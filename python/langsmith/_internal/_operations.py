@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import itertools
 import logging
+import os
 import uuid
 from typing import Literal, Optional, Union, cast
 
@@ -246,7 +247,7 @@ def serialized_run_operation_to_multipart_parts_and_context(
             ),
         )
     if op.attachments:
-        for n, (content_type, valb) in op.attachments.items():
+        for n, (content_type, data) in op.attachments.items():
             if "." in n:
                 logger.warning(
                     f"Skipping logging of attachment '{n}' "
@@ -256,17 +257,32 @@ def serialized_run_operation_to_multipart_parts_and_context(
                 )
                 continue
 
-            acc_parts.append(
-                (
-                    f"attachment.{op.id}.{n}",
+            if isinstance(data, bytes):
+                acc_parts.append(
                     (
-                        None,
-                        valb,
-                        content_type,
-                        {"Content-Length": str(len(valb))},
-                    ),
+                        f"attachment.{op.id}.{n}",
+                        (
+                            None,
+                            data,
+                            content_type,
+                            {"Content-Length": str(len(data))},
+                        ),
+                    )
                 )
-            )
+            else:
+                file_path = data
+                file_size = os.path.getsize(file_path)
+                acc_parts.append(
+                    (
+                        f"attachment.{op.id}.{n}",
+                        (
+                            None,
+                            open(file_path, "rb"),  # type: ignore[arg-type]
+                            f"{content_type}; length={file_size}",
+                            {},
+                        ),
+                    )
+                )
     return MultipartPartsAndContext(
         acc_parts,
         f"trace={op.trace_id},id={op.id}",

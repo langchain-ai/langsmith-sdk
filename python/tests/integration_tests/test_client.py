@@ -10,6 +10,7 @@ import sys
 import time
 import uuid
 from datetime import timedelta
+from pathlib import Path
 from typing import Any, Callable, Dict
 from unittest import mock
 from uuid import uuid4
@@ -64,7 +65,7 @@ def langchain_client() -> Client:
                 "dataset_examples_multipart_enabled": True,
                 "examples_multipart_enabled": True,
             }
-        },
+        }
     )
 
 
@@ -373,6 +374,41 @@ def test_persist_update_run(langchain_client: Client) -> None:
         assert stored_run.outputs == run["outputs"]
         assert stored_run.start_time == run["start_time"]
         assert stored_run.revision_id == str(revision_id)
+    finally:
+        langchain_client.delete_project(project_name=project_name)
+
+
+def test_update_run_attachments(langchain_client: Client) -> None:
+    """Test the persist and update methods work as expected."""
+    project_name = "__test_update_run_attachments" + uuid4().hex[:4]
+    if langchain_client.has_project(project_name):
+        langchain_client.delete_project(project_name=project_name)
+    try:
+        trace_id = uuid4()
+        start_time = datetime.datetime.now(datetime.timezone.utc)
+        run: dict = dict(
+            id=str(trace_id),
+            name="test_run",
+            run_type="llm",
+            inputs={"text": "hello world"},
+            project_name=project_name,
+            api_url=os.getenv("LANGCHAIN_ENDPOINT"),
+            start_time=start_time,
+            extra={"extra": "extra"},
+            trace_id=str(trace_id),
+            dotted_order=f"{start_time.strftime('%Y%m%dT%H%M%S%fZ')}{str(trace_id)}",
+        )
+        langchain_client.create_run(**run)
+        run["outputs"] = {"output": ["Hi"]}
+        run["extra"]["foo"] = "bar"
+        run["name"] = "test_run_updated"
+        langchain_client.update_run(run["id"], **run)
+        wait_for(lambda: langchain_client.read_run(run["id"]).end_time is not None)
+        stored_run = langchain_client.read_run(run["id"])
+        assert stored_run.name == run["name"]
+        assert str(stored_run.id) == run["id"]
+        assert stored_run.outputs == run["outputs"]
+        assert stored_run.start_time == run["start_time"].replace(tzinfo=None)
     finally:
         langchain_client.delete_project(project_name=project_name)
 
@@ -936,6 +972,260 @@ def test_multipart_ingest_empty(
         assert not caplog.records
 
 
+def test_multipart_ingest_create_with_attachments_error(
+    langchain_client: Client, caplog: pytest.LogCaptureFixture
+) -> None:
+    _session = "__test_multipart_ingest_create_with_attachments"
+    trace_a_id = uuid4()
+    current_time = datetime.datetime.now(datetime.timezone.utc).strftime(
+        "%Y%m%dT%H%M%S%fZ"
+    )
+
+    runs_to_create: list[dict] = [
+        {
+            "id": str(trace_a_id),
+            "session_name": _session,
+            "name": "trace a root",
+            "run_type": "chain",
+            "dotted_order": f"{current_time}{str(trace_a_id)}",
+            "trace_id": str(trace_a_id),
+            "inputs": {"input1": 1, "input2": 2},
+            "attachments": {
+                "foo": ("text/plain", b"bar"),
+                "bar": (
+                    "image/png",
+                    Path(__file__).parent / "test_data/parrot-icon.png",
+                ),
+            },
+        }
+    ]
+
+    # make sure no warnings logged
+    with pytest.raises(ValueError, match="Must set dangerously_allow_filesystem"):
+        langchain_client.multipart_ingest(create=runs_to_create, update=[])
+
+
+def test_multipart_ingest_create_with_attachments(
+    langchain_client: Client, caplog: pytest.LogCaptureFixture
+) -> None:
+    _session = "__test_multipart_ingest_create_with_attachments"
+    trace_a_id = uuid4()
+    current_time = datetime.datetime.now(datetime.timezone.utc).strftime(
+        "%Y%m%dT%H%M%S%fZ"
+    )
+
+    runs_to_create: list[dict] = [
+        {
+            "id": str(trace_a_id),
+            "session_name": _session,
+            "name": "trace a root",
+            "run_type": "chain",
+            "dotted_order": f"{current_time}{str(trace_a_id)}",
+            "trace_id": str(trace_a_id),
+            "inputs": {"input1": 1, "input2": 2},
+            "attachments": {
+                "foo": ("text/plain", b"bar"),
+                "bar": (
+                    "image/png",
+                    Path(__file__).parent / "test_data/parrot-icon.png",
+                ),
+            },
+        }
+    ]
+
+    # make sure no warnings logged
+    with caplog.at_level(logging.WARNING, logger="langsmith.client"):
+        langchain_client.multipart_ingest(
+            create=runs_to_create, update=[], dangerously_allow_filesystem=True
+        )
+        assert not caplog.records
+        wait_for(lambda: _get_run(str(trace_a_id), langchain_client))
+        created_run = langchain_client.read_run(run_id=str(trace_a_id))
+        assert sorted(created_run.attachments.keys()) == sorted(["foo", "bar"])
+        assert created_run.attachments["foo"]["reader"].read() == b"bar"
+        assert (
+            created_run.attachments["bar"]["reader"].read()
+            == (Path(__file__).parent / "test_data/parrot-icon.png").read_bytes()
+        )
+
+
+def test_multipart_ingest_update_with_attachments_no_paths(
+    langchain_client: Client, caplog: pytest.LogCaptureFixture
+):
+    _session = "__test_multipart_ingest_update_with_attachments_no_paths"
+    trace_a_id = uuid4()
+    current_time = datetime.datetime.now(datetime.timezone.utc).strftime(
+        "%Y%m%dT%H%M%S%fZ"
+    )
+
+    runs_to_create: list[dict] = [
+        {
+            "id": str(trace_a_id),
+            "session_name": _session,
+            "name": "trace a root",
+            "run_type": "chain",
+            "dotted_order": f"{current_time}{str(trace_a_id)}",
+            "trace_id": str(trace_a_id),
+            "outputs": {"output1": 3, "output2": 4},
+            "attachments": {
+                "foo": ("text/plain", b"bar"),
+                "bar": ("image/png", b"bar"),
+            },
+        }
+    ]
+    with caplog.at_level(logging.WARNING, logger="langsmith.client"):
+        langchain_client.multipart_ingest(create=runs_to_create, update=[])
+
+        assert not caplog.records
+        wait_for(lambda: _get_run(str(trace_a_id), langchain_client))
+        created_run = langchain_client.read_run(run_id=str(trace_a_id))
+        assert created_run.attachments
+        assert sorted(created_run.attachments.keys()) == sorted(["foo", "bar"])
+        assert created_run.attachments["foo"]["reader"].read() == b"bar"
+        assert created_run.attachments["bar"]["reader"].read() == b"bar"
+
+    runs_to_update: list[dict] = [
+        {
+            "id": str(trace_a_id),
+            "dotted_order": f"{current_time}{str(trace_a_id)}",
+            "trace_id": str(trace_a_id),
+            "outputs": {"output1": 3, "output2": 4},
+            "attachments": {
+                "baz": ("text/plain", b"bar"),
+                "qux": ("image/png", b"bar"),
+            },
+        }
+    ]
+    with caplog.at_level(logging.WARNING, logger="langsmith.client"):
+        langchain_client.multipart_ingest(create=[], update=runs_to_update)
+
+        assert not caplog.records
+        wait_for(lambda: _get_run(str(trace_a_id), langchain_client))
+        created_run = langchain_client.read_run(run_id=str(trace_a_id))
+        assert created_run.attachments
+        assert sorted(created_run.attachments.keys()) == sorted(
+            ["bar", "baz", "foo", "qux"]
+        )
+        assert created_run.attachments["baz"]["reader"].read() == b"bar"
+        assert created_run.attachments["qux"]["reader"].read() == b"bar"
+
+
+def _get_run(run_id: ID_TYPE, langchain_client: Client, has_end: bool = False) -> bool:
+    try:
+        r = langchain_client.read_run(run_id)  # type: ignore
+        if has_end:
+            return r.end_time is not None
+        return True
+    except LangSmithError:
+        return False
+
+
+def test_multipart_ingest_update_with_attachments_error(
+    langchain_client: Client, caplog: pytest.LogCaptureFixture
+) -> None:
+    _session = "__test_multipart_ingest_update_with_attachments"
+
+    trace_a_id = uuid4()
+    current_time = datetime.datetime.now(datetime.timezone.utc).strftime(
+        "%Y%m%dT%H%M%S%fZ"
+    )
+
+    runs_to_create: list[dict] = [
+        {
+            "id": str(trace_a_id),
+            "session_name": _session,
+            "name": "trace a root",
+            "run_type": "chain",
+            "dotted_order": f"{current_time}{str(trace_a_id)}",
+            "trace_id": str(trace_a_id),
+            "inputs": {"input1": 1, "input2": 2},
+        }
+    ]
+
+    # make sure no warnings logged
+    with caplog.at_level(logging.WARNING, logger="langsmith.client"):
+        langchain_client.multipart_ingest(create=runs_to_create, update=[])
+        assert not caplog.records
+        wait_for(lambda: _get_run(str(trace_a_id), langchain_client))
+
+        runs_to_update: list[dict] = [
+            {
+                "id": str(trace_a_id),
+                "dotted_order": f"{current_time}{str(trace_a_id)}",
+                "trace_id": str(trace_a_id),
+                "inputs": {"input1": 3, "input2": 4},
+                "attachments": {
+                    "foo": ("text/plain", b"bar"),
+                    "bar": (
+                        "image/png",
+                        Path(__file__).parent / "test_data/parrot-icon.png",
+                    ),
+                },
+            }
+        ]
+        with pytest.raises(ValueError, match="Must set dangerously_allow_filesystem"):
+            langchain_client.multipart_ingest(create=[], update=runs_to_update)
+
+
+def test_multipart_ingest_update_with_attachments(
+    langchain_client: Client, caplog: pytest.LogCaptureFixture
+) -> None:
+    _session = "__test_multipart_ingest_update_with_attachments"
+
+    trace_a_id = uuid4()
+    current_time = datetime.datetime.now(datetime.timezone.utc).strftime(
+        "%Y%m%dT%H%M%S%fZ"
+    )
+
+    runs_to_create: list[dict] = [
+        {
+            "id": str(trace_a_id),
+            "session_name": _session,
+            "name": "trace a root",
+            "run_type": "chain",
+            "dotted_order": f"{current_time}{str(trace_a_id)}",
+            "trace_id": str(trace_a_id),
+            "inputs": {"input1": 1, "input2": 2},
+        }
+    ]
+
+    # make sure no warnings logged
+    with caplog.at_level(logging.WARNING, logger="langsmith.client"):
+        langchain_client.multipart_ingest(create=runs_to_create, update=[])
+        assert not caplog.records
+        wait_for(lambda: _get_run(str(trace_a_id), langchain_client))
+
+        runs_to_update: list[dict] = [
+            {
+                "id": str(trace_a_id),
+                "dotted_order": f"{current_time}{str(trace_a_id)}",
+                "trace_id": str(trace_a_id),
+                "inputs": {"input1": 3, "input2": 4},
+                "attachments": {
+                    "foo": ("text/plain", b"bar"),
+                    "bar": (
+                        "image/png",
+                        Path(__file__).parent / "test_data/parrot-icon.png",
+                    ),
+                },
+            }
+        ]
+        langchain_client.multipart_ingest(
+            create=[], update=runs_to_update, dangerously_allow_filesystem=True
+        )
+
+        assert not caplog.records
+        wait_for(lambda: _get_run(str(trace_a_id), langchain_client))
+        created_run = langchain_client.read_run(run_id=str(trace_a_id))
+        assert created_run.inputs == {"input1": 3, "input2": 4}
+        assert sorted(created_run.attachments.keys()) == sorted(["foo", "bar"])
+        assert created_run.attachments["foo"]["reader"].read() == b"bar"
+        assert (
+            created_run.attachments["bar"]["reader"].read()
+            == (Path(__file__).parent / "test_data/parrot-icon.png").read_bytes()
+        )
+
+
 def test_multipart_ingest_create_then_update(
     langchain_client: Client, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -963,6 +1253,7 @@ def test_multipart_ingest_create_then_update(
         langchain_client.multipart_ingest(create=runs_to_create, update=[])
 
         assert not caplog.records
+        wait_for(lambda: _get_run(str(trace_a_id), langchain_client))
 
     runs_to_update: list[dict] = [
         {
@@ -976,6 +1267,10 @@ def test_multipart_ingest_create_then_update(
         langchain_client.multipart_ingest(create=[], update=runs_to_update)
 
         assert not caplog.records
+        wait_for(lambda: _get_run(str(trace_a_id), langchain_client))
+
+        created_run = langchain_client.read_run(run_id=str(trace_a_id))
+        assert created_run.outputs == {"output1": 3, "output2": 4}
 
 
 def test_multipart_ingest_update_then_create(
@@ -1089,16 +1384,7 @@ def test_update_run_extra(add_metadata: bool, do_batching: bool) -> None:
     revision_id = uuid4()
     langchain_client.create_run(**run, revision_id=revision_id)  # type: ignore
 
-    def _get_run(run_id: ID_TYPE, has_end: bool = False) -> bool:
-        try:
-            r = langchain_client.read_run(run_id)  # type: ignore
-            if has_end:
-                return r.end_time is not None
-            return True
-        except LangSmithError:
-            return False
-
-    wait_for(lambda: _get_run(run_id))
+    wait_for(lambda: _get_run(run_id, langchain_client))
     created_run = langchain_client.read_run(run_id)
     assert created_run.metadata["foo"] == "bar"
     assert created_run.metadata["revision_id"] == str(revision_id)
@@ -1107,7 +1393,7 @@ def test_update_run_extra(add_metadata: bool, do_batching: bool) -> None:
         run["extra"]["metadata"]["foo2"] = "baz"  # type: ignore
         run["tags"] = ["tag3"]
     langchain_client.update_run(run_id, **run)  # type: ignore
-    wait_for(lambda: _get_run(run_id, has_end=True))
+    wait_for(lambda: _get_run(run_id, langchain_client, has_end=True))
     updated_run = langchain_client.read_run(run_id)
     assert updated_run.metadata["foo"] == "bar"  # type: ignore
     assert updated_run.revision_id == str(revision_id)
@@ -1821,6 +2107,93 @@ def test_bulk_update_examples_with_attachments_operations(
         == b"fake image data 1"
     )
     assert updated_example_2.attachments["extra"]["reader"].read() == b"extra data"
+
+    # Clean up
+    langchain_client.delete_dataset(dataset_id=dataset.id)
+
+
+def test_examples_multipart_attachment_path(langchain_client: Client) -> None:
+    """Test uploading examples with attachments via multipart endpoint."""
+    dataset_name = "__test_upload_examples_multipart" + uuid4().hex[:4]
+    if langchain_client.has_dataset(dataset_name=dataset_name):
+        langchain_client.delete_dataset(dataset_name=dataset_name)
+
+    dataset = langchain_client.create_dataset(
+        dataset_name,
+        description="Test dataset for multipart example uploads",
+        data_type=DataType.kv,
+    )
+
+    example_id = uuid4()
+    example = ExampleUploadWithAttachments(
+        id=example_id,
+        inputs={"text": "hello world"},
+        attachments={
+            "file1": ("text/plain", b"original content 1"),
+            "file2": ("image/png", Path(__file__).parent / "test_data/parrot-icon.png"),
+        },
+    )
+
+    created_examples = langchain_client.upload_examples_multipart(
+        dataset_id=dataset.id, uploads=[example], dangerously_allow_filesystem=True
+    )
+    assert created_examples["count"] == 1
+
+    # Verify the upload
+    retrieved = langchain_client.read_example(example_id)
+
+    assert len(retrieved.attachments) == 2
+    assert "file1" in retrieved.attachments
+    assert "file2" in retrieved.attachments
+    assert retrieved.attachments["file1"]["reader"].read() == b"original content 1"
+    assert (
+        retrieved.attachments["file2"]["reader"].read()
+        == (Path(__file__).parent / "test_data/parrot-icon.png").read_bytes()
+    )
+
+    example_update = ExampleUpdateWithAttachments(
+        id=example_id,
+        attachments={
+            "new_file1": (
+                "image/png",
+                Path(__file__).parent / "test_data/parrot-icon.png",
+            ),
+        },
+    )
+
+    langchain_client.update_examples_multipart(
+        dataset_id=dataset.id,
+        updates=[example_update],
+        dangerously_allow_filesystem=True,
+    )
+
+    retrieved = langchain_client.read_example(example_id)
+
+    assert len(retrieved.attachments) == 1
+    assert "new_file1" in retrieved.attachments
+    assert (
+        retrieved.attachments["new_file1"]["reader"].read()
+        == (Path(__file__).parent / "test_data/parrot-icon.png").read_bytes()
+    )
+
+    example_wrong_path = ExampleUploadWithAttachments(
+        id=example_id,
+        inputs={"text": "hello world"},
+        attachments={
+            "file1": (
+                "text/plain",
+                Path(__file__).parent / "test_data/not-a-real-file.txt",
+            ),
+        },
+    )
+
+    with pytest.raises(FileNotFoundError) as exc_info:
+        langchain_client.upload_examples_multipart(
+            dataset_id=dataset.id,
+            uploads=[example_wrong_path],
+            dangerously_allow_filesystem=True,
+        )
+    assert "test_data/not-a-real-file.txt" in str(exc_info.value)
 
     # Clean up
     langchain_client.delete_dataset(dataset_id=dataset.id)
