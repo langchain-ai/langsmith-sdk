@@ -86,6 +86,7 @@ from langsmith._internal._constants import (
     _AUTO_SCALE_UP_NTHREADS_LIMIT,
     _BLOCKSIZE_BYTES,
     _SIZE_LIMIT_BYTES,
+    _BOUNDARY,
 )
 from langsmith._internal._multipart import (
     MultipartPart,
@@ -141,7 +142,6 @@ _urllib3_logger = logging.getLogger("urllib3.connectionpool")
 X_API_KEY = "x-api-key"
 WARNED_ATTACHMENTS = False
 EMPTY_SEQ: tuple[Dict, ...] = ()
-BOUNDARY = uuid.uuid4().hex
 URLLIB3_SUPPORTS_BLOCKSIZE = "key_blocksize" in signature(PoolKey).parameters
 
 
@@ -396,7 +396,6 @@ class Client:
         "_manual_cleanup",
         "_pyo3_client",
         "compress_traces",
-        "_boundary",
         "compressor_writer",
         "_run_count",
         "_buffer_lock",
@@ -507,7 +506,6 @@ class Client:
         self.compress_traces = ls_utils.get_env_var("USE_RUN_COMPRESSION")
         if self.compress_traces:
             self._futures: set[cf.Future] = set()
-            self._boundary = BOUNDARY
             self.compressed_runs_buffer: Optional[io.BytesIO] = io.BytesIO()
             self.compressor_writer: zstd.ZstdCompressionWriter = zstd.ZstdCompressor(
                 level=3, threads=-1
@@ -1334,7 +1332,7 @@ class Client:
                 )
                 with self._buffer_lock:
                     compress_multipart_parts_and_context(
-                        multipart_form, self.compressor_writer, self._boundary
+                        multipart_form, self.compressor_writer, _BOUNDARY
                     )
                     self._run_count += 1
                     self._data_available_event.set()
@@ -1678,7 +1676,7 @@ class Client:
         for api_url, api_key in self._write_api_urls.items():
             for idx in range(1, attempts + 1):
                 try:
-                    encoder = rqtb_multipart.MultipartEncoder(parts, boundary=BOUNDARY)
+                    encoder = rqtb_multipart.MultipartEncoder(parts, boundary=_BOUNDARY)
                     if encoder.len <= 20_000_000:  # ~20 MB
                         data = encoder.to_string()
                     else:
@@ -1729,7 +1727,7 @@ class Client:
                     headers = {
                         **self._headers,
                         "X-API-KEY": api_key,
-                        "Content-Type": f"multipart/form-data; boundary={self._boundary}",
+                        "Content-Type": f"multipart/form-data; boundary={_BOUNDARY}",
                         "Content-Encoding": "zstd",
                     }
 
@@ -1864,7 +1862,7 @@ class Client:
                 )
                 with self._buffer_lock:
                     compress_multipart_parts_and_context(
-                        multipart_form, self.compressor_writer, self._boundary
+                        multipart_form, self.compressor_writer, _BOUNDARY
                     )
                     self._run_count += 1
                     self._data_available_event.set()
@@ -3767,7 +3765,7 @@ class Client:
                     )
                 )
 
-        encoder = rqtb_multipart.MultipartEncoder(parts, boundary=BOUNDARY)
+        encoder = rqtb_multipart.MultipartEncoder(parts, boundary=_BOUNDARY)
         if encoder.len <= 20_000_000:  # ~20 MB
             data = encoder.to_string()
         else:

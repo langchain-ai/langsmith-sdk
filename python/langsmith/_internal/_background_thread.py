@@ -24,6 +24,7 @@ from langsmith._internal._constants import (
     _AUTO_SCALE_DOWN_NEMPTY_TRIGGER,
     _AUTO_SCALE_UP_NTHREADS_LIMIT,
     _AUTO_SCALE_UP_QSIZE_TRIGGER,
+    _BOUNDARY,
 )
 from langsmith._internal._operations import (
     SerializedFeedbackOperation,
@@ -117,7 +118,7 @@ def _tracing_thread_drain_compressed_buffer(
             return None
 
         # Write final boundary and close compression stream
-        client.compressor_writer.write(f"--{client._boundary}--\r\n".encode())
+        client.compressor_writer.write(f"--{_BOUNDARY}--\r\n".encode())
         client.compressor_writer.close()
 
         filled_buffer = client.compressed_runs_buffer
