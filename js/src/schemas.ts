@@ -67,7 +67,8 @@ export interface AttachmentInfo {
   presigned_url: string;
 }
 
-export type AttachmentData = Uint8Array | ArrayBuffer;
+
+export type AttachmentData = ArrayBuffer | Uint8Array | Blob;
 
 export type AttachmentDescription = {
   mimeType: string;

@@ -67,6 +67,7 @@ import { raiseForStatus } from "./utils/error.js";
 import { _getFetchImplementation } from "./singletons/fetch.js";
 
 import { stringify as stringifyForTracing } from "./utils/fast-safe-stringify/index.js";
+import { v4 as uuid4 } from "uuid";
 
 export interface ClientConfig {
   apiUrl?: string;
@@ -1148,12 +1149,20 @@ export class Client implements LangSmithTracingClientInterface {
                 );
                 continue;
               }
-              accumulatedParts.push({
-                name: `attachment.${payload.id}.${name}`,
-                payload: new Blob([content], {
-                  type: `${contentType}; length=${content.byteLength}`,
-                }),
-              });
+              // eslint-disable-next-line no-instanceof/no-instanceof
+              if (content instanceof Blob) {
+                accumulatedParts.push({
+                  name: `attachment.${payload.id}.${name}`,
+                  payload: content,
+                });
+              } else {
+                accumulatedParts.push({
+                  name: `attachment.${payload.id}.${name}`,
+                  payload: new Blob([content], {
+                    type: `${contentType}; length=${content.byteLength}`,
+                  }),
+                });
+              }
             }
           }
         }
@@ -3918,77 +3927,7 @@ export class Client implements LangSmithTracingClientInterface {
         "Your LangSmith version does not allow using the multipart examples endpoint, please update to the latest version."
       );
     }
-    const formData = new FormData();
-
-    for (const example of updates) {
-      const exampleId = example.id;
-
-      // Prepare the main example body
-      const exampleBody = {
-        ...(example.metadata && { metadata: example.metadata }),
-        ...(example.split && { split: example.split }),
-      };
-
-      // Add main example data
-      const stringifiedExample = stringifyForTracing(exampleBody);
-      const exampleBlob = new Blob([stringifiedExample], {
-        type: "application/json",
-      });
-      formData.append(exampleId, exampleBlob);
-
-      // Add inputs
-      if (example.inputs) {
-        const stringifiedInputs = stringifyForTracing(example.inputs);
-        const inputsBlob = new Blob([stringifiedInputs], {
-          type: "application/json",
-        });
-        formData.append(`${exampleId}.inputs`, inputsBlob);
-      }
-
-      // Add outputs if present
-      if (example.outputs) {
-        const stringifiedOutputs = stringifyForTracing(example.outputs);
-        const outputsBlob = new Blob([stringifiedOutputs], {
-          type: "application/json",
-        });
-        formData.append(`${exampleId}.outputs`, outputsBlob);
-      }
-
-      // Add attachments if present
-      if (example.attachments) {
-        for (const [name, attachment] of Object.entries(example.attachments)) {
-          let mimeType: string;
-          let data: AttachmentData;
-
-          if (Array.isArray(attachment)) {
-            [mimeType, data] = attachment;
-          } else {
-            mimeType = attachment.mimeType;
-            data = attachment.data;
-          }
-          const attachmentBlob = new Blob([data], {
-            type: `${mimeType}; length=${data.byteLength}`,
-          });
-          formData.append(`${exampleId}.attachment.${name}`, attachmentBlob);
-        }
-      }
-
-      if (example.attachments_operations) {
-        const stringifiedAttachmentsOperations = stringifyForTracing(
-          example.attachments_operations
-        );
-        const attachmentsOperationsBlob = new Blob(
-          [stringifiedAttachmentsOperations],
-          {
-            type: "application/json",
-          }
-        );
-        formData.append(
-          `${exampleId}.attachments_operations`,
-          attachmentsOperationsBlob
-        );
-      }
-    }
+    const formData = _prepareMultiPartData(updates);
 
     const response = await this.caller.call(
       _getFetchImplementation(),
@@ -4017,60 +3956,7 @@ export class Client implements LangSmithTracingClientInterface {
         "Your LangSmith version does not allow using the multipart examples endpoint, please update to the latest version."
       );
     }
-    const formData = new FormData();
-
-    for (const example of uploads) {
-      const exampleId = (example.id ?? uuid.v4()).toString();
-
-      // Prepare the main example body
-      const exampleBody = {
-        created_at: example.created_at,
-        ...(example.metadata && { metadata: example.metadata }),
-        ...(example.split && { split: example.split }),
-      };
-
-      // Add main example data
-      const stringifiedExample = stringifyForTracing(exampleBody);
-      const exampleBlob = new Blob([stringifiedExample], {
-        type: "application/json",
-      });
-      formData.append(exampleId, exampleBlob);
-
-      // Add inputs
-      const stringifiedInputs = stringifyForTracing(example.inputs);
-      const inputsBlob = new Blob([stringifiedInputs], {
-        type: "application/json",
-      });
-      formData.append(`${exampleId}.inputs`, inputsBlob);
-
-      // Add outputs if present
-      if (example.outputs) {
-        const stringifiedOutputs = stringifyForTracing(example.outputs);
-        const outputsBlob = new Blob([stringifiedOutputs], {
-          type: "application/json",
-        });
-        formData.append(`${exampleId}.outputs`, outputsBlob);
-      }
-
-      // Add attachments if present
-      if (example.attachments) {
-        for (const [name, attachment] of Object.entries(example.attachments)) {
-          let mimeType: string;
-          let data: AttachmentData;
-
-          if (Array.isArray(attachment)) {
-            [mimeType, data] = attachment;
-          } else {
-            mimeType = attachment.mimeType;
-            data = attachment.data;
-          }
-          const attachmentBlob = new Blob([data], {
-            type: `${mimeType}; length=${data.byteLength}`,
-          });
-          formData.append(`${exampleId}.attachment.${name}`, attachmentBlob);
-        }
-      }
-    }
+    const formData = _prepareMultiPartData(uploads);
 
     const response = await this.caller.call(
       _getFetchImplementation(),
@@ -4392,4 +4278,93 @@ export interface LangSmithTracingClientInterface {
   createRun: (run: CreateRunParams) => Promise<void>;
 
   updateRun: (runId: string, run: RunUpdate) => Promise<void>;
+}
+
+function isExampleUpdateWithAttachments(
+  obj: ExampleUpdateWithAttachments | ExampleUploadWithAttachments
+): obj is ExampleUpdateWithAttachments {
+  return (
+    (obj as ExampleUpdateWithAttachments).attachments_operations !== undefined
+  );
+}
+
+function _prepareMultiPartData(
+  examples: ExampleUpdateWithAttachments[] | ExampleUploadWithAttachments[]
+): FormData {
+  const formData = new FormData();
+
+  for (const example of examples) {
+    const exampleId = example.id ?? uuid4();
+
+    // Prepare the main example body
+    const exampleBody = {
+      ...(example.metadata && { metadata: example.metadata }),
+      ...(example.split && { split: example.split }),
+    };
+
+    // Add main example data
+    const stringifiedExample = stringifyForTracing(exampleBody);
+    const exampleBlob = new Blob([stringifiedExample], {
+      type: "application/json",
+    });
+    formData.append(exampleId, exampleBlob);
+
+    // Add inputs
+    if (example.inputs) {
+      const stringifiedInputs = stringifyForTracing(example.inputs);
+      const inputsBlob = new Blob([stringifiedInputs], {
+        type: "application/json",
+      });
+      formData.append(`${exampleId}.inputs`, inputsBlob);
+    }
+
+    // Add outputs if present
+    if (example.outputs) {
+      const stringifiedOutputs = stringifyForTracing(example.outputs);
+      const outputsBlob = new Blob([stringifiedOutputs], {
+        type: "application/json",
+      });
+      formData.append(`${exampleId}.outputs`, outputsBlob);
+    }
+
+    // Add attachments if present
+    if (example.attachments) {
+      for (const [name, [mimeType, data]] of Object.entries(
+        example.attachments
+      )) {
+        // eslint-disable-next-line no-instanceof/no-instanceof
+        if (data instanceof Blob) {
+          formData.append(`${exampleId}.attachment.${name}`, data);
+        } else {
+          formData.append(
+            `${exampleId}.attachment.${name}`,
+            new Blob([data], {
+              type: `${mimeType}; length=${data.byteLength}`,
+            })
+          );
+        }
+      }
+    }
+
+    if (
+      isExampleUpdateWithAttachments(example) &&
+      example.attachments_operations
+    ) {
+      const stringifiedAttachmentsOperations = stringifyForTracing(
+        example.attachments_operations
+      );
+      const attachmentsOperationsBlob = new Blob(
+        [stringifiedAttachmentsOperations],
+        {
+          type: "application/json",
+        }
+      );
+      formData.append(
+        `${exampleId}.attachments_operations`,
+        attachmentsOperationsBlob
+      );
+    }
+  }
+
+  return formData;
 }

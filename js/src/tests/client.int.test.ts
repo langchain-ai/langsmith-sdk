@@ -1289,7 +1289,12 @@ test("upload examples multipart", async () => {
     inputs: { text: "foo bar" },
     outputs: { response: "baz" },
     attachments: {
-      my_file: ["image/png", fs.readFileSync(pathname)],
+      my_file: [
+        "image/png",
+        new Blob([fs.readFileSync(pathname)], {
+          type: `image/png; length=${fs.readFileSync(pathname).byteLength}`,
+        }),
+      ],
     },
   };
 
@@ -1303,12 +1308,14 @@ test("upload examples multipart", async () => {
 
   const createdExample1 = await client.readExample(exampleId);
   expect(createdExample1.inputs["text"]).toBe("hello world");
+  expect(createdExample1.attachments?.["test_file"]).toBeDefined();
 
   const createdExample2 = await client.readExample(
     createdExamples.example_ids.find((id) => id !== exampleId)!
   );
   expect(createdExample2.inputs["text"]).toBe("foo bar");
   expect(createdExample2.outputs?.["response"]).toBe("baz");
+  expect(createdExample2.attachments?.["my_file"]).toBeDefined();
 
   // Test examples were sent to correct dataset
   const allExamplesInDataset = [];
