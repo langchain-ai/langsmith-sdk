@@ -419,7 +419,7 @@ class Client:
             hide_outputs (Optional[Union[Callable[[dict], dict], bool]]): Whether to hide run outputs when tracing with this client.
                 If True, hides the entire outputs. If a function, applied to
                 all run outputs when creating runs.
-            info (Optional[ls_schemas.LangSmithInfo]): The information about the LangSmith API. 
+            info (Optional[ls_schemas.LangSmithInfo]): The information about the LangSmith API.
                 If not provided, it will be fetched from the API.
             api_urls (Optional[Dict[str, str]]): A dictionary of write API URLs and their corresponding API keys.
                 Useful for multi-tenant setups. Data is only read from the first
@@ -980,9 +980,9 @@ class Client:
 
                 client = Client()
 
-                df = pd.read_parquet('path/to/your/myfile.parquet')
-                input_keys = ['column1', 'column2'] # replace with your input column names
-                output_keys = ['output1', 'output2'] # replace with your output column names
+                df = pd.read_parquet("path/to/your/myfile.parquet")
+                input_keys = ["column1", "column2"]  # replace with your input column names
+                output_keys = ["output1", "output2"]  # replace with your output column names
 
                 dataset = client.upload_dataframe(
                     df=df,
@@ -990,7 +990,7 @@ class Client:
                     output_keys=output_keys,
                     name="My Parquet Dataset",
                     description="Dataset created from a parquet file",
-                    data_type="kv" # The default
+                    data_type="kv",  # The default
                 )
         """
         csv_file = io.BytesIO()
@@ -1040,9 +1040,9 @@ class Client:
 
                 client = Client()
 
-                csv_file = 'path/to/your/myfile.csv'
-                input_keys = ['column1', 'column2'] # replace with your input column names
-                output_keys = ['output1', 'output2'] # replace with your output column names
+                csv_file = "path/to/your/myfile.csv"
+                input_keys = ["column1", "column2"]  # replace with your input column names
+                output_keys = ["output1", "output2"]  # replace with your output column names
 
                 dataset = client.upload_csv(
                     csv_file=csv_file,
@@ -1050,7 +1050,7 @@ class Client:
                     output_keys=output_keys,
                     name="My CSV Dataset",
                     description="Dataset created from a CSV file",
-                    data_type="kv" # The default
+                    data_type="kv",  # The default
                 )
         """
         data = {
@@ -1416,7 +1416,7 @@ class Client:
         Note:
             - The run objects MUST contain the dotted_order and trace_id fields
                 to be accepted by the API.
-        
+
         Examples:
             .. code-block:: python
                 from langsmith import Client
@@ -1596,14 +1596,14 @@ class Client:
 
         Raises:
             LangsmithAPIError: If there is an error in the API request.
-        
+
         Returns:
             None
 
         Note:
             - The run objects MUST contain the dotted_order and trace_id fields
                 to be accepted by the API.
-        
+
         Examples:
             .. code-block:: python
                 from langsmith import Client
@@ -2277,7 +2277,7 @@ class Client:
 
     def share_run(self, run_id: ID_TYPE, *, share_id: Optional[ID_TYPE] = None) -> str:
         """Get a share link for a run.
-        
+
         Args:
             run_id (Union[UUID, str]): The ID of the run to share.
             share_id (Optional[Union[UUID, str]]): Custom share ID.
@@ -2303,10 +2303,10 @@ class Client:
 
     def unshare_run(self, run_id: ID_TYPE) -> None:
         """Delete share link for a run.
-        
+
         Args:
             run_id (Union[UUID, str]): The ID of the run to unshare.
-        
+
         Returns:
             None
         """
@@ -2340,7 +2340,7 @@ class Client:
 
     def run_is_shared(self, run_id: ID_TYPE) -> bool:
         """Get share state for a run.
-        
+
         Args:
             run_id (Union[UUID, str]): The ID of the run.
 
@@ -2354,7 +2354,7 @@ class Client:
         self, share_token: Union[ID_TYPE, str], run_id: Optional[ID_TYPE] = None
     ) -> ls_schemas.Run:
         """Get shared runs.
-        
+
         Args:
             share_token (Union[UUID, str]): The share token or URL of the shared run.
             run_id (Optional[Union[UUID, str]]): The ID of the specific run to retrieve.
@@ -2379,7 +2379,7 @@ class Client:
         self, share_token: Union[ID_TYPE, str], run_ids: Optional[List[str]] = None
     ) -> Iterator[ls_schemas.Run]:
         """Get shared runs.
-        
+
         Args:
             share_token (Union[UUID, str]): The share token or URL of the shared run.
             run_ids (Optional[List[str]]): A list of run IDs to filter the results by.
@@ -2441,7 +2441,7 @@ class Client:
         dataset_name: Optional[str] = None,
     ) -> ls_schemas.DatasetShareSchema:
         """Get a share link for a dataset.
-        
+
         Args:
             dataset_id (Optional[Union[UUID, str]]): The ID of the dataset.
                 Either `dataset_id` or `dataset_name` must be given.
@@ -2476,7 +2476,7 @@ class Client:
 
     def unshare_dataset(self, dataset_id: ID_TYPE) -> None:
         """Delete share link for a dataset.
-        
+
         Args:
             dataset_id (Union[UUID, str]): The ID of the dataset to unshare.
 
@@ -2495,7 +2495,7 @@ class Client:
         share_token: str,
     ) -> ls_schemas.Dataset:
         """Get shared datasets.
-        
+
         Args:
             share_token (Union[UUID, str]): The share token or URL of the shared dataset.
 
@@ -2519,7 +2519,7 @@ class Client:
         self, share_token: str, *, example_ids: Optional[List[ID_TYPE]] = None
     ) -> List[ls_schemas.Example]:
         """Get shared examples.
-        
+
         Args:
             share_token (Union[UUID, str]): The share token or URL of the shared dataset.
             example_ids (Optional[List[UUID, str]], optional): The IDs of the examples to filter by. Defaults to None.
@@ -3025,7 +3025,10 @@ class Client:
         )
 
     def has_dataset(
-        self, *, dataset_name: Optional[str] = None, dataset_id: Optional[ID_TYPE] = None
+        self,
+        *,
+        dataset_name: Optional[str] = None,
+        dataset_id: Optional[ID_TYPE] = None,
     ) -> bool:
         """Check whether a dataset exists in your tenant.
 
@@ -3162,7 +3165,10 @@ class Client:
         return ls_schemas.DatasetDiffInfo(**response.json())
 
     def read_dataset_openai_finetuning(
-        self, dataset_id: Optional[ID_TYPE] = None, *, dataset_name: Optional[str] = None
+        self,
+        dataset_id: Optional[ID_TYPE] = None,
+        *,
+        dataset_name: Optional[str] = None,
     ) -> list:
         """Download a dataset in OpenAI Jsonl format and load it as a list of dicts.
 
@@ -3506,7 +3512,7 @@ class Client:
         created_at: Optional[datetime.datetime] = None,
     ) -> ls_schemas.Example:
         """Add an example (row) to an LLM-type dataset.
-        
+
         Args:
             prompt (str):
                 The input prompt for the example.
@@ -3542,7 +3548,7 @@ class Client:
         created_at: Optional[datetime.datetime] = None,
     ) -> ls_schemas.Example:
         """Add an example (row) to a Chat-type dataset.
-        
+
         Args:
             messages (List[Union[Mapping[str, Any], BaseMessageLike]]):
                 The input messages for the example.
@@ -3594,7 +3600,7 @@ class Client:
         created_at: Optional[datetime.datetime] = None,
     ) -> ls_schemas.Example:
         """Add an example (row) to a dataset from a run.
-        
+
         Args:
             run (Run): The run to create an example from.
             dataset_id (Optional[Union[UUID, str]]): The ID of the dataset.
@@ -3839,7 +3845,7 @@ class Client:
         updates: Optional[List[ls_schemas.ExampleUpdateWithAttachments]] = None,
     ) -> ls_schemas.UpsertExamplesResponse:
         """Update examples using multipart.
-        
+
         Args:
             dataset_id (Union[UUID, str]): The ID of the dataset to update.
             updates (Optional[List[ExampleUpdateWithAttachments]]): The updates to apply to the examples.
@@ -3879,7 +3885,7 @@ class Client:
         uploads: Optional[List[ls_schemas.ExampleUploadWithAttachments]] = None,
     ) -> ls_schemas.UpsertExamplesResponse:
         """Upload examples using multipart.
-        
+
         Args:
             dataset_id (Union[UUID, str]): The ID of the dataset to upload to.
             uploads (Optional[List[ExampleUploadWithAttachments]]): The examples to upload.
@@ -4169,7 +4175,7 @@ class Client:
         include_attachments: bool = False,
         **kwargs: Any,
     ) -> Iterator[ls_schemas.Example]:
-        """Retrieve the example rows of the specified dataset.
+        r"""Retrieve the example rows of the specified dataset.
 
         Args:
             dataset_id (Optional[Union[UUID, str]]): The ID of the dataset to filter by.
@@ -4200,16 +4206,18 @@ class Client:
             The examples.
 
         Examples:
-
             List all examples for a dataset:
 
             .. code-block:: python
 
                 from langsmith import Client
+
                 client = Client()
-                
+
                 # By Dataset ID
-                examples = client.list_examples(dataset_id="c9ace0d8-a82c-4b6c-13d2-83401d68e9ab")
+                examples = client.list_examples(
+                    dataset_id="c9ace0d8-a82c-4b6c-13d2-83401d68e9ab"
+                )
                 # By Dataset Name
                 examples = client.list_examples(dataset_name="My Test Dataset")
 
@@ -4218,9 +4226,9 @@ class Client:
             .. code-block:: python
 
                 example_ids = [
-                '734fc6a0-c187-4266-9721-90b7a025751a',
-                'd6b4c1b9-6160-4d63-9b61-b034c585074f',
-                '4d31df4e-f9c3-4a6e-8b6c-65701c2fed13',
+                    "734fc6a0-c187-4266-9721-90b7a025751a",
+                    "d6b4c1b9-6160-4d63-9b61-b034c585074f",
+                    "4d31df4e-f9c3-4a6e-8b6c-65701c2fed13",
                 ]
                 examples = client.list_examples(example_ids=example_ids)
 
@@ -4228,15 +4236,17 @@ class Client:
 
             .. code-block:: python
 
-                examples = client.list_examples(dataset_name=dataset_name, metadata={"foo": "bar"})
-            
+                examples = client.list_examples(
+                    dataset_name=dataset_name, metadata={"foo": "bar"}
+                )
+
             List examples by structured filter
 
             .. code-block:: python
 
                 examples = client.list_examples(
                     dataset_name=dataset_name,
-                    filter='and(not(has(metadata, \'{"foo": "bar"}\')), exists(metadata, "tenant_id"))'
+                    filter='and(not(has(metadata, \'{"foo": "bar"}\')), exists(metadata, "tenant_id"))',
                 )
         """
         params: Dict[str, Any] = {
@@ -4366,25 +4376,33 @@ class Client:
 
                 [
                     ExampleSearch(
-                        inputs={'question': 'How do I cache a Chat model? What caches can I use?'},
-                        outputs={'answer': 'You can use LangChain\'s caching layer for Chat Models. This can save you money by reducing the number of API calls you make to the LLM provider, if you\'re often requesting the same completion multiple times, and speed up your application.\n\nfrom langchain.cache import InMemoryCache\nlangchain.llm_cache = InMemoryCache()\n\n# The first time, it is not yet in cache, so it should take longer\nllm.predict(\'Tell me a joke\')\n\nYou can also use SQLite Cache which uses a SQLite database:\n\nrm .langchain.db\n\nfrom langchain.cache import SQLiteCache\nlangchain.llm_cache = SQLiteCache(database_path=".langchain.db")\n\n# The first time, it is not yet in cache, so it should take longer\nllm.predict(\'Tell me a joke\') \n'},
+                        inputs={
+                            "question": "How do I cache a Chat model? What caches can I use?"
+                        },
+                        outputs={
+                            "answer": "You can use LangChain's caching layer for Chat Models. This can save you money by reducing the number of API calls you make to the LLM provider, if you're often requesting the same completion multiple times, and speed up your application.\n\nfrom langchain.cache import InMemoryCache\nlangchain.llm_cache = InMemoryCache()\n\n# The first time, it is not yet in cache, so it should take longer\nllm.predict('Tell me a joke')\n\nYou can also use SQLite Cache which uses a SQLite database:\n\nrm .langchain.db\n\nfrom langchain.cache import SQLiteCache\nlangchain.llm_cache = SQLiteCache(database_path=\".langchain.db\")\n\n# The first time, it is not yet in cache, so it should take longer\nllm.predict('Tell me a joke') \n"
+                        },
                         metadata=None,
-                        id=UUID('b2ddd1c4-dff6-49ae-8544-f48e39053398'),
-                        dataset_id=UUID('01b6ce0f-bfb6-4f48-bbb8-f19272135d40')
+                        id=UUID("b2ddd1c4-dff6-49ae-8544-f48e39053398"),
+                        dataset_id=UUID("01b6ce0f-bfb6-4f48-bbb8-f19272135d40"),
                     ),
                     ExampleSearch(
-                        inputs={'question': "What's a runnable lambda?"},
-                        outputs={'answer': "A runnable lambda is an object that implements LangChain's `Runnable` interface and runs a callbale (i.e., a function). Note the function must accept a single argument."},
+                        inputs={"question": "What's a runnable lambda?"},
+                        outputs={
+                            "answer": "A runnable lambda is an object that implements LangChain's `Runnable` interface and runs a callbale (i.e., a function). Note the function must accept a single argument."
+                        },
                         metadata=None,
-                        id=UUID('f94104a7-2434-4ba7-8293-6a283f4860b4'),
-                        dataset_id=UUID('01b6ce0f-bfb6-4f48-bbb8-f19272135d40')
+                        id=UUID("f94104a7-2434-4ba7-8293-6a283f4860b4"),
+                        dataset_id=UUID("01b6ce0f-bfb6-4f48-bbb8-f19272135d40"),
                     ),
                     ExampleSearch(
-                        inputs={'question': 'Show me how to use RecursiveURLLoader'},
-                        outputs={'answer': 'The RecursiveURLLoader comes from the langchain.document_loaders.recursive_url_loader module. Here\'s an example of how to use it:\n\nfrom langchain.document_loaders.recursive_url_loader import RecursiveUrlLoader\n\n# Create an instance of RecursiveUrlLoader with the URL you want to load\nloader = RecursiveUrlLoader(url="https://example.com")\n\n# Load all child links from the URL page\nchild_links = loader.load()\n\n# Print the child links\nfor link in child_links:\n    print(link)\n\nMake sure to replace "https://example.com" with the actual URL you want to load. The load() method returns a list of child links found on the URL page. You can iterate over this list to access each child link.'},
+                        inputs={"question": "Show me how to use RecursiveURLLoader"},
+                        outputs={
+                            "answer": 'The RecursiveURLLoader comes from the langchain.document_loaders.recursive_url_loader module. Here\'s an example of how to use it:\n\nfrom langchain.document_loaders.recursive_url_loader import RecursiveUrlLoader\n\n# Create an instance of RecursiveUrlLoader with the URL you want to load\nloader = RecursiveUrlLoader(url="https://example.com")\n\n# Load all child links from the URL page\nchild_links = loader.load()\n\n# Print the child links\nfor link in child_links:\n    print(link)\n\nMake sure to replace "https://example.com" with the actual URL you want to load. The load() method returns a list of child links found on the URL page. You can iterate over this list to access each child link.'
+                        },
                         metadata=None,
-                        id=UUID('0308ea70-a803-4181-a37d-39e95f138f8c'),
-                        dataset_id=UUID('01b6ce0f-bfb6-4f48-bbb8-f19272135d40')
+                        id=UUID("0308ea70-a803-4181-a37d-39e95f138f8c"),
+                        dataset_id=UUID("01b6ce0f-bfb6-4f48-bbb8-f19272135d40"),
                     ),
                 ]
 
@@ -5082,7 +5100,7 @@ class Client:
                 The correction to update the feedback with.
             comment (Optional[str]):
                 The comment to update the feedback with.
-        
+
         Returns:
             None
         """
@@ -5546,7 +5564,7 @@ class Client:
 
         Args:
             queue_id (Union[UUID, str]): The ID of the annotation queue to delete.
-        
+
         Returns:
             None
         """
@@ -5586,7 +5604,7 @@ class Client:
             queue_id (Union[UUID, str]): The ID of the annotation queue.
             run_id (Union[UUID, str]): The ID of the run to be added to the annotation
                 queue.
-        
+
         Returns:
             None
         """
@@ -6512,8 +6530,9 @@ class Client:
             Prepare the dataset:
 
             .. code-block:: python
-            
+
                 from langsmith import Client
+
                 client = Client()
                 dataset = client.clone_public_dataset(
                     "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/d"
@@ -6523,7 +6542,7 @@ class Client:
             Basic usage:
 
             .. code-block:: python
-            
+
                 def accuracy(outputs: dict, reference_outputs: dict) -> dict:
                     # Row-level evaluator for accuracy.
                     pred = outputs["response"]
@@ -6541,9 +6560,13 @@ class Client:
                     tp = sum([p == e for p, e in zip(predictions, expected) if p == "yes"])
                     fp = sum([p == "yes" and e == "no" for p, e in zip(predictions, expected)])
                     return {"score": tp / (tp + fp)}
+
+
                 def predict(inputs: dict) -> dict:
                     # This can be any function or just an API call to your app.
                     return {"response": "Yes"}
+
+
                 results = client.evaluate(
                     predict,
                     data=dataset_name,
@@ -6559,7 +6582,7 @@ class Client:
             Evaluating over only a subset of the examples
 
             .. code-block:: python
-            
+
                 experiment_name = results.experiment_name
                 examples = client.list_examples(dataset_name=dataset_name, limit=5)
                 results = client.evaluate(
@@ -6589,15 +6612,19 @@ class Client:
             Using the `evaluate` API with an off-the-shelf LangChain evaluator:
 
             .. code-block:: python
-            
+
                 from langsmith.evaluation import LangChainStringEvaluator
                 from langchain.chat_models import init_chat_model
+
+
                 def prepare_criteria_data(run: Run, example: Example):
                     return {
                         "prediction": run.outputs["output"],
                         "reference": example.outputs["answer"],
                         "input": str(example.inputs),
                     }
+
+
                 results = client.evaluate(
                     predict,
                     data=dataset_name,
@@ -6626,12 +6653,18 @@ class Client:
             .. code-block:: python
 
                 from langchain_core.runnables import chain as as_runnable
+
+
                 @as_runnable
                 def nested_predict(inputs):
                     return {"response": "Yes"}
+
+
                 @as_runnable
                 def lc_predict(inputs):
                     return nested_predict.invoke(inputs)
+
+
                 results = client.evaluate(
                     lc_predict,
                     data=dataset_name,
@@ -6646,7 +6679,10 @@ class Client:
 
                 results = client.evaluate(
                     # The target is a tuple of the experiment IDs to compare
-                    target=("12345678-1234-1234-1234-123456789012", "98765432-1234-1234-1234-123456789012"),
+                    target=(
+                        "12345678-1234-1234-1234-123456789012",
+                        "98765432-1234-1234-1234-123456789012",
+                    ),
                     evaluators=[accuracy],
                     summary_evaluators=[precision],
                 )
@@ -6761,6 +6797,7 @@ class Client:
 
                 import asyncio
                 from langsmith import Client
+
                 client = Client()
                 dataset = client.clone_public_dataset(
                     "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/d"
@@ -6777,6 +6814,7 @@ class Client:
                     expected = reference_outputs["answer"]
                     return {"score": expected.lower() == pred.lower()}
 
+
                 def precision(outputs: list[dict], reference_outputs: list[dict]) -> dict:
                     # Experiment-level evaluator for precision.
                     # TP / (TP + FP)
@@ -6787,10 +6825,13 @@ class Client:
                     fp = sum([p == "yes" and e == "no" for p, e in zip(predictions, expected)])
                     return {"score": tp / (tp + fp)}
 
+
                 async def apredict(inputs: dict) -> dict:
                     # This can be any async function or just an API call to your app.
                     await asyncio.sleep(0.1)
                     return {"response": "Yes"}
+
+
                 results = asyncio.run(
                     client.aevaluate(
                         apredict,
@@ -6808,11 +6849,13 @@ class Client:
             Evaluating over only a subset of the examples using an async generator:
 
             .. code-block:: python
-            
+
                 async def example_generator():
                     examples = client.list_examples(dataset_name=dataset_name, limit=5)
                     for example in examples:
                         yield example
+
+
                 results = asyncio.run(
                     client.aevaluate(
                         apredict,
@@ -6840,9 +6883,12 @@ class Client:
                     )
                 )
 
+
                 async def aenumerate(iterable):
                     async for elem in iterable:
                         print(elem)
+
+
                 asyncio.run(aenumerate(results))
 
             Running without concurrency:
@@ -6870,6 +6916,7 @@ class Client:
                     await asyncio.sleep(5)  # Replace with your LLM API call
                     return {"score": outputs["output"] == "Yes"}
 
+
                 results = asyncio.run(
                     client.aevaluate(
                         apredict,
@@ -6890,7 +6937,7 @@ class Client:
                         # The target is the ID of the experiment we are evaluating
                         target="419dcab2-1d66-4b94-8901-0357ead390df",
                         evaluators=[accuracy, helpfulness],
-                        summary_evaluators=[precision],                        
+                        summary_evaluators=[precision],
                     )
                 )
 
