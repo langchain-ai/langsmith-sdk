@@ -395,7 +395,6 @@ class Client:
         "_settings",
         "_manual_cleanup",
         "_pyo3_client",
-        "compress_traces",
         "compressor_writer",
         "_run_count",
         "_buffer_lock",
@@ -503,8 +502,7 @@ class Client:
         # Create a session and register a finalizer to close it
         session_ = session if session else requests.Session()
         self.session = session_
-        self.compress_traces = ls_utils.get_env_var("USE_RUN_COMPRESSION")
-        if self.compress_traces:
+        if self.ls_utils.get_env_var("USE_RUN_COMPRESSION"):
             self._futures: set[cf.Future] = set()
             self.compressed_runs_buffer: Optional[io.BytesIO] = io.BytesIO()
             self.compressor_writer: zstd.ZstdCompressionWriter = zstd.ZstdCompressor(
@@ -524,7 +522,7 @@ class Client:
         weakref.finalize(self, close_session, self.session)
         atexit.register(close_session, session_)
         # Initialize auto batching
-        if auto_batch_tracing and self.compress_traces:
+        if auto_batch_tracing and self.compressed_runs_buffer is not None:
             self.tracing_queue: Optional[PriorityQueue] = None
             threading.Thread(
                 target=_tracing_control_thread_func_compress_parallel,
@@ -1891,7 +1889,7 @@ class Client:
 
     def flush_compressed_runs(self, attempts: int = 3) -> None:
         """Force flush the currently buffered compressed runs."""
-        if not self.compress_traces or self.compressed_runs_buffer is None:
+        if self.compressed_runs_buffer is None:
             return
 
         # Attempt to drain and send any remaining data
@@ -1928,7 +1926,7 @@ class Client:
 
     def flush(self) -> None:
         """Flush either queue or compressed buffer, depending on mode."""
-        if self.compress_traces and self.compressed_runs_buffer is not None:
+        if self.compressed_runs_buffer is not None:
             self.flush_compressed_runs()
         elif self.tracing_queue is not None:
             self.tracing_queue.join()
