@@ -17,8 +17,6 @@ from typing import (
     cast,
 )
 
-import zstandard as zstd
-
 from langsmith import schemas as ls_schemas
 from langsmith._internal._constants import (
     _AUTO_SCALE_DOWN_NEMPTY_TRIGGER,
@@ -100,10 +98,9 @@ def _tracing_thread_drain_queue(
 def _tracing_thread_drain_compressed_buffer(
     client: Client, size_limit: int = 100, size_limit_bytes: int | None = 20_971_520
 ) -> Optional[io.BytesIO]:
-    assert client.compressed_runs_buffer is not None
-    assert client.compressor_writer is not None
-    with client._buffer_lock:
-        current_size = client.compressed_runs_buffer.tell()
+    assert client.compressed_runs is not None
+    with client.compressed_runs.lock:
+        current_size = client.compressed_runs.buffer.tell()
 
         if size_limit is not None and size_limit <= 0:
             raise ValueError(f"size_limit must be positive; got {size_limit}")
@@ -113,21 +110,17 @@ def _tracing_thread_drain_compressed_buffer(
             )
 
         if (size_limit_bytes is None or current_size < size_limit_bytes) and (
-            size_limit is None or client._run_count < size_limit
+            size_limit is None or client.compressed_runs.run_count < size_limit
         ):
             return None
 
         # Write final boundary and close compression stream
-        client.compressor_writer.write(f"--{_BOUNDARY}--\r\n".encode())
-        client.compressor_writer.close()
+        client.compressed_runs.compressor_writer.write(f"--{_BOUNDARY}--\r\n".encode())
+        client.compressed_runs.compressor_writer.close()
 
-        filled_buffer = client.compressed_runs_buffer
+        filled_buffer = client.compressed_runs.buffer
 
-        client.compressed_runs_buffer = io.BytesIO()
-        client.compressor_writer = zstd.ZstdCompressor(
-            level=3, threads=-1
-        ).stream_writer(client.compressed_runs_buffer, closefd=False)
-        client._run_count = 0
+        client.compressed_runs.reset()
 
     filled_buffer.seek(0)
     return filled_buffer
