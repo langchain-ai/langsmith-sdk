@@ -6,7 +6,7 @@ import uuid
 from typing import Literal, Optional, Union, cast
 
 try:
-    from zstandard import ZstdCompressionWriter
+    from zstandard import ZstdCompressionWriter # type: ignore[import]
 except ImportError:
 
     class ZstdCompressionWriter:  # type: ignore[no-redef]
