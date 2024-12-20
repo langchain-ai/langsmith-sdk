@@ -9,7 +9,9 @@ export const jestAsyncLocalStorageInstance = new AsyncLocalStorage<{
   createdAt: string;
   project?: TracerSession;
   currentExample?: Partial<Example>;
-  client?: Client;
+  client: Client;
+  suiteUuid: string;
+  suiteName: string;
 }>();
 
 export function trackingEnabled() {
