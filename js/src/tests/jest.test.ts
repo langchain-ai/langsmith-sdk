@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import ls, { type SimpleEvaluator } from "../jest/index.js";
 
 const myEvaluator: SimpleEvaluator = ({ expected, actual }) => {
@@ -18,6 +19,9 @@ const myEvaluator: SimpleEvaluator = ({ expected, actual }) => {
     };
   }
 };
+
+const unrelatedStore = new AsyncLocalStorage();
+unrelatedStore.enterWith("value"); // Ensure that this works despite https://github.com/jestjs/jest/issues/13653
 
 ls.describe("js unit testing test demo", () => {
   ls.test({ inputs: { foo: "bar" }, outputs: { bar: "qux" } })(

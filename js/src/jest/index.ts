@@ -91,7 +91,54 @@ function wrapDescribeMethod(
     const testClient = config?.client ?? RunTree.getSharedClient();
     let storageValue;
     return method(datasetName, () => {
-      beforeAll(async () => {
+      // beforeAll(async () => {
+      //   if (!trackingEnabled()) {
+      //     storageValue = {
+      //       createdAt: new Date().toISOString(),
+      //     };
+      //   } else {
+      //     let dataset;
+      //     try {
+      //       dataset = await testClient.readDataset({
+      //         datasetName,
+      //       });
+      //     } catch (e: any) {
+      //       if (e.message.includes("not found")) {
+      //         dataset = await testClient.createDataset(datasetName, {
+      //           description: `Dataset for unit tests created on ${new Date().toISOString()}`,
+      //         });
+      //       } else {
+      //         throw e;
+      //       }
+      //     }
+      //     const examplesList = testClient.listExamples({
+      //       datasetName,
+      //     });
+      //     const examples = [];
+      //     for await (const example of examplesList) {
+      //       const inputHash = crypto
+      //         .createHash("sha256")
+      //         .update(JSON.stringify(example.inputs))
+      //         .digest("hex");
+      //       const outputHash = crypto
+      //         .createHash("sha256")
+      //         .update(JSON.stringify(example.inputs))
+      //         .digest("hex");
+      //       examples.push({ ...example, inputHash, outputHash });
+      //     }
+      //     const project = await _createProject(testClient, dataset.id);
+      //     storageValue = {
+      //       dataset,
+      //       examples,
+      //       createdAt: new Date().toISOString(),
+      //       project,
+      //       client: testClient,
+      //     };
+      //   }
+      //   jestAsyncLocalStorageInstance.enterWith(storageValue!);
+      // });
+
+      (async function init() {
         if (!trackingEnabled()) {
           storageValue = {
             createdAt: new Date().toISOString(),
@@ -135,12 +182,8 @@ function wrapDescribeMethod(
             client: testClient,
           };
         }
-      });
-      // Shoutout to https://github.com/jestjs/jest/issues/13653#issuecomment-1349970884
-      beforeEach(async () => {
         jestAsyncLocalStorageInstance.enterWith(storageValue!);
-      });
-      void fn();
+      })().then(fn);
     });
   };
 }
@@ -167,6 +210,8 @@ function wrapTestMethod(method: (...args: any[]) => void) {
     // This typing is wrong, but necessary to avoid lint errors
     // eslint-disable-next-line @typescript-eslint/no-misused-promises
     return async function (...args: any[]) {
+      const context = jestAsyncLocalStorageInstance.getStore();
+      console.log(context);
       return method(
         args[0],
         async () => {
