@@ -85,8 +85,8 @@ from langsmith._internal._beta_decorator import warn_beta
 from langsmith._internal._constants import (
     _AUTO_SCALE_UP_NTHREADS_LIMIT,
     _BLOCKSIZE_BYTES,
-    _SIZE_LIMIT_BYTES,
     _BOUNDARY,
+    _SIZE_LIMIT_BYTES,
 )
 from langsmith._internal._multipart import (
     MultipartPart,
