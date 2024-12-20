@@ -1,19 +1,12 @@
-/* eslint-disable no-process-env, @typescript-eslint/no-explicit-any */
+import ls, { type SimpleEvaluator } from "../jest/index.js";
 
-import { RunEvaluatorLike } from "../evaluation/evaluator.js";
-import { ls } from "../jest.js";
-
-ls.setup({
-  datasetId: "00000000-0000-0000-0000-000000000000",
-});
-
-const myEvaluator: RunEvaluatorLike = ({ inputs, outputs }) => {
-  if (inputs?.foo === "bar") {
+const myEvaluator: SimpleEvaluator = ({ expected, actual }) => {
+  if (actual.bar === expected.bar) {
     return {
       key: "quality",
       score: 1,
     };
-  } else if (outputs?.foo === "bar") {
+  } else if (actual.bar === "goodval") {
     return {
       key: "quality",
       score: 0.5,
@@ -26,36 +19,43 @@ const myEvaluator: RunEvaluatorLike = ({ inputs, outputs }) => {
   }
 };
 
-ls.test({ foo: "bar" })(
-  "Should succeed with some defined evaluator",
-  async (input) => {
-    console.log(input.foo);
-    // @ts-expect-error Not a param in the input
-    console.log(input.bar);
-    const res = { baz: "qux" };
-    expect(res).toPassEvaluator(myEvaluator, {});
-    return res;
-  },
-  180_000
-);
+ls.describe("js unit testing test demo", () => {
+  ls.test({ inputs: { foo: "bar" }, outputs: { bar: "qux" } })(
+    "Should succeed with some defined evaluator",
+    async ({}) => {
+      const myApp = () => {
+        return { bar: "qux" };
+      };
+      const res = myApp();
+      await expect(res).gradedBy(myEvaluator).toBeGreaterThanOrEqual(0.5);
+      return res;
+    },
+    180_000
+  );
 
-ls.test("00000000-0000-0000-0000-000000000000")(
-  "Should succeed with some defined evaluator",
-  async (_inputFromDataset) => {
-    const res = { baz: "qux" };
-    expect(res).toPassEvaluator(myEvaluator, {});
-    return res;
-  },
-  180_000
-);
+  ls.test({ inputs: { foo: "bar" }, outputs: { foo: "bar" } })(
+    "Should kind of succeed with some defined evaluator",
+    async ({}) => {
+      const myApp = () => {
+        return { bar: "goodval" };
+      };
+      const res = myApp();
+      await expect(res).gradedBy(myEvaluator).toBeGreaterThanOrEqual(0.5);
+      return res;
+    },
+    180_000
+  );
 
-ls.test.only({ foo: "bad" })(
-  "Should fail with some defined evaluator",
-  async (input) => {
-    console.log(input.foo);
-    const res = { baz: "qux" };
-    expect(res).toPassEvaluator(myEvaluator, {});
-    return res;
-  },
-  180_000
-);
+  ls.test({ inputs: { foo: "bad" }, outputs: { baz: "qux" } })(
+    "Should fail with some defined evaluator",
+    async ({}) => {
+      const myApp = () => {
+        return { bar: "bad" };
+      };
+      const res = myApp();
+      await expect(res).gradedBy(myEvaluator).not.toBeGreaterThanOrEqual(0.5);
+      return res;
+    },
+    180_000
+  );
+});

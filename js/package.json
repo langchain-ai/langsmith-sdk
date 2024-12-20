@@ -33,6 +33,10 @@
     "langchain.js",
     "langchain.d.ts",
     "langchain.d.cts",
+    "jest.cjs",
+    "jest.js",
+    "jest.d.ts",
+    "jest.d.cts",
     "vercel.cjs",
     "vercel.js",
     "vercel.d.ts",
@@ -227,6 +231,15 @@
       },
       "import": "./langchain.js",
       "require": "./langchain.cjs"
+    },
+    "./jest": {
+      "types": {
+        "import": "./jest.d.ts",
+        "require": "./jest.d.cts",
+        "default": "./jest.d.ts"
+      },
+      "import": "./jest.js",
+      "require": "./jest.cjs"
     },
     "./vercel": {
       "types": {
