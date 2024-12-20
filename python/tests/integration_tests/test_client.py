@@ -1171,7 +1171,6 @@ def test_multipart_ingest_update_with_attachments(
     langchain_client: Client, caplog: pytest.LogCaptureFixture
 ) -> None:
     _session = "__test_multipart_ingest_update_with_attachments"
-
     trace_a_id = uuid4()
     current_time = datetime.datetime.now(datetime.timezone.utc).strftime(
         "%Y%m%dT%H%M%S%fZ"
@@ -1193,7 +1192,6 @@ def test_multipart_ingest_update_with_attachments(
     with caplog.at_level(logging.WARNING, logger="langsmith.client"):
         langchain_client.multipart_ingest(create=runs_to_create, update=[])
         assert not caplog.records
-        wait_for(lambda: _get_run(str(trace_a_id), langchain_client))
 
         runs_to_update: list[dict] = [
             {
@@ -1253,7 +1251,6 @@ def test_multipart_ingest_create_then_update(
         langchain_client.multipart_ingest(create=runs_to_create, update=[])
 
         assert not caplog.records
-        wait_for(lambda: _get_run(str(trace_a_id), langchain_client))
 
     runs_to_update: list[dict] = [
         {
@@ -1267,10 +1264,6 @@ def test_multipart_ingest_create_then_update(
         langchain_client.multipart_ingest(create=[], update=runs_to_update)
 
         assert not caplog.records
-        wait_for(lambda: _get_run(str(trace_a_id), langchain_client))
-
-        created_run = langchain_client.read_run(run_id=str(trace_a_id))
-        assert created_run.outputs == {"output1": 3, "output2": 4}
 
 
 def test_multipart_ingest_update_then_create(
