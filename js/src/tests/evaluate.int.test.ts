@@ -1,10 +1,13 @@
+import { evaluate } from "../evaluation/_runner.js";
+import { waitUntilRunFound } from "./utils.js";
 import {
   EvaluationResult,
   EvaluationResults,
-} from "../evaluation/evaluator.js";
-import { evaluate } from "../evaluation/_runner.js";
-import { waitUntilRunFound } from "./utils.js";
-import { Example, Run, TracerSession } from "../schemas.js";
+  Example,
+  ExperimentResultRow,
+  Run,
+  TracerSession,
+} from "../schemas.js";
 import { Client } from "../index.js";
 import { afterAll, beforeAll } from "@jest/globals";
 import { RunnableLambda, RunnableSequence } from "@langchain/core/runnables";
@@ -1224,4 +1227,59 @@ test("evaluate enforces correct evaluator types for comparative evaluation at ru
       description: "Should fail at runtime",
     })
   ).rejects.toThrow(); // You might want to be more specific about the error message
+});
+
+test("summary evaluators receive evaluator results", async () => {
+  const client = new Client();
+
+  async function target(
+    inputs: Record<string, number>
+  ): Promise<{ answer: string }> {
+    return { answer: inputs?.input.toString() };
+  }
+
+  // Define evaluator
+  const evaluator = () => {
+    return {
+      key: "foo",
+      score: 1,
+    };
+  };
+
+  // Define summary evaluator
+  const summaryEvaluator = ({
+    runs,
+    examples,
+    inputs,
+    outputs,
+    referenceOutputs,
+    evaluationResults,
+  }: {
+    runs: Array<Run>;
+    examples: Array<Example>;
+    inputs: Array<Record<string, any>>;
+    outputs: Array<Record<string, any>>;
+    referenceOutputs?: Array<Record<string, any>>;
+    evaluationResults?: Array<ExperimentResultRow>;
+  }): EvaluationResult => {
+    expect(evaluationResults?.length).toBe(2);
+    expect(evaluationResults?.[0].evaluationResults.results[0].key).toBe("foo");
+    expect(evaluationResults?.[0].evaluationResults.results[0].score).toBe(1);
+    return {
+      key: "summary_evaluator",
+      score: 1,
+    };
+  };
+
+  // Run evaluation
+  const results = await evaluate(target, {
+    data: TESTING_DATASET_NAME,
+    evaluators: [evaluator],
+    summaryEvaluators: [summaryEvaluator],
+    numRepetitions: 1,
+    client: client,
+  });
+  expect(results.summaryResults.results.length).toBe(1);
+  expect(results.summaryResults.results[0].score).toBe(1);
+  expect(results.summaryResults.results[0].key).toBe("summary_evaluator");
 });
