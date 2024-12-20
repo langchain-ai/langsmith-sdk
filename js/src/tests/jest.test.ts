@@ -22,9 +22,9 @@ const myEvaluator: SimpleEvaluator = ({ expected, actual }) => {
 ls.describe("js unit testing test demo", () => {
   ls.test({ inputs: { foo: "bar" }, outputs: { bar: "qux" } })(
     "Should succeed with some defined evaluator",
-    async ({}) => {
+    async ({ inputs: _inputs, outputs }) => {
       const myApp = () => {
-        return { bar: "qux" };
+        return outputs;
       };
       const res = myApp();
       await expect(res).gradedBy(myEvaluator).toBeGreaterThanOrEqual(0.5);
@@ -35,7 +35,7 @@ ls.describe("js unit testing test demo", () => {
 
   ls.test({ inputs: { foo: "bar" }, outputs: { foo: "bar" } })(
     "Should kind of succeed with some defined evaluator",
-    async ({}) => {
+    async ({ inputs: _inputs, outputs: _outputs }) => {
       const myApp = () => {
         return { bar: "goodval" };
       };
@@ -48,7 +48,7 @@ ls.describe("js unit testing test demo", () => {
 
   ls.test({ inputs: { foo: "bad" }, outputs: { baz: "qux" } })(
     "Should fail with some defined evaluator",
-    async ({}) => {
+    async ({ inputs: _inputs, outputs: _outputs }) => {
       const myApp = () => {
         return { bar: "bad" };
       };

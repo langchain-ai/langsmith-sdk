@@ -1,3 +1,6 @@
+/* eslint-disable import/no-extraneous-dependencies */
+/* eslint-disable @typescript-eslint/no-namespace */
+
 import { expect, test, describe, beforeAll } from "@jest/globals";
 import crypto from "crypto";
 import { v4 } from "uuid";
@@ -137,7 +140,7 @@ function wrapDescribeMethod(
       beforeEach(async () => {
         jestAsyncLocalStorageInstance.enterWith(storageValue!);
       });
-      fn();
+      void fn();
     });
   };
 }
@@ -161,7 +164,9 @@ function wrapTestMethod(method: (...args: any[]) => void) {
     params: { inputs: I; outputs: O } | string,
     config?: Partial<RunTreeConfig>
   ): LangSmithJestTestWrapper<I, O> {
-    return async function (...args) {
+    // This typing is wrong, but necessary to avoid lint errors
+    // eslint-disable-next-line @typescript-eslint/no-misused-promises
+    return async function (...args: any[]) {
       return method(
         args[0],
         async () => {
