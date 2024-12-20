@@ -2,7 +2,10 @@ import { Client, RunTree, RunTreeConfig } from "../index.js";
 import {
   AttachmentInfo,
   BaseRun,
+  EvaluationResult,
+  EvaluationResults,
   Example,
+  ExperimentResultRow,
   KVMap,
   Run,
   TracerSession,
@@ -15,12 +18,7 @@ import { atee } from "../utils/atee.js";
 import { getLangChainEnvVarsMetadata } from "../utils/env.js";
 import { printErrorStackTrace } from "../utils/error.js";
 import { randomName } from "./_random_name.js";
-import {
-  EvaluationResult,
-  EvaluationResults,
-  RunEvaluator,
-  runEvaluator,
-} from "./evaluator.js";
+import { RunEvaluator, runEvaluator } from "./evaluator.js";
 import { LangSmithConflictError } from "../utils/error.js";
 import { v4 as uuidv4 } from "uuid";
 import {
@@ -64,6 +62,18 @@ type DeprecatedAsyncSummaryEvaluator = (
   examples: Array<Example>
 ) => Promise<EvaluationResult | EvaluationResults>;
 
+type SyncSummaryEvaluator = (
+  runs: Array<Run>,
+  examples: Array<Example>,
+  evaluationResults: Array<ExperimentResultRow>
+) => EvaluationResult | EvaluationResults;
+
+type AsyncSummaryEvaluator = (
+  runs: Array<Run>,
+  examples: Array<Example>,
+  evaluationResults: Array<ExperimentResultRow>
+) => Promise<EvaluationResult | EvaluationResults>;
+
 // Summary evaluator runs over the whole dataset
 export type SummaryEvaluatorT =
   | DeprecatedSyncSummaryEvaluator
@@ -74,6 +84,7 @@ export type SummaryEvaluatorT =
       inputs: Array<Record<string, any>>;
       outputs: Array<Record<string, any>>;
       referenceOutputs?: Array<Record<string, any>>;
+      evaluationResults?: Array<ExperimentResultRow>;
     }) => EvaluationResult | EvaluationResults)
   | ((args: {
       runs: Array<Run>;
@@ -81,6 +92,7 @@ export type SummaryEvaluatorT =
       inputs: Array<Record<string, any>>;
       outputs: Array<Record<string, any>>;
       referenceOutputs?: Array<Record<string, any>>;
+      evaluationResults?: Array<ExperimentResultRow>;
     }) => Promise<EvaluationResult | EvaluationResults>);
 
 /** @deprecated Use object parameter version instead: (args: { run, example, inputs, outputs, referenceOutputs }) => ... */
@@ -133,13 +145,17 @@ interface _ExperimentManagerArgs {
   runs?: AsyncGenerator<Run>;
   evaluationResults?: AsyncGenerator<EvaluationResults>;
   summaryResults?: AsyncGenerator<
-    (runsArray: Run[]) => AsyncGenerator<EvaluationResults, any, unknown>,
+    (
+      runsArray: Run[],
+      evaluationResults: ExperimentResultRow[]
+    ) => AsyncGenerator<EvaluationResults, any, unknown>,
     any,
     unknown
   >;
   examples?: Example[];
   numRepetitions?: number;
   _runsArray?: Run[];
+  _evaluationResultsArray?: ExperimentResultRow[];
   includeAttachments?: boolean;
 }
 
@@ -235,12 +251,6 @@ export function evaluate(
   return _evaluate(target, options);
 }
 
-export interface ExperimentResultRow {
-  run: Run;
-  example: Example;
-  evaluationResults: EvaluationResults;
-}
-
 /**
  * Manage the execution of experiments.
  *
@@ -255,7 +265,10 @@ export class _ExperimentManager {
   _evaluationResults?: AsyncGenerator<EvaluationResults>;
 
   _summaryResults?: AsyncGenerator<
-    (runsArray: Run[]) => AsyncGenerator<EvaluationResults, any, unknown>,
+    (
+      runsArray: Run[],
+      evaluationResults: ExperimentResultRow[]
+    ) => AsyncGenerator<EvaluationResults, any, unknown>,
     any,
     unknown
   >;
@@ -265,6 +278,8 @@ export class _ExperimentManager {
   _numRepetitions?: number;
 
   _runsArray?: Run[];
+
+  _evaluationResultsArray?: ExperimentResultRow[];
 
   client: Client;
 
@@ -558,6 +573,7 @@ export class _ExperimentManager {
       client: this.client,
       runs: this.runs,
       _runsArray: this._runsArray,
+      _evaluationResultsArray: this._evaluationResultsArray,
       evaluationResults: this._evaluationResults,
       summaryResults: aggregateFeedbackGen,
       includeAttachments: this._includeAttachments,
@@ -578,7 +594,15 @@ export class _ExperimentManager {
     for await (const evaluationResult of this.evaluationResults) {
       evaluationResults.push(evaluationResult);
     }
+    if (!this._evaluationResultsArray) {
+      this._evaluationResultsArray = [];
+    }
     for (let i = 0; i < this._runsArray.length; i++) {
+      this._evaluationResultsArray.push({
+        run: this._runsArray[i],
+        example: examples[i],
+        evaluationResults: evaluationResults[i],
+      });
       yield {
         run: this._runsArray[i],
         example: examples[i],
@@ -598,7 +622,8 @@ export class _ExperimentManager {
         // This is because runs array is not available until after this generator
         // is set, so we need to pass it like so.
         for await (const evaluationResults of evaluationResultsGenerator(
-          this._runsArray ?? []
+          this._runsArray ?? [],
+          this._evaluationResultsArray ?? []
         )) {
           results.push(...evaluationResults.results);
         }
@@ -752,7 +777,12 @@ export class _ExperimentManager {
 
   async *_applySummaryEvaluators(
     summaryEvaluators: Array<SummaryEvaluatorT>
-  ): AsyncGenerator<(runsArray: Run[]) => AsyncGenerator<EvaluationResults>> {
+  ): AsyncGenerator<
+    (
+      runsArray: Run[],
+      evaluationResults: ExperimentResultRow[]
+    ) => AsyncGenerator<EvaluationResults>
+  > {
     const projectId = this._getExperiment().id;
     const examples = await this.getExamples();
 
@@ -770,13 +800,18 @@ export class _ExperimentManager {
 
     yield async function* (
       this: _ExperimentManager,
-      runsArray: Run[]
+      runsArray: Run[],
+      evaluationResults: ExperimentResultRow[]
     ): AsyncGenerator<EvaluationResults> {
       const aggregateFeedback = [];
 
       for (const evaluator of wrappedEvaluators) {
         try {
-          const summaryEvalResult = await evaluator(runsArray, examples);
+          const summaryEvalResult = await evaluator(
+            runsArray,
+            examples,
+            evaluationResults
+          );
 
           const flattenedResults =
             this.client._selectEvalResults(summaryEvalResult);
@@ -1114,17 +1149,16 @@ function _resolveData(
 async function wrapSummaryEvaluators(
   evaluators: SummaryEvaluatorT[],
   optionsArray?: Partial<RunTreeConfig>[]
-): Promise<
-  Array<DeprecatedAsyncSummaryEvaluator | DeprecatedSyncSummaryEvaluator>
-> {
+): Promise<Array<AsyncSummaryEvaluator | SyncSummaryEvaluator>> {
   async function _wrap(
     evaluator: SummaryEvaluatorT
-  ): Promise<DeprecatedAsyncSummaryEvaluator | DeprecatedSyncSummaryEvaluator> {
+  ): Promise<AsyncSummaryEvaluator | SyncSummaryEvaluator> {
     const evalName = evaluator.name || "BatchEvaluator";
 
     const wrapperInner = (
       runs: Run[],
-      examples: Example[]
+      examples: Example[],
+      evaluationResults: ExperimentResultRow[]
     ): Promise<EvaluationResult | EvaluationResults> => {
       const wrapperSuperInner = traceable(
         (
@@ -1145,6 +1179,7 @@ async function wrapSummaryEvaluators(
                   inputs: Record<string, any>[];
                   outputs: Record<string, any>[];
                   referenceOutputs?: Record<string, any>[];
+                  evaluationResults?: ExperimentResultRow[];
                 }) => EvaluationResult | EvaluationResults
               )({
                 runs,
@@ -1152,12 +1187,17 @@ async function wrapSummaryEvaluators(
                 inputs,
                 outputs,
                 referenceOutputs,
+                evaluationResults,
               })
             );
           }
           // Otherwise use the traditional (runs, examples) signature
           return Promise.resolve(
-            (evaluator as DeprecatedSyncSummaryEvaluator)(runs, examples)
+            (evaluator as SyncSummaryEvaluator)(
+              runs,
+              examples,
+              evaluationResults
+            )
           );
         },
         { ...optionsArray, name: evalName }
@@ -1174,9 +1214,7 @@ async function wrapSummaryEvaluators(
     return wrapperInner;
   }
 
-  const results: Array<
-    DeprecatedAsyncSummaryEvaluator | DeprecatedSyncSummaryEvaluator
-  > = [];
+  const results: Array<AsyncSummaryEvaluator | SyncSummaryEvaluator> = [];
   for (let i = 0; i < evaluators.length; i++) {
     results.push(await _wrap(evaluators[i]));
   }
