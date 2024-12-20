@@ -36,7 +36,6 @@ from langsmith.evaluation._runner import (
     AEVALUATOR_T,
     DATA_T,
     EVALUATOR_T,
-    ExperimentResultRow,
     _evaluators_include_attachments,
     _ExperimentManagerMixin,
     _extract_feedback_keys,
@@ -690,7 +689,9 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         summary_evaluators: Sequence[SUMMARY_EVALUATOR_T],
     ) -> _AsyncExperimentManager:
         wrapped_evaluators = _wrap_summary_evaluators(summary_evaluators)
-        aggregate_feedback_gen = self._aapply_summary_evaluators(wrapped_evaluators)
+        aggregate_feedback_gen = self._aapply_summary_evaluators(
+            wrapped_evaluators, [r async for r in self.aget_results()]
+        )
         return _AsyncExperimentManager(
             await self.aget_examples(),
             experiment=self._experiment,
@@ -703,11 +704,11 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             upload_results=self._upload_results,
         )
 
-    async def aget_results(self) -> AsyncIterator[ExperimentResultRow]:
+    async def aget_results(self) -> AsyncIterator[schemas.ExperimentResultRow]:
         async for run, example, evaluation_results in aitertools.async_zip(
             self.aget_runs(), await self.aget_examples(), self.aget_evaluation_results()
         ):
-            yield ExperimentResultRow(
+            yield schemas.ExperimentResultRow(
                 run=run,
                 example=example,
                 evaluation_results=evaluation_results,
@@ -758,7 +759,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         self,
         evaluators: Sequence[RunEvaluator],
         max_concurrency: Optional[int] = None,
-    ) -> AsyncIterator[ExperimentResultRow]:
+    ) -> AsyncIterator[schemas.ExperimentResultRow]:
         with cf.ThreadPoolExecutor(max_workers=4) as executor:
 
             async def score_all():
@@ -776,9 +777,9 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
     async def _arun_evaluators(
         self,
         evaluators: Sequence[RunEvaluator],
-        current_results: ExperimentResultRow,
+        current_results: schemas.ExperimentResultRow,
         executor: cf.ThreadPoolExecutor,
-    ) -> ExperimentResultRow:
+    ) -> schemas.ExperimentResultRow:
         current_context = rh.get_tracing_context()
         metadata = {
             **(current_context["metadata"] or {}),
@@ -848,14 +849,16 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                     for attachment in example.attachments:
                         reader = example.attachments[attachment]["reader"]
                         reader.seek(0)
-            return ExperimentResultRow(
+            return schemas.ExperimentResultRow(
                 run=run,
                 example=example,
                 evaluation_results=eval_results,
             )
 
     async def _aapply_summary_evaluators(
-        self, summary_evaluators: Sequence[SUMMARY_EVALUATOR_T]
+        self,
+        summary_evaluators: Sequence[SUMMARY_EVALUATOR_T],
+        evaluation_results: List[schemas.ExperimentResultRow],
     ) -> AsyncIterator[EvaluationResults]:
         runs, examples = [], []
         async_examples = aitertools.ensure_async_iterator(await self.aget_examples())
@@ -885,7 +888,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         ):
             for evaluator in summary_evaluators:
                 try:
-                    summary_eval_result = evaluator(runs, examples)
+                    summary_eval_result = evaluator(runs, examples, evaluation_results)
                     flattened_results = self.client._select_eval_results(
                         summary_eval_result,
                         fn_name=evaluator.__name__,
@@ -963,7 +966,7 @@ class AsyncExperimentResults:
         experiment_manager: _AsyncExperimentManager,
     ):
         self._manager = experiment_manager
-        self._results: List[ExperimentResultRow] = []
+        self._results: List[schemas.ExperimentResultRow] = []
         self._lock = asyncio.Lock()
         self._task = asyncio.create_task(self._process_data(self._manager))
         self._processed_count = 0
@@ -972,10 +975,10 @@ class AsyncExperimentResults:
     def experiment_name(self) -> str:
         return self._manager.experiment_name
 
-    def __aiter__(self) -> AsyncIterator[ExperimentResultRow]:
+    def __aiter__(self) -> AsyncIterator[schemas.ExperimentResultRow]:
         return self
 
-    async def __anext__(self) -> ExperimentResultRow:
+    async def __anext__(self) -> schemas.ExperimentResultRow:
         async def _wait_until_index(index: int) -> None:
             while self._processed_count < index:
                 await asyncio.sleep(0.05)
