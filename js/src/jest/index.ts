@@ -88,7 +88,7 @@ function wrapDescribeMethod(
     const testClient = config?.client ?? RunTree.getSharedClient();
     return method(datasetName, () => {
       beforeAll(async () => {
-        if (trackingEnabled()) {
+        if (!trackingEnabled()) {
           jestAsyncLocalStorageInstance.enterWith({
             createdAt: new Date().toISOString(),
           });
