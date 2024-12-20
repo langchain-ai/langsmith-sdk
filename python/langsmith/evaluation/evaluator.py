@@ -12,120 +12,38 @@ from typing import (
     Callable,
     Dict,
     List,
-    Literal,
     Optional,
     Sequence,
     Union,
     cast,
 )
 
-from typing_extensions import TypedDict
-
 from langsmith import schemas
 
 try:
     from pydantic.v1 import (  # type: ignore[import]
         BaseModel,
-        Field,
         ValidationError,
-        validator,
     )
 except ImportError:
     from pydantic import (  # type: ignore[assignment]
         BaseModel,
-        Field,
         ValidationError,
-        validator,
     )
 
 import logging
 from functools import wraps
 
-from langsmith.schemas import SCORE_TYPE, VALUE_TYPE, Example, Run
+from langsmith.schemas import (
+    SCORE_TYPE,
+    EvaluationResult,
+    EvaluationResults,
+    Example,
+    ExperimentResultRow,
+    Run,
+)
 
 logger = logging.getLogger(__name__)
-
-
-class Category(TypedDict):
-    """A category for categorical feedback."""
-
-    value: Optional[Union[float, int]]
-    """The numeric score/ordinal corresponding to this category."""
-    label: str
-    """The label for this category."""
-
-
-class FeedbackConfig(TypedDict, total=False):
-    """Configuration to define a type of feedback.
-
-    Applied on on the first creation of a feedback_key.
-    """
-
-    type: Literal["continuous", "categorical", "freeform"]
-    """The type of feedback."""
-    min: Optional[Union[float, int]]
-    """The minimum permitted value (if continuous type)."""
-    max: Optional[Union[float, int]]
-    """The maximum value permitted value (if continuous type)."""
-    categories: Optional[List[Union[Category, dict]]]
-
-
-class EvaluationResult(BaseModel):
-    """Evaluation result."""
-
-    key: str
-    """The aspect, metric name, or label for this evaluation."""
-    score: SCORE_TYPE = None
-    """The numeric score for this evaluation."""
-    value: VALUE_TYPE = None
-    """The value for this evaluation, if not numeric."""
-    comment: Optional[str] = None
-    """An explanation regarding the evaluation."""
-    correction: Optional[Dict] = None
-    """What the correct value should be, if applicable."""
-    evaluator_info: Dict = Field(default_factory=dict)
-    """Additional information about the evaluator."""
-    feedback_config: Optional[Union[FeedbackConfig, dict]] = None
-    """The configuration used to generate this feedback."""
-    source_run_id: Optional[Union[uuid.UUID, str]] = None
-    """The ID of the trace of the evaluator itself."""
-    target_run_id: Optional[Union[uuid.UUID, str]] = None
-    """The ID of the trace this evaluation is applied to.
-    
-    If none provided, the evaluation feedback is applied to the
-    root trace being."""
-    extra: Optional[Dict] = None
-    """Metadata for the evaluator run."""
-
-    class Config:
-        """Pydantic model configuration."""
-
-        allow_extra = False
-
-    @validator("value", pre=True)
-    def check_value_non_numeric(cls, v, values):
-        """Check that the value is not numeric."""
-        # If a score isn't provided and the value is numeric
-        # it's more likely the user intended use the score field
-        if "score" not in values or values["score"] is None:
-            if isinstance(v, (int, float)):
-                logger.warning(
-                    "Numeric values should be provided in"
-                    " the 'score' field, not 'value'."
-                    f" Got: {v}"
-                )
-        return v
-
-
-class EvaluationResults(TypedDict, total=False):
-    """Batch evaluation results.
-
-    This makes it easy for your evaluator to return multiple
-    metrics at once.
-    """
-
-    results: List[EvaluationResult]
-    """The evaluation results."""
 
 
 class RunEvaluator:
@@ -805,18 +723,29 @@ def _format_evaluator_result(
 
 SUMMARY_EVALUATOR_T = Union[
     Callable[
-        [Sequence[schemas.Run], Sequence[schemas.Example]],
+        [
+            Sequence[schemas.Run],
+            Sequence[schemas.Example],
+            Sequence[ExperimentResultRow],
+        ],
         Union[EvaluationResult, EvaluationResults],
     ],
     Callable[
-        [List[schemas.Run], List[schemas.Example]],
+        [List[schemas.Run], List[schemas.Example], List[ExperimentResultRow]],
         Union[EvaluationResult, EvaluationResults],
     ],
 ]
 
 
 def _normalize_summary_evaluator(func: Callable) -> SUMMARY_EVALUATOR_T:
-    supported_args = ("runs", "examples", "inputs", "outputs", "reference_outputs")
+    supported_args = (
+        "runs",
+        "examples",
+        "inputs",
+        "outputs",
+        "reference_outputs",
+        "evaluation_results",
+    )
     sig = inspect.signature(func)
     positional_args = [
         pname
@@ -828,7 +757,7 @@ def _normalize_summary_evaluator(func: Callable) -> SUMMARY_EVALUATOR_T:
         and len(positional_args) != 2
     ):
         msg = (
-            f"Invalid evaluator function. Must have at least one positional "
+            f"Invalid summary evaluator function. Must have at least one positional "
             f"argument. Supported positional arguments are {supported_args}."
         )
         if positional_args:
@@ -839,11 +768,27 @@ def _normalize_summary_evaluator(func: Callable) -> SUMMARY_EVALUATOR_T:
     elif not all(
         pname in supported_args for pname in positional_args
     ) or positional_args == ["runs", "examples"]:
-        return func
+
+        def wrapper(
+            runs: Sequence[schemas.Run],
+            examples: Sequence[schemas.Example],
+            evaluation_results: Sequence[ExperimentResultRow],
+        ) -> Union[EvaluationResult, EvaluationResults]:
+            result = func(runs, examples)
+            if isinstance(result, EvaluationResult):
+                return result
+            return _format_evaluator_result(result)  # type: ignore[return-value]
+
+        wrapper.__name__ = (
+            getattr(func, "__name__") if hasattr(func, "__name__") else wrapper.__name__
+        )
+        return wrapper  # type: ignore[return-value]
     else:
 
         def wrapper(
-            runs: Sequence[schemas.Run], examples: Sequence[schemas.Example]
+            runs: Sequence[schemas.Run],
+            examples: Sequence[schemas.Example],
+            evaluation_results: Sequence[ExperimentResultRow],
         ) -> Union[EvaluationResult, EvaluationResults]:
             arg_map = {
                 "runs": runs,
@@ -851,6 +796,7 @@ def _normalize_summary_evaluator(func: Callable) -> SUMMARY_EVALUATOR_T:
                 "inputs": [example.inputs for example in examples],
                 "outputs": [run.outputs or {} for run in runs],
                 "reference_outputs": [example.outputs or {} for example in examples],
+                "evaluation_results": evaluation_results,
             }
             args = (arg_map[arg] for arg in positional_args)
             result = func(*args)
