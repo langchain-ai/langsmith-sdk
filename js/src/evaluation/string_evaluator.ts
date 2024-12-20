@@ -1,5 +1,6 @@
 import { Example, Run, ScoreType, ValueType } from "../schemas.js";
-import { EvaluationResult, RunEvaluator } from "./evaluator.js";
+import { RunEvaluator } from "./evaluator.js";
+import { EvaluationResult } from "../schemas.js";
 
 export interface GradingFunctionResult {
   key?: string;
