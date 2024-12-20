@@ -5,7 +5,13 @@ import logging
 import uuid
 from typing import Literal, Optional, Union, cast
 
-import zstandard as zstd
+try:
+    from zstandard import ZstdCompressionWriter
+except ImportError:
+
+    class ZstdCompressionWriter:  # type: ignore[no-redef]
+        """only used for typing checks."""
+
 
 from langsmith import schemas as ls_schemas
 from langsmith._internal import _orjson
@@ -277,7 +283,7 @@ def serialized_run_operation_to_multipart_parts_and_context(
 
 def compress_multipart_parts_and_context(
     parts_and_context: MultipartPartsAndContext,
-    compressor_writer: zstd.ZstdCompressionWriter,
+    compressor_writer: ZstdCompressionWriter,
     boundary: str,
 ) -> None:
     for part_name, (filename, data, content_type, headers) in parts_and_context.parts:

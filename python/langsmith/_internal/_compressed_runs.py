@@ -1,7 +1,12 @@
 import io
 import threading
 
-import zstandard as zstd
+try:
+    from zstandard import ZstdCompressor
+
+    HAVE_ZSTD = True
+except ImportError:
+    HAVE_ZSTD = False
 
 
 class CompressedRuns:
@@ -9,13 +14,23 @@ class CompressedRuns:
         self.buffer = io.BytesIO()
         self.run_count = 0
         self.lock = threading.Lock()
-        self.compressor_writer = zstd.ZstdCompressor(level=3, threads=-1).stream_writer(
+        if not HAVE_ZSTD:
+            raise ImportError(
+                "zstandard package required for compression. "
+                "Install with 'pip install langsmith[compression]'"
+            )
+        self.compressor_writer = ZstdCompressor(level=3, threads=-1).stream_writer(
             self.buffer, closefd=False
         )
 
     def reset(self):
         self.buffer = io.BytesIO()
         self.run_count = 0
-        self.compressor_writer = zstd.ZstdCompressor(level=3, threads=-1).stream_writer(
+        if not HAVE_ZSTD:
+            raise ImportError(
+                "zstandard package required for compression. "
+                "Install with 'pip install langsmith[compression]'"
+            )
+        self.compressor_writer = ZstdCompressor(level=3, threads=-1).stream_writer(
             self.buffer, closefd=False
         )
