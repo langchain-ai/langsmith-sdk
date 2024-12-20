@@ -172,17 +172,29 @@ function wrapTestMethod(method: (...args: any[]) => void) {
           }
           const { examples, dataset, createdAt, project, client } = context;
           if (trackingEnabled()) {
-            if (
-              examples === undefined ||
-              dataset === undefined ||
-              project === undefined ||
-              client === undefined
-            ) {
+            const missingFields = [];
+            if (examples === undefined) {
+              missingFields.push("examples");
+            }
+            if (dataset === undefined) {
+              missingFields.push("dataset");
+            }
+            if (project === undefined) {
+              missingFields.push("project");
+            }
+            if (client === undefined) {
+              missingFields.push("client");
+            }
+            if (missingFields.length > 0) {
               throw new Error(
-                "Failed to initialize test tracking. Please contact us for help."
+                `Failed to initialize test tracking: Could not identify ${missingFields
+                  .map((field) => `"${field}"`)
+                  .join(
+                    ", "
+                  )} while syncing to LangSmith. Please contact us for help.`
               );
             }
-            const testClient = config?.client ?? client;
+            const testClient = config?.client ?? client!;
             let example = (examples ?? []).find((example) => {
               return example.inputHash === inputHash;
             });
@@ -204,7 +216,7 @@ function wrapTestMethod(method: (...args: any[]) => void) {
             });
             const traceableOptions = {
               reference_example_id: example.id,
-              project_name: project.name,
+              project_name: project!.name,
               metadata: {
                 ...config?.metadata,
                 example_version: example.modified_at
