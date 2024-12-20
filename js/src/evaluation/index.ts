@@ -1,5 +1,5 @@
 // Evaluation methods
-export { RunEvaluator, EvaluationResult } from "./evaluator.js";
+export { RunEvaluator } from "./evaluator.js";
 export {
   StringEvaluator,
   GradingFunctionParams,
@@ -12,6 +12,6 @@ export {
   type DataT,
   type SummaryEvaluatorT,
   type EvaluatorT,
-  type ExperimentResultRow,
 } from "./_runner.js";
+export { EvaluationResult, type EvaluationResults } from "../schemas.js";
 export { evaluateComparative } from "./evaluate_comparative.js";
