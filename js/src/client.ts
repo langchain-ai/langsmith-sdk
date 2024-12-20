@@ -42,6 +42,8 @@ import {
   RawExample,
   AttachmentInfo,
   AttachmentData,
+  EvaluationResult,
+  EvaluationResults,
 } from "./schemas.js";
 import {
   convertLangChainMessageToExample,
@@ -54,11 +56,7 @@ import {
   getRuntimeEnvironment,
 } from "./utils/env.js";
 
-import {
-  EvaluationResult,
-  EvaluationResults,
-  RunEvaluator,
-} from "./evaluation/evaluator.js";
+import { RunEvaluator } from "./evaluation/evaluator.js";
 import { __version__ } from "./index.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";

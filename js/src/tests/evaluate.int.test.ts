@@ -1248,11 +1248,6 @@ test("summary evaluators receive evaluator results", async () => {
 
   // Define summary evaluator
   const summaryEvaluator = ({
-    runs,
-    examples,
-    inputs,
-    outputs,
-    referenceOutputs,
     evaluationResults,
   }: {
     runs: Array<Run>;
