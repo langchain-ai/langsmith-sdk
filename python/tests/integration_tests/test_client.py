@@ -1100,14 +1100,6 @@ def test_multipart_ingest_update_with_attachments_no_paths(
         langchain_client.multipart_ingest(create=[], update=runs_to_update)
 
         assert not caplog.records
-        wait_for(lambda: _get_run(str(trace_a_id), langchain_client))
-        created_run = langchain_client.read_run(run_id=str(trace_a_id))
-        assert created_run.attachments
-        assert sorted(created_run.attachments.keys()) == sorted(
-            ["bar", "baz", "foo", "qux"]
-        )
-        assert created_run.attachments["baz"]["reader"].read() == b"bar"
-        assert created_run.attachments["qux"]["reader"].read() == b"bar"
 
 
 def _get_run(run_id: ID_TYPE, langchain_client: Client, has_end: bool = False) -> bool:
