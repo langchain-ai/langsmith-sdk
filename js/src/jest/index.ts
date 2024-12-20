@@ -20,14 +20,14 @@ import type { SimpleEvaluator } from "./vendor/gradedBy.js";
 declare global {
   namespace jest {
     interface AsymmetricMatchers {
-      toBeRelativeCloseTo(expected: string, options: any): void;
-      toBeAbsoluteCloseTo(expected: string, options: any): void;
-      toBeSemanticCloseTo(expected: string, options: any): Promise<void>;
+      toBeRelativeCloseTo(expected: string, options?: any): void;
+      toBeAbsoluteCloseTo(expected: string, options?: any): void;
+      toBeSemanticCloseTo(expected: string, options?: any): Promise<void>;
     }
     interface Matchers<R> {
-      toBeRelativeCloseTo(expected: string, options: any): R;
-      toBeAbsoluteCloseTo(expected: string, options: any): R;
-      toBeSemanticCloseTo(expected: string, options: any): Promise<R>;
+      toBeRelativeCloseTo(expected: string, options?: any): R;
+      toBeAbsoluteCloseTo(expected: string, options?: any): R;
+      toBeSemanticCloseTo(expected: string, options?: any): Promise<R>;
       gradedBy(evaluator: SimpleEvaluator): jest.Matchers<Promise<R>> & {
         not: jest.Matchers<Promise<R>>;
         resolves: jest.Matchers<Promise<R>>;
@@ -86,12 +86,13 @@ function wrapDescribeMethod(
     config?: Partial<RunTreeConfig>
   ) {
     const testClient = config?.client ?? RunTree.getSharedClient();
+    let storageValue;
     return method(datasetName, () => {
       beforeAll(async () => {
         if (!trackingEnabled()) {
-          jestAsyncLocalStorageInstance.enterWith({
+          storageValue = {
             createdAt: new Date().toISOString(),
-          });
+          };
         } else {
           let dataset;
           try {
@@ -116,17 +117,25 @@ function wrapDescribeMethod(
               .createHash("sha256")
               .update(JSON.stringify(example.inputs))
               .digest("hex");
-            examples.push({ ...example, inputHash });
+            const outputHash = crypto
+              .createHash("sha256")
+              .update(JSON.stringify(example.inputs))
+              .digest("hex");
+            examples.push({ ...example, inputHash, outputHash });
           }
           const project = await _createProject(testClient, dataset.id);
-          jestAsyncLocalStorageInstance.enterWith({
+          storageValue = {
             dataset,
             examples,
             createdAt: new Date().toISOString(),
             project,
             client: testClient,
-          });
+          };
         }
+      });
+      // Shoutout to https://github.com/jestjs/jest/issues/13653#issuecomment-1349970884
+      beforeEach(async () => {
+        jestAsyncLocalStorageInstance.enterWith(storageValue!);
       });
       fn();
     });
@@ -164,6 +173,10 @@ function wrapTestMethod(method: (...args: any[]) => void) {
             .createHash("sha256")
             .update(JSON.stringify(testInput))
             .digest("hex");
+          const outputHash = crypto
+            .createHash("sha256")
+            .update(JSON.stringify(testOutput))
+            .digest("hex");
           const context = jestAsyncLocalStorageInstance.getStore();
           if (context === undefined) {
             throw new Error(
@@ -196,7 +209,10 @@ function wrapTestMethod(method: (...args: any[]) => void) {
             }
             const testClient = config?.client ?? client!;
             let example = (examples ?? []).find((example) => {
-              return example.inputHash === inputHash;
+              return (
+                example.inputHash === inputHash &&
+                example.outputHash === outputHash
+              );
             });
             if (example === undefined) {
               const newExample = await testClient.createExample(
@@ -207,7 +223,7 @@ function wrapTestMethod(method: (...args: any[]) => void) {
                   createdAt: new Date(createdAt ?? new Date()),
                 }
               );
-              example = { ...newExample, inputHash };
+              example = { ...newExample, inputHash, outputHash };
             }
             jestAsyncLocalStorageInstance.enterWith({
               ...context,

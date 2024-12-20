@@ -93,11 +93,6 @@ export default function expectWithGradedBy(expect: any) {
     expect // clone additional properties on expect
   );
 
-  // expectProxy.extend = (o: any) => {
-  //   expect.extend(o); // add new matchers to expect
-  //   expectProxy = Object.assign(expectProxy, expect); // clone new asymmetric matchers
-  // };
-
   return expectProxy;
 }
 

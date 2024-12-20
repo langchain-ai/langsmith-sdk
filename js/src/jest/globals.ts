@@ -5,7 +5,7 @@ import { getEnvironmentVariable } from "../utils/env.js";
 
 export const jestAsyncLocalStorageInstance = new AsyncLocalStorage<{
   dataset?: Dataset;
-  examples?: (Example & { inputHash: string })[];
+  examples?: (Example & { inputHash: string; outputHash: string })[];
   createdAt: string;
   project?: TracerSession;
   currentExample?: Partial<Example>;
