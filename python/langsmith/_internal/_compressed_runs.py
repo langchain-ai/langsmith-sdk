@@ -2,7 +2,7 @@ import io
 import threading
 
 try:
-    from zstandard import ZstdCompressor # type: ignore[import]
+    from zstandard import ZstdCompressor  # type: ignore[import]
 
     HAVE_ZSTD = True
 except ImportError:
