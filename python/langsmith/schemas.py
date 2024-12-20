@@ -28,6 +28,7 @@ try:
         StrictBool,
         StrictFloat,
         StrictInt,
+        validator,
     )
 except ImportError:
     from pydantic import (  # type: ignore[assignment]
@@ -37,9 +38,14 @@ except ImportError:
         StrictBool,
         StrictFloat,
         StrictInt,
+        validator,
     )
 
+import logging
+
 from typing_extensions import Literal
+
+logger = logging.getLogger(__name__)
 
 SCORE_TYPE = Union[StrictBool, StrictInt, StrictFloat, None]
 VALUE_TYPE = Union[Dict, str, None]
@@ -1086,3 +1092,78 @@ class UpsertExamplesResponse(TypedDict):
     """The number of examples that were upserted."""
     example_ids: List[str]
     """The ids of the examples that were upserted."""
+
+
+class Category(TypedDict):
+    """A category for categorical feedback."""
+
+    value: Optional[Union[float, int]]
+    """The numeric score/ordinal corresponding to this category."""
+    label: str
+    """The label for this category."""
+
+
+class EvaluationResult(BaseModel):
+    """Evaluation result."""
+
+    key: str
+    """The aspect, metric name, or label for this evaluation."""
+    score: SCORE_TYPE = None
+    """The numeric score for this evaluation."""
+    value: VALUE_TYPE = None
+    """The value for this evaluation, if not numeric."""
+    comment: Optional[str] = None
+    """An explanation regarding the evaluation."""
+    correction: Optional[Dict] = None
+    """What the correct value should be, if applicable."""
+    evaluator_info: Dict = Field(default_factory=dict)
+    """Additional information about the evaluator."""
+    feedback_config: Optional[Union[FeedbackConfig, dict]] = None
+    """The configuration used to generate this feedback."""
+    source_run_id: Optional[Union[UUID, str]] = None
+    """The ID of the trace of the evaluator itself."""
+    target_run_id: Optional[Union[UUID, str]] = None
+    """The ID of the trace this evaluation is applied to.
+    
+    If none provided, the evaluation feedback is applied to the
+    root trace being."""
+    extra: Optional[Dict] = None
+    """Metadata for the evaluator run."""
+
+    class Config:
+        """Pydantic model configuration."""
+
+        allow_extra = False
+
+    @validator("value", pre=True)
+    def check_value_non_numeric(cls, v, values):
+        """Check that the value is not numeric."""
+        # If a score isn't provided and the value is numeric
+        # it's more likely the user intended use the score field
+        if "score" not in values or values["score"] is None:
+            if isinstance(v, (int, float)):
+                logger.warning(
+                    "Numeric values should be provided in"
+                    " the 'score' field, not 'value'."
+                    f" Got: {v}"
+                )
+        return v
+
+
+class EvaluationResults(TypedDict, total=False):
+    """Batch evaluation results.
+
+    This makes it easy for your evaluator to return multiple
+    metrics at once.
+    """
+
+    results: List[EvaluationResult]
+    """The evaluation results."""
+
+
+class ExperimentResultRow(TypedDict):
+    """A row of experiment results."""
+
+    run: Run
+    example: Example
+    evaluation_results: EvaluationResults
