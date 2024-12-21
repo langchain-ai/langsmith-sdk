@@ -62,4 +62,30 @@ ls.describe("js unit testing test demo", () => {
     },
     180_000
   );
+
+  ls.test.each([
+    {
+      inputs: {
+        one: "uno",
+      },
+      outputs: {
+        ein: "un",
+      },
+    },
+    {
+      inputs: {
+        two: "dos",
+      },
+      outputs: {
+        zwei: "deux",
+      },
+    },
+  ])("Does the thing", async ({ inputs: _inputs, outputs: _outputs }) => {
+    const myApp = () => {
+      return { bar: "bad" };
+    };
+    const res = myApp();
+    await expect(res).gradedBy(myEvaluator).not.toBeGreaterThanOrEqual(0.5);
+    return res;
+  });
 });

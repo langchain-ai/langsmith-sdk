@@ -7,7 +7,7 @@ import { v4 } from "uuid";
 
 import { traceable } from "../traceable.js";
 import { RunTree, RunTreeConfig } from "../run_trees.js";
-import { TracerSession } from "../schemas.js";
+import { KVMap, TracerSession } from "../schemas.js";
 import { randomName } from "../evaluation/_random_name.js";
 import { Client } from "../client.js";
 import { LangSmithConflictError } from "../utils/error.js";
@@ -45,6 +45,28 @@ expect.extend({
   toBeAbsoluteCloseTo,
   toBeSemanticCloseTo,
 });
+
+const objectHash = (obj: KVMap, depth = 0): any => {
+  // Prevent infinite recursion
+  if (depth > 50) {
+    return "[Max Depth Exceeded]";
+  }
+
+  if (Array.isArray(obj)) {
+    return obj.map((item) => objectHash(item, depth + 1));
+  }
+
+  if (obj && typeof obj === "object") {
+    return Object.keys(obj)
+      .sort()
+      .reduce((result: KVMap, key) => {
+        result[key] = objectHash(obj[key], depth + 1);
+        return result;
+      }, {});
+  }
+
+  return crypto.createHash("sha256").update(JSON.stringify(obj)).digest("hex");
+};
 
 async function _createProject(client: Client, datasetId: string) {
   // Create the project, updating the experimentName until we find a unique one.
@@ -108,14 +130,8 @@ async function runDatasetSetup(testClient: Client, datasetName: string) {
     });
     const examples = [];
     for await (const example of examplesList) {
-      const inputHash = crypto
-        .createHash("sha256")
-        .update(JSON.stringify(example.inputs))
-        .digest("hex");
-      const outputHash = crypto
-        .createHash("sha256")
-        .update(JSON.stringify(example.inputs))
-        .digest("hex");
+      const inputHash = objectHash(example.inputs);
+      const outputHash = objectHash(example.outputs ?? {});
       examples.push({ ...example, inputHash, outputHash });
     }
     const project = await _createProject(testClient, dataset.id);
@@ -180,6 +196,9 @@ function wrapTestMethod(method: (...args: any[]) => void) {
     params: { inputs: I; outputs: O } | string,
     config?: Partial<RunTreeConfig>
   ): LangSmithJestTestWrapper<I, O> {
+    // Due to https://github.com/jestjs/jest/issues/13653,
+    // we must access the local store value here before
+    // entering an async context
     const context = jestAsyncLocalStorageInstance.getStore();
     // This typing is wrong, but necessary to avoid lint errors
     // eslint-disable-next-line @typescript-eslint/no-misused-promises
@@ -206,14 +225,8 @@ function wrapTestMethod(method: (...args: any[]) => void) {
             typeof params === "string" ? ({} as I) : params.inputs;
           const testOutput: O =
             typeof params === "string" ? ({} as O) : params.outputs;
-          const inputHash = crypto
-            .createHash("sha256")
-            .update(JSON.stringify(testInput))
-            .digest("hex");
-          const outputHash = crypto
-            .createHash("sha256")
-            .update(JSON.stringify(testOutput))
-            .digest("hex");
+          const inputHash = objectHash(testInput);
+          const outputHash = objectHash(testOutput ?? {});
           if (trackingEnabled()) {
             const missingFields = [];
             if (examples === undefined) {
@@ -305,9 +318,25 @@ function wrapTestMethod(method: (...args: any[]) => void) {
   };
 }
 
+function eachMethod<I extends KVMap, O extends KVMap>(
+  table: { inputs: I; outputs: O }[]
+) {
+  return function (
+    name: string,
+    fn: (params: { inputs: I; outputs: O }) => unknown | Promise<unknown>,
+    timeout?: number
+  ) {
+    for (let i = 0; i < table.length; i += 1) {
+      const example = table[i];
+      wrapTestMethod(test)<I, O>(example)(`${name} ${i}`, fn, timeout);
+    }
+  };
+}
+
 const lsTest = Object.assign(wrapTestMethod(test), {
   only: wrapTestMethod(test.only),
   skip: wrapTestMethod(test.skip),
+  each: eachMethod,
 });
 
 export default {
