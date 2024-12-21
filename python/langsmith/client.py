@@ -1575,6 +1575,7 @@ class Client:
         ] = None,
         *,
         pre_sampled: bool = False,
+        dangerously_allow_filesystem: bool = False,
     ) -> None:
         """Batch ingest/upsert multiple runs in the Langsmith system.
 
@@ -1658,6 +1659,18 @@ class Client:
                 )
             )
         )
+
+        for op in serialized_ops:
+            if isinstance(op, SerializedRunOperation) and op.attachments:
+                for attachment in op.attachments.values():
+                    if (
+                        isinstance(attachment, tuple)
+                        and isinstance(attachment[1], Path)
+                        and not dangerously_allow_filesystem
+                    ):
+                        raise ValueError(
+                            "Must set dangerously_allow_filesystem to True to use filesystem paths in multipart ingest."
+                        )
 
         # sent the runs in multipart requests
         self._multipart_ingest_ops(serialized_ops)
@@ -1774,6 +1787,7 @@ class Client:
         extra: Optional[Dict] = None,
         tags: Optional[List[str]] = None,
         attachments: Optional[ls_schemas.Attachments] = None,
+        dangerously_allow_filesystem: bool = False,
         **kwargs: Any,
     ) -> None:
         """Update a run in the LangSmith API.
@@ -1816,6 +1830,15 @@ class Client:
             "session_name": kwargs.pop("session_name", None),
         }
         if attachments:
+            for _, attachment in attachments.items():
+                if (
+                    isinstance(attachment, tuple)
+                    and isinstance(attachment[1], Path)
+                    and not dangerously_allow_filesystem
+                ):
+                    raise ValueError(
+                        "Must set dangerously_allow_filesystem=True to allow filesystem attachments."
+                    )
             data["attachments"] = attachments
         use_multipart = (
             (self.tracing_queue is not None or self.compressed_runs is not None)
@@ -1983,7 +2006,12 @@ class Client:
         response = self.request_with_retries(
             "GET", f"/runs/{_as_uuid(run_id, 'run_id')}"
         )
-        run = ls_schemas.Run(**response.json(), _host_url=self._host_url)
+        attachments = _convert_stored_attachments_to_attachments_dict(
+            response.json(), "s3_urls"
+        )
+        run = ls_schemas.Run(
+            attachments=attachments, **response.json(), _host_url=self._host_url
+        )
         if load_child_runs and run.child_run_ids:
             run = self._load_child_runs(run)
         return run
@@ -2179,7 +2207,13 @@ class Client:
         for i, run in enumerate(
             self._get_cursor_paginated_list("/runs/query", body=body_query)
         ):
-            yield ls_schemas.Run(**run, _host_url=self._host_url)
+            # Should this be behind a flag?
+            attachments = _convert_stored_attachments_to_attachments_dict(
+                run, "s3_urls"
+            )
+            yield ls_schemas.Run(
+                attachments=attachments, **run, _host_url=self._host_url
+            )
             if limit is not None and i + 1 >= limit:
                 break
 
@@ -3618,6 +3652,7 @@ class Client:
             | List[ls_schemas.ExampleUpdateWithAttachments],
         ],
         include_dataset_id: bool = False,
+        dangerously_allow_filesystem: bool = False,
     ) -> Tuple[Any, bytes]:
         parts: List[MultipartPart] = []
         if include_dataset_id:
@@ -3703,19 +3738,24 @@ class Client:
                 for name, attachment in example.attachments.items():
                     if isinstance(attachment, tuple):
                         if isinstance(attachment[1], Path):
-                            mime_type, file_path = attachment
-                            file_size = os.path.getsize(file_path)
-                            parts.append(
-                                (
-                                    f"{example_id}.attachment.{name}",
+                            if dangerously_allow_filesystem:
+                                mime_type, file_path = attachment
+                                file_size = os.path.getsize(file_path)
+                                parts.append(
                                     (
-                                        None,
-                                        open(file_path, "rb"),  # type: ignore[arg-type]
-                                        f"{mime_type}; length={file_size}",
-                                        {},
-                                    ),
+                                        f"{example_id}.attachment.{name}",
+                                        (
+                                            None,
+                                            open(file_path, "rb"),  # type: ignore[arg-type]
+                                            f"{mime_type}; length={file_size}",
+                                            {},
+                                        ),
+                                    )
                                 )
-                            )
+                            else:
+                                raise ValueError(
+                                    "dangerously_allow_filesystem must be True to upload files from the filesystem"
+                                )
                         else:
                             mime_type, data = attachment
                             parts.append(
@@ -3772,6 +3812,7 @@ class Client:
         *,
         dataset_id: ID_TYPE,
         updates: Optional[List[ls_schemas.ExampleUpdateWithAttachments]] = None,
+        dangerously_allow_filesystem: bool = False,
     ) -> ls_schemas.UpsertExamplesResponse:
         """Upload examples."""
         if not (self.info.instance_flags or {}).get(
@@ -3783,7 +3824,11 @@ class Client:
         if updates is None:
             updates = []
 
-        encoder, data = self._prepare_multipart_data(updates, include_dataset_id=False)
+        encoder, data = self._prepare_multipart_data(
+            updates,
+            include_dataset_id=False,
+            dangerously_allow_filesystem=dangerously_allow_filesystem,
+        )
 
         response = self.request_with_retries(
             "PATCH",
@@ -3804,6 +3849,7 @@ class Client:
         *,
         dataset_id: ID_TYPE,
         uploads: Optional[List[ls_schemas.ExampleUploadWithAttachments]] = None,
+        dangerously_allow_filesystem: bool = False,
     ) -> ls_schemas.UpsertExamplesResponse:
         """Upload examples."""
         if not (self.info.instance_flags or {}).get(
@@ -3814,7 +3860,11 @@ class Client:
             )
         if uploads is None:
             uploads = []
-        encoder, data = self._prepare_multipart_data(uploads, include_dataset_id=False)
+        encoder, data = self._prepare_multipart_data(
+            uploads,
+            include_dataset_id=False,
+            dangerously_allow_filesystem=dangerously_allow_filesystem,
+        )
 
         response = self.request_with_retries(
             "POST",
@@ -3834,6 +3884,7 @@ class Client:
         self,
         *,
         upserts: Optional[List[ls_schemas.ExampleUpsertWithAttachments]] = None,
+        dangerously_allow_filesystem: bool = False,
     ) -> ls_schemas.UpsertExamplesResponse:
         """Upsert examples.
 
@@ -3850,7 +3901,11 @@ class Client:
         if upserts is None:
             upserts = []
 
-        encoder, data = self._prepare_multipart_data(upserts, include_dataset_id=True)
+        encoder, data = self._prepare_multipart_data(
+            upserts,
+            include_dataset_id=True,
+            dangerously_allow_filesystem=dangerously_allow_filesystem,
+        )
 
         response = self.request_with_retries(
             "POST",
@@ -4042,16 +4097,9 @@ class Client:
         )
 
         example = response.json()
-        attachments = {}
-        if example["attachment_urls"]:
-            for key, value in example["attachment_urls"].items():
-                response = requests.get(value["presigned_url"], stream=True)
-                response.raise_for_status()
-                reader = io.BytesIO(response.content)
-                attachments[key.removeprefix("attachment.")] = {
-                    "presigned_url": value["presigned_url"],
-                    "reader": reader,
-                }
+        attachments = _convert_stored_attachments_to_attachments_dict(
+            example, "attachment_urls"
+        )
 
         return ls_schemas.Example(
             **{k: v for k, v in example.items() if k != "attachment_urls"},
@@ -4128,17 +4176,9 @@ class Client:
         for i, example in enumerate(
             self._get_paginated_list("/examples", params=params)
         ):
-            attachments = {}
-            if example["attachment_urls"]:
-                for key, value in example["attachment_urls"].items():
-                    response = requests.get(value["presigned_url"], stream=True)
-                    response.raise_for_status()
-                    reader = io.BytesIO(response.content)
-                    attachments[key.removeprefix("attachment.")] = {
-                        "presigned_url": value["presigned_url"],
-                        "reader": reader,
-                    }
-
+            attachments = _convert_stored_attachments_to_attachments_dict(
+                example, "attachment_urls"
+            )
             yield ls_schemas.Example(
                 **{k: v for k, v in example.items() if k != "attachment_urls"},
                 attachments=attachments,
@@ -6805,3 +6845,17 @@ def convert_prompt_to_anthropic_format(
         return anthropic._get_request_payload(messages, stop=stop)
     except Exception as e:
         raise ls_utils.LangSmithError(f"Error converting to Anthropic format: {e}")
+
+
+def _convert_stored_attachments_to_attachments_dict(data, attachments_key):
+    attachments_dict = {}
+    if attachments_key in data and data[attachments_key]:
+        for key, value in data[attachments_key].items():
+            response = requests.get(value["presigned_url"], stream=True)
+            response.raise_for_status()
+            reader = io.BytesIO(response.content)
+            attachments_dict[key.removeprefix("attachment.")] = {
+                "presigned_url": value["presigned_url"],
+                "reader": reader,
+            }
+    return attachments_dict
