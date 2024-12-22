@@ -1,3 +1,5 @@
+/* eslint-disable import/no-extraneous-dependencies */
+
 /**
  * Adapted from https://github.com/mattphillips/jest-chain/blob/main/src/chain.js
  */
