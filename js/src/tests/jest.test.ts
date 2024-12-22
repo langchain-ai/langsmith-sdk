@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import ls, { type SimpleEvaluator } from "../jest/index.js";
+import * as ls from "../jest/index.js";
+import { type SimpleEvaluator } from "../jest/index.js";
 
 const myEvaluator: SimpleEvaluator = ({ expected, actual }) => {
   if (actual.bar === expected.bar) {

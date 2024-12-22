@@ -339,11 +339,11 @@ const lsTest = Object.assign(wrapTestMethod(test), {
   each: eachMethod,
 });
 
-export default {
-  test: lsTest,
-  it: lsTest,
-  describe: lsDescribe,
-  expect: expectWithGradedBy,
+export {
+  lsTest as test,
+  lsTest as it,
+  lsDescribe as describe,
+  expectWithGradedBy as expect,
 };
 
 export { type SimpleEvaluator };
