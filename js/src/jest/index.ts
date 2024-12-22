@@ -17,7 +17,7 @@ import {
   toBeSemanticCloseTo,
 } from "./matchers.js";
 import { jestAsyncLocalStorageInstance, trackingEnabled } from "./globals.js";
-import expectWithGradedBy from "./vendor/chain.js";
+import { wrapExpect } from "./vendor/chain.js";
 import type { SimpleEvaluator } from "./vendor/gradedBy.js";
 
 declare global {
@@ -339,11 +339,13 @@ const lsTest = Object.assign(wrapTestMethod(test), {
   each: eachMethod,
 });
 
+const wrappedExpect = wrapExpect(expect);
+
 export {
   lsTest as test,
   lsTest as it,
   lsDescribe as describe,
-  expectWithGradedBy as expect,
+  wrappedExpect as expect,
 };
 
 export { type SimpleEvaluator };
