@@ -1,9 +1,6 @@
-/* eslint-disable import/no-extraneous-dependencies */
-
 /**
  * Adapted from https://github.com/mattphillips/jest-chain/blob/main/src/chain.js
  */
-import { expect } from "@jest/globals";
 import { gradedBy, SimpleEvaluator } from "./gradedBy.js";
 
 class JestAssertionError extends Error {
@@ -25,6 +22,7 @@ const _wrapMatchers = (
   matchers: jest.Matchers<any>,
   evaluator: SimpleEvaluator,
   originalArgs: any[],
+  originalExpect: any,
   staticPath: string[] = []
 ) => {
   return Object.keys(matchers)
@@ -33,7 +31,7 @@ const _wrapMatchers = (
       const newMatcher = async (...args: any[]) => {
         try {
           const score = await gradedBy(originalArgs[0], evaluator);
-          let result: any = expect(score);
+          let result: any = originalExpect(score);
           for (const pathEntry of staticPath) {
             result = result[pathEntry];
           }
@@ -58,6 +56,7 @@ const _wrapMatchers = (
 const addGradedBy = (
   matchers: jest.Matchers<any>,
   originalArgs: any[],
+  originalExpect: any,
   staticPath: string[] = []
 ) => {
   let spreadMatchers = { ...matchers };
@@ -82,7 +81,9 @@ const addGradedBy = (
       const mappedMatchers: any = _wrapMatchers(
         spreadMatchers,
         evaluator,
-        originalArgs
+        originalArgs,
+        originalExpect,
+        []
       );
       // .not etc.
       const staticMatchers = Object.keys(spreadMatchers)
@@ -95,6 +96,7 @@ const addGradedBy = (
                 spreadMatchers,
                 evaluator,
                 originalArgs,
+                originalExpect,
                 staticPath.concat(name)
               )
             ),
@@ -105,11 +107,12 @@ const addGradedBy = (
   });
 };
 
-export function wrapExpect(expect: any) {
+export function wrapExpect(originalExpect: any) {
   // proxy the expect function
   const expectProxy = Object.assign(
-    (...args: any[]) => addGradedBy(expect(...args), args), // partially apply expect to get all matchers and chain them
-    expect // clone additional properties on expect
+    (...args: any[]) =>
+      addGradedBy(originalExpect(...args), args, originalExpect, []), // partially apply expect to get all matchers and chain them
+    originalExpect // clone additional properties on expect
   );
 
   return expectProxy;
