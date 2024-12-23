@@ -1490,10 +1490,10 @@ async def test_aevaluate_with_attachments(langchain_client: Client) -> None:
 
     examples = [
         ExampleUploadWithAttachments(
-            inputs={"question": "What is shown in the image?"},
+            inputs={"question": "What is shown in the image?", "index": i},
             outputs={"answer": "test image"},
             attachments={
-                "image": ("image/png", b"fake image data for testing"),
+                "image": ("text/plain", bytes(f"data: {i}", "utf-8")),
             },
         )
         for i in range(10)
@@ -1508,16 +1508,16 @@ async def test_aevaluate_with_attachments(langchain_client: Client) -> None:
         assert "image" in attachments
         assert "presigned_url" in attachments["image"]
         image_data = attachments["image"]["reader"]
-        assert image_data.read() == b"fake image data for testing"
+        assert image_data.read() == bytes(f"data: {inputs['index']}", "utf-8")
         return {"answer": "test image"}
 
     async def evaluator_1(
-        outputs: dict, reference_outputs: dict, attachments: dict
+        inputs: dict, outputs: dict, reference_outputs: dict, attachments: dict
     ) -> Dict[str, Any]:
         assert "image" in attachments
         assert "presigned_url" in attachments["image"]
         image_data = attachments["image"]["reader"]
-        assert image_data.read() == b"fake image data for testing"
+        assert image_data.read() == bytes(f"data: {inputs['index']}", "utf-8")
         return {
             "score": float(
                 reference_outputs.get("answer") == outputs.get("answer")  # type: ignore
@@ -1525,12 +1525,12 @@ async def test_aevaluate_with_attachments(langchain_client: Client) -> None:
         }
 
     async def evaluator_2(
-        outputs: dict, reference_outputs: dict, attachments: dict
+        inputs: dict, outputs: dict, reference_outputs: dict, attachments: dict
     ) -> Dict[str, Any]:
         assert "image" in attachments
         assert "presigned_url" in attachments["image"]
         image_data = attachments["image"]["reader"]
-        assert image_data.read() == b"fake image data for testing"
+        assert image_data.read() == bytes(f"data: {inputs['index']}", "utf-8")
         return {
             "score": float(
                 reference_outputs.get("answer") == outputs.get("answer")  # type: ignore
