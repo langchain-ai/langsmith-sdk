@@ -82,6 +82,11 @@ export interface ClientConfig {
   blockOnRootRunFinalization?: boolean;
   traceBatchConcurrency?: number;
   fetchOptions?: RequestInit;
+  /**
+   * Whether to require manual .flush() calls before sending traces.
+   * Useful to solve rate limits at trace high volumes.
+   */
+  manualFlushMode?: boolean;
 }
 
 /**
@@ -488,6 +493,8 @@ export class Client implements LangSmithTracingClientInterface {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private _getServerInfoPromise?: Promise<Record<string, any>>;
 
+  private manualFlushMode = false;
+
   constructor(config: ClientConfig = {}) {
     const defaultConfig = Client.getDefaultClientConfig();
 
@@ -525,6 +532,7 @@ export class Client implements LangSmithTracingClientInterface {
       config.blockOnRootRunFinalization ?? this.blockOnRootRunFinalization;
     this.batchSizeBytesLimit = config.batchSizeBytesLimit;
     this.fetchOptions = config.fetchOptions || {};
+    this.manualFlushMode = config.manualFlushMode ?? this.manualFlushMode;
   }
 
   public static getDefaultClientConfig(): {
@@ -775,14 +783,17 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   private drainAutoBatchQueue(batchSizeLimit: number) {
+    const promises = [];
     while (this.autoBatchQueue.items.length > 0) {
       const [batch, done] = this.autoBatchQueue.pop(batchSizeLimit);
       if (!batch.length) {
         done();
         break;
       }
-      void this._processBatch(batch, done).catch(console.error);
+      const batchPromise = this._processBatch(batch, done).catch(console.error);
+      promises.push(batchPromise);
     }
+    return Promise.all(promises);
   }
 
   private async _processBatch(batch: AutoBatchQueueItem[], done: () => void) {
@@ -817,14 +828,18 @@ export class Client implements LangSmithTracingClientInterface {
       item.item = mergeRuntimeEnvIntoRunCreate(item.item as RunCreate);
     }
     const itemPromise = this.autoBatchQueue.push(item);
+    if (this.manualFlushMode) {
+      // Rely on manual flushing in serverless environments
+      return itemPromise;
+    }
     const sizeLimitBytes = await this._getBatchSizeLimitBytes();
     if (this.autoBatchQueue.sizeBytes > sizeLimitBytes) {
-      this.drainAutoBatchQueue(sizeLimitBytes);
+      void this.drainAutoBatchQueue(sizeLimitBytes);
     }
     if (this.autoBatchQueue.items.length > 0) {
       this.autoBatchTimeout = setTimeout(() => {
         this.autoBatchTimeout = undefined;
-        this.drainAutoBatchQueue(sizeLimitBytes);
+        void this.drainAutoBatchQueue(sizeLimitBytes);
       }, this.autoBatchAggregationDelayMs);
     }
     return itemPromise;
@@ -870,6 +885,14 @@ export class Client implements LangSmithTracingClientInterface {
     }
 
     return await this.settings;
+  }
+
+  /**
+   * Flushes current queued traces.
+   */
+  public async flush() {
+    const sizeLimitBytes = await this._getBatchSizeLimitBytes();
+    await this.drainAutoBatchQueue(sizeLimitBytes);
   }
 
   public async createRun(run: CreateRunParams): Promise<void> {
@@ -1239,7 +1262,8 @@ export class Client implements LangSmithTracingClientInterface {
       if (
         run.end_time !== undefined &&
         data.parent_run_id === undefined &&
-        this.blockOnRootRunFinalization
+        this.blockOnRootRunFinalization &&
+        !this.manualFlushMode
       ) {
         // Trigger batches as soon as a root trace ends and wait to ensure trace finishes
         // in serverless environments.
@@ -4381,6 +4405,12 @@ export class Client implements LangSmithTracingClientInterface {
    * @returns A promise that resolves once all currently pending traces have sent.
    */
   public awaitPendingTraceBatches() {
+    if (this.manualFlushMode) {
+      console.warn(
+        "[WARNING]: When tracing in manual flush mode, you must call `await client.flush()` manually to submit trace batches."
+      );
+      return Promise.resolve();
+    }
     return Promise.all([
       ...this.autoBatchQueue.items.map(({ itemPromise }) => itemPromise),
       this.batchIngestCaller.queue.onIdle(),
