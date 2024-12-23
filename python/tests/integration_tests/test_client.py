@@ -1260,9 +1260,6 @@ async def test_summary_evaluation_with_evaluator_results(
 ) -> None:
     """Test summary evaluators receive evaluator results."""
     dataset_name = "__test_summary_evaluation_inline_eval" + uuid4().hex[:4]
-    langchain_client = Client(
-        api_key="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"
-    )
     dataset = langchain_client.create_dataset(
         dataset_name,
         description="Test dataset for evals with attachments",
