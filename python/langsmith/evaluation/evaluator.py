@@ -726,12 +726,16 @@ SUMMARY_EVALUATOR_T = Union[
         [
             Sequence[schemas.Run],
             Sequence[schemas.Example],
-            Sequence[ExperimentResultRow],
+            Sequence[Sequence[schemas.EvaluationResult]],
         ],
         Union[EvaluationResult, EvaluationResults],
     ],
     Callable[
-        [List[schemas.Run], List[schemas.Example], List[ExperimentResultRow]],
+        [
+            List[schemas.Run],
+            List[schemas.Example],
+            List[List[schemas.EvaluationResult]],
+        ],
         Union[EvaluationResult, EvaluationResults],
     ],
 ]
@@ -772,7 +776,7 @@ def _normalize_summary_evaluator(func: Callable) -> SUMMARY_EVALUATOR_T:
         def wrapper(
             runs: Sequence[schemas.Run],
             examples: Sequence[schemas.Example],
-            evaluation_results: Sequence[ExperimentResultRow],
+            _: Sequence[Sequence[ExperimentResultRow]],
         ) -> Union[EvaluationResult, EvaluationResults]:
             result = func(runs, examples)
             if isinstance(result, EvaluationResult):
@@ -785,10 +789,10 @@ def _normalize_summary_evaluator(func: Callable) -> SUMMARY_EVALUATOR_T:
         return wrapper  # type: ignore[return-value]
     else:
 
-        def wrapper(
+        def wrapper(  # type: ignore[misc]
             runs: Sequence[schemas.Run],
             examples: Sequence[schemas.Example],
-            evaluation_results: Sequence[ExperimentResultRow],
+            evaluation_results: Sequence[Sequence[EvaluationResult]],
         ) -> Union[EvaluationResult, EvaluationResults]:
             arg_map = {
                 "runs": runs,

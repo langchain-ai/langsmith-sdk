@@ -1454,9 +1454,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         wrapped_evaluators = _wrap_summary_evaluators(summary_evaluators)
         context = copy_context()
         aggregate_feedback_gen = context.run(
-            self._apply_summary_evaluators,
-            wrapped_evaluators,
-            [r for r in self.get_results()],
+            self._apply_summary_evaluators, wrapped_evaluators
         )
         return _ExperimentManager(
             self.examples,
@@ -1670,12 +1668,12 @@ class _ExperimentManager(_ExperimentManagerMixin):
     def _apply_summary_evaluators(
         self,
         summary_evaluators: Sequence[SUMMARY_EVALUATOR_T],
-        evaluation_results: List[schemas.ExperimentResultRow],
     ) -> Generator[EvaluationResults, None, None]:
-        runs, examples = [], []
-        for run, example in zip(self.runs, self.examples):
-            runs.append(run)
-            examples.append(example)
+        runs, examples, evaluation_results = [], [], []
+        for row in self.get_results():
+            runs.append(row["run"])
+            examples.append(row["example"])
+            evaluation_results.append(row["evaluation_results"]["results"])
         aggregate_feedback = []
         with ls_utils.ContextThreadPoolExecutor() as executor:
             project_id = self._get_experiment().id if self._upload_results else None
@@ -1794,15 +1792,15 @@ def _wrap_summary_evaluators(
 
         @functools.wraps(evaluator)
         def _wrapper_inner(
-            runs: Sequence[schemas.Run],
-            examples: Sequence[schemas.Example],
-            evaluation_results: Sequence[schemas.ExperimentResultRow],
+            runs: list[schemas.Run],
+            examples: list[schemas.Example],
+            evaluation_results: list[list[EvaluationResult]],
         ) -> Union[EvaluationResult, EvaluationResults]:
             @rh.traceable(name=eval_name)
             def _wrapper_super_inner(
                 runs_: str, examples_: str, evaluation_results_: str
             ) -> Union[EvaluationResult, EvaluationResults]:
-                return evaluator(list(runs), list(examples), list(evaluation_results))
+                return evaluator(runs, examples, evaluation_results)
 
             return _wrapper_super_inner(
                 f"Runs[] (Length={len(runs)})",
