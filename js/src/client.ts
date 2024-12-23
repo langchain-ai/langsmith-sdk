@@ -84,7 +84,7 @@ export interface ClientConfig {
   fetchOptions?: RequestInit;
   /**
    * Whether to require manual .flush() calls before sending traces.
-   * Useful to solve rate limits at trace high volumes.
+   * Useful if encountering network rate limits at trace high volumes.
    */
   manualFlushMode?: boolean;
 }
