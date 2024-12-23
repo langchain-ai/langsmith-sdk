@@ -1433,7 +1433,6 @@ class _ExperimentManager(_ExperimentManagerMixin):
         # Split the generator into three so the manager
         # can consume each value individually.
         r1, r2, r3 = itertools.tee(experiment_results, 3)
-        # print("FOOOO", [result["evaluation_results"] for result in r3])
         return _ExperimentManager(
             (result["example"] for result in r1),
             experiment=self._experiment,
