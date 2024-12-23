@@ -1513,29 +1513,19 @@ async def test_aevaluate_with_attachments(langchain_client: Client) -> None:
 
     async def evaluator_1(
         inputs: dict, outputs: dict, reference_outputs: dict, attachments: dict
-    ) -> Dict[str, Any]:
+    ) -> bool:
         assert "image" in attachments
         assert "presigned_url" in attachments["image"]
         image_data = attachments["image"]["reader"]
-        assert image_data.read() == bytes(f"data: {inputs['index']}", "utf-8")
-        return {
-            "score": float(
-                reference_outputs.get("answer") == outputs.get("answer")  # type: ignore
-            )
-        }
+        return image_data.read() == bytes(f"data: {inputs['index']}", "utf-8")
 
     async def evaluator_2(
         inputs: dict, outputs: dict, reference_outputs: dict, attachments: dict
-    ) -> Dict[str, Any]:
+    ) -> bool:
         assert "image" in attachments
         assert "presigned_url" in attachments["image"]
         image_data = attachments["image"]["reader"]
-        assert image_data.read() == bytes(f"data: {inputs['index']}", "utf-8")
-        return {
-            "score": float(
-                reference_outputs.get("answer") == outputs.get("answer")  # type: ignore
-            )
-        }
+        return image_data.read() == bytes(f"data: {inputs['index']}", "utf-8")
 
     results = await langchain_client.aevaluate(
         target,
