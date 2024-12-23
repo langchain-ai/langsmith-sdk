@@ -689,9 +689,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         summary_evaluators: Sequence[SUMMARY_EVALUATOR_T],
     ) -> _AsyncExperimentManager:
         wrapped_evaluators = _wrap_summary_evaluators(summary_evaluators)
-        aggregate_feedback_gen = self._aapply_summary_evaluators(
-            wrapped_evaluators, [r async for r in self.aget_results()]
-        )
+        aggregate_feedback_gen = self._aapply_summary_evaluators(wrapped_evaluators)
         return _AsyncExperimentManager(
             await self.aget_examples(),
             experiment=self._experiment,
@@ -858,15 +856,12 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
     async def _aapply_summary_evaluators(
         self,
         summary_evaluators: Sequence[SUMMARY_EVALUATOR_T],
-        evaluation_results: List[schemas.ExperimentResultRow],
     ) -> AsyncIterator[EvaluationResults]:
-        runs, examples = [], []
-        async_examples = aitertools.ensure_async_iterator(await self.aget_examples())
-        async for run, example in aitertools.async_zip(
-            self.aget_runs(), async_examples
-        ):
-            runs.append(run)
-            examples.append(example)
+        runs, examples, evaluation_results = [], [], []
+        async for row in self.aget_results():
+            runs.append(row["run"])
+            examples.append(row["example"])
+            evaluation_results.append(row["evaluation_results"]["results"])
         aggregate_feedback = []
         project_id = self._get_experiment().id if self._upload_results else None
         current_context = rh.get_tracing_context()
