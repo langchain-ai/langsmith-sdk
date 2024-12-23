@@ -860,7 +860,6 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             run = current_results["run"]
             example = current_results["example"]
             eval_results = current_results["evaluation_results"]
-            lock = asyncio.Lock()
 
             async def _run_single_evaluator(evaluator):
                 try:
@@ -871,13 +870,12 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                     selected_results = self.client._select_eval_results(
                         evaluator_response
                     )
-                    async with lock:
-                        eval_results["results"].extend(selected_results)
 
                     if self._upload_results:
                         self.client._log_evaluation_feedback(
                             evaluator_response, run=run, _executor=executor
                         )
+                    return selected_results
                 except Exception as e:
                     try:
                         feedback_keys = _extract_feedback_keys(evaluator)
@@ -896,12 +894,11 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                         selected_results = self.client._select_eval_results(
                             error_response
                         )
-                        async with lock:
-                            eval_results["results"].extend(selected_results)
                         if self._upload_results:
                             self.client._log_evaluation_feedback(
                                 error_response, run=run, _executor=executor
                             )
+                        return selected_results
                     except Exception as e2:
                         logger.debug(f"Error parsing feedback keys: {e2}")
                         pass
@@ -911,9 +908,12 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                         exc_info=True,
                     )
 
-            await asyncio.gather(
+            all_results = await asyncio.gather(
                 *[_run_single_evaluator(evaluator) for evaluator in evaluators]
             )
+            for result in all_results:
+                if result is not None:
+                    eval_results["results"].extend(result)
             return ExperimentResultRow(
                 run=run,
                 example=example,
