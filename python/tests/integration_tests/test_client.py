@@ -24,11 +24,11 @@ from langsmith.evaluation import aevaluate, evaluate
 from langsmith.schemas import (
     AttachmentsOperations,
     DataType,
+    EvaluationResult,
     Example,
     ExampleUpdateWithAttachments,
     ExampleUploadWithAttachments,
     ExampleUpsertWithAttachments,
-    ExperimentResultRow,
     Run,
 )
 from langsmith.utils import (
@@ -1260,9 +1260,6 @@ async def test_summary_evaluation_with_evaluator_results(
 ) -> None:
     """Test summary evaluators receive evaluator results."""
     dataset_name = "__test_summary_evaluation_inline_eval" + uuid4().hex[:4]
-    langchain_client = Client(
-        api_key="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"
-    )
     dataset = langchain_client.create_dataset(
         dataset_name,
         description="Test dataset for evals with attachments",
@@ -1286,12 +1283,11 @@ async def test_summary_evaluation_with_evaluator_results(
     def evaluator(outputs: dict, reference_outputs: dict) -> dict:
         return {"score": 1, "key": "foo"}
 
-    def summary_evaluator(evaluation_results: list[ExperimentResultRow]) -> dict:
+    def summary_evaluator(evaluation_results: list[EvaluationResult]) -> bool:
         assert len(evaluation_results) == 1
-        assert evaluation_results[0]["evaluation_results"]["results"][0].key == "foo"
-        assert evaluation_results[0]["evaluation_results"]["results"][0].score == 1
-        assert evaluation_results[0]["example"].id == example_id
-        return 1
+        assert evaluation_results[0][0].key == "foo"
+        assert evaluation_results[0][0].score == 1
+        return True
 
     results = langchain_client.evaluate(
         target,
