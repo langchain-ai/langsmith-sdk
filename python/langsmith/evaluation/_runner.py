@@ -1665,14 +1665,14 @@ class _ExperimentManager(_ExperimentManagerMixin):
                     yield result
 
     def _apply_summary_evaluators(
-        self,
-        summary_evaluators: Sequence[SUMMARY_EVALUATOR_T],
+        self, summary_evaluators: Sequence[SUMMARY_EVALUATOR_T]
     ) -> Generator[EvaluationResults, None, None]:
         runs, examples, evaluation_results = [], [], []
         for row in self.get_results():
             runs.append(row["run"])
             examples.append(row["example"])
             evaluation_results.append(row["evaluation_results"]["results"])
+
         aggregate_feedback = []
         with ls_utils.ContextThreadPoolExecutor() as executor:
             project_id = self._get_experiment().id if self._upload_results else None
