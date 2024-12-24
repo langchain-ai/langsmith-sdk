@@ -978,7 +978,7 @@ def summary_eval_outputs_reference(outputs, reference_outputs):
     return min([len(x["response"]) for x in outputs])
 
 
-def summary_eval_outputs_reference(evaluation_results):
+def summary_eval_evaluation_results(evaluation_results):
     return len(evaluation_results)
 
 
@@ -988,6 +988,7 @@ def summary_eval_outputs_reference(evaluation_results):
         summary_eval_runs_examples,
         summary_eval_inputs_outputs,
         summary_eval_outputs_reference,
+        summary_eval_evaluation_results,
     ],
 )
 def test__normalize_summary_evaluator(evaluator: Callable) -> None:
