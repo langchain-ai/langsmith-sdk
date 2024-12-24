@@ -18,7 +18,7 @@ from unittest.mock import MagicMock
 import pytest
 from langchain_core.runnables import chain as as_runnable
 
-from langsmith import Client, aevaluate, evaluate
+from langsmith import Client, EvaluationResult, aevaluate, evaluate
 from langsmith import schemas as ls_schemas
 from langsmith.evaluation._runner import _include_attachments
 from langsmith.evaluation.evaluator import (
@@ -265,15 +265,6 @@ def test_evaluate_results(
             {"score": 1, "key": "list_eval_int"},
         ]
 
-    def summary_eval_runs_examples(runs_, examples_):
-        return {"score": len(runs_[0].dotted_order)}
-
-    def summary_eval_inputs_outputs(inputs, outputs):
-        return [{"score": len([x["in"] for x in inputs])}]
-
-    def summary_eval_outputs_reference(outputs, reference_outputs):
-        return len([x["answer"] for x in reference_outputs])
-
     evaluators = [
         score_value_first,
         score_unpacked_inputs_outputs,
@@ -285,10 +276,23 @@ def test_evaluate_results(
         eval_list,
     ]
 
+    def summary_eval_runs_examples(runs_, examples_):
+        return {"score": len(runs_[0].dotted_order)}
+
+    def summary_eval_inputs_outputs(inputs, outputs):
+        return [{"score": len([x["in"] for x in inputs])}]
+
+    def summary_eval_outputs_reference(outputs, reference_outputs):
+        return len([x["answer"] for x in reference_outputs])
+
+    def summary_eval_evaluation_results(evaluation_results):
+        return all(len(r) == len(evaluators) + 1 for r in evaluation_results)
+
     summary_evaluators = [
         summary_eval_runs_examples,
         summary_eval_inputs_outputs,
         summary_eval_outputs_reference,
+        summary_eval_evaluation_results,
     ]
 
     results = evaluate(
@@ -302,6 +306,7 @@ def test_evaluate_results(
         upload_results=upload_results,
         max_concurrency=None,
     )
+
     if not blocking:
         deltas = []
         last = None
@@ -557,15 +562,6 @@ async def test_aevaluate_results(
             {"score": 1, "key": "list_eval_int"},
         ]
 
-    def summary_eval_runs_examples(runs_, examples_):
-        return {"score": len(runs_[0].dotted_order)}
-
-    def summary_eval_inputs_outputs(inputs, outputs):
-        return {"score": len([x["in"] for x in inputs])}
-
-    def summary_eval_outputs_reference(outputs, reference_outputs):
-        return {"score": len([x["answer"] for x in reference_outputs])}
-
     evaluators = [
         score_value_first,
         score_unpacked_inputs_outputs,
@@ -577,10 +573,23 @@ async def test_aevaluate_results(
         eval_list,
     ]
 
+    def summary_eval_runs_examples(runs_, examples_):
+        return {"score": len(runs_[0].dotted_order)}
+
+    def summary_eval_inputs_outputs(inputs, outputs):
+        return {"score": len([x["in"] for x in inputs])}
+
+    def summary_eval_outputs_reference(outputs, reference_outputs):
+        return {"score": len([x["answer"] for x in reference_outputs])}
+
+    def summary_eval_evaluation_results(evaluation_results):
+        return all(len(r) == len(evaluators) + 1 for r in evaluation_results)
+
     summary_evaluators = [
         summary_eval_runs_examples,
         summary_eval_inputs_outputs,
         summary_eval_outputs_reference,
+        summary_eval_evaluation_results,
     ]
 
     results = await aevaluate(
@@ -969,12 +978,17 @@ def summary_eval_outputs_reference(outputs, reference_outputs):
     return min([len(x["response"]) for x in outputs])
 
 
+def summary_eval_evaluation_results(evaluation_results):
+    return len(evaluation_results)
+
+
 @pytest.mark.parametrize(
     "evaluator",
     [
         summary_eval_runs_examples,
         summary_eval_inputs_outputs,
         summary_eval_outputs_reference,
+        summary_eval_evaluation_results,
     ],
 )
 def test__normalize_summary_evaluator(evaluator: Callable) -> None:
@@ -995,7 +1009,8 @@ def test__normalize_summary_evaluator(evaluator: Callable) -> None:
             inputs={"in": "b" * 12},
         )
     ]
-    assert normalized(runs, examples)["score"] == 12
+    evaluation_results = [EvaluationResult(key="foo", score=1)] * 12
+    assert normalized(runs, examples, evaluation_results)["score"] == 12
 
 
 def summary_eval_kwargs(*, runs, examples):
