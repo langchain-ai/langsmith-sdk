@@ -1203,6 +1203,7 @@ def test_multipart_ingest_update_with_attachments(
         langchain_client.multipart_ingest(
             create=[], update=runs_to_update, dangerously_allow_filesystem=True
         )
+        assert open(Path(__file__).parent / "test_data/parrot-icon.png").closed
 
         assert not caplog.records
         wait_for(lambda: _get_run(str(trace_a_id), langchain_client))
@@ -2123,6 +2124,7 @@ def test_examples_multipart_attachment_path(langchain_client: Client) -> None:
         dataset_id=dataset.id, uploads=[example], dangerously_allow_filesystem=True
     )
     assert created_examples["count"] == 1
+    assert open(Path(__file__).parent / "test_data/parrot-icon.png").closed
 
     # Verify the upload
     retrieved = langchain_client.read_example(example_id)

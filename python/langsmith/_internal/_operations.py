@@ -4,7 +4,8 @@ import itertools
 import logging
 import os
 import uuid
-from typing import Literal, Optional, Union, cast
+from io import BufferedReader
+from typing import Dict, Literal, Optional, Union, cast
 
 from langsmith import schemas as ls_schemas
 from langsmith._internal import _orjson
@@ -212,9 +213,9 @@ def serialized_feedback_operation_to_multipart_parts_and_context(
 
 def serialized_run_operation_to_multipart_parts_and_context(
     op: SerializedRunOperation,
-) -> MultipartPartsAndContext:
+) -> tuple[MultipartPartsAndContext, Dict[str, BufferedReader]]:
     acc_parts: list[MultipartPart] = []
-
+    opened_files_dict: Dict[str, BufferedReader] = {}
     # this is main object, minus inputs/outputs/events/attachments
     acc_parts.append(
         (
@@ -270,14 +271,18 @@ def serialized_run_operation_to_multipart_parts_and_context(
                     )
                 )
             else:
-                file_path = data
-                file_size = os.path.getsize(file_path)
+                file_size = os.path.getsize(data)
+                if str(data) in opened_files_dict:
+                    file = opened_files_dict[str(data)]
+                else:
+                    file = open(data, "rb")
+                    opened_files_dict[str(data)] = file
                 acc_parts.append(
                     (
                         f"attachment.{op.id}.{n}",
                         (
                             None,
-                            open(file_path, "rb"),  # type: ignore[arg-type]
+                            file,  # type: ignore[arg-type]
                             f"{content_type}; length={file_size}",
                             {},
                         ),
@@ -286,4 +291,4 @@ def serialized_run_operation_to_multipart_parts_and_context(
     return MultipartPartsAndContext(
         acc_parts,
         f"trace={op.trace_id},id={op.id}",
-    )
+    ), opened_files_dict

@@ -1512,11 +1512,14 @@ class Client:
         self, ops: list[Union[SerializedRunOperation, SerializedFeedbackOperation]]
     ) -> None:
         parts: list[MultipartPartsAndContext] = []
+        opened_files_dict: Dict[str, io.BufferedReader] = {}
         for op in ops:
             if isinstance(op, SerializedRunOperation):
-                parts.append(
+                part, opened_files = (
                     serialized_run_operation_to_multipart_parts_and_context(op)
                 )
+                parts.append(part)
+                opened_files_dict.update(opened_files)
             elif isinstance(op, SerializedFeedbackOperation):
                 parts.append(
                     serialized_feedback_operation_to_multipart_parts_and_context(op)
@@ -1525,7 +1528,10 @@ class Client:
                 logger.error("Unknown operation type in tracing queue: %s", type(op))
         acc_multipart = join_multipart_parts_and_context(parts)
         if acc_multipart:
-            self._send_multipart_req(acc_multipart)
+            try:
+                self._send_multipart_req(acc_multipart)
+            finally:
+                _close_files(list(opened_files_dict.values()))
 
     def multipart_ingest(
         self,
@@ -3505,8 +3511,9 @@ class Client:
         ],
         include_dataset_id: bool = False,
         dangerously_allow_filesystem: bool = False,
-    ) -> Tuple[Any, bytes]:
+    ) -> tuple[Any, bytes, Dict[str, io.BufferedReader]]:
         parts: List[MultipartPart] = []
+        opened_files_dict: Dict[str, io.BufferedReader] = {}
         if include_dataset_id:
             if not isinstance(examples[0], ls_schemas.ExampleUpsertWithAttachments):
                 raise ValueError(
@@ -3587,39 +3594,30 @@ class Client:
                 )
 
             if example.attachments:
-                for name, attachment in example.attachments.items():
-                    if isinstance(attachment, tuple):
-                        if isinstance(attachment[1], Path):
-                            if dangerously_allow_filesystem:
-                                mime_type, file_path = attachment
-                                file_size = os.path.getsize(file_path)
-                                parts.append(
-                                    (
-                                        f"{example_id}.attachment.{name}",
-                                        (
-                                            None,
-                                            open(file_path, "rb"),  # type: ignore[arg-type]
-                                            f"{mime_type}; length={file_size}",
-                                            {},
-                                        ),
-                                    )
-                                )
+                for name, (mime_type, attachment_data) in example.attachments.items():
+                    if isinstance(attachment_data, Path):
+                        if dangerously_allow_filesystem:
+                            file_size = os.path.getsize(attachment_data)
+                            if str(attachment_data) in opened_files_dict:
+                                file = opened_files_dict[str(attachment_data)]
                             else:
-                                raise ValueError(
-                                    "dangerously_allow_filesystem must be True to upload files from the filesystem"
-                                )
-                        else:
-                            mime_type, data = attachment
+                                file = open(attachment_data, "rb")
+                                opened_files_dict[str(attachment_data)] = file
+
                             parts.append(
                                 (
                                     f"{example_id}.attachment.{name}",
                                     (
                                         None,
-                                        data,
-                                        f"{mime_type}; length={len(data)}",
+                                        file,  # type: ignore[arg-type]
+                                        f"{mime_type}; length={file_size}",
                                         {},
                                     ),
                                 )
+                            )
+                        else:
+                            raise ValueError(
+                                "dangerously_allow_filesystem must be True to upload files from the filesystem"
                             )
                     else:
                         parts.append(
@@ -3627,8 +3625,8 @@ class Client:
                                 f"{example_id}.attachment.{name}",
                                 (
                                     None,
-                                    attachment.data,
-                                    f"{attachment.mime_type}; length={len(attachment.data)}",
+                                    attachment_data,
+                                    f"{mime_type}; length={len(attachment_data)}",
                                     {},
                                 ),
                             )
@@ -3657,7 +3655,7 @@ class Client:
         else:
             data = encoder
 
-        return encoder, data
+        return encoder, data, opened_files_dict
 
     def update_examples_multipart(
         self,
@@ -3676,24 +3674,27 @@ class Client:
         if updates is None:
             updates = []
 
-        encoder, data = self._prepare_multipart_data(
+        encoder, data, opened_files_dict = self._prepare_multipart_data(
             updates,
             include_dataset_id=False,
             dangerously_allow_filesystem=dangerously_allow_filesystem,
         )
 
-        response = self.request_with_retries(
-            "PATCH",
-            f"/v1/platform/datasets/{dataset_id}/examples",
-            request_kwargs={
-                "data": data,
-                "headers": {
-                    **self._headers,
-                    "Content-Type": encoder.content_type,
+        try:
+            response = self.request_with_retries(
+                "PATCH",
+                f"/v1/platform/datasets/{dataset_id}/examples",
+                request_kwargs={
+                    "data": data,
+                    "headers": {
+                        **self._headers,
+                        "Content-Type": encoder.content_type,
+                    },
                 },
-            },
-        )
-        ls_utils.raise_for_status_with_text(response)
+            )
+            ls_utils.raise_for_status_with_text(response)
+        finally:
+            _close_files(list(opened_files_dict.values()))
         return response.json()
 
     def upload_examples_multipart(
@@ -3712,24 +3713,27 @@ class Client:
             )
         if uploads is None:
             uploads = []
-        encoder, data = self._prepare_multipart_data(
+        encoder, data, opened_files_dict = self._prepare_multipart_data(
             uploads,
             include_dataset_id=False,
             dangerously_allow_filesystem=dangerously_allow_filesystem,
         )
 
-        response = self.request_with_retries(
-            "POST",
-            f"/v1/platform/datasets/{dataset_id}/examples",
-            request_kwargs={
-                "data": data,
-                "headers": {
-                    **self._headers,
-                    "Content-Type": encoder.content_type,
+        try:
+            response = self.request_with_retries(
+                "POST",
+                f"/v1/platform/datasets/{dataset_id}/examples",
+                request_kwargs={
+                    "data": data,
+                    "headers": {
+                        **self._headers,
+                        "Content-Type": encoder.content_type,
+                    },
                 },
-            },
-        )
-        ls_utils.raise_for_status_with_text(response)
+            )
+            ls_utils.raise_for_status_with_text(response)
+        finally:
+            _close_files(list(opened_files_dict.values()))
         return response.json()
 
     def upsert_examples_multipart(
@@ -3753,24 +3757,27 @@ class Client:
         if upserts is None:
             upserts = []
 
-        encoder, data = self._prepare_multipart_data(
+        encoder, data, opened_files_dict = self._prepare_multipart_data(
             upserts,
             include_dataset_id=True,
             dangerously_allow_filesystem=dangerously_allow_filesystem,
         )
 
-        response = self.request_with_retries(
-            "POST",
-            "/v1/platform/examples/multipart",
-            request_kwargs={
-                "data": data,
-                "headers": {
-                    **self._headers,
-                    "Content-Type": encoder.content_type,
+        try:
+            response = self.request_with_retries(
+                "POST",
+                "/v1/platform/examples/multipart",
+                request_kwargs={
+                    "data": data,
+                    "headers": {
+                        **self._headers,
+                        "Content-Type": encoder.content_type,
+                    },
                 },
-            },
-        )
-        ls_utils.raise_for_status_with_text(response)
+            )
+            ls_utils.raise_for_status_with_text(response)
+        finally:
+            _close_files(list(opened_files_dict.values()))
         return response.json()
 
     def create_examples(
@@ -6711,3 +6718,12 @@ def _convert_stored_attachments_to_attachments_dict(data, attachments_key):
                 "reader": reader,
             }
     return attachments_dict
+
+
+def _close_files(files: List[io.BufferedReader]) -> None:
+    """Close all opened files used in multipart requests."""
+    for file in files:
+        try:
+            file.close()
+        except Exception:
+            pass

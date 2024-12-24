@@ -62,7 +62,7 @@ class Attachment(NamedTuple):
     """
 
     mime_type: str
-    data: bytes
+    data: Union[bytes, Path]
 
 
 Attachments = Dict[str, Union[Tuple[str, bytes], Attachment, Tuple[str, Path]]]
