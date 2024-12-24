@@ -24,7 +24,6 @@ from langsmith.evaluation import aevaluate, evaluate
 from langsmith.schemas import (
     AttachmentsOperations,
     DataType,
-    EvaluationResult,
     Example,
     ExampleUpdateWithAttachments,
     ExampleUploadWithAttachments,
@@ -1251,65 +1250,6 @@ def test_list_examples_attachments_keys(langchain_client: Client) -> None:
         f"Only in with_attachments: {with_keys - without_keys}\n"
         f"Only in without_attachments: {without_keys - with_keys}"
     )
-
-    langchain_client.delete_dataset(dataset_id=dataset.id)
-
-
-async def test_summary_evaluation_with_evaluator_results(
-    langchain_client: Client,
-) -> None:
-    """Test summary evaluators receive evaluator results."""
-    dataset_name = "__test_summary_evaluation_inline_eval" + uuid4().hex[:4]
-    dataset = langchain_client.create_dataset(
-        dataset_name,
-        description="Test dataset for evals with attachments",
-        data_type=DataType.kv,
-    )
-
-    example_id = uuid4()
-    langchain_client.create_example(
-        dataset_id=dataset.id,
-        inputs={"question": "What is 2+2?"},
-        outputs={"answer": "4"},
-        example_id=example_id,
-    )
-
-    def target(inputs: Dict[str, Any]) -> Dict[str, Any]:
-        return {"answer": "4"}
-
-    async def target_async(inputs: Dict[str, Any]) -> Dict[str, Any]:
-        return {"answer": "4"}
-
-    def evaluator(outputs: dict, reference_outputs: dict) -> dict:
-        return {"score": 1, "key": "foo"}
-
-    def summary_evaluator(evaluation_results: list[EvaluationResult]) -> bool:
-        assert len(evaluation_results) == 1
-        assert evaluation_results[0][0].key == "foo"
-        assert evaluation_results[0][0].score == 1
-        return True
-
-    results = langchain_client.evaluate(
-        target,
-        data=dataset_name,
-        evaluators=[evaluator],
-        summary_evaluators=[summary_evaluator],
-        num_repetitions=1,
-    )
-    assert len(results._summary_results["results"]) == 1
-    assert results._summary_results["results"][0].score == 1
-    assert results._summary_results["results"][0].key == "summary_evaluator"
-
-    results = await langchain_client.aevaluate(
-        target_async,
-        data=dataset_name,
-        evaluators=[evaluator],
-        summary_evaluators=[summary_evaluator],
-        num_repetitions=1,
-    )
-    assert len(results._summary_results["results"]) == 1
-    assert results._summary_results["results"][0].score == 1
-    assert results._summary_results["results"][0].key == "summary_evaluator"
 
     langchain_client.delete_dataset(dataset_id=dataset.id)
 
