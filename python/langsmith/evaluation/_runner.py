@@ -1668,10 +1668,12 @@ class _ExperimentManager(_ExperimentManagerMixin):
         self, summary_evaluators: Sequence[SUMMARY_EVALUATOR_T]
     ) -> Generator[EvaluationResults, None, None]:
         runs, examples, evaluation_results = [], [], []
-        for row in self.get_results():
-            runs.append(row["run"])
-            examples.append(row["example"])
-            evaluation_results.append(row["evaluation_results"]["results"])
+        for run, example in zip(self.runs, self.examples):
+            runs.append(run)
+            examples.append(example)
+
+        for evaluation_result in self.evaluation_results:
+            evaluation_results.append(evaluation_result["results"])
 
         aggregate_feedback = []
         with ls_utils.ContextThreadPoolExecutor() as executor:
@@ -1791,15 +1793,15 @@ def _wrap_summary_evaluators(
 
         @functools.wraps(evaluator)
         def _wrapper_inner(
-            runs: list[schemas.Run],
-            examples: list[schemas.Example],
-            evaluation_results: list[list[EvaluationResult]],
+            runs: Sequence[schemas.Run],
+            examples: Sequence[schemas.Example],
+            evaluation_results: Sequence[list[EvaluationResult]],
         ) -> Union[EvaluationResult, EvaluationResults]:
             @rh.traceable(name=eval_name)
             def _wrapper_super_inner(
                 runs_: str, examples_: str, evaluation_results_: str
             ) -> Union[EvaluationResult, EvaluationResults]:
-                return evaluator(runs, examples, evaluation_results)
+                return evaluator(list(runs), list(examples), list(evaluation_results))
 
             return _wrapper_super_inner(
                 f"Runs[] (Length={len(runs)})",

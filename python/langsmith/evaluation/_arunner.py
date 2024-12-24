@@ -858,10 +858,17 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         summary_evaluators: Sequence[SUMMARY_EVALUATOR_T],
     ) -> AsyncIterator[EvaluationResults]:
         runs, examples, evaluation_results = [], [], []
-        async for row in self.aget_results():
-            runs.append(row["run"])
-            examples.append(row["example"])
-            evaluation_results.append(row["evaluation_results"]["results"])
+
+        async_examples = aitertools.ensure_async_iterator(await self.aget_examples())
+        async for run, example in aitertools.async_zip(
+            self.aget_runs(), async_examples
+        ):
+            runs.append(run)
+            examples.append(example)
+
+        async for evaluation_result in self.aget_evaluation_results():
+            evaluation_results.append(evaluation_result["results"])
+
         aggregate_feedback = []
         project_id = self._get_experiment().id if self._upload_results else None
         current_context = rh.get_tracing_context()
