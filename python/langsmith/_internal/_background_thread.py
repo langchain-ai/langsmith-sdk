@@ -101,7 +101,7 @@ def _tracing_thread_drain_compressed_buffer(
     assert client.compressed_runs is not None
     with client.compressed_runs.lock:
         client.compressed_runs.compressor_writer.flush()
-        current_size = client.compressed_runs.buffer.getbuffer().nbytes
+        current_size = client.compressed_runs.buffer.tell()
 
         if size_limit is not None and size_limit <= 0:
             raise ValueError(f"size_limit must be positive; got {size_limit}")
