@@ -96,6 +96,14 @@ class AsyncClient:
     ) -> httpx.Response:
         """Make an async HTTP request with retries."""
         max_retries = cast(int, self._retry_config.get("max_retries", 3))
+
+        # Python requests library used by the normal Client filters out params with None values
+        # The httpx library does not. Filter them out here to keep behavior consistent
+        if 'params' in kwargs:
+            params = kwargs['params']
+            filtered_params = {k: v for k, v in params.items() if v is not None}
+            kwargs['params'] = filtered_params
+
         for attempt in range(max_retries):
             try:
                 response = await self._client.request(method, endpoint, **kwargs)
