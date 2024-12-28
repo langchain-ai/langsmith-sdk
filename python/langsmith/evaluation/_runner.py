@@ -534,12 +534,6 @@ def evaluate_existing(
     )
 
 
-class ExperimentResultRow(TypedDict):
-    run: schemas.Run
-    example: schemas.Example
-    evaluation_results: EvaluationResults
-
-
 class ExperimentResults:
     """Represents the results of an evaluate() call.
 
@@ -554,8 +548,8 @@ class ExperimentResults:
 
     def __init__(self, experiment_manager: _ExperimentManager, blocking: bool = True):
         self._manager = experiment_manager
-        self._results: List[ExperimentResultRow] = []
-        self._queue: queue.Queue[ExperimentResultRow] = queue.Queue()
+        self._results: List[schemas.ExperimentResultRow] = []
+        self._queue: queue.Queue[schemas.ExperimentResultRow] = queue.Queue()
         self._processing_complete = threading.Event()
         if not blocking:
             self._thread: Optional[threading.Thread] = threading.Thread(
@@ -570,7 +564,7 @@ class ExperimentResults:
     def experiment_name(self) -> str:
         return self._manager.experiment_name
 
-    def __iter__(self) -> Iterator[ExperimentResultRow]:
+    def __iter__(self) -> Iterator[schemas.ExperimentResultRow]:
         ix = 0
         while (
             not self._processing_complete.is_set()
@@ -1473,12 +1467,12 @@ class _ExperimentManager(_ExperimentManagerMixin):
             upload_results=self._upload_results,
         )
 
-    def get_results(self) -> Iterable[ExperimentResultRow]:
+    def get_results(self) -> Iterable[schemas.ExperimentResultRow]:
         """Return the traces, evaluation results, and associated examples."""
         for run, example, evaluation_results in zip(
             self.runs, self.examples, self.evaluation_results
         ):
-            yield ExperimentResultRow(
+            yield schemas.ExperimentResultRow(
                 run=run,
                 example=example,
                 evaluation_results=evaluation_results,
@@ -1544,9 +1538,9 @@ class _ExperimentManager(_ExperimentManagerMixin):
     def _run_evaluators(
         self,
         evaluators: Sequence[RunEvaluator],
-        current_results: ExperimentResultRow,
+        current_results: schemas.ExperimentResultRow,
         executor: cf.ThreadPoolExecutor,
-    ) -> ExperimentResultRow:
+    ) -> schemas.ExperimentResultRow:
         current_context = rh.get_tracing_context()
         metadata = {
             **(current_context["metadata"] or {}),
@@ -1619,7 +1613,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         reader = example.attachments[attachment]["reader"]
                         reader.seek(0)
 
-            return ExperimentResultRow(
+            return schemas.ExperimentResultRow(
                 run=run,
                 example=example,
                 evaluation_results=eval_results,
@@ -1629,7 +1623,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         self,
         evaluators: Sequence[RunEvaluator],
         max_concurrency: Optional[int] = None,
-    ) -> Iterable[ExperimentResultRow]:
+    ) -> Iterable[schemas.ExperimentResultRow]:
         """Run the evaluators on the prediction stream.
 
         Expects runs to be available in the manager.
@@ -1673,10 +1667,14 @@ class _ExperimentManager(_ExperimentManagerMixin):
     def _apply_summary_evaluators(
         self, summary_evaluators: Sequence[SUMMARY_EVALUATOR_T]
     ) -> Generator[EvaluationResults, None, None]:
-        runs, examples = [], []
+        runs, examples, evaluation_results = [], [], []
         for run, example in zip(self.runs, self.examples):
             runs.append(run)
             examples.append(example)
+
+        for evaluation_result in self.evaluation_results:
+            evaluation_results.append(evaluation_result["results"])
+
         aggregate_feedback = []
         with ls_utils.ContextThreadPoolExecutor() as executor:
             project_id = self._get_experiment().id if self._upload_results else None
@@ -1699,7 +1697,9 @@ class _ExperimentManager(_ExperimentManagerMixin):
             ):
                 for evaluator in summary_evaluators:
                     try:
-                        summary_eval_result = evaluator(runs, examples)
+                        summary_eval_result = evaluator(
+                            runs, examples, evaluation_results
+                        )
                         # TODO: Expose public API for this.
                         flattened_results = self.client._select_eval_results(
                             summary_eval_result,
@@ -1793,16 +1793,20 @@ def _wrap_summary_evaluators(
 
         @functools.wraps(evaluator)
         def _wrapper_inner(
-            runs: Sequence[schemas.Run], examples: Sequence[schemas.Example]
+            runs: Sequence[schemas.Run],
+            examples: Sequence[schemas.Example],
+            evaluation_results: Sequence[list[EvaluationResult]],
         ) -> Union[EvaluationResult, EvaluationResults]:
             @rh.traceable(name=eval_name)
             def _wrapper_super_inner(
-                runs_: str, examples_: str
+                runs_: str, examples_: str, evaluation_results_: str
             ) -> Union[EvaluationResult, EvaluationResults]:
-                return evaluator(list(runs), list(examples))
+                return evaluator(list(runs), list(examples), list(evaluation_results))
 
             return _wrapper_super_inner(
-                f"Runs[] (Length={len(runs)})", f"Examples[] (Length={len(examples)})"
+                f"Runs[] (Length={len(runs)})",
+                f"Examples[] (Length={len(examples)})",
+                f"EvaluationResults[] (Length={len(evaluation_results)})",
             )
 
         return _wrapper_inner
@@ -2173,7 +2177,7 @@ def _extract_code_evaluator_feedback_keys(func: Callable) -> list[str]:
 
 
 def _to_pandas(
-    results: list[ExperimentResultRow],
+    results: list[schemas.ExperimentResultRow],
     start: Optional[int] = 0,
     end: Optional[int] = None,
 ):
@@ -2190,7 +2194,7 @@ def _to_pandas(
 
 
 def _flatten_experiment_results(
-    results: list[ExperimentResultRow],
+    results: list[schemas.ExperimentResultRow],
     start: Optional[int] = 0,
     end: Optional[int] = None,
 ):
