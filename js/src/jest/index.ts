@@ -7,7 +7,7 @@ import { v4 } from "uuid";
 
 import { traceable } from "../traceable.js";
 import { RunTree, RunTreeConfig } from "../run_trees.js";
-import { KVMap, TracerSession } from "../schemas.js";
+import { Example, KVMap, TracerSession } from "../schemas.js";
 import { randomName } from "../evaluation/_random_name.js";
 import { Client } from "../client.js";
 import { LangSmithConflictError } from "../utils/error.js";
@@ -46,23 +46,25 @@ expect.extend({
   toBeSemanticCloseTo,
 });
 
-const objectHash = (obj: KVMap, depth = 0): any => {
+const objectHash = (obj: KVMap, depth = 0): string => {
   // Prevent infinite recursion
   if (depth > 50) {
-    return "[Max Depth Exceeded]";
+    throw new Error(
+      "Object is too deep to check equality for serialization. Please use a simpler example."
+    );
   }
 
   if (Array.isArray(obj)) {
-    return obj.map((item) => objectHash(item, depth + 1));
+    const arrayHash = obj.map((item) => objectHash(item, depth + 1)).join(",");
+    return crypto.createHash("sha256").update(arrayHash).digest("hex");
   }
 
   if (obj && typeof obj === "object") {
-    return Object.keys(obj)
+    const sortedHash = Object.keys(obj)
       .sort()
-      .reduce((result: KVMap, key) => {
-        result[key] = objectHash(obj[key], depth + 1);
-        return result;
-      }, {});
+      .map((key) => `${key}:${objectHash(obj[key], depth + 1)}`)
+      .join(",");
+    return crypto.createHash("sha256").update(sortedHash).digest("hex");
   }
 
   return crypto.createHash("sha256").update(JSON.stringify(obj)).digest("hex");
@@ -161,8 +163,7 @@ function wrapDescribeMethod(
        * the janky .enterWith.
        *
        * We also cannot do async setup in describe due to Jest restrictions.
-       * However, .run works and since the below function does not contain synchronously,
-       * it works.
+       * However, .run without asynchronous logic works.
        */
       void jestAsyncLocalStorageInstance.run(
         {
@@ -188,13 +189,13 @@ export type LangSmithJestTestWrapper<I, O> = (
   timeout?: number
 ) => void;
 
-function wrapTestMethod(method: (...args: any[]) => void) {
+function wrapTestMethod(method: (...args: any[]) => void | Promise<void>) {
   return function <
     I extends Record<string, any> = Record<string, any>,
     O extends Record<string, any> = Record<string, any>
   >(
-    params: { inputs: I; outputs: O } | string,
-    config?: Partial<RunTreeConfig>
+    params: { inputs: I; outputs: O },
+    config?: Partial<RunTreeConfig> & { n?: number }
   ): LangSmithJestTestWrapper<I, O> {
     // Due to https://github.com/jestjs/jest/issues/13653,
     // we must access the local store value here before
@@ -203,117 +204,131 @@ function wrapTestMethod(method: (...args: any[]) => void) {
     // This typing is wrong, but necessary to avoid lint errors
     // eslint-disable-next-line @typescript-eslint/no-misused-promises
     return async function (...args: any[]) {
-      return method(
-        args[0],
-        async () => {
-          if (context === undefined) {
-            throw new Error(
-              `Could not retrieve test context.\nPlease make sure you have tracing enabled and you are wrapping all of your test cases in an "ls.describe()" function.`
-            );
-          }
-          // Because of https://github.com/jestjs/jest/issues/13653, we have to do asynchronous setup
-          // within the test itself
-          if (!setupPromises.get(context.suiteUuid)) {
-            setupPromises.set(
-              context.suiteUuid,
-              runDatasetSetup(context.client, context.suiteName)
-            );
-          }
-          const { examples, dataset, createdAt, project, client } =
-            await setupPromises.get(context.suiteUuid);
-          const testInput: I =
-            typeof params === "string" ? ({} as I) : params.inputs;
-          const testOutput: O =
-            typeof params === "string" ? ({} as O) : params.outputs;
-          const inputHash = objectHash(testInput);
-          const outputHash = objectHash(testOutput ?? {});
-          if (trackingEnabled()) {
-            const missingFields = [];
-            if (examples === undefined) {
-              missingFields.push("examples");
-            }
-            if (dataset === undefined) {
-              missingFields.push("dataset");
-            }
-            if (project === undefined) {
-              missingFields.push("project");
-            }
-            if (client === undefined) {
-              missingFields.push("client");
-            }
-            if (missingFields.length > 0) {
+      let createExamplePromise: Promise<Example> | undefined;
+      const totalRuns = config?.n ?? 1;
+      for (let i = 0; i < totalRuns; i += 1) {
+        // Jest will not group under the same "describe" group if you await the test and
+        // total runs is greater than 1
+        void method(
+          `${args[0]} ${i}`,
+          async () => {
+            if (context === undefined) {
               throw new Error(
-                `Failed to initialize test tracking: Could not identify ${missingFields
-                  .map((field) => `"${field}"`)
-                  .join(
-                    ", "
-                  )} while syncing to LangSmith. Please contact us for help.`
+                `Could not retrieve test context.\nPlease make sure you have tracing enabled and you are wrapping all of your test cases in an "ls.describe()" function.`
               );
             }
-            const testClient = config?.client ?? client!;
-            let example = (examples ?? []).find((example: any) => {
-              return (
-                example.inputHash === inputHash &&
-                example.outputHash === outputHash
+            // Because of https://github.com/jestjs/jest/issues/13653, we have to do asynchronous setup
+            // within the test itself
+            if (!setupPromises.get(context.suiteUuid)) {
+              setupPromises.set(
+                context.suiteUuid,
+                runDatasetSetup(context.client, context.suiteName)
               );
-            });
-            if (example === undefined) {
-              const newExample = await testClient.createExample(
-                testInput,
-                testOutput,
-                {
-                  datasetId: dataset?.id,
-                  createdAt: new Date(createdAt ?? new Date()),
+            }
+            const { examples, dataset, createdAt, project, client } =
+              await setupPromises.get(context.suiteUuid);
+            const testInput: I = params.inputs;
+            const testOutput: O = params.outputs;
+            const inputHash = objectHash(testInput);
+            const outputHash = objectHash(testOutput ?? {});
+            if (trackingEnabled()) {
+              const missingFields = [];
+              if (examples === undefined) {
+                missingFields.push("examples");
+              }
+              if (dataset === undefined) {
+                missingFields.push("dataset");
+              }
+              if (project === undefined) {
+                missingFields.push("project");
+              }
+              if (client === undefined) {
+                missingFields.push("client");
+              }
+              if (missingFields.length > 0) {
+                throw new Error(
+                  `Failed to initialize test tracking: Could not identify ${missingFields
+                    .map((field) => `"${field}"`)
+                    .join(
+                      ", "
+                    )} while syncing to LangSmith. Please contact us for help.`
+                );
+              }
+              const testClient = config?.client ?? client!;
+              let example = (examples ?? []).find((example: any) => {
+                return (
+                  example.inputHash === inputHash &&
+                  example.outputHash === outputHash
+                );
+              });
+              if (example === undefined) {
+                // Avoid creating multiple of the same example
+                // when running the same test case multiple times
+                // Jest runs other tests serially
+                if (createExamplePromise === undefined) {
+                  createExamplePromise = testClient.createExample(
+                    testInput,
+                    testOutput,
+                    {
+                      datasetId: dataset?.id,
+                      createdAt: new Date(createdAt ?? new Date()),
+                    }
+                  );
                 }
+                const newExample = await createExamplePromise;
+                example = { ...newExample, inputHash, outputHash };
+              }
+
+              // What do I do here?
+              // examples.push(example);
+
+              // .enterWith is OK here
+              jestAsyncLocalStorageInstance.enterWith({
+                ...context,
+                currentExample: example,
+                client: testClient,
+              });
+              const traceableOptions = {
+                reference_example_id: example.id,
+                project_name: project!.name,
+                metadata: {
+                  ...config?.metadata,
+                  example_version: example.modified_at
+                    ? new Date(example.modified_at).toISOString()
+                    : new Date(example.created_at).toISOString(),
+                },
+                client: testClient,
+                tracingEnabled: true,
+                name: "Unit test",
+              };
+              // Pass inputs into traceable so tracing works correctly but
+              // provide both to the user-defined test function
+              const tracedFunction = traceable(
+                async (_: I) => {
+                  return args[1]({
+                    inputs: testInput,
+                    outputs: testOutput,
+                  });
+                },
+                { ...traceableOptions, ...config }
               );
-              example = { ...newExample, inputHash, outputHash };
+              await (tracedFunction as any)(testInput);
+              await testClient.awaitPendingTraceBatches();
+            } else {
+              // .enterWith is OK here
+              jestAsyncLocalStorageInstance.enterWith({
+                ...context,
+                currentExample: { inputs: testInput, outputs: testOutput },
+              });
+              await args[1]({
+                inputs: testInput,
+                outputs: testOutput,
+              });
             }
-            // .enterWith is OK here
-            jestAsyncLocalStorageInstance.enterWith({
-              ...context,
-              currentExample: example,
-              client: testClient,
-            });
-            const traceableOptions = {
-              reference_example_id: example.id,
-              project_name: project!.name,
-              metadata: {
-                ...config?.metadata,
-                example_version: example.modified_at
-                  ? new Date(example.modified_at).toISOString()
-                  : new Date(example.created_at).toISOString(),
-              },
-              client: testClient,
-              tracingEnabled: true,
-              name: "Unit test",
-            };
-            // Pass inputs into traceable so tracing works correctly but
-            // provide both to the user-defined test function
-            const tracedFunction = traceable(
-              async (_: I) => {
-                return args[1]({
-                  inputs: testInput,
-                  outputs: testOutput,
-                });
-              },
-              { ...traceableOptions, ...config }
-            );
-            await (tracedFunction as any)(testInput);
-            await testClient.awaitPendingTraceBatches();
-          } else {
-            // .enterWith is OK here
-            jestAsyncLocalStorageInstance.enterWith({
-              ...context,
-              currentExample: { inputs: testInput, outputs: testOutput },
-            });
-            await args[1]({
-              inputs: testInput,
-              outputs: testOutput,
-            });
-          }
-        },
-        ...args.slice(2)
-      );
+          },
+          ...args.slice(2)
+        );
+      }
     };
   };
 }

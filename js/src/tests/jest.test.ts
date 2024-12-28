@@ -38,8 +38,8 @@ ls.describe("js unit testing test demo", () => {
     180_000
   );
 
-  ls.test({ inputs: { foo: "bar" }, outputs: { foo: "bar" } })(
-    "Should kind of succeed with some defined evaluator",
+  ls.test({ inputs: { foo: "bar" }, outputs: { foo: "bar" } }, { n: 3 })(
+    "Should work with repetitions",
     async ({ inputs: _inputs, outputs: _outputs }) => {
       const myApp = () => {
         return { bar: "goodval" };
