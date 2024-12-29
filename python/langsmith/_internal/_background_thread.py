@@ -19,7 +19,6 @@ from typing import (
 
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
-
 from langsmith._internal._constants import (
     _AUTO_SCALE_DOWN_NEMPTY_TRIGGER,
     _AUTO_SCALE_UP_NTHREADS_LIMIT,
@@ -157,6 +156,7 @@ def _tracing_thread_handle_batch(
         for _ in batch:
             tracing_queue.task_done()
 
+
 def get_size_limit_from_env() -> Optional[int]:
     size_limit_str = ls_utils.get_env_var(
         "BATCH_INGEST_SIZE_LIMIT",
@@ -165,8 +165,12 @@ def get_size_limit_from_env() -> Optional[int]:
         try:
             return int(size_limit_str)
         except ValueError:
-            logger.warning("Invalid value for BATCH_INGEST_SIZE_LIMIT: %s, continuing with default", size_limit_str)
+            logger.warning(
+                f"Invalid value for BATCH_INGEST_SIZE_LIMIT: {size_limit_str}, "
+                "continuing with default"
+            )
     return None
+
 
 def _ensure_ingest_config(
     info: ls_schemas.LangSmithInfo,
