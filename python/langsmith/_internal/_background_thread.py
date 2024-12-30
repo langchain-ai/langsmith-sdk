@@ -13,6 +13,7 @@ from typing import (
     TYPE_CHECKING,
     List,
     Optional,
+    Tuple,
     Union,
     cast,
 )
@@ -97,10 +98,13 @@ def _tracing_thread_drain_queue(
 
 def _tracing_thread_drain_compressed_buffer(
     client: Client, size_limit: int = 100, size_limit_bytes: int | None = 20_971_520
-) -> Optional[io.BytesIO]:
+) -> Tuple[Optional[io.BytesIO], Optional[Tuple[int, int]]]:
     assert client.compressed_runs is not None
     with client.compressed_runs.lock:
+        client.compressed_runs.compressor_writer.flush()
         current_size = client.compressed_runs.buffer.tell()
+
+        pre_compressed_size = client.compressed_runs.uncompressed_size
 
         if size_limit is not None and size_limit <= 0:
             raise ValueError(f"size_limit must be positive; got {size_limit}")
@@ -112,7 +116,7 @@ def _tracing_thread_drain_compressed_buffer(
         if (size_limit_bytes is None or current_size < size_limit_bytes) and (
             size_limit is None or client.compressed_runs.run_count < size_limit
         ):
-            return None
+            return None, None
 
         # Write final boundary and close compression stream
         client.compressed_runs.compressor_writer.write(f"--{_BOUNDARY}--\r\n".encode())
@@ -120,10 +124,12 @@ def _tracing_thread_drain_compressed_buffer(
 
         filled_buffer = client.compressed_runs.buffer
 
+        compressed_runs_info = (pre_compressed_size, current_size)
+
         client.compressed_runs.reset()
 
     filled_buffer.seek(0)
-    return filled_buffer
+    return (filled_buffer, compressed_runs_info)
 
 
 def _tracing_thread_handle_batch(
@@ -283,35 +289,44 @@ def tracing_control_thread_func_compress_parallel(
             continue
         client._data_available_event.clear()
 
-        data_stream = _tracing_thread_drain_compressed_buffer(
+        data_stream, compressed_runs_info = _tracing_thread_drain_compressed_buffer(
             client, size_limit, size_limit_bytes
         )
 
         if data_stream is not None:
             try:
                 future = HTTP_REQUEST_THREAD_POOL.submit(
-                    client._send_compressed_multipart_req, data_stream
+                    client._send_compressed_multipart_req,
+                    data_stream,
+                    compressed_runs_info,
                 )
                 client._futures.add(future)
             except RuntimeError:
-                client._send_compressed_multipart_req(data_stream)
+                client._send_compressed_multipart_req(data_stream, compressed_runs_info)
 
     # Drain the buffer on exit
     try:
-        final_data_stream = _tracing_thread_drain_compressed_buffer(
-            client, size_limit=1, size_limit_bytes=1
-        )  # Force final drain
+        final_data_stream, compressed_runs_info = (
+            _tracing_thread_drain_compressed_buffer(
+                client, size_limit=1, size_limit_bytes=1
+            )  # Force final drain
+        )
         if final_data_stream is not None:
             try:
                 cf.wait(
                     [
                         HTTP_REQUEST_THREAD_POOL.submit(
-                            client._send_compressed_multipart_req, final_data_stream
+                            client._send_compressed_multipart_req,
+                            final_data_stream,
+                            compressed_runs_info,
                         )
                     ]
                 )
             except RuntimeError:
-                client._send_compressed_multipart_req(final_data_stream)
+                client._send_compressed_multipart_req(
+                    final_data_stream,
+                    compressed_runs_info,
+                )
 
     except Exception:
         logger.error("Error in final cleanup", exc_info=True)
