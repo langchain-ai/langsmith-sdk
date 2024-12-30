@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import atexit
+import contextvars
 import datetime
 import functools
 import inspect
@@ -466,17 +467,30 @@ class _LangSmithTestSuite:
             )
 
     def sync_example(
-        self, example_id: uuid.UUID, inputs: dict, outputs: dict, metadata: dict
+        self,
+        example_id: uuid.UUID,
+        *,
+        inputs: Optional[dict] = None,
+        outputs: Optional[dict] = None,
+        metadata: Optional[dict] = None,
     ) -> None:
         self._executor.submit(
-            self._sync_example, example_id, inputs, outputs, metadata.copy()
+            self._sync_example,
+            example_id,
+            inputs,
+            outputs,
+            metadata.copy() if metadata else {},
         )
 
     def _sync_example(
-        self, example_id: uuid.UUID, inputs: dict, outputs: dict, metadata: dict
+        self,
+        example_id: uuid.UUID,
+        inputs: Optional[dict],
+        outputs: Optional[dict],
+        metadata: dict,
     ) -> None:
-        inputs_ = _serde_example_values(inputs)
-        outputs_ = _serde_example_values(outputs)
+        inputs_ = _serde_example_values(inputs) if inputs else inputs
+        outputs_ = _serde_example_values(outputs) if outputs else outputs
         try:
             example = self.client.read_example(example_id=example_id)
             if (
@@ -505,6 +519,22 @@ class _LangSmithTestSuite:
 
     def wait(self):
         self._executor.shutdown(wait=True)
+
+
+class _TestCase:
+    def __init__(self, test_suite: _LangSmithTestSuite, example_id: uuid.UUID) -> None:
+        self.test_suite = test_suite
+        self.example_id = example_id
+
+    def sync_example(
+        self, *, inputs: Optional[dict] = None, outputs: Optional[dict] = None
+    ) -> None:
+        return self.test_suite.sync_example(
+            self.example_id, inputs=inputs, outputs=outputs
+        )
+
+
+_TEST_CASE = contextvars.ContextVar[Optional[_TestCase]]("_TEST_CASE", default=None)
 
 
 class _UTExtra(TypedDict, total=False):
@@ -541,8 +571,8 @@ def _ensure_example(
     example_id = langtest_extra["id"] or example_id
     test_suite.sync_example(
         example_id,
-        inputs,
-        outputs,
+        inputs=inputs,
+        outputs=outputs,
         metadata={"signature": _get_test_repr(func, signature), "name": example_name},
     )
     return test_suite, example_id
@@ -554,6 +584,7 @@ def _run_test(
     test_suite, example_id = _ensure_example(
         func, *test_args, **test_kwargs, langtest_extra=langtest_extra
     )
+    _TEST_CASE.set(_TestCase(test_suite, example_id))
     run_id = uuid.uuid4()
 
     def _test():
@@ -678,3 +709,32 @@ async def _arun_test(
 
 # For backwards compatibility
 unit = test
+
+
+def add_test_inputs(inputs: dict, /) -> None:
+    run_tree = rh.get_current_run_tree()
+    if not run_tree:
+        msg = ""
+        raise ValueError(msg)
+    test_case = _TEST_CASE.get()
+    if not test_case:
+        msg = ""
+        raise ValueError(msg)
+    run_tree.add_inputs(inputs)
+    test_case.sync_example(inputs=inputs)
+
+
+def add_test_outputs(outputs: dict, /) -> None:
+    run_tree = rh.get_current_run_tree()
+    if not run_tree:
+        msg = ""
+        raise ValueError(msg)
+    run_tree.add_outputs(outputs)
+
+
+def add_test_reference_outputs(outputs: dict, /) -> None:
+    test_case = _TEST_CASE.get()
+    if not test_case:
+        msg = ""
+        raise ValueError(msg)
+    test_case.sync_example(outputs=outputs)
