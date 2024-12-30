@@ -1292,7 +1292,7 @@ class Client:
         ):
             if self._pyo3_client is not None:
                 self._pyo3_client.create_run(run_create)
-            if self.compressed_runs is not None:
+            elif self.compressed_runs is not None:
                 serialized_op = serialize_run_dict("post", run_create)
                 multipart_form = (
                     serialized_run_operation_to_multipart_parts_and_context(
