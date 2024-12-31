@@ -1821,6 +1821,8 @@ class Client:
         _context: str = ""
 
         for api_url, api_key in self._write_api_urls.items():
+            data_stream.seek(0)
+
             for idx in range(1, attempts + 1):
                 try:
                     headers = {
