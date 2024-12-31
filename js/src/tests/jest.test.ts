@@ -64,24 +64,27 @@ ls.describe("js unit testing test demo", () => {
     180_000
   );
 
-  ls.test.each([
-    {
-      inputs: {
-        one: "uno",
+  ls.test.each(
+    [
+      {
+        inputs: {
+          one: "uno",
+        },
+        outputs: {
+          ein: "un",
+        },
       },
-      outputs: {
-        ein: "un",
+      {
+        inputs: {
+          two: "dos",
+        },
+        outputs: {
+          zwei: "deux",
+        },
       },
-    },
-    {
-      inputs: {
-        two: "dos",
-      },
-      outputs: {
-        zwei: "deux",
-      },
-    },
-  ])("Does the thing", async ({ inputs: _inputs, outputs: _outputs }) => {
+    ],
+    { n: 3, metadata: { something: "cool" } }
+  )("Does the thing", async ({ inputs: _inputs, outputs: _outputs }) => {
     const myApp = () => {
       return { bar: "bad" };
     };

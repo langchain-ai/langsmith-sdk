@@ -7,7 +7,7 @@ import { v4 } from "uuid";
 
 import { traceable } from "../traceable.js";
 import { RunTree, RunTreeConfig } from "../run_trees.js";
-import { Example, KVMap, TracerSession } from "../schemas.js";
+import { KVMap, TracerSession } from "../schemas.js";
 import { randomName } from "../evaluation/_random_name.js";
 import { Client } from "../client.js";
 import { LangSmithConflictError } from "../utils/error.js";
@@ -105,6 +105,7 @@ export type LangSmithJestDescribeWrapper = (
 ) => void;
 
 const setupPromises = new Map();
+const createExamplePromises = new Map();
 
 async function runDatasetSetup(testClient: Client, datasetName: string) {
   let storageValue;
@@ -204,13 +205,12 @@ function wrapTestMethod(method: (...args: any[]) => void | Promise<void>) {
     // This typing is wrong, but necessary to avoid lint errors
     // eslint-disable-next-line @typescript-eslint/no-misused-promises
     return async function (...args: any[]) {
-      let createExamplePromise: Promise<Example> | undefined;
       const totalRuns = config?.n ?? 1;
       for (let i = 0; i < totalRuns; i += 1) {
         // Jest will not group under the same "describe" group if you await the test and
         // total runs is greater than 1
         void method(
-          `${args[0]} ${i}`,
+          `${args[0]}, iteration ${i}`,
           async () => {
             if (context === undefined) {
               throw new Error(
@@ -265,22 +265,19 @@ function wrapTestMethod(method: (...args: any[]) => void | Promise<void>) {
                 // Avoid creating multiple of the same example
                 // when running the same test case multiple times
                 // Jest runs other tests serially
-                if (createExamplePromise === undefined) {
-                  createExamplePromise = testClient.createExample(
-                    testInput,
-                    testOutput,
-                    {
+                const exampleKey = inputHash + ":" + outputHash;
+                if (createExamplePromises.get(exampleKey) === undefined) {
+                  createExamplePromises.set(
+                    exampleKey,
+                    testClient.createExample(testInput, testOutput, {
                       datasetId: dataset?.id,
                       createdAt: new Date(createdAt ?? new Date()),
-                    }
+                    })
                   );
                 }
-                const newExample = await createExamplePromise;
+                const newExample = await createExamplePromises.get(exampleKey);
                 example = { ...newExample, inputHash, outputHash };
               }
-
-              // What do I do here?
-              // examples.push(example);
 
               // .enterWith is OK here
               jestAsyncLocalStorageInstance.enterWith({
@@ -334,7 +331,8 @@ function wrapTestMethod(method: (...args: any[]) => void | Promise<void>) {
 }
 
 function eachMethod<I extends KVMap, O extends KVMap>(
-  table: { inputs: I; outputs: O }[]
+  table: { inputs: I; outputs: O }[],
+  config?: Partial<RunTreeConfig> & { n?: number }
 ) {
   return function (
     name: string,
@@ -343,7 +341,11 @@ function eachMethod<I extends KVMap, O extends KVMap>(
   ) {
     for (let i = 0; i < table.length; i += 1) {
       const example = table[i];
-      wrapTestMethod(test)<I, O>(example)(`${name} ${i}`, fn, timeout);
+      wrapTestMethod(test)<I, O>(example, config)(
+        `${name}, item ${i}`,
+        fn,
+        timeout
+      );
     }
   };
 }
