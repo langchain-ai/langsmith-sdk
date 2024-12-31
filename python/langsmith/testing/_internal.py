@@ -11,7 +11,7 @@ import uuid
 import warnings
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Callable, Optional, Sequence, Tuple, TypeVar, overload
+from typing import Any, Callable, Optional, Sequence, Tuple, TypeVar, Union, overload
 
 from typing_extensions import TypedDict
 
@@ -22,6 +22,7 @@ from langsmith import run_trees as rt
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._internal import _orjson
+from langsmith.client import ID_TYPE
 
 try:
     import pytest  # type: ignore
@@ -517,6 +518,11 @@ class _LangSmithTestSuite:
         if example.modified_at:
             self.update_version(example.modified_at)
 
+    def _submit_feedback(self, run_id: Optional[ID_TYPE], key: str, **kwargs: Any):
+        self._executor.submit(
+            self.client.create_feedback, run_id=run_id, key=key, **kwargs
+        )
+
     def wait(self):
         self._executor.shutdown(wait=True)
 
@@ -711,7 +717,7 @@ async def _arun_test(
 unit = test
 
 
-def add_test_inputs(inputs: dict, /) -> None:
+def log_inputs(inputs: dict, /) -> None:
     run_tree = rh.get_current_run_tree()
     if not run_tree:
         msg = ""
@@ -724,7 +730,7 @@ def add_test_inputs(inputs: dict, /) -> None:
     test_case.sync_example(inputs=inputs)
 
 
-def add_test_outputs(outputs: dict, /) -> None:
+def log_outputs(outputs: dict, /) -> None:
     run_tree = rh.get_current_run_tree()
     if not run_tree:
         msg = ""
@@ -732,9 +738,29 @@ def add_test_outputs(outputs: dict, /) -> None:
     run_tree.add_outputs(outputs)
 
 
-def add_test_reference_outputs(outputs: dict, /) -> None:
+def log_reference_outputs(outputs: dict, /) -> None:
     test_case = _TEST_CASE.get()
     if not test_case:
         msg = ""
         raise ValueError(msg)
     test_case.sync_example(outputs=outputs)
+
+
+def log_feedback(
+    key: str,
+    *,
+    score: Optional[Union[int, bool, float]] = None,
+    value: Optional[Union[str, int, float, bool]] = None,
+    **kwargs: Any,
+) -> None:
+    run_tree = rh.get_current_run_tree()
+    if not run_tree:
+        msg = ""
+        raise ValueError(msg)
+    test_case = _TEST_CASE.get()
+    if not test_case:
+        msg = ""
+        raise ValueError(msg)
+    test_case.test_suite._submit_feedback(
+        run_tree.trace_id, key=key, score=score, value=value, **kwargs
+    )
