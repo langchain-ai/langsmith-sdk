@@ -1,6 +1,6 @@
 import uuid
 
-from langsmith._testing import _get_id, _serde_example_values
+from langsmith.testing._internal import _get_id, _serde_example_values
 
 
 def test__serde_example_values():
