@@ -1484,19 +1484,30 @@ def _get_inputs_safe(
         return {"args": args, "kwargs": kwargs}
 
 
-@functools.lru_cache(maxsize=1000)
-def _attachment_args(signature: inspect.Signature) -> Set[str]:
-    def _is_attachment(param: inspect.Parameter) -> bool:
-        if param.annotation == schemas.Attachment or (
-            get_origin(param.annotation) == Annotated
-            and any(arg == schemas.Attachment for arg in get_args(param.annotation))
-        ):
-            return True
-        return False
+def _is_attachment(param: inspect.Parameter) -> bool:
+    return param.annotation == schemas.Attachment or (
+        get_origin(param.annotation) == Annotated
+        and any(arg == schemas.Attachment for arg in get_args(param.annotation))
+    )
 
+
+def _attachment_args_helper(signature: inspect.Signature) -> Set[str]:
     return {
         name for name, param in signature.parameters.items() if _is_attachment(param)
     }
+
+
+@functools.lru_cache(maxsize=1000)
+def _cached_attachment_args(signature: inspect.Signature) -> Set[str]:
+    return _attachment_args_helper(signature)
+
+
+def _attachment_args(signature: inspect.Signature) -> Set[str]:
+    # Caching signatures fails if there's unhashable default values.
+    try:
+        return _cached_attachment_args(signature)
+    except TypeError:
+        return _attachment_args_helper(signature)
 
 
 def _get_inputs_and_attachments_safe(
@@ -1515,7 +1526,7 @@ def _get_inputs_and_attachments_safe(
             return inputs, attachments
         return inferred, {}
     except BaseException as e:
-        LOGGER.debug(f"Failed to get inputs for {signature}: {e}")
+        LOGGER.warning(f"Failed to get inputs for {signature}: {e}")
         return {"args": args, "kwargs": kwargs}, {}
 
 
