@@ -1488,15 +1488,18 @@ async def test_aevaluate_with_attachments(langchain_client: Client) -> None:
         data_type=DataType.kv,
     )
 
-    example = ExampleUploadWithAttachments(
-        inputs={"question": "What is shown in the image?"},
-        outputs={"answer": "test image"},
-        attachments={
-            "image": ("image/png", b"fake image data for testing"),
-        },
-    )
+    examples = [
+        ExampleUploadWithAttachments(
+            inputs={"question": "What is shown in the image?", "index": i},
+            outputs={"answer": "test image"},
+            attachments={
+                "image": ("text/plain", bytes(f"data: {i}", "utf-8")),
+            },
+        )
+        for i in range(10)
+    ]
 
-    langchain_client.upload_examples_multipart(dataset_id=dataset.id, uploads=[example])
+    langchain_client.upload_examples_multipart(dataset_id=dataset.id, uploads=examples)
 
     async def target(
         inputs: Dict[str, Any], attachments: Dict[str, Any]
@@ -1505,34 +1508,24 @@ async def test_aevaluate_with_attachments(langchain_client: Client) -> None:
         assert "image" in attachments
         assert "presigned_url" in attachments["image"]
         image_data = attachments["image"]["reader"]
-        assert image_data.read() == b"fake image data for testing"
+        assert image_data.read() == bytes(f"data: {inputs['index']}", "utf-8")
         return {"answer": "test image"}
 
     async def evaluator_1(
-        outputs: dict, reference_outputs: dict, attachments: dict
-    ) -> Dict[str, Any]:
+        inputs: dict, outputs: dict, reference_outputs: dict, attachments: dict
+    ) -> bool:
         assert "image" in attachments
         assert "presigned_url" in attachments["image"]
         image_data = attachments["image"]["reader"]
-        assert image_data.read() == b"fake image data for testing"
-        return {
-            "score": float(
-                reference_outputs.get("answer") == outputs.get("answer")  # type: ignore
-            )
-        }
+        return image_data.read() == bytes(f"data: {inputs['index']}", "utf-8")
 
     async def evaluator_2(
-        outputs: dict, reference_outputs: dict, attachments: dict
-    ) -> Dict[str, Any]:
+        inputs: dict, outputs: dict, reference_outputs: dict, attachments: dict
+    ) -> bool:
         assert "image" in attachments
         assert "presigned_url" in attachments["image"]
         image_data = attachments["image"]["reader"]
-        assert image_data.read() == b"fake image data for testing"
-        return {
-            "score": float(
-                reference_outputs.get("answer") == outputs.get("answer")  # type: ignore
-            )
-        }
+        return image_data.read() == bytes(f"data: {inputs['index']}", "utf-8")
 
     results = await langchain_client.aevaluate(
         target,
@@ -1542,7 +1535,7 @@ async def test_aevaluate_with_attachments(langchain_client: Client) -> None:
         max_concurrency=3,
     )
 
-    assert len(results) == 2
+    assert len(results) == 20
     async for result in results:
         assert result["evaluation_results"]["results"][0].score == 1.0
         assert result["evaluation_results"]["results"][1].score == 1.0
