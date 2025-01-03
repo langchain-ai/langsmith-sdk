@@ -1,4 +1,6 @@
+import { test } from "@jest/globals";
 import { AsyncLocalStorage } from "node:async_hooks";
+
 import * as ls from "../jest/index.js";
 import { type SimpleEvaluator } from "../jest/index.js";
 
@@ -32,10 +34,9 @@ ls.describe("js unit testing test demo", () => {
         return outputs;
       };
       const res = myApp();
-      await expect(res).gradedBy(myEvaluator).toBeGreaterThanOrEqual(0.5);
+      await ls.expect(res).gradedBy(myEvaluator).toBeGreaterThanOrEqual(0.5);
       return res;
-    },
-    180_000
+    }
   );
 
   ls.test({ inputs: { foo: "bar" }, outputs: { foo: "bar" } }, { n: 3 })(
@@ -45,10 +46,9 @@ ls.describe("js unit testing test demo", () => {
         return { bar: "goodval" };
       };
       const res = myApp();
-      await expect(res).gradedBy(myEvaluator).toBeGreaterThanOrEqual(0.5);
+      await ls.expect(res).gradedBy(myEvaluator).toBeGreaterThanOrEqual(0.5);
       return res;
-    },
-    180_000
+    }
   );
 
   ls.test({ inputs: { foo: "bad" }, outputs: { baz: "qux" } })(
@@ -58,10 +58,12 @@ ls.describe("js unit testing test demo", () => {
         return { bar: "bad" };
       };
       const res = myApp();
-      await expect(res).gradedBy(myEvaluator).not.toBeGreaterThanOrEqual(0.5);
+      await ls
+        .expect(res)
+        .gradedBy(myEvaluator)
+        .not.toBeGreaterThanOrEqual(0.5);
       return res;
-    },
-    180_000
+    }
   );
 
   ls.test.each(
@@ -89,7 +91,34 @@ ls.describe("js unit testing test demo", () => {
       return { bar: "bad" };
     };
     const res = myApp();
-    await expect(res).gradedBy(myEvaluator).not.toBeGreaterThanOrEqual(0.5);
+    await ls.expect(res).gradedBy(myEvaluator).not.toBeGreaterThanOrEqual(0.5);
     return res;
+  });
+
+  test("Should test absolute closeness custom matcher", async () => {
+    await ls.expect("foobar").toBeAbsoluteCloseTo("foobaz", {
+      threshold: 3,
+    });
+    await ls.expect("foobar").not.toBeAbsoluteCloseTo("foobaz", {
+      threshold: 0,
+    });
+    await ls.expect("foobar").not.toBeAbsoluteCloseTo("barfoo", {
+      threshold: 3,
+    });
+  });
+
+  test("Should test relative closeness custom matcher", async () => {
+    await ls.expect("0123456789").toBeRelativeCloseTo("1123456789", {
+      threshold: 0.1,
+    });
+    await ls.expect("0123456789").not.toBeRelativeCloseTo("111111111", {
+      threshold: 0.1,
+    });
+    await ls.expect("0123456789").not.toBeRelativeCloseTo("1", {
+      threshold: 0,
+    });
+    await ls.expect("0123456789").toBeRelativeCloseTo("1", {
+      threshold: 1,
+    });
   });
 });

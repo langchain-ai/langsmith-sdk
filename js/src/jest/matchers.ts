@@ -25,13 +25,24 @@ function levenshteinDistance(a: string, b: string): number {
   return matrix[b.length][a.length];
 }
 
+export type RelativeCloseToMatcherOptions = {
+  threshold?: number;
+  algorithm?: "levenshtein";
+};
+
 export async function toBeRelativeCloseTo(
   this: MatcherContext,
   received: string,
   expected: string,
-  options: { threshold?: number; algorithm?: "levenshtein" } = {}
+  options: RelativeCloseToMatcherOptions = {}
 ) {
   const { threshold = 0.1, algorithm = "levenshtein" } = options;
+
+  if (threshold < 0 || threshold > 1) {
+    throw new Error(
+      "Relative distance is normalized, and threshold must be between 0 and 1."
+    );
+  }
 
   let distance: number;
   let maxLength: number;
@@ -58,11 +69,16 @@ export async function toBeRelativeCloseTo(
   };
 }
 
+export type AbsoluteCloseToMatcherOptions = {
+  threshold?: number;
+  algorithm?: "levenshtein";
+};
+
 export async function toBeAbsoluteCloseTo(
   this: MatcherContext,
   received: string,
   expected: string,
-  options: { threshold?: number; algorithm?: "levenshtein" } = {}
+  options: AbsoluteCloseToMatcherOptions = {}
 ) {
   const { threshold = 3, algorithm = "levenshtein" } = options;
 
@@ -87,22 +103,24 @@ export async function toBeAbsoluteCloseTo(
   };
 }
 
+export type SemanticCloseToMatcherOptions = {
+  embeddings: { embedQuery: (query: string) => number[] | Promise<number[]> };
+  threshold?: number;
+  algorithm?: "cosine" | "dot-product";
+};
+
 export async function toBeSemanticCloseTo(
   this: MatcherContext,
   received: string,
   expected: string,
-  options: {
-    threshold?: number;
-    embedding: { embedQuery: (query: string) => number[] | Promise<number[]> };
-    algorithm?: "cosine" | "dot-product";
-  }
+  options: SemanticCloseToMatcherOptions
 ) {
-  const { threshold = 0.2, embedding, algorithm = "cosine" } = options;
+  const { threshold = 0.2, embeddings, algorithm = "cosine" } = options;
 
   // Get embeddings for both strings
   const [receivedEmbedding, expectedEmbedding] = await Promise.all([
-    embedding.embedQuery(received),
-    embedding.embedQuery(expected),
+    embeddings.embedQuery(received),
+    embeddings.embedQuery(expected),
   ]);
 
   // Calculate similarity based on chosen algorithm

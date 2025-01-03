@@ -15,22 +15,49 @@ import {
   toBeRelativeCloseTo,
   toBeAbsoluteCloseTo,
   toBeSemanticCloseTo,
+  type AbsoluteCloseToMatcherOptions,
+  type SemanticCloseToMatcherOptions,
+  type RelativeCloseToMatcherOptions,
 } from "./matchers.js";
 import { jestAsyncLocalStorageInstance, trackingEnabled } from "./globals.js";
 import { wrapExpect } from "./vendor/chain.js";
 import type { SimpleEvaluator } from "./vendor/gradedBy.js";
 
+expect.extend({
+  toBeRelativeCloseTo,
+  toBeAbsoluteCloseTo,
+  toBeSemanticCloseTo,
+});
+
 declare global {
   namespace jest {
     interface AsymmetricMatchers {
-      toBeRelativeCloseTo(expected: string, options?: any): void;
-      toBeAbsoluteCloseTo(expected: string, options?: any): void;
-      toBeSemanticCloseTo(expected: string, options?: any): Promise<void>;
+      toBeRelativeCloseTo(
+        expected: string,
+        options?: RelativeCloseToMatcherOptions
+      ): Promise<void>;
+      toBeAbsoluteCloseTo(
+        expected: string,
+        options?: AbsoluteCloseToMatcherOptions
+      ): Promise<void>;
+      toBeSemanticCloseTo(
+        expected: string,
+        options?: SemanticCloseToMatcherOptions
+      ): Promise<void>;
     }
     interface Matchers<R> {
-      toBeRelativeCloseTo(expected: string, options?: any): R;
-      toBeAbsoluteCloseTo(expected: string, options?: any): R;
-      toBeSemanticCloseTo(expected: string, options?: any): Promise<R>;
+      toBeRelativeCloseTo(
+        expected: string,
+        options?: RelativeCloseToMatcherOptions
+      ): Promise<R>;
+      toBeAbsoluteCloseTo(
+        expected: string,
+        options?: AbsoluteCloseToMatcherOptions
+      ): Promise<R>;
+      toBeSemanticCloseTo(
+        expected: string,
+        options?: SemanticCloseToMatcherOptions
+      ): Promise<R>;
       gradedBy(evaluator: SimpleEvaluator): jest.Matchers<Promise<R>> & {
         not: jest.Matchers<Promise<R>>;
         resolves: jest.Matchers<Promise<R>>;
@@ -39,12 +66,6 @@ declare global {
     }
   }
 }
-
-expect.extend({
-  toBeRelativeCloseTo,
-  toBeAbsoluteCloseTo,
-  toBeSemanticCloseTo,
-});
 
 const objectHash = (obj: KVMap, depth = 0): string => {
   // Prevent infinite recursion
@@ -190,7 +211,7 @@ export type LangSmithJestTestWrapper<I, O> = (
   timeout?: number
 ) => void;
 
-function wrapTestMethod(method: (...args: any[]) => void | Promise<void>) {
+function wrapTestMethod(method: (...args: any[]) => void) {
   return function <
     I extends Record<string, any> = Record<string, any>,
     O extends Record<string, any> = Record<string, any>
@@ -202,15 +223,18 @@ function wrapTestMethod(method: (...args: any[]) => void | Promise<void>) {
     // we must access the local store value here before
     // entering an async context
     const context = jestAsyncLocalStorageInstance.getStore();
-    // This typing is wrong, but necessary to avoid lint errors
     // eslint-disable-next-line @typescript-eslint/no-misused-promises
-    return async function (...args: any[]) {
+    return async function (
+      name: string,
+      testFn: (data: { inputs: I; outputs: O }) => unknown | Promise<unknown>,
+      timeout?: number
+    ) {
       const totalRuns = config?.n ?? 1;
       for (let i = 0; i < totalRuns; i += 1) {
         // Jest will not group under the same "describe" group if you await the test and
         // total runs is greater than 1
         void method(
-          `${args[0]}, iteration ${i}`,
+          `${name}, iteration ${i}`,
           async () => {
             if (context === undefined) {
               throw new Error(
@@ -302,7 +326,7 @@ function wrapTestMethod(method: (...args: any[]) => void | Promise<void>) {
               // provide both to the user-defined test function
               const tracedFunction = traceable(
                 async (_: I) => {
-                  return args[1]({
+                  return testFn({
                     inputs: testInput,
                     outputs: testOutput,
                   });
@@ -317,13 +341,13 @@ function wrapTestMethod(method: (...args: any[]) => void | Promise<void>) {
                 ...context,
                 currentExample: { inputs: testInput, outputs: testOutput },
               });
-              await args[1]({
+              await testFn({
                 inputs: testInput,
                 outputs: testOutput,
               });
             }
           },
-          ...args.slice(2)
+          timeout
         );
       }
     };
@@ -363,6 +387,9 @@ export {
   lsTest as it,
   lsDescribe as describe,
   wrappedExpect as expect,
+  toBeRelativeCloseTo,
+  toBeAbsoluteCloseTo,
+  toBeSemanticCloseTo,
 };
 
 export { type SimpleEvaluator };
