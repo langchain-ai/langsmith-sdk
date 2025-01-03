@@ -868,7 +868,7 @@ def log_feedback(
         ...     expected = 2
         ...     result = foo(x, y)
         ...     testing.log_feedback(key="right_type", score=isinstance(result, int))
-        ...     assert restul == expected
+        ...     assert result == expected
     """
     if feedback and any((key, score, value)):
         msg = "Must specify one of 'feedback' and ('key', 'score', 'value'), not both."
@@ -898,10 +898,9 @@ def log_feedback(
     ):
         run_id = run_tree.metadata["reference_run_id"]
         run_tree.add_outputs(feedback)
+        kwargs["source_run_id"] = run_tree.id
     else:
         run_id = run_tree.trace_id
-        print(run_tree.session_name)
-        print(run_tree.metadata)
     test_case.test_suite._submit_feedback(run_id, feedback, **kwargs)
 
 
