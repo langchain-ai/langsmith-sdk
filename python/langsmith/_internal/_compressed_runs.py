@@ -18,6 +18,8 @@ class CompressedRuns:
         self.buffer = io.BytesIO()
         self.run_count = 0
         self.lock = threading.Lock()
+        self.uncompressed_size = 0
+
         if not HAVE_ZSTD:
             raise ImportError(
                 "zstandard package required for compression. "
@@ -30,6 +32,8 @@ class CompressedRuns:
     def reset(self):
         self.buffer = io.BytesIO()
         self.run_count = 0
+        self.uncompressed_size = 0
+
         if not HAVE_ZSTD:
             raise ImportError(
                 "zstandard package required for compression. "
