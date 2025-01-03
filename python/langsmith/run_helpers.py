@@ -837,7 +837,9 @@ class trace:
         inputs: Optional[Dict] = None,
         extra: Optional[Dict] = None,
         project_name: Optional[str] = None,
-        parent: Optional[Union[run_trees.RunTree, str, Mapping]] = None,
+        parent: Optional[
+            Union[run_trees.RunTree, str, Mapping, Literal["ignore"]]
+        ] = None,
         tags: Optional[List[str]] = None,
         metadata: Optional[Mapping[str, Any]] = None,
         client: Optional[ls_client.Client] = None,
@@ -1048,13 +1050,13 @@ class trace:
 
 
 def _get_project_name(project_name: Optional[str]) -> Optional[str]:
+    if project_name:
+        return project_name
     prt = _PARENT_RUN_TREE.get()
     return (
         # Maintain tree consistency first
         _PROJECT_NAME.get()
         or (prt.session_name if prt else None)
-        # Then check the passed in value
-        or project_name
         # fallback to the default for the environment
         or utils.get_tracer_project()
     )
@@ -1254,6 +1256,8 @@ def _get_parent_run(
     config: Optional[dict] = None,
 ) -> Optional[run_trees.RunTree]:
     parent = langsmith_extra.get("parent")
+    if parent == "ignore":
+        return None
     if isinstance(parent, run_trees.RunTree):
         return parent
     if isinstance(parent, dict):
