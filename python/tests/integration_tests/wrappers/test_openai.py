@@ -369,3 +369,163 @@ async def test_wrap_openai_chat_async_tokens(test_case):
 
     filename = f"langsmith_py_wrap_openai_{test_case['description'].replace(' ', '_')}"
     _collect_requests(mock_session, filename)
+
+
+def test_parse_sync_api():
+    import openai
+
+    mock_session = mock.MagicMock()
+    client = langsmith.Client(session=mock_session)
+    original_client = openai.Client()
+    patched_client = wrap_openai(openai.Client(), tracing_extra={"client": client})
+
+    messages = [{"role": "user", "content": "Extract the person's name and age"}]
+    schema = {
+        "type": "object",
+        "properties": {"name": {"type": "string"}, "age": {"type": "integer"}},
+        "required": ["name", "age"],
+    }
+
+    original = original_client.beta.chat.completions.parse(
+        messages=messages,
+        model="gpt-3.5-turbo",
+        response_format={"type": "json_object", "schema": schema},
+        temperature=0,
+        seed=42,
+    )
+
+    patched = patched_client.beta.chat.completions.parse(
+        messages=messages,
+        model="gpt-3.5-turbo",
+        response_format={"type": "json_object", "schema": schema},
+        temperature=0,
+        seed=42,
+    )
+
+    assert type(original) is type(patched)
+    assert original == patched
+
+    time.sleep(0.01)
+    for call in mock_session.request.call_args_list[1:]:
+        assert call[0][0].upper() == "POST"
+
+
+@pytest.mark.asyncio
+async def test_parse_async_api():
+    import openai
+
+    mock_session = mock.MagicMock()
+    client = langsmith.Client(session=mock_session)
+    original_client = openai.AsyncClient()
+    patched_client = wrap_openai(openai.AsyncClient(), tracing_extra={"client": client})
+
+    messages = [{"role": "user", "content": "Extract the person's name and age"}]
+    schema = {
+        "type": "object",
+        "properties": {"name": {"type": "string"}, "age": {"type": "integer"}},
+        "required": ["name", "age"],
+    }
+
+    original = await original_client.beta.chat.completions.parse(
+        messages=messages,
+        model="gpt-4o-mini",
+        response_format={"type": "json_object", "schema": schema},
+        temperature=0,
+        seed=42,
+    )
+
+    patched = await patched_client.beta.chat.completions.parse(
+        messages=messages,
+        model="gpt-4o-mini",
+        response_format={"type": "json_object", "schema": schema},
+        temperature=0,
+        seed=42,
+    )
+
+    assert type(original) is type(patched)
+    assert original == patched
+
+    time.sleep(0.1)
+    for call in mock_session.request.call_args_list[1:]:
+        assert call[0][0].upper() == "POST"
+
+
+def test_parse_tokens():
+    """Test that token usage is properly tracked for parse operations."""
+    import openai
+
+    oai_client = openai.Client()
+    mock_session = mock.MagicMock()
+    ls_client = langsmith.Client(session=mock_session)
+    wrapped_oai_client = wrap_openai(oai_client, tracing_extra={"client": ls_client})
+
+    collect = Collect()
+    with langsmith.tracing_context(enabled=True):
+        messages = [
+            {"role": "user", "content": "Extract name and age from: John is 25"}
+        ]
+        schema = {
+            "type": "object",
+            "properties": {"name": {"type": "string"}, "age": {"type": "integer"}},
+            "required": ["name", "age"],
+        }
+
+        params = {
+            "model": "gpt-4",
+            "messages": messages,
+            "response_format": {"type": "json_object", "schema": schema},
+            "temperature": 0,
+            "seed": 42,
+            "langsmith_extra": {"on_end": collect},
+        }
+
+        res = wrapped_oai_client.beta.chat.completions.parse(**params)
+        assert isinstance(res, dict)
+        assert "name" in res
+        assert "age" in res
+
+        usage_metadata = collect.run.outputs["usage_metadata"]
+        assert "input_tokens" in usage_metadata
+        assert "output_tokens" in usage_metadata
+        assert "total_tokens" in usage_metadata
+
+
+@pytest.mark.asyncio
+async def test_parse_async_tokens():
+    """Test that token usage is properly tracked for async parse operations."""
+    import openai
+
+    oai_client = openai.AsyncClient()
+    mock_session = mock.MagicMock()
+    ls_client = langsmith.Client(session=mock_session)
+    wrapped_oai_client = wrap_openai(oai_client, tracing_extra={"client": ls_client})
+
+    collect = Collect()
+    with langsmith.tracing_context(enabled=True):
+        messages = [
+            {"role": "user", "content": "Extract name and age from: John is 25"}
+        ]
+        schema = {
+            "type": "object",
+            "properties": {"name": {"type": "string"}, "age": {"type": "integer"}},
+            "required": ["name", "age"],
+        }
+
+        params = {
+            "model": "gpt-4",
+            "messages": messages,
+            "response_format": {"type": "json_object", "schema": schema},
+            "temperature": 0,
+            "seed": 42,
+            "langsmith_extra": {"on_end": collect},
+        }
+
+        res = await wrapped_oai_client.beta.chat.completions.parse(**params)
+        assert isinstance(res, dict)
+        assert "name" in res
+        assert "age" in res
+
+        usage_metadata = collect.run.outputs["usage_metadata"]
+        assert "input_tokens" in usage_metadata
+        assert "output_tokens" in usage_metadata
+        assert "total_tokens" in usage_metadata
