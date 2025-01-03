@@ -3,8 +3,10 @@ from __future__ import annotations
 import atexit
 import datetime
 import functools
+import importlib
 import inspect
 import logging
+import os
 import threading
 import uuid
 import warnings
@@ -270,10 +272,21 @@ def test(*args: Any, **kwargs: Any) -> Callable:
 ## Private functions
 
 
-def _get_experiment_name() -> str:
-    # TODO Make more easily configurable
-    prefix = ls_utils.get_tracer_project(False) or "TestSuiteResult"
-    name = f"{prefix}:{uuid.uuid4().hex[:8]}"
+def _get_experiment_name(test_suite_name: str) -> str:
+    # If this is a pytest-xdist multi-process run then we need to create the same
+    # experiment name across processes. We can do this by accessing the
+    # PYTEST_XDIST_TESTRUNID env var.
+    if os.environ.get("PYTEST_XDIST_TESTRUNUID") and importlib.util.find_spec("xdist"):
+        id_name = test_suite_name + os.environ["PYTEST_XDIST_TESTRUNUID"]
+        id_ = str(uuid.uuid5(uuid.NAMESPACE_DNS, id_name).hex[:8])
+    else:
+        id_ = str(uuid.uuid4().hex[:8])
+
+    if os.environ.get("LANGSMITH_EXPERIMENT"):
+        prefix = os.environ["LANGSMITH_EXPERIMENT"]
+    else:
+        prefix = ls_utils.get_tracer_project(False) or "TestSuiteResult"
+    name = f"{prefix}:{id_}"
     return name
 
 
@@ -311,7 +324,7 @@ def _start_experiment(
     client: ls_client.Client,
     test_suite: ls_schemas.Dataset,
 ) -> ls_schemas.TracerSession:
-    experiment_name = _get_experiment_name()
+    experiment_name = _get_experiment_name(test_suite.name)
     try:
         return client.create_project(
             experiment_name,
