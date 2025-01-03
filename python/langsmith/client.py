@@ -4307,7 +4307,7 @@ class Client:
 
         example = response.json()
         attachments = {}
-        if example["attachment_urls"]:
+        if example.get("attachment_urls"):
             for key, value in example["attachment_urls"].items():
                 response = requests.get(value["presigned_url"], stream=True)
                 response.raise_for_status()
@@ -4441,7 +4441,7 @@ class Client:
             self._get_paginated_list("/examples", params=params)
         ):
             attachments = {}
-            if example["attachment_urls"]:
+            if example.get("attachment_urls"):
                 for key, value in example["attachment_urls"].items():
                     response = requests.get(value["presigned_url"], stream=True)
                     response.raise_for_status()
