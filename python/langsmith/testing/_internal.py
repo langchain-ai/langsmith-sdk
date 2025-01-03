@@ -23,6 +23,7 @@ from typing import (
     Tuple,
     TypeVar,
     Union,
+    cast,
     overload,
 )
 
@@ -900,11 +901,15 @@ def log_feedback(
         "reference_run_id"
     ):
         run_id = run_tree.metadata["reference_run_id"]
-        run_tree.add_outputs(feedback)
+        run_tree.add_outputs(
+            feedback if isinstance(feedback, dict) else {"feedback": feedback}
+        )
         kwargs["source_run_id"] = run_tree.id
     else:
         run_id = run_tree.trace_id
-    test_case.test_suite._submit_feedback(run_id, feedback, **kwargs)
+    test_case.test_suite._submit_feedback(
+        run_id, cast(Union[list, dict], feedback), **kwargs
+    )
 
 
 @contextlib.contextmanager
