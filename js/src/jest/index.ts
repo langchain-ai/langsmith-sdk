@@ -9,7 +9,7 @@ import { traceable } from "../traceable.js";
 import { RunTree, RunTreeConfig } from "../run_trees.js";
 import { KVMap, TracerSession } from "../schemas.js";
 import { randomName } from "../evaluation/_random_name.js";
-import { Client } from "../client.js";
+import { Client, CreateProjectParams } from "../client.js";
 import { LangSmithConflictError } from "../utils/error.js";
 import {
   toBeRelativeCloseTo,
@@ -91,7 +91,11 @@ const objectHash = (obj: KVMap, depth = 0): string => {
   return crypto.createHash("sha256").update(JSON.stringify(obj)).digest("hex");
 };
 
-async function _createProject(client: Client, datasetId: string) {
+async function _createProject(
+  client: Client,
+  datasetId: string,
+  projectConfig?: Partial<CreateProjectParams>
+) {
   // Create the project, updating the experimentName until we find a unique one.
   let project: TracerSession;
   let experimentName = randomName();
@@ -99,8 +103,8 @@ async function _createProject(client: Client, datasetId: string) {
     try {
       project = await client.createProject({
         projectName: experimentName,
+        ...projectConfig,
         referenceDatasetId: datasetId,
-        // description: this._description,
       });
       return project;
     } catch (e) {
@@ -128,7 +132,11 @@ export type LangSmithJestDescribeWrapper = (
 const setupPromises = new Map();
 const createExamplePromises = new Map();
 
-async function runDatasetSetup(testClient: Client, datasetName: string) {
+async function runDatasetSetup(
+  testClient: Client,
+  datasetName: string,
+  projectConfig?: Partial<CreateProjectParams>
+) {
   let storageValue;
   if (!trackingEnabled()) {
     storageValue = {
@@ -158,7 +166,7 @@ async function runDatasetSetup(testClient: Client, datasetName: string) {
       const outputHash = objectHash(example.outputs ?? {});
       examples.push({ ...example, inputHash, outputHash });
     }
-    const project = await _createProject(testClient, dataset.id);
+    const project = await _createProject(testClient, dataset.id, projectConfig);
     storageValue = {
       dataset,
       examples,
@@ -175,7 +183,9 @@ function wrapDescribeMethod(
   return function (
     datasetName: string,
     fn: () => void | Promise<void>,
-    config?: Partial<RunTreeConfig>
+    experimentConfig?: { client?: Client } & Partial<
+      Omit<CreateProjectParams, "referenceDatasetId">
+    >
   ) {
     return method(datasetName, () => {
       const suiteUuid = v4();
@@ -191,8 +201,9 @@ function wrapDescribeMethod(
         {
           suiteUuid,
           suiteName: datasetName,
-          client: config?.client ?? RunTree.getSharedClient(),
+          client: experimentConfig?.client ?? RunTree.getSharedClient(),
           createdAt: new Date().toISOString(),
+          projectConfig: experimentConfig,
         },
         fn
       );
@@ -254,7 +265,11 @@ function wrapTestMethod(method: (...args: any[]) => void) {
           if (!setupPromises.get(context.suiteUuid)) {
             setupPromises.set(
               context.suiteUuid,
-              runDatasetSetup(context.client, context.suiteName)
+              runDatasetSetup(
+                context.client,
+                context.suiteName,
+                context.projectConfig
+              )
             );
           }
           const { examples, dataset, createdAt, project, client } =
@@ -361,31 +376,38 @@ function wrapTestMethod(method: (...args: any[]) => void) {
   };
 }
 
-function eachMethod<I extends KVMap, O extends KVMap>(
-  table: { inputs: I; outputs: O }[],
-  config?: LangSmithJestWrapperConfig
-) {
-  return function (
-    name: string,
-    fn: (params: { inputs: I; outputs: O }) => unknown | Promise<unknown>,
-    timeout?: number
+function createEachMethod(method: (...args: any[]) => void) {
+  function eachMethod<I extends KVMap, O extends KVMap>(
+    table: { inputs: I; outputs: O }[],
+    config?: LangSmithJestWrapperConfig
   ) {
-    for (let i = 0; i < table.length; i += 1) {
-      const example = table[i];
-      wrapTestMethod(test)<I, O>(
-        `${name}, item ${i}`,
-        { inputs: example.inputs, outputs: example.outputs, config },
-        fn,
-        timeout
-      );
-    }
-  };
+    return function (
+      name: string,
+      fn: (params: { inputs: I; outputs: O }) => unknown | Promise<unknown>,
+      timeout?: number
+    ) {
+      for (let i = 0; i < table.length; i += 1) {
+        const example = table[i];
+        wrapTestMethod(method)<I, O>(
+          `${name}, item ${i}`,
+          { inputs: example.inputs, outputs: example.outputs, config },
+          fn,
+          timeout
+        );
+      }
+    };
+  }
+  return eachMethod;
 }
 
 const lsTest = Object.assign(wrapTestMethod(test), {
-  only: wrapTestMethod(test.only),
-  skip: wrapTestMethod(test.skip),
-  each: eachMethod,
+  only: Object.assign(wrapTestMethod(test.only), {
+    each: createEachMethod(test.only),
+  }),
+  skip: Object.assign(wrapTestMethod(test.skip), {
+    each: createEachMethod(test.skip),
+  }),
+  each: createEachMethod(test),
 });
 
 const wrappedExpect = wrapExpect(expect);
