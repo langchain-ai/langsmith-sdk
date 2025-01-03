@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import atexit
+import contextlib
 import contextvars
 import datetime
 import functools
@@ -13,13 +14,24 @@ import uuid
 import warnings
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Callable, Optional, Sequence, Tuple, TypeVar, Union, overload
+from typing import (
+    Any,
+    Callable,
+    Generator,
+    Optional,
+    Sequence,
+    Tuple,
+    TypeVar,
+    Union,
+    overload,
+)
 
 from typing_extensions import TypedDict
 
 from langsmith import client as ls_client
 from langsmith import env as ls_env
 from langsmith import run_helpers as rh
+from langsmith import run_trees
 from langsmith import run_trees as rt
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
@@ -531,10 +543,19 @@ class _LangSmithTestSuite:
         if example.modified_at:
             self.update_version(example.modified_at)
 
-    def _submit_feedback(self, run_id: Optional[ID_TYPE], key: str, **kwargs: Any):
-        self._executor.submit(
-            self.client.create_feedback, run_id=run_id, key=key, **kwargs
-        )
+    def _submit_feedback(
+        self, run_id: ID_TYPE, feedback: Union[dict, list], **kwargs: Any
+    ):
+        feedback = feedback if isinstance(feedback, list) else [feedback]
+        for fb in feedback:
+            self._executor.submit(
+                self._create_feedback, run_id=run_id, feedback=fb, **kwargs
+            )
+
+    def _create_feedback(self, run_id: ID_TYPE, feedback: dict, **kwargs: Any) -> None:
+        run = self.client.read_run(run_id)
+        trace_id = run.trace_id
+        self.client.create_feedback(trace_id, **feedback, **kwargs)
 
     def wait(self):
         self._executor.shutdown(wait=True)
@@ -731,6 +752,23 @@ unit = test
 
 
 def log_inputs(inputs: dict, /) -> None:
+    """Log run inputs from within a pytest test run.
+
+    Should only be used in pytest tests decorated with @langsmith.testing.test.
+
+    Args:
+        inputs: Inputs to log.
+
+    Example:
+        >>> from langsmith import testing
+        >>>
+        >>> @testing.test
+        ... def test_foo() -> None:
+        ...     x = 0
+        ...     y = 1
+        ...     testing.log_inputs({"x": x, "y": y})
+        ...     assert foo(x, y) == 2
+    """
     run_tree = rh.get_current_run_tree()
     test_case = _TEST_CASE.get()
     if not run_tree or not test_case:
@@ -744,6 +782,24 @@ def log_inputs(inputs: dict, /) -> None:
 
 
 def log_outputs(outputs: dict, /) -> None:
+    """Log run outputs from within a pytest test run.
+
+    Should only be used in pytest tests decorated with @langsmith.testing.test.
+
+    Args:
+        outputs: Outputs to log.
+
+    Example:
+        >>> from langsmith import testing
+        >>>
+        >>> @testing.test
+        ... def test_foo() -> None:
+        ...     x = 0
+        ...     y = 1
+        ...     result = foo(x, y)
+        ...     testing.log_outputs({"foo": result})
+        ...     assert result == 2
+    """
     run_tree = rh.get_current_run_tree()
     if not run_tree:
         msg = (
@@ -755,6 +811,24 @@ def log_outputs(outputs: dict, /) -> None:
 
 
 def log_reference_outputs(outputs: dict, /) -> None:
+    """Log example reference outputs from within a pytest test run.
+
+    Should only be used in pytest tests decorated with @langsmith.testing.test.
+
+    Args:
+        outputs: Reference outputs to log.
+
+    Example:
+        >>> from langsmith import testing
+        >>>
+        >>> @testing.test
+        ... def test_foo() -> None:
+        ...     x = 0
+        ...     y = 1
+        ...     expected = 2
+        ...     testing.log_reference_outputs({"foo": expected})
+        ...     assert foo(x, y) == expected
+    """
     test_case = _TEST_CASE.get()
     if not test_case:
         msg = (
@@ -766,12 +840,51 @@ def log_reference_outputs(outputs: dict, /) -> None:
 
 
 def log_feedback(
-    key: str,
+    feedback: Optional[Union[dict, list[dict]]] = None,
+    /,
     *,
+    key: str,
     score: Optional[Union[int, bool, float]] = None,
     value: Optional[Union[str, int, float, bool]] = None,
     **kwargs: Any,
 ) -> None:
+    """Log run feedback from within a pytest test run.
+
+    Should only be used in pytest tests decorated with @langsmith.testing.test.
+
+    Args:
+        key: Feedback name.
+        score: Numerical feedback value.
+        value: Categorical feedback value
+        kwargs: Any other Client.create_feedback args.
+
+    Example:
+        >>> from langsmith import testing
+        >>>
+        >>> @testing.test
+        ... def test_foo() -> None:
+        ...     x = 0
+        ...     y = 1
+        ...     expected = 2
+        ...     result = foo(x, y)
+        ...     testing.log_feedback(key="right_type", score=isinstance(result, int))
+        ...     assert restul == expected
+    """
+    if feedback and any((key, score, value)):
+        msg = "Must specify one of 'feedback' and ('key', 'score', 'value'), not both."
+        raise ValueError(msg)
+    elif not (feedback or key):
+        msg = "Must specify at least one of 'feedback' or ('key', 'score', value')."
+        raise ValueError(msg)
+    elif key:
+        feedback = {"key": key}
+        if score is not None:
+            feedback["score"] = score
+        if value is not None:
+            feedback["value"] = value
+    else:
+        pass
+
     run_tree = rh.get_current_run_tree()
     test_case = _TEST_CASE.get()
     if not run_tree or not test_case:
@@ -780,6 +893,49 @@ def log_feedback(
             "decorated with @langsmith.testing.test."
         )
         raise ValueError(msg)
-    test_case.test_suite._submit_feedback(
-        run_tree.trace_id, key=key, score=score, value=value, **kwargs
-    )
+    if run_tree.session_name == "evaluators" and run_tree.metadata.get(
+        "reference_run_id"
+    ):
+        run_id = run_tree.metadata["reference_run_id"]
+        run_tree.add_outputs(feedback)
+    else:
+        run_id = run_tree.trace_id
+        print(run_tree.session_name)
+        print(run_tree.metadata)
+    test_case.test_suite._submit_feedback(run_id, feedback, **kwargs)
+
+
+@contextlib.contextmanager
+def trace_feedback(
+    *, name: Optional[str] = None
+) -> Generator[run_trees.RunTree, None, None]:
+    """Trace the computation of a pytest run feedback as its own run.
+
+    Args:
+        inputs: ...
+        name: ...
+
+    Example:
+        ...
+    """
+    parent_run = rh.get_current_run_tree()
+    test_case = _TEST_CASE.get()
+    if not parent_run or not test_case:
+        msg = (
+            "trace_feedback should only be called within a pytest test "
+            "decorated with @langsmith.testing.test."
+        )
+        raise ValueError(msg)
+    metadata = {
+        "experiment": test_case.test_suite.experiment.name,
+        "reference_example_id": test_case.example_id,
+        "reference_run_id": parent_run.id,
+    }
+    with rh.trace(
+        name=name or "Feedback",
+        inputs=parent_run.outputs,
+        parent="ignore",
+        project_name="evaluators",
+        metadata=metadata,
+    ) as run_tree:
+        yield run_tree
