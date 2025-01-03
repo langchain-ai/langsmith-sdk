@@ -732,12 +732,12 @@ unit = test
 
 def log_inputs(inputs: dict, /) -> None:
     run_tree = rh.get_current_run_tree()
-    if not run_tree:
-        msg = ""
-        raise ValueError(msg)
     test_case = _TEST_CASE.get()
-    if not test_case:
-        msg = ""
+    if not run_tree or not test_case:
+        msg = (
+            "log_inputs should only be called within a pytest test decorated with "
+            "@langsmith.testing.test."
+        )
         raise ValueError(msg)
     run_tree.add_inputs(inputs)
     test_case.sync_example(inputs=inputs)
@@ -746,7 +746,10 @@ def log_inputs(inputs: dict, /) -> None:
 def log_outputs(outputs: dict, /) -> None:
     run_tree = rh.get_current_run_tree()
     if not run_tree:
-        msg = ""
+        msg = (
+            "log_outputs should only be called within a pytest test decorated with "
+            "@langsmith.testing.test."
+        )
         raise ValueError(msg)
     run_tree.add_outputs(outputs)
 
@@ -754,7 +757,10 @@ def log_outputs(outputs: dict, /) -> None:
 def log_reference_outputs(outputs: dict, /) -> None:
     test_case = _TEST_CASE.get()
     if not test_case:
-        msg = ""
+        msg = (
+            "log_reference_outputs should only be called within a pytest test "
+            "decorated with @langsmith.testing.test."
+        )
         raise ValueError(msg)
     test_case.sync_example(outputs=outputs)
 
@@ -767,12 +773,12 @@ def log_feedback(
     **kwargs: Any,
 ) -> None:
     run_tree = rh.get_current_run_tree()
-    if not run_tree:
-        msg = ""
-        raise ValueError(msg)
     test_case = _TEST_CASE.get()
-    if not test_case:
-        msg = ""
+    if not run_tree or not test_case:
+        msg = (
+            "log_feedback should only be called within a pytest test "
+            "decorated with @langsmith.testing.test."
+        )
         raise ValueError(msg)
     test_case.test_suite._submit_feedback(
         run_tree.trace_id, key=key, score=score, value=value, **kwargs
