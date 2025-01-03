@@ -254,6 +254,44 @@ def _get_wrapper(
     return acreate if run_helpers.is_async(original_create) else create
 
 
+def _get_parse_wrapper(
+    original_parse: Callable,
+    name: str,
+    tracing_extra: Optional[TracingExtra] = None,
+    invocation_params_fn: Optional[Callable] = None,
+) -> Callable:
+    textra = tracing_extra or {}
+
+    @functools.wraps(original_parse)
+    def parse(*args, **kwargs):
+        decorator = run_helpers.traceable(
+            name=name,
+            run_type="llm",
+            reduce_fn=None,
+            process_inputs=_strip_not_given,
+            _invocation_params_fn=invocation_params_fn,
+            process_outputs=_process_chat_completion,
+            **textra,
+        )
+        return decorator(original_parse)(*args, **kwargs)
+
+    @functools.wraps(original_parse)
+    async def aparse(*args, **kwargs):
+        kwargs = _strip_not_given(kwargs)
+        decorator = run_helpers.traceable(
+            name=name,
+            run_type="llm",
+            reduce_fn=None,
+            process_inputs=_strip_not_given,
+            _invocation_params_fn=invocation_params_fn,
+            process_outputs=_process_chat_completion,
+            **textra,
+        )
+        return await decorator(original_parse)(*args, **kwargs)
+
+    return aparse if run_helpers.is_async(original_parse) else parse
+
+
 class TracingExtra(TypedDict, total=False):
     metadata: Optional[Mapping[str, Any]]
     tags: Optional[List[str]]
@@ -297,4 +335,19 @@ def wrap_openai(
         tracing_extra=tracing_extra,
         invocation_params_fn=functools.partial(_infer_invocation_params, "llm"),
     )
+
+    # Wrap beta.chat.completions.parse if it exists
+    if (
+        hasattr(client, "beta")
+        and hasattr(client.beta, "chat")
+        and hasattr(client.beta.chat, "completions")
+        and hasattr(client.beta.chat.completions, "parse")
+    ):
+        client.beta.chat.completions.parse = _get_parse_wrapper(  # type: ignore[method-assign]
+            client.beta.chat.completions.parse,  # type: ignore
+            chat_name,
+            tracing_extra=tracing_extra,
+            invocation_params_fn=functools.partial(_infer_invocation_params, "chat"),
+        )
+
     return client
