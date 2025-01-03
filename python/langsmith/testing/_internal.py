@@ -329,9 +329,12 @@ def _get_test_suite(
         description = "Test suite"
         if repo:
             description += f" for {repo}"
-        return client.create_dataset(
-            dataset_name=test_suite_name, description=description
-        )
+        try:
+            return client.create_dataset(
+                dataset_name=test_suite_name, description=description
+            )
+        except ls_utils.LangSmithConflictError:
+            return client.read_dataset(dataset_name=test_suite_name)
 
 
 def _start_experiment(
