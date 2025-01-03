@@ -27,32 +27,35 @@ const unrelatedStore = new AsyncLocalStorage();
 unrelatedStore.enterWith("value"); // Ensure that this works despite https://github.com/jestjs/jest/issues/13653
 
 ls.describe("js unit testing test demo", () => {
-  ls.test({ inputs: { foo: "bar" }, outputs: { bar: "qux" } })(
+  ls.test(
     "Should succeed with some defined evaluator",
+    { inputs: { foo: "bar" }, outputs: { bar: "qux" } },
     async ({ inputs: _inputs, outputs }) => {
       const myApp = () => {
         return outputs;
       };
       const res = myApp();
-      await ls.expect(res).gradedBy(myEvaluator).toBeGreaterThanOrEqual(0.5);
-      return res;
+      await ls.expect(res).evaluatedBy(myEvaluator).toBeGreaterThanOrEqual(0.5);
+      // return res;
     }
   );
 
-  ls.test({ inputs: { foo: "bar" }, outputs: { foo: "bar" } }, { n: 3 })(
+  ls.test(
     "Should work with repetitions",
+    { inputs: { foo: "bar" }, outputs: { foo: "bar" }, config: { n: 3 } },
     async ({ inputs: _inputs, outputs: _outputs }) => {
       const myApp = () => {
         return { bar: "goodval" };
       };
       const res = myApp();
-      await ls.expect(res).gradedBy(myEvaluator).toBeGreaterThanOrEqual(0.5);
+      await ls.expect(res).evaluatedBy(myEvaluator).toBeGreaterThanOrEqual(0.5);
       return res;
     }
   );
 
-  ls.test({ inputs: { foo: "bad" }, outputs: { baz: "qux" } })(
+  ls.test(
     "Should fail with some defined evaluator",
+    { inputs: { foo: "bad" }, outputs: { baz: "qux" } },
     async ({ inputs: _inputs, outputs: _outputs }) => {
       const myApp = () => {
         return { bar: "bad" };
@@ -60,7 +63,7 @@ ls.describe("js unit testing test demo", () => {
       const res = myApp();
       await ls
         .expect(res)
-        .gradedBy(myEvaluator)
+        .evaluatedBy(myEvaluator)
         .not.toBeGreaterThanOrEqual(0.5);
       return res;
     }
@@ -91,7 +94,10 @@ ls.describe("js unit testing test demo", () => {
       return { bar: "bad" };
     };
     const res = myApp();
-    await ls.expect(res).gradedBy(myEvaluator).not.toBeGreaterThanOrEqual(0.5);
+    await ls
+      .expect(res)
+      .evaluatedBy(myEvaluator)
+      .not.toBeGreaterThanOrEqual(0.5);
     return res;
   });
 

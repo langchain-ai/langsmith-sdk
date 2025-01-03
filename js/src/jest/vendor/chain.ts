@@ -1,7 +1,7 @@
 /**
  * Adapted from https://github.com/mattphillips/jest-chain/blob/main/src/chain.js
  */
-import { gradedBy, SimpleEvaluator } from "./gradedBy.js";
+import { evaluatedBy, SimpleEvaluator } from "./evaluatedBy.js";
 
 class JestAssertionError extends Error {
   matcherResult: any;
@@ -30,7 +30,7 @@ const _wrapMatchers = (
     .map((name) => {
       const newMatcher = async (...args: any[]) => {
         try {
-          const score = await gradedBy(originalArgs[0], evaluator);
+          const score = await evaluatedBy(originalArgs[0], evaluator);
           let result: any = originalExpect(score);
           for (const pathEntry of staticPath) {
             result = result[pathEntry];
@@ -53,7 +53,7 @@ const _wrapMatchers = (
     });
 };
 
-const addGradedBy = (
+const addEvaluatedBy = (
   matchers: jest.Matchers<any>,
   originalArgs: any[],
   originalExpect: any,
@@ -77,7 +77,7 @@ const addGradedBy = (
     ) as any;
   }
   return Object.assign({}, matchers, {
-    gradedBy: function (evaluator: SimpleEvaluator) {
+    evaluatedBy: function (evaluator: SimpleEvaluator) {
       const mappedMatchers: any = _wrapMatchers(
         spreadMatchers,
         evaluator,
@@ -107,11 +107,11 @@ const addGradedBy = (
   });
 };
 
-export function wrapExpect(originalExpect: any) {
+export function wrapExpect(originalExpect: any): typeof expect {
   // proxy the expect function
   const expectProxy = Object.assign(
     (...args: any[]) =>
-      addGradedBy(originalExpect(...args), args, originalExpect, []), // partially apply expect to get all matchers and chain them
+      addEvaluatedBy(originalExpect(...args), args, originalExpect, []), // partially apply expect to get all matchers and chain them
     originalExpect // clone additional properties on expect
   );
 

@@ -9,7 +9,7 @@ export type SimpleEvaluator = (params: {
   expected: Record<string, any>;
 }) => EvaluationResult | Promise<EvaluationResult>;
 
-export async function gradedBy(actual: any, evaluator: SimpleEvaluator) {
+export async function evaluatedBy(actual: any, evaluator: SimpleEvaluator) {
   const context = jestAsyncLocalStorageInstance.getStore();
   if (context === undefined || context.currentExample === undefined) {
     throw new Error(
