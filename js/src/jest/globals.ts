@@ -3,7 +3,8 @@ import { Dataset, TracerSession, Example } from "../schemas.js";
 import { Client, CreateProjectParams } from "../client.js";
 import { getEnvironmentVariable } from "../utils/env.js";
 
-export const jestAsyncLocalStorageInstance = new AsyncLocalStorage<{
+export type JestAsyncLocalStorageData = {
+  enableTestTracking?: boolean;
   dataset?: Dataset;
   examples?: (Example & { inputHash: string; outputHash: string })[];
   createdAt: string;
@@ -13,8 +14,14 @@ export const jestAsyncLocalStorageInstance = new AsyncLocalStorage<{
   client: Client;
   suiteUuid: string;
   suiteName: string;
-}>();
+};
 
-export function trackingEnabled() {
-  return getEnvironmentVariable("LANGSMITH_TEST_TRACKING") === "true";
+export const jestAsyncLocalStorageInstance =
+  new AsyncLocalStorage<JestAsyncLocalStorageData>();
+
+export function trackingEnabled(context: JestAsyncLocalStorageData) {
+  return (
+    context.enableTestTracking ||
+    getEnvironmentVariable("LANGSMITH_TEST_TRACKING") === "true"
+  );
 }

@@ -19,7 +19,11 @@ import {
   type SemanticCloseToMatcherOptions,
   type RelativeCloseToMatcherOptions,
 } from "./matchers.js";
-import { jestAsyncLocalStorageInstance, trackingEnabled } from "./globals.js";
+import {
+  JestAsyncLocalStorageData,
+  jestAsyncLocalStorageInstance,
+  trackingEnabled,
+} from "./globals.js";
 import { wrapExpect } from "./vendor/chain.js";
 import type { SimpleEvaluator } from "./vendor/evaluatedBy.js";
 
@@ -132,13 +136,10 @@ export type LangSmithJestDescribeWrapper = (
 const setupPromises = new Map();
 const createExamplePromises = new Map();
 
-async function runDatasetSetup(
-  testClient: Client,
-  datasetName: string,
-  projectConfig?: Partial<CreateProjectParams>
-) {
+async function runDatasetSetup(context: JestAsyncLocalStorageData) {
+  const { client: testClient, suiteName: datasetName, projectConfig } = context;
   let storageValue;
-  if (!trackingEnabled()) {
+  if (!trackingEnabled(context)) {
     storageValue = {
       createdAt: new Date().toISOString(),
     };
@@ -183,9 +184,10 @@ function wrapDescribeMethod(
   return function (
     datasetName: string,
     fn: () => void | Promise<void>,
-    experimentConfig?: { client?: Client } & Partial<
-      Omit<CreateProjectParams, "referenceDatasetId">
-    >
+    experimentConfig?: {
+      client?: Client;
+      enableTestTracking?: boolean;
+    } & Partial<Omit<CreateProjectParams, "referenceDatasetId">>
   ) {
     return method(datasetName, () => {
       const suiteUuid = v4();
@@ -204,6 +206,7 @@ function wrapDescribeMethod(
           client: experimentConfig?.client ?? RunTree.getSharedClient(),
           createdAt: new Date().toISOString(),
           projectConfig: experimentConfig,
+          enableTestTracking: experimentConfig?.enableTestTracking,
         },
         fn
       );
@@ -263,14 +266,7 @@ function wrapTestMethod(method: (...args: any[]) => void) {
           // Because of https://github.com/jestjs/jest/issues/13653, we have to do asynchronous setup
           // within the test itself
           if (!setupPromises.get(context.suiteUuid)) {
-            setupPromises.set(
-              context.suiteUuid,
-              runDatasetSetup(
-                context.client,
-                context.suiteName,
-                context.projectConfig
-              )
-            );
+            setupPromises.set(context.suiteUuid, runDatasetSetup(context));
           }
           const { examples, dataset, createdAt, project, client } =
             await setupPromises.get(context.suiteUuid);
@@ -278,7 +274,7 @@ function wrapTestMethod(method: (...args: any[]) => void) {
           const testOutput: O = outputs;
           const inputHash = objectHash(testInput);
           const outputHash = objectHash(testOutput ?? {});
-          if (trackingEnabled()) {
+          if (trackingEnabled(context)) {
             const missingFields = [];
             if (examples === undefined) {
               missingFields.push("examples");

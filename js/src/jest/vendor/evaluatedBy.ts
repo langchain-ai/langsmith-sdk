@@ -17,7 +17,7 @@ export async function evaluatedBy(actual: any, evaluator: SimpleEvaluator) {
     );
   }
 
-  if (trackingEnabled()) {
+  if (trackingEnabled(context)) {
     const runTree = getCurrentRunTree();
     const wrappedEvaluator = traceable(evaluator, {
       reference_example_id: context.currentExample.id,
