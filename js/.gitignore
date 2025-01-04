@@ -59,6 +59,10 @@ Chinook_Sqlite.sql
 /langchain.js
 /langchain.d.ts
 /langchain.d.cts
+/jest.cjs
+/jest.js
+/jest.d.ts
+/jest.d.cts
 /vercel.cjs
 /vercel.js
 /vercel.d.ts

@@ -284,6 +284,15 @@ export type CreateExampleOptions = {
   sourceRunId?: string;
 };
 
+export type CreateProjectParams = {
+  projectName: string;
+  description?: string | null;
+  metadata?: RecordStringAny | null;
+  upsert?: boolean;
+  projectExtra?: RecordStringAny | null;
+  referenceDatasetId?: string | null;
+};
+
 type AutoBatchQueueItem = {
   action: "create" | "update";
   item: RunCreate | RunUpdate;
@@ -1898,14 +1907,7 @@ export class Client implements LangSmithTracingClientInterface {
     upsert = false,
     projectExtra = null,
     referenceDatasetId = null,
-  }: {
-    projectName: string;
-    description?: string | null;
-    metadata?: RecordStringAny | null;
-    upsert?: boolean;
-    projectExtra?: RecordStringAny | null;
-    referenceDatasetId?: string | null;
-  }): Promise<TracerSession> {
+  }: CreateProjectParams): Promise<TracerSession> {
     const upsert_ = upsert ? `?upsert=true` : "";
     const endpoint = `${this.apiUrl}/sessions${upsert_}`;
     const extra: RecordStringAny = projectExtra || {};
