@@ -133,11 +133,17 @@ export type LangSmithJestDescribeWrapper = (
   config?: Partial<RunTreeConfig>
 ) => void;
 
-const setupPromises = new Map();
+const datasetSetupInfo = new Map();
+const fetchExamplesPromises = new Map();
 const createExamplePromises = new Map();
 
 async function runDatasetSetup(context: JestAsyncLocalStorageData) {
-  const { client: testClient, suiteName: datasetName, projectConfig } = context;
+  const {
+    client: testClient,
+    suiteName: datasetName,
+    projectConfig,
+    suiteUuid,
+  } = context;
   let storageValue;
   if (!trackingEnabled(context)) {
     storageValue = {
@@ -158,15 +164,13 @@ async function runDatasetSetup(context: JestAsyncLocalStorageData) {
         throw e;
       }
     }
-    const examplesList = testClient.listExamples({
-      datasetName,
-    });
-    const examples = [];
-    for await (const example of examplesList) {
-      const inputHash = objectHash(example.inputs);
-      const outputHash = objectHash(example.outputs ?? {});
-      examples.push({ ...example, inputHash, outputHash });
+    if (fetchExamplesPromises.get(suiteUuid) === undefined) {
+      fetchExamplesPromises.set(
+        suiteUuid,
+        fetchExamples(testClient, datasetName)
+      );
     }
+    const examples = await fetchExamplesPromises.get(suiteUuid);
     const project = await _createProject(testClient, dataset.id, projectConfig);
     storageValue = {
       dataset,
@@ -176,6 +180,19 @@ async function runDatasetSetup(context: JestAsyncLocalStorageData) {
     };
   }
   return storageValue;
+}
+
+async function fetchExamples(testClient: Client, datasetName: string) {
+  const examplesList = testClient.listExamples({
+    datasetName,
+  });
+  const examples = [];
+  for await (const example of examplesList) {
+    const inputHash = objectHash(example.inputs);
+    const outputHash = objectHash(example.outputs ?? {});
+    examples.push({ ...example, inputHash, outputHash });
+  }
+  return examples;
 }
 
 function wrapDescribeMethod(
@@ -191,6 +208,19 @@ function wrapDescribeMethod(
   ) {
     return method(datasetName, () => {
       const suiteUuid = v4();
+      const context = {
+        suiteUuid,
+        suiteName: datasetName,
+        client: experimentConfig?.client ?? RunTree.getSharedClient(),
+        createdAt: new Date().toISOString(),
+        projectConfig: experimentConfig,
+        enableTestTracking: experimentConfig?.enableTestTracking,
+      };
+
+      beforeAll(async () => {
+        datasetSetupInfo.set(suiteUuid, await runDatasetSetup(context));
+      });
+
       /**
        * We cannot rely on setting AsyncLocalStorage in beforeAll or beforeEach,
        * due to https://github.com/jestjs/jest/issues/13653 and needing to use
@@ -198,18 +228,12 @@ function wrapDescribeMethod(
        *
        * We also cannot do async setup in describe due to Jest restrictions.
        * However, .run without asynchronous logic works.
+       *
+       * We really just need a way to pass suiteUuid as global state to inner tests
+       * that can handle concurrently running test suites. If we drop the
+       * concurrency requirement, we can remoce this hack.
        */
-      void jestAsyncLocalStorageInstance.run(
-        {
-          suiteUuid,
-          suiteName: datasetName,
-          client: experimentConfig?.client ?? RunTree.getSharedClient(),
-          createdAt: new Date().toISOString(),
-          projectConfig: experimentConfig,
-          enableTestTracking: experimentConfig?.enableTestTracking,
-        },
-        fn
-      );
+      void jestAsyncLocalStorageInstance.run(context, fn);
     });
   };
 }
@@ -248,13 +272,13 @@ function wrapTestMethod(method: (...args: any[]) => void) {
   ) {
     // Due to https://github.com/jestjs/jest/issues/13653,
     // we must access the local store value here before
-    // doing anything async
+    // doing anything async.
     const context = jestAsyncLocalStorageInstance.getStore();
     const { config, inputs, outputs } = lsParams;
     const totalRuns = config?.n ?? 1;
     for (let i = 0; i < totalRuns; i += 1) {
-      // Jest will not group under the same "describe" group if you await the test and
-      // total runs is greater than 1
+      // Jest will not group tests under the same "describe" group if you await the test and
+      // total runs is greater than 1.
       void method(
         `${name}, iteration ${i}`,
         async () => {
@@ -263,13 +287,13 @@ function wrapTestMethod(method: (...args: any[]) => void) {
               `Could not retrieve test context.\nPlease make sure you have tracing enabled and you are wrapping all of your test cases in an "ls.describe()" function.`
             );
           }
-          // Because of https://github.com/jestjs/jest/issues/13653, we have to do asynchronous setup
-          // within the test itself
-          if (!setupPromises.get(context.suiteUuid)) {
-            setupPromises.set(context.suiteUuid, runDatasetSetup(context));
+          if (!datasetSetupInfo.get(context.suiteUuid)) {
+            throw new Error(
+              "Dataset failed to initialize. Please check your LangSmith environment variables."
+            );
           }
           const { examples, dataset, createdAt, project, client } =
-            await setupPromises.get(context.suiteUuid);
+            datasetSetupInfo.get(context.suiteUuid);
           const testInput: I = inputs;
           const testOutput: O = outputs;
           const inputHash = objectHash(testInput);
@@ -308,7 +332,11 @@ function wrapTestMethod(method: (...args: any[]) => void) {
               // Avoid creating multiple of the same example
               // when running the same test case multiple times
               // Jest runs other tests serially
-              const exampleKey = inputHash + ":" + outputHash;
+              const exampleKey = [
+                context.suiteUuid,
+                inputHash,
+                outputHash,
+              ].join(":");
               if (createExamplePromises.get(exampleKey) === undefined) {
                 createExamplePromises.set(
                   exampleKey,
@@ -374,22 +402,90 @@ function wrapTestMethod(method: (...args: any[]) => void) {
 
 function createEachMethod(method: (...args: any[]) => void) {
   function eachMethod<I extends KVMap, O extends KVMap>(
-    table: { inputs: I; outputs: O }[],
+    table: { inputs: I; outputs: O }[] | "*",
     config?: LangSmithJestWrapperConfig
   ) {
+    const context = jestAsyncLocalStorageInstance.getStore();
+    if (context === undefined) {
+      throw new Error(
+        "Could not retrieve test context. Make sure your test is nested within a ls.describe() block."
+      );
+    }
     return function (
       name: string,
       fn: (params: { inputs: I; outputs: O }) => unknown | Promise<unknown>,
       timeout?: number
     ) {
-      for (let i = 0; i < table.length; i += 1) {
-        const example = table[i];
-        wrapTestMethod(method)<I, O>(
-          `${name}, item ${i}`,
-          { inputs: example.inputs, outputs: example.outputs, config },
-          fn,
-          timeout
+      if (table === "*") {
+        /*
+         * Jest doesn't allow async setup before declaring tests, so we can't
+         * fetch dataset examples before running the test.
+         * beforeAll() does not run before test declarations.
+         * datasetSetupInfo will not be populated until inside a test.
+         */
+        method(
+          `${name} (pulling from LangSmith dataset "${context.suiteName}")`,
+          async () => {
+            if (fetchExamplesPromises.get(context.suiteUuid) === undefined) {
+              fetchExamplesPromises.set(
+                context.suiteUuid,
+                fetchExamples(context.client, context.suiteName)
+              );
+            }
+            const examples = await fetchExamplesPromises.get(context.suiteUuid);
+            const testMethodPromises: Promise<void>[] = [];
+            for (let i = 0; i < examples.length; i += 1) {
+              const example = examples[i];
+              // Context gets overwritten by Jest, so reset it here.
+              jestAsyncLocalStorageInstance.enterWith(context);
+              // Use wrapTestMethod to get the traceable spans to properly appear.
+              // The test method gets executed without being awaited internally,
+              // but we want to await it to catch errors properly so we store the
+              // promises and await them at the end of the overarching test to
+              // properly catch errors.
+              wrapTestMethod(async (_, fn, timeout) => {
+                const testPromise = Promise.race([
+                  fn(),
+                  timeout > 0
+                    ? new Promise((_, reject) =>
+                        setTimeout(
+                          () =>
+                            reject(
+                              new Error(
+                                `Test run #${i} over LangSmith dataset timed out.`
+                              )
+                            ),
+                          timeout
+                        )
+                      )
+                    : Promise.resolve(),
+                ]);
+                testMethodPromises.push(testPromise);
+              })<I, O>(
+                `${name}, item ${i}`,
+                { inputs: example.inputs, outputs: example.outputs, config },
+                fn,
+                timeout
+              );
+            }
+
+            await Promise.all(testMethodPromises);
+            // TODO: Fix pending test issue caused by traces being sent after the
+            // test promises resolve.
+          },
+          // Handle timeouts individually within the test
+          0
         );
+      } else {
+        for (let i = 0; i < table.length; i += 1) {
+          const example = table[i];
+          wrapTestMethod(method)<I, O>(
+            `${name}, item ${i}`,
+            { inputs: example.inputs, outputs: example.outputs, config },
+            fn,
+            timeout
+          );
+        }
       }
     };
   }
