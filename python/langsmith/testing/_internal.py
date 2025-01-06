@@ -630,7 +630,6 @@ def _run_test(
     test_suite, example_id = _ensure_example(
         func, *test_args, **test_kwargs, langtest_extra=langtest_extra
     )
-    print(example_id)
     _TEST_CASE.set(_TestCase(test_suite, example_id))
     run_id = uuid.uuid4()
 
