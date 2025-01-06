@@ -1026,7 +1026,7 @@ def summary_eval_unknown_positional_args(runs, examples, foo):
     [summary_eval_kwargs, summary_eval_unknown_positional_args],
 )
 def test__normalize_summary_evaluator_invalid(evaluator: Callable) -> None:
-    with pytest.raises(ValueError, match="Invalid evaluator function."):
+    with pytest.raises(ValueError, match="Invalid summary evaluator function."):
         _normalize_summary_evaluator(evaluator)
 
 
