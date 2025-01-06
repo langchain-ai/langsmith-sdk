@@ -1319,6 +1319,7 @@ def test_evaluate_with_attachments_multiple_evaluators(
         num_repetitions=2,
     )
 
+    assert len(results) == 2
     for result in results:
         assert result["evaluation_results"]["results"][0].score == 1.0
         assert result["evaluation_results"]["results"][1].score == 1.0
@@ -1426,6 +1427,16 @@ def test_evaluate_with_attachments_not_in_target(langchain_client: Client) -> No
     )
 
     assert len(results) == 2
+    for result in results:
+        assert result["evaluation_results"]["results"][0].score == 1.0
+
+    results = langchain_client.evaluate(
+        target,
+        data=dataset_name,
+        evaluators=[evaluator],
+    )
+
+    assert len(results) == 1
     for result in results:
         assert result["evaluation_results"]["results"][0].score == 1.0
 
@@ -1539,6 +1550,17 @@ async def test_aevaluate_with_attachments(langchain_client: Client) -> None:
     async for result in results:
         assert result["evaluation_results"]["results"][0].score == 1.0
         assert result["evaluation_results"]["results"][1].score == 1.0
+
+
+    results = await langchain_client.aevaluate(
+        target,
+        data=dataset_name,
+        evaluators=[],
+        num_repetitions=1,
+        max_concurrency=3,
+    )
+
+    assert len(results) == 10
 
     langchain_client.delete_dataset(dataset_name=dataset_name)
 

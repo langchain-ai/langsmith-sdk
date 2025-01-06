@@ -24,7 +24,7 @@ from typing import (
     Union,
     cast,
 )
-
+import io
 import langsmith
 from langsmith import run_helpers as rh
 from langsmith import run_trees, schemas
@@ -47,7 +47,6 @@ from langsmith.evaluation._runner import (
     _load_experiment,
     _load_tqdm,
     _load_traces,
-    _make_fresh_examples,
     _resolve_data,
     _resolve_evaluators,
     _resolve_experiment,
@@ -480,7 +479,8 @@ async def _aevaluate(
         num_repetitions=num_repetitions,
         runs=runs,
         include_attachments=_include_attachments(target)
-        or _evaluators_include_attachments(evaluators),
+        or _evaluators_include_attachments(evaluators) > 0,
+        reuse_attachments = num_repetitions * (int(_include_attachments(target)) + _evaluators_include_attachments(evaluators)) > 1,
         upload_results=upload_results,
     ).astart()
     cache_dir = ls_utils.get_cache_dir(None)
@@ -552,7 +552,9 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         description: Optional[str] = None,
         num_repetitions: int = 1,
         include_attachments: bool = False,
+        reuse_attachments: bool = False,
         upload_results: bool = True,
+        attachment_raw_data_dict: Optional[dict] = None,
     ):
         super().__init__(
             experiment=experiment,
@@ -569,7 +571,16 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         self._summary_results = summary_results
         self._num_repetitions = num_repetitions
         self._include_attachments = include_attachments
+        self._reuse_attachments = reuse_attachments
         self._upload_results = upload_results
+        self._attachment_raw_data_dict = attachment_raw_data_dict
+
+    def _make_fresh_examples(self, examples):
+        return (
+            example
+            for example in examples
+            if str(example.id) not in self._attachment_raw_data_dict
+        )
 
     async def aget_examples(self) -> AsyncIterator[schemas.Example]:
         if self._examples is None:
@@ -578,11 +589,18 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                 client=self.client,
                 include_attachments=self._include_attachments,
             )
+            if self._reuse_attachments and self._attachment_raw_data_dict is None:
+                examples_copy, self._examples = aitertools.atee(self._examples)
+                self._attachment_raw_data_dict = {
+                    str(e.id) + name: value['reader'].read()
+                    async for e in examples_copy
+                    for name, value in e.attachments.items()
+                }
             if self._num_repetitions > 1:
                 examples_list = [example async for example in self._examples]
                 self._examples = async_chain_from_iterable(
                     [
-                        async_iter_from_list(_make_fresh_examples(examples_list))
+                        async_iter_from_list(self._make_fresh_examples(examples_list))
                         for _ in range(self._num_repetitions)
                     ]
                 )
@@ -648,7 +666,36 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             runs=self._runs,
             evaluation_results=self._evaluation_results,
             include_attachments=self._include_attachments,
+            reuse_attachments=self._reuse_attachments,
             upload_results=self._upload_results,
+            attachment_raw_data_dict=self._attachment_raw_data_dict
+        )
+
+    def _get_example_with_readers(self, example: schemas.Example) -> schemas.Example:
+        new_attachments = {}
+        for name, attachment in example.attachments.items():
+            try:
+                reader = io.BytesIO(self._attachment_raw_data_dict[str(example.id) + name])
+                new_attachments[name] = {
+                    "presigned_url": attachment["presigned_url"],
+                    "reader": reader,
+                }
+            except Exception:
+                new_attachments[name] = attachment
+
+        return schemas.Example(
+            id=example.id,
+            created_at=example.created_at,
+            dataset_id=example.dataset_id,
+            inputs=example.inputs,
+            outputs=example.outputs,
+            metadata=example.metadata,
+            modified_at=example.modified_at,
+            runs=example.runs,
+            source_run_id=example.source_run_id,
+            attachments=new_attachments,
+            _host_url=example._host_url,
+            _tenant_id=example._tenant_id,
         )
 
     async def awith_predictions_and_evaluators(
@@ -804,7 +851,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                 # Yield the coroutine to be awaited later
                 yield _aforward(
                     fn,
-                    example,
+                    self._get_example_with_readers(example),
                     self.experiment_name,
                     self._metadata,
                     self.client,
@@ -865,7 +912,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                 try:
                     evaluator_response = await evaluator.aevaluate_run(
                         run=run,
-                        example=example,
+                        example=self._get_example_with_readers(example),
                     )
                     selected_results = self.client._select_eval_results(
                         evaluator_response
