@@ -1,7 +1,7 @@
 /* eslint-disable import/no-extraneous-dependencies */
 /* eslint-disable @typescript-eslint/no-namespace */
 
-import { expect, test, describe } from "@jest/globals";
+import { expect, test, describe, beforeAll } from "@jest/globals";
 import crypto from "crypto";
 import { v4 } from "uuid";
 
