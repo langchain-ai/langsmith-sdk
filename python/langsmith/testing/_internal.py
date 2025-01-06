@@ -379,6 +379,8 @@ def _get_id(func: Callable, inputs: dict, suite_id: uuid.UUID) -> Tuple[uuid.UUI
         arg_indices.append(f"{key}{_param_dict[identifier][key]}")
     if arg_indices:
         identifier += f"[{'-'.join(arg_indices)}]"
+    if os.environ.get("PYTEST_XDIST_WORKER"):
+        identifier += "-" + os.environ["PYTEST_XDIST_WORKER"]
     return uuid.uuid5(uuid.NAMESPACE_DNS, identifier), identifier[len(str(suite_id)) :]
 
 
@@ -628,6 +630,7 @@ def _run_test(
     test_suite, example_id = _ensure_example(
         func, *test_args, **test_kwargs, langtest_extra=langtest_extra
     )
+    print(example_id)
     _TEST_CASE.set(_TestCase(test_suite, example_id))
     run_id = uuid.uuid4()
 
