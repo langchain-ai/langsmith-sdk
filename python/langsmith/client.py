@@ -6435,7 +6435,10 @@ class Client:
             Any: The prompt object in the specified format.
         """
         try:
-            from langchain_core.language_models.base import BaseLanguageModel
+            from langchain_core.language_models import (
+                BaseChatModel,
+                BaseLanguageModel,
+            )
             from langchain_core.load.load import loads
             from langchain_core.output_parsers import BaseOutputParser
             from langchain_core.prompts import BasePromptTemplate
@@ -6506,7 +6509,9 @@ class Client:
                     rebound_llm = seq.steps[1]
                     prompt = RunnableSequence(
                         prompt.first,
-                        rebound_llm.bind_tools(**prompt.last.kwargs),
+                        cast(BaseChatModel, rebound_llm).bind_tools(
+                            **prompt.last.kwargs
+                        ),
                         seq.last,
                     )
                 else:
