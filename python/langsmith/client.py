@@ -6726,4 +6726,5 @@ def _close_files(files: List[io.BufferedReader]) -> None:
         try:
             file.close()
         except Exception:
+            logger.debug("Could not close file: %s", file.name)
             pass
