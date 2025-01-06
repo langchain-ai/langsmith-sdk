@@ -82,6 +82,15 @@ impl TracingClient {
         self.sender.send(queued_run).map_err(|_| TracingClientError::QueueFull)
     }
 
+    /// Complete all in-progress requests, then allow the worker threads to exit.
+    ///
+    /// Convenience function for the PyO3 bindings, which cannot use [`Self::shutdown`]
+    /// due to its by-value `self`. This means we cannot `.join()` the threads,
+    /// but the client is nevertheless unusable after this call.
+    ///
+    /// Sending further data after a [`Self::drain()`] call has unspecified behavior.
+    /// It will not cause *undefined behavior* in the programming language sense,
+    /// but it may e.g. cause errors, panics, or even silently fail, with no guarantees.
     pub fn drain(&self) -> Result<(), TracingClientError> {
         for _ in &self.handles {
             self.sender.send(QueuedRun::Drain).map_err(|_| TracingClientError::QueueFull)?;

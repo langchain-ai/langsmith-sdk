@@ -9,6 +9,7 @@ from typing import Dict, Literal, Optional, Union, cast
 
 from langsmith import schemas as ls_schemas
 from langsmith._internal import _orjson
+from langsmith._internal._compressed_runs import CompressedRuns
 from langsmith._internal._multipart import MultipartPart, MultipartPartsAndContext
 from langsmith._internal._serde import dumps_json as _dumps_json
 
@@ -292,3 +293,39 @@ def serialized_run_operation_to_multipart_parts_and_context(
         acc_parts,
         f"trace={op.trace_id},id={op.id}",
     ), opened_files_dict
+
+
+def compress_multipart_parts_and_context(
+    parts_and_context: MultipartPartsAndContext,
+    compressed_runs: CompressedRuns,
+    boundary: str,
+) -> None:
+    for part_name, (filename, data, content_type, headers) in parts_and_context.parts:
+        header_parts = [
+            f"--{boundary}\r\n",
+            f'Content-Disposition: form-data; name="{part_name}"',
+        ]
+
+        if filename:
+            header_parts.append(f'; filename="{filename}"')
+
+        header_parts.extend(
+            [
+                f"\r\nContent-Type: {content_type}\r\n",
+                *[f"{k}: {v}\r\n" for k, v in headers.items()],
+                "\r\n",
+            ]
+        )
+
+        compressed_runs.compressor_writer.write("".join(header_parts).encode())
+
+        if isinstance(data, (bytes, bytearray)):
+            compressed_runs.uncompressed_size += len(data)
+            compressed_runs.compressor_writer.write(data)
+        else:
+            encoded_data = str(data).encode()
+            compressed_runs.uncompressed_size += len(encoded_data)
+            compressed_runs.compressor_writer.write(encoded_data)
+
+        # Write part terminator
+        compressed_runs.compressor_writer.write(b"\r\n")

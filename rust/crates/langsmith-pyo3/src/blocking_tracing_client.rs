@@ -68,14 +68,19 @@ impl BlockingTracingClient {
         Python::allow_threads(slf.py(), || unpacked.client.submit_run_update(run.into_inner()))
             .map_err(|e| into_py_err(slf.py(), e))
     }
-
-    pub fn drain(slf: &Bound<'_, Self>) -> PyResult<()> {
-        let unpacked = slf.get();
-        Python::allow_threads(slf.py(), || unpacked.client.drain())
-            .map_err(|e| into_py_err(slf.py(), e))
-    }
 }
 
 fn into_py_err(py: Python<'_>, e: langsmith_tracing_client::client::TracingClientError) -> PyErr {
     crate::errors::TracingClientError::new_err(format!("{e}").into_py(py))
+}
+
+impl Drop for BlockingTracingClient {
+    fn drop(&mut self) {
+        if Arc::strong_count(&self.client) == 1 {
+            // This is the only copy of the client in Python,
+            // so let it drain its in-progress requests before proceeding.
+            // This runs when Python runs GC on the client, such as when the application is exiting.
+            self.client.drain().expect("draining failed");
+        }
+    }
 }

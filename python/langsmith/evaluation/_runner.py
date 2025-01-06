@@ -353,7 +353,7 @@ def evaluate(
             blocking=blocking,
             **kwargs,
         )
-    elif isinstance(target, tuple):
+    elif isinstance(target, (list, tuple)):
         invalid_args = {
             "num_repetitions": num_repetitions > 1,
             "experiment": bool(experiment),

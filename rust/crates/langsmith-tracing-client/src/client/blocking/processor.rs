@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -55,13 +56,7 @@ impl RunProcessor {
                         }
 
                         self.drain_sender.send(()).expect("drain_sender should never fail");
-
-                        // Put this thread to sleep, so we know the remaining `Drain` messages
-                        // are almost certainly answered by other worker threads.
-                        //
-                        // HACK: This is very hacky!
-                        //       Drain should only be used for benchmarking.
-                        std::thread::sleep(Duration::from_secs(120));
+                        break;
                     }
                     _ => {
                         buffer.push(queued_run);
@@ -97,12 +92,70 @@ impl RunProcessor {
         Ok(())
     }
 
+    // If we have a `QueuedRun::Create` and `QueuedRun::Update` for the same run ID in the batch,
+    // combine the update data into the create so we can send just one operation instead of two.
+    fn combine_batch_operations(batch: Vec<QueuedRun>) -> Vec<QueuedRun> {
+        let mut output = Vec::with_capacity(batch.len());
+        let mut id_to_index = HashMap::with_capacity(batch.len());
+
+        for queued_run in batch {
+            match queued_run {
+                QueuedRun::Create(ref run_create_extended) => {
+                    // Record the `Create` operation's ID and index,
+                    // in case we need to modify it later.
+                    let RunCreateExtended { run_create, .. } = run_create_extended;
+                    let run_id = run_create.common.id.clone();
+                    let index = output.len();
+                    id_to_index.insert(run_id, index);
+                    output.push(queued_run);
+                }
+                QueuedRun::Update(run_update_extended) => {
+                    let run_id = run_update_extended.run_update.common.id.as_str();
+                    if let Some(create_index) = id_to_index.get(run_id) {
+                        // This `run_id` matches a `Create` in this batch.
+                        // Merge the `Update` data into the `Create` and
+                        // drop the separate `Update` operation from the batch.
+                        let RunUpdateExtended { run_update, io, attachments } = run_update_extended;
+                        let QueuedRun::Create(matching_create) = &mut output[*create_index] else {
+                            panic!("index {create_index} did not point to a Create operation in {output:?}");
+                        };
+                        debug_assert_eq!(
+                            run_update.common.id, matching_create.run_create.common.id,
+                            "Create operation at index {create_index} did not have expected ID {}: {matching_create:?}",
+                            run_update.common.id,
+                        );
+
+                        matching_create.run_create.common.merge(run_update.common);
+                        matching_create.run_create.end_time = Some(run_update.end_time);
+                        matching_create.io.merge(io);
+                        if let Some(mut _existing_attachments) =
+                            matching_create.attachments.as_mut()
+                        {
+                            unimplemented!("figure out how to merge attachments -- in Python they are a dict but here they are a Vec");
+                        } else {
+                            matching_create.attachments = attachments;
+                        }
+                    } else {
+                        // No matching `Create` operations for this `Update`, add it as-is.
+                        output.push(QueuedRun::Update(run_update_extended));
+                    }
+                }
+                // Allow other operations to pass through unchanged.
+                _ => output.push(queued_run),
+            }
+        }
+
+        output
+    }
+
     #[expect(unused_variables)]
     fn send_batch(&self, batch: Vec<QueuedRun>) -> Result<(), TracingClientError> {
         //println!("Handling a batch of {} runs", batch.len());
         let start_send_batch = tokio::time::Instant::now();
         let mut json_data = Vec::new();
         let mut attachment_parts = Vec::new();
+
+        let batch = Self::combine_batch_operations(batch);
 
         let start_iter = Instant::now();
         for queued_run in batch {
@@ -117,11 +170,19 @@ impl RunProcessor {
                         to_vec(&run_create).unwrap(), // TODO: get rid of unwrap
                     ));
 
-                    if let Some(inputs) = io.inputs {
+                    // Ensure that pre-formatted JSON data represented as bytes
+                    // doesn't end in trailing null bytes, since we'll be pasting it verbatim
+                    // into an HTTP multipart request which carries an explicit length header.
+                    if let Some(mut inputs) = io.inputs {
+                        if inputs.last() == Some(&0) {
+                            inputs.pop().expect("popping trailing null byte failed");
+                        }
                         json_data.push((format!("post.{}.inputs", run_id), inputs));
                     }
-
-                    if let Some(outputs) = io.outputs {
+                    if let Some(mut outputs) = io.outputs {
+                        if outputs.last() == Some(&0) {
+                            outputs.pop().expect("popping trailing null byte failed");
+                        }
                         json_data.push((format!("post.{}.outputs", run_id), outputs));
                     }
 
@@ -150,7 +211,13 @@ impl RunProcessor {
                         to_vec(&run_update).unwrap(), // TODO: get rid of unwrap
                     ));
 
-                    if let Some(outputs) = io.outputs {
+                    // Ensure that pre-formatted JSON data represented as bytes
+                    // doesn't end in trailing null bytes, since we'll be pasting it verbatim
+                    // into an HTTP multipart request which carries an explicit length header.
+                    if let Some(mut outputs) = io.outputs {
+                        if outputs.last() == Some(&0) {
+                            outputs.pop().expect("popping trailing null byte failed");
+                        }
                         json_data.push((format!("patch.{}.outputs", run_id), outputs));
                     }
 

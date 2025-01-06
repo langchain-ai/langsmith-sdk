@@ -163,6 +163,9 @@ def convert_runs_to_test(
     )
 
     for new_run in to_create:
+        latency = new_run["end_time"] - new_run["start_time"]
+        new_run["start_time"] = datetime.datetime.now(tz=datetime.timezone.utc)
+        new_run["end_time"] = new_run["start_time"] + latency
         client.create_run(**new_run, project_name=test_project_name)
 
     _ = client.update_project(
