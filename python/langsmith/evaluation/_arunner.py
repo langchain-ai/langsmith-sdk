@@ -581,12 +581,48 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         self._upload_results = upload_results
         self._attachment_raw_data_dict = attachment_raw_data_dict
 
-    def _make_fresh_examples(self, examples):
-        return (
-            example
-            for example in examples
-            if str(example.id) not in self._attachment_raw_data_dict
+    def _reset_example_attachments(self, example: schemas.Example) -> schemas.Example:
+        """Reset attachment readers for an example."""
+        if not hasattr(example, "attachments") or not example.attachments:
+            return example
+
+        new_attachments: dict[str, schemas.AttachmentInfo] = {}
+        for name, attachment in example.attachments.items():
+            if (
+                self._attachment_raw_data_dict is not None
+                and str(example.id) + name in self._attachment_raw_data_dict
+            ):
+                new_attachments[name] = {
+                    "presigned_url": attachment["presigned_url"],
+                    "reader": io.BytesIO(
+                        self._attachment_raw_data_dict[str(example.id) + name]
+                    ),
+                }
+            else:
+                new_attachments[name] = attachment
+
+        # Create a new Example instance with the updated attachments
+        return schemas.Example(
+            id=example.id,
+            created_at=example.created_at,
+            dataset_id=example.dataset_id,
+            inputs=example.inputs,
+            outputs=example.outputs,
+            metadata=example.metadata,
+            modified_at=example.modified_at,
+            runs=example.runs,
+            source_run_id=example.source_run_id,
+            attachments=new_attachments,
+            _host_url=example._host_url,
+            _tenant_id=example._tenant_id,
         )
+
+    def _make_fresh_examples(
+        self,
+        examples: List[schemas.Example],
+    ) -> List[schemas.Example]:
+        """Create fresh copies of examples with reset readers."""
+        return [self._reset_example_attachments(example) for example in examples]
 
     async def aget_examples(self) -> AsyncIterator[schemas.Example]:
         if self._examples is None:
