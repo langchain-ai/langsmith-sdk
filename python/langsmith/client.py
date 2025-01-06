@@ -476,12 +476,12 @@ class Client:
         # Create a session and register a finalizer to close it
         session_ = session if session else requests.Session()
         self.session = session_
-        if ls_utils.get_env_var("USE_RUN_COMPRESSION"):
+        if ls_utils.get_env_var("DISABLE_RUN_COMPRESSION"):
+            self.compressed_runs = None
+        else:
             self._futures: set[cf.Future] = set()
             self.compressed_runs: Optional[CompressedRuns] = CompressedRuns()
             self._data_available_event = threading.Event()
-        else:
-            self.compressed_runs = None
 
         self._info = (
             info
