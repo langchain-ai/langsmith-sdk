@@ -6506,7 +6506,7 @@ class Client:
                     rebound_llm = seq.steps[1]
                     prompt = RunnableSequence(
                         prompt.first,
-                        rebound_llm.bind(**{**prompt.last.kwargs}),
+                        rebound_llm.bind_tools(**prompt.last.kwargs),
                         seq.last,
                     )
                 else:
