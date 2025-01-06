@@ -3648,16 +3648,21 @@ export class Client implements LangSmithTracingClientInterface {
     return await response.json();
   }
 
-
   /**
    * Delete a run from an an annotation queue.
    * @param queueId - The ID of the annotation queue to delete the run from
    * @param queueRunId - The ID of the run to delete from the annotation queue
    */
-  public async deleteRunFromAnnotationQueue(queueId: string, queueRunId: string): Promise<void> {
+  public async deleteRunFromAnnotationQueue(
+    queueId: string,
+    queueRunId: string
+  ): Promise<void> {
     const response = await this.caller.call(
       _getFetchImplementation(),
-      `${this.apiUrl}/annotation-queues/${assertUuid(queueId, "queueId")}/runs/${assertUuid(queueRunId, "queueRunId")}`,
+      `${this.apiUrl}/annotation-queues/${assertUuid(
+        queueId,
+        "queueId"
+      )}/runs/${assertUuid(queueRunId, "queueRunId")}`,
       {
         method: "DELETE",
         headers: { ...this.headers, Accept: "application/json" },
