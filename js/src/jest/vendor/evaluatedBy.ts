@@ -21,13 +21,6 @@ export async function evaluatedBy(actual: any, evaluator: SimpleEvaluator) {
     const runTree = getCurrentRunTree();
     const wrappedEvaluator = traceable(evaluator, {
       reference_example_id: context.currentExample.id,
-      metadata: {
-        example_version: context.currentExample.modified_at
-          ? new Date(context.currentExample.modified_at).toISOString()
-          : new Date(
-              context.currentExample.created_at ?? new Date()
-            ).toISOString(),
-      },
       client: context.client,
       tracingEnabled: true,
     });
@@ -38,7 +31,12 @@ export async function evaluatedBy(actual: any, evaluator: SimpleEvaluator) {
       actual,
     });
 
-    await context.client?.logEvaluationFeedback(evalResult, runTree);
+    // Don't wait for feedback
+    const exampleSyncPromise =
+      context.currentExample.syncPromise ?? Promise.resolve();
+    void exampleSyncPromise.then(() =>
+      context.client?.logEvaluationFeedback(evalResult, runTree)
+    );
     return evalResult.score;
   } else {
     const evalResult = await evaluator({

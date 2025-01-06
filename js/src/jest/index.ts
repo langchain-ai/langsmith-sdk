@@ -1,9 +1,9 @@
 /* eslint-disable import/no-extraneous-dependencies */
 /* eslint-disable @typescript-eslint/no-namespace */
 
-import { expect, test, describe, beforeAll } from "@jest/globals";
+import { expect, test, describe, beforeAll, afterAll } from "@jest/globals";
 import crypto from "crypto";
-import { v4 } from "uuid";
+import { v4, v5 } from "uuid";
 
 import { traceable } from "../traceable.js";
 import { RunTree, RunTreeConfig } from "../run_trees.js";
@@ -26,6 +26,8 @@ import {
 } from "./globals.js";
 import { wrapExpect } from "./vendor/chain.js";
 import type { SimpleEvaluator } from "./vendor/evaluatedBy.js";
+
+const UUID5_NAMESPACE = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
 
 expect.extend({
   toBeRelativeCloseTo,
@@ -134,16 +136,64 @@ export type LangSmithJestDescribeWrapper = (
 ) => void;
 
 const datasetSetupInfo = new Map();
-const fetchExamplesPromises = new Map();
-const createExamplePromises = new Map();
+const syncExamplePromises = new Map();
+
+function getExampleId(
+  datasetName: string,
+  inputs: Record<string, unknown>,
+  outputs?: Record<string, unknown>
+) {
+  const identifier = JSON.stringify({
+    datasetName,
+    inputsHash: objectHash(inputs),
+    outputsHash: objectHash(outputs ?? {}),
+  });
+  return v5(identifier, UUID5_NAMESPACE);
+}
+
+async function syncExample(params: {
+  client: Client;
+  exampleId: string;
+  datasetId: string;
+  inputs: Record<string, unknown>;
+  outputs: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+}) {
+  const { client, exampleId, inputs, outputs, metadata, createdAt, datasetId } =
+    params;
+  let example;
+  try {
+    example = await client.readExample(exampleId);
+    if (
+      objectHash(example.inputs) !== objectHash(inputs) ||
+      objectHash(example.outputs ?? {}) !== objectHash(outputs ?? {}) ||
+      example.dataset_id !== datasetId
+    ) {
+      await client.updateExample(exampleId, {
+        inputs,
+        outputs,
+        metadata,
+        dataset_id: datasetId,
+      });
+    }
+  } catch (e: any) {
+    if (e.message.includes("not found")) {
+      example = await client.createExample(inputs, outputs, {
+        exampleId,
+        datasetId,
+        createdAt: new Date(createdAt ?? new Date()),
+        metadata,
+      });
+    } else {
+      throw e;
+    }
+  }
+  return example;
+}
 
 async function runDatasetSetup(context: JestAsyncLocalStorageData) {
-  const {
-    client: testClient,
-    suiteName: datasetName,
-    projectConfig,
-    suiteUuid,
-  } = context;
+  const { client: testClient, suiteName: datasetName, projectConfig } = context;
   let storageValue;
   if (!trackingEnabled(context)) {
     storageValue = {
@@ -164,35 +214,14 @@ async function runDatasetSetup(context: JestAsyncLocalStorageData) {
         throw e;
       }
     }
-    if (fetchExamplesPromises.get(suiteUuid) === undefined) {
-      fetchExamplesPromises.set(
-        suiteUuid,
-        fetchExamples(testClient, datasetName)
-      );
-    }
-    const examples = await fetchExamplesPromises.get(suiteUuid);
     const project = await _createProject(testClient, dataset.id, projectConfig);
     storageValue = {
       dataset,
-      examples,
       project,
       client: testClient,
     };
   }
   return storageValue;
-}
-
-async function fetchExamples(testClient: Client, datasetName: string) {
-  const examplesList = testClient.listExamples({
-    datasetName,
-  });
-  const examples = [];
-  for await (const example of examplesList) {
-    const inputHash = objectHash(example.inputs);
-    const outputHash = objectHash(example.outputs ?? {});
-    examples.push({ ...example, inputHash, outputHash });
-  }
-  return examples;
 }
 
 function wrapDescribeMethod(
@@ -206,12 +235,13 @@ function wrapDescribeMethod(
       enableTestTracking?: boolean;
     } & Partial<Omit<CreateProjectParams, "referenceDatasetId">>
   ) {
+    const client = experimentConfig?.client ?? RunTree.getSharedClient();
     return method(datasetName, () => {
       const suiteUuid = v4();
       const context = {
         suiteUuid,
         suiteName: datasetName,
-        client: experimentConfig?.client ?? RunTree.getSharedClient(),
+        client,
         createdAt: new Date().toISOString(),
         projectConfig: experimentConfig,
         enableTestTracking: experimentConfig?.enableTestTracking,
@@ -219,6 +249,11 @@ function wrapDescribeMethod(
 
       beforeAll(async () => {
         datasetSetupInfo.set(suiteUuid, await runDatasetSetup(context));
+      });
+
+      afterAll(async () => {
+        await Promise.all([...syncExamplePromises.values()]);
+        await client.awaitPendingTraceBatches();
       });
 
       /**
@@ -243,8 +278,11 @@ const lsDescribe = Object.assign(wrapDescribeMethod(describe), {
   skip: wrapDescribeMethod(describe.skip),
 });
 
-export type LangSmithJestWrapperConfig = Partial<RunTreeConfig> & {
+export type LangSmithJestWrapperConfig = Partial<
+  Omit<RunTreeConfig, "client">
+> & {
   n?: number;
+  iterations?: number;
 };
 
 export type LangSmithJestWrapperParams<I, O> = {
@@ -292,17 +330,13 @@ function wrapTestMethod(method: (...args: any[]) => void) {
               "Dataset failed to initialize. Please check your LangSmith environment variables."
             );
           }
-          const { examples, dataset, createdAt, project, client } =
-            datasetSetupInfo.get(context.suiteUuid);
+          const { dataset, createdAt, project, client } = datasetSetupInfo.get(
+            context.suiteUuid
+          );
           const testInput: I = inputs;
           const testOutput: O = outputs;
-          const inputHash = objectHash(testInput);
-          const outputHash = objectHash(testOutput ?? {});
           if (trackingEnabled(context)) {
             const missingFields = [];
-            if (examples === undefined) {
-              missingFields.push("examples");
-            }
             if (dataset === undefined) {
               missingFields.push("dataset");
             }
@@ -321,54 +355,48 @@ function wrapTestMethod(method: (...args: any[]) => void) {
                   )} while syncing to LangSmith. Please contact us for help.`
               );
             }
-            const testClient = config?.client ?? client!;
-            let example = (examples ?? []).find((example: any) => {
-              return (
-                example.inputHash === inputHash &&
-                example.outputHash === outputHash
+            const testClient = client;
+            const exampleId = getExampleId(dataset.name, inputs, outputs);
+
+            // Create or update the example in the background
+            if (syncExamplePromises.get(exampleId) === undefined) {
+              syncExamplePromises.set(
+                exampleId,
+                syncExample({
+                  client,
+                  exampleId,
+                  datasetId: dataset.id,
+                  inputs,
+                  outputs,
+                  metadata: {},
+                  createdAt,
+                })
               );
-            });
-            if (example === undefined) {
-              // Avoid creating multiple of the same example
-              // when running the same test case multiple times
-              // Jest runs other tests serially
-              const exampleKey = [
-                context.suiteUuid,
-                inputHash,
-                outputHash,
-              ].join(":");
-              if (createExamplePromises.get(exampleKey) === undefined) {
-                createExamplePromises.set(
-                  exampleKey,
-                  testClient.createExample(testInput, testOutput, {
-                    datasetId: dataset?.id,
-                    createdAt: new Date(createdAt ?? new Date()),
-                  })
-                );
-              }
-              const newExample = await createExamplePromises.get(exampleKey);
-              example = { ...newExample, inputHash, outputHash };
             }
 
             // .enterWith is OK here
             jestAsyncLocalStorageInstance.enterWith({
               ...context,
-              currentExample: example,
+              currentExample: {
+                inputs,
+                outputs,
+                id: exampleId,
+                syncPromise: syncExamplePromises.get(exampleId),
+              },
               client: testClient,
             });
+
             const traceableOptions = {
-              reference_example_id: example.id,
+              reference_example_id: exampleId,
               project_name: project!.name,
               metadata: {
                 ...config?.metadata,
-                example_version: example.modified_at
-                  ? new Date(example.modified_at).toISOString()
-                  : new Date(example.created_at).toISOString(),
               },
               client: testClient,
               tracingEnabled: true,
               name: "Unit test",
             };
+
             // Pass inputs into traceable so tracing works correctly but
             // provide both to the user-defined test function
             const tracedFunction = traceable(
@@ -381,7 +409,6 @@ function wrapTestMethod(method: (...args: any[]) => void) {
               { ...traceableOptions, ...config }
             );
             await (tracedFunction as any)(testInput);
-            await testClient.awaitPendingTraceBatches();
           } else {
             // .enterWith is OK here
             jestAsyncLocalStorageInstance.enterWith({
@@ -402,7 +429,7 @@ function wrapTestMethod(method: (...args: any[]) => void) {
 
 function createEachMethod(method: (...args: any[]) => void) {
   function eachMethod<I extends KVMap, O extends KVMap>(
-    table: { inputs: I; outputs: O }[] | "*",
+    table: { inputs: I; outputs: O }[],
     config?: LangSmithJestWrapperConfig
   ) {
     const context = jestAsyncLocalStorageInstance.getStore();
@@ -416,76 +443,14 @@ function createEachMethod(method: (...args: any[]) => void) {
       fn: (params: { inputs: I; outputs: O }) => unknown | Promise<unknown>,
       timeout?: number
     ) {
-      if (table === "*") {
-        /*
-         * Jest doesn't allow async setup before declaring tests, so we can't
-         * fetch dataset examples before running the test.
-         * beforeAll() does not run before test declarations.
-         * datasetSetupInfo will not be populated until inside a test.
-         */
-        method(
-          `${name} (pulling from LangSmith dataset "${context.suiteName}")`,
-          async () => {
-            if (fetchExamplesPromises.get(context.suiteUuid) === undefined) {
-              fetchExamplesPromises.set(
-                context.suiteUuid,
-                fetchExamples(context.client, context.suiteName)
-              );
-            }
-            const examples = await fetchExamplesPromises.get(context.suiteUuid);
-            const testMethodPromises: Promise<void>[] = [];
-            for (let i = 0; i < examples.length; i += 1) {
-              const example = examples[i];
-              // Context gets overwritten by Jest, so reset it here.
-              jestAsyncLocalStorageInstance.enterWith(context);
-              // Use wrapTestMethod to get the traceable spans to properly appear.
-              // The test method gets executed without being awaited internally,
-              // but we want to await it to catch errors properly so we store the
-              // promises and await them at the end of the overarching test to
-              // properly catch errors.
-              wrapTestMethod(async (_, fn, timeout) => {
-                const testPromise = Promise.race([
-                  fn(),
-                  timeout > 0
-                    ? new Promise((_, reject) =>
-                        setTimeout(
-                          () =>
-                            reject(
-                              new Error(
-                                `Test run #${i} over LangSmith dataset timed out.`
-                              )
-                            ),
-                          timeout
-                        )
-                      )
-                    : Promise.resolve(),
-                ]);
-                testMethodPromises.push(testPromise);
-              })<I, O>(
-                `${name}, item ${i}`,
-                { inputs: example.inputs, outputs: example.outputs, config },
-                fn,
-                timeout
-              );
-            }
-
-            await Promise.all(testMethodPromises);
-            // TODO: Fix pending test issue caused by traces being sent after the
-            // test promises resolve.
-          },
-          // Handle timeouts individually within the test
-          0
+      for (let i = 0; i < table.length; i += 1) {
+        const example = table[i];
+        wrapTestMethod(method)<I, O>(
+          `${name}, item ${i}`,
+          { inputs: example.inputs, outputs: example.outputs, config },
+          fn,
+          timeout
         );
-      } else {
-        for (let i = 0; i < table.length; i += 1) {
-          const example = table[i];
-          wrapTestMethod(method)<I, O>(
-            `${name}, item ${i}`,
-            { inputs: example.inputs, outputs: example.outputs, config },
-            fn,
-            timeout
-          );
-        }
       }
     };
   }

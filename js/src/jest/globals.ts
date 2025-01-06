@@ -6,11 +6,11 @@ import { getEnvironmentVariable } from "../utils/env.js";
 export type JestAsyncLocalStorageData = {
   enableTestTracking?: boolean;
   dataset?: Dataset;
-  examples?: (Example & { inputHash: string; outputHash: string })[];
+  // examples?: (Example & { inputHash: string; outputHash: string })[];
   createdAt: string;
   projectConfig?: Partial<CreateProjectParams>;
   project?: TracerSession;
-  currentExample?: Partial<Example>;
+  currentExample?: Partial<Example> & { syncPromise?: Promise<Example> };
   client: Client;
   suiteUuid: string;
   suiteName: string;
@@ -20,8 +20,11 @@ export const jestAsyncLocalStorageInstance =
   new AsyncLocalStorage<JestAsyncLocalStorageData>();
 
 export function trackingEnabled(context: JestAsyncLocalStorageData) {
-  return (
-    context.enableTestTracking ||
-    getEnvironmentVariable("LANGSMITH_TEST_TRACKING") === "true"
-  );
+  if (typeof context.enableTestTracking === "boolean") {
+    return context.enableTestTracking;
+  }
+  if (getEnvironmentVariable("LANGSMITH_TEST_TRACKING") === "false") {
+    return false;
+  }
+  return getEnvironmentVariable("LANGSMITH_TRACING_V2") === "true";
 }
