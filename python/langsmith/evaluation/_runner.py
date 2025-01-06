@@ -37,7 +37,6 @@ from typing import (
     cast,
 )
 
-import requests
 from typing_extensions import TypedDict, overload
 
 import langsmith
@@ -1343,14 +1342,19 @@ class _ExperimentManager(_ExperimentManagerMixin):
         if not hasattr(example, "attachments") or not example.attachments:
             return example
 
-        new_attachments = {}
+        new_attachments: dict[str, schemas.AttachmentInfo] = {}
         for name, attachment in example.attachments.items():
-            try:
+            if (
+                self._attachment_raw_data_dict is not None
+                and str(example.id) + name in self._attachment_raw_data_dict
+            ):
                 new_attachments[name] = {
                     "presigned_url": attachment["presigned_url"],
-                    "reader": io.BytesIO(self._attachment_raw_data_dict[str(example.id) + name]),
+                    "reader": io.BytesIO(
+                        self._attachment_raw_data_dict[str(example.id) + name]
+                    ),
                 }
-            except Exception:
+            else:
                 new_attachments[name] = attachment
 
         # Create a new Example instance with the updated attachments
@@ -1369,13 +1373,14 @@ class _ExperimentManager(_ExperimentManagerMixin):
             _tenant_id=example._tenant_id,
         )
 
-
     def _make_fresh_examples(
         self,
         _original_examples: List[schemas.Example],
     ) -> List[schemas.Example]:
         """Create fresh copies of examples with reset readers."""
-        return [self._reset_example_attachments(example) for example in _original_examples]
+        return [
+            self._reset_example_attachments(example) for example in _original_examples
+        ]
 
     @property
     def examples(self) -> Iterable[schemas.Example]:
@@ -1388,9 +1393,9 @@ class _ExperimentManager(_ExperimentManagerMixin):
             if self._reuse_attachments and self._attachment_raw_data_dict is None:
                 examples_copy, self._examples = itertools.tee(self._examples)
                 self._attachment_raw_data_dict = {
-                    str(e.id) + name: value['reader'].read()
+                    str(e.id) + name: value["reader"].read()
                     for e in examples_copy
-                    for name, value in e.attachments.items()
+                    for name, value in (e.attachments or {}).items()
                 }
             if self._num_repetitions > 1:
                 examples_list = list(self._examples)
@@ -1442,7 +1447,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             include_attachments=self._include_attachments,
             reuse_attachments=self._reuse_attachments,
             upload_results=self._upload_results,
-            attachment_raw_data_dict=self._attachment_raw_data_dict
+            attachment_raw_data_dict=self._attachment_raw_data_dict,
         )
 
     def with_predictions(

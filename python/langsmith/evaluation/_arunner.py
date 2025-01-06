@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures as cf
 import datetime
+import io
 import logging
 import pathlib
 import uuid
@@ -24,7 +25,7 @@ from typing import (
     Union,
     cast,
 )
-import io
+
 import langsmith
 from langsmith import run_helpers as rh
 from langsmith import run_trees, schemas
@@ -480,7 +481,12 @@ async def _aevaluate(
         runs=runs,
         include_attachments=_include_attachments(target)
         or _evaluators_include_attachments(evaluators) > 0,
-        reuse_attachments = num_repetitions * (int(_include_attachments(target)) + _evaluators_include_attachments(evaluators)) > 1,
+        reuse_attachments=num_repetitions
+        * (
+            int(_include_attachments(target))
+            + _evaluators_include_attachments(evaluators)
+        )
+        > 1,
         upload_results=upload_results,
     ).astart()
     cache_dir = ls_utils.get_cache_dir(None)
@@ -592,9 +598,9 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             if self._reuse_attachments and self._attachment_raw_data_dict is None:
                 examples_copy, self._examples = aitertools.atee(self._examples)
                 self._attachment_raw_data_dict = {
-                    str(e.id) + name: value['reader'].read()
+                    str(e.id) + name: value["reader"].read()
                     async for e in examples_copy
-                    for name, value in e.attachments.items()
+                    for name, value in (e.attachments or {}).items()
                 }
             if self._num_repetitions > 1:
                 examples_list = [example async for example in self._examples]
@@ -668,19 +674,24 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             include_attachments=self._include_attachments,
             reuse_attachments=self._reuse_attachments,
             upload_results=self._upload_results,
-            attachment_raw_data_dict=self._attachment_raw_data_dict
+            attachment_raw_data_dict=self._attachment_raw_data_dict,
         )
 
     def _get_example_with_readers(self, example: schemas.Example) -> schemas.Example:
-        new_attachments = {}
-        for name, attachment in example.attachments.items():
-            try:
-                reader = io.BytesIO(self._attachment_raw_data_dict[str(example.id) + name])
+        new_attachments: dict[str, schemas.AttachmentInfo] = {}
+        for name, attachment in (example.attachments or {}).items():
+            if (
+                self._attachment_raw_data_dict is not None
+                and str(example.id) + name in self._attachment_raw_data_dict
+            ):
+                reader = io.BytesIO(
+                    self._attachment_raw_data_dict[str(example.id) + name]
+                )
                 new_attachments[name] = {
                     "presigned_url": attachment["presigned_url"],
                     "reader": reader,
                 }
-            except Exception:
+            else:
                 new_attachments[name] = attachment
 
         return schemas.Example(

@@ -1551,7 +1551,6 @@ async def test_aevaluate_with_attachments(langchain_client: Client) -> None:
         assert result["evaluation_results"]["results"][0].score == 1.0
         assert result["evaluation_results"]["results"][1].score == 1.0
 
-
     results = await langchain_client.aevaluate(
         target,
         data=dataset_name,
