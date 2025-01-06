@@ -477,10 +477,10 @@ class Client:
         session_ = session if session else requests.Session()
         self.session = session_
         if ls_utils.get_env_var("DISABLE_RUN_COMPRESSION"):
-            self.compressed_runs = None
+            self.compressed_runs: Optional[CompressedRuns] = None
         else:
             self._futures: set[cf.Future] = set()
-            self.compressed_runs: Optional[CompressedRuns] = CompressedRuns()
+            self.compressed_runs = CompressedRuns()
             self._data_available_event = threading.Event()
 
         self._info = (
