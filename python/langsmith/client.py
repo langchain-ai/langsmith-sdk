@@ -1294,7 +1294,7 @@ class Client:
                 self._pyo3_client.create_run(run_create)
             elif self.compressed_runs is not None:
                 serialized_op = serialize_run_dict("post", run_create)
-                multipart_form = (
+                multipart_form, _ = (
                     serialized_run_operation_to_multipart_parts_and_context(
                         serialized_op
                     )
@@ -2018,7 +2018,7 @@ class Client:
         elif use_multipart:
             serialized_op = serialize_run_dict(operation="patch", payload=data)
             if self.compressed_runs is not None:
-                multipart_form = (
+                multipart_form, _ = (
                     serialized_run_operation_to_multipart_parts_and_context(
                         serialized_op
                     )
