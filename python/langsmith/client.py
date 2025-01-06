@@ -1302,7 +1302,7 @@ class Client:
                 with self.compressed_runs.lock:
                     compress_multipart_parts_and_context(
                         multipart_form,
-                        self.compressed_runs.compressor_writer,
+                        self.compressed_runs,
                         _BOUNDARY,
                     )
                     self.compressed_runs.run_count += 1
@@ -1816,7 +1816,13 @@ class Client:
                     # do not retry by default
                     return
 
-    def _send_compressed_multipart_req(self, data_stream, *, attempts: int = 3):
+    def _send_compressed_multipart_req(
+        self,
+        data_stream: io.BytesIO,
+        compressed_runs_info: Optional[Tuple[int, int]],
+        *,
+        attempts: int = 3,
+    ):
         """Send a zstd-compressed multipart form data stream to the backend."""
         _context: str = ""
 
@@ -1830,6 +1836,12 @@ class Client:
                         "X-API-KEY": api_key,
                         "Content-Type": f"multipart/form-data; boundary={_BOUNDARY}",
                         "Content-Encoding": "zstd",
+                        "X-Pre-Compressed-Size": (
+                            str(compressed_runs_info[0]) if compressed_runs_info else ""
+                        ),
+                        "X-Post-Compressed-Size": (
+                            str(compressed_runs_info[1]) if compressed_runs_info else ""
+                        ),
                     }
 
                     self.request_with_retries(
@@ -1985,7 +1997,7 @@ class Client:
                 with self.compressed_runs.lock:
                     compress_multipart_parts_and_context(
                         multipart_form,
-                        self.compressed_runs.compressor_writer,
+                        self.compressed_runs,
                         _BOUNDARY,
                     )
                     self.compressed_runs.run_count += 1
@@ -2024,8 +2036,10 @@ class Client:
             _tracing_thread_drain_compressed_buffer,
         )
 
-        final_data_stream = _tracing_thread_drain_compressed_buffer(
-            self, size_limit=1, size_limit_bytes=1
+        final_data_stream, compressed_runs_info = (
+            _tracing_thread_drain_compressed_buffer(
+                self, size_limit=1, size_limit_bytes=1
+            )
         )
 
         if final_data_stream is not None:
@@ -2035,13 +2049,14 @@ class Client:
                 future = HTTP_REQUEST_THREAD_POOL.submit(
                     self._send_compressed_multipart_req,
                     final_data_stream,
+                    compressed_runs_info,
                     attempts=attempts,
                 )
                 self._futures.add(future)
             except RuntimeError:
                 # In case the ThreadPoolExecutor is already shutdown
                 self._send_compressed_multipart_req(
-                    final_data_stream, attempts=attempts
+                    final_data_stream, compressed_runs_info, attempts=attempts
                 )
 
         # If we got a future, wait for it to complete
@@ -4292,7 +4307,7 @@ class Client:
 
         example = response.json()
         attachments = {}
-        if example["attachment_urls"]:
+        if example.get("attachment_urls"):
             for key, value in example["attachment_urls"].items():
                 response = requests.get(value["presigned_url"], stream=True)
                 response.raise_for_status()
@@ -4426,7 +4441,7 @@ class Client:
             self._get_paginated_list("/examples", params=params)
         ):
             attachments = {}
-            if example["attachment_urls"]:
+            if example.get("attachment_urls"):
                 for key, value in example["attachment_urls"].items():
                     response = requests.get(value["presigned_url"], stream=True)
                     response.raise_for_status()
