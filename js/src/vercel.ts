@@ -871,34 +871,27 @@ export class AISDKExporter {
       }
     }
 
-    let processed = sampled;
+    const processed = sampled.map(({ dotOrder, run }) => {
+      for (const action of actions) {
+        if (action.type === "delete") {
+          dotOrder = removeDotOrder(dotOrder, action.runId);
+        }
 
-    for (const action of actions) {
-      if (action.type === "delete") {
-        processed = processed.map(({ dotOrder, run }) => ({
-          dotOrder: removeDotOrder(dotOrder, action.runId),
-          run,
-        }));
-      }
-
-      if (action.type === "reparent") {
-        processed = processed.map(({ dotOrder, run }) => ({
-          dotOrder: reparentDotOrder(
+        if (action.type === "reparent") {
+          dotOrder = reparentDotOrder(
             dotOrder,
             action.runId,
             action.parentDotOrder
-          ),
-          run,
-        }));
+          );
+        }
+
+        if (action.type === "rename") {
+          dotOrder = dotOrder.replace(action.sourceRunId, action.targetRunId);
+        }
       }
 
-      if (action.type === "rename") {
-        processed = processed.map(({ dotOrder, run }) => ({
-          dotOrder: dotOrder.replace(action.sourceRunId, action.targetRunId),
-          run,
-        }));
-      }
-    }
+      return { dotOrder, run };
+    });
 
     this.logDebug(`sampled runs to be sent to LangSmith`, processed);
     Promise.all(
