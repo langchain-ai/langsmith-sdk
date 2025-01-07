@@ -1167,7 +1167,6 @@ def test_multipart_ingest_update_with_attachments(
     current_time = datetime.datetime.now(datetime.timezone.utc).strftime(
         "%Y%m%dT%H%M%S%fZ"
     )
-
     runs_to_create: list[dict] = [
         {
             "id": str(trace_a_id),
@@ -1184,6 +1183,8 @@ def test_multipart_ingest_update_with_attachments(
     with caplog.at_level(logging.WARNING, logger="langsmith.client"):
         langchain_client.multipart_ingest(create=runs_to_create, update=[])
         assert not caplog.records
+        image_path = Path(__file__).parent / "test_data/parrot-icon.png"
+        image_content = image_path.read_bytes()  # Read content before multipart request
 
         runs_to_update: list[dict] = [
             {
@@ -1195,7 +1196,7 @@ def test_multipart_ingest_update_with_attachments(
                     "foo": ("text/plain", b"bar"),
                     "bar": (
                         "image/png",
-                        Path(__file__).parent / "test_data/parrot-icon.png",
+                        image_path,
                     ),
                 },
             }
@@ -1203,7 +1204,9 @@ def test_multipart_ingest_update_with_attachments(
         langchain_client.multipart_ingest(
             create=[], update=runs_to_update, dangerously_allow_filesystem=True
         )
-        assert open(Path(__file__).parent / "test_data/parrot-icon.png").closed
+
+        # this would fail if the internal file handle wasn't closed
+        assert image_path.read_bytes() == image_content
 
         assert not caplog.records
         wait_for(lambda: _get_run(str(trace_a_id), langchain_client))
