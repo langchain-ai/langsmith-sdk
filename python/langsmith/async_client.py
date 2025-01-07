@@ -99,10 +99,10 @@ class AsyncClient:
 
         # Python requests library used by the normal Client filters out params with None values
         # The httpx library does not. Filter them out here to keep behavior consistent
-        if 'params' in kwargs:
-            params = kwargs['params']
+        if "params" in kwargs:
+            params = kwargs["params"]
             filtered_params = {k: v for k, v in params.items() if v is not None}
-            kwargs['params'] = filtered_params
+            kwargs["params"] = filtered_params
 
         for attempt in range(max_retries):
             try:
@@ -846,20 +846,19 @@ class AsyncClient:
             None
         """
         response = await self._arequest_with_retries(
-            "DELETE",
-            f"/feedback/{ls_client._as_uuid(feedback_id, 'feedback_id')}"
+            "DELETE", f"/feedback/{ls_client._as_uuid(feedback_id, 'feedback_id')}"
         )
         ls_utils.raise_for_status_with_text(response)
 
     # Annotation Queue API
 
     async def list_annotation_queues(
-            self,
-            *,
-            queue_ids: Optional[List[ID_TYPE]] = None,
-            name: Optional[str] = None,
-            name_contains: Optional[str] = None,
-            limit: Optional[int] = None,
+        self,
+        *,
+        queue_ids: Optional[List[ID_TYPE]] = None,
+        name: Optional[str] = None,
+        name_contains: Optional[str] = None,
+        limit: Optional[int] = None,
     ) -> AsyncIterator[ls_schemas.AnnotationQueue]:
         """List the annotation queues on the LangSmith API.
 
@@ -878,7 +877,10 @@ class AsyncClient:
         """
         params: dict = {
             "ids": (
-                [ls_client._as_uuid(id_, f"queue_ids[{i}]") for i, id_ in enumerate(queue_ids)]
+                [
+                    ls_client._as_uuid(id_, f"queue_ids[{i}]")
+                    for i, id_ in enumerate(queue_ids)
+                ]
                 if queue_ids is not None
                 else None
             ),
@@ -887,18 +889,20 @@ class AsyncClient:
             "limit": min(limit, 100) if limit is not None else 100,
         }
         ix = 0
-        async for feedback in self._aget_paginated_list("/annotation-queues", params=params):
+        async for feedback in self._aget_paginated_list(
+            "/annotation-queues", params=params
+        ):
             yield ls_schemas.AnnotationQueue(**feedback)
             ix += 1
             if limit is not None and ix >= limit:
                 break
 
     async def create_annotation_queue(
-            self,
-            *,
-            name: str,
-            description: Optional[str] = None,
-            queue_id: Optional[ID_TYPE] = None,
+        self,
+        *,
+        name: str,
+        description: Optional[str] = None,
+        queue_id: Optional[ID_TYPE] = None,
     ) -> ls_schemas.AnnotationQueue:
         """Create an annotation queue on the LangSmith API.
 
@@ -916,7 +920,7 @@ class AsyncClient:
         body = {
             "name": name,
             "description": description,
-            "id": queue_id or str(uuid.uuid4()),
+            "id": str(queue_id) if queue_id is not None else str(uuid.uuid4()),
         }
         response = await self._arequest_with_retries(
             "POST",
@@ -928,7 +932,9 @@ class AsyncClient:
             **response.json(),
         )
 
-    async def read_annotation_queue(self, queue_id: ID_TYPE) -> ls_schemas.AnnotationQueue:
+    async def read_annotation_queue(
+        self, queue_id: ID_TYPE
+    ) -> ls_schemas.AnnotationQueue:
         """Read an annotation queue with the specified queue ID.
 
         Args:
@@ -941,7 +947,7 @@ class AsyncClient:
         return await self.list_annotation_queues(queue_ids=[queue_id]).__anext__()
 
     async def update_annotation_queue(
-            self, queue_id: ID_TYPE, *, name: str, description: Optional[str] = None
+        self, queue_id: ID_TYPE, *, name: str, description: Optional[str] = None
     ) -> None:
         """Update an annotation queue with the specified queue_id.
 
@@ -981,7 +987,7 @@ class AsyncClient:
         ls_utils.raise_for_status_with_text(response)
 
     async def add_runs_to_annotation_queue(
-            self, queue_id: ID_TYPE, *, run_ids: List[ID_TYPE]
+        self, queue_id: ID_TYPE, *, run_ids: List[ID_TYPE]
     ) -> None:
         """Add runs to an annotation queue with the specified queue ID.
 
@@ -996,12 +1002,15 @@ class AsyncClient:
         response = await self._arequest_with_retries(
             "POST",
             f"/annotation-queues/{ls_client._as_uuid(queue_id, 'queue_id')}/runs",
-            json=[str(ls_client._as_uuid(id_, f"run_ids[{i}]")) for i, id_ in enumerate(run_ids)],
+            json=[
+                str(ls_client._as_uuid(id_, f"run_ids[{i}]"))
+                for i, id_ in enumerate(run_ids)
+            ],
         )
         ls_utils.raise_for_status_with_text(response)
 
     async def delete_run_from_annotation_queue(
-            self, queue_id: ID_TYPE, *, run_id: ID_TYPE
+        self, queue_id: ID_TYPE, *, run_id: ID_TYPE
     ) -> None:
         """Delete a run from an annotation queue with the specified queue ID and run ID.
 
@@ -1020,7 +1029,7 @@ class AsyncClient:
         ls_utils.raise_for_status_with_text(response)
 
     async def get_run_from_annotation_queue(
-            self, queue_id: ID_TYPE, *, index: int
+        self, queue_id: ID_TYPE, *, index: int
     ) -> ls_schemas.RunWithAnnotationQueueInfo:
         """Get a run from an annotation queue at the specified index.
 
@@ -1036,10 +1045,7 @@ class AsyncClient:
             LangSmithError: For other API-related errors.
         """
         base_url = f"/annotation-queues/{ls_client._as_uuid(queue_id, 'queue_id')}/run"
-        response = await self._arequest_with_retries(
-            "GET",
-            f"{base_url}/{index}"
-        )
+        response = await self._arequest_with_retries("GET", f"{base_url}/{index}")
         ls_utils.raise_for_status_with_text(response)
         return ls_schemas.RunWithAnnotationQueueInfo(**response.json())
 
