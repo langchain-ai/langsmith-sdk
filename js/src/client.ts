@@ -3648,6 +3648,27 @@ export class Client implements LangSmithTracingClientInterface {
     return await response.json();
   }
 
+  /**
+   * Get the size of an annotation queue.
+   * @param queueId - The ID of the annotation queue
+   */
+  public async getSizeFromAnnotationQueue(
+    queueId: string
+  ): Promise<Record<"size", number>> {
+    const response = await this.caller.call(
+      _getFetchImplementation(),
+      `${this.apiUrl}/annotation-queues/${assertUuid(queueId, "queueId")}/size`,
+      {
+        method: "GET",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+    await raiseForStatus(response, "get size from annotation queue");
+    return await response.json();
+  }
+
   protected async _currentTenantIsOwner(owner: string): Promise<boolean> {
     const settings = await this._getSettings();
     return owner == "-" || settings.tenant_handle === owner;
