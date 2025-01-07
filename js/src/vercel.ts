@@ -816,7 +816,7 @@ export class AISDKExporter {
       traceMap.childMap[parentRunId ?? ROOT].push(traceMap.nodeMap[runId]);
     }
 
-    const sampled: { dotOrder: string; run: RunCreate }[] = [];
+    const sampled: RunCreate[] = [];
     const actions: PostProcessAction[] = [];
 
     for (const traceId of Object.keys(this.traceByMap)) {
@@ -837,8 +837,6 @@ export class AISDKExporter {
 
         if (!task.item.sent) {
           if (task.item.run != null) {
-            sampled.push({ dotOrder: task.dotOrder, run: task.item.run });
-
             if (task.item.interop?.type === "user") {
               actions.push({
                 type: "rename",
@@ -854,6 +852,33 @@ export class AISDKExporter {
                 parentDotOrder: task.item.interop.parentRunTree.dotted_order,
               });
             }
+
+            let dotOrder = task.dotOrder;
+            for (const action of actions) {
+              if (action.type === "delete") {
+                dotOrder = removeDotOrder(dotOrder, action.runId);
+              }
+
+              if (action.type === "reparent") {
+                dotOrder = reparentDotOrder(
+                  dotOrder,
+                  action.runId,
+                  action.parentDotOrder
+                );
+              }
+
+              if (action.type === "rename") {
+                dotOrder = dotOrder.replace(
+                  action.sourceRunId,
+                  action.targetRunId
+                );
+              }
+            }
+
+            sampled.push({
+              ...task.item.run,
+              ...getMutableRunCreate(dotOrder),
+            });
           } else {
             actions.push({ type: "delete", runId: task.item.id });
           }
@@ -871,30 +896,8 @@ export class AISDKExporter {
       }
     }
 
-    const runs = sampled.map(({ dotOrder, run }) => {
-      for (const action of actions) {
-        if (action.type === "delete") {
-          dotOrder = removeDotOrder(dotOrder, action.runId);
-        }
-
-        if (action.type === "reparent") {
-          dotOrder = reparentDotOrder(
-            dotOrder,
-            action.runId,
-            action.parentDotOrder
-          );
-        }
-
-        if (action.type === "rename") {
-          dotOrder = dotOrder.replace(action.sourceRunId, action.targetRunId);
-        }
-      }
-
-      return { ...run, ...getMutableRunCreate(dotOrder) };
-    });
-
-    this.logDebug(`sampled runs to be sent to LangSmith`, runs);
-    Promise.all(runs.map((run) => this.client.createRun(run))).then(
+    this.logDebug(`sampled runs to be sent to LangSmith`, sampled);
+    Promise.all(sampled.map((run) => this.client.createRun(run))).then(
       () => resultCallback({ code: 0 }),
       (error) => resultCallback({ code: 1, error })
     );
