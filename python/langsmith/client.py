@@ -481,11 +481,10 @@ class Client:
             if info is None or isinstance(info, ls_schemas.LangSmithInfo)
             else ls_schemas.LangSmithInfo(**info)
         )
-
         use_multipart = (self.info.batch_ingest_config or {}).get(
             "use_multipart_endpoint", False
         )
-        if ls_utils.get_env_var("DISABLE_RUN_COMPRESSION") and use_multipart:
+        if ls_utils.get_env_var("DISABLE_RUN_COMPRESSION") or not use_multipart:
             self.compressed_runs: Optional[CompressedRuns] = None
         else:
             self._futures: set[cf.Future] = set()
