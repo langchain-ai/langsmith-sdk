@@ -476,18 +476,22 @@ class Client:
         # Create a session and register a finalizer to close it
         session_ = session if session else requests.Session()
         self.session = session_
-        if ls_utils.get_env_var("DISABLE_RUN_COMPRESSION"):
+        self._info = (
+            info
+            if info is None or isinstance(info, ls_schemas.LangSmithInfo)
+            else ls_schemas.LangSmithInfo(**info)
+        )
+
+        use_multipart = (self.info.batch_ingest_config or {}).get(
+            "use_multipart_endpoint", False
+        )
+        if ls_utils.get_env_var("DISABLE_RUN_COMPRESSION") and not use_multipart:
             self.compressed_runs: Optional[CompressedRuns] = None
         else:
             self._futures: set[cf.Future] = set()
             self.compressed_runs = CompressedRuns()
             self._data_available_event = threading.Event()
 
-        self._info = (
-            info
-            if info is None or isinstance(info, ls_schemas.LangSmithInfo)
-            else ls_schemas.LangSmithInfo(**info)
-        )
         weakref.finalize(self, close_session, self.session)
         atexit.register(close_session, session_)
         # Initialize auto batching
