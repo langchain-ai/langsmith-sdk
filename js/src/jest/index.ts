@@ -5,7 +5,7 @@ import { expect, test, describe, beforeAll, afterAll } from "@jest/globals";
 import crypto from "crypto";
 import { v4, v5 } from "uuid";
 
-import { traceable } from "../traceable.js";
+import { getCurrentRunTree, traceable } from "../traceable.js";
 import { RunTree, RunTreeConfig } from "../run_trees.js";
 import { KVMap, TracerSession } from "../schemas.js";
 import { randomName } from "../evaluation/_random_name.js";
@@ -20,14 +20,20 @@ import {
   type RelativeCloseToMatcherOptions,
 } from "./matchers.js";
 import {
+  evaluatorLogFeedbackPromises,
   JestAsyncLocalStorageData,
   jestAsyncLocalStorageInstance,
+  logFeedback,
+  syncExamplePromises,
   trackingEnabled,
 } from "./globals.js";
 import { wrapExpect } from "./vendor/chain.js";
 import type { SimpleEvaluator } from "./vendor/evaluatedBy.js";
 
 const UUID5_NAMESPACE = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
+// From https://stackoverflow.com/a/29497680
+const STRIP_ANSI_REGEX =
+  /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g;
 
 expect.extend({
   toBeRelativeCloseTo,
@@ -136,7 +142,6 @@ export type LangSmithJestDescribeWrapper = (
 ) => void;
 
 const datasetSetupInfo = new Map();
-const syncExamplePromises = new Map();
 
 function getExampleId(
   datasetName: string,
@@ -252,8 +257,11 @@ function wrapDescribeMethod(
       });
 
       afterAll(async () => {
-        await Promise.all([...syncExamplePromises.values()]);
-        await client.awaitPendingTraceBatches();
+        await Promise.all([
+          client.awaitPendingTraceBatches(),
+          ...syncExamplePromises.values(),
+          ...evaluatorLogFeedbackPromises.values(),
+        ]);
       });
 
       /**
@@ -281,19 +289,19 @@ const lsDescribe = Object.assign(wrapDescribeMethod(describe), {
 export type LangSmithJestWrapperConfig = Partial<
   Omit<RunTreeConfig, "client">
 > & {
-  n?: number;
   iterations?: number;
+  enableTestTracking?: boolean;
 };
 
 export type LangSmithJestWrapperParams<I, O> = {
   inputs: I;
-  outputs: O;
+  expected: O;
   config?: LangSmithJestWrapperConfig;
 };
 
 export type LangSmithJestTestWrapper<I, O> = (
   name: string,
-  fn: (params: { inputs: I; outputs: O }) => unknown | Promise<unknown>,
+  fn: (params: { inputs: I; expected: O }) => unknown | Promise<unknown>,
   params: LangSmithJestWrapperParams<I, O>,
   timeout?: number
 ) => void;
@@ -305,15 +313,21 @@ function wrapTestMethod(method: (...args: any[]) => void) {
   >(
     name: string,
     lsParams: LangSmithJestWrapperParams<I, O>,
-    testFn: (data: { inputs: I; outputs: O }) => unknown | Promise<unknown>,
+    testFn: (data: { inputs: I; expected: O }) => unknown | Promise<unknown>,
     timeout?: number
   ) {
     // Due to https://github.com/jestjs/jest/issues/13653,
     // we must access the local store value here before
     // doing anything async.
     const context = jestAsyncLocalStorageInstance.getStore();
-    const { config, inputs, outputs } = lsParams;
-    const totalRuns = config?.n ?? 1;
+    if (
+      context !== undefined &&
+      lsParams.config?.enableTestTracking !== undefined
+    ) {
+      context.enableTestTracking = lsParams.config.enableTestTracking;
+    }
+    const { config, inputs, expected } = lsParams;
+    const totalRuns = config?.iterations ?? 1;
     for (let i = 0; i < totalRuns; i += 1) {
       // Jest will not group tests under the same "describe" group if you await the test and
       // total runs is greater than 1.
@@ -334,7 +348,7 @@ function wrapTestMethod(method: (...args: any[]) => void) {
             context.suiteUuid
           );
           const testInput: I = inputs;
-          const testOutput: O = outputs;
+          const testOutput: O = expected;
           if (trackingEnabled(context)) {
             const missingFields = [];
             if (dataset === undefined) {
@@ -356,7 +370,7 @@ function wrapTestMethod(method: (...args: any[]) => void) {
               );
             }
             const testClient = client;
-            const exampleId = getExampleId(dataset.name, inputs, outputs);
+            const exampleId = getExampleId(dataset.name, inputs, expected);
 
             // Create or update the example in the background
             if (syncExamplePromises.get(exampleId) === undefined) {
@@ -367,7 +381,7 @@ function wrapTestMethod(method: (...args: any[]) => void) {
                   exampleId,
                   datasetId: dataset.id,
                   inputs,
-                  outputs,
+                  outputs: expected,
                   metadata: {},
                   createdAt,
                 })
@@ -379,9 +393,8 @@ function wrapTestMethod(method: (...args: any[]) => void) {
               ...context,
               currentExample: {
                 inputs,
-                outputs,
+                outputs: expected,
                 id: exampleId,
-                syncPromise: syncExamplePromises.get(exampleId),
               },
               client: testClient,
             });
@@ -394,21 +407,56 @@ function wrapTestMethod(method: (...args: any[]) => void) {
               },
               client: testClient,
               tracingEnabled: true,
-              name: "Unit test",
+              name,
             };
 
             // Pass inputs into traceable so tracing works correctly but
             // provide both to the user-defined test function
             const tracedFunction = traceable(
               async (_: I) => {
-                return testFn({
-                  inputs: testInput,
-                  outputs: testOutput,
-                });
+                try {
+                  const res = await testFn({
+                    inputs: testInput,
+                    expected: testOutput,
+                  });
+                  logFeedback({
+                    exampleId: exampleId,
+                    feedback: { key: "pass", score: true },
+                    context,
+                    runTree: getCurrentRunTree(),
+                    client: testClient,
+                  });
+                  return res;
+                } catch (e: any) {
+                  logFeedback({
+                    exampleId: exampleId,
+                    feedback: { key: "pass", score: false },
+                    context,
+                    runTree: getCurrentRunTree(),
+                    client: testClient,
+                  });
+                  const rawError = e;
+                  const strippedErrorMessage = e.message.replace(
+                    STRIP_ANSI_REGEX,
+                    ""
+                  );
+                  const langsmithFriendlyError = new Error(
+                    strippedErrorMessage
+                  );
+                  (langsmithFriendlyError as any).rawJestError = rawError;
+                  throw langsmithFriendlyError;
+                }
               },
               { ...traceableOptions, ...config }
             );
-            await (tracedFunction as any)(testInput);
+            try {
+              await (tracedFunction as any)(testInput);
+            } catch (e: any) {
+              if (e.rawJestError !== undefined) {
+                throw e.rawJestError;
+              }
+              throw e;
+            }
           } else {
             // .enterWith is OK here
             jestAsyncLocalStorageInstance.enterWith({
@@ -417,7 +465,7 @@ function wrapTestMethod(method: (...args: any[]) => void) {
             });
             await testFn({
               inputs: testInput,
-              outputs: testOutput,
+              expected: testOutput,
             });
           }
         },
@@ -429,7 +477,7 @@ function wrapTestMethod(method: (...args: any[]) => void) {
 
 function createEachMethod(method: (...args: any[]) => void) {
   function eachMethod<I extends KVMap, O extends KVMap>(
-    table: { inputs: I; outputs: O }[],
+    table: { inputs: I; expected: O }[],
     config?: LangSmithJestWrapperConfig
   ) {
     const context = jestAsyncLocalStorageInstance.getStore();
@@ -440,14 +488,14 @@ function createEachMethod(method: (...args: any[]) => void) {
     }
     return function (
       name: string,
-      fn: (params: { inputs: I; outputs: O }) => unknown | Promise<unknown>,
+      fn: (params: { inputs: I; expected: O }) => unknown | Promise<unknown>,
       timeout?: number
     ) {
       for (let i = 0; i < table.length; i += 1) {
         const example = table[i];
         wrapTestMethod(method)<I, O>(
           `${name}, item ${i}`,
-          { inputs: example.inputs, outputs: example.outputs, config },
+          { inputs: example.inputs, expected: example.expected, config },
           fn,
           timeout
         );

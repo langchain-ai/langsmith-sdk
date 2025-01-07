@@ -31,10 +31,10 @@ ls.describe(
   () => {
     ls.test(
       "Should succeed with some defined evaluator",
-      { inputs: { foo: "bar" }, outputs: { bar: "qux" } },
-      async ({ inputs: _inputs, outputs }) => {
+      { inputs: { foo: "bar" }, expected: { bar: "qux" } },
+      async ({ inputs: _inputs, expected }) => {
         const myApp = () => {
-          return outputs;
+          return expected;
         };
         const res = myApp();
         await ls
@@ -47,8 +47,12 @@ ls.describe(
 
     ls.test(
       "Should work with repetitions",
-      { inputs: { foo: "bar" }, outputs: { foo: "bar" }, config: { n: 3 } },
-      async ({ inputs: _inputs, outputs: _outputs }) => {
+      {
+        inputs: { foo: "bar" },
+        expected: { foo: "bar" },
+        config: { iterations: 3 },
+      },
+      async ({ inputs: _inputs, expected: _expected }) => {
         const myApp = () => {
           return { bar: "goodval" };
         };
@@ -63,8 +67,8 @@ ls.describe(
 
     ls.test(
       "Should fail with some defined evaluator",
-      { inputs: { foo: "bad" }, outputs: { baz: "qux" } },
-      async ({ inputs: _inputs, outputs: _outputs }) => {
+      { inputs: { foo: "bad" }, expected: { baz: "qux" } },
+      async ({ inputs: _inputs, expected: _expected }) => {
         const myApp = () => {
           return { bar: "bad" };
         };
@@ -83,7 +87,7 @@ ls.describe(
           inputs: {
             one: "uno",
           },
-          outputs: {
+          expected: {
             ein: "un",
           },
         },
@@ -91,13 +95,13 @@ ls.describe(
           inputs: {
             two: "dos",
           },
-          outputs: {
+          expected: {
             zwei: "deux",
           },
         },
       ],
-      { n: 3, metadata: { something: "cool" } }
-    )("Does the thing", async ({ inputs: _inputs, outputs: _outputs }) => {
+      { iterations: 3, metadata: { something: "cool" } }
+    )("Does the thing", async ({ inputs: _inputs, expected: _outputs }) => {
       const myApp = () => {
         return { bar: "bad" };
       };

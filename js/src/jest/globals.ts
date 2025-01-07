@@ -2,11 +2,13 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { Dataset, TracerSession, Example } from "../schemas.js";
 import { Client, CreateProjectParams } from "../client.js";
 import { getEnvironmentVariable } from "../utils/env.js";
+import { isTracingEnabled } from "../env.js";
+import { EvaluationResult } from "../evaluation/evaluator.js";
+import { RunTree } from "../run_trees.js";
 
 export type JestAsyncLocalStorageData = {
   enableTestTracking?: boolean;
   dataset?: Dataset;
-  // examples?: (Example & { inputHash: string; outputHash: string })[];
   createdAt: string;
   projectConfig?: Partial<CreateProjectParams>;
   project?: TracerSession;
@@ -26,5 +28,26 @@ export function trackingEnabled(context: JestAsyncLocalStorageData) {
   if (getEnvironmentVariable("LANGSMITH_TEST_TRACKING") === "false") {
     return false;
   }
-  return getEnvironmentVariable("LANGSMITH_TRACING_V2") === "true";
+  return isTracingEnabled();
+}
+
+export const evaluatorLogFeedbackPromises = new Set();
+export const syncExamplePromises = new Map();
+
+export function logFeedback(params: {
+  exampleId: string;
+  feedback: EvaluationResult;
+  context: JestAsyncLocalStorageData;
+  runTree: RunTree;
+  client: Client;
+}) {
+  const { exampleId, feedback, context, runTree, client } = params;
+  if (trackingEnabled(context)) {
+    evaluatorLogFeedbackPromises.add(
+      (async () => {
+        await syncExamplePromises.get(exampleId);
+        await client?.logEvaluationFeedback(feedback, runTree);
+      })()
+    );
+  }
 }

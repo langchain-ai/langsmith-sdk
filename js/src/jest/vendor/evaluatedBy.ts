@@ -1,5 +1,9 @@
 import { getCurrentRunTree, traceable } from "../../traceable.js";
-import { jestAsyncLocalStorageInstance, trackingEnabled } from "../globals.js";
+import {
+  jestAsyncLocalStorageInstance,
+  logFeedback,
+  trackingEnabled,
+} from "../globals.js";
 
 import { EvaluationResult } from "../../evaluation/evaluator.js";
 
@@ -31,12 +35,13 @@ export async function evaluatedBy(actual: any, evaluator: SimpleEvaluator) {
       actual,
     });
 
-    // Don't wait for feedback
-    const exampleSyncPromise =
-      context.currentExample.syncPromise ?? Promise.resolve();
-    void exampleSyncPromise.then(() =>
-      context.client?.logEvaluationFeedback(evalResult, runTree)
-    );
+    logFeedback({
+      exampleId: context.currentExample.id!,
+      feedback: evalResult,
+      context,
+      runTree,
+      client: context.client,
+    });
     return evalResult.score;
   } else {
     const evalResult = await evaluator({
