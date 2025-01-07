@@ -77,11 +77,7 @@ from langsmith._internal._background_thread import (
 from langsmith._internal._background_thread import (
     tracing_control_thread_func as _tracing_control_thread_func,
 )
-from langsmith._internal._background_thread import (
-    tracing_control_thread_func_compress_parallel as _tracing_control_thread_func_compress_parallel,
-)
 from langsmith._internal._beta_decorator import warn_beta
-from langsmith._internal._compressed_runs import CompressedRuns
 from langsmith._internal._constants import (
     _AUTO_SCALE_UP_NTHREADS_LIMIT,
     _BLOCKSIZE_BYTES,
@@ -481,29 +477,12 @@ class Client:
             if info is None or isinstance(info, ls_schemas.LangSmithInfo)
             else ls_schemas.LangSmithInfo(**info)
         )
-        use_multipart = (self.info.batch_ingest_config or {}).get(
-            "use_multipart_endpoint", False
-        )
-        if ls_utils.get_env_var("DISABLE_RUN_COMPRESSION") or not use_multipart:
-            self.compressed_runs: Optional[CompressedRuns] = None
-        else:
-            self._futures: set[cf.Future] = set()
-            self.compressed_runs = CompressedRuns()
-            self._data_available_event = threading.Event()
-
         weakref.finalize(self, close_session, self.session)
         atexit.register(close_session, session_)
         # Initialize auto batching
-        if auto_batch_tracing and self.compressed_runs is not None:
-            self.tracing_queue: Optional[PriorityQueue] = None
-            threading.Thread(
-                target=_tracing_control_thread_func_compress_parallel,
-                # arg must be a weakref to self to avoid the Thread object
-                # preventing garbage collection of the Client object
-                args=(weakref.ref(self),),
-            ).start()
-        elif auto_batch_tracing:
+        if auto_batch_tracing:
             self.tracing_queue = PriorityQueue()
+            self.compressed_runs = None
 
             threading.Thread(
                 target=_tracing_control_thread_func,
@@ -513,6 +492,7 @@ class Client:
             ).start()
         else:
             self.tracing_queue = None
+            self.compressed_runs = None
 
         # Mount the HTTPAdapter with the retry configuration.
         adapter = _LangSmithHttpAdapter(

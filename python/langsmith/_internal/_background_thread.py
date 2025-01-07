@@ -32,6 +32,8 @@ from langsmith._internal._operations import (
     combine_serialized_queue_operations,
 )
 
+from langsmith._internal._compressed_runs import CompressedRuns
+
 if TYPE_CHECKING:
     from langsmith.client import Client
 
@@ -213,6 +215,16 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
     scale_up_nthreads_limit: int = batch_ingest_config["scale_up_nthreads_limit"]
     scale_up_qsize_trigger: int = batch_ingest_config["scale_up_qsize_trigger"]
     use_multipart = batch_ingest_config.get("use_multipart_endpoint", False)
+
+    if ls_utils.get_env_var("DISABLE_RUN_COMPRESSION") is False and use_multipart:
+        client._futures = set()
+        client.compressed_runs = CompressedRuns()
+        client._data_available_event = threading.Event()
+        if client.info.version and ls_utils.is_version_greater_or_equal(client.info.version, "0.8.10"): # TODO(angus): update this version
+            threading.Thread(
+                target=tracing_control_thread_func_compress_parallel,
+                args=(weakref.ref(client),),
+            ).start()
 
     sub_threads: List[threading.Thread] = []
     # 1 for this func, 1 for getrefcount, 1 for _get_data_type_cached
