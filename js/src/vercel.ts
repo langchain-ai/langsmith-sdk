@@ -871,7 +871,7 @@ export class AISDKExporter {
       }
     }
 
-    const processed = sampled.map(({ dotOrder, run }) => {
+    const runs = sampled.map(({ dotOrder, run }) => {
       for (const action of actions) {
         if (action.type === "delete") {
           dotOrder = removeDotOrder(dotOrder, action.runId);
@@ -890,15 +890,11 @@ export class AISDKExporter {
         }
       }
 
-      return { dotOrder, run };
+      return { ...run, ...getMutableRunCreate(dotOrder) };
     });
 
-    this.logDebug(`sampled runs to be sent to LangSmith`, processed);
-    Promise.all(
-      processed.map(({ dotOrder, run }) =>
-        this.client.createRun({ ...run, ...getMutableRunCreate(dotOrder) })
-      )
-    ).then(
+    this.logDebug(`sampled runs to be sent to LangSmith`, runs);
+    Promise.all(runs.map((run) => this.client.createRun(run))).then(
       () => resultCallback({ code: 0 }),
       (error) => resultCallback({ code: 1, error })
     );
