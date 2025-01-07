@@ -196,10 +196,12 @@ function getDotOrder(item: {
 
   // Date only has millisecond precision, so we use the microseconds to break
   // possible ties, avoiding incorrect run order
-  const ms = Number(String(nanoseconds).slice(0, 3));
-  const ns = String(Number(String(nanoseconds).slice(3, 6)) + executionOrder)
-    .padStart(3, "0")
-    .slice(0, 3);
+  const nanosecondString = String(nanoseconds).padStart(9, "0");
+  const msFull = Number(nanosecondString.slice(0, 6)) + executionOrder;
+  const msString = String(msFull).padStart(6, "0");
+
+  const ms = Number(msString.slice(0, -3));
+  const ns = msString.slice(-3);
 
   return (
     stripNonAlphanumeric(
