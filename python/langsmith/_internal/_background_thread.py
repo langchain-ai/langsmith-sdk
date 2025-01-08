@@ -216,7 +216,7 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
     scale_up_nthreads_limit: int = batch_ingest_config["scale_up_nthreads_limit"]
     scale_up_qsize_trigger: int = batch_ingest_config["scale_up_qsize_trigger"]
     use_multipart = batch_ingest_config.get("use_multipart_endpoint", False)
-    
+
     if ls_utils.get_env_var("DISABLE_RUN_COMPRESSION") is None and use_multipart:
         if not (client.info.instance_flags or {}).get(
             "zstd_compression_enabled", False
