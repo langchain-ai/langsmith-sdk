@@ -7,6 +7,7 @@ import {
   Dataset,
   DatasetDiffInfo,
   DatasetShareSchema,
+  DatasetVersion,
   Example,
   ExampleCreate,
   ExampleUpdate,
@@ -1834,6 +1835,56 @@ export class Client implements LangSmithTracingClientInterface {
     );
     const dataset = await response.json();
     return dataset as Dataset;
+  }
+
+  /**
+   * Lists the versions of a dataset.
+   *
+   * @param {Object} params - The parameters for listing dataset versions.
+   * @param {string} params.datasetId - The ID of the dataset.
+   * @param {string} [params.search] - Optional search query to filter dataset versions.
+   * @param {string} [params.example] - Optional example query to filter dataset versions.
+   * @param {number} [params.limit=100] - The maximum number of dataset versions to return.
+   * @param {number} [params.offset=0] - The offset for pagination.
+   * @returns {Promise<DatasetVersion[]>} A promise that resolves to an array of dataset versions.
+   * @throws {Error} Throws an error if the datasetId is not a valid UUID.
+   */
+  public async listDatasetVersions({
+    datasetId,
+    search,
+    example,
+    limit = 100,
+    offset = 0,
+  }: {
+    datasetId: string;
+    search?: string;
+    example?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<DatasetVersion[]> {
+    assertUuid(datasetId);
+    const params = new URLSearchParams({
+      limit: limit.toString(),
+      offset: offset.toString(),
+    });
+    if (search !== undefined) {
+      params.append("search", search);
+    }
+    if (example !== undefined) {
+      params.append("example", example);
+    }
+    const response = await this.caller.call(
+      _getFetchImplementation(),
+      `${this.apiUrl}/datasets/${datasetId}/versions?${params.toString()}`,
+      {
+        method: "GET",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+    const datasetVersions = await response.json();
+    return datasetVersions as DatasetVersion[];
   }
 
   /**

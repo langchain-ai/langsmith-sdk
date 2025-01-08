@@ -349,6 +349,11 @@ export interface DatasetShareSchema {
   url: string;
 }
 
+export interface DatasetVersion {
+  tags?: string[];
+  asOf: string;
+}
+
 export interface FeedbackSourceBase {
   type: string;
   metadata?: KVMap;
