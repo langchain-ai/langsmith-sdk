@@ -1,4 +1,4 @@
-import { getCurrentRunTree, traceable } from "../../traceable.js";
+import { getCurrentRunTree, ROOT, traceable } from "../../traceable.js";
 import {
   jestAsyncLocalStorageInstance,
   _logTestFeedback,
@@ -8,11 +8,15 @@ import {
 import { EvaluationResult } from "../../evaluation/evaluator.js";
 import { RunTree } from "../../run_trees.js";
 
-export type SimpleEvaluator = (params: {
+export type SimpleEvaluatorParams = {
   input: Record<string, any>;
   actual: Record<string, any>;
   expected: Record<string, any>;
-}) => EvaluationResult | Promise<EvaluationResult>;
+};
+
+export type SimpleEvaluator = (
+  params: SimpleEvaluatorParams
+) => EvaluationResult | Promise<EvaluationResult>;
 
 export async function evaluatedBy(actual: any, evaluator: SimpleEvaluator) {
   const context = jestAsyncLocalStorageInstance.getStore();
@@ -24,26 +28,27 @@ export async function evaluatedBy(actual: any, evaluator: SimpleEvaluator) {
 
   if (trackingEnabled(context)) {
     const runTree = getCurrentRunTree();
-    const wrappedEvaluator = traceable(evaluator, {
-      reference_example_id: context.currentExample.id,
-      client: context.client,
-      tracingEnabled: true,
-    });
-
-    const evalResult = await wrappedEvaluator(
-      new RunTree({
-        name: evaluator.name ?? "<evaluator>",
-        project_name: "evaluators",
+    let evalRunId;
+    const wrappedEvaluator = traceable(
+      async (runTree: RunTree, params: SimpleEvaluatorParams) => {
+        const res = await evaluator(params);
+        evalRunId = runTree.id;
+        return res;
+      },
+      {
         reference_example_id: context.currentExample.id,
         client: context.client,
         tracingEnabled: true,
-      }),
-      {
-        input: runTree.inputs,
-        expected: context.currentExample.outputs ?? {},
-        actual,
+        name: evaluator.name ?? "<evaluator>",
+        project_name: "evaluators",
       }
     );
+
+    const evalResult = await wrappedEvaluator(ROOT, {
+      input: runTree.inputs,
+      expected: context.currentExample.outputs ?? {},
+      actual,
+    });
 
     _logTestFeedback({
       exampleId: context.currentExample.id!,
@@ -51,6 +56,7 @@ export async function evaluatedBy(actual: any, evaluator: SimpleEvaluator) {
       context,
       runTree,
       client: context.client,
+      sourceRunId: evalRunId,
     });
     return evalResult.score;
   } else {

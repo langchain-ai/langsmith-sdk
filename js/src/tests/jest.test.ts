@@ -30,7 +30,7 @@ unrelatedStore.enterWith("value"); // Ensure that this works despite https://git
 ls.describe(
   "js unit testing test demo",
   () => {
-    ls.test.only(
+    ls.test(
       "Should succeed with some defined evaluator",
       { inputs: { foo: "bar" }, expected: { bar: "qux" } },
       async ({ inputs: _inputs, expected }) => {

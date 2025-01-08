@@ -41,8 +41,9 @@ export function _logTestFeedback(params: {
   context: JestAsyncLocalStorageData;
   runTree: RunTree;
   client: Client;
+  sourceRunId?: string;
 }) {
-  const { exampleId, feedback, context, runTree, client } = params;
+  const { exampleId, feedback, context, runTree, client, sourceRunId } = params;
   if (trackingEnabled(context)) {
     if (exampleId === undefined) {
       throw new Error(
@@ -52,7 +53,13 @@ export function _logTestFeedback(params: {
     evaluatorLogFeedbackPromises.add(
       (async () => {
         await syncExamplePromises.get(exampleId);
-        await client?.logEvaluationFeedback(feedback, runTree);
+        await client?.logEvaluationFeedback(
+          feedback,
+          runTree,
+          sourceRunId !== undefined
+            ? { __run: { run_id: sourceRunId } }
+            : undefined
+        );
       })()
     );
   }
