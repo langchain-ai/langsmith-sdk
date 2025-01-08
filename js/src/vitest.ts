@@ -7,6 +7,7 @@ import {
   describe as vitestDescribe,
   beforeAll as vitestBeforeAll,
   afterAll as vitestAfterAll,
+  Assertion,
 } from "vitest";
 import {
   toBeRelativeCloseTo,
@@ -39,10 +40,10 @@ interface CustomMatchers<R = unknown> {
     expected: string,
     options?: SemanticCloseToMatcherOptions
   ): Promise<R>;
-  evaluatedBy(evaluator: SimpleEvaluator): jest.Matchers<Promise<R>> & {
-    not: jest.Matchers<Promise<R>>;
-    resolves: jest.Matchers<Promise<R>>;
-    rejects: jest.Matchers<Promise<R>>;
+  evaluatedBy(evaluator: SimpleEvaluator): Assertion<Promise<R>> & {
+    not: Assertion<Promise<R>>;
+    resolves: Assertion<Promise<R>>;
+    rejects: Assertion<Promise<R>>;
   };
 }
 
