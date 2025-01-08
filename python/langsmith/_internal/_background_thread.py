@@ -20,6 +20,7 @@ from typing import (
 
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
+from langsmith._internal._compressed_runs import CompressedRuns
 from langsmith._internal._constants import (
     _AUTO_SCALE_DOWN_NEMPTY_TRIGGER,
     _AUTO_SCALE_UP_NTHREADS_LIMIT,
@@ -31,8 +32,6 @@ from langsmith._internal._operations import (
     SerializedRunOperation,
     combine_serialized_queue_operations,
 )
-
-from langsmith._internal._compressed_runs import CompressedRuns
 
 if TYPE_CHECKING:
     from langsmith.client import Client
@@ -217,14 +216,21 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
     use_multipart = batch_ingest_config.get("use_multipart_endpoint", False)
 
     if ls_utils.get_env_var("DISABLE_RUN_COMPRESSION") is False and use_multipart:
+        if not (client.info.instance_flags or {}).get(
+            "zstd_compression_enabled", False
+        ):
+            raise ValueError(
+                "Zstd compression is not enabled. Please update to the latest "
+                "version of LangSmith or set the environment variable "
+                "DISABLE_RUN_COMPRESSION=true."
+            )
         client._futures = set()
         client.compressed_runs = CompressedRuns()
         client._data_available_event = threading.Event()
-        if client.info.version and ls_utils.is_version_greater_or_equal(client.info.version, "0.8.10"): # TODO(angus): update this version
-            threading.Thread(
-                target=tracing_control_thread_func_compress_parallel,
-                args=(weakref.ref(client),),
-            ).start()
+        threading.Thread(
+            target=tracing_control_thread_func_compress_parallel,
+            args=(weakref.ref(client),),
+        ).start()
 
     sub_threads: List[threading.Thread] = []
     # 1 for this func, 1 for getrefcount, 1 for _get_data_type_cached
