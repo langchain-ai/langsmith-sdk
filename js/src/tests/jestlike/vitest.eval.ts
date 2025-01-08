@@ -1,3 +1,5 @@
+/* eslint-disable import/no-extraneous-dependencies */
+
 import "dotenv/config";
 
 import { test } from "vitest";
