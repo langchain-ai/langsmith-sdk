@@ -23,12 +23,13 @@ import {
   evaluatorLogFeedbackPromises,
   JestAsyncLocalStorageData,
   jestAsyncLocalStorageInstance,
-  logFeedback,
+  _logTestFeedback,
   syncExamplePromises,
   trackingEnabled,
 } from "./globals.js";
 import { wrapExpect } from "./vendor/chain.js";
 import type { SimpleEvaluator } from "./vendor/evaluatedBy.js";
+import { EvaluationResult } from "../evaluation/evaluator.js";
 
 const UUID5_NAMESPACE = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
 // From https://stackoverflow.com/a/29497680
@@ -415,24 +416,51 @@ function wrapTestMethod(method: (...args: any[]) => void) {
             // provide both to the user-defined test function
             const tracedFunction = traceable(
               async (_: I) => {
+                const testContext = jestAsyncLocalStorageInstance.getStore();
+                if (testContext === undefined) {
+                  throw new Error(
+                    "Could not identify test context. Please contact us for help."
+                  );
+                }
                 try {
-                  const res = await testFn({
-                    inputs: testInput,
-                    expected: testOutput,
-                  });
-                  logFeedback({
-                    exampleId: exampleId,
+                  let loggedOutput: Record<string, unknown> | undefined;
+                  const res = await jestAsyncLocalStorageInstance.run(
+                    {
+                      ...testContext,
+                      setLoggedOutput: (value) => {
+                        if (loggedOutput !== undefined) {
+                          console.warn(
+                            `[WARN]: New "logOutput()" call will override output set by previous "logOutput()" call.`
+                          );
+                        }
+                        loggedOutput = value;
+                      },
+                    },
+                    async () => {
+                      return testFn({
+                        inputs: testInput,
+                        expected: testOutput,
+                      });
+                    }
+                  );
+                  _logTestFeedback({
+                    exampleId,
                     feedback: { key: "pass", score: true },
-                    context,
+                    context: testContext,
                     runTree: getCurrentRunTree(),
                     client: testClient,
                   });
-                  return res;
+                  if (loggedOutput !== undefined && res !== undefined) {
+                    console.warn(
+                      `[WARN]: Returned value from test function will override output set by previous "logOutput()" call.`
+                    );
+                  }
+                  return res ?? loggedOutput;
                 } catch (e: any) {
-                  logFeedback({
-                    exampleId: exampleId,
+                  _logTestFeedback({
+                    exampleId,
                     feedback: { key: "pass", score: false },
-                    context,
+                    context: testContext,
                     runTree: getCurrentRunTree(),
                     client: testClient,
                   });
@@ -476,6 +504,45 @@ function wrapTestMethod(method: (...args: any[]) => void) {
   };
 }
 
+export function logFeedback(feedback: EvaluationResult) {
+  const context = jestAsyncLocalStorageInstance.getStore();
+  if (context === undefined) {
+    throw new Error(
+      `Could not retrieve test context. Make sure your logFeedback call is nested within a "ls.describe()" block.`
+    );
+  }
+  if (context.currentExample === undefined) {
+    throw new Error(
+      `Could not retrieve current example. Make sure your logFeedback call is nested within a "ls.test()" block.`
+    );
+  }
+  _logTestFeedback({
+    exampleId: context.currentExample.id,
+    feedback: feedback,
+    context,
+    runTree: getCurrentRunTree(),
+    client: context.client,
+  });
+}
+
+export function logOutput(output: Record<string, unknown>) {
+  const context = jestAsyncLocalStorageInstance.getStore();
+  if (context === undefined) {
+    throw new Error(
+      `Could not retrieve test context. Make sure your logFeedback call is nested within a "ls.describe()" block.`
+    );
+  }
+  if (
+    context.currentExample === undefined ||
+    context.setLoggedOutput === undefined
+  ) {
+    throw new Error(
+      `Could not retrieve current example. Make sure your logFeedback call is nested within a "ls.test()" block.`
+    );
+  }
+  context.setLoggedOutput(output);
+}
+
 function createEachMethod(method: (...args: any[]) => void) {
   function eachMethod<I extends KVMap, O extends KVMap>(
     table: { inputs: I; expected: O }[],
@@ -484,7 +551,7 @@ function createEachMethod(method: (...args: any[]) => void) {
     const context = jestAsyncLocalStorageInstance.getStore();
     if (context === undefined) {
       throw new Error(
-        "Could not retrieve test context. Make sure your test is nested within a ls.describe() block."
+        `Could not retrieve test context. Make sure your test is nested within a "ls.describe()" block.`
       );
     }
     return function (

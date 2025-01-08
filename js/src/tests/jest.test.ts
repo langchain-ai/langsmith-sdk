@@ -4,7 +4,8 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import * as ls from "../jest/index.js";
 import { type SimpleEvaluator } from "../jest/index.js";
 
-const myEvaluator: SimpleEvaluator = ({ expected, actual }) => {
+const myEvaluator: SimpleEvaluator = (params) => {
+  const { expected, actual } = params;
   if (actual.bar === expected.bar) {
     return {
       key: "quality",
@@ -29,7 +30,7 @@ unrelatedStore.enterWith("value"); // Ensure that this works despite https://git
 ls.describe(
   "js unit testing test demo",
   () => {
-    ls.test(
+    ls.test.only(
       "Should succeed with some defined evaluator",
       { inputs: { foo: "bar" }, expected: { bar: "qux" } },
       async ({ inputs: _inputs, expected }) => {
@@ -41,7 +42,13 @@ ls.describe(
           .expect(res)
           .evaluatedBy(myEvaluator)
           .toBeGreaterThanOrEqual(0.5);
-        return res;
+        ls.logFeedback({
+          key: "coolness",
+          score: 0.5,
+        });
+        ls.logOutput({
+          testLoggedOutput: "logged",
+        });
       }
     );
 

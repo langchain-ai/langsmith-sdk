@@ -12,6 +12,7 @@ export type JestAsyncLocalStorageData = {
   createdAt: string;
   projectConfig?: Partial<CreateProjectParams>;
   project?: TracerSession;
+  setLoggedOutput?: (value: Record<string, unknown>) => void;
   currentExample?: Partial<Example> & { syncPromise?: Promise<Example> };
   client: Client;
   suiteUuid: string;
@@ -34,8 +35,8 @@ export function trackingEnabled(context: JestAsyncLocalStorageData) {
 export const evaluatorLogFeedbackPromises = new Set();
 export const syncExamplePromises = new Map();
 
-export function logFeedback(params: {
-  exampleId: string;
+export function _logTestFeedback(params: {
+  exampleId?: string;
   feedback: EvaluationResult;
   context: JestAsyncLocalStorageData;
   runTree: RunTree;
@@ -43,6 +44,11 @@ export function logFeedback(params: {
 }) {
   const { exampleId, feedback, context, runTree, client } = params;
   if (trackingEnabled(context)) {
+    if (exampleId === undefined) {
+      throw new Error(
+        "Could not log feedback to LangSmith: missing example id. Please contact us for help."
+      );
+    }
     evaluatorLogFeedbackPromises.add(
       (async () => {
         await syncExamplePromises.get(exampleId);

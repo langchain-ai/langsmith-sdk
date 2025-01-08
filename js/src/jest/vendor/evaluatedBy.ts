@@ -1,11 +1,12 @@
 import { getCurrentRunTree, traceable } from "../../traceable.js";
 import {
   jestAsyncLocalStorageInstance,
-  logFeedback,
+  _logTestFeedback,
   trackingEnabled,
 } from "../globals.js";
 
 import { EvaluationResult } from "../../evaluation/evaluator.js";
+import { RunTree } from "../../run_trees.js";
 
 export type SimpleEvaluator = (params: {
   input: Record<string, any>;
@@ -29,13 +30,22 @@ export async function evaluatedBy(actual: any, evaluator: SimpleEvaluator) {
       tracingEnabled: true,
     });
 
-    const evalResult = await wrappedEvaluator({
-      input: runTree.inputs,
-      expected: context.currentExample.outputs ?? {},
-      actual,
-    });
+    const evalResult = await wrappedEvaluator(
+      new RunTree({
+        name: evaluator.name ?? "<evaluator>",
+        project_name: "evaluators",
+        reference_example_id: context.currentExample.id,
+        client: context.client,
+        tracingEnabled: true,
+      }),
+      {
+        input: runTree.inputs,
+        expected: context.currentExample.outputs ?? {},
+        actual,
+      }
+    );
 
-    logFeedback({
+    _logTestFeedback({
       exampleId: context.currentExample.id!,
       feedback: evalResult,
       context,
