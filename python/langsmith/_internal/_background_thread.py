@@ -102,7 +102,8 @@ def _tracing_thread_drain_queue(
 def _tracing_thread_drain_compressed_buffer(
     client: Client, size_limit: int = 100, size_limit_bytes: int | None = 20_971_520
 ) -> Tuple[Optional[io.BytesIO], Optional[Tuple[int, int]]]:
-    assert client.compressed_runs is not None
+    if client.compressed_runs is None:
+        return None, None
     with client.compressed_runs.lock:
         client.compressed_runs.compressor_writer.flush()
         current_size = client.compressed_runs.buffer.tell()
@@ -220,18 +221,20 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
         if not (client.info.instance_flags or {}).get(
             "zstd_compression_enabled", False
         ):
-            raise ValueError(
+            logger.warning(
                 "Zstd compression is not enabled. Please update to the latest "
-                "version of LangSmith or set the environment variable "
-                "DISABLE_RUN_COMPRESSION=true."
+                "version of LangSmith."
             )
-        client._futures = set()
-        client.compressed_runs = CompressedRuns()
-        client._data_available_event = threading.Event()
-        threading.Thread(
-            target=tracing_control_thread_func_compress_parallel,
-            args=(weakref.ref(client),),
-        ).start()
+        else:
+            client._futures = set()
+            client.compressed_runs = CompressedRuns()
+            client._data_available_event = threading.Event()
+            threading.Thread(
+                target=tracing_control_thread_func_compress_parallel,
+                args=(weakref.ref(client),),
+            ).start()
+
+            return
 
     sub_threads: List[threading.Thread] = []
     # 1 for this func, 1 for getrefcount, 1 for _get_data_type_cached
@@ -290,9 +293,13 @@ def tracing_control_thread_func_compress_parallel(
     if client is None:
         return
 
-    assert client.compressed_runs is not None
-    assert client._data_available_event is not None
-    assert client._futures is not None
+    if (
+        client.compressed_runs is None
+        or client._data_available_event is None
+        or client._futures is None
+    ):
+        logger.error("Required compression attributes not initialized")
+        return
 
     batch_ingest_config = _ensure_ingest_config(client.info)
     size_limit: int = batch_ingest_config["size_limit"]
