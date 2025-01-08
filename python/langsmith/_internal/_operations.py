@@ -5,16 +5,9 @@ import logging
 import uuid
 from typing import Literal, Optional, Union, cast
 
-try:
-    from zstandard import ZstdCompressionWriter  # type: ignore[import]
-except ImportError:
-
-    class ZstdCompressionWriter:  # type: ignore[no-redef]
-        """only used for typing checks."""
-
-
 from langsmith import schemas as ls_schemas
 from langsmith._internal import _orjson
+from langsmith._internal._compressed_runs import CompressedRuns
 from langsmith._internal._multipart import MultipartPart, MultipartPartsAndContext
 from langsmith._internal._serde import dumps_json as _dumps_json
 
@@ -283,7 +276,7 @@ def serialized_run_operation_to_multipart_parts_and_context(
 
 def compress_multipart_parts_and_context(
     parts_and_context: MultipartPartsAndContext,
-    compressor_writer: ZstdCompressionWriter,
+    compressed_runs: CompressedRuns,
     boundary: str,
 ) -> None:
     for part_name, (filename, data, content_type, headers) in parts_and_context.parts:
@@ -303,12 +296,15 @@ def compress_multipart_parts_and_context(
             ]
         )
 
-        compressor_writer.write("".join(header_parts).encode())
+        compressed_runs.compressor_writer.write("".join(header_parts).encode())
 
         if isinstance(data, (bytes, bytearray)):
-            compressor_writer.write(data)
+            compressed_runs.uncompressed_size += len(data)
+            compressed_runs.compressor_writer.write(data)
         else:
-            compressor_writer.write(str(data).encode())
+            encoded_data = str(data).encode()
+            compressed_runs.uncompressed_size += len(encoded_data)
+            compressed_runs.compressor_writer.write(encoded_data)
 
         # Write part terminator
-        compressor_writer.write(b"\r\n")
+        compressed_runs.compressor_writer.write(b"\r\n")

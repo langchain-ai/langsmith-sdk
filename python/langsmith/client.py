@@ -1292,7 +1292,7 @@ class Client:
         ):
             if self._pyo3_client is not None:
                 self._pyo3_client.create_run(run_create)
-            if self.compressed_runs is not None:
+            elif self.compressed_runs is not None:
                 serialized_op = serialize_run_dict("post", run_create)
                 multipart_form = (
                     serialized_run_operation_to_multipart_parts_and_context(
@@ -1302,7 +1302,7 @@ class Client:
                 with self.compressed_runs.lock:
                     compress_multipart_parts_and_context(
                         multipart_form,
-                        self.compressed_runs.compressor_writer,
+                        self.compressed_runs,
                         _BOUNDARY,
                     )
                     self.compressed_runs.run_count += 1
@@ -1816,11 +1816,19 @@ class Client:
                     # do not retry by default
                     return
 
-    def _send_compressed_multipart_req(self, data_stream, *, attempts: int = 3):
+    def _send_compressed_multipart_req(
+        self,
+        data_stream: io.BytesIO,
+        compressed_runs_info: Optional[Tuple[int, int]],
+        *,
+        attempts: int = 3,
+    ):
         """Send a zstd-compressed multipart form data stream to the backend."""
         _context: str = ""
 
         for api_url, api_key in self._write_api_urls.items():
+            data_stream.seek(0)
+
             for idx in range(1, attempts + 1):
                 try:
                     headers = {
@@ -1828,6 +1836,12 @@ class Client:
                         "X-API-KEY": api_key,
                         "Content-Type": f"multipart/form-data; boundary={_BOUNDARY}",
                         "Content-Encoding": "zstd",
+                        "X-Pre-Compressed-Size": (
+                            str(compressed_runs_info[0]) if compressed_runs_info else ""
+                        ),
+                        "X-Post-Compressed-Size": (
+                            str(compressed_runs_info[1]) if compressed_runs_info else ""
+                        ),
                     }
 
                     self.request_with_retries(
@@ -1983,7 +1997,7 @@ class Client:
                 with self.compressed_runs.lock:
                     compress_multipart_parts_and_context(
                         multipart_form,
-                        self.compressed_runs.compressor_writer,
+                        self.compressed_runs,
                         _BOUNDARY,
                     )
                     self.compressed_runs.run_count += 1
@@ -2022,8 +2036,10 @@ class Client:
             _tracing_thread_drain_compressed_buffer,
         )
 
-        final_data_stream = _tracing_thread_drain_compressed_buffer(
-            self, size_limit=1, size_limit_bytes=1
+        final_data_stream, compressed_runs_info = (
+            _tracing_thread_drain_compressed_buffer(
+                self, size_limit=1, size_limit_bytes=1
+            )
         )
 
         if final_data_stream is not None:
@@ -2033,13 +2049,14 @@ class Client:
                 future = HTTP_REQUEST_THREAD_POOL.submit(
                     self._send_compressed_multipart_req,
                     final_data_stream,
+                    compressed_runs_info,
                     attempts=attempts,
                 )
                 self._futures.add(future)
             except RuntimeError:
                 # In case the ThreadPoolExecutor is already shutdown
                 self._send_compressed_multipart_req(
-                    final_data_stream, attempts=attempts
+                    final_data_stream, compressed_runs_info, attempts=attempts
                 )
 
         # If we got a future, wait for it to complete
@@ -4290,7 +4307,7 @@ class Client:
 
         example = response.json()
         attachments = {}
-        if example["attachment_urls"]:
+        if example.get("attachment_urls"):
             for key, value in example["attachment_urls"].items():
                 response = requests.get(value["presigned_url"], stream=True)
                 response.raise_for_status()
@@ -4424,7 +4441,7 @@ class Client:
             self._get_paginated_list("/examples", params=params)
         ):
             attachments = {}
-            if example["attachment_urls"]:
+            if example.get("attachment_urls"):
                 for key, value in example["attachment_urls"].items():
                     response = requests.get(value["presigned_url"], stream=True)
                     response.raise_for_status()
@@ -4741,6 +4758,29 @@ class Client:
             "DELETE",
             f"/examples/{_as_uuid(example_id, 'example_id')}",
             headers=self._headers,
+        )
+        ls_utils.raise_for_status_with_text(response)
+
+    def delete_examples(self, example_ids: Sequence[ID_TYPE]) -> None:
+        """Delete multiple examples by ID.
+
+        Parameters
+        ----------
+        example_ids : Sequence[ID_TYPE]
+            The IDs of the examples to delete.
+        """
+        response = self.request_with_retries(
+            "DELETE",
+            "/examples",
+            headers={**self._headers, "Content-Type": "application/json"},
+            data=_dumps_json(
+                {
+                    "ids": [
+                        str(_as_uuid(id_, f"example_ids[{i}]"))
+                        for i, id_ in enumerate(example_ids)
+                    ]
+                }
+            ),
         )
         ls_utils.raise_for_status_with_text(response)
 

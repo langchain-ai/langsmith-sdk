@@ -35,7 +35,7 @@ test("AI SDK generateText with a tool", async () => {
           JSON.stringify(["pasta", "tomato", "cheese", "onions"]),
       }),
     },
-    maxToolRoundtrips: 2,
+    maxSteps: 2,
   });
   DEBUG && console.log(text);
 });
