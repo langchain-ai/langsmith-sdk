@@ -3650,6 +3650,52 @@ export class Client implements LangSmithTracingClientInterface {
     return await response.json();
   }
 
+  /**
+   * Delete a run from an an annotation queue.
+   * @param queueId - The ID of the annotation queue to delete the run from
+   * @param queueRunId - The ID of the run to delete from the annotation queue
+   */
+  public async deleteRunFromAnnotationQueue(
+    queueId: string,
+    queueRunId: string
+  ): Promise<void> {
+    const response = await this.caller.call(
+      _getFetchImplementation(),
+      `${this.apiUrl}/annotation-queues/${assertUuid(
+        queueId,
+        "queueId"
+      )}/runs/${assertUuid(queueRunId, "queueRunId")}`,
+      {
+        method: "DELETE",
+        headers: { ...this.headers, Accept: "application/json" },
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+    await raiseForStatus(response, "delete run from annotation queue");
+  }
+
+  /**
+   * Get the size of an annotation queue.
+   * @param queueId - The ID of the annotation queue
+   */
+  public async getSizeFromAnnotationQueue(
+    queueId: string
+  ): Promise<{ size: number }> {
+    const response = await this.caller.call(
+      _getFetchImplementation(),
+      `${this.apiUrl}/annotation-queues/${assertUuid(queueId, "queueId")}/size`,
+      {
+        method: "GET",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+    await raiseForStatus(response, "get size from annotation queue");
+    return await response.json();
+  }
+
   protected async _currentTenantIsOwner(owner: string): Promise<boolean> {
     const settings = await this._getSettings();
     return owner == "-" || settings.tenant_handle === owner;
