@@ -27,6 +27,7 @@ from langsmith._internal import _beta_decorator as ls_beta
 
 ID_TYPE = Union[uuid.UUID, str]
 
+
 class AsyncClient:
     """Async Client for interacting with the LangSmith API."""
 
