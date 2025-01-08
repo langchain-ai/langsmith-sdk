@@ -351,7 +351,7 @@ export interface DatasetShareSchema {
 
 export interface DatasetVersion {
   tags?: string[];
-  asOf: string;
+  as_of: string;
 }
 
 export interface FeedbackSourceBase {
