@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-  pull_request:
+  pull_request_target:
     branches:
       - main
     types: [opened, synchronize, reopened, labeled, unlabeled]
@@ -42,7 +42,7 @@ jobs:
     needs: changed_files
     if: >
       (github.event_name == 'push') ||
-      (github.event_name == 'pull_request' && (
+      (github.event_name == 'pull_request_target' && (
         contains(github.event.pull_request.labels.*.name, 'release') ||
         needs.changed_files.outputs.python_changed == 'true'
       )) ||
@@ -52,7 +52,15 @@ jobs:
       run:
         working-directory: python
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout main branch
+        uses: actions/checkout@v3
+        with:
+          ref: main
+      - name: Checkout PR
+        if: github.event_name == 'pull_request_target'
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
       - name: Set up Python 3.11
         uses: actions/setup-python@v4
         with:
@@ -78,7 +86,7 @@ jobs:
     needs: changed_files
     if: >
       (github.event_name == 'push') ||
-      (github.event_name == 'pull_request' && (
+      (github.event_name == 'pull_request_target' && (
         contains(github.event.pull_request.labels.*.name, 'release') ||
         needs.changed_files.outputs.js_changed == 'true'
       )) ||
@@ -88,8 +96,16 @@ jobs:
       run:
         working-directory: js
     steps:
-      - uses: actions/checkout@v3
-      - name: Use Node.js 18.x
+      - name: Checkout main branch
+        uses: actions/checkout@v3
+        with:
+          ref: main
+      - name: Checkout PR
+        if: github.event_name == 'pull_request_target'
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Use Node.js 20.x
         uses: actions/setup-node@v3
         with:
           node-version: 20.x
