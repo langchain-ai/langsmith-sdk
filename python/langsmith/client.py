@@ -100,6 +100,7 @@ from langsmith._internal._operations import (
     serialized_run_operation_to_multipart_parts_and_context,
 )
 from langsmith._internal._serde import dumps_json as _dumps_json
+from python.langsmith._internal._compressed_runs import CompressedRuns
 
 try:
     from zoneinfo import ZoneInfo  # type: ignore[import-not-found]
@@ -482,7 +483,7 @@ class Client:
         # Initialize auto batching
         if auto_batch_tracing:
             self.tracing_queue = PriorityQueue()
-            self.compressed_runs = None
+            self.compressed_runs: Optional[CompressedRuns] = None
 
             threading.Thread(
                 target=_tracing_control_thread_func,
@@ -1273,6 +1274,8 @@ class Client:
             run_create.get("trace_id") is not None
             and run_create.get("dotted_order") is not None
         ):
+            print("creating run")
+            print("compressed runs", self.compressed_runs)
             if self._pyo3_client is not None:
                 self._pyo3_client.create_run(run_create)
             elif self.compressed_runs is not None:

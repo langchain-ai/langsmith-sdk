@@ -215,7 +215,7 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
     scale_up_qsize_trigger: int = batch_ingest_config["scale_up_qsize_trigger"]
     use_multipart = batch_ingest_config.get("use_multipart_endpoint", False)
 
-    if ls_utils.get_env_var("DISABLE_RUN_COMPRESSION") is False and use_multipart:
+    if ls_utils.get_env_var("DISABLE_RUN_COMPRESSION") is None and use_multipart:
         if not (client.info.instance_flags or {}).get(
             "zstd_compression_enabled", False
         ):
@@ -274,6 +274,7 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
             _tracing_thread_handle_batch(
                 client, tracing_queue, next_batch, use_multipart
             )
+
     # drain the queue on exit
     while next_batch := _tracing_thread_drain_queue(
         tracing_queue, limit=size_limit, block=False
@@ -284,6 +285,7 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
 def tracing_control_thread_func_compress_parallel(
     client_ref: weakref.ref[Client],
 ) -> None:
+    print("tracing_control_thread_func_compress_parallel")
     client = client_ref()
     if client is None:
         return
