@@ -491,16 +491,14 @@ export function traceable<Func extends (...args: any[]) => any>(
       // pass in the run tree
       if (firstArg === ROOT || isRunTree(firstArg)) {
         const currentRunTree = getTracingRunTree(
-          firstArg === ROOT
-            ? new RunTree(ensuredConfig)
-            : firstArg.createChild(ensuredConfig),
+          firstArg === ROOT ? new RunTree(ensuredConfig) : firstArg,
           restArgs as Inputs,
           config?.getInvocationParams,
           processInputsFn,
           extractAttachmentsFn
         );
 
-        return [currentRunTree, [currentRunTree, ...restArgs] as Inputs];
+        return [currentRunTree, restArgs as Inputs];
       }
 
       // Node.JS uses AsyncLocalStorage (ALS) and AsyncResource
