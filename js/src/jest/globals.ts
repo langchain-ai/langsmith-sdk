@@ -39,7 +39,7 @@ export function _logTestFeedback(params: {
   exampleId?: string;
   feedback: EvaluationResult;
   context: JestAsyncLocalStorageData;
-  runTree: RunTree;
+  runTree?: RunTree;
   client: Client;
   sourceRunId?: string;
 }) {
@@ -48,6 +48,11 @@ export function _logTestFeedback(params: {
     if (exampleId === undefined) {
       throw new Error(
         "Could not log feedback to LangSmith: missing example id. Please contact us for help."
+      );
+    }
+    if (runTree === undefined) {
+      throw new Error(
+        "Could not log feedback to LangSmith: missing run information. Please contact us for help."
       );
     }
     evaluatorLogFeedbackPromises.add(

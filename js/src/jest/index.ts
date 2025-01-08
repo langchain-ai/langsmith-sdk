@@ -487,15 +487,34 @@ function wrapTestMethod(method: (...args: any[]) => void) {
               throw e;
             }
           } else {
-            // .enterWith is OK here
-            jestAsyncLocalStorageInstance.enterWith({
-              ...context,
-              currentExample: { inputs: testInput, outputs: testOutput },
-            });
-            await testFn({
-              inputs: testInput,
-              expected: testOutput,
-            });
+            let loggedOutput: Record<string, unknown> | undefined;
+            const res = await jestAsyncLocalStorageInstance.run(
+              {
+                ...context,
+                currentExample: { inputs: testInput, outputs: testOutput },
+                setLoggedOutput: (value) => {
+                  if (loggedOutput !== undefined) {
+                    console.warn(
+                      `[WARN]: New "logOutput()" call will override output set by previous "logOutput()" call.`
+                    );
+                  }
+                  loggedOutput = value;
+                },
+              },
+              async () => {
+                return testFn({
+                  inputs: testInput,
+                  expected: testOutput,
+                });
+              }
+            );
+            if (loggedOutput !== undefined && res !== undefined) {
+              console.warn(
+                `[WARN]: Returned value from test function will override output set by previous "logOutput()" call.`
+              );
+            }
+            // TODO: Display logged or final output nicely
+            // return res ?? loggedOutput;
           }
         },
         timeout
@@ -520,7 +539,7 @@ export function logFeedback(feedback: EvaluationResult) {
     exampleId: context.currentExample.id,
     feedback: feedback,
     context,
-    runTree: getCurrentRunTree(),
+    runTree: trackingEnabled(context) ? getCurrentRunTree() : undefined,
     client: context.client,
   });
 }

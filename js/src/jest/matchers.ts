@@ -1,5 +1,3 @@
-import type { MatcherContext } from "expect";
-
 // Levenshtein distance implementation
 function levenshteinDistance(a: string, b: string): number {
   if (a.length === 0) return b.length;
@@ -31,7 +29,6 @@ export type RelativeCloseToMatcherOptions = {
 };
 
 export async function toBeRelativeCloseTo(
-  this: MatcherContext,
   received: string,
   expected: string,
   options: RelativeCloseToMatcherOptions = {}
@@ -75,7 +72,6 @@ export type AbsoluteCloseToMatcherOptions = {
 };
 
 export async function toBeAbsoluteCloseTo(
-  this: MatcherContext,
   received: string,
   expected: string,
   options: AbsoluteCloseToMatcherOptions = {}
@@ -110,7 +106,6 @@ export type SemanticCloseToMatcherOptions = {
 };
 
 export async function toBeSemanticCloseTo(
-  this: MatcherContext,
   received: string,
   expected: string,
   options: SemanticCloseToMatcherOptions
