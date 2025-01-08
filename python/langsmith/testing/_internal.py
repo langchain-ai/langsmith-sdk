@@ -426,6 +426,7 @@ class _LangSmithTestSuite:
         self._dataset = dataset
         self._version: Optional[datetime.datetime] = None
         self._executor = ls_utils.ContextThreadPoolExecutor(max_workers=1)
+        self._example_futures = []
         atexit.register(_end_tests, self)
 
     @property
@@ -506,14 +507,15 @@ class _LangSmithTestSuite:
         inputs: Optional[dict] = None,
         outputs: Optional[dict] = None,
         metadata: Optional[dict] = None,
-    ) -> Future:
-        return self._executor.submit(
+    ) -> None:
+        future = self._executor.submit(
             self._sync_example,
             example_id,
             inputs,
             outputs,
             metadata.copy() if metadata else {},
         )
+        self._example_futures.append(future)
 
     def _sync_example(
         self,
@@ -567,6 +569,11 @@ class _LangSmithTestSuite:
     def wait(self):
         self._executor.shutdown(wait=True)
 
+    def wait_examples(self):
+        """Wait for all example updates to complete."""
+        while self._example_futures:
+            self._example_futures.pop().result()
+
 
 class _TestCase:
     def __init__(self, test_suite: _LangSmithTestSuite, example_id: uuid.UUID) -> None:
@@ -575,8 +582,8 @@ class _TestCase:
 
     def sync_example(
         self, *, inputs: Optional[dict] = None, outputs: Optional[dict] = None
-    ) -> Future:
-        return self.test_suite.sync_example(
+    ) -> None:
+        self.test_suite.sync_example(
             self.example_id, inputs=inputs, outputs=outputs
         )
 
@@ -602,7 +609,7 @@ def _get_test_repr(func: Callable, sig: inspect.Signature) -> str:
 
 def _ensure_example(
     func: Callable, *args: Any, langtest_extra: _UTExtra, **kwargs: Any
-) -> Tuple[_LangSmithTestSuite, uuid.UUID, Future]:
+) -> Tuple[_LangSmithTestSuite, uuid.UUID]:
     client = langtest_extra["client"] or rt.get_cached_client()
     output_keys = langtest_extra["output_keys"]
     signature = inspect.signature(func)
@@ -616,19 +623,19 @@ def _ensure_example(
     )
     example_id, example_name = _get_id(func, inputs, test_suite.id)
     example_id = langtest_extra["id"] or example_id
-    example_future = test_suite.sync_example(
+    test_suite.sync_example(
         example_id,
         inputs=inputs,
         outputs=outputs,
         metadata={"signature": _get_test_repr(func, signature), "name": example_name},
     )
-    return test_suite, example_id, example_future
+    return test_suite, example_id
 
 
 def _run_test(
     func: Callable, *test_args: Any, langtest_extra: _UTExtra, **test_kwargs: Any
 ) -> None:
-    test_suite, example_id, example_future = _ensure_example(
+    test_suite, example_id = _ensure_example(
         func, *test_args, **test_kwargs, langtest_extra=langtest_extra
     )
     _TEST_CASE.set(_TestCase(test_suite, example_id))
@@ -639,7 +646,7 @@ def _run_test(
             inspect.signature(func), *test_args, **test_kwargs
         )
         # Make sure example is created before creating a run that references it.
-        example_future.result()
+        test_suite.wait_examples()
         with rh.trace(
             name=getattr(func, "__name__", "Test"),
             run_id=run_id,
@@ -650,8 +657,8 @@ def _run_test(
         ) as run_tree:
             try:
                 result = func(*test_args, **test_kwargs)
-                # Make sure all example and run updates complete before the run ends.
-                test_suite.wait()
+                # Make sure all example updates complete before the run ends.
+                test_suite.wait_examples()
                 run_tree.end(
                     outputs=(
                         result
@@ -661,6 +668,8 @@ def _run_test(
                 )
             except SkipException as e:
                 test_suite.submit_result(run_id, error=repr(e), skipped=True)
+                # Make sure all example updates complete before the run ends.
+                test_suite.wait_examples()
                 run_tree.end(
                     outputs={"skipped_reason": repr(e)},
                 )
@@ -697,7 +706,7 @@ def _run_test(
 async def _arun_test(
     func: Callable, *test_args: Any, langtest_extra: _UTExtra, **test_kwargs: Any
 ) -> None:
-    test_suite, example_id, example_future = _ensure_example(
+    test_suite, example_id = _ensure_example(
         func, *test_args, **test_kwargs, langtest_extra=langtest_extra
     )
     run_id = uuid.uuid4()
@@ -707,7 +716,7 @@ async def _arun_test(
             inspect.signature(func), *test_args, **test_kwargs
         )
         # Make sure example is created before creating a run that references it.
-        example_future.result()
+        test_suite.wait_examples()
         with rh.trace(
             name=getattr(func, "__name__", "Test"),
             run_id=run_id,
@@ -718,7 +727,7 @@ async def _arun_test(
         ) as run_tree:
             try:
                 result = await func(*test_args, **test_kwargs)
-                test_suite.wait()
+                test_suite.wait_examples()
                 run_tree.end(
                     outputs=(
                         result
@@ -728,6 +737,7 @@ async def _arun_test(
                 )
             except SkipException as e:
                 test_suite.submit_result(run_id, error=repr(e), skipped=True)
+                test_suite.wait_examples()
                 run_tree.end(
                     outputs={"skipped_reason": repr(e)},
                 )
@@ -735,6 +745,7 @@ async def _arun_test(
             except BaseException as e:
                 test_suite.submit_result(run_id, error=repr(e))
                 raise e
+
             try:
                 test_suite.submit_result(run_id, error=None)
             except BaseException as e:
