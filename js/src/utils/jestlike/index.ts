@@ -329,7 +329,7 @@ export function generateWrapperFromJestlikeMethods(
         // Jest will not group tests under the same "describe" group if you await the test and
         // total runs is greater than 1.
         void method(
-          `${name}, iteration ${i}`,
+          `${name}${totalRuns > 1 ? `, iteration ${i}` : ""}`,
           async () => {
             if (context === undefined) {
               throw new Error(
