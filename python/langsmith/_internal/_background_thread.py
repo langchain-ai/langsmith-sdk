@@ -6,6 +6,7 @@ import io
 import logging
 import sys
 import threading
+import time
 import weakref
 from multiprocessing import cpu_count
 from queue import Empty, Queue
@@ -283,7 +284,7 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
 
 
 def tracing_control_thread_func_compress_parallel(
-    client_ref: weakref.ref[Client],
+    client_ref: weakref.ref[Client], flush_interval: float = 0.5
 ) -> None:
     client = client_ref()
     if client is None:
@@ -323,35 +324,67 @@ def tracing_control_thread_func_compress_parallel(
             # for now, keep thread alive
             return True
 
+    last_flush_time = time.monotonic()
+
     while True:
         triggered = client._data_available_event.wait(timeout=0.05)
         if not keep_thread_active():
             break
-        if not triggered:
-            continue
-        client._data_available_event.clear()
 
-        data_stream, compressed_runs_info = _tracing_thread_drain_compressed_buffer(
-            client, size_limit, size_limit_bytes
-        )
+        # If data arrived, clear the event and attempt a drain
+        if triggered:
+            client._data_available_event.clear()
 
-        if data_stream is not None:
-            try:
-                future = HTTP_REQUEST_THREAD_POOL.submit(
-                    client._send_compressed_multipart_req,
-                    data_stream,
-                    compressed_runs_info,
+            data_stream, compressed_runs_info = _tracing_thread_drain_compressed_buffer(
+                client, size_limit, size_limit_bytes
+            )
+            # If we have data, submit the send request
+            if data_stream is not None:
+                try:
+                    future = HTTP_REQUEST_THREAD_POOL.submit(
+                        client._send_compressed_multipart_req,
+                        data_stream,
+                        compressed_runs_info,
+                    )
+                    client._futures.add(future)
+                except RuntimeError:
+                    client._send_compressed_multipart_req(
+                        data_stream,
+                        compressed_runs_info,
+                    )
+            last_flush_time = time.monotonic()
+
+        else:
+            if (time.monotonic() - last_flush_time) >= flush_interval:
+                data_stream, compressed_runs_info = (
+                    _tracing_thread_drain_compressed_buffer(
+                        client, size_limit=1, size_limit_bytes=1
+                    )
                 )
-                client._futures.add(future)
-            except RuntimeError:
-                client._send_compressed_multipart_req(data_stream, compressed_runs_info)
+                if data_stream is not None:
+                    try:
+                        cf.wait(
+                            [
+                                HTTP_REQUEST_THREAD_POOL.submit(
+                                    client._send_compressed_multipart_req,
+                                    data_stream,
+                                    compressed_runs_info,
+                                )
+                            ]
+                        )
+                    except RuntimeError:
+                        client._send_compressed_multipart_req(
+                            data_stream,
+                            compressed_runs_info,
+                        )
+                last_flush_time = time.monotonic()
 
-    # Drain the buffer on exit
+    # Drain the buffer on exit (final flush)
     try:
         final_data_stream, compressed_runs_info = (
             _tracing_thread_drain_compressed_buffer(
                 client, size_limit=1, size_limit_bytes=1
-            )  # Force final drain
+            )
         )
         if final_data_stream is not None:
             try:
