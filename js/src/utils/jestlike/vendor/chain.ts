@@ -3,7 +3,7 @@
  */
 import { evaluatedBy, SimpleEvaluator } from "./evaluatedBy.js";
 
-class JestAssertionError extends Error {
+class JestlikeAssertionError extends Error {
   matcherResult: any;
 
   constructor(result: any, callsite: any) {
@@ -19,7 +19,7 @@ class JestAssertionError extends Error {
 }
 
 const _wrapMatchers = (
-  matchers: jest.Matchers<any>,
+  matchers: any,
   evaluator: SimpleEvaluator,
   originalArgs: any[],
   originalExpect: any,
@@ -45,7 +45,7 @@ const _wrapMatchers = (
           if (!error.matcherResult) {
             throw error;
           } else {
-            throw new JestAssertionError(error.matcherResult, newMatcher);
+            throw new JestlikeAssertionError(error.matcherResult, newMatcher);
           }
         }
       };
@@ -54,14 +54,17 @@ const _wrapMatchers = (
 };
 
 const addEvaluatedBy = (
-  matchers: jest.Matchers<any>,
+  matchers: any,
   originalArgs: any[],
   originalExpect: any,
   staticPath: string[] = []
 ) => {
   let spreadMatchers = { ...matchers };
-  // Handle Bun, which uses a class
-  if (Object.keys(matchers).length === 0) {
+  // Handle Bun, which uses a class, and Vitest which uses something weird
+  if (
+    Object.keys(matchers).length === 0 ||
+    !Object.keys(matchers).includes("toEqual")
+  ) {
     const prototypeProps = Object.getOwnPropertyNames(
       Object.getPrototypeOf(matchers)
     );

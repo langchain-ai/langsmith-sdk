@@ -67,6 +67,10 @@ Chinook_Sqlite.sql
 /vercel.js
 /vercel.d.ts
 /vercel.d.cts
+/vitest.cjs
+/vitest.js
+/vitest.d.ts
+/vitest.d.cts
 /wrappers.cjs
 /wrappers.js
 /wrappers.d.ts

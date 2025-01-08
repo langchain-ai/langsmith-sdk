@@ -1,8 +1,10 @@
-import { test } from "@jest/globals";
+import "dotenv/config";
+
+import { test } from "vitest";
 import { AsyncLocalStorage } from "node:async_hooks";
 
-import * as ls from "../jest/index.js";
-import { type SimpleEvaluator } from "../jest/index.js";
+import * as ls from "../../vitest.js";
+import { type SimpleEvaluator } from "../../vitest.js";
 
 const myEvaluator: SimpleEvaluator = (params) => {
   const { expected, actual } = params;

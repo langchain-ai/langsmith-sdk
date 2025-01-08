@@ -1,12 +1,12 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { Dataset, TracerSession, Example } from "../schemas.js";
-import { Client, CreateProjectParams } from "../client.js";
-import { getEnvironmentVariable } from "../utils/env.js";
-import { isTracingEnabled } from "../env.js";
-import { EvaluationResult } from "../evaluation/evaluator.js";
-import { RunTree } from "../run_trees.js";
+import { Dataset, TracerSession, Example } from "../../schemas.js";
+import { Client, CreateProjectParams } from "../../client.js";
+import { getEnvironmentVariable } from "../env.js";
+import { isTracingEnabled } from "../../env.js";
+import { EvaluationResult } from "../../evaluation/evaluator.js";
+import { RunTree } from "../../run_trees.js";
 
-export type JestAsyncLocalStorageData = {
+export type TestWrapperAsyncLocalStorageData = {
   enableTestTracking?: boolean;
   dataset?: Dataset;
   createdAt: string;
@@ -19,10 +19,10 @@ export type JestAsyncLocalStorageData = {
   suiteName: string;
 };
 
-export const jestAsyncLocalStorageInstance =
-  new AsyncLocalStorage<JestAsyncLocalStorageData>();
+export const testWrapperAsyncLocalStorageInstance =
+  new AsyncLocalStorage<TestWrapperAsyncLocalStorageData>();
 
-export function trackingEnabled(context: JestAsyncLocalStorageData) {
+export function trackingEnabled(context: TestWrapperAsyncLocalStorageData) {
   if (typeof context.enableTestTracking === "boolean") {
     return context.enableTestTracking;
   }
@@ -38,7 +38,7 @@ export const syncExamplePromises = new Map();
 export function _logTestFeedback(params: {
   exampleId?: string;
   feedback: EvaluationResult;
-  context: JestAsyncLocalStorageData;
+  context: TestWrapperAsyncLocalStorageData;
   runTree?: RunTree;
   client: Client;
   sourceRunId?: string;

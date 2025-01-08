@@ -41,6 +41,10 @@
     "vercel.js",
     "vercel.d.ts",
     "vercel.d.cts",
+    "vitest.cjs",
+    "vitest.js",
+    "vitest.d.ts",
+    "vitest.d.cts",
     "wrappers.cjs",
     "wrappers.js",
     "wrappers.d.ts",
@@ -143,6 +147,7 @@
     "ts-jest": "^29.1.0",
     "ts-node": "^10.9.1",
     "typescript": "^5.4.5",
+    "vitest": "^2.1.8",
     "zod": "^3.23.8"
   },
   "peerDependencies": {
@@ -249,6 +254,15 @@
       },
       "import": "./vercel.js",
       "require": "./vercel.cjs"
+    },
+    "./vitest": {
+      "types": {
+        "import": "./vitest.d.ts",
+        "require": "./vitest.d.cts",
+        "default": "./vitest.d.ts"
+      },
+      "import": "./vitest.js",
+      "require": "./vitest.cjs"
     },
     "./wrappers": {
       "types": {

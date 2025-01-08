@@ -1,12 +1,12 @@
-import { getCurrentRunTree, ROOT, traceable } from "../../traceable.js";
+import { getCurrentRunTree, ROOT, traceable } from "../../../traceable.js";
 import {
-  jestAsyncLocalStorageInstance,
+  testWrapperAsyncLocalStorageInstance,
   _logTestFeedback,
   trackingEnabled,
 } from "../globals.js";
 
-import { EvaluationResult } from "../../evaluation/evaluator.js";
-import { RunTree } from "../../run_trees.js";
+import { EvaluationResult } from "../../../evaluation/evaluator.js";
+import { RunTree } from "../../../run_trees.js";
 
 export type SimpleEvaluatorParams = {
   input: Record<string, any>;
@@ -19,7 +19,7 @@ export type SimpleEvaluator = (
 ) => EvaluationResult | Promise<EvaluationResult>;
 
 export async function evaluatedBy(actual: any, evaluator: SimpleEvaluator) {
-  const context = jestAsyncLocalStorageInstance.getStore();
+  const context = testWrapperAsyncLocalStorageInstance.getStore();
   if (context === undefined || context.currentExample === undefined) {
     throw new Error(
       `Could not identify current LangSmith context.\nPlease ensure you are calling this matcher within "ls.test()"`
