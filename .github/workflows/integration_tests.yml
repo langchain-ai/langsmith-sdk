@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-  pull_request:
+  pull_request_target:
     branches:
       - main
     types: [opened, synchronize, reopened, labeled, unlabeled]
@@ -42,7 +42,7 @@ jobs:
     needs: changed_files
     if: >
       (github.event_name == 'push') ||
-      (github.event_name == 'pull_request' && (
+      (github.event_name == 'pull_request_target' && (
         contains(github.event.pull_request.labels.*.name, 'release') ||
         needs.changed_files.outputs.python_changed == 'true'
       )) ||
@@ -78,7 +78,7 @@ jobs:
     needs: changed_files
     if: >
       (github.event_name == 'push') ||
-      (github.event_name == 'pull_request' && (
+      (github.event_name == 'pull_request_target' && (
         contains(github.event.pull_request.labels.*.name, 'release') ||
         needs.changed_files.outputs.js_changed == 'true'
       )) ||
