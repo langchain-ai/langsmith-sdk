@@ -1274,8 +1274,6 @@ class Client:
             run_create.get("trace_id") is not None
             and run_create.get("dotted_order") is not None
         ):
-            print("creating run")
-            print("compressed runs", self.compressed_runs)
             if self._pyo3_client is not None:
                 self._pyo3_client.create_run(run_create)
             elif self.compressed_runs is not None:
