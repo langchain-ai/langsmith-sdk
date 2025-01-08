@@ -13,6 +13,7 @@ import threading
 import uuid
 import warnings
 from collections import defaultdict
+from concurrent.futures import Future
 from pathlib import Path
 from typing import (
     Any,
@@ -505,8 +506,8 @@ class _LangSmithTestSuite:
         inputs: Optional[dict] = None,
         outputs: Optional[dict] = None,
         metadata: Optional[dict] = None,
-    ) -> None:
-        self._executor.submit(
+    ) -> Future:
+        return self._executor.submit(
             self._sync_example,
             example_id,
             inputs,
@@ -574,7 +575,7 @@ class _TestCase:
 
     def sync_example(
         self, *, inputs: Optional[dict] = None, outputs: Optional[dict] = None
-    ) -> None:
+    ) -> Future:
         return self.test_suite.sync_example(
             self.example_id, inputs=inputs, outputs=outputs
         )
@@ -601,7 +602,7 @@ def _get_test_repr(func: Callable, sig: inspect.Signature) -> str:
 
 def _ensure_example(
     func: Callable, *args: Any, langtest_extra: _UTExtra, **kwargs: Any
-) -> Tuple[_LangSmithTestSuite, uuid.UUID]:
+) -> Tuple[_LangSmithTestSuite, uuid.UUID, Future]:
     client = langtest_extra["client"] or rt.get_cached_client()
     output_keys = langtest_extra["output_keys"]
     signature = inspect.signature(func)
@@ -615,19 +616,19 @@ def _ensure_example(
     )
     example_id, example_name = _get_id(func, inputs, test_suite.id)
     example_id = langtest_extra["id"] or example_id
-    test_suite.sync_example(
+    example_future = test_suite.sync_example(
         example_id,
         inputs=inputs,
         outputs=outputs,
         metadata={"signature": _get_test_repr(func, signature), "name": example_name},
     )
-    return test_suite, example_id
+    return test_suite, example_id, example_future
 
 
 def _run_test(
     func: Callable, *test_args: Any, langtest_extra: _UTExtra, **test_kwargs: Any
 ) -> None:
-    test_suite, example_id = _ensure_example(
+    test_suite, example_id, example_future = _ensure_example(
         func, *test_args, **test_kwargs, langtest_extra=langtest_extra
     )
     _TEST_CASE.set(_TestCase(test_suite, example_id))
@@ -637,6 +638,8 @@ def _run_test(
         func_inputs = rh._get_inputs_safe(
             inspect.signature(func), *test_args, **test_kwargs
         )
+        # Make sure example is created before creating a run that references it.
+        example_future.result()
         with rh.trace(
             name=getattr(func, "__name__", "Test"),
             run_id=run_id,
@@ -647,6 +650,8 @@ def _run_test(
         ) as run_tree:
             try:
                 result = func(*test_args, **test_kwargs)
+                # Make sure all example and run updates complete before the run ends.
+                test_suite.wait()
                 run_tree.end(
                     outputs=(
                         result
@@ -692,7 +697,7 @@ def _run_test(
 async def _arun_test(
     func: Callable, *test_args: Any, langtest_extra: _UTExtra, **test_kwargs: Any
 ) -> None:
-    test_suite, example_id = _ensure_example(
+    test_suite, example_id, example_future = _ensure_example(
         func, *test_args, **test_kwargs, langtest_extra=langtest_extra
     )
     run_id = uuid.uuid4()
@@ -701,6 +706,8 @@ async def _arun_test(
         func_inputs = rh._get_inputs_safe(
             inspect.signature(func), *test_args, **test_kwargs
         )
+        # Make sure example is created before creating a run that references it.
+        example_future.result()
         with rh.trace(
             name=getattr(func, "__name__", "Test"),
             run_id=run_id,
@@ -711,6 +718,7 @@ async def _arun_test(
         ) as run_tree:
             try:
                 result = await func(*test_args, **test_kwargs)
+                test_suite.wait()
                 run_tree.end(
                     outputs=(
                         result
