@@ -7,11 +7,12 @@ on:
     paths:
       - "python/pyproject.toml"
   workflow_dispatch:
-    dangerous-non-main-release:
-      required: false
-      type: boolean
-      default: false
-      description: "Release from a non-main branch (danger!)"
+    inputs:
+      dangerous-non-main-release:
+        required: false
+        type: boolean
+        default: false
+        description: "Release from a non-main branch (danger!)"
 
 env:
   POETRY_VERSION: "1.4.2"
