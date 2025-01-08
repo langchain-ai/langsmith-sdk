@@ -285,10 +285,13 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
 def tracing_control_thread_func_compress_parallel(
     client_ref: weakref.ref[Client],
 ) -> None:
-    print("tracing_control_thread_func_compress_parallel")
     client = client_ref()
     if client is None:
         return
+
+    assert client.compressed_runs is not None
+    assert client._data_available_event is not None
+    assert client._futures is not None
 
     batch_ingest_config = _ensure_ingest_config(client.info)
     size_limit: int = batch_ingest_config["size_limit"]

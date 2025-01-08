@@ -78,6 +78,7 @@ from langsmith._internal._background_thread import (
     tracing_control_thread_func as _tracing_control_thread_func,
 )
 from langsmith._internal._beta_decorator import warn_beta
+from langsmith._internal._compressed_runs import CompressedRuns
 from langsmith._internal._constants import (
     _AUTO_SCALE_UP_NTHREADS_LIMIT,
     _BLOCKSIZE_BYTES,
@@ -100,7 +101,6 @@ from langsmith._internal._operations import (
     serialized_run_operation_to_multipart_parts_and_context,
 )
 from langsmith._internal._serde import dumps_json as _dumps_json
-from python.langsmith._internal._compressed_runs import CompressedRuns
 
 try:
     from zoneinfo import ZoneInfo  # type: ignore[import-not-found]
@@ -480,10 +480,12 @@ class Client:
         )
         weakref.finalize(self, close_session, self.session)
         atexit.register(close_session, session_)
+        self.compressed_runs: Optional[CompressedRuns] = None
+        self._data_available_event: Optional[threading.Event] = None
+        self._futures: Optional[set[cf.Future]] = None
         # Initialize auto batching
         if auto_batch_tracing:
-            self.tracing_queue = PriorityQueue()
-            self.compressed_runs: Optional[CompressedRuns] = None
+            self.tracing_queue: Optional[PriorityQueue] = PriorityQueue()
 
             threading.Thread(
                 target=_tracing_control_thread_func,
@@ -493,7 +495,6 @@ class Client:
             ).start()
         else:
             self.tracing_queue = None
-            self.compressed_runs = None
 
         # Mount the HTTPAdapter with the retry configuration.
         adapter = _LangSmithHttpAdapter(
@@ -1277,6 +1278,7 @@ class Client:
             if self._pyo3_client is not None:
                 self._pyo3_client.create_run(run_create)
             elif self.compressed_runs is not None:
+                assert self._data_available_event is not None
                 serialized_op = serialize_run_dict("post", run_create)
                 multipart_form = (
                     serialized_run_operation_to_multipart_parts_and_context(
@@ -1979,6 +1981,7 @@ class Client:
                     )
                 )
                 with self.compressed_runs.lock:
+                    assert self._data_available_event is not None
                     compress_multipart_parts_and_context(
                         multipart_form,
                         self.compressed_runs,
@@ -2013,6 +2016,8 @@ class Client:
         """Force flush the currently buffered compressed runs."""
         if self.compressed_runs is None:
             return
+
+        assert self._futures is not None
 
         # Attempt to drain and send any remaining data
         from langsmith._internal._background_thread import (
