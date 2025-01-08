@@ -19,6 +19,7 @@ pub struct ClientConfig {
     pub batch_timeout: Duration,
     pub headers: Option<HeaderMap>,
     pub num_worker_threads: usize,
+    pub compression_level: i32,
 }
 
 pub struct TracingClient {

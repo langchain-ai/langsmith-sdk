@@ -27,6 +27,7 @@ impl BlockingTracingClient {
         batch_size: usize,
         batch_timeout_millis: u64,
         worker_threads: usize,
+        compression_level: i32,
     ) -> PyResult<Self> {
         let config = langsmith_tracing_client::client::blocking::ClientConfig {
             endpoint,
@@ -39,6 +40,7 @@ impl BlockingTracingClient {
 
             headers: None, // TODO: support custom headers
             num_worker_threads: worker_threads,
+            compression_level,
         };
 
         let client = RustTracingClient::new(config)

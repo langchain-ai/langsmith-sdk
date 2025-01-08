@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{mpsc, Arc, Mutex};
+use std::thread::available_parallelism;
 use std::time::{Duration, Instant};
 
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -266,14 +267,34 @@ impl RunProcessor {
         for (part_name, part) in json_parts.into_iter().chain(attachment_parts) {
             form = form.part(part_name, part);
         }
+        let content_type = format!("multipart/form-data; boundary={}", form.boundary());
+
+        let compressed_data = {
+            let mut buffer = Vec::with_capacity(4096);
+            let mut encoder = zstd::Encoder::new(&mut buffer, self.config.compression_level)
+                .and_then(|mut encoder| {
+                    encoder.multithread(
+                        available_parallelism().map(|p| p.get() as u32).unwrap_or_default(),
+                    )?;
+                    Ok(encoder)
+                })
+                .map_err(|e| TracingClientError::IoError(format!("{e}")))?;
+            std::io::copy(&mut form.reader(), &mut encoder)
+                .map_err(|e| TracingClientError::IoError(format!("{e}")))?;
+            encoder.finish().map_err(|e| TracingClientError::IoError(format!("{e}")))?;
+
+            buffer
+        };
 
         // send the multipart POST request
         let start_send_batch = Instant::now();
         let response = self
             .http_client
             .post(format!("{}/runs/multipart", self.config.endpoint))
-            .multipart(form)
             .headers(self.config.headers.as_ref().cloned().unwrap_or_default())
+            .header(http::header::CONTENT_TYPE, content_type)
+            .header(http::header::CONTENT_ENCODING, "zstd")
+            .body(compressed_data)
             .send()?;
         // println!("Sending batch took {:?}", start_send_batch.elapsed());
 
