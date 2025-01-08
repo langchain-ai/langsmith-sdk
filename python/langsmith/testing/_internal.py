@@ -780,7 +780,8 @@ def log_inputs(inputs: dict, /) -> None:
     if not run_tree or not test_case:
         msg = (
             "log_inputs should only be called within a pytest test decorated with "
-            "@langsmith.testing.test."
+            "@langsmith.testing.test, and with tracing enabled (by setting the "
+            "LANGSMITH_TRACING_V2 environment variable to 'true')."
         )
         raise ValueError(msg)
     run_tree.add_inputs(inputs)
@@ -810,7 +811,8 @@ def log_outputs(outputs: dict, /) -> None:
     if not run_tree:
         msg = (
             "log_outputs should only be called within a pytest test decorated with "
-            "@langsmith.testing.test."
+            "@langsmith.testing.test, and with tracing enabled (by setting the "
+            "LANGSMITH_TRACING_V2 environment variable to 'true')."
         )
         raise ValueError(msg)
     run_tree.add_outputs(outputs)
@@ -895,8 +897,9 @@ def log_feedback(
     test_case = _TEST_CASE.get()
     if not run_tree or not test_case:
         msg = (
-            "log_feedback should only be called within a pytest test "
-            "decorated with @langsmith.testing.test."
+            "log_feedback should only be called within a pytest test decorated with "
+            "@langsmith.testing.test, and with tracing enabled (by setting the "
+            "LANGSMITH_TRACING_V2 environment variable to 'true')."
         )
         raise ValueError(msg)
     if run_tree.session_name == "evaluators" and run_tree.metadata.get(
@@ -931,8 +934,9 @@ def trace_feedback(
     test_case = _TEST_CASE.get()
     if not parent_run or not test_case:
         msg = (
-            "trace_feedback should only be called within a pytest test "
-            "decorated with @langsmith.testing.test."
+            "trace_feedback should only be called within a pytest test decorated with "
+            "@langsmith.testing.test, and with tracing enabled (by setting the "
+            "LANGSMITH_TRACING_V2 environment variable to 'true')."
         )
         raise ValueError(msg)
     metadata = {
