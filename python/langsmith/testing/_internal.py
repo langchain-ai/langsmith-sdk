@@ -677,7 +677,7 @@ def _run_test(
                 run_future = test_suite.end_run(run_tree, example_id, outputs)
             except SkipException as e:
                 test_suite.submit_result(run_id, error=repr(e), skipped=True)
-                outputs = ({"skipped_reason": repr(e)},)
+                outputs = {"skipped_reason": repr(e)}
                 test_suite.end_run(run_tree, example_id, outputs).result()
                 raise e
             except BaseException as e:
@@ -718,6 +718,7 @@ async def _arun_test(
     test_suite, example_id = _ensure_example(
         func, *test_args, **test_kwargs, langtest_extra=langtest_extra
     )
+    _TEST_CASE.set(_TestCase(test_suite, example_id))
     run_id = uuid.uuid4()
 
     async def _test():
@@ -736,20 +737,16 @@ async def _arun_test(
         ) as run_tree:
             try:
                 result = await func(*test_args, **test_kwargs)
-                test_suite.wait_example_updates()
-                run_tree.end(
-                    outputs=(
-                        result
-                        if result is None or isinstance(result, dict)
-                        else {"output": result}
-                    )
+                outputs = (
+                    result
+                    if result is None or isinstance(result, dict)
+                    else {"output": result}
                 )
+                run_future = test_suite.end_run(run_tree, example_id, outputs)
             except SkipException as e:
                 test_suite.submit_result(run_id, error=repr(e), skipped=True)
-                test_suite.wait_example_updates()
-                run_tree.end(
-                    outputs={"skipped_reason": repr(e)},
-                )
+                outputs = {"skipped_reason": repr(e)}
+                test_suite.end_run(run_tree, example_id, outputs).result()
                 raise e
             except BaseException as e:
                 test_suite.submit_result(run_id, error=repr(e))
@@ -759,6 +756,9 @@ async def _arun_test(
                 test_suite.submit_result(run_id, error=None)
             except BaseException as e:
                 logger.warning(f"Failed to create feedback for run_id {run_id}: {e}")
+
+            # Ensure run is updated before exiting tracing context.
+            run_future.result()
 
     cache_path = (
         Path(langtest_extra["cache"]) / f"{test_suite.id}.yaml"
