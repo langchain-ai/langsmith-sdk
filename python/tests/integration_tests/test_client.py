@@ -2060,7 +2060,6 @@ def test_annotation_queue_runs(langchain_client: Client):
     """Test managing runs within an annotation queue."""
     queue_name = f"test_queue_{uuid.uuid4().hex[:8]}"
     project_name = f"test_project_{uuid.uuid4().hex[:8]}"
-    langchain_client = Client(api_key = "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")
     # Create a queue
     queue = langchain_client.create_annotation_queue(
         name=queue_name, description="Test queue"
@@ -2103,6 +2102,6 @@ def test_annotation_queue_runs(langchain_client: Client):
     langchain_client.delete_run_from_annotation_queue(
         queue_id=queue.id, run_id=run_ids[2]
     )
-    
+
     # Clean up
     langchain_client.delete_annotation_queue(queue.id)
