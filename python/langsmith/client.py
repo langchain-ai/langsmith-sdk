@@ -3982,11 +3982,10 @@ class Client:
                     if isinstance(attachment_data, Path):
                         if dangerously_allow_filesystem:
                             file_size = os.path.getsize(attachment_data)
-                            if str(attachment_data) in opened_files_dict:
-                                file = opened_files_dict[str(attachment_data)]
-                            else:
-                                file = open(attachment_data, "rb")
-                                opened_files_dict[str(attachment_data)] = file
+                            file = open(attachment_data, "rb")
+                            opened_files_dict[
+                                str(attachment_data) + str(uuid.uuid4())
+                            ] = file
 
                             parts.append(
                                 (

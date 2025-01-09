@@ -273,11 +273,8 @@ def serialized_run_operation_to_multipart_parts_and_context(
                 )
             else:
                 file_size = os.path.getsize(data)
-                if str(data) in opened_files_dict:
-                    file = opened_files_dict[str(data)]
-                else:
-                    file = open(data, "rb")
-                    opened_files_dict[str(data)] = file
+                file = open(data, "rb")
+                opened_files_dict[str(data) + str(uuid.uuid4())] = file
                 acc_parts.append(
                     (
                         f"attachment.{op.id}.{n}",

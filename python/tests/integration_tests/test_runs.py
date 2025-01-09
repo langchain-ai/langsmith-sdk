@@ -489,10 +489,14 @@ def test_trace_file_path(langchain_client: Client) -> None:
     run_meta = uuid.uuid4().hex
 
     @traceable(run_type="chain")
-    def my_func(foo: Attachment):
+    def my_func(foo: Attachment, bar: Attachment):
         return "foo"
 
     my_func(
+        Attachment(
+            mime_type="image/png",
+            data=Path(__file__).parent / "test_data/parrot-icon.png",
+        ),
         Attachment(
             mime_type="image/png",
             data=Path(__file__).parent / "test_data/parrot-icon.png",
@@ -501,14 +505,19 @@ def test_trace_file_path(langchain_client: Client) -> None:
             project_name=project_name, metadata={"test_run": run_meta}
         ),
     )
-
-    poll_runs_until_count(langchain_client, project_name, 1, max_retries=20)
     _filter = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{run_meta}"))'
+    poll_runs_until_count(
+        langchain_client, project_name, 1, max_retries=20, filter_=_filter
+    )
     runs = list(langchain_client.list_runs(project_name=project_name, filter=_filter))
     assert len(runs) == 1
     run = runs[0]
     assert run.attachments
     assert (
-        run.attachments["foo"].reader.read()
+        run.attachments["foo"]["reader"].read()
+        == (Path(__file__).parent / "test_data/parrot-icon.png").read_bytes()
+    )
+    assert (
+        run.attachments["bar"]["reader"].read()
         == (Path(__file__).parent / "test_data/parrot-icon.png").read_bytes()
     )

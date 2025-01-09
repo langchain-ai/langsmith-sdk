@@ -20,7 +20,7 @@ from freezegun import freeze_time
 from pydantic import BaseModel
 from requests_toolbelt import MultipartEncoder, MultipartEncoderMonitor
 
-from langsmith.client import ID_TYPE, Client
+from langsmith.client import ID_TYPE, Client, _close_files
 from langsmith.evaluation import aevaluate, evaluate
 from langsmith.schemas import (
     AttachmentsOperations,
@@ -2113,31 +2113,66 @@ def test_examples_multipart_attachment_path(langchain_client: Client) -> None:
         data_type=DataType.kv,
     )
 
+    file_path = Path(__file__).parent / "test_data/parrot-icon.png"
     example_id = uuid4()
     example = ExampleUploadWithAttachments(
         id=example_id,
         inputs={"text": "hello world"},
         attachments={
             "file1": ("text/plain", b"original content 1"),
-            "file2": ("image/png", Path(__file__).parent / "test_data/parrot-icon.png"),
+            "file2": ("image/png", file_path),
+            "file3": ("image/png", file_path),
         },
     )
+
+    # Get the multipart data first to check file handling
+    _, _, opened_files_dict = langchain_client._prepare_multipart_data(
+        [example],
+        include_dataset_id=False,
+        dangerously_allow_filesystem=True,
+    )
+
+    file_obj = list(opened_files_dict.values())[0]
+    fd = file_obj.fileno()
+
+    # Verify the file is open by trying to read from it
+    try:
+        os.fstat(fd)
+        file_is_open = True
+    except OSError:
+        file_is_open = False
+    assert file_is_open, "File should be open after _prepare_multipart_data"
+
+    # Now close the files
+    _close_files(list(opened_files_dict.values()))
+
+    # Verify the file is closed by checking if the file descriptor is invalid
+    try:
+        os.fstat(fd)
+        file_is_closed = False
+    except OSError:
+        file_is_closed = True
+    assert file_is_closed, "File should be closed after _close_files"
 
     created_examples = langchain_client.upload_examples_multipart(
         dataset_id=dataset.id, uploads=[example], dangerously_allow_filesystem=True
     )
     assert created_examples["count"] == 1
-    assert open(Path(__file__).parent / "test_data/parrot-icon.png").closed
 
     # Verify the upload
     retrieved = langchain_client.read_example(example_id)
 
-    assert len(retrieved.attachments) == 2
+    assert len(retrieved.attachments) == 3
     assert "file1" in retrieved.attachments
     assert "file2" in retrieved.attachments
+    assert "file3" in retrieved.attachments
     assert retrieved.attachments["file1"]["reader"].read() == b"original content 1"
     assert (
         retrieved.attachments["file2"]["reader"].read()
+        == (Path(__file__).parent / "test_data/parrot-icon.png").read_bytes()
+    )
+    assert (
+        retrieved.attachments["file3"]["reader"].read()
         == (Path(__file__).parent / "test_data/parrot-icon.png").read_bytes()
     )
 
@@ -2146,7 +2181,11 @@ def test_examples_multipart_attachment_path(langchain_client: Client) -> None:
         attachments={
             "new_file1": (
                 "image/png",
-                Path(__file__).parent / "test_data/parrot-icon.png",
+                file_path,
+            ),
+            "new_file2": (
+                "image/png",
+                file_path,
             ),
         },
     )
@@ -2159,12 +2198,11 @@ def test_examples_multipart_attachment_path(langchain_client: Client) -> None:
 
     retrieved = langchain_client.read_example(example_id)
 
-    assert len(retrieved.attachments) == 1
+    assert len(retrieved.attachments) == 2
     assert "new_file1" in retrieved.attachments
-    assert (
-        retrieved.attachments["new_file1"]["reader"].read()
-        == (Path(__file__).parent / "test_data/parrot-icon.png").read_bytes()
-    )
+    assert "new_file2" in retrieved.attachments
+    assert retrieved.attachments["new_file1"]["reader"].read() == file_path.read_bytes()
+    assert retrieved.attachments["new_file2"]["reader"].read() == file_path.read_bytes()
 
     example_wrong_path = ExampleUploadWithAttachments(
         id=example_id,
