@@ -100,8 +100,10 @@ def _reduce_choices(choices: List[Choice]) -> dict:
                 if arguments_:
                     message["function_call"]["arguments"] += arguments_
             if getattr(c.delta, "tool_calls", None):
-                for tool_call in c.delta.tool_calls:
-                    tool_calls[c.index].append(tool_call)
+                tool_calls_list = c.delta.tool_calls
+                if tool_calls_list is not None:
+                    for tool_call in tool_calls_list:
+                        tool_calls[c.index].append(tool_call)
     if tool_calls:
         message["tool_calls"] = [None for _ in tool_calls.keys()]
         for index, tool_call_chunks in tool_calls.items():
