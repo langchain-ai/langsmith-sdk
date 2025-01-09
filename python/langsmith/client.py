@@ -556,7 +556,9 @@ class Client:
                 batch_size = 100
                 batch_timeout_millis = 1000
                 worker_threads = 1
-                compression_level = ls_utils.get_env_var("RUN_COMPRESSION_LEVEL", 3)
+                compression_level = int(
+                    ls_utils.get_env_var("RUN_COMPRESSION_LEVEL", 3)
+                )
 
                 try:
                     self._pyo3_client = langsmith_pyo3.BlockingTracingClient(
