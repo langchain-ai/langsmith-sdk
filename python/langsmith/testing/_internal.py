@@ -426,7 +426,7 @@ class _LangSmithTestSuite:
         self._dataset = dataset
         self._version: Optional[datetime.datetime] = None
         self._executor = ls_utils.ContextThreadPoolExecutor(max_workers=1)
-        self._example_futures = []
+        self._example_futures: list[Future] = []
         atexit.register(_end_tests, self)
 
     @property
@@ -569,10 +569,24 @@ class _LangSmithTestSuite:
     def wait(self):
         self._executor.shutdown(wait=True)
 
-    def wait_examples(self):
+    def wait_example_updates(self):
         """Wait for all example updates to complete."""
         while self._example_futures:
             self._example_futures.pop().result()
+
+    def end_run(self, run_tree, example_id, outputs) -> Future:
+        return self._executor.submit(
+            self._end_run, run_tree=run_tree, example_id=example_id, outputs=outputs
+        )
+
+    def _end_run(self, run_tree, example_id, outputs) -> None:
+        # Ensure example is fully updated
+        self.wait_example_updates()
+        # Ensure that run end time is after example modified at.
+        end_time = cast(
+            datetime.datetime, self.client.read_example(example_id).modified_at
+        ) + datetime.timedelta(seconds=0.01)
+        run_tree.end(outputs=outputs, end_time=end_time)
 
 
 class _TestCase:
@@ -583,9 +597,7 @@ class _TestCase:
     def sync_example(
         self, *, inputs: Optional[dict] = None, outputs: Optional[dict] = None
     ) -> None:
-        self.test_suite.sync_example(
-            self.example_id, inputs=inputs, outputs=outputs
-        )
+        self.test_suite.sync_example(self.example_id, inputs=inputs, outputs=outputs)
 
 
 _TEST_CASE = contextvars.ContextVar[Optional[_TestCase]]("_TEST_CASE", default=None)
@@ -646,7 +658,7 @@ def _run_test(
             inspect.signature(func), *test_args, **test_kwargs
         )
         # Make sure example is created before creating a run that references it.
-        test_suite.wait_examples()
+        test_suite.wait_example_updates()
         with rh.trace(
             name=getattr(func, "__name__", "Test"),
             run_id=run_id,
@@ -657,22 +669,16 @@ def _run_test(
         ) as run_tree:
             try:
                 result = func(*test_args, **test_kwargs)
-                # Make sure all example updates complete before the run ends.
-                test_suite.wait_examples()
-                run_tree.end(
-                    outputs=(
-                        result
-                        if result is None or isinstance(result, dict)
-                        else {"output": result}
-                    )
+                outputs = (
+                    result
+                    if result is None or isinstance(result, dict)
+                    else {"output": result}
                 )
+                run_future = test_suite.end_run(run_tree, example_id, outputs)
             except SkipException as e:
                 test_suite.submit_result(run_id, error=repr(e), skipped=True)
-                # Make sure all example updates complete before the run ends.
-                test_suite.wait_examples()
-                run_tree.end(
-                    outputs={"skipped_reason": repr(e)},
-                )
+                outputs = ({"skipped_reason": repr(e)},)
+                test_suite.end_run(run_tree, example_id, outputs).result()
                 raise e
             except BaseException as e:
                 test_suite.submit_result(run_id, error=repr(e))
@@ -681,6 +687,9 @@ def _run_test(
                 test_suite.submit_result(run_id, error=None)
             except BaseException as e:
                 logger.warning(f"Failed to create feedback for run_id {run_id}: {e}")
+
+            # Ensure run is updated before exiting tracing context.
+            run_future.result()
 
     cache_path = (
         Path(langtest_extra["cache"]) / f"{test_suite.id}.yaml"
@@ -716,7 +725,7 @@ async def _arun_test(
             inspect.signature(func), *test_args, **test_kwargs
         )
         # Make sure example is created before creating a run that references it.
-        test_suite.wait_examples()
+        test_suite.wait_example_updates()
         with rh.trace(
             name=getattr(func, "__name__", "Test"),
             run_id=run_id,
@@ -727,7 +736,7 @@ async def _arun_test(
         ) as run_tree:
             try:
                 result = await func(*test_args, **test_kwargs)
-                test_suite.wait_examples()
+                test_suite.wait_example_updates()
                 run_tree.end(
                     outputs=(
                         result
@@ -737,7 +746,7 @@ async def _arun_test(
                 )
             except SkipException as e:
                 test_suite.submit_result(run_id, error=repr(e), skipped=True)
-                test_suite.wait_examples()
+                test_suite.wait_example_updates()
                 run_tree.end(
                     outputs={"skipped_reason": repr(e)},
                 )
