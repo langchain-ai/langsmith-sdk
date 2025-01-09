@@ -216,11 +216,14 @@ def test(*args: Any, **kwargs: Any) -> Callable:
         By default, each test case will be assigned a consistent, unique identifier
         based on the function name and module. You can also provide a custom identifier
         using the `id` argument:
-        >>> @test(id="1a77e4b5-1d38-4081-b829-b0442cf3f145")
+        >>> import uuid
+        >>>
+        >>> example_id = uuid.uuid4()
+        >>> @test(id=str(example_id))
         ... def test_multiplication():
         ...     assert 3 * 4 == 12
 
-        By default, all test test inputs are saved as "inputs" to a dataset.
+        By default, all test inputs are saved as "inputs" to a dataset.
         You can specify the `output_keys` argument to persist those keys
         within the dataset's "outputs" fields.
 
