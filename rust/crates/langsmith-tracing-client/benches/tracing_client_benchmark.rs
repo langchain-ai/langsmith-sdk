@@ -30,6 +30,7 @@ fn create_mock_client_config_sync(server_url: &str, batch_size: usize) -> Blocki
         batch_timeout: Duration::from_secs(1),
         headers: Default::default(),
         num_worker_threads: 1,
+        compression_level: 1,
     }
 }
 
