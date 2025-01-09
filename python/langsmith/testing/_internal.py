@@ -7,6 +7,7 @@ import datetime
 import functools
 import importlib
 import inspect
+import json
 import logging
 import os
 import threading
@@ -373,23 +374,21 @@ def _start_experiment(
 _param_dict: dict = defaultdict(lambda: defaultdict(int))
 
 
-def _get_id(func: Callable, inputs: dict, suite_id: uuid.UUID) -> Tuple[uuid.UUID, str]:
-    global _param_dict
+def _get_example_id(
+    func: Callable, inputs: dict, suite_id: uuid.UUID
+) -> Tuple[uuid.UUID, str]:
+    # global _param_dict
     try:
         file_path = str(Path(inspect.getfile(func)).relative_to(Path.cwd()))
     except ValueError:
         # Fall back to module name if file path is not available
         file_path = func.__module__
     identifier = f"{suite_id}{file_path}::{func.__name__}"
-    input_keys = tuple(sorted(inputs.keys()))
-    arg_indices = []
-    for key in input_keys:
-        _param_dict[identifier][key] += 1
-        arg_indices.append(f"{key}{_param_dict[identifier][key]}")
-    if arg_indices:
-        identifier += f"[{'-'.join(arg_indices)}]"
-    if os.environ.get("PYTEST_XDIST_WORKER"):
-        identifier += "-" + os.environ["PYTEST_XDIST_WORKER"]
+    # If parametrized test, need to add inputs to identifier:
+    if hasattr(func, "pytestmark") and any(
+        m.name == "parametrize" for m in func.pytestmark
+    ):
+        identifier += _stringify(inputs)
     return uuid.uuid5(uuid.NAMESPACE_DNS, identifier), identifier[len(str(suite_id)) :]
 
 
@@ -641,7 +640,7 @@ def _ensure_example(
     test_suite = _LangSmithTestSuite.from_test(
         client, func, langtest_extra.get("test_suite_name")
     )
-    example_id, example_name = _get_id(func, inputs, test_suite.id)
+    example_id, example_name = _get_example_id(func, inputs, test_suite.id)
     example_id = langtest_extra["id"] or example_id
     test_suite.sync_example(
         example_id,
@@ -992,3 +991,10 @@ def trace_feedback(
         metadata=metadata,
     ) as run_tree:
         yield run_tree
+
+
+def _stringify(x: Any) -> str:
+    try:
+        return json.dumps(x, ensure_ascii=False)
+    except Exception:
+        return str(x)
