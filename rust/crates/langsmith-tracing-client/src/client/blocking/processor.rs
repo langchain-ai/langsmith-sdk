@@ -1,6 +1,8 @@
 use std::collections::HashMap;
+use std::io::Write;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{mpsc, Arc, Mutex};
+use std::thread::available_parallelism;
 use std::time::{Duration, Instant};
 
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -266,14 +268,18 @@ impl RunProcessor {
         for (part_name, part) in json_parts.into_iter().chain(attachment_parts) {
             form = form.part(part_name, part);
         }
+        let content_type = format!("multipart/form-data; boundary={}", form.boundary());
+        let compressed_data = compress_multipart_body(form, self.config.compression_level)?;
 
         // send the multipart POST request
         let start_send_batch = Instant::now();
         let response = self
             .http_client
             .post(format!("{}/runs/multipart", self.config.endpoint))
-            .multipart(form)
             .headers(self.config.headers.as_ref().cloned().unwrap_or_default())
+            .header(http::header::CONTENT_TYPE, content_type)
+            .header(http::header::CONTENT_ENCODING, "zstd")
+            .body(compressed_data)
             .send()?;
         // println!("Sending batch took {:?}", start_send_batch.elapsed());
 
@@ -314,4 +320,64 @@ impl RunProcessor {
 
         Ok(part)
     }
+}
+
+fn compress_multipart_body(
+    form: Form,
+    compression_level: i32,
+) -> Result<Vec<u8>, TracingClientError> {
+    // We want to use as many threads as available cores to compress data.
+    // However, we have to be mindful of special values in the zstd library:
+    // - A setting of `0` here means "use the current thread only."
+    // - A setting of `1` means "use a separate thread, but only one."
+    //
+    // `1` isn't a useful setting for us, so turn `1` into `0` while
+    // keeping higher numbers the same.
+    let n_workers = match available_parallelism() {
+        Ok(num) => {
+            if num.get() == 1 {
+                0
+            } else {
+                num.get() as u32
+            }
+        }
+        Err(_) => {
+            // We failed to query the available number of cores.
+            // Use only the current single thread, to be safe.
+            0
+        }
+    };
+
+    // `reqwest` doesn't have a public method for getting *just* the multipart form data:
+    // the `Form::reader()` method isn't public. Instead, we pretend to be preparing a request,
+    // place the multipart data, and ask for the body to be buffered and made available as `&[u8]`.
+    // *This does not send the request!* We merely prepare a request in memory as a workaround.
+    //
+    // Just in case, we use `example.com` as the URL here, which is explicitly reserved for
+    // example use in the standards and is guaranteed to not be taken. This means that
+    // under no circumstances will we send multipart data to any other place,
+    // even if `reqwest` were to suddenly change the API to send data on `.build()`.
+    let builder = reqwest::blocking::Client::new().get("http://example.com/").multipart(form);
+    let mut request = builder.build().expect("failed to construct request");
+    let multipart_form_bytes = request
+        .body_mut()
+        .as_mut()
+        .expect("multipart request had no body, this should never happen")
+        .buffer()
+        .map_err(|e| TracingClientError::IoError(e.to_string()))?;
+
+    let mut buffer = Vec::with_capacity(multipart_form_bytes.len());
+    let mut encoder = zstd::Encoder::new(&mut buffer, compression_level)
+        .and_then(|mut encoder| {
+            encoder.multithread(n_workers)?;
+            Ok(encoder)
+        })
+        .map_err(|e| TracingClientError::IoError(e.to_string()))?;
+
+    encoder
+        .write_all(multipart_form_bytes)
+        .map_err(|e| TracingClientError::IoError(e.to_string()))?;
+    encoder.finish().map_err(|e| TracingClientError::IoError(e.to_string()))?;
+
+    Ok(buffer)
 }

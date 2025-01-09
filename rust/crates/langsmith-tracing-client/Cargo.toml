@@ -1,6 +1,6 @@
 [package]
 name = "langsmith-tracing-client"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 [dependencies]
@@ -17,6 +17,8 @@ futures = { workspace = true }
 rayon = { workspace = true }
 ureq = { workspace = true }
 flate2 = { workspace = true }
+zstd = { workspace = true }
+http = { workspace = true }
 
 [dev-dependencies]
 multer = "3.1.0"
