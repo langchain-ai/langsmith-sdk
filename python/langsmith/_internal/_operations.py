@@ -286,10 +286,13 @@ def serialized_run_operation_to_multipart_parts_and_context(
                         ),
                     )
                 )
-    return MultipartPartsAndContext(
-        acc_parts,
-        f"trace={op.trace_id},id={op.id}",
-    ), opened_files_dict
+    return (
+        MultipartPartsAndContext(
+            acc_parts,
+            f"trace={op.trace_id},id={op.id}",
+        ),
+        opened_files_dict,
+    )
 
 
 def compress_multipart_parts_and_context(
