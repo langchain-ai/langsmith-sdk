@@ -2069,3 +2069,73 @@ def test_evaluate_methods() -> None:
     eval_args = set(inspect.signature(aevaluate).parameters).difference({"client"})
     extra_args = client_args - eval_args
     assert not extra_args
+
+
+@patch("langsmith.client.requests.Session")
+def test_create_run_with_zstd_compression(mock_session_cls: mock.Mock) -> None:
+    """Test that runs are sent using zstd compression when compression is enabled."""
+    # Prepare a mocked session
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_session.request.return_value = mock_response
+    mock_session_cls.return_value = mock_session
+
+    with patch.dict("os.environ", {}, clear=True):
+        info = ls_schemas.LangSmithInfo(
+            version="0.6.0",
+            instance_flags={"zstd_compression_enabled": True},
+            batch_ingest_config=ls_schemas.BatchIngestConfig(
+                use_multipart_endpoint=True,
+                size_limit=1,
+                size_limit_bytes=128,
+                scale_up_nthreads_limit=4,
+                scale_up_qsize_trigger=3,
+                scale_down_nempty_trigger=1,
+            ),
+        )
+        client = Client(
+            api_url="http://localhost:1984",
+            api_key="123",
+            auto_batch_tracing=True,
+            session=mock_session,
+            info=info,
+        )
+
+        # Create a few runs with larger payloads so there's something to compress
+        for i in range(2):
+            run_id = uuid.uuid4()
+            client.create_run(
+                name=f"my_test_run_{i}",
+                run_type="llm",
+                inputs={"some_key": "some_val" * 1000},  # bigger input
+                id=run_id,
+                trace_id=run_id,
+                dotted_order=str(run_id),
+            )
+
+        # Let the background threads flush
+        if client.tracing_queue:
+            client.tracing_queue.join()
+        if client._futures is not None:
+            for fut in client._futures:
+                fut.result()
+
+    # Inspect the calls
+    post_calls = []
+    for call_obj in mock_session.request.mock_calls:
+        if call_obj.args and call_obj.args[0] == "POST":
+            post_calls.append(call_obj)
+    assert len(post_calls) >= 1, "Expected at least one POST to the compression endpoint"
+
+
+    call_data = post_calls[0][2]["data"]
+
+    if hasattr(call_data, "read"):
+        call_data = call_data.read()
+
+    zstd_magic = b"\x28\xb5\x2f\xfd"
+    assert call_data.startswith(zstd_magic), (
+        "Expected the request body to start with zstd magic bytes; "
+        "it appears runs were not compressed."
+    )
