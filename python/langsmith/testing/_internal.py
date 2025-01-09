@@ -38,6 +38,7 @@ from langsmith import run_trees as rt
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._internal import _orjson
+from langsmith._internal._beta_decorator import warn_beta
 from langsmith.client import ID_TYPE
 
 try:
@@ -110,7 +111,8 @@ def test(*args: Any, **kwargs: Any) -> Callable:
     Example:
         For basic usage, simply decorate a test function with `@test`:
 
-        >>> @test
+        >>> from langsmith import testing
+        >>> @testing.test
         ... def test_addition():
         ...     assert 3 + 4 == 7
 
@@ -119,12 +121,12 @@ def test(*args: Any, **kwargs: Any) -> Callable:
         or `wrap_*` functions) will be traced within the test case for
         improved visibility and debugging.
 
-        >>> from langsmith import traceable
+        >>> from langsmith import testing, traceable
         >>> @traceable
         ... def generate_numbers():
         ...     return 3, 4
 
-        >>> @test
+        >>> @testing.test
         ... def test_nested():
         ...     # Traced code will be included in the test case
         ...     a, b = generate_numbers()
@@ -144,9 +146,9 @@ def test(*args: Any, **kwargs: Any) -> Callable:
 
         >>> # os.environ["LANGSMITH_TEST_CACHE"] = "tests/cassettes"
         >>> import openai
-        >>> from langsmith.wrappers import wrap_openai
-        >>> oai_client = wrap_openai(openai.Client())
-        >>> @test
+        >>> from langsmith import testing, wrappers
+        >>> oai_client = wrappers.wrap_openai(openai.Client())
+        >>> @testing.test
         ... def test_openai_says_hello():
         ...     # Traced code will be included in the test case
         ...     response = oai_client.chat.completions.create(
@@ -161,8 +163,8 @@ def test(*args: Any, **kwargs: Any) -> Callable:
         LLMs are stochastic. Naive assertions are flakey. You can use langsmith's
         `expect` to score and make approximate assertions on your results.
 
-        >>> from langsmith import expect
-        >>> @test
+        >>> from langsmith import expect, testing
+        >>> @testing.test
         ... def test_output_semantically_close():
         ...     response = oai_client.chat.completions.create(
         ...         model="gpt-3.5-turbo",
@@ -189,12 +191,13 @@ def test(*args: Any, **kwargs: Any) -> Callable:
         The `@test` decorator works natively with pytest fixtures.
         The values will populate the "inputs" of the corresponding example in LangSmith.
 
+        >>> from langsmith import testing
         >>> import pytest
         >>> @pytest.fixture
         ... def some_input():
         ...     return "Some input"
         >>>
-        >>> @test
+        >>> @testing.test
         ... def test_with_fixture(some_input: str):
         ...     assert "input" in some_input
         >>>
@@ -202,7 +205,8 @@ def test(*args: Any, **kwargs: Any) -> Callable:
         You can still use pytest.parametrize() as usual to run multiple test cases
         using the same test function.
 
-        >>> @test(output_keys=["expected"])
+        >>> from langsmith import testing
+        >>> @testing.test(output_keys=["expected"])
         ... @pytest.mark.parametrize(
         ...     "a, b, expected",
         ...     [
@@ -227,10 +231,11 @@ def test(*args: Any, **kwargs: Any) -> Callable:
         You can specify the `output_keys` argument to persist those keys
         within the dataset's "outputs" fields.
 
+        >>> from langsmith import testing
         >>> @pytest.fixture
         ... def expected_output():
         ...     return "input"
-        >>> @test(output_keys=["expected_output"])
+        >>> @testing.test(output_keys=["expected_output"])
         ... def test_with_expected_output(some_input: str, expected_output: str):
         ...     assert expected_output in some_input
 
@@ -788,6 +793,7 @@ async def _arun_test(
 unit = test
 
 
+@warn_beta
 def log_inputs(inputs: dict, /) -> None:
     """Log run inputs from within a pytest test run.
 
@@ -819,6 +825,7 @@ def log_inputs(inputs: dict, /) -> None:
     test_case.sync_example(inputs=inputs)
 
 
+@warn_beta
 def log_outputs(outputs: dict, /) -> None:
     """Log run outputs from within a pytest test run.
 
@@ -849,6 +856,7 @@ def log_outputs(outputs: dict, /) -> None:
     run_tree.add_outputs(outputs)
 
 
+@warn_beta
 def log_reference_outputs(outputs: dict, /) -> None:
     """Log example reference outputs from within a pytest test run.
 
@@ -878,6 +886,7 @@ def log_reference_outputs(outputs: dict, /) -> None:
     test_case.sync_example(outputs=outputs)
 
 
+@warn_beta
 def log_feedback(
     feedback: Optional[Union[dict, list[dict]]] = None,
     /,
@@ -948,15 +957,15 @@ def log_feedback(
     )
 
 
+@warn_beta
 @contextlib.contextmanager
 def trace_feedback(
-    *, name: Optional[str] = None
+    *, name: str = "Feedback"
 ) -> Generator[run_trees.RunTree, None, None]:
     """Trace the computation of a pytest run feedback as its own run.
 
     Args:
-        inputs: ...
-        name: ...
+        name: Feedback run name. Defaults to "Feedback"
 
     Example:
         ...
@@ -976,7 +985,7 @@ def trace_feedback(
         "reference_run_id": parent_run.id,
     }
     with rh.trace(
-        name=name or "Feedback",
+        name=name,
         inputs=parent_run.outputs,
         parent="ignore",
         project_name="evaluators",
