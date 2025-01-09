@@ -2102,5 +2102,13 @@ def test_annotation_queue_runs(langchain_client: Client):
         queue_id=queue.id, run_id=run_ids[2]
     )
 
+    # Test that runs are deleted
+    with pytest.raises(LangSmithNotFoundError):
+        langchain_client.get_run_from_annotation_queue(queue_id=queue.id, index=2)
+
+    run_1 = langchain_client.get_run_from_annotation_queue(queue_id=queue.id, index=0)
+    run_2 = langchain_client.get_run_from_annotation_queue(queue_id=queue.id, index=1)
+    assert sorted([run_1.id, run_2.id]) == sorted(run_ids[:2])
+
     # Clean up
     langchain_client.delete_annotation_queue(queue.id)

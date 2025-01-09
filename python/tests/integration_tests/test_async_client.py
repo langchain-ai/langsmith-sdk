@@ -438,8 +438,12 @@ async def test_annotation_queue_runs(async_client: AsyncClient):
     )
 
     # Test that runs are deleted
-    run = await async_client.get_run_from_annotation_queue(queue_id=queue.id, index=0)
-    assert run.id == run_ids[1]
+    with pytest.raises(ls_utils.LangSmithAPIError):
+        await async_client.get_run_from_annotation_queue(queue_id=queue.id, index=2)
+
+    run_1 = await async_client.get_run_from_annotation_queue(queue_id=queue.id, index=0)
+    run_2 = await async_client.get_run_from_annotation_queue(queue_id=queue.id, index=1)
+    assert sorted([run_1.id, run_2.id]) == sorted(run_ids[:2])
 
     # Clean up
     await async_client.delete_annotation_queue(queue.id)
