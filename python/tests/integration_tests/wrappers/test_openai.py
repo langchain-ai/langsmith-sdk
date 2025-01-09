@@ -381,13 +381,13 @@ def test_parse_sync_api():
     original_client = openai.Client()
     patched_client = wrap_openai(openai.Client(), tracing_extra={"client": ls_client})
 
-    messages = [{"role": "user", "content": "Say 'Foo' then stop."}]
+    messages = [{"role": "user", "content": "Say 'foo' then stop."}]
 
     original = original_client.beta.chat.completions.parse(
-        messages=messages, model="gpt-3.5-turbo"
+        messages=messages, model="gpt-3.5-turbo", temperature=0, seed=42, max_tokens=3
     )
     patched = patched_client.beta.chat.completions.parse(
-        messages=messages, model="gpt-3.5-turbo"
+        messages=messages, model="gpt-3.5-turbo", temperature=0, seed=42, max_tokens=3
     )
 
     assert type(original) is type(patched)
@@ -413,13 +413,13 @@ async def test_parse_async_api():
         openai.AsyncClient(), tracing_extra={"client": ls_client}
     )
 
-    messages = [{"role": "user", "content": "Say 'Foo' then stop."}]
+    messages = [{"role": "user", "content": "Say 'foo' then stop."}]
 
     original = await original_client.beta.chat.completions.parse(
-        messages=messages, model="gpt-3.5-turbo"
+        messages=messages, model="gpt-3.5-turbo", temperature=0, seed=42, max_tokens=3
     )
     patched = await patched_client.beta.chat.completions.parse(
-        messages=messages, model="gpt-3.5-turbo"
+        messages=messages, model="gpt-3.5-turbo", temperature=0, seed=42, max_tokens=3
     )
 
     assert type(original) is type(patched)
