@@ -15,7 +15,6 @@ from unittest import mock
 from uuid import uuid4
 
 import pytest
-import requests
 from freezegun import freeze_time
 from pydantic import BaseModel
 from requests_toolbelt import MultipartEncoder, MultipartEncoderMonitor
