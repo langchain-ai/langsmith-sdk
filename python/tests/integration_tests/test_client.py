@@ -1,5 +1,6 @@
 """LangSmith langchain_client Integration Tests."""
 
+import asyncio
 import datetime
 import io
 import logging
@@ -1996,4 +1997,67 @@ def test_update_examples_multipart(langchain_client: Client) -> None:
     assert list(example_1_updated.attachments.keys()) == ["foo"]
 
     # Clean up
+    langchain_client.delete_dataset(dataset_id=dataset.id)
+
+
+async def test_aevaluate_max_concurrency(langchain_client: Client) -> None:
+    """Test max concurrency works as expected."""
+    dataset_name = "__test_a_ton_of_feedback" + uuid4().hex[:4]
+    dataset = langchain_client.create_dataset(
+        dataset_name=dataset_name,
+        description="Test dataset for max concurrency",
+    )
+
+    examples = [
+        ExampleUploadWithAttachments(
+            inputs={"query": "What's in this image?"},
+            outputs={"answer": "A test image 1"},
+            attachments={
+                "image1": ("image/png", b"fake image data 1"),
+                "extra": ("text/plain", b"extra data"),
+            },
+        )
+        for _ in range(10)
+    ]
+
+    langchain_client.upload_examples_multipart(dataset_id=dataset.id, uploads=examples)
+
+    evaluators = []
+    for _ in range(100):
+
+        async def eval_func(inputs, outputs):
+            await asyncio.sleep(0.1)
+            return {"score": random.random()}
+
+        evaluators.append(eval_func)
+
+    async def target(inputs, attachments):
+        return {"foo": "bar"}
+
+    start_time = time.time()
+    await langchain_client.aevaluate(
+        target,
+        data=dataset_name,
+        evaluators=evaluators,
+        max_concurrency=8,
+    )
+
+    end_time = time.time()
+    # this should proceed in a 8-2 manner, taking around 20 seconds total
+    assert end_time - start_time < 30
+    assert end_time - start_time > 20
+
+    start_time = time.time()
+    await langchain_client.aevaluate(
+        target,
+        data=dataset_name,
+        evaluators=evaluators,
+        max_concurrency=4,
+    )
+
+    end_time = time.time()
+    # this should proceed in a 4-4-2 manner, taking around 30 seconds total
+    assert end_time - start_time < 40
+    assert end_time - start_time > 30
+
     langchain_client.delete_dataset(dataset_id=dataset.id)

@@ -1340,7 +1340,15 @@ class _ExperimentManager(_ExperimentManagerMixin):
     def _reset_example_attachment_readers(
         self, example: schemas.Example
     ) -> schemas.Example:
-        """Reset attachment readers for an example."""
+        """Reset attachment readers for an example.
+
+        This is only in the case that an attachment is going to be used by more
+        than 1 callable (target + evaluators). In that case we keep a single copy
+        of the attachment data in self._attachment_raw_data_dict, and create
+        readers from that data. This makes it so that we don't have to keep
+        copies of the same data in memory, instead we can just create readers
+        from the same data.
+        """
         if not hasattr(example, "attachments") or not example.attachments:
             return example
 

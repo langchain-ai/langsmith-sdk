@@ -543,6 +543,18 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             sresults for the experiment.
         summary_results (Optional[Iterable[EvaluationResults]]): The aggregate results
             for the experiment.
+        num_repetitions (Optional[int], default=1): The number of repetitions for
+            the experiment.
+        include_attachments (Optional[bool], default=False): Whether to include
+            attachments. This is used for when we pull the examples for the experiment.
+        reuse_attachments (Optional[bool], default=False): Whether to reuse attachments
+            from examples. This is True if we need to reuse attachments across multiple
+            target/evaluator functions.
+        upload_results (Optional[bool], default=True): Whether to upload results
+            to Langsmith.
+        attachment_raw_data_dict (Optional[dict]): A dictionary to store raw data
+            for attachments. Only used if we reuse attachments across multiple
+            target/evaluator functions.
     """
 
     def __init__(
@@ -582,7 +594,15 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         self._attachment_raw_data_dict = attachment_raw_data_dict
 
     def _reset_example_attachments(self, example: schemas.Example) -> schemas.Example:
-        """Reset attachment readers for an example."""
+        """Reset attachment readers for an example.
+
+        This is only in the case that an attachment is going to be used by more
+        than 1 callable (target + evaluators). In that case we keep a single copy
+        of the attachment data in self._attachment_raw_data_dict, and create
+        readers from that data. This makes it so that we don't have to keep
+        copies of the same data in memory, instead we can just create readers
+        from the same data.
+        """
         if not hasattr(example, "attachments") or not example.attachments:
             return example
 
@@ -761,6 +781,11 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             self._evaluator_executor = cf.ThreadPoolExecutor(max_workers=4)
 
         async def process_examples():
+            """Create a single task per example.
+
+            That task is to run the target function and all the evaluators
+            sequentially.
+            """
             async for pred in self._apredict(
                 target,
                 max_concurrency=max_concurrency,
@@ -778,6 +803,9 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                 )
                 yield result
 
+        # Run the per-example tasks with max-concurrency
+        # This guarantees that max_concurrency is the upper limit
+        # for the number of target/evaluators that can be run in parallel
         experiment_results = aitertools.aiter_with_concurrency(
             max_concurrency,
             process_examples(),
@@ -1000,9 +1028,10 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                         exc_info=True,
                     )
 
-            all_results = await asyncio.gather(
-                *[_run_single_evaluator(evaluator) for evaluator in evaluators]
-            )
+            all_results = []
+            for evaluator in evaluators:
+                all_results.append(await _run_single_evaluator(evaluator))
+
             for result in all_results:
                 if result is not None:
                     eval_results["results"].extend(result)
