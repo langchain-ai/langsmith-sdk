@@ -1887,6 +1887,38 @@ export class Client implements LangSmithTracingClientInterface {
     return datasetVersions as DatasetVersion[];
   }
 
+  public async updateDatasetVersion(
+    dataSetId: string,
+    {
+      asOf,
+      tag,
+    }: {
+      asOf: string;
+      tag: string;
+    }
+  ): Promise<DatasetVersion> {
+    assertUuid(dataSetId);
+    const endpoint = `${this.apiUrl}/datasets/${dataSetId}/tags`;
+    const body: RecordStringAny = {
+      as_of: asOf,
+      tag,
+    };
+    const response = await this.caller.call(
+      _getFetchImplementation(),
+      endpoint,
+      {
+        method: "PUT",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+    await raiseForStatus(response, "update dataset version");
+    const result = await response.json();
+    return result as DatasetVersion;
+  }
+
   /**
    * Get shared examples.
    *
