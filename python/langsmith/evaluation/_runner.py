@@ -2247,7 +2247,7 @@ def _reset_example_attachments(example: schemas.Example) -> schemas.Example:
         new_attachments[key] = {
             "presigned_url": attachment["presigned_url"],
             "reader": reader,
-            "mime_type": attachment["mime_type"],
+            "mime_type": attachment.get("mime_type"),
         }
 
     # Create a new Example instance with the updated attachments
