@@ -894,6 +894,7 @@ class ExperimentResults implements AsyncIterableIterator<ExperimentResultRow> {
   results: ExperimentResultRow[] = [];
   processedCount = 0;
   summaryResults: EvaluationResults;
+  datasetVersion: string | undefined;
 
   constructor(experimentManager: _ExperimentManager) {
     this.manager = experimentManager;
@@ -923,6 +924,7 @@ class ExperimentResults implements AsyncIterableIterator<ExperimentResultRow> {
       this.processedCount++;
     }
     this.summaryResults = await manager.getSummaryScores();
+    this.datasetVersion = await manager._getDatasetVersion();
   }
 
   get length(): number {
