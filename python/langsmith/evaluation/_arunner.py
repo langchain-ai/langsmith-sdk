@@ -617,13 +617,6 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             _tenant_id=example._tenant_id,
         )
 
-    def _make_fresh_examples(
-        self,
-        examples: List[schemas.Example],
-    ) -> List[schemas.Example]:
-        """Create fresh copies of examples with reset readers."""
-        return [self._reset_example_attachments(example) for example in examples]
-
     async def aget_examples(self) -> AsyncIterator[schemas.Example]:
         if self._examples is None:
             self._examples = _aresolve_data(
@@ -642,7 +635,12 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                 examples_list = [example async for example in self._examples]
                 self._examples = async_chain_from_iterable(
                     [
-                        async_iter_from_list(self._make_fresh_examples(examples_list))
+                        async_iter_from_list(
+                            [
+                                self._reset_example_attachments(example)
+                                for example in examples_list
+                            ]
+                        )
                         for _ in range(self._num_repetitions)
                     ]
                 )
