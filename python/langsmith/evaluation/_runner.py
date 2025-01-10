@@ -1337,7 +1337,9 @@ class _ExperimentManager(_ExperimentManagerMixin):
         self._upload_results = upload_results
         self._attachment_raw_data_dict = attachment_raw_data_dict
 
-    def _reset_example_attachments(self, example: schemas.Example) -> schemas.Example:
+    def _reset_example_attachment_readers(
+        self, example: schemas.Example
+    ) -> schemas.Example:
         """Reset attachment readers for an example."""
         if not hasattr(example, "attachments") or not example.attachments:
             return example
@@ -1373,15 +1375,6 @@ class _ExperimentManager(_ExperimentManagerMixin):
             _tenant_id=example._tenant_id,
         )
 
-    def _make_fresh_examples(
-        self,
-        _original_examples: List[schemas.Example],
-    ) -> List[schemas.Example]:
-        """Create fresh copies of examples with reset readers."""
-        return [
-            self._reset_example_attachments(example) for example in _original_examples
-        ]
-
     @property
     def examples(self) -> Iterable[schemas.Example]:
         if self._examples is None:
@@ -1400,7 +1393,10 @@ class _ExperimentManager(_ExperimentManagerMixin):
             if self._num_repetitions > 1:
                 examples_list = list(self._examples)
                 self._examples = itertools.chain.from_iterable(
-                    self._make_fresh_examples(examples_list)
+                    [
+                        self._reset_example_attachment_readers(example)
+                        for example in examples_list
+                    ]
                     for _ in range(self._num_repetitions)
                 )
         self._examples, examples_iter = itertools.tee(self._examples)
