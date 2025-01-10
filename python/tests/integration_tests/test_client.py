@@ -19,6 +19,7 @@ from freezegun import freeze_time
 from pydantic import BaseModel
 from requests_toolbelt import MultipartEncoder, MultipartEncoderMonitor
 
+from langsmith._internal._serde import dumps_json
 from langsmith.client import ID_TYPE, Client
 from langsmith.evaluation import aevaluate, evaluate
 from langsmith.schemas import (
@@ -1153,6 +1154,37 @@ def test_surrogates():
         run_type="llm",
         end_time=datetime.datetime.now(datetime.timezone.utc),
     )
+
+
+def test_fallback_json_serialization():
+    class Document(BaseModel):
+        content: str
+
+    raw_surrogates = [
+        ("Hello\ud83d\ude00", "Hello😀"),
+        ("Python\ud83d\udc0d", "Python🐍"),
+        ("Surrogate\ud834\udd1e", "Surrogate𝄞"),
+        ("Example\ud83c\udf89", "Example🎉"),
+        ("String\ud83c\udfa7", "String🎧"),
+        ("With\ud83c\udf08", "With🌈"),
+        ("Surrogates\ud83d\ude0e", "Surrogates😎"),
+        ("Embedded\ud83d\udcbb", "Embedded💻"),
+        ("In\ud83c\udf0e", "In🌎"),
+        ("The\ud83d\udcd6", "The📖"),
+        ("Text\ud83d\udcac", "Text💬"),
+        ("收花🙄·到", "收花🙄·到"),
+    ]
+    pydantic_surrogates = [
+        (Document(content=item), expected) for item, expected in raw_surrogates
+    ]
+
+    for item, expected in raw_surrogates:
+        output = dumps_json(item).decode("utf8")
+        assert f'"{expected}"' == output
+
+    for item, expected in pydantic_surrogates:
+        output = dumps_json(item).decode("utf8")
+        assert f'{{"content":"{expected}"}}' == output
 
 
 def test_runs_stats():
