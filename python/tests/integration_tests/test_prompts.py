@@ -542,8 +542,6 @@ def test_convert_to_openai_format(chat_prompt_template: ChatPromptTemplate):
         ],
         "model": "gpt-3.5-turbo",
         "stream": False,
-        "n": 1,
-        "temperature": 0.7,
     }
     assert {k: res[k] for k in expected.keys()} == expected
 
