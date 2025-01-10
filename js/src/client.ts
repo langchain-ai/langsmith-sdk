@@ -1887,6 +1887,16 @@ export class Client implements LangSmithTracingClientInterface {
     return datasetVersions as DatasetVersion[];
   }
 
+  /**
+   * Updates the version of a dataset.
+   *
+   * @param {string} dataSetId - The ID of the dataset to update.
+   * @param {Object} options - The options for updating the dataset version.
+   * @param {string} options.asOf - The timestamp of the dataset version.
+   * @param {string} options.tag - The tag of the dataset version.
+   * @returns {Promise<DatasetVersion>} - A promise that resolves to the updated dataset version.
+   * @throws {Error} - Throws an error if the update fails.
+   */
   public async updateDatasetVersion(
     dataSetId: string,
     {
