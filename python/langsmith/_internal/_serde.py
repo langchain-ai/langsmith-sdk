@@ -146,7 +146,7 @@ def dumps_json(obj: Any) -> bytes:
         logger.debug(f"Orjson serialization failed: {repr(e)}. Falling back to json.")
         result = json.dumps(
             obj,
-            default=_simple_default,
+            default=_serialize_json,
             ensure_ascii=True,
         ).encode("utf-8")
         try:

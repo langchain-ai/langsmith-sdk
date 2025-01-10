@@ -523,6 +523,10 @@ class FeedbackSourceBase(BaseModel):
     """The type of the feedback source."""
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
     """Additional metadata for the feedback source."""
+    user_id: Optional[Union[UUID, str]] = None
+    """The user ID associated with the feedback source."""
+    user_name: Optional[str] = None
+    """The user name associated with the feedback source."""
 
 
 class APIFeedbackSource(FeedbackSourceBase):
