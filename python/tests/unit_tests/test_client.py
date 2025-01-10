@@ -2126,8 +2126,9 @@ def test_create_run_with_zstd_compression(mock_session_cls: mock.Mock) -> None:
     for call_obj in mock_session.request.mock_calls:
         if call_obj.args and call_obj.args[0] == "POST":
             post_calls.append(call_obj)
-    assert len(post_calls) >= 1, "Expected at least one POST to the compression endpoint"
-
+    assert (
+        len(post_calls) >= 1
+    ), "Expected at least one POST to the compression endpoint"
 
     call_data = post_calls[0][2]["data"]
 
