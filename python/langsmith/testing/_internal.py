@@ -7,7 +7,6 @@ import datetime
 import functools
 import importlib
 import inspect
-import json
 import logging
 import os
 import threading
@@ -40,6 +39,7 @@ from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._internal import _orjson
 from langsmith._internal._beta_decorator import warn_beta
+from langsmith._internal._serde import dumps_json
 from langsmith.client import ID_TYPE
 
 try:
@@ -76,9 +76,9 @@ def test(
 
 
 def test(*args: Any, **kwargs: Any) -> Callable:
-    """Create a test case in LangSmith.
+    """Trace a pytest test case in LangSmith.
 
-    This decorator is used to mark a function as a test case for LangSmith. It ensures
+    This decorator is used to trace a pytest test to LangSmith. It ensures
     that the necessary example data is created and associated with the test function.
     The decorated function will be executed as a test case, and the results will be
     recorded and reported by LangSmith.
@@ -110,10 +110,15 @@ def test(*args: Any, **kwargs: Any) -> Callable:
              without re-executing the code. Requires the 'langsmith[vcr]' package.
 
     Example:
-        For basic usage, simply decorate a test function with `@test`:
+        For basic usage, simply decorate a test function with `@pytest.mark.langsmith`.
+        Under the hood this will call the `test` method:
 
-        >>> from langsmith import testing
-        >>> @testing.test
+        >>> import pytest
+        >>>
+        >>> # Equivalently can decorate with `test` directly:
+        >>> # from langsmith import test
+        >>> # @test
+        >>> @pytest.mark.langsmith
         ... def test_addition():
         ...     assert 3 + 4 == 7
 
@@ -122,12 +127,14 @@ def test(*args: Any, **kwargs: Any) -> Callable:
         or `wrap_*` functions) will be traced within the test case for
         improved visibility and debugging.
 
-        >>> from langsmith import testing, traceable
+        >>> import pytest
+        >>> from langsmith import traceable
+        >>>
         >>> @traceable
         ... def generate_numbers():
         ...     return 3, 4
 
-        >>> @testing.test
+        >>> @pytest.mark.langsmith
         ... def test_nested():
         ...     # Traced code will be included in the test case
         ...     a, b = generate_numbers()
@@ -147,9 +154,11 @@ def test(*args: Any, **kwargs: Any) -> Callable:
 
         >>> # os.environ["LANGSMITH_TEST_CACHE"] = "tests/cassettes"
         >>> import openai
-        >>> from langsmith import testing, wrappers
+        >>> import pytest
+        >>> from langsmith import wrappers
+        >>>
         >>> oai_client = wrappers.wrap_openai(openai.Client())
-        >>> @testing.test
+        >>> @pytest.mark.langsmith
         ... def test_openai_says_hello():
         ...     # Traced code will be included in the test case
         ...     response = oai_client.chat.completions.create(
@@ -164,8 +173,10 @@ def test(*args: Any, **kwargs: Any) -> Callable:
         LLMs are stochastic. Naive assertions are flakey. You can use langsmith's
         `expect` to score and make approximate assertions on your results.
 
-        >>> from langsmith import expect, testing
-        >>> @testing.test
+        >>> import pytest
+        >>> from langsmith import expect
+        >>>
+        >>> @pytest.mark.langsmith
         ... def test_output_semantically_close():
         ...     response = oai_client.chat.completions.create(
         ...         model="gpt-3.5-turbo",
@@ -192,13 +203,13 @@ def test(*args: Any, **kwargs: Any) -> Callable:
         The `@test` decorator works natively with pytest fixtures.
         The values will populate the "inputs" of the corresponding example in LangSmith.
 
-        >>> from langsmith import testing
         >>> import pytest
+        >>>
         >>> @pytest.fixture
         ... def some_input():
         ...     return "Some input"
         >>>
-        >>> @testing.test
+        >>> @pytest.mark.langsmith
         ... def test_with_fixture(some_input: str):
         ...     assert "input" in some_input
         >>>
@@ -206,8 +217,9 @@ def test(*args: Any, **kwargs: Any) -> Callable:
         You can still use pytest.parametrize() as usual to run multiple test cases
         using the same test function.
 
-        >>> from langsmith import testing
-        >>> @testing.test(output_keys=["expected"])
+        >>> import pytest
+        >>>
+        >>> @pytest.mark.langsmith(output_keys=["expected"])
         ... @pytest.mark.parametrize(
         ...     "a, b, expected",
         ...     [
@@ -221,10 +233,11 @@ def test(*args: Any, **kwargs: Any) -> Callable:
         By default, each test case will be assigned a consistent, unique identifier
         based on the function name and module. You can also provide a custom identifier
         using the `id` argument:
+        >>> import pytest
         >>> import uuid
         >>>
         >>> example_id = uuid.uuid4()
-        >>> @test(id=str(example_id))
+        >>> @pytest.mark.langsmith(id=str(example_id))
         ... def test_multiplication():
         ...     assert 3 * 4 == 12
 
@@ -232,11 +245,13 @@ def test(*args: Any, **kwargs: Any) -> Callable:
         You can specify the `output_keys` argument to persist those keys
         within the dataset's "outputs" fields.
 
-        >>> from langsmith import testing
+        >>> import pytest
+        >>>
         >>> @pytest.fixture
         ... def expected_output():
         ...     return "input"
-        >>> @testing.test(output_keys=["expected_output"])
+        >>>
+        >>> @pytest.mark.langsmith(output_keys=["expected_output"])
         ... def test_with_expected_output(some_input: str, expected_output: str):
         ...     assert expected_output in some_input
 
@@ -520,7 +535,7 @@ class _LangSmithTestSuite:
             example_id,
             inputs,
             outputs,
-            metadata.copy() if metadata else {},
+            metadata.copy() if metadata else metadata,
         )
         self._example_futures.append(future)
 
@@ -529,12 +544,22 @@ class _LangSmithTestSuite:
         example_id: uuid.UUID,
         inputs: Optional[dict],
         outputs: Optional[dict],
-        metadata: dict,
+        metadata: Optional[dict],
     ) -> None:
         inputs_ = _serde_example_values(inputs) if inputs else inputs
         outputs_ = _serde_example_values(outputs) if outputs else outputs
         try:
             example = self.client.read_example(example_id=example_id)
+        except ls_utils.LangSmithNotFoundError:
+            example = self.client.create_example(
+                example_id=example_id,
+                inputs=inputs_,
+                outputs=outputs_,
+                dataset_id=self.id,
+                metadata=metadata,
+                created_at=self._experiment.start_time,
+            )
+        else:
             if (
                 inputs_ != example.inputs
                 or outputs_ != example.outputs
@@ -547,15 +572,6 @@ class _LangSmithTestSuite:
                     metadata=metadata,
                     dataset_id=self.id,
                 )
-        except ls_utils.LangSmithNotFoundError:
-            example = self.client.create_example(
-                example_id=example_id,
-                inputs=inputs_,
-                outputs=outputs_,
-                dataset_id=self.id,
-                metadata=metadata,
-                created_at=self._experiment.start_time,
-            )
         if example.modified_at:
             self.update_version(example.modified_at)
 
@@ -796,7 +812,7 @@ unit = test
 def log_inputs(inputs: dict, /) -> None:
     """Log run inputs from within a pytest test run.
 
-    Should only be used in pytest tests decorated with @langsmith.testing.test.
+    Should only be used in pytest tests decorated with @pytest.mark.langsmith.
 
     Args:
         inputs: Inputs to log.
@@ -804,7 +820,7 @@ def log_inputs(inputs: dict, /) -> None:
     Example:
         >>> from langsmith import testing
         >>>
-        >>> @testing.test
+        >>> @pytest.mark.langsmith
         ... def test_foo() -> None:
         ...     x = 0
         ...     y = 1
@@ -816,8 +832,8 @@ def log_inputs(inputs: dict, /) -> None:
     if not run_tree or not test_case:
         msg = (
             "log_inputs should only be called within a pytest test decorated with "
-            "@langsmith.testing.test, and with tracing enabled (by setting the "
-            "LANGSMITH_TRACING_V2 environment variable to 'true')."
+            "@pytest.mark.langsmith, and with tracing enabled (by setting the "
+            "LANGSMITH_TRACING environment variable to 'true')."
         )
         raise ValueError(msg)
     run_tree.add_inputs(inputs)
@@ -828,7 +844,7 @@ def log_inputs(inputs: dict, /) -> None:
 def log_outputs(outputs: dict, /) -> None:
     """Log run outputs from within a pytest test run.
 
-    Should only be used in pytest tests decorated with @langsmith.testing.test.
+    Should only be used in pytest tests decorated with @pytest.mark.langsmith.
 
     Args:
         outputs: Outputs to log.
@@ -836,7 +852,7 @@ def log_outputs(outputs: dict, /) -> None:
     Example:
         >>> from langsmith import testing
         >>>
-        >>> @testing.test
+        >>> @pytest.mark.langsmith
         ... def test_foo() -> None:
         ...     x = 0
         ...     y = 1
@@ -848,8 +864,8 @@ def log_outputs(outputs: dict, /) -> None:
     if not run_tree:
         msg = (
             "log_outputs should only be called within a pytest test decorated with "
-            "@langsmith.testing.test, and with tracing enabled (by setting the "
-            "LANGSMITH_TRACING_V2 environment variable to 'true')."
+            "@pytest.mark.langsmith, and with tracing enabled (by setting the "
+            "LANGSMITH_TRACING environment variable to 'true')."
         )
         raise ValueError(msg)
     run_tree.add_outputs(outputs)
@@ -859,7 +875,7 @@ def log_outputs(outputs: dict, /) -> None:
 def log_reference_outputs(outputs: dict, /) -> None:
     """Log example reference outputs from within a pytest test run.
 
-    Should only be used in pytest tests decorated with @langsmith.testing.test.
+    Should only be used in pytest tests decorated with @pytest.mark.langsmith.
 
     Args:
         outputs: Reference outputs to log.
@@ -867,7 +883,7 @@ def log_reference_outputs(outputs: dict, /) -> None:
     Example:
         >>> from langsmith import testing
         >>>
-        >>> @testing.test
+        >>> @pytest.mark.langsmith
         ... def test_foo() -> None:
         ...     x = 0
         ...     y = 1
@@ -879,7 +895,7 @@ def log_reference_outputs(outputs: dict, /) -> None:
     if not test_case:
         msg = (
             "log_reference_outputs should only be called within a pytest test "
-            "decorated with @langsmith.testing.test."
+            "decorated with @pytest.mark.langsmith."
         )
         raise ValueError(msg)
     test_case.sync_example(outputs=outputs)
@@ -897,7 +913,7 @@ def log_feedback(
 ) -> None:
     """Log run feedback from within a pytest test run.
 
-    Should only be used in pytest tests decorated with @langsmith.testing.test.
+    Should only be used in pytest tests decorated with @pytest.mark.langsmith.
 
     Args:
         key: Feedback name.
@@ -906,9 +922,10 @@ def log_feedback(
         kwargs: Any other Client.create_feedback args.
 
     Example:
+        >>> import pytest
         >>> from langsmith import testing
         >>>
-        >>> @testing.test
+        >>> @pytest.mark.langsmith
         ... def test_foo() -> None:
         ...     x = 0
         ...     y = 1
@@ -937,8 +954,8 @@ def log_feedback(
     if not run_tree or not test_case:
         msg = (
             "log_feedback should only be called within a pytest test decorated with "
-            "@langsmith.testing.test, and with tracing enabled (by setting the "
-            "LANGSMITH_TRACING_V2 environment variable to 'true')."
+            "@pytest.mark.langsmith, and with tracing enabled (by setting the "
+            "LANGSMITH_TRACING environment variable to 'true')."
         )
         raise ValueError(msg)
     if run_tree.session_name == "evaluators" and run_tree.metadata.get(
@@ -964,18 +981,63 @@ def trace_feedback(
     """Trace the computation of a pytest run feedback as its own run.
 
     Args:
-        name: Feedback run name. Defaults to "Feedback"
+        name: Feedback run name. Defaults to "Feedback".
 
     Example:
-        ...
-    """
+        .. code-block:: python
+
+            import openai
+            import pytest
+
+            from langsmith import testing, wrappers
+
+            oai_client = wrappers.wrap_openai(openai.Client())
+
+
+            @pytest.mark.langsmith
+            def test_openai_says_hello():
+                # Traced code will be included in the test case
+                text = "Say hello!"
+                response = oai_client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role": "system", "content": "You are a helpful assistant."},
+                        {"role": "user", "content": text},
+                    ],
+                )
+                testing.log_inputs({"text": text})
+                testing.log_outputs({"response": response.choices[0].message.content})
+                testing.log_reference_outputs({"response": "hello!"})
+
+                # Use this context manager to trace any steps used for generating evaluation
+                # feedback separately from the main application logic
+                with testing.trace_feedback():
+                    grade = oai_client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": "Return 1 if 'hello' is in the user message and 0 otherwise.",
+                            },
+                            {
+                                "role": "user",
+                                "content": response.choices[0].message.content,
+                            },
+                        ],
+                    )
+                    testing.log_feedback(
+                        key="llm_judge", score=float(grade.choices[0].message.content)
+                    )
+
+                assert "hello" in response.choices[0].message.content.lower()
+    """  # noqa: E501
     parent_run = rh.get_current_run_tree()
     test_case = _TEST_CASE.get()
     if not parent_run or not test_case:
         msg = (
             "trace_feedback should only be called within a pytest test decorated with "
-            "@langsmith.testing.test, and with tracing enabled (by setting the "
-            "LANGSMITH_TRACING_V2 environment variable to 'true')."
+            "@pytest.mark.langsmith, and with tracing enabled (by setting the "
+            "LANGSMITH_TRACING environment variable to 'true')."
         )
         raise ValueError(msg)
     metadata = {
@@ -995,6 +1057,6 @@ def trace_feedback(
 
 def _stringify(x: Any) -> str:
     try:
-        return json.dumps(x, ensure_ascii=False)
+        return dumps_json(x).decode("utf-8", errors="surrogateescape")
     except Exception:
         return str(x)
