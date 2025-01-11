@@ -4315,6 +4315,7 @@ class Client:
                 attachments[key.removeprefix("attachment.")] = {
                     "presigned_url": value["presigned_url"],
                     "reader": reader,
+                    "mime_type": value.get("mime_type"),
                 }
 
         return ls_schemas.Example(
@@ -4449,6 +4450,7 @@ class Client:
                     attachments[key.removeprefix("attachment.")] = {
                         "presigned_url": value["presigned_url"],
                         "reader": reader,
+                        "mime_type": value.get("mime_type"),
                     }
 
             yield ls_schemas.Example(

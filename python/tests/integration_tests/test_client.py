@@ -1286,6 +1286,115 @@ def test_list_examples_attachments_keys(langchain_client: Client) -> None:
     langchain_client.delete_dataset(dataset_id=dataset.id)
 
 
+def test_mime_type_is_propogated(langchain_client: Client) -> None:
+    """Test that the mime type is propogated correctly."""
+    dataset_name = "__test_mime_type_is_propogated" + uuid4().hex[:4]
+    dataset = langchain_client.create_dataset(dataset_name=dataset_name)
+
+    langchain_client.upload_examples_multipart(
+        dataset_id=dataset.id,
+        uploads=[
+            ExampleUploadWithAttachments(
+                inputs={"text": "hello world"},
+                outputs={"response": "hi there"},
+                attachments={
+                    "test_file": ("text/plain", b"test content"),
+                },
+            )
+        ],
+    )
+
+    example = next(
+        langchain_client.list_examples(dataset_id=dataset.id, include_attachments=True)
+    )
+    assert example.attachments["test_file"]["mime_type"] == "text/plain"
+
+    example = langchain_client.read_example(example_id=example.id)
+    assert example.attachments["test_file"]["mime_type"] == "text/plain"
+
+    langchain_client.delete_dataset(dataset_id=dataset.id)
+
+
+def test_evaluate_mime_type_is_propogated(langchain_client: Client) -> None:
+    """Test that the mime type is propogated correctly when evaluating."""
+    dataset_name = "__test_evaluate_mime_type_is_propogated" + uuid4().hex[:4]
+    dataset = langchain_client.create_dataset(dataset_name=dataset_name)
+
+    langchain_client.upload_examples_multipart(
+        dataset_id=dataset.id,
+        uploads=[
+            ExampleUploadWithAttachments(
+                inputs={"text": "hello world"},
+                outputs={"response": "hi there"},
+                attachments={
+                    "test_file": ("text/plain", b"test content"),
+                },
+            )
+        ],
+    )
+
+    def target(inputs: Dict[str, Any], attachments: Dict[str, Any]) -> Dict[str, Any]:
+        # Verify we receive the attachment data
+        assert attachments["test_file"]["mime_type"] == "text/plain"
+        return {"answer": "hi there"}
+
+    def evaluator(
+        outputs: dict, reference_outputs: dict, attachments: dict
+    ) -> Dict[str, Any]:
+        # Verify we receive the attachment data
+        assert attachments["test_file"]["mime_type"] == "text/plain"
+        return {
+            "score": float(
+                reference_outputs.get("answer") == outputs.get("answer")  # type: ignore
+            )
+        }
+
+    langchain_client.evaluate(target, data=dataset_name, evaluators=[evaluator])
+
+    langchain_client.delete_dataset(dataset_name=dataset_name)
+
+
+async def test_aevaluate_mime_type_is_propogated(langchain_client: Client) -> None:
+    """Test that the mime type is propogated correctly when evaluating."""
+    dataset_name = "__test_evaluate_mime_type_is_propogated" + uuid4().hex[:4]
+    dataset = langchain_client.create_dataset(dataset_name=dataset_name)
+
+    langchain_client.upload_examples_multipart(
+        dataset_id=dataset.id,
+        uploads=[
+            ExampleUploadWithAttachments(
+                inputs={"text": "hello world"},
+                outputs={"response": "hi there"},
+                attachments={
+                    "test_file": ("text/plain", b"test content"),
+                },
+            )
+        ],
+    )
+
+    async def target(
+        inputs: Dict[str, Any], attachments: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        # Verify we receive the attachment data
+        assert attachments["test_file"]["mime_type"] == "text/plain"
+        return {"answer": "hi there"}
+
+    async def evaluator(
+        outputs: dict, reference_outputs: dict, attachments: dict
+    ) -> Dict[str, Any]:
+        # Verify we receive the attachment data
+        assert attachments["test_file"]["mime_type"] == "text/plain"
+        return {
+            "score": float(
+                reference_outputs.get("answer") == outputs.get("answer")  # type: ignore
+            )
+        }
+
+    await langchain_client.aevaluate(target, data=dataset_name, evaluators=[evaluator])
+
+    langchain_client.delete_dataset(dataset_name=dataset_name)
+
+
 def test_evaluate_with_attachments_multiple_evaluators(
     langchain_client: Client,
 ) -> None:
