@@ -65,6 +65,7 @@ export interface BaseExample {
 
 export interface AttachmentInfo {
   presigned_url: string;
+  mime_type?: string;
 }
 
 export type AttachmentData = Uint8Array | ArrayBuffer;
@@ -300,6 +301,7 @@ export interface Example extends BaseExample {
 interface RawAttachmentInfo {
   presigned_url: string;
   s3_url: string;
+  mime_type?: string;
 }
 export interface RawExample extends BaseExample {
   id: string;

@@ -60,7 +60,7 @@ import {
   RunEvaluator,
 } from "./evaluation/evaluator.js";
 import { __version__ } from "./index.js";
-import { assertUuid } from "./utils/_uuid.js";
+import { assertUuid } from "./utils/uuid.js";
 import { warnOnce } from "./utils/warn.js";
 import { parsePromptIdentifier } from "./utils/prompts.js";
 import { raiseForStatus } from "./utils/error.js";
@@ -2770,6 +2770,7 @@ export class Client implements LangSmithTracingClientInterface {
         (acc, [key, value]) => {
           acc[key.slice("attachment.".length)] = {
             presigned_url: value.presigned_url,
+            mime_type: value.mime_type || undefined,
           };
           return acc;
         },
@@ -2867,6 +2868,7 @@ export class Client implements LangSmithTracingClientInterface {
             (acc, [key, value]) => {
               acc[key.slice("attachment.".length)] = {
                 presigned_url: value.presigned_url,
+                mime_type: value.mime_type || undefined,
               };
               return acc;
             },

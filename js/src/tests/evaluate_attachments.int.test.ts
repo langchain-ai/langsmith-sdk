@@ -40,6 +40,10 @@ test("evaluate can handle examples with attachments", async () => {
     const expectedData = new Uint8Array(
       Buffer.from("fake image data for testing")
     );
+    const attachmentMimeType = config?.attachments?.["image"].mime_type;
+    if (attachmentMimeType !== "image/png") {
+      throw new Error("Image attachment has incorrect mime type");
+    }
     const attachmentData: Uint8Array | undefined = config?.attachments?.[
       "image"
     ].presigned_url
@@ -61,6 +65,10 @@ test("evaluate can handle examples with attachments", async () => {
     const expectedData = new Uint8Array(
       Buffer.from("fake image data for testing")
     );
+    const attachmentMimeType = attachments?.["image"].mime_type;
+    if (attachmentMimeType !== "image/png") {
+      throw new Error("Image attachment has incorrect mime type");
+    }
     const attachmentData: Uint8Array | undefined = attachments?.["image"]
       .presigned_url
       ? new Uint8Array(
