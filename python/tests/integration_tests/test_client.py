@@ -21,6 +21,7 @@ from pydantic import BaseModel
 from requests_toolbelt import MultipartEncoder, MultipartEncoderMonitor
 
 from langsmith.client import ID_TYPE, Client, _close_files
+from langsmith._internal._serde import dumps_json
 from langsmith.evaluation import aevaluate, evaluate
 from langsmith.schemas import (
     AttachmentsOperations,
@@ -1430,6 +1431,37 @@ def test_surrogates():
     )
 
 
+def test_fallback_json_serialization():
+    class Document(BaseModel):
+        content: str
+
+    raw_surrogates = [
+        ("Hello\ud83d\ude00", "Hello😀"),
+        ("Python\ud83d\udc0d", "Python🐍"),
+        ("Surrogate\ud834\udd1e", "Surrogate𝄞"),
+        ("Example\ud83c\udf89", "Example🎉"),
+        ("String\ud83c\udfa7", "String🎧"),
+        ("With\ud83c\udf08", "With🌈"),
+        ("Surrogates\ud83d\ude0e", "Surrogates😎"),
+        ("Embedded\ud83d\udcbb", "Embedded💻"),
+        ("In\ud83c\udf0e", "In🌎"),
+        ("The\ud83d\udcd6", "The📖"),
+        ("Text\ud83d\udcac", "Text💬"),
+        ("收花🙄·到", "收花🙄·到"),
+    ]
+    pydantic_surrogates = [
+        (Document(content=item), expected) for item, expected in raw_surrogates
+    ]
+
+    for item, expected in raw_surrogates:
+        output = dumps_json(item).decode("utf8")
+        assert f'"{expected}"' == output
+
+    for item, expected in pydantic_surrogates:
+        output = dumps_json(item).decode("utf8")
+        assert f'{{"content":"{expected}"}}' == output
+
+
 def test_runs_stats():
     langchain_client = Client()
     # We always have stuff in the "default" project...
@@ -1527,6 +1559,115 @@ def test_list_examples_attachments_keys(langchain_client: Client) -> None:
     )
 
     langchain_client.delete_dataset(dataset_id=dataset.id)
+
+
+def test_mime_type_is_propogated(langchain_client: Client) -> None:
+    """Test that the mime type is propogated correctly."""
+    dataset_name = "__test_mime_type_is_propogated" + uuid4().hex[:4]
+    dataset = langchain_client.create_dataset(dataset_name=dataset_name)
+
+    langchain_client.upload_examples_multipart(
+        dataset_id=dataset.id,
+        uploads=[
+            ExampleUploadWithAttachments(
+                inputs={"text": "hello world"},
+                outputs={"response": "hi there"},
+                attachments={
+                    "test_file": ("text/plain", b"test content"),
+                },
+            )
+        ],
+    )
+
+    example = next(
+        langchain_client.list_examples(dataset_id=dataset.id, include_attachments=True)
+    )
+    assert example.attachments["test_file"]["mime_type"] == "text/plain"
+
+    example = langchain_client.read_example(example_id=example.id)
+    assert example.attachments["test_file"]["mime_type"] == "text/plain"
+
+    langchain_client.delete_dataset(dataset_id=dataset.id)
+
+
+def test_evaluate_mime_type_is_propogated(langchain_client: Client) -> None:
+    """Test that the mime type is propogated correctly when evaluating."""
+    dataset_name = "__test_evaluate_mime_type_is_propogated" + uuid4().hex[:4]
+    dataset = langchain_client.create_dataset(dataset_name=dataset_name)
+
+    langchain_client.upload_examples_multipart(
+        dataset_id=dataset.id,
+        uploads=[
+            ExampleUploadWithAttachments(
+                inputs={"text": "hello world"},
+                outputs={"response": "hi there"},
+                attachments={
+                    "test_file": ("text/plain", b"test content"),
+                },
+            )
+        ],
+    )
+
+    def target(inputs: Dict[str, Any], attachments: Dict[str, Any]) -> Dict[str, Any]:
+        # Verify we receive the attachment data
+        assert attachments["test_file"]["mime_type"] == "text/plain"
+        return {"answer": "hi there"}
+
+    def evaluator(
+        outputs: dict, reference_outputs: dict, attachments: dict
+    ) -> Dict[str, Any]:
+        # Verify we receive the attachment data
+        assert attachments["test_file"]["mime_type"] == "text/plain"
+        return {
+            "score": float(
+                reference_outputs.get("answer") == outputs.get("answer")  # type: ignore
+            )
+        }
+
+    langchain_client.evaluate(target, data=dataset_name, evaluators=[evaluator])
+
+    langchain_client.delete_dataset(dataset_name=dataset_name)
+
+
+async def test_aevaluate_mime_type_is_propogated(langchain_client: Client) -> None:
+    """Test that the mime type is propogated correctly when evaluating."""
+    dataset_name = "__test_evaluate_mime_type_is_propogated" + uuid4().hex[:4]
+    dataset = langchain_client.create_dataset(dataset_name=dataset_name)
+
+    langchain_client.upload_examples_multipart(
+        dataset_id=dataset.id,
+        uploads=[
+            ExampleUploadWithAttachments(
+                inputs={"text": "hello world"},
+                outputs={"response": "hi there"},
+                attachments={
+                    "test_file": ("text/plain", b"test content"),
+                },
+            )
+        ],
+    )
+
+    async def target(
+        inputs: Dict[str, Any], attachments: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        # Verify we receive the attachment data
+        assert attachments["test_file"]["mime_type"] == "text/plain"
+        return {"answer": "hi there"}
+
+    async def evaluator(
+        outputs: dict, reference_outputs: dict, attachments: dict
+    ) -> Dict[str, Any]:
+        # Verify we receive the attachment data
+        assert attachments["test_file"]["mime_type"] == "text/plain"
+        return {
+            "score": float(
+                reference_outputs.get("answer") == outputs.get("answer")  # type: ignore
+            )
+        }
+
+    await langchain_client.aevaluate(target, data=dataset_name, evaluators=[evaluator])
+
+    langchain_client.delete_dataset(dataset_name=dataset_name)
 
 
 def test_evaluate_with_attachments_multiple_evaluators(

@@ -4820,6 +4820,29 @@ class Client:
         )
         ls_utils.raise_for_status_with_text(response)
 
+    def delete_examples(self, example_ids: Sequence[ID_TYPE]) -> None:
+        """Delete multiple examples by ID.
+
+        Parameters
+        ----------
+        example_ids : Sequence[ID_TYPE]
+            The IDs of the examples to delete.
+        """
+        response = self.request_with_retries(
+            "DELETE",
+            "/examples",
+            headers={**self._headers, "Content-Type": "application/json"},
+            data=_dumps_json(
+                {
+                    "ids": [
+                        str(_as_uuid(id_, f"example_ids[{i}]"))
+                        for i, id_ in enumerate(example_ids)
+                    ]
+                }
+            ),
+        )
+        ls_utils.raise_for_status_with_text(response)
+
     def list_dataset_splits(
         self,
         *,
