@@ -249,7 +249,7 @@ def serialized_run_operation_to_multipart_parts_and_context(
             ),
         )
     if op.attachments:
-        for n, (content_type, data) in op.attachments.items():
+        for n, (content_type, data_or_path) in op.attachments.items():
             if "." in n:
                 logger.warning(
                     f"Skipping logging of attachment '{n}' "
@@ -259,22 +259,22 @@ def serialized_run_operation_to_multipart_parts_and_context(
                 )
                 continue
 
-            if isinstance(data, bytes):
+            if isinstance(data_or_path, bytes):
                 acc_parts.append(
                     (
                         f"attachment.{op.id}.{n}",
                         (
                             None,
-                            data,
+                            data_or_path,
                             content_type,
-                            {"Content-Length": str(len(data))},
+                            {"Content-Length": str(len(data_or_path))},
                         ),
                     )
                 )
             else:
-                file_size = os.path.getsize(data)
-                file = open(data, "rb")
-                opened_files_dict[str(data) + str(uuid.uuid4())] = file
+                file_size = os.path.getsize(data_or_path)
+                file = open(data_or_path, "rb")
+                opened_files_dict[str(data_or_path) + str(uuid.uuid4())] = file
                 acc_parts.append(
                     (
                         f"attachment.{op.id}.{n}",

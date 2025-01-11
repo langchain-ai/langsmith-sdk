@@ -1222,6 +1222,7 @@ class Client:
         *,
         project_name: Optional[str] = None,
         revision_id: Optional[str] = None,
+        dangerously_allow_filesystem: bool = False,
         **kwargs: Any,
     ) -> None:
         """Persist a run to the LangSmith API.
@@ -1284,6 +1285,17 @@ class Client:
             copy=False,
         )
         self._insert_runtime_env([run_create])
+
+        if run_create.get("attachments") is not None:
+            for attachment in run_create["attachments"].values():
+                if (
+                    isinstance(attachment, tuple)
+                    and isinstance(attachment[1], Path)
+                    and not dangerously_allow_filesystem
+                ):
+                    raise ValueError(
+                        "Must set dangerously_allow_filesystem=True to allow passing in Paths for attachments."
+                    )
 
         if (
             # batch ingest requires trace_id and dotted_order to be set
@@ -1782,7 +1794,7 @@ class Client:
                         and not dangerously_allow_filesystem
                     ):
                         raise ValueError(
-                            "Must set dangerously_allow_filesystem to True to use filesystem paths in multipart ingest."
+                            "Must set dangerously_allow_filesystem=True to allow passing in Paths for attachments."
                         )
 
         # sent the runs in multipart requests
@@ -1985,7 +1997,7 @@ class Client:
                     and not dangerously_allow_filesystem
                 ):
                     raise ValueError(
-                        "Must set dangerously_allow_filesystem=True to allow filesystem attachments."
+                        "Must set dangerously_allow_filesystem=True to allow passing in Paths for attachments."
                     )
             data["attachments"] = attachments
         use_multipart = (
@@ -2159,7 +2171,7 @@ class Client:
             "GET", f"/runs/{_as_uuid(run_id, 'run_id')}"
         )
         attachments = _convert_stored_attachments_to_attachments_dict(
-            response.json(), "s3_urls"
+            response.json(), attachments_key="s3_urls"
         )
         run = ls_schemas.Run(
             attachments=attachments, **response.json(), _host_url=self._host_url
@@ -2346,7 +2358,7 @@ class Client:
         ):
             # Should this be behind a flag?
             attachments = _convert_stored_attachments_to_attachments_dict(
-                run, "s3_urls"
+                run, attachments_key="s3_urls"
             )
             yield ls_schemas.Run(
                 attachments=attachments, **run, _host_url=self._host_url
@@ -4368,7 +4380,7 @@ class Client:
 
         example = response.json()
         attachments = _convert_stored_attachments_to_attachments_dict(
-            example, "attachment_urls"
+            example, attachments_key="attachment_urls"
         )
 
         return ls_schemas.Example(
@@ -4495,7 +4507,7 @@ class Client:
             self._get_paginated_list("/examples", params=params)
         ):
             attachments = _convert_stored_attachments_to_attachments_dict(
-                example, "attachment_urls"
+                example, attachments_key="attachment_urls"
             )
 
             yield ls_schemas.Example(
@@ -7256,7 +7268,8 @@ def convert_prompt_to_anthropic_format(
         raise ls_utils.LangSmithError(f"Error converting to Anthropic format: {e}")
 
 
-def _convert_stored_attachments_to_attachments_dict(data, attachments_key):
+def _convert_stored_attachments_to_attachments_dict(data, *, attachments_key):
+    """Convert attachments from the backend database format to the user facing format."""
     attachments_dict = {}
     if attachments_key in data and data[attachments_key]:
         for key, value in data[attachments_key].items():
