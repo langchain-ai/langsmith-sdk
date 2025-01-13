@@ -2102,8 +2102,6 @@ def test_create_run_with_zstd_compression(mock_session_cls: mock.Mock) -> None:
             info=info,
         )
 
-        time.sleep(1)
-
         # Create a few runs with larger payloads so there's something to compress
         for i in range(2):
             run_id = uuid.uuid4()
@@ -2122,6 +2120,8 @@ def test_create_run_with_zstd_compression(mock_session_cls: mock.Mock) -> None:
         if client._futures is not None:
             for fut in client._futures:
                 fut.result()
+
+    time.sleep(0.1)
 
     # Inspect the calls
     post_calls = []
@@ -2247,6 +2247,10 @@ def test_create_run_without_compression_support(mock_session_cls: mock.Mock) -> 
 @patch("langsmith.client.requests.Session")
 def test_create_run_with_disabled_compression(mock_session_cls: mock.Mock) -> None:
     """Test that runs use regular multipart when compression is explicitly disabled."""
+
+    # Clear the cache to ensure the environment variable is re-evaluated
+    ls_utils.get_env_var.cache_clear()
+
     mock_session = MagicMock()
     mock_response = MagicMock()
     mock_response.status_code = 200
