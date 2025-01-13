@@ -20,7 +20,6 @@ class LangSmithEvalReporter extends DefaultReporter {
       });
       await printReporterTable(tests);
     }
-    this.end = performance.now();
   }
 }
 
