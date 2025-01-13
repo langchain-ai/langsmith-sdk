@@ -2770,7 +2770,7 @@ export class Client implements LangSmithTracingClientInterface {
         (acc, [key, value]) => {
           acc[key.slice("attachment.".length)] = {
             presigned_url: value.presigned_url,
-            mime_type: value.mime_type || undefined,
+            mime_type: value.mime_type,
           };
           return acc;
         },
