@@ -44,6 +44,7 @@
       "src/jest/reporter.ts",
       "src/vercel.ts",
       "src/vitest/index.ts",
+      "src/vitest/reporter.ts",
       "src/wrappers/index.ts",
       "src/anonymizer/index.ts",
       "src/wrappers/openai.ts",

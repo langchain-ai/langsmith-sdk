@@ -18,6 +18,7 @@ const entrypoints = {
   "jest/reporter": "jest/reporter",
   vercel: "vercel",
   vitest: "vitest/index",
+  "vitest/reporter": "vitest/reporter",
   wrappers: "wrappers/index",
   anonymizer: "anonymizer/index",
   "wrappers/openai": "wrappers/openai",

@@ -49,6 +49,10 @@
     "vitest.js",
     "vitest.d.ts",
     "vitest.d.cts",
+    "vitest/reporter.cjs",
+    "vitest/reporter.js",
+    "vitest/reporter.d.ts",
+    "vitest/reporter.d.cts",
     "wrappers.cjs",
     "wrappers.js",
     "wrappers.d.ts",
@@ -114,7 +118,7 @@
   "homepage": "https://github.com/langchain-ai/langsmith-sdk#readme",
   "dependencies": {
     "@types/uuid": "^10.0.0",
-    "chalk": "5.4.1",
+    "chalk": "^4.1.2",
     "console-table-printer": "^2.12.1",
     "p-queue": "^6.6.2",
     "p-retry": "4",
@@ -279,6 +283,15 @@
       },
       "import": "./vitest.js",
       "require": "./vitest.cjs"
+    },
+    "./vitest/reporter": {
+      "types": {
+        "import": "./vitest/reporter.d.ts",
+        "require": "./vitest/reporter.d.cts",
+        "default": "./vitest/reporter.d.ts"
+      },
+      "import": "./vitest/reporter.js",
+      "require": "./vitest/reporter.cjs"
     },
     "./wrappers": {
       "types": {

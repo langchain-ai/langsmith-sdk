@@ -75,6 +75,10 @@ Chinook_Sqlite.sql
 /vitest.js
 /vitest.d.ts
 /vitest.d.cts
+/vitest/reporter.cjs
+/vitest/reporter.js
+/vitest/reporter.d.ts
+/vitest/reporter.d.cts
 /wrappers.cjs
 /wrappers.js
 /wrappers.d.ts
