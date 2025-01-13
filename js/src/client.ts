@@ -60,7 +60,7 @@ import {
   RunEvaluator,
 } from "./evaluation/evaluator.js";
 import { __version__ } from "./index.js";
-import { assertUuid } from "./utils/uuid.js";
+import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
 import { parsePromptIdentifier } from "./utils/prompts.js";
 import { raiseForStatus } from "./utils/error.js";
