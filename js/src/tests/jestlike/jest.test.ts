@@ -86,7 +86,7 @@ ls.describe(
         const res = myApp();
         ls.logFeedback({
           key: "coolness",
-          score: 0,
+          score: 0.1,
         });
         await ls
           .expect(res)
@@ -122,7 +122,7 @@ ls.describe(
       };
       ls.logFeedback({
         key: "coolness",
-        score: 0.2,
+        score: 0.6,
       });
       const res = myApp();
       await ls
