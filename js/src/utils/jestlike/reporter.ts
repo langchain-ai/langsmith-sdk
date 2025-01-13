@@ -83,7 +83,7 @@ export async function printReporterTable(
       rows.push([
         {
           Name: formatTestName(testName, duration),
-          Result: getFormattedStatus(status),
+          Status: getFormattedStatus(status),
         },
         getColorParam(status),
       ]);
@@ -92,7 +92,7 @@ export async function printReporterTable(
       rows.push([
         {
           Name: formatTestName(testName, duration),
-          Result: getFormattedStatus(status),
+          Status: getFormattedStatus(status),
         },
         getColorParam(status),
       ]);
@@ -107,9 +107,7 @@ export async function printReporterTable(
         fileContent = JSON.parse(await fs.readFile(resultsPath, "utf-8"));
         await fs.unlink(resultsPath);
       } catch (e) {
-        throw new Error(
-          "Failed to display custom evaluation results. Falling back to default display..."
-        );
+        throw new Error("Failed to display custom evaluation results.");
       }
       const feedback = fileContent.feedback.reduce(
         (acc: Record<string, ScoreType>, current: EvaluationResult) => {
@@ -128,10 +126,10 @@ export async function printReporterTable(
       rows.push([
         {
           Name: formatTestName(testName, duration),
-          Result: getFormattedStatus(status),
           Inputs: formatValue(fileContent.inputs),
-          Expected: formatValue(fileContent.expected),
-          Actual: formatValue(fileContent.outputs),
+          "Reference Outputs": formatValue(fileContent.expected),
+          Outputs: formatValue(fileContent.outputs),
+          Status: getFormattedStatus(status),
           ...feedback,
         },
         getColorParam(status),
@@ -178,10 +176,10 @@ export async function printReporterTable(
   const table = new Table({
     columns: [
       { name: "Name", alignment: "left", maxLen: 48 },
-      { name: "Result", alignment: "left" },
       { name: "Inputs", alignment: "left" },
-      { name: "Expected", alignment: "left" },
-      { name: "Actual", alignment: "left" },
+      { name: "Reference Outputs", alignment: "left" },
+      { name: "Outputs", alignment: "left" },
+      { name: "Status", alignment: "left" },
     ],
     colorMap: {
       grey: "\x1b[90m",
