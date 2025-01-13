@@ -1,7 +1,7 @@
 import { test } from "@jest/globals";
 import { OpenAIEmbeddings } from "@langchain/openai";
 
-import * as ls from "../../jest.js";
+import * as ls from "../../jest/index.js";
 
 const embeddings = new OpenAIEmbeddings({
   model: "text-embedding-3-small",

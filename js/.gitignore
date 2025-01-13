@@ -63,6 +63,10 @@ Chinook_Sqlite.sql
 /jest.js
 /jest.d.ts
 /jest.d.cts
+/jest/reporter.cjs
+/jest/reporter.js
+/jest/reporter.d.ts
+/jest/reporter.d.cts
 /vercel.cjs
 /vercel.js
 /vercel.d.ts

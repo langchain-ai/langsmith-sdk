@@ -13,6 +13,7 @@ export type TestWrapperAsyncLocalStorageData = {
   projectConfig?: Partial<CreateProjectParams>;
   project?: TracerSession;
   setLoggedOutput?: (value: Record<string, unknown>) => void;
+  onFeedbackLogged?: (feedback: EvaluationResult) => void;
   currentExample?: Partial<Example> & { syncPromise?: Promise<Example> };
   client: Client;
   suiteUuid: string;
@@ -68,4 +69,5 @@ export function _logTestFeedback(params: {
       })()
     );
   }
+  context.onFeedbackLogged?.(feedback);
 }

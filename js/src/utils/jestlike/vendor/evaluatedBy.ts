@@ -49,7 +49,6 @@ export async function evaluatedBy(actual: any, evaluator: SimpleEvaluator) {
       expected: context.currentExample.outputs ?? {},
       actual,
     });
-
     _logTestFeedback({
       exampleId: context.currentExample.id!,
       feedback: evalResult,
@@ -64,6 +63,12 @@ export async function evaluatedBy(actual: any, evaluator: SimpleEvaluator) {
       input: context.currentExample.inputs ?? {},
       expected: context.currentExample.outputs ?? {},
       actual,
+    });
+    _logTestFeedback({
+      exampleId: context.currentExample.id!,
+      feedback: evalResult,
+      context,
+      client: context.client,
     });
     return evalResult.score;
   }

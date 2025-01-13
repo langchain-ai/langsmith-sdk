@@ -1,8 +1,8 @@
 import { test } from "@jest/globals";
 import { AsyncLocalStorage } from "node:async_hooks";
 
-import * as ls from "../../jest.js";
-import { type SimpleEvaluator } from "../../jest.js";
+import * as ls from "../../jest/index.js";
+import { type SimpleEvaluator } from "../../jest/index.js";
 
 const myEvaluator: SimpleEvaluator = (params) => {
   const { expected, actual } = params;
@@ -47,7 +47,7 @@ ls.describe(
           score: 0.5,
         });
         ls.logOutput({
-          testLoggedOutput: "logged",
+          bar: "perfect",
         });
       }
     );

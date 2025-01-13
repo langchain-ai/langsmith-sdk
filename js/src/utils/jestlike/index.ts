@@ -1,9 +1,11 @@
 /* eslint-disable import/no-extraneous-dependencies */
 /* eslint-disable @typescript-eslint/no-namespace */
 
-// import { expect, test, describe, beforeAll, afterAll } from "@jest/globals";
 import crypto from "crypto";
 import { v4, v5 } from "uuid";
+import * as os from "node:os";
+import * as path from "node:path";
+import * as fs from "node:fs/promises";
 
 import { getCurrentRunTree, traceable } from "../../traceable.js";
 import { RunTree } from "../../run_trees.js";
@@ -37,6 +39,8 @@ const UUID5_NAMESPACE = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
 const STRIP_ANSI_REGEX =
   // eslint-disable-next-line no-control-regex
   /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g;
+
+let testCounter = 0;
 
 export function logFeedback(feedback: EvaluationResult) {
   const context = testWrapperAsyncLocalStorageInstance.getStore();
@@ -328,8 +332,14 @@ export function generateWrapperFromJestlikeMethods(
       for (let i = 0; i < totalRuns; i += 1) {
         // Jest will not group tests under the same "describe" group if you await the test and
         // total runs is greater than 1.
+        testCounter += 1;
+        const resultsPath = path.join(
+          os.tmpdir(),
+          "langsmith_test_results",
+          `${testCounter}.json`
+        );
         void method(
-          `${name}${totalRuns > 1 ? `, iteration ${i}` : ""}`,
+          `${testCounter}: ${name}${totalRuns > 1 ? `, iteration ${i}` : ""}`,
           async () => {
             if (context === undefined) {
               throw new Error(
@@ -345,6 +355,9 @@ export function generateWrapperFromJestlikeMethods(
               datasetSetupInfo.get(context.suiteUuid);
             const testInput: I = inputs;
             const testOutput: O = expected;
+            const testFeedback: EvaluationResult[] = [];
+            let testReturnValue: unknown;
+            let loggedOutput: Record<string, unknown> | undefined;
             if (trackingEnabled(context)) {
               const missingFields = [];
               if (dataset === undefined) {
@@ -418,7 +431,6 @@ export function generateWrapperFromJestlikeMethods(
                     );
                   }
                   try {
-                    let loggedOutput: Record<string, unknown> | undefined;
                     const res = await testWrapperAsyncLocalStorageInstance.run(
                       {
                         ...testContext,
@@ -430,6 +442,8 @@ export function generateWrapperFromJestlikeMethods(
                           }
                           loggedOutput = value;
                         },
+                        onFeedbackLogged: (feedback) =>
+                          testFeedback.push(feedback),
                       },
                       async () => {
                         return testFn({
@@ -445,12 +459,7 @@ export function generateWrapperFromJestlikeMethods(
                       runTree: getCurrentRunTree(),
                       client: testClient,
                     });
-                    if (loggedOutput !== undefined && res !== undefined) {
-                      console.warn(
-                        `[WARN]: Returned value from test function will override output set by previous "logOutput()" call.`
-                      );
-                    }
-                    return res ?? loggedOutput;
+                    return res;
                   } catch (e: any) {
                     _logTestFeedback({
                       exampleId,
@@ -474,7 +483,7 @@ export function generateWrapperFromJestlikeMethods(
                 { ...traceableOptions, ...config }
               );
               try {
-                await (tracedFunction as any)(testInput);
+                testReturnValue = await (tracedFunction as any)(testInput);
               } catch (e: any) {
                 if (e.rawJestError !== undefined) {
                   throw e.rawJestError;
@@ -482,8 +491,7 @@ export function generateWrapperFromJestlikeMethods(
                 throw e;
               }
             } else {
-              let loggedOutput: Record<string, unknown> | undefined;
-              const res = await testWrapperAsyncLocalStorageInstance.run(
+              testReturnValue = await testWrapperAsyncLocalStorageInstance.run(
                 {
                   ...context,
                   currentExample: { inputs: testInput, outputs: testOutput },
@@ -495,6 +503,7 @@ export function generateWrapperFromJestlikeMethods(
                     }
                     loggedOutput = value;
                   },
+                  onFeedbackLogged: (feedback) => testFeedback.push(feedback),
                 },
                 async () => {
                   return testFn({
@@ -503,14 +512,28 @@ export function generateWrapperFromJestlikeMethods(
                   });
                 }
               );
-              if (loggedOutput !== undefined && res !== undefined) {
+            }
+            if (testReturnValue != null) {
+              if (loggedOutput !== undefined) {
                 console.warn(
                   `[WARN]: Returned value from test function will override output set by previous "logOutput()" call.`
                 );
               }
-              // TODO: Display logged or final output nicely
-              // return res ?? loggedOutput;
+              loggedOutput =
+                typeof testReturnValue === "object"
+                  ? (testReturnValue as Record<string, unknown>)
+                  : { result: testReturnValue };
             }
+            await fs.mkdir(path.dirname(resultsPath), { recursive: true });
+            await fs.writeFile(
+              resultsPath,
+              JSON.stringify({
+                inputs,
+                expected,
+                outputs: loggedOutput,
+                feedback: testFeedback,
+              })
+            );
           },
           timeout
         );

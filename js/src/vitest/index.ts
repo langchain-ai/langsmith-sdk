@@ -16,10 +16,10 @@ import {
   type AbsoluteCloseToMatcherOptions,
   type SemanticCloseToMatcherOptions,
   type RelativeCloseToMatcherOptions,
-} from "./utils/jestlike/matchers.js";
-import type { SimpleEvaluator } from "./utils/jestlike/vendor/evaluatedBy.js";
-import { logFeedback, logOutput } from "./utils/jestlike/index.js";
-import { generateWrapperFromJestlikeMethods } from "./utils/jestlike/index.js";
+} from "../utils/jestlike/matchers.js";
+import type { SimpleEvaluator } from "../utils/jestlike/vendor/evaluatedBy.js";
+import { logFeedback, logOutput } from "../utils/jestlike/index.js";
+import { generateWrapperFromJestlikeMethods } from "../utils/jestlike/index.js";
 
 vitestExpect.extend({
   toBeRelativeCloseTo,
@@ -72,4 +72,4 @@ export {
   logOutput,
 };
 
-export * from "./utils/jestlike/types.js";
+export * from "../utils/jestlike/types.js";

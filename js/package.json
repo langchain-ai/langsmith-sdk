@@ -37,6 +37,10 @@
     "jest.js",
     "jest.d.ts",
     "jest.d.cts",
+    "jest/reporter.cjs",
+    "jest/reporter.js",
+    "jest/reporter.d.ts",
+    "jest/reporter.d.cts",
     "vercel.cjs",
     "vercel.js",
     "vercel.d.ts",
@@ -110,6 +114,8 @@
   "homepage": "https://github.com/langchain-ai/langsmith-sdk#readme",
   "dependencies": {
     "@types/uuid": "^10.0.0",
+    "chalk": "5.4.1",
+    "console-table-printer": "^2.12.1",
     "p-queue": "^6.6.2",
     "p-retry": "4",
     "semver": "^7.6.3",
@@ -120,6 +126,7 @@
     "@babel/preset-env": "^7.22.4",
     "@faker-js/faker": "^8.4.1",
     "@jest/globals": "^29.5.0",
+    "@jest/reporters": "^29.7.0",
     "@langchain/core": "^0.3.14",
     "@langchain/langgraph": "^0.2.20",
     "@langchain/openai": "^0.3.11",
@@ -245,6 +252,15 @@
       },
       "import": "./jest.js",
       "require": "./jest.cjs"
+    },
+    "./jest/reporter": {
+      "types": {
+        "import": "./jest/reporter.d.ts",
+        "require": "./jest/reporter.d.cts",
+        "default": "./jest/reporter.d.ts"
+      },
+      "import": "./jest/reporter.js",
+      "require": "./jest/reporter.cjs"
     },
     "./vercel": {
       "types": {

@@ -10,5 +10,6 @@ module.exports = {
     "^.+\\.m?[tj]sx?$": ["ts-jest", { useESM: true, diagnostics: false }],
   },
   setupFiles: ["dotenv/config"],
+  reporters: ["/Users/jacoblee/langchain/langsmith-sdk/js/src/utils/jestlike/reporter.js"],
   testTimeout: 20_000,
 };
