@@ -66,6 +66,7 @@ export async function printReporterTable(
 ) {
   const rows = [];
   const feedbackKeys = new Set<string>();
+  let experimentUrl;
   for (const result of results) {
     const { title, duration, status } = result;
     const titleComponents = title.split(":");
@@ -123,6 +124,7 @@ export async function printReporterTable(
         },
         {}
       );
+      experimentUrl = experimentUrl ?? fileContent.experimentUrl;
       rows.push([
         {
           Name: formatTestName(testName, duration),
@@ -172,10 +174,10 @@ export async function printReporterTable(
     }
   }
 
-  console.log("");
+  console.log();
   const table = new Table({
     columns: [
-      { name: "Name", alignment: "left" },
+      { name: "Name", alignment: "left", maxLen: 48 },
       { name: "Result", alignment: "left" },
       { name: "Inputs", alignment: "left" },
       { name: "Expected", alignment: "left" },
@@ -192,4 +194,11 @@ export async function printReporterTable(
     console.log(failureMessage);
   }
   table.printTable();
+  if (experimentUrl) {
+    console.log();
+    console.log(
+      ` [LANGSMITH]: View full results in LangSmith at ${experimentUrl}`
+    );
+    console.log();
+  }
 }

@@ -124,7 +124,7 @@ ls.describe(
       return res;
     });
 
-    test("Should test absolute closeness custom matcher", async () => {
+    test("Absolute closeness custom matcher", async () => {
       await ls.expect("foobar").toBeAbsoluteCloseTo("foobaz", {
         threshold: 3,
       });
@@ -136,7 +136,7 @@ ls.describe(
       });
     });
 
-    test("Should test relative closeness custom matcher", async () => {
+    test("Relative closeness custom matcher", async () => {
       await ls.expect("0123456789").toBeRelativeCloseTo("1123456789", {
         threshold: 0.1,
       });

@@ -241,10 +241,18 @@ export function generateWrapperFromJestlikeMethods(
         dataset.id,
         projectConfig
       );
+      const datasetUrl = await testClient.getDatasetUrl({
+        datasetId: dataset.id,
+      });
+      const experimentUrl = `${datasetUrl}/compare?selectedSessions=${project.id}`;
+      console.log(
+        `[LANGSMITH]: Experiment starting! View results at ${experimentUrl}`
+      );
       storageValue = {
         dataset,
         project,
         client: testClient,
+        experimentUrl,
       };
     }
     return storageValue;
@@ -274,7 +282,8 @@ export function generateWrapperFromJestlikeMethods(
         };
 
         beforeAll(async () => {
-          datasetSetupInfo.set(suiteUuid, await runDatasetSetup(context));
+          const storageValue = await runDatasetSetup(context);
+          datasetSetupInfo.set(suiteUuid, storageValue);
         });
 
         afterAll(async () => {
@@ -339,7 +348,7 @@ export function generateWrapperFromJestlikeMethods(
           `${testCounter}.json`
         );
         void method(
-          `${testCounter}: ${name}${totalRuns > 1 ? `, iteration ${i}` : ""}`,
+          `${testCounter}: ${name}${totalRuns > 1 ? `, run ${i}` : ""}`,
           async () => {
             if (context === undefined) {
               throw new Error(
@@ -351,7 +360,7 @@ export function generateWrapperFromJestlikeMethods(
                 "Dataset failed to initialize. Please check your LangSmith environment variables."
               );
             }
-            const { dataset, createdAt, project, client } =
+            const { dataset, createdAt, project, client, experimentUrl } =
               datasetSetupInfo.get(context.suiteUuid);
             const testInput: I = inputs;
             const testOutput: O = expected;
@@ -532,6 +541,7 @@ export function generateWrapperFromJestlikeMethods(
                 expected,
                 outputs: loggedOutput,
                 feedback: testFeedback,
+                experimentUrl,
               })
             );
           },

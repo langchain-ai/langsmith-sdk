@@ -5,6 +5,7 @@ import { printReporterTable } from "../utils/jestlike/reporter.js";
 
 class LangSmithEvalReporter extends DefaultReporter {
   async onTestResult(test: any, testResult: any, aggregatedResults: any) {
+    super.onTestResult(test, testResult, aggregatedResults);
     try {
       await printReporterTable(
         testResult.testResults,
@@ -12,7 +13,6 @@ class LangSmithEvalReporter extends DefaultReporter {
       );
     } catch (e: any) {
       console.log("Failed to display LangSmith eval results:", e.message);
-      return super.onTestResult(test, testResult, aggregatedResults);
     }
   }
 }
