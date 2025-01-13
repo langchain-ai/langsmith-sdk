@@ -26,10 +26,8 @@ import dataclasses_json
 import pytest
 import requests
 from multipart import MultipartParser, MultipartPart, parse_options_header
-from requests_toolbelt import MultipartEncoder
 from pydantic import BaseModel
 from requests import HTTPError
-import zstandard as zstd
 
 import langsmith.env as ls_env
 import langsmith.utils as ls_utils
@@ -2145,6 +2143,7 @@ def test_create_run_with_zstd_compression(mock_session_cls: mock.Mock) -> None:
         "it appears runs were not compressed."
     )
 
+
 @patch("langsmith.client.requests.Session")
 def test_create_run_without_compression_support(mock_session_cls: mock.Mock) -> None:
     """Test that runs use regular multipart when server doesn't support compression."""
@@ -2202,11 +2201,12 @@ def test_create_run_without_compression_support(mock_session_cls: mock.Mock) -> 
     time.sleep(0.1)
 
     post_calls = [
-        call_obj for call_obj in mock_session.request.mock_calls 
+        call_obj
+        for call_obj in mock_session.request.mock_calls
         if call_obj.args and call_obj.args[0] == "POST"
     ]
     assert len(post_calls) >= 1
-    
+
     payloads = [
         (call[2]["headers"], call[2]["data"])
         for call in mock_session.request.mock_calls
@@ -2225,10 +2225,10 @@ def test_create_run_without_compression_support(mock_session_cls: mock.Mock) -> 
         parts.extend(parser.parts())
 
     assert [p.name for p in parts] == [
-            f"post.{run_id}",
-            f"post.{run_id}.inputs",
-            f"post.{run_id}.outputs",
-        ]
+        f"post.{run_id}",
+        f"post.{run_id}.inputs",
+        f"post.{run_id}.outputs",
+    ]
     assert [p.headers.get("content-type") for p in parts] == [
         "application/json",
         "application/json",
@@ -2243,6 +2243,7 @@ def test_create_run_without_compression_support(mock_session_cls: mock.Mock) -> 
     assert run_parsed["trace_id"] == str(run_id)
     assert run_parsed["dotted_order"] == str(run_id)
 
+
 @patch("langsmith.client.requests.Session")
 def test_create_run_with_disabled_compression(mock_session_cls: mock.Mock) -> None:
     """Test that runs use regular multipart when compression is explicitly disabled."""
@@ -2252,7 +2253,9 @@ def test_create_run_with_disabled_compression(mock_session_cls: mock.Mock) -> No
     mock_session.request.return_value = mock_response
     mock_session_cls.return_value = mock_session
 
-    with patch.dict("os.environ", {"LANGSMITH_DISABLE_RUN_COMPRESSION": "true"}, clear=True):
+    with patch.dict(
+        "os.environ", {"LANGSMITH_DISABLE_RUN_COMPRESSION": "true"}, clear=True
+    ):
         info = ls_schemas.LangSmithInfo(
             version="0.6.0",
             instance_flags={"zstd_compression_enabled": True},  # Enabled on server
@@ -2300,11 +2303,12 @@ def test_create_run_with_disabled_compression(mock_session_cls: mock.Mock) -> No
     time.sleep(0.1)
 
     post_calls = [
-        call_obj for call_obj in mock_session.request.mock_calls 
+        call_obj
+        for call_obj in mock_session.request.mock_calls
         if call_obj.args and call_obj.args[0] == "POST"
     ]
     assert len(post_calls) >= 1
-    
+
     payloads = [
         (call[2]["headers"], call[2]["data"])
         for call in mock_session.request.mock_calls
@@ -2323,10 +2327,10 @@ def test_create_run_with_disabled_compression(mock_session_cls: mock.Mock) -> No
         parts.extend(parser.parts())
 
     assert [p.name for p in parts] == [
-            f"post.{run_id}",
-            f"post.{run_id}.inputs",
-            f"post.{run_id}.outputs",
-        ]
+        f"post.{run_id}",
+        f"post.{run_id}.inputs",
+        f"post.{run_id}.outputs",
+    ]
     assert [p.headers.get("content-type") for p in parts] == [
         "application/json",
         "application/json",
