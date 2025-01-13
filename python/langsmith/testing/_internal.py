@@ -503,8 +503,8 @@ class _LangSmithTestSuite:
         run_id: uuid.UUID,
         error: Optional[str] = None,
         skipped: bool = False,
-        pytest_plugin=None,
-        pytest_nodeid=None,
+        pytest_plugin: Any = None,
+        pytest_nodeid: Any = None,
     ) -> None:
         self._executor.submit(
             self._submit_result,
@@ -520,33 +520,21 @@ class _LangSmithTestSuite:
         run_id: uuid.UUID,
         error: Optional[str] = None,
         skipped: bool = False,
-        pytest_plugin=None,
-        pytest_nodeid=None,
+        pytest_plugin: Any = None,
+        pytest_nodeid: Any = None,
     ) -> None:
-        if error:
-            if skipped:
-                self.client.create_feedback(
-                    run_id,
-                    key="pass",
-                    # Don't factor into aggregate score
-                    score=None,
-                    comment=f"Skipped: {repr(error)}",
-                )
-                status = "skipped"
-            else:
-                self.client.create_feedback(
-                    run_id, key="pass", score=0, comment=f"Error: {repr(error)}"
-                )
-                status = "failed"
+        if skipped:
+            score = None
+            status = "skipped"
+        elif error:
+            score = 0
+            status = "failed"
         else:
-            self.client.create_feedback(
-                run_id,
-                key="pass",
-                score=1,
-            )
+            score = 1
             status = "passed"
         if pytest_plugin and pytest_nodeid:
             pytest_plugin.update_process_status(pytest_nodeid, {"status": status})
+        self.client.create_feedback(run_id, key="pass", score=score)
 
     def sync_example(
         self,
@@ -579,6 +567,11 @@ class _LangSmithTestSuite:
         pytest_plugin: Any,
         pytest_nodeid: Any,
     ) -> None:
+        if pytest_plugin and pytest_nodeid:
+            update = {"inputs": inputs, "reference_outputs": outputs}
+            update = {k: v for k, v in update.items() if v is not None}
+            pytest_plugin.update_process_status(pytest_nodeid, update)
+
         inputs_ = _serde_example_values(inputs) if inputs else inputs
         outputs_ = _serde_example_values(outputs) if outputs else outputs
         try:
@@ -608,11 +601,6 @@ class _LangSmithTestSuite:
         if example.modified_at:
             self.update_version(example.modified_at)
 
-        if pytest_plugin and pytest_nodeid:
-            update = {"inputs": inputs, "reference_outputs": outputs}
-            update = {k: v for k, v in update.items() if v is not None}
-            pytest_plugin.update_process_status(pytest_nodeid, update)
-
     def _submit_feedback(
         self, run_id: ID_TYPE, feedback: Union[dict, list], **kwargs: Any
     ):
@@ -626,17 +614,17 @@ class _LangSmithTestSuite:
         self,
         run_id: ID_TYPE,
         feedback: dict,
-        pytest_plugin=None,
-        pytest_nodeid=None,
+        pytest_plugin: Any = None,
+        pytest_nodeid: Any = None,
         **kwargs: Any,
     ) -> None:
-        trace_id = self.client.read_run(run_id).trace_id
-        self.client.create_feedback(trace_id, **feedback, **kwargs)
         if pytest_plugin and pytest_nodeid:
             val = feedback["score"] if "score" in feedback else feedback["val"]
             pytest_plugin.update_process_status(
                 pytest_nodeid, {"feedback": {feedback["key"]: val}}
             )
+        trace_id = self.client.read_run(run_id).trace_id
+        self.client.create_feedback(trace_id, **feedback, **kwargs)
 
     def shutdown(self):
         self._executor.shutdown(wait=True)

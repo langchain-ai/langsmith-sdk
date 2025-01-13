@@ -66,8 +66,8 @@ class LangSmithPlugin:
 
     def __init__(self):
         """Initialize."""
-        from rich.console import Console
-        from rich.live import Live
+        from rich.console import Console  # type: ignore[import-not-found]
+        from rich.live import Live  # type: ignore[import-not-found]
 
         self.process_status = {}  # Track process status
         self.status_lock = Lock()  # Thread-safe updates
@@ -109,7 +109,7 @@ class LangSmithPlugin:
 
     def generate_table(self):
         """Generate results table."""
-        from rich.table import Table
+        from rich.table import Table  # type: ignore[import-not-found]
 
         table = Table()
         table.add_column("Test")
