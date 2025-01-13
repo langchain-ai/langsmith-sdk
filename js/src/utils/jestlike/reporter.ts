@@ -82,7 +82,7 @@ export async function printReporterTable(
     if (testId === undefined) {
       rows.push([
         {
-          Name: formatTestName(testName, duration),
+          Test: formatTestName(testName, duration),
           Status: getFormattedStatus(status),
         },
         getColorParam(status),
@@ -91,7 +91,7 @@ export async function printReporterTable(
       // Skipped
       rows.push([
         {
-          Name: formatTestName(testName, duration),
+          Test: formatTestName(testName, duration),
           Status: getFormattedStatus(status),
         },
         getColorParam(status),
@@ -107,7 +107,17 @@ export async function printReporterTable(
         fileContent = JSON.parse(await fs.readFile(resultsPath, "utf-8"));
         await fs.unlink(resultsPath);
       } catch (e) {
-        throw new Error("Failed to display custom evaluation results.");
+        console.log(
+          "[LANGSMITH]: Failed to read custom evaluation results. Please contact us for help."
+        );
+        rows.push([
+          {
+            Test: formatTestName(testName, duration),
+            Status: getFormattedStatus(status),
+          },
+          getColorParam(status),
+        ]);
+        continue;
       }
       const feedback = fileContent.feedback.reduce(
         (acc: Record<string, ScoreType>, current: EvaluationResult) => {
@@ -125,7 +135,7 @@ export async function printReporterTable(
       experimentUrl = experimentUrl ?? fileContent.experimentUrl;
       rows.push([
         {
-          Name: formatTestName(testName, duration),
+          Test: formatTestName(testName, duration),
           Inputs: formatValue(fileContent.inputs),
           "Reference Outputs": formatValue(fileContent.expected),
           Outputs: formatValue(fileContent.outputs),
@@ -175,7 +185,7 @@ export async function printReporterTable(
   console.log();
   const table = new Table({
     columns: [
-      { name: "Name", alignment: "left", maxLen: 48 },
+      { name: "Test", alignment: "left", maxLen: 48 },
       { name: "Inputs", alignment: "left" },
       { name: "Reference Outputs", alignment: "left" },
       { name: "Outputs", alignment: "left" },
