@@ -26,6 +26,10 @@ const entrypoints = {
   "singletons/traceable": "singletons/traceable",
 };
 
+const defaultEntrypoints = [
+  "vitest/reporter"
+];
+
 const updateJsonFile = (relativePath, updateFunction) => {
   const contents = fs.readFileSync(relativePath).toString();
   const res = updateFunction(JSON.parse(contents));
@@ -38,6 +42,17 @@ const generateFiles = () => {
       const nrOfDots = key.split("/").length - 1;
       const relativePath = "../".repeat(nrOfDots) || "./";
       const compiledPath = `${relativePath}dist/${value}.js`;
+      if (defaultEntrypoints.includes(key)) {
+        return [
+          [
+            `${key}.cjs`,
+            `module.exports = require('${relativePath}dist/${value}.cjs').default;`,
+          ],
+          [`${key}.js`, `export { default } from '${compiledPath}'`],
+          [`${key}.d.ts`, `export { default } from '${compiledPath}'`],
+          [`${key}.d.cts`, `export { default } from '${compiledPath}'`],
+        ];
+      }
       return [
         [
           `${key}.cjs`,
