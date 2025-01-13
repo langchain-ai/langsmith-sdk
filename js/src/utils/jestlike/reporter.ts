@@ -6,6 +6,9 @@ import * as path from "node:path";
 import * as fs from "node:fs/promises";
 import { EvaluationResult } from "../../evaluation/evaluator.js";
 import { ScoreType } from "../../schemas.js";
+import { STRIP_ANSI_REGEX } from "./index.js";
+
+const FEEDBACK_COLLAPSE_THRESHOLD = 64;
 
 const RESERVED_KEYS = ["Name", "Result", "Inputs", "Expected", "Actual"];
 
@@ -147,6 +150,12 @@ export async function printReporterTable(
     }
   }
 
+  const feedbackKeysTotalLength = [...feedbackKeys].reduce(
+    (l, key) => l + key.length,
+    0
+  );
+  const collapseFeedbackColumn =
+    feedbackKeysTotalLength > FEEDBACK_COLLAPSE_THRESHOLD;
   for (const key of feedbackKeys) {
     const scores = rows
       .map(([row]) => row[key])
@@ -160,37 +169,80 @@ export async function printReporterTable(
         const score = row[0][key];
         if (score !== undefined) {
           const deviation = (score - mean) / stdDev;
+          let coloredKey;
           let coloredScore;
           if (isNaN(deviation)) {
+            coloredKey = chalk.white(`${key}:`);
             coloredScore = chalk.white(score);
           } else if (deviation <= -1) {
+            coloredKey = chalk.redBright(`${key}:`);
             coloredScore = chalk.redBright(score);
           } else if (deviation < -0.5) {
+            coloredKey = chalk.red(`${key}:`);
             coloredScore = chalk.red(score);
           } else if (deviation < 0) {
+            coloredKey = chalk.yellow(`${key}:`);
             coloredScore = chalk.yellow(score);
           } else if (deviation === 0) {
+            coloredKey = chalk.white(`${key}:`);
             coloredScore = chalk.white(score);
           } else if (deviation <= 0.5) {
+            coloredKey = chalk.green(`${key}:`);
             coloredScore = chalk.green(score);
           } else {
+            coloredKey = chalk.greenBright(`${key}:`);
             coloredScore = chalk.greenBright(score);
           }
-          row[0][key] = coloredScore;
+          if (collapseFeedbackColumn) {
+            delete row[0][key];
+            if (row[0].Feedback === undefined) {
+              row[0].Feedback = `${coloredKey} ${coloredScore}`;
+            } else {
+              row[0].Feedback = `${row[0].Feedback}\n${coloredKey} ${coloredScore}`;
+            }
+          } else {
+            row[0][key] = coloredScore;
+          }
         }
       }
     }
   }
 
+  const defaultColumns: {
+    name: string;
+    alignment?: string;
+    maxLen?: number;
+    minLen?: number;
+  }[] = [
+    { name: "Test", alignment: "left", maxLen: 48 },
+    { name: "Inputs", alignment: "left" },
+    { name: "Reference Outputs", alignment: "left" },
+    { name: "Outputs", alignment: "left" },
+    { name: "Status", alignment: "left" },
+  ];
+  if (collapseFeedbackColumn) {
+    const feedbackColumnLength = rows.reduce((max, [row]) => {
+      const maxFeedbackLineLength =
+        row.Feedback?.split("\n").reduce(
+          (max: number, feedbackLine: string) => {
+            return Math.max(
+              max,
+              feedbackLine.replace(STRIP_ANSI_REGEX, "").length
+            );
+          },
+          0
+        ) ?? 0;
+      return Math.max(max, maxFeedbackLineLength);
+    }, 0);
+    defaultColumns.push({
+      name: "Feedback",
+      alignment: "left",
+      minLen: feedbackColumnLength + 10,
+    });
+  }
   console.log();
   const table = new Table({
-    columns: [
-      { name: "Test", alignment: "left", maxLen: 48 },
-      { name: "Inputs", alignment: "left" },
-      { name: "Reference Outputs", alignment: "left" },
-      { name: "Outputs", alignment: "left" },
-      { name: "Status", alignment: "left" },
-    ],
+    columns: defaultColumns,
     colorMap: {
       grey: "\x1b[90m",
     },
