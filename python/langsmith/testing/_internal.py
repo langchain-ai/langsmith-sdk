@@ -10,6 +10,7 @@ import inspect
 import logging
 import os
 import threading
+import time
 import uuid
 import warnings
 from collections import defaultdict
@@ -296,10 +297,16 @@ def test(*args: Any, **kwargs: Any) -> Callable:
             return async_wrapper
 
         @functools.wraps(func)
-        def wrapper(*test_args: Any, **test_kwargs: Any):
+        def wrapper(*test_args: Any, request: Any, **test_kwargs: Any):
             if disable_tracking:
                 return func(*test_args, **test_kwargs)
-            _run_test(func, *test_args, **test_kwargs, langtest_extra=langtest_extra)
+            _run_test(
+                func,
+                *test_args,
+                request=request,
+                **test_kwargs,
+                langtest_extra=langtest_extra,
+            )
 
         return wrapper
 
@@ -383,16 +390,9 @@ def _start_experiment(
         return client.read_project(project_name=experiment_name)
 
 
-# Track the number of times a parameter has been used in a test
-# This is to ensure that we can uniquely identify each test case
-# defined using pytest.mark.parametrize
-_param_dict: dict = defaultdict(lambda: defaultdict(int))
-
-
 def _get_example_id(
     func: Callable, inputs: dict, suite_id: uuid.UUID
 ) -> Tuple[uuid.UUID, str]:
-    # global _param_dict
     try:
         file_path = str(Path(inspect.getfile(func)).relative_to(Path.cwd()))
     except ValueError:
@@ -407,9 +407,7 @@ def _get_example_id(
     return uuid.uuid5(uuid.NAMESPACE_DNS, identifier), identifier[len(str(suite_id)) :]
 
 
-def _end_tests(
-    test_suite: _LangSmithTestSuite,
-):
+def _end_tests(test_suite: _LangSmithTestSuite):
     git_info = ls_env.get_git_info() or {}
     test_suite.client.update_project(
         test_suite.experiment_id,
@@ -495,12 +493,29 @@ class _LangSmithTestSuite:
             return self._version
 
     def submit_result(
-        self, run_id: uuid.UUID, error: Optional[str] = None, skipped: bool = False
+        self,
+        run_id: uuid.UUID,
+        error: Optional[str] = None,
+        skipped: bool = False,
+        plugin=None,
+        nodeid=None,
     ) -> None:
-        self._executor.submit(self._submit_result, run_id, error, skipped=skipped)
+        self._executor.submit(
+            self._submit_result,
+            run_id,
+            error,
+            skipped=skipped,
+            plugin=plugin,
+            nodeid=nodeid,
+        )
 
     def _submit_result(
-        self, run_id: uuid.UUID, error: Optional[str] = None, skipped: bool = False
+        self,
+        run_id: uuid.UUID,
+        error: Optional[str] = None,
+        skipped: bool = False,
+        plugin=None,
+        nodeid=None,
     ) -> None:
         if error:
             if skipped:
@@ -511,16 +526,21 @@ class _LangSmithTestSuite:
                     score=None,
                     comment=f"Skipped: {repr(error)}",
                 )
+                status = "skipped"
             else:
                 self.client.create_feedback(
                     run_id, key="pass", score=0, comment=f"Error: {repr(error)}"
                 )
+                status = "failed"
         else:
             self.client.create_feedback(
                 run_id,
                 key="pass",
                 score=1,
             )
+            status = "passed"
+        if plugin and nodeid:
+            plugin.update_process_status(nodeid, {"status": status})
 
     def sync_example(
         self,
@@ -529,6 +549,8 @@ class _LangSmithTestSuite:
         inputs: Optional[dict] = None,
         outputs: Optional[dict] = None,
         metadata: Optional[dict] = None,
+        plugin=None,
+        nodeid=None,
     ) -> None:
         future = self._executor.submit(
             self._sync_example,
@@ -536,6 +558,8 @@ class _LangSmithTestSuite:
             inputs,
             outputs,
             metadata.copy() if metadata else metadata,
+            plugin,
+            nodeid,
         )
         with self._lock:
             self._example_futures[example_id].append(future)
@@ -546,6 +570,8 @@ class _LangSmithTestSuite:
         inputs: Optional[dict],
         outputs: Optional[dict],
         metadata: Optional[dict],
+        plugin: Any,
+        nodeid: Any,
     ) -> None:
         inputs_ = _serde_example_values(inputs) if inputs else inputs
         outputs_ = _serde_example_values(outputs) if outputs else outputs
@@ -576,6 +602,11 @@ class _LangSmithTestSuite:
         if example.modified_at:
             self.update_version(example.modified_at)
 
+        if plugin and nodeid:
+            update = {"inputs": inputs, "reference_outputs": outputs}
+            update = {k: v for k, v in update.items() if v is not None}
+            plugin.update_process_status(nodeid, update)
+
     def _submit_feedback(
         self, run_id: ID_TYPE, feedback: Union[dict, list], **kwargs: Any
     ):
@@ -585,9 +616,14 @@ class _LangSmithTestSuite:
                 self._create_feedback, run_id=run_id, feedback=fb, **kwargs
             )
 
-    def _create_feedback(self, run_id: ID_TYPE, feedback: dict, **kwargs: Any) -> None:
+    def _create_feedback(
+        self, run_id: ID_TYPE, feedback: dict, plugin=None, nodeid=None, **kwargs: Any
+    ) -> None:
         trace_id = self.client.read_run(run_id).trace_id
         self.client.create_feedback(trace_id, **feedback, **kwargs)
+        if plugin and nodeid:
+            val = feedback["score"] if "score" in feedback else feedback["val"]
+            plugin.update_process_status(nodeid, {"feedback": {feedback["key"]: val}})
 
     def shutdown(self):
         self._executor.shutdown(wait=True)
@@ -614,14 +650,37 @@ class _LangSmithTestSuite:
 
 
 class _TestCase:
-    def __init__(self, test_suite: _LangSmithTestSuite, example_id: uuid.UUID) -> None:
+    def __init__(
+        self,
+        test_suite: _LangSmithTestSuite,
+        example_id: uuid.UUID,
+        plugin=None,
+        nodeid=None,
+    ) -> None:
         self.test_suite = test_suite
         self.example_id = example_id
+        self.plugin = plugin
+        self.nodeid = nodeid
 
     def sync_example(
         self, *, inputs: Optional[dict] = None, outputs: Optional[dict] = None
     ) -> None:
-        self.test_suite.sync_example(self.example_id, inputs=inputs, outputs=outputs)
+        self.test_suite.sync_example(
+            self.example_id,
+            inputs=inputs,
+            outputs=outputs,
+            plugin=self.plugin,
+            nodeid=self.nodeid,
+        )
+
+    def submit_feedback(self, *args, **kwargs: Any):
+        self.test_suite._submit_feedback(
+            *args, **kwargs, plugin=self.plugin, nodeid=self.nodeid
+        )
+
+    def log_outputs(self, outputs: dict) -> None:
+        if self.plugin and self.nodeid:
+            self.plugin.update_process_status(self.nodeid, {"outputs": outputs})
 
 
 _TEST_CASE = contextvars.ContextVar[Optional[_TestCase]]("_TEST_CASE", default=None)
@@ -669,13 +728,21 @@ def _ensure_example(
 
 
 def _run_test(
-    func: Callable, *test_args: Any, langtest_extra: _UTExtra, **test_kwargs: Any
+    func: Callable,
+    *test_args: Any,
+    request: Any,
+    langtest_extra: _UTExtra,
+    **test_kwargs: Any,
 ) -> None:
     test_suite, example_id = _ensure_example(
-        func, *test_args, **test_kwargs, langtest_extra=langtest_extra
+        func, *test_args, **test_kwargs, langtest_extra=langtest_extra, request=request
     )
-    _TEST_CASE.set(_TestCase(test_suite, example_id))
+    plugin = request.config.pluginmanager.get_plugin("custom_output_plugin")
+    _TEST_CASE.set(
+        _TestCase(test_suite, example_id, plugin=plugin, nodeid=request.node.nodeid)
+    )
     run_id = uuid.uuid4()
+    # Get the plugin instance
 
     def _test():
         func_inputs = rh._get_inputs_safe(
@@ -690,15 +757,27 @@ def _run_test(
             project_name=test_suite.name,
             exceptions_to_handle=(SkipException,),
         ) as run_tree:
+            if plugin and request.node.nodeid:
+                plugin.update_process_status(
+                    request.node.nodeid, {"start_time": time.time()}
+                )
             try:
                 result = func(*test_args, **test_kwargs)
             except SkipException as e:
-                test_suite.submit_result(run_id, error=repr(e), skipped=True)
+                test_suite.submit_result(
+                    run_id,
+                    error=repr(e),
+                    skipped=True,
+                    plugin=plugin,
+                    nodeid=request.node.nodeid,
+                )
                 outputs = {"skipped_reason": repr(e)}
                 test_suite.end_run(run_tree, example_id, outputs)
                 raise e
             except BaseException as e:
-                test_suite.submit_result(run_id, error=repr(e))
+                test_suite.submit_result(
+                    run_id, error=repr(e), plugin=plugin, nodeid=request.node.nodeid
+                )
                 raise e
             else:
                 outputs = (
@@ -707,8 +786,15 @@ def _run_test(
                     else {"output": result}
                 )
                 test_suite.end_run(run_tree, example_id, outputs)
+            finally:
+                if plugin and request.node.nodeid:
+                    plugin.update_process_status(
+                        request.node.nodeid, {"end_time": time.time()}
+                    )
         try:
-            test_suite.submit_result(run_id, error=None)
+            test_suite.submit_result(
+                run_id, error=None, plugin=plugin, nodeid=request.node.nodeid
+            )
         except BaseException as e:
             logger.warning(f"Failed to create feedback for run_id {run_id}: {e}")
 
@@ -854,7 +940,8 @@ def log_outputs(outputs: dict, /) -> None:
         ...     assert result == 2
     """
     run_tree = rh.get_current_run_tree()
-    if not run_tree:
+    test_case = _TEST_CASE.get()
+    if not run_tree or not test_case:
         msg = (
             "log_outputs should only be called within a pytest test decorated with "
             "@pytest.mark.langsmith, and with tracing enabled (by setting the "
@@ -862,6 +949,7 @@ def log_outputs(outputs: dict, /) -> None:
         )
         raise ValueError(msg)
     run_tree.add_outputs(outputs)
+    test_case.log_outputs(outputs)
 
 
 @warn_beta
@@ -961,9 +1049,7 @@ def log_feedback(
         kwargs["source_run_id"] = run_tree.id
     else:
         run_id = run_tree.trace_id
-    test_case.test_suite._submit_feedback(
-        run_id, cast(Union[list, dict], feedback), **kwargs
-    )
+    test_case.submit_feedback(run_id, cast(Union[list, dict], feedback), **kwargs)
 
 
 @warn_beta
