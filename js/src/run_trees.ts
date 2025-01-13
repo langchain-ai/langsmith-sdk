@@ -9,6 +9,7 @@ import {
 import {
   RuntimeEnvironment,
   getEnvironmentVariable,
+  getLangSmithEnvironmentVariable,
   getRuntimeEnvironment,
 } from "./utils/env.js";
 import { Client } from "./client.js";
@@ -231,7 +232,7 @@ export class RunTree implements BaseRun {
       id: uuid.v4(),
       run_type: "chain",
       project_name:
-        getEnvironmentVariable("LANGCHAIN_PROJECT") ??
+        getLangSmithEnvironmentVariable("PROJECT") ??
         getEnvironmentVariable("LANGCHAIN_SESSION") ?? // TODO: Deprecate
         "default",
       child_runs: [],

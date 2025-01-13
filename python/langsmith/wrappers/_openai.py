@@ -3,6 +3,7 @@ from __future__ import annotations
 import functools
 import logging
 from collections import defaultdict
+from collections.abc import Mapping
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -10,7 +11,6 @@ from typing import (
     DefaultDict,
     Dict,
     List,
-    Mapping,
     Optional,
     Type,
     TypeVar,
@@ -82,23 +82,28 @@ def _reduce_choices(choices: List[Choice]) -> dict:
         "content": "",
     }
     for c in reversed_choices:
-        if c.delta.role:
+        if hasattr(c, "delta") and getattr(c.delta, "role", None):
             message["role"] = c.delta.role
             break
     tool_calls: DefaultDict[int, List[ChoiceDeltaToolCall]] = defaultdict(list)
     for c in choices:
-        if c.delta.content:
-            message["content"] += c.delta.content
-        if c.delta.function_call:
-            if not message.get("function_call"):
-                message["function_call"] = {"name": "", "arguments": ""}
-            if c.delta.function_call.name:
-                message["function_call"]["name"] += c.delta.function_call.name
-            if c.delta.function_call.arguments:
-                message["function_call"]["arguments"] += c.delta.function_call.arguments
-        if c.delta.tool_calls:
-            for tool_call in c.delta.tool_calls:
-                tool_calls[c.index].append(tool_call)
+        if hasattr(c, "delta") and getattr(c.delta, "content", None):
+            if getattr(c.delta, "content", None):
+                message["content"] += c.delta.content
+            if getattr(c.delta, "function_call", None):
+                if not message.get("function_call"):
+                    message["function_call"] = {"name": "", "arguments": ""}
+                name_ = getattr(c.delta.function_call, "name", None)
+                if name_:
+                    message["function_call"]["name"] += name_
+                arguments_ = getattr(c.delta.function_call, "arguments", None)
+                if arguments_:
+                    message["function_call"]["arguments"] += arguments_
+            if getattr(c.delta, "tool_calls", None):
+                tool_calls_list = c.delta.tool_calls
+                if tool_calls_list is not None:
+                    for tool_call in tool_calls_list:
+                        tool_calls[c.index].append(tool_call)
     if tool_calls:
         message["tool_calls"] = [None for _ in tool_calls.keys()]
         for index, tool_call_chunks in tool_calls.items():
@@ -108,22 +113,28 @@ def _reduce_choices(choices: List[Choice]) -> dict:
                 "type": next((c.type for c in tool_call_chunks if c.type), None),
             }
             for chunk in tool_call_chunks:
-                if chunk.function:
+                if getattr(chunk, "function", None):
                     if not message["tool_calls"][index].get("function"):
                         message["tool_calls"][index]["function"] = {
                             "name": "",
                             "arguments": "",
                         }
-                    if chunk.function.name:
+                    name_ = getattr(chunk.function, "name", None)
+                    if name_:
                         fn_ = message["tool_calls"][index]["function"]
-                        fn_["name"] += chunk.function.name
-                    if chunk.function.arguments:
+                        fn_["name"] += name_
+                    arguments_ = getattr(chunk.function, "arguments", None)
+                    if arguments_:
                         fn_ = message["tool_calls"][index]["function"]
-                        fn_["arguments"] += chunk.function.arguments
+                        fn_["arguments"] += arguments_
     return {
-        "index": choices[0].index,
+        "index": getattr(choices[0], "index", 0) if choices else 0,
         "finish_reason": next(
-            (c.finish_reason for c in reversed_choices if c.finish_reason),
+            (
+                c.finish_reason
+                for c in reversed_choices
+                if getattr(c, "finish_reason", None)
+            ),
             None,
         ),
         "message": message,
