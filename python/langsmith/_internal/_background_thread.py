@@ -235,7 +235,6 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
                 args=(weakref.ref(client),),
             ).start()
 
-            # client.tracing_queue.join()
             return
 
     sub_threads: List[threading.Thread] = []
