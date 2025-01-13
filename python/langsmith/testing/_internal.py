@@ -287,23 +287,29 @@ def test(*args: Any, **kwargs: Any) -> Callable:
         if inspect.iscoroutinefunction(func):
 
             @functools.wraps(func)
-            async def async_wrapper(*test_args: Any, **test_kwargs: Any):
+            async def async_wrapper(
+                *test_args: Any, request: Any = None, **test_kwargs: Any
+            ):
                 if disable_tracking:
                     return await func(*test_args, **test_kwargs)
                 await _arun_test(
-                    func, *test_args, **test_kwargs, langtest_extra=langtest_extra
+                    func,
+                    *test_args,
+                    pytest_request=request,
+                    **test_kwargs,
+                    langtest_extra=langtest_extra,
                 )
 
             return async_wrapper
 
         @functools.wraps(func)
-        def wrapper(*test_args: Any, request: Any, **test_kwargs: Any):
+        def wrapper(*test_args: Any, request: Any = None, **test_kwargs: Any):
             if disable_tracking:
                 return func(*test_args, **test_kwargs)
             _run_test(
                 func,
                 *test_args,
-                request=request,
+                pytest_request=request,
                 **test_kwargs,
                 langtest_extra=langtest_extra,
             )
@@ -497,16 +503,16 @@ class _LangSmithTestSuite:
         run_id: uuid.UUID,
         error: Optional[str] = None,
         skipped: bool = False,
-        plugin=None,
-        nodeid=None,
+        pytest_plugin=None,
+        pytest_nodeid=None,
     ) -> None:
         self._executor.submit(
             self._submit_result,
             run_id,
             error,
             skipped=skipped,
-            plugin=plugin,
-            nodeid=nodeid,
+            pytest_plugin=pytest_plugin,
+            pytest_nodeid=pytest_nodeid,
         )
 
     def _submit_result(
@@ -514,8 +520,8 @@ class _LangSmithTestSuite:
         run_id: uuid.UUID,
         error: Optional[str] = None,
         skipped: bool = False,
-        plugin=None,
-        nodeid=None,
+        pytest_plugin=None,
+        pytest_nodeid=None,
     ) -> None:
         if error:
             if skipped:
@@ -539,8 +545,8 @@ class _LangSmithTestSuite:
                 score=1,
             )
             status = "passed"
-        if plugin and nodeid:
-            plugin.update_process_status(nodeid, {"status": status})
+        if pytest_plugin and pytest_nodeid:
+            pytest_plugin.update_process_status(pytest_nodeid, {"status": status})
 
     def sync_example(
         self,
@@ -549,8 +555,8 @@ class _LangSmithTestSuite:
         inputs: Optional[dict] = None,
         outputs: Optional[dict] = None,
         metadata: Optional[dict] = None,
-        plugin=None,
-        nodeid=None,
+        pytest_plugin=None,
+        pytest_nodeid=None,
     ) -> None:
         future = self._executor.submit(
             self._sync_example,
@@ -558,8 +564,8 @@ class _LangSmithTestSuite:
             inputs,
             outputs,
             metadata.copy() if metadata else metadata,
-            plugin,
-            nodeid,
+            pytest_plugin,
+            pytest_nodeid,
         )
         with self._lock:
             self._example_futures[example_id].append(future)
@@ -570,8 +576,8 @@ class _LangSmithTestSuite:
         inputs: Optional[dict],
         outputs: Optional[dict],
         metadata: Optional[dict],
-        plugin: Any,
-        nodeid: Any,
+        pytest_plugin: Any,
+        pytest_nodeid: Any,
     ) -> None:
         inputs_ = _serde_example_values(inputs) if inputs else inputs
         outputs_ = _serde_example_values(outputs) if outputs else outputs
@@ -602,10 +608,10 @@ class _LangSmithTestSuite:
         if example.modified_at:
             self.update_version(example.modified_at)
 
-        if plugin and nodeid:
+        if pytest_plugin and pytest_nodeid:
             update = {"inputs": inputs, "reference_outputs": outputs}
             update = {k: v for k, v in update.items() if v is not None}
-            plugin.update_process_status(nodeid, update)
+            pytest_plugin.update_process_status(pytest_nodeid, update)
 
     def _submit_feedback(
         self, run_id: ID_TYPE, feedback: Union[dict, list], **kwargs: Any
@@ -617,13 +623,20 @@ class _LangSmithTestSuite:
             )
 
     def _create_feedback(
-        self, run_id: ID_TYPE, feedback: dict, plugin=None, nodeid=None, **kwargs: Any
+        self,
+        run_id: ID_TYPE,
+        feedback: dict,
+        pytest_plugin=None,
+        pytest_nodeid=None,
+        **kwargs: Any,
     ) -> None:
         trace_id = self.client.read_run(run_id).trace_id
         self.client.create_feedback(trace_id, **feedback, **kwargs)
-        if plugin and nodeid:
+        if pytest_plugin and pytest_nodeid:
             val = feedback["score"] if "score" in feedback else feedback["val"]
-            plugin.update_process_status(nodeid, {"feedback": {feedback["key"]: val}})
+            pytest_plugin.update_process_status(
+                pytest_nodeid, {"feedback": {feedback["key"]: val}}
+            )
 
     def shutdown(self):
         self._executor.shutdown(wait=True)
@@ -654,13 +667,15 @@ class _TestCase:
         self,
         test_suite: _LangSmithTestSuite,
         example_id: uuid.UUID,
-        plugin=None,
-        nodeid=None,
+        run_id: uuid.UUID,
+        pytest_plugin: Any = None,
+        pytest_nodeid: Any = None,
     ) -> None:
         self.test_suite = test_suite
         self.example_id = example_id
-        self.plugin = plugin
-        self.nodeid = nodeid
+        self.run_id = run_id
+        self.pytest_plugin = pytest_plugin
+        self.pytest_nodeid = pytest_nodeid
 
     def sync_example(
         self, *, inputs: Optional[dict] = None, outputs: Optional[dict] = None
@@ -669,18 +684,53 @@ class _TestCase:
             self.example_id,
             inputs=inputs,
             outputs=outputs,
-            plugin=self.plugin,
-            nodeid=self.nodeid,
+            pytest_plugin=self.pytest_plugin,
+            pytest_nodeid=self.pytest_nodeid,
         )
 
     def submit_feedback(self, *args, **kwargs: Any):
         self.test_suite._submit_feedback(
-            *args, **kwargs, plugin=self.plugin, nodeid=self.nodeid
+            *args,
+            **kwargs,
+            pytest_plugin=self.pytest_plugin,
+            pytest_nodeid=self.pytest_nodeid,
         )
 
     def log_outputs(self, outputs: dict) -> None:
-        if self.plugin and self.nodeid:
-            self.plugin.update_process_status(self.nodeid, {"outputs": outputs})
+        if self.pytest_plugin and self.pytest_nodeid:
+            self.pytest_plugin.update_process_status(
+                self.pytest_nodeid, {"outputs": outputs}
+            )
+
+    def submit_test_result(
+        self,
+        error: Optional[str] = None,
+        skipped: bool = False,
+    ) -> None:
+        return self.test_suite.submit_result(
+            self.run_id,
+            error=error,
+            skipped=skipped,
+            pytest_plugin=self.pytest_plugin,
+            pytest_nodeid=self.pytest_nodeid,
+        )
+
+    def start_time(self) -> None:
+        if self.pytest_plugin and self.pytest_nodeid:
+            self.pytest_plugin.update_process_status(
+                self.pytest_nodeid, {"start_time": time.time()}
+            )
+
+    def end_time(self) -> None:
+        if self.pytest_plugin and self.pytest_nodeid:
+            self.pytest_plugin.update_process_status(
+                self.pytest_nodeid, {"end_time": time.time()}
+            )
+
+    def end_run(self, run_tree, outputs: Any) -> Future:
+        if not (outputs is None or isinstance(outputs, dict)):
+            outputs = {"output": outputs}
+        return self.test_suite.end_run(run_tree, self.example_id, outputs)
 
 
 _TEST_CASE = contextvars.ContextVar[Optional[_TestCase]]("_TEST_CASE", default=None)
@@ -702,9 +752,13 @@ def _get_test_repr(func: Callable, sig: inspect.Signature) -> str:
     return f"{name}{sig}{description}"
 
 
-def _ensure_example(
-    func: Callable, *args: Any, langtest_extra: _UTExtra, **kwargs: Any
-) -> Tuple[_LangSmithTestSuite, uuid.UUID]:
+def _create_test_case(
+    func: Callable,
+    *args: Any,
+    pytest_request: Any,
+    langtest_extra: _UTExtra,
+    **kwargs: Any,
+) -> _TestCase:
     client = langtest_extra["client"] or rt.get_cached_client()
     output_keys = langtest_extra["output_keys"]
     signature = inspect.signature(func)
@@ -724,161 +778,153 @@ def _ensure_example(
         outputs=outputs,
         metadata={"signature": _get_test_repr(func, signature), "name": example_name},
     )
-    return test_suite, example_id
+    pytest_plugin = (
+        pytest_request.config.pluginmanager.get_plugin("langsmith_plugin")
+        if pytest_request
+        else None
+    )
+    pytest_nodeid = pytest_request.node.nodeid if pytest_request else None
+    return _TestCase(
+        test_suite,
+        example_id,
+        run_id=uuid.uuid4(),
+        pytest_plugin=pytest_plugin,
+        pytest_nodeid=pytest_nodeid,
+    )
 
 
 def _run_test(
     func: Callable,
     *test_args: Any,
-    request: Any,
+    pytest_request: Any,
     langtest_extra: _UTExtra,
     **test_kwargs: Any,
 ) -> None:
-    test_suite, example_id = _ensure_example(
-        func, *test_args, **test_kwargs, langtest_extra=langtest_extra, request=request
+    test_case = _create_test_case(
+        func,
+        *test_args,
+        **test_kwargs,
+        pytest_request=pytest_request,
+        langtest_extra=langtest_extra,
     )
-    plugin = request.config.pluginmanager.get_plugin("custom_output_plugin")
-    _TEST_CASE.set(
-        _TestCase(test_suite, example_id, plugin=plugin, nodeid=request.node.nodeid)
-    )
-    run_id = uuid.uuid4()
-    # Get the plugin instance
+    _TEST_CASE.set(test_case)
+    func_sig = inspect.signature(func)
+    func_inputs = rh._get_inputs_safe(func_sig, *test_args, **test_kwargs)
 
     def _test():
-        func_inputs = rh._get_inputs_safe(
-            inspect.signature(func), *test_args, **test_kwargs
-        )
-        # Make sure example is created before creating a run that references it.
+        test_case.start_time()
         with rh.trace(
             name=getattr(func, "__name__", "Test"),
-            run_id=run_id,
-            reference_example_id=example_id,
+            run_id=test_case.run_id,
+            reference_example_id=test_case.example_id,
             inputs=func_inputs,
-            project_name=test_suite.name,
+            project_name=test_case.test_suite.name,
             exceptions_to_handle=(SkipException,),
         ) as run_tree:
-            if plugin and request.node.nodeid:
-                plugin.update_process_status(
-                    request.node.nodeid, {"start_time": time.time()}
-                )
             try:
                 result = func(*test_args, **test_kwargs)
             except SkipException as e:
-                test_suite.submit_result(
-                    run_id,
-                    error=repr(e),
-                    skipped=True,
-                    plugin=plugin,
-                    nodeid=request.node.nodeid,
-                )
-                outputs = {"skipped_reason": repr(e)}
-                test_suite.end_run(run_tree, example_id, outputs)
+                test_case.submit_test_result(error=repr(e), skipped=True)
+                test_case.end_run(run_tree, {"skipped_reason": repr(e)})
                 raise e
             except BaseException as e:
-                test_suite.submit_result(
-                    run_id, error=repr(e), plugin=plugin, nodeid=request.node.nodeid
-                )
+                test_case.submit_test_result(error=repr(e))
                 raise e
             else:
-                outputs = (
-                    result
-                    if result is None or isinstance(result, dict)
-                    else {"output": result}
-                )
-                test_suite.end_run(run_tree, example_id, outputs)
+                test_case.end_run(run_tree, result)
             finally:
-                if plugin and request.node.nodeid:
-                    plugin.update_process_status(
-                        request.node.nodeid, {"end_time": time.time()}
-                    )
+                test_case.end_time()
         try:
-            test_suite.submit_result(
-                run_id, error=None, plugin=plugin, nodeid=request.node.nodeid
-            )
+            test_case.submit_test_result()
         except BaseException as e:
-            logger.warning(f"Failed to create feedback for run_id {run_id}: {e}")
+            logger.warning(
+                f"Failed to create feedback for run_id {test_case.run_id}:\n{e}"
+            )
 
-    cache_path = (
-        Path(langtest_extra["cache"]) / f"{test_suite.id}.yaml"
-        if langtest_extra["cache"]
-        else None
-    )
+    if langtest_extra["cache"]:
+        cache_path = Path(langtest_extra["cache"]) / f"{test_case.test_suite.id}.yaml"
+    else:
+        cache_path = None
     current_context = rh.get_tracing_context()
     metadata = {
         **(current_context["metadata"] or {}),
         **{
-            "experiment": test_suite.experiment.name,
-            "reference_example_id": str(example_id),
+            "experiment": test_case.test_suite.experiment.name,
+            "reference_example_id": str(test_case.example_id),
         },
     }
     with rh.tracing_context(
         **{**current_context, "metadata": metadata}
     ), ls_utils.with_optional_cache(
-        cache_path, ignore_hosts=[test_suite.client.api_url]
+        cache_path, ignore_hosts=[test_case.test_suite.client.api_url]
     ):
         _test()
 
 
 async def _arun_test(
-    func: Callable, *test_args: Any, langtest_extra: _UTExtra, **test_kwargs: Any
+    func: Callable,
+    *test_args: Any,
+    pytest_request: Any,
+    langtest_extra: _UTExtra,
+    **test_kwargs: Any,
 ) -> None:
-    test_suite, example_id = _ensure_example(
-        func, *test_args, **test_kwargs, langtest_extra=langtest_extra
+    test_case = _create_test_case(
+        func,
+        *test_args,
+        **test_kwargs,
+        pytest_request=pytest_request,
+        langtest_extra=langtest_extra,
     )
-    _TEST_CASE.set(_TestCase(test_suite, example_id))
-    run_id = uuid.uuid4()
+    _TEST_CASE.set(test_case)
+    func_sig = inspect.signature(func)
+    func_inputs = rh._get_inputs_safe(func_sig, *test_args, **test_kwargs)
 
     async def _test():
-        func_inputs = rh._get_inputs_safe(
-            inspect.signature(func), *test_args, **test_kwargs
-        )
+        test_case.start_time()
         with rh.trace(
             name=getattr(func, "__name__", "Test"),
-            run_id=run_id,
-            reference_example_id=example_id,
+            run_id=test_case.run_id,
+            reference_example_id=test_case.example_id,
             inputs=func_inputs,
-            project_name=test_suite.name,
+            project_name=test_case.test_suite.name,
             exceptions_to_handle=(SkipException,),
         ) as run_tree:
             try:
                 result = await func(*test_args, **test_kwargs)
             except SkipException as e:
-                test_suite.submit_result(run_id, error=repr(e), skipped=True)
-                outputs = {"skipped_reason": repr(e)}
-                test_suite.end_run(run_tree, example_id, outputs)
+                test_case.submit_test_result(error=repr(e), skipped=True)
+                test_case.end_run(run_tree, {"skipped_reason": repr(e)})
                 raise e
             except BaseException as e:
-                test_suite.submit_result(run_id, error=repr(e))
+                test_case.submit_test_result(error=repr(e))
                 raise e
             else:
-                outputs = (
-                    result
-                    if result is None or isinstance(result, dict)
-                    else {"output": result}
-                )
-                test_suite.end_run(run_tree, example_id, outputs)
+                test_case.end_run(run_tree, result)
+            finally:
+                test_case.end_time()
         try:
-            test_suite.submit_result(run_id, error=None)
+            test_case.submit_test_result()
         except BaseException as e:
-            logger.warning(f"Failed to create feedback for run_id {run_id}: {e}")
+            logger.warning(
+                f"Failed to create feedback for run_id {test_case.run_id}:\n{e}"
+            )
 
-    cache_path = (
-        Path(langtest_extra["cache"]) / f"{test_suite.id}.yaml"
-        if langtest_extra["cache"]
-        else None
-    )
+    if langtest_extra["cache"]:
+        cache_path = Path(langtest_extra["cache"]) / f"{test_case.test_suite.id}.yaml"
+    else:
+        cache_path = None
     current_context = rh.get_tracing_context()
     metadata = {
         **(current_context["metadata"] or {}),
         **{
-            "experiment": test_suite.experiment.name,
-            "reference_example_id": str(example_id),
+            "experiment": test_case.test_suite.experiment.name,
+            "reference_example_id": str(test_case.example_id),
         },
     }
     with rh.tracing_context(
         **{**current_context, "metadata": metadata}
     ), ls_utils.with_optional_cache(
-        cache_path, ignore_hosts=[test_suite.client.api_url]
+        cache_path, ignore_hosts=[test_case.test_suite.client.api_url]
     ):
         await _test()
 

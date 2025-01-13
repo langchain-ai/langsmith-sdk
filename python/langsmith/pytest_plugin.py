@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import os
 import time
 from threading import Lock
 
@@ -11,14 +12,27 @@ from langsmith.testing._internal import test as ls_test
 
 
 def pytest_addoption(parser):
-    """Set CLI options."""
-    group = parser.getgroup("custom-output")
+    """Set CLI options for choosing output format."""
+    group = parser.getgroup("langsmith", "LangSmith")
     group.addoption(
-        "--use-custom-output",
-        action="store_true",
-        default=False,
-        help="Enable custom JSON output instead of the default terminal output.",
+        "--output",
+        action="store",
+        default="pytest",
+        choices=["langsmith", "ls", "pytest"],
+        help=(
+            "Choose output format: 'langsmith' | 'ls' "
+            "(rich custom LangSmith output) or 'pytest' "
+            "(standard pytest). Defaults to 'pytest'."
+        ),
     )
+
+
+def pytest_cmdline_preparse(config, args):
+    """Call immediately after command line options are parsed."""
+    if any(opt in args for opt in ["--output=langsmith", "--output=ls"]):
+        # Only add --quiet if it's not already there
+        if not any(a in args for a in ["-q", "--quiet"]):
+            args.insert(0, "--quiet")
 
 
 @pytest.hookimpl(hookwrapper=True)
@@ -41,24 +55,26 @@ def pytest_runtest_call(item):
 
 def pytest_sessionstart(session):
     """Conditionally remove the terminalreporter plugin."""
-    if session.config.getoption("--use-custom-output"):
+    if session.config.getoption("--output") in ("langsmith", "ls"):
         tr = session.config.pluginmanager.get_plugin("terminalreporter")
         if tr:
             session.config.pluginmanager.unregister(tr)
 
 
-class CustomOutputPlugin:
+class LangSmithPlugin:
     """Plugin for rendering LangSmith results."""
 
     def __init__(self):
         """Initialize."""
         from rich.console import Console
+        from rich.live import Live
 
         self.process_status = {}  # Track process status
         self.status_lock = Lock()  # Thread-safe updates
         self.console = Console()
-        self.live = None
-        self.test_count = 0
+
+        self.live = Live(self.generate_table(), refresh_per_second=4)
+        self.live.start()
 
     def update_process_status(self, process_id, status):
         """Update test results."""
@@ -85,23 +101,11 @@ class CustomOutputPlugin:
                     **status.pop("outputs"),
                 }
             self.process_status[process_id] = {**current_status, **status}
-            if self.live:
-                self.live.update(self.generate_table())
-
-    def pytest_collection_modifyitems(self, items):
-        """Get total test count for progress tracking."""
-        self.test_count = len(items)
+        self.live.update(self.generate_table())
 
     def pytest_runtest_logstart(self, nodeid):
         """Initialize live display when first test starts."""
-        from rich.live import Live
-
-        if not self.live:
-            self.live = Live(self.generate_table(), refresh_per_second=4)
-            self.live.start()
-        self.update_process_status(
-            nodeid, {"status": "running", "start_time": time.time()}
-        )
+        self.update_process_status(nodeid, {"status": "running"})
 
     def generate_table(self):
         """Generate results table."""
@@ -120,13 +124,14 @@ class CustomOutputPlugin:
         max_status = len("status")
         max_feedback = len("feedback")
         max_duration = len("duration")
+        now = time.time()
         for pid, status in self.process_status.items():
-            duration = status.get("end_time", time.time()) - status["start_time"]
+            duration = status.get("end_time", now) - status.get("start_time", now)
             feedback = "\n".join(
                 f"{k}: {v}" for k, v in status.get("feedback", {}).items()
             )
             max_duration = max(len(f"{duration:.2f}s"), max_duration)
-            max_status = max(len(status["status"]), max_status)
+            max_status = max(len(status.get("status", "queued")), max_status)
             max_feedback = max(len(feedback), max_feedback)
 
         max_dynamic_col_width = (
@@ -139,9 +144,9 @@ class CustomOutputPlugin:
                 "passed": "green",
                 "failed": "red",
                 "skipped": "cyan",
-            }.get(status["status"], "white")
+            }.get(status.get("status", "queued"), "white")
 
-            duration = status.get("end_time", time.time()) - status["start_time"]
+            duration = status.get("end_time", now) - status.get("start_time", now)
             feedback = "\n".join(
                 f"{k}: {v}" for k, v in status.get("feedback", {}).items()
             )
@@ -153,7 +158,7 @@ class CustomOutputPlugin:
                 _abbreviate(inputs, max_len=max_dynamic_col_width),
                 _abbreviate(reference_outputs, max_len=max_dynamic_col_width),
                 _abbreviate(outputs, max_len=max_dynamic_col_width),
-                f"[{status_color}]{status['status']}[/{status_color}]",
+                f"[{status_color}]{status.get('status', 'queued')}[/{status_color}]",
                 feedback,
                 f"{duration:.2f}s",
             )
@@ -169,25 +174,26 @@ class CustomOutputPlugin:
         if reporter:
             reporter.warning_summary = lambda *args, **kwargs: None
 
-    # def pytest_runtest_logreport(self, report):
-    #     if hasattr(report, "warnings"):
-    #         report.warnings = []
-    #     pass
-
 
 def pytest_configure(config):
     """Register the 'langsmith' marker."""
     config.addinivalue_line(
         "markers", "langsmith: mark test to be tracked in LangSmith"
     )
-    if config.getoption("--use-custom-output"):
+    if config.getoption("--output") in ("langsmith", "ls"):
         if not importlib.util.find_spec("rich"):
             msg = (
-                "Must have 'rich' installed to use --use-custom-output. Please install "
-                "with: `pip install -U 'langsmith[pytest]'`"
+                "Must have 'rich' installed to use --output='langsmith' | 'ls'. "
+                "Please install with: `pip install -U 'langsmith[pytest]'`"
             )
             raise ValueError(msg)
-        config.pluginmanager.register(CustomOutputPlugin(), "custom_output_plugin")
+        if os.environ.get("PYTEST_XDIST_TESTRUNUID"):
+            msg = (
+                "--output='langsmith' | 'ls' not supported with pytest-xdist. "
+                "Please remove the '--output' option or '-n' option."
+            )
+            raise ValueError(msg)
+        config.pluginmanager.register(LangSmithPlugin(), "langsmith_plugin")
         # Suppress warnings summary
         config.option.showwarnings = False
 
