@@ -2102,13 +2102,15 @@ def test_create_run_with_zstd_compression(mock_session_cls: mock.Mock) -> None:
             info=info,
         )
 
+        time.sleep(1)
+
         # Create a few runs with larger payloads so there's something to compress
         for i in range(2):
             run_id = uuid.uuid4()
             client.create_run(
                 name=f"my_test_run_{i}",
                 run_type="llm",
-                inputs={"some_key": "some_val" * 1000},  # bigger input
+                inputs={"some_key": "some_val" * 1000},
                 id=run_id,
                 trace_id=run_id,
                 dotted_order=str(run_id),

@@ -1278,7 +1278,10 @@ class Client:
             if self._pyo3_client is not None:
                 self._pyo3_client.create_run(run_create)
             elif self.compressed_runs is not None:
-                assert self._data_available_event is not None
+                if self._data_available_event is None:
+                    raise ValueError(
+                        "Run compression is enabled but threading event is not configured"
+                    )
                 serialized_op = serialize_run_dict("post", run_create)
                 multipart_form = (
                     serialized_run_operation_to_multipart_parts_and_context(
@@ -1981,7 +1984,10 @@ class Client:
                     )
                 )
                 with self.compressed_runs.lock:
-                    assert self._data_available_event is not None
+                    if self._data_available_event is None:
+                        raise ValueError(
+                            "Run compression is enabled but threading event is not configured"
+                        )
                     compress_multipart_parts_and_context(
                         multipart_form,
                         self.compressed_runs,
@@ -2017,7 +2023,10 @@ class Client:
         if self.compressed_runs is None:
             return
 
-        assert self._futures is not None
+        if self._futures is None:
+            raise ValueError(
+                "Run compression is enabled but request pool futures is not set"
+            )
 
         # Attempt to drain and send any remaining data
         from langsmith._internal._background_thread import (
