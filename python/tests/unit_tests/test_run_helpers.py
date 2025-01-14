@@ -32,6 +32,7 @@ from langsmith import utils as ls_utils
 from langsmith._internal import _aiter as aitertools
 from langsmith.run_helpers import (
     _get_inputs,
+    _get_inputs_and_attachments_safe,
     as_runnable,
     get_current_run_tree,
     is_traceable_function,
@@ -1817,3 +1818,20 @@ def test_traceable_input_attachments():
         )
         assert mime_type_output == "text/plain"
         assert content_output == b"noidea"
+
+
+def test__get_inputs_and_attachments_safe_unhashable_default() -> None:
+    def foo(x: dict = {}) -> str:
+        return "bar"
+
+    expected = {"x": {}}
+    actual = _get_inputs_and_attachments_safe(inspect.signature(foo))[0]
+    assert expected == actual
+
+    expected = {"x": {"a": "b"}}
+    actual = _get_inputs_and_attachments_safe(inspect.signature(foo), {"a": "b"})[0]
+    assert expected == actual
+
+    expected = {"x": {"b": "c"}}
+    actual = _get_inputs_and_attachments_safe(inspect.signature(foo), x={"b": "c"})[0]
+    assert expected == actual
