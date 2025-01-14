@@ -483,6 +483,7 @@ export class _ExperimentManager {
     const project = await this._getProject(firstExample);
     await this._printExperimentStart();
     this._metadata["num_repetitions"] = this._numRepetitions;
+    this._metadata["dataset_version"] = await this._getDatasetVersion();
     return new _ExperimentManager({
       examples,
       experiment: project,
@@ -869,7 +870,6 @@ export class _ExperimentManager {
       throw new Error("Experiment not yet started.");
     }
     const projectMetadata = await this._getExperimentMetadata();
-    projectMetadata["dataset_version"] = await this._getDatasetVersion();
     projectMetadata["dataset_splits"] = await this._getDatasetSplits();
     // Update revision_id if not already set
     if (!projectMetadata["revision_id"]) {
@@ -894,7 +894,6 @@ class ExperimentResults implements AsyncIterableIterator<ExperimentResultRow> {
   results: ExperimentResultRow[] = [];
   processedCount = 0;
   summaryResults: EvaluationResults;
-  datasetVersion: string | undefined;
 
   constructor(experimentManager: _ExperimentManager) {
     this.manager = experimentManager;
@@ -902,6 +901,10 @@ class ExperimentResults implements AsyncIterableIterator<ExperimentResultRow> {
 
   get experimentName(): string {
     return this.manager.experimentName;
+  }
+
+  get datasetVersion(): string | undefined {
+    return this.manager._metadata?.dataset_version;
   }
 
   [Symbol.asyncIterator](): AsyncIterableIterator<ExperimentResultRow> {
@@ -924,7 +927,6 @@ class ExperimentResults implements AsyncIterableIterator<ExperimentResultRow> {
       this.processedCount++;
     }
     this.summaryResults = await manager.getSummaryScores();
-    this.datasetVersion = await manager._getDatasetVersion();
   }
 
   get length(): number {
