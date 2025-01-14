@@ -17,7 +17,14 @@ from langsmith.schemas import Attachment
 
 @pytest.fixture
 def langchain_client() -> Generator[Client, None, None]:
-    yield Client()
+    yield Client(
+        info={
+            "instance_flags": {
+                "dataset_examples_multipart_enabled": True,
+                "examples_multipart_enabled": True,
+            }
+        }
+    )
 
 
 def poll_runs_until_count(
@@ -485,10 +492,10 @@ async def test_end_metadata_with_run_tree(langchain_client: Client):
 
 def test_trace_file_path(langchain_client: Client) -> None:
     """Test that you can trace attachments with file paths"""
-    project_name = "__test_trace_file_path"
+    project_name = "__test_trace_file_path3"
     run_meta = uuid.uuid4().hex
 
-    @traceable(run_type="chain")
+    @traceable(run_type="chain", dangerously_allow_filesystem=True)
     def my_func(foo: Attachment, bar: Attachment):
         return "foo"
 
