@@ -201,7 +201,7 @@ def serialized_feedback_operation_to_multipart_parts_and_context(
                 (
                     None,
                     op.feedback,
-                    "application/json",
+                    f"application/json; length={len(op.feedback)}",
                     {"Content-Length": str(len(op.feedback))},
                 ),
             )
@@ -222,7 +222,7 @@ def serialized_run_operation_to_multipart_parts_and_context(
             (
                 None,
                 op._none,
-                "application/json",
+                f"application/json; length={len(op._none)}",
                 {"Content-Length": str(len(op._none))},
             ),
         )
@@ -241,7 +241,7 @@ def serialized_run_operation_to_multipart_parts_and_context(
                 (
                     None,
                     valb,
-                    "application/json",
+                    f"application/json; length={len(valb)}",
                     {"Content-Length": str(len(valb))},
                 ),
             ),
@@ -263,7 +263,7 @@ def serialized_run_operation_to_multipart_parts_and_context(
                     (
                         None,
                         valb,
-                        content_type,
+                        f"{content_type}; length={len(valb)}",
                         {"Content-Length": str(len(valb))},
                     ),
                 )
