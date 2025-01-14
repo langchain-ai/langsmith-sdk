@@ -77,9 +77,6 @@ from langsmith._internal._background_thread import (
 from langsmith._internal._background_thread import (
     tracing_control_thread_func as _tracing_control_thread_func,
 )
-from langsmith._internal._background_thread import (
-    tracing_control_thread_func_compress_parallel as _tracing_control_thread_func_compress_parallel,
-)
 from langsmith._internal._beta_decorator import warn_beta
 from langsmith._internal._compressed_runs import CompressedRuns
 from langsmith._internal._constants import (
@@ -476,13 +473,6 @@ class Client:
         # Create a session and register a finalizer to close it
         session_ = session if session else requests.Session()
         self.session = session_
-        if ls_utils.get_env_var("USE_RUN_COMPRESSION"):
-            self._futures: set[cf.Future] = set()
-            self.compressed_runs: Optional[CompressedRuns] = CompressedRuns()
-            self._data_available_event = threading.Event()
-        else:
-            self.compressed_runs = None
-
         self._info = (
             info
             if info is None or isinstance(info, ls_schemas.LangSmithInfo)
@@ -490,17 +480,12 @@ class Client:
         )
         weakref.finalize(self, close_session, self.session)
         atexit.register(close_session, session_)
+        self.compressed_runs: Optional[CompressedRuns] = None
+        self._data_available_event: Optional[threading.Event] = None
+        self._futures: Optional[set[cf.Future]] = None
         # Initialize auto batching
-        if auto_batch_tracing and self.compressed_runs is not None:
-            self.tracing_queue: Optional[PriorityQueue] = None
-            threading.Thread(
-                target=_tracing_control_thread_func_compress_parallel,
-                # arg must be a weakref to self to avoid the Thread object
-                # preventing garbage collection of the Client object
-                args=(weakref.ref(self),),
-            ).start()
-        elif auto_batch_tracing:
-            self.tracing_queue = PriorityQueue()
+        if auto_batch_tracing:
+            self.tracing_queue: Optional[PriorityQueue] = PriorityQueue()
 
             threading.Thread(
                 target=_tracing_control_thread_func,
@@ -1293,6 +1278,10 @@ class Client:
             if self._pyo3_client is not None:
                 self._pyo3_client.create_run(run_create)
             elif self.compressed_runs is not None:
+                if self._data_available_event is None:
+                    raise ValueError(
+                        "Run compression is enabled but threading event is not configured"
+                    )
                 serialized_op = serialize_run_dict("post", run_create)
                 multipart_form = (
                     serialized_run_operation_to_multipart_parts_and_context(
@@ -1995,6 +1984,10 @@ class Client:
                     )
                 )
                 with self.compressed_runs.lock:
+                    if self._data_available_event is None:
+                        raise ValueError(
+                            "Run compression is enabled but threading event is not configured"
+                        )
                     compress_multipart_parts_and_context(
                         multipart_form,
                         self.compressed_runs,
@@ -2029,6 +2022,11 @@ class Client:
         """Force flush the currently buffered compressed runs."""
         if self.compressed_runs is None:
             return
+
+        if self._futures is None:
+            raise ValueError(
+                "Run compression is enabled but request pool futures is not set"
+            )
 
         # Attempt to drain and send any remaining data
         from langsmith._internal._background_thread import (
