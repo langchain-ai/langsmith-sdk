@@ -1363,6 +1363,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                     "reader": io.BytesIO(
                         self._attachment_raw_data_dict[str(example.id) + name]
                     ),
+                    "mime_type": attachment["mime_type"],
                 }
             else:
                 new_attachments[name] = attachment

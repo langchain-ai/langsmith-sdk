@@ -617,6 +617,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                     "reader": io.BytesIO(
                         self._attachment_raw_data_dict[str(example.id) + name]
                     ),
+                    "mime_type": attachment["mime_type"],
                 }
             else:
                 new_attachments[name] = attachment
@@ -744,6 +745,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                 new_attachments[name] = {
                     "presigned_url": attachment["presigned_url"],
                     "reader": reader,
+                    "mime_type": attachment["mime_type"],
                 }
             else:
                 new_attachments[name] = attachment
