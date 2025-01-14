@@ -235,8 +235,6 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
                 args=(weakref.ref(client),),
             ).start()
 
-            return
-
     sub_threads: List[threading.Thread] = []
     # 1 for this func, 1 for getrefcount, 1 for _get_data_type_cached
     num_known_refs = 3
