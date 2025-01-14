@@ -129,7 +129,7 @@ class AttachmentInfo(TypedDict):
 
     presigned_url: str
     reader: BinaryIOLike
-    mime_type: str
+    mime_type: Optional[str]
 
 
 class Example(ExampleBase):

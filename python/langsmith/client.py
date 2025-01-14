@@ -7302,6 +7302,7 @@ def _convert_stored_attachments_to_attachments_dict(data, *, attachments_key):
             attachments_dict[key.removeprefix("attachment.")] = {
                 "presigned_url": value["presigned_url"],
                 "reader": reader,
+                "mime_type": value.get("mime_type"),
             }
     return attachments_dict
 
