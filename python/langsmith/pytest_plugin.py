@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 import time
+from collections import defaultdict
 from threading import Lock
 
 import pytest
@@ -125,15 +126,48 @@ class LangSmithPlugin:
         max_feedback = len("feedback")
         max_duration = len("duration")
         now = time.time()
+        durations = []
+        numeric_feedbacks = defaultdict(list)
         for pid, status in self.process_status.items():
             duration = status.get("end_time", now) - status.get("start_time", now)
+            durations.append(duration)
             feedback = "\n".join(
                 f"{k}: {v}" for k, v in status.get("feedback", {}).items()
             )
+            for k, v in status.get("feedback", {}).items():
+                if isinstance(v, (float, int, bool)):
+                    numeric_feedbacks[k].append(v)
             max_duration = max(len(f"{duration:.2f}s"), max_duration)
             max_status = max(len(status.get("status", "queued")), max_status)
             max_feedback = max(len(feedback), max_feedback)
 
+        passed_count = sum(
+            s.get("status") == "passed" for s in self.process_status.values()
+        )
+        failed_count = sum(
+            s.get("status") == "failed" for s in self.process_status.values()
+        )
+
+        # You could arrange a row to show the aggregated data—here, in the last column:
+        if passed_count + failed_count:
+            rate = passed_count / (passed_count + failed_count)
+            color = "green" if rate == 1 else "red"
+            aggregate_status = f"[{color}]{rate:.0%}[/{color}]"
+        else:
+            aggregate_status = "Passed: --"
+        if durations:
+            aggregate_duration = f"{sum(durations) / len(durations):.2f}s"
+        else:
+            aggregate_duration = "--s"
+        if numeric_feedbacks:
+            aggregate_feedback = "\n".join(
+                f"{k}: {sum(v) / len(v)}" for k, v in numeric_feedbacks.items()
+            )
+        else:
+            aggregate_feedback = "--"
+
+        max_duration = max(max_duration, len(aggregate_duration))
+        max_feedback = max(max_feedback, len(aggregate_feedback))
         max_dynamic_col_width = (
             self.console.width - (max_status + max_feedback + max_duration)
         ) // 4
@@ -162,6 +196,20 @@ class LangSmithPlugin:
                 feedback,
                 f"{duration:.2f}s",
             )
+
+        # Add a blank row or a section separator if you like:
+        table.add_row("", "", "", "", "", "", "")
+        # Finally, our “footer” row:
+        table.add_row(
+            "[bold]Results[/bold]",
+            "",
+            "",
+            "",
+            aggregate_status,
+            aggregate_feedback,
+            aggregate_duration,
+        )
+
         return table
 
     def pytest_configure(self, config):

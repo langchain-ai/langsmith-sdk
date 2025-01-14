@@ -79,7 +79,7 @@ pytest-socket = "^0.7.0"
 vcr = ["vcrpy"]
 langsmith_pyo3 = ["langsmith-pyo3"]
 compression = ["zstandard"]
-pytest = ["rich"]
+pytest = ["rich", "vcrpy"]
 
 [build-system]
 requires = ["poetry-core"]
