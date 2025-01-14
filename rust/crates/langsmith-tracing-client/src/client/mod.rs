@@ -3,6 +3,7 @@ mod run;
 
 pub mod async_enabled;
 pub mod blocking;
+pub mod streaming;
 
 pub use errors::TracingClientError;
 pub use run::{
