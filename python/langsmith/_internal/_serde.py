@@ -79,6 +79,11 @@ _serialization_methods = [
 ]
 
 
+# IMPORTANT: This function is used from Rust code in `langsmith-pyo3` serialization,
+#            in order to handle serializing these tricky Python types *from Rust*.
+#            Do not cause this function to become inaccessible (e.g. by deleting
+#            or renaming it) without also fixing the corresponding Rust code found in:
+#               rust/crates/langsmith-pyo3/src/serialization/mod.rs
 def _serialize_json(obj: Any) -> Any:
     try:
         if isinstance(obj, (set, tuple)):

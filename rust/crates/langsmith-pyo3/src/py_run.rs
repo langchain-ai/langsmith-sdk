@@ -22,6 +22,12 @@ impl RunCreateExtended {
 
 impl FromPyObject<'_> for RunCreateExtended {
     fn extract_bound(value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        // Perform a runtime check that we've successfully located the `langsmith` Python code
+        // used to transform Python objects which aren't natively serializeable by `orjson`.
+        //
+        // This assertion ensures that we won't later fail to serialize e.g. Pydantic objects.
+        serialization::assert_orjson_default_is_present();
+
         let run_create = value.extract::<RunCreate>()?.into_inner();
 
         let attachments = {
@@ -58,6 +64,12 @@ impl RunUpdateExtended {
 
 impl FromPyObject<'_> for RunUpdateExtended {
     fn extract_bound(value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        // Perform a runtime check that we've successfully located the `langsmith` Python code
+        // used to transform Python objects which aren't natively serializeable by `orjson`.
+        //
+        // This assertion ensures that we won't later fail to serialize e.g. Pydantic objects.
+        serialization::assert_orjson_default_is_present();
+
         let run_update = value.extract::<RunUpdate>()?.into_inner();
 
         // TODO: attachments are WIP at the moment, ignore them here for now.
@@ -273,7 +285,7 @@ fn extract_string_like(value: &Bound<'_, PyAny>) -> PyResult<String> {
             // However, orjson supports serializing UUID objects, so the easiest way to get
             // a Rust string from a Python UUID object is to serialize the UUID to a JSON string
             // and then parse out the string.
-            let Ok(buffer) = self::serialization::dumps(value.as_ptr()) else {
+            let Ok(buffer) = serialization::dumps(value.as_ptr()) else {
                 // orjson failed to deserialize the object. The fact that orjson is involved
                 // is an internal implementation detail, so return the original error instead.
                 // It looks like this:
