@@ -196,7 +196,8 @@ impl RunProcessor {
             Ok(())
         } else {
             let status = response.status();
-            Err(TracingClientError::HttpError(status))
+            let message = response.text().unwrap_or_default();
+            Err(TracingClientError::HttpError(status, message))
         }
     }
 

@@ -8,8 +8,8 @@ pub enum TracingClientError {
     #[error("Serialization error: {0}")]
     SerializationError(#[from] serde_json::Error),
 
-    #[error("HTTP error: {0}")]
-    HttpError(reqwest::StatusCode),
+    #[error("HTTP error: status {0}, message \"{1}\"")]
+    HttpError(reqwest::StatusCode, String),
 
     #[error("Request error: {0}")]
     RequestError(#[from] reqwest::Error),
