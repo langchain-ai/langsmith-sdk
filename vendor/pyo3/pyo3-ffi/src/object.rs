@@ -214,7 +214,7 @@ pub unsafe fn Py_SIZE(ob: *mut PyObject) -> Py_ssize_t {
 
 #[inline(always)]
 #[cfg(all(Py_3_12, not(Py_GIL_DISABLED)))]
-unsafe fn _Py_IsImmortal(op: *mut PyObject) -> c_int {
+pub unsafe fn _Py_IsImmortal(op: *mut PyObject) -> c_int {
     #[cfg(target_pointer_width = "64")]
     {
         (((*op).ob_refcnt.ob_refcnt as crate::PY_INT32_T) < 0) as c_int
