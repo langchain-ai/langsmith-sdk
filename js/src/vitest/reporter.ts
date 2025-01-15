@@ -1,6 +1,6 @@
 /* eslint-disable import/no-extraneous-dependencies */
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore Import does not to work with our CJS build order
+// @ts-ignore Import throws an error in internal CJS build, but seems to work fine after build
 import { DefaultReporter, type TestModule } from "vitest/reporters";
 
 import { RunnerTestFile } from "vitest";
