@@ -25,6 +25,7 @@ impl BlockingTracingClient {
     pub fn new(
         endpoint: String,
         api_key: String,
+        queue_capacity: usize,
         batch_size: usize,
         batch_timeout_millis: u64,
         compression_level: i32,
@@ -32,6 +33,7 @@ impl BlockingTracingClient {
         let config = RustClientConfig {
             endpoint,
             api_key,
+            queue_capacity,
             send_at_batch_size: batch_size,
             send_at_batch_time: Duration::from_millis(batch_timeout_millis),
             compression_level,
