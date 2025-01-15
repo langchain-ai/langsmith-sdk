@@ -20,7 +20,7 @@
   "includeVersion": true,
   "sourceLinkTemplate": "https://github.com/langchain-ai/langsmith-sdk/blob/{gitRevision}/{path}#L{line}",
   "logLevel": "Error",
-  "name": "LangChain.js",
+  "name": "LangSmith",
   "skipErrorChecking": false,
   "exclude": ["dist"],
   "hostedBaseUrl": "https://docs.smith.langchain.com/reference/js/",

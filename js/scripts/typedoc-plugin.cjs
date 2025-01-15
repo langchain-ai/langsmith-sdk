@@ -60,8 +60,8 @@ function shouldRemoveReflection(reflection) {
   }
 
   if (REFLECTION_KINDS_TO_HIDE.find((kindToHide) => kindToHide === kind)) {
-    if (reflection.name.startsWith("_") || reflection.name.startsWith("lc_")) {
-      // Remove all reflections which start with an `_` or `lc_`
+    if (reflection.name.startsWith("_") || reflection.name.startsWith("ls_")) {
+      // Remove all reflections which start with an `_` or `ls_` as those are internal
       return true;
     }
   }
