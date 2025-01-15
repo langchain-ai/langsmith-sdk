@@ -853,6 +853,7 @@ class trace:
 
         Warns if unsupported kwargs are passed.
         """
+        self._end_on_exit = kwargs.pop("_end_on_exit", True)
         if kwargs:
             warnings.warn(
                 "The `trace` context manager no longer supports the following kwargs: "
@@ -980,7 +981,7 @@ class trace:
             self.new_run.end(error=tb)
         if self.old_ctx is not None:
             enabled = utils.tracing_is_enabled(self.old_ctx)
-            if enabled is True:
+            if enabled is True and not self._end_on_exit:
                 self.new_run.patch()
 
             _set_tracing_context(self.old_ctx)
