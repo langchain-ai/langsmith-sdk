@@ -1642,7 +1642,6 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         self._run_evaluators,
                         evaluators,
                         current_results,
-                        executor,
                     )
             else:
                 futures = set()
@@ -1652,7 +1651,6 @@ class _ExperimentManager(_ExperimentManagerMixin):
                             self._run_evaluators,
                             evaluators,
                             current_results,
-                            executor,
                         )
                     )
                     try:
