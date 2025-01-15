@@ -70,8 +70,8 @@ class LangSmithPlugin:
         from rich.console import Console  # type: ignore[import-not-found]
         from rich.live import Live  # type: ignore[import-not-found]
 
-        self.test_suites: dict[str, list[str]] = defaultdict(list)
-        self.test_suite_urls: dict[str, str] = {}
+        self.test_suites = defaultdict(list)
+        self.test_suite_urls = {}
 
         self.process_status = {}  # Track process status
         self.status_lock = Lock()  # Thread-safe updates

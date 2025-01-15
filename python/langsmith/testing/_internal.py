@@ -664,9 +664,13 @@ class _TestCase:
     def submit_feedback(self, *args, **kwargs: Any):
         self.test_suite._submit_feedback(
             *args,
-            **kwargs,
-            pytest_plugin=self.pytest_plugin,
-            pytest_nodeid=self.pytest_nodeid,
+            **{
+                **kwargs,
+                **dict(
+                    pytest_plugin=self.pytest_plugin,
+                    pytest_nodeid=self.pytest_nodeid,
+                ),
+            },
         )
 
     def log_outputs(self, outputs: dict) -> None:
@@ -759,7 +763,7 @@ def _create_test_case(
     pytest_nodeid = pytest_request.node.nodeid if pytest_request else None
     if pytest_plugin:
         pytest_plugin.test_suite_urls[test_suite._dataset.name] = (
-            test_suite._dataset.url
+            cast(str, test_suite._dataset.url)
             + "/compare?selectedSessions="
             + str(test_suite.experiment_id)
         )
