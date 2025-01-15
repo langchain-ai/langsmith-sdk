@@ -84,12 +84,10 @@ class LangSmithPlugin:
             self.generate_tables(), console=self.console, refresh_per_second=10
         )
         self.live.start()
-        self.live.console.print("\nCollecting tests...")
+        self.live.console.print("Collecting tests...")
 
     def pytest_collection_finish(self, session):
-        """Called after the collection phase is completed and
-        session.items is fully populated.
-        """
+        """Call after collection phase is completed and session.items is populated."""
         self.collected_nodeids = set()
         for item in session.items:
             self.collected_nodeids.add(item.nodeid)
@@ -102,7 +100,7 @@ class LangSmithPlugin:
         """Update test results."""
         # First update
         if not self.process_status:
-            self.live.console.print("Running tests...\n")
+            self.live.console.print("Running tests...")
 
         with self.status_lock:
             current_status = self.process_status.get(process_id, {})
@@ -153,10 +151,9 @@ class LangSmithPlugin:
 
         process_ids = self.test_suites[suite_name]
 
-        table = Table(
-            title=f"[bold]{suite_name}[/bold]\n[bright_cyan][link={self.test_suite_urls[suite_name]}]Click to see results in LangSmith[/link][/bright_cyan]",
-            title_justify="left",
-        )
+        title = f"""Test Suite:[bold]{suite_name}[/bold]
+LangSmith link: [bright_cyan][link={self.test_suite_urls[suite_name]}]click here[/link][/bright_cyan]"""  # noqa: E501
+        table = Table(title=title, title_justify="left")
         table.add_column("Test")
         table.add_column("Inputs")
         table.add_column("Ref outputs")
@@ -239,10 +236,14 @@ class LangSmithPlugin:
                 f"[{status_color}]{status.get('status', 'queued')}[/{status_color}]",
                 feedback,
                 f"{duration:.2f}s",
+                "x" if status.get("logged") else "",
             )
 
         if suite_statuses:
-            aggregate_logged = f'{sum(bool(s.get("logged")) for s in suite_statuses.values()) / len(suite_statuses):.0%}'
+            logged = sum(s.get("logged", False) for s in suite_statuses.values()) / len(
+                suite_statuses
+            )
+            aggregate_logged = f"{logged:.0%}"
         else:
             aggregate_logged = "--"
 

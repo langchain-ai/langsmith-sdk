@@ -622,10 +622,12 @@ class _LangSmithTestSuite:
             example_id=example_id,
             outputs=outputs,
             pytest_plugin=pytest_plugin,
-            pytest_nodeid=None,
+            pytest_nodeid=pytest_nodeid,
         )
 
-    def _end_run(self, run_tree, example_id, outputs) -> None:
+    def _end_run(
+        self, run_tree, example_id, outputs, pytest_plugin, pytest_nodeid
+    ) -> None:
         # Ensure example is fully updated
         self.wait_example_updates(example_id)
         time.sleep(0.5)
@@ -635,6 +637,7 @@ class _LangSmithTestSuite:
         ) + datetime.timedelta(seconds=0.01)
         run_tree.end(outputs=outputs, end_time=end_time)
         run_tree.patch()
+        pytest_plugin.update_process_status(pytest_nodeid, {"logged": True})
 
 
 class _TestCase:
