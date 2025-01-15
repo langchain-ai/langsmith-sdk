@@ -630,11 +630,11 @@ class _LangSmithTestSuite:
     ) -> None:
         # Ensure example is fully updated
         self.wait_example_updates(example_id)
-        time.sleep(0.5)
         # Ensure that run end time is after example modified at.
         end_time = cast(
             datetime.datetime, self.client.read_example(example_id).modified_at
         ) + datetime.timedelta(seconds=0.01)
+        # TODO: remove this hack so that run durations are correct
         run_tree.end(outputs=outputs, end_time=end_time)
         run_tree.patch()
         pytest_plugin.update_process_status(pytest_nodeid, {"logged": True})
