@@ -4,9 +4,39 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::client::{run::QueuedRun, RunCreateExtended, RunUpdateExtended, TracingClientError};
+use crate::client::{
+    errors::StreamState, run::QueuedRun, RunCreate, RunCreateExtended, RunUpdate,
+    RunUpdateExtended, TracingClientError,
+};
 
 use super::{multipart_writer::StreamingMultipart, ClientConfig};
+
+trait ErrorReporter {
+    #[allow(unused_variables)] // allow the default impl to not use the fn inputs
+    fn report_run_create_processing_error(
+        &self,
+        operation: &RunCreate,
+        part_name: &str,
+        stream_state: &StreamState,
+    ) {
+    }
+
+    #[allow(unused_variables)] // allow the default impl to not use the fn inputs
+    fn report_run_update_processing_error(
+        &self,
+        operation: &RunUpdate,
+        part_name: &str,
+        stream_state: &StreamState,
+    ) {
+    }
+
+    #[allow(unused_variables)] // allow the default impl to not use the fn inputs
+    fn report_transmit_error(&self, stream_state: &StreamState) {}
+}
+
+struct NoOpReporter;
+
+impl ErrorReporter for NoOpReporter {}
 
 pub struct RunProcessor {
     receiver: crossbeam_channel::Receiver<QueuedRun>,
@@ -15,6 +45,7 @@ pub struct RunProcessor {
     config: Arc<ClientConfig>,
     compression_workers: u32,
     multipart_stream: StreamingMultipart<zstd::stream::write::Encoder<'static, Vec<u8>>>,
+    error_reporter: Box<dyn ErrorReporter>,
 }
 
 impl RunProcessor {
@@ -63,8 +94,17 @@ impl RunProcessor {
         };
 
         let multipart_stream = Self::make_stream(config.compression_level, compression_workers);
+        let error_reporter = Box::new(NoOpReporter);
 
-        Self { receiver, drain_sender, http_client, config, compression_workers, multipart_stream }
+        Self {
+            receiver,
+            drain_sender,
+            http_client,
+            config,
+            compression_workers,
+            multipart_stream,
+            error_reporter,
+        }
     }
 
     pub(crate) fn run(&mut self) -> Result<(), TracingClientError> {
@@ -85,12 +125,28 @@ impl RunProcessor {
                         break;
                     }
                     _ => {
-                        self.process_new_data(queued_run)?;
-                        if self.multipart_stream.get_ref().get_ref().len()
-                            >= self.config.send_at_batch_size
-                        {
-                            self.send_pending_data()?;
-                            last_send_time = Instant::now();
+                        match self.process_new_data(queued_run) {
+                            Ok(()) => {
+                                // The new data was added to the stream.
+                                if self.multipart_stream.get_ref().get_ref().len()
+                                    >= self.config.send_at_batch_size
+                                {
+                                    self.send_pending_data()?;
+                                    last_send_time = Instant::now();
+                                }
+                            }
+                            Err(StreamState::Safe(..)) => {
+                                // Failed to process the new run data, but the prior data is safe.
+                                // We're dropping this run data item and moving on.
+                            }
+                            Err(StreamState::Polluted(..)) => {
+                                // The stream is polluted. We have to discard its data
+                                // and start a new stream.
+                                self.multipart_stream = Self::make_stream(
+                                    self.config.compression_level,
+                                    self.compression_workers,
+                                );
+                            }
                         }
                     }
                 },
@@ -144,52 +200,121 @@ impl RunProcessor {
         }
     }
 
-    fn process_new_data(&mut self, queued_run: QueuedRun) -> Result<(), TracingClientError> {
+    /// Serialize the run data into the output stream.
+    ///
+    /// If errors are encountered, attempt to recover as best as possible:
+    /// - If partial run data can be sent intact, attempt to do so. For example,
+    ///   if a specified attachment file cannot be found, drop that attachment and submit the rest.
+    ///   In such a case, the function returns `Ok(())` and reports the error via `error_reporter`.
+    /// - If the run data cannot be sent at all, skip the run but attempt to keep the stream intact
+    ///   as it contains data on other run events which we still want to transmit.
+    ///   In such a case, the function returns `Err(StreamState::Safe(..))`.
+    /// - If the stream may have been corrupted, returns `Err(StreamState::Polluted(..))`.
+    ///   The caller must discard all data in the stream and start a new stream.
+    fn process_new_data(&mut self, queued_run: QueuedRun) -> Result<(), StreamState> {
         match queued_run {
             QueuedRun::Create(run_create_extended) => {
                 let RunCreateExtended { run_create, io, attachments } = run_create_extended;
-                let run_id = run_create.common.id.clone();
+                let run_id = run_create.common.id.as_str();
 
                 // Collect JSON data.
+                // If we fail to serialize this basic metadata, the entire event entry is useless
+                // since the server won't be able to make sense of it. Return an error immediately.
                 let part_name = format!("post.{}", run_id);
-                let serialized = serde_json::to_vec(&run_create).expect("serialization_failed");
-                self.multipart_stream.json_part(&part_name, &serialized)?;
+                let serialized = serde_json::to_vec(&run_create)
+                    .map_err(StreamState::safe)
+                    .inspect_err(|e| {
+                        self.error_reporter.report_run_create_processing_error(
+                            &run_create,
+                            &part_name,
+                            e,
+                        );
+                    })?;
+                self.multipart_stream.json_part(&part_name, &serialized).inspect_err(|e| {
+                    self.error_reporter.report_run_create_processing_error(
+                        &run_create,
+                        &part_name,
+                        e,
+                    );
+                })?;
 
                 // Ensure that pre-formatted JSON data represented as bytes
                 // doesn't end in trailing null bytes, since they are unnecessary
                 // in HTTP multipart requests.
+                //
+                // If writing this data fails in a way that doesn't pollute the stream,
+                // we can attempt to keep going. Report any errors
+                // to the error reporter, whether or not we're suppressing them.
                 if let Some(mut inputs) = io.inputs {
                     if inputs.last() == Some(&0) {
                         inputs.pop().expect("popping trailing null byte failed");
                     }
+
                     let part_name = format!("post.{}.inputs", run_id);
-                    self.multipart_stream.json_part(&part_name, &inputs)?;
+
+                    let outcome = self.multipart_stream.json_part(&part_name, &inputs);
+                    if let Err(state) = &outcome {
+                        self.error_reporter.report_run_create_processing_error(
+                            &run_create,
+                            &part_name,
+                            state,
+                        );
+                        if let StreamState::Polluted(..) = state {
+                            return outcome;
+                        }
+                    }
                 }
                 if let Some(mut outputs) = io.outputs {
                     if outputs.last() == Some(&0) {
                         outputs.pop().expect("popping trailing null byte failed");
                     }
+
                     let part_name = format!("post.{}.outputs", run_id);
-                    self.multipart_stream.json_part(&part_name, &outputs)?;
+
+                    let outcome = self.multipart_stream.json_part(&part_name, &outputs);
+                    if let Err(state) = &outcome {
+                        self.error_reporter.report_run_create_processing_error(
+                            &run_create,
+                            &part_name,
+                            state,
+                        );
+                        if let StreamState::Polluted(..) = state {
+                            return outcome;
+                        }
+                    }
                 }
 
+                // If including any attachment fails in such a way that the stream is not polluted,
+                // simply drop it from the payload and keep going. Report any errors
+                // to the error reporter, whether or not we're suppressing them.
                 if let Some(attachments) = attachments {
                     for attachment in attachments {
                         let part_name = format!("attachment.{}.{}", run_id, attachment.ref_name);
-                        if let Some(data) = attachment.data {
+                        let outcome = if let Some(data) = attachment.data {
                             self.multipart_stream.file_part_from_bytes(
                                 &part_name,
                                 &attachment.ref_name,
                                 &attachment.content_type,
                                 &data,
-                            )?;
+                            )
                         } else {
                             self.multipart_stream.file_part_from_path(
                                 &part_name,
                                 &attachment.ref_name,
                                 &attachment.content_type,
                                 Path::new(&attachment.filename),
-                            )?;
+                            )
+                        };
+
+                        if let Err(state) = &outcome {
+                            self.error_reporter.report_run_create_processing_error(
+                                &run_create,
+                                &part_name,
+                                state,
+                            );
+                            if let StreamState::Polluted(..) = state {
+                                return outcome;
+                            }
                         }
                     }
                 }
@@ -198,52 +323,96 @@ impl RunProcessor {
             }
             QueuedRun::Update(run_update_extended) => {
                 let RunUpdateExtended { run_update, io, attachments } = run_update_extended;
-                let run_id = run_update.common.id.clone();
+                let run_id = run_update.common.id.as_str();
 
                 // Collect JSON data.
+                // If we fail to serialize this basic metadata, the entire event entry is useless
+                // since the server won't be able to make sense of it. Return an error immediately.
                 let part_name = format!("patch.{}", run_id);
-                let serialized = serde_json::to_vec(&run_update).expect("serialization_failed");
-                self.multipart_stream.json_part(&part_name, &serialized)?;
+                let serialized = serde_json::to_vec(&run_update)
+                    .map_err(StreamState::safe)
+                    .inspect_err(|e| {
+                        self.error_reporter.report_run_update_processing_error(
+                            &run_update,
+                            &part_name,
+                            e,
+                        );
+                    })?;
+                self.multipart_stream.json_part(&part_name, &serialized).inspect_err(|e| {
+                    self.error_reporter.report_run_update_processing_error(
+                        &run_update,
+                        &part_name,
+                        e,
+                    );
+                })?;
 
                 // Ensure that pre-formatted JSON data represented as bytes
                 // doesn't end in trailing null bytes, since they are unnecessary
                 // in HTTP multipart requests.
+                //
+                // If writing this data fails in a way that doesn't pollute the stream,
+                // we can attempt to keep going. Report any errors
+                // to the error reporter, whether or not we're suppressing them.
                 if let Some(mut outputs) = io.outputs {
                     if outputs.last() == Some(&0) {
                         outputs.pop().expect("popping trailing null byte failed");
                     }
 
                     let part_name = format!("patch.{}.outputs", run_id);
-                    self.multipart_stream.json_part(&part_name, &outputs)?;
+
+                    let outcome = self.multipart_stream.json_part(&part_name, &outputs);
+                    if let Err(state) = &outcome {
+                        self.error_reporter.report_run_update_processing_error(
+                            &run_update,
+                            &part_name,
+                            state,
+                        );
+                        if let StreamState::Polluted(..) = state {
+                            return outcome;
+                        }
+                    }
                 }
 
+                // If including any attachment fails in such a way that the stream is not polluted,
+                // simply drop it from the payload and keep going. Report any errors
+                // to the error reporter, whether or not we're suppressing them.
                 if let Some(attachments) = attachments {
                     for attachment in attachments {
                         let part_name = format!("attachment.{}.{}", run_id, attachment.ref_name);
-                        if let Some(data) = attachment.data {
+                        let outcome = if let Some(data) = attachment.data {
                             self.multipart_stream.file_part_from_bytes(
                                 &part_name,
                                 &attachment.ref_name,
                                 &attachment.content_type,
                                 &data,
-                            )?;
+                            )
                         } else {
                             self.multipart_stream.file_part_from_path(
                                 &part_name,
                                 &attachment.ref_name,
                                 &attachment.content_type,
                                 Path::new(&attachment.filename),
-                            )?;
+                            )
+                        };
+
+                        if let Err(state) = &outcome {
+                            self.error_reporter.report_run_update_processing_error(
+                                &run_update,
+                                &part_name,
+                                state,
+                            );
+                            if let StreamState::Polluted(..) = state {
+                                return outcome;
+                            }
                         }
                     }
                 }
 
                 Ok(())
             }
-            QueuedRun::Drain => {
-                unreachable!("drain message that wasn't handled earlier");
+            QueuedRun::Drain | QueuedRun::Shutdown => {
+                unreachable!("drain/shutdown message that wasn't handled earlier");
             }
-            QueuedRun::Shutdown => Err(TracingClientError::UnexpectedShutdown),
         }
     }
 }
