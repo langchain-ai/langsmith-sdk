@@ -153,6 +153,8 @@ version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f34d93e62b03caf570cccc334cbc6c2fceca82f39211051345108adcba3eebdc"
 dependencies = [
+ "jobserver",
+ "libc",
  "shlex",
 ]
 
@@ -323,6 +325,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "crossbeam-channel"
+version = "0.5.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "06ba6d68e24814cb8de6bb986db8222d3a027d15872cabc0d18817bc3c0e4471"
+dependencies = [
+ "crossbeam-utils",
+]
+
+[[package]]
 name = "crossbeam-deque"
 version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -397,9 +408,9 @@ dependencies = [
 
 [[package]]
 name = "fastrand"
-version = "2.2.0"
+version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "486f806e73c5707928240ddc295403b1b93c96a02038563881c4a2fd84b81ac4"
+checksum = "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be"
 
 [[package]]
 name = "flate2"
@@ -908,6 +919,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "db69f08d4fb10524cacdb074c10b296299d71274ddbc830a8ee65666867002e9"
 
 [[package]]
+name = "jobserver"
+version = "0.1.32"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "48d1dbcbbeb6a7fec7e059840aa538bd62aaccf972c7346c4d9d2059312853d0"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "js-sys"
 version = "0.3.74"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -935,8 +955,11 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "criterion",
+ "crossbeam-channel",
+ "fastrand",
  "flate2",
  "futures",
+ "http",
  "mockito",
  "multer",
  "rayon",
@@ -949,6 +972,7 @@ dependencies = [
  "tokio-util",
  "ureq",
  "uuid",
+ "zstd",
 ]
 
 [[package]]
@@ -1181,6 +1205,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
+name = "pkg-config"
+version = "0.3.31"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "953ec861398dccce10c670dfeaf3ec4911ca479e9c02154b3a215178c5f566f2"
+
+[[package]]
 name = "plotters"
 version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1234,7 +1264,7 @@ dependencies = [
 
 [[package]]
 name = "pyo3"
-version = "0.23.0-dev"
+version = "0.23.4"
 dependencies = [
  "cfg-if",
  "indoc",
@@ -1250,7 +1280,7 @@ dependencies = [
 
 [[package]]
 name = "pyo3-build-config"
-version = "0.23.0-dev"
+version = "0.23.4"
 dependencies = [
  "once_cell",
  "target-lexicon",
@@ -1258,7 +1288,7 @@ dependencies = [
 
 [[package]]
 name = "pyo3-ffi"
-version = "0.23.0-dev"
+version = "0.23.4"
 dependencies = [
  "libc",
  "pyo3-build-config",
@@ -1266,7 +1296,7 @@ dependencies = [
 
 [[package]]
 name = "pyo3-macros"
-version = "0.23.0-dev"
+version = "0.23.4"
 dependencies = [
  "proc-macro2",
  "pyo3-macros-backend",
@@ -1276,7 +1306,7 @@ dependencies = [
 
 [[package]]
 name = "pyo3-macros-backend"
-version = "0.23.0-dev"
+version = "0.23.4"
 dependencies = [
  "heck",
  "proc-macro2",
@@ -2443,4 +2473,32 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "zstd"
+version = "0.13.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fcf2b778a664581e31e389454a7072dab1647606d44f7feea22cd5abb9c9f3f9"
+dependencies = [
+ "zstd-safe",
+]
+
+[[package]]
+name = "zstd-safe"
+version = "7.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "54a3ab4db68cea366acc5c897c7b4d4d1b8994a9cd6e6f841f8964566a419059"
+dependencies = [
+ "zstd-sys",
+]
+
+[[package]]
+name = "zstd-sys"
+version = "2.0.13+zstd.1.5.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "38ff0f21cfee8f97d94cef41359e0c89aa6113028ab0291aa8ca0038995a95aa"
+dependencies = [
+ "cc",
+ "pkg-config",
 ]
