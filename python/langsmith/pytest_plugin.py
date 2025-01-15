@@ -34,6 +34,9 @@ def pytest_cmdline_preparse(config, args):
         # Only add --quiet if it's not already there
         if not any(a in args for a in ["-q", "--quiet"]):
             args.insert(0, "--quiet")
+        # Disable built-in output capturing
+        if not any(a in args for a in ["-s", "--capture=no"]):
+            args.insert(0, "-s")
 
 
 @pytest.hookimpl(hookwrapper=True)
@@ -77,8 +80,19 @@ class LangSmithPlugin:
         self.status_lock = Lock()  # Thread-safe updates
         self.console = Console()
 
-        self.live = Live(self.generate_tables(), refresh_per_second=4)
+        self.live = Live(
+            self.generate_tables(), console=self.console, refresh_per_second=10
+        )
         self.live.start()
+        self.live.console.print("\nCollecting tests...")
+
+    def pytest_collection_finish(self, session):
+        """Called after the collection phase is completed and
+        session.items is fully populated.
+        """
+        self.collected_nodeids = set()
+        for item in session.items:
+            self.collected_nodeids.add(item.nodeid)
 
     def add_process_to_test_suite(self, test_suite, process_id):
         """Group a test case with its test suite."""
@@ -86,6 +100,10 @@ class LangSmithPlugin:
 
     def update_process_status(self, process_id, status):
         """Update test results."""
+        # First update
+        if not self.process_status:
+            self.live.console.print("Running tests...\n")
+
         with self.status_lock:
             current_status = self.process_status.get(process_id, {})
             if status.get("feedback"):
@@ -126,7 +144,8 @@ class LangSmithPlugin:
         for suite_name in self.test_suites:
             table = self._generate_table(suite_name)
             tables.append(table)
-        return Group(*tables)
+        group = Group(*tables)
+        return group
 
     def _generate_table(self, suite_name: str):
         """Generate results table."""
@@ -135,7 +154,8 @@ class LangSmithPlugin:
         process_ids = self.test_suites[suite_name]
 
         table = Table(
-            title=f"[link={self.test_suite_urls[suite_name]}]{suite_name}[/link]"
+            title=f"[bold]{suite_name}[/bold]\n[bright_cyan][link={self.test_suite_urls[suite_name]}]Click to see results in LangSmith[/link][/bright_cyan]",
+            title_justify="left",
         )
         table.add_column("Test")
         table.add_column("Inputs")
@@ -144,6 +164,7 @@ class LangSmithPlugin:
         table.add_column("Status")
         table.add_column("Feedback")
         table.add_column("Duration")
+        table.add_column("Logged")
 
         # Test, inputs, ref outputs, outputs col width
         max_status = len("status")
@@ -191,7 +212,8 @@ class LangSmithPlugin:
         max_duration = max(max_duration, len(aggregate_duration))
         max_feedback = max(max_feedback, len(aggregate_feedback))
         max_dynamic_col_width = (
-            self.console.width - (max_status + max_feedback + max_duration)
+            self.console.width
+            - (max_status + max_feedback + max_duration + len("Logged"))
         ) // 4
 
         for pid, status in suite_statuses.items():
@@ -219,6 +241,11 @@ class LangSmithPlugin:
                 f"{duration:.2f}s",
             )
 
+        if suite_statuses:
+            aggregate_logged = f'{sum(bool(s.get("logged")) for s in suite_statuses.values()) / len(suite_statuses):.0%}'
+        else:
+            aggregate_logged = "--"
+
         # Add a blank row or a section separator if you like:
         table.add_row("", "", "", "", "", "", "")
         # Finally, our “footer” row:
@@ -230,6 +257,7 @@ class LangSmithPlugin:
             aggregate_status,
             aggregate_feedback,
             aggregate_duration,
+            aggregate_logged,
         )
 
         return table

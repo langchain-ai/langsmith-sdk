@@ -981,7 +981,7 @@ class trace:
             self.new_run.end(error=tb)
         if self.old_ctx is not None:
             enabled = utils.tracing_is_enabled(self.old_ctx)
-            if enabled is True and not self._end_on_exit:
+            if enabled is True and self._end_on_exit:
                 self.new_run.patch()
 
             _set_tracing_context(self.old_ctx)

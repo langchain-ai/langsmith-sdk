@@ -613,15 +613,22 @@ class _LangSmithTestSuite:
         while self._example_futures[example_id]:
             self._example_futures[example_id].pop().result()
 
-    def end_run(self, run_tree, example_id, outputs) -> Future:
+    def end_run(
+        self, run_tree, example_id, outputs, pytest_plugin=None, pytest_nodeid=None
+    ) -> Future:
         return self._executor.submit(
-            self._end_run, run_tree=run_tree, example_id=example_id, outputs=outputs
+            self._end_run,
+            run_tree=run_tree,
+            example_id=example_id,
+            outputs=outputs,
+            pytest_plugin=pytest_plugin,
+            pytest_nodeid=None,
         )
 
     def _end_run(self, run_tree, example_id, outputs) -> None:
         # Ensure example is fully updated
         self.wait_example_updates(example_id)
-        time.sleep(1)
+        time.sleep(0.5)
         # Ensure that run end time is after example modified at.
         end_time = cast(
             datetime.datetime, self.client.read_example(example_id).modified_at
@@ -707,7 +714,13 @@ class _TestCase:
     def end_run(self, run_tree, outputs: Any) -> Future:
         if not (outputs is None or isinstance(outputs, dict)):
             outputs = {"output": outputs}
-        return self.test_suite.end_run(run_tree, self.example_id, outputs)
+        return self.test_suite.end_run(
+            run_tree,
+            self.example_id,
+            outputs,
+            pytest_plugin=self.pytest_plugin,
+            pytest_nodeid=self.pytest_nodeid,
+        )
 
 
 _TEST_CASE = contextvars.ContextVar[Optional[_TestCase]]("_TEST_CASE", default=None)
