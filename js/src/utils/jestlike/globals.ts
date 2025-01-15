@@ -6,6 +6,8 @@ import { isTracingEnabled } from "../../env.js";
 import { EvaluationResult } from "../../evaluation/evaluator.js";
 import { RunTree } from "../../run_trees.js";
 
+export const DEFAULT_TEST_CLIENT = new Client();
+
 export type TestWrapperAsyncLocalStorageData = {
   enableTestTracking?: boolean;
   dataset?: Dataset;

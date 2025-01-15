@@ -8,7 +8,6 @@ import * as path from "node:path";
 import * as fs from "node:fs/promises";
 
 import { getCurrentRunTree, traceable } from "../../traceable.js";
-import { RunTree } from "../../run_trees.js";
 import { KVMap, TracerSession } from "../../schemas.js";
 import { randomName } from "../../evaluation/_random_name.js";
 import { Client, CreateProjectParams } from "../../client.js";
@@ -25,6 +24,7 @@ import {
   _logTestFeedback,
   syncExamplePromises,
   trackingEnabled,
+  DEFAULT_TEST_CLIENT,
 } from "./globals.js";
 import { wrapExpect } from "./vendor/chain.js";
 import { EvaluationResult } from "../../evaluation/evaluator.js";
@@ -269,7 +269,7 @@ export function generateWrapperFromJestlikeMethods(
         enableTestTracking?: boolean;
       } & Partial<Omit<CreateProjectParams, "referenceDatasetId">>
     ) {
-      const client = experimentConfig?.client ?? RunTree.getSharedClient();
+      const client = experimentConfig?.client ?? DEFAULT_TEST_CLIENT;
       return method(datasetName, () => {
         const suiteUuid = v4();
         const context = {
@@ -365,8 +365,72 @@ export function generateWrapperFromJestlikeMethods(
             const testInput: I = inputs;
             const testOutput: O = expected;
             const testFeedback: EvaluationResult[] = [];
-            let testReturnValue: unknown;
+            const onFeedbackLogged = (feedback: EvaluationResult) =>
+              testFeedback.push(feedback);
             let loggedOutput: Record<string, unknown> | undefined;
+            const setLoggedOutput = (value: Record<string, unknown>) => {
+              if (loggedOutput !== undefined) {
+                console.warn(
+                  `[WARN]: New "logOutput()" call will override output set by previous "logOutput()" call.`
+                );
+              }
+              loggedOutput = value;
+            };
+            let exampleId: string;
+            const runTestFn = async () => {
+              const testContext =
+                testWrapperAsyncLocalStorageInstance.getStore();
+              if (testContext === undefined) {
+                throw new Error(
+                  "Could not identify test context. Please contact us for help."
+                );
+              }
+              try {
+                const res = await testFn({
+                  inputs: testInput,
+                  expected: testOutput,
+                });
+                _logTestFeedback({
+                  exampleId,
+                  feedback: { key: "pass", score: true },
+                  context: testContext,
+                  runTree: trackingEnabled(testContext)
+                    ? getCurrentRunTree()
+                    : undefined,
+                  client: testContext.client,
+                });
+                if (res != null) {
+                  if (loggedOutput !== undefined) {
+                    console.warn(
+                      `[WARN]: Returned value from test function will override output set by previous "logOutput()" call.`
+                    );
+                  }
+                  loggedOutput =
+                    typeof res === "object"
+                      ? (res as Record<string, unknown>)
+                      : { result: res };
+                }
+                return loggedOutput;
+              } catch (e: any) {
+                _logTestFeedback({
+                  exampleId,
+                  feedback: { key: "pass", score: false },
+                  context: testContext,
+                  runTree: trackingEnabled(testContext)
+                    ? getCurrentRunTree()
+                    : undefined,
+                  client: testContext.client,
+                });
+                const rawError = e;
+                const strippedErrorMessage = e.message.replace(
+                  STRIP_ANSI_REGEX,
+                  ""
+                );
+                const langsmithFriendlyError = new Error(strippedErrorMessage);
+                (langsmithFriendlyError as any).rawJestError = rawError;
+                throw langsmithFriendlyError;
+              }
+            };
             try {
               if (trackingEnabled(context)) {
                 const missingFields = [];
@@ -388,14 +452,16 @@ export function generateWrapperFromJestlikeMethods(
                       )} while syncing to LangSmith. Please contact us for help.`
                   );
                 }
-                const testClient = client;
-                const exampleId = getExampleId(dataset.name, inputs, expected);
+                exampleId = getExampleId(dataset.name, inputs, expected);
 
-                // Create or update the example in the background
+                // TODO: Create or update the example in the background
+                // Currently run end time has to be after example modified time
+                // for examples to render properly, so we must modify the example
+                // first before running the test.
                 if (syncExamplePromises.get(exampleId) === undefined) {
                   syncExamplePromises.set(
                     exampleId,
-                    syncExample({
+                    await syncExample({
                       client,
                       exampleId,
                       datasetId: dataset.id,
@@ -407,24 +473,13 @@ export function generateWrapperFromJestlikeMethods(
                   );
                 }
 
-                // .enterWith is OK here
-                testWrapperAsyncLocalStorageInstance.enterWith({
-                  ...context,
-                  currentExample: {
-                    inputs,
-                    outputs: expected,
-                    id: exampleId,
-                  },
-                  client: testClient,
-                });
-
                 const traceableOptions = {
                   reference_example_id: exampleId,
                   project_name: project!.name,
                   metadata: {
                     ...config?.metadata,
                   },
-                  client: testClient,
+                  client,
                   tracingEnabled: true,
                   name,
                 };
@@ -432,77 +487,37 @@ export function generateWrapperFromJestlikeMethods(
                 // Pass inputs into traceable so tracing works correctly but
                 // provide both to the user-defined test function
                 const tracedFunction = traceable(
-                  async (_: I) => {
-                    const testContext =
-                      testWrapperAsyncLocalStorageInstance.getStore();
-                    if (testContext === undefined) {
-                      throw new Error(
-                        "Could not identify test context. Please contact us for help."
-                      );
-                    }
-                    try {
-                      const res =
-                        await testWrapperAsyncLocalStorageInstance.run(
-                          {
-                            ...testContext,
-                            setLoggedOutput: (value) => {
-                              if (loggedOutput !== undefined) {
-                                console.warn(
-                                  `[WARN]: New "logOutput()" call will override output set by previous "logOutput()" call.`
-                                );
-                              }
-                              loggedOutput = value;
-                            },
-                            onFeedbackLogged: (feedback) =>
-                              testFeedback.push(feedback),
-                          },
-                          async () => {
-                            return testFn({
-                              inputs: testInput,
-                              expected: testOutput,
-                            });
-                          }
-                        );
-                      _logTestFeedback({
-                        exampleId,
-                        feedback: { key: "pass", score: true },
-                        context: testContext,
-                        runTree: getCurrentRunTree(),
-                        client: testClient,
-                      });
-                      return res;
-                    } catch (e: any) {
-                      _logTestFeedback({
-                        exampleId,
-                        feedback: { key: "pass", score: false },
-                        context: testContext,
-                        runTree: getCurrentRunTree(),
-                        client: testClient,
-                      });
-                      const rawError = e;
-                      const strippedErrorMessage = e.message.replace(
-                        STRIP_ANSI_REGEX,
-                        ""
-                      );
-                      const langsmithFriendlyError = new Error(
-                        strippedErrorMessage
-                      );
-                      (langsmithFriendlyError as any).rawJestError = rawError;
-                      throw langsmithFriendlyError;
-                    }
+                  async () => {
+                    return testWrapperAsyncLocalStorageInstance.run(
+                      {
+                        ...context,
+                        currentExample: {
+                          inputs,
+                          outputs: expected,
+                          id: exampleId,
+                        },
+                        setLoggedOutput,
+                        onFeedbackLogged,
+                      },
+                      runTestFn
+                    );
                   },
-                  { ...traceableOptions, ...config }
+                  {
+                    ...traceableOptions,
+                    ...config,
+                  }
                 );
                 try {
-                  testReturnValue = await (tracedFunction as any)(testInput);
+                  await tracedFunction(testInput);
                 } catch (e: any) {
+                  // Extract raw Jest error from LangSmith formatted one and throw
                   if (e.rawJestError !== undefined) {
                     throw e.rawJestError;
                   }
                   throw e;
                 }
               } else {
-                testReturnValue =
+                try {
                   await testWrapperAsyncLocalStorageInstance.run(
                     {
                       ...context,
@@ -510,37 +525,20 @@ export function generateWrapperFromJestlikeMethods(
                         inputs: testInput,
                         outputs: testOutput,
                       },
-                      setLoggedOutput: (value) => {
-                        if (loggedOutput !== undefined) {
-                          console.warn(
-                            `[WARN]: New "logOutput()" call will override output set by previous "logOutput()" call.`
-                          );
-                        }
-                        loggedOutput = value;
-                      },
-                      onFeedbackLogged: (feedback) =>
-                        testFeedback.push(feedback),
+                      setLoggedOutput,
+                      onFeedbackLogged,
                     },
-                    async () => {
-                      return testFn({
-                        inputs: testInput,
-                        expected: testOutput,
-                      });
-                    }
+                    runTestFn
                   );
+                } catch (e: any) {
+                  // Extract raw Jest error from LangSmith formatted one and throw
+                  if (e.rawJestError !== undefined) {
+                    throw e.rawJestError;
+                  }
+                  throw e;
+                }
               }
             } finally {
-              if (testReturnValue != null) {
-                if (loggedOutput !== undefined) {
-                  console.warn(
-                    `[WARN]: Returned value from test function will override output set by previous "logOutput()" call.`
-                  );
-                }
-                loggedOutput =
-                  typeof testReturnValue === "object"
-                    ? (testReturnValue as Record<string, unknown>)
-                    : { result: testReturnValue };
-              }
               await fs.mkdir(path.dirname(resultsPath), { recursive: true });
               await fs.writeFile(
                 resultsPath,

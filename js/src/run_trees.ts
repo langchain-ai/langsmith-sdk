@@ -247,7 +247,7 @@ export class RunTree implements BaseRun {
     };
   }
 
-  static getSharedClient(): Client {
+  private static getSharedClient(): Client {
     if (!RunTree.sharedClient) {
       RunTree.sharedClient = new Client();
     }

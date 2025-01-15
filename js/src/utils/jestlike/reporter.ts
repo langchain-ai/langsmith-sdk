@@ -10,7 +10,14 @@ import { STRIP_ANSI_REGEX } from "./index.js";
 
 const FEEDBACK_COLLAPSE_THRESHOLD = 64;
 
-const RESERVED_KEYS = ["Name", "Result", "Inputs", "Expected", "Actual"];
+const RESERVED_KEYS = [
+  "Name",
+  "Result",
+  "Inputs",
+  "Expected",
+  "Actual",
+  "pass",
+];
 
 function formatTestName(name: string, duration: number) {
   if (duration != null) {
