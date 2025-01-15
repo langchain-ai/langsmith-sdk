@@ -70,12 +70,19 @@ class LangSmithPlugin:
         from rich.console import Console  # type: ignore[import-not-found]
         from rich.live import Live  # type: ignore[import-not-found]
 
+        self.test_suites: dict[str, list[str]] = defaultdict(list)
+        self.test_suite_urls: dict[str, str] = {}
+
         self.process_status = {}  # Track process status
         self.status_lock = Lock()  # Thread-safe updates
         self.console = Console()
 
-        self.live = Live(self.generate_table(), refresh_per_second=4)
+        self.live = Live(self.generate_tables(), refresh_per_second=4)
         self.live.start()
+
+    def add_process_to_test_suite(self, test_suite, process_id):
+        """Group a test case with its test suite."""
+        self.test_suites[test_suite].append(process_id)
 
     def update_process_status(self, process_id, status):
         """Update test results."""
@@ -102,17 +109,34 @@ class LangSmithPlugin:
                     **status.pop("outputs"),
                 }
             self.process_status[process_id] = {**current_status, **status}
-        self.live.update(self.generate_table())
+        self.live.update(self.generate_tables())
 
     def pytest_runtest_logstart(self, nodeid):
         """Initialize live display when first test starts."""
         self.update_process_status(nodeid, {"status": "running"})
 
-    def generate_table(self):
+    def generate_tables(self):
+        """Generate a collection of tables—one per suite.
+
+        Returns a 'Group' object so it can be rendered simultaneously by Rich Live.
+        """
+        from rich.console import Group
+
+        tables = []
+        for suite_name in self.test_suites:
+            table = self._generate_table(suite_name)
+            tables.append(table)
+        return Group(*tables)
+
+    def _generate_table(self, suite_name: str):
         """Generate results table."""
         from rich.table import Table  # type: ignore[import-not-found]
 
-        table = Table()
+        process_ids = self.test_suites[suite_name]
+
+        table = Table(
+            title=f"[link={self.test_suite_urls[suite_name]}]{suite_name}[/link]"
+        )
         table.add_column("Test")
         table.add_column("Inputs")
         table.add_column("Ref outputs")
@@ -128,7 +152,9 @@ class LangSmithPlugin:
         now = time.time()
         durations = []
         numeric_feedbacks = defaultdict(list)
-        for pid, status in self.process_status.items():
+        # Gather data only for this suite
+        suite_statuses = {pid: self.process_status[pid] for pid in process_ids}
+        for pid, status in suite_statuses.items():
             duration = status.get("end_time", now) - status.get("start_time", now)
             durations.append(duration)
             feedback = "\n".join(
@@ -141,12 +167,8 @@ class LangSmithPlugin:
             max_status = max(len(status.get("status", "queued")), max_status)
             max_feedback = max(len(feedback), max_feedback)
 
-        passed_count = sum(
-            s.get("status") == "passed" for s in self.process_status.values()
-        )
-        failed_count = sum(
-            s.get("status") == "failed" for s in self.process_status.values()
-        )
+        passed_count = sum(s.get("status") == "passed" for s in suite_statuses.values())
+        failed_count = sum(s.get("status") == "failed" for s in suite_statuses.values())
 
         # You could arrange a row to show the aggregated data—here, in the last column:
         if passed_count + failed_count:
@@ -172,7 +194,7 @@ class LangSmithPlugin:
             self.console.width - (max_status + max_feedback + max_duration)
         ) // 4
 
-        for pid, status in self.process_status.items():
+        for pid, status in suite_statuses.items():
             status_color = {
                 "running": "yellow",
                 "passed": "green",
@@ -201,7 +223,7 @@ class LangSmithPlugin:
         table.add_row("", "", "", "", "", "", "")
         # Finally, our “footer” row:
         table.add_row(
-            "[bold]Results[/bold]",
+            "[bold]Summary[/bold]",
             "",
             "",
             "",

@@ -645,6 +645,11 @@ class _TestCase:
         self.pytest_plugin = pytest_plugin
         self.pytest_nodeid = pytest_nodeid
 
+        if pytest_plugin and pytest_nodeid:
+            pytest_plugin.add_process_to_test_suite(
+                test_suite._dataset.name, pytest_nodeid
+            )
+
     def sync_example(
         self, *, inputs: Optional[dict] = None, outputs: Optional[dict] = None
     ) -> None:
@@ -752,6 +757,12 @@ def _create_test_case(
         else None
     )
     pytest_nodeid = pytest_request.node.nodeid if pytest_request else None
+    if pytest_plugin:
+        pytest_plugin.test_suite_urls[test_suite._dataset.name] = (
+            test_suite._dataset.url
+            + "/compare?selectedSessions="
+            + str(test_suite.experiment_id)
+        )
     return _TestCase(
         test_suite,
         example_id,
