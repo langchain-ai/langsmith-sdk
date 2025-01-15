@@ -9,7 +9,7 @@ import { EvaluationResult } from "../../../evaluation/evaluator.js";
 import { RunTree } from "../../../run_trees.js";
 
 export type SimpleEvaluatorParams = {
-  input: Record<string, any>;
+  inputs: Record<string, any>;
   actual: Record<string, any>;
   expected: Record<string, any>;
 };
@@ -45,7 +45,7 @@ export async function evaluatedBy(actual: any, evaluator: SimpleEvaluator) {
     );
 
     const evalResult = await wrappedEvaluator(ROOT, {
-      input: runTree.inputs,
+      inputs: runTree.inputs,
       expected: context.currentExample.outputs ?? {},
       actual,
     });
@@ -60,7 +60,7 @@ export async function evaluatedBy(actual: any, evaluator: SimpleEvaluator) {
     return evalResult.score;
   } else {
     const evalResult = await evaluator({
-      input: context.currentExample.inputs ?? {},
+      inputs: context.currentExample.inputs ?? {},
       expected: context.currentExample.outputs ?? {},
       actual,
     });
