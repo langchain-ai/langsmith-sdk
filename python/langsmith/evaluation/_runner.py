@@ -1579,7 +1579,6 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         self.client._select_eval_results(evaluator_response)
                     )
                     if self._upload_results:
-                        # TODO: This is a hack
                         self.client._log_evaluation_feedback(
                             evaluator_response, run=run
                         )
@@ -1602,7 +1601,6 @@ class _ExperimentManager(_ExperimentManagerMixin):
                             self.client._select_eval_results(error_response)
                         )
                         if self._upload_results:
-                            # TODO: This is a hack
                             self.client._log_evaluation_feedback(
                                 error_response, run=run
                             )
