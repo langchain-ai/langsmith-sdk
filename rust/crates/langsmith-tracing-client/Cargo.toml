@@ -17,6 +17,10 @@ futures = { workspace = true }
 rayon = { workspace = true }
 ureq = { workspace = true }
 flate2 = { workspace = true }
+fastrand = { workspace = true }
+crossbeam-channel = { workspace = true }
+http = { workspace = true }
+zstd = { workspace = true }
 
 [dev-dependencies]
 multer = "3.1.0"
