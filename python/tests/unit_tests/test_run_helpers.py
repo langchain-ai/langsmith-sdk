@@ -1809,14 +1809,14 @@ def test_traceable_input_attachments():
         _, (mime_type2, content2) = next(
             data for data in datas if data[0] == f"attachment.{trace_id}.att2"
         )
-        assert mime_type2 == "application/octet-stream"
+        assert mime_type2 == "application/octet-stream; length=8"
         assert content2 == b"content2"
 
         # Assert that anoutput is uploaded
         _, (mime_type_output, content_output) = next(
             data for data in datas if data[0] == f"attachment.{trace_id}.anoutput"
         )
-        assert mime_type_output == "text/plain"
+        assert mime_type_output == "text/plain; length=446"
         assert content_output == b"noidea"
 
 
