@@ -46,12 +46,18 @@ export function logFeedback(feedback: EvaluationResult) {
   const context = testWrapperAsyncLocalStorageInstance.getStore();
   if (context === undefined) {
     throw new Error(
-      `Could not retrieve test context. Make sure your logFeedback call is nested within a "ls.describe()" block.`
+      [
+        `Could not retrieve test context. Make sure your logFeedback call is nested within a "ls.describe()" block.`,
+        `See this page for more information: https://docs.smith.langchain.com/evaluation/how_to_guides/jest_and_vitest`,
+      ].join("\n")
     );
   }
   if (context.currentExample === undefined) {
     throw new Error(
-      `Could not retrieve current example. Make sure your logFeedback call is nested within a "ls.test()" block.`
+      [
+        `Could not retrieve current example. Make sure your logFeedback call is nested within a "ls.test()" block.`,
+        `See this page for more information: https://docs.smith.langchain.com/evaluation/how_to_guides/jest_and_vitest`,
+      ].join("\n")
     );
   }
   _logTestFeedback({
@@ -75,7 +81,10 @@ export function logOutput(output: Record<string, unknown>) {
     context.setLoggedOutput === undefined
   ) {
     throw new Error(
-      `Could not retrieve current example. Make sure your logFeedback call is nested within a "ls.test()" block.`
+      [
+        `Could not retrieve current example. Make sure your logFeedback call is nested within a "ls.test()" block.`,
+        `See this page for more information: https://docs.smith.langchain.com/evaluation/how_to_guides/jest_and_vitest`,
+      ].join("\n")
     );
   }
   context.setLoggedOutput(output);
@@ -352,7 +361,11 @@ export function generateWrapperFromJestlikeMethods(
           async () => {
             if (context === undefined) {
               throw new Error(
-                `Could not retrieve test context.\nPlease make sure you have tracing enabled and you are wrapping all of your test cases in an "ls.describe()" function.`
+                [
+                  `Could not retrieve test context.`,
+                  `Please make sure you have tracing enabled and you are wrapping all of your test cases in an "ls.describe()" function.`,
+                  `See this page for more information: https://docs.smith.langchain.com/evaluation/how_to_guides/jest_and_vitest`,
+                ].join("\n")
               );
             }
             if (!datasetSetupInfo.get(context.suiteUuid)) {
@@ -566,7 +579,10 @@ export function generateWrapperFromJestlikeMethods(
       const context = testWrapperAsyncLocalStorageInstance.getStore();
       if (context === undefined) {
         throw new Error(
-          `Could not retrieve test context. Make sure your test is nested within a "ls.describe()" block.`
+          [
+            `Could not retrieve test context. Make sure your test is nested within a "ls.describe()" block.`,
+            `See this page for more information: https://docs.smith.langchain.com/evaluation/how_to_guides/jest_and_vitest`,
+          ].join("\n")
         );
       }
       return function (

@@ -22,7 +22,11 @@ export async function evaluatedBy(actual: any, evaluator: SimpleEvaluator) {
   const context = testWrapperAsyncLocalStorageInstance.getStore();
   if (context === undefined || context.currentExample === undefined) {
     throw new Error(
-      `Could not identify current LangSmith context.\nPlease ensure you are calling this matcher within "ls.test()"`
+      [
+        `Could not identify current LangSmith context.`,
+        `Please ensure you are calling this matcher within "ls.test()"`,
+        `See this page for more information: https://docs.smith.langchain.com/evaluation/how_to_guides/jest_and_vitest`,
+      ].join("\n")
     );
   }
 
