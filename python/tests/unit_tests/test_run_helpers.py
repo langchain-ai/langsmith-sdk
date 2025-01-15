@@ -1803,7 +1803,7 @@ def test_traceable_input_attachments():
         _, (mime_type1, content1) = next(
             data for data in datas if data[0] == f"attachment.{trace_id}.att1"
         )
-        assert mime_type1 == "text/plain"
+        assert mime_type1 == "text/plain; length=20000000"
         assert content1 == long_content
 
         _, (mime_type2, content2) = next(
