@@ -116,22 +116,6 @@ pub struct RunUpdateExtended {
 }
 
 #[derive(Debug)]
-pub struct RunEventBytes {
-    pub run_id: String,
-    pub event_type: EventType,
-    pub run_bytes: Vec<u8>,
-    pub inputs_bytes: Option<Vec<u8>>,
-    pub outputs_bytes: Option<Vec<u8>>,
-    pub attachments: Option<Vec<Attachment>>,
-}
-
-#[derive(Debug)]
-pub enum EventType {
-    Create,
-    Update,
-}
-
-#[derive(Debug)]
 pub(crate) enum QueuedRun {
     Create(RunCreateExtended),
     Update(RunUpdateExtended),
