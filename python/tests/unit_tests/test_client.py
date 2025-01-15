@@ -361,9 +361,9 @@ def test_create_run_mutate(
             f"post.{id_}.outputs",
         ]
         assert [p.headers.get("content-type") for p in parts] == [
-            "application/json",
-            "application/json",
-            "application/json",
+            "application/json; length=705",
+            "application/json; length=108",
+            "application/json; length=27",
         ]
         outputs_parsed = json.loads(parts[2].value)
         assert outputs_parsed == outputs
@@ -2230,9 +2230,9 @@ def test_create_run_without_compression_support(mock_session_cls: mock.Mock) -> 
         f"post.{run_id}.outputs",
     ]
     assert [p.headers.get("content-type") for p in parts] == [
-        "application/json",
-        "application/json",
-        "application/json",
+        "application/json; length=715",
+        "application/json; length=15",
+        "application/json; length=18",
     ]
 
     outputs_parsed = json.loads(parts[2].value)
@@ -2336,9 +2336,9 @@ def test_create_run_with_disabled_compression(mock_session_cls: mock.Mock) -> No
         f"post.{run_id}.outputs",
     ]
     assert [p.headers.get("content-type") for p in parts] == [
-        "application/json",
-        "application/json",
-        "application/json",
+        "application/json; length=715",
+        "application/json; length=15",
+        "application/json; length=18",
     ]
 
     outputs_parsed = json.loads(parts[2].value)
