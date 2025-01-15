@@ -23,7 +23,7 @@ const REFLECTION_KINDS_TO_HIDE = [
   ReflectionKind.TypeAlias,
 ];
 
-const BASE_OUTPUT_DIR = "./api_refs";
+const BASE_OUTPUT_DIR = "./_build/api_refs";
 
 // Script to inject into the HTML to add a CMD/CTRL + K 'hotkey' which focuses
 // on the search input element.

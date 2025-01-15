@@ -1,6 +1,6 @@
 {
   "$schema": "https://typedoc.org/schema.json",
-  "out": "api_refs",
+  "out": "_build/api_refs",
   "sort": [
     "kind",
     "visibility",

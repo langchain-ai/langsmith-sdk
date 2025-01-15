@@ -161,6 +161,6 @@ cython_debug/
 .DS_Store
 
 # JS API refs
-js/api_refs/
+js/_build/
 
 .envrc
