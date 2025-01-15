@@ -304,7 +304,7 @@ export function generateWrapperFromJestlikeMethods(
          *
          * We really just need a way to pass suiteUuid as global state to inner tests
          * that can handle concurrently running test suites. If we drop the
-         * concurrency requirement, we can remoce this hack.
+         * concurrency requirement, we can remove this hack.
          */
         void testWrapperAsyncLocalStorageInstance.run(context, fn);
       });
