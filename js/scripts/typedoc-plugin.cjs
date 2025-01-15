@@ -38,21 +38,6 @@ const SCRIPT_HTML = `<script>
 </script>`;
 
 /**
- * HTML injected into sections where there is a `@deprecated` JSDoc tag.
- * This provides a far more visible warning to the user that the feature is
- * deprecated.
- *
- * @param {string | undefined} deprecationText
- * @returns {string}
- */
-const DEPRECATION_HTML = (deprecationText) => `<div class="deprecation-warning">
-<h2>⚠️ Deprecated ⚠️</h2>
-${deprecationText ? `<p>${deprecationText}</p>` : ""}
-<p>This feature is deprecated and will be removed in the future.</p>
-<p>It is not recommended for use.</p>
-</div>`;
-
-/**
  * Takes in a reflection and an array of all chat model class names.
  * Then performs checks to see if the given reflection should be removed
  * from the documentation.
@@ -112,40 +97,11 @@ function load(application) {
    */
   function onEndRenderEvent(context) {
     const htmlToSplitAtSearchScript = `<div class="tsd-toolbar-contents container">`;
-    const htmlToSplitAtVersionDropdown = `<div id="tsd-toolbar-links">`;
-    const deprecatedHTML = "<h4>Deprecated</h4>";
 
     const { urls } = context;
     for (const { url } of urls) {
       const indexFilePath = path.join(BASE_OUTPUT_DIR, url);
-      let htmlFileContent = fs.readFileSync(indexFilePath, "utf-8");
-
-      if (htmlFileContent.includes(deprecatedHTML)) {
-        // If any comments are added to the `@deprecated` JSDoc, they'll
-        // be inside the following <p> tag.
-        const deprecationTextRegex = new RegExp(
-          `${deprecatedHTML}<p>(.*?)</p>`
-        );
-        const deprecationTextMatch =
-          htmlFileContent.match(deprecationTextRegex);
-
-        /** @type {string | undefined} */
-        let textInsidePTag;
-
-        if (deprecationTextMatch) {
-          textInsidePTag = deprecationTextMatch[1];
-          const newTextToReplace = `${deprecatedHTML}<p>${textInsidePTag}</p>`;
-          htmlFileContent = htmlFileContent.replace(
-            newTextToReplace,
-            DEPRECATION_HTML(textInsidePTag)
-          );
-        } else {
-          htmlFileContent = htmlFileContent.replace(
-            deprecatedHTML,
-            DEPRECATION_HTML(undefined)
-          );
-        }
-      }
+      const htmlFileContent = fs.readFileSync(indexFilePath, "utf-8");
 
       const [part1, part2] = htmlFileContent.split(htmlToSplitAtSearchScript);
       const htmlWithScript = part1 + SCRIPT_HTML + part2;
