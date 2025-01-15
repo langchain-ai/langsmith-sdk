@@ -1816,7 +1816,7 @@ def test_traceable_input_attachments():
         _, (mime_type_output, content_output) = next(
             data for data in datas if data[0] == f"attachment.{trace_id}.anoutput"
         )
-        assert mime_type_output == "text/plain; length=446"
+        assert mime_type_output == "text/plain; length=6"
         assert content_output == b"noidea"
 
 
