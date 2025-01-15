@@ -234,6 +234,11 @@ function processChatCompletion(outputs: Readonly<KVMap>): KVMap {
  * @param options LangSmith options.
  * @example
  * ```ts
+ * import { OpenAI } from "openai";
+ * import { wrapOpenAI } from "langsmith/wrappers/openai";
+ *
+ * const patchedClient = wrapOpenAI(new OpenAI());
+ *
  * const patchedStream = await patchedClient.chat.completions.create(
  *   {
  *     messages: [{ role: "user", content: `Say 'foo'` }],
