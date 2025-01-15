@@ -361,7 +361,7 @@ def test_create_run_mutate(
             f"post.{id_}.outputs",
         ]
         assert [p.headers.get("content-type") for p in parts] == [
-            "application/json; length=705",
+            "application/json; length=703",
             "application/json; length=108",
             "application/json; length=27",
         ]
