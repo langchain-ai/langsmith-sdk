@@ -67,6 +67,7 @@
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "yarn clean && yarn build:esm && yarn build:cjs && node scripts/create-entrypoints.js",
+    "build:typedoc": "yarn build && rm -rf ./_build/api_refs && npx typedoc",
     "bump-version": "node scripts/bump-version.js",
     "check-version": "node scripts/check-version.js",
     "check-npm-version": "node scripts/check-npm-version.js",
@@ -139,6 +140,8 @@
     "prettier": "^2.8.8",
     "ts-jest": "^29.1.0",
     "ts-node": "^10.9.1",
+    "typedoc": "^0.27.6",
+    "typedoc-plugin-expand-object-like-types": "^0.1.2",
     "typescript": "^5.4.5",
     "zod": "^3.23.8"
   },
