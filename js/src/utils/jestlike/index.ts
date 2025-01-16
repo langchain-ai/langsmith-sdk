@@ -340,7 +340,9 @@ export function generateWrapperFromJestlikeMethods(
     >(
       name: string,
       lsParams: LangSmithJestlikeWrapperParams<I, O>,
-      testFn: (data: { inputs: I; expected: O }) => unknown | Promise<unknown>,
+      testFn: (
+        data: { inputs: I; expected: O } & Record<string, any>
+      ) => unknown | Promise<unknown>,
       timeout?: number
     ) {
       // Due to https://github.com/jestjs/jest/issues/13653,
@@ -353,7 +355,7 @@ export function generateWrapperFromJestlikeMethods(
       ) {
         context.enableTestTracking = lsParams.config.enableTestTracking;
       }
-      const { config, inputs, expected } = lsParams;
+      const { config, inputs, expected, ...rest } = lsParams;
       const totalRuns = config?.iterations ?? 1;
       for (let i = 0; i < totalRuns; i += 1) {
         // Jest will not group tests under the same "describe" group if you await the test and
@@ -408,6 +410,7 @@ export function generateWrapperFromJestlikeMethods(
               }
               try {
                 const res = await testFn({
+                  ...rest,
                   inputs: testInput,
                   expected: testOutput,
                 });
@@ -581,7 +584,7 @@ export function generateWrapperFromJestlikeMethods(
 
   function createEachMethod(method: (...args: any[]) => void) {
     function eachMethod<I extends KVMap, O extends KVMap>(
-      table: { inputs: I; expected: O }[],
+      table: ({ inputs: I; expected: O } & Record<string, any>)[],
       config?: LangSmithJestlikeWrapperConfig
     ) {
       const context = testWrapperAsyncLocalStorageInstance.getStore();
@@ -595,14 +598,21 @@ export function generateWrapperFromJestlikeMethods(
       }
       return function (
         name: string,
-        fn: (params: { inputs: I; expected: O }) => unknown | Promise<unknown>,
+        fn: (
+          params: { inputs: I; expected: O } & Record<string, any>
+        ) => unknown | Promise<unknown>,
         timeout?: number
       ) {
         for (let i = 0; i < table.length; i += 1) {
           const example = table[i];
           wrapTestMethod(method)<I, O>(
             `${name}, item ${i}`,
-            { inputs: example.inputs, expected: example.expected, config },
+            {
+              ...example,
+              inputs: example.inputs,
+              expected: example.expected,
+              config,
+            },
             fn,
             timeout
           );

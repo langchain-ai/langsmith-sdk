@@ -8,7 +8,7 @@ import { EvaluationResult } from "../../evaluation/evaluator.js";
 import { ScoreType } from "../../schemas.js";
 import { STRIP_ANSI_REGEX } from "./index.js";
 
-const FEEDBACK_COLLAPSE_THRESHOLD = 64;
+const FEEDBACK_COLLAPSE_THRESHOLD = 48;
 
 const RESERVED_KEYS = [
   "Name",
@@ -58,11 +58,12 @@ function formatValue(value: unknown) {
     return Object.entries(value)
       .map(([k, v]) => {
         const rawValue = typeof v === "string" ? v : JSON.stringify(v);
-        const value =
-          rawValue.length > 32 ? rawValue.slice(0, 29) + "..." : rawValue;
-        return `${k}: ${value}`;
+        const rawEntry = `${k}: ${rawValue}`;
+        const entry =
+          rawEntry.length > 24 ? rawEntry.slice(0, 21) + "..." : rawEntry;
+        return entry;
       })
-      .join(", ");
+      .join("\n");
   }
   if (value == null) {
     return;
@@ -221,10 +222,10 @@ export async function printReporterTable(
     maxLen?: number;
     minLen?: number;
   }[] = [
-    { name: "Test", alignment: "left", maxLen: 48 },
-    { name: "Inputs", alignment: "left" },
-    { name: "Reference Outputs", alignment: "left" },
-    { name: "Outputs", alignment: "left" },
+    { name: "Test", alignment: "left", maxLen: 36 },
+    { name: "Inputs", alignment: "left", minLen: 24 },
+    { name: "Reference Outputs", alignment: "left", minLen: 24 },
+    { name: "Outputs", alignment: "left", minLen: 24 },
     { name: "Status", alignment: "left" },
   ];
   if (collapseFeedbackColumn) {

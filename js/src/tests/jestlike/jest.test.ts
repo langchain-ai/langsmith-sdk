@@ -46,6 +46,22 @@ ls.describe(
           key: "coolness",
           score: 0.9,
         });
+        ls.logFeedback({
+          key: "coolness 2",
+          score: 0.9,
+        });
+        ls.logFeedback({
+          key: "coolness 3",
+          score: 0.9,
+        });
+        ls.logFeedback({
+          key: "coolness 4",
+          score: 0.9,
+        });
+        ls.logFeedback({
+          key: "coolness 5",
+          score: 0.9,
+        });
         ls.logOutput({
           bar: "perfect",
         });
