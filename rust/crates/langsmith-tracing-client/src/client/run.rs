@@ -25,6 +25,7 @@ pub struct RunIO {
 }
 
 impl RunIO {
+    #[allow(dead_code)]
     #[inline]
     pub(crate) fn merge(&mut self, other: RunIO) {
         if other.inputs.is_some() {
@@ -52,6 +53,7 @@ pub struct RunCommon {
 }
 
 impl RunCommon {
+    #[allow(dead_code)]
     #[inline]
     pub(crate) fn merge(&mut self, other: RunCommon) {
         if other.parent_run_id.is_some() {
@@ -114,27 +116,9 @@ pub struct RunUpdateExtended {
 }
 
 #[derive(Debug)]
-pub struct RunEventBytes {
-    pub run_id: String,
-    pub event_type: EventType,
-    pub run_bytes: Vec<u8>,
-    pub inputs_bytes: Option<Vec<u8>>,
-    pub outputs_bytes: Option<Vec<u8>>,
-    pub attachments: Option<Vec<Attachment>>,
-}
-
-#[derive(Debug)]
-pub enum EventType {
-    Create,
-    Update,
-}
-
-#[derive(Debug)]
 pub(crate) enum QueuedRun {
     Create(RunCreateExtended),
     Update(RunUpdateExtended),
-    #[expect(dead_code)]
-    RunBytes(RunEventBytes),
     Drain, // Like `Shutdown`, but explicitly sends a message confirming draining is complete.
     Shutdown,
 }

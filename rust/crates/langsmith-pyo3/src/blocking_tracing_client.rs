@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use pyo3::prelude::*;
 
-use langsmith_tracing_client::client::streaming::{
+use langsmith_tracing_client::client::{
     ClientConfig as RustClientConfig, TracingClient as RustTracingClient,
 };
 
