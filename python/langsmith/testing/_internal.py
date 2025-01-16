@@ -310,7 +310,7 @@ def test(*args: Any, **kwargs: Any) -> Callable:
         warnings.warn(f"Unexpected keyword arguments: {kwargs.keys()}")
     disable_tracking = ls_utils.test_tracking_is_disabled()
     if disable_tracking:
-        warnings.warn(
+        logger.info(
             "LANGSMITH_TEST_TRACKING is set to 'false'."
             " Skipping LangSmith test tracking."
         )
@@ -987,6 +987,11 @@ def log_inputs(inputs: dict, /) -> None:
         ...     testing.log_inputs({"x": x, "y": y})
         ...     assert foo(x, y) == 2
     """
+    if ls_utils.test_tracking_is_disabled():
+        logger.info(
+            "LANGSMITH_TEST_TRACKING is set to 'false'." " Skipping log_inputs."
+        )
+        return
     run_tree = rh.get_current_run_tree()
     test_case = _TEST_CASE.get()
     if not run_tree or not test_case:
@@ -1020,6 +1025,11 @@ def log_outputs(outputs: dict, /) -> None:
         ...     testing.log_outputs({"foo": result})
         ...     assert result == 2
     """
+    if ls_utils.test_tracking_is_disabled():
+        logger.info(
+            "LANGSMITH_TEST_TRACKING is set to 'false'." " Skipping log_outputs."
+        )
+        return
     run_tree = rh.get_current_run_tree()
     test_case = _TEST_CASE.get()
     if not run_tree or not test_case:
@@ -1053,6 +1063,12 @@ def log_reference_outputs(outputs: dict, /) -> None:
         ...     testing.log_reference_outputs({"foo": expected})
         ...     assert foo(x, y) == expected
     """
+    if ls_utils.test_tracking_is_disabled():
+        logger.info(
+            "LANGSMITH_TEST_TRACKING is set to 'false'."
+            " Skipping log_reference_outputs."
+        )
+        return
     test_case = _TEST_CASE.get()
     if not test_case:
         msg = (
@@ -1096,6 +1112,11 @@ def log_feedback(
         ...     testing.log_feedback(key="right_type", score=isinstance(result, int))
         ...     assert result == expected
     """
+    if ls_utils.test_tracking_is_disabled():
+        logger.info(
+            "LANGSMITH_TEST_TRACKING is set to 'false'." " Skipping log_feedback."
+        )
+        return
     if feedback and any((key, score, value)):
         msg = "Must specify one of 'feedback' and ('key', 'score', 'value'), not both."
         raise ValueError(msg)
@@ -1137,7 +1158,7 @@ def log_feedback(
 @contextlib.contextmanager
 def trace_feedback(
     *, name: str = "Feedback"
-) -> Generator[run_trees.RunTree, None, None]:
+) -> Generator[Optional[run_trees.RunTree], None, None]:
     """Trace the computation of a pytest run feedback as its own run.
 
     Args:
@@ -1191,6 +1212,12 @@ def trace_feedback(
 
                 assert "hello" in response.choices[0].message.content.lower()
     """  # noqa: E501
+    if ls_utils.test_tracking_is_disabled():
+        logger.info(
+            "LANGSMITH_TEST_TRACKING is set to 'false'." " Skipping log_feedback."
+        )
+        yield None
+        return
     parent_run = rh.get_current_run_tree()
     test_case = _TEST_CASE.get()
     if not parent_run or not test_case:
