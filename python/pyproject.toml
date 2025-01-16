@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "langsmith"
-version = "0.2.11rc7"
+version = "0.2.11rc8"
 description = "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform."
 authors = ["LangChain <support@langchain.dev>"]
 license = "MIT"
@@ -137,5 +137,5 @@ markers = ["slow: long-running tests"]
 [project]
 name = "langsmith"
 
-[project.entry-points.pytest11]
+[tool.poetry.plugins.pytest11]
 langsmith = "langsmith.pytest_plugin"
