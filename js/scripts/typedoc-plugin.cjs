@@ -50,21 +50,13 @@ const SCRIPT_HTML = `<script>
 function shouldRemoveReflection(reflection) {
   const kind = reflection.kind;
 
-  if (
-    reflection.parent &&
-    reflection.name !== "constructor"
-  ) {
-    if (kind === ReflectionKind.Property) {
-      return true;
-    }
-  }
-
   if (REFLECTION_KINDS_TO_HIDE.find((kindToHide) => kindToHide === kind)) {
     if (reflection.name.startsWith("_") || reflection.name.startsWith("ls_")) {
       // Remove all reflections which start with an `_` or `ls_` as those are internal
       return true;
     }
   }
+  return false;
 }
 
 /**
