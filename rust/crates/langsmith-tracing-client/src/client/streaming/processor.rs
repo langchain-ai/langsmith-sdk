@@ -14,34 +14,37 @@ use crate::client::{
 use super::{multipart_writer::StreamingMultipart, ClientConfig};
 
 trait ErrorReporter {
-    #[allow(unused_variables)] // allow the default impl to not use the fn inputs
     fn report_run_create_processing_error(
         &self,
         operation: &RunCreate,
         part_name: &str,
         stream_state: &StreamState,
     ) {
+        eprintln!("run create processing error: {operation:?} {part_name} {stream_state:?}")
     }
 
-    #[allow(unused_variables)] // allow the default impl to not use the fn inputs
     fn report_run_update_processing_error(
         &self,
         operation: &RunUpdate,
         part_name: &str,
         stream_state: &StreamState,
     ) {
+        eprintln!("run update processing error: {operation:?} {part_name} {stream_state:?}")
     }
 
-    #[allow(unused_variables)] // allow the default impl to not use the fn inputs
-    fn report_transmit_retry(&self, e: &TracingClientError, retry_after: Duration) {}
+    fn report_transmit_retry(&self, e: &TracingClientError, retry_after: Duration) {
+        eprintln!("transmit error {e}, retrying in {}ms", retry_after.as_millis())
+    }
 
-    #[allow(unused_variables)] // allow the default impl to not use the fn inputs
-    fn report_final_transmit_error(&self, e: TracingClientError) {}
+    fn report_final_transmit_error(&self, e: TracingClientError) {
+        eprintln!("giving up due to error {e}")
+    }
 }
 
-struct NoOpReporter;
+/// Print each reported error to stderr.
+struct EprintlnReporter;
 
-impl ErrorReporter for NoOpReporter {}
+impl ErrorReporter for EprintlnReporter {}
 
 pub struct RunProcessor {
     receiver: crossbeam_channel::Receiver<QueuedRun>,
@@ -99,7 +102,7 @@ impl RunProcessor {
         };
 
         let multipart_stream = Self::make_stream(config.compression_level, compression_workers);
-        let error_reporter = Box::new(NoOpReporter);
+        let error_reporter = Box::new(EprintlnReporter);
 
         Self {
             receiver,

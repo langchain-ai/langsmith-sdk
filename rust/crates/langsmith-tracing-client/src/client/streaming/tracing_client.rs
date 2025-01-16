@@ -24,7 +24,7 @@ pub struct TracingClient {
 impl TracingClient {
     pub fn new(mut config: ClientConfig) -> Result<Self, TracingClientError> {
         let (sender, receiver) = crossbeam_channel::bounded(config.queue_capacity);
-        let (drain_sender, drain_receiver) = crossbeam_channel::bounded(1);
+        let (drain_sender, drain_receiver) = crossbeam_channel::bounded(0);
 
         // Ensure our headers include the API key,
         // and it's marked as "sensitive" so it doesn't get printed in logs.
