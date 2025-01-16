@@ -9,6 +9,7 @@ from threading import Lock
 
 import pytest
 
+from langsmith import utils as ls_utils
 from langsmith.testing._internal import test as ls_test
 
 
@@ -273,6 +274,10 @@ LangSmith link: [bright_cyan][link={self.test_suite_urls[suite_name]}]click here
         if reporter:
             reporter.warning_summary = lambda *args, **kwargs: None
 
+    def pytest_sessionfinish(self, session):
+        """Stop Rich Live rendering at the end of the session."""
+        self.live.stop()
+
 
 def pytest_configure(config):
     """Register the 'langsmith' marker."""
@@ -290,6 +295,13 @@ def pytest_configure(config):
             msg = (
                 "--output='langsmith' | 'ls' not supported with pytest-xdist. "
                 "Please remove the '--output' option or '-n' option."
+            )
+            raise ValueError(msg)
+        if ls_utils.test_tracking_is_disabled():
+            msg = (
+                "--output='langsmith' | 'ls' not supported when env var"
+                "LANGSMITH_TEST_TRACKING='false'. Please remove the '--output' option "
+                "or enable test tracking."
             )
             raise ValueError(msg)
         config.pluginmanager.register(LangSmithPlugin(), "langsmith_plugin")
