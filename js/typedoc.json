@@ -24,4 +24,5 @@
   "skipErrorChecking": false,
   "exclude": ["dist"],
   "hostedBaseUrl": "https://docs.smith.langchain.com/reference/js/",
+  "useHostedBaseUrlForAbsoluteLinks": true
 }
