@@ -41,7 +41,7 @@ impl TracingClient {
 
         let worker = thread::spawn(move || {
             let mut processor = super::RunProcessor::new(receiver, drain_sender, config);
-            processor.run().expect("run failed")
+            processor.run();
         });
 
         Ok(Self { sender, drain: drain_receiver, worker })

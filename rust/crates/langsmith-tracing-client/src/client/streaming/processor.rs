@@ -4,6 +4,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+use backon::BlockingRetryable as _;
+
 use crate::client::{
     errors::StreamState, run::QueuedRun, RunCreate, RunCreateExtended, RunUpdate,
     RunUpdateExtended, TracingClientError,
@@ -31,7 +33,10 @@ trait ErrorReporter {
     }
 
     #[allow(unused_variables)] // allow the default impl to not use the fn inputs
-    fn report_transmit_error(&self, stream_state: &StreamState) {}
+    fn report_transmit_retry(&self, e: &TracingClientError, retry_after: Duration) {}
+
+    #[allow(unused_variables)] // allow the default impl to not use the fn inputs
+    fn report_final_transmit_error(&self, e: TracingClientError) {}
 }
 
 struct NoOpReporter;
@@ -107,7 +112,7 @@ impl RunProcessor {
         }
     }
 
-    pub(crate) fn run(&mut self) -> Result<(), TracingClientError> {
+    pub(crate) fn run(&mut self) {
         let mut last_send_time = Instant::now();
 
         loop {
@@ -116,11 +121,11 @@ impl RunProcessor {
             match queued_run {
                 Ok(queued_run) => match queued_run {
                     QueuedRun::Shutdown => {
-                        self.send_pending_data()?;
+                        self.send_pending_data();
                         break;
                     }
                     QueuedRun::Drain => {
-                        self.send_pending_data()?;
+                        self.send_pending_data();
                         self.drain_sender.send(()).expect("drain_sender should never fail");
                         break;
                     }
@@ -131,7 +136,7 @@ impl RunProcessor {
                                 if self.multipart_stream.get_ref().get_ref().len()
                                     >= self.config.send_at_batch_size
                                 {
-                                    self.send_pending_data()?;
+                                    self.send_pending_data();
                                     last_send_time = Instant::now();
                                 }
                             }
@@ -154,26 +159,35 @@ impl RunProcessor {
                     if self.multipart_stream.is_empty()
                         && last_send_time.elapsed() >= self.config.send_at_batch_time
                     {
-                        self.send_pending_data()?;
+                        self.send_pending_data();
                         last_send_time = Instant::now();
                     }
                 }
                 Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
                     // The sending part of the channel was dropped, so no further data is incoming.
-                    self.send_pending_data()?;
+                    self.send_pending_data();
                     break;
                 }
             }
         }
-
-        Ok(())
     }
 
-    fn send_pending_data(&mut self) -> Result<(), TracingClientError> {
+    /// Send any data that is present in the compressed stream, retrying errors.
+    ///
+    /// If retries are exhausted without success, report the error to the error reporter
+    /// and drop the data.
+    fn send_pending_data(&mut self) {
         if self.multipart_stream.is_empty() {
-            return Ok(());
+            return;
         }
 
+        let outcome = self.prepare_request().and_then(|request| self.submit_request(request));
+        if let Err(e) = outcome {
+            self.error_reporter.report_final_transmit_error(e);
+        }
+    }
+
+    fn prepare_request(&mut self) -> Result<reqwest::blocking::RequestBuilder, TracingClientError> {
         // Start a new compression stream for future payload data, and replace the current one.
         let next_stream =
             Self::make_stream(self.config.compression_level, self.compression_workers);
@@ -183,22 +197,77 @@ impl RunProcessor {
             format!("multipart/form-data; boundary={}", compressed_stream.boundary());
         let compressed_payload = compressed_stream.finish()?.finish()?;
 
-        let response = self
+        let request = self
             .http_client
             .post(format!("{}/runs/multipart", self.config.endpoint))
             .headers(self.config.headers.as_ref().cloned().unwrap_or_default())
             .header(http::header::CONTENT_TYPE, content_type)
             .header(http::header::CONTENT_ENCODING, "zstd")
-            .body(compressed_payload)
-            .send()?;
+            .body(compressed_payload);
 
-        if response.status().is_success() {
-            Ok(())
-        } else {
-            let status = response.status();
-            let message = response.text().unwrap_or_default();
-            Err(TracingClientError::HttpError(status, message))
-        }
+        Ok(request)
+    }
+
+    /// Attempt to submit the prepared request, retrying errors.
+    fn submit_request(&mut self, request: reqwest::blocking::RequestBuilder) -> Result<(), TracingClientError> {
+        let sender = move || -> Result<(), TracingClientError> {
+            // We have to clone the request before sending it, so we can retry it.
+            // Requests are designed to be cheaply cloneable.
+            // Cloning a request *does not* clone the buffer that represents the body.
+            let cloned_request = request.try_clone().expect("request was not cloneable, please make sure the body is a `Vec<u8>` buffer and not a stream");
+
+            let response = cloned_request.send()?;
+            if response.status().is_success() {
+                Ok(())
+            } else {
+                let status = response.status();
+                let message = response.text().unwrap_or_default();
+                Err(TracingClientError::HttpError(status, message))
+            }
+        };
+
+        sender
+            .retry(
+                // Approximate a Fibonacci backoff with jitter.
+                // In an ideal world, we'd have the option of full jitter
+                // (from 0 to the current exponential amount) since that performs a bit better.
+                // But `backon` doesn't seem to offer that option, and the improvement is marginal
+                // so it isn't worth implementing.
+                //
+                // More info:
+                // https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/
+                backon::ExponentialBuilder::default()
+                    .with_factor(1.6)
+                    .with_min_delay(Duration::from_millis(500))
+                    .with_max_delay(Duration::from_secs(8))
+                    .with_jitter()
+                    .with_max_times(4)  // 1 initial attempt + 4 retries = 5 attempts total
+            )
+            .sleep(std::thread::sleep)
+            .when(move |e| {
+                match e {
+                    TracingClientError::HttpError(status_code, _) => {
+                        if status_code.as_u16() == http::StatusCode::TOO_MANY_REQUESTS.as_u16() {
+                            // The server is telling us to slow down our request rate.
+                            // Ensure we sleep for an extra second before continuing.
+                            std::thread::sleep(Duration::from_secs(1));
+                            true
+                        } else {
+                            // Retry server errors (status 5xx).
+                            status_code.is_server_error()
+                        }
+                    }
+                    TracingClientError::RequestError(error) => {
+                        // Retry network-related errors like connection failures and timeouts.
+                        error.is_connect() || error.is_timeout()
+                    }
+                    _ => false,
+                }
+            })
+            .notify(|err, dur| {
+                self.error_reporter.report_transmit_retry(err, dur);
+            })
+            .call()
     }
 
     /// Serialize the run data into the output stream.
