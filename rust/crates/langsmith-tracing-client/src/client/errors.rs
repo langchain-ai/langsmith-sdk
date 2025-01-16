@@ -31,11 +31,13 @@ impl From<std::io::Error> for TracingClientError {
 #[derive(Debug)]
 pub(crate) enum StreamState {
     /// The stream is safe. We can skip the offending record and keep going.
+    #[expect(dead_code, reason = "will be used when we decide how to report non-fatal client errors")]
     Safe(TracingClientError),
 
     /// Some of the offending record's data has been written into the stream,
     /// so the stream's data is now invalid and cannot be recovered.
     /// We must discard the entire stream and start over.
+    #[expect(dead_code, reason = "will be used when we decide how to report non-fatal client errors")]
     Polluted(TracingClientError),
 }
 
