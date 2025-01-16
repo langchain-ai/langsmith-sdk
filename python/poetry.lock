@@ -2379,10 +2379,10 @@ cffi = ["cffi (>=1.11)"]
 [extras]
 compression = ["zstandard"]
 langsmith-pyo3 = ["langsmith-pyo3"]
-pytest = ["rich"]
+pytest = ["pytest", "rich"]
 vcr = []
 
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<4.0"
-content-hash = "266ff8b75a6f5faa9e334766de1fc130ad66bbae65d2fcda1dd346d73850c9b5"
+content-hash = "53eaf249063d8b1f421ca5b813875522ceb5f15689601f60e72dd189aa682862"
