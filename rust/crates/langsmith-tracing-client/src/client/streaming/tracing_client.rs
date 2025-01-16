@@ -28,12 +28,10 @@ impl TracingClient {
 
         // Ensure our headers include the API key,
         // and it's marked as "sensitive" so it doesn't get printed in logs.
-        let mut api_key_header = HeaderValue::from_str(&config.api_key).expect("failed to convert API key into header");
+        let mut api_key_header =
+            HeaderValue::from_str(&config.api_key).expect("failed to convert API key into header");
         api_key_header.set_sensitive(true);
-        config.headers.get_or_insert_with(Default::default).append(
-            "X-API-KEY",
-            api_key_header,
-        );
+        config.headers.get_or_insert_with(Default::default).append("X-API-KEY", api_key_header);
 
         // We're going to share the config across threads.
         // It's immutable from this point onward, so Arc it for efficiency.

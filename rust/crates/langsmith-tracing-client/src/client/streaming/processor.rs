@@ -209,7 +209,10 @@ impl RunProcessor {
     }
 
     /// Attempt to submit the prepared request, retrying errors.
-    fn submit_request(&mut self, request: reqwest::blocking::RequestBuilder) -> Result<(), TracingClientError> {
+    fn submit_request(
+        &mut self,
+        request: reqwest::blocking::RequestBuilder,
+    ) -> Result<(), TracingClientError> {
         let sender = move || -> Result<(), TracingClientError> {
             // We have to clone the request before sending it, so we can retry it.
             // Requests are designed to be cheaply cloneable.
@@ -241,7 +244,7 @@ impl RunProcessor {
                     .with_min_delay(Duration::from_millis(500))
                     .with_max_delay(Duration::from_secs(8))
                     .with_jitter()
-                    .with_max_times(4)  // 1 initial attempt + 4 retries = 5 attempts total
+                    .with_max_times(4), // 1 initial attempt + 4 retries = 5 attempts total
             )
             .sleep(std::thread::sleep)
             .when(move |e| {
