@@ -50,7 +50,7 @@ interface CustomMatchers<R = unknown> {
    *
    * @example
    * ```ts
-   * import * as ls from "langsmith/jest";
+   * import * as ls from "langsmith/vitest";
    *
    * const myEvaluator = async ({ inputs, actual, expected }) => {
    *   // Judge example on some metric
@@ -88,13 +88,16 @@ declare module "vitest" {
   interface AsymmetricMatchersContaining extends CustomMatchers {}
 }
 
-const { test, it, describe, expect } = generateWrapperFromJestlikeMethods({
-  expect: vitestExpect,
-  test: vitestTest,
-  describe: vitestDescribe,
-  beforeAll: vitestBeforeAll,
-  afterAll: vitestAfterAll,
-});
+const { test, it, describe, expect } = generateWrapperFromJestlikeMethods(
+  {
+    expect: vitestExpect,
+    test: vitestTest,
+    describe: vitestDescribe,
+    beforeAll: vitestBeforeAll,
+    afterAll: vitestAfterAll,
+  },
+  "vitest"
+);
 
 export {
   /**

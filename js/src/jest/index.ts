@@ -100,13 +100,16 @@ declare global {
   }
 }
 
-const { test, it, describe, expect } = generateWrapperFromJestlikeMethods({
-  expect: jestExpect,
-  test: jestTest,
-  describe: jestDescribe,
-  beforeAll: jestBeforeAll,
-  afterAll: jestAfterAll,
-});
+const { test, it, describe, expect } = generateWrapperFromJestlikeMethods(
+  {
+    expect: jestExpect,
+    test: jestTest,
+    describe: jestDescribe,
+    beforeAll: jestBeforeAll,
+    afterAll: jestAfterAll,
+  },
+  process?.versions?.bun !== undefined ? "bun" : "jest"
+);
 
 export {
   /**

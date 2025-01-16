@@ -91,7 +91,8 @@ export function logOutput(output: Record<string, unknown>) {
 }
 
 export function generateWrapperFromJestlikeMethods(
-  methods: Record<string, any>
+  methods: Record<string, any>,
+  testRunnerName: string
 ) {
   const { expect, test, describe, beforeAll, afterAll } = methods;
 
@@ -240,6 +241,7 @@ export function generateWrapperFromJestlikeMethods(
         if (e.message.includes("not found")) {
           dataset = await testClient.createDataset(datasetName, {
             description: `Dataset for unit tests created on ${new Date().toISOString()}`,
+            metadata: { __ls_runner: testRunnerName },
           });
         } else {
           throw e;
@@ -286,7 +288,13 @@ export function generateWrapperFromJestlikeMethods(
           suiteName: datasetName,
           client,
           createdAt: new Date().toISOString(),
-          projectConfig: experimentConfig,
+          projectConfig: {
+            ...experimentConfig,
+            metadata: {
+              ...experimentConfig?.metadata,
+              __ls_runner: testRunnerName,
+            },
+          },
           enableTestTracking: experimentConfig?.enableTestTracking,
         };
 
