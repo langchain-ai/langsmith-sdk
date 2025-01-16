@@ -313,6 +313,10 @@ def traceable(
             Defaults to None.
         dangerously_allow_filesystem: Whether to allow filesystem access for attachments.
             Defaults to False.
+            
+            Traces that reference local filepaths will be uploaded to LangSmith.
+            In general, network-hosted applications should not be using this because
+            referenced files are usually on the user's machine, not the host machine.
 
     Returns:
             Union[Callable, Callable[[Callable], Callable]]: The decorated function.
