@@ -8,6 +8,7 @@ use crate::client::{run::QueuedRun, RunCreateExtended, RunUpdateExtended, Tracin
 pub struct ClientConfig {
     pub endpoint: String,
     pub api_key: String,
+    pub queue_capacity: usize,
     pub send_at_batch_size: usize,
     pub send_at_batch_time: Duration,
     pub headers: Option<HeaderMap>,
@@ -22,7 +23,7 @@ pub struct TracingClient {
 
 impl TracingClient {
     pub fn new(mut config: ClientConfig) -> Result<Self, TracingClientError> {
-        let (sender, receiver) = crossbeam_channel::unbounded();
+        let (sender, receiver) = crossbeam_channel::bounded(config.queue_capacity);
         let (drain_sender, drain_receiver) = crossbeam_channel::bounded(1);
 
         // Ensure our headers include the API key.
