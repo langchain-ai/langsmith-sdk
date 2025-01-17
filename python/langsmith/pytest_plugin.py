@@ -304,7 +304,7 @@ def pytest_configure(config):
                 "or enable test tracking."
             )
             raise ValueError(msg)
-        config.pluginmanager.register(LangSmithPlugin(), "langsmith_plugin")
+        config.pluginmanager.register(LangSmithPlugin(), "langsmith_output_plugin")
         # Suppress warnings summary
         config.option.showwarnings = False
 
