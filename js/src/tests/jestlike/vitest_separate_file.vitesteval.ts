@@ -2,26 +2,9 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
 import * as ls from "../../vitest/index.js";
-import { type SimpleEvaluator } from "../../vitest/index.js";
 
-const myEvaluator: SimpleEvaluator = (params) => {
-  const { referenceOutputs, outputs } = params;
-  if (outputs.bar === referenceOutputs.bar) {
-    return {
-      key: "accuracy",
-      score: 1,
-    };
-  } else if (outputs.bar === "goodval") {
-    return {
-      key: "accuracy",
-      score: 0.5,
-    };
-  } else {
-    return {
-      key: "accuracy",
-      score: 0,
-    };
-  }
+const myEvaluator = () => {
+  return { key: "accuracy", score: Math.random() };
 };
 
 const unrelatedStore = new AsyncLocalStorage();

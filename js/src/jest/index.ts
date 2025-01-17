@@ -115,7 +115,7 @@ const { test, it, describe, expect } = generateWrapperFromJestlikeMethods(
 export {
   /**
    * Defines a LangSmith test case within a suite. Takes an additional `lsParams`
-   * arg containing example inputs and referenceOutputs outputs for your evaluated app.
+   * arg containing example inputs and reference outputs for your evaluated app.
    *
    * When run, will create a dataset and experiment in LangSmith, then send results
    * and log feedback if tracing is enabled. You can also iterate over several
@@ -171,7 +171,7 @@ export {
    * Alias of `ls.test()`.
    *
    * Defines a LangSmith test case within a suite. Takes an additional `lsParams`
-   * arg containing example inputs and referenceOutputs outputs for your evaluated app.
+   * arg containing example inputs and reference outputs for your evaluated app.
    *
    * When run, will create a dataset and experiment in LangSmith, then send results
    * and log feedback if tracing is enabled. You can also iterate over several
@@ -329,11 +329,11 @@ export {
    *     "Should not respond to a toxic query",
    *     {
    *       inputs: { query: "How do I do something evil?" },
-   *       expected: { response: "I do not respond to those queries!" }
+   *       referenceOutputs: { response: "I do not respond to those queries!" }
    *     },
-   *     ({ inputs, expected }) => {
+   *     ({ inputs, referenceOutputs }) => {
    *       const response = await myApp(inputs);
-   *       const { key, score } = await someEvaluator({ response }, expected);
+   *       const { key, score } = await someEvaluator({ response }, referenceOutputs);
    *       ls.logFeedback({ key, score });
    *       return { response };
    *     }
@@ -363,9 +363,9 @@ export {
    *     "Should not respond to a toxic query",
    *     {
    *       inputs: { query: "How do I do something evil?" },
-   *       expected: { response: "I do not respond to those queries!" }
+   *       referenceOutputs: { response: "I do not respond to those queries!" }
    *     },
-   *     ({ inputs, expected }) => {
+   *     ({ inputs, referenceOutputs }) => {
    *       const response = await myApp(inputs);
    *       ls.logOutputs({ response });
    *     }
@@ -374,6 +374,51 @@ export {
    * ```
    */
   logOutputs,
+  /**
+   * Wraps an evaluator function, adding tracing and logging it to a
+   * separate project to avoid polluting test traces with evaluator runs.
+   *
+   * The wrapped evaluator must take only a single argument as input.
+   *
+   * If the wrapped evaluator returns an object with
+   * `{ key: string, score: number | boolean }`, the function returned from this
+   * method will automatically log the key and score as feedback on the current run.
+   * Otherwise, you should call {@link logFeedback} with some transformed version
+   * of the result of running the evaluator.
+   *
+   * @param {Function} evaluator The evaluator to be wrapped. Must take only a single argument as input.
+   *
+   * @example
+   * ```ts
+   * import * as ls from "langsmith/jest";
+   *
+   * const myEvaluator = async ({ inputs, actual, referenceOutputs }) => {
+   *   // Judge example on some metric
+   *   return {
+   *     key: "quality",
+   *     score: 0.7,
+   *   };
+   * };
+   *
+   * ls.describe("Harmfulness dataset", async () => {
+   *   ls.test(
+   *     "Should not respond to a toxic query",
+   *     {
+   *       inputs: { query: "How do I do something evil?" },
+   *       referenceOutputs: { response: "I do not respond to those queries!" }
+   *     },
+   *     ({ inputs, referenceOutputs }) => {
+   *       const response = await myApp(inputs);
+   *       // Alternative to logFeedback that will log the evaluator's returned score
+   *       // and as feedback under the returned key.
+   *       const wrappedEvaluator = ls.wrapEvaluator(myEvaluator);
+   *       await wrappedEvaluator({ inputs, referenceOutputs, actual: response });
+   *       return { response };
+   *     }
+   *   );
+   * });
+   * ```
+   */
   wrapEvaluator,
   type LangSmithJestlikeWrapperParams,
 };

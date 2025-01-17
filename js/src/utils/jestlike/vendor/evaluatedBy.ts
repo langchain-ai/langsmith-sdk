@@ -6,7 +6,7 @@ import {
 } from "../globals.js";
 
 import { EvaluationResult } from "../../../evaluation/evaluator.js";
-import { RunTree } from "../../../run_trees.js";
+import { RunTree, RunTreeConfig } from "../../../run_trees.js";
 import { v4 } from "uuid";
 
 export type SimpleEvaluatorParams = {
@@ -30,7 +30,10 @@ function isEvaluationResult(x: unknown): x is EvaluationResult {
 }
 
 export function wrapEvaluator<I, O>(evaluator: (input: I) => O | Promise<O>) {
-  return async (input: I, config?: { runId?: string }): Promise<O> => {
+  return async (
+    input: I,
+    config?: Partial<RunTreeConfig> & { runId?: string }
+  ): Promise<O> => {
     const context = testWrapperAsyncLocalStorageInstance.getStore();
     if (context === undefined || context.currentExample === undefined) {
       throw new Error(
@@ -41,7 +44,7 @@ export function wrapEvaluator<I, O>(evaluator: (input: I) => O | Promise<O>) {
         ].join("\n")
       );
     }
-    const evalRunId = config?.runId ?? v4();
+    const evalRunId = config?.runId ?? config?.id ?? v4();
     let evalResult;
     let currentRunTree;
     if (trackingEnabled(context)) {
@@ -51,6 +54,7 @@ export function wrapEvaluator<I, O>(evaluator: (input: I) => O | Promise<O>) {
           return evaluator(params);
         },
         {
+          ...config,
           id: evalRunId,
           trace_id: evalRunId,
           reference_example_id: context.currentExample.id,

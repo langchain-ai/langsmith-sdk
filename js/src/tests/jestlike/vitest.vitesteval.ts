@@ -75,7 +75,7 @@ ls.describe(
     ls.test(
       "Should fail with some defined evaluator",
       { inputs: { foo: "bad" }, referenceOutputs: { baz: "qux" } },
-      async ({ inputs: _inputs, expected: _expected }) => {
+      async ({ inputs: _inputs, referenceOutputs: _expected }) => {
         const myApp = () => {
           return { bar: "bad" };
         };
