@@ -804,7 +804,7 @@ def _create_test_case(
         metadata={"signature": _get_test_repr(func, signature), "name": example_name},
     )
     pytest_plugin = (
-        pytest_request.config.pluginmanager.get_plugin("langsmith_plugin")
+        pytest_request.config.pluginmanager.get_plugin("langsmith_output_plugin")
         if pytest_request
         else None
     )
