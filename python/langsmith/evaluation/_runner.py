@@ -1591,9 +1591,8 @@ class _ExperimentManager(_ExperimentManagerMixin):
                             results=[
                                 EvaluationResult(
                                     key=key,
-                                    source_run_id=run.id,
                                     comment=repr(e),
-                                    extra={"error": True},
+                                    error=True,
                                 )
                                 for key in feedback_keys
                             ]
