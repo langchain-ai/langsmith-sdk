@@ -18,7 +18,7 @@ from pydantic import BaseModel
 
 import langsmith.utils as ls_utils
 from langsmith import Client, traceable
-from langsmith.run_helpers import tracing_context
+from langsmith.run_helpers import get_current_run_tree, tracing_context
 
 
 class LangSmithProjectNameTest(unittest.TestCase):
@@ -107,9 +107,20 @@ def test_tracing_enabled():
         assert not ls_utils.tracing_is_enabled()
 
     @traceable
+    def grandchild_function():
+        assert ls_utils.tracing_is_enabled()
+        rt = get_current_run_tree()
+        assert rt
+        assert rt.parent_run_id is None
+        assert "." not in rt.dotted_order
+        assert rt.parent_run is None
+        return 1
+
+    @traceable
     def child_function():
         assert ls_utils.tracing_is_enabled()
-        return 1
+        with tracing_context(parent=False):
+            return grandchild_function()
 
     @traceable
     def untraced_child_function():
