@@ -71,7 +71,7 @@ export function wrapEvaluator<I, O>(evaluator: (input: I) => O | Promise<O>) {
     }
     if (isEvaluationResult(evalResult)) {
       _logTestFeedback({
-        exampleId: context?.currentExample?.id!,
+        exampleId: context?.currentExample?.id,
         feedback: evalResult,
         context,
         runTree: currentRunTree,
