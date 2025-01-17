@@ -39,8 +39,7 @@ const UUID5_NAMESPACE = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
 export const STRIP_ANSI_REGEX =
   // eslint-disable-next-line no-control-regex
   /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g;
-
-let testCounter = 0;
+export const TEST_ID_DELIMITER = ", test_id=";
 
 export function logFeedback(feedback: EvaluationResult) {
   const context = testWrapperAsyncLocalStorageInstance.getStore();
@@ -358,16 +357,18 @@ export function generateWrapperFromJestlikeMethods(
       const { config, inputs, expected, ...rest } = lsParams;
       const totalRuns = config?.iterations ?? 1;
       for (let i = 0; i < totalRuns; i += 1) {
+        const testUuid = v4().replace(/-/g, "").slice(0, 13);
         // Jest will not group tests under the same "describe" group if you await the test and
         // total runs is greater than 1.
-        testCounter += 1;
         const resultsPath = path.join(
           os.tmpdir(),
           "langsmith_test_results",
-          `${testCounter}.json`
+          `${testUuid}.json`
         );
         void method(
-          `${testCounter}: ${name}${totalRuns > 1 ? `, run ${i}` : ""}`,
+          `${name}${
+            totalRuns > 1 ? `, run ${i}` : ""
+          }${TEST_ID_DELIMITER}${testUuid}`,
           async () => {
             if (context === undefined) {
               throw new Error(

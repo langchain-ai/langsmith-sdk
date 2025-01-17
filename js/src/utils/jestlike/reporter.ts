@@ -6,7 +6,7 @@ import * as path from "node:path";
 import * as fs from "node:fs/promises";
 import { EvaluationResult } from "../../evaluation/evaluator.js";
 import { ScoreType } from "../../schemas.js";
-import { STRIP_ANSI_REGEX } from "./index.js";
+import { STRIP_ANSI_REGEX, TEST_ID_DELIMITER } from "./index.js";
 
 const FEEDBACK_COLLAPSE_THRESHOLD = 48;
 
@@ -80,15 +80,15 @@ export async function printReporterTable(
   let experimentUrl;
   for (const result of results) {
     const { title, duration, status } = result;
-    const titleComponents = title.split(":");
+    const titleComponents = title.split(TEST_ID_DELIMITER);
     const testId =
-      titleComponents.length > 1 && !isNaN(parseInt(titleComponents[0], 10))
-        ? titleComponents[0]
+      titleComponents.length > 1 && titleComponents.at(-1) !== undefined
+        ? titleComponents.at(-1)
         : undefined;
     const testName =
       testId !== undefined
-        ? titleComponents.slice(1).join(":").trim()
-        : titleComponents.join(":");
+        ? titleComponents.slice(0, -1).join(TEST_ID_DELIMITER).trim()
+        : titleComponents.join(TEST_ID_DELIMITER);
     // Non-LangSmith test
     if (testId === undefined) {
       rows.push([

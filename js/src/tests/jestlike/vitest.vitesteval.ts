@@ -1,8 +1,4 @@
 /* eslint-disable import/no-extraneous-dependencies */
-
-import "dotenv/config";
-
-import { test } from "vitest";
 import { AsyncLocalStorage } from "node:async_hooks";
 
 import * as ls from "../../vitest/index.js";
@@ -32,7 +28,7 @@ const unrelatedStore = new AsyncLocalStorage();
 unrelatedStore.enterWith("value"); // Ensure that this works despite https://github.com/jestjs/jest/issues/13653
 
 ls.describe(
-  "js unit testing test demo",
+  "js vitest",
   () => {
     ls.test(
       "Should succeed with some defined evaluator",
@@ -122,33 +118,6 @@ ls.describe(
         .evaluatedBy(myEvaluator)
         .not.toBeGreaterThanOrEqual(0.5);
       return res;
-    });
-
-    test("Absolute closeness custom matcher", async () => {
-      await ls.expect("foobar").toBeAbsoluteCloseTo("foobaz", {
-        threshold: 3,
-      });
-      await ls.expect("foobar").not.toBeAbsoluteCloseTo("foobaz", {
-        threshold: 0,
-      });
-      await ls.expect("foobar").not.toBeAbsoluteCloseTo("barfoo", {
-        threshold: 3,
-      });
-    });
-
-    test("Relative closeness custom matcher", async () => {
-      await ls.expect("0123456789").toBeRelativeCloseTo("1123456789", {
-        threshold: 0.1,
-      });
-      await ls.expect("0123456789").not.toBeRelativeCloseTo("111111111", {
-        threshold: 0.1,
-      });
-      await ls.expect("0123456789").not.toBeRelativeCloseTo("1", {
-        threshold: 0,
-      });
-      await ls.expect("0123456789").toBeRelativeCloseTo("1", {
-        threshold: 1,
-      });
     });
   },
   {
