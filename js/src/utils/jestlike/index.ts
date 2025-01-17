@@ -69,7 +69,7 @@ export function logFeedback(feedback: EvaluationResult) {
   });
 }
 
-export function logOutput(output: Record<string, unknown>) {
+export function logOutputs(output: Record<string, unknown>) {
   const context = testWrapperAsyncLocalStorageInstance.getStore();
   if (context === undefined) {
     throw new Error(
@@ -394,7 +394,7 @@ export function generateWrapperFromJestlikeMethods(
             const setLoggedOutput = (value: Record<string, unknown>) => {
               if (loggedOutput !== undefined) {
                 console.warn(
-                  `[WARN]: New "logOutput()" call will override output set by previous "logOutput()" call.`
+                  `[WARN]: New "logOutputs()" call will override output set by previous "logOutputs()" call.`
                 );
               }
               loggedOutput = value;
@@ -426,7 +426,7 @@ export function generateWrapperFromJestlikeMethods(
                 if (res != null) {
                   if (loggedOutput !== undefined) {
                     console.warn(
-                      `[WARN]: Returned value from test function will override output set by previous "logOutput()" call.`
+                      `[WARN]: Returned value from test function will override output set by previous "logOutputs()" call.`
                     );
                   }
                   loggedOutput =

@@ -50,7 +50,7 @@ ls.describe(
           key: "coolness",
           score: 0.5,
         });
-        ls.logOutput({
+        ls.logOutputs({
           testLoggedOutput: "logged",
         });
       }

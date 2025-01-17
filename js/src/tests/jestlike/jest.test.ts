@@ -31,7 +31,7 @@ ls.describe(
   "js unit testing test demo",
   () => {
     ls.test(
-      "Should succeed with some defined evaluator",
+      "Should succeed with a defined evaluator",
       { inputs: { foo: "bar" }, expected: { bar: "qux" } },
       async ({ inputs: _inputs, expected }) => {
         const myApp = () => {
@@ -43,26 +43,26 @@ ls.describe(
           .evaluatedBy(myEvaluator)
           .toBeGreaterThanOrEqual(0.5);
         ls.logFeedback({
-          key: "coolness",
+          key: "readability",
           score: 0.9,
         });
         ls.logFeedback({
-          key: "coolness 2",
+          key: "readability 2",
           score: 0.9,
         });
         ls.logFeedback({
-          key: "coolness 3",
+          key: "readability 3",
           score: 0.9,
         });
         ls.logFeedback({
-          key: "coolness 4",
+          key: "readability 4",
           score: 0.9,
         });
         ls.logFeedback({
-          key: "coolness 5",
+          key: "readability 5",
           score: 0.9,
         });
-        ls.logOutput({
+        ls.logOutputs({
           bar: "perfect",
         });
       }
@@ -81,7 +81,7 @@ ls.describe(
         };
         const res = myApp();
         ls.logFeedback({
-          key: "coolness",
+          key: "readability",
           score: 0.8,
         });
         await ls
@@ -101,7 +101,7 @@ ls.describe(
         };
         const res = myApp();
         ls.logFeedback({
-          key: "coolness",
+          key: "readability",
           score: 0.1,
         });
         await ls
@@ -132,12 +132,12 @@ ls.describe(
         },
       ],
       { iterations: 3, metadata: { something: "cool" } }
-    )("Does the thing", async ({ inputs: _inputs, expected: _outputs }) => {
+    )("Counts to ten", async ({ inputs: _inputs, expected: _outputs }) => {
       const myApp = () => {
         return { bar: "bad" };
       };
       ls.logFeedback({
-        key: "coolness",
+        key: "readability",
         score: 0.6,
       });
       const res = myApp();
@@ -145,7 +145,7 @@ ls.describe(
         .expect(res)
         .evaluatedBy(myEvaluator)
         .not.toBeGreaterThanOrEqual(0.5);
-      return res;
+      ls.logOutputs(res);
     });
 
     test("Absolute closeness custom matcher", async () => {

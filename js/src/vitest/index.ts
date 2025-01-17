@@ -18,7 +18,7 @@ import {
   type RelativeCloseToMatcherOptions,
 } from "../utils/jestlike/matchers.js";
 import type { SimpleEvaluator } from "../utils/jestlike/vendor/evaluatedBy.js";
-import { logFeedback, logOutput } from "../utils/jestlike/index.js";
+import { logFeedback, logOutputs } from "../utils/jestlike/index.js";
 import { generateWrapperFromJestlikeMethods } from "../utils/jestlike/index.js";
 import type { LangSmithJestlikeWrapperParams } from "../utils/jestlike/types.js";
 
@@ -354,13 +354,13 @@ export {
    *     },
    *     ({ inputs, expected }) => {
    *       const response = await myApp(inputs);
-   *       ls.logOutput({ response });
+   *       ls.logOutputs({ response });
    *     }
    *   );
    * });
    * ```
    */
-  logOutput,
+  logOutputs,
   type LangSmithJestlikeWrapperParams,
 };
 
