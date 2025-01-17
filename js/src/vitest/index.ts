@@ -18,6 +18,7 @@ import {
   type RelativeCloseToMatcherOptions,
 } from "../utils/jestlike/matchers.js";
 import type { SimpleEvaluator } from "../utils/jestlike/vendor/evaluatedBy.js";
+import { wrapEvaluator } from "../utils/jestlike/vendor/evaluatedBy.js";
 import { logFeedback, logOutputs } from "../utils/jestlike/index.js";
 import { generateWrapperFromJestlikeMethods } from "../utils/jestlike/index.js";
 import type { LangSmithJestlikeWrapperParams } from "../utils/jestlike/types.js";
@@ -42,7 +43,7 @@ interface CustomMatchers<R = unknown> {
     options?: SemanticCloseToMatcherOptions
   ): Promise<R>;
   /**
-   * Matcher that runs an evaluator with actual and expected output from some run,
+   * Matcher that runs an evaluator with actual outputs and referenceOutputs from some run,
    * and asserts the evaluator's output `score` based on subsequent matchers.
    * Will also log feedback to LangSmith and to test results.
    *
@@ -52,7 +53,7 @@ interface CustomMatchers<R = unknown> {
    * ```ts
    * import * as ls from "langsmith/vitest";
    *
-   * const myEvaluator = async ({ inputs, actual, expected }) => {
+   * const myEvaluator = async ({ inputs, actual, referenceOutputs }) => {
    *   // Judge example on some metric
    *   return {
    *     key: "quality",
@@ -65,9 +66,9 @@ interface CustomMatchers<R = unknown> {
    *     "Should not respond to a toxic query",
    *     {
    *       inputs: { query: "How do I do something evil?" },
-   *       expected: { response: "I do not respond to those queries!" }
+   *       referenceOutputs: { response: "I do not respond to those queries!" }
    *     },
-   *     ({ inputs, expected }) => {
+   *     ({ inputs, referenceOutputs }) => {
    *       const response = await myApp(inputs);
    *       await ls.expect(response).evaluatedBy(myEvaluator).toBeGreaterThan(0.5);
    *       return { response };
@@ -102,7 +103,7 @@ const { test, it, describe, expect } = generateWrapperFromJestlikeMethods(
 export {
   /**
    * Defines a LangSmith test case within a suite. Takes an additional `lsParams`
-   * arg containing example inputs and expected outputs for your evaluated app.
+   * arg containing example inputs and reference outputs for your evaluated app.
    *
    * When run, will create a dataset and experiment in LangSmith, then send results
    * and log feedback if tracing is enabled. You can also iterate over several
@@ -122,7 +123,7 @@ export {
    * @param {LangSmithJestlikeWrapperParams<I, O>} lsParams Input and output for the eval,
    *   as well as additional LangSmith fields
    * @param {Function} fn - The function containing the test implementation.
-   *   Will receive "inputs" and "expected" from parameters.
+   *   Will receive "inputs" and "referenceOutputs" from parameters.
    *   Returning a value here will populate experiment output logged in LangSmith.
    * @param {number} [timeout] - Optional timeout in milliseconds for the test
    * @example
@@ -134,20 +135,20 @@ export {
    *     "Should not respond to a toxic query",
    *     {
    *       inputs: { query: "How do I do something evil?" },
-   *       expected: { response: "I do not respond to those queries!" }
+   *       referenceOutputs: { response: "I do not respond to those queries!" }
    *     },
-   *     ({ inputs, expected }) => {
+   *     ({ inputs, referenceOutputs }) => {
    *       const response = await myApp(inputs);
-   *       const { key, score } = await someEvaluator({ response }, expected);
+   *       const { key, score } = await someEvaluator({ response }, referenceOutputs);
    *       ls.logFeedback({ key, score });
    *       return { response };
    *     }
    *   );
    *
    *   ls.test.each([
-   *     { inputs: {...}, expected: {...} },
-   *     { inputs: {...}, expected: {...} }
-   *   ])("Should respond to the above examples", async ({ inputs, expected }) => {
+   *     { inputs: {...}, referenceOutputs: {...} },
+   *     { inputs: {...}, referenceOutputs: {...} }
+   *   ])("Should respond to the above examples", async ({ inputs, referenceOutputs }) => {
    *     ...
    *   });
    * });
@@ -158,7 +159,7 @@ export {
    * Alias of `ls.test()`.
    *
    * Defines a LangSmith test case within a suite. Takes an additional `lsParams`
-   * arg containing example inputs and expected outputs for your evaluated app.
+   * arg containing example inputs and referenceOutputs outputs for your evaluated app.
    *
    * When run, will create a dataset and experiment in LangSmith, then send results
    * and log feedback if tracing is enabled. You can also iterate over several
@@ -178,7 +179,7 @@ export {
    * @param {LangSmithJestlikeWrapperParams<I, O>} lsParams Input and output for the eval,
    *   as well as additional LangSmith fields
    * @param {Function} fn - The function containing the test implementation.
-   *   Will receive "inputs" and "expected" from parameters.
+   *   Will receive "inputs" and "referenceOutputs" from parameters.
    *   Returning a value here will populate experiment output logged in LangSmith.
    * @param {number} [timeout] - Optional timeout in milliseconds for the test
    * @example
@@ -190,20 +191,20 @@ export {
    *     "Should not respond to a toxic query",
    *     {
    *       inputs: { query: "How do I do something evil?" },
-   *       expected: { response: "I do not respond to those queries!" }
+   *       referenceOutputs: { response: "I do not respond to those queries!" }
    *     },
-   *     ({ inputs, expected }) => {
+   *     ({ inputs, referenceOutputs }) => {
    *       const response = await myApp(inputs);
-   *       const { key, score } = await someEvaluator({ response }, expected);
+   *       const { key, score } = await someEvaluator({ response }, referenceOutputs);
    *       ls.logFeedback({ key, score });
    *       return { response };
    *     }
    *   );
    *
    *   ls.it.each([
-   *     { inputs: {...}, expected: {...} },
-   *     { inputs: {...}, expected: {...} }
-   *   ])("Should respond to the above examples", async ({ inputs, expected }) => {
+   *     { inputs: {...}, referenceOutputs: {...} },
+   *     { inputs: {...}, referenceOutputs: {...} }
+   *   ])("Should respond to the above examples", async ({ inputs, referenceOutputs }) => {
    *     ...
    *   });
    * });
@@ -225,7 +226,7 @@ export {
    *
    * @param {string} name - The name or description of the test suite
    * @param {Function} fn - The function containing the test implementation.
-   *   Will receive "inputs" and "expected" from parameters.
+   *   Will receive "inputs" and "referenceOutputs" from parameters.
    *   Returning a value here will populate experiment output logged in LangSmith.
    * @param {Partial<RunTreeConfig>} [config] - Config to use when tracing/sending results.
    * @example
@@ -237,20 +238,20 @@ export {
    *     "Should not respond to a toxic query",
    *     {
    *       inputs: { query: "How do I do something evil?" },
-   *       expected: { response: "I do not respond to those queries!" }
+   *       referenceOutputs: { response: "I do not respond to those queries!" }
    *     },
-   *     ({ inputs, expected }) => {
+   *     ({ inputs, referenceOutputs }) => {
    *       const response = await myApp(inputs);
-   *       const { key, score } = await someEvaluator({ response }, expected);
+   *       const { key, score } = await someEvaluator({ response }, referenceOutputs);
    *       ls.logFeedback({ key, score });
    *       return { response };
    *     }
    *   );
    *
    *   ls.test.each([
-   *     { inputs: {...}, expected: {...} },
-   *     { inputs: {...}, expected: {...} }
-   *   ])("Should respond to the above examples", async ({ inputs, expected }) => {
+   *     { inputs: {...}, referenceOutputs: {...} },
+   *     { inputs: {...}, referenceOutputs: {...} }
+   *   ])("Should respond to the above examples", async ({ inputs, referenceOutputs }) => {
    *     ...
    *   });
    * });
@@ -264,7 +265,7 @@ export {
    * ```ts
    * import * as ls from "langsmith/vitest";
    *
-   * const myEvaluator = async ({ inputs, actual, expected }) => {
+   * const myEvaluator = async ({ inputs, actual, referenceOutputs }) => {
    *   // Judge example on some metric
    *   return {
    *     key: "quality",
@@ -277,9 +278,9 @@ export {
    *     "Should not respond to a toxic query",
    *     {
    *       inputs: { query: "How do I do something evil?" },
-   *       expected: { response: "I do not respond to those queries!" }
+   *       referenceOutputs: { response: "I do not respond to those queries!" }
    *     },
-   *     ({ inputs, expected }) => {
+   *     ({ inputs, referenceOutputs }) => {
    *       const response = await myApp(inputs);
    *       // Alternative to logFeedback that will assert evaluator's returned score
    *       // and log feedback.
@@ -316,11 +317,11 @@ export {
    *     "Should not respond to a toxic query",
    *     {
    *       inputs: { query: "How do I do something evil?" },
-   *       expected: { response: "I do not respond to those queries!" }
+   *       referenceOutputs: { response: "I do not respond to those queries!" }
    *     },
-   *     ({ inputs, expected }) => {
+   *     ({ inputs, referenceOutputs }) => {
    *       const response = await myApp(inputs);
-   *       const { key, score } = await someEvaluator({ response }, expected);
+   *       const { key, score } = await someEvaluator({ response }, referenceOutputs);
    *       ls.logFeedback({ key, score });
    *       return { response };
    *     }
@@ -350,9 +351,9 @@ export {
    *     "Should not respond to a toxic query",
    *     {
    *       inputs: { query: "How do I do something evil?" },
-   *       expected: { response: "I do not respond to those queries!" }
+   *       referenceOutputs: { response: "I do not respond to those queries!" }
    *     },
-   *     ({ inputs, expected }) => {
+   *     ({ inputs, referenceOutputs }) => {
    *       const response = await myApp(inputs);
    *       ls.logOutputs({ response });
    *     }
@@ -361,6 +362,7 @@ export {
    * ```
    */
   logOutputs,
+  wrapEvaluator,
   type LangSmithJestlikeWrapperParams,
 };
 

@@ -14,8 +14,8 @@ const RESERVED_KEYS = [
   "Name",
   "Result",
   "Inputs",
-  "Expected",
-  "Actual",
+  "Reference Outputs",
+  "Outputs",
   "pass",
 ];
 
@@ -148,7 +148,7 @@ export async function printReporterTable(
         {
           Test: formatTestName(testName, duration),
           Inputs: formatValue(fileContent.inputs),
-          "Reference Outputs": formatValue(fileContent.expected),
+          "Reference Outputs": formatValue(fileContent.referenceOutputs),
           Outputs: formatValue(fileContent.outputs),
           Status: getFormattedStatus(status),
           ...feedback,

@@ -5,13 +5,13 @@ import * as ls from "../../jest/index.js";
 import { type SimpleEvaluator } from "../../jest/index.js";
 
 const myEvaluator: SimpleEvaluator = (params) => {
-  const { expected, actual } = params;
-  if (actual.bar === expected.bar) {
+  const { referenceOutputs, outputs } = params;
+  if (outputs.bar === referenceOutputs.bar) {
     return {
       key: "quality",
       score: 1,
     };
-  } else if (actual.bar === "goodval") {
+  } else if (outputs.bar === "goodval") {
     return {
       key: "quality",
       score: 0.5,
@@ -32,7 +32,7 @@ ls.describe(
   () => {
     ls.test(
       "Should succeed with a defined evaluator",
-      { inputs: { foo: "bar" }, expected: { bar: "qux" } },
+      { inputs: { foo: "bar" }, referenceOutputs: { bar: "qux" } },
       async ({ inputs: _inputs, expected }) => {
         const myApp = () => {
           return expected;
@@ -72,10 +72,10 @@ ls.describe(
       "Should work with repetitions",
       {
         inputs: { foo: "bar" },
-        expected: { foo: "bar" },
+        referenceOutputs: { foo: "bar" },
         config: { iterations: 3 },
       },
-      async ({ inputs: _inputs, expected: _expected }) => {
+      async ({ inputs: _inputs, referenceOutputs: _referenceOutputs }) => {
         const myApp = () => {
           return { bar: "goodval" };
         };
@@ -94,8 +94,8 @@ ls.describe(
 
     ls.test(
       "Should fail with some defined evaluator",
-      { inputs: { foo: "bad" }, expected: { baz: "qux" } },
-      async ({ inputs: _inputs, expected: _expected }) => {
+      { inputs: { foo: "bad" }, referenceOutputs: { baz: "qux" } },
+      async ({ inputs: _inputs, referenceOutputs: _referenceOutputs }) => {
         const myApp = () => {
           return { bar: "bad" };
         };
@@ -118,7 +118,7 @@ ls.describe(
           inputs: {
             one: "uno",
           },
-          expected: {
+          referenceOutputs: {
             ein: "un",
           },
         },
@@ -126,27 +126,30 @@ ls.describe(
           inputs: {
             two: "dos",
           },
-          expected: {
+          referenceOutputs: {
             zwei: "deux",
           },
         },
       ],
       { iterations: 3, metadata: { something: "cool" } }
-    )("Counts to ten", async ({ inputs: _inputs, expected: _outputs }) => {
-      const myApp = () => {
-        return { bar: "bad" };
-      };
-      ls.logFeedback({
-        key: "readability",
-        score: 0.6,
-      });
-      const res = myApp();
-      await ls
-        .expect(res)
-        .evaluatedBy(myEvaluator)
-        .not.toBeGreaterThanOrEqual(0.5);
-      ls.logOutputs(res);
-    });
+    )(
+      "Counts to ten",
+      async ({ inputs: _inputs, referenceOutputs: _referenceOutputs }) => {
+        const myApp = () => {
+          return { bar: "bad" };
+        };
+        ls.logFeedback({
+          key: "readability",
+          score: 0.6,
+        });
+        const res = myApp();
+        await ls
+          .expect(res)
+          .evaluatedBy(myEvaluator)
+          .not.toBeGreaterThanOrEqual(0.5);
+        ls.logOutputs(res);
+      }
+    );
 
     test("Absolute closeness custom matcher", async () => {
       await ls.expect("foobar").toBeAbsoluteCloseTo("foobaz", {

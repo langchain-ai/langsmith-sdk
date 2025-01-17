@@ -5,13 +5,13 @@ import * as ls from "../../vitest/index.js";
 import { type SimpleEvaluator } from "../../vitest/index.js";
 
 const myEvaluator: SimpleEvaluator = (params) => {
-  const { expected, actual } = params;
-  if (actual.bar === expected.bar) {
+  const { referenceOutputs, outputs } = params;
+  if (outputs.bar === referenceOutputs.bar) {
     return {
       key: "quality",
       score: 1,
     };
-  } else if (actual.bar === "goodval") {
+  } else if (outputs.bar === "goodval") {
     return {
       key: "quality",
       score: 0.5,
@@ -32,10 +32,10 @@ ls.describe(
   () => {
     ls.test(
       "Should succeed with some defined evaluator",
-      { inputs: { foo: "bar" }, expected: { bar: "qux" } },
-      async ({ inputs: _inputs, expected }) => {
+      { inputs: { foo: "bar" }, referenceOutputs: { bar: "qux" } },
+      async ({ inputs: _inputs, referenceOutputs }) => {
         const myApp = () => {
-          return expected;
+          return referenceOutputs;
         };
         const res = myApp();
         await ls
@@ -56,10 +56,10 @@ ls.describe(
       "Should work with repetitions",
       {
         inputs: { foo: "bar" },
-        expected: { foo: "bar" },
+        referenceOutputs: { foo: "bar" },
         config: { iterations: 3 },
       },
-      async ({ inputs: _inputs, expected: _expected }) => {
+      async ({ inputs: _inputs, referenceOutputs: _referenceOutputs }) => {
         const myApp = () => {
           return { bar: "goodval" };
         };
@@ -74,7 +74,7 @@ ls.describe(
 
     ls.test(
       "Should fail with some defined evaluator",
-      { inputs: { foo: "bad" }, expected: { baz: "qux" } },
+      { inputs: { foo: "bad" }, referenceOutputs: { baz: "qux" } },
       async ({ inputs: _inputs, expected: _expected }) => {
         const myApp = () => {
           return { bar: "bad" };
@@ -94,7 +94,7 @@ ls.describe(
           inputs: {
             one: "uno",
           },
-          expected: {
+          referenceOutputs: {
             ein: "un",
           },
         },
@@ -102,23 +102,26 @@ ls.describe(
           inputs: {
             two: "dos",
           },
-          expected: {
+          referenceOutputs: {
             zwei: "deux",
           },
         },
       ],
       { iterations: 3, metadata: { something: "cool" } }
-    )("Does the thing", async ({ inputs: _inputs, expected: _outputs }) => {
-      const myApp = () => {
-        return { bar: "bad" };
-      };
-      const res = myApp();
-      await ls
-        .expect(res)
-        .evaluatedBy(myEvaluator)
-        .not.toBeGreaterThanOrEqual(0.5);
-      return res;
-    });
+    )(
+      "Does the thing",
+      async ({ inputs: _inputs, referenceOutputs: _outputs }) => {
+        const myApp = () => {
+          return { bar: "bad" };
+        };
+        const res = myApp();
+        await ls
+          .expect(res)
+          .evaluatedBy(myEvaluator)
+          .not.toBeGreaterThanOrEqual(0.5);
+        return res;
+      }
+    );
   },
   {
     metadata: {

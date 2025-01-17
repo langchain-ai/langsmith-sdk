@@ -41,13 +41,16 @@ export const STRIP_ANSI_REGEX =
   /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g;
 export const TEST_ID_DELIMITER = ", test_id=";
 
-export function logFeedback(feedback: EvaluationResult) {
+export function logFeedback(
+  feedback: EvaluationResult,
+  config?: { sourceRunId?: string }
+) {
   const context = testWrapperAsyncLocalStorageInstance.getStore();
   if (context === undefined) {
     throw new Error(
       [
         `Could not retrieve test context. Make sure your logFeedback call is nested within a "ls.describe()" block.`,
-        `See this page for more information: https://docs.smith.langchain.com/evaluation/how_to_guides/jest_and_vitest`,
+        `See this page for more information: https://docs.smith.langchain.com/evaluation/how_to_guides/vitest_jest`,
       ].join("\n")
     );
   }
@@ -55,11 +58,12 @@ export function logFeedback(feedback: EvaluationResult) {
     throw new Error(
       [
         `Could not retrieve current example. Make sure your logFeedback call is nested within a "ls.test()" block.`,
-        `See this page for more information: https://docs.smith.langchain.com/evaluation/how_to_guides/jest_and_vitest`,
+        `See this page for more information: https://docs.smith.langchain.com/evaluation/how_to_guides/vitest_jest`,
       ].join("\n")
     );
   }
   _logTestFeedback({
+    ...config,
     exampleId: context.currentExample.id,
     feedback: feedback,
     context,
@@ -82,7 +86,7 @@ export function logOutputs(output: Record<string, unknown>) {
     throw new Error(
       [
         `Could not retrieve current example. Make sure your logFeedback call is nested within a "ls.test()" block.`,
-        `See this page for more information: https://docs.smith.langchain.com/evaluation/how_to_guides/jest_and_vitest`,
+        `See this page for more information: https://docs.smith.langchain.com/evaluation/how_to_guides/vitest_jest`,
       ].join("\n")
     );
   }
@@ -340,7 +344,7 @@ export function generateWrapperFromJestlikeMethods(
       name: string,
       lsParams: LangSmithJestlikeWrapperParams<I, O>,
       testFn: (
-        data: { inputs: I; expected: O } & Record<string, any>
+        data: { inputs: I; referenceOutputs: O } & Record<string, any>
       ) => unknown | Promise<unknown>,
       timeout?: number
     ) {
@@ -354,7 +358,7 @@ export function generateWrapperFromJestlikeMethods(
       ) {
         context.enableTestTracking = lsParams.config.enableTestTracking;
       }
-      const { config, inputs, expected, ...rest } = lsParams;
+      const { config, inputs, referenceOutputs, ...rest } = lsParams;
       const totalRuns = config?.iterations ?? 1;
       for (let i = 0; i < totalRuns; i += 1) {
         const testUuid = v4().replace(/-/g, "").slice(0, 13);
@@ -375,7 +379,7 @@ export function generateWrapperFromJestlikeMethods(
                 [
                   `Could not retrieve test context.`,
                   `Please make sure you have tracing enabled and you are wrapping all of your test cases in an "ls.describe()" function.`,
-                  `See this page for more information: https://docs.smith.langchain.com/evaluation/how_to_guides/jest_and_vitest`,
+                  `See this page for more information: https://docs.smith.langchain.com/evaluation/how_to_guides/vitest_jest`,
                 ].join("\n")
               );
             }
@@ -387,7 +391,7 @@ export function generateWrapperFromJestlikeMethods(
             const { dataset, createdAt, project, client, experimentUrl } =
               datasetSetupInfo.get(context.suiteUuid);
             const testInput: I = inputs;
-            const testOutput: O = expected;
+            const testOutput: O = referenceOutputs;
             const testFeedback: EvaluationResult[] = [];
             const onFeedbackLogged = (feedback: EvaluationResult) =>
               testFeedback.push(feedback);
@@ -413,7 +417,7 @@ export function generateWrapperFromJestlikeMethods(
                 const res = await testFn({
                   ...rest,
                   inputs: testInput,
-                  expected: testOutput,
+                  referenceOutputs: testOutput,
                 });
                 _logTestFeedback({
                   exampleId,
@@ -477,7 +481,11 @@ export function generateWrapperFromJestlikeMethods(
                       )} while syncing to LangSmith. Please contact us for help.`
                   );
                 }
-                exampleId = getExampleId(dataset.name, inputs, expected);
+                exampleId = getExampleId(
+                  dataset.name,
+                  inputs,
+                  referenceOutputs
+                );
 
                 // TODO: Create or update the example in the background
                 // Currently run end time has to be after example modified time
@@ -491,7 +499,7 @@ export function generateWrapperFromJestlikeMethods(
                       exampleId,
                       datasetId: dataset.id,
                       inputs,
-                      outputs: expected,
+                      outputs: referenceOutputs,
                       metadata: {},
                       createdAt,
                     })
@@ -518,7 +526,7 @@ export function generateWrapperFromJestlikeMethods(
                         ...context,
                         currentExample: {
                           inputs,
-                          outputs: expected,
+                          outputs: referenceOutputs,
                           id: exampleId,
                         },
                         setLoggedOutput,
@@ -569,7 +577,7 @@ export function generateWrapperFromJestlikeMethods(
                 resultsPath,
                 JSON.stringify({
                   inputs,
-                  expected,
+                  referenceOutputs,
                   outputs: loggedOutput,
                   feedback: testFeedback,
                   experimentUrl,
@@ -585,7 +593,7 @@ export function generateWrapperFromJestlikeMethods(
 
   function createEachMethod(method: (...args: any[]) => void) {
     function eachMethod<I extends KVMap, O extends KVMap>(
-      table: ({ inputs: I; expected: O } & Record<string, any>)[],
+      table: ({ inputs: I; referenceOutputs: O } & Record<string, any>)[],
       config?: LangSmithJestlikeWrapperConfig
     ) {
       const context = testWrapperAsyncLocalStorageInstance.getStore();
@@ -593,14 +601,14 @@ export function generateWrapperFromJestlikeMethods(
         throw new Error(
           [
             `Could not retrieve test context. Make sure your test is nested within a "ls.describe()" block.`,
-            `See this page for more information: https://docs.smith.langchain.com/evaluation/how_to_guides/jest_and_vitest`,
+            `See this page for more information: https://docs.smith.langchain.com/evaluation/how_to_guides/vitest_jest`,
           ].join("\n")
         );
       }
       return function (
         name: string,
         fn: (
-          params: { inputs: I; expected: O } & Record<string, any>
+          params: { inputs: I; referenceOutputs: O } & Record<string, any>
         ) => unknown | Promise<unknown>,
         timeout?: number
       ) {
@@ -611,7 +619,7 @@ export function generateWrapperFromJestlikeMethods(
             {
               ...example,
               inputs: example.inputs,
-              expected: example.expected,
+              referenceOutputs: example.referenceOutputs,
               config,
             },
             fn,

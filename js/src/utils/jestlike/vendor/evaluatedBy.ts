@@ -7,73 +7,99 @@ import {
 
 import { EvaluationResult } from "../../../evaluation/evaluator.js";
 import { RunTree } from "../../../run_trees.js";
+import { v4 } from "uuid";
 
 export type SimpleEvaluatorParams = {
   inputs: Record<string, any>;
-  actual: Record<string, any>;
-  expected: Record<string, any>;
+  referenceOutputs: Record<string, any>;
+  outputs: Record<string, any>;
 };
 
 export type SimpleEvaluator = (
   params: SimpleEvaluatorParams
 ) => EvaluationResult | Promise<EvaluationResult>;
 
-export async function evaluatedBy(actual: any, evaluator: SimpleEvaluator) {
+function isEvaluationResult(x: unknown): x is EvaluationResult {
+  return (
+    x != null &&
+    typeof x === "object" &&
+    "key" in x &&
+    typeof x.key === "string" &&
+    "score" in x
+  );
+}
+
+export function wrapEvaluator<I, O>(evaluator: (input: I) => O | Promise<O>) {
+  return async (input: I, config?: { runId?: string }): Promise<O> => {
+    const context = testWrapperAsyncLocalStorageInstance.getStore();
+    if (context === undefined || context.currentExample === undefined) {
+      throw new Error(
+        [
+          `Could not identify current LangSmith context.`,
+          `Please ensure you are calling this matcher within "ls.test()"`,
+          `See this page for more information: https://docs.smith.langchain.com/evaluation/how_to_guides/vitest_jest`,
+        ].join("\n")
+      );
+    }
+    const evalRunId = config?.runId ?? v4();
+    let evalResult;
+    let currentRunTree;
+    if (trackingEnabled(context)) {
+      currentRunTree = getCurrentRunTree();
+      const wrappedEvaluator = traceable(
+        async (_runTree: RunTree, params: I) => {
+          return evaluator(params);
+        },
+        {
+          id: evalRunId,
+          trace_id: evalRunId,
+          reference_example_id: context.currentExample.id,
+          client: context.client,
+          tracingEnabled: true,
+          name: evaluator.name ?? "<evaluator>",
+          project_name: "evaluators",
+        }
+      );
+
+      evalResult = await wrappedEvaluator(ROOT, input);
+    } else {
+      evalResult = await evaluator(input);
+    }
+    if (isEvaluationResult(evalResult)) {
+      _logTestFeedback({
+        exampleId: context?.currentExample?.id!,
+        feedback: evalResult,
+        context,
+        runTree: currentRunTree,
+        client: context.client,
+        sourceRunId: evalRunId,
+      });
+    }
+    return evalResult;
+  };
+}
+
+export async function evaluatedBy(outputs: any, evaluator: SimpleEvaluator) {
   const context = testWrapperAsyncLocalStorageInstance.getStore();
   if (context === undefined || context.currentExample === undefined) {
     throw new Error(
       [
         `Could not identify current LangSmith context.`,
         `Please ensure you are calling this matcher within "ls.test()"`,
-        `See this page for more information: https://docs.smith.langchain.com/evaluation/how_to_guides/jest_and_vitest`,
+        `See this page for more information: https://docs.smith.langchain.com/evaluation/how_to_guides/vitest_jest`,
       ].join("\n")
     );
   }
-
-  if (trackingEnabled(context)) {
-    const runTree = getCurrentRunTree();
-    let evalRunId;
-    const wrappedEvaluator = traceable(
-      async (runTree: RunTree, params: SimpleEvaluatorParams) => {
-        const res = await evaluator(params);
-        evalRunId = runTree.id;
-        return res;
-      },
-      {
-        reference_example_id: context.currentExample.id,
-        client: context.client,
-        tracingEnabled: true,
-        name: evaluator.name ?? "<evaluator>",
-        project_name: "evaluators",
-      }
-    );
-
-    const evalResult = await wrappedEvaluator(ROOT, {
+  const runTree = getCurrentRunTree();
+  const wrappedEvaluator = wrapEvaluator(evaluator);
+  const evalRunId = v4();
+  const evalResult = await wrappedEvaluator(
+    {
       inputs: runTree.inputs,
-      expected: context.currentExample.outputs ?? {},
-      actual,
-    });
-    _logTestFeedback({
-      exampleId: context.currentExample.id!,
-      feedback: evalResult,
-      context,
-      runTree,
-      client: context.client,
-      sourceRunId: evalRunId,
-    });
-    return evalResult.score;
-  } else {
-    const evalResult = await evaluator({
-      inputs: context.currentExample.inputs ?? {},
-      expected: context.currentExample.outputs ?? {},
-      actual,
-    });
-    _logTestFeedback({
-      exampleId: context.currentExample.id!,
-      feedback: evalResult,
-      context,
-      client: context.client,
-    });
-    return evalResult.score;
-  }
+      referenceOutputs: context?.currentExample?.outputs ?? {},
+      outputs,
+    },
+    { runId: evalRunId }
+  );
+  return evalResult.score;
 }

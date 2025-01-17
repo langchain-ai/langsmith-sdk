@@ -12,7 +12,7 @@ export type LangSmithJestlikeWrapperConfig = Partial<
 
 export type LangSmithJestlikeWrapperParams<I, O> = {
   inputs: I;
-  expected: O;
+  referenceOutputs: O;
   config?: LangSmithJestlikeWrapperConfig;
 };
 

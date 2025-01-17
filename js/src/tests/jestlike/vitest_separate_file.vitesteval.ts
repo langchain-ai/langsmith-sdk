@@ -5,20 +5,20 @@ import * as ls from "../../vitest/index.js";
 import { type SimpleEvaluator } from "../../vitest/index.js";
 
 const myEvaluator: SimpleEvaluator = (params) => {
-  const { expected, actual } = params;
-  if (actual.bar === expected.bar) {
+  const { referenceOutputs, outputs } = params;
+  if (outputs.bar === referenceOutputs.bar) {
     return {
-      key: "quality",
+      key: "accuracy",
       score: 1,
     };
-  } else if (actual.bar === "goodval") {
+  } else if (outputs.bar === "goodval") {
     return {
-      key: "quality",
+      key: "accuracy",
       score: 0.5,
     };
   } else {
     return {
-      key: "quality",
+      key: "accuracy",
       score: 0,
     };
   }
@@ -30,71 +30,13 @@ unrelatedStore.enterWith("value"); // Ensure that this works despite https://git
 ls.describe(
   "js vitest 2",
   () => {
-    ls.test(
-      "Should succeed with some defined evaluator",
-      { inputs: { foo: "bar" }, expected: { bar: "qux" } },
-      async ({ inputs: _inputs, expected }) => {
-        const myApp = () => {
-          return expected;
-        };
-        const res = myApp();
-        await ls
-          .expect(res)
-          .evaluatedBy(myEvaluator)
-          .toBeGreaterThanOrEqual(0.5);
-        ls.logFeedback({
-          key: "coolness",
-          score: 0.5,
-        });
-        ls.logOutputs({
-          testLoggedOutput: "logged",
-        });
-      }
-    );
-
-    ls.test(
-      "Should work with repetitions",
-      {
-        inputs: { foo: "bar" },
-        expected: { foo: "bar" },
-        config: { iterations: 3 },
-      },
-      async ({ inputs: _inputs, expected: _expected }) => {
-        const myApp = () => {
-          return { bar: "goodval" };
-        };
-        const res = myApp();
-        await ls
-          .expect(res)
-          .evaluatedBy(myEvaluator)
-          .toBeGreaterThanOrEqual(0.5);
-        return res;
-      }
-    );
-
-    ls.test(
-      "Should fail with some defined evaluator",
-      { inputs: { foo: "bad" }, expected: { baz: "qux" } },
-      async ({ inputs: _inputs, expected: _expected }) => {
-        const myApp = () => {
-          return { bar: "bad" };
-        };
-        const res = myApp();
-        await ls
-          .expect(res)
-          .evaluatedBy(myEvaluator)
-          .not.toBeGreaterThanOrEqual(0.5);
-        return res;
-      }
-    );
-
     ls.test.each(
       [
         {
           inputs: {
             one: "uno",
           },
-          expected: {
+          referenceOutputs: {
             ein: "un",
           },
         },
@@ -102,21 +44,19 @@ ls.describe(
           inputs: {
             two: "dos",
           },
-          expected: {
+          referenceOutputs: {
             zwei: "deux",
           },
         },
       ],
       { iterations: 3, metadata: { something: "cool" } }
-    )("Does the thing", async ({ inputs: _inputs, expected: _outputs }) => {
+    )("Does the thing", async ({ inputs, referenceOutputs }) => {
       const myApp = () => {
         return { bar: "bad" };
       };
       const res = myApp();
-      await ls
-        .expect(res)
-        .evaluatedBy(myEvaluator)
-        .not.toBeGreaterThanOrEqual(0.5);
+      const evaluator = ls.wrapEvaluator(myEvaluator);
+      await evaluator({ inputs, referenceOutputs, outputs: res });
       return res;
     });
   },
