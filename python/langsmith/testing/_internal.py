@@ -465,13 +465,13 @@ def _end_tests(test_suite: _LangSmithTestSuite):
         test_suite.client.update_dataset_tag(
             dataset_id=dataset_id,
             as_of=current_version.as_of,
-            tag=f'git:commit:{git_info["commit"]}'
+            tag=f'git:commit:{git_info["commit"]}',
         )
     if git_info["branch"] is not None:
         test_suite.client.update_dataset_tag(
             dataset_id=dataset_id,
             as_of=current_version.as_of,
-            tag=f'git:branch:{git_info["branch"]}'
+            tag=f'git:branch:{git_info["branch"]}',
         )
     test_suite.shutdown()
 
