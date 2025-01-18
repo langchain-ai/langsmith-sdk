@@ -6,6 +6,7 @@ import { v4, v5 } from "uuid";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as fs from "node:fs/promises";
+import { execSync } from "child_process";
 
 import { getCurrentRunTree, traceable } from "../../traceable.js";
 import { KVMap, TracerSession } from "../../schemas.js";
@@ -287,6 +288,7 @@ export function generateWrapperFromJestlikeMethods(
     ) {
       const client = experimentConfig?.client ?? DEFAULT_TEST_CLIENT;
       return method(datasetName, () => {
+        const startTime = new Date();
         const suiteUuid = v4();
         const context = {
           suiteUuid,
@@ -314,6 +316,64 @@ export function generateWrapperFromJestlikeMethods(
             ...syncExamplePromises.values(),
             ...evaluatorLogFeedbackPromises.values(),
           ]);
+          if (!trackingEnabled(context)) {
+            return;
+          }
+          const examples = [...syncExamplePromises.values()];
+          if (examples.length === 0) {
+            return;
+          }
+          const endTime = new Date();
+          let branch;
+          let commit;
+          try {
+            branch = execSync("git rev-parse --abbrev-ref HEAD")
+              .toString()
+              .trim();
+            commit = execSync("git rev-parse HEAD").toString().trim();
+          } catch {
+            return;
+          }
+          if (branch === undefined || commit === undefined) {
+            return;
+          }
+          try {
+            let finalModifiedAt = examples.reduce(
+              (latestModifiedAt, example) => {
+                if (
+                  new Date(latestModifiedAt).getTime() >
+                  new Date(example.modified_at).getTime()
+                ) {
+                  return latestModifiedAt;
+                } else {
+                  return example.modified_at;
+                }
+              },
+              examples[0].modified_at
+            );
+            if (new Date(finalModifiedAt).getTime() < startTime.getTime()) {
+              finalModifiedAt = endTime.toISOString();
+            }
+            const datasetInfo = datasetSetupInfo.get(suiteUuid);
+            const { as_of } = await client.readDatasetVersion({
+              datasetId: datasetInfo.dataset.id,
+              asOf: finalModifiedAt,
+            });
+            await Promise.all([
+              client.updateDatasetTag({
+                datasetId: datasetInfo.dataset.id,
+                asOf: as_of,
+                tag: `git-branch:${branch}`,
+              }),
+              client.updateDatasetTag({
+                datasetId: datasetInfo.dataset.id,
+                asOf: as_of,
+                tag: `git-commit:${commit}`,
+              }),
+            ]);
+          } catch (e: any) {
+            console.warn(`[LANGSMITH]: Failed to tag dataset: ${e.message}`);
+          }
         });
 
         /**
@@ -346,7 +406,7 @@ export function generateWrapperFromJestlikeMethods(
       name: string,
       lsParams: LangSmithJestlikeWrapperParams<I, O>,
       testFn: (
-        data: { inputs: I; referenceOutputs: O } & Record<string, any>
+        data: { inputs: I; referenceOutputs?: O } & Record<string, any>
       ) => unknown | Promise<unknown>,
       timeout?: number
     ) {
@@ -610,7 +670,7 @@ export function generateWrapperFromJestlikeMethods(
       return function (
         name: string,
         fn: (
-          params: { inputs: I; referenceOutputs: O } & Record<string, any>
+          params: { inputs: I; referenceOutputs?: O } & Record<string, any>
         ) => unknown | Promise<unknown>,
         timeout?: number
       ) {
