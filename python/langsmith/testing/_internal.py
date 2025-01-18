@@ -625,7 +625,7 @@ class _LangSmithTestSuite:
         feedback = feedback if isinstance(feedback, list) else [feedback]
         for fb in feedback:
             if pytest_plugin and pytest_nodeid:
-                val = fb["score"] if "score" in fb else fb["val"]
+                val = fb["score"] if "score" in fb else fb["value"]
                 pytest_plugin.update_process_status(
                     pytest_nodeid, {"feedback": {fb["key"]: val}}
                 )
