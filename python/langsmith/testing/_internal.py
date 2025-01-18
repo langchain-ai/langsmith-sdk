@@ -456,6 +456,23 @@ def _end_tests(test_suite: _LangSmithTestSuite):
             "revision_id": ls_env.get_langchain_env_var_metadata().get("revision_id"),
         },
     )
+    dataset_id = test_suite._dataset.id
+    current_version = test_suite.client.read_dataset_version(
+        dataset_id=dataset_id,
+        as_of=datetime.datetime.now(datetime.timezone.utc),
+    )
+    if git_info["commit"] is not None:
+        test_suite.client.update_dataset_tag(
+            dataset_id=dataset_id,
+            as_of=current_version.as_of,
+            tag=f'git:commit:{git_info["commit"]}'
+        )
+    if git_info["branch"] is not None:
+        test_suite.client.update_dataset_tag(
+            dataset_id=dataset_id,
+            as_of=current_version.as_of,
+            tag=f'git:branch:{git_info["branch"]}'
+        )
     test_suite.shutdown()
 
 
