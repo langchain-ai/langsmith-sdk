@@ -94,12 +94,11 @@ export async function evaluatedBy(outputs: any, evaluator: SimpleEvaluator) {
       ].join("\n")
     );
   }
-  const runTree = getCurrentRunTree();
   const wrappedEvaluator = wrapEvaluator(evaluator);
   const evalRunId = v4();
   const evalResult = await wrappedEvaluator(
     {
-      inputs: runTree.inputs,
+      inputs: context.currentExample?.inputs ?? {},
       referenceOutputs: context?.currentExample?.outputs ?? {},
       outputs,
     },

@@ -33,9 +33,9 @@ ls.describe(
     ls.test(
       "Should succeed with a defined evaluator",
       { inputs: { foo: "bar" }, referenceOutputs: { bar: "qux" } },
-      async ({ inputs: _inputs, expected }) => {
+      async ({ inputs: _inputs, referenceOutputs }) => {
         const myApp = () => {
-          return expected;
+          return referenceOutputs;
         };
         const res = myApp();
         await ls
