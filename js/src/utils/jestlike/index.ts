@@ -363,12 +363,12 @@ export function generateWrapperFromJestlikeMethods(
               client.updateDatasetTag({
                 datasetId: datasetInfo.dataset.id,
                 asOf: as_of,
-                tag: `git-branch:${branch}`,
+                tag: `git:branch:${branch}`,
               }),
               client.updateDatasetTag({
                 datasetId: datasetInfo.dataset.id,
                 asOf: as_of,
-                tag: `git-commit:${commit}`,
+                tag: `git:commit:${commit}`,
               }),
             ]);
           } catch (e: any) {
