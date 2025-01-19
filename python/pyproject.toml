@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "langsmith"
-version = "0.2.11rc12"
+version = "0.2.11rc13"
 description = "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform."
 authors = ["LangChain <support@langchain.dev>"]
 license = "MIT"
@@ -37,7 +37,7 @@ langsmith-pyo3 = { version = "^0.1.0rc2", optional = true }
 # Enabled via `compression` extra: `pip install langsmith[compression]`.
 zstandard = { version = "^0.23.0", optional = true }
 rich = {version = "^13.9.4", optional = true}
-pytest = {version = "^7.0.0", optional = true}
+pytest = {version = ">=7.0.0", optional = true}
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.3.1"
