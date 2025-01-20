@@ -2802,15 +2802,14 @@ export class Client implements LangSmithTracingClientInterface {
    */
   public async *readExamplesWithRuns(
     datasetId: string,
+    sessionIds: string[],
     {
-      sessionIds,
       comparativeExperimentId,
       filters,
       preview = false,
       offset = 0,
       limit = 20,
     }: {
-      sessionIds: string[];
       comparativeExperimentId?: string;
       filters?: KVMap;
       preview?: boolean;
