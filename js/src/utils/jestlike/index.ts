@@ -371,8 +371,8 @@ export function generateWrapperFromJestlikeMethods(
                 tag: `git:commit:${commit}`,
               }),
             ]);
-          } catch (e: any) {
-            console.warn(`[LANGSMITH]: Failed to tag dataset: ${e.message}`);
+          } catch {
+            return;
           }
         });
 
