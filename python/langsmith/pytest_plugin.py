@@ -172,7 +172,7 @@ class LangSmithPlugin:
         process_ids = self.test_suites[suite_name]
 
         title = f"""Test Suite: [bold]{suite_name}[/bold]
-LangSmith link: [bright_cyan][link={self.test_suite_urls[suite_name]}]click here[/link][/bright_cyan]"""  # noqa: E501
+LangSmith link: [bright_cyan][link={self.test_suite_urls[suite_name]}]⌘ + click here[/link][/bright_cyan]"""  # noqa: E501
         table = Table(title=title, title_justify="left")
         table.add_column("Test")
         table.add_column("Inputs")
