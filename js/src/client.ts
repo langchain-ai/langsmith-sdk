@@ -2841,10 +2841,10 @@ export class Client implements LangSmithTracingClientInterface {
           break;
         }
         examplesYielded += exampleWithRuns.length;
+        yield* exampleWithRuns;
         if (examplesYielded >= limit) {
           break;
         }
-        yield* exampleWithRuns;
       } else {
         yield* exampleWithRuns;
       }
