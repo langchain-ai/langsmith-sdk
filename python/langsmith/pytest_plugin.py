@@ -29,8 +29,8 @@ def pytest_addoption(parser):
     )
 
 
-def pytest_cmdline_preparse(config, args):
-    """Call immediately after command line options are parsed."""
+def _handle_output_args(args):
+    """Common logic for handling output arguments."""
     if any(opt in args for opt in ["--output=langsmith", "--output=ls"]):
         # Only add --quiet if it's not already there
         if not any(a in args for a in ["-q", "--quiet"]):
@@ -38,6 +38,18 @@ def pytest_cmdline_preparse(config, args):
         # Disable built-in output capturing
         if not any(a in args for a in ["-s", "--capture=no"]):
             args.insert(0, "-s")
+
+
+if pytest.__version__.startswith("7."):
+
+    def pytest_cmdline_preparse(config, args):
+        """Call immediately after command line options are parsed (pytest v7)."""
+        _handle_output_args(args)
+else:
+
+    def pytest_load_initial_conftests(args):
+        """Handle args in pytest v8+."""
+        _handle_output_args(args)
 
 
 @pytest.hookimpl(hookwrapper=True)
@@ -54,7 +66,13 @@ def pytest_runtest_call(item):
         request_obj = getattr(item, "_request", None)
         if request_obj is not None and "request" not in item.funcargs:
             item.funcargs["request"] = request_obj
-            item._fixtureinfo.argnames += ("request",)
+            # Create a new FuncFixtureInfo instance with updated argnames
+            item._fixtureinfo = type(item._fixtureinfo)(
+                argnames=item._fixtureinfo.argnames + ("request",),
+                initialnames=item._fixtureinfo.initialnames,
+                names_closure=item._fixtureinfo.names_closure,
+                name2fixturedefs=item._fixtureinfo.name2fixturedefs,
+            )
     yield
 
 
@@ -213,6 +231,7 @@ LangSmith link: [bright_cyan][link={self.test_suite_urls[suite_name]}]click here
             self.console.width
             - (max_status + max_feedback + max_duration + len("Logged"))
         ) // 4
+        max_dynamic_col_width = max(max_dynamic_col_width, 8)
 
         for pid, status in suite_statuses.items():
             status_color = {
@@ -233,7 +252,9 @@ LangSmith link: [bright_cyan][link={self.test_suite_urls[suite_name]}]click here
                 _abbreviate_test_name(str(pid), max_len=max_dynamic_col_width),
                 _abbreviate(inputs, max_len=max_dynamic_col_width),
                 _abbreviate(reference_outputs, max_len=max_dynamic_col_width),
-                _abbreviate(outputs, max_len=max_dynamic_col_width),
+                _abbreviate(outputs, max_len=max_dynamic_col_width)[
+                    -max_dynamic_col_width:
+                ],
                 f"[{status_color}]{status.get('status', 'queued')}[/{status_color}]",
                 feedback,
                 f"{duration:.2f}s",

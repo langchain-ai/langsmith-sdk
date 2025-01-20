@@ -638,7 +638,7 @@ class _LangSmithTestSuite:
         self.client.create_feedback(trace_id, **feedback, **kwargs)
 
     def shutdown(self):
-        self._executor.shutdown(wait=True)
+        self._executor.shutdown()
 
     def wait_example_updates(self, example_id: ID_TYPE):
         """Wait for all example updates to complete."""
