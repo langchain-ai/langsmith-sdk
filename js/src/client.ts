@@ -2835,15 +2835,15 @@ export class Client implements LangSmithTracingClientInterface {
       body
     )) {
       if (limit) {
-        if (examplesYielded >= limit) {
-          break;
-        }
         if (exampleWithRuns.length + examplesYielded > limit) {
           const newRuns = exampleWithRuns.slice(0, limit - examplesYielded);
           yield* newRuns;
           break;
         }
         examplesYielded += exampleWithRuns.length;
+        if (examplesYielded >= limit) {
+          break;
+        }
         yield* exampleWithRuns;
       } else {
         yield* exampleWithRuns;
