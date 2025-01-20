@@ -99,7 +99,7 @@ Thus, when copying a Rust struct to a Python object, we first allocate `PyCell` 
 move `T` into it.
 Also, `PyCell` provides [RefCell](https://doc.rust-lang.org/std/cell/struct.RefCell.html)-like methods
 to ensure Rust's borrow rules.
-See [the documentation](https://docs.rs/pyo3/0.23.1/pyo3/pycell/#structs) for more.
+See [the documentation](https://docs.rs/pyo3/latest/pyo3/pycell/struct.PyCell.html) for more.
 
 `PyCell<T>` requires that `T` implements `PyClass`.
 This trait is somewhat complex and derives many traits, but the most important one is `PyTypeInfo`

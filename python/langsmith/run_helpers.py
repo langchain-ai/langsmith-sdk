@@ -102,7 +102,7 @@ def tracing_context(
     project_name: Optional[str] = None,
     tags: Optional[List[str]] = None,
     metadata: Optional[Dict[str, Any]] = None,
-    parent: Optional[Union[run_trees.RunTree, Mapping, str]] = None,
+    parent: Optional[Union[run_trees.RunTree, Mapping, str, Literal[False]]] = None,
     enabled: Optional[Union[bool, Literal["local"]]] = None,
     client: Optional[ls_client.Client] = None,
     **kwargs: Any,
@@ -129,7 +129,11 @@ def tracing_context(
             DeprecationWarning,
         )
     current_context = get_tracing_context()
-    parent_run = _get_parent_run({"parent": parent or kwargs.get("parent_run")})
+    parent_run = (
+        _get_parent_run({"parent": parent or kwargs.get("parent_run")})
+        if parent is not False
+        else None
+    )
     if parent_run is not None:
         tags = sorted(set(tags or []) | set(parent_run.tags or []))
         metadata = {**parent_run.metadata, **(metadata or {})}

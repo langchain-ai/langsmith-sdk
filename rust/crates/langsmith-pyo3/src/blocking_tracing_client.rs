@@ -2,7 +2,9 @@ use std::{sync::Arc, time::Duration};
 
 use pyo3::prelude::*;
 
-use langsmith_tracing_client::client::blocking::TracingClient as RustTracingClient;
+use langsmith_tracing_client::client::{
+    ClientConfig as RustClientConfig, TracingClient as RustTracingClient,
+};
 
 pub(super) fn register(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<BlockingTracingClient>()?;
@@ -26,19 +28,16 @@ impl BlockingTracingClient {
         queue_capacity: usize,
         batch_size: usize,
         batch_timeout_millis: u64,
-        worker_threads: usize,
+        compression_level: i32,
     ) -> PyResult<Self> {
-        let config = langsmith_tracing_client::client::blocking::ClientConfig {
+        let config = RustClientConfig {
             endpoint,
             api_key,
             queue_capacity,
-            batch_size,
-
-            // TODO: check if this is fine
-            batch_timeout: Duration::from_millis(batch_timeout_millis),
-
+            send_at_batch_size: batch_size,
+            send_at_batch_time: Duration::from_millis(batch_timeout_millis),
+            compression_level,
             headers: None, // TODO: support custom headers
-            num_worker_threads: worker_threads,
         };
 
         let client = RustTracingClient::new(config)
