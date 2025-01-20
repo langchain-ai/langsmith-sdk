@@ -721,8 +721,10 @@ export class Client implements LangSmithTracingClientInterface {
           break;
         }
         yield responseBody[dataKey];
+      } else {
+        yield responseBody;
       }
-      yield responseBody;
+
       const cursors = responseBody.cursors;
       if (!cursors) {
         break;
