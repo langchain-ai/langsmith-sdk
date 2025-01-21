@@ -82,6 +82,10 @@ class BinaryIOLike(Protocol):
         """Seek function."""
         ...
 
+    def getvalue(self) -> bytes:
+        """Get value function."""
+        ...
+
 
 class ExampleBase(BaseModel):
     """Example base model."""

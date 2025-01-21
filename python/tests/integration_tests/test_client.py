@@ -1,5 +1,6 @@
 """LangSmith langchain_client Integration Tests."""
 
+import asyncio
 import datetime
 import io
 import logging
@@ -1735,6 +1736,7 @@ def test_evaluate_with_attachments_multiple_evaluators(
         num_repetitions=2,
     )
 
+    assert len(results) == 2
     for result in results:
         assert result["evaluation_results"]["results"][0].score == 1.0
         assert result["evaluation_results"]["results"][1].score == 1.0
@@ -1845,6 +1847,16 @@ def test_evaluate_with_attachments_not_in_target(langchain_client: Client) -> No
     for result in results:
         assert result["evaluation_results"]["results"][0].score == 1.0
 
+    results = langchain_client.evaluate(
+        target,
+        data=dataset_name,
+        evaluators=[evaluator],
+    )
+
+    assert len(results) == 1
+    for result in results:
+        assert result["evaluation_results"]["results"][0].score == 1.0
+
     langchain_client.delete_dataset(dataset_name=dataset_name)
 
 
@@ -1904,15 +1916,18 @@ async def test_aevaluate_with_attachments(langchain_client: Client) -> None:
         data_type=DataType.kv,
     )
 
-    example = ExampleUploadWithAttachments(
-        inputs={"question": "What is shown in the image?"},
-        outputs={"answer": "test image"},
-        attachments={
-            "image": ("image/png", b"fake image data for testing"),
-        },
-    )
+    examples = [
+        ExampleUploadWithAttachments(
+            inputs={"question": "What is shown in the image?", "index": i},
+            outputs={"answer": "test image"},
+            attachments={
+                "image": ("text/plain", bytes(f"data: {i}", "utf-8")),
+            },
+        )
+        for i in range(10)
+    ]
 
-    langchain_client.upload_examples_multipart(dataset_id=dataset.id, uploads=[example])
+    langchain_client.upload_examples_multipart(dataset_id=dataset.id, uploads=examples)
 
     async def target(
         inputs: Dict[str, Any], attachments: Dict[str, Any]
@@ -1921,34 +1936,24 @@ async def test_aevaluate_with_attachments(langchain_client: Client) -> None:
         assert "image" in attachments
         assert "presigned_url" in attachments["image"]
         image_data = attachments["image"]["reader"]
-        assert image_data.read() == b"fake image data for testing"
+        assert image_data.read() == bytes(f"data: {inputs['index']}", "utf-8")
         return {"answer": "test image"}
 
     async def evaluator_1(
-        outputs: dict, reference_outputs: dict, attachments: dict
-    ) -> Dict[str, Any]:
+        inputs: dict, outputs: dict, reference_outputs: dict, attachments: dict
+    ) -> bool:
         assert "image" in attachments
         assert "presigned_url" in attachments["image"]
         image_data = attachments["image"]["reader"]
-        assert image_data.read() == b"fake image data for testing"
-        return {
-            "score": float(
-                reference_outputs.get("answer") == outputs.get("answer")  # type: ignore
-            )
-        }
+        return image_data.read() == bytes(f"data: {inputs['index']}", "utf-8")
 
     async def evaluator_2(
-        outputs: dict, reference_outputs: dict, attachments: dict
-    ) -> Dict[str, Any]:
+        inputs: dict, outputs: dict, reference_outputs: dict, attachments: dict
+    ) -> bool:
         assert "image" in attachments
         assert "presigned_url" in attachments["image"]
         image_data = attachments["image"]["reader"]
-        assert image_data.read() == b"fake image data for testing"
-        return {
-            "score": float(
-                reference_outputs.get("answer") == outputs.get("answer")  # type: ignore
-            )
-        }
+        return image_data.read() == bytes(f"data: {inputs['index']}", "utf-8")
 
     results = await langchain_client.aevaluate(
         target,
@@ -1958,10 +1963,20 @@ async def test_aevaluate_with_attachments(langchain_client: Client) -> None:
         max_concurrency=3,
     )
 
-    assert len(results) == 2
+    assert len(results) == 20
     async for result in results:
         assert result["evaluation_results"]["results"][0].score == 1.0
         assert result["evaluation_results"]["results"][1].score == 1.0
+
+    results = await langchain_client.aevaluate(
+        target,
+        data=dataset_name,
+        evaluators=[],
+        num_repetitions=1,
+        max_concurrency=3,
+    )
+
+    assert len(results) == 10
 
     langchain_client.delete_dataset(dataset_name=dataset_name)
 
@@ -2524,6 +2539,69 @@ def test_update_examples_multipart(langchain_client: Client) -> None:
     assert list(example_1_updated.attachments.keys()) == ["foo"]
 
     # Clean up
+    langchain_client.delete_dataset(dataset_id=dataset.id)
+
+
+async def test_aevaluate_max_concurrency(langchain_client: Client) -> None:
+    """Test max concurrency works as expected."""
+    dataset_name = "__test_a_ton_of_feedback" + uuid4().hex[:4]
+    dataset = langchain_client.create_dataset(
+        dataset_name=dataset_name,
+        description="Test dataset for max concurrency",
+    )
+
+    examples = [
+        ExampleUploadWithAttachments(
+            inputs={"query": "What's in this image?"},
+            outputs={"answer": "A test image 1"},
+            attachments={
+                "image1": ("image/png", b"fake image data 1"),
+                "extra": ("text/plain", b"extra data"),
+            },
+        )
+        for _ in range(10)
+    ]
+
+    langchain_client.upload_examples_multipart(dataset_id=dataset.id, uploads=examples)
+
+    evaluators = []
+    for _ in range(100):
+
+        async def eval_func(inputs, outputs):
+            await asyncio.sleep(0.1)
+            return {"score": random.random()}
+
+        evaluators.append(eval_func)
+
+    async def target(inputs, attachments):
+        return {"foo": "bar"}
+
+    start_time = time.time()
+    await langchain_client.aevaluate(
+        target,
+        data=dataset_name,
+        evaluators=evaluators,
+        max_concurrency=8,
+    )
+
+    end_time = time.time()
+    # this should proceed in a 8-2 manner, taking around 20 seconds total
+    assert end_time - start_time < 30
+    assert end_time - start_time > 20
+
+    start_time = time.time()
+    await langchain_client.aevaluate(
+        target,
+        data=dataset_name,
+        evaluators=evaluators,
+        max_concurrency=4,
+    )
+
+    end_time = time.time()
+    # this should proceed in a 4-4-2 manner, taking around 30 seconds total
+    assert end_time - start_time < 40
+    assert end_time - start_time > 30
+
     langchain_client.delete_dataset(dataset_id=dataset.id)
 
 
