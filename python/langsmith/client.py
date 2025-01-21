@@ -1120,8 +1120,6 @@ class Client:
         Returns:
             dict: The transformed run object as a dictionary.
         """
-        global WARNED_ATTACHMENTS
-
         if hasattr(run, "dict") and callable(getattr(run, "dict")):
             run_create: dict = run.dict()  # type: ignore
         else:
@@ -1143,10 +1141,7 @@ class Client:
 
         # Only retain LLM & Prompt manifests
         if "serialized" in run_create:
-            if run_create.get("run_type") not in (
-                "llm",
-                "prompt",
-            ):
+            if run_create.get("run_type") not in ("llm", "prompt"):
                 # Drop completely
                 run_create.pop("serialized", None)
             elif run_create.get("serialized"):
@@ -1266,12 +1261,8 @@ class Client:
             return
         if revision_id is not None:
             run_create["extra"]["metadata"]["revision_id"] = revision_id
-        run_create = self._run_transform(
-            run_create,
-            copy=False,
-        )
+        run_create = self._run_transform(run_create, copy=False)
         self._insert_runtime_env([run_create])
-
         if run_create.get("attachments") is not None:
             for attachment in run_create["attachments"].values():
                 if (
@@ -1296,7 +1287,7 @@ class Client:
                         "Run compression is enabled but threading event is not configured"
                     )
                 serialized_op = serialize_run_dict("post", run_create)
-                multipart_form, _ = (
+                multipart_form, opened_files = (
                     serialized_run_operation_to_multipart_parts_and_context(
                         serialized_op
                     )
@@ -1309,6 +1300,8 @@ class Client:
                     )
                     self.compressed_runs.run_count += 1
                     self._data_available_event.set()
+
+                _close_files(list(opened_files.values()))
             elif self.tracing_queue is not None:
                 serialized_op = serialize_run_dict("post", run_create)
                 self.tracing_queue.put(
@@ -2020,7 +2013,7 @@ class Client:
         elif use_multipart:
             serialized_op = serialize_run_dict(operation="patch", payload=data)
             if self.compressed_runs is not None:
-                multipart_form, _ = (
+                multipart_form, opened_files = (
                     serialized_run_operation_to_multipart_parts_and_context(
                         serialized_op
                     )
@@ -2037,6 +2030,7 @@ class Client:
                     )
                     self.compressed_runs.run_count += 1
                     self._data_available_event.set()
+                _close_files(list(opened_files.values()))
             elif self.tracing_queue is not None:
                 self.tracing_queue.put(
                     TracingQueueItem(data["dotted_order"], serialized_op)

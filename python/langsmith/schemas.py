@@ -62,18 +62,10 @@ class Attachment(NamedTuple):
     """
 
     mime_type: str
-    data: Union[Path, Any]
+    data: Union[bytes, Path]
 
 
-class AttachmentInfo(TypedDict):
-    """Info for an attachment."""
-
-    presigned_url: str
-    reader: BinaryIOLike
-    mime_type: Optional[str]
-
-
-Attachments = Dict[str, Union[Attachment, Tuple[str, Path], Tuple[str, Any]]]
+Attachments = Dict[str, Union[Tuple[str, bytes], Attachment, Tuple[str, Path]]]
 """Attachments associated with the run. 
 Each entry is a tuple of (mime_type, bytes), or (mime_type, file_path)"""
 
@@ -134,6 +126,14 @@ class ExampleUpsertWithAttachments(ExampleUploadWithAttachments):
     """Example create with attachments."""
 
     dataset_id: UUID
+
+
+class AttachmentInfo(TypedDict):
+    """Info for an attachment."""
+
+    presigned_url: str
+    reader: BinaryIOLike
+    mime_type: Optional[str]
 
 
 class Example(ExampleBase):
@@ -375,7 +375,8 @@ class RunBase(BaseModel):
     attachments: Union[Attachments, Dict[str, AttachmentInfo]] = Field(
         default_factory=dict
     )
-    """Attachments associated with the run."""
+    """Attachments associated with the run.
+    Each entry is a tuple of (mime_type, bytes)."""
 
     @property
     def metadata(self) -> dict[str, Any]:

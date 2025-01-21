@@ -499,15 +499,19 @@ def test_trace_file_path(langchain_client: Client) -> None:
     def my_func(foo: Attachment, bar: Attachment):
         return "foo"
 
+    foo = Attachment(
+        mime_type="image/png",
+        data=Path(__file__).parent / "test_data/parrot-icon.png",
+    )
+    bar = Attachment(
+        mime_type="image/png",
+        data=Path(__file__).parent / "test_data/parrot-icon.png",
+    )
+    assert isinstance(foo.data, Path)
+    assert isinstance(bar.data, Path)
     my_func(
-        Attachment(
-            mime_type="image/png",
-            data=Path(__file__).parent / "test_data/parrot-icon.png",
-        ),
-        Attachment(
-            mime_type="image/png",
-            data=Path(__file__).parent / "test_data/parrot-icon.png",
-        ),
+        foo,
+        bar,
         langsmith_extra=dict(
             project_name=project_name, metadata={"test_run": run_meta}
         ),

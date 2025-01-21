@@ -280,17 +280,14 @@ def serialized_run_operation_to_multipart_parts_and_context(
                         f"attachment.{op.id}.{n}",
                         (
                             None,
-                            file,  # type: ignore[arg-type]
+                            file,
                             f"{content_type}; length={file_size}",
                             {},
                         ),
                     )
                 )
     return (
-        MultipartPartsAndContext(
-            acc_parts,
-            f"trace={op.trace_id},id={op.id}",
-        ),
+        MultipartPartsAndContext(acc_parts, f"trace={op.trace_id},id={op.id}"),
         opened_files_dict,
     )
 
@@ -323,7 +320,10 @@ def compress_multipart_parts_and_context(
             compressed_runs.uncompressed_size += len(data)
             compressed_runs.compressor_writer.write(data)
         else:
-            encoded_data = str(data).encode()
+            if isinstance(data, BufferedReader):
+                encoded_data = data.read()
+            else:
+                encoded_data = str(data).encode()
             compressed_runs.uncompressed_size += len(encoded_data)
             compressed_runs.compressor_writer.write(encoded_data)
 
