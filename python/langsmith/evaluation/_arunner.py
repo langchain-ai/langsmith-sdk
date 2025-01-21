@@ -1030,9 +1030,9 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                         exc_info=True,
                     )
 
-            all_results = []
-            for evaluator in evaluators:
-                all_results.append(await _run_single_evaluator(evaluator))
+            all_results = await asyncio.gather(
+                *[_run_single_evaluator(evaluator) for evaluator in evaluators]
+            )
 
             for result in all_results:
                 if result is not None:

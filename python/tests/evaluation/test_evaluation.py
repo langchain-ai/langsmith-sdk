@@ -234,7 +234,6 @@ def test_evaluate():
             "function": "evaluate",
         },
         num_repetitions=3,
-        max_concurrency=2,
     )
     assert len(results) == 30
     if _has_pandas():
@@ -328,7 +327,6 @@ async def test_aevaluate():
             "function": "aevaluate",
         },
         num_repetitions=2,
-        max_concurrency=2,
     )
     assert len(results) == 20
     if _has_pandas():
