@@ -5,7 +5,7 @@ import {
   trackingEnabled,
 } from "../globals.js";
 
-import { EvaluationResult } from "../../../evaluation/evaluator.js";
+import { SimpleEvaluationResult } from "../types.js";
 import { RunTree, RunTreeConfig } from "../../../run_trees.js";
 import { v4 } from "uuid";
 
@@ -17,9 +17,9 @@ export type SimpleEvaluatorParams = {
 
 export type SimpleEvaluator = (
   params: SimpleEvaluatorParams
-) => EvaluationResult | Promise<EvaluationResult>;
+) => SimpleEvaluationResult | Promise<SimpleEvaluationResult>;
 
-function isEvaluationResult(x: unknown): x is EvaluationResult {
+function isEvaluationResult(x: unknown): x is SimpleEvaluationResult {
   return (
     x != null &&
     typeof x === "object" &&
@@ -29,11 +29,15 @@ function isEvaluationResult(x: unknown): x is EvaluationResult {
   );
 }
 
-export function wrapEvaluator<I, O>(evaluator: (input: I) => O | Promise<O>) {
+export function wrapEvaluator<I>(
+  evaluator: (
+    input: I
+  ) => SimpleEvaluationResult | Promise<SimpleEvaluationResult>
+) {
   return async (
     input: I,
     config?: Partial<RunTreeConfig> & { runId?: string }
-  ): Promise<O> => {
+  ): Promise<SimpleEvaluationResult> => {
     const context = testWrapperAsyncLocalStorageInstance.getStore();
     if (context === undefined || context.currentExample === undefined) {
       throw new Error(
