@@ -447,8 +447,8 @@ def _get_example_id(
 
 def _end_tests(test_suite: _LangSmithTestSuite):
     git_info = ls_env.get_git_info() or {}
-    dataset_version = test_suite.get_version()
     test_suite.shutdown()
+    dataset_version = test_suite.get_version()
     dataset_id = test_suite._dataset.id
     test_suite.client.update_project(
         test_suite.experiment_id,
