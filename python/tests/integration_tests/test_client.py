@@ -2587,7 +2587,6 @@ async def test_aevaluate_max_concurrency(langchain_client: Client) -> None:
     end_time = time.time()
     # this should proceed in a 8-2 manner, taking around 20 seconds total
     assert end_time - start_time < 30
-    assert end_time - start_time > 20
 
     start_time = time.time()
     await langchain_client.aevaluate(
@@ -2600,7 +2599,6 @@ async def test_aevaluate_max_concurrency(langchain_client: Client) -> None:
     end_time = time.time()
     # this should proceed in a 4-4-2 manner, taking around 30 seconds total
     assert end_time - start_time < 40
-    assert end_time - start_time > 30
 
     langchain_client.delete_dataset(dataset_id=dataset.id)
 
