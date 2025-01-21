@@ -188,6 +188,19 @@ class RunTree(ls_schemas.RunBase):
             self.outputs = {}
         self.outputs.update(outputs)
 
+    def add_inputs(self, inputs: Dict[str, Any]) -> None:
+        """Upsert the given outputs into the run.
+
+        Args:
+            outputs (Dict[str, Any]): A dictionary containing the outputs to be added.
+
+        Returns:
+            None
+        """
+        if self.inputs is None:
+            self.inputs = {}
+        self.inputs.update(inputs)
+
     def add_event(
         self,
         events: Union[
@@ -347,6 +360,7 @@ class RunTree(ls_schemas.RunBase):
         self.client.update_run(
             name=self.name,
             run_id=self.id,
+            inputs=self.inputs.copy() if self.inputs else None,
             outputs=self.outputs.copy() if self.outputs else None,
             error=self.error,
             parent_run_id=self.parent_run_id,

@@ -849,7 +849,9 @@ class trace:
         inputs: Optional[Dict] = None,
         extra: Optional[Dict] = None,
         project_name: Optional[str] = None,
-        parent: Optional[Union[run_trees.RunTree, str, Mapping]] = None,
+        parent: Optional[
+            Union[run_trees.RunTree, str, Mapping, Literal["ignore"]]
+        ] = None,
         tags: Optional[List[str]] = None,
         metadata: Optional[Mapping[str, Any]] = None,
         client: Optional[ls_client.Client] = None,
@@ -863,6 +865,7 @@ class trace:
 
         Warns if unsupported kwargs are passed.
         """
+        self._end_on_exit = kwargs.pop("_end_on_exit", True)
         if kwargs:
             warnings.warn(
                 "The `trace` context manager no longer supports the following kwargs: "
@@ -990,7 +993,7 @@ class trace:
             self.new_run.end(error=tb)
         if self.old_ctx is not None:
             enabled = utils.tracing_is_enabled(self.old_ctx)
-            if enabled is True:
+            if enabled is True and self._end_on_exit:
                 self.new_run.patch()
 
             _set_tracing_context(self.old_ctx)
@@ -1060,13 +1063,13 @@ class trace:
 
 
 def _get_project_name(project_name: Optional[str]) -> Optional[str]:
+    if project_name:
+        return project_name
     prt = _PARENT_RUN_TREE.get()
     return (
         # Maintain tree consistency first
         _PROJECT_NAME.get()
         or (prt.session_name if prt else None)
-        # Then check the passed in value
-        or project_name
         # fallback to the default for the environment
         or utils.get_tracer_project()
     )
@@ -1267,6 +1270,8 @@ def _get_parent_run(
     config: Optional[dict] = None,
 ) -> Optional[run_trees.RunTree]:
     parent = langsmith_extra.get("parent")
+    if parent == "ignore":
+        return None
     if isinstance(parent, run_trees.RunTree):
         return parent
     if isinstance(parent, dict):

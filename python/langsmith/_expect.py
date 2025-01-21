@@ -379,7 +379,7 @@ class _Expect:
 
     def score(
         self,
-        score: Union[float, int],
+        score: Union[float, int, bool],
         *,
         key: str = "score",
         source_run_id: Optional[ls_client.ID_TYPE] = None,

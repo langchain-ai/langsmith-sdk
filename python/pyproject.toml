@@ -21,9 +21,6 @@ keywords = [
 ]
 packages = [{ include = "langsmith" }]
 
-[tool.poetry.scripts]
-langsmith = "langsmith.cli.main:main"
-
 [tool.poetry.dependencies]
 python = ">=3.9,<4.0"
 pydantic = [
@@ -37,7 +34,9 @@ requests-toolbelt = "^1.0.0"
 
 # Enabled via `langsmith_pyo3` extra: `pip install langsmith[langsmith_pyo3]`.
 langsmith-pyo3 = { version = "^0.1.0rc2", optional = true }
-# Enabled via `compression` extra: `pip install langsmith[compression]`.
+zstandard = "^0.23.0"
+rich = {version = "^13.9.4", optional = true}
+pytest = {version = ">=7.0.0", optional = true}
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.3.1"
@@ -65,7 +64,6 @@ pytest-socket = "^0.7.0"
 pyperf = "^2.7.0"
 py-spy = "^0.3.14"
 multipart = "^1.0.0"
-zstandard = "^0.23.0"
 
 [tool.poetry.group.lint.dependencies]
 openai = "^1.10"
@@ -77,6 +75,7 @@ pytest-socket = "^0.7.0"
 [tool.poetry.extras]
 vcr = ["vcrpy"]
 langsmith_pyo3 = ["langsmith-pyo3"]
+pytest = ["pytest", "rich", "vcrpy"]
 
 [build-system]
 requires = ["poetry-core"]
@@ -129,3 +128,9 @@ disallow_untyped_defs = "True"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 markers = ["slow: long-running tests"]
+
+[project]
+name = "langsmith"
+
+[tool.poetry.plugins."pytest11"]
+langsmith_plugin = "langsmith.pytest_plugin"
