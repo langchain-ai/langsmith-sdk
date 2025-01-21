@@ -295,7 +295,7 @@ class RunTree(ls_schemas.RunBase):
             project_name=self.session_name,
             ls_client=self.ls_client,
             tags=tags,
-            attachments=attachments or {},
+            attachments=cast(dict, attachments) or {},
             dangerously_allow_filesystem=self.dangerously_allow_filesystem,
         )
         self.child_runs.append(run)

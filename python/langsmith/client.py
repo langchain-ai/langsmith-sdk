@@ -101,6 +101,7 @@ from langsmith._internal._operations import (
     serialized_run_operation_to_multipart_parts_and_context,
 )
 from langsmith._internal._serde import dumps_json as _dumps_json
+from langsmith.schemas import AttachmentInfo
 
 try:
     from zoneinfo import ZoneInfo  # type: ignore[import-not-found]
@@ -7290,7 +7291,9 @@ def convert_prompt_to_anthropic_format(
         raise ls_utils.LangSmithError(f"Error converting to Anthropic format: {e}")
 
 
-def _convert_stored_attachments_to_attachments_dict(data, *, attachments_key):
+def _convert_stored_attachments_to_attachments_dict(
+    data: dict, *, attachments_key: str
+) -> dict[str, AttachmentInfo]:
     """Convert attachments from the backend database format to the user facing format."""
     attachments_dict = {}
     if attachments_key in data and data[attachments_key]:
@@ -7298,11 +7301,13 @@ def _convert_stored_attachments_to_attachments_dict(data, *, attachments_key):
             response = requests.get(value["presigned_url"], stream=True)
             response.raise_for_status()
             reader = io.BytesIO(response.content)
-            attachments_dict[key.removeprefix("attachment.")] = {
-                "presigned_url": value["presigned_url"],
-                "reader": reader,
-                "mime_type": value.get("mime_type"),
-            }
+            attachments_dict[key.removeprefix("attachment.")] = AttachmentInfo(
+                **{
+                    "presigned_url": value["presigned_url"],
+                    "reader": reader,
+                    "mime_type": value.get("mime_type"),
+                }
+            )
     return attachments_dict
 
 

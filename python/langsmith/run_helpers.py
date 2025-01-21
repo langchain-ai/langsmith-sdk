@@ -950,7 +950,7 @@ class trace:
                 inputs=self.inputs or {},
                 tags=tags_,
                 client=client_,  # type: ignore
-                attachments=self.attachments or {},
+                attachments=cast(dict, self.attachments) or {},
             )
 
         if enabled is True:
@@ -1435,7 +1435,7 @@ def _setup_run(
             extra=extra_inner,
             tags=tags_,
             client=client_,  # type: ignore
-            attachments=attachments,
+            attachments=cast(dict, attachments),
             dangerously_allow_filesystem=dangerously_allow_filesystem,
         )
     if utils.tracing_is_enabled() is True:
