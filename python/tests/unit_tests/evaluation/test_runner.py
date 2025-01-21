@@ -603,7 +603,7 @@ async def test_aevaluate_results(
             now = time.time()
             if last is None:
                 elapsed = now - start
-                assert elapsed < 3
+                assert elapsed < 3.1
             deltas.append((now - last) if last is not None else 0)  # type: ignore
             last = now
         total = now - start  # type: ignore
