@@ -614,7 +614,7 @@ async def test_aevaluate_results(
         tolerance = 3
         assert total_slow < tolerance
         assert total_quick > (SPLIT_SIZE * NUM_REPETITIONS - 1) - tolerance
-        assert max(deltas) > (total / 4)
+        assert max(deltas) > (total / 3)
 
     async for r in results:
         assert r["run"].outputs["output"] == r["example"].inputs["in"] + 1  # type: ignore
