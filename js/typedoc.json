@@ -1,0 +1,27 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "out": "_build/api_refs",
+  "sort": [
+    "kind",
+    "visibility",
+    "instance-first",
+    "required-first",
+    "alphabetical"
+  ],
+  "plugin": [
+    "typedoc-plugin-expand-object-like-types",
+    "./scripts/typedoc-plugin.cjs"
+  ],
+  "tsconfig": "./tsconfig.json",
+  "excludePrivate": true,
+  "excludeInternal": true,
+  "excludeExternals": false,
+  "excludeNotDocumented": false,
+  "includeVersion": true,
+  "sourceLinkTemplate": "https://github.com/langchain-ai/langsmith-sdk/blob/{gitRevision}/{path}#L{line}",
+  "logLevel": "Error",
+  "name": "LangSmith",
+  "skipErrorChecking": false,
+  "exclude": ["dist"],
+  "hostedBaseUrl": "https://docs.smith.langchain.com/reference/js/"
+}

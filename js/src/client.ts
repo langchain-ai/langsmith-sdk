@@ -42,6 +42,7 @@ import {
   RawExample,
   AttachmentInfo,
   AttachmentData,
+  DatasetVersion,
 } from "./schemas.js";
 import {
   convertLangChainMessageToExample,
@@ -282,6 +283,15 @@ export type CreateExampleOptions = {
   split?: string | string[];
   /** The ID of the source run associated with this example. */
   sourceRunId?: string;
+};
+
+export type CreateProjectParams = {
+  projectName: string;
+  description?: string | null;
+  metadata?: RecordStringAny | null;
+  upsert?: boolean;
+  projectExtra?: RecordStringAny | null;
+  referenceDatasetId?: string | null;
 };
 
 type AutoBatchQueueItem = {
@@ -1898,14 +1908,7 @@ export class Client implements LangSmithTracingClientInterface {
     upsert = false,
     projectExtra = null,
     referenceDatasetId = null,
-  }: {
-    projectName: string;
-    description?: string | null;
-    metadata?: RecordStringAny | null;
-    upsert?: boolean;
-    projectExtra?: RecordStringAny | null;
-    referenceDatasetId?: string | null;
-  }): Promise<TracerSession> {
+  }: CreateProjectParams): Promise<TracerSession> {
     const upsert_ = upsert ? `?upsert=true` : "";
     const endpoint = `${this.apiUrl}/sessions${upsert_}`;
     const extra: RecordStringAny = projectExtra || {};
@@ -2480,6 +2483,53 @@ export class Client implements LangSmithTracingClientInterface {
     return (await response.json()) as Dataset;
   }
 
+  /**
+   * Updates a tag on a dataset.
+   *
+   * If the tag is already assigned to a different version of this dataset,
+   * the tag will be moved to the new version. The as_of parameter is used to
+   * determine which version of the dataset to apply the new tags to.
+   *
+   * It must be an exact version of the dataset to succeed. You can
+   * use the "readDatasetVersion" method to find the exact version
+   * to apply the tags to.
+   * @param params.datasetId The ID of the dataset to update. Must be provided if "datasetName" is not provided.
+   * @param params.datasetName The name of the dataset to update. Must be provided if "datasetId" is not provided.
+   * @param params.asOf The timestamp of the dataset to apply the new tags to.
+   * @param params.tag The new tag to apply to the dataset.
+   */
+  public async updateDatasetTag(props: {
+    datasetId?: string;
+    datasetName?: string;
+    asOf: string | Date;
+    tag: string;
+  }): Promise<void> {
+    const { datasetId, datasetName, asOf, tag } = props;
+
+    if (!datasetId && !datasetName) {
+      throw new Error("Must provide either datasetName or datasetId");
+    }
+    const _datasetId =
+      datasetId ?? (await this.readDataset({ datasetName })).id;
+    assertUuid(_datasetId);
+
+    const response = await this.caller.call(
+      _getFetchImplementation(),
+      `${this.apiUrl}/datasets/${_datasetId}/tags`,
+      {
+        method: "PUT",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          as_of: typeof asOf === "string" ? asOf : asOf.toISOString(),
+          tag,
+        }),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+    await raiseForStatus(response, "update dataset tags");
+  }
+
   public async deleteDataset({
     datasetId,
     datasetName,
@@ -2937,6 +2987,72 @@ export class Client implements LangSmithTracingClientInterface {
     await raiseForStatus(response, "update examples");
     const result = await response.json();
     return result;
+  }
+
+  /**
+   * Get dataset version by closest date or exact tag.
+   *
+   * Use this to resolve the nearest version to a given timestamp or for a given tag.
+   *
+   * @param options The options for getting the dataset version
+   * @param options.datasetId The ID of the dataset
+   * @param options.datasetName The name of the dataset
+   * @param options.asOf The timestamp of the dataset to retrieve
+   * @param options.tag The tag of the dataset to retrieve
+   * @returns The dataset version
+   */
+  public async readDatasetVersion({
+    datasetId,
+    datasetName,
+    asOf,
+    tag,
+  }: {
+    datasetId?: string;
+    datasetName?: string;
+    asOf?: string | Date;
+    tag?: string;
+  }): Promise<DatasetVersion> {
+    let resolvedDatasetId: string;
+    if (!datasetId) {
+      const dataset = await this.readDataset({ datasetName });
+      resolvedDatasetId = dataset.id;
+    } else {
+      resolvedDatasetId = datasetId;
+    }
+
+    assertUuid(resolvedDatasetId);
+
+    if ((asOf && tag) || (!asOf && !tag)) {
+      throw new Error("Exactly one of asOf and tag must be specified.");
+    }
+
+    const params = new URLSearchParams();
+    if (asOf !== undefined) {
+      params.append(
+        "as_of",
+        typeof asOf === "string" ? asOf : asOf.toISOString()
+      );
+    }
+    if (tag !== undefined) {
+      params.append("tag", tag);
+    }
+
+    const response = await this.caller.call(
+      _getFetchImplementation(),
+      `${
+        this.apiUrl
+      }/datasets/${resolvedDatasetId}/version?${params.toString()}`,
+      {
+        method: "GET",
+        headers: { ...this.headers },
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+
+    await raiseForStatus(response, "read dataset version");
+
+    return await response.json();
   }
 
   public async listDatasetSplits({

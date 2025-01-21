@@ -23,3 +23,9 @@ pub enum TracingClientError {
     #[error("IO error")]
     IoError(String),
 }
+
+impl From<std::io::Error> for TracingClientError {
+    fn from(value: std::io::Error) -> Self {
+        Self::IoError(value.to_string())
+    }
+}

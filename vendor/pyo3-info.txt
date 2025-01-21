@@ -1,11 +1,11 @@
-cloned from commit a42e53e888227724928c7f370cad47153a13b329
+cloned from commit f2a8460559d8f58269f306679fc58c9d101f70cf (tag: v0.23.4)
 
 then apply diff:
 
-diff --git a/pyo3-ffi/src/modsupport.rs b/pyo3-ffi/src/modsupport.rs
+diff --git a/vendor/pyo3/pyo3-ffi/src/modsupport.rs b/vendor/pyo3/pyo3-ffi/src/modsupport.rs
 index 4a18d30f..6da2795b 100644
---- a/pyo3-ffi/src/modsupport.rs
-+++ b/pyo3-ffi/src/modsupport.rs
+--- a/vendor/pyo3/pyo3-ffi/src/modsupport.rs
++++ b/vendor/pyo3/pyo3-ffi/src/modsupport.rs
 @@ -36,6 +36,13 @@ extern "C" {
      pub fn Py_BuildValue(arg1: *const c_char, ...) -> *mut PyObject;
      // skipped Py_VaBuildValue
@@ -20,11 +20,11 @@ index 4a18d30f..6da2795b 100644
      #[cfg(Py_3_10)]
      #[cfg_attr(PyPy, link_name = "PyPyModule_AddObjectRef")]
      pub fn PyModule_AddObjectRef(
-diff --git a/pyo3-ffi/src/object.rs b/pyo3-ffi/src/object.rs
-index fc3484be..d2fa1930 100644
---- a/pyo3-ffi/src/object.rs
-+++ b/pyo3-ffi/src/object.rs
-@@ -211,7 +211,7 @@ pub unsafe fn Py_SIZE(ob: *mut PyObject) -> Py_ssize_t {
+diff --git a/vendor/pyo3/pyo3-ffi/src/object.rs b/vendor/pyo3/pyo3-ffi/src/object.rs
+index 3f086ac1..51083a8e 100644
+--- a/vendor/pyo3/pyo3-ffi/src/object.rs
++++ b/vendor/pyo3/pyo3-ffi/src/object.rs
+@@ -214,7 +214,7 @@ pub unsafe fn Py_SIZE(ob: *mut PyObject) -> Py_ssize_t {
 
  #[inline(always)]
  #[cfg(all(Py_3_12, not(Py_GIL_DISABLED)))]
