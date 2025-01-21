@@ -603,7 +603,7 @@ async def test_aevaluate_results(
             now = time.time()
             if last is None:
                 elapsed = now - start
-                assert elapsed < 3.05
+                assert elapsed < 3
             deltas.append((now - last) if last is not None else 0)  # type: ignore
             last = now
         total = now - start  # type: ignore
@@ -617,6 +617,7 @@ async def test_aevaluate_results(
         tolerance = 3
         assert total_slow < tolerance
         assert total_quick > (SPLIT_SIZE * NUM_REPETITIONS - 1) - tolerance
+        assert any([d > 1 for d in deltas])
 
     async for r in results:
         assert r["run"].outputs["output"] == r["example"].inputs["in"] + 1  # type: ignore
