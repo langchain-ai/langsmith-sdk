@@ -1,4 +1,4 @@
-"""LangSmith unit testing module."""
+"""LangSmith pytest testing module."""
 
 from langsmith.testing._internal import (
     log_feedback,
