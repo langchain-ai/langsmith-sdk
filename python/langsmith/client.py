@@ -4698,6 +4698,7 @@ class Client:
             split=split,
             attachments_operations=attachments_operations,
         )
+        example = {k: v for k, v in example.items() if v is not None}
         response = self.request_with_retries(
             "PATCH",
             f"/examples/{_as_uuid(example_id, 'example_id')}",

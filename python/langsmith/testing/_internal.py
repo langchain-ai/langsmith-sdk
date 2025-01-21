@@ -429,7 +429,7 @@ def _start_experiment(
 
 
 def _get_example_id(
-    func: Callable, inputs: dict, suite_id: uuid.UUID
+    func: Callable, inputs: Optional[dict], suite_id: uuid.UUID
 ) -> Tuple[uuid.UUID, str]:
     try:
         file_path = str(Path(inspect.getfile(func)).relative_to(Path.cwd()))
@@ -447,16 +447,30 @@ def _get_example_id(
 
 def _end_tests(test_suite: _LangSmithTestSuite):
     git_info = ls_env.get_git_info() or {}
+    test_suite.shutdown()
+    dataset_version = test_suite.get_version()
+    dataset_id = test_suite._dataset.id
     test_suite.client.update_project(
         test_suite.experiment_id,
         end_time=datetime.datetime.now(datetime.timezone.utc),
         metadata={
             **git_info,
-            "dataset_version": test_suite.get_version(),
+            "dataset_version": dataset_version,
             "revision_id": ls_env.get_langchain_env_var_metadata().get("revision_id"),
         },
     )
-    test_suite.shutdown()
+    if dataset_version and git_info["commit"] is not None:
+        test_suite.client.update_dataset_tag(
+            dataset_id=dataset_id,
+            as_of=dataset_version,
+            tag=f'git:commit:{git_info["commit"]}',
+        )
+    if dataset_version and git_info["branch"] is not None:
+        test_suite.client.update_dataset_tag(
+            dataset_id=dataset_id,
+            as_of=dataset_version,
+            tag=f'git:branch:{git_info["branch"]}',
+        )
 
 
 VT = TypeVar("VT", bound=Optional[dict])
@@ -485,6 +499,7 @@ class _LangSmithTestSuite:
         self._version: Optional[datetime.datetime] = None
         self._executor = ls_utils.ContextThreadPoolExecutor(max_workers=1)
         self._example_futures: dict[ID_TYPE, list[Future]] = defaultdict(list)
+        self._example_modified_at: dict[ID_TYPE, datetime.datetime] = {}
         atexit.register(_end_tests, self)
 
     @property
@@ -521,14 +536,20 @@ class _LangSmithTestSuite:
     def name(self):
         return self._experiment.name
 
-    def update_version(self, version: datetime.datetime) -> None:
+    def update_version(self, version: datetime.datetime, example_id: uuid.UUID) -> None:
         with self._lock:
             if self._version is None or version > self._version:
                 self._version = version
+            self._example_modified_at[example_id] = version
 
-    def get_version(self) -> Optional[datetime.datetime]:
+    def get_version(
+        self, example_id: Optional[uuid.UUID] = None
+    ) -> Optional[datetime.datetime]:
         with self._lock:
-            return self._version
+            if not example_id:
+                return self._version
+            else:
+                return self._example_modified_at[example_id]
 
     def submit_result(
         self,
@@ -585,34 +606,39 @@ class _LangSmithTestSuite:
         outputs: Optional[dict],
         metadata: Optional[dict],
     ) -> None:
-        inputs_ = _serde_example_values(inputs) if inputs else inputs
-        outputs_ = _serde_example_values(outputs) if outputs else outputs
+        inputs = _serde_example_values(inputs)
+        outputs = _serde_example_values(outputs)
         try:
             example = self.client.read_example(example_id=example_id)
         except ls_utils.LangSmithNotFoundError:
             example = self.client.create_example(
                 example_id=example_id,
-                inputs=inputs_,
-                outputs=outputs_,
+                inputs=inputs,
+                outputs=outputs,
                 dataset_id=self.id,
                 metadata=metadata,
                 created_at=self._experiment.start_time,
             )
+            modified_at = example.modified_at
         else:
             if (
-                inputs_ != example.inputs
-                or outputs_ != example.outputs
+                (inputs is not None and inputs != example.inputs)
+                or (outputs is not None and outputs != example.outputs)
+                or (metadata is not None and metadata != example.metadata)
                 or str(example.dataset_id) != str(self.id)
             ):
-                self.client.update_example(
+                response = self.client.update_example(
                     example_id=example.id,
-                    inputs=inputs_,
-                    outputs=outputs_,
+                    inputs=inputs,
+                    outputs=outputs,
                     metadata=metadata,
                     dataset_id=self.id,
                 )
-        if example.modified_at:
-            self.update_version(example.modified_at)
+                modified_at = datetime.datetime.fromisoformat(response["modified_at"])
+            else:
+                modified_at = example.modified_at
+        if modified_at:
+            self.update_version(modified_at, example_id=example_id)
 
     def _submit_feedback(
         self,
@@ -645,27 +671,33 @@ class _LangSmithTestSuite:
             self._example_futures[example_id].pop().result()
 
     def end_run(
-        self, run_tree, example_id, outputs, pytest_plugin=None, pytest_nodeid=None
+        self,
+        run_tree,
+        example_id,
+        outputs,
+        end_time,
+        pytest_plugin=None,
+        pytest_nodeid=None,
     ) -> Future:
         return self._executor.submit(
             self._end_run,
             run_tree=run_tree,
             example_id=example_id,
             outputs=outputs,
+            end_time=end_time,
             pytest_plugin=pytest_plugin,
             pytest_nodeid=pytest_nodeid,
         )
 
     def _end_run(
-        self, run_tree, example_id, outputs, pytest_plugin, pytest_nodeid
+        self, run_tree, example_id, outputs, end_time, pytest_plugin, pytest_nodeid
     ) -> None:
+        # TODO: remove this hack so that run durations are correct
         # Ensure example is fully updated
         self.wait_example_updates(example_id)
         # Ensure that run end time is after example modified at.
-        end_time = cast(
-            datetime.datetime, self.client.read_example(example_id).modified_at
-        ) + datetime.timedelta(seconds=0.01)
-        # TODO: remove this hack so that run durations are correct
+        example_modified_at = self.get_version(example_id=example_id)
+        end_time = max(example_modified_at, end_time)
         run_tree.end(outputs=outputs, end_time=end_time)
         run_tree.patch()
         pytest_plugin.update_process_status(pytest_nodeid, {"logged": True})
@@ -748,10 +780,12 @@ class _TestCase:
     def end_run(self, run_tree, outputs: Any) -> Future:
         if not (outputs is None or isinstance(outputs, dict)):
             outputs = {"output": outputs}
+        end_time = datetime.datetime.now(datetime.timezone.utc)
         return self.test_suite.end_run(
             run_tree,
             self.example_id,
             outputs,
+            end_time=end_time,
             pytest_plugin=self.pytest_plugin,
             pytest_nodeid=self.pytest_nodeid,
         )
@@ -786,9 +820,16 @@ def _create_test_case(
     client = langtest_extra["client"] or rt.get_cached_client()
     output_keys = langtest_extra["output_keys"]
     signature = inspect.signature(func)
-    inputs: dict = rh._get_inputs_safe(signature, *args, **kwargs)
-    outputs = {}
+    inputs = rh._get_inputs_safe(signature, *args, **kwargs) or None
+    outputs = None
     if output_keys:
+        outputs = {}
+        if not inputs:
+            msg = (
+                "'output_keys' should only be specified when marked test function has "
+                "input arguments."
+            )
+            raise ValueError(msg)
         for k in output_keys:
             outputs[k] = inputs.pop(k, None)
     test_suite = _LangSmithTestSuite.from_test(
