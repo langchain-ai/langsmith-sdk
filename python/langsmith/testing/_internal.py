@@ -39,7 +39,6 @@ from langsmith import run_trees as rt
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._internal import _orjson
-from langsmith._internal._beta_decorator import warn_beta
 from langsmith._internal._serde import dumps_json
 from langsmith.client import ID_TYPE
 
@@ -1008,9 +1007,12 @@ async def _arun_test(
 unit = test
 
 
-@warn_beta
 def log_inputs(inputs: dict, /) -> None:
     """Log run inputs from within a pytest test run.
+
+    .. warning::
+
+        This API is in beta and might change in future versions.
 
     Should only be used in pytest tests decorated with @pytest.mark.langsmith.
 
@@ -1018,14 +1020,17 @@ def log_inputs(inputs: dict, /) -> None:
         inputs: Inputs to log.
 
     Example:
-        >>> from langsmith import testing
-        >>>
-        >>> @pytest.mark.langsmith
-        ... def test_foo() -> None:
-        ...     x = 0
-        ...     y = 1
-        ...     testing.log_inputs({"x": x, "y": y})
-        ...     assert foo(x, y) == 2
+        .. code-block:: python
+
+            from langsmith import testing as t
+
+
+            @pytest.mark.langsmith
+            def test_foo() -> None:
+                x = 0
+                y = 1
+                t.log_inputs({"x": x, "y": y})
+                assert foo(x, y) == 2
     """
     if ls_utils.test_tracking_is_disabled():
         logger.info(
@@ -1045,9 +1050,12 @@ def log_inputs(inputs: dict, /) -> None:
     test_case.sync_example(inputs=inputs)
 
 
-@warn_beta
 def log_outputs(outputs: dict, /) -> None:
     """Log run outputs from within a pytest test run.
+
+    .. warning::
+
+        This API is in beta and might change in future versions.
 
     Should only be used in pytest tests decorated with @pytest.mark.langsmith.
 
@@ -1055,15 +1063,18 @@ def log_outputs(outputs: dict, /) -> None:
         outputs: Outputs to log.
 
     Example:
-        >>> from langsmith import testing
-        >>>
-        >>> @pytest.mark.langsmith
-        ... def test_foo() -> None:
-        ...     x = 0
-        ...     y = 1
-        ...     result = foo(x, y)
-        ...     testing.log_outputs({"foo": result})
-        ...     assert result == 2
+        .. code-block:: python
+
+            from langsmith import testing as t
+
+
+            @pytest.mark.langsmith
+            def test_foo() -> None:
+                x = 0
+                y = 1
+                result = foo(x, y)
+                t.log_outputs({"foo": result})
+                assert result == 2
     """
     if ls_utils.test_tracking_is_disabled():
         logger.info(
@@ -1083,9 +1094,12 @@ def log_outputs(outputs: dict, /) -> None:
     test_case.log_outputs(outputs)
 
 
-@warn_beta
 def log_reference_outputs(outputs: dict, /) -> None:
     """Log example reference outputs from within a pytest test run.
+
+    .. warning::
+
+        This API is in beta and might change in future versions.
 
     Should only be used in pytest tests decorated with @pytest.mark.langsmith.
 
@@ -1093,15 +1107,18 @@ def log_reference_outputs(outputs: dict, /) -> None:
         outputs: Reference outputs to log.
 
     Example:
-        >>> from langsmith import testing
-        >>>
-        >>> @pytest.mark.langsmith
-        ... def test_foo() -> None:
-        ...     x = 0
-        ...     y = 1
-        ...     expected = 2
-        ...     testing.log_reference_outputs({"foo": expected})
-        ...     assert foo(x, y) == expected
+        .. code-block:: python
+
+            from langsmith import testing
+
+
+            @pytest.mark.langsmith
+            def test_foo() -> None:
+                x = 0
+                y = 1
+                expected = 2
+                testing.log_reference_outputs({"foo": expected})
+                assert foo(x, y) == expected
     """
     if ls_utils.test_tracking_is_disabled():
         logger.info(
@@ -1119,7 +1136,6 @@ def log_reference_outputs(outputs: dict, /) -> None:
     test_case.sync_example(outputs=outputs)
 
 
-@warn_beta
 def log_feedback(
     feedback: Optional[Union[dict, list[dict]]] = None,
     /,
@@ -1131,6 +1147,10 @@ def log_feedback(
 ) -> None:
     """Log run feedback from within a pytest test run.
 
+    .. warning::
+
+        This API is in beta and might change in future versions.
+
     Should only be used in pytest tests decorated with @pytest.mark.langsmith.
 
     Args:
@@ -1140,17 +1160,20 @@ def log_feedback(
         kwargs: Any other Client.create_feedback args.
 
     Example:
-        >>> import pytest
-        >>> from langsmith import testing
-        >>>
-        >>> @pytest.mark.langsmith
-        ... def test_foo() -> None:
-        ...     x = 0
-        ...     y = 1
-        ...     expected = 2
-        ...     result = foo(x, y)
-        ...     testing.log_feedback(key="right_type", score=isinstance(result, int))
-        ...     assert result == expected
+        .. code-block:: python
+
+            import pytest
+            from langsmith import testing as t
+
+
+            @pytest.mark.langsmith
+            def test_foo() -> None:
+                x = 0
+                y = 1
+                expected = 2
+                result = foo(x, y)
+                t.log_feedback(key="right_type", score=isinstance(result, int))
+                assert result == expected
     """
     if ls_utils.test_tracking_is_disabled():
         logger.info(
@@ -1194,12 +1217,15 @@ def log_feedback(
     test_case.submit_feedback(run_id, cast(Union[list, dict], feedback), **kwargs)
 
 
-@warn_beta
 @contextlib.contextmanager
 def trace_feedback(
     *, name: str = "Feedback"
 ) -> Generator[Optional[run_trees.RunTree], None, None]:
     """Trace the computation of a pytest run feedback as its own run.
+
+    .. warning::
+
+        This API is in beta and might change in future versions.
 
     Args:
         name: Feedback run name. Defaults to "Feedback".
@@ -1210,7 +1236,8 @@ def trace_feedback(
             import openai
             import pytest
 
-            from langsmith import testing, wrappers
+            from langsmith import testing as t
+            from langsmith import wrappers
 
             oai_client = wrappers.wrap_openai(openai.Client())
 
@@ -1226,13 +1253,13 @@ def trace_feedback(
                         {"role": "user", "content": text},
                     ],
                 )
-                testing.log_inputs({"text": text})
-                testing.log_outputs({"response": response.choices[0].message.content})
-                testing.log_reference_outputs({"response": "hello!"})
+                t.log_inputs({"text": text})
+                t.log_outputs({"response": response.choices[0].message.content})
+                t.log_reference_outputs({"response": "hello!"})
 
                 # Use this context manager to trace any steps used for generating evaluation
                 # feedback separately from the main application logic
-                with testing.trace_feedback():
+                with t.trace_feedback():
                     grade = oai_client.chat.completions.create(
                         model="gpt-4o-mini",
                         messages=[
@@ -1246,7 +1273,9 @@ def trace_feedback(
                             },
                         ],
                     )
-                    testing.log_feedback(
+                    # Make sure to log relevant feedback within the context for the
+                    # trace to be associated with this feedback.
+                    t.log_feedback(
                         key="llm_judge", score=float(grade.choices[0].message.content)
                     )
 

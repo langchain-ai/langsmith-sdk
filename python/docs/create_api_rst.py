@@ -1,5 +1,7 @@
 """Script for auto-generating api_reference.rst."""
 
+from __future__ import annotations
+
 import importlib
 import inspect
 import logging
@@ -82,6 +84,10 @@ _INCLUDED_UTILS = {
 }
 
 
+def _document_func_or_class(name: str) -> bool:
+    return (not name.startswith("_")) or name in ("_Expect")
+
+
 def _load_module_members(module_path: str, namespace: str) -> ModuleMembers:
     classes_: List[ClassInfo] = []
     functions: List[FunctionInfo] = []
@@ -113,7 +119,7 @@ def _load_module_members(module_path: str, namespace: str) -> ModuleMembers:
                     name=name,
                     qualified_name=f"{namespace}.{name}",
                     kind=kind,
-                    is_public=not name.startswith("_"),
+                    is_public=_document_func_or_class(name),
                     is_deprecated=".. deprecated::" in (type_.__doc__ or ""),
                 )
             )
@@ -122,7 +128,7 @@ def _load_module_members(module_path: str, namespace: str) -> ModuleMembers:
                 FunctionInfo(
                     name=name,
                     qualified_name=f"{namespace}.{name}",
-                    is_public=not name.startswith("_"),
+                    is_public=_document_func_or_class(name),
                     is_deprecated=".. deprecated::" in (type_.__doc__ or ""),
                 )
             )
@@ -147,6 +153,7 @@ def _load_package_modules(
                 "_internal.py",
                 "_expect.py",
                 "_openai.py",
+                "_expect.py",
             }:
                 continue
 
@@ -189,6 +196,7 @@ module_order = [
     "anonymizer",
     "wrappers",
     "testing",
+    "_expect",
 ]
 
 
@@ -387,6 +395,7 @@ Here are quick links to some of the key classes and functions:
   run_helpers<run_helpers>
   wrappers<wrappers>
   testing<testing>
+  _expect<_expect>
 ``` 
 
 """
