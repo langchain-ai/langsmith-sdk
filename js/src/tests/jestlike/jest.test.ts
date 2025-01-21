@@ -192,7 +192,7 @@ const scoreMarketingCopyAgent = async () => {
   };
 };
 
-ls.describe.only("Test Tweet", () => {
+ls.describe("Test Tweet", () => {
   ls.test(
     "should generate a tweet LS",
     {
