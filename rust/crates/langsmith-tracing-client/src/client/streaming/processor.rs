@@ -240,9 +240,6 @@ impl RunProcessor {
 
                 Ok(())
             }
-            QueuedRun::RunBytes(_) => {
-                unimplemented!("RunBytes is not supported")
-            }
             QueuedRun::Drain => {
                 unreachable!("drain message that wasn't handled earlier");
             }

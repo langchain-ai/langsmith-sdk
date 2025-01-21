@@ -642,7 +642,7 @@ class _LangSmithTestSuite:
         feedback = feedback if isinstance(feedback, list) else [feedback]
         for fb in feedback:
             if pytest_plugin and pytest_nodeid:
-                val = fb["score"] if "score" in fb else fb["val"]
+                val = fb["score"] if "score" in fb else fb["value"]
                 pytest_plugin.update_process_status(
                     pytest_nodeid, {"feedback": {fb["key"]: val}}
                 )
@@ -651,11 +651,10 @@ class _LangSmithTestSuite:
             )
 
     def _create_feedback(self, run_id: ID_TYPE, feedback: dict, **kwargs: Any) -> None:
-        trace_id = self.client.read_run(run_id).trace_id
-        self.client.create_feedback(trace_id, **feedback, **kwargs)
+        self.client.create_feedback(run_id, **feedback, **kwargs)
 
     def shutdown(self):
-        self._executor.shutdown(wait=True)
+        self._executor.shutdown()
 
     def wait_example_updates(self, example_id: ID_TYPE):
         """Wait for all example updates to complete."""

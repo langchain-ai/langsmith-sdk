@@ -29,8 +29,8 @@ def pytest_addoption(parser):
     )
 
 
-def pytest_cmdline_preparse(config, args):
-    """Call immediately after command line options are parsed."""
+def _handle_output_args(args):
+    """Handle output arguments."""
     if any(opt in args for opt in ["--output=langsmith", "--output=ls"]):
         # Only add --quiet if it's not already there
         if not any(a in args for a in ["-q", "--quiet"]):
@@ -38,6 +38,19 @@ def pytest_cmdline_preparse(config, args):
         # Disable built-in output capturing
         if not any(a in args for a in ["-s", "--capture=no"]):
             args.insert(0, "-s")
+
+
+if pytest.__version__.startswith("7."):
+
+    def pytest_cmdline_preparse(config, args):
+        """Call immediately after command line options are parsed (pytest v7)."""
+        _handle_output_args(args)
+
+else:
+
+    def pytest_load_initial_conftests(args):
+        """Handle args in pytest v8+."""
+        _handle_output_args(args)
 
 
 @pytest.hookimpl(hookwrapper=True)
@@ -54,7 +67,13 @@ def pytest_runtest_call(item):
         request_obj = getattr(item, "_request", None)
         if request_obj is not None and "request" not in item.funcargs:
             item.funcargs["request"] = request_obj
-            item._fixtureinfo.argnames += ("request",)
+            # Create a new FuncFixtureInfo instance with updated argnames
+            item._fixtureinfo = type(item._fixtureinfo)(
+                argnames=item._fixtureinfo.argnames + ("request",),
+                initialnames=item._fixtureinfo.initialnames,
+                names_closure=item._fixtureinfo.names_closure,
+                name2fixturedefs=item._fixtureinfo.name2fixturedefs,
+            )
     yield
 
 
@@ -153,7 +172,7 @@ class LangSmithPlugin:
         process_ids = self.test_suites[suite_name]
 
         title = f"""Test Suite: [bold]{suite_name}[/bold]
-LangSmith link: [bright_cyan][link={self.test_suite_urls[suite_name]}]click here[/link][/bright_cyan]"""  # noqa: E501
+LangSmith link: [bright_cyan][link={self.test_suite_urls[suite_name]}]⌘ + click here[/link][/bright_cyan]"""  # noqa: E501
         table = Table(title=title, title_justify="left")
         table.add_column("Test")
         table.add_column("Inputs")
@@ -166,7 +185,6 @@ LangSmith link: [bright_cyan][link={self.test_suite_urls[suite_name]}]click here
 
         # Test, inputs, ref outputs, outputs col width
         max_status = len("status")
-        max_feedback = len("feedback")
         max_duration = len("duration")
         now = time.time()
         durations = []
@@ -176,15 +194,11 @@ LangSmith link: [bright_cyan][link={self.test_suite_urls[suite_name]}]click here
         for pid, status in suite_statuses.items():
             duration = status.get("end_time", now) - status.get("start_time", now)
             durations.append(duration)
-            feedback = "\n".join(
-                f"{k}: {v}" for k, v in status.get("feedback", {}).items()
-            )
             for k, v in status.get("feedback", {}).items():
                 if isinstance(v, (float, int, bool)):
                     numeric_feedbacks[k].append(v)
             max_duration = max(len(f"{duration:.2f}s"), max_duration)
             max_status = max(len(status.get("status", "queued")), max_status)
-            max_feedback = max(len(feedback), max_feedback)
 
         passed_count = sum(s.get("status") == "passed" for s in suite_statuses.values())
         failed_count = sum(s.get("status") == "failed" for s in suite_statuses.values())
@@ -208,11 +222,10 @@ LangSmith link: [bright_cyan][link={self.test_suite_urls[suite_name]}]click here
             aggregate_feedback = "--"
 
         max_duration = max(max_duration, len(aggregate_duration))
-        max_feedback = max(max_feedback, len(aggregate_feedback))
         max_dynamic_col_width = (
-            self.console.width
-            - (max_status + max_feedback + max_duration + len("Logged"))
-        ) // 4
+            self.console.width - (max_status + max_duration + len("Logged"))
+        ) // 5
+        max_dynamic_col_width = max(max_dynamic_col_width, 8)
 
         for pid, status in suite_statuses.items():
             status_color = {
@@ -224,7 +237,8 @@ LangSmith link: [bright_cyan][link={self.test_suite_urls[suite_name]}]click here
 
             duration = status.get("end_time", now) - status.get("start_time", now)
             feedback = "\n".join(
-                f"{k}: {v}" for k, v in status.get("feedback", {}).items()
+                f"{_abbreviate(k, max_len=max_dynamic_col_width)}: {int(v) if isinstance(v, bool) else v}"  # noqa: E501
+                for k, v in status.get("feedback", {}).items()
             )
             inputs = json.dumps(status.get("inputs", {}))
             reference_outputs = json.dumps(status.get("reference_outputs", {}))
@@ -233,7 +247,9 @@ LangSmith link: [bright_cyan][link={self.test_suite_urls[suite_name]}]click here
                 _abbreviate_test_name(str(pid), max_len=max_dynamic_col_width),
                 _abbreviate(inputs, max_len=max_dynamic_col_width),
                 _abbreviate(reference_outputs, max_len=max_dynamic_col_width),
-                _abbreviate(outputs, max_len=max_dynamic_col_width),
+                _abbreviate(outputs, max_len=max_dynamic_col_width)[
+                    -max_dynamic_col_width:
+                ],
                 f"[{status_color}]{status.get('status', 'queued')}[/{status_color}]",
                 feedback,
                 f"{duration:.2f}s",

@@ -37,7 +37,6 @@ from typing import (
     cast,
 )
 
-import requests
 from typing_extensions import TypedDict, overload
 
 import langsmith
@@ -1067,7 +1066,7 @@ def _evaluate(
         runs=runs,
         # Create or resolve the experiment.
         include_attachments=_include_attachments(target)
-        or _evaluators_include_attachments(evaluators),
+        or _evaluators_include_attachments(evaluators) > 0,
         upload_results=upload_results,
     ).start()
     cache_dir = ls_utils.get_cache_dir(None)
@@ -1317,7 +1316,9 @@ class _ExperimentManager(_ExperimentManagerMixin):
         description: Optional[str] = None,
         num_repetitions: int = 1,
         include_attachments: bool = False,
+        reuse_attachments: bool = False,
         upload_results: bool = True,
+        attachment_raw_data_dict: Optional[dict] = None,
     ):
         super().__init__(
             experiment=experiment,
@@ -1332,7 +1333,56 @@ class _ExperimentManager(_ExperimentManagerMixin):
         self._summary_results = summary_results
         self._num_repetitions = num_repetitions
         self._include_attachments = include_attachments
+        self._reuse_attachments = reuse_attachments
         self._upload_results = upload_results
+        self._attachment_raw_data_dict = attachment_raw_data_dict
+
+    def _reset_example_attachment_readers(
+        self, example: schemas.Example
+    ) -> schemas.Example:
+        """Reset attachment readers for an example.
+
+        This is only in the case that an attachment is going to be used by more
+        than 1 callable (target + evaluators). In that case we keep a single copy
+        of the attachment data in self._attachment_raw_data_dict, and create
+        readers from that data. This makes it so that we don't have to keep
+        copies of the same data in memory, instead we can just create readers
+        from the same data.
+        """
+        if not hasattr(example, "attachments") or not example.attachments:
+            return example
+
+        new_attachments: dict[str, schemas.AttachmentInfo] = {}
+        for name, attachment in example.attachments.items():
+            if (
+                self._attachment_raw_data_dict is not None
+                and str(example.id) + name in self._attachment_raw_data_dict
+            ):
+                new_attachments[name] = {
+                    "presigned_url": attachment["presigned_url"],
+                    "reader": io.BytesIO(
+                        self._attachment_raw_data_dict[str(example.id) + name]
+                    ),
+                    "mime_type": attachment["mime_type"],
+                }
+            else:
+                new_attachments[name] = attachment
+
+        # Create a new Example instance with the updated attachments
+        return schemas.Example(
+            id=example.id,
+            created_at=example.created_at,
+            dataset_id=example.dataset_id,
+            inputs=example.inputs,
+            outputs=example.outputs,
+            metadata=example.metadata,
+            modified_at=example.modified_at,
+            runs=example.runs,
+            source_run_id=example.source_run_id,
+            attachments=new_attachments,
+            _host_url=example._host_url,
+            _tenant_id=example._tenant_id,
+        )
 
     @property
     def examples(self) -> Iterable[schemas.Example]:
@@ -1342,10 +1392,20 @@ class _ExperimentManager(_ExperimentManagerMixin):
                 client=self.client,
                 include_attachments=self._include_attachments,
             )
+            if self._reuse_attachments and self._attachment_raw_data_dict is None:
+                examples_copy, self._examples = itertools.tee(self._examples)
+                self._attachment_raw_data_dict = {
+                    str(e.id) + name: value["reader"].read()
+                    for e in examples_copy
+                    for name, value in (e.attachments or {}).items()
+                }
             if self._num_repetitions > 1:
                 examples_list = list(self._examples)
                 self._examples = itertools.chain.from_iterable(
-                    _make_fresh_examples(examples_list)
+                    [
+                        self._reset_example_attachment_readers(example)
+                        for example in examples_list
+                    ]
                     for _ in range(self._num_repetitions)
                 )
         self._examples, examples_iter = itertools.tee(self._examples)
@@ -1390,7 +1450,9 @@ class _ExperimentManager(_ExperimentManagerMixin):
             runs=self._runs,
             evaluation_results=self._evaluation_results,
             include_attachments=self._include_attachments,
+            reuse_attachments=self._reuse_attachments,
             upload_results=self._upload_results,
+            attachment_raw_data_dict=self._attachment_raw_data_dict,
         )
 
     def with_predictions(
@@ -1929,11 +1991,11 @@ def _ensure_traceable(
 
 def _evaluators_include_attachments(
     evaluators: Optional[Sequence[Union[EVALUATOR_T, AEVALUATOR_T]]],
-) -> bool:
+) -> int:
     if evaluators is None:
-        return False
+        return 0
 
-    def evaluator_has_attachments(evaluator: Any) -> bool:
+    def evaluator_uses_attachments(evaluator: Any) -> bool:
         if not callable(evaluator):
             return False
         sig = inspect.signature(evaluator)
@@ -1943,7 +2005,7 @@ def _evaluators_include_attachments(
         ]
         return any(p.name == "attachments" for p in positional_params)
 
-    return any(evaluator_has_attachments(e) for e in evaluators)
+    return sum(evaluator_uses_attachments(e) for e in evaluators)
 
 
 def _include_attachments(
@@ -2232,43 +2294,3 @@ def _import_langchain_runnable() -> Optional[type]:
 
 def _is_langchain_runnable(o: Any) -> bool:
     return bool((Runnable := _import_langchain_runnable()) and isinstance(o, Runnable))
-
-
-def _reset_example_attachments(example: schemas.Example) -> schemas.Example:
-    """Reset attachment readers for an example."""
-    if not hasattr(example, "attachments") or not example.attachments:
-        return example
-
-    new_attachments = {}
-    for key, attachment in example.attachments.items():
-        response = requests.get(attachment["presigned_url"], stream=True)
-        response.raise_for_status()
-        reader = io.BytesIO(response.content)
-        new_attachments[key] = {
-            "presigned_url": attachment["presigned_url"],
-            "reader": reader,
-            "mime_type": attachment.get("mime_type"),
-        }
-
-    # Create a new Example instance with the updated attachments
-    return schemas.Example(
-        id=example.id,
-        created_at=example.created_at,
-        dataset_id=example.dataset_id,
-        inputs=example.inputs,
-        outputs=example.outputs,
-        metadata=example.metadata,
-        modified_at=example.modified_at,
-        runs=example.runs,
-        source_run_id=example.source_run_id,
-        attachments=new_attachments,
-        _host_url=example._host_url,
-        _tenant_id=example._tenant_id,
-    )
-
-
-def _make_fresh_examples(
-    _original_examples: List[schemas.Example],
-) -> List[schemas.Example]:
-    """Create fresh copies of examples with reset readers."""
-    return [_reset_example_attachments(example) for example in _original_examples]
