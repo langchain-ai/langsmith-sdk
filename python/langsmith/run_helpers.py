@@ -286,6 +286,7 @@ def traceable(
     process_inputs: Optional[Callable[[dict], dict]] = None,
     process_outputs: Optional[Callable[..., dict]] = None,
     _invocation_params_fn: Optional[Callable[[dict], dict]] = None,
+    dangerously_allow_filesystem: bool = False,
 ) -> Callable[[Callable[P, R]], SupportsLangsmithExtra[P, R]]: ...
 
 
@@ -314,6 +315,12 @@ def traceable(
             Defaults to None.
         process_outputs: Custom serialization / processing function for outputs.
             Defaults to None.
+        dangerously_allow_filesystem: Whether to allow filesystem access for attachments.
+            Defaults to False.
+
+            Traces that reference local filepaths will be uploaded to LangSmith.
+            In general, network-hosted applications should not be using this because
+            referenced files are usually on the user's machine, not the host machine.
 
     Returns:
             Union[Callable, Callable[[Callable], Callable]]: The decorated function.
@@ -467,6 +474,7 @@ def traceable(
         run_type=run_type,
         process_inputs=kwargs.pop("process_inputs", None),
         invocation_params_fn=kwargs.pop("_invocation_params_fn", None),
+        dangerously_allow_filesystem=kwargs.pop("dangerously_allow_filesystem", False),
     )
     outputs_processor = kwargs.pop("process_outputs", None)
     _on_run_end = functools.partial(
@@ -1219,6 +1227,7 @@ class _ContainerInput(TypedDict, total=False):
     run_type: ls_client.RUN_TYPE_T
     process_inputs: Optional[Callable[[dict], dict]]
     invocation_params_fn: Optional[Callable[[dict], dict]]
+    dangerously_allow_filesystem: Optional[bool]
 
 
 def _container_end(
@@ -1321,6 +1330,9 @@ def _setup_run(
     tags = container_input.get("tags")
     client = container_input.get("client")
     run_type = container_input.get("run_type") or "chain"
+    dangerously_allow_filesystem = container_input.get(
+        "dangerously_allow_filesystem", False
+    )
     outer_project = _PROJECT_NAME.get()
     langsmith_extra = langsmith_extra or LangSmithExtra()
     name = langsmith_extra.get("name") or container_input.get("name")
@@ -1424,6 +1436,7 @@ def _setup_run(
             tags=tags_,
             client=client_,  # type: ignore
             attachments=attachments,
+            dangerously_allow_filesystem=dangerously_allow_filesystem,
         )
     if utils.tracing_is_enabled() is True:
         try:

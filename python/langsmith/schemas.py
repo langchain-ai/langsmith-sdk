@@ -39,6 +39,8 @@ except ImportError:
         StrictInt,
     )
 
+from pathlib import Path
+
 from typing_extensions import Literal
 
 SCORE_TYPE = Union[StrictBool, StrictInt, StrictFloat, None]
@@ -60,10 +62,10 @@ class Attachment(NamedTuple):
     """
 
     mime_type: str
-    data: bytes
+    data: Union[bytes, Path]
 
 
-Attachments = Dict[str, Union[Tuple[str, bytes], Attachment]]
+Attachments = Dict[str, Union[Tuple[str, bytes], Attachment, Tuple[str, Path]]]
 """Attachments associated with the run. 
 Each entry is a tuple of (mime_type, bytes), or (mime_type, file_path)"""
 
@@ -76,12 +78,12 @@ class BinaryIOLike(Protocol):
         """Read function."""
         ...
 
-    def write(self, b: bytes) -> int:
-        """Write function."""
-        ...
-
     def seek(self, offset: int, whence: int = 0) -> int:
         """Seek function."""
+        ...
+
+    def getvalue(self) -> bytes:
+        """Get value function."""
         ...
 
 
@@ -131,7 +133,7 @@ class AttachmentInfo(TypedDict):
 
     presigned_url: str
     reader: BinaryIOLike
-    mime_type: str
+    mime_type: Optional[str]
 
 
 class Example(ExampleBase):
@@ -370,7 +372,9 @@ class RunBase(BaseModel):
     tags: Optional[List[str]] = None
     """Tags for categorizing or annotating the run."""
 
-    attachments: Attachments = Field(default_factory=dict)
+    attachments: Union[Attachments, Dict[str, AttachmentInfo]] = Field(
+        default_factory=dict
+    )
     """Attachments associated with the run.
     Each entry is a tuple of (mime_type, bytes)."""
 
@@ -389,6 +393,11 @@ class RunBase(BaseModel):
     def __repr__(self):
         """Return a string representation of the RunBase object."""
         return f"{self.__class__}(id={self.id}, name='{self.name}', run_type='{self.run_type}')"
+
+    class Config:
+        """Configuration class for the schema."""
+
+        arbitrary_types_allowed = True
 
 
 class Run(RunBase):

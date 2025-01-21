@@ -77,9 +77,6 @@ from langsmith._internal._background_thread import (
 from langsmith._internal._background_thread import (
     tracing_control_thread_func as _tracing_control_thread_func,
 )
-from langsmith._internal._background_thread import (
-    tracing_control_thread_func_compress_parallel as _tracing_control_thread_func_compress_parallel,
-)
 from langsmith._internal._beta_decorator import warn_beta
 from langsmith._internal._compressed_runs import CompressedRuns
 from langsmith._internal._constants import (
@@ -476,13 +473,6 @@ class Client:
         # Create a session and register a finalizer to close it
         session_ = session if session else requests.Session()
         self.session = session_
-        if ls_utils.get_env_var("USE_RUN_COMPRESSION"):
-            self._futures: set[cf.Future] = set()
-            self.compressed_runs: Optional[CompressedRuns] = CompressedRuns()
-            self._data_available_event = threading.Event()
-        else:
-            self.compressed_runs = None
-
         self._info = (
             info
             if info is None or isinstance(info, ls_schemas.LangSmithInfo)
@@ -490,17 +480,12 @@ class Client:
         )
         weakref.finalize(self, close_session, self.session)
         atexit.register(close_session, session_)
+        self.compressed_runs: Optional[CompressedRuns] = None
+        self._data_available_event: Optional[threading.Event] = None
+        self._futures: Optional[set[cf.Future]] = None
         # Initialize auto batching
-        if auto_batch_tracing and self.compressed_runs is not None:
-            self.tracing_queue: Optional[PriorityQueue] = None
-            threading.Thread(
-                target=_tracing_control_thread_func_compress_parallel,
-                # arg must be a weakref to self to avoid the Thread object
-                # preventing garbage collection of the Client object
-                args=(weakref.ref(self),),
-            ).start()
-        elif auto_batch_tracing:
-            self.tracing_queue = PriorityQueue()
+        if auto_batch_tracing:
+            self.tracing_queue: Optional[PriorityQueue] = PriorityQueue()
 
             threading.Thread(
                 target=_tracing_control_thread_func,
@@ -1222,6 +1207,7 @@ class Client:
         *,
         project_name: Optional[str] = None,
         revision_id: Optional[str] = None,
+        dangerously_allow_filesystem: bool = False,
         **kwargs: Any,
     ) -> None:
         """Persist a run to the LangSmith API.
@@ -1285,6 +1271,17 @@ class Client:
         )
         self._insert_runtime_env([run_create])
 
+        if run_create.get("attachments") is not None:
+            for attachment in run_create["attachments"].values():
+                if (
+                    isinstance(attachment, tuple)
+                    and isinstance(attachment[1], Path)
+                    and not dangerously_allow_filesystem
+                ):
+                    raise ValueError(
+                        "Must set dangerously_allow_filesystem=True to allow passing in Paths for attachments."
+                    )
+
         if (
             # batch ingest requires trace_id and dotted_order to be set
             run_create.get("trace_id") is not None
@@ -1293,8 +1290,12 @@ class Client:
             if self._pyo3_client is not None:
                 self._pyo3_client.create_run(run_create)
             elif self.compressed_runs is not None:
+                if self._data_available_event is None:
+                    raise ValueError(
+                        "Run compression is enabled but threading event is not configured"
+                    )
                 serialized_op = serialize_run_dict("post", run_create)
-                multipart_form = (
+                multipart_form, _ = (
                     serialized_run_operation_to_multipart_parts_and_context(
                         serialized_op
                     )
@@ -1593,11 +1594,14 @@ class Client:
         self, ops: list[Union[SerializedRunOperation, SerializedFeedbackOperation]]
     ) -> None:
         parts: list[MultipartPartsAndContext] = []
+        opened_files_dict: Dict[str, io.BufferedReader] = {}
         for op in ops:
             if isinstance(op, SerializedRunOperation):
-                parts.append(
+                part, opened_files = (
                     serialized_run_operation_to_multipart_parts_and_context(op)
                 )
+                parts.append(part)
+                opened_files_dict.update(opened_files)
             elif isinstance(op, SerializedFeedbackOperation):
                 parts.append(
                     serialized_feedback_operation_to_multipart_parts_and_context(op)
@@ -1606,7 +1610,10 @@ class Client:
                 logger.error("Unknown operation type in tracing queue: %s", type(op))
         acc_multipart = join_multipart_parts_and_context(parts)
         if acc_multipart:
-            self._send_multipart_req(acc_multipart)
+            try:
+                self._send_multipart_req(acc_multipart)
+            finally:
+                _close_files(list(opened_files_dict.values()))
 
     def multipart_ingest(
         self,
@@ -1618,6 +1625,7 @@ class Client:
         ] = None,
         *,
         pre_sampled: bool = False,
+        dangerously_allow_filesystem: bool = False,
     ) -> None:
         """Batch ingest/upsert multiple runs in the Langsmith system.
 
@@ -1766,6 +1774,18 @@ class Client:
             )
         )
 
+        for op in serialized_ops:
+            if isinstance(op, SerializedRunOperation) and op.attachments:
+                for attachment in op.attachments.values():
+                    if (
+                        isinstance(attachment, tuple)
+                        and isinstance(attachment[1], Path)
+                        and not dangerously_allow_filesystem
+                    ):
+                        raise ValueError(
+                            "Must set dangerously_allow_filesystem=True to allow passing in Paths for attachments."
+                        )
+
         # sent the runs in multipart requests
         self._multipart_ingest_ops(serialized_ops)
 
@@ -1895,6 +1915,7 @@ class Client:
         extra: Optional[Dict] = None,
         tags: Optional[List[str]] = None,
         attachments: Optional[ls_schemas.Attachments] = None,
+        dangerously_allow_filesystem: bool = False,
         **kwargs: Any,
     ) -> None:
         """Update a run in the LangSmith API.
@@ -1958,6 +1979,15 @@ class Client:
             "session_name": kwargs.pop("session_name", None),
         }
         if attachments:
+            for _, attachment in attachments.items():
+                if (
+                    isinstance(attachment, tuple)
+                    and isinstance(attachment[1], Path)
+                    and not dangerously_allow_filesystem
+                ):
+                    raise ValueError(
+                        "Must set dangerously_allow_filesystem=True to allow passing in Paths for attachments."
+                    )
             data["attachments"] = attachments
         use_multipart = (
             (self.tracing_queue is not None or self.compressed_runs is not None)
@@ -1989,12 +2019,16 @@ class Client:
         elif use_multipart:
             serialized_op = serialize_run_dict(operation="patch", payload=data)
             if self.compressed_runs is not None:
-                multipart_form = (
+                multipart_form, _ = (
                     serialized_run_operation_to_multipart_parts_and_context(
                         serialized_op
                     )
                 )
                 with self.compressed_runs.lock:
+                    if self._data_available_event is None:
+                        raise ValueError(
+                            "Run compression is enabled but threading event is not configured"
+                        )
                     compress_multipart_parts_and_context(
                         multipart_form,
                         self.compressed_runs,
@@ -2029,6 +2063,11 @@ class Client:
         """Force flush the currently buffered compressed runs."""
         if self.compressed_runs is None:
             return
+
+        if self._futures is None:
+            raise ValueError(
+                "Run compression is enabled but request pool futures is not set"
+            )
 
         # Attempt to drain and send any remaining data
         from langsmith._internal._background_thread import (
@@ -2129,7 +2168,12 @@ class Client:
         response = self.request_with_retries(
             "GET", f"/runs/{_as_uuid(run_id, 'run_id')}"
         )
-        run = ls_schemas.Run(**response.json(), _host_url=self._host_url)
+        attachments = _convert_stored_attachments_to_attachments_dict(
+            response.json(), attachments_key="s3_urls"
+        )
+        run = ls_schemas.Run(
+            attachments=attachments, **response.json(), _host_url=self._host_url
+        )
         if load_child_runs and run.child_run_ids:
             run = self._load_child_runs(run)
         return run
@@ -2310,7 +2354,13 @@ class Client:
         for i, run in enumerate(
             self._get_cursor_paginated_list("/runs/query", body=body_query)
         ):
-            yield ls_schemas.Run(**run, _host_url=self._host_url)
+            # Should this be behind a flag?
+            attachments = _convert_stored_attachments_to_attachments_dict(
+                run, attachments_key="s3_urls"
+            )
+            yield ls_schemas.Run(
+                attachments=attachments, **run, _host_url=self._host_url
+            )
             if limit is not None and i + 1 >= limit:
                 break
 
@@ -3854,8 +3904,10 @@ class Client:
             | List[ls_schemas.ExampleUpdateWithAttachments],
         ],
         include_dataset_id: bool = False,
-    ) -> Tuple[Any, bytes]:
+        dangerously_allow_filesystem: bool = False,
+    ) -> tuple[Any, bytes, Dict[str, io.BufferedReader]]:
         parts: List[MultipartPart] = []
+        opened_files_dict: Dict[str, io.BufferedReader] = {}
         if include_dataset_id:
             if not isinstance(examples[0], ls_schemas.ExampleUpsertWithAttachments):
                 raise ValueError(
@@ -3936,34 +3988,29 @@ class Client:
                 )
 
             if example.attachments:
-                for name, attachment in example.attachments.items():
-                    if isinstance(attachment, tuple):
-                        if isinstance(attachment[1], Path):
-                            mime_type, file_path = attachment
-                            file_size = os.path.getsize(file_path)
+                for name, (mime_type, attachment_data) in example.attachments.items():
+                    if isinstance(attachment_data, Path):
+                        if dangerously_allow_filesystem:
+                            file_size = os.path.getsize(attachment_data)
+                            file = open(attachment_data, "rb")
+                            opened_files_dict[
+                                str(attachment_data) + str(uuid.uuid4())
+                            ] = file
+
                             parts.append(
                                 (
                                     f"{example_id}.attachment.{name}",
                                     (
                                         None,
-                                        open(file_path, "rb"),  # type: ignore[arg-type]
+                                        file,  # type: ignore[arg-type]
                                         f"{mime_type}; length={file_size}",
                                         {},
                                     ),
                                 )
                             )
                         else:
-                            mime_type, data = attachment
-                            parts.append(
-                                (
-                                    f"{example_id}.attachment.{name}",
-                                    (
-                                        None,
-                                        data,
-                                        f"{mime_type}; length={len(data)}",
-                                        {},
-                                    ),
-                                )
+                            raise ValueError(
+                                "dangerously_allow_filesystem must be True to upload files from the filesystem"
                             )
                     else:
                         parts.append(
@@ -3971,8 +4018,8 @@ class Client:
                                 f"{example_id}.attachment.{name}",
                                 (
                                     None,
-                                    attachment.data,
-                                    f"{attachment.mime_type}; length={len(attachment.data)}",
+                                    attachment_data,
+                                    f"{mime_type}; length={len(attachment_data)}",
                                     {},
                                 ),
                             )
@@ -4001,13 +4048,14 @@ class Client:
         else:
             data = encoder
 
-        return encoder, data
+        return encoder, data, opened_files_dict
 
     def update_examples_multipart(
         self,
         *,
         dataset_id: ID_TYPE,
         updates: Optional[List[ls_schemas.ExampleUpdateWithAttachments]] = None,
+        dangerously_allow_filesystem: bool = False,
     ) -> ls_schemas.UpsertExamplesResponse:
         """Update examples using multipart.
 
@@ -4027,20 +4075,27 @@ class Client:
         if updates is None:
             updates = []
 
-        encoder, data = self._prepare_multipart_data(updates, include_dataset_id=False)
-
-        response = self.request_with_retries(
-            "PATCH",
-            f"/v1/platform/datasets/{dataset_id}/examples",
-            request_kwargs={
-                "data": data,
-                "headers": {
-                    **self._headers,
-                    "Content-Type": encoder.content_type,
-                },
-            },
+        encoder, data, opened_files_dict = self._prepare_multipart_data(
+            updates,
+            include_dataset_id=False,
+            dangerously_allow_filesystem=dangerously_allow_filesystem,
         )
-        ls_utils.raise_for_status_with_text(response)
+
+        try:
+            response = self.request_with_retries(
+                "PATCH",
+                f"/v1/platform/datasets/{dataset_id}/examples",
+                request_kwargs={
+                    "data": data,
+                    "headers": {
+                        **self._headers,
+                        "Content-Type": encoder.content_type,
+                    },
+                },
+            )
+            ls_utils.raise_for_status_with_text(response)
+        finally:
+            _close_files(list(opened_files_dict.values()))
         return response.json()
 
     def upload_examples_multipart(
@@ -4048,6 +4103,7 @@ class Client:
         *,
         dataset_id: ID_TYPE,
         uploads: Optional[List[ls_schemas.ExampleUploadWithAttachments]] = None,
+        dangerously_allow_filesystem: bool = False,
     ) -> ls_schemas.UpsertExamplesResponse:
         """Upload examples using multipart.
 
@@ -4069,26 +4125,34 @@ class Client:
             )
         if uploads is None:
             uploads = []
-        encoder, data = self._prepare_multipart_data(uploads, include_dataset_id=False)
-
-        response = self.request_with_retries(
-            "POST",
-            f"/v1/platform/datasets/{dataset_id}/examples",
-            request_kwargs={
-                "data": data,
-                "headers": {
-                    **self._headers,
-                    "Content-Type": encoder.content_type,
-                },
-            },
+        encoder, data, opened_files_dict = self._prepare_multipart_data(
+            uploads,
+            include_dataset_id=False,
+            dangerously_allow_filesystem=dangerously_allow_filesystem,
         )
-        ls_utils.raise_for_status_with_text(response)
+
+        try:
+            response = self.request_with_retries(
+                "POST",
+                f"/v1/platform/datasets/{dataset_id}/examples",
+                request_kwargs={
+                    "data": data,
+                    "headers": {
+                        **self._headers,
+                        "Content-Type": encoder.content_type,
+                    },
+                },
+            )
+            ls_utils.raise_for_status_with_text(response)
+        finally:
+            _close_files(list(opened_files_dict.values()))
         return response.json()
 
     def upsert_examples_multipart(
         self,
         *,
         upserts: Optional[List[ls_schemas.ExampleUpsertWithAttachments]] = None,
+        dangerously_allow_filesystem: bool = False,
     ) -> ls_schemas.UpsertExamplesResponse:
         """Upsert examples.
 
@@ -4104,20 +4168,27 @@ class Client:
         if upserts is None:
             upserts = []
 
-        encoder, data = self._prepare_multipart_data(upserts, include_dataset_id=True)
-
-        response = self.request_with_retries(
-            "POST",
-            "/v1/platform/examples/multipart",
-            request_kwargs={
-                "data": data,
-                "headers": {
-                    **self._headers,
-                    "Content-Type": encoder.content_type,
-                },
-            },
+        encoder, data, opened_files_dict = self._prepare_multipart_data(
+            upserts,
+            include_dataset_id=True,
+            dangerously_allow_filesystem=dangerously_allow_filesystem,
         )
-        ls_utils.raise_for_status_with_text(response)
+
+        try:
+            response = self.request_with_retries(
+                "POST",
+                "/v1/platform/examples/multipart",
+                request_kwargs={
+                    "data": data,
+                    "headers": {
+                        **self._headers,
+                        "Content-Type": encoder.content_type,
+                    },
+                },
+            )
+            ls_utils.raise_for_status_with_text(response)
+        finally:
+            _close_files(list(opened_files_dict.values()))
         return response.json()
 
     def create_examples(
@@ -4306,17 +4377,9 @@ class Client:
         )
 
         example = response.json()
-        attachments = {}
-        if example.get("attachment_urls"):
-            for key, value in example["attachment_urls"].items():
-                response = requests.get(value["presigned_url"], stream=True)
-                response.raise_for_status()
-                reader = io.BytesIO(response.content)
-                attachments[key.removeprefix("attachment.")] = {
-                    "presigned_url": value["presigned_url"],
-                    "reader": reader,
-                    "mime_type": value.get("mime_type"),
-                }
+        attachments = _convert_stored_attachments_to_attachments_dict(
+            example, attachments_key="attachment_urls"
+        )
 
         return ls_schemas.Example(
             **{k: v for k, v in example.items() if k != "attachment_urls"},
@@ -4441,17 +4504,9 @@ class Client:
         for i, example in enumerate(
             self._get_paginated_list("/examples", params=params)
         ):
-            attachments = {}
-            if example.get("attachment_urls"):
-                for key, value in example["attachment_urls"].items():
-                    response = requests.get(value["presigned_url"], stream=True)
-                    response.raise_for_status()
-                    reader = io.BytesIO(response.content)
-                    attachments[key.removeprefix("attachment.")] = {
-                        "presigned_url": value["presigned_url"],
-                        "reader": reader,
-                        "mime_type": value.get("mime_type"),
-                    }
+            attachments = _convert_stored_attachments_to_attachments_dict(
+                example, attachments_key="attachment_urls"
+            )
 
             yield ls_schemas.Example(
                 **{k: v for k, v in example.items() if k != "attachment_urls"},
@@ -5701,7 +5756,7 @@ class Client:
         body = {
             "name": name,
             "description": description,
-            "id": queue_id or str(uuid.uuid4()),
+            "id": str(queue_id) if queue_id is not None else str(uuid.uuid4()),
         }
         response = self.request_with_retries(
             "POST",
@@ -7232,3 +7287,29 @@ def convert_prompt_to_anthropic_format(
         return anthropic._get_request_payload(messages, stop=stop)
     except Exception as e:
         raise ls_utils.LangSmithError(f"Error converting to Anthropic format: {e}")
+
+
+def _convert_stored_attachments_to_attachments_dict(data, *, attachments_key):
+    """Convert attachments from the backend database format to the user facing format."""
+    attachments_dict = {}
+    if attachments_key in data and data[attachments_key]:
+        for key, value in data[attachments_key].items():
+            response = requests.get(value["presigned_url"], stream=True)
+            response.raise_for_status()
+            reader = io.BytesIO(response.content)
+            attachments_dict[key.removeprefix("attachment.")] = {
+                "presigned_url": value["presigned_url"],
+                "reader": reader,
+                "mime_type": value.get("mime_type"),
+            }
+    return attachments_dict
+
+
+def _close_files(files: List[io.BufferedReader]) -> None:
+    """Close all opened files used in multipart requests."""
+    for file in files:
+        try:
+            file.close()
+        except Exception:
+            logger.debug("Could not close file: %s", file.name)
+            pass
