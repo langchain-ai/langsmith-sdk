@@ -64,6 +64,9 @@ pytest-socket = "^0.7.0"
 pyperf = "^2.7.0"
 py-spy = "^0.3.14"
 multipart = "^1.0.0"
+# Hack to get tests/integration_tests/test_context_propagation.py to pass
+# TODO: remove
+httpx = ">=0.23.0,<0.28.0"
 
 [tool.poetry.group.lint.dependencies]
 openai = "^1.10"
