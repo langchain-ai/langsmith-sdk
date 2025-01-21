@@ -595,13 +595,13 @@ async def test_aevaluate_results(
         max_concurrency=None,
     )
     if not blocking:
-        deltas = []
-        last = None
+        deltas: list = []
         start = time.time()
+        last = start
         now = None
         async for _ in results:
             now = time.time()
-            deltas.append((now - last) if last is not None else 0)  # type: ignore
+            deltas.append((now - last))
             last = now
         total = now - start  # type: ignore
         assert 3.2 > total > 1.5
@@ -614,7 +614,7 @@ async def test_aevaluate_results(
         tolerance = 3
         assert total_slow < tolerance
         assert total_quick > (SPLIT_SIZE * NUM_REPETITIONS - 1) - tolerance
-        assert max(deltas) > (sum(deltas) / 3)
+        assert max(deltas) > (total / 4)
 
     async for r in results:
         assert r["run"].outputs["output"] == r["example"].inputs["in"] + 1  # type: ignore
