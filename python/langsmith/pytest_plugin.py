@@ -77,12 +77,13 @@ def pytest_runtest_call(item):
     yield
 
 
-def pytest_sessionstart(session):
-    """Conditionally remove the terminalreporter plugin."""
-    if session.config.getoption("--output") in ("langsmith", "ls"):
-        tr = session.config.pluginmanager.get_plugin("terminalreporter")
-        if tr:
-            session.config.pluginmanager.unregister(tr)
+@pytest.hookimpl
+def pytest_report_teststatus(report, config):
+    """Remove the short test-status character outputs ("./F")."""
+    # The hook normally returns a 3-tuple: (short_letter, verbose_word, color)
+    # By returning empty strings, the progress characters won't show.
+    if config.getoption("--output") in ("langsmith", "ls"):
+        return "", "", None
 
 
 class LangSmithPlugin:
