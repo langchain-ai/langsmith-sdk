@@ -9,6 +9,7 @@ import { ScoreType } from "../../schemas.js";
 import { STRIP_ANSI_REGEX, TEST_ID_DELIMITER } from "./index.js";
 
 const FEEDBACK_COLLAPSE_THRESHOLD = 48;
+const MAX_TEST_PARAMS_LENGTH = 18;
 
 const RESERVED_KEYS = [
   "Name",
@@ -60,7 +61,9 @@ function formatValue(value: unknown) {
         const rawValue = typeof v === "string" ? v : JSON.stringify(v);
         const rawEntry = `${k}: ${rawValue}`;
         const entry =
-          rawEntry.length > 24 ? rawEntry.slice(0, 21) + "..." : rawEntry;
+          rawEntry.length > MAX_TEST_PARAMS_LENGTH
+            ? rawEntry.slice(0, MAX_TEST_PARAMS_LENGTH - 3) + "..."
+            : rawEntry;
         return entry;
       })
       .join("\n");
@@ -223,9 +226,13 @@ export async function printReporterTable(
     minLen?: number;
   }[] = [
     { name: "Test", alignment: "left", maxLen: 36 },
-    { name: "Inputs", alignment: "left", minLen: 24 },
-    { name: "Reference Outputs", alignment: "left", minLen: 24 },
-    { name: "Outputs", alignment: "left", minLen: 24 },
+    { name: "Inputs", alignment: "left", minLen: MAX_TEST_PARAMS_LENGTH },
+    {
+      name: "Reference Outputs",
+      alignment: "left",
+      minLen: MAX_TEST_PARAMS_LENGTH,
+    },
+    { name: "Outputs", alignment: "left", minLen: MAX_TEST_PARAMS_LENGTH },
     { name: "Status", alignment: "left" },
   ];
   if (collapseFeedbackColumn) {
@@ -245,7 +252,7 @@ export async function printReporterTable(
     defaultColumns.push({
       name: "Feedback",
       alignment: "left",
-      minLen: feedbackColumnLength + 10,
+      minLen: feedbackColumnLength + 8,
     });
   }
   console.log();
