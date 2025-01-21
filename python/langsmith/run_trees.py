@@ -74,6 +74,9 @@ class RunTree(ls_schemas.RunBase):
         default="", description="The order of the run in the tree."
     )
     trace_id: UUID = Field(default="", description="The trace id of the run.")  # type: ignore
+    dangerously_allow_filesystem: Optional[bool] = Field(
+        default=False, description="Whether to allow filesystem access for attachments."
+    )
 
     class Config:
         """Pydantic model configuration."""
@@ -280,6 +283,7 @@ class RunTree(ls_schemas.RunBase):
             ls_client=self.ls_client,
             tags=tags,
             attachments=attachments or {},
+            dangerously_allow_filesystem=self.dangerously_allow_filesystem,
         )
         self.child_runs.append(run)
         return run
@@ -318,7 +322,9 @@ class RunTree(ls_schemas.RunBase):
         """Patch the run tree to the API in a background thread."""
         if not self.end_time:
             self.end()
-        attachments = self.attachments
+        attachments = {
+            a: v for a, v in self.attachments.items() if isinstance(v, tuple)
+        }
         try:
             # Avoid loading the same attachment twice
             if attachments:
