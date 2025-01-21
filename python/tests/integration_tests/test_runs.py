@@ -495,7 +495,7 @@ def test_trace_file_path(langchain_client: Client) -> None:
     project_name = "__test_trace_file_path3"
     run_meta = uuid.uuid4().hex
 
-    @traceable(run_type="chain", dangerously_allow_filesystem=True)
+    @traceable(dangerously_allow_filesystem=True)
     def my_func(foo: Attachment, bar: Attachment):
         return "foo"
 
