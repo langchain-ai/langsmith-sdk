@@ -62,7 +62,7 @@ class Attachment(NamedTuple):
     """
 
     mime_type: str
-    data: Union[bytes, Path]
+    data: Union[Path, Any]
 
 
 class AttachmentInfo(TypedDict):
@@ -73,7 +73,7 @@ class AttachmentInfo(TypedDict):
     mime_type: Optional[str]
 
 
-Attachments = Dict[str, Union[Attachment, Tuple[str, Path], Tuple[str, bytes]]]
+Attachments = Dict[str, Union[Attachment, Tuple[str, Path], Tuple[str, Any]]]
 """Attachments associated with the run. 
 Each entry is a tuple of (mime_type, bytes), or (mime_type, file_path)"""
 
@@ -372,7 +372,7 @@ class RunBase(BaseModel):
     tags: Optional[List[str]] = None
     """Tags for categorizing or annotating the run."""
 
-    attachments: Dict[str, Union[AttachmentInfo, Attachment, tuple[str, Any]]] = Field(
+    attachments: Union[Attachments, Dict[str, AttachmentInfo]] = Field(
         default_factory=dict
     )
     """Attachments associated with the run."""
