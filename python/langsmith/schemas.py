@@ -372,9 +372,9 @@ class RunBase(BaseModel):
     tags: Optional[List[str]] = None
     """Tags for categorizing or annotating the run."""
 
-    attachments: Dict[
-        str, Union[AttachmentInfo, Attachment, tuple[str, Path], tuple[str, bytes]]
-    ] = Field(default_factory=dict)
+    attachments: Dict[str, Union[AttachmentInfo, Attachment, tuple[str, Any]]] = Field(
+        default_factory=dict
+    )
     """Attachments associated with the run."""
 
     @property
