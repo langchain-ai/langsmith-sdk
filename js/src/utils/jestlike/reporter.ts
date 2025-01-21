@@ -4,7 +4,7 @@ import chalk from "chalk";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as fs from "node:fs/promises";
-import { EvaluationResult } from "../../evaluation/evaluator.js";
+import { SimpleEvaluationResult } from "./types.js";
 import { ScoreType } from "../../schemas.js";
 import { STRIP_ANSI_REGEX, TEST_ID_DELIMITER } from "./index.js";
 
@@ -131,7 +131,7 @@ export async function printReporterTable(
         continue;
       }
       const feedback = fileContent.feedback.reduce(
-        (acc: Record<string, ScoreType>, current: EvaluationResult) => {
+        (acc: Record<string, ScoreType>, current: SimpleEvaluationResult) => {
           if (
             !RESERVED_KEYS.includes(current.key) &&
             current.score !== undefined

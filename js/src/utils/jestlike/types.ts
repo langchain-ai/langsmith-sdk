@@ -1,3 +1,4 @@
+import { EvaluationResult } from "../../evaluation/evaluator.js";
 import type { RunTreeConfig } from "../../run_trees.js";
 import type { SimpleEvaluator } from "./vendor/evaluatedBy.js";
 
@@ -21,3 +22,9 @@ export type LangSmithJestDescribeWrapper = (
   fn: () => void | Promise<void>,
   config?: Partial<RunTreeConfig>
 ) => void;
+
+export type SimpleEvaluationResult = {
+  key: EvaluationResult["key"];
+  score: NonNullable<EvaluationResult["score"]>;
+  comment?: EvaluationResult["comment"];
+};

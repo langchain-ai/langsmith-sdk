@@ -184,3 +184,72 @@ ls.describe(
     },
   }
 );
+
+const scoreMarketingCopyAgent = async () => {
+  return {
+    key: "marketing_copy_score",
+    score: 0.5,
+  };
+};
+
+ls.describe.only("Test Tweet", () => {
+  ls.test(
+    "should generate a tweet LS",
+    {
+      inputs: {
+        request: "Write a tweet about LLMs",
+      },
+      referenceOutputs: {},
+    },
+    async ({ inputs: { request } }: { inputs: { request: string } }) => {
+      const result = request.repeat(2);
+      ls.logOutputs({ response: result });
+      ls.logFeedback({
+        key: "length",
+        score: result.length,
+      });
+      ls.logFeedback({
+        key: "twitter_length",
+        score: result.length <= 280,
+      });
+      const wrappedEvaluator = ls.wrapEvaluator(scoreMarketingCopyAgent);
+      await wrappedEvaluator({
+        content: result,
+        query_type: "tweet",
+      });
+    }
+  );
+});
+
+ls.describe("Test Linkedin Post", () => {
+  ls.test(
+    "should generate a linkedin post LS",
+    {
+      inputs: {
+        request: "Write a linkedin post about LLMs",
+      },
+      referenceOutputs: {},
+    },
+    async ({ inputs: { request } }: { inputs: { request: string } }) => {
+      const result = request.repeat(2);
+      ls.logOutputs({ response: result });
+      ls.logFeedback({
+        key: "length",
+        score: result.length,
+      });
+      ls.logFeedback({
+        key: "linkedin_length",
+        score: result.length > 280,
+      });
+      ls.logFeedback({
+        key: "multiline",
+        score: result.split("\n").length > 2,
+      });
+      const wrappedEvaluator = ls.wrapEvaluator(scoreMarketingCopyAgent);
+      await wrappedEvaluator({
+        content: result,
+        query_type: "linkedin post",
+      });
+    }
+  );
+});
