@@ -3,8 +3,8 @@ import { Dataset, TracerSession, Example } from "../../schemas.js";
 import { Client, CreateProjectParams } from "../../client.js";
 import { getEnvironmentVariable } from "../env.js";
 import { isTracingEnabled } from "../../env.js";
-import { EvaluationResult } from "../../evaluation/evaluator.js";
 import { RunTree } from "../../run_trees.js";
+import { SimpleEvaluationResult } from "./types.js";
 
 export const DEFAULT_TEST_CLIENT = new Client();
 
@@ -15,7 +15,7 @@ export type TestWrapperAsyncLocalStorageData = {
   projectConfig?: Partial<CreateProjectParams>;
   project?: TracerSession;
   setLoggedOutput?: (value: Record<string, unknown>) => void;
-  onFeedbackLogged?: (feedback: EvaluationResult) => void;
+  onFeedbackLogged?: (feedback: SimpleEvaluationResult) => void;
   currentExample?: Partial<Example> & { syncPromise?: Promise<Example> };
   client: Client;
   suiteUuid: string;
@@ -40,7 +40,7 @@ export const syncExamplePromises = new Map();
 
 export function _logTestFeedback(params: {
   exampleId?: string;
-  feedback: EvaluationResult;
+  feedback: SimpleEvaluationResult;
   context: TestWrapperAsyncLocalStorageData;
   runTree?: RunTree;
   client: Client;

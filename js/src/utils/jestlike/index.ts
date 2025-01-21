@@ -28,7 +28,7 @@ import {
   DEFAULT_TEST_CLIENT,
 } from "./globals.js";
 import { wrapExpect } from "./vendor/chain.js";
-import { EvaluationResult } from "../../evaluation/evaluator.js";
+import { SimpleEvaluationResult } from "./types.js";
 import type {
   LangSmithJestlikeWrapperConfig,
   LangSmithJestlikeWrapperParams,
@@ -45,7 +45,7 @@ export const STRIP_ANSI_REGEX =
 export const TEST_ID_DELIMITER = ", test_id=";
 
 export function logFeedback(
-  feedback: EvaluationResult,
+  feedback: SimpleEvaluationResult,
   config?: { sourceRunId?: string }
 ) {
   const context = testWrapperAsyncLocalStorageInstance.getStore();
@@ -166,12 +166,12 @@ export function generateWrapperFromJestlikeMethods(
   const datasetSetupInfo = new Map();
 
   function getExampleId(
-    datasetName: string,
+    datasetId: string,
     inputs: Record<string, unknown>,
     outputs?: Record<string, unknown>
   ) {
     const identifier = JSON.stringify({
-      datasetName,
+      datasetId,
       inputsHash: objectHash(inputs),
       outputsHash: objectHash(outputs ?? {}),
     });
@@ -454,8 +454,8 @@ export function generateWrapperFromJestlikeMethods(
               datasetSetupInfo.get(context.suiteUuid);
             const testInput: I = inputs;
             const testOutput: O = referenceOutputs;
-            const testFeedback: EvaluationResult[] = [];
-            const onFeedbackLogged = (feedback: EvaluationResult) =>
+            const testFeedback: SimpleEvaluationResult[] = [];
+            const onFeedbackLogged = (feedback: SimpleEvaluationResult) =>
               testFeedback.push(feedback);
             let loggedOutput: Record<string, unknown> | undefined;
             const setLoggedOutput = (value: Record<string, unknown>) => {
@@ -543,11 +543,7 @@ export function generateWrapperFromJestlikeMethods(
                       )} while syncing to LangSmith. Please contact us for help.`
                   );
                 }
-                exampleId = getExampleId(
-                  dataset.name,
-                  inputs,
-                  referenceOutputs
-                );
+                exampleId = getExampleId(dataset.id, inputs, referenceOutputs);
 
                 // TODO: Create or update the example in the background
                 // Currently run end time has to be after example modified time
