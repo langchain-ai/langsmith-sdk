@@ -15,7 +15,6 @@ import time
 import uuid
 import warnings
 import weakref
-import zstandard as zstd
 from datetime import datetime, timezone
 from enum import Enum
 from io import BytesIO
@@ -2390,10 +2389,7 @@ def test_create_feedback_with_zstd_compression(mock_session_cls: mock.Mock) -> N
             "score": 0.95,
         }
         client.create_feedback(
-            run_id=run_id,
-            key="test_key",
-            trace_id=run_id,
-            **feedback_data
+            run_id=run_id, key="test_key", trace_id=run_id, **feedback_data
         )
 
         # Let the background threads flush
@@ -2407,13 +2403,11 @@ def test_create_feedback_with_zstd_compression(mock_session_cls: mock.Mock) -> N
 
     # Inspect the calls
     post_calls = [
-        call_obj 
+        call_obj
         for call_obj in mock_session.request.mock_calls
         if call_obj.args and call_obj.args[0] == "POST"
     ]
     assert len(post_calls) == 1, "Expected exactly one POST request"
-
-    print(post_calls)
 
     call_data = post_calls[0][2]["data"]
     if hasattr(call_data, "read"):
@@ -2428,6 +2422,6 @@ def test_create_feedback_with_zstd_compression(mock_session_cls: mock.Mock) -> N
 
     # Verify Content-Encoding header
     headers = post_calls[0][2]["headers"]
-    assert headers.get("Content-Encoding") == "zstd", (
-        "Expected Content-Encoding header to be 'zstd'"
-    )
+    assert (
+        headers.get("Content-Encoding") == "zstd"
+    ), "Expected Content-Encoding header to be 'zstd'"
