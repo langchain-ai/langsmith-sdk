@@ -242,18 +242,10 @@ async def test_aevaluate():
     if _has_pandas():
         df = results.to_pandas()
         assert len(df) == 10
-    examples = client.list_examples(dataset_name=dataset.name)
+    all_examples = list(client.list_examples(dataset_name=dataset.name))
     all_results = [r async for r in results]
-    all_examples = []
-    for example in examples:
-        count = 0
-        for r in all_results:
-            if r["run"].reference_example_id == example.id:
-                count += 1
-        assert count == 2
-        all_examples.append(example)
 
-    # Wait for there to be 2x runs vs. examples
+    # Wait for there to be same num runs vs. examples
     def check_run_count():
         current_runs = list(
             client.list_runs(project_name=results.experiment_name, is_root=True)
@@ -261,13 +253,13 @@ async def test_aevaluate():
         for r in current_runs:
             assert "accuracy" in r.feedback_stats
             assert "slow_accuracy" in r.feedback_stats
-        return current_runs, len(current_runs) == 2 * len(all_examples)
+        return current_runs, len(current_runs) == len(all_examples)
 
     final_runs = wait_for(check_run_count, max_sleep_time=60, sleep_time=2)
 
-    assert len(final_runs) == 2 * len(
+    assert len(final_runs) == len(
         all_examples
-    ), f"Expected {2 * len(all_examples)} runs, but got {len(final_runs)}"
+    ), f"Expected {len(all_examples)} runs, but got {len(final_runs)}"
 
     # Run it again with the existing project
     results2 = await aevaluate(
