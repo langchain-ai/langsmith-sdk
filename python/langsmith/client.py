@@ -1850,10 +1850,14 @@ class Client:
                         "Content-Type": f"multipart/form-data; boundary={_BOUNDARY}",
                         "Content-Encoding": "zstd",
                         "X-Pre-Compressed-Size": (
-                            str(compressed_traces_info[0]) if compressed_traces_info else ""
+                            str(compressed_traces_info[0])
+                            if compressed_traces_info
+                            else ""
                         ),
                         "X-Post-Compressed-Size": (
-                            str(compressed_traces_info[1]) if compressed_traces_info else ""
+                            str(compressed_traces_info[1])
+                            if compressed_traces_info
+                            else ""
                         ),
                     }
 
@@ -5295,13 +5299,17 @@ class Client:
                 use_multipart
                 and self.info.version  # TODO: Remove version check once versions have updated
                 and ls_utils.is_version_greater_or_equal(self.info.version, "0.8.10")
-                and (self.tracing_queue is not None or self.compressed_traces is not None)
+                and (
+                    self.tracing_queue is not None or self.compressed_traces is not None
+                )
                 and feedback.trace_id is not None
             ):
                 serialized_op = serialize_feedback_dict(feedback)
                 if self.compressed_traces is not None:
-                    multipart_form = serialized_feedback_operation_to_multipart_parts_and_context(
-                        serialized_op
+                    multipart_form = (
+                        serialized_feedback_operation_to_multipart_parts_and_context(
+                            serialized_op
+                        )
                     )
                     with self.compressed_traces.lock:
                         compress_multipart_parts_and_context(

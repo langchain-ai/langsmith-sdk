@@ -123,7 +123,9 @@ def _tracing_thread_drain_compressed_buffer(
             return None, None
 
         # Write final boundary and close compression stream
-        client.compressed_traces.compressor_writer.write(f"--{_BOUNDARY}--\r\n".encode())
+        client.compressed_traces.compressor_writer.write(
+            f"--{_BOUNDARY}--\r\n".encode()
+        )
         client.compressed_traces.compressor_writer.close()
 
         filled_buffer = client.compressed_traces.buffer
@@ -343,9 +345,9 @@ def tracing_control_thread_func_compress_parallel(
         if triggered:
             client._data_available_event.clear()
 
-            data_stream, compressed_traces_info = _tracing_thread_drain_compressed_buffer(
-                client, size_limit, size_limit_bytes
-            )
+            data_stream, compressed_traces_info = (
+                _tracing_thread_drain_compressed_buffer
+            )(client, size_limit, size_limit_bytes)
             # If we have data, submit the send request
             if data_stream is not None:
                 try:
