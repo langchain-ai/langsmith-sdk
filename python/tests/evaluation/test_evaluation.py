@@ -200,6 +200,7 @@ def _has_pandas() -> bool:
     except Exception:
         return False
 
+
 async def test_aevaluate():
     client = Client()
     dataset = client.clone_public_dataset(
@@ -300,6 +301,7 @@ async def test_aevaluate():
     )
     assert len(results4) == 10
 
+
 def test_evaluate():
     client = Client()
     _ = client.clone_public_dataset(
@@ -383,8 +385,6 @@ def test_evaluate():
         experiment=str(experiment.id),
     )
     assert len(results4) == 10
-
-
 
 
 @test
