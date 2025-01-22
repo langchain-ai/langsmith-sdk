@@ -310,7 +310,7 @@ async def test_aevaluate():
         fp = sum([p == "yes" and e == "no" for p, e in zip(predictions, expected)])
         return {"score": tp / (tp + fp)}
 
-    def apredict(inputs: dict) -> dict:
+    async def apredict(inputs: dict) -> dict:
         # await asyncio.sleep(0.1)
         return {"output": "Yes"}
 
