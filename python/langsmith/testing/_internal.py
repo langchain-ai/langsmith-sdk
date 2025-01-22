@@ -728,6 +728,7 @@ class _TestCase:
             self.example_id,
             inputs=inputs,
             outputs=outputs,
+            pytest_plugin=self.pytest_plugin,
             pytest_nodeid=self.pytest_nodeid,
         )
 
@@ -1048,6 +1049,9 @@ def log_inputs(inputs: dict, /) -> None:
             "LANGSMITH_TRACING environment variable to 'true')."
         )
         raise ValueError(msg)
+    if test_case._ended:
+        msg = "log_inputs must be called before log_outputs."
+        raise ValueError(msg)
     run_tree.add_inputs(inputs)
     test_case.sync_example(inputs=inputs)
 
@@ -1092,7 +1096,6 @@ def log_outputs(outputs: dict, /) -> None:
             "LANGSMITH_TRACING environment variable to 'true')."
         )
         raise ValueError(msg)
-    run_tree.add_outputs(outputs)
     test_case.log_outputs(run_tree, outputs)
 
 
