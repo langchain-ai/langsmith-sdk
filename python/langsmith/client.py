@@ -5295,7 +5295,7 @@ class Client:
                 use_multipart
                 and self.info.version  # TODO: Remove version check once versions have updated
                 and ls_utils.is_version_greater_or_equal(self.info.version, "0.8.10")
-                and self.tracing_queue is not None
+                and (self.tracing_queue is not None or self.compressed_traces is not None)
                 and feedback.trace_id is not None
             ):
                 serialized_op = serialize_feedback_dict(feedback)
@@ -5310,7 +5310,8 @@ class Client:
                             _BOUNDARY,
                         )
                         self.compressed_traces.trace_count += 1
-                        self._data_available_event.set()
+                        if self._data_available_event:
+                            self._data_available_event.set()
                 elif self.tracing_queue is not None:
                     self.tracing_queue.put(
                         TracingQueueItem(str(feedback.id), serialized_op)
