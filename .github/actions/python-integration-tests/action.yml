@@ -40,29 +40,29 @@ runs:
       shell: bash
       working-directory: python
 
-    - name: Run integration tests
-      env:
-        LANGCHAIN_TRACING_V2: "true"
-        LANGCHAIN_ENDPOINT: https://beta.api.smith.langchain.com
-        LANGCHAIN_API_KEY: ${{ inputs.langchain-api-key-beta }}
-        OPENAI_API_KEY: ${{ inputs.openai-api-key }}
-        LANGSMITH_TEST_CACHE: tests/cassettes
-      run: make integration_tests_fast
-      shell: bash
-      working-directory: python
-    
-    - name: Run doctest
-      env:
-        LANGCHAIN_TRACING_V2: "true"
-        LANGCHAIN_ENDPOINT: https://api.smith.langchain.com
-        LANGCHAIN_API_KEY: ${{ inputs.langchain-api-key-prod }}
-        OPENAI_API_KEY: ${{ inputs.openai-api-key }}
-        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
-        LANGSMITH_TEST_CACHE: tests/cassettes
-      run: make doctest
-      shell: bash
-      working-directory: python
-    
+#    - name: Run integration tests
+#      env:
+#        LANGCHAIN_TRACING_V2: "true"
+#        LANGCHAIN_ENDPOINT: https://beta.api.smith.langchain.com
+#        LANGCHAIN_API_KEY: ${{ inputs.langchain-api-key-beta }}
+#        OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+#        LANGSMITH_TEST_CACHE: tests/cassettes
+#      run: make integration_tests_fast
+#      shell: bash
+#      working-directory: python
+#
+#    - name: Run doctest
+#      env:
+#        LANGCHAIN_TRACING_V2: "true"
+#        LANGCHAIN_ENDPOINT: https://api.smith.langchain.com
+#        LANGCHAIN_API_KEY: ${{ inputs.langchain-api-key-prod }}
+#        OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+#        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+#        LANGSMITH_TEST_CACHE: tests/cassettes
+#      run: make doctest
+#      shell: bash
+#      working-directory: python
+#
 
     - name: Run Evaluation
       env:

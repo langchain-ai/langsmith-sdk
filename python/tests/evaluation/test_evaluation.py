@@ -316,7 +316,7 @@ async def test_aevaluate():
 
     results = await aevaluate(
         apredict,
-        data=client.list_examples(dataset_name=dataset.name),
+        data=dataset.name,
         evaluators=[accuracy, slow_accuracy],
         summary_evaluators=[precision],
         experiment_prefix="My Experiment",
@@ -359,7 +359,7 @@ async def test_aevaluate():
     # Run it again with the existing project
     results2 = await aevaluate(
         apredict,
-        data=client.list_examples(dataset_name=dataset.name),
+        data=dataset.name,
         evaluators=[accuracy],
         summary_evaluators=[precision],
         experiment=results.experiment_name,
@@ -370,7 +370,7 @@ async def test_aevaluate():
     experiment = client.read_project(project_name=results.experiment_name)
     results3 = await aevaluate(
         apredict,
-        data=client.list_examples(dataset_name=dataset.name),
+        data=dataset.name,
         evaluators=[accuracy],
         summary_evaluators=[precision],
         experiment=experiment,
@@ -380,7 +380,7 @@ async def test_aevaluate():
     # ... and again with the ID
     results4 = await aevaluate(
         apredict,
-        data=client.list_examples(dataset_name=dataset.name),
+        data=dataset.name,
         evaluators=[accuracy],
         summary_evaluators=[precision],
         experiment=str(experiment.id),
