@@ -8,10 +8,10 @@ from langsmith import utils as ls_utils
 compression_level = ls_utils.get_env_var("RUN_COMPRESSION_LEVEL", 3)
 
 
-class CompressedRuns:
+class CompressedTraces:
     def __init__(self):
         self.buffer = io.BytesIO()
-        self.run_count = 0
+        self.trace_count = 0
         self.lock = threading.Lock()
         self.uncompressed_size = 0
 
@@ -21,7 +21,7 @@ class CompressedRuns:
 
     def reset(self):
         self.buffer = io.BytesIO()
-        self.run_count = 0
+        self.trace_count = 0
         self.uncompressed_size = 0
 
         self.compressor_writer = ZstdCompressor(
