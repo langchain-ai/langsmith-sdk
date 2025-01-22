@@ -401,7 +401,9 @@ def _get_test_suite(
             description += f" for {repo}"
         try:
             return client.create_dataset(
-                dataset_name=test_suite_name, description=description
+                dataset_name=test_suite_name,
+                description=description,
+                metadata={"__ls_runner": "pytest"},
             )
         except ls_utils.LangSmithConflictError:
             return client.read_dataset(dataset_name=test_suite_name)
