@@ -200,92 +200,6 @@ def _has_pandas() -> bool:
     except Exception:
         return False
 
-
-def test_evaluate():
-    client = Client()
-    _ = client.clone_public_dataset(
-        "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/d"
-    )
-    dataset_name = "Evaluate Examples"
-
-    def accuracy(run: Run, example: Example):
-        pred = run.outputs["output"]  # type: ignore
-        expected = example.outputs["answer"]  # type: ignore
-        return {"score": expected.lower() == pred.lower()}
-
-    def precision(runs: Sequence[Run], examples: Sequence[Example]):
-        predictions = [run.outputs["output"].lower() for run in runs]  # type: ignore
-        expected = [example.outputs["answer"].lower() for example in examples]  # type: ignore
-        tp = sum([p == e for p, e in zip(predictions, expected) if p == "yes"])
-        fp = sum([p == "yes" and e == "no" for p, e in zip(predictions, expected)])
-        return {"score": tp / (tp + fp)}
-
-    def predict(inputs: dict) -> dict:
-        return {"output": "Yes"}
-
-    results = evaluate(
-        predict,
-        data=client.list_examples(dataset_name=dataset_name, as_of="test_version"),
-        evaluators=[accuracy],
-        summary_evaluators=[precision],
-        description="My sync experiment",
-        metadata={
-            "my-prompt-version": "abcd-1234",
-            "function": "evaluate",
-        },
-        num_repetitions=3,
-    )
-    assert len(results) == 30
-    if _has_pandas():
-        df = results.to_pandas()
-        assert len(df) == 30
-        assert set(df.columns) == {
-            "inputs.context",
-            "inputs.question",
-            "outputs.output",
-            "error",
-            "reference.answer",
-            "feedback.accuracy",
-            "execution_time",
-            "example_id",
-            "id",
-        }
-    examples = client.list_examples(dataset_name=dataset_name, as_of="test_version")
-    for example in examples:
-        assert len([r for r in results if r["example"].id == example.id]) == 3
-
-    # Run it again with the existing project
-    results2 = evaluate(
-        predict,
-        data=client.list_examples(dataset_name=dataset_name, as_of="test_version"),
-        evaluators=[accuracy],
-        summary_evaluators=[precision],
-        experiment=results.experiment_name,
-    )
-    assert len(results2) == 10
-
-    # ... and again with the object
-    experiment = client.read_project(project_name=results.experiment_name)
-    results3 = evaluate(
-        predict,
-        data=client.list_examples(dataset_name=dataset_name, as_of="test_version"),
-        evaluators=[accuracy],
-        summary_evaluators=[precision],
-        experiment=experiment,
-    )
-    assert len(results3) == 10
-
-    # ... and again with the ID
-    results4 = evaluate(
-        predict,
-        data=client.list_examples(dataset_name=dataset_name, as_of="test_version"),
-        evaluators=[accuracy],
-        summary_evaluators=[precision],
-        experiment=str(experiment.id),
-    )
-    assert len(results4) == 10
-
-
 async def test_aevaluate():
     client = Client()
     dataset = client.clone_public_dataset(
@@ -385,6 +299,92 @@ async def test_aevaluate():
         experiment=str(experiment.id),
     )
     assert len(results4) == 10
+
+def test_evaluate():
+    client = Client()
+    _ = client.clone_public_dataset(
+        "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/d"
+    )
+    dataset_name = "Evaluate Examples"
+
+    def accuracy(run: Run, example: Example):
+        pred = run.outputs["output"]  # type: ignore
+        expected = example.outputs["answer"]  # type: ignore
+        return {"score": expected.lower() == pred.lower()}
+
+    def precision(runs: Sequence[Run], examples: Sequence[Example]):
+        predictions = [run.outputs["output"].lower() for run in runs]  # type: ignore
+        expected = [example.outputs["answer"].lower() for example in examples]  # type: ignore
+        tp = sum([p == e for p, e in zip(predictions, expected) if p == "yes"])
+        fp = sum([p == "yes" and e == "no" for p, e in zip(predictions, expected)])
+        return {"score": tp / (tp + fp)}
+
+    def predict(inputs: dict) -> dict:
+        return {"output": "Yes"}
+
+    results = evaluate(
+        predict,
+        data=client.list_examples(dataset_name=dataset_name, as_of="test_version"),
+        evaluators=[accuracy],
+        summary_evaluators=[precision],
+        description="My sync experiment",
+        metadata={
+            "my-prompt-version": "abcd-1234",
+            "function": "evaluate",
+        },
+        num_repetitions=3,
+    )
+    assert len(results) == 30
+    if _has_pandas():
+        df = results.to_pandas()
+        assert len(df) == 30
+        assert set(df.columns) == {
+            "inputs.context",
+            "inputs.question",
+            "outputs.output",
+            "error",
+            "reference.answer",
+            "feedback.accuracy",
+            "execution_time",
+            "example_id",
+            "id",
+        }
+    examples = client.list_examples(dataset_name=dataset_name, as_of="test_version")
+    for example in examples:
+        assert len([r for r in results if r["example"].id == example.id]) == 3
+
+    # Run it again with the existing project
+    results2 = evaluate(
+        predict,
+        data=client.list_examples(dataset_name=dataset_name, as_of="test_version"),
+        evaluators=[accuracy],
+        summary_evaluators=[precision],
+        experiment=results.experiment_name,
+    )
+    assert len(results2) == 10
+
+    # ... and again with the object
+    experiment = client.read_project(project_name=results.experiment_name)
+    results3 = evaluate(
+        predict,
+        data=client.list_examples(dataset_name=dataset_name, as_of="test_version"),
+        evaluators=[accuracy],
+        summary_evaluators=[precision],
+        experiment=experiment,
+    )
+    assert len(results3) == 10
+
+    # ... and again with the ID
+    results4 = evaluate(
+        predict,
+        data=client.list_examples(dataset_name=dataset_name, as_of="test_version"),
+        evaluators=[accuracy],
+        summary_evaluators=[precision],
+        experiment=str(experiment.id),
+    )
+    assert len(results4) == 10
+
+
 
 
 @test
