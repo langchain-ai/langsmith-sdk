@@ -550,7 +550,7 @@ class _LangSmithTestSuite:
             if not example_id:
                 return self._version
             else:
-                return self._example_modified_at[example_id]
+                return self._example_modified_at.get(example_id)
 
     def submit_result(
         self,
@@ -620,7 +620,6 @@ class _LangSmithTestSuite:
                 metadata=metadata,
                 created_at=self._experiment.start_time,
             )
-            modified_at = example.modified_at
         else:
             if (
                 (inputs is not None and inputs != example.inputs)
@@ -628,18 +627,16 @@ class _LangSmithTestSuite:
                 or (metadata is not None and metadata != example.metadata)
                 or str(example.dataset_id) != str(self.id)
             ):
-                response = self.client.update_example(
+                self.client.update_example(
                     example_id=example.id,
                     inputs=inputs,
                     outputs=outputs,
                     metadata=metadata,
                     dataset_id=self.id,
                 )
-                modified_at = datetime.datetime.fromisoformat(response["modified_at"])
-            else:
-                modified_at = example.modified_at
-        if modified_at:
-            self.update_version(modified_at, example_id=example_id)
+                example = self.client.read_example(example_id=example.id)
+        if example.modified_at:
+            self.update_version(example.modified_at, example_id=example_id)
 
     def _submit_feedback(
         self,
@@ -668,8 +665,9 @@ class _LangSmithTestSuite:
 
     def wait_example_updates(self, example_id: ID_TYPE):
         """Wait for all example updates to complete."""
-        while self._example_futures[example_id]:
-            self._example_futures[example_id].pop().result()
+        with self._lock:
+            while self._example_futures[example_id]:
+                self._example_futures[example_id].pop().result()
 
     def end_run(
         self,
@@ -697,7 +695,7 @@ class _LangSmithTestSuite:
         # Ensure example is fully updated
         self.wait_example_updates(example_id)
         # Ensure that run end time is after example modified at.
-        example_modified_at = self.get_version(example_id=example_id)
+        example_modified_at = self.get_version(example_id=example_id) or end_time
         end_time = max(example_modified_at, end_time)
         run_tree.end(outputs=outputs, end_time=end_time)
         run_tree.patch()
@@ -778,11 +776,11 @@ class _TestCase:
                 self.pytest_nodeid, {"end_time": time.time()}
             )
 
-    def end_run(self, run_tree, outputs: Any) -> Future:
+    def end_run(self, run_tree, outputs: Any) -> None:
         if not (outputs is None or isinstance(outputs, dict)):
             outputs = {"output": outputs}
         end_time = datetime.datetime.now(datetime.timezone.utc)
-        return self.test_suite.end_run(
+        self.test_suite.end_run(
             run_tree,
             self.example_id,
             outputs,
