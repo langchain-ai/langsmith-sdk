@@ -217,6 +217,10 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
     scale_up_qsize_trigger: int = batch_ingest_config["scale_up_qsize_trigger"]
     use_multipart = batch_ingest_config.get("use_multipart_endpoint", False)
 
+    sub_threads: List[threading.Thread] = []
+    # 1 for this func, 1 for getrefcount, 1 for _get_data_type_cached
+    num_known_refs = 3
+
     disable_compression = ls_utils.get_env_var("DISABLE_RUN_COMPRESSION")
     if not ls_utils.is_truish(disable_compression) and use_multipart:
         if not (client.info.instance_flags or {}).get(
@@ -235,9 +239,7 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
                 args=(weakref.ref(client),),
             ).start()
 
-    sub_threads: List[threading.Thread] = []
-    # 1 for this func, 1 for getrefcount, 1 for _get_data_type_cached
-    num_known_refs = 3
+            num_known_refs += 1
 
     def keep_thread_active() -> bool:
         # if `client.cleanup()` was called, stop thread
