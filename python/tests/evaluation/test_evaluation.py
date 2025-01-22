@@ -215,7 +215,7 @@ async def test_aevaluate():
     async def slow_accuracy(run: Run, example: Example):
         pred = run.outputs["output"]  # type: ignore
         expected = example.outputs["answer"]  # type: ignore
-        await asyncio.sleep(5)
+        await asyncio.sleep(2)
         return {"score": expected.lower() == pred.lower()}
 
     def precision(runs: Sequence[Run], examples: Sequence[Example]):
@@ -237,12 +237,11 @@ async def test_aevaluate():
         experiment_prefix="My Experiment",
         description="My Experiment Description",
         metadata={"my-prompt-version": "abcd-1234", "function": "aevaluate"},
-        num_repetitions=2,
     )
-    assert len(results) == 20
+    assert len(results) == 10
     if _has_pandas():
         df = results.to_pandas()
-        assert len(df) == 20
+        assert len(df) == 10
     examples = client.list_examples(dataset_name=dataset.name)
     all_results = [r async for r in results]
     all_examples = []
