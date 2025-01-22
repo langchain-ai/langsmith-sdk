@@ -2559,16 +2559,20 @@ async def test_aevaluate_max_concurrency(langchain_client: Client) -> None:
                 "extra": ("text/plain", b"extra data"),
             },
         )
-        for _ in range(10)
+        for _ in range(5)
     ]
 
     langchain_client.upload_examples_multipart(dataset_id=dataset.id, uploads=examples)
 
-    async def eval_func(inputs, outputs):
-        await asyncio.sleep(0.1)
-        return {"score": random.random()}
+    evaluators = []
+    # Takes 2 sec to run all evaluators on an example.
+    for _ in range(20):
 
-    evaluators = [eval_func] * 100
+        async def eval_func(inputs, outputs):
+            await asyncio.sleep(0.1)
+            return {"score": random.random()}
+
+        evaluators.append(eval_func)
 
     async def target(inputs, attachments):
         return {"foo": "bar"}
@@ -2578,11 +2582,14 @@ async def test_aevaluate_max_concurrency(langchain_client: Client) -> None:
         target,
         data=dataset_name,
         evaluators=evaluators,
-        max_concurrency=8,
+        max_concurrency=4,
     )
+
     end_time = time.time()
-    # this should proceed in a 8-2 manner, taking around 20 seconds total
-    assert end_time - start_time < 30
+    # should proceed in two rounds (4 examples then 1), taking around 4 seconds
+    # total.
+    assert end_time - start_time < 5
+    langchain_client.delete_dataset(dataset_name=dataset.name)
 
 
 def test_annotation_queue_crud(langchain_client: Client):
