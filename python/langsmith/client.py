@@ -1,6 +1,6 @@
 """Client for interacting with the LangSmith API.
 
-Use the client to customize API keys / workspace ocnnections, SSl certs,
+Use the client to customize API keys / workspace connections, SSL certs,
 etc. for tracing.
 
 Also used to create, read, update, and delete LangSmith resources
