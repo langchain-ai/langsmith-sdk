@@ -5299,9 +5299,34 @@ class Client:
                 and feedback.trace_id is not None
             ):
                 serialized_op = serialize_feedback_dict(feedback)
-                self.tracing_queue.put(
-                    TracingQueueItem(str(feedback.id), serialized_op)
-                )
+                if self.compressed_traces is not None:
+                    multipart_form = serialized_feedback_operation_to_multipart_parts_and_context(
+                        serialized_op
+                    )
+                    with self.compressed_traces.lock:
+                        compress_multipart_parts_and_context(
+                            multipart_form,
+                            self.compressed_traces,
+                            _BOUNDARY,
+                        )
+                        self.compressed_traces.trace_count += 1
+                        self._data_available_event.set()
+                elif self.tracing_queue is not None:
+                    self.tracing_queue.put(
+                        TracingQueueItem(str(feedback.id), serialized_op)
+                    )
+                else:
+                    # Fall back to immediate standard endpoint
+                    feedback_block = _dumps_json(feedback.dict(exclude_none=True))
+                    self.request_with_retries(
+                        "POST",
+                        "/feedback",
+                        request_kwargs={
+                            "data": feedback_block,
+                        },
+                        stop_after_attempt=stop_after_attempt,
+                        retry_on=(ls_utils.LangSmithNotFoundError,),
+                    )
             else:
                 feedback_block = _dumps_json(feedback.dict(exclude_none=True))
                 self.request_with_retries(
