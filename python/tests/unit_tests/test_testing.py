@@ -1,6 +1,6 @@
 import uuid
 
-from langsmith._testing import _get_id, _serde_example_values
+from langsmith.testing._internal import _get_example_id, _serde_example_values
 
 
 def test__serde_example_values():
@@ -27,4 +27,4 @@ def test__get_id():
 
     suite_id = uuid.UUID("4e32bff6-5762-4906-8d74-ee2bd0f1d234")
 
-    _get_id(foo, {"x": Foo(1, 2)}, suite_id)
+    _get_example_id(foo, {"x": Foo(1, 2)}, suite_id)

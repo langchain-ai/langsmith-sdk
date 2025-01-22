@@ -286,6 +286,7 @@ def traceable(
     process_inputs: Optional[Callable[[dict], dict]] = None,
     process_outputs: Optional[Callable[..., dict]] = None,
     _invocation_params_fn: Optional[Callable[[dict], dict]] = None,
+    dangerously_allow_filesystem: bool = False,
 ) -> Callable[[Callable[P, R]], SupportsLangsmithExtra[P, R]]: ...
 
 
@@ -314,6 +315,12 @@ def traceable(
             Defaults to None.
         process_outputs: Custom serialization / processing function for outputs.
             Defaults to None.
+        dangerously_allow_filesystem: Whether to allow filesystem access for attachments.
+            Defaults to False.
+
+            Traces that reference local filepaths will be uploaded to LangSmith.
+            In general, network-hosted applications should not be using this because
+            referenced files are usually on the user's machine, not the host machine.
 
     Returns:
             Union[Callable, Callable[[Callable], Callable]]: The decorated function.
@@ -467,6 +474,7 @@ def traceable(
         run_type=run_type,
         process_inputs=kwargs.pop("process_inputs", None),
         invocation_params_fn=kwargs.pop("_invocation_params_fn", None),
+        dangerously_allow_filesystem=kwargs.pop("dangerously_allow_filesystem", False),
     )
     outputs_processor = kwargs.pop("process_outputs", None)
     _on_run_end = functools.partial(
@@ -841,7 +849,9 @@ class trace:
         inputs: Optional[Dict] = None,
         extra: Optional[Dict] = None,
         project_name: Optional[str] = None,
-        parent: Optional[Union[run_trees.RunTree, str, Mapping]] = None,
+        parent: Optional[
+            Union[run_trees.RunTree, str, Mapping, Literal["ignore"]]
+        ] = None,
         tags: Optional[List[str]] = None,
         metadata: Optional[Mapping[str, Any]] = None,
         client: Optional[ls_client.Client] = None,
@@ -855,6 +865,7 @@ class trace:
 
         Warns if unsupported kwargs are passed.
         """
+        self._end_on_exit = kwargs.pop("_end_on_exit", True)
         if kwargs:
             warnings.warn(
                 "The `trace` context manager no longer supports the following kwargs: "
@@ -939,7 +950,7 @@ class trace:
                 inputs=self.inputs or {},
                 tags=tags_,
                 client=client_,  # type: ignore
-                attachments=self.attachments or {},
+                attachments=self.attachments or {},  # type: ignore
             )
 
         if enabled is True:
@@ -982,7 +993,7 @@ class trace:
             self.new_run.end(error=tb)
         if self.old_ctx is not None:
             enabled = utils.tracing_is_enabled(self.old_ctx)
-            if enabled is True:
+            if enabled is True and self._end_on_exit:
                 self.new_run.patch()
 
             _set_tracing_context(self.old_ctx)
@@ -1052,13 +1063,13 @@ class trace:
 
 
 def _get_project_name(project_name: Optional[str]) -> Optional[str]:
+    if project_name:
+        return project_name
     prt = _PARENT_RUN_TREE.get()
     return (
         # Maintain tree consistency first
         _PROJECT_NAME.get()
         or (prt.session_name if prt else None)
-        # Then check the passed in value
-        or project_name
         # fallback to the default for the environment
         or utils.get_tracer_project()
     )
@@ -1216,6 +1227,7 @@ class _ContainerInput(TypedDict, total=False):
     run_type: ls_client.RUN_TYPE_T
     process_inputs: Optional[Callable[[dict], dict]]
     invocation_params_fn: Optional[Callable[[dict], dict]]
+    dangerously_allow_filesystem: Optional[bool]
 
 
 def _container_end(
@@ -1258,6 +1270,8 @@ def _get_parent_run(
     config: Optional[dict] = None,
 ) -> Optional[run_trees.RunTree]:
     parent = langsmith_extra.get("parent")
+    if parent == "ignore":
+        return None
     if isinstance(parent, run_trees.RunTree):
         return parent
     if isinstance(parent, dict):
@@ -1316,6 +1330,9 @@ def _setup_run(
     tags = container_input.get("tags")
     client = container_input.get("client")
     run_type = container_input.get("run_type") or "chain"
+    dangerously_allow_filesystem = container_input.get(
+        "dangerously_allow_filesystem", False
+    )
     outer_project = _PROJECT_NAME.get()
     langsmith_extra = langsmith_extra or LangSmithExtra()
     name = langsmith_extra.get("name") or container_input.get("name")
@@ -1418,7 +1435,8 @@ def _setup_run(
             extra=extra_inner,
             tags=tags_,
             client=client_,  # type: ignore
-            attachments=attachments,
+            attachments=attachments,  # type: ignore
+            dangerously_allow_filesystem=dangerously_allow_filesystem,
         )
     if utils.tracing_is_enabled() is True:
         try:
