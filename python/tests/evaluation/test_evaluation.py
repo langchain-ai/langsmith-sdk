@@ -297,7 +297,7 @@ async def test_aevaluate():
         expected = example.outputs["answer"]  # type: ignore
         return {"score": expected.lower() == pred.lower()}
 
-    async def slow_accuracy(run: Run, example: Example):
+    def slow_accuracy(run: Run, example: Example):
         pred = run.outputs["output"]  # type: ignore
         expected = example.outputs["answer"]  # type: ignore
         # await asyncio.sleep(5)
@@ -310,8 +310,8 @@ async def test_aevaluate():
         fp = sum([p == "yes" and e == "no" for p, e in zip(predictions, expected)])
         return {"score": tp / (tp + fp)}
 
-    async def apredict(inputs: dict) -> dict:
-        await asyncio.sleep(0.1)
+    def apredict(inputs: dict) -> dict:
+        # await asyncio.sleep(0.1)
         return {"output": "Yes"}
 
     results = await aevaluate(
