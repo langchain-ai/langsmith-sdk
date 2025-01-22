@@ -300,7 +300,7 @@ async def test_aevaluate():
     async def slow_accuracy(run: Run, example: Example):
         pred = run.outputs["output"]  # type: ignore
         expected = example.outputs["answer"]  # type: ignore
-        await asyncio.sleep(2.5)
+        await asyncio.sleep(5)
         return {"score": expected.lower() == pred.lower()}
 
     def precision(runs: Sequence[Run], examples: Sequence[Example]):
