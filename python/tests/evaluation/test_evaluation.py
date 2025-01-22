@@ -311,7 +311,7 @@ async def test_aevaluate():
         return {"score": tp / (tp + fp)}
 
     async def apredict(inputs: dict) -> dict:
-        # await asyncio.sleep(0.1)
+        await asyncio.sleep(0.1)
         return {"output": "Yes"}
 
     results = await aevaluate(
