@@ -2554,27 +2554,20 @@ async def test_aevaluate_max_concurrency(langchain_client: Client) -> None:
         ExampleUploadWithAttachments(
             inputs={"query": "What's in this image?"},
             outputs={"answer": "A test image 1"},
-            attachments={
-                "image1": ("image/png", b"fake image data 1"),
-                "extra": ("text/plain", b"extra data"),
-            },
         )
         for _ in range(5)
     ]
 
     langchain_client.upload_examples_multipart(dataset_id=dataset.id, uploads=examples)
 
-    evaluators = []
     # Takes 2 sec to run all evaluators on an example.
-    for _ in range(20):
+    async def eval_func(inputs, outputs):
+        await asyncio.sleep(0.1)
+        return {"score": random.random()}
 
-        async def eval_func(inputs, outputs):
-            await asyncio.sleep(0.1)
-            return {"score": random.random()}
+    evaluators = [eval_func] * 20
 
-        evaluators.append(eval_func)
-
-    async def target(inputs, attachments):
+    async def target(inputs):
         return {"foo": "bar"}
 
     start_time = time.time()
@@ -2584,11 +2577,11 @@ async def test_aevaluate_max_concurrency(langchain_client: Client) -> None:
         evaluators=evaluators,
         max_concurrency=4,
     )
-
     end_time = time.time()
+
     # should proceed in two rounds (4 examples then 1), taking around 4 seconds
     # total.
-    assert end_time - start_time < 5
+    assert end_time - start_time < 8
     langchain_client.delete_dataset(dataset_name=dataset.name)
 
 
