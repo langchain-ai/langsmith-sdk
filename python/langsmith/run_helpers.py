@@ -268,7 +268,10 @@ class SupportsLangsmithExtra(Protocol, Generic[P, R]):
 
 
 @overload
-def traceable(func: Callable[P, R]) -> SupportsLangsmithExtra[P, R]: ...
+def traceable(
+    func: Callable[P, R],
+) -> SupportsLangsmithExtra[P, R]: ...
+
 
 @overload
 def traceable(
@@ -290,7 +293,7 @@ def traceable(
 def traceable(
     *args: Any,
     **kwargs: Any,
-) -> Union[SupportsLangsmithExtra[P, R], Callable[[Callable[P, R]], SupportsLangsmithExtra[P, R]]]:
+) -> Union[Callable, Callable[[Callable], Callable]]:
     """Trace a function with langsmith.
 
     Args:
