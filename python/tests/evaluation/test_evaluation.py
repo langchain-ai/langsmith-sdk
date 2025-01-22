@@ -288,10 +288,9 @@ def test_evaluate():
 
 async def test_aevaluate():
     client = Client()
-    _ = client.clone_public_dataset(
-        "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/d"
+    dataset = client.clone_public_dataset(
+        "https://smith.langchain.com/public/2bbf4a10-c3d5-4868-9e96-400df97fed69/d"
     )
-    dataset_name = "Evaluate Examples"
 
     def accuracy(run: Run, example: Example):
         pred = run.outputs["output"]  # type: ignore
@@ -317,7 +316,7 @@ async def test_aevaluate():
 
     results = await aevaluate(
         apredict,
-        data=client.list_examples(dataset_name=dataset_name, as_of="test_version"),
+        data=client.list_examples(dataset_name=dataset.name),
         evaluators=[accuracy, slow_accuracy],
         summary_evaluators=[precision],
         experiment_prefix="My Experiment",
@@ -330,7 +329,7 @@ async def test_aevaluate():
     if _has_pandas():
         df = results.to_pandas()
         assert len(df) == 20
-    examples = client.list_examples(dataset_name=dataset_name, as_of="test_version")
+    examples = client.list_examples(dataset_name=dataset.name)
     all_results = [r async for r in results]
     all_examples = []
     for example in examples:
@@ -351,7 +350,7 @@ async def test_aevaluate():
             assert "slow_accuracy" in r.feedback_stats
         return current_runs, len(current_runs) == 2 * len(all_examples)
 
-    final_runs = wait_for(check_run_count, max_sleep_time=120, sleep_time=2)
+    final_runs = wait_for(check_run_count, max_sleep_time=60, sleep_time=2)
 
     assert len(final_runs) == 2 * len(
         all_examples
@@ -360,7 +359,7 @@ async def test_aevaluate():
     # Run it again with the existing project
     results2 = await aevaluate(
         apredict,
-        data=client.list_examples(dataset_name=dataset_name, as_of="test_version"),
+        data=client.list_examples(dataset_name=dataset.name),
         evaluators=[accuracy],
         summary_evaluators=[precision],
         experiment=results.experiment_name,
@@ -371,7 +370,7 @@ async def test_aevaluate():
     experiment = client.read_project(project_name=results.experiment_name)
     results3 = await aevaluate(
         apredict,
-        data=client.list_examples(dataset_name=dataset_name, as_of="test_version"),
+        data=client.list_examples(dataset_name=dataset.name),
         evaluators=[accuracy],
         summary_evaluators=[precision],
         experiment=experiment,
@@ -381,7 +380,7 @@ async def test_aevaluate():
     # ... and again with the ID
     results4 = await aevaluate(
         apredict,
-        data=client.list_examples(dataset_name=dataset_name, as_of="test_version"),
+        data=client.list_examples(dataset_name=dataset.name),
         evaluators=[accuracy],
         summary_evaluators=[precision],
         experiment=str(experiment.id),
