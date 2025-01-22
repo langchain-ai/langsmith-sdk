@@ -714,6 +714,7 @@ class _TestCase:
         self.run_id = run_id
         self.pytest_plugin = pytest_plugin
         self.pytest_nodeid = pytest_nodeid
+        self._ended = False
 
         if pytest_plugin and pytest_nodeid:
             pytest_plugin.add_process_to_test_suite(
@@ -727,7 +728,6 @@ class _TestCase:
             self.example_id,
             inputs=inputs,
             outputs=outputs,
-            pytest_plugin=self.pytest_plugin,
             pytest_nodeid=self.pytest_nodeid,
         )
 
@@ -743,11 +743,12 @@ class _TestCase:
             },
         )
 
-    def log_outputs(self, outputs: dict) -> None:
+    def log_outputs(self, run_tree, outputs: dict) -> None:
         if self.pytest_plugin and self.pytest_nodeid:
             self.pytest_plugin.update_process_status(
                 self.pytest_nodeid, {"outputs": outputs}
             )
+        self.end_run(run_tree, outputs)
 
     def submit_test_result(
         self,
@@ -774,11 +775,13 @@ class _TestCase:
                 self.pytest_nodeid, {"end_time": time.time()}
             )
 
-    def end_run(self, run_tree, outputs: Any) -> Future:
+    def end_run(self, run_tree, outputs: Any) -> None:
+        if self._ended:
+            return
         if not (outputs is None or isinstance(outputs, dict)):
             outputs = {"output": outputs}
         end_time = datetime.datetime.now(datetime.timezone.utc)
-        return self.test_suite.end_run(
+        self.test_suite.end_run(
             run_tree,
             self.example_id,
             outputs,
@@ -786,6 +789,7 @@ class _TestCase:
             pytest_plugin=self.pytest_plugin,
             pytest_nodeid=self.pytest_nodeid,
         )
+        self._ended = True
 
 
 _TEST_CASE = contextvars.ContextVar[Optional[_TestCase]]("_TEST_CASE", default=None)
@@ -1089,7 +1093,7 @@ def log_outputs(outputs: dict, /) -> None:
         )
         raise ValueError(msg)
     run_tree.add_outputs(outputs)
-    test_case.log_outputs(outputs)
+    test_case.log_outputs(run_tree, outputs)
 
 
 def log_reference_outputs(outputs: dict, /) -> None:
