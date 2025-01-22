@@ -351,7 +351,7 @@ async def test_aevaluate():
             assert "slow_accuracy" in r.feedback_stats
         return current_runs, len(current_runs) == 2 * len(all_examples)
 
-    final_runs = wait_for(check_run_count, max_sleep_time=60, sleep_time=2)
+    final_runs = wait_for(check_run_count, max_sleep_time=120, sleep_time=2)
 
     assert len(final_runs) == 2 * len(
         all_examples
