@@ -1,6 +1,7 @@
 # LangSmith Client SDK
- [![Release Notes](https://img.shields.io/github/release/langchain-ai/langsmith-sdk?logo=python)](https://github.com/langchain-ai/langsmith-sdk/releases)
- [![Python Downloads](https://static.pepy.tech/badge/langsmith/month)](https://pepy.tech/project/langsmith)
+
+[![Release Notes](https://img.shields.io/github/release/langchain-ai/langsmith-sdk?logo=python)](https://github.com/langchain-ai/langsmith-sdk/releases)
+[![Python Downloads](https://static.pepy.tech/badge/langsmith/month)](https://pepy.tech/project/langsmith)
 
 This package contains the Python client for interacting with the [LangSmith platform](https://smith.langchain.com/).
 
@@ -32,6 +33,7 @@ def pipeline(user_input: str):
 
 pipeline("Hello, world!")
 ```
+
 See the resulting nested trace [🌐 here](https://smith.langchain.com/public/b37ca9b1-60cd-4a2a-817e-3c4e4443fdc0/r).
 
 LangSmith helps you and your team develop and evaluate language models and intelligent agents. It is compatible with any LLM application.
@@ -100,9 +102,9 @@ LangChain code.
 
 ```python
 import os
-os.environ["LANGCHAIN_ENDPOINT"] = "https://api.smith.langchain.com"
-os.environ["LANGCHAIN_API_KEY"] = "<YOUR-LANGSMITH-API-KEY>"
-# os.environ["LANGCHAIN_PROJECT"] = "My Project Name" # Optional: "default" is used if not set
+os.environ["LANGSMITH_ENDPOINT"] = "https://api.smith.langchain.com"
+os.environ["LANGSMITH_API_KEY"] = "<YOUR-LANGSMITH-API-KEY>"
+# os.environ["LANGSMITH_PROJECT"] = "My Project Name" # Optional: "default" is used if not set
 ```
 
 2. **Log traces**
@@ -158,7 +160,7 @@ parent_run = RunTree(
     name="My Chat Bot",
     run_type="chain",
     inputs={"text": "Summarize this morning's meetings."},
-    # project_name= "Defaults to the LANGCHAIN_PROJECT env var"
+    # project_name= "Defaults to the LANGSMITH_PROJECT env var"
 )
 parent_run.post()
 # .. My Chat Bot calls an LLM
@@ -286,7 +288,6 @@ for run in runs:
     client.evaluate_run(run, evaluator)
 ```
 
-
 ## Integrations
 
 LangSmith easily integrates with your favorite LLM framework.
@@ -294,12 +295,13 @@ LangSmith easily integrates with your favorite LLM framework.
 ## OpenAI SDK
 
 <!-- markdown-link-check-disable -->
+
 We provide a convenient wrapper for the [OpenAI SDK](https://platform.openai.com/docs/api-reference).
 
 In order to use, you first need to set your LangSmith API key.
 
 ```shell
-export LANGCHAIN_API_KEY=<your-api-key>
+export LANGSMITH_API_KEY=<your-api-key>
 ```
 
 Next, you will need to install the LangSmith SDK:
@@ -350,7 +352,7 @@ We provide a convenient integration with [Instructor](https://jxnl.github.io/ins
 In order to use, you first need to set your LangSmith API key.
 
 ```shell
-export LANGCHAIN_API_KEY=<your-api-key>
+export LANGSMITH_API_KEY=<your-api-key>
 ```
 
 Next, you will need to install the LangSmith SDK:
@@ -414,7 +416,6 @@ def my_function(text: str) -> UserDetail:
 
 my_function("Jason is 25 years old")
 ```
-
 
 ## Additional Documentation
 
