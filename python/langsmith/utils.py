@@ -795,3 +795,15 @@ def _get_function_name(fn: Callable, depth: int = 0) -> str:
         return _get_function_name(fn.__call__, depth + 1)
 
     return str(fn)
+
+
+def is_truish(val: Any) -> bool:
+    """Check if the value is truish.
+
+    Args:
+        val (Any): The value to check.
+
+    Returns:
+        bool: True if the value is truish, False otherwise.
+    """
+    return val is True or val == "true" or val == "True" or val == "TRUE" or val == "1"

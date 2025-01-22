@@ -1,5 +1,7 @@
 """Script for auto-generating api_reference.rst."""
 
+from __future__ import annotations
+
 import importlib
 import inspect
 import logging
@@ -82,6 +84,10 @@ _INCLUDED_UTILS = {
 }
 
 
+def _document_func_or_class(name: str) -> bool:
+    return (not name.startswith("_")) or name in ("_Expect")
+
+
 def _load_module_members(module_path: str, namespace: str) -> ModuleMembers:
     classes_: List[ClassInfo] = []
     functions: List[FunctionInfo] = []
@@ -108,24 +114,12 @@ def _load_module_members(module_path: str, namespace: str) -> ModuleMembers:
                     else "Pydantic" if issubclass(type_, BaseModel) else "Regular"
                 )
             )
-            # if hasattr(type_, "__slots__"):
-            #     for func_name, func_type in inspect.getmembers(type_):
-            #         if inspect.isfunction(func_type):
-            #             functions.append(
-            #                 FunctionInfo(
-            #                     name=func_name,
-            #                     qualified_name=f"{namespace}.{name}.{func_name}",
-            #                     is_public=not func_name.startswith("_"),
-            #                     is_deprecated=".. deprecated::"
-            #                     in (func_type.__doc__ or ""),
-            #                 )
-            #             )
             classes_.append(
                 ClassInfo(
                     name=name,
                     qualified_name=f"{namespace}.{name}",
                     kind=kind,
-                    is_public=not name.startswith("_"),
+                    is_public=_document_func_or_class(name),
                     is_deprecated=".. deprecated::" in (type_.__doc__ or ""),
                 )
             )
@@ -134,7 +128,7 @@ def _load_module_members(module_path: str, namespace: str) -> ModuleMembers:
                 FunctionInfo(
                     name=name,
                     qualified_name=f"{namespace}.{name}",
-                    is_public=not name.startswith("_"),
+                    is_public=_document_func_or_class(name),
                     is_deprecated=".. deprecated::" in (type_.__doc__ or ""),
                 )
             )
@@ -156,9 +150,10 @@ def _load_package_modules(
             if file_path.name not in {
                 "_runner.py",
                 "_arunner.py",
-                "_testing.py",
+                "_internal.py",
                 "_expect.py",
                 "_openai.py",
+                "_expect.py",
             }:
                 continue
 
@@ -200,6 +195,8 @@ module_order = [
     "utils",
     "anonymizer",
     "wrappers",
+    "testing",
+    "_expect",
 ]
 
 
@@ -387,9 +384,7 @@ Here are quick links to some of the key classes and functions:
 | [AsyncClient](async_client/langsmith.async_client.AsyncClient) | Asynchronous client for interacting with the LangSmith API. |
 | [traceable](run_helpers/langsmith.run_helpers.traceable) | Wrapper/decorator for tracing any function. |
 | [wrap_openai](wrappers/langsmith.wrappers._openai.wrap_openai) | Wrapper for OpenAI client, adds LangSmith tracing to all OpenAI calls. |
-| [evaluate](evaluation/langsmith.evaluation._runner.evaluate) | Evaluate an application on a dataset. |
-| [aevaluate](evaluation/langsmith.evaluation._arunner.aevaluate) | Asynchronously evaluate an application on a dataset. |
-| [unit](_testing/langsmith._testing.unit) | Create a LangSmith unit test. |
+| [@pytest.mark.langsmith](/testing/langsmith.testing._internal.test) | LangSmith pytest integration. |
 
 ```{{toctree}}
 :maxdepth: 2
@@ -397,10 +392,10 @@ Here are quick links to some of the key classes and functions:
 
   client<client>
   async_client<async_client>
-  evaluation<evaluation>
   run_helpers<run_helpers>
   wrappers<wrappers>
-  _testing<_testing>
+  testing<testing>
+  _expect<_expect>
 ``` 
 
 """

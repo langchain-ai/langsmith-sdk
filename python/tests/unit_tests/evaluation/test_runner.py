@@ -595,21 +595,18 @@ async def test_aevaluate_results(
         max_concurrency=None,
     )
     if not blocking:
-        deltas = []
-        last = None
+        deltas: list = []
         start = time.time()
+        last = start
         now = None
         async for _ in results:
             now = time.time()
-            if last is None:
-                elapsed = now - start
-                assert elapsed < 3
-            deltas.append((now - last) if last is not None else 0)  # type: ignore
+            deltas.append((now - last))
             last = now
         total = now - start  # type: ignore
-        assert total > 1.5
+        assert 3.2 > total > 1.5
 
-        # Essentially we want to check that 1 delay is > 1.5s and the rest are < 0.1s
+        # Essentially we want to check that most calls were very fast.
         assert len(deltas) == SPLIT_SIZE * NUM_REPETITIONS
 
         total_quick = sum([d < 0.5 for d in deltas])
@@ -617,7 +614,7 @@ async def test_aevaluate_results(
         tolerance = 3
         assert total_slow < tolerance
         assert total_quick > (SPLIT_SIZE * NUM_REPETITIONS - 1) - tolerance
-        assert any([d > 1 for d in deltas])
+        assert max(deltas) > (total / 3)
 
     async for r in results:
         assert r["run"].outputs["output"] == r["example"].inputs["in"] + 1  # type: ignore

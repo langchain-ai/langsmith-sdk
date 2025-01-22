@@ -3,6 +3,7 @@ import time
 import uuid
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from typing import AsyncGenerator, Generator, Optional, Sequence
 
 import pytest  # type: ignore
@@ -11,11 +12,19 @@ from langsmith import utils as ls_utils
 from langsmith.client import Client
 from langsmith.run_helpers import trace, traceable
 from langsmith.run_trees import RunTree
+from langsmith.schemas import Attachment
 
 
 @pytest.fixture
 def langchain_client() -> Generator[Client, None, None]:
-    yield Client()
+    yield Client(
+        info={
+            "instance_flags": {
+                "dataset_examples_multipart_enabled": True,
+                "examples_multipart_enabled": True,
+            }
+        }
+    )
 
 
 def poll_runs_until_count(
@@ -479,3 +488,47 @@ async def test_end_metadata_with_run_tree(langchain_client: Client):
     assert run.run_type == "chain"
     assert run.metadata["final_metadata"] == run_id.hex
     assert run.outputs == {"result": "success"}
+
+
+def test_trace_file_path(langchain_client: Client) -> None:
+    """Test that you can trace attachments with file paths"""
+    project_name = "__test_trace_file_path3"
+    run_meta = uuid.uuid4().hex
+
+    @traceable(dangerously_allow_filesystem=True)
+    def my_func(foo: Attachment, bar: Attachment):
+        return "foo"
+
+    foo = Attachment(
+        mime_type="image/png",
+        data=Path(__file__).parent / "test_data/parrot-icon.png",
+    )
+    bar = Attachment(
+        mime_type="image/png",
+        data=Path(__file__).parent / "test_data/parrot-icon.png",
+    )
+    assert isinstance(foo.data, Path)
+    assert isinstance(bar.data, Path)
+    my_func(
+        foo,
+        bar,
+        langsmith_extra=dict(
+            project_name=project_name, metadata={"test_run": run_meta}
+        ),
+    )
+    _filter = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{run_meta}"))'
+    poll_runs_until_count(
+        langchain_client, project_name, 1, max_retries=20, filter_=_filter
+    )
+    runs = list(langchain_client.list_runs(project_name=project_name, filter=_filter))
+    assert len(runs) == 1
+    run = runs[0]
+    assert run.attachments
+    assert (
+        run.attachments["foo"]["reader"].read()
+        == (Path(__file__).parent / "test_data/parrot-icon.png").read_bytes()
+    )
+    assert (
+        run.attachments["bar"]["reader"].read()
+        == (Path(__file__).parent / "test_data/parrot-icon.png").read_bytes()
+    )
