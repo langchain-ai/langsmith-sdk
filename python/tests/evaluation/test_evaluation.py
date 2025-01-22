@@ -322,11 +322,9 @@ async def test_aevaluate():
         summary_evaluators=[precision],
         experiment_prefix="My Experiment",
         description="My Experiment Description",
-        metadata={
-            "my-prompt-version": "abcd-1234",
-            "function": "aevaluate",
-        },
+        metadata={"my-prompt-version": "abcd-1234", "function": "aevaluate"},
         num_repetitions=2,
+        max_concurrency=3,
     )
     assert len(results) == 20
     if _has_pandas():
