@@ -83,7 +83,7 @@ def pytest_report_teststatus(report, config):
     # The hook normally returns a 3-tuple: (short_letter, verbose_word, color)
     # By returning empty strings, the progress characters won't show.
     if config.getoption("--output") in ("langsmith", "ls"):
-        return "", "", None
+        return "", "", ""
 
 
 class LangSmithPlugin:
