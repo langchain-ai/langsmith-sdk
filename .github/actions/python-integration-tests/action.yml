@@ -72,7 +72,7 @@ runs:
           OPENAI_API_KEY: ${{ inputs.openai-api-key }}
           ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
           LANGSMITH_TEST_CACHE: tests/cassettes
-      run: poetry run python -m pytest tests/evaluation/test_evaluation.py::test_aevaluate
+      run: make evals
       shell: bash
       working-directory: python
 
