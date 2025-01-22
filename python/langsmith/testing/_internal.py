@@ -716,7 +716,6 @@ class _TestCase:
         self.run_id = run_id
         self.pytest_plugin = pytest_plugin
         self.pytest_nodeid = pytest_nodeid
-        self._ended = False
 
         if pytest_plugin and pytest_nodeid:
             pytest_plugin.add_process_to_test_suite(
@@ -746,12 +745,11 @@ class _TestCase:
             },
         )
 
-    def log_outputs(self, run_tree, outputs: dict) -> None:
+    def log_outputs(self, outputs: dict) -> None:
         if self.pytest_plugin and self.pytest_nodeid:
             self.pytest_plugin.update_process_status(
                 self.pytest_nodeid, {"outputs": outputs}
             )
-        self.end_run(run_tree, outputs)
 
     def submit_test_result(
         self,
@@ -779,8 +777,6 @@ class _TestCase:
             )
 
     def end_run(self, run_tree, outputs: Any) -> None:
-        if self._ended:
-            return
         if not (outputs is None or isinstance(outputs, dict)):
             outputs = {"output": outputs}
         end_time = datetime.datetime.now(datetime.timezone.utc)
@@ -792,7 +788,6 @@ class _TestCase:
             pytest_plugin=self.pytest_plugin,
             pytest_nodeid=self.pytest_nodeid,
         )
-        self._ended = True
 
 
 _TEST_CASE = contextvars.ContextVar[Optional[_TestCase]]("_TEST_CASE", default=None)
@@ -1051,9 +1046,6 @@ def log_inputs(inputs: dict, /) -> None:
             "LANGSMITH_TRACING environment variable to 'true')."
         )
         raise ValueError(msg)
-    if test_case._ended:
-        msg = "log_inputs must be called before log_outputs."
-        raise ValueError(msg)
     run_tree.add_inputs(inputs)
     test_case.sync_example(inputs=inputs)
 
@@ -1098,7 +1090,8 @@ def log_outputs(outputs: dict, /) -> None:
             "LANGSMITH_TRACING environment variable to 'true')."
         )
         raise ValueError(msg)
-    test_case.log_outputs(run_tree, outputs)
+    run_tree.add_outputs(outputs)
+    test_case.log_outputs(outputs)
 
 
 def log_reference_outputs(outputs: dict, /) -> None:
