@@ -2580,7 +2580,6 @@ async def test_aevaluate_max_concurrency(langchain_client: Client) -> None:
         evaluators=evaluators,
         max_concurrency=8,
     )
-
     end_time = time.time()
     # this should proceed in a 8-2 manner, taking around 20 seconds total
     assert end_time - start_time < 30
