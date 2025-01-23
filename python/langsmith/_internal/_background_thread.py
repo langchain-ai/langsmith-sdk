@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import concurrent.futures as cf
 import functools
 import io
@@ -20,6 +21,7 @@ from typing import (
 
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
+from langsmith._internal._compressed_runs import CompressedRuns
 from langsmith._internal._constants import (
     _AUTO_SCALE_DOWN_NEMPTY_TRIGGER,
     _AUTO_SCALE_UP_NTHREADS_LIMIT,
@@ -33,6 +35,7 @@ from langsmith._internal._operations import (
 )
 
 if TYPE_CHECKING:
+    from langsmith.async_client import AsyncClient
     from langsmith.client import Client
 
 logger = logging.getLogger("langsmith.client")
@@ -97,40 +100,64 @@ def _tracing_thread_drain_queue(
     return next_batch
 
 
-def _tracing_thread_drain_compressed_buffer(
-    client: Client, size_limit: int = 100, size_limit_bytes: int | None = 20_971_520
+def _drain_compressed_runs(
+    compressed_runs: CompressedRuns,
+    size_limit: int = 100,
+    size_limit_bytes: int | None = 20_971_520,
 ) -> Tuple[Optional[io.BytesIO], Optional[Tuple[int, int]]]:
-    assert client.compressed_runs is not None
-    with client.compressed_runs.lock:
-        client.compressed_runs.compressor_writer.flush()
-        current_size = client.compressed_runs.buffer.tell()
+    compressed_runs.compressor_writer.flush()
+    current_size = compressed_runs.buffer.tell()
 
-        pre_compressed_size = client.compressed_runs.uncompressed_size
+    pre_compressed_size = compressed_runs.uncompressed_size
 
-        if size_limit is not None and size_limit <= 0:
-            raise ValueError(f"size_limit must be positive; got {size_limit}")
-        if size_limit_bytes is not None and size_limit_bytes < 0:
-            raise ValueError(
-                f"size_limit_bytes must be nonnegative; got {size_limit_bytes}"
-            )
+    if size_limit is not None and size_limit <= 0:
+        raise ValueError(f"size_limit must be positive; got {size_limit}")
+    if size_limit_bytes is not None and size_limit_bytes < 0:
+        raise ValueError(
+            f"size_limit_bytes must be nonnegative; got {size_limit_bytes}"
+        )
 
-        if (size_limit_bytes is None or current_size < size_limit_bytes) and (
-            size_limit is None or client.compressed_runs.run_count < size_limit
-        ):
-            return None, None
+    if (size_limit_bytes is None or current_size < size_limit_bytes) and (
+        size_limit is None or compressed_runs.run_count < size_limit
+    ):
+        return None, None
 
-        # Write final boundary and close compression stream
-        client.compressed_runs.compressor_writer.write(f"--{_BOUNDARY}--\r\n".encode())
-        client.compressed_runs.compressor_writer.close()
+    # Write final boundary and close compression stream
+    compressed_runs.compressor_writer.write(f"--{_BOUNDARY}--\r\n".encode())
+    compressed_runs.compressor_writer.close()
 
-        filled_buffer = client.compressed_runs.buffer
+    filled_buffer = compressed_runs.buffer
 
-        compressed_runs_info = (pre_compressed_size, current_size)
+    compressed_runs_info = (pre_compressed_size, current_size)
 
-        client.compressed_runs.reset()
+    compressed_runs.reset()
 
     filled_buffer.seek(0)
     return (filled_buffer, compressed_runs_info)
+
+
+def _tracing_thread_drain_compressed_buffer(
+    client: Client,
+    size_limit: int = 100,
+    size_limit_bytes: int | None = 20_971_520,
+) -> Tuple[Optional[io.BytesIO], Optional[Tuple[int, int]]]:
+    assert client.compressed_runs is not None
+    with client._compressed_runs_lock:
+        return _drain_compressed_runs(
+            client.compressed_runs, size_limit, size_limit_bytes
+        )
+
+
+async def _atracing_thread_drain_compressed_buffer(
+    client: AsyncClient,
+    size_limit: int = 100,
+    size_limit_bytes: int | None = 20_971_520,
+) -> Tuple[Optional[io.BytesIO], Optional[Tuple[int, int]]]:
+    assert client.compressed_runs is not None
+    async with client._compressed_runs_lock:
+        return _drain_compressed_runs(
+            client.compressed_runs, size_limit, size_limit_bytes
+        )
 
 
 def _tracing_thread_handle_batch(
@@ -391,3 +418,63 @@ def _tracing_sub_thread_func(
         tracing_queue, limit=size_limit, block=False
     ):
         _tracing_thread_handle_batch(client, tracing_queue, next_batch, use_multipart)
+
+
+async def _abackground_send_compressed_runs(async_client: AsyncClient):
+    batch_ingest_config = _ensure_ingest_config(async_client.info)
+    size_limit: int = batch_ingest_config["size_limit"]
+    size_limit_bytes = batch_ingest_config.get("size_limit_bytes", 20_971_520)
+    while True:
+        # Python 3.13, asyncio.wait no longer allows passing coroutines directly as arguments
+        data_available_task = asyncio.create_task(
+            async_client._data_available_event.wait()
+        )
+        exit_background_send_task = asyncio.create_task(
+            async_client._exit_background_send_event.wait()
+        )
+        _, pending = await asyncio.wait(
+            [
+                data_available_task,
+                exit_background_send_task,
+            ],
+            timeout=0.05,
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+
+        for task in pending:
+            task.cancel()
+
+        if async_client._exit_background_send_event.is_set():
+            break
+
+        if not async_client._data_available_event.is_set():
+            continue
+
+        async_client._data_available_event.clear()
+
+        (
+            data_stream,
+            compressed_runs_info,
+        ) = await _atracing_thread_drain_compressed_buffer(
+            async_client, size_limit, size_limit_bytes
+        )
+
+        if data_stream is not None:
+            await async_client._asend_compressed_multipart_req(
+                data_stream, compressed_runs_info
+            )
+
+    # Drain the buffer on exit
+    try:
+        final_data_stream, compressed_runs_info = await (
+            _atracing_thread_drain_compressed_buffer(
+                async_client, size_limit=1, size_limit_bytes=1
+            )  # Force final drain
+        )
+        if final_data_stream is not None:
+            await async_client._asend_compressed_multipart_req(
+                data_stream, compressed_runs_info
+            )
+
+    except Exception:
+        logger.error("Error in final cleanup", exc_info=True)

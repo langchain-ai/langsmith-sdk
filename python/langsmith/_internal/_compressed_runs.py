@@ -1,3 +1,4 @@
+import asyncio
 import io
 import threading
 
@@ -17,7 +18,6 @@ class CompressedRuns:
     def __init__(self):
         self.buffer = io.BytesIO()
         self.run_count = 0
-        self.lock = threading.Lock()
         self.uncompressed_size = 0
 
         if not HAVE_ZSTD:

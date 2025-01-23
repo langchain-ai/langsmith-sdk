@@ -384,6 +384,7 @@ class Client:
         "_manual_cleanup",
         "_pyo3_client",
         "compressed_runs",
+        "_compressed_runs_lock",
         "_data_available_event",
         "_futures",
     ]
@@ -479,6 +480,7 @@ class Client:
         if ls_utils.get_env_var("USE_RUN_COMPRESSION"):
             self._futures: set[cf.Future] = set()
             self.compressed_runs: Optional[CompressedRuns] = CompressedRuns()
+            self._compressed_runs_lock = threading.Lock()
             self._data_available_event = threading.Event()
         else:
             self.compressed_runs = None
@@ -1299,7 +1301,7 @@ class Client:
                         serialized_op
                     )
                 )
-                with self.compressed_runs.lock:
+                with self._compressed_runs_lock:
                     compress_multipart_parts_and_context(
                         multipart_form,
                         self.compressed_runs,
@@ -1994,7 +1996,7 @@ class Client:
                         serialized_op
                     )
                 )
-                with self.compressed_runs.lock:
+                with self._compressed_runs_lock:
                     compress_multipart_parts_and_context(
                         multipart_form,
                         self.compressed_runs,

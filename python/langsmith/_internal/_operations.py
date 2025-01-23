@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import itertools
 import logging
 import uuid
@@ -274,11 +275,10 @@ def serialized_run_operation_to_multipart_parts_and_context(
     )
 
 
-def compress_multipart_parts_and_context(
+def encode_multipart_parts_and_context(
     parts_and_context: MultipartPartsAndContext,
-    compressed_runs: CompressedRuns,
     boundary: str,
-) -> None:
+):
     for part_name, (filename, data, content_type, headers) in parts_and_context.parts:
         header_parts = [
             f"--{boundary}\r\n",
@@ -296,15 +296,43 @@ def compress_multipart_parts_and_context(
             ]
         )
 
-        compressed_runs.compressor_writer.write("".join(header_parts).encode())
+        header_data = "".join(header_parts).encode()
 
         if isinstance(data, (bytes, bytearray)):
-            compressed_runs.uncompressed_size += len(data)
-            compressed_runs.compressor_writer.write(data)
+            yield (header_data, data)
         else:
-            encoded_data = str(data).encode()
-            compressed_runs.uncompressed_size += len(encoded_data)
-            compressed_runs.compressor_writer.write(encoded_data)
+            yield (header_data, str(data).encode())
+
+
+def compress_multipart_parts_and_context(
+    parts_and_context: MultipartPartsAndContext,
+    compressed_runs: CompressedRuns,
+    boundary: str,
+) -> None:
+    for headers, data in encode_multipart_parts_and_context(
+        parts_and_context, boundary
+    ):
+        compressed_runs.compressor_writer.write(headers)
+
+        compressed_runs.uncompressed_size += len(data)
+        compressed_runs.compressor_writer.write(data)
 
         # Write part terminator
         compressed_runs.compressor_writer.write(b"\r\n")
+
+
+async def acompress_multipart_parts_and_context(
+    parts_and_context: MultipartPartsAndContext,
+    compressed_runs: CompressedRuns,
+    boundary: str,
+) -> None:
+    for headers, data in encode_multipart_parts_and_context(
+        parts_and_context, boundary
+    ):
+        await asyncio.to_thread(compressed_runs.compressor_writer.write, headers)
+
+        compressed_runs.uncompressed_size += len(data)
+        await asyncio.to_thread(compressed_runs.compressor_writer.write, data)
+
+        # Write part terminator
+        await asyncio.to_thread(compressed_runs.compressor_writer.write, b"\r\n")

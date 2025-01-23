@@ -5,6 +5,7 @@ import uuid
 import pytest
 from pydantic import BaseModel
 
+from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith.async_client import AsyncClient
 from langsmith.schemas import DataType, Run
@@ -68,6 +69,26 @@ async def async_client():
     await client.aclose()
 
 
+@pytest.fixture
+async def async_client_with_compression(request):
+    compress_size_limit = request.param
+    ls_utils.get_env_var.cache_clear()
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setenv("LANGSMITH_USE_RUN_COMPRESSION", "true")
+        client = AsyncClient(
+            info=ls_schemas.LangSmithInfo(
+                batch_ingest_config=ls_schemas.BatchIngestConfig(
+                    use_multipart_endpoint=False,
+                    size_limit_bytes=None,  # Note this field is not used here
+                    size_limit=compress_size_limit,
+                    # ignoring other settings here (not used by AsyncClient)
+                )
+            )
+        )
+        yield client
+        await client.aclose()
+
+
 @pytest.mark.asyncio
 async def test_create_run(async_client: AsyncClient):
     project_name = "__test_create_run" + uuid.uuid4().hex[:8]
@@ -92,6 +113,41 @@ async def test_create_run(async_client: AsyncClient):
     await wait_for(check_run)
     run = await async_client.read_run(run_id)
     assert run.name == "test_run"
+    assert run.inputs == {"input": "hello"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("async_client_with_compression", [1], indirect=True)
+async def test_create_compressed_run(async_client_with_compression: AsyncClient):
+    project_name = "__test_create_run" + uuid.uuid4().hex[:8]
+
+    run_id = uuid.uuid4()
+
+    current_time = datetime.datetime.now(datetime.timezone.utc).strftime(
+        "%Y%m%dT%H%M%S%fZ"
+    )
+
+    await async_client_with_compression.create_run(
+        name="test_compressed_run",
+        inputs={"input": "hello"},
+        run_type="llm",
+        project_name=project_name,
+        id=run_id,
+        trace_id=run_id,
+        dotted_order=f"{current_time}{str(run_id)}",
+        start_time=datetime.datetime.now(datetime.timezone.utc),
+    )
+
+    async def check_run():
+        try:
+            run = await async_client_with_compression.read_run(run_id)
+            return run.name == "test_compressed_run"
+        except ls_utils.LangSmithError:
+            return False
+
+    await wait_for(check_run)
+    run = await async_client_with_compression.read_run(run_id)
+    assert run.name == "test_compressed_run"
     assert run.inputs == {"input": "hello"}
 
 
