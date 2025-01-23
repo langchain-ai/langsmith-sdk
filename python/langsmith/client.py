@@ -1795,7 +1795,7 @@ class Client:
                         data = encoder
                     self.request_with_retries(
                         "POST",
-                        f"{api_url}/runs/multipart",
+                        f"{api_url}/v1/runs/multipart",
                         request_kwargs={
                             "data": data,
                             "headers": {
@@ -1859,7 +1859,7 @@ class Client:
 
                     self.request_with_retries(
                         "POST",
-                        f"{api_url}/runs/multipart",
+                        f"{api_url}/v1/runs/multipart",
                         request_kwargs={
                             "data": data_stream,
                             "headers": headers,
