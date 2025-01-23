@@ -78,7 +78,7 @@ from langsmith._internal._background_thread import (
     tracing_control_thread_func as _tracing_control_thread_func,
 )
 from langsmith._internal._beta_decorator import warn_beta
-from langsmith._internal._compressed_runs import CompressedRuns
+from langsmith._internal._compressed_traces import CompressedTraces
 from langsmith._internal._constants import (
     _AUTO_SCALE_UP_NTHREADS_LIMIT,
     _BLOCKSIZE_BYTES,
@@ -380,7 +380,7 @@ class Client:
         "_settings",
         "_manual_cleanup",
         "_pyo3_client",
-        "compressed_runs",
+        "compressed_traces",
         "_data_available_event",
         "_futures",
     ]
@@ -480,7 +480,7 @@ class Client:
         )
         weakref.finalize(self, close_session, self.session)
         atexit.register(close_session, session_)
-        self.compressed_runs: Optional[CompressedRuns] = None
+        self.compressed_traces: Optional[CompressedTraces] = None
         self._data_available_event: Optional[threading.Event] = None
         self._futures: Optional[set[cf.Future]] = None
         # Initialize auto batching
@@ -1280,7 +1280,7 @@ class Client:
         ):
             if self._pyo3_client is not None:
                 self._pyo3_client.create_run(run_create)
-            elif self.compressed_runs is not None:
+            elif self.compressed_traces is not None:
                 if self._data_available_event is None:
                     raise ValueError(
                         "Run compression is enabled but threading event is not configured"
@@ -1291,13 +1291,13 @@ class Client:
                         serialized_op
                     )
                 )
-                with self.compressed_runs.lock:
+                with self.compressed_traces.lock:
                     compress_multipart_parts_and_context(
                         multipart_form,
-                        self.compressed_runs,
+                        self.compressed_traces,
                         _BOUNDARY,
                     )
-                    self.compressed_runs.run_count += 1
+                    self.compressed_traces.trace_count += 1
                     self._data_available_event.set()
 
                 _close_files(list(opened_files.values()))
@@ -1832,7 +1832,7 @@ class Client:
     def _send_compressed_multipart_req(
         self,
         data_stream: io.BytesIO,
-        compressed_runs_info: Optional[Tuple[int, int]],
+        compressed_traces_info: Optional[Tuple[int, int]],
         *,
         attempts: int = 3,
     ):
@@ -1850,10 +1850,14 @@ class Client:
                         "Content-Type": f"multipart/form-data; boundary={_BOUNDARY}",
                         "Content-Encoding": "zstd",
                         "X-Pre-Compressed-Size": (
-                            str(compressed_runs_info[0]) if compressed_runs_info else ""
+                            str(compressed_traces_info[0])
+                            if compressed_traces_info
+                            else ""
                         ),
                         "X-Post-Compressed-Size": (
-                            str(compressed_runs_info[1]) if compressed_runs_info else ""
+                            str(compressed_traces_info[1])
+                            if compressed_traces_info
+                            else ""
                         ),
                     }
 
@@ -1983,7 +1987,7 @@ class Client:
                     )
             data["attachments"] = attachments
         use_multipart = (
-            (self.tracing_queue is not None or self.compressed_runs is not None)
+            (self.tracing_queue is not None or self.compressed_traces is not None)
             # batch ingest requires trace_id and dotted_order to be set
             and data["trace_id"] is not None
             and data["dotted_order"] is not None
@@ -2011,23 +2015,23 @@ class Client:
             self._pyo3_client.update_run(data)
         elif use_multipart:
             serialized_op = serialize_run_dict(operation="patch", payload=data)
-            if self.compressed_runs is not None:
+            if self.compressed_traces is not None:
                 multipart_form, opened_files = (
                     serialized_run_operation_to_multipart_parts_and_context(
                         serialized_op
                     )
                 )
-                with self.compressed_runs.lock:
+                with self.compressed_traces.lock:
                     if self._data_available_event is None:
                         raise ValueError(
                             "Run compression is enabled but threading event is not configured"
                         )
                     compress_multipart_parts_and_context(
                         multipart_form,
-                        self.compressed_runs,
+                        self.compressed_traces,
                         _BOUNDARY,
                     )
-                    self.compressed_runs.run_count += 1
+                    self.compressed_traces.trace_count += 1
                     self._data_available_event.set()
                 _close_files(list(opened_files.values()))
             elif self.tracing_queue is not None:
@@ -2053,9 +2057,9 @@ class Client:
                 },
             )
 
-    def flush_compressed_runs(self, attempts: int = 3) -> None:
+    def flush_compressed_traces(self, attempts: int = 3) -> None:
         """Force flush the currently buffered compressed runs."""
-        if self.compressed_runs is None:
+        if self.compressed_traces is None:
             return
 
         if self._futures is None:
@@ -2069,7 +2073,7 @@ class Client:
             _tracing_thread_drain_compressed_buffer,
         )
 
-        final_data_stream, compressed_runs_info = (
+        final_data_stream, compressed_traces_info = (
             _tracing_thread_drain_compressed_buffer(
                 self, size_limit=1, size_limit_bytes=1
             )
@@ -2082,14 +2086,14 @@ class Client:
                 future = HTTP_REQUEST_THREAD_POOL.submit(
                     self._send_compressed_multipart_req,
                     final_data_stream,
-                    compressed_runs_info,
+                    compressed_traces_info,
                     attempts=attempts,
                 )
                 self._futures.add(future)
             except RuntimeError:
                 # In case the ThreadPoolExecutor is already shutdown
                 self._send_compressed_multipart_req(
-                    final_data_stream, compressed_runs_info, attempts=attempts
+                    final_data_stream, compressed_traces_info, attempts=attempts
                 )
 
         # If we got a future, wait for it to complete
@@ -2100,8 +2104,8 @@ class Client:
 
     def flush(self) -> None:
         """Flush either queue or compressed buffer, depending on mode."""
-        if self.compressed_runs is not None:
-            self.flush_compressed_runs()
+        if self.compressed_traces is not None:
+            self.flush_compressed_traces()
         elif self.tracing_queue is not None:
             self.tracing_queue.join()
 
@@ -5295,13 +5299,31 @@ class Client:
                 use_multipart
                 and self.info.version  # TODO: Remove version check once versions have updated
                 and ls_utils.is_version_greater_or_equal(self.info.version, "0.8.10")
-                and self.tracing_queue is not None
+                and (
+                    self.tracing_queue is not None or self.compressed_traces is not None
+                )
                 and feedback.trace_id is not None
             ):
                 serialized_op = serialize_feedback_dict(feedback)
-                self.tracing_queue.put(
-                    TracingQueueItem(str(feedback.id), serialized_op)
-                )
+                if self.compressed_traces is not None:
+                    multipart_form = (
+                        serialized_feedback_operation_to_multipart_parts_and_context(
+                            serialized_op
+                        )
+                    )
+                    with self.compressed_traces.lock:
+                        compress_multipart_parts_and_context(
+                            multipart_form,
+                            self.compressed_traces,
+                            _BOUNDARY,
+                        )
+                        self.compressed_traces.trace_count += 1
+                        if self._data_available_event:
+                            self._data_available_event.set()
+                elif self.tracing_queue is not None:
+                    self.tracing_queue.put(
+                        TracingQueueItem(str(feedback.id), serialized_op)
+                    )
             else:
                 feedback_block = _dumps_json(feedback.dict(exclude_none=True))
                 self.request_with_retries(
