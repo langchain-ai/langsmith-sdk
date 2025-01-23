@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import itertools
 import logging
 import os
@@ -292,6 +291,7 @@ def serialized_run_operation_to_multipart_parts_and_context(
         opened_files_dict,
     )
 
+
 def encode_multipart_parts_and_context(
     parts_and_context: MultipartPartsAndContext,
     boundary: str,
@@ -314,6 +314,7 @@ def encode_multipart_parts_and_context(
         )
 
         yield ("".join(header_parts).encode(), data)
+
 
 def compress_multipart_parts_and_context(
     parts_and_context: MultipartPartsAndContext,
