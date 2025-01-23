@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import itertools
 import logging
 import os
 import uuid
 from io import BufferedReader
-from typing import Dict, Literal, Optional, Union, cast
+from typing import Dict, Iterable, Literal, Optional, Tuple, Union, cast
 
 from langsmith import schemas as ls_schemas
 from langsmith._internal import _orjson
@@ -291,12 +292,10 @@ def serialized_run_operation_to_multipart_parts_and_context(
         opened_files_dict,
     )
 
-
-def compress_multipart_parts_and_context(
+def encode_multipart_parts_and_context(
     parts_and_context: MultipartPartsAndContext,
-    compressed_traces: CompressedTraces,
     boundary: str,
-) -> None:
+) -> Iterable[Tuple[bytes, Union[bytes, BufferedReader]]]:
     for part_name, (filename, data, content_type, headers) in parts_and_context.parts:
         header_parts = [
             f"--{boundary}\r\n",
@@ -314,7 +313,17 @@ def compress_multipart_parts_and_context(
             ]
         )
 
-        compressed_traces.compressor_writer.write("".join(header_parts).encode())
+        yield ("".join(header_parts).encode(), data)
+
+def compress_multipart_parts_and_context(
+    parts_and_context: MultipartPartsAndContext,
+    compressed_traces: CompressedTraces,
+    boundary: str,
+) -> None:
+    for headers, data in encode_multipart_parts_and_context(
+        parts_and_context, boundary
+    ):
+        compressed_traces.compressor_writer.write(headers)
 
         if isinstance(data, (bytes, bytearray)):
             compressed_traces.uncompressed_size += len(data)
