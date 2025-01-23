@@ -36,16 +36,16 @@ tests_watch:
 	poetry run ptw --now . -- -vv -x  tests/unit_tests
 
 integration_tests:
-	poetry run python -m pytest -v --durations=10 --cov=langsmith --cov-report=term-missing --cov-report=html --cov-config=.coveragerc tests/integration_tests
+	poetry run python -m pytest -x -v --durations=10 --cov=langsmith --cov-report=term-missing --cov-report=html --cov-config=.coveragerc tests/integration_tests
 
 integration_tests_fast:
-	poetry run python -m pytest -n auto --durations=10 -v --cov=langsmith --cov-report=term-missing --cov-report=html --cov-config=.coveragerc tests/integration_tests
+	poetry run python -m pytest -x -n auto --durations=10 -v --cov=langsmith --cov-report=term-missing --cov-report=html --cov-config=.coveragerc tests/integration_tests
 
 doctest:
-	poetry run python -m pytest -n auto --durations=10 --doctest-modules langsmith
+	poetry run python -m pytest -n auto -x --durations=10 --doctest-modules langsmith
 
 evals:
-	poetry run python -m pytest tests/evaluation
+	poetry run python -m pytest -n auto -x tests/evaluation
 
 lint:
 	poetry run ruff check .
