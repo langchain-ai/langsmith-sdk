@@ -243,7 +243,8 @@ async def test_aevaluate():
         df = results.to_pandas()
         assert len(df) == 10
     all_examples = list(client.list_examples(dataset_name=dataset.name))
-    list(results)
+    async for _ in results:
+        pass
 
     # Wait for there to be same num runs vs. examples
     def check_run_count():
