@@ -96,40 +96,41 @@ export function logOutputs(output: Record<string, unknown>) {
   context.setLoggedOutput(output);
 }
 
+export function objectHash(obj: KVMap, depth = 0): string {
+  // Prevent infinite recursion
+  if (depth > 50) {
+    throw new Error(
+      "Object is too deep to check equality for serialization. Please use a simpler example."
+    );
+  }
+
+  if (Array.isArray(obj)) {
+    const arrayHash = obj.map((item) => objectHash(item, depth + 1)).join(",");
+    return crypto.createHash("sha256").update(arrayHash).digest("hex");
+  }
+
+  if (obj && typeof obj === "object") {
+    const sortedHash = Object.keys(obj)
+      .sort()
+      .map((key) => `${key}:${objectHash(obj[key], depth + 1)}`)
+      .join(",");
+    return crypto.createHash("sha256").update(sortedHash).digest("hex");
+  }
+
+  return (
+    crypto
+      .createHash("sha256")
+      // Treat null and undefined as equal for serialization purposes
+      .update(JSON.stringify(obj ?? null))
+      .digest("hex")
+  );
+}
+
 export function generateWrapperFromJestlikeMethods(
   methods: Record<string, any>,
   testRunnerName: string
 ) {
   const { expect, test, describe, beforeAll, afterAll } = methods;
-
-  const objectHash = (obj: KVMap, depth = 0): string => {
-    // Prevent infinite recursion
-    if (depth > 50) {
-      throw new Error(
-        "Object is too deep to check equality for serialization. Please use a simpler example."
-      );
-    }
-
-    if (Array.isArray(obj)) {
-      const arrayHash = obj
-        .map((item) => objectHash(item, depth + 1))
-        .join(",");
-      return crypto.createHash("sha256").update(arrayHash).digest("hex");
-    }
-
-    if (obj && typeof obj === "object") {
-      const sortedHash = Object.keys(obj)
-        .sort()
-        .map((key) => `${key}:${objectHash(obj[key], depth + 1)}`)
-        .join(",");
-      return crypto.createHash("sha256").update(sortedHash).digest("hex");
-    }
-
-    return crypto
-      .createHash("sha256")
-      .update(JSON.stringify(obj))
-      .digest("hex");
-  };
 
   async function _createProject(
     client: Client,
