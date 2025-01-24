@@ -102,7 +102,7 @@ def _reduce_chat(all_chunks: List) -> dict:
 def _reduce_completions(all_chunks: List[Completion]) -> dict:
     all_content = []
     for chunk in all_chunks:
-        content = chunk.choices[0].text
+        content = chunk.completion
         if content is not None:
             all_content.append(content)
     content = "".join(all_content)
