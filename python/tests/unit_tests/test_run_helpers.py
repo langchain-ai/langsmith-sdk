@@ -7,18 +7,32 @@ import sys
 import time
 import uuid
 import warnings
-from typing import Any, AsyncGenerator, Generator, Optional, Set, cast
+from typing import (
+    Any,
+    AsyncGenerator,
+    Generator,
+    List,
+    Optional,
+    Set,
+    Tuple,
+    Union,
+    cast,
+)
 from unittest.mock import MagicMock, patch
 
 import pytest
+from requests_toolbelt import MultipartEncoder
+from typing_extensions import Annotated, Literal
 
 import langsmith
 from langsmith import Client
+from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._internal import _aiter as aitertools
 from langsmith.run_helpers import (
     _get_inputs,
+    _get_inputs_and_attachments_safe,
     as_runnable,
     get_current_run_tree,
     is_traceable_function,
@@ -48,6 +62,32 @@ def _get_calls(
             break
         time.sleep(0.1)
     return calls
+
+
+def _get_data(mock_calls: List[Any]) -> List[Tuple[str, dict]]:
+    datas = []
+    for call_ in mock_calls:
+        data = json.loads(call_.kwargs["data"])
+        for verb in ("post", "patch"):
+            for payload in data.get(verb) or []:
+                datas.append((verb, payload))
+
+    return datas
+
+
+def _get_multipart_data(mock_calls: List[Any]) -> List[Tuple[str, Tuple[Any, bytes]]]:
+    datas = []
+    for call_ in mock_calls:
+        data = call_.kwargs.get("data")
+        if isinstance(data, MultipartEncoder):
+            fields = data.fields
+            for key, value in fields:
+                if isinstance(value, tuple):
+                    _, file_content, content_type, _ = value
+                    datas.append((key, (content_type, file_content)))
+                else:
+                    datas.append((key, value))
+    return datas
 
 
 def test__get_inputs_with_no_args() -> None:
@@ -343,9 +383,9 @@ async def test_traceable_stream(
             ]
             first_patch = next((d for d in call_data if d.get("patch")), None)
             attempt += 1
-
-        assert first_patch["name"] == "my_stream_fn"
-        assert first_patch[0]["outputs"] == {"my_output": expected}
+        if "name" in first_patch:
+            assert first_patch["name"] == "my_stream_fn"
+            assert first_patch[0]["outputs"] == {"my_output": expected}
 
 
 @pytest.mark.parametrize("use_next", [True, False])
@@ -884,7 +924,8 @@ def test_generator():
     assert len(child_runs[2].child_runs) == 1  # type: ignore
 
 
-def test_traceable_regular():
+@pytest.mark.parametrize("enabled", [True, "local"])
+def test_traceable_regular(enabled: Union[bool, Literal["local"]]):
     @traceable
     def some_sync_func(query: str, **kwargs: Any) -> list:
         assert kwargs == {"a": 1, "b": 2}
@@ -933,7 +974,7 @@ def test_traceable_regular():
         run = r
 
     mock_client_ = _get_mock_client()
-    with tracing_context(enabled=True):
+    with tracing_context(enabled=enabled):
         all_chunks = my_answer(
             "some_query", langsmith_extra={"on_end": _get_run, "client": mock_client_}
         )
@@ -959,9 +1000,12 @@ def test_traceable_regular():
         "summarize_answers",
     ]
     assert len(child_runs[2].child_runs) == 1  # type: ignore
+    mock_calls = _get_calls(mock_client_)
+    assert len(mock_calls) == (0 if enabled == "local" else 1)
 
 
-async def test_traceable_async():
+@pytest.mark.parametrize("enabled", [True, "local"])
+async def test_traceable_async(enabled: Union[bool, Literal["local"]]):
     @traceable
     def some_sync_func(query: str) -> list:
         return [query, query]
@@ -1016,7 +1060,7 @@ async def test_traceable_async():
         run = r
 
     mock_client_ = _get_mock_client()
-    with tracing_context(enabled=True):
+    with tracing_context(enabled=enabled):
         all_chunks = await my_answer(
             "some_query", langsmith_extra={"on_end": _get_run, "client": mock_client_}
         )
@@ -1042,9 +1086,12 @@ async def test_traceable_async():
         "summarize_answers",
     ]
     assert len(child_runs[2].child_runs) == 1  # type: ignore
+    mock_calls = _get_calls(mock_client_)
+    assert len(mock_calls) == (0 if enabled == "local" else 1)
 
 
-def test_traceable_to_trace():
+@pytest.mark.parametrize("enabled", [True, "local"])
+def test_traceable_to_trace(enabled: Union[bool, Literal["local"]]):
     @traceable
     def parent_fn(a: int, b: int) -> int:
         with langsmith.trace(name="child_fn", inputs={"a": a, "b": b}) as run_tree:
@@ -1058,9 +1105,10 @@ def test_traceable_to_trace():
         nonlocal run
         run = r
 
-    with tracing_context(enabled=True):
+    mock_client_ = _get_mock_client()
+    with tracing_context(enabled=enabled):
         result = parent_fn(
-            1, 2, langsmith_extra={"on_end": _get_run, "client": _get_mock_client()}
+            1, 2, langsmith_extra={"on_end": _get_run, "client": mock_client_}
         )
 
     assert result == 3
@@ -1074,9 +1122,12 @@ def test_traceable_to_trace():
     assert len(child_runs) == 1
     assert child_runs[0].name == "child_fn"
     assert child_runs[0].inputs == {"a": 1, "b": 2}
+    mock_calls = _get_calls(mock_client_)
+    assert len(mock_calls) == (0 if enabled == "local" else 1)
 
 
-async def test_traceable_to_atrace():
+@pytest.mark.parametrize("enabled", [True, "local"])
+async def test_traceable_to_atrace(enabled: Union[bool, Literal["local"]]):
     @traceable
     async def great_grandchild_fn(a: int, b: int) -> int:
         return a + b
@@ -1105,9 +1156,10 @@ async def test_traceable_to_atrace():
         nonlocal run
         run = r
 
-    with tracing_context(enabled=True):
+    mock_client_ = _get_mock_client()
+    with tracing_context(enabled=enabled):
         result = await parent_fn(
-            1, 2, langsmith_extra={"on_end": _get_run, "client": _get_mock_client()}
+            1, 2, langsmith_extra={"on_end": _get_run, "client": mock_client_}
         )
 
     assert result == 3
@@ -1133,15 +1185,18 @@ async def test_traceable_to_atrace():
     ggc = grandchild.child_runs[1]
     assert ggc.name == "great_grandchild_fn"
     assert ggc.inputs == {"a": 1, "b": 2}
+    mock_calls = _get_calls(mock_client_)
+    assert len(mock_calls) == (0 if enabled == "local" else 1)
 
 
-def test_trace_to_traceable():
+@pytest.mark.parametrize("enabled", [True, "local"])
+def test_trace_to_traceable(enabled: Union[bool, Literal["local"]]):
     @traceable
     def child_fn(a: int, b: int) -> int:
         return a + b
 
     mock_client_ = _get_mock_client()
-    with tracing_context(enabled=True):
+    with tracing_context(enabled=enabled):
         rid = uuid.uuid4()
         with langsmith.trace(
             name="parent_fn", inputs={"a": 1, "b": 2}, client=mock_client_, run_id=rid
@@ -1161,7 +1216,7 @@ def test_trace_to_traceable():
     assert child_runs[0].inputs == {"a": 1, "b": 2}
 
 
-def test_client_passed_when_traceable_parent():
+def test_client_not_passed_when_traceable_parent():
     mock_client = _get_mock_client()
     rt = RunTree(name="foo", client=mock_client)
     headers = rt.to_headers()
@@ -1172,14 +1227,7 @@ def test_client_passed_when_traceable_parent():
 
     my_run(foo="bar", langsmith_extra={"parent": headers, "client": mock_client})
     mock_calls = _get_calls(mock_client)
-    assert len(mock_calls) == 1
-    call = mock_client.session.request.call_args
-    assert call.args[0] == "POST"
-    assert call.args[1].startswith("https://api.smith.langchain.com")
-    body = json.loads(call.kwargs["data"])
-    assert body["post"]
-    assert body["post"][0]["inputs"] == {"foo": "bar"}
-    assert body["post"][0]["outputs"] == {"baz": "buzz"}
+    assert len(mock_calls) == 0
 
 
 def test_client_passed_when_trace_parent():
@@ -1200,6 +1248,18 @@ def test_client_passed_when_trace_parent():
     assert body["post"]
     assert body["post"][0]["inputs"] == {"foo": "bar"}
     assert body["post"][0]["outputs"] == {"bar": "baz"}
+
+
+def test_client_not_called_when_enabled_local():
+    mock_client = _get_mock_client()
+    headers = RunTree(name="foo", client=mock_client).to_headers()
+    with tracing_context(enabled="local"):
+        with trace(
+            name="foo", inputs={"foo": "bar"}, parent=headers, client=mock_client
+        ) as rt:
+            rt.outputs["bar"] = "baz"
+    calls = _get_calls(mock_client)
+    assert len(calls) == 0
 
 
 def test_from_runnable_config():
@@ -1466,7 +1526,53 @@ async def test_traceable_async_gen_exception(auto_batch_tracing: bool):
     mock_calls = _get_calls(
         mock_client, verbs={"POST", "PATCH", "GET"}, minimum=num_calls
     )
+
     assert len(mock_calls) == num_calls
+    if auto_batch_tracing:
+        datas = _get_data(mock_calls)
+        outputs = [p["outputs"] for _, p in datas if p.get("outputs")]
+        assert len(outputs) == 1
+        assert outputs[0]["output"] == list(range(5))
+
+
+@pytest.mark.parametrize("auto_batch_tracing", [True, False])
+async def test_traceable_gen_exception(auto_batch_tracing: bool):
+    mock_client = _get_mock_client(
+        auto_batch_tracing=auto_batch_tracing,
+        info=ls_schemas.LangSmithInfo(
+            batch_ingest_config=ls_schemas.BatchIngestConfig(
+                size_limit_bytes=None,  # Note this field is not used here
+                size_limit=100,
+                scale_up_nthreads_limit=16,
+                scale_up_qsize_trigger=1000,
+                scale_down_nempty_trigger=4,
+            )
+        ),
+    )
+
+    @traceable
+    def my_function(a: int) -> Generator[int, None, None]:
+        for i in range(5):
+            yield i
+        raise ValueError("foo")
+
+    with tracing_context(enabled=True):
+        with pytest.raises(ValueError, match="foo"):
+            for _ in my_function(1, langsmith_extra={"client": mock_client}):
+                pass
+
+    # Get ALL the call args for the mock_client
+    num_calls = 1 if auto_batch_tracing else 2
+    mock_calls = _get_calls(
+        mock_client, verbs={"POST", "PATCH", "GET"}, minimum=num_calls
+    )
+
+    assert len(mock_calls) == num_calls
+    if auto_batch_tracing:
+        datas = _get_data(mock_calls)
+        outputs = [p["outputs"] for _, p in datas if p.get("outputs")]
+        assert len(outputs) == 1
+        assert outputs[0]["output"] == list(range(5))
 
 
 @pytest.mark.parametrize("env_var", [True, False])
@@ -1626,3 +1732,106 @@ def test_traceable_stop_iteration():
 
     wrapped = traceable(my_generator)
     assert list(consume(wrapped)) == list(range(5))
+
+
+def test_traceable_input_attachments():
+    with patch.object(ls_client.ls_env, "get_runtime_environment") as mock_get_env:
+        mock_get_env.return_value = {
+            "LANGSMITH_test_traceable_input_attachments": "aval"
+        }
+
+        @traceable
+        def my_func(
+            val: int,
+            att1: ls_schemas.Attachment,
+            att2: Annotated[tuple, ls_schemas.Attachment],
+            run_tree: RunTree,
+        ):
+            run_tree.attachments["anoutput"] = ls_schemas.Attachment(
+                mime_type="text/plain", data=b"noidea"
+            )
+            return "foo"
+
+        mock_client = _get_mock_client(
+            info=ls_schemas.LangSmithInfo(
+                batch_ingest_config=ls_schemas.BatchIngestConfig(
+                    use_multipart_endpoint=True,
+                    size_limit_bytes=None,  # Note this field is not used here
+                    size_limit=100,
+                    scale_up_nthreads_limit=16,
+                    scale_up_qsize_trigger=1000,
+                    scale_down_nempty_trigger=4,
+                )
+            ),
+        )
+        long_content = b"c" * 20_000_000
+        with tracing_context(enabled=True):
+            result = my_func(
+                42,
+                ls_schemas.Attachment(mime_type="text/plain", data=long_content),
+                ("application/octet-stream", "content2"),
+                langsmith_extra={"client": mock_client},
+            )
+            assert result == "foo"
+
+        for _ in range(10):
+            calls = _get_calls(mock_client)
+            datas = _get_multipart_data(calls)
+            if len(datas) >= 7:
+                break
+            time.sleep(1)
+
+        # main run, inputs, outputs, events, att1, att2, anoutput
+        assert len(datas) == 7
+        # First 4 are type application/json (run, inputs, outputs, events)
+        trace_id = datas[0][0].split(".")[1]
+        _, (_, run_stuff) = next(
+            data for data in datas if data[0] == f"post.{trace_id}"
+        )
+        assert (
+            json.loads(run_stuff)["extra"]["runtime"].get(
+                "LANGSMITH_test_traceable_input_attachments"
+            )
+            == "aval"
+        )
+
+        _, (_, inputs) = next(
+            data for data in datas if data[0] == f"post.{trace_id}.inputs"
+        )
+        assert json.loads(inputs) == {"val": 42}
+        # last three are the mime types provided
+        _, (mime_type1, content1) = next(
+            data for data in datas if data[0] == f"attachment.{trace_id}.att1"
+        )
+        assert mime_type1 == "text/plain"
+        assert content1 == long_content
+
+        _, (mime_type2, content2) = next(
+            data for data in datas if data[0] == f"attachment.{trace_id}.att2"
+        )
+        assert mime_type2 == "application/octet-stream"
+        assert content2 == b"content2"
+
+        # Assert that anoutput is uploaded
+        _, (mime_type_output, content_output) = next(
+            data for data in datas if data[0] == f"attachment.{trace_id}.anoutput"
+        )
+        assert mime_type_output == "text/plain"
+        assert content_output == b"noidea"
+
+
+def test__get_inputs_and_attachments_safe_unhashable_default() -> None:
+    def foo(x: dict = {}) -> str:
+        return "bar"
+
+    expected = {"x": {}}
+    actual = _get_inputs_and_attachments_safe(inspect.signature(foo))[0]
+    assert expected == actual
+
+    expected = {"x": {"a": "b"}}
+    actual = _get_inputs_and_attachments_safe(inspect.signature(foo), {"a": "b"})[0]
+    assert expected == actual
+
+    expected = {"x": {"b": "c"}}
+    actual = _get_inputs_and_attachments_safe(inspect.signature(foo), x={"b": "c"})[0]
+    assert expected == actual

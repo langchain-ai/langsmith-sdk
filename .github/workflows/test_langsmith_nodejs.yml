@@ -1,0 +1,35 @@
+name: Run langsmith_nodejs CI
+
+# Our Node.js bindings also depend on the Rust workspace config,
+# and on the `langsmith-tracing-client` crate itself.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "rust/Cargo.toml"
+      - "rust/Cargo.lock"
+      - "rust/crates/langsmith-tracing-client/**"
+      - "rust/crates/langsmith-nodejs/**"
+      - ".github/workflows/test_langsmith_nodejs.yml"
+  pull_request:
+    paths:
+      - "rust/Cargo.toml"
+      - "rust/Cargo.lock"
+      - "rust/crates/langsmith-tracing-client/**"
+      - "rust/crates/langsmith-nodejs/**"
+      - ".github/workflows/test_langsmith_nodejs.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  RUST_VERSION: '1.82'
+  RUST_WORKSPACE_PATH: 'rust'  # The location of the Rust workspace relative to the repo root.
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo 'hello world'

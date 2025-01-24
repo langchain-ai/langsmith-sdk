@@ -1,11 +1,18 @@
+import { v4 as uuidv4 } from "uuid";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
+import nodeFetch from "node-fetch";
+
 import { Client } from "../client.js";
 import { RunTree, convertToDottedOrderFormat } from "../run_trees.js";
-import { v4 as uuidv4 } from "uuid";
 import {
   deleteProject,
   waitUntilProjectFound,
   waitUntilRunFound,
 } from "./utils.js";
+import { traceable } from "../traceable.js";
+import { overrideFetchImplementation } from "../singletons/fetch.js";
 
 test.concurrent(
   "Test persist update run",
@@ -58,7 +65,7 @@ test.concurrent(
     const langchainClient = new Client({
       autoBatchTracing: true,
       callerOptions: { maxRetries: 2 },
-      pendingAutoBatchedRunLimit: 2,
+      batchSizeBytesLimit: 1,
       timeout_ms: 30_000,
     });
     const projectName =
@@ -185,3 +192,125 @@ test.concurrent(
   },
   180_000
 );
+
+test.concurrent(
+  "Test persist run with attachment",
+  async () => {
+    const langchainClient = new Client({
+      autoBatchTracing: true,
+      callerOptions: { maxRetries: 2 },
+      timeout_ms: 30_000,
+    });
+    const projectName = "__test_create_attachment" + uuidv4().substring(0, 4);
+    await deleteProject(langchainClient, projectName);
+
+    const runId = uuidv4();
+    const dottedOrder = convertToDottedOrderFormat(
+      new Date().getTime() / 1000,
+      runId
+    );
+    const pathname = path.join(
+      path.dirname(fileURLToPath(import.meta.url)),
+      "test_data",
+      "parrot-icon.png"
+    );
+    await langchainClient.createRun({
+      id: runId,
+      project_name: projectName,
+      name: "test_run",
+      run_type: "llm",
+      inputs: { text: "hello world" },
+      trace_id: runId,
+      dotted_order: dottedOrder,
+      attachments: {
+        testimage: ["image/png", fs.readFileSync(pathname)],
+      },
+    });
+
+    await langchainClient.updateRun(runId, {
+      outputs: { output: ["Hi"] },
+      dotted_order: dottedOrder,
+      trace_id: runId,
+      end_time: Math.floor(new Date().getTime() / 1000),
+    });
+
+    await Promise.all([
+      waitUntilRunFound(langchainClient, runId, true),
+      waitUntilProjectFound(langchainClient, projectName),
+    ]);
+
+    const storedRun = await langchainClient.readRun(runId);
+    expect(storedRun.id).toEqual(runId);
+    await langchainClient.deleteProject({ projectName });
+  },
+  180_000
+);
+
+test.skip("very large runs", async () => {
+  const langchainClient = new Client({
+    autoBatchTracing: true,
+    timeout_ms: 120_000,
+  });
+
+  const projectName = "__test_large_runs" + uuidv4().substring(0, 4);
+  await deleteProject(langchainClient, projectName);
+
+  console.time("largeRunTimer");
+
+  const promises = [];
+  for (let i = 0; i < 10; i++) {
+    promises.push(
+      traceable(
+        async () => {
+          return "x".repeat(9000000);
+        },
+        {
+          project_name: projectName,
+          client: langchainClient,
+          tracingEnabled: true,
+        }
+      )()
+    );
+  }
+
+  await Promise.all(promises);
+
+  console.timeLog("largeRunTimer");
+
+  await langchainClient.awaitPendingTraceBatches();
+
+  console.timeLog("largeRunTimer");
+
+  await Promise.all([waitUntilProjectFound(langchainClient, projectName)]);
+
+  await langchainClient.deleteProject({ projectName });
+}, 180_000);
+
+test("multipart should work with overridden node-fetch", async () => {
+  overrideFetchImplementation(nodeFetch);
+
+  const langchainClient = new Client({
+    autoBatchTracing: true,
+    timeout_ms: 120_000,
+  });
+
+  const projectName = "__test_node_fetch" + uuidv4().substring(0, 4);
+  await deleteProject(langchainClient, projectName);
+
+  await traceable(
+    async () => {
+      return "testing with node fetch";
+    },
+    {
+      project_name: projectName,
+      client: langchainClient,
+      tracingEnabled: true,
+    }
+  )();
+
+  await langchainClient.awaitPendingTraceBatches();
+
+  await Promise.all([waitUntilProjectFound(langchainClient, projectName)]);
+
+  await langchainClient.deleteProject({ projectName });
+});

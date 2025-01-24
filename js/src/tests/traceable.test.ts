@@ -1,7 +1,12 @@
+import { jest } from "@jest/globals";
 import { RunTree, RunTreeConfig } from "../run_trees.js";
+import { _LC_CONTEXT_VARIABLES_KEY } from "../singletons/constants.js";
 import { ROOT, traceable, withRunTree } from "../traceable.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 import { mockClient } from "./utils/mock_client.js";
+import { Client, overrideFetchImplementation } from "../index.js";
+import { AsyncLocalStorageProviderSingleton } from "../singletons/traceable.js";
+import { KVMap } from "../schemas.js";
 
 test("basic traceable implementation", async () => {
   const { client, callSpy } = mockClient();
@@ -24,6 +29,38 @@ test("basic traceable implementation", async () => {
     nodes: ["llm:0"],
     edges: [],
   });
+});
+
+test("404s should only log, not throw an error", async () => {
+  const overriddenFetch = jest.fn(() =>
+    Promise.resolve({
+      ok: false,
+      status: 404,
+      statusText: "Expected test error",
+      json: () => Promise.resolve({}),
+      text: () => Promise.resolve("Expected test error."),
+    })
+  );
+  overrideFetchImplementation(overriddenFetch);
+  const client = new Client({
+    apiUrl: "https://foobar.notreal",
+    autoBatchTracing: false,
+  });
+  const llm = traceable(
+    async function* llm(input: string) {
+      const response = input.repeat(2).split("");
+      for (const char of response) {
+        yield char;
+      }
+    },
+    { client, tracingEnabled: true }
+  );
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  for await (const _ of llm("Hello world")) {
+    // pass
+  }
+  expect(overriddenFetch).toHaveBeenCalled();
 });
 
 test("nested traceable implementation", async () => {
@@ -68,6 +105,80 @@ test("nested traceable implementation", async () => {
       ["chain:0", "str:2"],
     ],
   });
+});
+
+test("nested traceable passes through LangChain context vars", (done) => {
+  const alsInstance = AsyncLocalStorageProviderSingleton.getInstance();
+
+  alsInstance.run(
+    {
+      [_LC_CONTEXT_VARIABLES_KEY]: { foo: "bar" },
+    } as any,
+    // eslint-disable-next-line @typescript-eslint/no-misused-promises
+    async () => {
+      try {
+        expect(
+          (alsInstance.getStore() as any)?.[_LC_CONTEXT_VARIABLES_KEY]?.foo
+        ).toEqual("bar");
+        const { client, callSpy } = mockClient();
+
+        const llm = traceable(async function llm(input: string) {
+          expect(
+            (alsInstance.getStore() as any)?.[_LC_CONTEXT_VARIABLES_KEY]?.foo
+          ).toEqual("bar");
+          return input.repeat(2);
+        });
+
+        const str = traceable(async function* str(input: string) {
+          const response = input.split("").reverse();
+          for (const char of response) {
+            yield char;
+          }
+          expect(
+            (alsInstance.getStore() as any)?.[_LC_CONTEXT_VARIABLES_KEY]?.foo
+          ).toEqual("bar");
+        });
+
+        const chain = traceable(
+          async function chain(input: string) {
+            expect(
+              (alsInstance.getStore() as any)?.[_LC_CONTEXT_VARIABLES_KEY]?.foo
+            ).toEqual("bar");
+            const question = await llm(input);
+
+            let answer = "";
+            for await (const char of str(question)) {
+              answer += char;
+            }
+
+            return { question, answer };
+          },
+          { client, tracingEnabled: true }
+        );
+
+        const result = await chain("Hello world");
+
+        expect(result).toEqual({
+          question: "Hello worldHello world",
+          answer: "dlrow olleHdlrow olleH",
+        });
+
+        expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+          nodes: ["chain:0", "llm:1", "str:2"],
+          edges: [
+            ["chain:0", "llm:1"],
+            ["chain:0", "str:2"],
+          ],
+        });
+        expect(
+          (alsInstance.getStore() as any)?.[_LC_CONTEXT_VARIABLES_KEY]?.foo
+        ).toEqual("bar");
+        done();
+      } catch (e) {
+        done(e);
+      }
+    }
+  );
 });
 
 test("trace circular input and output objects", async () => {
@@ -556,7 +667,7 @@ describe("async generators", () => {
     );
 
     const numbers: number[] = [];
-    for await (const num of await stream()) {
+    for await (const num of (await stream()) as unknown as AsyncGenerator<number>) {
       numbers.push(num);
     }
 
@@ -686,7 +797,7 @@ describe("deferred input", () => {
     const { client, callSpy } = mockClient();
     const parrotStream = traceable(
       async function* parrotStream(input: ReadableStream<string>) {
-        for await (const token of input) {
+        for await (const token of input as unknown as AsyncGenerator<string>) {
           yield token;
         }
       },
@@ -994,6 +1105,365 @@ test("argsConfigPath", async () => {
           args: [1, { suffix: "hello" }],
         },
         outputs: { outputs: "1hello" },
+      },
+    },
+  });
+});
+
+test("traceable continues execution when client throws error", async () => {
+  const errorClient = {
+    createRun: jest
+      .fn()
+      .mockRejectedValue(new Error("Expected test client error") as never),
+    updateRun: jest
+      .fn()
+      .mockRejectedValue(new Error("Expected test client error") as never),
+  };
+
+  const tracedFunction = traceable(
+    async (value: number): Promise<number> => value * 2,
+    {
+      client: errorClient as unknown as Client,
+      name: "errorTest",
+      tracingEnabled: true,
+    }
+  );
+
+  const result = await tracedFunction(5);
+
+  expect(result).toBe(10);
+  expect(errorClient.createRun).toHaveBeenCalled();
+  expect(errorClient.updateRun).toHaveBeenCalled();
+});
+
+test("traceable with processInputs", async () => {
+  const { client, callSpy } = mockClient();
+
+  const processInputs = jest.fn((inputs: Readonly<KVMap>) => {
+    return { ...inputs, password: "****" };
+  });
+
+  const func = traceable(
+    async function func(input: { username: string; password: string }) {
+      // The function should receive the original inputs
+      expect(input.password).toBe("secret");
+      return `Welcome, ${input.username}`;
+    },
+    {
+      client,
+      tracingEnabled: true,
+      processInputs,
+    }
+  );
+
+  await func({ username: "user1", password: "secret" });
+
+  expect(processInputs).toHaveBeenCalledWith({
+    username: "user1",
+    password: "secret",
+  });
+  // Verify that the logged inputs have the password masked
+  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+    nodes: ["func:0"],
+    edges: [],
+    data: {
+      "func:0": {
+        inputs: {
+          username: "user1",
+          password: "****",
+        },
+        outputs: { outputs: "Welcome, user1" },
+      },
+    },
+  });
+});
+
+test("traceable with processOutputs", async () => {
+  const { client, callSpy } = mockClient();
+
+  const processOutputs = jest.fn((_outputs: Readonly<KVMap>) => {
+    return { outputs: "Modified Output" };
+  });
+
+  const func = traceable(
+    async function func(input: string) {
+      return `Original Output for ${input}`;
+    },
+    {
+      client,
+      tracingEnabled: true,
+      processOutputs,
+    }
+  );
+
+  const result = await func("test");
+
+  expect(processOutputs).toHaveBeenCalledWith({
+    outputs: "Original Output for test",
+  });
+  expect(result).toBe("Original Output for test");
+  // Verify that the tracing data shows the modified output
+  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+    nodes: ["func:0"],
+    edges: [],
+    data: {
+      "func:0": {
+        inputs: { input: "test" },
+        outputs: { outputs: "Modified Output" },
+      },
+    },
+  });
+});
+
+test("traceable with processInputs throwing error does not affect invocation", async () => {
+  const { client, callSpy } = mockClient();
+
+  const processInputs = jest.fn((_inputs: Readonly<KVMap>) => {
+    throw new Error("totally expected test processInputs error");
+  });
+
+  const func = traceable(
+    async function func(input: { username: string }) {
+      // This should not be called
+      return `Hello, ${input.username}`;
+    },
+    {
+      client,
+      tracingEnabled: true,
+      processInputs,
+    }
+  );
+
+  const result = await func({ username: "user1" });
+
+  expect(processInputs).toHaveBeenCalledWith({ username: "user1" });
+  expect(result).toBe("Hello, user1");
+
+  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+    nodes: ["func:0"],
+    edges: [],
+    data: {
+      "func:0": {
+        inputs: { username: "user1" },
+        outputs: { outputs: "Hello, user1" },
+      },
+    },
+  });
+});
+
+test("traceable with processOutputs throwing error does not affect invocation", async () => {
+  const { client, callSpy } = mockClient();
+
+  const processOutputs = jest.fn((_outputs: Readonly<KVMap>) => {
+    throw new Error("totally expected test processInputs error");
+  });
+
+  const func = traceable(
+    async function func(input: string) {
+      return `Original Output for ${input}`;
+    },
+    {
+      client,
+      tracingEnabled: true,
+      processOutputs,
+    }
+  );
+
+  const result = await func("test");
+
+  expect(processOutputs).toHaveBeenCalledWith({
+    outputs: "Original Output for test",
+  });
+  expect(result).toBe("Original Output for test");
+
+  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+    nodes: ["func:0"],
+    edges: [],
+    data: {
+      "func:0": {
+        inputs: { input: "test" },
+        outputs: { outputs: "Original Output for test" },
+      },
+    },
+  });
+});
+
+test("traceable async generator with processOutputs", async () => {
+  const { client, callSpy } = mockClient();
+
+  const processOutputs = jest.fn((outputs: Readonly<KVMap>) => {
+    return { outputs: outputs.outputs.map((output: number) => output * 2) };
+  });
+
+  const func = traceable(
+    async function* func() {
+      for (let i = 1; i <= 3; i++) {
+        yield i;
+      }
+    },
+    {
+      client,
+      tracingEnabled: true,
+      processOutputs,
+    }
+  );
+
+  const results: number[] = [];
+  for await (const value of func()) {
+    results.push(value);
+  }
+
+  expect(results).toEqual([1, 2, 3]); // Original values
+  expect(processOutputs).toHaveBeenCalledWith({ outputs: [1, 2, 3] });
+
+  // Tracing data should reflect the processed outputs
+  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+    nodes: ["func:0"],
+    edges: [],
+    data: {
+      "func:0": {
+        outputs: { outputs: [2, 4, 6] }, // Processed outputs
+      },
+    },
+  });
+});
+
+test("traceable function returning object with async iterable and processOutputs", async () => {
+  const { client, callSpy } = mockClient();
+
+  const processOutputs = jest.fn((outputs: Readonly<KVMap>) => {
+    return { outputs: outputs.outputs.map((output: number) => output * 2) };
+  });
+
+  const func = traceable(
+    async function func() {
+      return {
+        data: "some data",
+        stream: (async function* () {
+          for (let i = 1; i <= 3; i++) {
+            yield i;
+          }
+        })(),
+      };
+    },
+    {
+      client,
+      tracingEnabled: true,
+      processOutputs,
+      __finalTracedIteratorKey: "stream",
+    }
+  );
+
+  const result = await func();
+  expect(result.data).toBe("some data");
+
+  const results: number[] = [];
+  for await (const value of result.stream) {
+    results.push(value);
+  }
+
+  expect(results).toEqual([1, 2, 3]);
+  expect(processOutputs).toHaveBeenCalledWith({ outputs: [1, 2, 3] });
+
+  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+    nodes: ["func:0"],
+    edges: [],
+    data: {
+      "func:0": {
+        outputs: { outputs: [2, 4, 6] },
+      },
+    },
+  });
+});
+
+test("traceable generator function with processOutputs", async () => {
+  const { client, callSpy } = mockClient();
+
+  const processOutputs = jest.fn((outputs: Readonly<KVMap>) => {
+    return { outputs: outputs.outputs.map((output: number) => output * 2) };
+  });
+
+  function* func() {
+    for (let i = 1; i <= 3; i++) {
+      yield i;
+    }
+  }
+
+  const tracedFunc = traceable(func, {
+    client,
+    tracingEnabled: true,
+    processOutputs,
+  });
+
+  const results: number[] = [];
+  for (const value of await tracedFunc()) {
+    results.push(value);
+  }
+
+  expect(results).toEqual([1, 2, 3]);
+  expect(processOutputs).toHaveBeenCalledWith({ outputs: [1, 2, 3] });
+
+  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+    nodes: ["func:0"],
+    edges: [],
+    data: {
+      "func:0": {
+        outputs: { outputs: [2, 4, 6] },
+      },
+    },
+  });
+});
+
+test("traceable with complex outputs", async () => {
+  const { client, callSpy } = mockClient();
+
+  const processOutputs = jest.fn((outputs: Readonly<KVMap>) => {
+    return { data: "****", output: outputs.output, nested: outputs.nested };
+  });
+
+  const func = traceable(
+    async function func(input: string) {
+      return {
+        data: "some sensitive data",
+        output: `Original Output for ${input}`,
+        nested: {
+          key: "value",
+          nestedOutput: `Nested Output for ${input}`,
+        },
+      };
+    },
+    {
+      client,
+      tracingEnabled: true,
+      processOutputs,
+    }
+  );
+
+  const result = await func("test");
+
+  expect(result).toEqual({
+    data: "some sensitive data",
+    output: "Original Output for test",
+    nested: {
+      key: "value",
+      nestedOutput: "Nested Output for test",
+    },
+  });
+
+  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+    nodes: ["func:0"],
+    edges: [],
+    data: {
+      "func:0": {
+        inputs: { input: "test" },
+        outputs: {
+          data: "****",
+          output: "Original Output for test",
+          nested: {
+            key: "value",
+            nestedOutput: "Nested Output for test",
+          },
+        },
       },
     },
   });

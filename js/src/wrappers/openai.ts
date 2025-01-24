@@ -2,9 +2,18 @@ import { OpenAI } from "openai";
 import type { APIPromise } from "openai/core";
 import type { RunTreeConfig } from "../index.js";
 import { isTraceableFunction, traceable } from "../traceable.js";
+import { KVMap } from "../schemas.js";
 
 // Extra leniency around types in case multiple OpenAI SDK versions get installed
 type OpenAIType = {
+  beta?: {
+    chat?: {
+      completions?: {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        parse?: (...args: any[]) => any;
+      };
+    };
+  };
   chat: {
     completions: {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -179,6 +188,44 @@ const textAggregator = (
   return aggregatedOutput;
 };
 
+function processChatCompletion(outputs: Readonly<KVMap>): KVMap {
+  const chatCompletion = outputs as OpenAI.ChatCompletion;
+  // copy the original object, minus usage
+  const result = { ...chatCompletion } as KVMap;
+  const usage = chatCompletion.usage;
+  if (usage) {
+    const inputTokenDetails = {
+      ...(usage.prompt_tokens_details?.audio_tokens !== null && {
+        audio: usage.prompt_tokens_details?.audio_tokens,
+      }),
+      ...(usage.prompt_tokens_details?.cached_tokens !== null && {
+        cache_read: usage.prompt_tokens_details?.cached_tokens,
+      }),
+    };
+    const outputTokenDetails = {
+      ...(usage.completion_tokens_details?.audio_tokens !== null && {
+        audio: usage.completion_tokens_details?.audio_tokens,
+      }),
+      ...(usage.completion_tokens_details?.reasoning_tokens !== null && {
+        reasoning: usage.completion_tokens_details?.reasoning_tokens,
+      }),
+    };
+    result.usage_metadata = {
+      input_tokens: usage.prompt_tokens ?? 0,
+      output_tokens: usage.completion_tokens ?? 0,
+      total_tokens: usage.total_tokens ?? 0,
+      ...(Object.keys(inputTokenDetails).length > 0 && {
+        input_token_details: inputTokenDetails,
+      }),
+      ...(Object.keys(outputTokenDetails).length > 0 && {
+        output_token_details: outputTokenDetails,
+      }),
+    };
+  }
+  delete result.usage;
+  return result;
+}
+
 /**
  * Wraps an OpenAI client's completion methods, enabling automatic LangSmith
  * tracing. Method signatures are unchanged, with the exception that you can pass
@@ -187,6 +234,11 @@ const textAggregator = (
  * @param options LangSmith options.
  * @example
  * ```ts
+ * import { OpenAI } from "openai";
+ * import { wrapOpenAI } from "langsmith/wrappers/openai";
+ *
+ * const patchedClient = wrapOpenAI(new OpenAI());
+ *
  * const patchedStream = await patchedClient.chat.completions.create(
  *   {
  *     messages: [{ role: "user", content: `Say 'foo'` }],
@@ -216,38 +268,99 @@ export const wrapOpenAI = <T extends OpenAIType>(
     );
   }
 
-  openai.chat.completions.create = traceable(
-    openai.chat.completions.create.bind(openai.chat.completions),
-    {
-      name: "ChatOpenAI",
-      run_type: "llm",
-      aggregator: chatAggregator,
-      argsConfigPath: [1, "langsmithExtra"],
-      getInvocationParams: (payload: unknown) => {
-        if (typeof payload !== "object" || payload == null) return undefined;
-        // we can safely do so, as the types are not exported in TSC
-        const params = payload as OpenAI.ChatCompletionCreateParams;
+  // Some internal OpenAI methods call each other, so we need to preserve original
+  // OpenAI methods.
+  const tracedOpenAIClient = { ...openai };
 
-        const ls_stop =
-          (typeof params.stop === "string" ? [params.stop] : params.stop) ??
-          undefined;
+  if (
+    openai.beta &&
+    openai.beta.chat &&
+    openai.beta.chat.completions &&
+    typeof openai.beta.chat.completions.parse === "function"
+  ) {
+    tracedOpenAIClient.beta = {
+      ...openai.beta,
+      chat: {
+        ...openai.beta.chat,
+        completions: {
+          ...openai.beta.chat.completions,
+          parse: traceable(
+            openai.beta.chat.completions.parse.bind(
+              openai.beta.chat.completions
+            ),
+            {
+              name: "ChatOpenAI",
+              run_type: "llm",
+              aggregator: chatAggregator,
+              argsConfigPath: [1, "langsmithExtra"],
+              getInvocationParams: (payload: unknown) => {
+                if (typeof payload !== "object" || payload == null)
+                  return undefined;
+                // we can safely do so, as the types are not exported in TSC
+                const params = payload as OpenAI.ChatCompletionCreateParams;
 
-        return {
-          ls_provider: "openai",
-          ls_model_type: "chat",
-          ls_model_name: params.model,
-          ls_max_tokens: params.max_tokens ?? undefined,
-          ls_temperature: params.temperature ?? undefined,
-          ls_stop,
-        };
+                const ls_stop =
+                  (typeof params.stop === "string"
+                    ? [params.stop]
+                    : params.stop) ?? undefined;
+
+                return {
+                  ls_provider: "openai",
+                  ls_model_type: "chat",
+                  ls_model_name: params.model,
+                  ls_max_tokens: params.max_tokens ?? undefined,
+                  ls_temperature: params.temperature ?? undefined,
+                  ls_stop,
+                };
+              },
+              ...options,
+            }
+          ),
+        },
       },
-      ...options,
-    }
-  );
+    };
+  }
 
-  openai.completions.create = traceable(
-    openai.completions.create.bind(openai.completions),
-    {
+  tracedOpenAIClient.chat = {
+    ...openai.chat,
+    completions: {
+      ...openai.chat.completions,
+      create: traceable(
+        openai.chat.completions.create.bind(openai.chat.completions),
+        {
+          name: "ChatOpenAI",
+          run_type: "llm",
+          aggregator: chatAggregator,
+          argsConfigPath: [1, "langsmithExtra"],
+          getInvocationParams: (payload: unknown) => {
+            if (typeof payload !== "object" || payload == null)
+              return undefined;
+            // we can safely do so, as the types are not exported in TSC
+            const params = payload as OpenAI.ChatCompletionCreateParams;
+
+            const ls_stop =
+              (typeof params.stop === "string" ? [params.stop] : params.stop) ??
+              undefined;
+
+            return {
+              ls_provider: "openai",
+              ls_model_type: "chat",
+              ls_model_name: params.model,
+              ls_max_tokens: params.max_tokens ?? undefined,
+              ls_temperature: params.temperature ?? undefined,
+              ls_stop,
+            };
+          },
+          processOutputs: processChatCompletion,
+          ...options,
+        }
+      ),
+    },
+  };
+
+  tracedOpenAIClient.completions = {
+    ...openai.completions,
+    create: traceable(openai.completions.create.bind(openai.completions), {
       name: "OpenAI",
       run_type: "llm",
       aggregator: textAggregator,
@@ -271,8 +384,8 @@ export const wrapOpenAI = <T extends OpenAIType>(
         };
       },
       ...options,
-    }
-  );
+    }),
+  };
 
-  return openai as PatchedOpenAIClient<T>;
+  return tracedOpenAIClient as PatchedOpenAIClient<T>;
 };

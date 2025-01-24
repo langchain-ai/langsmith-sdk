@@ -2,6 +2,7 @@ import { execSync } from 'child_process';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import path from 'path';
+import semver from 'semver';
 
 // Convert the URL to a file path
 const __filename = fileURLToPath(import.meta.url);
@@ -15,7 +16,7 @@ const { name: packageName } = packageJson;
 
 try {
     const npmVersion = execSync(`npm view ${packageName} version`, { encoding: 'utf-8' }).trim();
-    if (npmVersion && version <= npmVersion) {
+    if (npmVersion && semver.lte(version, npmVersion)) {
         console.error(`Current version ${version} is not greater than npm version ${npmVersion}.`);
         process.exit(1); // Exit with error
     } else {

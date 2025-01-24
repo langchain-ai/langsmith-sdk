@@ -7,6 +7,12 @@ on:
     paths:
       - "python/pyproject.toml"
   workflow_dispatch:
+    inputs:
+      dangerous-non-main-release:
+        required: false
+        type: boolean
+        default: false
+        description: "Release from a non-main branch (danger!)"
 
 env:
   POETRY_VERSION: "1.4.2"
@@ -14,7 +20,7 @@ env:
 jobs:
   if_release:
     # Disallow publishing from branches that aren't `main`.
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || inputs.dangerous-non-main-release
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -45,7 +51,7 @@ jobs:
           draft: false
           generateReleaseNotes: true
           tag: v${{ steps.check-version.outputs.version }}
-          commit: main
+          commit: ${{ github.sha }}
       - name: Publish package distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:

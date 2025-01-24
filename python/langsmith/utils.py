@@ -24,6 +24,7 @@ from typing import (
     Iterable,
     Iterator,
     List,
+    Literal,
     Mapping,
     Optional,
     Sequence,
@@ -37,7 +38,7 @@ from urllib import parse as urllib_parse
 import httpx
 import requests
 from typing_extensions import ParamSpec
-from urllib3.util import Retry
+from urllib3.util import Retry  # type: ignore[import-untyped]
 
 from langsmith import schemas as ls_schemas
 
@@ -50,6 +51,10 @@ class LangSmithError(Exception):
 
 class LangSmithAPIError(LangSmithError):
     """Internal server error while communicating with LangSmith."""
+
+
+class LangSmithRequestTimeout(LangSmithError):
+    """Client took too long to send request body."""
 
 
 class LangSmithUserError(LangSmithError):
@@ -87,7 +92,7 @@ class LangSmithMissingAPIKeyWarning(LangSmithWarning):
     """Warning for missing API key."""
 
 
-def tracing_is_enabled(ctx: Optional[dict] = None) -> bool:
+def tracing_is_enabled(ctx: Optional[dict] = None) -> Union[bool, Literal["local"]]:
     """Return True if tracing is enabled."""
     from langsmith.run_helpers import get_current_run_tree, get_tracing_context
 
@@ -145,9 +150,6 @@ def raise_for_status_with_text(
         response.raise_for_status()
     except requests.HTTPError as e:
         raise requests.HTTPError(str(e), response.text) from e  # type: ignore[call-arg]
-
-    except httpx.HTTPError as e:
-        raise httpx.HTTPError(str(e), response.text) from e  # type: ignore[call-arg]
 
 
 def get_enum_value(enu: Union[enum.Enum, str]) -> str:
@@ -491,6 +493,10 @@ def with_cache(
             "vcrpy is required to use caching. Install with:"
             'pip install -U "langsmith[vcr]"'
         )
+    # Fix concurrency issue in vcrpy's patching
+    from langsmith._internal import _patch as patch_urllib3
+
+    patch_urllib3.patch_urllib3()
 
     def _filter_request_headers(request: Any) -> Any:
         if ignore_hosts and any(request.url.startswith(host) for host in ignore_hosts):
@@ -789,3 +795,15 @@ def _get_function_name(fn: Callable, depth: int = 0) -> str:
         return _get_function_name(fn.__call__, depth + 1)
 
     return str(fn)
+
+
+def is_truish(val: Any) -> bool:
+    """Check if the value is truish.
+
+    Args:
+        val (Any): The value to check.
+
+    Returns:
+        bool: True if the value is truish, False otherwise.
+    """
+    return val is True or val == "true" or val == "True" or val == "TRUE" or val == "1"

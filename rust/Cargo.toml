@@ -1,0 +1,32 @@
+[workspace]
+members = [
+    "crates/langsmith-pyo3",
+    "crates/langsmith-tracing-client",
+]
+resolver = "2"
+
+[workspace.lints]
+
+[workspace.dependencies]
+chrono = "0.4.38"
+crossbeam-channel = "0.5.14"
+fastrand = "2.3.0"
+flate2 = "1.0.34"
+futures = "0.3.31"
+http = "1.2.0"
+rayon = "1.10.0"
+serde = { version = "1.0.210", features = ["derive"] }
+serde_json = "1.0.128"
+tempfile = "3.13.0"
+thiserror = "2.0"
+tokio = { version = "1", features = ["full"] }
+tokio-util = "0.7.12"
+ureq = "2.10.1"
+uuid = { version = "1.11.0", features = ["v4"] }
+zstd = { version = "0.13.2", features = ["zstdmt"] }
+
+# Use rustls instead of OpenSSL, because OpenSSL is a nightmare when compiling across platforms.
+# OpenSSL is a default feature, so we have to disable all default features, then re-add
+# everything except `default-tls` which pulls in OpenSSL:
+# https://github.com/seanmonstar/reqwest/blob/e2d4b14c695acaebe531af7ce4712e182278f38a/Cargo.toml#L30
+reqwest = { version = "0.12.8", default-features = false, features = ["rustls-tls", "charset", "http2", "macos-system-configuration", "multipart", "stream", "blocking"] }

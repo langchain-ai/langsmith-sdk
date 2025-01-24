@@ -1,5 +1,7 @@
 """Script for auto-generating api_reference.rst."""
 
+from __future__ import annotations
+
 import importlib
 import inspect
 import logging
@@ -82,6 +84,10 @@ _INCLUDED_UTILS = {
 }
 
 
+def _document_func_or_class(name: str) -> bool:
+    return (not name.startswith("_")) or name in ("_Expect")
+
+
 def _load_module_members(module_path: str, namespace: str) -> ModuleMembers:
     classes_: List[ClassInfo] = []
     functions: List[FunctionInfo] = []
@@ -108,24 +114,12 @@ def _load_module_members(module_path: str, namespace: str) -> ModuleMembers:
                     else "Pydantic" if issubclass(type_, BaseModel) else "Regular"
                 )
             )
-            if hasattr(type_, "__slots__"):
-                for func_name, func_type in inspect.getmembers(type_):
-                    if inspect.isfunction(func_type):
-                        functions.append(
-                            FunctionInfo(
-                                name=func_name,
-                                qualified_name=f"{namespace}.{name}.{func_name}",
-                                is_public=not func_name.startswith("_"),
-                                is_deprecated=".. deprecated::"
-                                in (func_type.__doc__ or ""),
-                            )
-                        )
             classes_.append(
                 ClassInfo(
                     name=name,
                     qualified_name=f"{namespace}.{name}",
                     kind=kind,
-                    is_public=not name.startswith("_"),
+                    is_public=_document_func_or_class(name),
                     is_deprecated=".. deprecated::" in (type_.__doc__ or ""),
                 )
             )
@@ -134,7 +128,7 @@ def _load_module_members(module_path: str, namespace: str) -> ModuleMembers:
                 FunctionInfo(
                     name=name,
                     qualified_name=f"{namespace}.{name}",
-                    is_public=not name.startswith("_"),
+                    is_public=_document_func_or_class(name),
                     is_deprecated=".. deprecated::" in (type_.__doc__ or ""),
                 )
             )
@@ -156,7 +150,9 @@ def _load_package_modules(
             if file_path.name not in {
                 "_runner.py",
                 "_arunner.py",
-                "_testing.py",
+                "_internal.py",
+                "_expect.py",
+                "_openai.py",
                 "_expect.py",
             }:
                 continue
@@ -198,6 +194,9 @@ module_order = [
     "schemas",
     "utils",
     "anonymizer",
+    "wrappers",
+    "testing",
+    "_expect",
 ]
 
 
@@ -355,7 +354,7 @@ def _construct_doc(
 
 """
         docs.append((f"{module}.rst", module_doc))
-    docs.append(("index.rst", index_doc))
+    # docs.append(("index.rst", index_doc))
     return docs
 
 
@@ -369,6 +368,55 @@ def _get_package_version(package_dir: Path) -> str:
         sys.exit(1)
 
 
+def _build_index(package_version: str) -> None:
+    doc = f"""# LangSmith Python SDK
+**Version: `{package_version}`**
+
+Welcome to the API reference for the LangSmith Python SDK. 
+
+For user guides see [https://docs.smith.langchain.com](https://docs.smith.langchain.com).
+
+Here are quick links to some of the key classes and functions:
+
+| Class/function | Description |
+| :- | :- | 
+| [Client](client/langsmith.client.Client) |  Synchronous client for interacting with the LangSmith API. |
+| [AsyncClient](async_client/langsmith.async_client.AsyncClient) | Asynchronous client for interacting with the LangSmith API. |
+| [traceable](run_helpers/langsmith.run_helpers.traceable) | Wrapper/decorator for tracing any function. |
+| [wrap_openai](wrappers/langsmith.wrappers._openai.wrap_openai) | Wrapper for OpenAI client, adds LangSmith tracing to all OpenAI calls. |
+| [@pytest.mark.langsmith](/testing/langsmith.testing._internal.test) | LangSmith pytest integration. |
+
+```{{toctree}}
+:maxdepth: 2
+:hidden:
+
+  client<client>
+  async_client<async_client>
+  run_helpers<run_helpers>
+  wrappers<wrappers>
+  testing<testing>
+  _expect<_expect>
+``` 
+
+"""
+
+    with open(HERE / "reference.md", "w") as f:
+        f.write(doc)
+
+    dummy_index = """\
+# API reference
+
+```{toctree}
+:maxdepth: 3
+:hidden:
+
+Reference<reference>
+```
+"""
+    with open(HERE / "index.md", "w") as f:
+        f.write(dummy_index)
+
+
 def main() -> None:
     print("Starting to build API reference files.")
     package_members = _load_package_modules(PACKAGE_DIR)
@@ -377,6 +425,7 @@ def main() -> None:
     for name, rst in rsts:
         with open(HERE / name, "w") as f:
             f.write(rst)
+    _build_index(package_version)
     print("API reference files built.")
 
 

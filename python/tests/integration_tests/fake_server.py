@@ -1,9 +1,11 @@
 from fastapi import FastAPI, Request
 
 from langsmith import traceable
+from langsmith.middleware import TracingMiddleware
 from langsmith.run_helpers import get_current_run_tree, trace, tracing_context
 
 fake_app = FastAPI()
+fake_app.add_middleware(TracingMiddleware)
 
 
 @traceable
@@ -47,13 +49,11 @@ async def fake_route(request: Request):
     with trace(
         "Trace",
         project_name="Definitely-not-your-grandpas-project",
-        parent=request.headers,
     ):
         fake_function()
     fake_function_two(
         "foo",
         langsmith_extra={
-            "parent": request.headers,
             "project_name": "Definitely-not-your-grandpas-project",
         },
     )

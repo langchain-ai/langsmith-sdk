@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import threading
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from enum import Enum
@@ -10,19 +9,21 @@ from typing import (
     Any,
     Dict,
     List,
+    NamedTuple,
     Optional,
     Protocol,
+    Tuple,
     Union,
     runtime_checkable,
 )
 from uuid import UUID
 
-from typing_extensions import TypedDict
+from typing_extensions import NotRequired, TypedDict
 
 try:
-    from pydantic.v1 import (  # type: ignore[import]
+    from pydantic.v1 import (
         BaseModel,
-        Field,
+        Field,  # type: ignore[import]
         PrivateAttr,
         StrictBool,
         StrictFloat,
@@ -38,10 +39,52 @@ except ImportError:
         StrictInt,
     )
 
+from pathlib import Path
+
 from typing_extensions import Literal
 
 SCORE_TYPE = Union[StrictBool, StrictInt, StrictFloat, None]
 VALUE_TYPE = Union[Dict, str, None]
+
+
+class Attachment(NamedTuple):
+    """Annotated type that will be stored as an attachment if used.
+
+    Examples:
+        --------
+        .. code-block:: python
+
+        @traceable
+        def my_function(bar: int, my_val: Attachment):
+            # my_val will be stored as an attachment
+            # bar will be stored as inputs
+            return bar
+    """
+
+    mime_type: str
+    data: Union[bytes, Path]
+
+
+Attachments = Dict[str, Union[Tuple[str, bytes], Attachment, Tuple[str, Path]]]
+"""Attachments associated with the run. 
+Each entry is a tuple of (mime_type, bytes), or (mime_type, file_path)"""
+
+
+@runtime_checkable
+class BinaryIOLike(Protocol):
+    """Protocol for binary IO-like objects."""
+
+    def read(self, size: int = -1) -> bytes:
+        """Read function."""
+        ...
+
+    def seek(self, offset: int, whence: int = 0) -> int:
+        """Seek function."""
+        ...
+
+    def getvalue(self) -> bytes:
+        """Get value function."""
+        ...
 
 
 class ExampleBase(BaseModel):
@@ -56,6 +99,7 @@ class ExampleBase(BaseModel):
         """Configuration class for the schema."""
 
         frozen = True
+        arbitrary_types_allowed = True
 
 
 class ExampleCreate(ExampleBase):
@@ -64,6 +108,32 @@ class ExampleCreate(ExampleBase):
     id: Optional[UUID]
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     split: Optional[Union[str, List[str]]] = None
+
+
+class ExampleUploadWithAttachments(BaseModel):
+    """Example upload with attachments."""
+
+    id: Optional[UUID]
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    inputs: Dict[str, Any] = Field(default_factory=dict)
+    outputs: Optional[Dict[str, Any]] = Field(default=None)
+    metadata: Optional[Dict[str, Any]] = Field(default=None)
+    split: Optional[Union[str, List[str]]] = None
+    attachments: Optional[Attachments] = None
+
+
+class ExampleUpsertWithAttachments(ExampleUploadWithAttachments):
+    """Example create with attachments."""
+
+    dataset_id: UUID
+
+
+class AttachmentInfo(TypedDict):
+    """Info for an attachment."""
+
+    presigned_url: str
+    reader: BinaryIOLike
+    mime_type: Optional[str]
 
 
 class Example(ExampleBase):
@@ -77,6 +147,9 @@ class Example(ExampleBase):
     modified_at: Optional[datetime] = Field(default=None)
     runs: List[Run] = Field(default_factory=list)
     source_run_id: Optional[UUID] = None
+    attachments: Optional[Dict[str, AttachmentInfo]] = Field(default=None)
+    """Dictionary with attachment names as keys and a tuple of the S3 url
+    and a reader of the data for the file."""
     _host_url: Optional[str] = PrivateAttr(default=None)
     _tenant_id: Optional[UUID] = PrivateAttr(default=None)
 
@@ -101,11 +174,26 @@ class Example(ExampleBase):
             return f"{self._host_url}{path}"
         return None
 
+    def __repr__(self):
+        """Return a string representation of the RunBase object."""
+        return f"{self.__class__}(id={self.id}, dataset_id={self.dataset_id}, link='{self.url}')"
+
 
 class ExampleSearch(ExampleBase):
     """Example returned via search."""
 
     id: UUID
+
+
+class AttachmentsOperations(BaseModel):
+    """Operations to perform on attachments."""
+
+    rename: Dict[str, str] = Field(
+        default_factory=dict, description="Mapping of old attachment names to new names"
+    )
+    retain: List[str] = Field(
+        default_factory=list, description="List of attachment names to keep"
+    )
 
 
 class ExampleUpdate(BaseModel):
@@ -114,6 +202,7 @@ class ExampleUpdate(BaseModel):
     dataset_id: Optional[UUID] = None
     inputs: Optional[Dict[str, Any]] = None
     outputs: Optional[Dict[str, Any]] = None
+    attachments_operations: Optional[AttachmentsOperations] = None
     metadata: Optional[Dict[str, Any]] = None
     split: Optional[Union[str, List[str]]] = None
 
@@ -121,6 +210,18 @@ class ExampleUpdate(BaseModel):
         """Configuration class for the schema."""
 
         frozen = True
+
+
+class ExampleUpdateWithAttachments(ExampleUpdate):
+    """Example update with attachments."""
+
+    id: UUID
+    inputs: Dict[str, Any] = Field(default_factory=dict)
+    outputs: Optional[Dict[str, Any]] = Field(default=None)
+    metadata: Optional[Dict[str, Any]] = Field(default=None)
+    split: Optional[Union[str, List[str]]] = None
+    attachments: Optional[Attachments] = None
+    attachments_operations: Optional[AttachmentsOperations] = None
 
 
 class DataType(str, Enum):
@@ -144,6 +245,22 @@ class DatasetBase(BaseModel):
         frozen = True
 
 
+DatasetTransformationType = Literal[
+    "remove_system_messages",
+    "convert_to_openai_message",
+    "convert_to_openai_tool",
+    "remove_extra_fields",
+    "extract_tools_from_run",
+]
+
+
+class DatasetTransformation(TypedDict, total=False):
+    """Schema for dataset transformations."""
+
+    path: List[str]
+    transformation_type: Union[DatasetTransformationType, str]
+
+
 class Dataset(DatasetBase):
     """Dataset ORM model."""
 
@@ -155,6 +272,7 @@ class Dataset(DatasetBase):
     last_session_start_time: Optional[datetime] = None
     inputs_schema: Optional[Dict[str, Any]] = None
     outputs_schema: Optional[Dict[str, Any]] = None
+    transformations: Optional[List[DatasetTransformation]] = None
     _host_url: Optional[str] = PrivateAttr(default=None)
     _tenant_id: Optional[UUID] = PrivateAttr(default=None)
     _public_path: Optional[str] = PrivateAttr(default=None)
@@ -197,6 +315,10 @@ class DatasetVersion(BaseModel):
     as_of: datetime
 
 
+def _default_extra():
+    return {"metadata": {}}
+
+
 class RunBase(BaseModel):
     """Base Run schema.
 
@@ -222,7 +344,7 @@ class RunBase(BaseModel):
     end_time: Optional[datetime] = None
     """End time of the run, if applicable."""
 
-    extra: Optional[dict] = None
+    extra: Optional[dict] = Field(default_factory=_default_extra)
     """Additional metadata or settings related to the run."""
 
     error: Optional[str] = None
@@ -250,21 +372,32 @@ class RunBase(BaseModel):
     tags: Optional[List[str]] = None
     """Tags for categorizing or annotating the run."""
 
-    _lock: threading.Lock = PrivateAttr(default_factory=threading.Lock)
+    attachments: Union[Attachments, Dict[str, AttachmentInfo]] = Field(
+        default_factory=dict
+    )
+    """Attachments associated with the run.
+    Each entry is a tuple of (mime_type, bytes)."""
 
     @property
     def metadata(self) -> dict[str, Any]:
         """Retrieve the metadata (if any)."""
-        with self._lock:
-            if self.extra is None:
-                self.extra = {}
-            metadata = self.extra.setdefault("metadata", {})
-        return metadata
+        if self.extra is None:
+            self.extra = {}
+        return self.extra.setdefault("metadata", {})
 
     @property
     def revision_id(self) -> Optional[UUID]:
         """Retrieve the revision ID (if any)."""
         return self.metadata.get("revision_id")
+
+    def __repr__(self):
+        """Return a string representation of the RunBase object."""
+        return f"{self.__class__}(id={self.id}, name='{self.name}', run_type='{self.run_type}')"
+
+    class Config:
+        """Configuration class for the schema."""
+
+        arbitrary_types_allowed = True
 
 
 class Run(RunBase):
@@ -376,6 +509,7 @@ class RunLikeDict(TypedDict, total=False):
     output_attachments: Optional[dict]
     trace_id: UUID
     dotted_order: str
+    attachments: Attachments
 
 
 class RunWithAnnotationQueueInfo(RunBase):
@@ -398,6 +532,10 @@ class FeedbackSourceBase(BaseModel):
     """The type of the feedback source."""
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
     """Additional metadata for the feedback source."""
+    user_id: Optional[Union[UUID, str]] = None
+    """The user ID associated with the feedback source."""
+    user_name: Optional[str] = None
+    """The user name associated with the feedback source."""
 
 
 class APIFeedbackSource(FeedbackSourceBase):
@@ -432,6 +570,8 @@ class FeedbackBase(BaseModel):
     """The time the feedback was last modified."""
     run_id: Optional[UUID]
     """The associated run ID this feedback is logged for."""
+    trace_id: Optional[UUID]
+    """The associated trace ID this feedback is logged for."""
     key: str
     """The metric name, tag, or aspect to provide feedback on."""
     score: SCORE_TYPE = None
@@ -452,6 +592,8 @@ class FeedbackBase(BaseModel):
     """For preference scoring, this group ID is shared across feedbacks for each
 
     run in the group that was being compared."""
+    extra: Optional[Dict] = None
+    """The metadata of the feedback."""
 
     class Config:
         """Configuration class for the schema."""
@@ -531,6 +673,8 @@ class TracerSession(BaseModel):
         """Initialize a Run object."""
         super().__init__(**kwargs)
         self._host_url = _host_url
+        if self.start_time.tzinfo is None:
+            self.start_time = self.start_time.replace(tzinfo=timezone.utc)
 
     @property
     def url(self) -> Optional[str]:
@@ -637,6 +781,8 @@ class AnnotationQueue(BaseModel):
 class BatchIngestConfig(TypedDict, total=False):
     """Configuration for batch ingestion."""
 
+    use_multipart_endpoint: bool
+    """Whether to use the multipart endpoint for batch ingestion."""
     scale_up_qsize_trigger: int
     """The queue size threshold that triggers scaling up."""
     scale_up_nthreads_limit: int
@@ -657,6 +803,8 @@ class LangSmithInfo(BaseModel):
     license_expiration_time: Optional[datetime] = None
     """The time the license will expire."""
     batch_ingest_config: Optional[BatchIngestConfig] = None
+    """The instance flags."""
+    instance_flags: Optional[Dict[str, Any]] = None
 
 
 Example.update_forward_refs()
@@ -769,6 +917,49 @@ class PromptCommit(BaseModel):
     """The list of examples."""
 
 
+class ListedPromptCommit(BaseModel):
+    """Represents a listed prompt commit with associated metadata."""
+
+    id: UUID
+    """The unique identifier for the prompt commit."""
+
+    owner: str
+    """The owner of the prompt commit."""
+
+    repo: str
+    """The repository name of the prompt commit."""
+
+    manifest_id: Optional[UUID] = None
+    """The optional identifier for the manifest associated with this commit."""
+
+    repo_id: Optional[UUID] = None
+    """The optional identifier for the repository."""
+
+    parent_id: Optional[UUID] = None
+    """The optional identifier for the parent commit."""
+
+    commit_hash: Optional[str] = None
+    """The optional hash of the commit."""
+
+    created_at: Optional[datetime] = None
+    """The optional timestamp when the commit was created."""
+
+    updated_at: Optional[datetime] = None
+    """The optional timestamp when the commit was last updated."""
+
+    example_run_ids: Optional[List[UUID]] = Field(default_factory=list)
+    """A list of example run identifiers associated with this commit."""
+
+    num_downloads: Optional[int] = 0
+    """The number of times this commit has been downloaded."""
+
+    num_views: Optional[int] = 0
+    """The number of times this commit has been viewed."""
+
+    parent_commit_hash: Optional[str] = None
+    """The optional hash of the parent commit."""
+
+
 class Prompt(BaseModel):
     """Represents a Prompt with metadata."""
 
@@ -806,7 +997,7 @@ class Prompt(BaseModel):
     """The number of downloads."""
     num_views: int
     """The number of views."""
-    liked_by_auth_user: bool
+    liked_by_auth_user: Optional[bool] = None
     """Whether the prompt is liked by the authenticated user."""
     last_commit_hash: Optional[str] = None
     """The hash of the last commit."""
@@ -838,3 +1029,73 @@ class PromptSortField(str, Enum):
     """Last updated time."""
     num_likes = "num_likes"
     """Number of likes."""
+
+
+class InputTokenDetails(TypedDict, total=False):
+    """Breakdown of input token counts.
+
+    Does *not* need to sum to full input token count. Does *not* need to have all keys.
+    """
+
+    audio: int
+    """Audio input tokens."""
+    cache_creation: int
+    """Input tokens that were cached and there was a cache miss.
+
+    Since there was a cache miss, the cache was created from these tokens.
+    """
+    cache_read: int
+    """Input tokens that were cached and there was a cache hit.
+
+    Since there was a cache hit, the tokens were read from the cache. More precisely,
+    the model state given these tokens was read from the cache.
+    """
+
+
+class OutputTokenDetails(TypedDict, total=False):
+    """Breakdown of output token counts.
+
+    Does *not* need to sum to full output token count. Does *not* need to have all keys.
+    """
+
+    audio: int
+    """Audio output tokens."""
+    reasoning: int
+    """Reasoning output tokens.
+
+    Tokens generated by the model in a chain of thought process (i.e. by OpenAI's o1
+    models) that are not returned as part of model output.
+    """
+
+
+class UsageMetadata(TypedDict):
+    """Usage metadata for a message, such as token counts.
+
+    This is a standard representation of token usage that is consistent across models.
+    """
+
+    input_tokens: int
+    """Count of input (or prompt) tokens. Sum of all input token types."""
+    output_tokens: int
+    """Count of output (or completion) tokens. Sum of all output token types."""
+    total_tokens: int
+    """Total token count. Sum of input_tokens + output_tokens."""
+    input_token_details: NotRequired[InputTokenDetails]
+    """Breakdown of input token counts.
+
+    Does *not* need to sum to full input token count. Does *not* need to have all keys.
+    """
+    output_token_details: NotRequired[OutputTokenDetails]
+    """Breakdown of output token counts.
+
+    Does *not* need to sum to full output token count. Does *not* need to have all keys.
+    """
+
+
+class UpsertExamplesResponse(TypedDict):
+    """Response object returned from the upsert_examples_multipart method."""
+
+    count: int
+    """The number of examples that were upserted."""
+    example_ids: List[str]
+    """The ids of the examples that were upserted."""

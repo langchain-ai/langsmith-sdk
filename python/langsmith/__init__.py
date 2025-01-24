@@ -1,10 +1,10 @@
 """LangSmith Client."""
 
+from importlib import metadata
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from langsmith._expect import expect
-    from langsmith._testing import test, unit
     from langsmith.async_client import AsyncClient
     from langsmith.client import Client
     from langsmith.evaluation import aevaluate, evaluate
@@ -17,19 +17,22 @@ if TYPE_CHECKING:
         tracing_context,
     )
     from langsmith.run_trees import RunTree
+    from langsmith.testing._internal import test, unit
     from langsmith.utils import (
         ContextThreadPoolExecutor,
     )
 
+# Avoid calling into importlib on every call to __version__
+version = ""
+try:
+    version = metadata.version(__package__)
+except metadata.PackageNotFoundError:
+    pass
+
 
 def __getattr__(name: str) -> Any:
     if name == "__version__":
-        try:
-            from importlib import metadata
-
-            return metadata.version(__package__)
-        except metadata.PackageNotFoundError:
-            return ""
+        return version
     elif name == "Client":
         from langsmith.client import Client
 
@@ -60,7 +63,7 @@ def __getattr__(name: str) -> Any:
         return traceable
 
     elif name == "test":
-        from langsmith._testing import test
+        from langsmith.testing._internal import test
 
         return test
 
@@ -101,7 +104,7 @@ def __getattr__(name: str) -> Any:
         return get_current_run_tree
 
     elif name == "unit":
-        from langsmith._testing import unit
+        from langsmith.testing._internal import unit
 
         return unit
     elif name == "ContextThreadPoolExecutor":

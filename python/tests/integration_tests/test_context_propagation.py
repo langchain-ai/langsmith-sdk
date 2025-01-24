@@ -1,7 +1,7 @@
 import asyncio
 
+import httpx
 import pytest
-from httpx import AsyncClient
 from uvicorn import Config, Server
 
 from langsmith import traceable
@@ -33,11 +33,13 @@ async def fake_server():
 
 @traceable
 async def the_parent_function():
-    async with AsyncClient(app=fake_app, base_url="http://localhost:8000") as client:
+    async with httpx.AsyncClient(
+        app=fake_app, base_url="http://localhost:8000"
+    ) as http_client:
         headers = {}
         if span := get_current_run_tree():
             headers.update(span.to_headers())
-        response = await client.post("/fake-route", headers=headers)
+        response = await http_client.post("/fake-route", headers=headers)
         assert response.status_code == 200
         return response.json()
 
