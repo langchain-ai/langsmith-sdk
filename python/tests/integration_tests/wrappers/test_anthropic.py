@@ -72,7 +72,7 @@ def test_chat_sync_api(mock_session: mock.MagicMock, stream: bool):
         if data.get("patch"):
             outputs = data["patch"][0]["outputs"]
             break
-    
+
     assert outputs
 
 
@@ -80,10 +80,12 @@ def test_chat_sync_api(mock_session: mock.MagicMock, stream: bool):
 @pytest.mark.parametrize("stream", [False, True])
 async def test_chat_async_api(mock_session: mock.MagicMock, stream: bool):
     import anthropic  # noqa
-    
+
     client = Client(session=mock_session())
     original_client = anthropic.AsyncAnthropic()
-    patched_client = wrap_anthropic(anthropic.AsyncAnthropic(), tracing_extra={"client": client})
+    patched_client = wrap_anthropic(
+        anthropic.AsyncAnthropic(), tracing_extra={"client": client}
+    )
     messages = [{"role": "user", "content": "Say 'foo'"}]
 
     if stream:
@@ -106,8 +108,18 @@ async def test_chat_async_api(mock_session: mock.MagicMock, stream: bool):
                 patched_chunks.append(chunk)
         assert len(original_chunks) == len(patched_chunks)
 
-        assert "".join([c.message.content[0].text for c in original_chunks if hasattr(c, 'message') and len(c.message.content)]) == "".join(
-            [c.message.content[0].text for c in patched_chunks if hasattr(c, 'message') and len(c.message.content)]
+        assert "".join(
+            [
+                c.message.content[0].text
+                for c in original_chunks
+                if hasattr(c, "message") and len(c.message.content)
+            ]
+        ) == "".join(
+            [
+                c.message.content[0].text
+                for c in patched_chunks
+                if hasattr(c, "message") and len(c.message.content)
+            ]
         )
     else:
         original = await original_client.messages.create(
@@ -139,9 +151,12 @@ async def test_chat_async_api(mock_session: mock.MagicMock, stream: bool):
 @pytest.mark.parametrize("stream", [False, True])
 def test_completions_sync_api(mock_session: mock.MagicMock, stream: bool):
     import anthropic
+
     client = Client(session=mock_session())
     original_client = anthropic.Anthropic()
-    patched_client = wrap_anthropic(anthropic.Anthropic(), tracing_extra={"client": client})
+    patched_client = wrap_anthropic(
+        anthropic.Anthropic(), tracing_extra={"client": client}
+    )
     prompt = "Human: Say 'Hi i'm Claude' then stop.\n\nAssistant:"
     original = original_client.completions.create(
         model="claude-2.1",
@@ -183,7 +198,9 @@ async def test_completions_async_api(mock_session: mock.MagicMock, stream: bool)
 
     client = Client(session=mock_session())
     original_client = anthropic.AsyncAnthropic()
-    patched_client = wrap_anthropic(anthropic.AsyncAnthropic(), tracing_extra={"client": client})
+    patched_client = wrap_anthropic(
+        anthropic.AsyncAnthropic(), tracing_extra={"client": client}
+    )
     prompt = "Human: Say 'Hi i'm Claude' then stop.\n\nAssistant:"
     original = await original_client.completions.create(
         model="claude-2.1",
@@ -209,6 +226,86 @@ async def test_completions_async_api(mock_session: mock.MagicMock, stream: bool)
     else:
         assert type(original) == type(patched)
         assert original.completion == patched.completion
+
+    time.sleep(0.1)
+    assert mock_session.return_value.request.call_count > 1
+    # This is the info call
+    assert mock_session.return_value.request.call_args_list[0][0][0].upper() == "GET"
+    for call in mock_session.return_value.request.call_args_list[1:]:
+        assert call[0][0].upper() == "POST"
+
+
+@mock.patch("langsmith.client.requests.Session")
+def test_beta_chat_sync_api(mock_session: mock.MagicMock):
+    import anthropic  # noqa
+    from tests.unit_tests.test_run_helpers import _get_calls
+
+    mock_client = Client(session=mock_session())
+    original_client = anthropic.Anthropic()
+    patched_client = wrap_anthropic(
+        anthropic.Anthropic(), tracing_extra={"client": mock_client}
+    )
+    messages = [{"role": "user", "content": "Say 'foo'"}]
+
+    original = original_client.beta.messages.create(
+        messages=messages,
+        temperature=0,
+        model=model_name,
+        max_tokens=3,
+    )
+    patched = patched_client.beta.messages.create(
+        messages=messages,
+        temperature=0,
+        model=model_name,
+        max_tokens=3,
+    )
+    assert type(original) == type(patched)
+    assert "".join([c.text for c in original.content]) == "".join(
+        [c.text for c in patched.content]
+    )
+
+    calls = _get_calls(mock_client, minimum=1)
+    assert calls
+    datas = [json.loads(call.kwargs["data"]) for call in calls]
+    outputs = None
+    for data in datas:
+        if data.get("post"):
+            if outputs := data["post"][0]["outputs"]:
+                break
+        if data.get("patch"):
+            outputs = data["patch"][0]["outputs"]
+            break
+
+    assert outputs
+
+
+@mock.patch("langsmith.client.requests.Session")
+async def test_beta_chat_async_api(mock_session: mock.MagicMock):
+    import anthropic  # noqa
+
+    client = Client(session=mock_session())
+    original_client = anthropic.AsyncAnthropic()
+    patched_client = wrap_anthropic(
+        anthropic.AsyncAnthropic(), tracing_extra={"client": client}
+    )
+    messages = [{"role": "user", "content": "Say 'foo'"}]
+
+    original = await original_client.beta.messages.create(
+        messages=messages,
+        temperature=0,
+        model=model_name,
+        max_tokens=3,
+    )
+    patched = await patched_client.beta.messages.create(
+        messages=messages,
+        temperature=0,
+        model=model_name,
+        max_tokens=3,
+    )
+    assert type(original) == type(patched)
+    assert "".join([c.text for c in original.content]) == "".join(
+        [c.text for c in patched.content]
+    )
 
     time.sleep(0.1)
     assert mock_session.return_value.request.call_count > 1

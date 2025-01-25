@@ -188,4 +188,15 @@ def wrap_anthropic(client: C, *, tracing_extra: Optional[TracingExtra] = None) -
         _reduce_completions,
         tracing_extra=tracing_extra,
     )
+
+    if (
+        hasattr(client, "beta")
+        and hasattr(client.beta, "messages")
+        and hasattr(client.beta.messages, "create")
+    ):
+        client.beta.messages.create = _get_wrapper(  # type: ignore[method-assign]
+            client.beta.messages.create,  # type: ignore
+            "Anthropic",
+            tracing_extra=tracing_extra,
+        )
     return client

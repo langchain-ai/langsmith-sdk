@@ -1473,7 +1473,6 @@ def _handle_container_end(
         LOGGER.warning(f"Unable to process trace outputs: {repr(e)}")
 
 
-
 def _is_traceable_function(func: Any) -> bool:
     return getattr(func, "__langsmith_traceable__", False)
 
@@ -1506,7 +1505,6 @@ def _get_inputs_safe(
     except BaseException as e:
         LOGGER.debug(f"Failed to get inputs for {signature}: {e}")
         return {"args": args, "kwargs": kwargs}
-
 
 
 def _is_attachment(param: inspect.Parameter) -> bool:
@@ -1553,7 +1551,6 @@ def _get_inputs_and_attachments_safe(
     except BaseException as e:
         LOGGER.warning(f"Failed to get inputs for {signature}: {e}")
         return {"args": args, "kwargs": kwargs}, {}
-
 
 
 def _set_tracing_context(context: Dict[str, Any]):
@@ -1784,7 +1781,6 @@ class _TracedAsyncStream(_TracedStreamBase, Generic[T]):
             return await self.__ls_stream__.__aexit__(exc_type, exc_val, exc_tb)
         finally:
             await self._aend_trace()
-
 
 
 def _get_function_result(results: list, reduce_fn: Callable) -> Any:
