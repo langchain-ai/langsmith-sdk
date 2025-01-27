@@ -453,7 +453,6 @@ def _end_tests(test_suite: _LangSmithTestSuite):
     dataset_id = test_suite._dataset.id
     test_suite.client.update_project(
         test_suite.experiment_id,
-        end_time=datetime.datetime.now(datetime.timezone.utc),
         metadata={
             **git_info,
             "dataset_version": dataset_version,
