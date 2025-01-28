@@ -70,7 +70,7 @@ Tracing can be activated by setting the following environment variables or by ma
 
 ```python
 import os
-os.environ["LANGSMITH_TRACING_V2"] = "true"
+os.environ["LANGSMITH_TRACING"] = "true"
 os.environ["LANGSMITH_ENDPOINT"] = "https://api.smith.langchain.com"
 # os.environ["LANGSMITH_ENDPOINT"] = "https://eu.api.smith.langchain.com" # If signed up in the EU region
 os.environ["LANGSMITH_API_KEY"] = "<YOUR-LANGSMITH-API-KEY>"
