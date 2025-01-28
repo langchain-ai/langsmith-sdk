@@ -56,7 +56,7 @@ def test_chat_sync_api(mock_session: mock.MagicMock, stream: bool):
             model=model_name,
             max_tokens=3,
         )
-        assert type(original) == type(patched)
+        assert isinstance(patched, type(original))
         assert "".join([c.text for c in original.content]) == "".join(
             [c.text for c in patched.content]
         )
@@ -134,7 +134,7 @@ async def test_chat_async_api(mock_session: mock.MagicMock, stream: bool):
             model=model_name,
             max_tokens=3,
         )
-        assert type(original) == type(patched)
+        assert isinstance(patched, type(original))
         assert "".join([c.text for c in original.content]) == "".join(
             [c.text for c in patched.content]
         )
@@ -180,7 +180,7 @@ def test_completions_sync_api(mock_session: mock.MagicMock, stream: bool):
             [c.completion for c in patched_chunks]
         )
     else:
-        assert type(original) == type(patched)
+        assert isinstance(patched, type(original))
         assert original.completion == patched.completion
 
     time.sleep(0.1)
@@ -224,7 +224,7 @@ async def test_completions_async_api(mock_session: mock.MagicMock, stream: bool)
             [c.completion for c in patched_chunks]
         )
     else:
-        assert type(original) == type(patched)
+        assert isinstance(patched, type(original))
         assert original.completion == patched.completion
 
     time.sleep(0.1)
@@ -259,7 +259,7 @@ def test_beta_chat_sync_api(mock_session: mock.MagicMock):
         model=model_name,
         max_tokens=3,
     )
-    assert type(original) == type(patched)
+    assert isinstance(patched, type(original))
     assert "".join([c.text for c in original.content]) == "".join(
         [c.text for c in patched.content]
     )
@@ -302,7 +302,7 @@ async def test_beta_chat_async_api(mock_session: mock.MagicMock):
         model=model_name,
         max_tokens=3,
     )
-    assert type(original) == type(patched)
+    assert isinstance(patched, type(original))
     assert "".join([c.text for c in original.content]) == "".join(
         [c.text for c in patched.content]
     )
