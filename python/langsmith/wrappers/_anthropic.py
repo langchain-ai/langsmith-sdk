@@ -54,7 +54,7 @@ def _strip_not_given(d: dict) -> dict:
 
 def _accumulate_event(
     *, event: MessageStreamEvent, current_snapshot: Message | None
-) -> Message:
+) -> Message | None:
     try:
         from anthropic.types import ContentBlock
     except ImportError:
@@ -72,7 +72,7 @@ def _accumulate_event(
     if event.type == "content_block_start":
         # TODO: check index <-- from anthropic SDK :)
         current_snapshot.content.append(
-            ContentBlock.construct(**event.content_block.model_dump()),
+            ContentBlock.construct(**event.content_block.model_dump()),  # type: ignore[attr-defined]
         )
     elif event.type == "content_block_delta":
         content = current_snapshot.content[event.index]
