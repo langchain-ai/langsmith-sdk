@@ -7,17 +7,17 @@ import pytest
 
 from langsmith import Client
 from langsmith.wrappers import wrap_anthropic
+from tests.unit_tests.test_run_helpers import _get_calls
 
 model_name = "claude-3-haiku-20240307"
 
 
-@mock.patch("langsmith.client.requests.Session")
 @pytest.mark.parametrize("stream", [False, True])
-def test_chat_sync_api(mock_session: mock.MagicMock, stream: bool):
+def test_chat_sync_api(stream: bool):
     import anthropic  # noqa
-    from tests.unit_tests.test_run_helpers import _get_calls
 
-    mock_client = Client(session=mock_session())
+    mock_session = mock.MagicMock()
+    mock_client = Client(session=mock_session)
     original_client = anthropic.Anthropic()
     patched_client = wrap_anthropic(
         anthropic.Anthropic(), tracing_extra={"client": mock_client}
@@ -76,15 +76,15 @@ def test_chat_sync_api(mock_session: mock.MagicMock, stream: bool):
     assert outputs
 
 
-@mock.patch("langsmith.client.requests.Session")
 @pytest.mark.parametrize("stream", [False, True])
-async def test_chat_async_api(mock_session: mock.MagicMock, stream: bool):
+async def test_chat_async_api(stream: bool):
     import anthropic  # noqa
 
-    client = Client(session=mock_session())
+    mock_session = mock.MagicMock()
+    mock_client = Client(session=mock_session)
     original_client = anthropic.AsyncAnthropic()
     patched_client = wrap_anthropic(
-        anthropic.AsyncAnthropic(), tracing_extra={"client": client}
+        anthropic.AsyncAnthropic(), tracing_extra={"client": mock_client}
     )
     messages = [{"role": "user", "content": "Say 'foo'"}]
 
@@ -147,15 +147,15 @@ async def test_chat_async_api(mock_session: mock.MagicMock, stream: bool):
         assert call[0][0].upper() == "POST"
 
 
-@mock.patch("langsmith.client.requests.Session")
 @pytest.mark.parametrize("stream", [False, True])
-def test_completions_sync_api(mock_session: mock.MagicMock, stream: bool):
+def test_completions_sync_api(stream: bool):
     import anthropic
 
-    client = Client(session=mock_session())
+    mock_session = mock.MagicMock()
+    mock_client = Client(session=mock_session)
     original_client = anthropic.Anthropic()
     patched_client = wrap_anthropic(
-        anthropic.Anthropic(), tracing_extra={"client": client}
+        anthropic.Anthropic(), tracing_extra={"client": mock_client}
     )
     prompt = "Human: Say 'Hi i'm Claude' then stop.\n\nAssistant:"
     original = original_client.completions.create(
@@ -191,15 +191,15 @@ def test_completions_sync_api(mock_session: mock.MagicMock, stream: bool):
         assert call[0][0].upper() == "POST"
 
 
-@mock.patch("langsmith.client.requests.Session")
 @pytest.mark.parametrize("stream", [False, True])
-async def test_completions_async_api(mock_session: mock.MagicMock, stream: bool):
+async def test_completions_async_api(stream: bool):
     import anthropic
 
-    client = Client(session=mock_session())
+    mock_session = mock.MagicMock()
+    mock_client = Client(session=mock_session)
     original_client = anthropic.AsyncAnthropic()
     patched_client = wrap_anthropic(
-        anthropic.AsyncAnthropic(), tracing_extra={"client": client}
+        anthropic.AsyncAnthropic(), tracing_extra={"client": mock_client}
     )
     prompt = "Human: Say 'Hi i'm Claude' then stop.\n\nAssistant:"
     original = await original_client.completions.create(
@@ -235,12 +235,12 @@ async def test_completions_async_api(mock_session: mock.MagicMock, stream: bool)
         assert call[0][0].upper() == "POST"
 
 
-@mock.patch("langsmith.client.requests.Session")
-def test_beta_chat_sync_api(mock_session: mock.MagicMock):
+def test_beta_chat_sync_api():
     import anthropic  # noqa
     from tests.unit_tests.test_run_helpers import _get_calls
 
-    mock_client = Client(session=mock_session())
+    mock_session = mock.MagicMock()
+    mock_client = Client(session=mock_session)
     original_client = anthropic.Anthropic()
     patched_client = wrap_anthropic(
         anthropic.Anthropic(), tracing_extra={"client": mock_client}
@@ -279,14 +279,14 @@ def test_beta_chat_sync_api(mock_session: mock.MagicMock):
     assert outputs
 
 
-@mock.patch("langsmith.client.requests.Session")
-async def test_beta_chat_async_api(mock_session: mock.MagicMock):
+async def test_beta_chat_async_api():
     import anthropic  # noqa
 
-    client = Client(session=mock_session())
+    mock_session = mock.MagicMock()
+    mock_client = Client(session=mock_session)
     original_client = anthropic.AsyncAnthropic()
     patched_client = wrap_anthropic(
-        anthropic.AsyncAnthropic(), tracing_extra={"client": client}
+        anthropic.AsyncAnthropic(), tracing_extra={"client": mock_client}
     )
     messages = [{"role": "user", "content": "Say 'foo'"}]
 
