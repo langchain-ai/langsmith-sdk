@@ -465,6 +465,6 @@ def test_get_host_url():
 
     # Otherwise, returns https://smith.langchain.com for unknown host.
     assert (
-        ls_utils.get_host_url(None, "https://unknownhost.com/api")
+        ls_utils.get_host_url(None, "https://unknownhost.com")
         == "https://smith.langchain.com"
     )
