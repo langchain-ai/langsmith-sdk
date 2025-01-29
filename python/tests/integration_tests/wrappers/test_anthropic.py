@@ -7,6 +7,7 @@ import pytest
 
 from langsmith import Client
 from langsmith.wrappers import wrap_anthropic
+import langsmith.schemas as ls_schemas
 from tests.unit_tests.test_run_helpers import _get_calls
 
 model_name = "claude-3-haiku-20240307"
@@ -140,10 +141,10 @@ async def test_chat_async_api(stream: bool):
         )
 
     time.sleep(1)
-    assert mock_session.return_value.request.call_count > 1
+    assert mock_session.request.call_count > 1
     # This is the info call
-    assert mock_session.return_value.request.call_args_list[0][0][0].upper() == "GET"
-    for call in mock_session.return_value.request.call_args_list[1:]:
+    assert mock_session.request.call_args_list[0][0][0].upper() == "GET"
+    for call in mock_session.request.call_args_list[1:]:
         assert call[0][0].upper() == "POST"
 
 
@@ -184,10 +185,10 @@ def test_completions_sync_api(stream: bool):
         assert original.completion == patched.completion
 
     time.sleep(1)
-    assert mock_session.return_value.request.call_count > 1
+    assert mock_session.request.call_count > 1
     # This is the info call
-    assert mock_session.return_value.request.call_args_list[0][0][0].upper() == "GET"
-    for call in mock_session.return_value.request.call_args_list[1:]:
+    assert mock_session.request.call_args_list[0][0][0].upper() == "GET"
+    for call in mock_session.request.call_args_list[1:]:
         assert call[0][0].upper() == "POST"
 
 
@@ -228,10 +229,10 @@ async def test_completions_async_api(stream: bool):
         assert original.completion == patched.completion
 
     time.sleep(1)
-    assert mock_session.return_value.request.call_count > 1
+    assert mock_session.request.call_count > 1
     # This is the info call
-    assert mock_session.return_value.request.call_args_list[0][0][0].upper() == "GET"
-    for call in mock_session.return_value.request.call_args_list[1:]:
+    assert mock_session.request.call_args_list[0][0][0].upper() == "GET"
+    for call in mock_session.request.call_args_list[1:]:
         assert call[0][0].upper() == "POST"
 
 
@@ -308,8 +309,8 @@ async def test_beta_chat_async_api():
     )
 
     time.sleep(1)
-    assert mock_session.return_value.request.call_count > 1
+    assert mock_session.request.call_count > 1
     # This is the info call
-    assert mock_session.return_value.request.call_args_list[0][0][0].upper() == "GET"
-    for call in mock_session.return_value.request.call_args_list[1:]:
+    assert mock_session.request.call_args_list[0][0][0].upper() == "GET"
+    for call in mock_session.request.call_args_list[1:]:
         assert call[0][0].upper() == "POST"
