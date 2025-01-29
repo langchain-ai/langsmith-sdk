@@ -1326,6 +1326,7 @@ def _setup_run(
     kwargs: Any = None,
 ) -> _TraceableContainer:
     """Create a new run or create_child() if run is passed in kwargs."""
+    print("SETTING UP RUN", utils.tracing_is_enabled())
     extra_outer = container_input.get("extra_outer") or {}
     metadata = container_input.get("metadata")
     tags = container_input.get("tags")
@@ -1441,6 +1442,7 @@ def _setup_run(
         )
     if utils.tracing_is_enabled() is True:
         try:
+            print("POSTING RUN")
             new_run.post()
         except BaseException as e:
             LOGGER.error(f"Failed to post run {new_run.id}: {e}")
