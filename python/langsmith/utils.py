@@ -770,10 +770,15 @@ def get_host_url(web_url: Optional[str], api_url: str):
     elif str(parsed_url.path).endswith("/api"):
         new_path = str(parsed_url.path).rsplit("/api", 1)[0]
         link = urllib_parse.urlunparse(parsed_url._replace(path=new_path))
+    elif str(parsed_url.path).endswith("/api/v1"):
+        new_path = str(parsed_url.path).rsplit("/api/v1", 1)[0]
+        link = urllib_parse.urlunparse(parsed_url._replace(path=new_path))
     elif str(parsed_url.netloc).startswith("eu."):
         link = "https://eu.smith.langchain.com"
     elif str(parsed_url.netloc).startswith("dev."):
         link = "https://dev.smith.langchain.com"
+    elif str(parsed_url.netloc).startswith("beta."):
+        link = "https://beta.smith.langchain.com"
     else:
         link = "https://smith.langchain.com"
     return link
