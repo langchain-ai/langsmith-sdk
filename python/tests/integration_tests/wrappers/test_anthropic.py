@@ -7,7 +7,6 @@ import pytest
 
 from langsmith import Client
 from langsmith.wrappers import wrap_anthropic
-import langsmith.schemas as ls_schemas
 from tests.unit_tests.test_run_helpers import _get_calls
 
 model_name = "claude-3-haiku-20240307"
