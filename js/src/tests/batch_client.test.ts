@@ -86,7 +86,7 @@ describe.each(ENDPOINT_TYPES)(
     const expectedTraceURL =
       endpointType === "batch"
         ? "https://api.smith.langchain.com/runs/batch"
-        : "https://api.smith.langchain.com/runs/multipart";
+        : "https://api.smith.langchain.com/v1/runs/multipart";
     it("should create a batched run with the given input", async () => {
       const client = new Client({
         apiKey: "test-api-key",
