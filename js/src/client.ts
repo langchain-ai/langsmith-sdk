@@ -1231,7 +1231,7 @@ export class Client implements LangSmithTracingClientInterface {
 
       const res = await this.batchIngestCaller.call(
         _getFetchImplementation(),
-        `${this.apiUrl}/runs/multipart`,
+        `${this.apiUrl}/v1/runs/multipart`,
         {
           method: "POST",
           headers: {
