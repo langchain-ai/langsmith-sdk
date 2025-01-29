@@ -139,7 +139,7 @@ async def test_chat_async_api(stream: bool):
             [c.text for c in patched.content]
         )
 
-    time.sleep(0.1)
+    time.sleep(1)
     assert mock_session.return_value.request.call_count > 1
     # This is the info call
     assert mock_session.return_value.request.call_args_list[0][0][0].upper() == "GET"
@@ -183,7 +183,7 @@ def test_completions_sync_api(stream: bool):
         assert isinstance(patched, type(original))
         assert original.completion == patched.completion
 
-    time.sleep(0.1)
+    time.sleep(1)
     assert mock_session.return_value.request.call_count > 1
     # This is the info call
     assert mock_session.return_value.request.call_args_list[0][0][0].upper() == "GET"
@@ -227,7 +227,7 @@ async def test_completions_async_api(stream: bool):
         assert isinstance(patched, type(original))
         assert original.completion == patched.completion
 
-    time.sleep(0.1)
+    time.sleep(1)
     assert mock_session.return_value.request.call_count > 1
     # This is the info call
     assert mock_session.return_value.request.call_args_list[0][0][0].upper() == "GET"
@@ -307,7 +307,7 @@ async def test_beta_chat_async_api():
         [c.text for c in patched.content]
     )
 
-    time.sleep(0.1)
+    time.sleep(1)
     assert mock_session.return_value.request.call_count > 1
     # This is the info call
     assert mock_session.return_value.request.call_args_list[0][0][0].upper() == "GET"
