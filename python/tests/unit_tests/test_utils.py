@@ -409,3 +409,62 @@ def test_get_func_name():
     assert ls_utils._get_function_name(print) == "print"
 
     assert ls_utils._get_function_name("not_a_function") == "not_a_function"
+
+
+def test_get_host_url():
+    # If web_url is explicitly provided, it takes precedence over api_url.
+    assert (
+        ls_utils.get_host_url(
+            "https://my-custom-web.com", "https://api.smith.langchain.com"
+        )
+        == "https://my-custom-web.com"
+    )
+
+    # When web_url is None and api_url is localhost.
+    assert ls_utils.get_host_url(None, "http://localhost:5000") == "http://localhost"
+    # A port variation on localhost.
+    assert (
+        ls_utils.get_host_url(None, "http://127.0.0.1:8080") == "http://localhost"
+    ), "Should recognize 127.x.x.x as localhost."
+
+    # If api_url path ends with /api, trimmed back to netloc.
+    assert (
+        ls_utils.get_host_url(None, "https://my-awesome-domain.com/api")
+        == "https://my-awesome-domain.com"
+    )
+
+    # If api_url path ends with /api/v1, trimmed back to netloc.
+    assert (
+        ls_utils.get_host_url(None, "https://my-other-domain.com/api/v1")
+        == "https://my-other-domain.com"
+    )
+
+    # If netloc begins with dev.
+    assert (
+        ls_utils.get_host_url(None, "https://dev.smith.langchain.com/api/v1")
+        == "https://dev.smith.langchain.com"
+    )
+
+    # If netloc begins with eu.
+    assert (
+        ls_utils.get_host_url(None, "https://eu.smith.langchain.com/api")
+        == "https://eu.smith.langchain.com"
+    )
+
+    # If netloc begins with beta.
+    assert (
+        ls_utils.get_host_url(None, "https://beta.smith.langchain.com")
+        == "https://beta.smith.langchain.com"
+    )
+
+    # If netloc begins with api.
+    assert (
+        ls_utils.get_host_url(None, "https://api.smith.langchain.com")
+        == "https://smith.langchain.com"
+    )
+
+    # Otherwise, returns https://smith.langchain.com for unknown host.
+    assert (
+        ls_utils.get_host_url(None, "https://unknownhost.com/api")
+        == "https://smith.langchain.com"
+    )
