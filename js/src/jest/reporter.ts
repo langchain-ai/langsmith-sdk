@@ -5,6 +5,9 @@ import { printReporterTable } from "../utils/jestlike/reporter.js";
 
 class LangSmithEvalReporter extends DefaultReporter {
   async onTestResult(test: any, testResult: any, aggregatedResults: any) {
+    if (testResult.failureMessage) {
+      console.log(testResult.failureMessage);
+    }
     const groupedTestResults = testResult.testResults.reduce(
       (groups: Record<string, any>, testResult: any) => {
         const ancestorTitle = testResult.ancestorTitles.join(" > ");
