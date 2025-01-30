@@ -4709,15 +4709,10 @@ class Client:
     def update_examples(
         self,
         *,
-        example_ids: Sequence[ID_TYPE],
-        inputs: Optional[Sequence[Optional[Dict[str, Any]]]] = None,
-        outputs: Optional[Sequence[Optional[Mapping[str, Any]]]] = None,
-        metadata: Optional[Sequence[Optional[Dict]]] = None,
-        splits: Optional[Sequence[Optional[str | List[str]]]] = None,
-        dataset_ids: Optional[Sequence[Optional[ID_TYPE]]] = None,
-        attachments_operations: Optional[
-            Sequence[Optional[ls_schemas.AttachmentsOperations]]
-        ] = None,
+        dataset_id: ID_TYPE | None = None,
+        updates: Optional[List[ls_schemas.ExampleUpdateWithAttachments]] = None,
+        dangerously_allow_filesystem: bool = False,
+        **kwargs: Any,
     ) -> Dict[str, Any]:
         """Update multiple examples.
 
@@ -4741,24 +4736,29 @@ class Client:
         Returns:
             Dict[str, Any]: The response from the server (specifies the number of examples updated).
         """
-        if attachments_operations is not None:
+        if kwargs and any(dataset_id, updates, dangerously_allow_filesystem):
+            raise ValueError("...")
+        elif kwargs and not kwargs.get("example_ids"):
+            raise ValueError("...")
+        elif kwargs:
+            example_ids = kwargs.pop("example_ids")
+        else:
+            return self.upload_examples_multipart(
+                dataset_id=dataset_id,
+                uploads=uploads,
+                dangerously_allow_filesystem=dangerously_allow_filesystem,
+            )
+
+        if kwargs.get("attachments_operations") is not None:
             if not (self.info.instance_flags or {}).get(
                 "dataset_examples_multipart_enabled", False
             ):
                 raise ValueError(
                     "Your LangSmith version does not allow using the attachment operations, please update to the latest version."
                 )
-        sequence_args = {
-            "inputs": inputs,
-            "outputs": outputs,
-            "metadata": metadata,
-            "splits": splits,
-            "dataset_ids": dataset_ids,
-            "attachments_operations": attachments_operations,
-        }
         # Since inputs are required, we will check against them
         examples_len = len(example_ids)
-        for arg_name, arg_value in sequence_args.items():
+        for arg_name, arg_value in kwargs.items():
             if arg_value is not None and len(arg_value) != examples_len:
                 raise ValueError(
                     f"Length of {arg_name} ({len(arg_value)}) does not match"
@@ -4776,12 +4776,12 @@ class Client:
             }
             for id_, in_, out_, metadata_, split_, dataset_id_, attachments_operations_ in zip(
                 example_ids,
-                inputs or [None] * len(example_ids),
-                outputs or [None] * len(example_ids),
-                metadata or [None] * len(example_ids),
-                splits or [None] * len(example_ids),
-                dataset_ids or [None] * len(example_ids),
-                attachments_operations or [None] * len(example_ids),
+                kwargs.get("inputs", [None] * len(example_ids)),
+                kwargs.get("outputs", [None] * len(example_ids)),
+                kwargs.get("metadata", [None] * len(example_ids)),
+                kwargs.get("splits", [None] * len(example_ids)),
+                kwargs.get("dataset_ids", [None] * len(example_ids)),
+                kwargs.get("attachments_operations", [None] * len(example_ids)),
             )
         ]
         response = self.request_with_retries(
