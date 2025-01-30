@@ -19,7 +19,16 @@ class LangSmithEvalReporter extends DefaultReporter {
     try {
       for (const testGroupName of Object.keys(groupedTestResults)) {
         const resultGroup = groupedTestResults[testGroupName];
-        await printReporterTable(resultGroup, testResult.failureMessage);
+        const unskippedTests = resultGroup.filter(
+          (result: any) => result.status !== "pending"
+        );
+        const overallResult =
+          unskippedTests.length === 0
+            ? "skip"
+            : unskippedTests.every((result: any) => result.status === "passed")
+            ? "pass"
+            : "fail";
+        await printReporterTable(testGroupName, resultGroup, overallResult);
       }
     } catch (e: any) {
       console.log("Failed to display LangSmith eval results:", e.message);
