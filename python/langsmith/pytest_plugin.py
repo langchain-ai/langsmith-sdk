@@ -90,7 +90,7 @@ def pytest_report_teststatus(report, config):
     """Remove the short test-status character outputs ("./F")."""
     # The hook normally returns a 3-tuple: (short_letter, verbose_word, color)
     # By returning empty strings, the progress characters won't show.
-    if config.getoption("--langsmith-output") in ("langsmith", "ls"):
+    if config.getoption("--langsmith-output"):
         return "", "", ""
 
 
@@ -309,7 +309,7 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "langsmith: mark test to be tracked in LangSmith"
     )
-    if config.getoption("--langsmith-output") in ("langsmith", "ls"):
+    if config.getoption("--langsmith-output"):
         if not importlib.util.find_spec("rich"):
             msg = (
                 "Must have 'rich' installed to use --langsmith-output. "
