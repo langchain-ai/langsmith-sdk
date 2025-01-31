@@ -49,3 +49,43 @@ ls.describe(
     },
   }
 );
+
+ls.describe(
+  "js vitest 3",
+  () => {
+    ls.test.each(
+      [
+        {
+          inputs: {
+            one: "uno",
+          },
+          referenceOutputs: {
+            ein: "un",
+          },
+        },
+        {
+          inputs: {
+            two: "dos",
+          },
+          referenceOutputs: {
+            zwei: "deux",
+          },
+        },
+      ],
+      { iterations: 3, metadata: { something: "cool" } }
+    )("Does the thing", async ({ inputs, referenceOutputs }) => {
+      const myApp = () => {
+        return { bar: "bad" };
+      };
+      const res = myApp();
+      const evaluator = ls.wrapEvaluator(myEvaluator);
+      await evaluator({ inputs, referenceOutputs, outputs: res });
+      return res;
+    });
+  },
+  {
+    metadata: {
+      model: "test-model",
+    },
+  }
+);
