@@ -135,3 +135,6 @@ markers = ["slow: long-running tests"]
 [project]
 name = "langsmith"
 dynamic = ["version"]
+
+[tool.poetry.plugins."pytest11"]
+langsmith_plugin = "langsmith.pytest_plugin"
