@@ -422,14 +422,7 @@ my_function("Jason is 25 years old")
 The LangSmith pytest plugin lets Python developers define their datasets and evaluations as pytest test cases.
 See [online docs](https://docs.smith.langchain.com/evaluation/how_to_guides/pytest) for more information.
 
-This plugin is installed as part of the LangSmith SDK, but is not enabled by default.  
-To enable the plugin for your project, add `"langsmith.pytest_plugin"` to the `pytest_plugins` list in your root `conftest.py` file:
-
-```python
-# root `conftest.py` file
-pytest_plugins = ["langsmith.pytest_plugin"]
-```
-
+This plugin is installed as part of the LangSmith SDK, and is enabled by default.
 See also official pytest docs: [How to install and use plugins](https://docs.pytest.org/en/stable/how-to/plugins.html)
 
 ## Additional Documentation
