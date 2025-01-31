@@ -422,7 +422,8 @@ def _start_experiment(
             metadata={
                 "revision_id": ls_env.get_langchain_env_var_metadata().get(
                     "revision_id"
-                )
+                ),
+                "__ls_runner": "pytest",
             },
         )
     except ls_utils.LangSmithConflictError:
@@ -457,6 +458,7 @@ def _end_tests(test_suite: _LangSmithTestSuite):
             **git_info,
             "dataset_version": dataset_version,
             "revision_id": ls_env.get_langchain_env_var_metadata().get("revision_id"),
+            "__ls_runner": "pytest",
         },
     )
     if dataset_version and git_info["commit"] is not None:
