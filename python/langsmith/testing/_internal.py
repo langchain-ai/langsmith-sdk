@@ -422,7 +422,8 @@ def _start_experiment(
             metadata={
                 "revision_id": ls_env.get_langchain_env_var_metadata().get(
                     "revision_id"
-                )
+                ),
+                "__ls_runner": "pytest",
             },
         )
     except ls_utils.LangSmithConflictError:
