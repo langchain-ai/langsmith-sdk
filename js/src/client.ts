@@ -575,6 +575,9 @@ export class Client implements LangSmithTracingClientInterface {
     } else if (isLocalhost(this.apiUrl)) {
       this.webUrl = "http://localhost:3000";
       return this.webUrl;
+    } else if (this.apiUrl.endsWith("/api/v1")) {
+      this.webUrl = this.apiUrl.replace("/api/v1", "");
+      return this.webUrl;
     } else if (
       this.apiUrl.includes("/api") &&
       !this.apiUrl.split(".", 1)[0].endsWith("api")
@@ -586,6 +589,9 @@ export class Client implements LangSmithTracingClientInterface {
       return this.webUrl;
     } else if (this.apiUrl.split(".", 1)[0].includes("eu")) {
       this.webUrl = "https://eu.smith.langchain.com";
+      return this.webUrl;
+    } else if (this.apiUrl.split(".", 1)[0].includes("beta")) {
+      this.webUrl = "https://beta.smith.langchain.com";
       return this.webUrl;
     } else {
       this.webUrl = "https://smith.langchain.com";
