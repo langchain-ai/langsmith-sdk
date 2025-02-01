@@ -28,8 +28,8 @@ from langsmith.schemas import (
     AttachmentsOperations,
     DataType,
     Example,
-    ExampleUpdateWithAttachments,
-    ExampleUploadWithAttachments,
+    ExampleUpdate,
+    ExampleCreate,
     ExampleUpsertWithAttachments,
     Run,
 )
@@ -438,7 +438,7 @@ def test_upload_examples_multipart(langchain_client: Client):
 
     # Test example with all fields
     example_id = uuid4()
-    example_1 = ExampleUploadWithAttachments(
+    example_1 = ExampleCreate(
         id=example_id,
         inputs={"text": "hello world"},
         attachments={
@@ -447,12 +447,12 @@ def test_upload_examples_multipart(langchain_client: Client):
     )
 
     # Test example with minimum required fields
-    example_2 = ExampleUploadWithAttachments(
+    example_2 = ExampleCreate(
         inputs={"text": "minimal example"},
     )
 
     # Test example with outputs and multiple attachments
-    example_3 = ExampleUploadWithAttachments(
+    example_3 = ExampleCreate(
         inputs={"text": "example with outputs"},
         outputs={"response": "test response"},
         attachments={
@@ -501,7 +501,7 @@ def test_upload_examples_multipart(langchain_client: Client):
         langchain_client.upload_examples_multipart(
             dataset_id=fake_id,
             uploads=[
-                ExampleUploadWithAttachments(
+                ExampleCreate(
                     inputs={"text": "should fail"},
                 )
             ],
@@ -1533,7 +1533,7 @@ def test_list_examples_attachments_keys(langchain_client: Client) -> None:
     langchain_client.upload_examples_multipart(
         dataset_id=dataset.id,
         uploads=[
-            ExampleUploadWithAttachments(
+            ExampleCreate(
                 inputs={"text": "hello world"},
                 outputs={"response": "hi there"},
                 attachments={
@@ -1572,7 +1572,7 @@ def test_mime_type_is_propogated(langchain_client: Client) -> None:
     langchain_client.upload_examples_multipart(
         dataset_id=dataset.id,
         uploads=[
-            ExampleUploadWithAttachments(
+            ExampleCreate(
                 inputs={"text": "hello world"},
                 outputs={"response": "hi there"},
                 attachments={
@@ -1601,7 +1601,7 @@ def test_evaluate_mime_type_is_propogated(langchain_client: Client) -> None:
     langchain_client.upload_examples_multipart(
         dataset_id=dataset.id,
         uploads=[
-            ExampleUploadWithAttachments(
+            ExampleCreate(
                 inputs={"text": "hello world"},
                 outputs={"response": "hi there"},
                 attachments={
@@ -1640,7 +1640,7 @@ async def test_aevaluate_mime_type_is_propogated(langchain_client: Client) -> No
     langchain_client.upload_examples_multipart(
         dataset_id=dataset.id,
         uploads=[
-            ExampleUploadWithAttachments(
+            ExampleCreate(
                 inputs={"text": "hello world"},
                 outputs={"response": "hi there"},
                 attachments={
@@ -1687,7 +1687,7 @@ def test_evaluate_with_attachments_multiple_evaluators(
     )
 
     # 2. Create example with attachments
-    example = ExampleUploadWithAttachments(
+    example = ExampleCreate(
         inputs={"question": "What is shown in the image?"},
         outputs={"answer": "test image"},
         attachments={
@@ -1758,7 +1758,7 @@ def test_evaluate_with_attachments(langchain_client: Client) -> None:
     )
 
     # 2. Create example with attachments
-    example = ExampleUploadWithAttachments(
+    example = ExampleCreate(
         inputs={"question": "What is shown in the image?"},
         outputs={"answer": "test image"},
         attachments={
@@ -1812,7 +1812,7 @@ def test_evaluate_with_attachments_not_in_target(langchain_client: Client) -> No
         data_type=DataType.kv,
     )
 
-    example = ExampleUploadWithAttachments(
+    example = ExampleCreate(
         inputs={"question": "What is shown in the image?"},
         outputs={"answer": "test image"},
         attachments={
@@ -1879,7 +1879,7 @@ def test_evaluate_with_no_attachments(langchain_client: Client) -> None:
     )
 
     # Verify we can create example the new way without attachments
-    example = ExampleUploadWithAttachments(
+    example = ExampleCreate(
         inputs={"question": "What is 3+1?"},
         outputs={"answer": "4"},
     )
@@ -1919,7 +1919,7 @@ async def test_aevaluate_with_attachments(langchain_client: Client) -> None:
     )
 
     examples = [
-        ExampleUploadWithAttachments(
+        ExampleCreate(
             inputs={"question": "What is shown in the image?", "index": i},
             outputs={"answer": "test image"},
             attachments={
@@ -1994,7 +1994,7 @@ async def test_aevaluate_with_attachments_not_in_target(
         data_type=DataType.kv,
     )
 
-    example = ExampleUploadWithAttachments(
+    example = ExampleCreate(
         inputs={"question": "What is shown in the image?"},
         outputs={"answer": "test image"},
         attachments={
@@ -2049,7 +2049,7 @@ async def test_aevaluate_with_no_attachments(langchain_client: Client) -> None:
     )
 
     # Verify we can create example the new way without attachments
-    example = ExampleUploadWithAttachments(
+    example = ExampleCreate(
         inputs={"question": "What is 3+1?"},
         outputs={"answer": "4"},
     )
@@ -2122,6 +2122,52 @@ def test_examples_length_validation(langchain_client: Client) -> None:
     langchain_client.delete_dataset(dataset_id=dataset.id)
 
 
+def test_update_examples_output(langchain_client: Client) -> None:
+    """Test update_examples output."""
+    dataset_name = "__test_update_examples_output" + uuid4().hex[:4]
+    dataset = langchain_client.create_dataset(dataset_name=dataset_name)
+
+    # Create some valid examples for testing update
+    langchain_client.create_examples(
+        inputs=[{"text": "hello"}, {"text": "world"}],
+        outputs=[{"response": "hi"}, {"response": "earth"}],
+        dataset_id=dataset.id,
+    )
+    example_ids = [
+        example.id for example in langchain_client.list_examples(dataset_id=dataset.id)
+    ]
+
+    # Test update_examples validation
+    updated_examples = langchain_client.update_examples(
+        example_ids=example_ids,
+        inputs=[{"text": "new hello"}, {"text": "new world"}],
+        outputs=[{"response": "new hi"}, {"response": "new earth"}],
+    )
+
+    example_updates = [
+        ExampleUpdate(
+            id=example_ids[0],
+            inputs={"text": "new hello"},
+            outputs={"response": "new hi"},
+        ),
+        ExampleUpdate(
+            id=example_ids[1],
+            inputs={"text": "new world"},
+            outputs={"response": "new earth"},
+        ),
+    ]
+
+    updated_examples_multipart = langchain_client.update_examples_multipart(
+        dataset_id=dataset.id,
+        updates=example_updates,
+    )
+    #assert len(updated_examples) == 2
+    print(updated_examples)
+    print(updated_examples_multipart)
+
+    # Clean up
+    langchain_client.delete_dataset(dataset_id=dataset.id)
+
 def test_update_example_with_attachments_operations(langchain_client: Client) -> None:
     """Test updating an example with attachment operations."""
     dataset_name = "__test_update_example_attachments" + uuid4().hex[:4]
@@ -2131,7 +2177,7 @@ def test_update_example_with_attachments_operations(langchain_client: Client) ->
     )
     example_id = uuid4()
     # Create example with attachments
-    example = ExampleUploadWithAttachments(
+    example = ExampleCreate(
         id=example_id,
         inputs={"query": "What's in this image?"},
         outputs={"answer": "A test image"},
@@ -2187,7 +2233,7 @@ def test_bulk_update_examples_with_attachments_operations(
 
     example_id1, example_id2 = uuid4(), uuid4()
     # Create two examples with attachments
-    example1 = ExampleUploadWithAttachments(
+    example1 = ExampleCreate(
         id=example_id1,
         inputs={"query": "What's in this image?"},
         outputs={"answer": "A test image 1"},
@@ -2196,7 +2242,7 @@ def test_bulk_update_examples_with_attachments_operations(
             "extra": ("text/plain", b"extra data"),
         },
     )
-    example2 = ExampleUploadWithAttachments(
+    example2 = ExampleCreate(
         id=example_id2,
         inputs={"query": "What's in this image?"},
         outputs={"answer": "A test image 2"},
@@ -2273,7 +2319,7 @@ def test_examples_multipart_attachment_path(langchain_client: Client) -> None:
 
     file_path = Path(__file__).parent / "test_data/parrot-icon.png"
     example_id = uuid4()
-    example = ExampleUploadWithAttachments(
+    example = ExampleCreate(
         id=example_id,
         inputs={"text": "hello world"},
         attachments={
@@ -2334,7 +2380,7 @@ def test_examples_multipart_attachment_path(langchain_client: Client) -> None:
         == (Path(__file__).parent / "test_data/parrot-icon.png").read_bytes()
     )
 
-    example_update = ExampleUpdateWithAttachments(
+    example_update = ExampleUpdate(
         id=example_id,
         attachments={
             "new_file1": (
@@ -2362,7 +2408,7 @@ def test_examples_multipart_attachment_path(langchain_client: Client) -> None:
     assert retrieved.attachments["new_file1"]["reader"].read() == file_path.read_bytes()
     assert retrieved.attachments["new_file2"]["reader"].read() == file_path.read_bytes()
 
-    example_wrong_path = ExampleUploadWithAttachments(
+    example_wrong_path = ExampleCreate(
         id=example_id,
         inputs={"text": "hello world"},
         attachments={
@@ -2399,7 +2445,7 @@ def test_update_examples_multipart(langchain_client: Client) -> None:
     example_ids = [uuid4() for _ in range(2)]
 
     # First create some examples with attachments
-    example_1 = ExampleUploadWithAttachments(
+    example_1 = ExampleCreate(
         id=example_ids[0],
         inputs={"text": "hello world"},
         attachments={
@@ -2408,7 +2454,7 @@ def test_update_examples_multipart(langchain_client: Client) -> None:
         },
     )
 
-    example_2 = ExampleUploadWithAttachments(
+    example_2 = ExampleCreate(
         id=example_ids[1],
         inputs={"text": "second example"},
         attachments={
@@ -2423,7 +2469,7 @@ def test_update_examples_multipart(langchain_client: Client) -> None:
     assert created_examples["count"] == 2
 
     # Now create update operations
-    update_1 = ExampleUpdateWithAttachments(
+    update_1 = ExampleUpdate(
         id=example_ids[0],
         inputs={"text": "updated hello world"},
         attachments={
@@ -2434,7 +2480,7 @@ def test_update_examples_multipart(langchain_client: Client) -> None:
         ),
     )
 
-    update_2 = ExampleUpdateWithAttachments(
+    update_2 = ExampleUpdate(
         id=example_ids[1],
         inputs={"text": "updated second example"},
         attachments={
@@ -2490,7 +2536,7 @@ def test_update_examples_multipart(langchain_client: Client) -> None:
     response = langchain_client.update_examples_multipart(
         dataset_id=dataset.id,
         updates=[
-            ExampleUpdateWithAttachments(
+            ExampleUpdate(
                 id=uuid4(),
                 inputs={"text": "should fail"},
             )
@@ -2502,7 +2548,7 @@ def test_update_examples_multipart(langchain_client: Client) -> None:
     response = langchain_client.update_examples_multipart(
         dataset_id=dataset.id,
         updates=[
-            ExampleUpdateWithAttachments(
+            ExampleUpdate(
                 id=example_ids[0],
                 attachments={
                     "renamed_file1": ("text/plain", b"new content 1"),
@@ -2525,7 +2571,7 @@ def test_update_examples_multipart(langchain_client: Client) -> None:
     response = langchain_client.update_examples_multipart(
         dataset_id=dataset.id,
         updates=[
-            ExampleUpdateWithAttachments(
+            ExampleUpdate(
                 id=example_ids[0],
                 attachments={
                     "foo": ("text/plain", b"new content 1"),
@@ -2553,7 +2599,7 @@ async def test_aevaluate_max_concurrency(langchain_client: Client) -> None:
     )
 
     examples = [
-        ExampleUploadWithAttachments(
+        ExampleCreate(
             inputs={"query": "What's in this image?"},
             outputs={"answer": "A test image 1"},
         )

@@ -102,15 +102,7 @@ class ExampleBase(BaseModel):
         arbitrary_types_allowed = True
 
 
-class ExampleCreate(ExampleBase):
-    """Example create model."""
-
-    id: Optional[UUID]
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    split: Optional[Union[str, List[str]]] = None
-
-
-class ExampleUploadWithAttachments(BaseModel):
+class ExampleCreate(BaseModel):
     """Example upload with attachments."""
 
     id: Optional[UUID]
@@ -121,8 +113,11 @@ class ExampleUploadWithAttachments(BaseModel):
     split: Optional[Union[str, List[str]]] = None
     attachments: Optional[Attachments] = None
 
+    def __init__(self, **data):
+        super().__init__(**data)
 
-class ExampleUpsertWithAttachments(ExampleUploadWithAttachments):
+
+class ExampleUpsertWithAttachments(ExampleCreate):
     """Example create with attachments."""
 
     dataset_id: UUID
@@ -195,33 +190,27 @@ class AttachmentsOperations(BaseModel):
         default_factory=list, description="List of attachment names to keep"
     )
 
-
 class ExampleUpdate(BaseModel):
-    """Update class for Example."""
-
-    dataset_id: Optional[UUID] = None
-    inputs: Optional[Dict[str, Any]] = None
-    outputs: Optional[Dict[str, Any]] = None
-    attachments_operations: Optional[AttachmentsOperations] = None
-    metadata: Optional[Dict[str, Any]] = None
-    split: Optional[Union[str, List[str]]] = None
-
-    class Config:
-        """Configuration class for the schema."""
-
-        frozen = True
-
-
-class ExampleUpdateWithAttachments(ExampleUpdate):
     """Example update with attachments."""
 
     id: UUID
+    dataset_id: Optional[UUID] = None
     inputs: Dict[str, Any] = Field(default_factory=dict)
     outputs: Optional[Dict[str, Any]] = Field(default=None)
     metadata: Optional[Dict[str, Any]] = Field(default=None)
     split: Optional[Union[str, List[str]]] = None
     attachments: Optional[Attachments] = None
     attachments_operations: Optional[AttachmentsOperations] = None
+
+    class Config:
+        """Configuration class for the schema."""
+        frozen = True
+
+    def __init__(self, **data):
+        super().__init__(**data)
+
+
+ExampleUpdateWithAttachments = ExampleUpdate
 
 
 class DataType(str, Enum):
