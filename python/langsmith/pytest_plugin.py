@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import logging
 import os
 import time
 from collections import defaultdict
@@ -12,26 +13,33 @@ import pytest
 from langsmith import utils as ls_utils
 from langsmith.testing._internal import test as ls_test
 
+logger = logging.getLogger(__name__)
+
 
 def pytest_addoption(parser):
-    """Set CLI options for choosing output format."""
-    group = parser.getgroup("langsmith", "LangSmith")
-    group.addoption(
-        "--output",
-        action="store",
-        default="pytest",
-        choices=["langsmith", "ls", "pytest"],
-        help=(
-            "Choose output format: 'langsmith' | 'ls' "
-            "(rich custom LangSmith output) or 'pytest' "
-            "(standard pytest). Defaults to 'pytest'."
-        ),
-    )
+    """Set a boolean flag for LangSmith output.
+
+    Skip if --langsmith-output is already defined.
+    """
+    try:
+        # Try to add the option, will raise if it already exists
+        group = parser.getgroup("langsmith", "LangSmith")
+        group.addoption(
+            "--langsmith-output",
+            action="store_true",
+            default=False,
+            help="Use LangSmith output (requires 'rich').",
+        )
+    except ValueError:
+        # Option already exists
+        logger.warning(
+            "LangSmith output flag cannot be added because it's already defined."
+        )
 
 
 def _handle_output_args(args):
     """Handle output arguments."""
-    if any(opt in args for opt in ["--output=langsmith", "--output=ls"]):
+    if any(opt in args for opt in ["--langsmith-output"]):
         # Only add --quiet if it's not already there
         if not any(a in args for a in ["-q", "--quiet"]):
             args.insert(0, "--quiet")
@@ -82,7 +90,7 @@ def pytest_report_teststatus(report, config):
     """Remove the short test-status character outputs ("./F")."""
     # The hook normally returns a 3-tuple: (short_letter, verbose_word, color)
     # By returning empty strings, the progress characters won't show.
-    if config.getoption("--output") in ("langsmith", "ls"):
+    if config.getoption("--langsmith-output"):
         return "", "", ""
 
 
@@ -301,23 +309,24 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "langsmith: mark test to be tracked in LangSmith"
     )
-    if config.getoption("--output") in ("langsmith", "ls"):
+    if config.getoption("--langsmith-output"):
         if not importlib.util.find_spec("rich"):
             msg = (
-                "Must have 'rich' installed to use --output='langsmith' | 'ls'. "
+                "Must have 'rich' installed to use --langsmith-output. "
                 "Please install with: `pip install -U 'langsmith[pytest]'`"
             )
             raise ValueError(msg)
         if os.environ.get("PYTEST_XDIST_TESTRUNUID"):
             msg = (
-                "--output='langsmith' | 'ls' not supported with pytest-xdist. "
-                "Please remove the '--output' option or '-n' option."
+                "--langsmith-output not supported with pytest-xdist. "
+                "Please remove the '--langsmith-output' option or '-n' option."
             )
             raise ValueError(msg)
         if ls_utils.test_tracking_is_disabled():
             msg = (
-                "--output='langsmith' | 'ls' not supported when env var"
-                "LANGSMITH_TEST_TRACKING='false'. Please remove the '--output' option "
+                "--langsmith-output not supported when env var"
+                "LANGSMITH_TEST_TRACKING='false'. Please remove the"
+                "'--langsmith-output' option "
                 "or enable test tracking."
             )
             raise ValueError(msg)

@@ -345,7 +345,7 @@ def my_function(text: str):
 my_function("hello world")
 ```
 
-# Instructor
+## Instructor
 
 We provide a convenient integration with [Instructor](https://jxnl.github.io/instructor/), largely by virtue of it essentially just using the OpenAI SDK.
 
@@ -416,6 +416,14 @@ def my_function(text: str) -> UserDetail:
 
 my_function("Jason is 25 years old")
 ```
+
+## Pytest Plugin
+
+The LangSmith pytest plugin lets Python developers define their datasets and evaluations as pytest test cases.
+See [online docs](https://docs.smith.langchain.com/evaluation/how_to_guides/pytest) for more information.
+
+This plugin is installed as part of the LangSmith SDK, and is enabled by default.
+See also official pytest docs: [How to install and use plugins](https://docs.pytest.org/en/stable/how-to/plugins.html)
 
 ## Additional Documentation
 
