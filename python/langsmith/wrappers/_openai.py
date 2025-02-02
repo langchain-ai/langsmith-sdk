@@ -20,7 +20,7 @@ from typing import (
 from typing_extensions import TypedDict
 
 from langsmith import client as ls_client
-from langsmith import run_helpers
+from langsmith import run_helpers, RunTree
 from langsmith.schemas import InputTokenDetails, OutputTokenDetails, UsageMetadata
 
 if TYPE_CHECKING:
@@ -308,6 +308,173 @@ class TracingExtra(TypedDict, total=False):
     tags: Optional[List[str]]
     client: Optional[ls_client.Client]
 
+from typing import Any, Dict, Optional, Union
+from contextlib import contextmanager
+from langsmith import run_trees
+from datetime import datetime, timezone
+
+class TracedRealtimeConnection:
+    """Wrapper for OpenAI's realtime connection that creates a run tree of events."""
+    
+    def __init__(self, connection: Any, parent_run: run_trees.RunTree):
+        self._connection = connection
+        self._parent_run = parent_run
+        self.session = connection.session
+        self.conversation = connection.conversation
+        self.response = connection.response
+        self._current_response_run: Optional[run_trees.RunTree] = None
+        self._current_item_run: Optional[run_trees.RunTree] = None
+        self._message_buffer: list[str] = []
+
+        # Create initial run for first conversation item
+        self._current_item_run = self._parent_run.create_child(
+            name="conversation_item",
+            run_type="llm",
+            inputs={},
+        )
+        
+    def __iter__(self):
+        return self
+    
+    def __next__(self):
+        try:
+            event = self._connection.recv()
+            self._handle_event(event)
+            return event
+        except Exception as e:
+            # Properly propagate StopIteration if the connection is closed
+            if "ConnectionClosedOK" in str(type(e)):
+                raise StopIteration
+            raise
+    
+    def _handle_event(self, event: Any) -> None:
+        """Process each event and update the run tree accordingly."""
+        event_type = getattr(event, 'type', None)
+        
+        if event_type == "conversation.item.created":
+            # Create a new run for the conversation item
+            if self._current_item_run:
+                self._current_item_run.end(
+                    outputs={"content": event.item.content},
+                    end_time=datetime.now(timezone.utc),
+                )
+                self._current_item_run.post()
+            
+        elif event_type == "response.created":
+            # Start a new run for this response
+            self._current_response_run = self._parent_run.create_child(
+                name="assistant_response",
+                run_type="llm",
+                inputs={},
+            )
+            self._message_buffer = []
+            
+        elif event_type == "response.text.delta":
+            self._message_buffer.append(event.delta)
+            
+        elif event_type == "response.done":
+            if self._current_response_run:
+                self._current_response_run.end(
+                    outputs={
+                        "content": "".join(self._message_buffer),
+                        "event_type": event_type
+                    },
+                    end_time=datetime.now(timezone.utc),
+                )
+                self._current_response_run.post()
+                self._current_response_run = None
+                self._message_buffer = []
+
+                self._current_item_run = self._parent_run.create_child(
+                    name="conversation_item",
+                    run_type="llm",
+                    inputs={},
+                )
+                
+        elif event_type == "error":
+            error_run = self._parent_run.create_child(
+                name="error",
+                run_type="llm",
+                inputs={},
+                outputs={"error": str(event.error)},
+            )
+            error_run.end(error=str(event.error))
+            error_run.post()
+            
+        # Handle audio-related events
+        elif event_type == "conversation.item.input_audio_transcription.completed":
+            audio_run = self._parent_run.create_child(
+                name="audio_transcription",
+                run_type="llm",
+                outputs={"transcription": event.transcription},
+            )
+            audio_run.end()
+            audio_run.post()
+            
+        elif event_type == "conversation.item.input_audio_transcription.failed":
+            audio_run = self._parent_run.create_child(
+                name="audio_transcription",
+                run_type="llm",
+                outputs={},
+            )
+            audio_run.end(error=str(event.error))
+            audio_run.post()
+
+def _wrap_openai_realtime(
+    client: Any,
+    name: str = "OpenAIRealtime",
+    tags: Optional[list[str]] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> Any:
+    """Wrap the OpenAI client's realtime functionality with tracing.
+    
+    Args:
+        client: The OpenAI client to wrap
+        name: Name for the trace
+        tags: Optional tags for the trace
+        metadata: Optional metadata for the trace
+    
+    Returns:
+        The wrapped client with tracing enabled
+    """
+    if not hasattr(client, "beta") or not hasattr(client.beta, "realtime"):
+        return client
+
+    original_connect = client.beta.realtime.connect
+    
+    @contextmanager
+    def wrapped_connect(*args, **kwargs):
+        # Create parent run for the entire connection
+        parent_run = run_trees.RunTree(
+            name=name,
+            run_type="chain",
+            inputs=kwargs,
+            tags=tags or [],
+            metadata=metadata or {},
+            serialized={
+                "name": name,
+            }
+        )
+        parent_run.post()
+        
+        try:
+            with original_connect(*args, **kwargs) as connection:
+                traced_connection = TracedRealtimeConnection(
+                    connection=connection,
+                    parent_run=parent_run
+                )
+                yield traced_connection
+        except Exception as e:
+            parent_run.end(error=str(e))
+            raise
+        else:
+            parent_run.end(
+                end_time=datetime.now(timezone.utc),
+            )
+            parent_run.patch()
+    
+    client.beta.realtime.connect = wrapped_connect
+    return client
 
 def wrap_openai(
     client: C,
@@ -359,6 +526,12 @@ def wrap_openai(
             chat_name,
             tracing_extra=tracing_extra,
             invocation_params_fn=functools.partial(_infer_invocation_params, "chat"),
+        )
+
+    if hasattr(client, "beta") and hasattr(client.beta, "realtime"):
+        client = _wrap_openai_realtime(
+            client,
+            chat_name,
         )
 
     return client
