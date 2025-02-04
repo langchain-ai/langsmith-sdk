@@ -1133,6 +1133,7 @@ export class Client implements LangSmithTracingClientInterface {
     // send the runs in multipart requests
     const accumulatedContext: string[] = [];
     const accumulatedParts: MultipartPart[] = [];
+    const encoder = new TextEncoder();
     for (const [method, payloads] of [
       ["post", preparedCreateParams] as const,
       ["patch", preparedUpdateParams] as const,
@@ -1144,10 +1145,11 @@ export class Client implements LangSmithTracingClientInterface {
         const fields = { inputs, outputs, events };
         // encode the main run payload
         const stringifiedPayload = stringifyForTracing(payload);
+        const valueBytes = encoder.encode(stringifiedPayload).length;
         accumulatedParts.push({
           name: `${method}.${payload.id}`,
           payload: new Blob([stringifiedPayload], {
-            type: `application/json; length=${stringifiedPayload.length}`, // encoding=gzip
+            type: `application/json; charset=utf-8; length=${valueBytes}`, // encoding=gzip
           }),
         });
         // encode the fields we collected
@@ -1156,10 +1158,11 @@ export class Client implements LangSmithTracingClientInterface {
             continue;
           }
           const stringifiedValue = stringifyForTracing(value);
+          const valueBytes = encoder.encode(stringifiedValue).length;
           accumulatedParts.push({
             name: `${method}.${payload.id}.${key}`,
             payload: new Blob([stringifiedValue], {
-              type: `application/json; length=${stringifiedValue.length}`,
+              type: `application/json; charset=utf-8; length=${valueBytes}`,
             }),
           });
         }
