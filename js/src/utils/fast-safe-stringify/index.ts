@@ -15,8 +15,8 @@ function defaultOptions() {
   };
 }
 
-function encodeString(str: string): string {
-  return encoder.encode(str).toString();
+function encodeString(str: string): Uint8Array {
+  return encoder.encode(str);
 }
 
 // Regular stringify

@@ -1024,7 +1024,7 @@ export class Client implements LangSmithTracingClientInterface {
     }
   }
 
-  private async _postBatchIngestRuns(body: string) {
+  private async _postBatchIngestRuns(body: Uint8Array) {
     const headers = {
       ...this.headers,
       "Content-Type": "application/json",
