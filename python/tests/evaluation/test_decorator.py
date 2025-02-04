@@ -1,4 +1,5 @@
 import os
+import time
 
 import pytest
 
@@ -81,3 +82,15 @@ def test_param(a, b):
     t.log_outputs({"sum": a + b})
     t.log_reference_outputs({"sum": a + b})
     assert a + b == a + b
+
+
+@pytest.mark.skipif(
+    not os.getenv("LANGSMITH_TRACING"),
+    reason="LANGSMITH_TRACING environment variable not set",
+)
+@pytest.mark.langsmith
+def test_slow_test():
+    t.log_inputs({"slow": "I am slow"})
+    time.sleep(5)
+    t.log_outputs({"slow_result": "I am slow"})
+    t.log_reference_outputs({"slow_result": "I am not fast"})
