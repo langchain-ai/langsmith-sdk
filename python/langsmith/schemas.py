@@ -107,13 +107,17 @@ class ExampleCreate(BaseModel):
 
     id: Optional[UUID]
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    inputs: Dict[str, Any] = Field(default_factory=dict)
+    inputs: Optional[Dict[str, Any]] = Field(default_factory=None)
     outputs: Optional[Dict[str, Any]] = Field(default=None)
     metadata: Optional[Dict[str, Any]] = Field(default=None)
     split: Optional[Union[str, List[str]]] = None
     attachments: Optional[Attachments] = None
+    use_source_run_io: bool = False
+    use_source_run_attachments: Optional[List[str]] = None
+    source_run_id: Optional[UUID] = None
 
     def __init__(self, **data):
+        """Initialize from dict."""
         super().__init__(**data)
 
 
@@ -190,6 +194,7 @@ class AttachmentsOperations(BaseModel):
         default_factory=list, description="List of attachment names to keep"
     )
 
+
 class ExampleUpdate(BaseModel):
     """Example update with attachments."""
 
@@ -204,9 +209,11 @@ class ExampleUpdate(BaseModel):
 
     class Config:
         """Configuration class for the schema."""
+
         frozen = True
 
     def __init__(self, **data):
+        """Initialize from dict."""
         super().__init__(**data)
 
 
