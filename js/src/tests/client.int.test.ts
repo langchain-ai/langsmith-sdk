@@ -1958,7 +1958,7 @@ test("update examples go backend", async () => {
     },
   ]);
 
-  let retrievedExample = await client.readExample(exampleId);
+  const retrievedExample = await client.readExample(exampleId);
   expect(retrievedExample.inputs.text).toEqual("hello world");
   expect(Object.keys(retrievedExample.attachments ?? {}).sort()).toEqual(
     ["test_file2", "test_file3"].sort()

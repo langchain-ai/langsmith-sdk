@@ -66,8 +66,6 @@ import { raiseForStatus } from "./utils/error.js";
 import { _getFetchImplementation } from "./singletons/fetch.js";
 
 import { stringify as stringifyForTracing } from "./utils/fast-safe-stringify/index.js";
-import { StringColorFormat } from "@faker-js/faker";
-import { awaitAllCallbacks } from "@langchain/core/callbacks/promises";
 
 export interface ClientConfig {
   apiUrl?: string;
@@ -2713,7 +2711,7 @@ export class Client implements LangSmithTracingClientInterface {
     options?: CreateExampleOptions
   ): Promise<Example> {
     let datasetId_ = outputs ? options?.datasetId : inputsOrUpdate.dataset_id;
-    let datasetName_ = outputs
+    const datasetName_ = outputs
       ? options?.datasetName
       : inputsOrUpdate.dataset_name;
     if (datasetId_ === undefined && datasetName_ === undefined) {
@@ -2798,7 +2796,7 @@ export class Client implements LangSmithTracingClientInterface {
 
     // Grab the dataset
     let datasetId_ = uploads ? uploads[0].dataset_id : datasetId;
-    let datasetName_ = uploads ? uploads[0].dataset_name : datasetName;
+    const datasetName_ = uploads ? uploads[0].dataset_name : datasetName;
     if (datasetId_ === undefined && datasetName_ === undefined) {
       throw new Error("Must provide either datasetName or datasetId");
     } else if (datasetId_ !== undefined && datasetName_ !== undefined) {
