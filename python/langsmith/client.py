@@ -3936,9 +3936,31 @@ class Client:
             else:
                 created_at = example.created_at
 
+            if isinstance(example, ls_schemas.ExampleCreate):
+                use_source_run_io = example.use_source_run_io
+                use_source_run_attachments = example.use_source_run_attachments
+                source_run_id = example.source_run_id
+            else:
+                use_source_run_io, use_source_run_attachments, source_run_id = (
+                    None,
+                    None,
+                    None,
+                )
+
             example_body = {
                 **({"dataset_id": dataset_id} if include_dataset_id else {}),
                 **({"created_at": created_at} if created_at is not None else {}),
+                **(
+                    {"use_source_run_io": use_source_run_io}
+                    if use_source_run_io
+                    else {}
+                ),
+                **(
+                    {"use_source_run_attachments": use_source_run_attachments}
+                    if use_source_run_attachments
+                    else {}
+                ),
+                **({"source_run_id": source_run_id} if source_run_id else {}),
             }
             if example.metadata is not None:
                 example_body["metadata"] = example.metadata
@@ -4229,6 +4251,7 @@ class Client:
             _close_files(list(opened_files_dict.values()))
         return response.json()
 
+    @ls_utils.xor_args(("dataset_id", "dataset_name"))
     def create_examples(
         self,
         *,
@@ -4285,6 +4308,7 @@ class Client:
                 uploads=uploads,
                 dangerously_allow_filesystem=dangerously_allow_filesystem,
             )
+            return
 
         # Since inputs are required, we will check against them
         input_len = len(inputs)
@@ -4317,7 +4341,7 @@ class Client:
                 kwargs.get("source_run_ids") or [None] * len(inputs),
                 kwargs.get("attachments") or [None] * len(inputs),
                 kwargs.get("use_source_run_io") or [False] * len(inputs),
-                kwargs.get("use_source_run_attachments") or [False] * len(inputs),
+                kwargs.get("use_source_run_attachments") or [[]] * len(inputs),
             )
         ]
 
@@ -4341,6 +4365,7 @@ class Client:
         source_run_id: Optional[ID_TYPE] = None,
         use_source_run_io: bool = False,
         use_source_run_attachments: Optional[List[str]] = None,
+        attachments: Optional[ls_schemas.Attachments] = None,
     ) -> ls_schemas.Example:
         """Create a dataset example in the LangSmith API.
 
@@ -4388,6 +4413,7 @@ class Client:
                 "source_run_id": source_run_id,
                 "use_source_run_io": use_source_run_io,
                 "use_source_run_attachments": use_source_run_attachments,
+                "attachments": attachments,
             }
         )
         if created_at:
@@ -4707,6 +4733,7 @@ class Client:
         split: Optional[str | List[str]] = None,
         dataset_id: Optional[ID_TYPE] = None,
         attachments_operations: Optional[ls_schemas.AttachmentsOperations] = None,
+        attachments: Optional[ls_schemas.Attachments] = None,
     ) -> Dict[str, Any]:
         """Update a specific example.
 
@@ -4746,6 +4773,7 @@ class Client:
             metadata=metadata,
             split=split,
             attachments_operations=attachments_operations,
+            attachments=attachments,
         )
         example = ls_schemas.ExampleUpdate(
             **{k: v for k, v in example_dict.items() if v is not None}
@@ -4805,9 +4833,22 @@ class Client:
             raise ValueError("When passing kwargs, you must pass example_ids")
         elif kwargs:
             example_ids = kwargs.pop("example_ids")
+        elif not updates:
+            raise ValueError("When not passing kwargs, you must pass updates")
+        elif len(updates) == 0:
+            return {"message": "0 examples updated", "count": 0, "example_ids": []}
         else:
+            if not dataset_id and not updates[0].dataset_id:
+                raise ValueError(
+                    "When not passing kwargs, you must pass dataset_id as a param or in the first update object"
+                )
             if not dataset_id:
-                raise ValueError("When not passing kwargs, you must pass dataset_id")
+                # We will naively assume all updates are for dataset from first example
+                dataset_id = updates[0].dataset_id
+
+            if not dataset_id:
+                raise ValueError("Must pass a non-null dataset_id")
+
             response = self._update_examples_multipart(
                 dataset_id=dataset_id,
                 updates=updates,

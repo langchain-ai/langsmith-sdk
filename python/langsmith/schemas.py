@@ -121,6 +121,9 @@ class ExampleCreate(BaseModel):
         super().__init__(**data)
 
 
+ExampleUploadWithAttachments = ExampleCreate
+
+
 class ExampleUpsertWithAttachments(ExampleCreate):
     """Example create with attachments."""
 
@@ -200,7 +203,7 @@ class ExampleUpdate(BaseModel):
 
     id: UUID
     dataset_id: Optional[UUID] = None
-    inputs: Dict[str, Any] = Field(default_factory=dict)
+    inputs: Optional[Dict[str, Any]] = Field(default=None)
     outputs: Optional[Dict[str, Any]] = Field(default=None)
     metadata: Optional[Dict[str, Any]] = Field(default=None)
     split: Optional[Union[str, List[str]]] = None
