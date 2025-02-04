@@ -667,6 +667,7 @@ class _LangSmithTestSuite:
         pytest_plugin,
         pytest_nodeid,
     ) -> None:
+        # TODO: remove this hack so that run durations are correct
         # Ensure example is fully updated
         self.sync_example(example_id, inputs=run_tree.inputs, outputs=reference_outputs)
         run_tree.end(outputs=outputs)
@@ -681,6 +682,8 @@ class _TestCase:
         run_id: uuid.UUID,
         pytest_plugin: Any = None,
         pytest_nodeid: Any = None,
+        inputs: Optional[dict] = None,
+        reference_outputs: Optional[dict] = None,
     ) -> None:
         self.test_suite = test_suite
         self.example_id = example_id
@@ -693,6 +696,10 @@ class _TestCase:
             pytest_plugin.add_process_to_test_suite(
                 test_suite._dataset.name, pytest_nodeid
             )
+            if inputs:
+                self.log_inputs(inputs)
+            if reference_outputs:
+                self.log_reference_outputs(reference_outputs)
 
     def sync_example(
         self, *, inputs: Optional[dict] = None, outputs: Optional[dict] = None
@@ -832,13 +839,16 @@ def _create_test_case(
             + "/compare?selectedSessions="
             + str(test_suite.experiment_id)
         )
-    return _TestCase(
+    test_case = _TestCase(
         test_suite,
         example_id,
         run_id=uuid.uuid4(),
+        inputs=inputs,
+        reference_outputs=outputs,
         pytest_plugin=pytest_plugin,
         pytest_nodeid=pytest_nodeid,
     )
+    return test_case
 
 
 def _run_test(
