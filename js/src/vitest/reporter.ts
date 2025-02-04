@@ -10,15 +10,22 @@ class LangSmithEvalReporter extends DefaultReporter {
   async onFinished(files: RunnerTestFile[], errors: unknown[]) {
     super.onFinished(files, errors);
     for (const file of files) {
-      const testModule = this.ctx.state.getReportedEntity(file) as TestModule;
-      const tests = [...testModule.children.allTests()].map((test) => {
-        return {
-          title: test.name,
-          status: test.result()?.state ?? "skipped",
-          duration: Math.round(test.diagnostic()?.duration ?? 0),
-        };
-      });
-      await printReporterTable(tests);
+      for (const task of file.tasks) {
+        const testModule = this.ctx.state.getReportedEntity(task) as TestModule;
+        const tests = [...testModule.children.allTests()].map((test) => {
+          return {
+            title: test.name,
+            status: test.result()?.state ?? "skipped",
+            duration: Math.round(test.diagnostic()?.duration ?? 0),
+          };
+        });
+        const result = ["pass", "fail", "skip"].includes(
+          task.result?.state ?? ""
+        )
+          ? (task.result?.state as "pass" | "fail" | "skip")
+          : "skip";
+        await printReporterTable(task.name, tests, result);
+      }
     }
   }
 }
