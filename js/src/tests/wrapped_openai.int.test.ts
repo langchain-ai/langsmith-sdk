@@ -12,6 +12,7 @@ import { UsageMetadata } from "../schemas.js";
 import fs from "fs";
 
 function parseRequestBody(body: any) {
+  // eslint-disable-next-line no-instanceof/no-instanceof
   return body instanceof Uint8Array
     ? JSON.parse(new TextDecoder().decode(body))
     : JSON.parse(body);
