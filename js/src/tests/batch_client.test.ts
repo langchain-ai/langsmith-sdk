@@ -7,12 +7,17 @@ import { convertToDottedOrderFormat } from "../run_trees.js";
 import { _getFetchImplementation } from "../singletons/fetch.js";
 import { RunCreate } from "../schemas.js";
 
-const parseMockRequestBody = async (body: string | ArrayBuffer) => {
+const parseMockRequestBody = async (body: string | ArrayBuffer | Uint8Array) => {
   if (typeof body === "string") {
     return JSON.parse(body);
   }
+  
   // Typing is missing
   const rawMultipart = new TextDecoder().decode(body);
+
+  if (rawMultipart.trim().startsWith('{')) {
+    return JSON.parse(rawMultipart);
+  }
   // Parse the multipart form data boundary from the raw text
   const boundary = rawMultipart.split("\r\n")[0].trim();
   // Split the multipart body into individual parts
@@ -143,7 +148,7 @@ describe.each(ENDPOINT_TYPES)(
         _getFetchImplementation(),
         expectedTraceURL,
         expect.objectContaining({
-          body: expect.any(endpointType === "batch" ? String : ArrayBuffer),
+          body: expect.any(endpointType === "batch" ? Uint8Array : ArrayBuffer),
         })
       );
     });
@@ -257,7 +262,7 @@ describe.each(ENDPOINT_TYPES)(
         _getFetchImplementation(),
         expectedTraceURL,
         expect.objectContaining({
-          body: expect.any(endpointType === "batch" ? String : ArrayBuffer),
+          body: expect.any(endpointType === "batch" ? Uint8Array : ArrayBuffer),
         })
       );
     });
@@ -338,7 +343,7 @@ describe.each(ENDPOINT_TYPES)(
         _getFetchImplementation(),
         expectedTraceURL,
         expect.objectContaining({
-          body: expect.any(endpointType === "batch" ? String : ArrayBuffer),
+          body: expect.any(endpointType === "batch" ? Uint8Array : ArrayBuffer),
         })
       );
     });
@@ -935,7 +940,7 @@ describe.each(ENDPOINT_TYPES)(
         _getFetchImplementation(),
         "https://api.smith.langchain.com/runs/batch",
         expect.objectContaining({
-          body: expect.any(String),
+          body: expect.any(Uint8Array),
         })
       );
     });
@@ -1027,7 +1032,7 @@ describe.each(ENDPOINT_TYPES)(
         _getFetchImplementation(),
         expectedTraceURL,
         expect.objectContaining({
-          body: expect.any(endpointType === "batch" ? String : ArrayBuffer),
+          body: expect.any(endpointType === "batch" ? Uint8Array : ArrayBuffer),
         })
       );
     });

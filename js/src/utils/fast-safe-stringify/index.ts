@@ -20,7 +20,7 @@ function encodeString(str: string): Uint8Array {
 }
 
 // Regular stringify
-export function stringify(obj, replacer?, spacer?, options?) {
+export function serialize(obj, replacer?, spacer?, options?) {
   try {
     const str = JSON.stringify(obj, replacer, spacer);
     return encodeString(str);
