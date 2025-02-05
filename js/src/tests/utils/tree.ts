@@ -35,12 +35,12 @@ export function getAssumedTreeFromCalls(calls: unknown[][]) {
       body = JSON.parse(fetchArgs.body);
     } else {
       const decoded = new TextDecoder().decode(fetchArgs.body);
-      
+
       if (decoded.trim().startsWith("{")) {
         body = JSON.parse(decoded);
       }
     }
-    
+
     if (req === "POST /runs") {
       const id = body!.id;
       upsertId(id);

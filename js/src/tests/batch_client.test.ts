@@ -7,15 +7,17 @@ import { convertToDottedOrderFormat } from "../run_trees.js";
 import { _getFetchImplementation } from "../singletons/fetch.js";
 import { RunCreate } from "../schemas.js";
 
-const parseMockRequestBody = async (body: string | ArrayBuffer | Uint8Array) => {
+const parseMockRequestBody = async (
+  body: string | ArrayBuffer | Uint8Array
+) => {
   if (typeof body === "string") {
     return JSON.parse(body);
   }
-  
+
   // Typing is missing
   const rawMultipart = new TextDecoder().decode(body);
 
-  if (rawMultipart.trim().startsWith('{')) {
+  if (rawMultipart.trim().startsWith("{")) {
     return JSON.parse(rawMultipart);
   }
   // Parse the multipart form data boundary from the raw text
