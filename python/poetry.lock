@@ -1963,6 +1963,18 @@ slack = ["slack-sdk"]
 telegram = ["requests"]
 
 [[package]]
+name = "types-deprecated"
+version = "1.2.15.20241117"
+description = "Typing stubs for Deprecated"
+optional = false
+python-versions = ">=3.8"
+groups = ["typing"]
+files = [
+    {file = "types-Deprecated-1.2.15.20241117.tar.gz", hash = "sha256:924002c8b7fddec51ba4949788a702411a2e3636cd9b2a33abd8ee119701d77e"},
+    {file = "types_Deprecated-1.2.15.20241117-py3-none-any.whl", hash = "sha256:a0cc5e39f769fc54089fd8e005416b55d74aa03f6964d2ed1a0b0b2e28751884"},
+]
+
+[[package]]
 name = "types-psutil"
 version = "5.9.5.20240516"
 description = "Typing stubs for psutil"
@@ -1980,6 +1992,7 @@ version = "2025.1.0.20250204"
 description = "Typing stubs for pytz"
 optional = false
 python-versions = ">=3.9"
+groups = ["dev"]
 files = [
     {file = "types_pytz-2025.1.0.20250204-py3-none-any.whl", hash = "sha256:32ca4a35430e8b94f6603b35beb7f56c32260ddddd4f4bb305fdf8f92358b87e"},
     {file = "types_pytz-2025.1.0.20250204.tar.gz", hash = "sha256:00f750132769f1c65a4f7240bc84f13985b4da774bd17dfbe5d9cd442746bd49"},
@@ -2516,4 +2529,4 @@ vcr = []
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.9,<4.0"
-content-hash = "d4f1871259f75512917119082e932b738fc7dd4c46a2677b38111f9e40414dbc"
+content-hash = "a358a032ba5bed139f9fc95a7c3dbd12c638e068c834dd1d83dc7b4b8085b805"
