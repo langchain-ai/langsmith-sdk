@@ -281,12 +281,12 @@ export function generateWrapperFromJestlikeMethods(
     method: (name: string, fn: () => void | Promise<void>) => void
   ): LangSmithJestlikeDescribeWrapper {
     return function (
-      datasetName: string,
+      testSuiteName: string,
       fn: () => void | Promise<void>,
       experimentConfig?: LangSmithJestlikeDescribeWrapperConfig
     ) {
       const client = experimentConfig?.client ?? DEFAULT_TEST_CLIENT;
-      const suiteName = experimentConfig?.datasetName ?? datasetName;
+      const suiteName = experimentConfig?.testSuiteName ?? testSuiteName;
       return method(suiteName, () => {
         const startTime = new Date();
         const suiteUuid = v4();

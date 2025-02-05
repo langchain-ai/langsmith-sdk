@@ -127,6 +127,6 @@ ls.describe(
     metadata: {
       model: "test-model",
     },
-    datasetName: "js-vitest-testing",
+    testSuiteName: "js-vitest-testing",
   }
 );

@@ -22,7 +22,7 @@ export type LangSmithJestlikeWrapperParams<I, O> = {
 export type LangSmithJestlikeDescribeWrapperConfig = {
   client?: Client;
   enableTestTracking?: boolean;
-  datasetName?: string;
+  testSuiteName?: string;
 } & Partial<Omit<CreateProjectParams, "referenceDatasetId">>;
 
 export type LangSmithJestlikeDescribeWrapper = (
