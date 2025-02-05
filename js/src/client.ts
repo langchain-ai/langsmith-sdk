@@ -2710,6 +2710,14 @@ export class Client implements LangSmithTracingClientInterface {
     outputs?: KVMap,
     options?: CreateExampleOptions
   ): Promise<Example> {
+    if ("dataset_id" in inputsOrUpdate || "dataset_name" in inputsOrUpdate) {
+      if (outputs !== undefined || options !== undefined) {
+        throw new Error(
+          "Cannot provide outputs or options when using ExampleCreate object"
+        );
+      }
+    }
+
     let datasetId_ = outputs ? options?.datasetId : inputsOrUpdate.dataset_id;
     const datasetName_ = outputs
       ? options?.datasetName
@@ -2783,7 +2791,11 @@ export class Client implements LangSmithTracingClientInterface {
         inputs,
         outputs,
         metadata,
+        splits,
         sourceRunIds,
+        useSourceRunIOs,
+        useSourceRunAttachments,
+        attachments,
         exampleIds,
         datasetId,
         datasetName,
@@ -2792,6 +2804,8 @@ export class Client implements LangSmithTracingClientInterface {
       throw new Error("When providing uploads cannot provide any other params");
     } else if (inputs === undefined && uploads === undefined) {
       throw new Error("Must provide either inputs or uploads");
+    } else if (uploads !== undefined && uploads.length === 0) {
+      return [];
     }
 
     // Grab the dataset

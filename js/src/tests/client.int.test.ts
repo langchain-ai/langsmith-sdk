@@ -1967,3 +1967,79 @@ test("update examples go backend", async () => {
   // Clean up
   await client.deleteDataset({ datasetName });
 });
+
+test("create example errors", async () => {
+  const client = new Client();
+  const datasetName = `__test_create_examples_go_backend${uuidv4().slice(
+    0,
+    4
+  )}`;
+
+  // Clean up existing dataset if it exists
+  if (await client.hasDataset({ datasetName })) {
+    await client.deleteDataset({ datasetName });
+  }
+
+  // Create actual dataset
+  const dataset = await client.createDataset(datasetName, {
+    description: "Test dataset for multipart example upload",
+    dataType: "kv",
+  });
+
+  const exampleId = uuidv4();
+  const example: ExampleCreate = {
+    id: exampleId,
+    dataset_id: dataset.id,
+    inputs: { text: "hello world" },
+    attachments: {
+      test_file: ["plain/txt", Buffer.from("data")],
+    },
+  };
+
+  const invalidExample: ExampleCreate = {
+    id: exampleId,
+    inputs: { text: "hello world" },
+    attachments: {
+      test_file: ["plain/txt", Buffer.from("data")],
+    },
+  };
+
+  const invalidExample2: ExampleCreate = {
+    id: exampleId,
+    dataset_id: dataset.id,
+    dataset_name: datasetName,
+    inputs: { text: "hello world" },
+    attachments: {
+      test_file: ["plain/txt", Buffer.from("data")],
+    },
+  };
+
+  await expect(
+    client.createExample(example, { foo: "bar" }, {})
+  ).rejects.toThrow(
+    "Cannot provide outputs or options when using ExampleCreate object"
+  );
+
+  await expect(client.createExample(invalidExample)).rejects.toThrow(
+    "Must provide either datasetName or datasetId"
+  );
+
+  await expect(client.createExample(invalidExample2)).rejects.toThrow(
+    "Must provide either datasetName or datasetId, not both"
+  );
+
+  await expect(client.createExample({ foo: "bar" }, {}, {})).rejects.toThrow(
+    "Must provide either datasetName or datasetId"
+  );
+
+  await expect(
+    client.createExample(
+      { foo: "bar" },
+      {},
+      { datasetId: dataset.id, datasetName: datasetName }
+    )
+  ).rejects.toThrow("Must provide either datasetName or datasetId, not both");
+
+  // Clean up
+  await client.deleteDataset({ datasetName });
+});
