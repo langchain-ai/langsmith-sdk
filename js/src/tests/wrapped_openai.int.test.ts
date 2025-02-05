@@ -11,6 +11,12 @@ import { z } from "zod";
 import { UsageMetadata } from "../schemas.js";
 import fs from "fs";
 
+function parseRequestBody(body: any) {
+  return body instanceof Uint8Array
+    ? JSON.parse(new TextDecoder().decode(body))
+    : JSON.parse(body);
+}
+
 test("wrapOpenAI should return type compatible with OpenAI", async () => {
   let originalClient = new OpenAI();
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -323,8 +329,8 @@ test.concurrent("chat completions with tool calling", async () => {
   for (const call of callSpy.mock.calls) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect(JSON.parse((call[2] as any).body).extra.metadata).toEqual({
+    const body = parseRequestBody((call[2] as any).body);
+    expect(body.extra.metadata).toEqual({
       thing1: "thing2",
       ls_model_name: "gpt-3.5-turbo",
       ls_model_type: "chat",
@@ -566,8 +572,8 @@ test.concurrent("beta.chat.completions.parse", async () => {
   for (const call of callSpy.mock.calls) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect(JSON.parse((call[2] as any).body).extra.metadata).toEqual({
+    const body = parseRequestBody((call[2] as any).body);
+    expect(body.extra.metadata).toEqual({
       ls_model_name: "gpt-4o-mini",
       ls_model_type: "chat",
       ls_provider: "openai",
@@ -655,7 +661,7 @@ describe("Usage Metadata Tests", () => {
         const requestBodies: any = {};
         for (const call of callSpy.mock.calls) {
           const request = call[2] as any;
-          const requestBody = JSON.parse(request.body);
+          const requestBody = parseRequestBody(request.body);
           if (request.method === "POST") {
             requestBodies["post"] = [requestBody];
           }
