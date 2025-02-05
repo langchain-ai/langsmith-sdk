@@ -4766,9 +4766,7 @@ class Client:
         example_dict = dict(
             inputs=inputs,
             outputs=outputs,
-            dataset_id=(
-                uuid.UUID(dataset_id) if isinstance(dataset_id, str) else dataset_id
-            ),
+            id=example_id,
             metadata=metadata,
             split=split,
             attachments_operations=attachments_operations,
@@ -4785,9 +4783,7 @@ class Client:
                 )
             )
         else:
-            dataset_id = [e for e in self.list_examples(example_ids=[example_id])][
-                0
-            ].dataset_id
+            dataset_id = self.read_example(example_id).dataset_id
             return dict(
                 self._update_examples_multipart(
                     dataset_id=dataset_id, updates=[example]
