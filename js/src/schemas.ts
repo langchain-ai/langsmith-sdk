@@ -255,12 +255,6 @@ export interface RunUpdate {
   attachments?: Attachments;
 }
 
-/* export interface ExampleCreate extends BaseExample {
-  id?: string;
-  created_at?: string;
-  split?: string | string[];
-} */
-
 export interface ExampleCreate {
   id?: string;
   inputs: KVMap;

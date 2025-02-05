@@ -4339,7 +4339,7 @@ export class Client implements LangSmithTracingClientInterface {
 
       // Add inputs if present
       if (example.inputs) {
-        const stringifiedInputs = stringifyForTracing(example.inputs);
+        const stringifiedInputs = serializePayloadForTracing(example.inputs);
         const inputsBlob = new Blob([stringifiedInputs], {
           type: "application/json",
         });
