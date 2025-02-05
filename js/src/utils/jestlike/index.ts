@@ -297,6 +297,9 @@ export function generateWrapperFromJestlikeMethods(
         const nodeEnv =
           experimentConfig?.metadata?.NODE_ENV ??
           getEnvironmentVariable("NODE_ENV");
+        const langsmithEnvironment =
+          experimentConfig?.metadata?.LANGSMITH_ENVIRONMENT ??
+          getEnvironmentVariable("LANGSMITH_ENVIRONMENT");
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const metadata: Record<string, any> = {
           ...experimentConfig?.metadata,
@@ -307,6 +310,9 @@ export function generateWrapperFromJestlikeMethods(
         }
         if (nodeEnv !== undefined) {
           metadata.NODE_ENV = nodeEnv;
+        }
+        if (langsmithEnvironment !== undefined) {
+          metadata.LANGSMITH_ENVIRONMENT = langsmithEnvironment;
         }
         const context = {
           suiteUuid,
