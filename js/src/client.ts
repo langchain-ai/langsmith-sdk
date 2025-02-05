@@ -4221,7 +4221,7 @@ export class Client implements LangSmithTracingClientInterface {
       });
       formData.append(exampleId, exampleBlob);
 
-      // Add inputs
+      // Add inputs if present
       if (example.inputs) {
         const stringifiedInputs = stringifyForTracing(example.inputs);
         const inputsBlob = new Blob([stringifiedInputs], {
@@ -4337,12 +4337,14 @@ export class Client implements LangSmithTracingClientInterface {
       });
       formData.append(exampleId, exampleBlob);
 
-      // Add inputs
-      const stringifiedInputs = stringifyForTracing(example.inputs);
-      const inputsBlob = new Blob([stringifiedInputs], {
-        type: "application/json",
-      });
-      formData.append(`${exampleId}.inputs`, inputsBlob);
+      // Add inputs if present
+      if (example.inputs) {
+        const stringifiedInputs = stringifyForTracing(example.inputs);
+        const inputsBlob = new Blob([stringifiedInputs], {
+          type: "application/json",
+        });
+        formData.append(`${exampleId}.inputs`, inputsBlob);
+      }
 
       // Add outputs if present
       if (example.outputs) {
