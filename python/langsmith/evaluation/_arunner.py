@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures as cf
-import datetime
 import io
 import logging
 import pathlib
