@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures as cf
-import datetime
 import io
 import logging
 import pathlib
@@ -1137,8 +1136,6 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         project_metadata["dataset_splits"] = await self._get_dataset_splits()
         self.client.update_project(
             experiment.id,
-            end_time=experiment.end_time
-            or datetime.datetime.now(datetime.timezone.utc),
             metadata={
                 **experiment.metadata,
                 **project_metadata,

@@ -877,7 +877,6 @@ export class _ExperimentManager {
     }
 
     await this.client.updateProject(experiment.id, {
-      endTime: new Date().toISOString(),
       metadata: projectMetadata,
     });
   }

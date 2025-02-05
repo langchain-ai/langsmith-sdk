@@ -169,7 +169,7 @@ def convert_runs_to_test(
         client.create_run(**new_run, project_name=test_project_name)
 
     _ = client.update_project(
-        project.id, end_time=datetime.datetime.now(tz=datetime.timezone.utc)
+        project.id,
     )
     return project
 

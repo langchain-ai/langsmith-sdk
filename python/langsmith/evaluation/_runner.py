@@ -5,7 +5,6 @@ from __future__ import annotations
 import ast
 import collections
 import concurrent.futures as cf
-import datetime
 import functools
 import inspect
 import io
@@ -1823,8 +1822,6 @@ class _ExperimentManager(_ExperimentManagerMixin):
         project_metadata["dataset_splits"] = self._get_dataset_splits()
         self.client.update_project(
             experiment.id,
-            end_time=experiment.end_time
-            or datetime.datetime.now(datetime.timezone.utc),
             metadata={
                 **experiment.metadata,
                 **project_metadata,
