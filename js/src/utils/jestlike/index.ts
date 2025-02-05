@@ -294,6 +294,9 @@ export function generateWrapperFromJestlikeMethods(
         const environment =
           experimentConfig?.metadata?.ENVIRONMENT ??
           getEnvironmentVariable("ENVIRONMENT");
+        const nodeEnv =
+          experimentConfig?.metadata?.NODE_ENV ??
+          getEnvironmentVariable("NODE_ENV");
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const metadata: Record<string, any> = {
           ...experimentConfig?.metadata,
@@ -301,6 +304,9 @@ export function generateWrapperFromJestlikeMethods(
         };
         if (environment !== undefined) {
           metadata.ENVIRONMENT = environment;
+        }
+        if (nodeEnv !== undefined) {
+          metadata.NODE_ENV = nodeEnv;
         }
         const context = {
           suiteUuid,
