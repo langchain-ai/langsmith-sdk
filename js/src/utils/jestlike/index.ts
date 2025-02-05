@@ -32,7 +32,8 @@ import { SimpleEvaluationResult } from "./types.js";
 import type {
   LangSmithJestlikeWrapperConfig,
   LangSmithJestlikeWrapperParams,
-  LangSmithJestDescribeWrapper,
+  LangSmithJestlikeDescribeWrapper,
+  LangSmithJestlikeDescribeWrapperConfig,
 } from "./types.js";
 
 const DEFAULT_TEST_TIMEOUT = 30_000;
@@ -264,7 +265,7 @@ export function generateWrapperFromJestlikeMethods(
       });
       const experimentUrl = `${datasetUrl}/compare?selectedSessions=${project.id}`;
       console.log(
-        `[LANGSMITH]: Experiment starting! View results at ${experimentUrl}`
+        `[LANGSMITH]: Experiment starting for dataset "${datasetName}"!\n[LANGSMITH]: View results at ${experimentUrl}`
       );
       storageValue = {
         dataset,
@@ -278,22 +279,20 @@ export function generateWrapperFromJestlikeMethods(
 
   function wrapDescribeMethod(
     method: (name: string, fn: () => void | Promise<void>) => void
-  ): LangSmithJestDescribeWrapper {
+  ): LangSmithJestlikeDescribeWrapper {
     return function (
       datasetName: string,
       fn: () => void | Promise<void>,
-      experimentConfig?: {
-        client?: Client;
-        enableTestTracking?: boolean;
-      } & Partial<Omit<CreateProjectParams, "referenceDatasetId">>
+      experimentConfig?: LangSmithJestlikeDescribeWrapperConfig
     ) {
       const client = experimentConfig?.client ?? DEFAULT_TEST_CLIENT;
-      return method(datasetName, () => {
+      const suiteName = experimentConfig?.datasetName ?? datasetName;
+      return method(suiteName, () => {
         const startTime = new Date();
         const suiteUuid = v4();
         const context = {
           suiteUuid,
-          suiteName: datasetName,
+          suiteName,
           client,
           createdAt: new Date().toISOString(),
           projectConfig: {

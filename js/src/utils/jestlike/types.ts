@@ -1,4 +1,6 @@
+import { CreateProjectParams } from "../../client.js";
 import { EvaluationResult } from "../../evaluation/evaluator.js";
+import { Client } from "../../index.js";
 import type { RunTreeConfig } from "../../run_trees.js";
 import type { SimpleEvaluator } from "./vendor/evaluatedBy.js";
 
@@ -17,11 +19,20 @@ export type LangSmithJestlikeWrapperParams<I, O> = {
   config?: LangSmithJestlikeWrapperConfig;
 };
 
-export type LangSmithJestDescribeWrapper = (
+export type LangSmithJestlikeDescribeWrapperConfig = {
+  client?: Client;
+  enableTestTracking?: boolean;
+  datasetName?: string;
+} & Partial<Omit<CreateProjectParams, "referenceDatasetId">>;
+
+export type LangSmithJestlikeDescribeWrapper = (
   name: string,
   fn: () => void | Promise<void>,
-  config?: Partial<RunTreeConfig>
+  config?: LangSmithJestlikeDescribeWrapperConfig
 ) => void;
+
+/** @deprecated Import as `LangSmithJestlikeDescribeWrapper` instead. */
+export type LangSmithJestDescribeWrapper = LangSmithJestlikeDescribeWrapper;
 
 export type SimpleEvaluationResult = {
   key: EvaluationResult["key"];
