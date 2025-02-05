@@ -34,11 +34,10 @@ export function getAssumedTreeFromCalls(calls: unknown[][]) {
     if (typeof fetchArgs.body === "string") {
       body = JSON.parse(fetchArgs.body);
     } else {
-      // Typing is missing
-      const rawMultipart = new TextDecoder().decode(fetchArgs.body);
+      const decoded = new TextDecoder().decode(fetchArgs.body);
       
-      if (rawMultipart.trim().startsWith('{')) {
-        body = JSON.parse(rawMultipart);
+      if (decoded.trim().startsWith("{")) {
+        body = JSON.parse(decoded);
       }
     }
     
