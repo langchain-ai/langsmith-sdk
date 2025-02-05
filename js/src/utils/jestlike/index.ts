@@ -35,6 +35,7 @@ import type {
   LangSmithJestlikeDescribeWrapper,
   LangSmithJestlikeDescribeWrapperConfig,
 } from "./types.js";
+import { getEnvironmentVariable } from "../env.js";
 
 const DEFAULT_TEST_TIMEOUT = 30_000;
 
@@ -290,6 +291,17 @@ export function generateWrapperFromJestlikeMethods(
       return method(suiteName, () => {
         const startTime = new Date();
         const suiteUuid = v4();
+        const environment =
+          experimentConfig?.metadata?.ENVIRONMENT ??
+          getEnvironmentVariable("ENVIRONMENT");
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const metadata: Record<string, any> = {
+          ...experimentConfig?.metadata,
+          __ls_runner: testRunnerName,
+        };
+        if (environment !== undefined) {
+          metadata.ENVIRONMENT = environment;
+        }
         const context = {
           suiteUuid,
           suiteName,
@@ -297,10 +309,7 @@ export function generateWrapperFromJestlikeMethods(
           createdAt: new Date().toISOString(),
           projectConfig: {
             ...experimentConfig,
-            metadata: {
-              ...experimentConfig?.metadata,
-              __ls_runner: testRunnerName,
-            },
+            metadata,
           },
           enableTestTracking: experimentConfig?.enableTestTracking,
         };
