@@ -2249,7 +2249,7 @@ def test_new_update_examples(langchain_client: Client) -> None:
     assert retrieved_example.attachments.keys() == example_update.attachments.keys()
 
     langchain_client.update_examples(
-        dataset_id=dataset.id,
+        dataset_ids=[dataset.id],
         example_ids=[example_id],
         inputs=[{"query": "What's not in this image?"}],
         outputs=[{"answer": "A real image"}],
@@ -2669,7 +2669,7 @@ def test_update_example_with_attachments_operations(langchain_client: Client) ->
             "image2": ("image/png", b"fake image data 2"),
         },
     )
-    langchain_client.upload_examples_multipart(dataset_id=dataset.id, uploads=[example])
+    langchain_client.create_examples(dataset_id=dataset.id, uploads=[example])
 
     # Update example with attachment operations to rename and retain attachments
     attachments_operations = AttachmentsOperations(
@@ -2698,6 +2698,24 @@ def test_update_example_with_attachments_operations(langchain_client: Client) ->
     assert (
         retrieved_example.attachments["renamed_image"]["reader"].read()
         == b"fake image data 1"
+    )
+
+    langchain_client.update_example(
+        dataset_id=dataset.id,
+        example_id=example_id,
+        attachments={"image3": ("image/png", b"fake image data 3")},
+    )
+
+    # Verify the update
+    retrieved_example = langchain_client.read_example(
+        example_id=example_id,
+    )
+
+    # Check that only the renamed attachment exists
+    assert len(retrieved_example.attachments) == 1
+    assert "image3" in retrieved_example.attachments
+    assert (
+        retrieved_example.attachments["image3"]["reader"].read() == b"fake image data 3"
     )
 
     # Clean up

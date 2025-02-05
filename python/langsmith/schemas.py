@@ -107,7 +107,7 @@ class ExampleCreate(BaseModel):
 
     id: Optional[UUID]
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    inputs: Optional[Dict[str, Any]] = Field(default_factory=None)
+    inputs: Optional[Dict[str, Any]] = Field(default=None)
     outputs: Optional[Dict[str, Any]] = Field(default=None)
     metadata: Optional[Dict[str, Any]] = Field(default=None)
     split: Optional[Union[str, List[str]]] = None
@@ -142,6 +142,7 @@ class Example(ExampleBase):
     """Example model."""
 
     id: UUID
+    inputs: Optional[Dict[str, Any]] = Field(default=None, allow_mutation=True)
     created_at: datetime = Field(
         default_factory=lambda: datetime.fromtimestamp(0, tz=timezone.utc)
     )

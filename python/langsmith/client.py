@@ -3979,19 +3979,20 @@ class Client:
                 )
             )
 
-            inputsb = _dumps_json(example.inputs)
+            if example.inputs:
+                inputsb = _dumps_json(example.inputs)
 
-            parts.append(
-                (
-                    f"{example_id}.inputs",
+                parts.append(
                     (
-                        None,
-                        inputsb,
-                        "application/json",
-                        {},
-                    ),
+                        f"{example_id}.inputs",
+                        (
+                            None,
+                            inputsb,
+                            "application/json",
+                            {},
+                        ),
+                    )
                 )
-            )
 
             if example.outputs:
                 outputsb = _dumps_json(example.outputs)
@@ -4072,7 +4073,7 @@ class Client:
 
     @deprecated(
         version="0.1.0",
-        reason="This method is deprecated. Use `create_examples` instead.",
+        reason="This method is deprecated. Use `update_examples` instead.",
     )
     def update_examples_multipart(
         self,
@@ -4137,7 +4138,7 @@ class Client:
         return response.json()
 
     @deprecated(
-        reason="This method is deprecated. Please use the new upload_examples_multipart method instead."
+        reason="This method is deprecated. Please use the `create_examples` method instead."
     )
     def upload_examples_multipart(
         self,
@@ -4165,6 +4166,7 @@ class Client:
         Args:
             dataset_id (Union[UUID, str]): The ID of the dataset to upload to.
             uploads (Optional[List[ExampleCreate]]): The examples to upload.
+            dangerously_allow_filesystem (bool): Whether to allow uploading files from the filesystem.
 
         Returns:
             ls_schemas.UpsertExamplesResponse: The count and ids of the successfully uploaded examples
@@ -4263,24 +4265,16 @@ class Client:
         """Create examples in a dataset.
 
         Args:
-            inputs (Sequence[Mapping[str, Any]]):
-                The input values for the examples.
-            outputs (Optional[Sequence[Optional[Mapping[str, Any]]]]):
-                The output values for the examples.
-            metadata (Optional[Sequence[Optional[Mapping[str, Any]]]]):
-                The metadata for the examples.
-            splits (Optional[Sequence[Optional[str | List[str]]]]):
-                The splits for the examples, which are divisions
-                of your dataset such as 'train', 'test', or 'validation'.
-            source_run_ids (Optional[Sequence[Optional[Union[UUID, str]]]]):
-                    The IDs of the source runs associated with the examples.
-            ids (Optional[Sequence[Union[UUID, str]]]):
-                The IDs of the examples.
-            dataset_id (Optional[Union[UUID, str]]):
-                The ID of the dataset to create the examples in.
             dataset_name (Optional[str]):
                 The name of the dataset to create the examples in.
-            **kwargs: Any: Additional keyword arguments are ignored.
+            dataset_id (Optional[Union[UUID, str]]):
+                The ID of the dataset to create the examples in.
+            uploads (Optional[List[ExampleCreate]]):
+                The examples to create.
+            dangerously_allow_filesystem (bool):
+                Whether to allow uploading files from the filesystem.
+            **kwargs: (Any): Kwargs for backwards compatibility of old `create_eaxmples`.
+                Do not pass if using uploads.
 
         Raises:
             ValueError: If neither dataset_id nor dataset_name is provided.
@@ -4393,6 +4387,13 @@ class Client:
                 example will be created.
             source_run_id (Optional[Union[UUID, str]]):
                 The ID of the source run associated with this example.
+            use_source_run_io (bool):
+                Whether to use the inputs, outputs, and attachments from the source run.
+            use_source_run_attachments (Optional[List[str]]):
+                Which attachments to use from the source run. If use_source_run_io
+                is True, all attachments will be used regardless of this param.
+            attachments (Optional[Attachments]):
+                The attachments for the example.
 
         Returns:
             Example: The created example.
@@ -4752,6 +4753,8 @@ class Client:
                 The ID of the dataset to update.
             attachments_operations (Optional[AttachmentsOperations]):
                 The attachments operations to perform.
+            attachments (Optional[Attachments]):
+                The attachments to add to the example.
 
         Returns:
             Dict[str, Any]: The updated example.
@@ -4801,21 +4804,14 @@ class Client:
         """Update multiple examples.
 
         Args:
-            example_ids (Sequence[Union[UUID, str]]):
-                The IDs of the examples to update.
-            inputs (Optional[Sequence[Optional[Dict[str, Any]]]):
-                The input values for the examples.
-            outputs (Optional[Sequence[Optional[Mapping[str, Any]]]]):
-                The output values for the examples.
-            metadata (Optional[Sequence[Optional[Mapping[str, Any]]]]):
-                The metadata for the examples.
-            splits (Optional[Sequence[Optional[str | List[str]]]]):
-                The splits for the examples, which are divisions
-                of your dataset such as 'train', 'test', or 'validation'.
-            dataset_ids (Optional[Sequence[Optional[Union[UUID, str]]]]):
-                The IDs of the datasets to move the examples to.
-            attachments_operations (Optional[Sequence[Optional[ls_schemas.AttachmentsOperations]]):
-                The operations to perform on the attachments.
+            dataset_id (Optional[Union[UUID, str]]):
+                The ID of the dataset to update.
+            updates (Optional[List[ExampleUpdate]]):
+                The updates to apply to the examples.
+            dangerously_allow_filesystem (bool, default=False):
+                Whether to allow using filesystem paths as attachments.
+            **kwargs: (Any): Kwargs for backwards compatibility of old `update_examples`.
+                Do not pass if using updates.
 
         Returns:
             Dict[str, Any]: The response from the server (specifies the number of examples updated).
@@ -4898,9 +4894,7 @@ class Client:
         ]
         if "dataset_ids" not in kwargs:
             # get dataset_id of first example, assume it works for all
-            dataset_id = [e for e in self.list_examples(example_ids=[example_ids[0]])][
-                0
-            ].dataset_id
+            dataset_id = self.read_example(example_ids[0]).dataset_id
             response = self._update_examples_multipart(
                 dataset_id=dataset_id,
                 updates=examples,
