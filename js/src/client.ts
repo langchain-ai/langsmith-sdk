@@ -2752,7 +2752,9 @@ export class Client implements LangSmithTracingClientInterface {
     }
 
     const response = await this._uploadExamplesMultipart(datasetId_, [data]);
-    const example = await this.readExample(response.example_ids[0]);
+    const example = await this.readExample(
+      response.example_ids?.[0] ?? uuid.v4()
+    );
     return example;
   }
 
