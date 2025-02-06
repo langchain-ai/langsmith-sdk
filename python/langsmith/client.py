@@ -4422,7 +4422,7 @@ class Client:
             offset (int, default=0): The offset to start from. Defaults to 0.
             limit (Optional[int]): The maximum number of examples to return.
             metadata (Optional[dict]): A dictionary of metadata to filter by.
-            filter (Optional[str]): A structured fileter string to apply to
+            filter (Optional[str]): A structured filter string to apply to
                 the examples.
             include_attachments (bool, default=False): Whether to include the
                 attachments in the response. Defaults to False.
