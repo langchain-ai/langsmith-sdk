@@ -409,17 +409,14 @@ def _get_test_suite(
 
 
 def _get_environment_metadata():
-    environment = os.environ.get("ENVIRONMENT")
-    langsmith_environment = os.environ.get("LANGSMITH_ENVIRONMENT")
     metadata = {
         "revision_id": ls_env.get_langchain_env_var_metadata().get("revision_id"),
         "__ls_runner": "pytest",
     }
 
-    # Only add environment variables if they exist
-    if environment := os.environ.get("ENVIRONMENT"):
-        metadata["ENVIRONMENT"] = environment
-    if langsmith_environment := os.environ.get("LANGSMITH_ENVIRONMENT"):
+    if langsmith_environment := ls_env.get_langchain_env_var_metadata().get(
+        "LANGSMITH_ENVIRONMENT"
+    ):
         metadata["LANGSMITH_ENVIRONMENT"] = langsmith_environment
     return metadata
 
