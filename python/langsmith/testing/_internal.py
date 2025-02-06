@@ -13,7 +13,6 @@ import threading
 import time
 import uuid
 import warnings
-from collections import defaultdict
 from concurrent.futures import Future
 from pathlib import Path
 from typing import (
@@ -450,7 +449,7 @@ def _get_example_id(
 def _end_tests(test_suite: _LangSmithTestSuite):
     git_info = ls_env.get_git_info() or {}
     test_suite.shutdown()
-    dataset_version = test_suite.get_version()
+    dataset_version = test_suite.get_dataset_version()
     dataset_id = test_suite._dataset.id
     test_suite.client.update_project(
         test_suite.experiment_id,
@@ -498,10 +497,8 @@ class _LangSmithTestSuite:
         self.client = client or rt.get_cached_client()
         self._experiment = experiment
         self._dataset = dataset
-        self._version: Optional[datetime.datetime] = None
-        self._executor = ls_utils.ContextThreadPoolExecutor(max_workers=1)
-        self._example_futures: dict[ID_TYPE, list[Future]] = defaultdict(list)
-        self._example_modified_at: dict[ID_TYPE, datetime.datetime] = {}
+        self._dataset_version: Optional[datetime.datetime] = dataset.modified_at
+        self._executor = ls_utils.ContextThreadPoolExecutor()
         atexit.register(_end_tests, self)
 
     @property
@@ -538,20 +535,8 @@ class _LangSmithTestSuite:
     def name(self):
         return self._experiment.name
 
-    def update_version(self, version: datetime.datetime, example_id: uuid.UUID) -> None:
-        with self._lock:
-            if self._version is None or version > self._version:
-                self._version = version
-            self._example_modified_at[example_id] = version
-
-    def get_version(
-        self, example_id: Optional[uuid.UUID] = None
-    ) -> Optional[datetime.datetime]:
-        with self._lock:
-            if not example_id:
-                return self._version
-            else:
-                return self._example_modified_at.get(example_id)
+    def get_dataset_version(self):
+        return self._dataset_version
 
     def submit_result(
         self,
@@ -591,23 +576,7 @@ class _LangSmithTestSuite:
             update = {"inputs": inputs, "reference_outputs": outputs}
             update = {k: v for k, v in update.items() if v is not None}
             pytest_plugin.update_process_status(pytest_nodeid, update)
-        future = self._executor.submit(
-            self._sync_example,
-            example_id,
-            inputs,
-            outputs,
-            metadata.copy() if metadata else metadata,
-        )
-        with self._lock:
-            self._example_futures[example_id].append(future)
-
-    def _sync_example(
-        self,
-        example_id: uuid.UUID,
-        inputs: Optional[dict],
-        outputs: Optional[dict],
-        metadata: Optional[dict],
-    ) -> None:
+        metadata = metadata.copy() if metadata else metadata
         inputs = _serde_example_values(inputs)
         outputs = _serde_example_values(outputs)
         try:
@@ -636,8 +605,14 @@ class _LangSmithTestSuite:
                     dataset_id=self.id,
                 )
                 example = self.client.read_example(example_id=example.id)
-        if example.modified_at:
-            self.update_version(example.modified_at, example_id=example_id)
+        if self._dataset_version is None:
+            self._dataset_version = example.modified_at
+        elif (
+            example.modified_at
+            and self._dataset_version
+            and example.modified_at > self._dataset_version
+        ):
+            self._dataset_version = example.modified_at
 
     def _submit_feedback(
         self,
@@ -664,18 +639,12 @@ class _LangSmithTestSuite:
     def shutdown(self):
         self._executor.shutdown()
 
-    def wait_example_updates(self, example_id: ID_TYPE):
-        """Wait for all example updates to complete."""
-        with self._lock:
-            while self._example_futures[example_id]:
-                self._example_futures[example_id].pop().result()
-
     def end_run(
         self,
         run_tree,
         example_id,
         outputs,
-        end_time,
+        reference_outputs,
         pytest_plugin=None,
         pytest_nodeid=None,
     ) -> Future:
@@ -684,23 +653,25 @@ class _LangSmithTestSuite:
             run_tree=run_tree,
             example_id=example_id,
             outputs=outputs,
-            end_time=end_time,
+            reference_outputs=reference_outputs,
             pytest_plugin=pytest_plugin,
             pytest_nodeid=pytest_nodeid,
         )
 
     def _end_run(
-        self, run_tree, example_id, outputs, end_time, pytest_plugin, pytest_nodeid
+        self,
+        run_tree,
+        example_id,
+        outputs,
+        reference_outputs,
+        pytest_plugin,
+        pytest_nodeid,
     ) -> None:
         # TODO: remove this hack so that run durations are correct
         # Ensure example is fully updated
-        self.wait_example_updates(example_id)
-        # Ensure that run end time is after example modified at.
-        example_modified_at = self.get_version(example_id=example_id) or end_time
-        end_time = max(example_modified_at, end_time)
-        run_tree.end(outputs=outputs, end_time=end_time)
+        self.sync_example(example_id, inputs=run_tree.inputs, outputs=reference_outputs)
+        run_tree.end(outputs=outputs)
         run_tree.patch()
-        pytest_plugin.update_process_status(pytest_nodeid, {"logged": True})
 
 
 class _TestCase:
@@ -711,17 +682,24 @@ class _TestCase:
         run_id: uuid.UUID,
         pytest_plugin: Any = None,
         pytest_nodeid: Any = None,
+        inputs: Optional[dict] = None,
+        reference_outputs: Optional[dict] = None,
     ) -> None:
         self.test_suite = test_suite
         self.example_id = example_id
         self.run_id = run_id
         self.pytest_plugin = pytest_plugin
         self.pytest_nodeid = pytest_nodeid
+        self._logged_reference_outputs: Optional[dict] = None
 
         if pytest_plugin and pytest_nodeid:
             pytest_plugin.add_process_to_test_suite(
                 test_suite._dataset.name, pytest_nodeid
             )
+            if inputs:
+                self.log_inputs(inputs)
+            if reference_outputs:
+                self.log_reference_outputs(reference_outputs)
 
     def sync_example(
         self, *, inputs: Optional[dict] = None, outputs: Optional[dict] = None
@@ -746,10 +724,23 @@ class _TestCase:
             },
         )
 
+    def log_inputs(self, inputs: dict) -> None:
+        if self.pytest_plugin and self.pytest_nodeid:
+            self.pytest_plugin.update_process_status(
+                self.pytest_nodeid, {"inputs": inputs}
+            )
+
     def log_outputs(self, outputs: dict) -> None:
         if self.pytest_plugin and self.pytest_nodeid:
             self.pytest_plugin.update_process_status(
                 self.pytest_nodeid, {"outputs": outputs}
+            )
+
+    def log_reference_outputs(self, reference_outputs: dict) -> None:
+        self._logged_reference_outputs = reference_outputs
+        if self.pytest_plugin and self.pytest_nodeid:
+            self.pytest_plugin.update_process_status(
+                self.pytest_nodeid, {"reference_outputs": reference_outputs}
             )
 
     def submit_test_result(
@@ -780,12 +771,11 @@ class _TestCase:
     def end_run(self, run_tree, outputs: Any) -> None:
         if not (outputs is None or isinstance(outputs, dict)):
             outputs = {"output": outputs}
-        end_time = datetime.datetime.now(datetime.timezone.utc)
         self.test_suite.end_run(
             run_tree,
             self.example_id,
             outputs,
-            end_time=end_time,
+            reference_outputs=self._logged_reference_outputs,
             pytest_plugin=self.pytest_plugin,
             pytest_nodeid=self.pytest_nodeid,
         )
@@ -837,12 +827,6 @@ def _create_test_case(
     )
     example_id, example_name = _get_example_id(func, inputs, test_suite.id)
     example_id = langtest_extra["id"] or example_id
-    test_suite.sync_example(
-        example_id,
-        inputs=inputs,
-        outputs=outputs,
-        metadata={"signature": _get_test_repr(func, signature), "name": example_name},
-    )
     pytest_plugin = (
         pytest_request.config.pluginmanager.get_plugin("langsmith_output_plugin")
         if pytest_request
@@ -855,13 +839,16 @@ def _create_test_case(
             + "/compare?selectedSessions="
             + str(test_suite.experiment_id)
         )
-    return _TestCase(
+    test_case = _TestCase(
         test_suite,
         example_id,
         run_id=uuid.uuid4(),
+        inputs=inputs,
+        reference_outputs=outputs,
         pytest_plugin=pytest_plugin,
         pytest_nodeid=pytest_nodeid,
     )
+    return test_case
 
 
 def _run_test(
@@ -1048,7 +1035,7 @@ def log_inputs(inputs: dict, /) -> None:
         )
         raise ValueError(msg)
     run_tree.add_inputs(inputs)
-    test_case.sync_example(inputs=inputs)
+    test_case.log_inputs(inputs)
 
 
 def log_outputs(outputs: dict, /) -> None:
@@ -1095,7 +1082,7 @@ def log_outputs(outputs: dict, /) -> None:
     test_case.log_outputs(outputs)
 
 
-def log_reference_outputs(outputs: dict, /) -> None:
+def log_reference_outputs(reference_outputs: dict, /) -> None:
     """Log example reference outputs from within a pytest test run.
 
     .. warning::
@@ -1134,7 +1121,7 @@ def log_reference_outputs(outputs: dict, /) -> None:
             "decorated with @pytest.mark.langsmith."
         )
         raise ValueError(msg)
-    test_case.sync_example(outputs=outputs)
+    test_case.log_reference_outputs(reference_outputs)
 
 
 def log_feedback(

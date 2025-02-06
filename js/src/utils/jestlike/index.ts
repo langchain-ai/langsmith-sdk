@@ -32,8 +32,10 @@ import { SimpleEvaluationResult } from "./types.js";
 import type {
   LangSmithJestlikeWrapperConfig,
   LangSmithJestlikeWrapperParams,
-  LangSmithJestDescribeWrapper,
+  LangSmithJestlikeDescribeWrapper,
+  LangSmithJestlikeDescribeWrapperConfig,
 } from "./types.js";
+import { getEnvironmentVariable } from "../env.js";
 
 const DEFAULT_TEST_TIMEOUT = 30_000;
 
@@ -264,7 +266,7 @@ export function generateWrapperFromJestlikeMethods(
       });
       const experimentUrl = `${datasetUrl}/compare?selectedSessions=${project.id}`;
       console.log(
-        `[LANGSMITH]: Experiment starting! View results at ${experimentUrl}`
+        `[LANGSMITH]: Experiment starting for dataset "${datasetName}"!\n[LANGSMITH]: View results at ${experimentUrl}`
       );
       storageValue = {
         dataset,
@@ -278,30 +280,48 @@ export function generateWrapperFromJestlikeMethods(
 
   function wrapDescribeMethod(
     method: (name: string, fn: () => void | Promise<void>) => void
-  ): LangSmithJestDescribeWrapper {
+  ): LangSmithJestlikeDescribeWrapper {
     return function (
-      datasetName: string,
+      testSuiteName: string,
       fn: () => void | Promise<void>,
-      experimentConfig?: {
-        client?: Client;
-        enableTestTracking?: boolean;
-      } & Partial<Omit<CreateProjectParams, "referenceDatasetId">>
+      experimentConfig?: LangSmithJestlikeDescribeWrapperConfig
     ) {
       const client = experimentConfig?.client ?? DEFAULT_TEST_CLIENT;
-      return method(datasetName, () => {
+      const suiteName = experimentConfig?.testSuiteName ?? testSuiteName;
+      return method(suiteName, () => {
         const startTime = new Date();
         const suiteUuid = v4();
+        const environment =
+          experimentConfig?.metadata?.ENVIRONMENT ??
+          getEnvironmentVariable("ENVIRONMENT");
+        const nodeEnv =
+          experimentConfig?.metadata?.NODE_ENV ??
+          getEnvironmentVariable("NODE_ENV");
+        const langsmithEnvironment =
+          experimentConfig?.metadata?.LANGSMITH_ENVIRONMENT ??
+          getEnvironmentVariable("LANGSMITH_ENVIRONMENT");
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const metadata: Record<string, any> = {
+          ...experimentConfig?.metadata,
+          __ls_runner: testRunnerName,
+        };
+        if (environment !== undefined) {
+          metadata.ENVIRONMENT = environment;
+        }
+        if (nodeEnv !== undefined) {
+          metadata.NODE_ENV = nodeEnv;
+        }
+        if (langsmithEnvironment !== undefined) {
+          metadata.LANGSMITH_ENVIRONMENT = langsmithEnvironment;
+        }
         const context = {
           suiteUuid,
-          suiteName: datasetName,
+          suiteName,
           client,
           createdAt: new Date().toISOString(),
           projectConfig: {
             ...experimentConfig,
-            metadata: {
-              ...experimentConfig?.metadata,
-              __ls_runner: testRunnerName,
-            },
+            metadata,
           },
           enableTestTracking: experimentConfig?.enableTestTracking,
         };

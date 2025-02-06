@@ -5,5 +5,6 @@ export default defineConfig({
     include: ["**/*.vitesteval.?(c|m)[jt]s"],
     reporters: ["./src/vitest/reporter.ts"],
     setupFiles: ["dotenv/config"],
+    hookTimeout: 30000,
   },
 });
