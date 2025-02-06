@@ -58,6 +58,7 @@ from typing import (
 from urllib import parse as urllib_parse
 
 import requests
+from deprecated import deprecated
 from requests import adapters as requests_adapters
 from requests_toolbelt import (  # type: ignore[import-untyped]
     multipart as rqtb_multipart,
@@ -3896,9 +3897,9 @@ class Client:
     def _prepare_multipart_data(
         self,
         examples: Union[
-            List[ls_schemas.ExampleUploadWithAttachments]
+            List[ls_schemas.ExampleCreate]
             | List[ls_schemas.ExampleUpsertWithAttachments]
-            | List[ls_schemas.ExampleUpdateWithAttachments],
+            | List[ls_schemas.ExampleUpdate],
         ],
         include_dataset_id: bool = False,
         dangerously_allow_filesystem: bool = False,
@@ -3915,28 +3916,50 @@ class Client:
 
         for example in examples:
             if (
-                not isinstance(example, ls_schemas.ExampleUploadWithAttachments)
+                not isinstance(example, ls_schemas.ExampleCreate)
                 and not isinstance(example, ls_schemas.ExampleUpsertWithAttachments)
-                and not isinstance(example, ls_schemas.ExampleUpdateWithAttachments)
+                and not isinstance(example, ls_schemas.ExampleUpdate)
             ):
                 raise ValueError(
-                    "The examples must be of type ExampleUploadWithAttachments"
+                    "The examples must be of type ExampleCreate"
                     " or ExampleUpsertWithAttachments"
-                    " or ExampleUpdateWithAttachments"
+                    " or ExampleUpdate"
                 )
             if example.id is not None:
                 example_id = str(example.id)
             else:
                 example_id = str(uuid.uuid4())
 
-            if isinstance(example, ls_schemas.ExampleUpdateWithAttachments):
+            if isinstance(example, ls_schemas.ExampleUpdate):
                 created_at = None
             else:
                 created_at = example.created_at
 
+            if isinstance(example, ls_schemas.ExampleCreate):
+                use_source_run_io = example.use_source_run_io
+                use_source_run_attachments = example.use_source_run_attachments
+                source_run_id = example.source_run_id
+            else:
+                use_source_run_io, use_source_run_attachments, source_run_id = (
+                    None,
+                    None,
+                    None,
+                )
+
             example_body = {
                 **({"dataset_id": dataset_id} if include_dataset_id else {}),
                 **({"created_at": created_at} if created_at is not None else {}),
+                **(
+                    {"use_source_run_io": use_source_run_io}
+                    if use_source_run_io
+                    else {}
+                ),
+                **(
+                    {"use_source_run_attachments": use_source_run_attachments}
+                    if use_source_run_attachments
+                    else {}
+                ),
+                **({"source_run_id": source_run_id} if source_run_id else {}),
             }
             if example.metadata is not None:
                 example_body["metadata"] = example.metadata
@@ -3956,19 +3979,20 @@ class Client:
                 )
             )
 
-            inputsb = _dumps_json(example.inputs)
+            if example.inputs:
+                inputsb = _dumps_json(example.inputs)
 
-            parts.append(
-                (
-                    f"{example_id}.inputs",
+                parts.append(
                     (
-                        None,
-                        inputsb,
-                        "application/json",
-                        {},
-                    ),
+                        f"{example_id}.inputs",
+                        (
+                            None,
+                            inputsb,
+                            "application/json",
+                            {},
+                        ),
+                    )
                 )
-            )
 
             if example.outputs:
                 outputsb = _dumps_json(example.outputs)
@@ -4023,7 +4047,7 @@ class Client:
                         )
 
             if (
-                isinstance(example, ls_schemas.ExampleUpdateWithAttachments)
+                isinstance(example, ls_schemas.ExampleUpdate)
                 and example.attachments_operations
             ):
                 attachments_operationsb = _dumps_json(example.attachments_operations)
@@ -4047,18 +4071,36 @@ class Client:
 
         return encoder, data, opened_files_dict
 
+    @deprecated(
+        version="0.1.0",
+        reason="This method is deprecated. Use `update_examples` instead.",
+    )
     def update_examples_multipart(
         self,
         *,
         dataset_id: ID_TYPE,
-        updates: Optional[List[ls_schemas.ExampleUpdateWithAttachments]] = None,
+        updates: Optional[List[ls_schemas.ExampleUpdate]] = None,
+        dangerously_allow_filesystem: bool = False,
+    ) -> ls_schemas.UpsertExamplesResponse:
+        """Update examples using multipart."""
+        return self._update_examples_multipart(
+            dataset_id=dataset_id,
+            updates=updates,
+            dangerously_allow_filesystem=dangerously_allow_filesystem,
+        )
+
+    def _update_examples_multipart(
+        self,
+        *,
+        dataset_id: ID_TYPE,
+        updates: Optional[List[ls_schemas.ExampleUpdate]] = None,
         dangerously_allow_filesystem: bool = False,
     ) -> ls_schemas.UpsertExamplesResponse:
         """Update examples using multipart.
 
         Args:
             dataset_id (Union[UUID, str]): The ID of the dataset to update.
-            updates (Optional[List[ExampleUpdateWithAttachments]]): The updates to apply to the examples.
+            updates (Optional[List[ExampleUpdate]]): The updates to apply to the examples.
 
         Raises:
             ValueError: If the multipart examples endpoint is not enabled.
@@ -4095,18 +4137,36 @@ class Client:
             _close_files(list(opened_files_dict.values()))
         return response.json()
 
+    @deprecated(
+        reason="This method is deprecated. Please use the `create_examples` method instead."
+    )
     def upload_examples_multipart(
         self,
         *,
         dataset_id: ID_TYPE,
-        uploads: Optional[List[ls_schemas.ExampleUploadWithAttachments]] = None,
+        uploads: Optional[List[ls_schemas.ExampleCreate]] = None,
+        dangerously_allow_filesystem: bool = False,
+    ) -> ls_schemas.UpsertExamplesResponse:
+        """Upload examples using multipart."""
+        return self._upload_examples_multipart(
+            dataset_id=dataset_id,
+            uploads=uploads,
+            dangerously_allow_filesystem=dangerously_allow_filesystem,
+        )
+
+    def _upload_examples_multipart(
+        self,
+        *,
+        dataset_id: ID_TYPE,
+        uploads: Optional[List[ls_schemas.ExampleCreate]] = None,
         dangerously_allow_filesystem: bool = False,
     ) -> ls_schemas.UpsertExamplesResponse:
         """Upload examples using multipart.
 
         Args:
             dataset_id (Union[UUID, str]): The ID of the dataset to upload to.
-            uploads (Optional[List[ExampleUploadWithAttachments]]): The examples to upload.
+            uploads (Optional[List[ExampleCreate]]): The examples to upload.
+            dangerously_allow_filesystem (bool): Whether to allow uploading files from the filesystem.
 
         Returns:
             ls_schemas.UpsertExamplesResponse: The count and ids of the successfully uploaded examples
@@ -4145,6 +4205,10 @@ class Client:
             _close_files(list(opened_files_dict.values()))
         return response.json()
 
+    @deprecated(
+        version="0.1.0",
+        reason="This method is deprecated. Use `create_examples` instead.",
+    )
     def upsert_examples_multipart(
         self,
         *,
@@ -4154,7 +4218,7 @@ class Client:
         """Upsert examples.
 
         .. deprecated:: 0.1.0
-           This method is deprecated. Use :func:`langsmith.upload_examples_multipart` instead.
+           This method is deprecated. Use :func:`langsmith.create_examples` instead.
         """  # noqa: E501
         if not (self.info.instance_flags or {}).get(
             "examples_multipart_enabled", False
@@ -4188,40 +4252,29 @@ class Client:
             _close_files(list(opened_files_dict.values()))
         return response.json()
 
+    @ls_utils.xor_args(("dataset_id", "dataset_name"))
     def create_examples(
         self,
         *,
-        inputs: Sequence[Mapping[str, Any]],
-        outputs: Optional[Sequence[Optional[Mapping[str, Any]]]] = None,
-        metadata: Optional[Sequence[Optional[Mapping[str, Any]]]] = None,
-        splits: Optional[Sequence[Optional[str | List[str]]]] = None,
-        source_run_ids: Optional[Sequence[Optional[ID_TYPE]]] = None,
-        ids: Optional[Sequence[Optional[ID_TYPE]]] = None,
-        dataset_id: Optional[ID_TYPE] = None,
         dataset_name: Optional[str] = None,
+        dataset_id: Optional[ID_TYPE] = None,
+        uploads: Optional[List[ls_schemas.ExampleCreate]] = None,
+        dangerously_allow_filesystem: bool = False,
         **kwargs: Any,
     ) -> None:
         """Create examples in a dataset.
 
         Args:
-            inputs (Sequence[Mapping[str, Any]]):
-                The input values for the examples.
-            outputs (Optional[Sequence[Optional[Mapping[str, Any]]]]):
-                The output values for the examples.
-            metadata (Optional[Sequence[Optional[Mapping[str, Any]]]]):
-                The metadata for the examples.
-            splits (Optional[Sequence[Optional[str | List[str]]]]):
-                The splits for the examples, which are divisions
-                of your dataset such as 'train', 'test', or 'validation'.
-            source_run_ids (Optional[Sequence[Optional[Union[UUID, str]]]]):
-                    The IDs of the source runs associated with the examples.
-            ids (Optional[Sequence[Union[UUID, str]]]):
-                The IDs of the examples.
-            dataset_id (Optional[Union[UUID, str]]):
-                The ID of the dataset to create the examples in.
             dataset_name (Optional[str]):
                 The name of the dataset to create the examples in.
-            **kwargs: Any: Additional keyword arguments are ignored.
+            dataset_id (Optional[Union[UUID, str]]):
+                The ID of the dataset to create the examples in.
+            uploads (Optional[List[ExampleCreate]]):
+                The examples to create.
+            dangerously_allow_filesystem (bool):
+                Whether to allow uploading files from the filesystem.
+            **kwargs: (Any): Kwargs for backwards compatibility of old `create_eaxmples`.
+                Do not pass if using uploads.
 
         Raises:
             ValueError: If neither dataset_id nor dataset_name is provided.
@@ -4229,59 +4282,72 @@ class Client:
         Returns:
             None
         """
+        if kwargs and uploads:
+            raise ValueError("When passing kwargs, you must not pass uploads")
+        elif kwargs and not kwargs.get("inputs"):
+            raise ValueError("When passing kwargs, you must pass inputs")
+        elif kwargs:
+            inputs = kwargs.pop("inputs", None)
+
         if dataset_id is None and dataset_name is None:
             raise ValueError("Either dataset_id or dataset_name must be provided.")
 
         if dataset_id is None:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
 
-        sequence_args = {
-            "outputs": outputs,
-            "metadata": metadata,
-            "splits": splits,
-            "ids": ids,
-            "source_run_ids": source_run_ids,
-        }
+        if not kwargs:
+            self._upload_examples_multipart(
+                dataset_id=dataset_id,
+                uploads=uploads,
+                dangerously_allow_filesystem=dangerously_allow_filesystem,
+            )
+            return
+
         # Since inputs are required, we will check against them
         input_len = len(inputs)
-        for arg_name, arg_value in sequence_args.items():
+        for arg_name, arg_value in kwargs.items():
             if arg_value is not None and len(arg_value) != input_len:
                 raise ValueError(
                     f"Length of {arg_name} ({len(arg_value)}) does not match"
                     f" length of inputs ({input_len})"
                 )
         examples = [
-            {
-                "inputs": in_,
-                "outputs": out_,
-                "dataset_id": dataset_id,
-                "metadata": metadata_,
-                "split": split_,
-                "id": id_ or str(uuid.uuid4()),
-                "source_run_id": source_run_id_,
-            }
-            for in_, out_, metadata_, split_, id_, source_run_id_ in zip(
+            ls_schemas.ExampleCreate(
+                **{
+                    "inputs": in_,
+                    "outputs": out_,
+                    "metadata": metadata_,
+                    "split": split_,
+                    "id": id_ or str(uuid.uuid4()),
+                    "source_run_id": source_run_id_,
+                    "attachments": attachments_,
+                    "use_source_run_io": use_source_run_io_,
+                    "use_source_run_attachments": use_source_run_attachments_,
+                }
+            )
+            for in_, out_, metadata_, split_, id_, source_run_id_, attachments_, use_source_run_io_, use_source_run_attachments_ in zip(
                 inputs,
-                outputs or [None] * len(inputs),
-                metadata or [None] * len(inputs),
-                splits or [None] * len(inputs),
-                ids or [None] * len(inputs),
-                source_run_ids or [None] * len(inputs),
+                kwargs.get("outputs") or [None] * len(inputs),
+                kwargs.get("metadata") or [None] * len(inputs),
+                kwargs.get("splits") or [None] * len(inputs),
+                kwargs.get("ids") or [None] * len(inputs),
+                kwargs.get("source_run_ids") or [None] * len(inputs),
+                kwargs.get("attachments") or [None] * len(inputs),
+                kwargs.get("use_source_run_io") or [False] * len(inputs),
+                kwargs.get("use_source_run_attachments") or [[]] * len(inputs),
             )
         ]
 
-        response = self.request_with_retries(
-            "POST",
-            "/examples/bulk",
-            headers={**self._headers, "Content-Type": "application/json"},
-            data=_dumps_json(examples),
+        self._upload_examples_multipart(
+            dataset_id=dataset_id,
+            uploads=examples,
+            dangerously_allow_filesystem=dangerously_allow_filesystem,
         )
-        ls_utils.raise_for_status_with_text(response)
 
     @ls_utils.xor_args(("dataset_id", "dataset_name"))
     def create_example(
         self,
-        inputs: Mapping[str, Any],
+        inputs: Optional[Mapping[str, Any]] = None,
         dataset_id: Optional[ID_TYPE] = None,
         dataset_name: Optional[str] = None,
         created_at: Optional[datetime.datetime] = None,
@@ -4290,6 +4356,9 @@ class Client:
         split: Optional[str | List[str]] = None,
         example_id: Optional[ID_TYPE] = None,
         source_run_id: Optional[ID_TYPE] = None,
+        use_source_run_io: bool = False,
+        use_source_run_attachments: Optional[List[str]] = None,
+        attachments: Optional[ls_schemas.Attachments] = None,
     ) -> ls_schemas.Example:
         """Create a dataset example in the LangSmith API.
 
@@ -4318,37 +4387,44 @@ class Client:
                 example will be created.
             source_run_id (Optional[Union[UUID, str]]):
                 The ID of the source run associated with this example.
+            use_source_run_io (bool):
+                Whether to use the inputs, outputs, and attachments from the source run.
+            use_source_run_attachments (Optional[List[str]]):
+                Which attachments to use from the source run. If use_source_run_io
+                is True, all attachments will be used regardless of this param.
+            attachments (Optional[Attachments]):
+                The attachments for the example.
 
         Returns:
             Example: The created example.
         """
+        if inputs is None and not use_source_run_io:
+            raise ValueError("Must provide either inputs or use_source_run_io")
+
         if dataset_id is None:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
 
-        data = {
-            "inputs": inputs,
-            "outputs": outputs,
-            "dataset_id": dataset_id,
-            "metadata": metadata,
-            "split": split,
-            "source_run_id": source_run_id,
-        }
+        data = ls_schemas.ExampleCreate(
+            **{
+                "inputs": inputs,
+                "outputs": outputs,
+                "metadata": metadata,
+                "split": split,
+                "source_run_id": source_run_id,
+                "use_source_run_io": use_source_run_io,
+                "use_source_run_attachments": use_source_run_attachments,
+                "attachments": attachments,
+            }
+        )
         if created_at:
-            data["created_at"] = created_at.isoformat()
-        data["id"] = example_id or str(uuid.uuid4())
-        response = self.request_with_retries(
-            "POST",
-            "/examples",
-            headers={**self._headers, "Content-Type": "application/json"},
-            data=_dumps_json({k: v for k, v in data.items() if v is not None}),
+            data.created_at = created_at
+        data.id = (
+            (uuid.UUID(example_id) if isinstance(example_id, str) else example_id)
+            if example_id
+            else uuid.uuid4()
         )
-        ls_utils.raise_for_status_with_text(response)
-        result = response.json()
-        return ls_schemas.Example(
-            **result,
-            _host_url=self._host_url,
-            _tenant_id=self._get_optional_tenant_id(),
-        )
+        self._upload_examples_multipart(dataset_id=dataset_id, uploads=[data])
+        return self.read_example(example_id=data.id)
 
     def read_example(
         self, example_id: ID_TYPE, *, as_of: Optional[datetime.datetime] = None
@@ -4657,6 +4733,7 @@ class Client:
         split: Optional[str | List[str]] = None,
         dataset_id: Optional[ID_TYPE] = None,
         attachments_operations: Optional[ls_schemas.AttachmentsOperations] = None,
+        attachments: Optional[ls_schemas.Attachments] = None,
     ) -> Dict[str, Any]:
         """Update a specific example.
 
@@ -4676,6 +4753,8 @@ class Client:
                 The ID of the dataset to update.
             attachments_operations (Optional[AttachmentsOperations]):
                 The attachments operations to perform.
+            attachments (Optional[Attachments]):
+                The attachments to add to the example.
 
         Returns:
             Dict[str, Any]: The updated example.
@@ -4687,117 +4766,153 @@ class Client:
                 raise ValueError(
                     "Your LangSmith version does not allow using the attachment operations, please update to the latest version."
                 )
-        example = dict(
+        example_dict = dict(
             inputs=inputs,
             outputs=outputs,
-            dataset_id=dataset_id,
+            id=example_id,
             metadata=metadata,
             split=split,
             attachments_operations=attachments_operations,
+            attachments=attachments,
         )
-        example = {k: v for k, v in example.items() if v is not None}
-        response = self.request_with_retries(
-            "PATCH",
-            f"/examples/{_as_uuid(example_id, 'example_id')}",
-            headers={**self._headers, "Content-Type": "application/json"},
-            data=_dumps_json({k: v for k, v in example.items() if v is not None}),
+        example = ls_schemas.ExampleUpdate(
+            **{k: v for k, v in example_dict.items() if v is not None}
         )
-        ls_utils.raise_for_status_with_text(response)
-        return response.json()
+
+        if dataset_id is not None:
+            return dict(
+                self._update_examples_multipart(
+                    dataset_id=dataset_id, updates=[example]
+                )
+            )
+        else:
+            dataset_id = self.read_example(example_id).dataset_id
+            return dict(
+                self._update_examples_multipart(
+                    dataset_id=dataset_id, updates=[example]
+                )
+            )
 
     def update_examples(
         self,
         *,
-        example_ids: Sequence[ID_TYPE],
-        inputs: Optional[Sequence[Optional[Dict[str, Any]]]] = None,
-        outputs: Optional[Sequence[Optional[Mapping[str, Any]]]] = None,
-        metadata: Optional[Sequence[Optional[Dict]]] = None,
-        splits: Optional[Sequence[Optional[str | List[str]]]] = None,
-        dataset_ids: Optional[Sequence[Optional[ID_TYPE]]] = None,
-        attachments_operations: Optional[
-            Sequence[Optional[ls_schemas.AttachmentsOperations]]
-        ] = None,
+        dataset_id: ID_TYPE | None = None,
+        updates: Optional[List[ls_schemas.ExampleUpdate]] = None,
+        dangerously_allow_filesystem: bool = False,
+        **kwargs: Any,
     ) -> Dict[str, Any]:
         """Update multiple examples.
 
         Args:
-            example_ids (Sequence[Union[UUID, str]]):
-                The IDs of the examples to update.
-            inputs (Optional[Sequence[Optional[Dict[str, Any]]]):
-                The input values for the examples.
-            outputs (Optional[Sequence[Optional[Mapping[str, Any]]]]):
-                The output values for the examples.
-            metadata (Optional[Sequence[Optional[Mapping[str, Any]]]]):
-                The metadata for the examples.
-            splits (Optional[Sequence[Optional[str | List[str]]]]):
-                The splits for the examples, which are divisions
-                of your dataset such as 'train', 'test', or 'validation'.
-            dataset_ids (Optional[Sequence[Optional[Union[UUID, str]]]]):
-                The IDs of the datasets to move the examples to.
-            attachments_operations (Optional[Sequence[Optional[ls_schemas.AttachmentsOperations]]):
-                The operations to perform on the attachments.
+            dataset_id (Optional[Union[UUID, str]]):
+                The ID of the dataset to update.
+            updates (Optional[List[ExampleUpdate]]):
+                The updates to apply to the examples.
+            dangerously_allow_filesystem (bool, default=False):
+                Whether to allow using filesystem paths as attachments.
+            **kwargs: (Any): Kwargs for backwards compatibility of old `update_examples`.
+                Do not pass if using updates.
 
         Returns:
             Dict[str, Any]: The response from the server (specifies the number of examples updated).
         """
-        if attachments_operations is not None:
+        if kwargs and any([dataset_id, updates]):
+            raise ValueError(
+                "When passing kwargs, you must not pass dataset_id, or updates"
+            )
+        elif kwargs and not kwargs.get("example_ids"):
+            raise ValueError("When passing kwargs, you must pass example_ids")
+        elif kwargs:
+            example_ids = kwargs.pop("example_ids")
+        elif not updates:
+            raise ValueError("When not passing kwargs, you must pass updates")
+        elif len(updates) == 0:
+            return {"message": "0 examples updated", "count": 0, "example_ids": []}
+        else:
+            if not dataset_id and not updates[0].dataset_id:
+                raise ValueError(
+                    "When not passing kwargs, you must pass dataset_id as a param or in the first update object"
+                )
+            if not dataset_id:
+                # We will naively assume all updates are for dataset from first example
+                dataset_id = updates[0].dataset_id
+
+            if not dataset_id:
+                raise ValueError("Must pass a non-null dataset_id")
+
+            response = self._update_examples_multipart(
+                dataset_id=dataset_id,
+                updates=updates,
+                dangerously_allow_filesystem=dangerously_allow_filesystem,
+            )
+            return {
+                "message": f"{response.get('count', 0)} examples updated",
+                **response,
+            }
+
+        if (
+            kwargs.get("attachments_operations") is not None
+            or kwargs.get("attachments") is not None
+        ):
             if not (self.info.instance_flags or {}).get(
                 "dataset_examples_multipart_enabled", False
             ):
                 raise ValueError(
                     "Your LangSmith version does not allow using the attachment operations, please update to the latest version."
                 )
-        sequence_args = {
-            "inputs": inputs,
-            "outputs": outputs,
-            "metadata": metadata,
-            "splits": splits,
-            "dataset_ids": dataset_ids,
-            "attachments_operations": attachments_operations,
-        }
-        # Since inputs are required, we will check against them
+        # Since ids are required, we will check against them
         examples_len = len(example_ids)
-        for arg_name, arg_value in sequence_args.items():
+        for arg_name, arg_value in kwargs.items():
             if arg_value is not None and len(arg_value) != examples_len:
                 raise ValueError(
                     f"Length of {arg_name} ({len(arg_value)}) does not match"
                     f" length of examples ({examples_len})"
                 )
         examples = [
-            {
-                "id": id_,
-                "inputs": in_,
-                "outputs": out_,
-                "dataset_id": dataset_id_,
-                "metadata": metadata_,
-                "split": split_,
-                "attachments_operations": attachments_operations_,
-            }
-            for id_, in_, out_, metadata_, split_, dataset_id_, attachments_operations_ in zip(
+            ls_schemas.ExampleUpdate(
+                **{
+                    "id": id_,
+                    "inputs": in_,
+                    "outputs": out_,
+                    "dataset_id": dataset_id_,
+                    "metadata": metadata_,
+                    "split": split_,
+                    "attachments": attachments_,
+                    "attachments_operations": attachments_operations_,
+                }
+            )
+            for id_, in_, out_, metadata_, split_, dataset_id_, attachments_, attachments_operations_ in zip(
                 example_ids,
-                inputs or [None] * len(example_ids),
-                outputs or [None] * len(example_ids),
-                metadata or [None] * len(example_ids),
-                splits or [None] * len(example_ids),
-                dataset_ids or [None] * len(example_ids),
-                attachments_operations or [None] * len(example_ids),
+                kwargs.get("inputs", [None] * len(example_ids)),
+                kwargs.get("outputs", [None] * len(example_ids)),
+                kwargs.get("metadata", [None] * len(example_ids)),
+                kwargs.get("splits", [None] * len(example_ids)),
+                kwargs.get("dataset_ids", [None] * len(example_ids)),
+                kwargs.get("attachments", [None] * len(example_ids)),
+                kwargs.get("attachments_operations", [None] * len(example_ids)),
             )
         ]
-        response = self.request_with_retries(
-            "PATCH",
-            "/examples/bulk",
-            headers={**self._headers, "Content-Type": "application/json"},
-            data=(
-                _dumps_json(
-                    [
-                        {k: v for k, v in example.items() if v is not None}
-                        for example in examples
-                    ]
-                )
-            ),
-        )
-        ls_utils.raise_for_status_with_text(response)
-        return response.json()
+        if "dataset_ids" not in kwargs:
+            # get dataset_id of first example, assume it works for all
+            dataset_id = self.read_example(example_ids[0]).dataset_id
+            response = self._update_examples_multipart(
+                dataset_id=dataset_id,
+                updates=examples,
+                dangerously_allow_filesystem=dangerously_allow_filesystem,
+            )
+        else:
+            if len(set(kwargs["dataset_ids"])) > 1:
+                raise ValueError("Dataset IDs must be the same for all examples")
+            dataset_id = kwargs["dataset_ids"][0]
+            if not dataset_id:
+                raise ValueError("dataset_ids cannot be set to None")
+            response = self._update_examples_multipart(
+                dataset_id=dataset_id,
+                updates=examples,
+                dangerously_allow_filesystem=dangerously_allow_filesystem,
+            )
+
+        return {"message": f"{response.get('count', 0)} examples updated", **response}
 
     def delete_example(self, example_id: ID_TYPE) -> None:
         """Delete an example by ID.

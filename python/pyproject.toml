@@ -37,6 +37,7 @@ langsmith-pyo3 = { version = "^0.1.0rc2", optional = true }
 zstandard = "^0.23.0"
 rich = {version = "^13.9.4", optional = true}
 pytest = {version = ">=7.0.0", optional = true}
+deprecated = "^1.2.18"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.3.1"
@@ -74,6 +75,10 @@ openai = "^1.10"
 
 [tool.poetry.group.test.dependencies]
 pytest-socket = "^0.7.0"
+
+
+[tool.poetry.group.typing.dependencies]
+types-deprecated = "^1.2.15.20241117"
 
 [tool.poetry.extras]
 vcr = ["vcrpy"]
