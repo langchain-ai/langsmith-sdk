@@ -10,7 +10,7 @@ import {
   Example,
   ExampleCreate,
   ExampleUpdate,
-  ExampleUpdateWithoutID,
+  ExampleUpdateWithoutId,
   Feedback,
   FeedbackConfig,
   FeedbackIngestToken,
@@ -1064,40 +1064,25 @@ export class Client implements LangSmithTracingClientInterface {
     }
     // transform and convert to dicts
     const allAttachments: Record<string, Attachments> = {};
-    let preparedCreateParams =
-      runCreates?.map((create) =>
-        this.prepareRunCreateOrUpdateInputs(create)
-      ) ?? [];
-    let preparedUpdateParams =
-      runUpdates?.map((update) =>
-        this.prepareRunCreateOrUpdateInputs(update)
-      ) ?? [];
+    let preparedCreateParams = [];
 
-    if (preparedCreateParams.length > 0 && preparedUpdateParams.length > 0) {
-      const createById = preparedCreateParams.reduce(
-        (params: Record<string, RunCreate>, run) => {
-          if (!run.id) {
-            return params;
-          }
-          params[run.id] = run;
-          return params;
-        },
-        {}
-      );
-      const standaloneUpdates = [];
-      for (const updateParam of preparedUpdateParams) {
-        if (updateParam.id !== undefined && createById[updateParam.id]) {
-          createById[updateParam.id] = {
-            ...createById[updateParam.id],
-            ...updateParam,
-          };
-        } else {
-          standaloneUpdates.push(updateParam);
-        }
+    for (const create of runCreates ?? []) {
+      const preparedCreate = this.prepareRunCreateOrUpdateInputs(create);
+      if (
+        preparedCreate.id !== undefined &&
+        preparedCreate.attachments !== undefined
+      ) {
+        allAttachments[preparedCreate.id] = preparedCreate.attachments;
       }
-      preparedCreateParams = Object.values(createById);
-      preparedUpdateParams = standaloneUpdates;
+      delete preparedCreate.attachments;
+      preparedCreateParams.push(preparedCreate);
     }
+    let preparedUpdateParams = [];
+    for (const update of runUpdates ?? []) {
+      preparedUpdateParams.push(this.prepareRunCreateOrUpdateInputs(update));
+    }
+
+    // require trace_id and dotted_order
     const invalidRunCreate = preparedCreateParams.find((runCreate) => {
       return (
         runCreate.trace_id === undefined || runCreate.dotted_order === undefined
@@ -2699,6 +2684,9 @@ export class Client implements LangSmithTracingClientInterface {
 
   public async createExample(update: ExampleCreate): Promise<Example>;
 
+  /**
+   * @deprecated This signature is deprecated, use createExample(update: ExampleCreate) instead
+   */
   public async createExample(
     inputs: KVMap,
     outputs: KVMap,
@@ -2758,6 +2746,8 @@ export class Client implements LangSmithTracingClientInterface {
     return example;
   }
 
+  public async createExamples(uploads: ExampleCreate[]): Promise<Example[]>;
+  /** @deprecated Use the uploads-only overload instead */
   public async createExamples(props: {
     inputs?: Array<KVMap>;
     outputs?: Array<KVMap>;
@@ -2770,8 +2760,51 @@ export class Client implements LangSmithTracingClientInterface {
     exampleIds?: Array<string>;
     datasetId?: string;
     datasetName?: string;
-    uploads?: ExampleCreate[];
-  }): Promise<Example[]> {
+  }): Promise<Example[]>;
+  public async createExamples(
+    propsOrUploads:
+      | ExampleCreate[]
+      | {
+          inputs?: Array<KVMap>;
+          outputs?: Array<KVMap>;
+          metadata?: Array<KVMap>;
+          splits?: Array<string | Array<string>>;
+          sourceRunIds?: Array<string>;
+          useSourceRunIOs?: Array<boolean>;
+          useSourceRunAttachments?: Array<string[]>;
+          attachments?: Array<Attachments>;
+          exampleIds?: Array<string>;
+          datasetId?: string;
+          datasetName?: string;
+        }
+  ): Promise<Example[]> {
+    if (Array.isArray(propsOrUploads)) {
+      if (propsOrUploads.length === 0) {
+        return [];
+      }
+
+      const uploads = propsOrUploads;
+      let datasetId_ = uploads[0].dataset_id;
+      const datasetName_ = uploads[0].dataset_name;
+
+      if (datasetId_ === undefined && datasetName_ === undefined) {
+        throw new Error("Must provide either datasetName or datasetId");
+      } else if (datasetId_ !== undefined && datasetName_ !== undefined) {
+        throw new Error(
+          "Must provide either datasetName or datasetId, not both"
+        );
+      } else if (datasetId_ === undefined) {
+        const dataset = await this.readDataset({ datasetName: datasetName_ });
+        datasetId_ = dataset.id;
+      }
+
+      const response = await this._uploadExamplesMultipart(datasetId_, uploads);
+      const examples = await Promise.all(
+        response.example_ids.map((id) => this.readExample(id))
+      );
+      return examples;
+    }
+
     const {
       inputs,
       outputs,
@@ -2784,35 +2817,15 @@ export class Client implements LangSmithTracingClientInterface {
       exampleIds,
       datasetId,
       datasetName,
-      uploads,
-    } = props;
-    // Check that either uploads or old params are being used
-    if (
-      uploads !== undefined &&
-      [
-        inputs,
-        outputs,
-        metadata,
-        splits,
-        sourceRunIds,
-        useSourceRunIOs,
-        useSourceRunAttachments,
-        attachments,
-        exampleIds,
-        datasetId,
-        datasetName,
-      ].some((x) => x !== undefined)
-    ) {
-      throw new Error("When providing uploads cannot provide any other params");
-    } else if (inputs === undefined && uploads === undefined) {
-      throw new Error("Must provide either inputs or uploads");
-    } else if (uploads !== undefined && uploads.length === 0) {
-      return [];
+    } = propsOrUploads;
+
+    if (inputs === undefined) {
+      throw new Error("Must provide inputs when using legacy parameters");
     }
 
-    // Grab the dataset
-    let datasetId_ = uploads ? uploads[0].dataset_id : datasetId;
-    const datasetName_ = uploads ? uploads[0].dataset_name : datasetName;
+    let datasetId_ = datasetId;
+    const datasetName_ = datasetName;
+
     if (datasetId_ === undefined && datasetName_ === undefined) {
       throw new Error("Must provide either datasetName or datasetId");
     } else if (datasetId_ !== undefined && datasetName_ !== undefined) {
@@ -2822,39 +2835,29 @@ export class Client implements LangSmithTracingClientInterface {
       datasetId_ = dataset.id;
     }
 
-    if (uploads !== undefined) {
-      const response = await this._uploadExamplesMultipart(datasetId_, uploads);
-      const examples = await Promise.all(
-        response.example_ids.map((id) => this.readExample(id))
-      );
-      return examples;
-    } else if (inputs !== undefined) {
-      const formattedExamples: ExampleCreate[] = inputs.map((input, idx) => {
-        return {
-          dataset_id: datasetId_,
-          inputs: input,
-          outputs: outputs?.[idx],
-          metadata: metadata?.[idx],
-          split: splits?.[idx],
-          id: exampleIds?.[idx],
-          attachments: attachments?.[idx],
-          source_run_id: sourceRunIds?.[idx],
-          use_source_run_io: useSourceRunIOs?.[idx],
-          use_source_run_attachments: useSourceRunAttachments?.[idx],
-        } as ExampleCreate;
-      });
+    const formattedExamples: ExampleCreate[] = inputs.map((input, idx) => {
+      return {
+        dataset_id: datasetId_,
+        inputs: input,
+        outputs: outputs?.[idx],
+        metadata: metadata?.[idx],
+        split: splits?.[idx],
+        id: exampleIds?.[idx],
+        attachments: attachments?.[idx],
+        source_run_id: sourceRunIds?.[idx],
+        use_source_run_io: useSourceRunIOs?.[idx],
+        use_source_run_attachments: useSourceRunAttachments?.[idx],
+      } as ExampleCreate;
+    });
 
-      const response = await this._uploadExamplesMultipart(
-        datasetId_,
-        formattedExamples
-      );
-      const examples = await Promise.all(
-        response.example_ids.map((id) => this.readExample(id))
-      );
-      return examples;
-    } else {
-      throw new Error("Must provide either inputs or uploads");
-    }
+    const response = await this._uploadExamplesMultipart(
+      datasetId_,
+      formattedExamples
+    );
+    const examples = await Promise.all(
+      response.example_ids.map((id) => this.readExample(id))
+    );
+    return examples;
   }
 
   public async createLLMExample(
@@ -3028,16 +3031,19 @@ export class Client implements LangSmithTracingClientInterface {
     await response.json();
   }
 
+  /**
+   * @deprecated This signature is deprecated, use updateExample(update: ExampleUpdate) instead
+   */
   public async updateExample(
     exampleId: string,
-    update: ExampleUpdateWithoutID
+    update: ExampleUpdateWithoutId
   ): Promise<object>;
 
   public async updateExample(update: ExampleUpdate): Promise<object>;
 
   public async updateExample(
     exampleIdOrUpdate: string | ExampleUpdate,
-    update?: ExampleUpdateWithoutID
+    update?: ExampleUpdateWithoutId
   ): Promise<object> {
     let exampleId: string;
     if (update) {

@@ -282,7 +282,7 @@ export interface ExampleUpdate {
   dataset_id?: string;
 }
 
-export interface ExampleUpdateWithoutID extends Omit<ExampleUpdate, "id"> {}
+export interface ExampleUpdateWithoutId extends Omit<ExampleUpdate, "id"> {}
 
 export interface ExampleUpdateWithAttachments extends ExampleUpdate {}
 

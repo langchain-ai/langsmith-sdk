@@ -1586,55 +1586,53 @@ test.skip("test use source run io multiple examples", async () => {
   });
 
   const exampleIds = [uuidv4(), uuidv4(), uuidv4()];
-  await client.createExamples({
-    uploads: [
-      {
-        id: exampleIds[0],
-        inputs: { bar: "baz" },
-        outputs: { bar: "baz" },
-        attachments: {
-          test_file2: {
-            data: Buffer.from("test content"),
-            mimeType: "text/plain",
-          },
+  await client.createExamples([
+    {
+      id: exampleIds[0],
+      inputs: { bar: "baz" },
+      outputs: { bar: "baz" },
+      attachments: {
+        test_file2: {
+          data: Buffer.from("test content"),
+          mimeType: "text/plain",
         },
-        use_source_run_io: true,
-        use_source_run_attachments: [],
-        source_run_id: runId,
-        dataset_id: dataset.id,
       },
-      {
-        id: exampleIds[1],
-        inputs: { bar: "baz" },
-        outputs: { bar: "baz" },
-        attachments: {
-          test_file2: {
-            data: Buffer.from("test content"),
-            mimeType: "text/plain",
-          },
+      use_source_run_io: true,
+      use_source_run_attachments: [],
+      source_run_id: runId,
+      dataset_id: dataset.id,
+    },
+    {
+      id: exampleIds[1],
+      inputs: { bar: "baz" },
+      outputs: { bar: "baz" },
+      attachments: {
+        test_file2: {
+          data: Buffer.from("test content"),
+          mimeType: "text/plain",
         },
-        use_source_run_io: false,
-        use_source_run_attachments: ["test_file"],
-        source_run_id: runId,
-        dataset_id: dataset.id,
       },
-      {
-        id: exampleIds[2],
-        inputs: { bar: "baz" },
-        outputs: { bar: "baz" },
-        attachments: {
-          test_file2: {
-            data: Buffer.from("test content"),
-            mimeType: "text/plain",
-          },
+      use_source_run_io: false,
+      use_source_run_attachments: ["test_file"],
+      source_run_id: runId,
+      dataset_id: dataset.id,
+    },
+    {
+      id: exampleIds[2],
+      inputs: { bar: "baz" },
+      outputs: { bar: "baz" },
+      attachments: {
+        test_file2: {
+          data: Buffer.from("test content"),
+          mimeType: "text/plain",
         },
-        use_source_run_io: true,
-        use_source_run_attachments: ["test_file"],
-        source_run_id: runId,
-        dataset_id: dataset.id,
       },
-    ],
-  });
+      use_source_run_io: true,
+      use_source_run_attachments: ["test_file"],
+      source_run_id: runId,
+      dataset_id: dataset.id,
+    },
+  ]);
 
   const example1 = await client.readExample(exampleIds[0]);
   const example2 = await client.readExample(exampleIds[1]);
@@ -1861,7 +1859,7 @@ test("create examples go backend", async () => {
     },
   };
 
-  let createdExample = (await client.createExamples({ uploads: [example] }))[0];
+  let createdExample = (await client.createExamples([example]))[0];
   expect(createdExample.id).toEqual(exampleId);
   expect(createdExample.inputs.text).toEqual("hello world");
   expect(Object.keys(createdExample.attachments ?? {})).toEqual(["test_file"]);
