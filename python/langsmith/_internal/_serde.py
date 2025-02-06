@@ -105,7 +105,7 @@ def _serialize_json(obj: Any) -> Any:
                         return str(response)
                     return response
                 except Exception as e:
-                    logger.error(
+                    logger.debug(
                         f"Failed to use {attr} to serialize {type(obj)} to"
                         f" JSON: {repr(e)}"
                     )
