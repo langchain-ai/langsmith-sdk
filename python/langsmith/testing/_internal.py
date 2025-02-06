@@ -408,6 +408,22 @@ def _get_test_suite(
             return client.read_dataset(dataset_name=test_suite_name)
 
 
+def _get_environment_metadata():
+    environment = os.environ.get("ENVIRONMENT")
+    langsmith_environment = os.environ.get("LANGSMITH_ENVIRONMENT")
+    metadata = {
+        "revision_id": ls_env.get_langchain_env_var_metadata().get("revision_id"),
+        "__ls_runner": "pytest",
+    }
+
+    # Only add environment variables if they exist
+    if environment := os.environ.get("ENVIRONMENT"):
+        metadata["ENVIRONMENT"] = environment
+    if langsmith_environment := os.environ.get("LANGSMITH_ENVIRONMENT"):
+        metadata["LANGSMITH_ENVIRONMENT"] = langsmith_environment
+    return metadata
+
+
 def _start_experiment(
     client: ls_client.Client,
     test_suite: ls_schemas.Dataset,
@@ -418,12 +434,7 @@ def _start_experiment(
             experiment_name,
             reference_dataset_id=test_suite.id,
             description="Test Suite Results.",
-            metadata={
-                "revision_id": ls_env.get_langchain_env_var_metadata().get(
-                    "revision_id"
-                ),
-                "__ls_runner": "pytest",
-            },
+            metadata=_get_environment_metadata(),
         )
     except ls_utils.LangSmithConflictError:
         return client.read_project(project_name=experiment_name)
@@ -456,8 +467,7 @@ def _end_tests(test_suite: _LangSmithTestSuite):
         metadata={
             **git_info,
             "dataset_version": dataset_version,
-            "revision_id": ls_env.get_langchain_env_var_metadata().get("revision_id"),
-            "__ls_runner": "pytest",
+            **_get_environment_metadata(),
         },
     )
     if dataset_version and git_info["commit"] is not None:
