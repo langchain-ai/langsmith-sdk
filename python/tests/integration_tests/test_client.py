@@ -30,7 +30,6 @@ from langsmith.schemas import (
     Example,
     ExampleUpdateWithAttachments,
     ExampleUploadWithAttachments,
-    ExampleUpsertWithAttachments,
     Run,
 )
 from langsmith.utils import (
