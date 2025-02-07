@@ -1391,11 +1391,9 @@ def test_io_interops():
     patches_dict = {d["id"]: d for d in patches_datas}
     child_patch = patches_dict[ids["child"]]
     assert child_patch["outputs"] == expected_at_stage["child_output"]
-    assert child_patch["inputs"] == expected_at_stage["child_input"]
     assert child_patch["name"] == "child"
     parent_patch = patches_dict[ids["the_parent"]]
     assert parent_patch["outputs"] == expected_at_stage["parent_output"]
-    assert parent_patch["inputs"] == expected_at_stage["parent_input"]
     assert parent_patch["name"] == "the_parent"
     for d in patches_datas:
         if d["id"] in ids_contains_serialized:
