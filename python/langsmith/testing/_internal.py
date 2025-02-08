@@ -691,6 +691,8 @@ class _TestCase:
         self.pytest_plugin = pytest_plugin
         self.pytest_nodeid = pytest_nodeid
         self._logged_reference_outputs: Optional[dict] = None
+        self.inputs = inputs
+        self.reference_outputs = reference_outputs
 
         if pytest_plugin and pytest_nodeid:
             pytest_plugin.add_process_to_test_suite(
@@ -866,8 +868,6 @@ def _run_test(
         langtest_extra=langtest_extra,
     )
     _TEST_CASE.set(test_case)
-    func_sig = inspect.signature(func)
-    func_inputs = rh._get_inputs_safe(func_sig, *test_args, **test_kwargs)
 
     def _test():
         test_case.start_time()
@@ -875,7 +875,7 @@ def _run_test(
             name=getattr(func, "__name__", "Test"),
             run_id=test_case.run_id,
             reference_example_id=test_case.example_id,
-            inputs=func_inputs,
+            inputs=test_case.inputs,
             project_name=test_case.test_suite.name,
             exceptions_to_handle=(SkipException,),
             _end_on_exit=False,
@@ -936,8 +936,6 @@ async def _arun_test(
         langtest_extra=langtest_extra,
     )
     _TEST_CASE.set(test_case)
-    func_sig = inspect.signature(func)
-    func_inputs = rh._get_inputs_safe(func_sig, *test_args, **test_kwargs)
 
     async def _test():
         test_case.start_time()
@@ -945,7 +943,7 @@ async def _arun_test(
             name=getattr(func, "__name__", "Test"),
             run_id=test_case.run_id,
             reference_example_id=test_case.example_id,
-            inputs=func_inputs,
+            inputs=test_case.inputs,
             project_name=test_case.test_suite.name,
             exceptions_to_handle=(SkipException,),
             _end_on_exit=False,
