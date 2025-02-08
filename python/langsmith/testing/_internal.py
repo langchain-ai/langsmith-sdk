@@ -304,10 +304,8 @@ def test(*args: Any, **kwargs: Any) -> Callable:
     """
     if "output_keys" in kwargs:
         warnings.warn(
-            (
-                "The `output_keys` keyword argument is deprecated.",
-                "Please use `reference_output_keys` instead.",
-            ),
+            "The `output_keys` keyword argument is deprecated."
+            "Please use `reference_output_keys` instead.",
             DeprecationWarning,
         )
         reference_output_keys = kwargs.pop("output_keys")
