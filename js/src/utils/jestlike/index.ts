@@ -301,18 +301,18 @@ export function generateWrapperFromJestlikeMethods(
           experimentConfig?.metadata?.LANGSMITH_ENVIRONMENT ??
           getEnvironmentVariable("LANGSMITH_ENVIRONMENT");
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const metadata: Record<string, any> = {
+        const suiteMetadata: Record<string, any> = {
           ...experimentConfig?.metadata,
           __ls_runner: testRunnerName,
         };
         if (environment !== undefined) {
-          metadata.ENVIRONMENT = environment;
+          suiteMetadata.ENVIRONMENT = environment;
         }
         if (nodeEnv !== undefined) {
-          metadata.NODE_ENV = nodeEnv;
+          suiteMetadata.NODE_ENV = nodeEnv;
         }
         if (langsmithEnvironment !== undefined) {
-          metadata.LANGSMITH_ENVIRONMENT = langsmithEnvironment;
+          suiteMetadata.LANGSMITH_ENVIRONMENT = langsmithEnvironment;
         }
         const context = {
           suiteUuid,
@@ -321,7 +321,7 @@ export function generateWrapperFromJestlikeMethods(
           createdAt: new Date().toISOString(),
           projectConfig: {
             ...experimentConfig,
-            metadata,
+            metadata: suiteMetadata,
           },
           enableTestTracking: experimentConfig?.enableTestTracking,
         };
@@ -347,11 +347,13 @@ export function generateWrapperFromJestlikeMethods(
           const endTime = new Date();
           let branch;
           let commit;
+          let dirty;
           try {
             branch = execSync("git rev-parse --abbrev-ref HEAD")
               .toString()
               .trim();
             commit = execSync("git rev-parse HEAD").toString().trim();
+            dirty = execSync("git status --porcelain").toString().trim() !== "";
           } catch {
             return;
           }
@@ -376,23 +378,21 @@ export function generateWrapperFromJestlikeMethods(
               finalModifiedAt = endTime.toISOString();
             }
             const datasetInfo = datasetSetupInfo.get(suiteUuid);
-            const { as_of } = await client.readDatasetVersion({
+            await client.updateProject(datasetInfo.project.id, {
+              metadata: {
+                ...suiteMetadata,
+                commit,
+                branch,
+                dirty,
+              },
+            });
+            await client.updateDatasetTag({
               datasetId: datasetInfo.dataset.id,
               asOf: finalModifiedAt,
+              tag: `git:commit:${commit}`,
             });
-            await Promise.all([
-              client.updateDatasetTag({
-                datasetId: datasetInfo.dataset.id,
-                asOf: as_of,
-                tag: `git:branch:${branch}`,
-              }),
-              client.updateDatasetTag({
-                datasetId: datasetInfo.dataset.id,
-                asOf: as_of,
-                tag: `git:commit:${commit}`,
-              }),
-            ]);
-          } catch {
+          } catch (e) {
+            console.error(e);
             return;
           }
         });
