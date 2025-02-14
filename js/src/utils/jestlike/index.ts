@@ -32,8 +32,10 @@ import { SimpleEvaluationResult } from "./types.js";
 import type {
   LangSmithJestlikeWrapperConfig,
   LangSmithJestlikeWrapperParams,
-  LangSmithJestDescribeWrapper,
+  LangSmithJestlikeDescribeWrapper,
+  LangSmithJestlikeDescribeWrapperConfig,
 } from "./types.js";
+import { getEnvironmentVariable } from "../env.js";
 
 const DEFAULT_TEST_TIMEOUT = 30_000;
 
@@ -264,7 +266,7 @@ export function generateWrapperFromJestlikeMethods(
       });
       const experimentUrl = `${datasetUrl}/compare?selectedSessions=${project.id}`;
       console.log(
-        `[LANGSMITH]: Experiment starting! View results at ${experimentUrl}`
+        `[LANGSMITH]: Experiment starting for dataset "${datasetName}"!\n[LANGSMITH]: View results at ${experimentUrl}`
       );
       storageValue = {
         dataset,
@@ -278,30 +280,48 @@ export function generateWrapperFromJestlikeMethods(
 
   function wrapDescribeMethod(
     method: (name: string, fn: () => void | Promise<void>) => void
-  ): LangSmithJestDescribeWrapper {
+  ): LangSmithJestlikeDescribeWrapper {
     return function (
-      datasetName: string,
+      testSuiteName: string,
       fn: () => void | Promise<void>,
-      experimentConfig?: {
-        client?: Client;
-        enableTestTracking?: boolean;
-      } & Partial<Omit<CreateProjectParams, "referenceDatasetId">>
+      experimentConfig?: LangSmithJestlikeDescribeWrapperConfig
     ) {
       const client = experimentConfig?.client ?? DEFAULT_TEST_CLIENT;
-      return method(datasetName, () => {
+      const suiteName = experimentConfig?.testSuiteName ?? testSuiteName;
+      return method(suiteName, () => {
         const startTime = new Date();
         const suiteUuid = v4();
+        const environment =
+          experimentConfig?.metadata?.ENVIRONMENT ??
+          getEnvironmentVariable("ENVIRONMENT");
+        const nodeEnv =
+          experimentConfig?.metadata?.NODE_ENV ??
+          getEnvironmentVariable("NODE_ENV");
+        const langsmithEnvironment =
+          experimentConfig?.metadata?.LANGSMITH_ENVIRONMENT ??
+          getEnvironmentVariable("LANGSMITH_ENVIRONMENT");
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const suiteMetadata: Record<string, any> = {
+          ...experimentConfig?.metadata,
+          __ls_runner: testRunnerName,
+        };
+        if (environment !== undefined) {
+          suiteMetadata.ENVIRONMENT = environment;
+        }
+        if (nodeEnv !== undefined) {
+          suiteMetadata.NODE_ENV = nodeEnv;
+        }
+        if (langsmithEnvironment !== undefined) {
+          suiteMetadata.LANGSMITH_ENVIRONMENT = langsmithEnvironment;
+        }
         const context = {
           suiteUuid,
-          suiteName: datasetName,
+          suiteName,
           client,
           createdAt: new Date().toISOString(),
           projectConfig: {
             ...experimentConfig,
-            metadata: {
-              ...experimentConfig?.metadata,
-              __ls_runner: testRunnerName,
-            },
+            metadata: suiteMetadata,
           },
           enableTestTracking: experimentConfig?.enableTestTracking,
         };
@@ -327,11 +347,13 @@ export function generateWrapperFromJestlikeMethods(
           const endTime = new Date();
           let branch;
           let commit;
+          let dirty;
           try {
             branch = execSync("git rev-parse --abbrev-ref HEAD")
               .toString()
               .trim();
             commit = execSync("git rev-parse HEAD").toString().trim();
+            dirty = execSync("git status --porcelain").toString().trim() !== "";
           } catch {
             return;
           }
@@ -356,23 +378,21 @@ export function generateWrapperFromJestlikeMethods(
               finalModifiedAt = endTime.toISOString();
             }
             const datasetInfo = datasetSetupInfo.get(suiteUuid);
-            const { as_of } = await client.readDatasetVersion({
+            await client.updateProject(datasetInfo.project.id, {
+              metadata: {
+                ...suiteMetadata,
+                commit,
+                branch,
+                dirty,
+              },
+            });
+            await client.updateDatasetTag({
               datasetId: datasetInfo.dataset.id,
               asOf: finalModifiedAt,
+              tag: `git:commit:${commit}`,
             });
-            await Promise.all([
-              client.updateDatasetTag({
-                datasetId: datasetInfo.dataset.id,
-                asOf: as_of,
-                tag: `git:branch:${branch}`,
-              }),
-              client.updateDatasetTag({
-                datasetId: datasetInfo.dataset.id,
-                asOf: as_of,
-                tag: `git:commit:${commit}`,
-              }),
-            ]);
-          } catch {
+          } catch (e) {
+            console.error(e);
             return;
           }
         });

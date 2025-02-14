@@ -6,6 +6,8 @@ var CIRCULAR_REPLACE_NODE = { result: "[Circular]" };
 var arr = [];
 var replacerStack = [];
 
+const encoder = new TextEncoder();
+
 function defaultOptions() {
   return {
     depthLimit: Number.MAX_SAFE_INTEGER,
@@ -13,15 +15,20 @@ function defaultOptions() {
   };
 }
 
+function encodeString(str: string): Uint8Array {
+  return encoder.encode(str);
+}
+
 // Regular stringify
-export function stringify(obj, replacer?, spacer?, options?) {
+export function serialize(obj, replacer?, spacer?, options?) {
   try {
-    return JSON.stringify(obj, replacer, spacer);
+    const str = JSON.stringify(obj, replacer, spacer);
+    return encodeString(str);
   } catch (e: any) {
     // Fall back to more complex stringify if circular reference
     if (!e.message?.includes("Converting circular structure to JSON")) {
       console.warn("[WARNING]: LangSmith received unserializable value.");
-      return "[Unserializable]";
+      return encodeString("[Unserializable]");
     }
     console.warn(
       "[WARNING]: LangSmith received circular JSON. This will decrease tracer performance."
@@ -31,7 +38,7 @@ export function stringify(obj, replacer?, spacer?, options?) {
     }
 
     decirc(obj, "", 0, [], undefined, 0, options);
-    var res;
+    let res: string;
     try {
       if (replacerStack.length === 0) {
         res = JSON.stringify(obj, replacer, spacer);
@@ -39,12 +46,12 @@ export function stringify(obj, replacer?, spacer?, options?) {
         res = JSON.stringify(obj, replaceGetterValues(replacer), spacer);
       }
     } catch (_) {
-      return JSON.stringify(
+      return encodeString(
         "[unable to serialize, circular reference is too complex to analyze]"
       );
     } finally {
       while (arr.length !== 0) {
-        var part = arr.pop();
+        const part = arr.pop();
         if (part.length === 4) {
           Object.defineProperty(part[0], part[1], part[3]);
         } else {
@@ -52,7 +59,7 @@ export function stringify(obj, replacer?, spacer?, options?) {
         }
       }
     }
-    return res;
+    return encodeString(res);
   }
 }
 

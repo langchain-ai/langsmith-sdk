@@ -30,12 +30,21 @@ export function getAssumedTreeFromCalls(calls: unknown[][]) {
       { method: string; body: string }
     ];
     const req = `${fetchArgs.method} ${new URL(url as string).pathname}`;
-    const body: Run = JSON.parse(fetchArgs.body);
+    let body: Run;
+    if (typeof fetchArgs.body === "string") {
+      body = JSON.parse(fetchArgs.body);
+    } else {
+      const decoded = new TextDecoder().decode(fetchArgs.body);
+
+      if (decoded.trim().startsWith("{")) {
+        body = JSON.parse(decoded);
+      }
+    }
 
     if (req === "POST /runs") {
-      const id = body.id;
+      const id = body!.id;
       upsertId(id);
-      nodeMap[id] = { ...nodeMap[id], ...body };
+      nodeMap[id] = { ...nodeMap[id], ...body! };
       if (nodeMap[id].parent_run_id) {
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         edges.push([nodeMap[id].parent_run_id!, nodeMap[id].id]);
@@ -43,7 +52,7 @@ export function getAssumedTreeFromCalls(calls: unknown[][]) {
     } else if (req.startsWith("PATCH /runs/")) {
       const id = req.substring("PATCH /runs/".length);
       upsertId(id);
-      nodeMap[id] = { ...nodeMap[id], ...body };
+      nodeMap[id] = { ...nodeMap[id], ...body! };
     }
   }
 

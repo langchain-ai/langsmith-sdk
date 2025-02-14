@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import logging
 import os
 import time
 from collections import defaultdict
@@ -12,29 +13,36 @@ import pytest
 from langsmith import utils as ls_utils
 from langsmith.testing._internal import test as ls_test
 
+logger = logging.getLogger(__name__)
+
 
 def pytest_addoption(parser):
-    """Set CLI options for choosing output format."""
-    group = parser.getgroup("langsmith", "LangSmith")
-    group.addoption(
-        "--output",
-        action="store",
-        default="pytest",
-        choices=["langsmith", "ls", "pytest"],
-        help=(
-            "Choose output format: 'langsmith' | 'ls' "
-            "(rich custom LangSmith output) or 'pytest' "
-            "(standard pytest). Defaults to 'pytest'."
-        ),
-    )
+    """Set a boolean flag for LangSmith output.
+
+    Skip if --langsmith-output is already defined.
+    """
+    try:
+        # Try to add the option, will raise if it already exists
+        group = parser.getgroup("langsmith", "LangSmith")
+        group.addoption(
+            "--langsmith-output",
+            action="store_true",
+            default=False,
+            help="Use LangSmith output (requires 'rich').",
+        )
+    except ValueError:
+        # Option already exists
+        logger.warning(
+            "LangSmith output flag cannot be added because it's already defined."
+        )
 
 
 def _handle_output_args(args):
     """Handle output arguments."""
-    if any(opt in args for opt in ["--output=langsmith", "--output=ls"]):
+    if any(opt in args for opt in ["--langsmith-output"]):
         # Only add --quiet if it's not already there
-        if not any(a in args for a in ["-q", "--quiet"]):
-            args.insert(0, "--quiet")
+        if not any(a in args for a in ["-qq"]):
+            args.insert(0, "-qq")
         # Disable built-in output capturing
         if not any(a in args for a in ["-s", "--capture=no"]):
             args.insert(0, "-s")
@@ -82,7 +90,7 @@ def pytest_report_teststatus(report, config):
     """Remove the short test-status character outputs ("./F")."""
     # The hook normally returns a 3-tuple: (short_letter, verbose_word, color)
     # By returning empty strings, the progress characters won't show.
-    if config.getoption("--output") in ("langsmith", "ls"):
+    if config.getoption("--langsmith-output"):
         return "", "", ""
 
 
@@ -173,7 +181,7 @@ class LangSmithPlugin:
         process_ids = self.test_suites[suite_name]
 
         title = f"""Test Suite: [bold]{suite_name}[/bold]
-LangSmith link: [bright_cyan][link={self.test_suite_urls[suite_name]}]⌘ + click here[/link][/bright_cyan]"""  # noqa: E501
+LangSmith URL: [bright_cyan]{self.test_suite_urls[suite_name]}[/bright_cyan]"""  # noqa: E501
         table = Table(title=title, title_justify="left")
         table.add_column("Test")
         table.add_column("Inputs")
@@ -182,7 +190,6 @@ LangSmith link: [bright_cyan][link={self.test_suite_urls[suite_name]}]⌘ + clic
         table.add_column("Status")
         table.add_column("Feedback")
         table.add_column("Duration")
-        table.add_column("Logged")
 
         # Test, inputs, ref outputs, outputs col width
         max_status = len("status")
@@ -223,9 +230,7 @@ LangSmith link: [bright_cyan][link={self.test_suite_urls[suite_name]}]⌘ + clic
             aggregate_feedback = "--"
 
         max_duration = max(max_duration, len(aggregate_duration))
-        max_dynamic_col_width = (
-            self.console.width - (max_status + max_duration + len("Logged"))
-        ) // 5
+        max_dynamic_col_width = (self.console.width - (max_status + max_duration)) // 5
         max_dynamic_col_width = max(max_dynamic_col_width, 8)
 
         for pid, status in suite_statuses.items():
@@ -254,29 +259,19 @@ LangSmith link: [bright_cyan][link={self.test_suite_urls[suite_name]}]⌘ + clic
                 f"[{status_color}]{status.get('status', 'queued')}[/{status_color}]",
                 feedback,
                 f"{duration:.2f}s",
-                "x" if status.get("logged") else "",
             )
-
-        if suite_statuses:
-            logged = sum(s.get("logged", False) for s in suite_statuses.values()) / len(
-                suite_statuses
-            )
-            aggregate_logged = f"{logged:.0%}"
-        else:
-            aggregate_logged = "--"
 
         # Add a blank row or a section separator if you like:
         table.add_row("", "", "", "", "", "", "")
         # Finally, our “footer” row:
         table.add_row(
-            "[bold]Summary[/bold]",
+            "[bold]Averages[/bold]",
             "",
             "",
             "",
             aggregate_status,
             aggregate_feedback,
             aggregate_duration,
-            aggregate_logged,
         )
 
         return table
@@ -294,6 +289,7 @@ LangSmith link: [bright_cyan][link={self.test_suite_urls[suite_name]}]⌘ + clic
     def pytest_sessionfinish(self, session):
         """Stop Rich Live rendering at the end of the session."""
         self.live.stop()
+        self.live.console.print("\nFinishing up...")
 
 
 def pytest_configure(config):
@@ -301,23 +297,24 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "langsmith: mark test to be tracked in LangSmith"
     )
-    if config.getoption("--output") in ("langsmith", "ls"):
+    if config.getoption("--langsmith-output"):
         if not importlib.util.find_spec("rich"):
             msg = (
-                "Must have 'rich' installed to use --output='langsmith' | 'ls'. "
+                "Must have 'rich' installed to use --langsmith-output. "
                 "Please install with: `pip install -U 'langsmith[pytest]'`"
             )
             raise ValueError(msg)
         if os.environ.get("PYTEST_XDIST_TESTRUNUID"):
             msg = (
-                "--output='langsmith' | 'ls' not supported with pytest-xdist. "
-                "Please remove the '--output' option or '-n' option."
+                "--langsmith-output not supported with pytest-xdist. "
+                "Please remove the '--langsmith-output' option or '-n' option."
             )
             raise ValueError(msg)
         if ls_utils.test_tracking_is_disabled():
             msg = (
-                "--output='langsmith' | 'ls' not supported when env var"
-                "LANGSMITH_TEST_TRACKING='false'. Please remove the '--output' option "
+                "--langsmith-output not supported when env var"
+                "LANGSMITH_TEST_TRACKING='false'. Please remove the"
+                "'--langsmith-output' option "
                 "or enable test tracking."
             )
             raise ValueError(msg)

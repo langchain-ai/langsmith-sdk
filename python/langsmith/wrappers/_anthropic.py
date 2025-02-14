@@ -169,7 +169,32 @@ def wrap_anthropic(client: C, *, tracing_extra: Optional[TracingExtra] = None) -
     Returns:
         Union[Anthropic, AsyncAnthropic]: The patched client.
 
-    """
+    Example:
+
+        .. code-block:: python
+
+            import anthropic
+            from langsmith import wrappers
+
+            client = wrappers.wrap_anthropic(anthropic.Anthropic())
+
+            # Use Anthropic client same as you normally would:
+            system = "You are a helpful assistant."
+            messages = [
+                {
+                    "role": "user",
+                    "content": "What physics breakthroughs do you predict will happen by 2300?",
+                }
+            ]
+            completion = client.messages.create(
+                model="claude-3-5-sonnet-latest",
+                messages=messages,
+                max_tokens=1000,
+                system=system,
+            )
+            print(completion.content)
+
+    """  # noqa: E501
     client.messages.create = _get_wrapper(  # type: ignore[method-assign]
         client.messages.create,
         "ChatAnthropic",
