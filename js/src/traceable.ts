@@ -611,6 +611,18 @@ export function traceable<Func extends (...args: any[]) => any>(
               finished = true;
               break;
             }
+            if (currentRunTree?.run_type === "llm") {
+              if (currentRunTree.events === undefined) {
+                currentRunTree.events = [];
+              }
+              currentRunTree.events.push({
+                name: "new_token",
+                time: new Date().toISOString(),
+                kwargs: {
+                  token: value,
+                },
+              });
+            }
             chunks.push(value);
             yield value;
           }
