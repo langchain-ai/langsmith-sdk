@@ -125,7 +125,7 @@ class ExampleCreate(BaseModel):
     outputs: Optional[Dict[str, Any]] = Field(default=None)
     metadata: Optional[Dict[str, Any]] = Field(default=None)
     split: Optional[Union[str, List[str]]] = None
-    attachments: dict[str, _AttachmentLike] | None = None
+    attachments: Optional[dict[str, _AttachmentLike]] = None
     use_source_run_io: bool = False
     use_source_run_attachments: Optional[List[str]] = None
     source_run_id: Optional[UUID] = None
