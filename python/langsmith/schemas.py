@@ -108,7 +108,7 @@ class ExampleBase(BaseModel):
 
 class _AttachmentDict(TypedDict):
     mime_type: str
-    data: bytes | Path
+    data: Union[bytes, Path]
 
 
 _AttachmentLike = Union[
