@@ -51,14 +51,18 @@ class Attachment(NamedTuple):
     """Annotated type that will be stored as an attachment if used.
 
     Examples:
-        --------
+
         .. code-block:: python
 
-        @traceable
-        def my_function(bar: int, my_val: Attachment):
-            # my_val will be stored as an attachment
-            # bar will be stored as inputs
-            return bar
+            from langsmith import traceable
+            from langsmith.schemas import Attachment
+
+
+            @traceable
+            def my_function(bar: int, my_val: Attachment):
+                # my_val will be stored as an attachment
+                # bar will be stored as inputs
+                return bar
     """
 
     mime_type: str
@@ -102,6 +106,16 @@ class ExampleBase(BaseModel):
         arbitrary_types_allowed = True
 
 
+class _AttachmentDict(TypedDict):
+    mime_type: str
+    data: bytes | Path
+
+
+_AttachmentLike = Union[
+    Attachment, _AttachmentDict, Tuple[str, bytes], Tuple[str, Path]
+]
+
+
 class ExampleCreate(BaseModel):
     """Example upload with attachments."""
 
@@ -111,7 +125,7 @@ class ExampleCreate(BaseModel):
     outputs: Optional[Dict[str, Any]] = Field(default=None)
     metadata: Optional[Dict[str, Any]] = Field(default=None)
     split: Optional[Union[str, List[str]]] = None
-    attachments: Optional[Attachments] = None
+    attachments: dict[str, _AttachmentLike] | None = None
     use_source_run_io: bool = False
     use_source_run_attachments: Optional[List[str]] = None
     source_run_id: Optional[UUID] = None

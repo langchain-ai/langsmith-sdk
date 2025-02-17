@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "langsmith"
-version = "0.3.5"
+version = "0.3.8"
 description = "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform."
 authors = ["LangChain <support@langchain.dev>"]
 license = "MIT"
@@ -37,7 +37,6 @@ langsmith-pyo3 = { version = "^0.1.0rc2", optional = true }
 zstandard = "^0.23.0"
 rich = {version = "^13.9.4", optional = true}
 pytest = {version = ">=7.0.0", optional = true}
-deprecated = "^1.2.18"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.3.1"
@@ -78,7 +77,6 @@ pytest-socket = "^0.7.0"
 
 
 [tool.poetry.group.typing.dependencies]
-types-deprecated = "^1.2.15.20241117"
 
 [tool.poetry.extras]
 vcr = ["vcrpy"]

@@ -41,8 +41,8 @@ def _handle_output_args(args):
     """Handle output arguments."""
     if any(opt in args for opt in ["--langsmith-output"]):
         # Only add --quiet if it's not already there
-        if not any(a in args for a in ["-q", "--quiet"]):
-            args.insert(0, "--quiet")
+        if not any(a in args for a in ["-qq"]):
+            args.insert(0, "-qq")
         # Disable built-in output capturing
         if not any(a in args for a in ["-s", "--capture=no"]):
             args.insert(0, "-s")
@@ -181,7 +181,7 @@ class LangSmithPlugin:
         process_ids = self.test_suites[suite_name]
 
         title = f"""Test Suite: [bold]{suite_name}[/bold]
-LangSmith link: [bright_cyan][link={self.test_suite_urls[suite_name]}]⌘ + click here[/link][/bright_cyan]"""  # noqa: E501
+LangSmith URL: [bright_cyan]{self.test_suite_urls[suite_name]}[/bright_cyan]"""  # noqa: E501
         table = Table(title=title, title_justify="left")
         table.add_column("Test")
         table.add_column("Inputs")
@@ -190,7 +190,6 @@ LangSmith link: [bright_cyan][link={self.test_suite_urls[suite_name]}]⌘ + clic
         table.add_column("Status")
         table.add_column("Feedback")
         table.add_column("Duration")
-        table.add_column("Logged")
 
         # Test, inputs, ref outputs, outputs col width
         max_status = len("status")
@@ -231,9 +230,7 @@ LangSmith link: [bright_cyan][link={self.test_suite_urls[suite_name]}]⌘ + clic
             aggregate_feedback = "--"
 
         max_duration = max(max_duration, len(aggregate_duration))
-        max_dynamic_col_width = (
-            self.console.width - (max_status + max_duration + len("Logged"))
-        ) // 5
+        max_dynamic_col_width = (self.console.width - (max_status + max_duration)) // 5
         max_dynamic_col_width = max(max_dynamic_col_width, 8)
 
         for pid, status in suite_statuses.items():
@@ -262,29 +259,19 @@ LangSmith link: [bright_cyan][link={self.test_suite_urls[suite_name]}]⌘ + clic
                 f"[{status_color}]{status.get('status', 'queued')}[/{status_color}]",
                 feedback,
                 f"{duration:.2f}s",
-                "x" if status.get("logged") else "",
             )
-
-        if suite_statuses:
-            logged = sum(s.get("logged", False) for s in suite_statuses.values()) / len(
-                suite_statuses
-            )
-            aggregate_logged = f"{logged:.0%}"
-        else:
-            aggregate_logged = "--"
 
         # Add a blank row or a section separator if you like:
         table.add_row("", "", "", "", "", "", "")
         # Finally, our “footer” row:
         table.add_row(
-            "[bold]Summary[/bold]",
+            "[bold]Averages[/bold]",
             "",
             "",
             "",
             aggregate_status,
             aggregate_feedback,
             aggregate_duration,
-            aggregate_logged,
         )
 
         return table
@@ -302,6 +289,7 @@ LangSmith link: [bright_cyan][link={self.test_suite_urls[suite_name]}]⌘ + clic
     def pytest_sessionfinish(self, session):
         """Stop Rich Live rendering at the end of the session."""
         self.live.stop()
+        self.live.console.print("\nFinishing up...")
 
 
 def pytest_configure(config):

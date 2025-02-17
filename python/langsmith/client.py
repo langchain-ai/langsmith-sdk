@@ -58,7 +58,6 @@ from typing import (
 from urllib import parse as urllib_parse
 
 import requests
-from deprecated import deprecated
 from requests import adapters as requests_adapters
 from requests_toolbelt import (  # type: ignore[import-untyped]
     multipart as rqtb_multipart,
@@ -982,7 +981,9 @@ class Client:
             ValueError: If the csv_file is not a string or tuple.
 
         Examples:
+
             .. code-block:: python
+
                 from langsmith import Client
                 import os
                 import pandas as pd
@@ -1043,7 +1044,9 @@ class Client:
             ValueError: If the csv_file is not a string or tuple.
 
         Examples:
+
             .. code-block:: python
+
                 from langsmith import Client
                 import os
 
@@ -1224,7 +1227,9 @@ class Client:
             LangSmithUserError: If the API key is not provided when using the hosted service.
 
         Examples:
+
             .. code-block:: python
+
                 from langsmith import Client
                 import datetime
                 from uuid import uuid4
@@ -1451,7 +1456,9 @@ class Client:
                 to be accepted by the API.
 
         Examples:
+
             .. code-block:: python
+
                 from langsmith import Client
                 import datetime
                 from uuid import uuid4
@@ -1645,7 +1652,9 @@ class Client:
                 to be accepted by the API.
 
         Examples:
+
             .. code-block:: python
+
                 from langsmith import Client
                 import datetime
                 from uuid import uuid4
@@ -1936,7 +1945,9 @@ class Client:
             None
 
         Examples:
+
             .. code-block:: python
+
                 from langsmith import Client
                 import datetime
                 from uuid import uuid4
@@ -2155,7 +2166,9 @@ class Client:
             Run: The run read from the LangSmith API.
 
         Examples:
+
             .. code-block:: python
+
                 from langsmith import Client
 
                 # Existing run
@@ -4009,7 +4022,12 @@ class Client:
                 )
 
             if example.attachments:
-                for name, (mime_type, attachment_data) in example.attachments.items():
+                for name, attachment in example.attachments.items():
+                    if isinstance(attachment, dict):
+                        mime_type = attachment["mime_type"]
+                        attachment_data = attachment["data"]
+                    else:
+                        mime_type, attachment_data = attachment
                     if isinstance(attachment_data, Path):
                         if dangerously_allow_filesystem:
                             file_size = os.path.getsize(attachment_data)
@@ -4071,10 +4089,6 @@ class Client:
 
         return encoder, data, opened_files_dict
 
-    @deprecated(
-        version="0.1.0",
-        reason="This method is deprecated. Use `update_examples` instead.",
-    )
     def update_examples_multipart(
         self,
         *,
@@ -4082,7 +4096,12 @@ class Client:
         updates: Optional[List[ls_schemas.ExampleUpdate]] = None,
         dangerously_allow_filesystem: bool = False,
     ) -> ls_schemas.UpsertExamplesResponse:
-        """Update examples using multipart."""
+        """Update examples using multipart.
+
+        .. deprecated:: 0.3.9
+
+            Use Client.update_examples instead. Will be removed in 0.4.0.
+        """
         return self._update_examples_multipart(
             dataset_id=dataset_id,
             updates=updates,
@@ -4109,7 +4128,9 @@ class Client:
             "dataset_examples_multipart_enabled", False
         ):
             raise ValueError(
-                "Your LangSmith version does not allow using the multipart examples endpoint, please update to the latest version."
+                "Your LangSmith version does not allow using the latest examples "
+                "endpoints, please update to the latest version or downgrade your SDK "
+                "to langsmith<0.3.9."
             )
         if updates is None:
             updates = []
@@ -4137,9 +4158,6 @@ class Client:
             _close_files(list(opened_files_dict.values()))
         return response.json()
 
-    @deprecated(
-        reason="This method is deprecated. Please use the `create_examples` method instead."
-    )
     def upload_examples_multipart(
         self,
         *,
@@ -4147,7 +4165,12 @@ class Client:
         uploads: Optional[List[ls_schemas.ExampleCreate]] = None,
         dangerously_allow_filesystem: bool = False,
     ) -> ls_schemas.UpsertExamplesResponse:
-        """Upload examples using multipart."""
+        """Upload examples using multipart.
+
+        .. deprecated:: 0.3.9
+
+            Use Client.create_examples instead. Will be removed in 0.4.0.
+        """
         return self._upload_examples_multipart(
             dataset_id=dataset_id,
             uploads=uploads,
@@ -4205,10 +4228,6 @@ class Client:
             _close_files(list(opened_files_dict.values()))
         return response.json()
 
-    @deprecated(
-        version="0.1.0",
-        reason="This method is deprecated. Use `create_examples` instead.",
-    )
     def upsert_examples_multipart(
         self,
         *,
@@ -4217,9 +4236,11 @@ class Client:
     ) -> ls_schemas.UpsertExamplesResponse:
         """Upsert examples.
 
-        .. deprecated:: 0.1.0
-           This method is deprecated. Use :func:`langsmith.create_examples` instead.
-        """  # noqa: E501
+        .. deprecated:: 0.3.9
+
+            Use Client.create_examples and Client.update_examples instead. Will be
+            removed in 0.4.0.
+        """
         if not (self.info.instance_flags or {}).get(
             "examples_multipart_enabled", False
         ):
@@ -4258,89 +4279,143 @@ class Client:
         *,
         dataset_name: Optional[str] = None,
         dataset_id: Optional[ID_TYPE] = None,
-        uploads: Optional[List[ls_schemas.ExampleCreate]] = None,
+        examples: Optional[Sequence[ls_schemas.ExampleCreate | dict]] = None,
         dangerously_allow_filesystem: bool = False,
         **kwargs: Any,
-    ) -> None:
+    ) -> ls_schemas.UpsertExamplesResponse:
         """Create examples in a dataset.
 
         Args:
-            dataset_name (Optional[str]):
-                The name of the dataset to create the examples in.
-            dataset_id (Optional[Union[UUID, str]]):
-                The ID of the dataset to create the examples in.
-            uploads (Optional[List[ExampleCreate]]):
+            dataset_name (str | None):
+                The name of the dataset to create the examples in. Must specify exactly
+                one of dataset_name or dataset_id.
+            dataset_id (UUID | str | None):
+                The ID of the dataset to create the examples in. Must specify exactly
+                one of dataset_name or dataset_id
+            examples (Sequence[ExampleCreate | dict]):
                 The examples to create.
             dangerously_allow_filesystem (bool):
                 Whether to allow uploading files from the filesystem.
-            **kwargs: (Any): Kwargs for backwards compatibility of old `create_eaxmples`.
-                Do not pass if using uploads.
+            **kwargs (Any): Legacy keyword args. Should not be specified if 'examples' is specified.
+
+                - inputs (Sequence[Mapping[str, Any]]): The input values for the examples.
+                - outputs (Optional[Sequence[Optional[Mapping[str, Any]]]]): The output values for the examples.
+                - metadata (Optional[Sequence[Optional[Mapping[str, Any]]]]): The metadata for the examples.
+                - splits (Optional[Sequence[Optional[str | List[str]]]]): The splits for the examples, which are divisions of your dataset such as 'train', 'test', or 'validation'.
+                - source_run_ids (Optional[Sequence[Optional[Union[UUID, str]]]]): The IDs of the source runs associated with the examples.
+                - ids (Optional[Sequence[Union[UUID, str]]]): The IDs of the examples.
 
         Raises:
-            ValueError: If neither dataset_id nor dataset_name is provided.
+            ValueError: If 'examples' and legacy args are both provided.
 
         Returns:
-            None
-        """
-        if kwargs and uploads:
-            raise ValueError("When passing kwargs, you must not pass uploads")
-        elif kwargs and not kwargs.get("inputs"):
-            raise ValueError("When passing kwargs, you must pass inputs")
-        elif kwargs:
-            inputs = kwargs.pop("inputs", None)
+            The LangSmith JSON response. Includes 'count' and 'example_ids'.
 
-        if dataset_id is None and dataset_name is None:
+        .. versionchanged:: 0.3.9
+
+            Updated to take argument 'examples', a single list where each
+            element is the full example to create. This should be used instead of the
+            legacy 'inputs', 'outputs', etc. arguments which split each examples
+            attributes across arguments.
+
+            Updated to support creating examples with attachments.
+
+        Example:
+            .. code-block:: python
+
+                from langsmith import Client
+
+                client = Client()
+
+                dataset = client.create_dataset("agent-qa")
+
+                examples = [
+                    {
+                        "inputs": {"question": "what's an agent"},
+                        "outputs": {"answer": "an agent is..."},
+                        "metadata": {"difficulty": "easy"},
+                    },
+                    {
+                        "inputs": {
+                            "question": "can you explain the agent architecture in this diagram?"
+                        },
+                        "outputs": {"answer": "this diagram shows..."},
+                        "attachments": {"diagram": {"mime_type": "image/png", "data": b"..."}},
+                        "metadata": {"difficulty": "medium"},
+                    },
+                    # more examples...
+                ]
+
+                response = client.create_examples(dataset_name="agent-qa", examples=examples)
+                # -> {"example_ids": [...
+        """  # noqa: E501
+        if kwargs and examples:
+            kwarg_keys = ", ".join([f"'{k}'" for k in kwargs])
+            raise ValueError(
+                f"Cannot specify {kwarg_keys} when 'examples' is specified."
+            )
+
+        supported_kwargs = {
+            "inputs",
+            "outputs",
+            "metadata",
+            "split",
+            "id",
+            "source_run_id",
+        }
+        if kwargs and (unsupported := set(kwargs).difference(supported_kwargs)):
+            raise ValueError(
+                f"Received unsupported keyword arguments: {tuple(unsupported)}."
+            )
+
+        if not (dataset_id or dataset_name):
             raise ValueError("Either dataset_id or dataset_name must be provided.")
-
-        if dataset_id is None:
+        elif not dataset_id:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
 
-        if not kwargs:
-            self._upload_examples_multipart(
-                dataset_id=dataset_id,
-                uploads=uploads,
-                dangerously_allow_filesystem=dangerously_allow_filesystem,
-            )
-            return
+        if examples:
+            uploads = [
+                ls_schemas.ExampleCreate(**x) if isinstance(x, dict) else x
+                for x in examples
+            ]
 
-        # Since inputs are required, we will check against them
-        input_len = len(inputs)
-        for arg_name, arg_value in kwargs.items():
-            if arg_value is not None and len(arg_value) != input_len:
-                raise ValueError(
-                    f"Length of {arg_name} ({len(arg_value)}) does not match"
-                    f" length of inputs ({input_len})"
+        # For backwards compatibility
+        else:
+            inputs = kwargs.get("inputs")
+            if not inputs:
+                raise ValueError("Must specify either 'examples' or 'inputs.'")
+            # Since inputs are required, we will check against them
+            input_len = len(inputs)
+            for arg_name, arg_value in kwargs.items():
+                if arg_value is not None and len(arg_value) != input_len:
+                    raise ValueError(
+                        f"Length of {arg_name} ({len(arg_value)}) does not match"
+                        f" length of inputs ({input_len})"
+                    )
+            uploads = [
+                ls_schemas.ExampleCreate(
+                    **{
+                        "inputs": in_,
+                        "outputs": out_,
+                        "metadata": metadata_,
+                        "split": split_,
+                        "id": id_ or str(uuid.uuid4()),
+                        "source_run_id": source_run_id_,
+                    }
                 )
-        examples = [
-            ls_schemas.ExampleCreate(
-                **{
-                    "inputs": in_,
-                    "outputs": out_,
-                    "metadata": metadata_,
-                    "split": split_,
-                    "id": id_ or str(uuid.uuid4()),
-                    "source_run_id": source_run_id_,
-                    "attachments": attachments_,
-                    "use_source_run_io": use_source_run_io_,
-                    "use_source_run_attachments": use_source_run_attachments_,
-                }
-            )
-            for in_, out_, metadata_, split_, id_, source_run_id_, attachments_, use_source_run_io_, use_source_run_attachments_ in zip(
-                inputs,
-                kwargs.get("outputs") or [None] * len(inputs),
-                kwargs.get("metadata") or [None] * len(inputs),
-                kwargs.get("splits") or [None] * len(inputs),
-                kwargs.get("ids") or [None] * len(inputs),
-                kwargs.get("source_run_ids") or [None] * len(inputs),
-                kwargs.get("attachments") or [None] * len(inputs),
-                kwargs.get("use_source_run_io") or [False] * len(inputs),
-                kwargs.get("use_source_run_attachments") or [[]] * len(inputs),
-            )
-        ]
+                for in_, out_, metadata_, split_, id_, source_run_id_ in zip(
+                    inputs,
+                    kwargs.get("outputs") or (None for _ in range(input_len)),
+                    kwargs.get("metadata") or (None for _ in range(input_len)),
+                    kwargs.get("splits") or (None for _ in range(input_len)),
+                    kwargs.get("ids") or (None for _ in range(input_len)),
+                    kwargs.get("source_run_ids") or (None for _ in range(input_len)),
+                )
+            ]
 
-        self._upload_examples_multipart(
-            dataset_id=dataset_id,
-            uploads=examples,
+        return self._upload_examples_multipart(
+            dataset_id=cast(uuid.UUID, dataset_id),
+            uploads=uploads,
             dangerously_allow_filesystem=dangerously_allow_filesystem,
         )
 
@@ -4498,7 +4573,7 @@ class Client:
             offset (int, default=0): The offset to start from. Defaults to 0.
             limit (Optional[int]): The maximum number of examples to return.
             metadata (Optional[dict]): A dictionary of metadata to filter by.
-            filter (Optional[str]): A structured fileter string to apply to
+            filter (Optional[str]): A structured filter string to apply to
                 the examples.
             include_attachments (bool, default=False): Whether to include the
                 attachments in the response. Defaults to False.
@@ -4796,121 +4871,190 @@ class Client:
     def update_examples(
         self,
         *,
+        dataset_name: str | None = None,
         dataset_id: ID_TYPE | None = None,
-        updates: Optional[List[ls_schemas.ExampleUpdate]] = None,
+        updates: Optional[Sequence[ls_schemas.ExampleUpdate | dict]] = None,
         dangerously_allow_filesystem: bool = False,
         **kwargs: Any,
     ) -> Dict[str, Any]:
         """Update multiple examples.
 
+         Examples are expected to all be part of the same dataset.
+
         Args:
-            dataset_id (Optional[Union[UUID, str]]):
-                The ID of the dataset to update.
-            updates (Optional[List[ExampleUpdate]]):
-                The updates to apply to the examples.
-            dangerously_allow_filesystem (bool, default=False):
-                Whether to allow using filesystem paths as attachments.
-            **kwargs: (Any): Kwargs for backwards compatibility of old `update_examples`.
-                Do not pass if using updates.
+             dataset_name (str | None):
+                 The name of the dataset to update. Should specify exactly one of
+                 'dataset_name' or 'dataset_id'.
+             dataset_id (UUID | str | None):
+                 The ID of the dataset to update. Should specify exactly one of
+                 'dataset_name' or 'dataset_id'.
+             updates (Sequence[ExampleUpdate | dict] | None):
+                 The example updates. Overwrites any specified fields and does not
+                 update any unspecified fields.
+             dangerously_allow_filesystem (bool):
+                 Whether to allow using filesystem paths as attachments.
+             **kwargs (Any):
+                 Legacy keyword args. Should not be specified if 'updates' is specified.
+
+                 - example_ids (Sequence[UUID | str]): The IDs of the examples to update.
+                 - inputs (Sequence[dict | None] | None): The input values for the examples.
+                 - outputs (Sequence[dict | None] | None): The output values for the examples.
+                 - metadata (Sequence[dict | None] | None): The metadata for the examples.
+                 - splits (Sequence[str | list[str] | None] | None): The splits for the examples, which are divisions of your dataset such as 'train', 'test', or 'validation'.
+                 - attachments_operations (Sequence[AttachmentsOperations | None] | None): The operations to perform on the attachments.
+                 - dataset_ids (Sequence[UUID | str] | None): The IDs of the datasets to move the examples to.
 
         Returns:
-            Dict[str, Any]: The response from the server (specifies the number of examples updated).
-        """
-        if kwargs and any([dataset_id, updates]):
+             The LangSmith JSON response. Includes 'message', 'count', and 'example_ids'.
+
+         .. versionchanged:: 0.3.9
+
+             Updated to ...
+
+        Example:
+
+             .. code-block:: python
+
+                 from langsmith import Client
+
+                 client = Client()
+
+                 dataset = client.create_dataset("agent-qa")
+
+                 examples = [
+                     {
+                         "inputs": {"question": "what's an agent"},
+                         "outputs": {"answer": "an agent is..."},
+                         "metadata": {"difficulty": "easy"},
+                     },
+                     {
+                         "inputs": {
+                             "question": "can you explain the agent architecture in this diagram?"
+                         },
+                         "outputs": {"answer": "this diagram shows..."},
+                         "attachments": {"diagram": {"mime_type": "image/png", "data": b"..."}},
+                         "metadata": {"difficulty": "medium"},
+                     },
+                     # more examples...
+                 ]
+
+                 response = client.create_examples(dataset_name="agent-qa", examples=examples)
+                 example_ids = response["example_ids"]
+
+                 updates = [
+                     {
+                         "id": example_ids[0],
+                         "inputs": {"question": "what isn't an agent"},
+                         "outputs": {"answer": "an agent is not..."},
+                     },
+                     {
+                         "id": example_ids[1],
+                         "attachments_operations": [
+                             {"rename": {"diagram": "agent_diagram"}, "retain": []}
+                         ],
+                     },
+                 ]
+                 response = client.update_examples(dataset_name="agent-qa", updates=updates)
+                 # -> {"example_ids": [...
+        """  # noqa: E501
+        if kwargs and updates:
             raise ValueError(
-                "When passing kwargs, you must not pass dataset_id, or updates"
+                f"Must pass in either 'updates' or args {tuple(kwargs)}, not both."
             )
-        elif kwargs and not kwargs.get("example_ids"):
-            raise ValueError("When passing kwargs, you must pass example_ids")
-        elif kwargs:
-            example_ids = kwargs.pop("example_ids")
-        elif not updates:
-            raise ValueError("When not passing kwargs, you must pass updates")
-        elif len(updates) == 0:
-            return {"message": "0 examples updated", "count": 0, "example_ids": []}
+        if not (kwargs or updates):
+            raise ValueError("Please pass in a non-empty sequence for arg 'updates'.")
+
+        if dataset_name and dataset_id:
+            raise ValueError(
+                "Must pass in exactly one of 'dataset_name' or 'dataset_id'."
+            )
+        elif dataset_name:
+            dataset_id = self.read_dataset(dataset_name=dataset_name).id
+
+        if updates:
+            updates_obj = [
+                ls_schemas.ExampleUpdate(**x) if isinstance(x, dict) else x
+                for x in updates
+            ]
+
+            if not dataset_id:
+                if updates_obj[0].dataset_id:
+                    dataset_id = updates_obj[0].dataset_id
+                else:
+                    raise ValueError(
+                        "Must pass in (exactly) one of 'dataset_name' or 'dataset_id'."
+                    )
+
+        # For backwards compatibility
         else:
-            if not dataset_id and not updates[0].dataset_id:
+            example_ids = kwargs.get("example_ids", None)
+            if not example_ids:
                 raise ValueError(
-                    "When not passing kwargs, you must pass dataset_id as a param or in the first update object"
+                    "Must pass in (exactly) one of 'updates' or 'example_ids'."
                 )
             if not dataset_id:
-                # We will naively assume all updates are for dataset from first example
-                dataset_id = updates[0].dataset_id
+                if "dataset_ids" not in kwargs:
+                    # Assume all examples belong to same dataset
+                    dataset_id = self.read_example(example_ids[0]).dataset_id
+                elif len(set(kwargs["dataset_ids"])) > 1:
+                    raise ValueError("Dataset IDs must be the same for all examples")
+                elif not kwargs["dataset_ids"][0]:
+                    raise ValueError("If specified, dataset_ids must be non-null.")
+                else:
+                    dataset_id = kwargs["dataset_ids"][0]
 
-            if not dataset_id:
-                raise ValueError("Must pass a non-null dataset_id")
-
-            response = self._update_examples_multipart(
-                dataset_id=dataset_id,
-                updates=updates,
-                dangerously_allow_filesystem=dangerously_allow_filesystem,
+            multipart_enabled = (self.info.instance_flags or {}).get(
+                "dataset_examples_multipart_enabled"
             )
-            return {
-                "message": f"{response.get('count', 0)} examples updated",
-                **response,
-            }
-
-        if (
-            kwargs.get("attachments_operations") is not None
-            or kwargs.get("attachments") is not None
-        ):
-            if not (self.info.instance_flags or {}).get(
-                "dataset_examples_multipart_enabled", False
+            if (
+                not multipart_enabled
+                and (kwargs.get("attachments_operations") or kwargs.get("attachments"))
+                is not None
             ):
                 raise ValueError(
-                    "Your LangSmith version does not allow using the attachment operations, please update to the latest version."
+                    "Your LangSmith version does not allow using the attachment "
+                    "operations, please update to the latest version."
                 )
-        # Since ids are required, we will check against them
-        examples_len = len(example_ids)
-        for arg_name, arg_value in kwargs.items():
-            if arg_value is not None and len(arg_value) != examples_len:
-                raise ValueError(
-                    f"Length of {arg_name} ({len(arg_value)}) does not match"
-                    f" length of examples ({examples_len})"
+            # Since ids are required, we will check against them
+            examples_len = len(example_ids)
+            for arg_name, arg_value in kwargs.items():
+                if arg_value is not None and len(arg_value) != examples_len:
+                    raise ValueError(
+                        f"Length of {arg_name} ({len(arg_value)}) does not match"
+                        f" length of examples ({examples_len})"
+                    )
+            updates_obj = [
+                ls_schemas.ExampleUpdate(
+                    **{
+                        "id": id_,
+                        "inputs": in_,
+                        "outputs": out_,
+                        "dataset_id": dataset_id_,
+                        "metadata": metadata_,
+                        "split": split_,
+                        "attachments": attachments_,
+                        "attachments_operations": attachments_operations_,
+                    }
                 )
-        examples = [
-            ls_schemas.ExampleUpdate(
-                **{
-                    "id": id_,
-                    "inputs": in_,
-                    "outputs": out_,
-                    "dataset_id": dataset_id_,
-                    "metadata": metadata_,
-                    "split": split_,
-                    "attachments": attachments_,
-                    "attachments_operations": attachments_operations_,
-                }
-            )
-            for id_, in_, out_, metadata_, split_, dataset_id_, attachments_, attachments_operations_ in zip(
-                example_ids,
-                kwargs.get("inputs", [None] * len(example_ids)),
-                kwargs.get("outputs", [None] * len(example_ids)),
-                kwargs.get("metadata", [None] * len(example_ids)),
-                kwargs.get("splits", [None] * len(example_ids)),
-                kwargs.get("dataset_ids", [None] * len(example_ids)),
-                kwargs.get("attachments", [None] * len(example_ids)),
-                kwargs.get("attachments_operations", [None] * len(example_ids)),
-            )
-        ]
-        if "dataset_ids" not in kwargs:
-            # get dataset_id of first example, assume it works for all
-            dataset_id = self.read_example(example_ids[0]).dataset_id
-            response = self._update_examples_multipart(
-                dataset_id=dataset_id,
-                updates=examples,
-                dangerously_allow_filesystem=dangerously_allow_filesystem,
-            )
-        else:
-            if len(set(kwargs["dataset_ids"])) > 1:
-                raise ValueError("Dataset IDs must be the same for all examples")
-            dataset_id = kwargs["dataset_ids"][0]
-            if not dataset_id:
-                raise ValueError("dataset_ids cannot be set to None")
-            response = self._update_examples_multipart(
-                dataset_id=dataset_id,
-                updates=examples,
-                dangerously_allow_filesystem=dangerously_allow_filesystem,
-            )
+                for id_, in_, out_, metadata_, split_, dataset_id_, attachments_, attachments_operations_ in zip(
+                    example_ids,
+                    kwargs.get("inputs", (None for _ in range(examples_len))),
+                    kwargs.get("outputs", (None for _ in range(examples_len))),
+                    kwargs.get("metadata", (None for _ in range(examples_len))),
+                    kwargs.get("splits", (None for _ in range(examples_len))),
+                    kwargs.get("dataset_ids", (None for _ in range(examples_len))),
+                    kwargs.get("attachments", (None for _ in range(examples_len))),
+                    kwargs.get(
+                        "attachments_operations", (None for _ in range(examples_len))
+                    ),
+                )
+            ]
+
+        response = self._update_examples_multipart(
+            dataset_id=cast(uuid.UUID, dataset_id),
+            updates=updates_obj,
+            dangerously_allow_filesystem=dangerously_allow_filesystem,
+        )
 
         return {"message": f"{response.get('count', 0)} examples updated", **response}
 
@@ -6092,6 +6236,7 @@ class Client:
         """Asynchronously run the Chain or language model on a dataset.
 
         .. deprecated:: 0.1.0
+
            This method is deprecated. Use :func:`langsmith.aevaluate` instead.
         """  # noqa: E501
         warnings.warn(
@@ -6140,6 +6285,7 @@ class Client:
         """Run the Chain or language model on a dataset.
 
         .. deprecated:: 0.1.0
+
            This method is deprecated. Use :func:`langsmith.aevaluate` instead.
         """  # noqa: E501  # noqa: E501
         warnings.warn(
