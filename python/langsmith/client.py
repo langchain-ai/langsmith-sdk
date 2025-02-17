@@ -4359,9 +4359,9 @@ class Client:
             "inputs",
             "outputs",
             "metadata",
-            "split",
-            "id",
-            "source_run_id",
+            "splits",
+            "ids",
+            "source_run_ids",
         }
         if kwargs and (unsupported := set(kwargs).difference(supported_kwargs)):
             raise ValueError(
