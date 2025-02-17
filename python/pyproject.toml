@@ -75,9 +75,6 @@ openai = "^1.10"
 [tool.poetry.group.test.dependencies]
 pytest-socket = "^0.7.0"
 
-
-[tool.poetry.group.typing.dependencies]
-
 [tool.poetry.extras]
 vcr = ["vcrpy"]
 langsmith_pyo3 = ["langsmith-pyo3"]
