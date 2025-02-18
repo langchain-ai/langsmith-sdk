@@ -669,7 +669,7 @@ export function generateWrapperFromJestlikeMethods(
 
   function createEachMethod(method: (...args: any[]) => void) {
     function eachMethod<I extends KVMap, O extends KVMap>(
-      table: ({ inputs: I; referenceOutputs: O } & Record<string, any>)[],
+      table: ({ inputs: I; referenceOutputs?: O } & Record<string, any>)[],
       config?: LangSmithJestlikeWrapperConfig
     ) {
       const context = testWrapperAsyncLocalStorageInstance.getStore();
