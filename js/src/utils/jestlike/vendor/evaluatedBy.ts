@@ -57,7 +57,6 @@ export function wrapEvaluator<
           return evaluator(params);
         },
         {
-          ...config,
           id: evalRunId,
           trace_id: evalRunId,
           reference_example_id: context.currentExample.id,
@@ -65,6 +64,7 @@ export function wrapEvaluator<
           tracingEnabled: true,
           name: evaluator.name ?? "<evaluator>",
           project_name: "evaluators",
+          ...config,
         }
       );
 
