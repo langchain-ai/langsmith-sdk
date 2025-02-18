@@ -29,15 +29,14 @@ function isEvaluationResult(x: unknown): x is SimpleEvaluationResult {
   );
 }
 
-export function wrapEvaluator<I>(
-  evaluator: (
-    input: I
-  ) => SimpleEvaluationResult | Promise<SimpleEvaluationResult>
-) {
+export function wrapEvaluator<
+  I,
+  O extends SimpleEvaluationResult | SimpleEvaluationResult[]
+>(evaluator: (input: I) => O | Promise<O>) {
   return async (
     input: I,
     config?: Partial<RunTreeConfig> & { runId?: string }
-  ): Promise<SimpleEvaluationResult> => {
+  ): Promise<O> => {
     const context = testWrapperAsyncLocalStorageInstance.getStore();
     if (context === undefined || context.currentExample === undefined) {
       throw new Error(
@@ -49,7 +48,7 @@ export function wrapEvaluator<I>(
       );
     }
     const evalRunId = config?.runId ?? config?.id ?? v4();
-    let evalResult;
+    let evalResult: O;
     let currentRunTree;
     if (trackingEnabled(context)) {
       currentRunTree = getCurrentRunTree();
@@ -73,15 +72,23 @@ export function wrapEvaluator<I>(
     } else {
       evalResult = await evaluator(input);
     }
-    if (isEvaluationResult(evalResult)) {
-      _logTestFeedback({
-        exampleId: context?.currentExample?.id,
-        feedback: evalResult,
-        context,
-        runTree: currentRunTree,
-        client: context.client,
-        sourceRunId: evalRunId,
-      });
+    let normalizedResult;
+    if (!Array.isArray(evalResult)) {
+      normalizedResult = [evalResult];
+    } else {
+      normalizedResult = evalResult;
+    }
+    for (const result of normalizedResult) {
+      if (isEvaluationResult(result)) {
+        _logTestFeedback({
+          exampleId: context?.currentExample?.id,
+          feedback: result,
+          context,
+          runTree: currentRunTree,
+          client: context.client,
+          sourceRunId: evalRunId,
+        });
+      }
     }
     return evalResult;
   };
@@ -108,5 +115,8 @@ export async function evaluatedBy(outputs: any, evaluator: SimpleEvaluator) {
     },
     { runId: evalRunId }
   );
+  if (Array.isArray(evalResult)) {
+    return evalResult.map((result) => result.score);
+  }
   return evalResult.score;
 }

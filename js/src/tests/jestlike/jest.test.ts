@@ -3,7 +3,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 
 import * as ls from "../../jest/index.js";
 import { type SimpleEvaluator } from "../../jest/index.js";
-import { objectHash } from "../../utils/jestlike/index.js";
+import { _objectHash } from "../../utils/jestlike/index.js";
 
 const myEvaluator: SimpleEvaluator = (params) => {
   const { referenceOutputs, outputs } = params;
@@ -257,7 +257,7 @@ ls.describe("Test Linkedin Post", () => {
 
 test("object hash should work on undefined values", async () => {
   expect(
-    objectHash({
+    _objectHash({
       foo: "bar",
       baz: undefined,
       qux: null,

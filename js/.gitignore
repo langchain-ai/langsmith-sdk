@@ -99,6 +99,10 @@ Chinook_Sqlite.sql
 /singletons/traceable.js
 /singletons/traceable.d.ts
 /singletons/traceable.d.cts
+/utils/jestlike.cjs
+/utils/jestlike.js
+/utils/jestlike.d.ts
+/utils/jestlike.d.cts
 /index.cjs
 /index.js
 /index.d.ts
