@@ -398,8 +398,7 @@ def test_evaluate_results(
         assert r["evaluation_results"]["results"][0].extra == {"error": True}
 
     # test invalid evaluators
-    # args need to be positional
-    def eval1(*, inputs, outputs):
+    def eval1(bar, *, inputs, outputs):
         pass
 
     # if more than 2 positional args, they must all have default arg names
@@ -689,8 +688,7 @@ async def test_aevaluate_results(
         assert r["evaluation_results"]["results"][0].extra == {"error": True}
 
     # test invalid evaluators
-    # args need to be positional
-    async def eval1(*, inputs, outputs):
+    async def eval1(bar, *, inputs, outputs):
         pass
 
     # if more than 2 positional args, they must all have default arg names
@@ -862,11 +860,69 @@ async def invalid_three_args_async(inputs, outputs, foo, *, optional=None):
     return {"score": 1}
 
 
-def invalid_no_positional(*, inputs, outputs, optional=None):
+def kwarg_valid_two_arbitrary(*, foo, bar, optional=None):
     return {"score": 1}
 
 
-async def invalid_no_positional_async(*, inputs, outputs, optional=None):
+def kwarg_valid_multiple_supported(
+    *, inputs, outputs, reference_outputs, optional=None
+):
+    return {"score": 1}
+
+
+async def kwarg_valid_two_arbitrary_async(*, foo, bar, optional=None):
+    return {"score": 1}
+
+
+async def kwarg_valid_multiple_supported_async(
+    *, inputs, outputs, reference_outputs, optional=None
+):
+    return {"score": 1}
+
+
+def kwarg_invalid_single_unsupported(*, foo, optional=None):
+    return {"score": 1}
+
+
+def kwarg_invalid_three_args(*, inputs, outputs, foo, optional=None):
+    return {"score": 1}
+
+
+async def kwarg_invalid_single_unsupported_async(*, foo, optional=None):
+    return {"score": 1}
+
+
+async def kwarg_invalid_three_args_async(*, inputs, outputs, foo, optional=None):
+    return {"score": 1}
+
+
+def valid_mixed_positional_and_keyword(foo, *, bar, optional=None):
+    return {"score": 1}
+
+
+def valid_mixed_positional_and_keyword_with_reference_outputs(
+    inputs, outputs, *, reference_outputs, optional=None
+):
+    return {"score": 1}
+
+
+async def valid_mixed_positional_and_keyword_async(foo, *, bar, optional=None):
+    return {"score": 1}
+
+
+async def valid_mixed_positional_and_keyword_with_reference_outputs_async(
+    inputs, outputs, *, reference_outputs, optional=None
+):
+    return {"score": 1}
+
+
+def invalid_mixed_positional_and_keyword_three_args(baz, *, foo, bar, optional=None):
+    return {"score": 1}
+
+
+async def invalid_mixed_positional_and_keyword_three_args_async(
+    baz, *, foo, bar, optional=None
+):
     return {"score": 1}
 
 
@@ -878,6 +934,14 @@ VALID_EVALUATOR_CASES = [
     (valid_two_arbitrary_async, True),
     (valid_multiple_supported, False),
     (valid_multiple_supported_async, True),
+    (valid_mixed_positional_and_keyword, False),
+    (valid_mixed_positional_and_keyword_with_reference_outputs, False),
+    (valid_mixed_positional_and_keyword_async, True),
+    (valid_mixed_positional_and_keyword_with_reference_outputs_async, True),
+    (kwarg_valid_two_arbitrary, False),
+    (kwarg_valid_two_arbitrary_async, True),
+    (kwarg_valid_multiple_supported, False),
+    (kwarg_valid_multiple_supported_async, True),
 ]
 
 # Test cases that should raise ValueError
@@ -886,8 +950,12 @@ INVALID_EVALUATOR_CASES = [
     (invalid_single_unsupported_async, True),
     (invalid_three_args, False),
     (invalid_three_args_async, True),
-    (invalid_no_positional, False),
-    (invalid_no_positional_async, True),
+    (kwarg_invalid_single_unsupported, False),
+    (kwarg_invalid_single_unsupported_async, True),
+    (kwarg_invalid_three_args, False),
+    (kwarg_invalid_three_args_async, True),
+    (invalid_mixed_positional_and_keyword_three_args, False),
+    (invalid_mixed_positional_and_keyword_three_args_async, True),
 ]
 
 
@@ -995,7 +1063,7 @@ def test__normalize_summary_evaluator(evaluator: Callable) -> None:
     assert normalized(runs, examples)["score"] == 12
 
 
-def summary_eval_kwargs(*, runs, examples):
+def summary_eval_kwargs(bar, *, runs, examples):
     return
 
 
@@ -1096,7 +1164,7 @@ async def test__normalize_comparison_evaluator_async(evaluator: Callable) -> Non
     assert await normalized(runs, example) == [2, 3]
 
 
-def comparison_eval_kwargs(*, runs, example):
+def comparison_eval_kwargs(bar, *, runs, example):
     return
 
 
