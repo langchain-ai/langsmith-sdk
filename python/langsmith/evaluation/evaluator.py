@@ -932,7 +932,7 @@ def _normalize_summary_evaluator(func: Callable) -> SUMMARY_EVALUATOR_T:
             result = func(*args, **kwargs)
             if isinstance(result, EvaluationResult):
                 return result
-            return _format_evaluator_result(result) # type: ignore
+            return _format_evaluator_result(result)  # type: ignore
 
         wrapper.__name__ = (
             getattr(func, "__name__") if hasattr(func, "__name__") else wrapper.__name__
