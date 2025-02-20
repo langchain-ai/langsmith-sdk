@@ -2487,16 +2487,16 @@ def test_update_examples_multipart(langchain_client: Client) -> None:
     )
 
     # Test updating non-existent example doesn't do anything
-    response = langchain_client.update_examples_multipart(
-        dataset_id=dataset.id,
-        updates=[
-            ExampleUpdateWithAttachments(
-                id=uuid4(),
-                inputs={"text": "should fail"},
-            )
-        ],
-    )
-    assert response["count"] == 0
+    with pytest.raises(LangSmithNotFoundError):
+        langchain_client.update_examples_multipart(
+            dataset_id=dataset.id,
+            updates=[
+                ExampleUpdateWithAttachments(
+                    id=uuid4(),
+                    inputs={"text": "should fail"},
+                )
+            ],
+        )
 
     # Test new attachments have priority
     response = langchain_client.update_examples_multipart(
@@ -2505,20 +2505,19 @@ def test_update_examples_multipart(langchain_client: Client) -> None:
             ExampleUpdateWithAttachments(
                 id=example_ids[0],
                 attachments={
-                    "renamed_file1": ("text/plain", b"new content 1"),
+                    "new_file1": ("text/plain", b"new content 1"),
                 },
                 attachments_operations=AttachmentsOperations(
-                    retain=["renamed_file1"],
+                    retain=["new_file1"],
                 ),
             )
         ],
     )
     assert response["count"] == 1
     example_1_updated = langchain_client.read_example(example_ids[0])
-    assert list(example_1_updated.attachments.keys()) == ["renamed_file1"]
+    assert list(example_1_updated.attachments.keys()) == ["new_file1"]
     assert (
-        example_1_updated.attachments["renamed_file1"]["reader"].read()
-        == b"new content 1"
+        example_1_updated.attachments["new_file1"]["reader"].read() == b"new content 1"
     )
 
     # Test new attachments have priority
@@ -2528,10 +2527,10 @@ def test_update_examples_multipart(langchain_client: Client) -> None:
             ExampleUpdateWithAttachments(
                 id=example_ids[0],
                 attachments={
-                    "foo": ("text/plain", b"new content 1"),
+                    "foo": ("text/plain", b"new content 2"),
                 },
                 attachments_operations=AttachmentsOperations(
-                    rename={"renamed_file1": "foo"},
+                    rename={"new_file1": "foo"},
                 ),
             )
         ],
@@ -2539,6 +2538,7 @@ def test_update_examples_multipart(langchain_client: Client) -> None:
     assert response["count"] == 1
     example_1_updated = langchain_client.read_example(example_ids[0])
     assert list(example_1_updated.attachments.keys()) == ["foo"]
+    assert example_1_updated.attachments["foo"]["reader"].read() == b"new content 2"
 
     # Clean up
     langchain_client.delete_dataset(dataset_id=dataset.id)
