@@ -24,6 +24,7 @@ const entrypoints = {
   "wrappers/openai": "wrappers/openai",
   "wrappers/vercel": "wrappers/vercel",
   "singletons/traceable": "singletons/traceable",
+  "utils/jestlike": "utils/jestlike/index",
 };
 
 const defaultEntrypoints = [

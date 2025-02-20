@@ -95,6 +95,26 @@ test.concurrent("chat.completions", async () => {
 
   expect(patchedChoices).toEqual(originalChoices);
   expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
+
+  // Verify token events were logged
+  const patchCalls = callSpy.mock.calls.filter(
+    (call) => (call[2] as any).method === "PATCH"
+  );
+  const lastPatchCall = patchCalls[patchCalls.length - 1];
+  const body = parseRequestBody((lastPatchCall[2] as any).body);
+
+  expect(body.events).toBeDefined();
+  const tokenEvents = body.events.filter(
+    (event: any) => event.name === "new_token"
+  );
+  expect(tokenEvents.length).toBeGreaterThan(0);
+  tokenEvents.forEach((event: any) => {
+    expect(event.name).toBe("new_token");
+    expect(event.kwargs).toBeDefined();
+    expect(event.kwargs.token).toBeDefined();
+    expect(event.time).toBeDefined();
+  });
+
   for (const call of callSpy.mock.calls) {
     expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);
   }
@@ -286,6 +306,26 @@ test.concurrent("chat completions with tool calling", async () => {
     removeToolCallId(originalChoices)
   );
   expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
+
+  // Verify token events were logged for tool calling stream
+  const patchCalls = callSpy.mock.calls.filter(
+    (call) => (call[2] as any).method === "PATCH"
+  );
+  const lastPatchCall = patchCalls[patchCalls.length - 1];
+  const body = parseRequestBody((lastPatchCall[2] as any).body);
+
+  expect(body.events).toBeDefined();
+  const tokenEvents = body.events.filter(
+    (event: any) => event.name === "new_token"
+  );
+  expect(tokenEvents.length).toBeGreaterThan(0);
+  tokenEvents.forEach((event: any) => {
+    expect(event.name).toBe("new_token");
+    expect(event.kwargs).toBeDefined();
+    expect(event.kwargs.token).toBeDefined();
+    expect(event.time).toBeDefined();
+  });
+
   for (const call of callSpy.mock.calls) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);

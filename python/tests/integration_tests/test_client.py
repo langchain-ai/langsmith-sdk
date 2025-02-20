@@ -30,7 +30,6 @@ from langsmith.schemas import (
     Example,
     ExampleUpdateWithAttachments,
     ExampleUploadWithAttachments,
-    ExampleUpsertWithAttachments,
     Run,
 )
 from langsmith.utils import (
@@ -609,7 +608,7 @@ def test_upsert_examples_multipart(langchain_client: Client) -> None:
         langchain_client.upsert_examples_multipart(upserts=[{"foo": "bar"}])
     langchain_client.delete_dataset(dataset_name=dataset_name)
 
-
+    
 def test_create_dataset(langchain_client: Client) -> None:
     dataset_name = "__test_create_dataset" + uuid4().hex[:4]
     if langchain_client.has_dataset(dataset_name=dataset_name):
