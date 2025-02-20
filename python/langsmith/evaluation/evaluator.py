@@ -929,7 +929,10 @@ def _normalize_summary_evaluator(func: Callable) -> SUMMARY_EVALUATOR_T:
                     else:
                         kwargs[param_name] = arg_map[param_name]
 
-            return func(*args, **kwargs)  # type: ignore[return-value]
+            result = func(*args, **kwargs)
+            if isinstance(result, EvaluationResult):
+                return result
+            return _format_evaluator_result(result)
 
         wrapper.__name__ = (
             getattr(func, "__name__") if hasattr(func, "__name__") else wrapper.__name__
