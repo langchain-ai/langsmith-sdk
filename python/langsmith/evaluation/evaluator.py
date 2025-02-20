@@ -660,45 +660,7 @@ def _normalize_evaluator_func(
         "run",
         "example",
     ]:
-        if inspect.iscoroutinefunction(func):
-
-            async def awrapper(
-                run: Run, example: Optional[Example]
-            ) -> _RUNNABLE_OUTPUT:
-                args = []
-                kwargs = {}
-                for i, (param_name, param) in enumerate(sig.parameters.items()):
-                    if param.kind == param.POSITIONAL_ONLY:
-                        args.append(run if i == 0 else example)
-                    else:
-                        kwargs[param_name] = run if i == 0 else example
-                return await func(*args, **kwargs)  # type: ignore
-
-            awrapper.__name__ = (
-                getattr(func, "__name__")
-                if hasattr(func, "__name__")
-                else awrapper.__name__
-            )
-            return awrapper  # type: ignore[return-value]
-
-        else:
-
-            def wrapper(run: Run, example: Optional[Example]) -> _RUNNABLE_OUTPUT:
-                args = []
-                kwargs = {}
-                for i, (param_name, param) in enumerate(sig.parameters.items()):
-                    if param.kind == param.POSITIONAL_ONLY:
-                        args.append(run if i == 0 else example)
-                    else:
-                        kwargs[param_name] = run if i == 0 else example
-                return func(*args, **kwargs)  # type: ignore
-
-            wrapper.__name__ = (
-                getattr(func, "__name__")
-                if hasattr(func, "__name__")
-                else wrapper.__name__
-            )
-            return wrapper  # type: ignore[return-value]
+        return func
     else:
         if inspect.iscoroutinefunction(func):
 
@@ -736,7 +698,7 @@ def _normalize_evaluator_func(
 
         else:
 
-            def wrapper(run: Run, example: Example) -> _RUNNABLE_OUTPUT:
+            def wrapper(run: Run, example: Optional[Example]) -> _RUNNABLE_OUTPUT:
                 arg_map = {
                     "run": run,
                     "example": example,
@@ -803,45 +765,7 @@ def _normalize_comparison_evaluator_func(
         "runs",
         "example",
     ]:
-        if inspect.iscoroutinefunction(func):
-
-            async def awrapper(
-                run: Run, example: Optional[Example]
-            ) -> _RUNNABLE_OUTPUT:
-                args = []
-                kwargs = {}
-                for i, (param_name, param) in enumerate(sig.parameters.items()):
-                    if param.kind == param.POSITIONAL_ONLY:
-                        args.append(run if i == 0 else example)
-                    else:
-                        kwargs[param_name] = run if i == 0 else example
-                return await func(*args, **kwargs)  # type: ignore
-
-            awrapper.__name__ = (
-                getattr(func, "__name__")
-                if hasattr(func, "__name__")
-                else awrapper.__name__
-            )
-            return awrapper  # type: ignore[return-value]
-
-        else:
-
-            def wrapper(run: Run, example: Optional[Example]) -> _RUNNABLE_OUTPUT:
-                args = []
-                kwargs = {}
-                for i, (param_name, param) in enumerate(sig.parameters.items()):
-                    if param.kind == param.POSITIONAL_ONLY:
-                        args.append(run if i == 0 else example)
-                    else:
-                        kwargs[param_name] = run if i == 0 else example
-                return func(*args, **kwargs)  # type: ignore
-
-            wrapper.__name__ = (
-                getattr(func, "__name__")
-                if hasattr(func, "__name__")
-                else wrapper.__name__
-            )
-            return wrapper  # type: ignore[return-value]
+        return func
     else:
         if inspect.iscoroutinefunction(func):
 
@@ -878,7 +802,9 @@ def _normalize_comparison_evaluator_func(
 
         else:
 
-            def wrapper(runs: Sequence[Run], example: Example) -> _COMPARISON_OUTPUT:
+            def wrapper(
+                runs: Sequence[Run], example: Optional[Example]
+            ) -> _COMPARISON_OUTPUT:
                 arg_map = {
                     "runs": runs,
                     "example": example,
@@ -886,7 +812,6 @@ def _normalize_comparison_evaluator_func(
                     "outputs": [run.outputs or {} for run in runs],
                     "reference_outputs": example.outputs or {} if example else {},
                 }
-                args = (arg_map[arg] for arg in all_args)
                 kwargs = {}
                 args = []
                 for param_name, param in sig.parameters.items():

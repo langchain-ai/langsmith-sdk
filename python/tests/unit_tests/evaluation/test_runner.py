@@ -18,7 +18,7 @@ from unittest.mock import MagicMock
 import pytest
 from langchain_core.runnables import chain as as_runnable
 
-from langsmith import Client, RunTree, aevaluate, evaluate
+from langsmith import Client, aevaluate, evaluate
 from langsmith import schemas as ls_schemas
 from langsmith.evaluation._runner import _include_attachments
 from langsmith.evaluation.evaluator import (
@@ -982,22 +982,12 @@ def test_passing_kwargs_is_working():
     client = Client(api_url="http://localhost:1984", api_key="123", session=session)
     client._tenant_id = tenant_id  # type: ignore
 
-    def _valid_mixed_positional_and_keyword(foo, *, bar, optional=None):
-        assert isinstance(foo, RunTree)
-        assert isinstance(bar, ls_schemas.Example)
-        return {"score": 1}
-
     def _valid_mixed_positional_and_keyword_with_reference_outputs(
         inputs, outputs, *, reference_outputs, optional=None
     ):
         assert list(inputs.keys()) == ["in"]
         assert list(outputs.keys()) == ["foo"]
         assert list(reference_outputs.keys()) == ["answer"]
-        return {"score": 1}
-
-    async def _async_valid_mixed_positional_and_keyword(foo, *, bar, optional=None):
-        assert isinstance(foo, RunTree)
-        assert isinstance(bar, ls_schemas.Example)
         return {"score": 1}
 
     async def _async_valid_mixed_positional_and_keyword_with_reference_outputs(
@@ -1008,29 +998,23 @@ def test_passing_kwargs_is_working():
         assert list(reference_outputs.keys()) == ["answer"]
         return {"score": 1}
 
-    func_1 = _normalize_evaluator_func(_valid_mixed_positional_and_keyword)
-
-    func_2 = _normalize_evaluator_func(
+    func_1 = _normalize_evaluator_func(
         _valid_mixed_positional_and_keyword_with_reference_outputs
     )
 
-    func_3 = _normalize_evaluator_func(_async_valid_mixed_positional_and_keyword)
-
-    func_4 = _normalize_evaluator_func(
+    func_2 = _normalize_evaluator_func(
         _async_valid_mixed_positional_and_keyword_with_reference_outputs
     )
 
     res = evaluate(
         target,
         data=ds_examples,
-        evaluators=[func_1, func_2, func_3, func_4],
+        evaluators=[func_1, func_2],
         client=client,
     )
     for r in res:
         assert r["evaluation_results"]["results"][0].score == 1
         assert r["evaluation_results"]["results"][1].score == 1
-        assert r["evaluation_results"]["results"][2].score == 1
-        assert r["evaluation_results"]["results"][3].score == 1
 
 
 @pytest.mark.parametrize("func,is_async", VALID_EVALUATOR_CASES)
