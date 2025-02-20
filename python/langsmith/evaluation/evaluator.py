@@ -633,7 +633,7 @@ def _normalize_evaluator_func(
         "attachments",
     )
     sig = inspect.signature(func)
-    all_args = [pname for pname, p in sig.parameters.items()]
+    all_args = [pname for pname, _ in sig.parameters.items()]
     args_with_defaults = [
         pname
         for pname, p in sig.parameters.items()
@@ -652,13 +652,53 @@ def _normalize_evaluator_func(
             # noqa: E501
         )
         raise ValueError(msg)
-    elif not all(pname in supported_args for pname in all_args) or all_args == [
+    # For backwards compatibility we assume custom arg names are Run and Example
+    # types, respectively.
+    elif not all(
+        pname in supported_args or pname in args_with_defaults for pname in all_args
+    ) or all_args == [
         "run",
         "example",
     ]:
-        # For backwards compatibility we assume custom arg names are Run and Example
-        # types, respectively.
-        return func
+        if inspect.iscoroutinefunction(func):
+
+            async def awrapper(
+                run: Run, example: Optional[Example]
+            ) -> _RUNNABLE_OUTPUT:
+                args = []
+                kwargs = {}
+                for i, (param_name, param) in enumerate(sig.parameters.items()):
+                    if param.kind == param.POSITIONAL_ONLY:
+                        args.append(run if i == 0 else example)
+                    else:
+                        kwargs[param_name] = run if i == 0 else example
+                return await func(*args, **kwargs)  # type: ignore
+
+            awrapper.__name__ = (
+                getattr(func, "__name__")
+                if hasattr(func, "__name__")
+                else awrapper.__name__
+            )
+            return awrapper  # type: ignore[return-value]
+
+        else:
+
+            def wrapper(run: Run, example: Optional[Example]) -> _RUNNABLE_OUTPUT:
+                args = []
+                kwargs = {}
+                for i, (param_name, param) in enumerate(sig.parameters.items()):
+                    if param.kind == param.POSITIONAL_ONLY:
+                        args.append(run if i == 0 else example)
+                    else:
+                        kwargs[param_name] = run if i == 0 else example
+                return func(*args, **kwargs)  # type: ignore
+
+            wrapper.__name__ = (
+                getattr(func, "__name__")
+                if hasattr(func, "__name__")
+                else wrapper.__name__
+            )
+            return wrapper  # type: ignore[return-value]
     else:
         if inspect.iscoroutinefunction(func):
 
@@ -673,8 +713,19 @@ def _normalize_evaluator_func(
                     "attachments": example.attachments or {} if example else {},
                     "reference_outputs": example.outputs or {} if example else {},
                 }
-                args = (arg_map[arg] for arg in all_args)
-                return await func(*args)
+                kwargs = {}
+                args = []
+                for param_name, param in sig.parameters.items():
+                    # Could have params with defaults that are not in the arg map
+                    if param_name in arg_map:
+                        if param.kind in (
+                            param.POSITIONAL_OR_KEYWORD,
+                            param.POSITIONAL_ONLY,
+                        ):
+                            args.append(arg_map[param_name])
+                        else:
+                            kwargs[param_name] = arg_map[param_name]
+                return await func(*args, **kwargs)
 
             awrapper.__name__ = (
                 getattr(func, "__name__")
@@ -694,8 +745,20 @@ def _normalize_evaluator_func(
                     "attachments": example.attachments or {},
                     "reference_outputs": example.outputs or {} if example else {},
                 }
-                args = (arg_map[arg] for arg in all_args)
-                return func(*args)
+                kwargs = {}
+                args = []
+                for param_name, param in sig.parameters.items():
+                    # Could have params with defaults that are not in the arg map
+                    if param_name in arg_map:
+                        if param.kind in (
+                            param.POSITIONAL_OR_KEYWORD,
+                            param.POSITIONAL_ONLY,
+                        ):
+                            args.append(arg_map[param_name])
+                        else:
+                            kwargs[param_name] = arg_map[param_name]
+
+                return func(*args, **kwargs)
 
             wrapper.__name__ = (
                 getattr(func, "__name__")
@@ -713,7 +776,7 @@ def _normalize_comparison_evaluator_func(
 ]:
     supported_args = ("runs", "example", "inputs", "outputs", "reference_outputs")
     sig = inspect.signature(func)
-    all_args = [pname for pname, p in sig.parameters.items()]
+    all_args = [pname for pname, _ in sig.parameters.items()]
     args_with_defaults = [
         pname
         for pname, p in sig.parameters.items()
@@ -734,11 +797,51 @@ def _normalize_comparison_evaluator_func(
         raise ValueError(msg)
     # For backwards compatibility we assume custom arg names are List[Run] and
     # List[Example] types, respectively.
-    elif not all(pname in supported_args for pname in all_args) or all_args == [
+    elif not all(
+        pname in supported_args or pname in args_with_defaults for pname in all_args
+    ) or all_args == [
         "runs",
         "example",
     ]:
-        return func
+        if inspect.iscoroutinefunction(func):
+
+            async def awrapper(
+                run: Run, example: Optional[Example]
+            ) -> _RUNNABLE_OUTPUT:
+                args = []
+                kwargs = {}
+                for i, (param_name, param) in enumerate(sig.parameters.items()):
+                    if param.kind == param.POSITIONAL_ONLY:
+                        args.append(run if i == 0 else example)
+                    else:
+                        kwargs[param_name] = run if i == 0 else example
+                return await func(*args, **kwargs)  # type: ignore
+
+            awrapper.__name__ = (
+                getattr(func, "__name__")
+                if hasattr(func, "__name__")
+                else awrapper.__name__
+            )
+            return awrapper  # type: ignore[return-value]
+
+        else:
+
+            def wrapper(run: Run, example: Optional[Example]) -> _RUNNABLE_OUTPUT:
+                args = []
+                kwargs = {}
+                for i, (param_name, param) in enumerate(sig.parameters.items()):
+                    if param.kind == param.POSITIONAL_ONLY:
+                        args.append(run if i == 0 else example)
+                    else:
+                        kwargs[param_name] = run if i == 0 else example
+                return func(*args, **kwargs)  # type: ignore
+
+            wrapper.__name__ = (
+                getattr(func, "__name__")
+                if hasattr(func, "__name__")
+                else wrapper.__name__
+            )
+            return wrapper  # type: ignore[return-value]
     else:
         if inspect.iscoroutinefunction(func):
 
@@ -752,8 +855,19 @@ def _normalize_comparison_evaluator_func(
                     "outputs": [run.outputs or {} for run in runs],
                     "reference_outputs": example.outputs or {} if example else {},
                 }
-                args = (arg_map[arg] for arg in all_args)
-                return await func(*args)
+                kwargs = {}
+                args = []
+                for param_name, param in sig.parameters.items():
+                    # Could have params with defaults that are not in the arg map
+                    if param_name in arg_map:
+                        if param.kind in (
+                            param.POSITIONAL_OR_KEYWORD,
+                            param.POSITIONAL_ONLY,
+                        ):
+                            args.append(arg_map[param_name])
+                        else:
+                            kwargs[param_name] = arg_map[param_name]
+                return await func(*args, **kwargs)
 
             awrapper.__name__ = (
                 getattr(func, "__name__")
@@ -773,7 +887,20 @@ def _normalize_comparison_evaluator_func(
                     "reference_outputs": example.outputs or {} if example else {},
                 }
                 args = (arg_map[arg] for arg in all_args)
-                return func(*args)
+                kwargs = {}
+                args = []
+                for param_name, param in sig.parameters.items():
+                    # Could have params with defaults that are not in the arg map
+                    if param_name in arg_map:
+                        if param.kind in (
+                            param.POSITIONAL_OR_KEYWORD,
+                            param.POSITIONAL_ONLY,
+                        ):
+                            args.append(arg_map[param_name])
+                        else:
+                            kwargs[param_name] = arg_map[param_name]
+
+                return func(*args, **kwargs)
 
             wrapper.__name__ = (
                 getattr(func, "__name__")
@@ -864,11 +991,20 @@ def _normalize_summary_evaluator(func: Callable) -> SUMMARY_EVALUATOR_T:
                 "outputs": [run.outputs or {} for run in runs],
                 "reference_outputs": [example.outputs or {} for example in examples],
             }
-            args = (arg_map[arg] for arg in all_args)
-            result = func(*args)
-            if isinstance(result, EvaluationResult):
-                return result
-            return _format_evaluator_result(result)  # type: ignore[return-value]
+            kwargs = {}
+            args = []
+            for param_name, param in sig.parameters.items():
+                # Could have params with defaults that are not in the arg map
+                if param_name in arg_map:
+                    if param.kind in (
+                        param.POSITIONAL_OR_KEYWORD,
+                        param.POSITIONAL_ONLY,
+                    ):
+                        args.append(arg_map[param_name])
+                    else:
+                        kwargs[param_name] = arg_map[param_name]
+
+            return func(*args, **kwargs)  # type: ignore[return-value]
 
         wrapper.__name__ = (
             getattr(func, "__name__") if hasattr(func, "__name__") else wrapper.__name__
