@@ -864,6 +864,10 @@ def kwarg_valid_two_arbitrary(*, foo, bar, optional=None):
     return {"score": 1}
 
 
+def valid_additional_kwargs(*, foo, bar, optional=None, **kwargs):
+    return {"score": 1}
+
+
 def kwarg_valid_multiple_supported(
     *, inputs, outputs, reference_outputs, optional=None
 ):
@@ -871,6 +875,10 @@ def kwarg_valid_multiple_supported(
 
 
 async def kwarg_valid_two_arbitrary_async(*, foo, bar, optional=None):
+    return {"score": 1}
+
+
+async def valid_additional_kwargs_async(*, foo, bar, optional=None, **kwargs):
     return {"score": 1}
 
 
@@ -942,6 +950,8 @@ VALID_EVALUATOR_CASES = [
     (kwarg_valid_two_arbitrary_async, True),
     (kwarg_valid_multiple_supported, False),
     (kwarg_valid_multiple_supported_async, True),
+    (valid_additional_kwargs, False),
+    (valid_additional_kwargs_async, True),
 ]
 
 # Test cases that should raise ValueError
