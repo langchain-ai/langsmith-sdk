@@ -246,7 +246,7 @@ class SupportsLangsmithExtra(Protocol, Generic[P, R]):
         R: The return type of the callable.
     """
 
-    def __call__(
+    def __call__(  # type: ignore[valid-type]
         self,
         *args: P.args,
         langsmith_extra: Optional[LangSmithExtra] = None,
