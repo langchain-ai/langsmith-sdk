@@ -633,7 +633,7 @@ def _normalize_evaluator_func(
         "attachments",
     )
     sig = inspect.signature(func)
-    all_args = [pname for pname, _ in sig.parameters.items()]
+    all_args = [pname for pname, p in sig.parameters.items() if p.kind != p.VAR_KEYWORD]
     args_with_defaults = [
         pname
         for pname, p in sig.parameters.items()
@@ -738,7 +738,7 @@ def _normalize_comparison_evaluator_func(
 ]:
     supported_args = ("runs", "example", "inputs", "outputs", "reference_outputs")
     sig = inspect.signature(func)
-    all_args = [pname for pname, _ in sig.parameters.items()]
+    all_args = [pname for pname, p in sig.parameters.items() if p.kind != p.VAR_KEYWORD]
     args_with_defaults = [
         pname
         for pname, p in sig.parameters.items()
