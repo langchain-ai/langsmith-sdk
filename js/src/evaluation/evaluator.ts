@@ -95,12 +95,18 @@ export type RunEvaluatorLike =
       run: Run,
       example?: Example
     ) => Promise<EvaluationResult | EvaluationResult[] | EvaluationResults>)
-  | ((run: Run, example?: Example) => EvaluationResult | EvaluationResult[] | EvaluationResults)
+  | ((
+      run: Run,
+      example?: Example
+    ) => EvaluationResult | EvaluationResult[] | EvaluationResults)
   | ((
       run: Run,
       example: Example
     ) => Promise<EvaluationResult | EvaluationResult[] | EvaluationResults>)
-  | ((run: Run, example: Example) => EvaluationResult | EvaluationResult[] | EvaluationResults)
+  | ((
+      run: Run,
+      example: Example
+    ) => EvaluationResult | EvaluationResult[] | EvaluationResults)
   | ((args: {
       run: Run;
       example: Example;
@@ -247,7 +253,9 @@ export class DynamicRunEvaluator<Func extends (...args: any[]) => any>
     }
     if (Array.isArray(result)) {
       return {
-        results: result.map((r) => this.coerceEvaluationResult(r, sourceRunId, false)),
+        results: result.map((r) =>
+          this.coerceEvaluationResult(r, sourceRunId, false)
+        ),
       };
     }
     if (typeof result !== "object") {

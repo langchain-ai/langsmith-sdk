@@ -3521,7 +3521,10 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   async _logEvaluationFeedback(
-    evaluatorResponse: EvaluationResult |  EvaluationResult[] | EvaluationResults,
+    evaluatorResponse:
+      | EvaluationResult
+      | EvaluationResult[]
+      | EvaluationResults,
     run?: Run,
     sourceInfo?: { [key: string]: any }
   ): Promise<[results: EvaluationResult[], feedbacks: Feedback[]]> {
@@ -3560,7 +3563,10 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   public async logEvaluationFeedback(
-    evaluatorResponse: EvaluationResult | EvaluationResults,
+    evaluatorResponse:
+      | EvaluationResult
+      | EvaluationResult[]
+      | EvaluationResults,
     run?: Run,
     sourceInfo?: { [key: string]: any }
   ): Promise<EvaluationResult[]> {

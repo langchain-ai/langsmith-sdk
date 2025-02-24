@@ -1129,7 +1129,9 @@ async function wrapSummaryEvaluators(
         (
           _runs_: string,
           _examples_: string
-        ): Promise<EvaluationResult | EvaluationResult[] | EvaluationResults> => {
+        ): Promise<
+          EvaluationResult | EvaluationResult[] | EvaluationResults
+        > => {
           // Check if the evaluator expects an object parameter
           if (evaluator.length === 1) {
             const inputs = examples.map((ex) => ex.inputs);

@@ -261,11 +261,13 @@ test("evaluate can evaluate with custom evaluators and array return value", asyn
   };
 
   const customEvaluator = async (run: Run, example?: Example) => {
-    return [{
-      key: "key",
-      score: 1,
-      comment: `Run: ${run.id} Example: ${example?.id}`,
-    }];
+    return [
+      {
+        key: "key",
+        score: 1,
+        comment: `Run: ${run.id} Example: ${example?.id}`,
+      },
+    ];
   };
 
   const evalRes = await evaluate(targetFunc, {
@@ -323,7 +325,6 @@ test("evaluate can evaluate with custom evaluators and array return value", asyn
     expect.arrayContaining(expectedCommentStrings)
   );
 });
-
 
 test("evaluate can evaluate with summary evaluators", async () => {
   const targetFunc = (input: Record<string, any>) => {
