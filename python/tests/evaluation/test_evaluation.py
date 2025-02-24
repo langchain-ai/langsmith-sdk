@@ -218,6 +218,11 @@ async def test_aevaluate():
         await asyncio.sleep(2)
         return {"score": expected.lower() == pred.lower()}
 
+    async def multi_accuracy(run: Run, example: Example):
+        pred = run.outputs["output"]  # type: ignore
+        expected = example.outputs["answer"]  # type: ignore
+        return [{"score": expected.lower() == pred.lower()}]
+
     def precision(runs: Sequence[Run], examples: Sequence[Example]):
         predictions = [run.outputs["output"].lower() for run in runs]  # type: ignore
         expected = [example.outputs["answer"].lower() for example in examples]  # type: ignore
@@ -293,6 +298,15 @@ async def test_aevaluate():
     )
     assert len(results4) == 10
 
+    # Multiple return values
+    results5 = await aevaluate(
+        apredict,
+        data=dataset.name,
+        evaluators=[multi_accuracy],
+        experiment=results.experiment_name,
+    )
+    assert len(results5["results"]) == 10
+
 
 def test_evaluate():
     client = Client()
@@ -305,6 +319,11 @@ def test_evaluate():
         pred = run.outputs["output"]  # type: ignore
         expected = example.outputs["answer"]  # type: ignore
         return {"score": expected.lower() == pred.lower()}
+
+    def multi_accuracy(run: Run, example: Example):
+        pred = run.outputs["output"]  # type: ignore
+        expected = example.outputs["answer"]  # type: ignore
+        return [{"score": expected.lower() == pred.lower()}]
 
     def precision(runs: Sequence[Run], examples: Sequence[Example]):
         predictions = [run.outputs["output"].lower() for run in runs]  # type: ignore
@@ -377,6 +396,15 @@ def test_evaluate():
         experiment=str(experiment.id),
     )
     assert len(results4) == 10
+
+    # Multiple return values
+    results5 = evaluate(
+        predict,
+        data=client.list_examples(dataset_name=dataset_name, as_of="test_version"),
+        evaluators=[multi_accuracy],
+        experiment=results.experiment_name,
+    )
+    assert len(results5["results"]) == 10
 
 
 @test
