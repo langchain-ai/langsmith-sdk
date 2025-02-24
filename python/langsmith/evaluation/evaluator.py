@@ -300,7 +300,9 @@ class DynamicRunEvaluator(RunEvaluator):
                 result.source_run_id = source_run_id
             return result
         elif isinstance(result, list):
-            return [self._format_result(r, source_run_id) for r in result]
+            result = {
+                "results": result
+            }
         result = _format_evaluator_result(result)
         return self._coerce_evaluation_results(result, source_run_id)
 
