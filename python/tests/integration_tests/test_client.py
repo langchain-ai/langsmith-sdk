@@ -28,11 +28,13 @@ from langsmith.schemas import (
     AttachmentsOperations,
     DataType,
     Example,
+    ExampleCreate,
+    ExampleUpdate,
     ExampleUpdateWithAttachments,
-    ExampleUploadWithAttachments,
     Run,
 )
 from langsmith.utils import (
+    LangSmithAPIError,
     LangSmithConnectionError,
     LangSmithError,
     LangSmithNotFoundError,
@@ -432,8 +434,6 @@ def test_upload_examples_multipart(langchain_client: Client):
     dataset_name = "__test_upload_examples_multipart" + uuid4().hex[:4]
     if langchain_client.has_dataset(dataset_name=dataset_name):
         langchain_client.delete_dataset(dataset_name=dataset_name)
-    if langchain_client.has_dataset(dataset_name=dataset_name):
-        langchain_client.delete_dataset(dataset_name=dataset_name)
 
     dataset = langchain_client.create_dataset(
         dataset_name,
@@ -443,7 +443,7 @@ def test_upload_examples_multipart(langchain_client: Client):
 
     # Test example with all fields
     example_id = uuid4()
-    example_1 = ExampleUploadWithAttachments(
+    example_1 = ExampleCreate(
         id=example_id,
         inputs={"text": "hello world"},
         attachments={
@@ -452,12 +452,12 @@ def test_upload_examples_multipart(langchain_client: Client):
     )
 
     # Test example with minimum required fields
-    example_2 = ExampleUploadWithAttachments(
+    example_2 = ExampleCreate(
         inputs={"text": "minimal example"},
     )
 
     # Test example with outputs and multiple attachments
-    example_3 = ExampleUploadWithAttachments(
+    example_3 = ExampleCreate(
         inputs={"text": "example with outputs"},
         outputs={"response": "test response"},
         attachments={
@@ -506,7 +506,7 @@ def test_upload_examples_multipart(langchain_client: Client):
         langchain_client.upload_examples_multipart(
             dataset_id=fake_id,
             uploads=[
-                ExampleUploadWithAttachments(
+                ExampleCreate(
                     inputs={"text": "should fail"},
                 )
             ],
@@ -564,8 +564,6 @@ def test_create_dataset(langchain_client: Client) -> None:
 
 def test_dataset_schema_validation(langchain_client: Client) -> None:
     dataset_name = "__test_create_dataset" + uuid4().hex[:4]
-    if langchain_client.has_dataset(dataset_name=dataset_name):
-        langchain_client.delete_dataset(dataset_name=dataset_name)
     if langchain_client.has_dataset(dataset_name=dataset_name):
         langchain_client.delete_dataset(dataset_name=dataset_name)
 
@@ -1453,7 +1451,7 @@ def test_list_examples_attachments_keys(langchain_client: Client) -> None:
     langchain_client.upload_examples_multipart(
         dataset_id=dataset.id,
         uploads=[
-            ExampleUploadWithAttachments(
+            ExampleCreate(
                 inputs={"text": "hello world"},
                 outputs={"response": "hi there"},
                 attachments={
@@ -1494,7 +1492,7 @@ def test_mime_type_is_propogated(langchain_client: Client) -> None:
     langchain_client.upload_examples_multipart(
         dataset_id=dataset.id,
         uploads=[
-            ExampleUploadWithAttachments(
+            ExampleCreate(
                 inputs={"text": "hello world"},
                 outputs={"response": "hi there"},
                 attachments={
@@ -1525,7 +1523,7 @@ def test_evaluate_mime_type_is_propogated(langchain_client: Client) -> None:
     langchain_client.upload_examples_multipart(
         dataset_id=dataset.id,
         uploads=[
-            ExampleUploadWithAttachments(
+            ExampleCreate(
                 inputs={"text": "hello world"},
                 outputs={"response": "hi there"},
                 attachments={
@@ -1566,7 +1564,7 @@ async def test_aevaluate_mime_type_is_propogated(langchain_client: Client) -> No
     langchain_client.upload_examples_multipart(
         dataset_id=dataset.id,
         uploads=[
-            ExampleUploadWithAttachments(
+            ExampleCreate(
                 inputs={"text": "hello world"},
                 outputs={"response": "hi there"},
                 attachments={
@@ -1614,7 +1612,7 @@ def test_evaluate_with_attachments_multiple_evaluators(
     )
 
     # 2. Create example with attachments
-    example = ExampleUploadWithAttachments(
+    example = ExampleCreate(
         inputs={"question": "What is shown in the image?"},
         outputs={"answer": "test image"},
         attachments={
@@ -1686,7 +1684,7 @@ def test_evaluate_with_attachments(langchain_client: Client) -> None:
     )
 
     # 2. Create example with attachments
-    example = ExampleUploadWithAttachments(
+    example = ExampleCreate(
         inputs={"question": "What is shown in the image?"},
         outputs={"answer": "test image"},
         attachments={
@@ -1742,7 +1740,7 @@ def test_evaluate_with_attachments_not_in_target(langchain_client: Client) -> No
         data_type=DataType.kv,
     )
 
-    example = ExampleUploadWithAttachments(
+    example = ExampleCreate(
         inputs={"question": "What is shown in the image?"},
         outputs={"answer": "test image"},
         attachments={
@@ -1811,7 +1809,7 @@ def test_evaluate_with_no_attachments(langchain_client: Client) -> None:
     )
 
     # Verify we can create example the new way without attachments
-    example = ExampleUploadWithAttachments(
+    example = ExampleCreate(
         inputs={"question": "What is 3+1?"},
         outputs={"answer": "4"},
     )
@@ -1853,7 +1851,7 @@ async def test_aevaluate_with_attachments(langchain_client: Client) -> None:
     )
 
     examples = [
-        ExampleUploadWithAttachments(
+        ExampleCreate(
             inputs={"question": "What is shown in the image?", "index": i},
             outputs={"answer": "test image"},
             attachments={
@@ -1922,8 +1920,6 @@ async def test_aevaluate_with_attachments_not_in_target(
 ) -> None:
     """Test evaluating examples with attachments."""
     dataset_name = "__test_aevaluate_attachments" + uuid4().hex[:4]
-    if langchain_client.has_dataset(dataset_name=dataset_name):
-        langchain_client.delete_dataset(dataset_name=dataset_name)
     # Delete the dataset if it exists
     if langchain_client.has_dataset(dataset_name=dataset_name):
         langchain_client.delete_dataset(dataset_name=dataset_name)
@@ -1933,7 +1929,7 @@ async def test_aevaluate_with_attachments_not_in_target(
         data_type=DataType.kv,
     )
 
-    example = ExampleUploadWithAttachments(
+    example = ExampleCreate(
         inputs={"question": "What is shown in the image?"},
         outputs={"answer": "test image"},
         attachments={
@@ -1990,7 +1986,7 @@ async def test_aevaluate_with_no_attachments(langchain_client: Client) -> None:
     )
 
     # Verify we can create example the new way without attachments
-    example = ExampleUploadWithAttachments(
+    example = ExampleCreate(
         inputs={"question": "What is 3+1?"},
         outputs={"answer": "4"},
     )
@@ -2065,6 +2061,534 @@ def test_examples_length_validation(langchain_client: Client) -> None:
     langchain_client.delete_dataset(dataset_id=dataset.id)
 
 
+def test_new_create_example(langchain_client: Client) -> None:
+    """Test create_examples works with multipart style input."""
+    dataset_name = "__test_update_examples_output" + uuid4().hex[:4]
+    dataset = langchain_client.create_dataset(dataset_name=dataset_name)
+
+    example_id = uuid4()
+    langchain_client.create_example(
+        dataset_name=dataset_name,
+        example_id=example_id,
+        inputs={"query": "What's in this image?"},
+        outputs={"answer": "A test image"},
+        attachments={
+            "image1": ("image/png", b"fake image data 1"),
+            "image2": ("image/png", b"fake image data 2"),
+        },
+    )
+
+    retrieved_example = langchain_client.read_example(example_id=example_id)
+
+    assert retrieved_example.id == example_id
+    assert retrieved_example.dataset_id == dataset.id
+    assert retrieved_example.inputs == {"query": "What's in this image?"}
+    assert retrieved_example.outputs == {"answer": "A test image"}
+    assert list(retrieved_example.attachments.keys()) == ["image1", "image2"]
+
+    # Clean up
+    langchain_client.delete_dataset(dataset_id=dataset.id)
+
+
+def test_new_create_examples(langchain_client: Client) -> None:
+    """Test create_examples works with multipart style input."""
+    dataset_name = "__test_update_examples_output" + uuid4().hex[:4]
+    dataset = langchain_client.create_dataset(dataset_name=dataset_name)
+
+    example_id = uuid4()
+    example = dict(
+        id=example_id,
+        inputs={"query": "What's in this image?"},
+        outputs={"answer": "A test image"},
+        attachments={
+            "image1": ("image/png", b"fake image data 1"),
+            "image2": ("image/png", b"fake image data 2"),
+        },
+    )
+
+    # Use new way of passing example
+    langchain_client.create_examples(dataset_name=dataset_name, examples=[example])
+
+    retrieved_example = langchain_client.read_example(example_id=example_id)
+    examples_in_dataset = langchain_client.list_examples(dataset_id=dataset.id)
+    assert len(list(examples_in_dataset)) == 1
+
+    assert retrieved_example.id == example_id
+    assert retrieved_example.dataset_id == dataset.id
+    assert retrieved_example.inputs == example["inputs"]
+    assert retrieved_example.outputs == example["outputs"]
+    assert retrieved_example.attachments.keys() == example["attachments"].keys()
+
+    # Use old way of passing example
+    example_id2 = uuid4()
+    langchain_client.create_examples(
+        dataset_name=dataset_name,
+        ids=[example_id2],
+        inputs=[{"query": "What's not in this image?"}],
+        outputs=[{"answer": "A real image"}],
+        attachments=[
+            {
+                "image1": ("image/png", b"fake image data 1"),
+                "image2": ("image/png", b"fake image data 2"),
+            }
+        ],
+    )
+
+    retrieved_example = langchain_client.read_example(example_id=example_id2)
+    examples_in_dataset = langchain_client.list_examples(dataset_id=dataset.id)
+    assert len(list(examples_in_dataset)) == 2
+
+    assert retrieved_example.id == example_id2
+    assert retrieved_example.dataset_id == dataset.id
+    assert retrieved_example.inputs == {"query": "What's not in this image?"}
+    assert retrieved_example.outputs == {"answer": "A real image"}
+    assert retrieved_example.attachments.keys() == example["attachments"].keys()
+
+    # Clean up
+    langchain_client.delete_dataset(dataset_id=dataset.id)
+
+
+def test_new_update_examples(langchain_client: Client) -> None:
+    """Test update_examples works with multipart style input."""
+    dataset_name = "__test_update_examples_output" + uuid4().hex[:4]
+    dataset = langchain_client.create_dataset(dataset_name=dataset_name)
+
+    example_id = uuid4()
+    example = dict(
+        id=example_id,
+        inputs={"query": "What's in this image?"},
+        outputs={"answer": "A test image"},
+        attachments={
+            "image1": ("image/png", b"fake image data 1"),
+            "image2": ("image/png", b"fake image data 2"),
+        },
+    )
+
+    # Create some valid examples for testing update
+    langchain_client.create_examples(dataset_name=dataset_name, examples=[example])
+
+    example_update = ExampleUpdate(
+        id=example_id,
+        inputs={"query": "What's not in this image?"},
+        outputs={"answer": "A real image"},
+        attachments={
+            "image3": ("image/png", b"fake image data 3"),
+        },
+    )
+
+    langchain_client.update_examples(dataset_id=dataset.id, updates=[example_update])
+
+    retrieved_example = langchain_client.read_example(example_id=example_id)
+
+    assert retrieved_example.id == example_id
+    assert retrieved_example.dataset_id == dataset.id
+    assert retrieved_example.inputs == example_update.inputs
+    assert retrieved_example.outputs == example_update.outputs
+    assert retrieved_example.attachments.keys() == example_update.attachments.keys()
+
+    langchain_client.update_examples(
+        dataset_ids=[dataset.id],
+        example_ids=[example_id],
+        inputs=[{"query": "What's not in this image?"}],
+        outputs=[{"answer": "A real image"}],
+        attachments=[
+            {
+                "image4": ("image/png", b"fake image data 4"),
+            }
+        ],
+    )
+
+    retrieved_example = langchain_client.read_example(example_id=example_id)
+
+    assert retrieved_example.id == example_id
+    assert retrieved_example.dataset_id == dataset.id
+    assert retrieved_example.inputs == example_update.inputs
+    assert retrieved_example.outputs == example_update.outputs
+    assert list(retrieved_example.attachments.keys()) == ["image4"]
+
+    # Clean up
+    langchain_client.delete_dataset(dataset_id=dataset.id)
+
+
+def test_update_examples_multiple_datasets(langchain_client: Client) -> None:
+    """Test update_examples does not work with multiple datasets."""
+    dataset_name1 = "__test_update_examples_output" + uuid4().hex[:4]
+    dataset_name2 = "__test_update_examples_output" + uuid4().hex[:4]
+    dataset1 = langchain_client.create_dataset(dataset_name=dataset_name1)
+    dataset2 = langchain_client.create_dataset(dataset_name=dataset_name2)
+
+    example1_id = uuid4()
+    example2_id = uuid4()
+    example_1 = dict(
+        id=example1_id,
+        inputs={"query": "What's in this image?"},
+        outputs={"answer": "A test image"},
+        attachments={
+            "image1": ("image/png", b"fake image data 1"),
+            "image2": ("image/png", b"fake image data 2"),
+        },
+    )
+    example_2 = dict(
+        id=example2_id,
+        inputs={"query": "What's in this image?"},
+        outputs={"answer": "A test image"},
+        attachments={
+            "image1": ("image/png", b"fake image data 1"),
+            "image2": ("image/png", b"fake image data 2"),
+        },
+    )
+
+    # Create some valid examples for testing update
+    langchain_client.create_examples(dataset_name=dataset_name1, examples=[example_1])
+
+    langchain_client.create_examples(dataset_name=dataset_name2, examples=[example_2])
+
+    example_update_1 = ExampleUpdate(
+        id=example1_id,
+        inputs={"query": "What's not in this image?"},
+        outputs={"answer": "A real image"},
+        attachments={
+            "image3": ("image/png", b"fake image data 1"),
+        },
+    )
+
+    example_update_2 = ExampleUpdate(
+        id=example2_id,
+        inputs={"query": "What's not in this image?"},
+        outputs={"answer": "A real image"},
+        attachments={
+            "image3": ("image/png", b"fake image data 1"),
+        },
+    )
+
+    with pytest.raises(LangSmithAPIError, match="Dataset ID mismatch"):
+        langchain_client.update_examples(
+            dataset_id=dataset1.id, updates=[example_update_1, example_update_2]
+        )
+
+    with pytest.raises(LangSmithAPIError, match="Dataset ID mismatch"):
+        langchain_client.update_examples(
+            example_ids=[example1_id, example2_id],
+            inputs=[example_update_1.inputs, example_update_2.inputs],
+            outputs=[example_update_1.outputs, example_update_2.outputs],
+        )
+
+    # Clean up
+    langchain_client.delete_dataset(dataset_id=dataset1.id)
+    langchain_client.delete_dataset(dataset_id=dataset2.id)
+
+
+@pytest.mark.xfail(reason="Need to wait for backend changes to go endpoint")
+def test_use_source_run_io(langchain_client: Client) -> None:
+    dataset_name = "__test_use_source_run_io" + uuid4().hex[:4]
+    dataset = langchain_client.create_dataset(
+        dataset_name=dataset_name,
+        description="Test dataset for creating dataset with description",
+    )
+
+    run_id = uuid4()
+    langchain_client.create_run(
+        name="foo",
+        run_type="llm",
+        inputs={"foo": "bar"},
+        outputs={"foo": "bar"},
+        attachments={
+            "test_file": ("text/plain", b"test content"),
+        },
+        id=run_id,
+    )
+
+    retrieved_example = langchain_client.create_example(
+        use_source_run_io=True, source_run_id=run_id, dataset_id=dataset.id
+    )
+
+    assert retrieved_example.dataset_id == dataset.id
+    assert retrieved_example.inputs == {"foo": "bar"}
+    assert retrieved_example.outputs == {"foo": "bar"}
+    assert list(retrieved_example.attachments.keys()) == ["test_file"]
+
+    # Clean up
+    langchain_client.delete_dataset(dataset_id=dataset.id)
+
+
+@pytest.mark.xfail(reason="Need to wait for backend changes to go endpoint")
+def test_use_source_run_attachments(langchain_client: Client) -> None:
+    dataset_name = "__test_use_source_run_attachments" + uuid4().hex[:4]
+    dataset = langchain_client.create_dataset(
+        dataset_name=dataset_name,
+        description="Test dataset for creating dataset with description",
+    )
+
+    run_id = uuid4()
+    langchain_client.create_run(
+        name="foo",
+        run_type="llm",
+        inputs={"foo": "bar"},
+        outputs={"foo": "bar"},
+        attachments={
+            "test_file": ("text/plain", b"test content"),
+        },
+        id=run_id,
+    )
+
+    retrieved_example = langchain_client.create_example(
+        use_source_run_io=True,
+        use_source_run_attachments=[],
+        source_run_id=run_id,
+        dataset_id=dataset.id,
+        inputs={"bar": "baz"},
+        outputs={"bar": "baz"},
+        attachments={
+            "test_file2": ("text/plain", b"test content"),
+        },
+    )
+
+    assert retrieved_example.dataset_id == dataset.id
+    assert retrieved_example.inputs == {"bar": "baz"}
+    assert retrieved_example.outputs == {"bar": "baz"}
+    # source run attachments should override manually passed ones
+    assert list(retrieved_example.attachments.keys()) == ["test_file"]
+
+    example_id = uuid4()
+    example = dict(
+        id=example_id,
+        use_source_run_io=True,
+        source_run_id=run_id,
+        attachments={
+            "test_file2": ("text/plain", b"test content"),
+        },
+        inputs={"bar": "baz"},
+        outputs={"bar": "baz"},
+    )
+
+    langchain_client.create_examples(dataset_id=dataset.id, examples=[example])
+
+    retrieved_example = langchain_client.read_example(example_id=example_id)
+
+    assert retrieved_example.dataset_id == dataset.id
+    assert retrieved_example.inputs == {"foo": "bar"}
+    assert retrieved_example.outputs == {"foo": "bar"}
+    # source run attachments should override manually passed ones
+    assert list(retrieved_example.attachments.keys()) == ["test_file"]
+
+    # Clean up
+    langchain_client.delete_dataset(dataset_id=dataset.id)
+
+
+def test_create_examples_xor_dataset_args(langchain_client: Client) -> None:
+    """Test create_examples fails if both dataset_name and dataset_id are provided."""
+    dataset_name = "__test_create_examples_xor_dataset_args" + uuid4().hex[:4]
+    dataset = langchain_client.create_dataset(
+        dataset_name=dataset_name,
+        description="Test dataset for creating dataset with description",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Exactly one argument in each of the following "
+        "groups must be defined: dataset_id, dataset_name",
+    ):
+        langchain_client.create_examples(
+            dataset_name=dataset_name, dataset_id=dataset.id
+        )
+
+    # Clean up
+    langchain_client.delete_dataset(dataset_id=dataset.id)
+
+
+def test_must_pass_uploads_or_inputs(langchain_client: Client) -> None:
+    """Test create_examples fails if no uploads or inputs are provided."""
+    dataset_name = "__test_must_pass_uploads_or_inputs" + uuid4().hex[:4]
+    dataset = langchain_client.create_dataset(
+        dataset_name=dataset_name,
+        description="Test dataset for creating dataset with description",
+    )
+
+    with pytest.raises(ValueError, match="Must specify either 'examples' or 'inputs.'"):
+        langchain_client.create_examples(dataset_id=dataset.id, outputs={"foo": "bar"})
+
+    # Clean up
+    langchain_client.delete_dataset(dataset_id=dataset.id)
+
+
+def test_update_examples_errors(langchain_client: Client) -> None:
+    """Test update_examples fails in a number of cases."""
+    dataset_name = "__test_update_examples_errors" + uuid4().hex[:4]
+    dataset2_name = "__test_update_examples_errors" + uuid4().hex[:4]
+    dataset = langchain_client.create_dataset(
+        dataset_name=dataset_name,
+        description="Test dataset for creating dataset with description",
+    )
+    dataset2 = langchain_client.create_dataset(
+        dataset_name=dataset2_name,
+        description="Test dataset for creating dataset with description",
+    )
+
+    # Create example to update
+    example_id = uuid4()
+    langchain_client.create_example(
+        example_id=example_id,
+        inputs={"foo": "bar"},
+        outputs={"foo": "bar"},
+        dataset_id=dataset.id,
+    )
+    example_id2 = uuid4()
+    langchain_client.create_example(
+        example_id=example_id2,
+        inputs={"foo": "bar"},
+        outputs={"foo": "bar"},
+        dataset_id=dataset2.id,
+    )
+
+    # Update example
+    with pytest.raises(
+        ValueError, match="When passing kwargs, you must pass example_ids"
+    ):
+        langchain_client.update_examples(
+            outputs=[{"bar": "baz"}],
+        )
+
+    with pytest.raises(
+        ValueError,
+        match="When passing kwargs, you must not pass dataset_id, or updates",
+    ):
+        langchain_client.update_examples(
+            outputs=[{"bar": "baz"}],
+            example_ids=[example_id],
+            dataset_id=dataset.id,
+        )
+
+    with pytest.raises(
+        ValueError, match="When not passing kwargs, you must pass dataset_id"
+    ):
+        langchain_client.update_examples(
+            updates=[ExampleUpdate(id=example_id, outputs={"bar": "baz"})],
+        )
+
+    with pytest.raises(
+        ValueError, match="Dataset IDs must be the same for all examples"
+    ):
+        langchain_client.update_examples(
+            dataset_ids=[dataset.id, uuid4()],
+            outputs=[{"bar": "baz"}, {"bar": "baz"}],
+            example_ids=[example_id, uuid4()],
+        )
+
+    with pytest.raises(ValueError, match="dataset_ids cannot be set to None"):
+        langchain_client.update_examples(
+            dataset_ids=[None],
+            outputs=[{"bar": "baz"}],
+            example_ids=[example_id],
+        )
+
+    with pytest.raises(LangSmithAPIError):
+        langchain_client.update_examples(
+            updates=[
+                ExampleUpdate(
+                    id=example_id, outputs={"bar": "baz"}, dataset_id=dataset.id
+                ),
+                ExampleUpdate(
+                    id=example_id2, outputs={"bar": "baz"}, dataset_id=dataset2.id
+                ),
+            ],
+        )
+
+    retrieved_example = langchain_client.read_example(example_id=example_id)
+    # Assert update failed due to differing datasets
+    assert retrieved_example.outputs == {"foo": "bar"}
+
+    langchain_client.update_examples(
+        updates=[
+            ExampleUpdate(id=example_id, outputs={"bar": "baz"}, dataset_id=dataset.id)
+        ],
+    )
+    retrieved_example = langchain_client.read_example(example_id=example_id)
+    # Assert update was successful
+    assert retrieved_example.outputs == {"bar": "baz"}
+
+    # Clean up
+    langchain_client.delete_dataset(dataset_id=dataset.id)
+
+
+def test_create_examples_errors(langchain_client: Client) -> None:
+    """Test create_examples fails in a number of cases."""
+    dataset_name = "__test_create_examples_errors" + uuid4().hex[:4]
+    dataset = langchain_client.create_dataset(
+        dataset_name=dataset_name,
+        description="Test dataset for creating dataset with description",
+    )
+
+    with pytest.raises(
+        ValueError, match="When passing kwargs, you must not pass uploads"
+    ):
+        langchain_client.create_examples(
+            dataset_id=dataset.id, outputs={"foo": "bar"}, examples=[ExampleCreate()]
+        )
+
+    # Clean up
+    langchain_client.delete_dataset(dataset_id=dataset.id)
+
+
+@pytest.mark.xfail(reason="Need to wait for backend changes to go endpoint")
+def test_use_source_run_io_multiple_examples(langchain_client: Client) -> None:
+    dataset_name = "__test_use_source_run_io" + uuid4().hex[:4]
+    dataset = langchain_client.create_dataset(
+        dataset_name=dataset_name,
+        description="Test dataset for creating dataset with description",
+    )
+
+    run_id = uuid4()
+    langchain_client.create_run(
+        name="foo",
+        run_type="llm",
+        inputs={"foo": "bar"},
+        outputs={"foo": "bar"},
+        attachments={
+            "test_file": ("text/plain", b"test content"),
+            "real_file": ("text/plain", b"real content"),
+        },
+        id=run_id,
+    )
+
+    example_ids = [uuid4(), uuid4(), uuid4()]
+    langchain_client.create_examples(
+        ids=example_ids,
+        inputs=[{"bar": "baz"}, {"bar": "baz"}, {"bar": "baz"}],
+        outputs=[{"bar": "baz"}, {"bar": "baz"}, {"bar": "baz"}],
+        attachments=[
+            {"test_file2": ("text/plain", b"test content")},
+            {"test_file2": ("text/plain", b"test content")},
+            {"test_file2": ("text/plain", b"test content")},
+        ],
+        use_source_run_io=[True, False, True],
+        use_source_run_attachments=[[], ["test_file"], ["test_file"]],
+        source_run_ids=[run_id, run_id, run_id],
+        dataset_id=dataset.id,
+    )
+
+    example_1 = langchain_client.read_example(example_id=example_ids[0])
+    example_2 = langchain_client.read_example(example_id=example_ids[1])
+    example_3 = langchain_client.read_example(example_id=example_ids[2])
+
+    assert example_1.dataset_id == dataset.id
+    assert example_1.inputs == {"foo": "bar"}
+    assert example_1.outputs == {"foo": "bar"}
+    assert sorted(example_1.attachments.keys()) == ["real_file", "test_file"]
+
+    assert example_2.dataset_id == dataset.id
+    assert example_2.inputs == {"bar": "baz"}
+    assert example_2.outputs == {"bar": "baz"}
+    assert sorted(example_2.attachments.keys()) == ["test_file"]
+
+    assert example_3.dataset_id == dataset.id
+    assert example_3.inputs == {"foo": "bar"}
+    assert example_3.outputs == {"foo": "bar"}
+    assert sorted(example_3.attachments.keys()) == ["real_file", "test_file"]
+
+    # Clean up
+    langchain_client.delete_dataset(dataset_id=dataset.id)
+
+
 def test_update_example_with_attachments_operations(langchain_client: Client) -> None:
     """Test updating an example with attachment operations."""
     dataset_name = "__test_update_example_attachments" + uuid4().hex[:4]
@@ -2076,7 +2600,7 @@ def test_update_example_with_attachments_operations(langchain_client: Client) ->
     )
     example_id = uuid4()
     # Create example with attachments
-    example = ExampleUploadWithAttachments(
+    example = ExampleCreate(
         id=example_id,
         inputs={"query": "What's in this image?"},
         outputs={"answer": "A test image"},
@@ -2085,7 +2609,7 @@ def test_update_example_with_attachments_operations(langchain_client: Client) ->
             "image2": ("image/png", b"fake image data 2"),
         },
     )
-    langchain_client.upload_examples_multipart(dataset_id=dataset.id, uploads=[example])
+    langchain_client.create_examples(dataset_id=dataset.id, examples=[example])
 
     # Update example with attachment operations to rename and retain attachments
     attachments_operations = AttachmentsOperations(
@@ -2116,6 +2640,24 @@ def test_update_example_with_attachments_operations(langchain_client: Client) ->
         == b"fake image data 1"
     )
 
+    langchain_client.update_example(
+        dataset_id=dataset.id,
+        example_id=example_id,
+        attachments={"image3": ("image/png", b"fake image data 3")},
+    )
+
+    # Verify the update
+    retrieved_example = langchain_client.read_example(
+        example_id=example_id,
+    )
+
+    # Check that only the renamed attachment exists
+    assert len(retrieved_example.attachments) == 1
+    assert "image3" in retrieved_example.attachments
+    assert (
+        retrieved_example.attachments["image3"]["reader"].read() == b"fake image data 3"
+    )
+
     # Clean up
     langchain_client.delete_dataset(dataset_id=dataset.id)
 
@@ -2134,7 +2676,7 @@ def test_bulk_update_examples_with_attachments_operations(
 
     example_id1, example_id2 = uuid4(), uuid4()
     # Create two examples with attachments
-    example1 = ExampleUploadWithAttachments(
+    example1 = ExampleCreate(
         id=example_id1,
         inputs={"query": "What's in this image?"},
         outputs={"answer": "A test image 1"},
@@ -2143,7 +2685,7 @@ def test_bulk_update_examples_with_attachments_operations(
             "extra": ("text/plain", b"extra data"),
         },
     )
-    example2 = ExampleUploadWithAttachments(
+    example2 = ExampleCreate(
         id=example_id2,
         inputs={"query": "What's in this image?"},
         outputs={"answer": "A test image 2"},
@@ -2211,8 +2753,6 @@ def test_examples_multipart_attachment_path(langchain_client: Client) -> None:
     dataset_name = "__test_upload_examples_multipart" + uuid4().hex[:4]
     if langchain_client.has_dataset(dataset_name=dataset_name):
         langchain_client.delete_dataset(dataset_name=dataset_name)
-    if langchain_client.has_dataset(dataset_name=dataset_name):
-        langchain_client.delete_dataset(dataset_name=dataset_name)
 
     dataset = langchain_client.create_dataset(
         dataset_name,
@@ -2222,7 +2762,7 @@ def test_examples_multipart_attachment_path(langchain_client: Client) -> None:
 
     file_path = Path(__file__).parent / "test_data/parrot-icon.png"
     example_id = uuid4()
-    example = ExampleUploadWithAttachments(
+    example = ExampleCreate(
         id=example_id,
         inputs={"text": "hello world"},
         attachments={
@@ -2283,7 +2823,7 @@ def test_examples_multipart_attachment_path(langchain_client: Client) -> None:
         == (Path(__file__).parent / "test_data/parrot-icon.png").read_bytes()
     )
 
-    example_update = ExampleUpdateWithAttachments(
+    example_update = ExampleUpdate(
         id=example_id,
         attachments={
             "new_file1": (
@@ -2311,7 +2851,7 @@ def test_examples_multipart_attachment_path(langchain_client: Client) -> None:
     assert retrieved.attachments["new_file1"]["reader"].read() == file_path.read_bytes()
     assert retrieved.attachments["new_file2"]["reader"].read() == file_path.read_bytes()
 
-    example_wrong_path = ExampleUploadWithAttachments(
+    example_wrong_path = ExampleCreate(
         id=example_id,
         inputs={"text": "hello world"},
         attachments={
@@ -2339,8 +2879,6 @@ def test_update_examples_multipart(langchain_client: Client) -> None:
     dataset_name = "__test_update_examples_multipart" + uuid4().hex[:4]
     if langchain_client.has_dataset(dataset_name=dataset_name):
         langchain_client.delete_dataset(dataset_name=dataset_name)
-    if langchain_client.has_dataset(dataset_name=dataset_name):
-        langchain_client.delete_dataset(dataset_name=dataset_name)
 
     dataset = langchain_client.create_dataset(
         dataset_name,
@@ -2350,7 +2888,7 @@ def test_update_examples_multipart(langchain_client: Client) -> None:
     example_ids = [uuid4() for _ in range(2)]
 
     # First create some examples with attachments
-    example_1 = ExampleUploadWithAttachments(
+    example_1 = ExampleCreate(
         id=example_ids[0],
         inputs={"text": "hello world"},
         attachments={
@@ -2359,7 +2897,7 @@ def test_update_examples_multipart(langchain_client: Client) -> None:
         },
     )
 
-    example_2 = ExampleUploadWithAttachments(
+    example_2 = ExampleCreate(
         id=example_ids[1],
         inputs={"text": "second example"},
         attachments={
@@ -2374,7 +2912,7 @@ def test_update_examples_multipart(langchain_client: Client) -> None:
     assert created_examples["count"] == 2
 
     # Now create update operations
-    update_1 = ExampleUpdateWithAttachments(
+    update_1 = ExampleUpdate(
         id=example_ids[0],
         inputs={"text": "updated hello world"},
         attachments={
@@ -2385,7 +2923,7 @@ def test_update_examples_multipart(langchain_client: Client) -> None:
         ),
     )
 
-    update_2 = ExampleUpdateWithAttachments(
+    update_2 = ExampleUpdate(
         id=example_ids[1],
         inputs={"text": "updated second example"},
         attachments={
@@ -2453,7 +2991,7 @@ def test_update_examples_multipart(langchain_client: Client) -> None:
     response = langchain_client.update_examples_multipart(
         dataset_id=dataset.id,
         updates=[
-            ExampleUpdateWithAttachments(
+            ExampleUpdate(
                 id=example_ids[0],
                 attachments={
                     "new_file1": ("text/plain", b"new content 1"),
@@ -2475,7 +3013,7 @@ def test_update_examples_multipart(langchain_client: Client) -> None:
     response = langchain_client.update_examples_multipart(
         dataset_id=dataset.id,
         updates=[
-            ExampleUpdateWithAttachments(
+            ExampleUpdate(
                 id=example_ids[0],
                 attachments={
                     "foo": ("text/plain", b"new content 2"),
@@ -2506,7 +3044,7 @@ async def test_aevaluate_max_concurrency(langchain_client: Client) -> None:
     )
 
     examples = [
-        ExampleUploadWithAttachments(
+        ExampleCreate(
             inputs={"query": "What's in this image?"},
             outputs={"answer": "A test image 1"},
         )
