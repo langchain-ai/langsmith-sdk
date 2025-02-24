@@ -5236,10 +5236,7 @@ class Client:
     def _select_eval_results(
         self,
         results: Union[
-            ls_evaluator.EvaluationResult,
-            list[ls_evaluator.EvaluationResult],
-            ls_evaluator.EvaluationResults,
-            dict,
+            ls_evaluator.EvaluationResult, ls_evaluator.EvaluationResults, dict
         ],
         *,
         fn_name: Optional[str] = None,
@@ -5264,8 +5261,6 @@ class Client:
 
         if isinstance(results, ls_evaluator.EvaluationResult):
             results_ = [results]
-        elif isinstance(results, list):
-            results_ = [_cast_result(r) for r in results]
         elif _is_eval_results(results):
             results_ = [_cast_result(r) for r in results["results"]]
         elif isinstance(results, dict):
@@ -5324,10 +5319,7 @@ class Client:
     def _log_evaluation_feedback(
         self,
         evaluator_response: Union[
-            ls_evaluator.EvaluationResult,
-            list[ls_evaluator.EvaluationResult],
-            ls_evaluator.EvaluationResults,
-            dict,
+            ls_evaluator.EvaluationResult, ls_evaluator.EvaluationResults, dict
         ],
         run: Optional[ls_schemas.Run] = None,
         source_info: Optional[Dict[str, Any]] = None,

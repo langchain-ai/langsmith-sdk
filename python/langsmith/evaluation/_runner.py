@@ -78,16 +78,14 @@ EVALUATOR_T = Union[
     RunEvaluator,
     Callable[
         [schemas.Run, Optional[schemas.Example]],
-        Union[EvaluationResult, list[EvaluationResult], EvaluationResults],
+        Union[EvaluationResult, EvaluationResults],
     ],
-    Callable[
-        ..., Union[dict, EvaluationResults, list[EvaluationResult], EvaluationResult]
-    ],
+    Callable[..., Union[dict, EvaluationResults, EvaluationResult]],
 ]
 AEVALUATOR_T = Union[
     Callable[
         [schemas.Run, Optional[schemas.Example]],
-        Awaitable[Union[EvaluationResult, list[EvaluationResult], EvaluationResults]],
+        Awaitable[Union[EvaluationResult, EvaluationResults]],
     ],
 ]
 EXPERIMENT_T = Union[str, uuid.UUID, schemas.TracerSession]

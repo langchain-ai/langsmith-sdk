@@ -146,9 +146,7 @@ class RunEvaluator:
         )
 
 
-_RUNNABLE_OUTPUT = Union[
-    EvaluationResult, list[EvaluationResult], EvaluationResults, dict
-]
+_RUNNABLE_OUTPUT = Union[EvaluationResult, EvaluationResults, dict]
 
 
 class ComparisonEvaluationResult(BaseModel):
@@ -283,15 +281,7 @@ class DynamicRunEvaluator(RunEvaluator):
     def _format_result(
         self,
         result: Union[
-            EvaluationResult,
-            list[EvaluationResult],
-            EvaluationResults,
-            dict,
-            str,
-            int,
-            bool,
-            float,
-            list,
+            EvaluationResult, EvaluationResults, dict, str, int, bool, float, list
         ],
         source_run_id: uuid.UUID,
     ) -> Union[EvaluationResult, EvaluationResults]:
@@ -299,12 +289,6 @@ class DynamicRunEvaluator(RunEvaluator):
             if not result.source_run_id:
                 result.source_run_id = source_run_id
             return result
-        elif (
-            result
-            and isinstance(result, list)
-            and all(isinstance(r, EvaluationResult) for r in result)
-        ):
-            result = {"results": result}
         result = _format_evaluator_result(result)
         return self._coerce_evaluation_results(result, source_run_id)
 
