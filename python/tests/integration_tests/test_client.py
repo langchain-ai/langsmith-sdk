@@ -1861,7 +1861,7 @@ async def test_aevaluate_with_attachments(langchain_client: Client) -> None:
         for i in range(10)
     ]
 
-    langchain_client.upload_examples_multipart(dataset_id=dataset.id, uploads=examples)
+    langchain_client.create_examples(dataset_id=dataset.id, examples=examples)
 
     async def target(
         inputs: Dict[str, Any], attachments: Dict[str, Any]
