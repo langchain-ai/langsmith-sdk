@@ -34,7 +34,7 @@ from langsmith.schemas import (
     Run,
 )
 from langsmith.utils import (
-    LangSmithAPIError,
+    LangSmithConflictError,
     LangSmithConnectionError,
     LangSmithError,
     LangSmithNotFoundError,
@@ -1861,7 +1861,7 @@ async def test_aevaluate_with_attachments(langchain_client: Client) -> None:
         for i in range(10)
     ]
 
-    langchain_client.upload_examples_multipart(dataset_id=dataset.id, uploads=examples)
+    langchain_client.create_examples(dataset_id=dataset.id, examples=examples)
 
     async def target(
         inputs: Dict[str, Any], attachments: Dict[str, Any]
@@ -2120,18 +2120,13 @@ def test_new_create_examples(langchain_client: Client) -> None:
     assert retrieved_example.attachments.keys() == example["attachments"].keys()
 
     # Use old way of passing example
+    # Can't pass in attachments this way
     example_id2 = uuid4()
     langchain_client.create_examples(
         dataset_name=dataset_name,
         ids=[example_id2],
         inputs=[{"query": "What's not in this image?"}],
         outputs=[{"answer": "A real image"}],
-        attachments=[
-            {
-                "image1": ("image/png", b"fake image data 1"),
-                "image2": ("image/png", b"fake image data 2"),
-            }
-        ],
     )
 
     retrieved_example = langchain_client.read_example(example_id=example_id2)
@@ -2142,7 +2137,6 @@ def test_new_create_examples(langchain_client: Client) -> None:
     assert retrieved_example.dataset_id == dataset.id
     assert retrieved_example.inputs == {"query": "What's not in this image?"}
     assert retrieved_example.outputs == {"answer": "A real image"}
-    assert retrieved_example.attachments.keys() == example["attachments"].keys()
 
     # Clean up
     langchain_client.delete_dataset(dataset_id=dataset.id)
@@ -2261,12 +2255,12 @@ def test_update_examples_multiple_datasets(langchain_client: Client) -> None:
         },
     )
 
-    with pytest.raises(LangSmithAPIError, match="Dataset ID mismatch"):
+    with pytest.raises(LangSmithConflictError, match="Dataset ID mismatch"):
         langchain_client.update_examples(
             dataset_id=dataset1.id, updates=[example_update_1, example_update_2]
         )
 
-    with pytest.raises(LangSmithAPIError, match="Dataset ID mismatch"):
+    with pytest.raises(LangSmithConflictError, match="Dataset ID mismatch"):
         langchain_client.update_examples(
             example_ids=[example1_id, example2_id],
             inputs=[example_update_1.inputs, example_update_2.inputs],
@@ -2411,105 +2405,6 @@ def test_must_pass_uploads_or_inputs(langchain_client: Client) -> None:
     langchain_client.delete_dataset(dataset_id=dataset.id)
 
 
-def test_update_examples_errors(langchain_client: Client) -> None:
-    """Test update_examples fails in a number of cases."""
-    dataset_name = "__test_update_examples_errors" + uuid4().hex[:4]
-    dataset2_name = "__test_update_examples_errors" + uuid4().hex[:4]
-    dataset = langchain_client.create_dataset(
-        dataset_name=dataset_name,
-        description="Test dataset for creating dataset with description",
-    )
-    dataset2 = langchain_client.create_dataset(
-        dataset_name=dataset2_name,
-        description="Test dataset for creating dataset with description",
-    )
-
-    # Create example to update
-    example_id = uuid4()
-    langchain_client.create_example(
-        example_id=example_id,
-        inputs={"foo": "bar"},
-        outputs={"foo": "bar"},
-        dataset_id=dataset.id,
-    )
-    example_id2 = uuid4()
-    langchain_client.create_example(
-        example_id=example_id2,
-        inputs={"foo": "bar"},
-        outputs={"foo": "bar"},
-        dataset_id=dataset2.id,
-    )
-
-    # Update example
-    with pytest.raises(
-        ValueError, match="When passing kwargs, you must pass example_ids"
-    ):
-        langchain_client.update_examples(
-            outputs=[{"bar": "baz"}],
-        )
-
-    with pytest.raises(
-        ValueError,
-        match="When passing kwargs, you must not pass dataset_id, or updates",
-    ):
-        langchain_client.update_examples(
-            outputs=[{"bar": "baz"}],
-            example_ids=[example_id],
-            dataset_id=dataset.id,
-        )
-
-    with pytest.raises(
-        ValueError, match="When not passing kwargs, you must pass dataset_id"
-    ):
-        langchain_client.update_examples(
-            updates=[ExampleUpdate(id=example_id, outputs={"bar": "baz"})],
-        )
-
-    with pytest.raises(
-        ValueError, match="Dataset IDs must be the same for all examples"
-    ):
-        langchain_client.update_examples(
-            dataset_ids=[dataset.id, uuid4()],
-            outputs=[{"bar": "baz"}, {"bar": "baz"}],
-            example_ids=[example_id, uuid4()],
-        )
-
-    with pytest.raises(ValueError, match="dataset_ids cannot be set to None"):
-        langchain_client.update_examples(
-            dataset_ids=[None],
-            outputs=[{"bar": "baz"}],
-            example_ids=[example_id],
-        )
-
-    with pytest.raises(LangSmithAPIError):
-        langchain_client.update_examples(
-            updates=[
-                ExampleUpdate(
-                    id=example_id, outputs={"bar": "baz"}, dataset_id=dataset.id
-                ),
-                ExampleUpdate(
-                    id=example_id2, outputs={"bar": "baz"}, dataset_id=dataset2.id
-                ),
-            ],
-        )
-
-    retrieved_example = langchain_client.read_example(example_id=example_id)
-    # Assert update failed due to differing datasets
-    assert retrieved_example.outputs == {"foo": "bar"}
-
-    langchain_client.update_examples(
-        updates=[
-            ExampleUpdate(id=example_id, outputs={"bar": "baz"}, dataset_id=dataset.id)
-        ],
-    )
-    retrieved_example = langchain_client.read_example(example_id=example_id)
-    # Assert update was successful
-    assert retrieved_example.outputs == {"bar": "baz"}
-
-    # Clean up
-    langchain_client.delete_dataset(dataset_id=dataset.id)
-
-
 def test_create_examples_errors(langchain_client: Client) -> None:
     """Test create_examples fails in a number of cases."""
     dataset_name = "__test_create_examples_errors" + uuid4().hex[:4]
@@ -2517,9 +2412,8 @@ def test_create_examples_errors(langchain_client: Client) -> None:
         dataset_name=dataset_name,
         description="Test dataset for creating dataset with description",
     )
-
     with pytest.raises(
-        ValueError, match="When passing kwargs, you must not pass uploads"
+        ValueError, match="Cannot specify 'outputs' when 'examples' is specified."
     ):
         langchain_client.create_examples(
             dataset_id=dataset.id, outputs={"foo": "bar"}, examples=[ExampleCreate()]
@@ -2551,20 +2445,36 @@ def test_use_source_run_io_multiple_examples(langchain_client: Client) -> None:
     )
 
     example_ids = [uuid4(), uuid4(), uuid4()]
-    langchain_client.create_examples(
-        ids=example_ids,
-        inputs=[{"bar": "baz"}, {"bar": "baz"}, {"bar": "baz"}],
-        outputs=[{"bar": "baz"}, {"bar": "baz"}, {"bar": "baz"}],
-        attachments=[
-            {"test_file2": ("text/plain", b"test content")},
-            {"test_file2": ("text/plain", b"test content")},
-            {"test_file2": ("text/plain", b"test content")},
-        ],
-        use_source_run_io=[True, False, True],
-        use_source_run_attachments=[[], ["test_file"], ["test_file"]],
-        source_run_ids=[run_id, run_id, run_id],
-        dataset_id=dataset.id,
-    )
+    examples = [
+        {
+            "id": uuid4(),
+            "inputs": {"bar": "baz"},
+            "outputs": {"bar": "baz"},
+            "attachments": {"test_file2": ("text/plain", b"test content")},
+            "use_source_run_io": True,
+            "use_source_run_attachments": [],
+            "source_run_id": run_id,
+        },
+        {
+            "id": uuid4(),
+            "inputs": {"bar": "baz"},
+            "outputs": {"bar": "baz"},
+            "attachments": {"test_file2": ("text/plain", b"test content")},
+            "use_source_run_io": False,
+            "use_source_run_attachments": ["test_file"],
+            "source_run_id": run_id,
+        },
+        {
+            "id": uuid4(),
+            "inputs": {"bar": "baz"},
+            "outputs": {"bar": "baz"},
+            "attachments": {"test_file2": ("text/plain", b"test content")},
+            "use_source_run_io": True,
+            "use_source_run_attachments": ["test_file"],
+            "source_run_id": run_id,
+        },
+    ]
+    langchain_client.create_examples(examples=examples, dataset_id=dataset.id)
 
     example_1 = langchain_client.read_example(example_id=example_ids[0])
     example_2 = langchain_client.read_example(example_id=example_ids[1])
