@@ -3507,11 +3507,13 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   _selectEvalResults(
-    results: EvaluationResult | EvaluationResults
+    results: EvaluationResult | EvaluationResult[] | EvaluationResults
   ): Array<EvaluationResult> {
     let results_: Array<EvaluationResult>;
     if ("results" in results) {
       results_ = results.results;
+    } else if (Array.isArray(results)) {
+      results_ = results;
     } else {
       results_ = [results];
     }
@@ -3519,7 +3521,7 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   async _logEvaluationFeedback(
-    evaluatorResponse: EvaluationResult | EvaluationResults,
+    evaluatorResponse: EvaluationResult |  EvaluationResult[] | EvaluationResults,
     run?: Run,
     sourceInfo?: { [key: string]: any }
   ): Promise<[results: EvaluationResult[], feedbacks: Feedback[]]> {
