@@ -633,27 +633,33 @@ def _normalize_evaluator_func(
         "attachments",
     )
     sig = inspect.signature(func)
-    positional_args = [
+    all_args = [pname for pname, p in sig.parameters.items() if p.kind != p.VAR_KEYWORD]
+    args_with_defaults = [
         pname
         for pname, p in sig.parameters.items()
-        if p.kind in (p.POSITIONAL_OR_KEYWORD, p.POSITIONAL_ONLY)
+        if p.default is not inspect.Parameter.empty
     ]
-    if not positional_args or (
-        not all(pname in supported_args for pname in positional_args)
-        and len(positional_args) != 2
+    if not all_args or (
+        not all(
+            pname in supported_args or pname in args_with_defaults for pname in all_args
+        )
+        and len([a for a in all_args if a not in args_with_defaults]) != 2
     ):
         msg = (
-            f"Invalid evaluator function. Must have at least one positional "
-            f"argument. Supported positional arguments are {supported_args}. Please "
+            f"Invalid evaluator function. Must have at least one "
+            f"argument. Supported arguments are {supported_args}. Please "
             f"see https://docs.smith.langchain.com/evaluation/how_to_guides/evaluation/evaluate_llm_application#use-custom-evaluators"
             # noqa: E501
         )
         raise ValueError(msg)
+    # For backwards compatibility we assume custom arg names are Run and Example
+    # types, respectively.
     elif not all(
-        pname in supported_args for pname in positional_args
-    ) or positional_args == ["run", "example"]:
-        # For backwards compatibility we assume custom arg names are Run and Example
-        # types, respectively.
+        pname in supported_args or pname in args_with_defaults for pname in all_args
+    ) or all_args == [
+        "run",
+        "example",
+    ]:
         return func
     else:
         if inspect.iscoroutinefunction(func):
@@ -669,8 +675,19 @@ def _normalize_evaluator_func(
                     "attachments": example.attachments or {} if example else {},
                     "reference_outputs": example.outputs or {} if example else {},
                 }
-                args = (arg_map[arg] for arg in positional_args)
-                return await func(*args)
+                kwargs = {}
+                args = []
+                for param_name, param in sig.parameters.items():
+                    # Could have params with defaults that are not in the arg map
+                    if param_name in arg_map:
+                        if param.kind in (
+                            param.POSITIONAL_OR_KEYWORD,
+                            param.POSITIONAL_ONLY,
+                        ):
+                            args.append(arg_map[param_name])
+                        else:
+                            kwargs[param_name] = arg_map[param_name]
+                return await func(*args, **kwargs)
 
             awrapper.__name__ = (
                 getattr(func, "__name__")
@@ -681,17 +698,29 @@ def _normalize_evaluator_func(
 
         else:
 
-            def wrapper(run: Run, example: Example) -> _RUNNABLE_OUTPUT:
+            def wrapper(run: Run, example: Optional[Example]) -> _RUNNABLE_OUTPUT:
                 arg_map = {
                     "run": run,
                     "example": example,
                     "inputs": example.inputs if example else {},
                     "outputs": run.outputs or {},
-                    "attachments": example.attachments or {},
+                    "attachments": example.attachments or {} if example else {},
                     "reference_outputs": example.outputs or {} if example else {},
                 }
-                args = (arg_map[arg] for arg in positional_args)
-                return func(*args)
+                kwargs = {}
+                args = []
+                for param_name, param in sig.parameters.items():
+                    # Could have params with defaults that are not in the arg map
+                    if param_name in arg_map:
+                        if param.kind in (
+                            param.POSITIONAL_OR_KEYWORD,
+                            param.POSITIONAL_ONLY,
+                        ):
+                            args.append(arg_map[param_name])
+                        else:
+                            kwargs[param_name] = arg_map[param_name]
+
+                return func(*args, **kwargs)
 
             wrapper.__name__ = (
                 getattr(func, "__name__")
@@ -709,18 +738,21 @@ def _normalize_comparison_evaluator_func(
 ]:
     supported_args = ("runs", "example", "inputs", "outputs", "reference_outputs")
     sig = inspect.signature(func)
-    positional_args = [
+    all_args = [pname for pname, p in sig.parameters.items() if p.kind != p.VAR_KEYWORD]
+    args_with_defaults = [
         pname
         for pname, p in sig.parameters.items()
-        if p.kind in (p.POSITIONAL_OR_KEYWORD, p.POSITIONAL_ONLY)
+        if p.default is not inspect.Parameter.empty
     ]
-    if not positional_args or (
-        not all(pname in supported_args for pname in positional_args)
-        and len(positional_args) != 2
+    if not all_args or (
+        not all(
+            pname in supported_args or pname in args_with_defaults for pname in all_args
+        )
+        and len([a for a in all_args if a not in args_with_defaults]) != 2
     ):
         msg = (
-            f"Invalid evaluator function. Must have at least one positional "
-            f"argument. Supported positional arguments are {supported_args}. Please "
+            f"Invalid evaluator function. Must have at least one "
+            f"argument. Supported arguments are {supported_args}. Please "
             f"see https://docs.smith.langchain.com/evaluation/how_to_guides/evaluation/evaluate_llm_application#use-custom-evaluators"
             # noqa: E501
         )
@@ -728,8 +760,11 @@ def _normalize_comparison_evaluator_func(
     # For backwards compatibility we assume custom arg names are List[Run] and
     # List[Example] types, respectively.
     elif not all(
-        pname in supported_args for pname in positional_args
-    ) or positional_args == ["runs", "example"]:
+        pname in supported_args or pname in args_with_defaults for pname in all_args
+    ) or all_args == [
+        "runs",
+        "example",
+    ]:
         return func
     else:
         if inspect.iscoroutinefunction(func):
@@ -744,8 +779,19 @@ def _normalize_comparison_evaluator_func(
                     "outputs": [run.outputs or {} for run in runs],
                     "reference_outputs": example.outputs or {} if example else {},
                 }
-                args = (arg_map[arg] for arg in positional_args)
-                return await func(*args)
+                kwargs = {}
+                args = []
+                for param_name, param in sig.parameters.items():
+                    # Could have params with defaults that are not in the arg map
+                    if param_name in arg_map:
+                        if param.kind in (
+                            param.POSITIONAL_OR_KEYWORD,
+                            param.POSITIONAL_ONLY,
+                        ):
+                            args.append(arg_map[param_name])
+                        else:
+                            kwargs[param_name] = arg_map[param_name]
+                return await func(*args, **kwargs)
 
             awrapper.__name__ = (
                 getattr(func, "__name__")
@@ -756,7 +802,9 @@ def _normalize_comparison_evaluator_func(
 
         else:
 
-            def wrapper(runs: Sequence[Run], example: Example) -> _COMPARISON_OUTPUT:
+            def wrapper(
+                runs: Sequence[Run], example: Optional[Example]
+            ) -> _COMPARISON_OUTPUT:
                 arg_map = {
                     "runs": runs,
                     "example": example,
@@ -764,8 +812,20 @@ def _normalize_comparison_evaluator_func(
                     "outputs": [run.outputs or {} for run in runs],
                     "reference_outputs": example.outputs or {} if example else {},
                 }
-                args = (arg_map[arg] for arg in positional_args)
-                return func(*args)
+                kwargs = {}
+                args = []
+                for param_name, param in sig.parameters.items():
+                    # Could have params with defaults that are not in the arg map
+                    if param_name in arg_map:
+                        if param.kind in (
+                            param.POSITIONAL_OR_KEYWORD,
+                            param.POSITIONAL_ONLY,
+                        ):
+                            args.append(arg_map[param_name])
+                        else:
+                            kwargs[param_name] = arg_map[param_name]
+
+                return func(*args, **kwargs)
 
             wrapper.__name__ = (
                 getattr(func, "__name__")
@@ -818,27 +878,31 @@ SUMMARY_EVALUATOR_T = Union[
 def _normalize_summary_evaluator(func: Callable) -> SUMMARY_EVALUATOR_T:
     supported_args = ("runs", "examples", "inputs", "outputs", "reference_outputs")
     sig = inspect.signature(func)
-    positional_args = [
+    all_args = [pname for pname, p in sig.parameters.items()]
+    args_with_defaults = [
         pname
         for pname, p in sig.parameters.items()
-        if p.kind in (p.POSITIONAL_OR_KEYWORD, p.POSITIONAL_ONLY)
+        if p.default is not inspect.Parameter.empty
     ]
-    if not positional_args or (
-        not all(pname in supported_args for pname in positional_args)
-        and len(positional_args) != 2
+    if not all_args or (
+        not all(
+            pname in supported_args or pname in args_with_defaults for pname in all_args
+        )
+        and len([a for a in all_args if a not in args_with_defaults]) != 2
     ):
         msg = (
-            f"Invalid evaluator function. Must have at least one positional "
-            f"argument. Supported positional arguments are {supported_args}."
+            f"Invalid evaluator function. Must have at least one "
+            f"argument. Supported arguments are {supported_args}."
         )
-        if positional_args:
-            msg += f" Received positional arguments {positional_args}."
+        if all_args:
+            msg += f" Received arguments {all_args}."
         raise ValueError(msg)
     # For backwards compatibility we assume custom arg names are Sequence[Run] and
     # Sequence[Example] types, respectively.
-    elif not all(
-        pname in supported_args for pname in positional_args
-    ) or positional_args == ["runs", "examples"]:
+    elif not all(pname in supported_args for pname in all_args) or all_args == [
+        "runs",
+        "examples",
+    ]:
         return func
     else:
 
@@ -852,11 +916,23 @@ def _normalize_summary_evaluator(func: Callable) -> SUMMARY_EVALUATOR_T:
                 "outputs": [run.outputs or {} for run in runs],
                 "reference_outputs": [example.outputs or {} for example in examples],
             }
-            args = (arg_map[arg] for arg in positional_args)
-            result = func(*args)
+            kwargs = {}
+            args = []
+            for param_name, param in sig.parameters.items():
+                # Could have params with defaults that are not in the arg map
+                if param_name in arg_map:
+                    if param.kind in (
+                        param.POSITIONAL_OR_KEYWORD,
+                        param.POSITIONAL_ONLY,
+                    ):
+                        args.append(arg_map[param_name])
+                    else:
+                        kwargs[param_name] = arg_map[param_name]
+
+            result = func(*args, **kwargs)
             if isinstance(result, EvaluationResult):
                 return result
-            return _format_evaluator_result(result)  # type: ignore[return-value]
+            return _format_evaluator_result(result)  # type: ignore
 
         wrapper.__name__ = (
             getattr(func, "__name__") if hasattr(func, "__name__") else wrapper.__name__
