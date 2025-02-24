@@ -34,7 +34,7 @@ from langsmith.schemas import (
     Run,
 )
 from langsmith.utils import (
-    LangSmithAPIError,
+    LangSmithConflictError,
     LangSmithConnectionError,
     LangSmithError,
     LangSmithNotFoundError,
@@ -2255,12 +2255,12 @@ def test_update_examples_multiple_datasets(langchain_client: Client) -> None:
         },
     )
 
-    with pytest.raises(LangSmithAPIError, match="Dataset ID mismatch"):
+    with pytest.raises(LangSmithConflictError, match="Dataset ID mismatch"):
         langchain_client.update_examples(
             dataset_id=dataset1.id, updates=[example_update_1, example_update_2]
         )
 
-    with pytest.raises(LangSmithAPIError, match="Dataset ID mismatch"):
+    with pytest.raises(LangSmithConflictError, match="Dataset ID mismatch"):
         langchain_client.update_examples(
             example_ids=[example1_id, example2_id],
             inputs=[example_update_1.inputs, example_update_2.inputs],
@@ -2412,9 +2412,8 @@ def test_create_examples_errors(langchain_client: Client) -> None:
         dataset_name=dataset_name,
         description="Test dataset for creating dataset with description",
     )
-
     with pytest.raises(
-        ValueError, match="When passing kwargs, you must not pass uploads"
+        ValueError, match="Cannot specify 'outputs' when 'examples' is specified."
     ):
         langchain_client.create_examples(
             dataset_id=dataset.id, outputs={"foo": "bar"}, examples=[ExampleCreate()]
