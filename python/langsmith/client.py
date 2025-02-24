@@ -4311,7 +4311,7 @@ class Client:
         Returns:
             The LangSmith JSON response. Includes 'count' and 'example_ids'.
 
-        .. versionchanged:: 0.3.9
+        .. versionchanged:: 0.3.11
 
             Updated to take argument 'examples', a single list where each
             element is the full example to create. This should be used instead of the
