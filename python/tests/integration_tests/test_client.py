@@ -2115,9 +2115,9 @@ def test_new_create_examples(langchain_client: Client) -> None:
 
     assert retrieved_example.id == example_id
     assert retrieved_example.dataset_id == dataset.id
-    assert retrieved_example.inputs == example.inputs
-    assert retrieved_example.outputs == example.outputs
-    assert retrieved_example.attachments.keys() == example.attachments.keys()
+    assert retrieved_example.inputs == example["inputs"]
+    assert retrieved_example.outputs == example["outputs"]
+    assert retrieved_example.attachments.keys() == example["attachments"].keys()
 
     # Use old way of passing example
     example_id2 = uuid4()
@@ -2142,7 +2142,7 @@ def test_new_create_examples(langchain_client: Client) -> None:
     assert retrieved_example.dataset_id == dataset.id
     assert retrieved_example.inputs == {"query": "What's not in this image?"}
     assert retrieved_example.outputs == {"answer": "A real image"}
-    assert retrieved_example.attachments.keys() == example.attachments.keys()
+    assert retrieved_example.attachments.keys() == example["attachments"].keys()
 
     # Clean up
     langchain_client.delete_dataset(dataset_id=dataset.id)
@@ -2404,7 +2404,7 @@ def test_must_pass_uploads_or_inputs(langchain_client: Client) -> None:
         description="Test dataset for creating dataset with description",
     )
 
-    with pytest.raises(ValueError, match="When passing kwargs, you must pass inputs"):
+    with pytest.raises(ValueError, match="Must specify either 'examples' or 'inputs.'"):
         langchain_client.create_examples(dataset_id=dataset.id, outputs={"foo": "bar"})
 
     # Clean up
