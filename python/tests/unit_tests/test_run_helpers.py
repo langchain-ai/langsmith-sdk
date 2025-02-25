@@ -1833,3 +1833,53 @@ def test__get_inputs_and_attachments_safe_unhashable_default() -> None:
     expected = {"x": {"b": "c"}}
     actual = _get_inputs_and_attachments_safe(inspect.signature(foo), x={"b": "c"})[0]
     assert expected == actual
+
+
+def test_traceable_iterator_process_chunk(mock_client: Client) -> None:
+    with tracing_context(enabled=True):
+
+        @traceable(client=mock_client, process_chunk=lambda x: x["val"])
+        def my_iterator_fn(a, b, d, **kwargs) -> Any:
+            assert kwargs == {"e": 5}
+            for i in range(a + b + d):
+                yield {"val": i, "squared": i**2}
+
+        expected = [{"val": x, "squared": x**2} for x in range(6)]
+        genout = my_iterator_fn(1, 2, 3, e=5)
+        results = list(genout)
+        assert results == expected
+    # check the mock_calls
+    mock_calls = _get_calls(mock_client, minimum=1)
+    assert 1 <= len(mock_calls) <= 2
+
+    call = mock_calls[0]
+    assert call.args[0] == "POST"
+    assert call.args[1].startswith("https://api.smith.langchain.com")
+    body = json.loads(mock_calls[0].kwargs["data"])
+    assert body["post"]
+    assert body["post"][0]["outputs"]["output"] == list(range(6))
+
+
+async def test_traceable_async_iterator_process_chunk(mock_client: Client) -> None:
+    with tracing_context(enabled=True):
+
+        @traceable(client=mock_client, process_chunk=lambda x: x["val"])
+        async def my_iterator_fn(a, b, d, **kwargs) -> Any:
+            assert kwargs == {"e": 5}
+            for i in range(a + b + d):
+                yield {"val": i, "squared": i**2}
+
+        expected = [{"val": x, "squared": x**2} for x in range(6)]
+        genout = my_iterator_fn(1, 2, 3, e=5)
+        results = [x async for x in genout]
+        assert results == expected
+    # check the mock_calls
+    mock_calls = _get_calls(mock_client, minimum=1)
+    assert 1 <= len(mock_calls) <= 2
+
+    call = mock_calls[0]
+    assert call.args[0] == "POST"
+    assert call.args[1].startswith("https://api.smith.langchain.com")
+    body = json.loads(mock_calls[0].kwargs["data"])
+    assert body["post"]
+    assert body["post"][0]["outputs"]["output"] == list(range(6))
