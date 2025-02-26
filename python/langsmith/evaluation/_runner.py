@@ -1632,7 +1632,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             for evaluator in evaluators:
                 evaluator_run_id = uuid.uuid4()
                 try:
-                    evaluator_response = evaluator.evaluate_run(
+                    evaluator_response = evaluator.evaluate_run(  # type: ignore[call-arg]
                         run=run,
                         example=example,
                         source_run_id=evaluator_run_id,

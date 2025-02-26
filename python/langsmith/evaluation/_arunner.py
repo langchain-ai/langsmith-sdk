@@ -985,7 +985,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             async def _run_single_evaluator(evaluator):
                 evaluator_run_id = uuid.uuid4()
                 try:
-                    evaluator_response = await evaluator.aevaluate_run(
+                    evaluator_response = await evaluator.aevaluate_run(  # type: ignore[call-arg]
                         run=run,
                         example=self._get_example_with_readers(example),
                         source_run_id=evaluator_run_id,
