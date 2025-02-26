@@ -5344,7 +5344,7 @@ class Client:
                 run_id_ = res.target_run_id
             elif run is not None:
                 run_id_ = run.id
-            error = res.extra.pop("error", None) if res.extra is not None else None
+            error = res.extra.get("error", None) if res.extra is not None else None
 
             _submit_feedback(
                 run_id=run_id_,
