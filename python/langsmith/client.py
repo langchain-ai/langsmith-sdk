@@ -5344,6 +5344,7 @@ class Client:
                 run_id_ = res.target_run_id
             elif run is not None:
                 run_id_ = run.id
+            error = res.extra.pop("error", None) if res.extra is not None else None
 
             _submit_feedback(
                 run_id=run_id_,
@@ -5361,6 +5362,7 @@ class Client:
                 project_id=project_id,
                 extra=res.extra,
                 trace_id=run.trace_id if run else None,
+                error=error,
             )
         return results
 
@@ -5430,6 +5432,7 @@ class Client:
         feedback_group_id: Optional[ID_TYPE] = None,
         extra: Optional[Dict] = None,
         trace_id: Optional[ID_TYPE] = None,
+        error: Optional[bool] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
         """Create a feedback in the LangSmith API.
@@ -5547,6 +5550,7 @@ class Client:
                 ),
                 feedback_group_id=_ensure_uuid(feedback_group_id, accept_null=True),
                 extra=extra,
+                error=error,
             )
 
             use_multipart = (self.info.batch_ingest_config or {}).get(

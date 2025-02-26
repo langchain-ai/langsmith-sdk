@@ -302,7 +302,10 @@ class DynamicRunEvaluator(RunEvaluator):
         return hasattr(self, "afunc")
 
     def evaluate_run(
-        self, run: Run, example: Optional[Example] = None
+        self,
+        run: Run,
+        example: Optional[Example] = None,
+        source_run_id: Optional[uuid.UUID] = None,
     ) -> Union[EvaluationResult, EvaluationResults]:
         """Evaluate a run using the wrapped function.
 
@@ -324,7 +327,8 @@ class DynamicRunEvaluator(RunEvaluator):
                 )
             else:
                 return running_loop.run_until_complete(self.aevaluate_run(run, example))
-        source_run_id = uuid.uuid4()
+        if source_run_id is None:
+            source_run_id = uuid.uuid4()
         metadata: Dict[str, Any] = {"target_run_id": run.id}
         if getattr(run, "session_id", None):
             metadata["experiment"] = str(run.session_id)
@@ -335,7 +339,12 @@ class DynamicRunEvaluator(RunEvaluator):
         )
         return self._format_result(result, source_run_id)
 
-    async def aevaluate_run(self, run: Run, example: Optional[Example] = None):
+    async def aevaluate_run(
+        self,
+        run: Run,
+        example: Optional[Example] = None,
+        source_run_id: Optional[uuid.UUID] = None,
+    ):
         """Evaluate a run asynchronously using the wrapped async function.
 
         This method directly invokes the wrapped async function with the
@@ -351,7 +360,8 @@ class DynamicRunEvaluator(RunEvaluator):
         """
         if not hasattr(self, "afunc"):
             return await super().aevaluate_run(run, example)
-        source_run_id = uuid.uuid4()
+        if source_run_id is None:
+            source_run_id = uuid.uuid4()
         metadata: Dict[str, Any] = {"target_run_id": run.id}
         if getattr(run, "session_id", None):
             metadata["experiment"] = str(run.session_id)

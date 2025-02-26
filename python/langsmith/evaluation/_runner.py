@@ -1630,10 +1630,12 @@ class _ExperimentManager(_ExperimentManagerMixin):
             example = current_results["example"]
             eval_results = current_results["evaluation_results"]
             for evaluator in evaluators:
+                evaluator_run_id = uuid.uuid4()
                 try:
                     evaluator_response = evaluator.evaluate_run(
                         run=run,
                         example=example,
+                        source_run_id=evaluator_run_id,
                     )
 
                     eval_results["results"].extend(
@@ -1652,7 +1654,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                             results=[
                                 EvaluationResult(
                                     key=key,
-                                    source_run_id=run.id,
+                                    source_run_id=evaluator_run_id,
                                     comment=repr(e),
                                     extra={"error": True},
                                 )

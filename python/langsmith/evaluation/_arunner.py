@@ -983,10 +983,12 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             eval_results = current_results["evaluation_results"]
 
             async def _run_single_evaluator(evaluator):
+                evaluator_run_id = uuid.uuid4()
                 try:
                     evaluator_response = await evaluator.aevaluate_run(
                         run=run,
                         example=self._get_example_with_readers(example),
+                        source_run_id=evaluator_run_id,
                     )
                     selected_results = self.client._select_eval_results(
                         evaluator_response
@@ -1005,7 +1007,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                             results=[
                                 EvaluationResult(
                                     key=key,
-                                    source_run_id=run.id,
+                                    source_run_id=evaluator_run_id,
                                     comment=repr(e),
                                     extra={"error": True},
                                 )
