@@ -22,7 +22,7 @@ function stripNonAlphanumeric(input: string) {
 }
 
 export function convertToDottedOrderFormat(
-  epoch: number,
+  epoch: string,
   runId: string,
   executionOrder = 1
 ) {
@@ -44,8 +44,8 @@ export interface RunTreeConfig {
   parent_run?: RunTree;
   parent_run_id?: string;
   child_runs?: RunTree[];
-  start_time?: number;
-  end_time?: number;
+  start_time?: string;
+  end_time?: string;
   extra?: KVMap;
   metadata?: KVMap;
   tags?: string[];
@@ -163,8 +163,8 @@ export class RunTree implements BaseRun {
   project_name: string;
   parent_run?: RunTree;
   child_runs: RunTree[];
-  start_time: number;
-  end_time?: number;
+  start_time: string;
+  end_time?: string;
   extra: KVMap;
   tags?: string[];
   error?: string;
@@ -324,7 +324,7 @@ export class RunTree implements BaseRun {
   async end(
     outputs?: KVMap,
     error?: string,
-    endTime = Date.now(),
+    endTime = String(Date.now()),
     metadata?: KVMap
   ): Promise<void> {
     this.outputs = this.outputs ?? outputs;
@@ -545,7 +545,7 @@ export class RunTree implements BaseRun {
       ...inheritArgs,
       name: inheritArgs?.["name"] ?? "parent",
       run_type: inheritArgs?.["run_type"] ?? "chain",
-      start_time: inheritArgs?.["start_time"] ?? Date.now(),
+      start_time: inheritArgs?.["start_time"] ?? String(Date.now()),
       id: parsedDottedOrder.at(-1)?.uuid,
       trace_id: traceId,
       dotted_order: parentDottedOrder,
