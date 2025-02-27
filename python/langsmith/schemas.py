@@ -643,6 +643,8 @@ class FeedbackCreate(FeedbackBase):
     feedback_source: FeedbackSourceBase
     """The source of the feedback."""
     feedback_config: Optional[FeedbackConfig] = None
+    """The config for the feedback"""
+    error: Optional[bool] = None
 
 
 class Feedback(FeedbackBase):
