@@ -922,7 +922,7 @@ export class Client implements LangSmithTracingClientInterface {
     const runCreate: RunCreate = this.prepareRunCreateOrUpdateInputs({
       session_name,
       ...run,
-      start_time: run.start_time ?? String(Date.now()),
+      start_time: run.start_time ?? new Date().toISOString(),
     });
     if (
       this.autoBatchTracing &&

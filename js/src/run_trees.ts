@@ -324,7 +324,7 @@ export class RunTree implements BaseRun {
   async end(
     outputs?: KVMap,
     error?: string,
-    endTime = String(Date.now()),
+    endTime = new Date().toISOString(),
     metadata?: KVMap
   ): Promise<void> {
     this.outputs = this.outputs ?? outputs;
@@ -545,7 +545,7 @@ export class RunTree implements BaseRun {
       ...inheritArgs,
       name: inheritArgs?.["name"] ?? "parent",
       run_type: inheritArgs?.["run_type"] ?? "chain",
-      start_time: inheritArgs?.["start_time"] ?? String(Date.now()),
+      start_time: inheritArgs?.["start_time"] ?? new Date().toISOString(),
       id: parsedDottedOrder.at(-1)?.uuid,
       trace_id: traceId,
       dotted_order: parentDottedOrder,
