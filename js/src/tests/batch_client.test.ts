@@ -115,7 +115,7 @@ describe.each(ENDPOINT_TYPES)(
 
       const runId = uuidv4();
       const dottedOrder = convertToDottedOrderFormat(
-        new Date().getTime() / 1000,
+        (new Date().getTime() / 1000).toString(),
         runId
       );
       await client.createRun({
@@ -178,7 +178,7 @@ describe.each(ENDPOINT_TYPES)(
 
       const runId = uuidv4();
       const dottedOrder = convertToDottedOrderFormat(
-        new Date().getTime() / 1000,
+        (new Date().getTime() / 1000).toString(),
         runId
       );
 
@@ -216,7 +216,7 @@ describe.each(ENDPOINT_TYPES)(
 
       const runId = uuidv4();
       const dottedOrder = convertToDottedOrderFormat(
-        new Date().getTime() / 1000,
+        (new Date().getTime() / 1000).toString(),
         runId
       );
       await client.createRun({
@@ -229,7 +229,7 @@ describe.each(ENDPOINT_TYPES)(
         dotted_order: dottedOrder,
       });
 
-      const endTime = Math.floor(new Date().getTime() / 1000);
+      const endTime = Math.floor(new Date().getTime() / 1000).toString();
 
       await client.updateRun(runId, {
         outputs: { output: ["Hi"] },
@@ -295,7 +295,7 @@ describe.each(ENDPOINT_TYPES)(
 
       const runId = uuidv4();
       const dottedOrder = convertToDottedOrderFormat(
-        new Date().getTime() / 1000,
+        (new Date().getTime() / 1000).toString(),
         runId
       );
       await client.createRun({
@@ -308,7 +308,7 @@ describe.each(ENDPOINT_TYPES)(
         dotted_order: dottedOrder,
       });
 
-      const endTime = Math.floor(new Date().getTime() / 1000);
+      const endTime = Math.floor(new Date().getTime() / 1000).toString();
 
       await client.updateRun(runId, {
         outputs: { output: ["Hi"] },
@@ -372,7 +372,7 @@ describe.each(ENDPOINT_TYPES)(
 
       const runId = uuidv4();
       const dottedOrder = convertToDottedOrderFormat(
-        new Date().getTime() / 1000,
+        (new Date().getTime() / 1000).toString(),
         runId
       );
       await client.createRun({
@@ -388,7 +388,7 @@ describe.each(ENDPOINT_TYPES)(
       // Wait for first batch to send
       await new Promise((resolve) => setTimeout(resolve, 300));
 
-      const endTime = Math.floor(new Date().getTime() / 1000);
+      const endTime = Math.floor(new Date().getTime() / 1000).toString();
 
       // A root run finishing triggers the second batch
       await client.updateRun(runId, {
@@ -400,7 +400,7 @@ describe.each(ENDPOINT_TYPES)(
 
       const runId2 = uuidv4();
       const dottedOrder2 = convertToDottedOrderFormat(
-        new Date().getTime() / 1000,
+        (new Date().getTime() / 1000).toString(),
         runId2
       );
 
@@ -487,7 +487,7 @@ describe.each(ENDPOINT_TYPES)(
 
       const runId = uuidv4();
       const dottedOrder = convertToDottedOrderFormat(
-        new Date().getTime() / 1000,
+        (new Date().getTime() / 1000).toString(),
         runId
       );
       await client.createRun({
@@ -505,7 +505,7 @@ describe.each(ENDPOINT_TYPES)(
       await new Promise((resolve) => setTimeout(resolve, 300));
       expect((client as any).autoBatchQueue.items.length).toBe(0);
 
-      const endTime = Math.floor(new Date().getTime() / 1000);
+      const endTime = Math.floor(new Date().getTime() / 1000).toString();
 
       // Start the the second batch
       await client.updateRun(runId, {
@@ -517,7 +517,7 @@ describe.each(ENDPOINT_TYPES)(
 
       const runId2 = uuidv4();
       const dottedOrder2 = convertToDottedOrderFormat(
-        new Date().getTime() / 1000,
+        (new Date().getTime() / 1000).toString(),
         runId2
       );
 
@@ -605,7 +605,7 @@ describe.each(ENDPOINT_TYPES)(
         [...Array(15)].map(async (_, i) => {
           const runId = uuidv4();
           const dottedOrder = convertToDottedOrderFormat(
-            new Date().getTime() / 1000,
+            (new Date().getTime() / 1000).toString(),
             runId
           );
           const params = mergeRuntimeEnvIntoRunCreate({
@@ -699,7 +699,7 @@ describe.each(ENDPOINT_TYPES)(
         [...Array(15)].map(async (_, i) => {
           const runId = uuidv4();
           const dottedOrder = convertToDottedOrderFormat(
-            new Date().getTime() / 1000,
+            (new Date().getTime() / 1000).toString(),
             runId
           );
           const params = mergeRuntimeEnvIntoRunCreate({
@@ -800,7 +800,7 @@ describe.each(ENDPOINT_TYPES)(
         [...Array(4)].map(async (_, i) => {
           const runId = uuidv4();
           const dottedOrder = convertToDottedOrderFormat(
-            new Date().getTime() / 1000,
+            (new Date().getTime() / 1000).toString(),
             runId
           );
           await client.createRun({
@@ -902,7 +902,7 @@ describe.each(ENDPOINT_TYPES)(
 
       const runId = uuidv4();
       const dottedOrder = convertToDottedOrderFormat(
-        new Date().getTime() / 1000,
+        (new Date().getTime() / 1000).toString(),
         runId
       );
       await client.createRun({
@@ -972,7 +972,7 @@ describe.each(ENDPOINT_TYPES)(
 
       const runId = uuidv4();
       const dottedOrder = convertToDottedOrderFormat(
-        new Date().getTime() / 1000,
+        (new Date().getTime() / 1000).toString(),
         runId
       );
       await client.createRun({
@@ -985,7 +985,7 @@ describe.each(ENDPOINT_TYPES)(
         dotted_order: dottedOrder,
       });
 
-      const endTime = Math.floor(new Date().getTime() / 1000);
+      const endTime = Math.floor(new Date().getTime() / 1000).toString();
 
       await client.updateRun(runId, {
         outputs: b,
