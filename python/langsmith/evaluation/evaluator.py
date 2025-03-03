@@ -21,6 +21,7 @@ from typing import (
 
 from typing_extensions import TypedDict
 
+from langsmith import run_helpers as rh
 from langsmith import schemas
 
 try:
@@ -141,9 +142,13 @@ class RunEvaluator:
         self, run: Run, example: Optional[Example] = None
     ) -> Union[EvaluationResult, EvaluationResults]:
         """Evaluate an example asynchronously."""
-        return await asyncio.get_running_loop().run_in_executor(
-            None, self.evaluate_run, run, example
-        )
+        current_context = rh.get_tracing_context()
+
+        def _run_with_context():
+            with rh.tracing_context(**current_context):
+                return self.evaluate_run(run, example)
+
+        return await asyncio.get_running_loop().run_in_executor(None, _run_with_context)
 
 
 _RUNNABLE_OUTPUT = Union[EvaluationResult, EvaluationResults, dict]
