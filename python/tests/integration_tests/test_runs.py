@@ -126,6 +126,7 @@ async def test_list_runs_multi_project(langchain_client: Client):
     filter_ = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{run_meta}"))'
 
     poll_runs_until_count(langchain_client, project_names[0], 1, filter_=filter_)
+    poll_runs_until_count(langchain_client, project_names[1], 1, filter_=filter_)
     runs = list(
         langchain_client.list_runs(
             project_name=project_names,
