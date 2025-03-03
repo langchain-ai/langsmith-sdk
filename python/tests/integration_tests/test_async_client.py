@@ -432,7 +432,7 @@ async def test_annotation_queue_runs(async_client: AsyncClient):
         except ls_utils.LangSmithError:
             return False
 
-    await asyncio.gather([wait_for(_get_run, run_id=run_id) for run_id in run_ids])
+    await asyncio.gather(*[wait_for(_get_run, run_id=run_id) for run_id in run_ids])
     # Add runs to queue
     await async_client.add_runs_to_annotation_queue(queue_id=queue.id, run_ids=run_ids)
 
