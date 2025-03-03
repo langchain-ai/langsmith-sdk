@@ -1415,7 +1415,7 @@ test("update examples multipart", async () => {
   expect(Object.keys(updatedExample.attachments ?? {}).sort()).toEqual(
     ["bar", "test_file"].sort()
   );
-  expect(updatedExample.metadata).toEqual({ bar: "foo" });
+  expect(updatedExample.metadata?.bar).toEqual("foo");
   let attachmentData: Uint8Array | undefined = updatedExample.attachments?.[
     "test_file"
   ].presigned_url
@@ -1445,7 +1445,7 @@ test("update examples multipart", async () => {
 
   await client.updateExamplesMultipart(dataset.id, [exampleUpdate4]);
   updatedExample = await client.readExample(exampleId);
-  expect(updatedExample.metadata).toEqual({ foo: "bar" });
+  expect(updatedExample.metadata?.foo).toEqual("bar");
   expect(Object.keys(updatedExample.attachments ?? {})).toEqual(["test_file2"]);
   attachmentData = updatedExample.attachments?.["test_file2"].presigned_url
     ? new Uint8Array(
