@@ -134,19 +134,25 @@ class RunEvaluator:
 
     @abstractmethod
     def evaluate_run(
-        self, run: Run, example: Optional[Example] = None
+        self,
+        run: Run,
+        example: Optional[Example] = None,
+        evaluator_run_id: Optional[uuid.UUID] = None,
     ) -> Union[EvaluationResult, EvaluationResults]:
         """Evaluate an example."""
 
     async def aevaluate_run(
-        self, run: Run, example: Optional[Example] = None
+        self,
+        run: Run,
+        example: Optional[Example] = None,
+        evaluator_run_id: Optional[uuid.UUID] = None,
     ) -> Union[EvaluationResult, EvaluationResults]:
         """Evaluate an example asynchronously."""
         current_context = rh.get_tracing_context()
 
         def _run_with_context():
             with rh.tracing_context(**current_context):
-                return self.evaluate_run(run, example)
+                return self.evaluate_run(run, example, evaluator_run_id)
 
         return await asyncio.get_running_loop().run_in_executor(None, _run_with_context)
 
@@ -310,7 +316,7 @@ class DynamicRunEvaluator(RunEvaluator):
         self,
         run: Run,
         example: Optional[Example] = None,
-        source_run_id: Optional[uuid.UUID] = None,
+        evaluator_run_id: Optional[uuid.UUID] = None,
     ) -> Union[EvaluationResult, EvaluationResults]:
         """Evaluate a run using the wrapped function.
 
@@ -332,23 +338,23 @@ class DynamicRunEvaluator(RunEvaluator):
                 )
             else:
                 return running_loop.run_until_complete(self.aevaluate_run(run, example))
-        if source_run_id is None:
-            source_run_id = uuid.uuid4()
+        if evaluator_run_id is None:
+            evaluator_run_id = uuid.uuid4()
         metadata: Dict[str, Any] = {"target_run_id": run.id}
         if getattr(run, "session_id", None):
             metadata["experiment"] = str(run.session_id)
         result = self.func(
             run,
             example,
-            langsmith_extra={"run_id": source_run_id, "metadata": metadata},
+            langsmith_extra={"run_id": evaluator_run_id, "metadata": metadata},
         )
-        return self._format_result(result, source_run_id)
+        return self._format_result(result, evaluator_run_id)
 
     async def aevaluate_run(
         self,
         run: Run,
         example: Optional[Example] = None,
-        source_run_id: Optional[uuid.UUID] = None,
+        evaluator_run_id: Optional[uuid.UUID] = None,
     ):
         """Evaluate a run asynchronously using the wrapped async function.
 
@@ -365,17 +371,17 @@ class DynamicRunEvaluator(RunEvaluator):
         """
         if not hasattr(self, "afunc"):
             return await super().aevaluate_run(run, example)
-        if source_run_id is None:
-            source_run_id = uuid.uuid4()
+        if evaluator_run_id is None:
+            evaluator_run_id = uuid.uuid4()
         metadata: Dict[str, Any] = {"target_run_id": run.id}
         if getattr(run, "session_id", None):
             metadata["experiment"] = str(run.session_id)
         result = await self.afunc(
             run,
             example,
-            langsmith_extra={"run_id": source_run_id, "metadata": metadata},
+            langsmith_extra={"run_id": evaluator_run_id, "metadata": metadata},
         )
-        return self._format_result(result, source_run_id)
+        return self._format_result(result, evaluator_run_id)
 
     def __call__(
         self, run: Run, example: Optional[Example] = None

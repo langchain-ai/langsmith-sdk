@@ -1635,7 +1635,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                     evaluator_response = evaluator.evaluate_run(  # type: ignore[call-arg]
                         run=run,
                         example=example,
-                        source_run_id=evaluator_run_id,
+                        evaluator_run_id=evaluator_run_id,
                     )
 
                     eval_results["results"].extend(
