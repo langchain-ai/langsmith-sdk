@@ -415,26 +415,24 @@ async def test_annotation_queue_runs(async_client: AsyncClient):
 
     # Create some test runs
     run_ids = [uuid.uuid4() for _ in range(3)]
-    for i in range(3):
+    for i, run_id in enumerate(run_ids):
         await async_client.create_run(
             name=f"test_run_{i}",
             inputs={"input": f"test_{i}"},
             run_type="llm",
             project_name=project_name,
             start_time=datetime.datetime.now(datetime.timezone.utc),
-            id=run_ids[i],
+            id=run_id,
         )
 
-    def _get_run(run_id: uuid.UUID) -> bool:
+    async def _get_run(run_id: uuid.UUID) -> bool:
         try:
             await async_client.read_run(run_id)  # type: ignore
             return True
         except ls_utils.LangSmithError:
             return False
 
-    wait_for(_get_run, run_id=run_ids[0])
-    wait_for(_get_run, run_id=run_ids[1])
-    wait_for(_get_run, run_id=run_ids[2])
+    await asyncio.gather([wait_for(_get_run, run_id=run_id) for run_id in run_ids])
     # Add runs to queue
     await async_client.add_runs_to_annotation_queue(queue_id=queue.id, run_ids=run_ids)
 
