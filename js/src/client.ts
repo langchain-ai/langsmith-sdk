@@ -2410,7 +2410,7 @@ export class Client implements LangSmithTracingClientInterface {
     } else if (datasetName !== undefined) {
       datasetId = (await this.readDataset({ datasetName })).id;
     } else {
-      throw new Error("Must provide dataset name or ID");
+      throw new Error("Must provide either datasetName or datasetId");
     }
     const response = await this._getResponse(`${path}/${datasetId}/openai_ft`);
     const datasetText = await response.text();
@@ -2698,7 +2698,7 @@ export class Client implements LangSmithTracingClientInterface {
     outputs?: KVMap,
     options?: CreateExampleOptions
   ): Promise<Example> {
-    if ("dataset_id" in inputsOrUpdate || "dataset_name" in inputsOrUpdate) {
+    if (isExampleCreate(inputsOrUpdate)) {
       if (outputs !== undefined || options !== undefined) {
         throw new Error(
           "Cannot provide outputs or options when using ExampleCreate object"
@@ -2722,7 +2722,7 @@ export class Client implements LangSmithTracingClientInterface {
     const createdAt_ =
       (outputs ? options?.createdAt : inputsOrUpdate.created_at) || new Date();
     let data: ExampleCreate;
-    if (outputs) {
+    if (!isExampleCreate(inputsOrUpdate)) {
       data = {
         inputs: inputsOrUpdate,
         outputs,
@@ -2736,7 +2736,7 @@ export class Client implements LangSmithTracingClientInterface {
         attachments: options?.attachments,
       };
     } else {
-      data = inputsOrUpdate as ExampleCreate;
+      data = inputsOrUpdate;
     }
 
     const response = await this._uploadExamplesMultipart(datasetId_, [data]);
@@ -4706,4 +4706,8 @@ export interface LangSmithTracingClientInterface {
   createRun: (run: CreateRunParams) => Promise<void>;
 
   updateRun: (runId: string, run: RunUpdate) => Promise<void>;
+}
+
+function isExampleCreate(input: KVMap | ExampleCreate): input is ExampleCreate {
+  return "dataset_id" in input || "dataset_name" in input;
 }
