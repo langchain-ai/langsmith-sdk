@@ -48,11 +48,11 @@ async def test_indexed_datasets():
 
 
 # Helper function to wait for a condition
-async def wait_for(condition, timeout=10):
+async def wait_for(condition, timeout=10, **kwargs):
     start_time = asyncio.get_event_loop().time()
     while True:
         try:
-            if await condition():
+            if await condition(**kwargs):
                 return
         except Exception:
             if asyncio.get_event_loop().time() - start_time > timeout:
@@ -425,6 +425,16 @@ async def test_annotation_queue_runs(async_client: AsyncClient):
             id=run_ids[i],
         )
 
+    def _get_run(run_id: uuid.UUID) -> bool:
+        try:
+            await async_client.read_run(run_id)  # type: ignore
+            return True
+        except ls_utils.LangSmithError:
+            return False
+
+    wait_for(_get_run, run_id=run_ids[0])
+    wait_for(_get_run, run_id=run_ids[1])
+    wait_for(_get_run, run_id=run_ids[2])
     # Add runs to queue
     await async_client.add_runs_to_annotation_queue(queue_id=queue.id, run_ids=run_ids)
 

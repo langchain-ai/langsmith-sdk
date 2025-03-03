@@ -3080,11 +3080,9 @@ def test_annotation_queue_runs(langchain_client: Client):
             id=run_ids[i],
         )
 
-    def _get_run(run_id: ID_TYPE, has_end: bool = False) -> bool:
+    def _get_run(run_id: ID_TYPE) -> bool:
         try:
-            r = langchain_client.read_run(run_id)  # type: ignore
-            if has_end:
-                return r.end_time is not None
+            langchain_client.read_run(run_id)  # type: ignore
             return True
         except LangSmithError:
             return False
