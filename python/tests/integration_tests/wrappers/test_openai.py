@@ -7,183 +7,224 @@ from typing import Any
 from unittest import mock
 
 import pytest
+import vcr
 
 import langsmith
 from langsmith.wrappers import wrap_openai
+
+vcr_path = os.path.join(os.path.dirname(__file__), "cassettes")
+
+openai_vcr = vcr.VCR(
+    cassette_library_dir=vcr_path,
+    record_mode="once",
+    match_on=["uri", "method"],
+    filter_headers=["authorization", "api-key"],  # Don't record sensitive headers
+    filter_query_parameters=["api-key"],
+    decode_compressed_response=True,
+)
+
+
+def use_vcr(test_name, stream: bool = False):
+    """Decorator to use VCR for a test with a specific cassette name."""
+    return openai_vcr.use_cassette(f"{test_name}.yaml")
 
 
 @pytest.mark.parametrize("stream", [False, True])
 def test_chat_sync_api(stream: bool):
     import openai  # noqa
 
-    mock_session = mock.MagicMock()
-    client = langsmith.Client(session=mock_session)
-    original_client = openai.Client()
-    patched_client = wrap_openai(openai.Client(), tracing_extra={"client": client})
-    messages = [{"role": "user", "content": "Say 'foo'"}]
-    original = original_client.chat.completions.create(
-        messages=messages,  # noqa: [arg-type]
-        stream=stream,
-        temperature=0,
-        seed=42,
-        model="gpt-3.5-turbo",
-    )
-    patched = patched_client.chat.completions.create(
-        messages=messages,  # noqa: [arg-type]
-        stream=stream,
-        temperature=0,
-        seed=42,
-        model="gpt-3.5-turbo",
-    )
-    if stream:
-        # We currently return a generator, so
-        # the types aren't the same.
-        original_chunks = list(original)
-        patched_chunks = list(patched)
-        assert len(original_chunks) == len(patched_chunks)
-        assert [o.choices == p.choices for o, p in zip(original_chunks, patched_chunks)]
-    else:
-        assert type(original) is type(patched)
-        assert original.choices == patched.choices
-    # Give the thread a chance.
-    time.sleep(0.01)
-    for call in mock_session.request.call_args_list[1:]:
-        assert call[0][0].upper() == "POST"
+    with use_vcr(f"test_chat_sync_api{'_stream' if stream else ''}"):
+        mock_session = mock.MagicMock()
+        client = langsmith.Client(session=mock_session)
+        original_client = openai.Client()
+        patched_client = wrap_openai(openai.Client(), tracing_extra={"client": client})
+        messages = [{"role": "user", "content": "Say 'foo'"}]
+        original = original_client.chat.completions.create(
+            messages=messages,  # noqa: [arg-type]
+            stream=stream,
+            temperature=0,
+            seed=42,
+            model="gpt-3.5-turbo",
+        )
+        patched = patched_client.chat.completions.create(
+            messages=messages,  # noqa: [arg-type]
+            stream=stream,
+            temperature=0,
+            seed=42,
+            model="gpt-3.5-turbo",
+        )
+        if stream:
+            # We currently return a generator, so
+            # the types aren't the same.
+            original_chunks = list(original)
+            patched_chunks = list(patched)
+            assert len(original_chunks) == len(patched_chunks)
+            assert [
+                o.choices == p.choices for o, p in zip(original_chunks, patched_chunks)
+            ]
+        else:
+            assert type(original) is type(patched)
+            assert original.choices == patched.choices
+        # Give the thread a chance.
+        time.sleep(0.01)
+        for call in mock_session.request.call_args_list[1:]:
+            assert call[0][0].upper() == "POST"
 
 
 @pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.asyncio
 async def test_chat_async_api(stream: bool):
     import openai  # noqa
 
-    mock_session = mock.MagicMock()
-    client = langsmith.Client(session=mock_session)
-    original_client = openai.AsyncClient()
-    patched_client = wrap_openai(openai.AsyncClient(), tracing_extra={"client": client})
-    messages = [{"role": "user", "content": "Say 'foo'"}]
-    original = await original_client.chat.completions.create(
-        messages=messages, stream=stream, temperature=0, seed=42, model="gpt-3.5-turbo"
-    )
-    patched = await patched_client.chat.completions.create(
-        messages=messages, stream=stream, temperature=0, seed=42, model="gpt-3.5-turbo"
-    )
-    if stream:
-        # We currently return a generator, so
-        # the types aren't the same.
-        original_chunks = []
-        async for chunk in original:
-            original_chunks.append(chunk)
-        patched_chunks = []
-        async for chunk in patched:
-            patched_chunks.append(chunk)
-        assert len(original_chunks) == len(patched_chunks)
-        assert [o.choices == p.choices for o, p in zip(original_chunks, patched_chunks)]
-    else:
-        assert type(original) is type(patched)
-        assert original.choices == patched.choices
-    # Give the thread a chance.
-    time.sleep(0.1)
-    for call in mock_session.request.call_args_list[1:]:
-        assert call[0][0].upper() == "POST"
+    with use_vcr(f"test_chat_async_api{'_stream' if stream else ''}"):
+        mock_session = mock.MagicMock()
+        client = langsmith.Client(session=mock_session)
+        original_client = openai.AsyncClient()
+        patched_client = wrap_openai(
+            openai.AsyncClient(), tracing_extra={"client": client}
+        )
+        messages = [{"role": "user", "content": "Say 'foo'"}]
+        original = await original_client.chat.completions.create(
+            messages=messages,
+            stream=stream,
+            temperature=0,
+            seed=42,
+            model="gpt-3.5-turbo",
+        )
+        patched = await patched_client.chat.completions.create(
+            messages=messages,
+            stream=stream,
+            temperature=0,
+            seed=42,
+            model="gpt-3.5-turbo",
+        )
+        if stream:
+            # We currently return a generator, so
+            # the types aren't the same.
+            original_chunks = []
+            async for chunk in original:
+                original_chunks.append(chunk)
+            patched_chunks = []
+            async for chunk in patched:
+                patched_chunks.append(chunk)
+            assert len(original_chunks) == len(patched_chunks)
+            assert [
+                o.choices == p.choices for o, p in zip(original_chunks, patched_chunks)
+            ]
+        else:
+            assert type(original) is type(patched)
+            assert original.choices == patched.choices
+        # Give the thread a chance.
+        time.sleep(0.1)
+        for call in mock_session.request.call_args_list[1:]:
+            assert call[0][0].upper() == "POST"
 
 
 @pytest.mark.parametrize("stream", [False, True])
 def test_completions_sync_api(stream: bool):
     import openai
 
-    mock_session = mock.MagicMock()
-    client = langsmith.Client(session=mock_session)
-    original_client = openai.Client()
-    patched_client = wrap_openai(openai.Client(), tracing_extra={"client": client})
-    prompt = ("Say 'Foo' then stop.",)
-    original = original_client.completions.create(
-        model="gpt-3.5-turbo-instruct",
-        prompt=prompt,
-        max_tokens=3,
-        temperature=0,
-        seed=42,
-        stream=stream,
-    )
-    patched = patched_client.completions.create(
-        model="gpt-3.5-turbo-instruct",
-        prompt=prompt,
-        max_tokens=3,
-        temperature=0,
-        seed=42,
-        stream=stream,
-    )
-    if stream:
-        # We currently return a generator, so
-        # the types aren't the same.
-        original_chunks = list(original)
-        patched_chunks = list(patched)
-        assert len(original_chunks) == len(patched_chunks)
-        assert [o.choices == p.choices for o, p in zip(original_chunks, patched_chunks)]
-        assert original.response
-        assert patched.response
-    else:
-        assert type(original) is type(patched)
-        assert original.choices == patched.choices
-    # Give the thread a chance.
-    time.sleep(0.1)
-    for call in mock_session.request.call_args_list[1:]:
-        assert call[0][0].upper() == "POST"
+    with use_vcr(f"test_completions_sync_api{'_stream' if stream else ''}"):
+        mock_session = mock.MagicMock()
+        client = langsmith.Client(session=mock_session)
+        original_client = openai.Client()
+        patched_client = wrap_openai(openai.Client(), tracing_extra={"client": client})
+        prompt = ("Say 'Foo' then stop.",)
+        original = original_client.completions.create(
+            model="gpt-3.5-turbo-instruct",
+            prompt=prompt,
+            max_tokens=3,
+            temperature=0,
+            seed=42,
+            stream=stream,
+        )
+        patched = patched_client.completions.create(
+            model="gpt-3.5-turbo-instruct",
+            prompt=prompt,
+            max_tokens=3,
+            temperature=0,
+            seed=42,
+            stream=stream,
+        )
+        if stream:
+            # We currently return a generator, so
+            # the types aren't the same.
+            original_chunks = list(original)
+            patched_chunks = list(patched)
+            assert len(original_chunks) == len(patched_chunks)
+            assert [
+                o.choices == p.choices for o, p in zip(original_chunks, patched_chunks)
+            ]
+            assert original.response
+            assert patched.response
+        else:
+            assert type(original) is type(patched)
+            assert original.choices == patched.choices
+        # Give the thread a chance.
+        time.sleep(0.1)
+        for call in mock_session.request.call_args_list[1:]:
+            assert call[0][0].upper() == "POST"
 
 
 @pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.asyncio
 async def test_completions_async_api(stream: bool):
     import openai
 
-    mock_session = mock.MagicMock()
-    client = langsmith.Client(session=mock_session)
+    with use_vcr(f"test_completions_async_api{'_stream' if stream else ''}"):
+        mock_session = mock.MagicMock()
+        client = langsmith.Client(session=mock_session)
 
-    original_client = openai.AsyncClient()
-    patched_client = wrap_openai(
-        openai.AsyncClient(),
-        tracing_extra={"client": client},
-        chat_name="chattychat",
-        completions_name="incompletions",
-    )
-    prompt = ("Say 'Hi i'm ChatGPT' then stop.",)
-    original = await original_client.completions.create(
-        model="gpt-3.5-turbo-instruct",
-        prompt=prompt,
-        max_tokens=5,
-        temperature=0,
-        seed=42,
-        stream=stream,
-    )
-    patched = await patched_client.completions.create(
-        model="gpt-3.5-turbo-instruct",
-        prompt=prompt,
-        max_tokens=5,
-        temperature=0,
-        seed=42,
-        stream=stream,
-    )
-    if stream:
-        # We currently return a generator, so
-        # the types aren't the same.
-        original_chunks = []
-        async for chunk in original:
-            original_chunks.append(chunk)
-        patched_chunks = []
-        async for chunk in patched:
-            patched_chunks.append(chunk)
-        assert len(original_chunks) == len(patched_chunks)
-        assert [o.choices == p.choices for o, p in zip(original_chunks, patched_chunks)]
-        assert original.response
-        assert patched.response
-    else:
-        assert type(original) is type(patched)
-        assert original.choices == patched.choices
-    # Give the thread a chance.
-    for _ in range(10):
-        time.sleep(0.1)
-        if mock_session.request.call_count >= 1:
-            break
-    assert mock_session.request.call_count >= 1
-    for call in mock_session.request.call_args_list[1:]:
-        assert call[0][0].upper() == "POST"
+        original_client = openai.AsyncClient()
+        patched_client = wrap_openai(
+            openai.AsyncClient(),
+            tracing_extra={"client": client},
+            chat_name="chattychat",
+            completions_name="incompletions",
+        )
+        prompt = ("Say 'Hi i'm ChatGPT' then stop.",)
+        original = await original_client.completions.create(
+            model="gpt-3.5-turbo-instruct",
+            prompt=prompt,
+            max_tokens=5,
+            temperature=0,
+            seed=42,
+            stream=stream,
+        )
+        patched = await patched_client.completions.create(
+            model="gpt-3.5-turbo-instruct",
+            prompt=prompt,
+            max_tokens=5,
+            temperature=0,
+            seed=42,
+            stream=stream,
+        )
+        if stream:
+            # We currently return a generator, so
+            # the types aren't the same.
+            original_chunks = []
+            async for chunk in original:
+                original_chunks.append(chunk)
+            patched_chunks = []
+            async for chunk in patched:
+                patched_chunks.append(chunk)
+            assert len(original_chunks) == len(patched_chunks)
+            assert [
+                o.choices == p.choices for o, p in zip(original_chunks, patched_chunks)
+            ]
+            assert original.response
+            assert patched.response
+        else:
+            assert type(original) is type(patched)
+            assert original.choices == patched.choices
+        # Give the thread a chance.
+        for _ in range(10):
+            time.sleep(0.1)
+            if mock_session.request.call_count >= 1:
+                break
+        assert mock_session.request.call_count >= 1
+        for call in mock_session.request.call_args_list[1:]:
+            assert call[0][0].upper() == "POST"
 
 
 class Collect:
@@ -236,7 +277,7 @@ test_cases = [
         "expect_usage_metadata": True,
     },
     {
-        "description": "stream no usage",
+        "description": "stream_no_usage",
         "params": {
             "model": "gpt-4o-mini",
             "messages": [{"role": "user", "content": "howdy"}],
@@ -278,47 +319,57 @@ def test_wrap_openai_chat_tokens(test_case):
     import openai
     from openai.types.chat import ChatCompletion, ChatCompletionChunk
 
-    oai_client = openai.Client()
-    mock_session = mock.MagicMock()
-    ls_client = langsmith.Client(session=mock_session)
-    wrapped_oai_client = wrap_openai(oai_client, tracing_extra={"client": ls_client})
-
-    collect = Collect()
-    run_id_to_usage_metadata = {}
-    with langsmith.tracing_context(enabled=True):
-        params: dict[str, Any] = test_case["params"].copy()
-        params["langsmith_extra"] = {"on_end": collect}
-        res = wrapped_oai_client.chat.completions.create(**params)
-
-        if params.get("stream"):
-            for chunk in res:
-                assert isinstance(chunk, ChatCompletionChunk)
-                if test_case.get("expect_usage_metadata") and hasattr(chunk, "usage"):
-                    oai_usage = chunk.usage
-        else:
-            assert isinstance(res, ChatCompletion)
-            oai_usage = res.usage
-
-        if test_case["expect_usage_metadata"]:
-            usage_metadata = collect.run.outputs["usage_metadata"]
-            assert usage_metadata["input_tokens"] == oai_usage.prompt_tokens
-            assert usage_metadata["output_tokens"] == oai_usage.completion_tokens
-            assert usage_metadata["total_tokens"] == oai_usage.total_tokens
-            if test_case.get("check_reasoning_tokens"):
-                assert (
-                    usage_metadata["output_token_details"]["reasoning"]
-                    == oai_usage.completion_tokens_details.reasoning_tokens
-                )
-        else:
-            assert collect.run.outputs.get("usage_metadata") is None
-            assert collect.run.outputs.get("usage") is None
-
-        run_id_to_usage_metadata[collect.run.id] = collect.run.outputs.get(
-            "usage_metadata"
+    cassette_name = "test_wrap_openai_chat_tokens"
+    if test_case["description"]:
+        cassette_name += "_" + test_case["description"]
+    with use_vcr(cassette_name):
+        oai_client = openai.Client()
+        mock_session = mock.MagicMock()
+        ls_client = langsmith.Client(session=mock_session)
+        wrapped_oai_client = wrap_openai(
+            oai_client, tracing_extra={"client": ls_client}
         )
 
-    filename = f"langsmith_py_wrap_openai_{test_case['description'].replace(' ', '_')}"
-    _collect_requests(mock_session, filename)
+        collect = Collect()
+        run_id_to_usage_metadata = {}
+        with langsmith.tracing_context(enabled=True):
+            params: dict[str, Any] = test_case["params"].copy()
+            params["langsmith_extra"] = {"on_end": collect}
+            res = wrapped_oai_client.chat.completions.create(**params)
+
+            if params.get("stream"):
+                for chunk in res:
+                    assert isinstance(chunk, ChatCompletionChunk)
+                    if test_case.get("expect_usage_metadata") and hasattr(
+                        chunk, "usage"
+                    ):
+                        oai_usage = chunk.usage
+            else:
+                assert isinstance(res, ChatCompletion)
+                oai_usage = res.usage
+
+            if test_case["expect_usage_metadata"]:
+                usage_metadata = collect.run.outputs["usage_metadata"]
+                assert usage_metadata["input_tokens"] == oai_usage.prompt_tokens
+                assert usage_metadata["output_tokens"] == oai_usage.completion_tokens
+                assert usage_metadata["total_tokens"] == oai_usage.total_tokens
+                if test_case.get("check_reasoning_tokens"):
+                    assert (
+                        usage_metadata["output_token_details"]["reasoning"]
+                        == oai_usage.completion_tokens_details.reasoning_tokens
+                    )
+            else:
+                assert collect.run.outputs.get("usage_metadata") is None
+                assert collect.run.outputs.get("usage") is None
+
+            run_id_to_usage_metadata[collect.run.id] = collect.run.outputs.get(
+                "usage_metadata"
+            )
+
+        filename = (
+            f"langsmith_py_wrap_openai_{test_case['description'].replace(' ', '_')}"
+        )
+        _collect_requests(mock_session, filename)
 
 
 @pytest.mark.asyncio
@@ -327,50 +378,61 @@ async def test_wrap_openai_chat_async_tokens(test_case):
     import openai
     from openai.types.chat import ChatCompletion, ChatCompletionChunk
 
-    oai_client = openai.AsyncClient()
-    mock_session = mock.MagicMock()
-    ls_client = langsmith.Client(session=mock_session)
-    wrapped_oai_client = wrap_openai(oai_client, tracing_extra={"client": ls_client})
-
-    collect = Collect()
-    run_id_to_usage_metadata = {}
-    with langsmith.tracing_context(enabled=True):
-        params: dict[str, Any] = test_case["params"].copy()
-        params["langsmith_extra"] = {"on_end": collect}
-        res = await wrapped_oai_client.chat.completions.create(**params)
-
-        if params.get("stream"):
-            oai_usage = None
-            async for chunk in res:
-                assert isinstance(chunk, ChatCompletionChunk)
-                if test_case.get("expect_usage_metadata") and hasattr(chunk, "usage"):
-                    oai_usage = chunk.usage
-        else:
-            assert isinstance(res, ChatCompletion)
-            oai_usage = res.usage
-
-        if test_case["expect_usage_metadata"]:
-            usage_metadata = collect.run.outputs["usage_metadata"]
-            assert usage_metadata["input_tokens"] == oai_usage.prompt_tokens
-            assert usage_metadata["output_tokens"] == oai_usage.completion_tokens
-            assert usage_metadata["total_tokens"] == oai_usage.total_tokens
-            if test_case.get("check_reasoning_tokens"):
-                assert (
-                    usage_metadata["output_token_details"]["reasoning"]
-                    == oai_usage.completion_tokens_details.reasoning_tokens
-                )
-        else:
-            assert collect.run.outputs.get("usage_metadata") is None
-            assert collect.run.outputs.get("usage") is None
-
-        run_id_to_usage_metadata[collect.run.id] = collect.run.outputs.get(
-            "usage_metadata"
+    cassette_name = "test_wrap_openai_chat_async_tokens"
+    if test_case["description"]:
+        cassette_name += "_" + test_case["description"]
+    with use_vcr(cassette_name):
+        oai_client = openai.AsyncClient()
+        mock_session = mock.MagicMock()
+        ls_client = langsmith.Client(session=mock_session)
+        wrapped_oai_client = wrap_openai(
+            oai_client, tracing_extra={"client": ls_client}
         )
 
-    filename = f"langsmith_py_wrap_openai_{test_case['description'].replace(' ', '_')}"
-    _collect_requests(mock_session, filename)
+        collect = Collect()
+        run_id_to_usage_metadata = {}
+        with langsmith.tracing_context(enabled=True):
+            params: dict[str, Any] = test_case["params"].copy()
+            params["langsmith_extra"] = {"on_end": collect}
+            res = await wrapped_oai_client.chat.completions.create(**params)
+
+            if params.get("stream"):
+                oai_usage = None
+                async for chunk in res:
+                    assert isinstance(chunk, ChatCompletionChunk)
+                    if test_case.get("expect_usage_metadata") and hasattr(
+                        chunk, "usage"
+                    ):
+                        oai_usage = chunk.usage
+            else:
+                assert isinstance(res, ChatCompletion)
+                oai_usage = res.usage
+
+            if test_case["expect_usage_metadata"]:
+                usage_metadata = collect.run.outputs["usage_metadata"]
+                assert usage_metadata["input_tokens"] == oai_usage.prompt_tokens
+                assert usage_metadata["output_tokens"] == oai_usage.completion_tokens
+                assert usage_metadata["total_tokens"] == oai_usage.total_tokens
+                if test_case.get("check_reasoning_tokens"):
+                    assert (
+                        usage_metadata["output_token_details"]["reasoning"]
+                        == oai_usage.completion_tokens_details.reasoning_tokens
+                    )
+            else:
+                assert collect.run.outputs.get("usage_metadata") is None
+                assert collect.run.outputs.get("usage") is None
+
+            run_id_to_usage_metadata[collect.run.id] = collect.run.outputs.get(
+                "usage_metadata"
+            )
+
+        filename = (
+            f"langsmith_py_wrap_openai_{test_case['description'].replace(' ', '_')}"
+        )
+        _collect_requests(mock_session, filename)
 
 
+@use_vcr("test_parse_sync_api")
 def test_parse_sync_api():
     """Test that the sync parse method can be traced without errors."""
     import openai  # noqa
@@ -401,6 +463,7 @@ def test_parse_sync_api():
 
 
 @pytest.mark.asyncio
+@use_vcr("test_parse_async_api")
 async def test_parse_async_api():
     """Test that the async parse method can be traced without errors."""
     import openai  # noqa
@@ -432,6 +495,7 @@ async def test_parse_async_api():
     _collect_requests(mock_session, "test_parse_async_api")
 
 
+@use_vcr("test_parse_tokens")
 def test_parse_tokens():
     """
     Test that usage tokens are captured for parse calls

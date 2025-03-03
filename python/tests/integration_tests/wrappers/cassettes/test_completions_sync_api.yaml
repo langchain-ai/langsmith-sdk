@@ -1,0 +1,222 @@
+interactions:
+- request:
+    body: '{"model": "gpt-3.5-turbo-instruct", "prompt": ["Say ''Foo'' then stop."],
+      "max_tokens": 3, "seed": 42, "stream": false, "temperature": 0}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '135'
+      content-type:
+      - application/json
+      host:
+      - api.openai.com
+      user-agent:
+      - OpenAI/Python 1.63.2
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - 'false'
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 1.63.2
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.11.3
+    method: POST
+    uri: https://api.openai.com/v1/completions
+  response:
+    body:
+      string: "{\n  \"id\": \"cmpl-B6ujsD0iXzbQprEfu7m3EiDQhMIJl\",\n  \"object\":
+        \"text_completion\",\n  \"created\": 1740987772,\n  \"model\": \"gpt-3.5-turbo-instruct:20230824-v2\",\n
+        \ \"choices\": [\n    {\n      \"text\": \"\\n\\nFoo\",\n      \"index\":
+        0,\n      \"logprobs\": null,\n      \"finish_reason\": \"stop\"\n    }\n
+        \ ],\n  \"usage\": {\n    \"prompt_tokens\": 7,\n    \"completion_tokens\":
+        2,\n    \"total_tokens\": 9\n  }\n}\n"
+    headers:
+      CF-RAY:
+      - 91a77fe7b8925337-LAX
+      Cache-Control:
+      - no-cache, must-revalidate
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Mon, 03 Mar 2025 07:42:52 GMT
+      Server:
+      - cloudflare
+      Set-Cookie:
+      - __cf_bm=S_DRJp6ZyNbilGZVDuwfukrhDOD8h80tUGIRUGVRM2Y-1740987772-1.0.1.1-2ROvHrPiaDN7PL0z2O07m0nB8rM_.F7PXKGqatohmHhYpGELgWI0wkfto3JJyO8n5aSbVb7gmEgHvwD0QZuTS8JG2XIwjp0KyQhSWej2780;
+        path=/; expires=Mon, 03-Mar-25 08:12:52 GMT; domain=.api.openai.com; HttpOnly;
+        Secure; SameSite=None
+      - _cfuvid=1DGCBjPet4hmeu8wt5FegQmU638rmLXNXsM6.31BSGU-1740987772602-0.0.1.1-604800000;
+        path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      access-control-allow-origin:
+      - '*'
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '375'
+      openai-model:
+      - gpt-3.5-turbo-instruct:20230824-v2
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '176'
+      openai-version:
+      - '2020-10-01'
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      via:
+      - envoy-router-5c669b98c9-hmqsv
+      x-envoy-upstream-service-time:
+      - '157'
+      x-ratelimit-limit-requests:
+      - '3500'
+      x-ratelimit-limit-tokens:
+      - '90000'
+      x-ratelimit-remaining-requests:
+      - '3499'
+      x-ratelimit-remaining-tokens:
+      - '89992'
+      x-ratelimit-reset-requests:
+      - 17ms
+      x-ratelimit-reset-tokens:
+      - 5ms
+      x-request-id:
+      - req_b2c741f3da26aa5eb03e0dd0e961f5f1
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"model": "gpt-3.5-turbo-instruct", "prompt": ["Say ''Foo'' then stop."],
+      "max_tokens": 3, "seed": 42, "stream": false, "temperature": 0}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '135'
+      content-type:
+      - application/json
+      host:
+      - api.openai.com
+      user-agent:
+      - OpenAI/Python 1.63.2
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - 'false'
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 1.63.2
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.11.3
+    method: POST
+    uri: https://api.openai.com/v1/completions
+  response:
+    body:
+      string: "{\n  \"id\": \"cmpl-B6ujtzekGTO0QlkAIEyoSBPuGecMv\",\n  \"object\":
+        \"text_completion\",\n  \"created\": 1740987773,\n  \"model\": \"gpt-3.5-turbo-instruct:20230824-v2\",\n
+        \ \"choices\": [\n    {\n      \"text\": \"\\n\\nFoo\",\n      \"index\":
+        0,\n      \"logprobs\": null,\n      \"finish_reason\": \"stop\"\n    }\n
+        \ ],\n  \"usage\": {\n    \"prompt_tokens\": 7,\n    \"completion_tokens\":
+        2,\n    \"total_tokens\": 9\n  }\n}\n"
+    headers:
+      CF-RAY:
+      - 91a77fec59b8f644-LAX
+      Cache-Control:
+      - no-cache, must-revalidate
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Mon, 03 Mar 2025 07:42:53 GMT
+      Server:
+      - cloudflare
+      Set-Cookie:
+      - __cf_bm=pLak3NfB9GOWa5dKGlFkkBaSsBfrnr09DXOSpsMztuY-1740987773-1.0.1.1-EJjwODXPK6DN2skrNEYEzRmchKO.DTteHjqyluK2O3VFeKZIa98gkOKZ7ij0ivHfFj8dBcd2nnGkSf_aOsLmjACci93g5q.i_LunewCBz2k;
+        path=/; expires=Mon, 03-Mar-25 08:12:53 GMT; domain=.api.openai.com; HttpOnly;
+        Secure; SameSite=None
+      - _cfuvid=dGTN1u0awnVkFJFeusxxV10VCBcKNeh85p5eC7jTQQM-1740987773472-0.0.1.1-604800000;
+        path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      access-control-allow-origin:
+      - '*'
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '375'
+      openai-model:
+      - gpt-3.5-turbo-instruct:20230824-v2
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '215'
+      openai-version:
+      - '2020-10-01'
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      via:
+      - envoy-router-55f648ffc4-pdxjm
+      x-envoy-upstream-service-time:
+      - '193'
+      x-ratelimit-limit-requests:
+      - '3500'
+      x-ratelimit-limit-tokens:
+      - '90000'
+      x-ratelimit-remaining-requests:
+      - '3499'
+      x-ratelimit-remaining-tokens:
+      - '89992'
+      x-ratelimit-reset-requests:
+      - 17ms
+      x-ratelimit-reset-tokens:
+      - 5ms
+      x-request-id:
+      - req_7da8de15989137caf962ca0856c273af
+    status:
+      code: 200
+      message: OK
+version: 1

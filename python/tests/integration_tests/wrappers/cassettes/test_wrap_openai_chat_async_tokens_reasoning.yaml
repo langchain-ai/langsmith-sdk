@@ -1,0 +1,144 @@
+interactions:
+- request:
+    body: '{"messages": [{"role": "user", "content": "Write a bash script that takes
+      a matrix represented as a string with format ''[1,2],[3,4],[5,6]'' and prints
+      the transpose in the same format."}], "model": "o1-mini", "stream": false}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '224'
+      content-type:
+      - application/json
+      host:
+      - api.openai.com
+      user-agent:
+      - AsyncOpenAI/Python 1.63.2
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - async:asyncio
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 1.63.2
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.11.3
+    method: POST
+    uri: https://api.openai.com/v1/chat/completions
+  response:
+    body:
+      string: "{\n  \"id\": \"chatcmpl-B6unYHAkUwDDbXm2iCJHQJBSPCYu5\",\n  \"object\":
+        \"chat.completion\",\n  \"created\": 1740988000,\n  \"model\": \"o1-mini-2024-09-12\",\n
+        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
+        \"assistant\",\n        \"content\": \"Certainly! Below is a Bash script that
+        takes a matrix represented as a string in the format `\\\"[1,2],[3,4],[5,6]\\\"`
+        and prints its transpose in the same format. The transpose of the provided
+        matrix is `\\\"[1,3,5],[2,4,6]\\\"`.\\n\\n### Script: `transpose_matrix.sh`\\n\\n```bash\\n#!/bin/bash\\n\\n#
+        Check if an argument is provided\\nif [ $# -ne 1 ]; then\\n    echo \\\"Usage:
+        $0 '[a,b,c],[d,e,f],[g,h,i]'\\\"\\n    exit 1\\nfi\\n\\ninput=\\\"$1\\\"\\n\\n#
+        Use awk to process and transpose the matrix\\necho \\\"$input\\\" | awk -F
+        '[\\\\\\\\[\\\\\\\\],]+' '\\n{\\n    # Iterate through each field in the row\\n
+        \   for(i=1; i<=NF; i++) {\\n        if ($i != \\\"\\\") {\\n            #
+        Concatenate elements column-wise\\n            a[i] = a[i] ? a[i] \\\",\\\"
+        $i : $i\\n        }\\n    }\\n}\\nEND {\\n    # Start constructing the transposed
+        matrix string\\n    printf \\\"[\\\"\\n    for(i=1; i<=length(a); i++) {\\n
+        \       if(i > 1) {\\n            printf \\\"],[\\\"\\n        }\\n        printf
+        \\\"%s\\\", a[i]\\n    }\\n    printf \\\"]\\\\n\\\"\\n}'\\n```\\n\\n### How
+        the Script Works\\n\\n1. **Input Validation:**\\n   - The script first checks
+        if exactly one argument is provided. If not, it displays usage instructions
+        and exits.\\n\\n2. **Processing with `awk`:**\\n   - **Field Separator (`-F
+        '[\\\\\\\\[\\\\\\\\],]+'`):**\\n     - The `awk` command uses a field separator
+        that splits the input string based on `[`, `]`, and `,`. This effectively
+        isolates each number in the matrix.\\n   \\n   - **Building Columns:**\\n
+        \    - The script iterates through each field (number) and appends it to an
+        array `a` corresponding to its column. For example, all first elements of
+        each row go into `a[1]`, all second elements into `a[2]`, and so on.\\n\\n
+        \  - **Constructing the Transposed Matrix:**\\n     - In the `END` block,
+        the script constructs the transposed matrix by iterating through the array
+        `a` and formatting it back into the desired string format.\\n\\n3. **Output:**\\n
+        \  - The transposed matrix is printed in the same format as the input, e.g.,
+        `\\\"[1,3,5],[2,4,6]\\\"`.\\n\\n### Usage Example\\n\\n1. **Make the Script
+        Executable:**\\n\\n   ```bash\\n   chmod +x transpose_matrix.sh\\n   ```\\n\\n2.
+        **Run the Script with a Matrix String:**\\n\\n   ```bash\\n   ./transpose_matrix.sh
+        '[1,2],[3,4],[5,6]'\\n   ```\\n\\n   **Output:**\\n\\n   ```\\n   [1,3,5],[2,4,6]\\n
+        \  ```\\n\\n### Explanation of the Output\\n\\nGiven the input matrix:\\n```\\n[1,2]\\n[3,4]\\n[5,6]\\n```\\nThe
+        transpose swaps rows with columns, resulting in:\\n```\\n[1,3,5]\\n[2,4,6]\\n```\\nWhich
+        is represented as:\\n```\\n[1,3,5],[2,4,6]\\n```\\n\\n### Additional Example\\n\\n```bash\\n./transpose_matrix.sh
+        '[1,2,3],[4,5,6]'\\n```\\n\\n**Output:**\\n\\n```\\n[1,4],[2,5],[3,6]\\n```\\n\\nThis
+        transposes a 2x3 matrix to a 3x2 matrix.\\n\\n---\\n\\nFeel free to use and
+        modify this script according to your needs!\",\n        \"refusal\": null\n
+        \     },\n      \"finish_reason\": \"stop\"\n    }\n  ],\n  \"usage\": {\n
+        \   \"prompt_tokens\": 43,\n    \"completion_tokens\": 1690,\n    \"total_tokens\":
+        1733,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\": 0,\n      \"audio_tokens\":
+        0\n    },\n    \"completion_tokens_details\": {\n      \"reasoning_tokens\":
+        896,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\": 0,\n
+        \     \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
+        \"default\",\n  \"system_fingerprint\": \"fp_5c373483f1\"\n}\n"
+    headers:
+      CF-RAY:
+      - 91a7857899b61038-LAX
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Mon, 03 Mar 2025 07:46:54 GMT
+      Server:
+      - cloudflare
+      Set-Cookie:
+      - __cf_bm=LCpnT8TvPy_Jgf5CilKlXbr0gGJG2tAj6pOCo4fnU1s-1740988014-1.0.1.1-zyTVuQe9xL2msVhrzfPsZSQ1Jjj_fQLFbuirSjuZtooPtxYf6MTOw56B2R3QlejJdpUMNvjM_ESz1aKjXyIevFeS7j8JQ5XuKUBAV8eKhBc;
+        path=/; expires=Mon, 03-Mar-25 08:16:54 GMT; domain=.api.openai.com; HttpOnly;
+        Secure; SameSite=None
+      - _cfuvid=1onnNn764QhfEaqSATWZrNVMbVewAVnbTQAHQCZSQyQ-1740988014460-0.0.1.1-604800000;
+        path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '3500'
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '14302'
+      openai-version:
+      - '2020-10-01'
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      x-ratelimit-limit-requests:
+      - '30000'
+      x-ratelimit-limit-tokens:
+      - '150000000'
+      x-ratelimit-remaining-requests:
+      - '29999'
+      x-ratelimit-remaining-tokens:
+      - '149999948'
+      x-ratelimit-reset-requests:
+      - 2ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_fbeebcf3835a7d0b22fe2c67f7a5a2e0
+    status:
+      code: 200
+      message: OK
+version: 1
