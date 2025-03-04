@@ -7,7 +7,7 @@ import type {
 import type { AISDKSpan } from "./vercel.types.js";
 import { Client, RunTree } from "./index.js";
 import { KVMap, RunCreate } from "./schemas.js";
-import { v5 as uuid5, v4 as uuid4 } from "uuid";
+import { v5 as uuid5 } from "uuid";
 import { getCurrentRunTree } from "./singletons/traceable.js";
 import {
   getLangSmithEnvironmentVariable,
@@ -183,23 +183,84 @@ function stripNonAlphanumeric(input: string) {
   return input.replace(/[-:.]/g, "");
 }
 
-function convertToDottedOrderFormat(
-  [seconds, nanoseconds]: [seconds: number, nanoseconds: number],
-  runId: string,
-  executionOrder: number
-) {
+function getDotOrder(item: {
+  startTime: [seconds: number, nanoseconds: number];
+  id: string;
+  executionOrder: number;
+}): string {
+  const {
+    startTime: [seconds, nanoseconds],
+    id: runId,
+    executionOrder,
+  } = item;
+
   // Date only has millisecond precision, so we use the microseconds to break
   // possible ties, avoiding incorrect run order
-  const ms = Number(String(nanoseconds).slice(0, 3));
-  const ns = String(Number(String(nanoseconds).slice(3, 6)) + executionOrder)
-    .padStart(3, "0")
-    .slice(0, 3);
+  const nanosecondString = String(nanoseconds).padStart(9, "0");
+  const msFull = Number(nanosecondString.slice(0, 6)) + executionOrder;
+  const msString = String(msFull).padStart(6, "0");
+
+  const ms = Number(msString.slice(0, -3));
+  const ns = msString.slice(-3);
 
   return (
     stripNonAlphanumeric(
       `${new Date(seconds * 1000 + ms).toISOString().slice(0, -1)}${ns}Z`
     ) + runId
   );
+}
+
+function joinDotOrder(...segments: (string | undefined | null)[]): string {
+  return segments.filter(Boolean).join(".");
+}
+
+function removeDotOrder(dotOrder: string, ...ids: string[]): string {
+  return dotOrder
+    .split(".")
+    .filter((i) => !ids.some((id) => i.includes(id)))
+    .join(".");
+}
+
+function reparentDotOrder(
+  dotOrder: string,
+  sourceRunId: string,
+  parentDotOrder: string
+): string {
+  const segments = dotOrder.split(".");
+  const sourceIndex = segments.findIndex((i) => i.includes(sourceRunId));
+
+  if (sourceIndex === -1) return dotOrder;
+  return joinDotOrder(
+    ...parentDotOrder.split("."),
+    ...segments.slice(sourceIndex)
+  );
+}
+
+interface MutableRunCreate {
+  id: string;
+  trace_id: string;
+  dotted_order: string;
+  parent_run_id: string | undefined;
+}
+
+function getMutableRunCreate(dotOrder: string): MutableRunCreate {
+  const segments = dotOrder.split(".").map((i) => {
+    const [startTime, runId] = i.split("Z");
+    return { startTime, runId };
+  });
+
+  const traceId = segments[0].runId;
+  const parentRunId = segments.at(-2)?.runId;
+
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  const runId = segments.at(-1)!.runId;
+
+  return {
+    id: runId,
+    trace_id: traceId,
+    dotted_order: dotOrder,
+    parent_run_id: parentRunId,
+  };
 }
 
 function convertToTimestamp([seconds, nanoseconds]: [
@@ -248,18 +309,25 @@ const RESERVED_METADATA_KEYS = [
   BAGGAGE_METADATA_KEY.output,
 ];
 
+type PostProcessAction =
+  | { type: "delete"; runId: string }
+  | { type: "reparent"; runId: string; parentDotOrder: string }
+  | { type: "rename"; sourceRunId: string; targetRunId: string };
+
 interface RunTask {
   id: string;
-  parentId: string | undefined;
-  startTime: [seconds: number, nanoseconds: number];
-  run: RunCreate;
-  sent: boolean;
   executionOrder: number;
+  startTime: [seconds: number, nanoseconds: number];
+
+  run: RunCreate | undefined;
+
+  interop: InteropType | undefined;
+  sent: boolean;
 }
 
 type InteropType =
   | { type: "traceable"; parentRunTree: RunTree }
-  | { type: "user"; userTraceId?: string }
+  | { type: "user"; userRunId: string }
   | undefined;
 
 /**
@@ -310,7 +378,6 @@ export class AISDKExporter {
       childMap: Record<string, RunTask[]>;
       nodeMap: Record<string, RunTask>;
       relativeExecutionOrder: Record<string, number>;
-      interop?: InteropType;
     }
   > = {};
 
@@ -372,6 +439,8 @@ export class AISDKExporter {
 
   /** @internal */
   protected parseInteropFromMetadata(span: AISDKSpan): InteropType {
+    if (!this.isRootRun(span)) return undefined;
+
     const userTraceId = this.getSpanAttributeKey(
       span,
       RUN_ID_METADATA_KEY.output
@@ -399,17 +468,12 @@ export class AISDKExporter {
       return { type: "traceable", parentRunTree };
     }
 
-    if (userTraceId) return { type: "user", userTraceId };
+    if (userTraceId) return { type: "user", userRunId: userTraceId };
     return undefined;
   }
 
   /** @internal */
   protected getRunCreate(span: AISDKSpan): RunCreate | undefined {
-    const runId = uuid5(span.spanContext().spanId, RUN_ID_NAMESPACE);
-    const parentRunId = span.parentSpanId
-      ? uuid5(span.parentSpanId, RUN_ID_NAMESPACE)
-      : undefined;
-
     const asRunCreate = (rawConfig: RunCreate) => {
       const aiMetadata = Object.keys(span.attributes)
         .filter(
@@ -448,8 +512,6 @@ export class AISDKExporter {
       const config: RunCreate = {
         ...rawConfig,
         name,
-        id: runId,
-        parent_run_id: parentRunId,
         extra: {
           ...rawConfig.extra,
           metadata: {
@@ -732,62 +794,41 @@ export class AISDKExporter {
       };
 
       const runId = uuid5(spanId, RUN_ID_NAMESPACE);
-      let parentRunId = parentId
+      const parentRunId = parentId
         ? uuid5(parentId, RUN_ID_NAMESPACE)
         : undefined;
 
-      // in LangSmith we currently only support certain spans
-      // which may be deeply nested within other traces
-      if (this.isRootRun(span)) parentRunId = undefined;
       const traceMap = this.traceByMap[traceId];
-
       const run = this.getRunCreate(span);
-      if (!run) {
-        this.logDebug("skipping span", span);
-        continue;
-      }
 
       traceMap.relativeExecutionOrder[parentRunId ?? ROOT] ??= -1;
       traceMap.relativeExecutionOrder[parentRunId ?? ROOT] += 1;
 
       traceMap.nodeMap[runId] ??= {
         id: runId,
-        parentId: parentRunId,
         startTime: span.startTime,
         run,
         sent: false,
+        interop: this.parseInteropFromMetadata(span),
         executionOrder: traceMap.relativeExecutionOrder[parentRunId ?? ROOT],
       };
 
       if (this.debug) console.log(`[${span.name}] ${runId}`, run);
       traceMap.childMap[parentRunId ?? ROOT] ??= [];
       traceMap.childMap[parentRunId ?? ROOT].push(traceMap.nodeMap[runId]);
-      traceMap.interop = this.parseInteropFromMetadata(span);
     }
 
-    type OverrideRunCreate = {
-      id: string;
-      trace_id: string;
-      dotted_order: string;
-      parent_run_id: string | undefined;
-    };
-
-    // We separate `id`,
-    const sampled: [OverrideRunCreate, RunCreate][] = [];
+    const sampled: RunCreate[] = [];
+    const actions: PostProcessAction[] = [];
 
     for (const traceId of Object.keys(this.traceByMap)) {
-      type QueueItem = { item: RunTask; dottedOrder: string; traceId: string };
+      type QueueItem = { dotOrder: string; item: RunTask };
       const traceMap = this.traceByMap[traceId];
 
       const queue: QueueItem[] =
         traceMap.childMap[ROOT]?.map((item) => ({
           item,
-          dottedOrder: convertToDottedOrderFormat(
-            item.startTime,
-            item.id,
-            item.executionOrder
-          ),
-          traceId: item.id,
+          dotOrder: getDotOrder(item),
         })) ?? [];
 
       const seen = new Set<string>();
@@ -797,85 +838,68 @@ export class AISDKExporter {
         if (seen.has(task.item.id)) continue;
 
         if (!task.item.sent) {
-          let override: OverrideRunCreate = {
-            id: task.item.id,
-            parent_run_id: task.item.parentId,
-            dotted_order: task.dottedOrder,
-            trace_id: task.traceId,
-          };
-
-          if (traceMap.interop) {
-            // attach the run to a parent run tree
-            // - id: preserve
-            // - parent_run_id: use existing parent run id or hook to the provided run tree
-            // - dotted_order: append to the dotted_order of the parent run tree
-            // - trace_id: use from the existing run tree
-            if (traceMap.interop.type === "traceable") {
-              override = {
-                id: override.id,
-                parent_run_id:
-                  override.parent_run_id ?? traceMap.interop.parentRunTree.id,
-                dotted_order: [
-                  traceMap.interop.parentRunTree.dotted_order,
-                  override.dotted_order,
-                ]
-                  .filter(Boolean)
-                  .join("."),
-                trace_id: traceMap.interop.parentRunTree.trace_id,
-              };
-            } else if (traceMap.interop.type === "user") {
-              // Allow user to specify custom trace ID = run ID of the root run
-              // - id: use user provided run ID if root run, otherwise preserve
-              // - parent_run_id: use user provided run ID if root run, otherwise preserve
-              // - dotted_order: replace the trace_id with the user provided run ID
-              // - trace_id: use user provided run ID
-              const userTraceId = traceMap.interop.userTraceId ?? uuid4();
-              override = {
-                id:
-                  override.id === override.trace_id ? userTraceId : override.id,
-                parent_run_id:
-                  override.parent_run_id === override.trace_id
-                    ? userTraceId
-                    : override.parent_run_id,
-                dotted_order: override.dotted_order.replace(
-                  override.trace_id,
-                  userTraceId
-                ),
-                trace_id: userTraceId,
-              };
+          if (task.item.run != null) {
+            if (task.item.interop?.type === "user") {
+              actions.push({
+                type: "rename",
+                sourceRunId: task.item.id,
+                targetRunId: task.item.interop.userRunId,
+              });
             }
+
+            if (task.item.interop?.type === "traceable") {
+              actions.push({
+                type: "reparent",
+                runId: task.item.id,
+                parentDotOrder: task.item.interop.parentRunTree.dotted_order,
+              });
+            }
+
+            let dotOrder = task.dotOrder;
+            for (const action of actions) {
+              if (action.type === "delete") {
+                dotOrder = removeDotOrder(dotOrder, action.runId);
+              }
+
+              if (action.type === "reparent") {
+                dotOrder = reparentDotOrder(
+                  dotOrder,
+                  action.runId,
+                  action.parentDotOrder
+                );
+              }
+
+              if (action.type === "rename") {
+                dotOrder = dotOrder.replace(
+                  action.sourceRunId,
+                  action.targetRunId
+                );
+              }
+            }
+
+            sampled.push({
+              ...task.item.run,
+              ...getMutableRunCreate(dotOrder),
+            });
+          } else {
+            actions.push({ type: "delete", runId: task.item.id });
           }
 
-          sampled.push([override, task.item.run]);
           task.item.sent = true;
         }
 
         const children = traceMap.childMap[task.item.id] ?? [];
         queue.push(
-          ...children.map((child) => {
-            return {
-              item: child,
-              dottedOrder: [
-                task.dottedOrder,
-                convertToDottedOrderFormat(
-                  child.startTime,
-                  child.id,
-                  child.executionOrder
-                ),
-              ].join("."),
-              traceId: task.traceId,
-            };
-          })
+          ...children.map((item) => ({
+            item,
+            dotOrder: joinDotOrder(task.dotOrder, getDotOrder(item)),
+          }))
         );
       }
     }
 
     this.logDebug(`sampled runs to be sent to LangSmith`, sampled);
-    Promise.all(
-      sampled.map(([override, value]) =>
-        this.client.createRun({ ...value, ...override })
-      )
-    ).then(
+    Promise.all(sampled.map((run) => this.client.createRun(run))).then(
       () => resultCallback({ code: 0 }),
       (error) => resultCallback({ code: 1, error })
     );
@@ -884,9 +908,10 @@ export class AISDKExporter {
   async shutdown(): Promise<void> {
     // find nodes which are incomplete
     const incompleteNodes = Object.values(this.traceByMap).flatMap((trace) =>
-      Object.values(trace.nodeMap).filter((i) => !i.sent)
+      Object.values(trace.nodeMap).filter((i) => !i.sent && i.run != null)
     );
-    this.logDebug("shutting down", { incompleteNodes: incompleteNodes.length });
+
+    this.logDebug("shutting down", { incompleteNodes });
 
     if (incompleteNodes.length > 0) {
       console.warn(

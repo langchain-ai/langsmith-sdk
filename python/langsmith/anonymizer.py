@@ -90,7 +90,21 @@ class RuleNodeProcessor(StringNodeProcessor):
 
     def __init__(self, rules: List[StringNodeRule]):
         """Initialize the processor with a list of rules."""
-        self.rules = rules
+        self.rules = [
+            {
+                "pattern": (
+                    rule["pattern"]
+                    if isinstance(rule["pattern"], re.Pattern)
+                    else re.compile(rule["pattern"])
+                ),
+                "replace": (
+                    rule["replace"]
+                    if isinstance(rule.get("replace"), str)
+                    else "[redacted]"
+                ),
+            }
+            for rule in rules
+        ]
 
     def mask_nodes(self, nodes: List[StringNode]) -> List[StringNode]:
         """Mask nodes using the rules."""
@@ -98,14 +112,7 @@ class RuleNodeProcessor(StringNodeProcessor):
         for item in nodes:
             new_value = item["value"]
             for rule in self.rules:
-                new_value = rule["pattern"].sub(
-                    (
-                        rule["replace"]
-                        if isinstance(rule["replace"], str)
-                        else "[redacted]"
-                    ),
-                    new_value,
-                )
+                new_value = rule["pattern"].sub(rule["replace"], new_value)
             if new_value != item["value"]:
                 result.append(StringNode(value=new_value, path=item["path"]))
         return result

@@ -94,8 +94,33 @@ export type RunEvaluatorLike =
   | ((
       run: Run,
       example?: Example
-    ) => Promise<EvaluationResult | EvaluationResults>)
-  | ((run: Run, example?: Example) => EvaluationResult | EvaluationResults);
+    ) => Promise<EvaluationResult | EvaluationResult[] | EvaluationResults>)
+  | ((
+      run: Run,
+      example?: Example
+    ) => EvaluationResult | EvaluationResult[] | EvaluationResults)
+  | ((
+      run: Run,
+      example: Example
+    ) => Promise<EvaluationResult | EvaluationResult[] | EvaluationResults>)
+  | ((
+      run: Run,
+      example: Example
+    ) => EvaluationResult | EvaluationResult[] | EvaluationResults)
+  | ((args: {
+      run: Run;
+      example: Example;
+      inputs: Record<string, any>;
+      outputs: Record<string, any>;
+      referenceOutputs?: Record<string, any>;
+    }) => EvaluationResult | EvaluationResult[] | EvaluationResults)
+  | ((args: {
+      run: Run;
+      example: Example;
+      inputs: Record<string, any>;
+      outputs: Record<string, any>;
+      referenceOutputs?: Record<string, any>;
+    }) => Promise<EvaluationResult | EvaluationResult[] | EvaluationResults>);
 
 /**
  * Wraps an evaluator function + implements the RunEvaluator interface.
@@ -110,7 +135,19 @@ export class DynamicRunEvaluator<Func extends (...args: any[]) => any>
       langSmithRunAndExample: { run: Run; example: Example };
     }) => {
       const { run, example } = input.langSmithRunAndExample;
-      return evaluator(run, example);
+
+      return evaluator(
+        {
+          ...run,
+          run,
+          example,
+          inputs: example?.inputs,
+          outputs: run?.outputs,
+          referenceOutputs: example?.outputs,
+          attachments: example?.attachments,
+        },
+        example
+      );
     }) as Func;
   }
 
@@ -199,13 +236,13 @@ export class DynamicRunEvaluator<Func extends (...args: any[]) => any>
       }
     );
 
-    const result = (await wrappedTraceableFunc(
+    const result = await wrappedTraceableFunc(
       // Pass data via `langSmithRunAndExample` key to avoid conflicts with other
       // inputs. This key is extracted in the wrapped function, with `run` and
       // `example` passed to evaluator function as arguments.
       { langSmithRunAndExample: { run, example } },
       { metadata }
-    )) as EvaluationResults | Record<string, any>;
+    );
 
     // Check the one required property of EvaluationResult since 'instanceof' is not possible
     if ("key" in result) {
@@ -213,6 +250,13 @@ export class DynamicRunEvaluator<Func extends (...args: any[]) => any>
         result.sourceRunId = sourceRunId;
       }
       return result as EvaluationResult;
+    }
+    if (Array.isArray(result)) {
+      return {
+        results: result.map((r) =>
+          this.coerceEvaluationResult(r, sourceRunId, false)
+        ),
+      };
     }
     if (typeof result !== "object") {
       throw new Error("Evaluator function must return an object.");

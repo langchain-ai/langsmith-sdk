@@ -1,4 +1,8 @@
-export { Client, type ClientConfig } from "./client.js";
+export {
+  Client,
+  type ClientConfig,
+  type LangSmithTracingClientInterface,
+} from "./client.js";
 
 export type {
   Dataset,
@@ -14,4 +18,4 @@ export { RunTree, type RunTreeConfig } from "./run_trees.js";
 export { overrideFetchImplementation } from "./singletons/fetch.js";
 
 // Update using yarn bump-version
-export const __version__ = "0.2.5";
+export const __version__ = "0.3.12";

@@ -14,13 +14,22 @@ const entrypoints = {
   "evaluation/langchain": "evaluation/langchain",
   schemas: "schemas",
   langchain: "langchain",
+  jest: "jest/index",
+  "jest/reporter": "jest/reporter",
   vercel: "vercel",
+  vitest: "vitest/index",
+  "vitest/reporter": "vitest/reporter",
   wrappers: "wrappers/index",
   anonymizer: "anonymizer/index",
   "wrappers/openai": "wrappers/openai",
   "wrappers/vercel": "wrappers/vercel",
   "singletons/traceable": "singletons/traceable",
+  "utils/jestlike": "utils/jestlike/index",
 };
+
+const defaultEntrypoints = [
+  "vitest/reporter"
+];
 
 const updateJsonFile = (relativePath, updateFunction) => {
   const contents = fs.readFileSync(relativePath).toString();
@@ -34,6 +43,17 @@ const generateFiles = () => {
       const nrOfDots = key.split("/").length - 1;
       const relativePath = "../".repeat(nrOfDots) || "./";
       const compiledPath = `${relativePath}dist/${value}.js`;
+      if (defaultEntrypoints.includes(key)) {
+        return [
+          [
+            `${key}.cjs`,
+            `module.exports = require('${relativePath}dist/${value}.cjs').default;`,
+          ],
+          [`${key}.js`, `export { default } from '${compiledPath}'`],
+          [`${key}.d.ts`, `export { default } from '${compiledPath}'`],
+          [`${key}.d.cts`, `export { default } from '${compiledPath}'`],
+        ];
+      }
       return [
         [
           `${key}.cjs`,

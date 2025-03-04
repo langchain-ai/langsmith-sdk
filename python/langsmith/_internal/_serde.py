@@ -12,7 +12,7 @@ import re
 import uuid
 from typing import Any
 
-import orjson
+from langsmith._internal import _orjson
 
 try:
     from zoneinfo import ZoneInfo  # type: ignore[import-not-found]
@@ -79,6 +79,11 @@ _serialization_methods = [
 ]
 
 
+# IMPORTANT: This function is used from Rust code in `langsmith-pyo3` serialization,
+#            in order to handle serializing these tricky Python types *from Rust*.
+#            Do not cause this function to become inaccessible (e.g. by deleting
+#            or renaming it) without also fixing the corresponding Rust code found in:
+#               rust/crates/langsmith-pyo3/src/serialization/mod.rs
 def _serialize_json(obj: Any) -> Any:
     try:
         if isinstance(obj, (set, tuple)):
@@ -100,7 +105,7 @@ def _serialize_json(obj: Any) -> Any:
                         return str(response)
                     return response
                 except Exception as e:
-                    logger.error(
+                    logger.debug(
                         f"Failed to use {attr} to serialize {type(obj)} to"
                         f" JSON: {repr(e)}"
                     )
@@ -133,26 +138,26 @@ def dumps_json(obj: Any) -> bytes:
         The JSON formatted string.
     """
     try:
-        return orjson.dumps(
+        return _orjson.dumps(
             obj,
             default=_serialize_json,
-            option=orjson.OPT_SERIALIZE_NUMPY
-            | orjson.OPT_SERIALIZE_DATACLASS
-            | orjson.OPT_SERIALIZE_UUID
-            | orjson.OPT_NON_STR_KEYS,
+            option=_orjson.OPT_SERIALIZE_NUMPY
+            | _orjson.OPT_SERIALIZE_DATACLASS
+            | _orjson.OPT_SERIALIZE_UUID
+            | _orjson.OPT_NON_STR_KEYS,
         )
     except TypeError as e:
         # Usually caused by UTF surrogate characters
         logger.debug(f"Orjson serialization failed: {repr(e)}. Falling back to json.")
         result = json.dumps(
             obj,
-            default=_simple_default,
+            default=_serialize_json,
             ensure_ascii=True,
         ).encode("utf-8")
         try:
-            result = orjson.dumps(
-                orjson.loads(result.decode("utf-8", errors="surrogateescape"))
+            result = _orjson.dumps(
+                _orjson.loads(result.decode("utf-8", errors="surrogateescape"))
             )
-        except orjson.JSONDecodeError:
+        except _orjson.JSONDecodeError:
             result = _elide_surrogates(result)
         return result

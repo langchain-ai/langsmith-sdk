@@ -63,8 +63,21 @@ export interface BaseExample {
   source_run_id?: string;
 }
 
+export interface AttachmentInfo {
+  presigned_url: string;
+  mime_type?: string;
+}
+
 export type AttachmentData = Uint8Array | ArrayBuffer;
-export type Attachments = Record<string, [string, AttachmentData]>;
+
+export type AttachmentDescription = {
+  mimeType: string;
+  data: AttachmentData;
+};
+export type Attachments = Record<
+  string,
+  [string, AttachmentData] | AttachmentDescription
+>;
 
 /**
  * A run can represent either a trace (root run)
@@ -245,31 +258,69 @@ export interface RunUpdate {
   attachments?: Attachments;
 }
 
-export interface ExampleCreate extends BaseExample {
+export interface ExampleCreate {
   id?: string;
+  inputs: KVMap;
+  outputs?: KVMap;
+  metadata?: KVMap;
+  split?: string | string[];
+  attachments?: Attachments;
   created_at?: string;
+  dataset_id?: string;
+  dataset_name?: string;
+  source_run_id?: string;
+  use_source_run_io?: boolean;
+  use_source_run_attachments?: string[];
+}
+
+export interface ExampleUploadWithAttachments extends ExampleCreate {}
+export interface ExampleUpdate {
+  id: string;
+  inputs?: KVMap;
+  outputs?: KVMap;
+  metadata?: KVMap;
+  split?: string | string[];
+  attachments?: Attachments;
+  attachments_operations?: KVMap;
+  dataset_id?: string;
+}
+
+export interface ExampleUpdateWithoutId extends Omit<ExampleUpdate, "id"> {}
+
+export interface ExampleUpdateWithAttachments extends ExampleUpdate {}
+
+export interface UploadExamplesResponse {
+  count: number;
+  example_ids: string[];
+}
+
+export interface UpdateExamplesResponse extends UploadExamplesResponse {}
+
+export interface Example extends BaseExample {
+  id: string;
+  created_at: string;
+  modified_at?: string;
+  source_run_id?: string;
+  runs: Run[];
+  attachments?: Record<string, AttachmentInfo>;
   split?: string | string[];
 }
 
-export interface Example extends BaseExample {
+interface RawAttachmentInfo {
+  presigned_url: string;
+  s3_url: string;
+  mime_type?: string;
+}
+export interface RawExample extends BaseExample {
   id: string;
   created_at: string;
   modified_at: string;
   source_run_id?: string;
   runs: Run[];
+  attachment_urls?: Record<string, RawAttachmentInfo>;
 }
 
-export interface ExampleUpdate {
-  dataset_id?: string;
-  inputs?: KVMap;
-  outputs?: KVMap;
-  metadata?: KVMap;
-  split?: string | string[];
-}
-
-export interface ExampleUpdateWithId extends ExampleUpdate {
-  id: string;
-}
+export interface ExampleUpdateWithId extends ExampleUpdate {}
 
 export interface ExampleSearch extends BaseExample {
   id: string;
@@ -296,6 +347,11 @@ export interface DatasetShareSchema {
   dataset_id: string;
   share_token: string;
   url: string;
+}
+
+export interface DatasetVersion {
+  tags?: string[];
+  as_of: string;
 }
 
 export interface FeedbackSourceBase {

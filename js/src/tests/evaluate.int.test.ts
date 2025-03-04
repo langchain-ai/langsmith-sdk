@@ -3,6 +3,7 @@ import {
   EvaluationResults,
 } from "../evaluation/evaluator.js";
 import { evaluate } from "../evaluation/_runner.js";
+import { waitUntilRunFound } from "./utils.js";
 import { Example, Run, TracerSession } from "../schemas.js";
 import { Client } from "../index.js";
 import { afterAll, beforeAll } from "@jest/globals";
@@ -194,6 +195,79 @@ test("evaluate can evaluate with custom evaluators", async () => {
       score: 1,
       comment: `Run: ${run.id} Example: ${example?.id}`,
     });
+  };
+
+  const evalRes = await evaluate(targetFunc, {
+    data: TESTING_DATASET_NAME,
+    evaluators: [customEvaluator],
+    description: "evaluate can evaluate with custom evaluators",
+  });
+
+  expect(evalRes.results).toHaveLength(2);
+
+  expect(evalRes.results[0].run).toBeDefined();
+  expect(evalRes.results[0].example).toBeDefined();
+  expect(evalRes.results[0].evaluationResults).toBeDefined();
+
+  const firstRun = evalRes.results[0].run;
+  // The examples are not always in the same order, so it should always be 2 or 3
+  expect(firstRun.outputs?.foo).toBeGreaterThanOrEqual(2);
+  expect(firstRun.outputs?.foo).toBeLessThanOrEqual(3);
+
+  const firstExample = evalRes.results[0].example;
+  expect(firstExample).toBeDefined();
+
+  const firstEvalResults = evalRes.results[0].evaluationResults;
+  expect(firstEvalResults.results).toHaveLength(1);
+  expect(firstEvalResults.results[0].key).toEqual("key");
+  expect(firstEvalResults.results[0].score).toEqual(1);
+
+  expect(evalRes.results[1].run).toBeDefined();
+  expect(evalRes.results[1].example).toBeDefined();
+  expect(evalRes.results[1].evaluationResults).toBeDefined();
+
+  const secondRun = evalRes.results[1].run;
+  // The examples are not always in the same order, so it should always be 2 or 3
+  expect(secondRun.outputs?.foo).toBeGreaterThanOrEqual(2);
+  expect(secondRun.outputs?.foo).toBeLessThanOrEqual(3);
+
+  const secondExample = evalRes.results[1].example;
+  expect(secondExample).toBeDefined();
+
+  const secondEvalResults = evalRes.results[1].evaluationResults;
+  expect(secondEvalResults.results).toHaveLength(1);
+  expect(secondEvalResults.results[0].key).toEqual("key");
+  expect(secondEvalResults.results[0].score).toEqual(1);
+
+  // Test runs & examples were passed to customEvaluator
+  const expectedCommentStrings = [
+    `Run: ${secondRun.id} Example: ${secondExample?.id}`,
+    `Run: ${firstRun.id} Example: ${firstExample?.id}`,
+  ];
+  const receivedCommentStrings = evalRes.results
+    .map(({ evaluationResults }) => evaluationResults.results[0].comment)
+    .filter((c): c is string => !!c);
+  expect(receivedCommentStrings.length).toBe(2);
+  expect(receivedCommentStrings).toEqual(
+    expect.arrayContaining(expectedCommentStrings)
+  );
+});
+
+test("evaluate can evaluate with custom evaluators and array return value", async () => {
+  const targetFunc = (input: Record<string, any>) => {
+    return {
+      foo: input.input + 1,
+    };
+  };
+
+  const customEvaluator = async (run: Run, example?: Example) => {
+    return [
+      {
+        key: "key",
+        score: 1,
+        comment: `Run: ${run.id} Example: ${example?.id}`,
+      },
+    ];
   };
 
   const evalRes = await evaluate(targetFunc, {
@@ -769,4 +843,458 @@ test("evaluate accepts evaluators which return multiple feedback keys", async ()
     { key: "first-key", score: 1, comment },
     { key: "second-key", score: 2, comment },
   ]);
+});
+
+test("evaluate can handle evaluators with object parameters", async () => {
+  const targetFunc = (input: Record<string, any>) => {
+    return {
+      foo: input.input + 1,
+    };
+  };
+
+  const objectEvaluator = ({
+    inputs,
+    outputs,
+    referenceOutputs,
+  }: {
+    inputs?: Record<string, any>;
+    outputs?: Record<string, any>;
+    referenceOutputs?: Record<string, any>;
+  }) => {
+    return {
+      key: "object_evaluator",
+      score: outputs?.foo === referenceOutputs?.output ? 1 : 0,
+      comment: `Input: ${inputs?.input}, Output: ${outputs?.foo}, Expected: ${referenceOutputs?.output}`,
+    };
+  };
+
+  const evalRes = await evaluate(targetFunc, {
+    data: TESTING_DATASET_NAME,
+    evaluators: [objectEvaluator],
+    description: "evaluate can handle evaluators with object parameters",
+  });
+
+  expect(evalRes.results).toHaveLength(2);
+
+  // Check first result
+  const firstResult = evalRes.results[0];
+  expect(firstResult.evaluationResults.results).toHaveLength(1);
+  const firstEval = firstResult.evaluationResults.results[0];
+  expect(firstEval.key).toBe("object_evaluator");
+  expect(firstEval.score).toBeDefined();
+  expect(firstEval.comment).toContain("Input:");
+  expect(firstEval.comment).toContain("Output:");
+  expect(firstEval.comment).toContain("Expected:");
+
+  // Check second result
+  const secondResult = evalRes.results[1];
+  expect(secondResult.evaluationResults.results).toHaveLength(1);
+  const secondEval = secondResult.evaluationResults.results[0];
+  expect(secondEval.key).toBe("object_evaluator");
+  expect(secondEval.score).toBeDefined();
+  expect(secondEval.comment).toContain("Input:");
+  expect(secondEval.comment).toContain("Output:");
+  expect(secondEval.comment).toContain("Expected:");
+});
+
+test("evaluate can mix evaluators with different parameter styles", async () => {
+  const targetFunc = (input: Record<string, any>) => {
+    return {
+      foo: input.input + 1,
+    };
+  };
+
+  // Traditional style evaluator
+  const traditionalEvaluator = (run: Run, example?: Example) => {
+    return {
+      key: "traditional",
+      score: run.outputs?.foo === example?.outputs?.output ? 1 : 0,
+    };
+  };
+
+  // Object style evaluator
+  const objectEvaluator = ({
+    outputs,
+    referenceOutputs,
+  }: {
+    outputs?: Record<string, any>;
+    referenceOutputs?: Record<string, any>;
+  }) => {
+    return {
+      key: "object_style",
+      score: outputs?.foo === referenceOutputs?.output ? 1 : 0,
+    };
+  };
+
+  const evalRes = await evaluate(targetFunc, {
+    data: TESTING_DATASET_NAME,
+    evaluators: [traditionalEvaluator, objectEvaluator],
+    description: "evaluate can mix evaluators with different parameter styles",
+  });
+
+  expect(evalRes.results).toHaveLength(2);
+
+  // Check both evaluators ran for each example
+  for (const result of evalRes.results) {
+    expect(result.evaluationResults.results).toHaveLength(2);
+
+    const traditionalResult = result.evaluationResults.results.find(
+      (r) => r.key === "traditional"
+    );
+    expect(traditionalResult).toBeDefined();
+    expect(typeof traditionalResult?.score).toBe("number");
+
+    const objectResult = result.evaluationResults.results.find(
+      (r) => r.key === "object_style"
+    );
+    expect(objectResult).toBeDefined();
+    expect(typeof objectResult?.score).toBe("number");
+  }
+});
+
+test("evaluate handles partial object parameters correctly", async () => {
+  const targetFunc = (input: Record<string, any>) => {
+    return {
+      foo: input.input + 1,
+    };
+  };
+
+  // Evaluator that only uses outputs and referenceOutputs
+  const outputOnlyEvaluator = ({
+    outputs,
+    referenceOutputs,
+  }: {
+    outputs?: Record<string, any>;
+    referenceOutputs?: Record<string, any>;
+  }) => {
+    return {
+      key: "output_only",
+      score: outputs?.foo === referenceOutputs?.output ? 1 : 0,
+    };
+  };
+
+  // Evaluator that only uses run and example
+  const runOnlyEvaluator = ({
+    run,
+    example,
+  }: {
+    run?: Run;
+    example?: Example;
+  }) => {
+    return {
+      key: "run_only",
+      score: run?.outputs?.foo === example?.outputs?.output ? 1 : 0,
+    };
+  };
+
+  const evalRes = await evaluate(targetFunc, {
+    data: TESTING_DATASET_NAME,
+    evaluators: [outputOnlyEvaluator, runOnlyEvaluator],
+    description: "evaluate handles partial object parameters correctly",
+  });
+
+  expect(evalRes.results).toHaveLength(2);
+
+  // Check both evaluators ran for each example
+  for (const result of evalRes.results) {
+    expect(result.evaluationResults.results).toHaveLength(2);
+
+    const outputResult = result.evaluationResults.results.find(
+      (r) => r.key === "output_only"
+    );
+    expect(outputResult).toBeDefined();
+    expect(typeof outputResult?.score).toBe("number");
+
+    const runResult = result.evaluationResults.results.find(
+      (r) => r.key === "run_only"
+    );
+    expect(runResult).toBeDefined();
+    expect(typeof runResult?.score).toBe("number");
+  }
+});
+
+test("evaluate handles async object-style evaluators", async () => {
+  const targetFunc = (input: Record<string, any>) => {
+    return {
+      foo: input.input + 1,
+    };
+  };
+
+  const asyncEvaluator = async ({
+    outputs,
+    referenceOutputs,
+  }: {
+    outputs?: Record<string, any>;
+    referenceOutputs?: Record<string, any>;
+  }) => {
+    // Simulate async operation
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    return {
+      key: "async_evaluator",
+      score: outputs?.foo === referenceOutputs?.output ? 1 : 0,
+    };
+  };
+
+  const evalRes = await evaluate(targetFunc, {
+    data: TESTING_DATASET_NAME,
+    evaluators: [asyncEvaluator],
+    description: "evaluate handles async object-style evaluators",
+  });
+
+  expect(evalRes.results).toHaveLength(2);
+
+  for (const result of evalRes.results) {
+    expect(result.evaluationResults.results).toHaveLength(1);
+    const evalResult = result.evaluationResults.results[0];
+    expect(evalResult.key).toBe("async_evaluator");
+    expect(typeof evalResult.score).toBe("number");
+  }
+});
+
+test("evaluate can evaluate with updated summary evaluators", async () => {
+  const targetFunc = (input: Record<string, any>) => {
+    return {
+      foo: input.input + 1,
+    };
+  };
+
+  const customSummaryEvaluator = ({
+    runs,
+    examples,
+    inputs,
+    outputs,
+    referenceOutputs,
+  }: {
+    runs?: Run[];
+    examples?: Example[];
+    inputs?: Record<string, any>[];
+    outputs?: Record<string, any>[];
+    referenceOutputs?: Record<string, any>[];
+  }): Promise<EvaluationResult> => {
+    const runIds = runs?.map(({ id }) => id).join(", ") || "";
+    const exampleIds = examples?.map(({ id }) => id).join(", ");
+    const inputValues = inputs?.map((input) => input.input).join(", ");
+    const outputValues = outputs?.map((output) => output.foo).join(", ");
+    const referenceOutputValues = referenceOutputs
+      ?.map((ref) => ref.output)
+      .join(", ");
+
+    return Promise.resolve({
+      key: "UpdatedSummaryEvaluator",
+      score: 1,
+      comment: `Runs: ${runIds} Examples: ${exampleIds} Inputs: ${inputValues} Outputs: ${outputValues} ReferenceOutputs: ${referenceOutputValues}`,
+    });
+  };
+
+  const evalRes = await evaluate(targetFunc, {
+    data: TESTING_DATASET_NAME,
+    summaryEvaluators: [customSummaryEvaluator],
+    description: "evaluate can evaluate with updated summary evaluators",
+  });
+
+  expect(evalRes.summaryResults.results).toHaveLength(1);
+  expect(evalRes.summaryResults.results[0].key).toBe("UpdatedSummaryEvaluator");
+  expect(evalRes.summaryResults.results[0].score).toBe(1);
+
+  const allRuns = evalRes.results.map(({ run }) => run);
+  const allExamples = evalRes.results.map(({ example }) => example);
+  const allInputs = evalRes.results.map(({ example }) => example.inputs);
+  const allOutputs = evalRes.results.map(({ run }) => run.outputs);
+  const allReferenceOutputs = evalRes.results.map(
+    ({ example }) => example.outputs
+  );
+
+  const runIds = allRuns.map(({ id }) => id).join(", ");
+  const exampleIds = allExamples.map(({ id }) => id).join(", ");
+  const inputValues = allInputs.map((input) => input.input).join(", ");
+  const outputValues = allOutputs.map((output) => output?.foo).join(", ");
+  const referenceOutputValues = allReferenceOutputs
+    .map((ref) => ref?.output)
+    .join(", ");
+
+  expect(evalRes.summaryResults.results[0].comment).toBe(
+    `Runs: ${runIds} Examples: ${exampleIds} Inputs: ${inputValues} Outputs: ${outputValues} ReferenceOutputs: ${referenceOutputValues}`
+  );
+});
+
+test("evaluate handles partial summary evaluator parameters correctly", async () => {
+  const targetFunc = (input: Record<string, any>) => {
+    return {
+      foo: input.input + 1,
+    };
+  };
+
+  // Summary evaluator that only uses inputs, outputs, and referenceOutputs
+  const outputOnlySummaryEvaluator = ({
+    inputs,
+    outputs,
+    referenceOutputs,
+  }: {
+    inputs?: Record<string, any>[];
+    outputs?: Record<string, any>[];
+    referenceOutputs?: Record<string, any>[];
+  }): Promise<EvaluationResult> => {
+    const inputValues = inputs?.map((input) => input.input).join(", ") || "";
+    const outputValues = outputs?.map((output) => output.foo).join(", ") || "";
+    const referenceOutputValues = referenceOutputs
+      ?.map((ref) => ref?.output)
+      .join(", ");
+
+    // Calculate average difference between outputs and reference outputs
+    const avgDiff =
+      outputs?.reduce((sum, output, i) => {
+        return sum + Math.abs(output?.foo - referenceOutputs?.[i]?.output);
+      }, 0) || 0;
+
+    return Promise.resolve({
+      key: "OutputOnlySummaryEvaluator",
+      score: avgDiff === 0 ? 1 : 0,
+      comment: `Inputs: ${inputValues} Outputs: ${outputValues} ReferenceOutputs: ${referenceOutputValues} AvgDiff: ${avgDiff}`,
+    });
+  };
+
+  const evalRes = await evaluate(targetFunc, {
+    data: TESTING_DATASET_NAME,
+    summaryEvaluators: [outputOnlySummaryEvaluator],
+    description: "evaluate handles partial summary evaluator parameters",
+  });
+
+  expect(evalRes.summaryResults.results).toHaveLength(1);
+  const summaryResult = evalRes.summaryResults.results[0];
+  expect(summaryResult.key).toBe("OutputOnlySummaryEvaluator");
+  expect(typeof summaryResult.score).toBe("number");
+
+  // Verify the comment contains all the expected parts
+  const allInputs = evalRes.results.map(({ example }) => example.inputs);
+  const allOutputs = evalRes.results.map(({ run }) => run.outputs);
+  const allReferenceOutputs = evalRes.results.map(
+    ({ example }) => example.outputs
+  );
+
+  const inputValues = allInputs.map((input) => input.input).join(", ");
+  const outputValues = allOutputs.map((output) => output?.foo).join(", ");
+  const referenceOutputValues = allReferenceOutputs
+    .map((ref) => ref?.output)
+    .join(", ");
+
+  // Calculate expected average difference
+  const expectedAvgDiff =
+    allOutputs.reduce((sum, output, i) => {
+      return sum + Math.abs(output?.foo - allReferenceOutputs[i]?.output);
+    }, 0) / allOutputs.length;
+
+  expect(summaryResult.comment).toBe(
+    `Inputs: ${inputValues} Outputs: ${outputValues} ReferenceOutputs: ${referenceOutputValues} AvgDiff: ${expectedAvgDiff}`
+  );
+});
+
+test("evaluate handles comparative target with ComparativeEvaluateOptions", async () => {
+  const client = new Client();
+
+  // First, create two experiments to compare
+  const targetFunc1 = (input: Record<string, any>) => {
+    return {
+      foo: input.input + 1,
+    };
+  };
+
+  const targetFunc2 = (input: Record<string, any>) => {
+    return {
+      foo: input.input + 2,
+    };
+  };
+
+  // Run initial experiments
+  const exp1 = await evaluate(targetFunc1, {
+    data: TESTING_DATASET_NAME,
+    description: "First experiment for comparison",
+  });
+
+  const exp2 = await evaluate(targetFunc2, {
+    data: TESTING_DATASET_NAME,
+    description: "Second experiment for comparison",
+  });
+
+  await Promise.all(
+    [exp1, exp2].flatMap(({ results }) =>
+      results.flatMap(({ run }) => waitUntilRunFound(client, run.id))
+    )
+  );
+  // Create comparative evaluator
+  const comparativeEvaluator = ({
+    runs,
+    example,
+  }: {
+    runs: Run[];
+    example: Example;
+  }) => {
+    if (!runs || !example) throw new Error("Missing required parameters");
+
+    // Compare outputs from both runs
+    const scores = Object.fromEntries(
+      runs.map((run) => [
+        run.id,
+        run.outputs?.foo === example.outputs?.output ? 1 : 0,
+      ])
+    );
+
+    return {
+      key: "comparative_score",
+      scores,
+    };
+  };
+
+  // Run comparative evaluation
+  const compareRes = await evaluate(
+    [exp1.experimentName, exp2.experimentName],
+    {
+      evaluators: [comparativeEvaluator],
+      description: "Comparative evaluation test",
+      randomizeOrder: true,
+      loadNested: false,
+    }
+  );
+
+  // Verify we got ComparisonEvaluationResults
+  expect(compareRes.experimentName).toBeDefined();
+  expect(compareRes.experimentName).toBeDefined();
+  expect(compareRes.results).toBeDefined();
+  expect(Array.isArray(compareRes.results)).toBe(true);
+
+  // Check structure of comparison results
+  for (const result of compareRes.results) {
+    expect(result.key).toBe("comparative_score");
+    expect(result.scores).toBeDefined();
+    expect(Object.keys(result.scores)).toHaveLength(2); // Should have scores for both experiments
+  }
+});
+
+test("evaluate enforces correct evaluator types for comparative evaluation at runtime", async () => {
+  const exp1 = await evaluate(
+    (input: Record<string, any>) => ({ foo: input.input + 1 }),
+    {
+      data: TESTING_DATASET_NAME,
+    }
+  );
+
+  const exp2 = await evaluate(
+    (input: Record<string, any>) => ({ foo: input.input + 2 }),
+    {
+      data: TESTING_DATASET_NAME,
+    }
+  );
+
+  // Create a standard evaluator (wrong type)
+  const standardEvaluator = (run: Run, example: Example) => ({
+    key: "standard",
+    score: run.outputs?.foo === example.outputs?.output ? 1 : 0,
+  });
+
+  await expect(
+    // @ts-expect-error - Should error because standardEvaluator is not a ComparativeEvaluator
+    evaluate([exp1.experimentName, exp2.experimentName], {
+      evaluators: [standardEvaluator],
+      description: "Should fail at runtime",
+    })
+  ).rejects.toThrow(); // You might want to be more specific about the error message
 });

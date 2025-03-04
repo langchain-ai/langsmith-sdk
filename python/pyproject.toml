@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "langsmith"
-version = "0.1.143"
+version = "0.3.11"
 description = "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform."
 authors = ["LangChain <support@langchain.dev>"]
 license = "MIT"
@@ -21,19 +21,23 @@ keywords = [
 ]
 packages = [{ include = "langsmith" }]
 
-[tool.poetry.scripts]
-langsmith = "langsmith.cli.main:main"
-
 [tool.poetry.dependencies]
-python = ">=3.8.1,<4.0"
+python = ">=3.9,<4.0"
 pydantic = [
   { version = ">=1,<3", python = "<3.12.4" },
   { version = "^2.7.4", python = ">=3.12.4" },
 ]
 requests = "^2"
-orjson = "^3.9.14"
+orjson = { version = "^3.9.14", markers = "platform_python_implementation != 'PyPy'" }
 httpx = ">=0.23.0,<1"
 requests-toolbelt = "^1.0.0"
+
+# Enabled via `langsmith_pyo3` extra: `pip install langsmith[langsmith_pyo3]`.
+langsmith-pyo3 = { version = "^0.1.0rc2", optional = true }
+zstandard = "^0.23.0"
+rich = {version = "^13.9.4", optional = true}
+pytest = {version = ">=7.0.0", optional = true}
+packaging = ">=23.2"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.3.1"
@@ -61,6 +65,9 @@ pytest-socket = "^0.7.0"
 pyperf = "^2.7.0"
 py-spy = "^0.3.14"
 multipart = "^1.0.0"
+# Hack to get tests/integration_tests/test_context_propagation.py to pass
+# TODO: remove
+httpx = ">=0.23.0,<0.28.0"
 
 [tool.poetry.group.lint.dependencies]
 openai = "^1.10"
@@ -71,6 +78,8 @@ pytest-socket = "^0.7.0"
 
 [tool.poetry.extras]
 vcr = ["vcrpy"]
+langsmith_pyo3 = ["langsmith-pyo3"]
+pytest = ["pytest", "rich", "vcrpy"]
 
 [build-system]
 requires = ["poetry-core"]
@@ -99,13 +108,14 @@ convention = "google"
 "langsmith/run_helpers.py" = ["E501"]
 "docs/conf.py" = ["E501"]
 "langsmith/cli/*" = ["T201", "D", "UP"]
-"docs/create_api_rst.py" = ["D101", "D103"]
+"docs/create_api_rst.py" = ["D101", "D103", "E501"]
 "docs/scripts/custom_formatter.py" = ["D100"]
 "langsmith/anonymizer.py" = ["E501"]
 "langsmith/async_client.py" = ["E501"]
 "langsmith/client.py" = ["E501"]
 "langsmith/schemas.py" = ["E501"]
 "tests/evaluation/__init__.py" = ["E501"]
+"tests/unit_tests/test_client.py" = ["E501"]
 "tests/*" = ["D", "UP"]
 "bench/*" = ["D", "UP", "T"]
 "docs/*" = ["T", "D"]
@@ -122,3 +132,10 @@ disallow_untyped_defs = "True"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 markers = ["slow: long-running tests"]
+
+[project]
+name = "langsmith"
+dynamic = ["version"]
+
+[tool.poetry.plugins."pytest11"]
+langsmith_plugin = "langsmith.pytest_plugin"

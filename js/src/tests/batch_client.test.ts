@@ -7,24 +7,43 @@ import { convertToDottedOrderFormat } from "../run_trees.js";
 import { _getFetchImplementation } from "../singletons/fetch.js";
 import { RunCreate } from "../schemas.js";
 
-const parseMockRequestBody = async (body: string | FormData) => {
+const parseMockRequestBody = async (
+  body: string | ArrayBuffer | Uint8Array
+) => {
   if (typeof body === "string") {
     return JSON.parse(body);
   }
+
   // Typing is missing
-  const entries: any[] = Array.from((body as any).entries());
+  const rawMultipart = new TextDecoder().decode(body);
+
+  if (rawMultipart.trim().startsWith("{")) {
+    return JSON.parse(rawMultipart);
+  }
+  // Parse the multipart form data boundary from the raw text
+  const boundary = rawMultipart.split("\r\n")[0].trim();
+  // Split the multipart body into individual parts
+  const parts = rawMultipart.split(boundary).slice(1, -1);
+
+  const entries: [string, any][] = parts.map((part) => {
+    const [headers, ...contentParts] = part.trim().split("\r\n\r\n");
+    const content = contentParts.join("\r\n\r\n");
+    // Extract the name from Content-Disposition header
+    const nameMatch = headers.match(/name="([^"]+)"/);
+    const name = nameMatch ? nameMatch[1] : "";
+    return [name, content.trim()];
+  });
   const reconstructedBody: any = {
     post: [],
     patch: [],
   };
   for (const [key, value] of entries) {
     let [method, id, type] = key.split(".");
-    const text = await value.text();
     let parsedValue;
     try {
-      parsedValue = JSON.parse(text);
+      parsedValue = JSON.parse(value);
     } catch (e) {
-      parsedValue = text;
+      parsedValue = value;
     }
     // if (method === "attachment") {
     //   for (const item of reconstructedBody.post) {
@@ -131,7 +150,7 @@ describe.each(ENDPOINT_TYPES)(
         _getFetchImplementation(),
         expectedTraceURL,
         expect.objectContaining({
-          body: expect.any(endpointType === "batch" ? String : FormData),
+          body: expect.any(endpointType === "batch" ? Uint8Array : ArrayBuffer),
         })
       );
     });
@@ -245,7 +264,7 @@ describe.each(ENDPOINT_TYPES)(
         _getFetchImplementation(),
         expectedTraceURL,
         expect.objectContaining({
-          body: expect.any(endpointType === "batch" ? String : FormData),
+          body: expect.any(endpointType === "batch" ? Uint8Array : ArrayBuffer),
         })
       );
     });
@@ -326,7 +345,7 @@ describe.each(ENDPOINT_TYPES)(
         _getFetchImplementation(),
         expectedTraceURL,
         expect.objectContaining({
-          body: expect.any(endpointType === "batch" ? String : FormData),
+          body: expect.any(endpointType === "batch" ? Uint8Array : ArrayBuffer),
         })
       );
     });
@@ -612,9 +631,21 @@ describe.each(ENDPOINT_TYPES)(
       const calledRequestParam: any = callSpy.mock.calls[0][2];
       const calledRequestParam2: any = callSpy.mock.calls[1][2];
 
+      const firstBatchBody = await parseMockRequestBody(
+        calledRequestParam?.body
+      );
+      const secondBatchBody = await parseMockRequestBody(
+        calledRequestParam2?.body
+      );
+
+      const initialBatchBody =
+        firstBatchBody.post.length === 10 ? firstBatchBody : secondBatchBody;
+      const followupBatchBody =
+        firstBatchBody.post.length === 10 ? secondBatchBody : firstBatchBody;
+
       // Queue should drain as soon as size limit is reached,
       // sending both batches
-      expect(await parseMockRequestBody(calledRequestParam?.body)).toEqual({
+      expect(initialBatchBody).toEqual({
         post: runIds.slice(0, 10).map((runId, i) =>
           expect.objectContaining({
             id: runId,
@@ -628,7 +659,107 @@ describe.each(ENDPOINT_TYPES)(
         patch: [],
       });
 
-      expect(await parseMockRequestBody(calledRequestParam2?.body)).toEqual({
+      expect(followupBatchBody).toEqual({
+        post: runIds.slice(10).map((runId, i) =>
+          expect.objectContaining({
+            id: runId,
+            run_type: "llm",
+            inputs: {
+              text: expect.stringContaining("hello world " + (i + 10)),
+            },
+            trace_id: runId,
+          })
+        ),
+        patch: [],
+      });
+    });
+
+    it("should flush traces in batches with manualFlushMode enabled", async () => {
+      const client = new Client({
+        apiKey: "test-api-key",
+        batchSizeBytesLimit: 10000,
+        autoBatchTracing: true,
+        manualFlushMode: true,
+      });
+      const callSpy = jest
+        .spyOn((client as any).batchIngestCaller, "call")
+        .mockResolvedValue({
+          ok: true,
+          text: () => "",
+        });
+      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
+        return {
+          version: "foo",
+          batch_ingest_config: { ...extraBatchIngestConfig },
+        };
+      });
+      const projectName = "__test_batch";
+
+      const runIds = await Promise.all(
+        [...Array(15)].map(async (_, i) => {
+          const runId = uuidv4();
+          const dottedOrder = convertToDottedOrderFormat(
+            new Date().getTime() / 1000,
+            runId
+          );
+          const params = mergeRuntimeEnvIntoRunCreate({
+            id: runId,
+            project_name: projectName,
+            name: "test_run " + i,
+            run_type: "llm",
+            inputs: { text: "hello world " + i },
+            trace_id: runId,
+            dotted_order: dottedOrder,
+          } as RunCreate);
+          // Allow some extra space for other request properties
+          const mockRunSize = 950;
+          const padCount = mockRunSize - JSON.stringify(params).length;
+          params.inputs.text = params.inputs.text + "x".repeat(padCount);
+          await client.createRun(params);
+          return runId;
+        })
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      expect(callSpy.mock.calls.length).toBe(0);
+
+      await client.flush();
+
+      expect(callSpy.mock.calls.length).toBe(2);
+
+      const calledRequestParam: any = callSpy.mock.calls[0][2];
+      const calledRequestParam2: any = callSpy.mock.calls[1][2];
+
+      const firstBatchBody = await parseMockRequestBody(
+        calledRequestParam?.body
+      );
+      const secondBatchBody = await parseMockRequestBody(
+        calledRequestParam2?.body
+      );
+
+      const initialBatchBody =
+        firstBatchBody.post.length === 10 ? firstBatchBody : secondBatchBody;
+      const followupBatchBody =
+        firstBatchBody.post.length === 10 ? secondBatchBody : firstBatchBody;
+
+      // Queue should drain as soon as size limit is reached,
+      // sending both batches
+      expect(initialBatchBody).toEqual({
+        post: runIds.slice(0, 10).map((runId, i) =>
+          expect.objectContaining({
+            id: runId,
+            run_type: "llm",
+            inputs: {
+              text: expect.stringContaining("hello world " + i),
+            },
+            trace_id: runId,
+          })
+        ),
+        patch: [],
+      });
+
+      expect(followupBatchBody).toEqual({
         post: runIds.slice(10).map((runId, i) =>
           expect.objectContaining({
             id: runId,
@@ -811,7 +942,7 @@ describe.each(ENDPOINT_TYPES)(
         _getFetchImplementation(),
         "https://api.smith.langchain.com/runs/batch",
         expect.objectContaining({
-          body: expect.any(String),
+          body: expect.any(Uint8Array),
         })
       );
     });
@@ -903,7 +1034,7 @@ describe.each(ENDPOINT_TYPES)(
         _getFetchImplementation(),
         expectedTraceURL,
         expect.objectContaining({
-          body: expect.any(endpointType === "batch" ? String : FormData),
+          body: expect.any(endpointType === "batch" ? Uint8Array : ArrayBuffer),
         })
       );
     });

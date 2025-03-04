@@ -9,6 +9,7 @@ import {
 import {
   RuntimeEnvironment,
   getEnvironmentVariable,
+  getLangSmithEnvironmentVariable,
   getRuntimeEnvironment,
 } from "./utils/env.js";
 import { Client } from "./client.js";
@@ -231,7 +232,7 @@ export class RunTree implements BaseRun {
       id: uuid.v4(),
       run_type: "chain",
       project_name:
-        getEnvironmentVariable("LANGCHAIN_PROJECT") ??
+        getLangSmithEnvironmentVariable("PROJECT") ??
         getEnvironmentVariable("LANGCHAIN_SESSION") ?? // TODO: Deprecate
         "default",
       child_runs: [],
@@ -433,6 +434,29 @@ export class RunTree implements BaseRun {
     return this._convertToCreate(this, undefined, false);
   }
 
+  /**
+   * Add an event to the run tree.
+   * @param event - A single event or string to add
+   */
+  addEvent(event: RunEvent | string): void {
+    if (!this.events) {
+      this.events = [];
+    }
+
+    if (typeof event === "string") {
+      this.events.push({
+        name: "event",
+        time: new Date().toISOString(),
+        message: event,
+      });
+    } else {
+      this.events.push({
+        ...event,
+        time: event.time ?? new Date().toISOString(),
+      });
+    }
+  }
+
   static fromRunnableConfig(
     parentConfig: RunnableConfigLike,
     props: RunTreeConfig
@@ -581,6 +605,14 @@ function isCallbackManagerLike(x: unknown): x is CallbackManagerLike {
     x != null &&
     Array.isArray((x as CallbackManagerLike).handlers)
   );
+}
+
+export interface RunEvent {
+  name?: string;
+  time?: string;
+  message?: string;
+  kwargs?: Record<string, unknown>;
+  [key: string]: unknown;
 }
 
 export function isRunnableConfigLike(x?: unknown): x is RunnableConfigLike {

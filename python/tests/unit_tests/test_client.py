@@ -3,6 +3,7 @@
 import asyncio
 import dataclasses
 import gc
+import inspect
 import io
 import itertools
 import json
@@ -17,12 +18,11 @@ import weakref
 from datetime import datetime, timezone
 from enum import Enum
 from io import BytesIO
-from typing import Dict, List, NamedTuple, Optional, Type, Union
+from typing import Dict, List, Literal, NamedTuple, Optional, Type, Union
 from unittest import mock
 from unittest.mock import MagicMock, patch
 
 import dataclasses_json
-import orjson
 import pytest
 import requests
 from multipart import MultipartParser, MultipartPart, parse_options_header
@@ -31,8 +31,9 @@ from requests import HTTPError
 
 import langsmith.env as ls_env
 import langsmith.utils as ls_utils
-from langsmith import AsyncClient, EvaluationResult, run_trees
+from langsmith import AsyncClient, EvaluationResult, aevaluate, evaluate, run_trees
 from langsmith import schemas as ls_schemas
+from langsmith._internal import _orjson
 from langsmith._internal._serde import _serialize_json
 from langsmith.client import (
     Client,
@@ -262,8 +263,8 @@ def test_async_methods() -> None:
     for async_method in async_methods:
         sync_method = async_method[1:]  # Remove the "a" from the beginning
         assert sync_method in sync_methods
-        sync_args = set(Client.__dict__[sync_method].__code__.co_varnames)
-        async_args = set(Client.__dict__[async_method].__code__.co_varnames)
+        sync_args = set(inspect.signature(Client.__dict__[sync_method]).parameters)
+        async_args = set(inspect.signature(Client.__dict__[async_method]).parameters)
         extra_args = sync_args - async_args
         assert not extra_args, (
             f"Extra args for {async_method} "
@@ -414,6 +415,97 @@ def test_create_run_mutate(
             "<generator object test_create_run_mutate.<locals>."
         )
         assert outputs == {"messages": ["hi", "there"]}
+
+
+@mock.patch("langsmith.client.requests.Session")
+def test_upsert_examples_multipart(mock_session_cls: mock.Mock) -> None:
+    """Test that upsert_examples_multipart sends correct multipart data."""
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_session.request.return_value = mock_response
+    mock_session_cls.return_value = mock_session
+
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        info={"instance_flags": {"examples_multipart_enabled": True}},
+    )
+
+    # Create test data
+    example_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+    created_at = datetime(2015, 1, 1, 0, 0, 0)
+
+    example = ls_schemas.ExampleUpsertWithAttachments(
+        id=example_id,
+        dataset_id=dataset_id,
+        created_at=created_at,
+        inputs={"input": "test input"},
+        outputs={"output": "test output"},
+        metadata={"meta": "data"},
+        split="train",
+        attachments={
+            "file1": ("text/plain", b"test data"),
+            "file2": ls_schemas.Attachment(
+                mime_type="application/json", data=b'{"key": "value"}'
+            ),
+        },
+    )
+    client.upsert_examples_multipart(upserts=[example])
+
+    # Verify the request
+    assert mock_session.request.call_count == 1
+    call_args = mock_session.request.call_args
+
+    assert call_args[0][0] == "POST"
+    assert call_args[0][1].endswith("/v1/platform/examples/multipart")
+
+    # Parse the multipart data
+    request_data = call_args[1]["data"]
+    content_type = call_args[1]["headers"]["Content-Type"]
+    boundary = parse_options_header(content_type)[1]["boundary"]
+
+    parser = MultipartParser(
+        io.BytesIO(
+            request_data
+            if isinstance(request_data, bytes)
+            else request_data.to_string()
+        ),
+        boundary,
+    )
+    parts = list(parser.parts())
+
+    # Verify all expected parts are present
+    expected_parts = {
+        str(example_id): {
+            "dataset_id": str(dataset_id),
+            "created_at": created_at.isoformat(),
+            "metadata": {"meta": "data"},
+            "split": "train",
+        },
+        f"{example_id}.inputs": {"input": "test input"},
+        f"{example_id}.outputs": {"output": "test output"},
+        f"{example_id}.attachment.file1": "test data",
+        f"{example_id}.attachment.file2": '{"key": "value"}',
+    }
+
+    assert len(parts) == len(expected_parts)
+
+    for part in parts:
+        name = part.name
+        assert name in expected_parts, f"Unexpected part: {name}"
+
+        if name.endswith(".attachment.file1"):
+            assert part.value == expected_parts[name]
+            assert part.headers["Content-Type"] == "text/plain; length=9"
+        elif name.endswith(".attachment.file2"):
+            assert part.value == expected_parts[name]
+            assert part.headers["Content-Type"] == "application/json; length=16"
+        else:
+            value = json.loads(part.value)
+            assert value == expected_parts[name]
+            assert part.headers["Content-Type"] == "application/json"
 
 
 class CallTracker:
@@ -848,7 +940,7 @@ def test_serialize_json(caplog) -> None:
         "set_with_class": set([MyClass(1)]),
         "my_mock": MagicMock(text="Hello, world"),
     }
-    res = orjson.loads(_dumps_json(to_serialize))
+    res = _orjson.loads(_dumps_json(to_serialize))
     assert (
         "model_dump" not in caplog.text
     ), f"Unexpected error logs were emitted: {caplog.text}"
@@ -898,7 +990,7 @@ def test_serialize_json(caplog) -> None:
     my_cyclic = CyclicClass(other=CyclicClass(other=None))
     my_cyclic.other.other = my_cyclic  # type: ignore
 
-    res = orjson.loads(_dumps_json({"cyclic": my_cyclic}))
+    res = _orjson.loads(_dumps_json({"cyclic": my_cyclic}))
     assert res == {"cyclic": "my_cycles..."}
     expected = {"foo": "foo", "bar": 1}
 
@@ -1142,7 +1234,7 @@ def test_batch_ingest_run_splits_large_batches(
             op
             for call in mock_session.request.call_args_list
             for reqs in (
-                orjson.loads(call[1]["data"]).values() if call[0][0] == "POST" else []
+                _orjson.loads(call[1]["data"]).values() if call[0][0] == "POST" else []
             )
             for op in reqs
         ]
@@ -1254,3 +1346,1082 @@ def test_parse_token_or_url():
     invalid_url = "https://invalid.com/419dcab2-1d66-4b94-8901-0357ead390df"
     with pytest.raises(LangSmithUserError):
         _parse_token_or_url(invalid_url, api_url)
+
+
+_PROMPT_COMMITS = [
+    (
+        True,
+        "tools",
+        {
+            "owner": "-",
+            "repo": "tweet-generator-example-with-tools",
+            "commit_hash": "b862ce708ffeb932331a9345ea2a2fe6a76d62cf83e9aab834c24bb12bd516c9",
+            "manifest": {
+                "lc": 1,
+                "type": "constructor",
+                "id": ["langchain", "schema", "runnable", "RunnableSequence"],
+                "kwargs": {
+                    "first": {
+                        "lc": 1,
+                        "type": "constructor",
+                        "id": ["langchain", "prompts", "chat", "ChatPromptTemplate"],
+                        "kwargs": {
+                            "input_variables": ["topic"],
+                            "metadata": {
+                                "lc_hub_owner": "-",
+                                "lc_hub_repo": "tweet-generator-example",
+                                "lc_hub_commit_hash": "c39837bd8d010da739d6d4adc7f2dca2f2461521661a393d37606f5c696109a5",
+                            },
+                            "messages": [
+                                {
+                                    "lc": 1,
+                                    "type": "constructor",
+                                    "id": [
+                                        "langchain",
+                                        "prompts",
+                                        "chat",
+                                        "SystemMessagePromptTemplate",
+                                    ],
+                                    "kwargs": {
+                                        "prompt": {
+                                            "lc": 1,
+                                            "type": "constructor",
+                                            "id": [
+                                                "langchain",
+                                                "prompts",
+                                                "prompt",
+                                                "PromptTemplate",
+                                            ],
+                                            "kwargs": {
+                                                "input_variables": [],
+                                                "template_format": "f-string",
+                                                "template": "Generate a tweet based on the provided topic.",
+                                            },
+                                        }
+                                    },
+                                },
+                                {
+                                    "lc": 1,
+                                    "type": "constructor",
+                                    "id": [
+                                        "langchain",
+                                        "prompts",
+                                        "chat",
+                                        "HumanMessagePromptTemplate",
+                                    ],
+                                    "kwargs": {
+                                        "prompt": {
+                                            "lc": 1,
+                                            "type": "constructor",
+                                            "id": [
+                                                "langchain",
+                                                "prompts",
+                                                "prompt",
+                                                "PromptTemplate",
+                                            ],
+                                            "kwargs": {
+                                                "input_variables": ["topic"],
+                                                "template_format": "f-string",
+                                                "template": "{topic}",
+                                            },
+                                        }
+                                    },
+                                },
+                            ],
+                        },
+                        "name": "StructuredPrompt",
+                    },
+                    "last": {
+                        "lc": 1,
+                        "type": "constructor",
+                        "id": ["langchain", "schema", "runnable", "RunnableBinding"],
+                        "kwargs": {
+                            "bound": {
+                                "lc": 1,
+                                "type": "constructor",
+                                "id": [
+                                    "langchain",
+                                    "chat_models",
+                                    "anthropic",
+                                    "ChatAnthropic",
+                                ],
+                                "kwargs": {
+                                    "temperature": 1,
+                                    "max_tokens": 1024,
+                                    "top_p": 1,
+                                    "top_k": -1,
+                                    "anthropic_api_key": {
+                                        "id": ["ANTHROPIC_API_KEY"],
+                                        "lc": 1,
+                                        "type": "secret",
+                                    },
+                                    "model": "claude-3-5-sonnet-20240620",
+                                },
+                            },
+                            "kwargs": {
+                                "tools": [
+                                    {
+                                        "type": "function",
+                                        "function": {
+                                            "name": "GenerateTweet",
+                                            "description": "Submit your tweet.",
+                                            "parameters": {
+                                                "properties": {
+                                                    "tweet": {
+                                                        "type": "string",
+                                                        "description": "The generated tweet.",
+                                                    }
+                                                },
+                                                "required": ["tweet"],
+                                                "type": "object",
+                                            },
+                                        },
+                                    },
+                                    {
+                                        "type": "function",
+                                        "function": {
+                                            "name": "SomethingElse",
+                                            "description": "",
+                                            "parameters": {
+                                                "properties": {
+                                                    "aval": {
+                                                        "type": "array",
+                                                        "items": {"type": "string"},
+                                                    }
+                                                },
+                                                "required": [],
+                                                "type": "object",
+                                            },
+                                        },
+                                    },
+                                ]
+                            },
+                        },
+                    },
+                },
+            },
+            "examples": [],
+        },
+    ),
+    (
+        True,
+        "structured",
+        {
+            "owner": "-",
+            "repo": "tweet-generator-example",
+            "commit_hash": "e8da7f9e80471ace9b96c4f8fd55a215020126521f1da8f66130604c101fc522",
+            "manifest": {
+                "lc": 1,
+                "type": "constructor",
+                "id": ["langchain", "schema", "runnable", "RunnableSequence"],
+                "kwargs": {
+                    "first": {
+                        "lc": 1,
+                        "type": "constructor",
+                        "id": [
+                            "langchain_core",
+                            "prompts",
+                            "structured",
+                            "StructuredPrompt",
+                        ],
+                        "kwargs": {
+                            "input_variables": ["topic"],
+                            "metadata": {
+                                "lc_hub_owner": "langchain-ai",
+                                "lc_hub_repo": "tweet-generator-example",
+                                "lc_hub_commit_hash": "7c32ca78a2831b6b3a3904eb5704b48a0730e93f29afb0853cfaefc42dc09f9c",
+                            },
+                            "messages": [
+                                {
+                                    "lc": 1,
+                                    "type": "constructor",
+                                    "id": [
+                                        "langchain",
+                                        "prompts",
+                                        "chat",
+                                        "SystemMessagePromptTemplate",
+                                    ],
+                                    "kwargs": {
+                                        "prompt": {
+                                            "lc": 1,
+                                            "type": "constructor",
+                                            "id": [
+                                                "langchain",
+                                                "prompts",
+                                                "prompt",
+                                                "PromptTemplate",
+                                            ],
+                                            "kwargs": {
+                                                "input_variables": [],
+                                                "template_format": "f-string",
+                                                "template": "Generate a tweet about the given topic.",
+                                            },
+                                        }
+                                    },
+                                },
+                                {
+                                    "lc": 1,
+                                    "type": "constructor",
+                                    "id": [
+                                        "langchain",
+                                        "prompts",
+                                        "chat",
+                                        "HumanMessagePromptTemplate",
+                                    ],
+                                    "kwargs": {
+                                        "prompt": {
+                                            "lc": 1,
+                                            "type": "constructor",
+                                            "id": [
+                                                "langchain",
+                                                "prompts",
+                                                "prompt",
+                                                "PromptTemplate",
+                                            ],
+                                            "kwargs": {
+                                                "input_variables": ["topic"],
+                                                "template_format": "f-string",
+                                                "template": "{topic}",
+                                            },
+                                        }
+                                    },
+                                },
+                            ],
+                            "schema_": {
+                                "title": "GenerateTweet",
+                                "description": "Submit your tweet.",
+                                "type": "object",
+                                "properties": {
+                                    "tweet": {
+                                        "type": "string",
+                                        "description": "The generated tweet.",
+                                    }
+                                },
+                                "required": ["tweet"],
+                            },
+                        },
+                        "name": "StructuredPrompt",
+                    },
+                    "last": {
+                        "lc": 1,
+                        "type": "constructor",
+                        "id": ["langchain", "schema", "runnable", "RunnableBinding"],
+                        "kwargs": {
+                            "bound": {
+                                "lc": 1,
+                                "type": "constructor",
+                                "id": [
+                                    "langchain",
+                                    "chat_models",
+                                    "anthropic",
+                                    "ChatAnthropic",
+                                ],
+                                "kwargs": {
+                                    "temperature": 1,
+                                    "max_tokens": 1024,
+                                    "top_p": 1,
+                                    "top_k": -1,
+                                    "anthropic_api_key": {
+                                        "id": ["ANTHROPIC_API_KEY"],
+                                        "lc": 1,
+                                        "type": "secret",
+                                    },
+                                    "model": "claude-3-5-sonnet-20240620",
+                                },
+                            },
+                            "kwargs": {},
+                        },
+                    },
+                },
+            },
+            "examples": [],
+        },
+    ),
+    (
+        True,
+        "none",
+        {
+            "owner": "-",
+            "repo": "tweet-generator-example-with-nothing",
+            "commit_hash": "06c657373bdfcadec0d4d0933416b2c11f1b283ef3d1ca5dfb35dd6ed28b9f78",
+            "manifest": {
+                "lc": 1,
+                "type": "constructor",
+                "id": ["langchain", "schema", "runnable", "RunnableSequence"],
+                "kwargs": {
+                    "first": {
+                        "lc": 1,
+                        "type": "constructor",
+                        "id": ["langchain", "prompts", "chat", "ChatPromptTemplate"],
+                        "kwargs": {
+                            "messages": [
+                                {
+                                    "lc": 1,
+                                    "type": "constructor",
+                                    "id": [
+                                        "langchain",
+                                        "prompts",
+                                        "chat",
+                                        "SystemMessagePromptTemplate",
+                                    ],
+                                    "kwargs": {
+                                        "prompt": {
+                                            "lc": 1,
+                                            "type": "constructor",
+                                            "id": [
+                                                "langchain",
+                                                "prompts",
+                                                "prompt",
+                                                "PromptTemplate",
+                                            ],
+                                            "kwargs": {
+                                                "input_variables": [],
+                                                "template_format": "f-string",
+                                                "template": "Generate a tweet about the given topic.",
+                                            },
+                                        }
+                                    },
+                                },
+                                {
+                                    "lc": 1,
+                                    "type": "constructor",
+                                    "id": [
+                                        "langchain",
+                                        "prompts",
+                                        "chat",
+                                        "HumanMessagePromptTemplate",
+                                    ],
+                                    "kwargs": {
+                                        "prompt": {
+                                            "lc": 1,
+                                            "type": "constructor",
+                                            "id": [
+                                                "langchain",
+                                                "prompts",
+                                                "prompt",
+                                                "PromptTemplate",
+                                            ],
+                                            "kwargs": {
+                                                "input_variables": ["topic"],
+                                                "template_format": "f-string",
+                                                "template": "{topic}",
+                                            },
+                                        }
+                                    },
+                                },
+                            ],
+                            "input_variables": ["topic"],
+                        },
+                    },
+                    "last": {
+                        "lc": 1,
+                        "type": "constructor",
+                        "id": ["langchain", "schema", "runnable", "RunnableBinding"],
+                        "kwargs": {
+                            "bound": {
+                                "lc": 1,
+                                "type": "constructor",
+                                "id": [
+                                    "langchain",
+                                    "chat_models",
+                                    "openai",
+                                    "ChatOpenAI",
+                                ],
+                                "kwargs": {
+                                    "openai_api_key": {
+                                        "id": ["OPENAI_API_KEY"],
+                                        "lc": 1,
+                                        "type": "secret",
+                                    },
+                                    "model": "gpt-4o-mini",
+                                },
+                            },
+                            "kwargs": {},
+                        },
+                    },
+                },
+            },
+            "examples": [],
+        },
+    ),
+    (
+        False,
+        "tools",
+        {
+            "owner": "-",
+            "repo": "tweet-generator-example-with-tools",
+            "commit_hash": "b862ce708ffeb932331a9345ea2a2fe6a76d62cf83e9aab834c24bb12bd516c9",
+            "manifest": {
+                "lc": 1,
+                "type": "constructor",
+                "id": ["langchain", "prompts", "chat", "ChatPromptTemplate"],
+                "kwargs": {
+                    "input_variables": ["topic"],
+                    "metadata": {
+                        "lc_hub_owner": "-",
+                        "lc_hub_repo": "tweet-generator-example",
+                        "lc_hub_commit_hash": "c39837bd8d010da739d6d4adc7f2dca2f2461521661a393d37606f5c696109a5",
+                    },
+                    "messages": [
+                        {
+                            "lc": 1,
+                            "type": "constructor",
+                            "id": [
+                                "langchain",
+                                "prompts",
+                                "chat",
+                                "SystemMessagePromptTemplate",
+                            ],
+                            "kwargs": {
+                                "prompt": {
+                                    "lc": 1,
+                                    "type": "constructor",
+                                    "id": [
+                                        "langchain",
+                                        "prompts",
+                                        "prompt",
+                                        "PromptTemplate",
+                                    ],
+                                    "kwargs": {
+                                        "input_variables": [],
+                                        "template_format": "f-string",
+                                        "template": "Generate a tweet based on the provided topic.",
+                                    },
+                                }
+                            },
+                        },
+                        {
+                            "lc": 1,
+                            "type": "constructor",
+                            "id": [
+                                "langchain",
+                                "prompts",
+                                "chat",
+                                "HumanMessagePromptTemplate",
+                            ],
+                            "kwargs": {
+                                "prompt": {
+                                    "lc": 1,
+                                    "type": "constructor",
+                                    "id": [
+                                        "langchain",
+                                        "prompts",
+                                        "prompt",
+                                        "PromptTemplate",
+                                    ],
+                                    "kwargs": {
+                                        "input_variables": ["topic"],
+                                        "template_format": "f-string",
+                                        "template": "{topic}",
+                                    },
+                                }
+                            },
+                        },
+                    ],
+                },
+                "name": "StructuredPrompt",
+            },
+            "examples": [],
+        },
+    ),
+    (
+        False,
+        "structured",
+        {
+            "owner": "-",
+            "repo": "tweet-generator-example",
+            "commit_hash": "e8da7f9e80471ace9b96c4f8fd55a215020126521f1da8f66130604c101fc522",
+            "manifest": {
+                "lc": 1,
+                "type": "constructor",
+                "id": ["langchain_core", "prompts", "structured", "StructuredPrompt"],
+                "kwargs": {
+                    "input_variables": ["topic"],
+                    "metadata": {
+                        "lc_hub_owner": "langchain-ai",
+                        "lc_hub_repo": "tweet-generator-example",
+                        "lc_hub_commit_hash": "7c32ca78a2831b6b3a3904eb5704b48a0730e93f29afb0853cfaefc42dc09f9c",
+                    },
+                    "messages": [
+                        {
+                            "lc": 1,
+                            "type": "constructor",
+                            "id": [
+                                "langchain",
+                                "prompts",
+                                "chat",
+                                "SystemMessagePromptTemplate",
+                            ],
+                            "kwargs": {
+                                "prompt": {
+                                    "lc": 1,
+                                    "type": "constructor",
+                                    "id": [
+                                        "langchain",
+                                        "prompts",
+                                        "prompt",
+                                        "PromptTemplate",
+                                    ],
+                                    "kwargs": {
+                                        "input_variables": [],
+                                        "template_format": "f-string",
+                                        "template": "Generate a tweet about the given topic.",
+                                    },
+                                }
+                            },
+                        },
+                        {
+                            "lc": 1,
+                            "type": "constructor",
+                            "id": [
+                                "langchain",
+                                "prompts",
+                                "chat",
+                                "HumanMessagePromptTemplate",
+                            ],
+                            "kwargs": {
+                                "prompt": {
+                                    "lc": 1,
+                                    "type": "constructor",
+                                    "id": [
+                                        "langchain",
+                                        "prompts",
+                                        "prompt",
+                                        "PromptTemplate",
+                                    ],
+                                    "kwargs": {
+                                        "input_variables": ["topic"],
+                                        "template_format": "f-string",
+                                        "template": "{topic}",
+                                    },
+                                }
+                            },
+                        },
+                    ],
+                    "schema_": {
+                        "title": "GenerateTweet",
+                        "description": "Submit your tweet.",
+                        "type": "object",
+                        "properties": {
+                            "tweet": {
+                                "type": "string",
+                                "description": "The generated tweet.",
+                            }
+                        },
+                        "required": ["tweet"],
+                    },
+                },
+                "name": "StructuredPrompt",
+            },
+            "examples": [],
+        },
+    ),
+    (
+        False,
+        "none",
+        {
+            "owner": "-",
+            "repo": "tweet-generator-example-with-nothing",
+            "commit_hash": "06c657373bdfcadec0d4d0933416b2c11f1b283ef3d1ca5dfb35dd6ed28b9f78",
+            "manifest": {
+                "lc": 1,
+                "type": "constructor",
+                "id": ["langchain", "prompts", "chat", "ChatPromptTemplate"],
+                "kwargs": {
+                    "messages": [
+                        {
+                            "lc": 1,
+                            "type": "constructor",
+                            "id": [
+                                "langchain",
+                                "prompts",
+                                "chat",
+                                "SystemMessagePromptTemplate",
+                            ],
+                            "kwargs": {
+                                "prompt": {
+                                    "lc": 1,
+                                    "type": "constructor",
+                                    "id": [
+                                        "langchain",
+                                        "prompts",
+                                        "prompt",
+                                        "PromptTemplate",
+                                    ],
+                                    "kwargs": {
+                                        "input_variables": [],
+                                        "template_format": "f-string",
+                                        "template": "Generate a tweet about the given topic.",
+                                    },
+                                }
+                            },
+                        },
+                        {
+                            "lc": 1,
+                            "type": "constructor",
+                            "id": [
+                                "langchain",
+                                "prompts",
+                                "chat",
+                                "HumanMessagePromptTemplate",
+                            ],
+                            "kwargs": {
+                                "prompt": {
+                                    "lc": 1,
+                                    "type": "constructor",
+                                    "id": [
+                                        "langchain",
+                                        "prompts",
+                                        "prompt",
+                                        "PromptTemplate",
+                                    ],
+                                    "kwargs": {
+                                        "input_variables": ["topic"],
+                                        "template_format": "f-string",
+                                        "template": "{topic}",
+                                    },
+                                }
+                            },
+                        },
+                    ],
+                    "input_variables": ["topic"],
+                },
+            },
+            "examples": [],
+        },
+    ),
+]
+
+
+@pytest.mark.parametrize("include_model, manifest_type, manifest_data", _PROMPT_COMMITS)
+def test_pull_prompt(
+    include_model: bool,
+    manifest_type: Literal["structured", "tool", "none"],
+    manifest_data: dict,
+):
+    try:
+        from langchain_core.language_models.base import BaseLanguageModel
+        from langchain_core.output_parsers import JsonOutputKeyToolsParser
+        from langchain_core.prompts import ChatPromptTemplate
+        from langchain_core.prompts.structured import StructuredPrompt
+        from langchain_core.runnables import RunnableBinding, RunnableSequence
+    except ImportError:
+        pytest.skip("Skipping test that requires langchain")
+    # Create a mock session
+    mock_session = mock.Mock()
+    # prompt_commit = ls_schemas.PromptCommit(**manifest_data)
+    mock_session.request.side_effect = lambda method, url, **kwargs: mock.Mock(
+        json=lambda: manifest_data if "/commits/" in url else None
+    )
+
+    # Create a client with Info pre-created and version >= 0.6
+    info = ls_schemas.LangSmithInfo(version="0.6.0")
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="fake_api_key",
+        session=mock_session,
+        info=info,
+    )
+    with mock.patch.dict(
+        "os.environ",
+        {
+            "ANTHROPIC_API_KEY": "test_anthropic_key",
+            "OPENAI_API_KEY": "test_openai_key",
+        },
+    ):
+        result = client.pull_prompt(
+            prompt_identifier=manifest_data["repo"], include_model=include_model
+        )
+    expected_prompt_type = (
+        StructuredPrompt if manifest_type == "structured" else ChatPromptTemplate
+    )
+    if include_model:
+        assert isinstance(result, RunnableSequence)
+        assert isinstance(result.first, expected_prompt_type)
+        if manifest_type != "structured":
+            assert not isinstance(result.first, StructuredPrompt)
+            assert len(result.steps) == 2
+            if manifest_type == "tool":
+                assert result.steps[1].kwargs.get("tools")
+        else:
+            assert len(result.steps) == 3
+            assert isinstance(result.steps[1], RunnableBinding)
+            assert result.steps[1].kwargs.get("tools")
+            assert isinstance(result.steps[1].bound, BaseLanguageModel)
+            assert isinstance(result.steps[2], JsonOutputKeyToolsParser)
+
+    else:
+        assert isinstance(result, expected_prompt_type)
+        if manifest_type != "structured":
+            assert not isinstance(result, StructuredPrompt)
+
+
+def test_evaluate_methods() -> None:
+    client_args = set(inspect.signature(Client.evaluate).parameters).difference(
+        {"self"}
+    )
+    eval_args = set(inspect.signature(evaluate).parameters).difference({"client"})
+    assert client_args == eval_args
+
+    client_args = set(inspect.signature(Client.aevaluate).parameters).difference(
+        {"self"}
+    )
+    eval_args = set(inspect.signature(aevaluate).parameters).difference({"client"})
+    extra_args = client_args - eval_args
+    assert not extra_args
+
+
+@patch("langsmith.client.requests.Session")
+def test_create_run_with_zstd_compression(mock_session_cls: mock.Mock) -> None:
+    """Test that runs are sent using zstd compression when compression is enabled."""
+    # Prepare a mocked session
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_session.request.return_value = mock_response
+    mock_session_cls.return_value = mock_session
+
+    with patch.dict("os.environ", {}, clear=True):
+        info = ls_schemas.LangSmithInfo(
+            version="0.6.0",
+            instance_flags={"zstd_compression_enabled": True},
+            batch_ingest_config=ls_schemas.BatchIngestConfig(
+                use_multipart_endpoint=True,
+                size_limit=1,
+                size_limit_bytes=128,
+                scale_up_nthreads_limit=4,
+                scale_up_qsize_trigger=3,
+                scale_down_nempty_trigger=1,
+            ),
+        )
+        client = Client(
+            api_url="http://localhost:1984",
+            api_key="123",
+            auto_batch_tracing=True,
+            session=mock_session,
+            info=info,
+        )
+
+        # Create a few runs with larger payloads so there's something to compress
+        for i in range(2):
+            run_id = uuid.uuid4()
+            client.create_run(
+                name=f"my_test_run_{i}",
+                run_type="llm",
+                inputs={"some_key": "some_val" * 1000},
+                id=run_id,
+                trace_id=run_id,
+                dotted_order=str(run_id),
+            )
+
+        # Let the background threads flush
+        if client.tracing_queue:
+            client.tracing_queue.join()
+        if client._futures is not None:
+            for fut in client._futures:
+                fut.result()
+
+    time.sleep(0.1)
+
+    # Inspect the calls
+    post_calls = []
+    for call_obj in mock_session.request.mock_calls:
+        if call_obj.args and call_obj.args[0] == "POST":
+            post_calls.append(call_obj)
+    assert (
+        len(post_calls) >= 1
+    ), "Expected at least one POST to the compression endpoint"
+
+    call_data = post_calls[0][2]["data"]
+
+    if hasattr(call_data, "read"):
+        call_data = call_data.read()
+
+    zstd_magic = b"\x28\xb5\x2f\xfd"
+    assert call_data.startswith(zstd_magic), (
+        "Expected the request body to start with zstd magic bytes; "
+        "it appears runs were not compressed."
+    )
+
+
+@patch("langsmith.client.requests.Session")
+def test_create_feedback_with_zstd_compression(mock_session_cls: mock.Mock) -> None:
+    """Test that feedback is sent using zstd compression when compression is enabled."""
+    # Prepare a mocked session
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_session.request.return_value = mock_response
+    mock_session_cls.return_value = mock_session
+
+    with patch.dict("os.environ", {}, clear=True):
+        info = ls_schemas.LangSmithInfo(
+            version="0.8.11",
+            instance_flags={"zstd_compression_enabled": True},
+            batch_ingest_config=ls_schemas.BatchIngestConfig(
+                use_multipart_endpoint=True,
+                size_limit=1,
+                size_limit_bytes=128,
+                scale_up_nthreads_limit=4,
+                scale_up_qsize_trigger=3,
+                scale_down_nempty_trigger=1,
+            ),
+        )
+        client = Client(
+            api_url="http://localhost:1984",
+            api_key="123",
+            auto_batch_tracing=True,
+            session=mock_session,
+            info=info,
+        )
+
+        # Create a few runs with larger payloads so there's something to compress
+        run_id = uuid.uuid4()
+
+        feedback_data = {
+            "comment": "test comment",
+            "score": 0.95,
+        }
+        client.create_feedback(
+            run_id=run_id, key="test_key", trace_id=run_id, **feedback_data
+        )
+
+        # Let the background threads flush
+        if client.tracing_queue:
+            client.tracing_queue.join()
+        if client._futures is not None:
+            for fut in client._futures:
+                fut.result()
+
+        time.sleep(0.1)
+
+    # Inspect the calls
+    post_calls = [
+        call_obj
+        for call_obj in mock_session.request.mock_calls
+        if call_obj.args and call_obj.args[0] == "POST"
+    ]
+    assert len(post_calls) == 1, "Expected exactly one POST request"
+
+    call_data = post_calls[0][2]["data"]
+    if hasattr(call_data, "read"):
+        call_data = call_data.read()
+
+    # Check for zstd magic bytes
+    zstd_magic = b"\x28\xb5\x2f\xfd"
+    assert call_data.startswith(zstd_magic), (
+        "Expected the request body to start with zstd magic bytes; "
+        "it appears feedback was not compressed."
+    )
+
+    # Verify Content-Encoding header
+    headers = post_calls[0][2]["headers"]
+    assert (
+        headers.get("Content-Encoding") == "zstd"
+    ), "Expected Content-Encoding header to be 'zstd'"
+
+
+@patch("langsmith.client.requests.Session")
+def test_create_run_without_compression_support(mock_session_cls: mock.Mock) -> None:
+    """Test that runs use regular multipart when server doesn't support compression."""
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_session.request.return_value = mock_response
+    mock_session_cls.return_value = mock_session
+
+    with patch.dict("os.environ", {}, clear=True):
+        info = ls_schemas.LangSmithInfo(
+            version="0.6.0",
+            instance_flags={},  # No compression flag
+            batch_ingest_config=ls_schemas.BatchIngestConfig(
+                use_multipart_endpoint=True,
+                size_limit=1,
+                size_limit_bytes=128,
+                scale_up_nthreads_limit=4,
+                scale_up_qsize_trigger=3,
+                scale_down_nempty_trigger=1,
+            ),
+        )
+        client = Client(
+            api_url="http://localhost:1984",
+            api_key="123",
+            auto_batch_tracing=True,
+            session=mock_session,
+            info=info,
+        )
+
+        run_id = uuid.uuid4()
+        inputs = {"key": "there"}
+        client.create_run(
+            name="test_run",
+            run_type="llm",
+            inputs=inputs,
+            id=run_id,
+            trace_id=run_id,
+            dotted_order=str(run_id),
+        )
+
+        outputs = {"key": "hi there"}
+
+        client.update_run(
+            run_id,
+            outputs=outputs,
+            end_time=datetime.now(timezone.utc),
+            trace_id=run_id,
+            dotted_order=str(run_id),
+        )
+
+        if client.tracing_queue:
+            client.tracing_queue.join()
+
+    time.sleep(0.1)
+
+    post_calls = [
+        call_obj
+        for call_obj in mock_session.request.mock_calls
+        if call_obj.args and call_obj.args[0] == "POST"
+    ]
+    assert len(post_calls) >= 1
+
+    payloads = [
+        (call[2]["headers"], call[2]["data"])
+        for call in mock_session.request.mock_calls
+        if call.args and call.args[1].endswith("runs/multipart")
+    ]
+    if not payloads:
+        assert False, "No payloads found"
+
+    parts: List[MultipartPart] = []
+    for payload in payloads:
+        headers, data = payload
+        assert headers["Content-Type"].startswith("multipart/form-data")
+        assert isinstance(data, bytes)
+        boundary = parse_options_header(headers["Content-Type"])[1]["boundary"]
+        parser = MultipartParser(io.BytesIO(data), boundary)
+        parts.extend(parser.parts())
+
+    assert [p.name for p in parts] == [
+        f"post.{run_id}",
+        f"post.{run_id}.inputs",
+        f"post.{run_id}.outputs",
+    ]
+    assert [p.headers.get("content-type") for p in parts] == [
+        "application/json",
+        "application/json",
+        "application/json",
+    ]
+
+    outputs_parsed = json.loads(parts[2].value)
+    assert outputs_parsed == outputs
+    inputs_parsed = json.loads(parts[1].value)
+    assert inputs_parsed == inputs
+    run_parsed = json.loads(parts[0].value)
+    assert run_parsed["trace_id"] == str(run_id)
+    assert run_parsed["dotted_order"] == str(run_id)
+
+
+@patch("langsmith.client.requests.Session")
+def test_create_run_with_disabled_compression(mock_session_cls: mock.Mock) -> None:
+    """Test that runs use regular multipart when compression is explicitly disabled."""
+
+    # Clear the cache to ensure the environment variable is re-evaluated
+    ls_utils.get_env_var.cache_clear()
+
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_session.request.return_value = mock_response
+    mock_session_cls.return_value = mock_session
+
+    with patch.dict(
+        "os.environ", {"LANGSMITH_DISABLE_RUN_COMPRESSION": "true"}, clear=True
+    ):
+        info = ls_schemas.LangSmithInfo(
+            version="0.6.0",
+            instance_flags={"zstd_compression_enabled": True},  # Enabled on server
+            batch_ingest_config=ls_schemas.BatchIngestConfig(
+                use_multipart_endpoint=True,
+                size_limit=1,
+                size_limit_bytes=128,
+                scale_up_nthreads_limit=4,
+                scale_up_qsize_trigger=3,
+                scale_down_nempty_trigger=1,
+            ),
+        )
+        client = Client(
+            api_url="http://localhost:1984",
+            api_key="123",
+            auto_batch_tracing=True,
+            session=mock_session,
+            info=info,
+        )
+
+        run_id = uuid.uuid4()
+        inputs = {"key": "there"}
+        client.create_run(
+            name="test_run",
+            run_type="llm",
+            inputs=inputs,
+            id=run_id,
+            trace_id=run_id,
+            dotted_order=str(run_id),
+        )
+
+        outputs = {"key": "hi there"}
+        client.update_run(
+            run_id,
+            outputs=outputs,
+            end_time=datetime.now(timezone.utc),
+            trace_id=run_id,
+            dotted_order=str(run_id),
+        )
+
+        # Let the background threads flush
+        if client.tracing_queue:
+            client.tracing_queue.join()
+
+    time.sleep(0.1)
+
+    post_calls = [
+        call_obj
+        for call_obj in mock_session.request.mock_calls
+        if call_obj.args and call_obj.args[0] == "POST"
+    ]
+    assert len(post_calls) >= 1
+
+    payloads = [
+        (call[2]["headers"], call[2]["data"])
+        for call in mock_session.request.mock_calls
+        if call.args and call.args[1].endswith("runs/multipart")
+    ]
+    if not payloads:
+        assert False, "No payloads found"
+
+    parts: List[MultipartPart] = []
+    for payload in payloads:
+        headers, data = payload
+        assert headers["Content-Type"].startswith("multipart/form-data")
+        assert isinstance(data, bytes)
+        boundary = parse_options_header(headers["Content-Type"])[1]["boundary"]
+        parser = MultipartParser(io.BytesIO(data), boundary)
+        parts.extend(parser.parts())
+
+    assert [p.name for p in parts] == [
+        f"post.{run_id}",
+        f"post.{run_id}.inputs",
+        f"post.{run_id}.outputs",
+    ]
+    assert [p.headers.get("content-type") for p in parts] == [
+        "application/json",
+        "application/json",
+        "application/json",
+    ]
+
+    outputs_parsed = json.loads(parts[2].value)
+    assert outputs_parsed == outputs
+    inputs_parsed = json.loads(parts[1].value)
+    assert inputs_parsed == inputs
+    run_parsed = json.loads(parts[0].value)
+    assert run_parsed["trace_id"] == str(run_id)
+    assert run_parsed["dotted_order"] == str(run_id)

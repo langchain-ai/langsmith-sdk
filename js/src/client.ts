@@ -10,7 +10,7 @@ import {
   Example,
   ExampleCreate,
   ExampleUpdate,
-  ExampleUpdateWithId,
+  ExampleUpdateWithoutId,
   Feedback,
   FeedbackConfig,
   FeedbackIngestToken,
@@ -35,6 +35,12 @@ import {
   AnnotationQueue,
   RunWithAnnotationQueueInfo,
   Attachments,
+  UploadExamplesResponse,
+  UpdateExamplesResponse,
+  RawExample,
+  AttachmentInfo,
+  AttachmentData,
+  DatasetVersion,
 } from "./schemas.js";
 import {
   convertLangChainMessageToExample,
@@ -55,14 +61,11 @@ import {
 import { __version__ } from "./index.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
-import {
-  isVersionGreaterOrEqual,
-  parsePromptIdentifier,
-} from "./utils/prompts.js";
+import { parsePromptIdentifier } from "./utils/prompts.js";
 import { raiseForStatus } from "./utils/error.js";
 import { _getFetchImplementation } from "./singletons/fetch.js";
 
-import { stringify as stringifyForTracing } from "./utils/fast-safe-stringify/index.js";
+import { serialize as serializePayloadForTracing } from "./utils/fast-safe-stringify/index.js";
 
 export interface ClientConfig {
   apiUrl?: string;
@@ -78,6 +81,11 @@ export interface ClientConfig {
   blockOnRootRunFinalization?: boolean;
   traceBatchConcurrency?: number;
   fetchOptions?: RequestInit;
+  /**
+   * Whether to require manual .flush() calls before sending traces.
+   * Useful if encountering network rate limits at trace high volumes.
+   */
+  manualFlushMode?: boolean;
 }
 
 /**
@@ -273,6 +281,21 @@ export type CreateExampleOptions = {
   split?: string | string[];
   /** The ID of the source run associated with this example. */
   sourceRunId?: string;
+  /** Whether to use the inputs and outputs from the source run. */
+  useSourceRunIO?: boolean;
+  /** Which attachments from the source run to use. */
+  useSourceRunAttachments?: string[];
+  /** Attachments for the example */
+  attachments?: Attachments;
+};
+
+export type CreateProjectParams = {
+  projectName: string;
+  description?: string | null;
+  metadata?: RecordStringAny | null;
+  upsert?: boolean;
+  projectExtra?: RecordStringAny | null;
+  referenceDatasetId?: string | null;
 };
 
 type AutoBatchQueueItem = {
@@ -386,7 +409,7 @@ export class AutoBatchQueue {
       // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/Promise
       itemPromiseResolve = resolve;
     });
-    const size = stringifyForTracing(item.item).length;
+    const size = serializePayloadForTracing(item.item).length;
     this.items.push({
       action: item.action,
       payload: item.item,
@@ -435,9 +458,9 @@ export class AutoBatchQueue {
 // 20 MB
 export const DEFAULT_BATCH_SIZE_LIMIT_BYTES = 20_971_520;
 
-const SERVER_INFO_REQUEST_TIMEOUT = 1000;
+const SERVER_INFO_REQUEST_TIMEOUT = 2500;
 
-export class Client {
+export class Client implements LangSmithTracingClientInterface {
   private apiKey?: string;
 
   private apiUrl: string;
@@ -484,6 +507,8 @@ export class Client {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private _getServerInfoPromise?: Promise<Record<string, any>>;
 
+  private manualFlushMode = false;
+
   constructor(config: ClientConfig = {}) {
     const defaultConfig = Client.getDefaultClientConfig();
 
@@ -521,6 +546,7 @@ export class Client {
       config.blockOnRootRunFinalization ?? this.blockOnRootRunFinalization;
     this.batchSizeBytesLimit = config.batchSizeBytesLimit;
     this.fetchOptions = config.fetchOptions || {};
+    this.manualFlushMode = config.manualFlushMode ?? this.manualFlushMode;
   }
 
   public static getDefaultClientConfig(): {
@@ -553,6 +579,9 @@ export class Client {
     } else if (isLocalhost(this.apiUrl)) {
       this.webUrl = "http://localhost:3000";
       return this.webUrl;
+    } else if (this.apiUrl.endsWith("/api/v1")) {
+      this.webUrl = this.apiUrl.replace("/api/v1", "");
+      return this.webUrl;
     } else if (
       this.apiUrl.includes("/api") &&
       !this.apiUrl.split(".", 1)[0].endsWith("api")
@@ -564,6 +593,9 @@ export class Client {
       return this.webUrl;
     } else if (this.apiUrl.split(".", 1)[0].includes("eu")) {
       this.webUrl = "https://eu.smith.langchain.com";
+      return this.webUrl;
+    } else if (this.apiUrl.split(".", 1)[0].includes("beta")) {
+      this.webUrl = "https://beta.smith.langchain.com";
       return this.webUrl;
     } else {
       this.webUrl = "https://smith.langchain.com";
@@ -763,15 +795,25 @@ export class Client {
     );
   }
 
+  private async _getMultiPartSupport(): Promise<boolean> {
+    const serverInfo = await this._ensureServerInfo();
+    return (
+      serverInfo.instance_flags?.dataset_examples_multipart_enabled ?? false
+    );
+  }
+
   private drainAutoBatchQueue(batchSizeLimit: number) {
+    const promises = [];
     while (this.autoBatchQueue.items.length > 0) {
       const [batch, done] = this.autoBatchQueue.pop(batchSizeLimit);
       if (!batch.length) {
         done();
         break;
       }
-      void this._processBatch(batch, done).catch(console.error);
+      const batchPromise = this._processBatch(batch, done).catch(console.error);
+      promises.push(batchPromise);
     }
+    return Promise.all(promises);
   }
 
   private async _processBatch(batch: AutoBatchQueueItem[], done: () => void) {
@@ -806,14 +848,18 @@ export class Client {
       item.item = mergeRuntimeEnvIntoRunCreate(item.item as RunCreate);
     }
     const itemPromise = this.autoBatchQueue.push(item);
+    if (this.manualFlushMode) {
+      // Rely on manual flushing in serverless environments
+      return itemPromise;
+    }
     const sizeLimitBytes = await this._getBatchSizeLimitBytes();
     if (this.autoBatchQueue.sizeBytes > sizeLimitBytes) {
-      this.drainAutoBatchQueue(sizeLimitBytes);
+      void this.drainAutoBatchQueue(sizeLimitBytes);
     }
     if (this.autoBatchQueue.items.length > 0) {
       this.autoBatchTimeout = setTimeout(() => {
         this.autoBatchTimeout = undefined;
-        this.drainAutoBatchQueue(sizeLimitBytes);
+        void this.drainAutoBatchQueue(sizeLimitBytes);
       }, this.autoBatchAggregationDelayMs);
     }
     return itemPromise;
@@ -861,6 +907,14 @@ export class Client {
     return await this.settings;
   }
 
+  /**
+   * Flushes current queued traces.
+   */
+  public async flush() {
+    const sizeLimitBytes = await this._getBatchSizeLimitBytes();
+    await this.drainAutoBatchQueue(sizeLimitBytes);
+  }
+
   public async createRun(run: CreateRunParams): Promise<void> {
     if (!this._filterForSampling([run]).length) {
       return;
@@ -893,7 +947,7 @@ export class Client {
       {
         method: "POST",
         headers,
-        body: stringifyForTracing(mergedRunCreateParam),
+        body: serializePayloadForTracing(mergedRunCreateParam),
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       }
@@ -970,11 +1024,11 @@ export class Client {
       }
     }
     if (batchChunks.post.length > 0 || batchChunks.patch.length > 0) {
-      await this._postBatchIngestRuns(stringifyForTracing(batchChunks));
+      await this._postBatchIngestRuns(serializePayloadForTracing(batchChunks));
     }
   }
 
-  private async _postBatchIngestRuns(body: string) {
+  private async _postBatchIngestRuns(body: Uint8Array) {
     const headers = {
       ...this.headers,
       "Content-Type": "application/json",
@@ -1011,6 +1065,7 @@ export class Client {
     // transform and convert to dicts
     const allAttachments: Record<string, Attachments> = {};
     let preparedCreateParams = [];
+
     for (const create of runCreates ?? []) {
       const preparedCreate = this.prepareRunCreateOrUpdateInputs(create);
       if (
@@ -1093,7 +1148,7 @@ export class Client {
           originalPayload;
         const fields = { inputs, outputs, events };
         // encode the main run payload
-        const stringifiedPayload = stringifyForTracing(payload);
+        const stringifiedPayload = serializePayloadForTracing(payload);
         accumulatedParts.push({
           name: `${method}.${payload.id}`,
           payload: new Blob([stringifiedPayload], {
@@ -1105,7 +1160,7 @@ export class Client {
           if (value === undefined) {
             continue;
           }
-          const stringifiedValue = stringifyForTracing(value);
+          const stringifiedValue = serializePayloadForTracing(value);
           accumulatedParts.push({
             name: `${method}.${payload.id}.${key}`,
             payload: new Blob([stringifiedValue], {
@@ -1118,9 +1173,17 @@ export class Client {
           const attachments = allAttachments[payload.id];
           if (attachments) {
             delete allAttachments[payload.id];
-            for (const [name, [contentType, content]] of Object.entries(
-              attachments
-            )) {
+            for (const [name, attachment] of Object.entries(attachments)) {
+              let contentType: string;
+              let content: AttachmentData;
+
+              if (Array.isArray(attachment)) {
+                [contentType, content] = attachment;
+              } else {
+                contentType = attachment.mimeType;
+                content = attachment.data;
+              }
+
               // Validate that the attachment name doesn't contain a '.'
               if (name.includes(".")) {
                 console.warn(
@@ -1150,33 +1213,51 @@ export class Client {
 
   private async _sendMultipartRequest(parts: MultipartPart[], context: string) {
     try {
-      const formData = new FormData();
+      // Create multipart form data manually using Blobs
+      const boundary =
+        "----LangSmithFormBoundary" + Math.random().toString(36).slice(2);
+      const chunks: Blob[] = [];
+
       for (const part of parts) {
-        formData.append(part.name, part.payload);
+        // Add field boundary
+        chunks.push(new Blob([`--${boundary}\r\n`]));
+        chunks.push(
+          new Blob([
+            `Content-Disposition: form-data; name="${part.name}"\r\n`,
+            `Content-Type: ${part.payload.type}\r\n\r\n`,
+          ])
+        );
+        chunks.push(part.payload);
+        chunks.push(new Blob(["\r\n"]));
       }
-      // Log the form data
-      await this.batchIngestCaller.call(
+
+      // Add final boundary
+      chunks.push(new Blob([`--${boundary}--\r\n`]));
+
+      // Combine all chunks into a single Blob
+      const body = new Blob(chunks);
+
+      // Convert Blob to ArrayBuffer for compatibility
+      const arrayBuffer = await body.arrayBuffer();
+
+      const res = await this.batchIngestCaller.call(
         _getFetchImplementation(),
         `${this.apiUrl}/runs/multipart`,
         {
           method: "POST",
           headers: {
             ...this.headers,
+            "Content-Type": `multipart/form-data; boundary=${boundary}`,
           },
-          body: formData,
+          body: arrayBuffer,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
         }
       );
-    } catch (e) {
-      let errorMessage = "Failed to multipart ingest runs";
-      // eslint-disable-next-line no-instanceof/no-instanceof
-      if (e instanceof Error) {
-        errorMessage += `: ${e.stack || e.message}`;
-      } else {
-        errorMessage += `: ${String(e)}`;
-      }
-      console.warn(`${errorMessage.trim()}\n\nContext: ${context}`);
+      await raiseForStatus(res, "ingest multipart runs", true);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (e: any) {
+      console.warn(`${e.message.trim()}\n\nContext: ${context}`);
     }
   }
 
@@ -1202,7 +1283,8 @@ export class Client {
       if (
         run.end_time !== undefined &&
         data.parent_run_id === undefined &&
-        this.blockOnRootRunFinalization
+        this.blockOnRootRunFinalization &&
+        !this.manualFlushMode
       ) {
         // Trigger batches as soon as a root trace ends and wait to ensure trace finishes
         // in serverless environments.
@@ -1224,7 +1306,7 @@ export class Client {
       {
         method: "PATCH",
         headers,
-        body: stringifyForTracing(run),
+        body: serializePayloadForTracing(run),
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       }
@@ -1342,6 +1424,7 @@ export class Client {
    * @param query - The query string to filter by.
    * @param filter - The filter string to apply to the run spans.
    * @param traceFilter - The filter string to apply on the root run of the trace.
+   * @param treeFilter - The filter string to apply on other runs in the trace.
    * @param limit - The maximum number of runs to retrieve.
    * @returns {AsyncIterable<Run>} - The runs.
    *
@@ -1849,14 +1932,7 @@ export class Client {
     upsert = false,
     projectExtra = null,
     referenceDatasetId = null,
-  }: {
-    projectName: string;
-    description?: string | null;
-    metadata?: RecordStringAny | null;
-    upsert?: boolean;
-    projectExtra?: RecordStringAny | null;
-    referenceDatasetId?: string | null;
-  }): Promise<TracerSession> {
+  }: CreateProjectParams): Promise<TracerSession> {
     const upsert_ = upsert ? `?upsert=true` : "";
     const endpoint = `${this.apiUrl}/sessions${upsert_}`;
     const extra: RecordStringAny = projectExtra || {};
@@ -2346,7 +2422,7 @@ export class Client {
     } else if (datasetName !== undefined) {
       datasetId = (await this.readDataset({ datasetName })).id;
     } else {
-      throw new Error("Must provide datasetName or datasetId");
+      throw new Error("Must provide either datasetName or datasetId");
     }
     const response = await this._getResponse(`${path}/${datasetId}/openai_ft`);
     const datasetText = await response.text();
@@ -2429,6 +2505,53 @@ export class Client {
     );
     await raiseForStatus(response, "update dataset");
     return (await response.json()) as Dataset;
+  }
+
+  /**
+   * Updates a tag on a dataset.
+   *
+   * If the tag is already assigned to a different version of this dataset,
+   * the tag will be moved to the new version. The as_of parameter is used to
+   * determine which version of the dataset to apply the new tags to.
+   *
+   * It must be an exact version of the dataset to succeed. You can
+   * use the "readDatasetVersion" method to find the exact version
+   * to apply the tags to.
+   * @param params.datasetId The ID of the dataset to update. Must be provided if "datasetName" is not provided.
+   * @param params.datasetName The name of the dataset to update. Must be provided if "datasetId" is not provided.
+   * @param params.asOf The timestamp of the dataset to apply the new tags to.
+   * @param params.tag The new tag to apply to the dataset.
+   */
+  public async updateDatasetTag(props: {
+    datasetId?: string;
+    datasetName?: string;
+    asOf: string | Date;
+    tag: string;
+  }): Promise<void> {
+    const { datasetId, datasetName, asOf, tag } = props;
+
+    if (!datasetId && !datasetName) {
+      throw new Error("Must provide either datasetName or datasetId");
+    }
+    const _datasetId =
+      datasetId ?? (await this.readDataset({ datasetName })).id;
+    assertUuid(_datasetId);
+
+    const response = await this.caller.call(
+      _getFetchImplementation(),
+      `${this.apiUrl}/datasets/${_datasetId}/tags`,
+      {
+        method: "PUT",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          as_of: typeof asOf === "string" ? asOf : asOf.toISOString(),
+          tag,
+        }),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+    await raiseForStatus(response, "update dataset tags");
   }
 
   public async deleteDataset({
@@ -2571,113 +2694,182 @@ export class Client {
     return result["examples"] as ExampleSearch[];
   }
 
+  public async createExample(update: ExampleCreate): Promise<Example>;
+
+  /**
+   * @deprecated This signature is deprecated, use createExample(update: ExampleCreate) instead
+   */
   public async createExample(
     inputs: KVMap,
     outputs: KVMap,
-    {
-      datasetId,
-      datasetName,
-      createdAt,
-      exampleId,
-      metadata,
-      split,
-      sourceRunId,
-    }: CreateExampleOptions
+    options: CreateExampleOptions
+  ): Promise<Example>;
+
+  public async createExample(
+    inputsOrUpdate: KVMap | ExampleCreate,
+    outputs?: KVMap,
+    options?: CreateExampleOptions
   ): Promise<Example> {
-    let datasetId_ = datasetId;
-    if (datasetId_ === undefined && datasetName === undefined) {
+    if (isExampleCreate(inputsOrUpdate)) {
+      if (outputs !== undefined || options !== undefined) {
+        throw new Error(
+          "Cannot provide outputs or options when using ExampleCreate object"
+        );
+      }
+    }
+
+    let datasetId_ = outputs ? options?.datasetId : inputsOrUpdate.dataset_id;
+    const datasetName_ = outputs
+      ? options?.datasetName
+      : inputsOrUpdate.dataset_name;
+    if (datasetId_ === undefined && datasetName_ === undefined) {
       throw new Error("Must provide either datasetName or datasetId");
-    } else if (datasetId_ !== undefined && datasetName !== undefined) {
+    } else if (datasetId_ !== undefined && datasetName_ !== undefined) {
       throw new Error("Must provide either datasetName or datasetId, not both");
     } else if (datasetId_ === undefined) {
-      const dataset = await this.readDataset({ datasetName });
+      const dataset = await this.readDataset({ datasetName: datasetName_ });
       datasetId_ = dataset.id;
     }
 
-    const createdAt_ = createdAt || new Date();
-    const data: ExampleCreate = {
-      dataset_id: datasetId_,
-      inputs,
-      outputs,
-      created_at: createdAt_?.toISOString(),
-      id: exampleId,
-      metadata,
-      split,
-      source_run_id: sourceRunId,
-    };
+    const createdAt_ =
+      (outputs ? options?.createdAt : inputsOrUpdate.created_at) || new Date();
+    let data: ExampleCreate;
+    if (!isExampleCreate(inputsOrUpdate)) {
+      data = {
+        inputs: inputsOrUpdate,
+        outputs,
+        created_at: createdAt_?.toISOString(),
+        id: options?.exampleId,
+        metadata: options?.metadata,
+        split: options?.split,
+        source_run_id: options?.sourceRunId,
+        use_source_run_io: options?.useSourceRunIO,
+        use_source_run_attachments: options?.useSourceRunAttachments,
+        attachments: options?.attachments,
+      };
+    } else {
+      data = inputsOrUpdate;
+    }
 
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/examples`,
-      {
-        method: "POST",
-        headers: { ...this.headers, "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
-      }
+    const response = await this._uploadExamplesMultipart(datasetId_, [data]);
+    const example = await this.readExample(
+      response.example_ids?.[0] ?? uuid.v4()
     );
-
-    await raiseForStatus(response, "create example");
-    const result = await response.json();
-    return result as Example;
+    return example;
   }
 
+  public async createExamples(uploads: ExampleCreate[]): Promise<Example[]>;
+  /** @deprecated Use the uploads-only overload instead */
   public async createExamples(props: {
-    inputs: Array<KVMap>;
+    inputs?: Array<KVMap>;
     outputs?: Array<KVMap>;
     metadata?: Array<KVMap>;
     splits?: Array<string | Array<string>>;
     sourceRunIds?: Array<string>;
+    useSourceRunIOs?: Array<boolean>;
+    useSourceRunAttachments?: Array<string[]>;
+    attachments?: Array<Attachments>;
     exampleIds?: Array<string>;
     datasetId?: string;
     datasetName?: string;
-  }): Promise<Example[]> {
+  }): Promise<Example[]>;
+  public async createExamples(
+    propsOrUploads:
+      | ExampleCreate[]
+      | {
+          inputs?: Array<KVMap>;
+          outputs?: Array<KVMap>;
+          metadata?: Array<KVMap>;
+          splits?: Array<string | Array<string>>;
+          sourceRunIds?: Array<string>;
+          useSourceRunIOs?: Array<boolean>;
+          useSourceRunAttachments?: Array<string[]>;
+          attachments?: Array<Attachments>;
+          exampleIds?: Array<string>;
+          datasetId?: string;
+          datasetName?: string;
+        }
+  ): Promise<Example[]> {
+    if (Array.isArray(propsOrUploads)) {
+      if (propsOrUploads.length === 0) {
+        return [];
+      }
+
+      const uploads = propsOrUploads;
+      let datasetId_ = uploads[0].dataset_id;
+      const datasetName_ = uploads[0].dataset_name;
+
+      if (datasetId_ === undefined && datasetName_ === undefined) {
+        throw new Error("Must provide either datasetName or datasetId");
+      } else if (datasetId_ !== undefined && datasetName_ !== undefined) {
+        throw new Error(
+          "Must provide either datasetName or datasetId, not both"
+        );
+      } else if (datasetId_ === undefined) {
+        const dataset = await this.readDataset({ datasetName: datasetName_ });
+        datasetId_ = dataset.id;
+      }
+
+      const response = await this._uploadExamplesMultipart(datasetId_, uploads);
+      const examples = await Promise.all(
+        response.example_ids.map((id) => this.readExample(id))
+      );
+      return examples;
+    }
+
     const {
       inputs,
       outputs,
       metadata,
+      splits,
       sourceRunIds,
+      useSourceRunIOs,
+      useSourceRunAttachments,
+      attachments,
       exampleIds,
       datasetId,
       datasetName,
-    } = props;
+    } = propsOrUploads;
+
+    if (inputs === undefined) {
+      throw new Error("Must provide inputs when using legacy parameters");
+    }
+
     let datasetId_ = datasetId;
-    if (datasetId_ === undefined && datasetName === undefined) {
+    const datasetName_ = datasetName;
+
+    if (datasetId_ === undefined && datasetName_ === undefined) {
       throw new Error("Must provide either datasetName or datasetId");
-    } else if (datasetId_ !== undefined && datasetName !== undefined) {
+    } else if (datasetId_ !== undefined && datasetName_ !== undefined) {
       throw new Error("Must provide either datasetName or datasetId, not both");
     } else if (datasetId_ === undefined) {
-      const dataset = await this.readDataset({ datasetName });
+      const dataset = await this.readDataset({ datasetName: datasetName_ });
       datasetId_ = dataset.id;
     }
 
-    const formattedExamples = inputs.map((input, idx) => {
+    const formattedExamples: ExampleCreate[] = inputs.map((input, idx) => {
       return {
         dataset_id: datasetId_,
         inputs: input,
-        outputs: outputs ? outputs[idx] : undefined,
-        metadata: metadata ? metadata[idx] : undefined,
-        split: props.splits ? props.splits[idx] : undefined,
-        id: exampleIds ? exampleIds[idx] : undefined,
-        source_run_id: sourceRunIds ? sourceRunIds[idx] : undefined,
-      };
+        outputs: outputs?.[idx],
+        metadata: metadata?.[idx],
+        split: splits?.[idx],
+        id: exampleIds?.[idx],
+        attachments: attachments?.[idx],
+        source_run_id: sourceRunIds?.[idx],
+        use_source_run_io: useSourceRunIOs?.[idx],
+        use_source_run_attachments: useSourceRunAttachments?.[idx],
+      } as ExampleCreate;
     });
 
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/examples/bulk`,
-      {
-        method: "POST",
-        headers: { ...this.headers, "Content-Type": "application/json" },
-        body: JSON.stringify(formattedExamples),
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
-      }
+    const response = await this._uploadExamplesMultipart(
+      datasetId_,
+      formattedExamples
     );
-    await raiseForStatus(response, "create examples");
-    const result = await response.json();
-    return result as Example[];
+    const examples = await Promise.all(
+      response.example_ids.map((id) => this.readExample(id))
+    );
+    return examples;
   }
 
   public async createLLMExample(
@@ -2712,7 +2904,22 @@ export class Client {
   public async readExample(exampleId: string): Promise<Example> {
     assertUuid(exampleId);
     const path = `/examples/${exampleId}`;
-    return await this._get<Example>(path);
+    const rawExample: RawExample = await this._get(path);
+    const { attachment_urls, ...rest } = rawExample;
+    const example: Example = rest;
+    if (attachment_urls) {
+      example.attachments = Object.entries(attachment_urls).reduce(
+        (acc, [key, value]) => {
+          acc[key.slice("attachment.".length)] = {
+            presigned_url: value.presigned_url,
+            mime_type: value.mime_type,
+          };
+          return acc;
+        },
+        {} as Record<string, AttachmentInfo>
+      );
+    }
+    return example;
   }
 
   public async *listExamples({
@@ -2726,6 +2933,7 @@ export class Client {
     limit,
     offset,
     filter,
+    includeAttachments,
   }: {
     datasetId?: string;
     datasetName?: string;
@@ -2737,6 +2945,7 @@ export class Client {
     limit?: number;
     offset?: number;
     filter?: string;
+    includeAttachments?: boolean;
   } = {}): AsyncIterable<Example> {
     let datasetId_;
     if (datasetId !== undefined && datasetName !== undefined) {
@@ -2783,12 +2992,31 @@ export class Client {
     if (filter !== undefined) {
       params.append("filter", filter);
     }
+    if (includeAttachments === true) {
+      ["attachment_urls", "outputs", "metadata"].forEach((field) =>
+        params.append("select", field)
+      );
+    }
     let i = 0;
-    for await (const examples of this._getPaginated<Example>(
+    for await (const rawExamples of this._getPaginated<RawExample>(
       "/examples",
       params
     )) {
-      for (const example of examples) {
+      for (const rawExample of rawExamples) {
+        const { attachment_urls, ...rest } = rawExample;
+        const example: Example = rest;
+        if (attachment_urls) {
+          example.attachments = Object.entries(attachment_urls).reduce(
+            (acc, [key, value]) => {
+              acc[key.slice("attachment.".length)] = {
+                presigned_url: value.presigned_url,
+                mime_type: value.mime_type || undefined,
+              };
+              return acc;
+            },
+            {} as Record<string, AttachmentInfo>
+          );
+        }
         yield example;
         i++;
       }
@@ -2815,42 +3043,124 @@ export class Client {
     await response.json();
   }
 
+  /**
+   * @deprecated This signature is deprecated, use updateExample(update: ExampleUpdate) instead
+   */
   public async updateExample(
     exampleId: string,
-    update: ExampleUpdate
+    update: ExampleUpdateWithoutId
+  ): Promise<object>;
+
+  public async updateExample(update: ExampleUpdate): Promise<object>;
+
+  public async updateExample(
+    exampleIdOrUpdate: string | ExampleUpdate,
+    update?: ExampleUpdateWithoutId
   ): Promise<object> {
+    let exampleId: string;
+    if (update) {
+      exampleId = exampleIdOrUpdate as string;
+    } else {
+      exampleId = (exampleIdOrUpdate as ExampleUpdate).id;
+    }
+
     assertUuid(exampleId);
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/examples/${exampleId}`,
-      {
-        method: "PATCH",
-        headers: { ...this.headers, "Content-Type": "application/json" },
-        body: JSON.stringify(update),
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
-      }
-    );
-    await raiseForStatus(response, "update example");
-    const result = await response.json();
-    return result;
+
+    let updateToUse: ExampleUpdate;
+    if (update) {
+      updateToUse = { id: exampleId, ...update };
+    } else {
+      updateToUse = exampleIdOrUpdate as ExampleUpdate;
+    }
+
+    let datasetId: string;
+    if (updateToUse.dataset_id !== undefined) {
+      datasetId = updateToUse.dataset_id;
+    } else {
+      const example = await this.readExample(exampleId);
+      datasetId = example.dataset_id;
+    }
+
+    return this._updateExamplesMultipart(datasetId, [updateToUse]);
   }
 
-  public async updateExamples(update: ExampleUpdateWithId[]): Promise<object> {
+  public async updateExamples(update: ExampleUpdate[]): Promise<object> {
+    // We will naively get dataset id from first example and assume it works for all
+    let datasetId: string;
+    if (update[0].dataset_id === undefined) {
+      const example = await this.readExample(update[0].id);
+      datasetId = example.dataset_id;
+    } else {
+      datasetId = update[0].dataset_id;
+    }
+
+    return this._updateExamplesMultipart(datasetId, update);
+  }
+
+  /**
+   * Get dataset version by closest date or exact tag.
+   *
+   * Use this to resolve the nearest version to a given timestamp or for a given tag.
+   *
+   * @param options The options for getting the dataset version
+   * @param options.datasetId The ID of the dataset
+   * @param options.datasetName The name of the dataset
+   * @param options.asOf The timestamp of the dataset to retrieve
+   * @param options.tag The tag of the dataset to retrieve
+   * @returns The dataset version
+   */
+  public async readDatasetVersion({
+    datasetId,
+    datasetName,
+    asOf,
+    tag,
+  }: {
+    datasetId?: string;
+    datasetName?: string;
+    asOf?: string | Date;
+    tag?: string;
+  }): Promise<DatasetVersion> {
+    let resolvedDatasetId: string;
+    if (!datasetId) {
+      const dataset = await this.readDataset({ datasetName });
+      resolvedDatasetId = dataset.id;
+    } else {
+      resolvedDatasetId = datasetId;
+    }
+
+    assertUuid(resolvedDatasetId);
+
+    if ((asOf && tag) || (!asOf && !tag)) {
+      throw new Error("Exactly one of asOf and tag must be specified.");
+    }
+
+    const params = new URLSearchParams();
+    if (asOf !== undefined) {
+      params.append(
+        "as_of",
+        typeof asOf === "string" ? asOf : asOf.toISOString()
+      );
+    }
+    if (tag !== undefined) {
+      params.append("tag", tag);
+    }
+
     const response = await this.caller.call(
       _getFetchImplementation(),
-      `${this.apiUrl}/examples/bulk`,
+      `${
+        this.apiUrl
+      }/datasets/${resolvedDatasetId}/version?${params.toString()}`,
       {
-        method: "PATCH",
-        headers: { ...this.headers, "Content-Type": "application/json" },
-        body: JSON.stringify(update),
+        method: "GET",
+        headers: { ...this.headers },
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       }
     );
-    await raiseForStatus(response, "update examples");
-    const result = await response.json();
-    return result;
+
+    await raiseForStatus(response, "read dataset version");
+
+    return await response.json();
   }
 
   public async listDatasetSplits({
@@ -3171,10 +3481,10 @@ export class Client {
    * applications the ability to submit feedback without needing
    * to expose an API key.
    *
-   * @param runId - The ID of the run.
-   * @param feedbackKey - The feedback key.
-   * @param options - Additional options for the token.
-   * @param options.expiration - The expiration time for the token.
+   * @param runId The ID of the run.
+   * @param feedbackKey The feedback key.
+   * @param options Additional options for the token.
+   * @param options.expiration The expiration time for the token.
    *
    * @returns A promise that resolves to a FeedbackIngestToken.
    */
@@ -3299,11 +3609,13 @@ export class Client {
   }
 
   _selectEvalResults(
-    results: EvaluationResult | EvaluationResults
+    results: EvaluationResult | EvaluationResult[] | EvaluationResults
   ): Array<EvaluationResult> {
     let results_: Array<EvaluationResult>;
     if ("results" in results) {
       results_ = results.results;
+    } else if (Array.isArray(results)) {
+      results_ = results;
     } else {
       results_ = [results];
     }
@@ -3311,7 +3623,10 @@ export class Client {
   }
 
   async _logEvaluationFeedback(
-    evaluatorResponse: EvaluationResult | EvaluationResults,
+    evaluatorResponse:
+      | EvaluationResult
+      | EvaluationResult[]
+      | EvaluationResults,
     run?: Run,
     sourceInfo?: { [key: string]: any }
   ): Promise<[results: EvaluationResult[], feedbacks: Feedback[]]> {
@@ -3350,7 +3665,10 @@ export class Client {
   }
 
   public async logEvaluationFeedback(
-    evaluatorResponse: EvaluationResult | EvaluationResults,
+    evaluatorResponse:
+      | EvaluationResult
+      | EvaluationResult[]
+      | EvaluationResults,
     run?: Run,
     sourceInfo?: { [key: string]: any }
   ): Promise<EvaluationResult[]> {
@@ -3561,6 +3879,52 @@ export class Client {
     );
 
     await raiseForStatus(response, "get run from annotation queue");
+    return await response.json();
+  }
+
+  /**
+   * Delete a run from an an annotation queue.
+   * @param queueId - The ID of the annotation queue to delete the run from
+   * @param queueRunId - The ID of the run to delete from the annotation queue
+   */
+  public async deleteRunFromAnnotationQueue(
+    queueId: string,
+    queueRunId: string
+  ): Promise<void> {
+    const response = await this.caller.call(
+      _getFetchImplementation(),
+      `${this.apiUrl}/annotation-queues/${assertUuid(
+        queueId,
+        "queueId"
+      )}/runs/${assertUuid(queueRunId, "queueRunId")}`,
+      {
+        method: "DELETE",
+        headers: { ...this.headers, Accept: "application/json" },
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+    await raiseForStatus(response, "delete run from annotation queue");
+  }
+
+  /**
+   * Get the size of an annotation queue.
+   * @param queueId - The ID of the annotation queue
+   */
+  public async getSizeFromAnnotationQueue(
+    queueId: string
+  ): Promise<{ size: number }> {
+    const response = await this.caller.call(
+      _getFetchImplementation(),
+      `${this.apiUrl}/annotation-queues/${assertUuid(queueId, "queueId")}/size`,
+      {
+        method: "GET",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+    await raiseForStatus(response, "get size from annotation queue");
     return await response.json();
   }
 
@@ -3844,6 +4208,212 @@ export class Client {
     );
   }
 
+  /**
+   * Update examples with attachments using multipart form data.
+   * @param updates List of ExampleUpdateWithAttachments objects to upsert
+   * @returns Promise with the update response
+   */
+  public async updateExamplesMultipart(
+    datasetId: string,
+    updates: ExampleUpdate[] = []
+  ): Promise<UpdateExamplesResponse> {
+    return this._updateExamplesMultipart(datasetId, updates);
+  }
+
+  private async _updateExamplesMultipart(
+    datasetId: string,
+    updates: ExampleUpdate[] = []
+  ): Promise<UpdateExamplesResponse> {
+    if (!(await this._getMultiPartSupport())) {
+      throw new Error(
+        "Your LangSmith version does not allow using the multipart examples endpoint, please update to the latest version."
+      );
+    }
+    const formData = new FormData();
+
+    for (const example of updates) {
+      const exampleId = example.id;
+
+      // Prepare the main example body
+      const exampleBody = {
+        ...(example.metadata && { metadata: example.metadata }),
+        ...(example.split && { split: example.split }),
+      };
+
+      // Add main example data
+      const stringifiedExample = serializePayloadForTracing(exampleBody);
+      const exampleBlob = new Blob([stringifiedExample], {
+        type: "application/json",
+      });
+      formData.append(exampleId, exampleBlob);
+
+      // Add inputs if present
+      if (example.inputs) {
+        const stringifiedInputs = serializePayloadForTracing(example.inputs);
+        const inputsBlob = new Blob([stringifiedInputs], {
+          type: "application/json",
+        });
+        formData.append(`${exampleId}.inputs`, inputsBlob);
+      }
+
+      // Add outputs if present
+      if (example.outputs) {
+        const stringifiedOutputs = serializePayloadForTracing(example.outputs);
+        const outputsBlob = new Blob([stringifiedOutputs], {
+          type: "application/json",
+        });
+        formData.append(`${exampleId}.outputs`, outputsBlob);
+      }
+
+      // Add attachments if present
+      if (example.attachments) {
+        for (const [name, attachment] of Object.entries(example.attachments)) {
+          let mimeType: string;
+          let data: AttachmentData;
+
+          if (Array.isArray(attachment)) {
+            [mimeType, data] = attachment;
+          } else {
+            mimeType = attachment.mimeType;
+            data = attachment.data;
+          }
+          const attachmentBlob = new Blob([data], {
+            type: `${mimeType}; length=${data.byteLength}`,
+          });
+          formData.append(`${exampleId}.attachment.${name}`, attachmentBlob);
+        }
+      }
+
+      if (example.attachments_operations) {
+        const stringifiedAttachmentsOperations = serializePayloadForTracing(
+          example.attachments_operations
+        );
+        const attachmentsOperationsBlob = new Blob(
+          [stringifiedAttachmentsOperations],
+          {
+            type: "application/json",
+          }
+        );
+        formData.append(
+          `${exampleId}.attachments_operations`,
+          attachmentsOperationsBlob
+        );
+      }
+    }
+
+    const datasetIdToUse = datasetId ?? updates[0]?.dataset_id;
+    const response = await this.caller.call(
+      _getFetchImplementation(),
+      `${this.apiUrl}/v1/platform/datasets/${datasetIdToUse}/examples`,
+      {
+        method: "PATCH",
+        headers: this.headers,
+        body: formData,
+      }
+    );
+    const result = await response.json();
+    return result;
+  }
+
+  /**
+   * Upload examples with attachments using multipart form data.
+   * @param uploads List of ExampleUploadWithAttachments objects to upload
+   * @returns Promise with the upload response
+   * @deprecated This method is deprecated and will be removed in future LangSmith versions, please use `createExamples` instead
+   */
+  public async uploadExamplesMultipart(
+    datasetId: string,
+    uploads: ExampleCreate[] = []
+  ): Promise<UploadExamplesResponse> {
+    return this._uploadExamplesMultipart(datasetId, uploads);
+  }
+
+  private async _uploadExamplesMultipart(
+    datasetId: string,
+    uploads: ExampleCreate[] = []
+  ): Promise<UploadExamplesResponse> {
+    if (!(await this._getMultiPartSupport())) {
+      throw new Error(
+        "Your LangSmith version does not allow using the multipart examples endpoint, please update to the latest version."
+      );
+    }
+    const formData = new FormData();
+
+    for (const example of uploads) {
+      const exampleId = (example.id ?? uuid.v4()).toString();
+
+      // Prepare the main example body
+      const exampleBody = {
+        created_at: example.created_at,
+        ...(example.metadata && { metadata: example.metadata }),
+        ...(example.split && { split: example.split }),
+        ...(example.source_run_id && { source_run_id: example.source_run_id }),
+        ...(example.use_source_run_io && {
+          use_source_run_io: example.use_source_run_io,
+        }),
+        ...(example.use_source_run_attachments && {
+          use_source_run_attachments: example.use_source_run_attachments,
+        }),
+      };
+
+      // Add main example data
+      const stringifiedExample = serializePayloadForTracing(exampleBody);
+      const exampleBlob = new Blob([stringifiedExample], {
+        type: "application/json",
+      });
+      formData.append(exampleId, exampleBlob);
+
+      // Add inputs if present
+      if (example.inputs) {
+        const stringifiedInputs = serializePayloadForTracing(example.inputs);
+        const inputsBlob = new Blob([stringifiedInputs], {
+          type: "application/json",
+        });
+        formData.append(`${exampleId}.inputs`, inputsBlob);
+      }
+
+      // Add outputs if present
+      if (example.outputs) {
+        const stringifiedOutputs = serializePayloadForTracing(example.outputs);
+        const outputsBlob = new Blob([stringifiedOutputs], {
+          type: "application/json",
+        });
+        formData.append(`${exampleId}.outputs`, outputsBlob);
+      }
+
+      // Add attachments if present
+      if (example.attachments) {
+        for (const [name, attachment] of Object.entries(example.attachments)) {
+          let mimeType: string;
+          let data: AttachmentData;
+
+          if (Array.isArray(attachment)) {
+            [mimeType, data] = attachment;
+          } else {
+            mimeType = attachment.mimeType;
+            data = attachment.data;
+          }
+          const attachmentBlob = new Blob([data], {
+            type: `${mimeType}; length=${data.byteLength}`,
+          });
+          formData.append(`${exampleId}.attachment.${name}`, attachmentBlob);
+        }
+      }
+    }
+
+    const response = await this.caller.call(
+      _getFetchImplementation(),
+      `${this.apiUrl}/v1/platform/datasets/${datasetId}/examples`,
+      {
+        method: "POST",
+        headers: this.headers,
+        body: formData,
+      }
+    );
+    const result = await response.json();
+    return result;
+  }
+
   public async updatePrompt(
     promptIdentifier: string,
     options?: {
@@ -3859,7 +4429,6 @@ export class Client {
     }
 
     const [owner, promptName] = parsePromptIdentifier(promptIdentifier);
-
     if (!(await this._currentTenantIsOwner(owner))) {
       throw await this._ownerConflictError("update a prompt", owner);
     }
@@ -3932,28 +4501,9 @@ export class Client {
   ): Promise<PromptCommit> {
     const [owner, promptName, commitHash] =
       parsePromptIdentifier(promptIdentifier);
-    const serverInfo = await this._getServerInfo();
-    const useOptimization = isVersionGreaterOrEqual(
-      serverInfo.version,
-      "0.5.23"
-    );
-
-    let passedCommitHash = commitHash;
-
-    if (!useOptimization && commitHash === "latest") {
-      const latestCommitHash = await this._getLatestCommitHash(
-        `${owner}/${promptName}`
-      );
-      if (!latestCommitHash) {
-        throw new Error("No commits found");
-      } else {
-        passedCommitHash = latestCommitHash;
-      }
-    }
-
     const response = await this.caller.call(
       _getFetchImplementation(),
-      `${this.apiUrl}/commits/${owner}/${promptName}/${passedCommitHash}${
+      `${this.apiUrl}/commits/${owner}/${promptName}/${commitHash}${
         options?.includeModel ? "?include_model=true" : ""
       }`,
       {
@@ -4159,9 +4709,25 @@ export class Client {
    * @returns A promise that resolves once all currently pending traces have sent.
    */
   public awaitPendingTraceBatches() {
+    if (this.manualFlushMode) {
+      console.warn(
+        "[WARNING]: When tracing in manual flush mode, you must call `await client.flush()` manually to submit trace batches."
+      );
+      return Promise.resolve();
+    }
     return Promise.all([
       ...this.autoBatchQueue.items.map(({ itemPromise }) => itemPromise),
       this.batchIngestCaller.queue.onIdle(),
     ]);
   }
+}
+
+export interface LangSmithTracingClientInterface {
+  createRun: (run: CreateRunParams) => Promise<void>;
+
+  updateRun: (runId: string, run: RunUpdate) => Promise<void>;
+}
+
+function isExampleCreate(input: KVMap | ExampleCreate): input is ExampleCreate {
+  return "dataset_id" in input || "dataset_name" in input;
 }

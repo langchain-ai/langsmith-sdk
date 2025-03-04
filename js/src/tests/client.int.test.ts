@@ -1,4 +1,10 @@
-import { Dataset, Example, Run, TracerSession } from "../schemas.js";
+import {
+  Dataset,
+  Example,
+  ExampleUpdateWithAttachments,
+  Run,
+  TracerSession,
+} from "../schemas.js";
 import {
   FunctionMessage,
   HumanMessage,
@@ -7,6 +13,10 @@ import {
 
 import { Client } from "../client.js";
 import { v4 as uuidv4 } from "uuid";
+import { ExampleCreate } from "../schemas.js";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   createRunsFactory,
   deleteDataset,
@@ -583,7 +593,7 @@ test.concurrent(
     expect(examplesList2.length).toEqual(3);
     const datasetDiff = await client.diffDatasetVersions({
       datasetId: dataset.id,
-      fromVersion: initialVersion,
+      fromVersion: initialVersion!,
       toVersion: "latest",
     });
     expect(datasetDiff.examples_added.length).toEqual(3);
@@ -1239,4 +1249,795 @@ test("annotationqueue crud", async () => {
       await client.deleteProject({ projectName });
     }
   }
+});
+
+test("upload examples multipart", async () => {
+  const client = new Client();
+  const datasetName = `__test_upload_examples_multipart${uuidv4().slice(0, 4)}`;
+
+  // Clean up existing dataset if it exists
+  if (await client.hasDataset({ datasetName })) {
+    await client.deleteDataset({ datasetName });
+  }
+
+  // Create actual dataset
+  const dataset = await client.createDataset(datasetName, {
+    description: "Test dataset for multipart example upload",
+    dataType: "kv",
+  });
+
+  const pathname = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "test_data",
+    "parrot-icon.png"
+  );
+  // Create test examples
+  const exampleId = uuidv4();
+  const example1: ExampleCreate = {
+    id: exampleId,
+    inputs: { text: "hello world" },
+    // check that passing no outputs works fine
+    attachments: {
+      test_file: {
+        mimeType: "image/png",
+        data: fs.readFileSync(pathname),
+      },
+    },
+  };
+
+  const example2: ExampleCreate = {
+    inputs: { text: "foo bar" },
+    outputs: { response: "baz" },
+    attachments: {
+      my_file: ["image/png", fs.readFileSync(pathname)],
+    },
+  };
+
+  // Test creating examples
+  const createdExamples = await client.uploadExamplesMultipart(dataset.id, [
+    example1,
+    example2,
+  ]);
+
+  expect(createdExamples.count).toBe(2);
+
+  const createdExample1 = await client.readExample(exampleId);
+  expect(createdExample1.inputs["text"]).toBe("hello world");
+
+  const createdExample2 = await client.readExample(
+    createdExamples.example_ids.find((id) => id !== exampleId)!
+  );
+  expect(createdExample2.inputs["text"]).toBe("foo bar");
+  expect(createdExample2.outputs?.["response"]).toBe("baz");
+
+  // Test examples were sent to correct dataset
+  const allExamplesInDataset = [];
+  for await (const example of client.listExamples({
+    datasetId: dataset.id,
+  })) {
+    allExamplesInDataset.push(example);
+  }
+  expect(allExamplesInDataset.length).toBe(2);
+
+  // Test invalid example fails
+  const example3: ExampleCreate = {
+    inputs: { text: "foo bar" },
+    outputs: { response: "baz" },
+    attachments: {
+      my_file: ["image/png", fs.readFileSync(pathname)],
+    },
+  };
+
+  const errorResponse = await client.uploadExamplesMultipart(uuidv4(), [
+    example3,
+  ]);
+  expect(errorResponse).toHaveProperty("error");
+
+  // Clean up
+  await client.deleteDataset({ datasetName });
+});
+
+test("update examples multipart", async () => {
+  const client = new Client();
+  const datasetName = `__test_update_examples_multipart${uuidv4().slice(0, 4)}`;
+
+  // Clean up existing dataset if it exists
+  if (await client.hasDataset({ datasetName })) {
+    await client.deleteDataset({ datasetName });
+  }
+
+  // Create actual dataset
+  const dataset = await client.createDataset(datasetName, {
+    description: "Test dataset for multipart example upload",
+    dataType: "kv",
+  });
+
+  const pathname = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "test_data",
+    "parrot-icon.png"
+  );
+  // Create test examples
+  const exampleId = uuidv4();
+  const example: ExampleCreate = {
+    id: exampleId,
+    metadata: { bar: "foo" },
+    inputs: { text: "hello world" },
+    // check that passing no outputs works fine
+    attachments: {
+      test_file: ["image/png", fs.readFileSync(pathname)],
+      foo: ["image/png", fs.readFileSync(pathname)],
+    },
+  };
+
+  // Create examples
+  await client.uploadExamplesMultipart(dataset.id, [example]);
+
+  const exampleUpdate1: ExampleUpdateWithAttachments = {
+    id: exampleId,
+    inputs: { text: "hello world" },
+    attachments_operations: {
+      retain: ["test_file"],
+      rename: { foo: "test_file" },
+    },
+  };
+
+  let response = await client.updateExamplesMultipart(dataset.id, [
+    exampleUpdate1,
+  ]);
+  expect(response).toHaveProperty("error");
+
+  const exampleUpdate2: ExampleUpdateWithAttachments = {
+    id: exampleId,
+    inputs: { text: "hello world" },
+    attachments_operations: {
+      retain: ["test_file"],
+      rename: { test_file: "test_file2" },
+    },
+  };
+
+  response = await client.updateExamplesMultipart(dataset.id, [exampleUpdate2]);
+  expect(response).toHaveProperty("error");
+
+  const exampleUpdate3: ExampleUpdateWithAttachments = {
+    id: exampleId,
+    inputs: { text: "hello world2" },
+    attachments_operations: {
+      retain: ["test_file"],
+      rename: { foo: "bar" },
+    },
+  };
+
+  await client.updateExamplesMultipart(dataset.id, [exampleUpdate3]);
+
+  let updatedExample = await client.readExample(exampleId);
+  expect(updatedExample.inputs.text).toEqual("hello world2");
+  expect(Object.keys(updatedExample.attachments ?? {}).sort()).toEqual(
+    ["bar", "test_file"].sort()
+  );
+  expect(updatedExample.metadata?.bar).toEqual("foo");
+  let attachmentData: Uint8Array | undefined = updatedExample.attachments?.[
+    "test_file"
+  ].presigned_url
+    ? new Uint8Array(
+        (await fetch(
+          updatedExample.attachments?.["test_file"].presigned_url
+        ).then((res) => res.arrayBuffer())) as ArrayBuffer
+      )
+    : undefined;
+  expect(attachmentData).toEqual(new Uint8Array(fs.readFileSync(pathname)));
+  attachmentData = updatedExample.attachments?.["bar"].presigned_url
+    ? new Uint8Array(
+        (await fetch(updatedExample.attachments?.["bar"].presigned_url).then(
+          (res) => res.arrayBuffer()
+        )) as ArrayBuffer
+      )
+    : undefined;
+  expect(attachmentData).toEqual(new Uint8Array(fs.readFileSync(pathname)));
+
+  const exampleUpdate4: ExampleUpdateWithAttachments = {
+    id: exampleId,
+    metadata: { foo: "bar" },
+    attachments: {
+      test_file2: ["image/png", fs.readFileSync(pathname)],
+    },
+  };
+
+  await client.updateExamplesMultipart(dataset.id, [exampleUpdate4]);
+  updatedExample = await client.readExample(exampleId);
+  expect(updatedExample.metadata?.foo).toEqual("bar");
+  expect(Object.keys(updatedExample.attachments ?? {})).toEqual(["test_file2"]);
+  attachmentData = updatedExample.attachments?.["test_file2"].presigned_url
+    ? new Uint8Array(
+        (await fetch(
+          updatedExample.attachments?.["test_file2"].presigned_url
+        ).then((res) => res.arrayBuffer())) as ArrayBuffer
+      )
+    : undefined;
+  expect(attachmentData).toEqual(new Uint8Array(fs.readFileSync(pathname)));
+
+  const exampleUpdate5: ExampleUpdateWithAttachments = {
+    id: exampleId,
+    split: ["foo", "bar"],
+    attachments: {
+      test_file: ["image/png", fs.readFileSync(pathname)],
+    },
+  };
+
+  await client.updateExamplesMultipart(dataset.id, [exampleUpdate5]);
+
+  updatedExample = await client.readExample(exampleId);
+  expect(updatedExample.metadata).toEqual({
+    foo: "bar",
+    dataset_split: ["foo", "bar"],
+  });
+  expect(Object.keys(updatedExample.attachments ?? {})).toEqual(["test_file"]);
+  attachmentData = updatedExample.attachments?.["test_file"].presigned_url
+    ? new Uint8Array(
+        (await fetch(
+          updatedExample.attachments?.["test_file"].presigned_url
+        ).then((res) => res.arrayBuffer())) as ArrayBuffer
+      )
+    : undefined;
+  expect(attachmentData).toEqual(new Uint8Array(fs.readFileSync(pathname)));
+
+  // Clean up
+  await client.deleteDataset({ datasetName });
+});
+
+test("create example go backend", async () => {
+  const client = new Client();
+  const datasetName = `__test_create_examples_go_backend${uuidv4().slice(
+    0,
+    4
+  )}`;
+
+  // Clean up existing dataset if it exists
+  if (await client.hasDataset({ datasetName })) {
+    await client.deleteDataset({ datasetName });
+  }
+
+  // Create actual dataset
+  const dataset = await client.createDataset(datasetName, {
+    description: "Test dataset for multipart example upload",
+    dataType: "kv",
+  });
+
+  const pathname = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "test_data",
+    "parrot-icon.png"
+  );
+
+  // Create test examples
+  const exampleId = uuidv4();
+  const example: ExampleCreate = {
+    id: exampleId,
+    dataset_id: dataset.id,
+    inputs: { text: "hello world" },
+    attachments: {
+      test_file: ["image/png", fs.readFileSync(pathname)],
+    },
+  };
+
+  let createdExample = await client.createExample(example);
+  expect(createdExample.id).toEqual(exampleId);
+  expect(createdExample.inputs.text).toEqual("hello world");
+  expect(Object.keys(createdExample.attachments ?? {})).toEqual(["test_file"]);
+  let attachmentData: Uint8Array | undefined = createdExample.attachments?.[
+    "test_file"
+  ].presigned_url
+    ? new Uint8Array(
+        (await fetch(
+          createdExample.attachments?.["test_file"].presigned_url
+        ).then((res) => res.arrayBuffer())) as ArrayBuffer
+      )
+    : undefined;
+  expect(attachmentData).toEqual(new Uint8Array(fs.readFileSync(pathname)));
+
+  createdExample = await client.createExample(
+    { text: "hello world" },
+    {
+      foo: "bar",
+    },
+    {
+      attachments: {
+        test_file: ["image/png", fs.readFileSync(pathname)],
+      },
+      datasetName: datasetName,
+    }
+  );
+  expect(createdExample.inputs.text).toEqual("hello world");
+  expect(createdExample.outputs?.foo).toEqual("bar");
+  expect(Object.keys(createdExample.attachments ?? {})).toEqual(["test_file"]);
+  attachmentData = createdExample.attachments?.["test_file"].presigned_url
+    ? new Uint8Array(
+        (await fetch(
+          createdExample.attachments?.["test_file"].presigned_url
+        ).then((res) => res.arrayBuffer())) as ArrayBuffer
+      )
+    : undefined;
+  expect(attachmentData).toEqual(new Uint8Array(fs.readFileSync(pathname)));
+
+  // Clean up
+  await client.deleteDataset({ datasetName });
+});
+
+// Backend changes for go endpoint using runs still needs to land
+test.skip("test use source run io multiple examples", async () => {
+  const client = new Client({ autoBatchTracing: false });
+
+  const datasetName = `__test_use_source_run_io${uuidv4().slice(0, 4)}`;
+  const dataset = await client.createDataset(datasetName, {
+    description: "Test dataset for creating dataset with description",
+  });
+
+  const runId = uuidv4();
+  await client.createRun({
+    name: "foo",
+    run_type: "llm",
+    inputs: { foo: "bar" },
+    outputs: { foo: "bar" },
+    id: runId,
+    attachments: {
+      test_file: { data: Buffer.from("test content"), mimeType: "text/plain" },
+      real_file: { data: Buffer.from("real content"), mimeType: "text/plain" },
+    },
+  });
+
+  const exampleIds = [uuidv4(), uuidv4(), uuidv4()];
+  await client.createExamples([
+    {
+      id: exampleIds[0],
+      inputs: { bar: "baz" },
+      outputs: { bar: "baz" },
+      attachments: {
+        test_file2: {
+          data: Buffer.from("test content"),
+          mimeType: "text/plain",
+        },
+      },
+      use_source_run_io: true,
+      use_source_run_attachments: [],
+      source_run_id: runId,
+      dataset_id: dataset.id,
+    },
+    {
+      id: exampleIds[1],
+      inputs: { bar: "baz" },
+      outputs: { bar: "baz" },
+      attachments: {
+        test_file2: {
+          data: Buffer.from("test content"),
+          mimeType: "text/plain",
+        },
+      },
+      use_source_run_io: false,
+      use_source_run_attachments: ["test_file"],
+      source_run_id: runId,
+      dataset_id: dataset.id,
+    },
+    {
+      id: exampleIds[2],
+      inputs: { bar: "baz" },
+      outputs: { bar: "baz" },
+      attachments: {
+        test_file2: {
+          data: Buffer.from("test content"),
+          mimeType: "text/plain",
+        },
+      },
+      use_source_run_io: true,
+      use_source_run_attachments: ["test_file"],
+      source_run_id: runId,
+      dataset_id: dataset.id,
+    },
+  ]);
+
+  const example1 = await client.readExample(exampleIds[0]);
+  const example2 = await client.readExample(exampleIds[1]);
+  const example3 = await client.readExample(exampleIds[2]);
+
+  expect(example1.dataset_id).toBe(dataset.id);
+  expect(example1.inputs).toEqual({ foo: "bar" });
+  expect(example1.outputs).toEqual({ foo: "bar" });
+  expect(Object.keys(example1.attachments ?? {}).sort()).toEqual([
+    "real_file",
+    "test_file",
+  ]);
+
+  expect(example2.dataset_id).toBe(dataset.id);
+  expect(example2.inputs).toEqual({ bar: "baz" });
+  expect(example2.outputs).toEqual({ bar: "baz" });
+  expect(Object.keys(example2.attachments ?? {}).sort()).toEqual(["test_file"]);
+
+  expect(example3.dataset_id).toBe(dataset.id);
+  expect(example3.inputs).toEqual({ foo: "bar" });
+  expect(example3.outputs).toEqual({ foo: "bar" });
+  expect(Object.keys(example3.attachments ?? {}).sort()).toEqual([
+    "real_file",
+    "test_file",
+  ]);
+
+  // Clean up
+  await client.deleteDataset({ datasetName });
+});
+
+// Backend changes for go endpoint using runs still needs to land
+test.skip("test use source run io single example", async () => {
+  const client = new Client();
+  const datasetName = `__test_create_examples_go_backend${uuidv4().slice(
+    0,
+    4
+  )}`;
+
+  // Clean up existing dataset if it exists
+  if (await client.hasDataset({ datasetName })) {
+    await client.deleteDataset({ datasetName });
+  }
+
+  // Create actual dataset
+  const dataset = await client.createDataset(datasetName, {
+    description: "Test dataset for multipart example upload",
+    dataType: "kv",
+  });
+
+  const runId = uuidv4();
+  await client.createRun({
+    name: "foo",
+    run_type: "llm",
+    inputs: { foo: "bar" },
+    outputs: { foo: "bar" },
+    id: runId,
+    attachments: {
+      test_file: { data: Buffer.from("test content"), mimeType: "text/plain" },
+      real_file: { data: Buffer.from("real content"), mimeType: "text/plain" },
+    },
+  });
+
+  const pathname = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "test_data",
+    "parrot-icon.png"
+  );
+
+  // Create test examples
+  const exampleId = uuidv4();
+  const example: ExampleCreate = {
+    id: exampleId,
+    dataset_id: dataset.id,
+    inputs: { text: "hello world" },
+    attachments: {
+      test_file2: ["image/png", fs.readFileSync(pathname)],
+    },
+    use_source_run_io: true,
+    use_source_run_attachments: [],
+    source_run_id: runId,
+  };
+
+  let createdExample = await client.createExample(example);
+  expect(createdExample.id).toEqual(exampleId);
+  expect(createdExample.inputs.text).toEqual("hello world");
+  // using source run io overrides everything else with regards to attachments
+  expect(Object.keys(createdExample.attachments ?? {})).toEqual([
+    "real_file",
+    "test_file",
+  ]);
+
+  createdExample = await client.createExample(
+    { text: "hello world" },
+    {
+      foo: "bar",
+    },
+    {
+      attachments: {
+        test_file2: ["image/png", fs.readFileSync(pathname)],
+      },
+      datasetName: datasetName,
+      useSourceRunIO: true,
+      useSourceRunAttachments: [],
+      sourceRunId: runId,
+    }
+  );
+  expect(createdExample.inputs.text).toEqual("hello world");
+  expect(createdExample.outputs?.foo).toEqual("bar");
+  // using source run io overrides everything else with regards to attachments
+  expect(Object.keys(createdExample.attachments ?? {})).toEqual([
+    "real_file",
+    "test_file",
+  ]);
+
+  // Clean up
+  await client.deleteDataset({ datasetName });
+});
+
+test("update example go backend", async () => {
+  const client = new Client();
+  const datasetName = `__test_create_examples_go_backend${uuidv4().slice(
+    0,
+    4
+  )}`;
+
+  // Clean up existing dataset if it exists
+  if (await client.hasDataset({ datasetName })) {
+    await client.deleteDataset({ datasetName });
+  }
+
+  // Create actual dataset
+  const dataset = await client.createDataset(datasetName, {
+    description: "Test dataset for multipart example upload",
+    dataType: "kv",
+  });
+
+  const pathname = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "test_data",
+    "parrot-icon.png"
+  );
+
+  // Create test examples
+  const exampleId = uuidv4();
+  const example: ExampleCreate = {
+    id: exampleId,
+    dataset_id: dataset.id,
+    inputs: { text: "hello world" },
+    attachments: {
+      test_file: ["image/png", fs.readFileSync(pathname)],
+    },
+  };
+
+  await client.createExample(example);
+
+  // Update old way
+  await client.updateExample(exampleId, {
+    attachments: {
+      test_file3: ["image/png", fs.readFileSync(pathname)],
+    },
+    attachments_operations: {
+      rename: { test_file: "test_file2" },
+    },
+  });
+
+  let retrievedExample = await client.readExample(exampleId);
+  expect(retrievedExample.inputs.text).toEqual("hello world");
+  expect(Object.keys(retrievedExample.attachments ?? {}).sort()).toEqual(
+    ["test_file2", "test_file3"].sort()
+  );
+
+  // Update new way
+  await client.updateExample({
+    id: exampleId,
+    attachments: {
+      test_file4: ["image/png", fs.readFileSync(pathname)],
+    },
+    attachments_operations: {
+      rename: { test_file3: "test_file5" },
+    },
+  });
+  retrievedExample = await client.readExample(exampleId);
+  expect(retrievedExample.inputs.text).toEqual("hello world");
+  expect(Object.keys(retrievedExample.attachments ?? {}).sort()).toEqual(
+    ["test_file4", "test_file5"].sort()
+  );
+
+  // Clean up
+  await client.deleteDataset({ datasetName });
+});
+
+test("create examples go backend", async () => {
+  const client = new Client();
+  const datasetName = `__test_create_examples_go_backend${uuidv4().slice(
+    0,
+    4
+  )}`;
+
+  // Clean up existing dataset if it exists
+  if (await client.hasDataset({ datasetName })) {
+    await client.deleteDataset({ datasetName });
+  }
+
+  // Create actual dataset
+  const dataset = await client.createDataset(datasetName, {
+    description: "Test dataset for multipart example upload",
+    dataType: "kv",
+  });
+
+  const pathname = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "test_data",
+    "parrot-icon.png"
+  );
+
+  // Create test examples
+  const exampleId = uuidv4();
+  const example: ExampleCreate = {
+    id: exampleId,
+    dataset_id: dataset.id,
+    inputs: { text: "hello world" },
+    attachments: {
+      test_file: ["image/png", fs.readFileSync(pathname)],
+    },
+  };
+
+  let createdExample = (await client.createExamples([example]))[0];
+  expect(createdExample.id).toEqual(exampleId);
+  expect(createdExample.inputs.text).toEqual("hello world");
+  expect(Object.keys(createdExample.attachments ?? {})).toEqual(["test_file"]);
+  let attachmentData: Uint8Array | undefined = createdExample.attachments?.[
+    "test_file"
+  ].presigned_url
+    ? new Uint8Array(
+        (await fetch(
+          createdExample.attachments?.["test_file"].presigned_url
+        ).then((res) => res.arrayBuffer())) as ArrayBuffer
+      )
+    : undefined;
+  expect(attachmentData).toEqual(new Uint8Array(fs.readFileSync(pathname)));
+
+  createdExample = (
+    await client.createExamples({
+      inputs: [{ text: "hello world" }],
+      outputs: [
+        {
+          foo: "bar",
+        },
+      ],
+      attachments: [
+        {
+          test_file: ["image/png", fs.readFileSync(pathname)],
+        },
+      ],
+      datasetName: datasetName,
+    })
+  )[0];
+  expect(createdExample.inputs.text).toEqual("hello world");
+  expect(createdExample.outputs?.foo).toEqual("bar");
+  expect(Object.keys(createdExample.attachments ?? {})).toEqual(["test_file"]);
+  attachmentData = createdExample.attachments?.["test_file"].presigned_url
+    ? new Uint8Array(
+        (await fetch(
+          createdExample.attachments?.["test_file"].presigned_url
+        ).then((res) => res.arrayBuffer())) as ArrayBuffer
+      )
+    : undefined;
+  expect(attachmentData).toEqual(new Uint8Array(fs.readFileSync(pathname)));
+
+  // Clean up
+  await client.deleteDataset({ datasetName });
+});
+
+test("update examples go backend", async () => {
+  const client = new Client();
+  const datasetName = `__test_create_examples_go_backend${uuidv4().slice(
+    0,
+    4
+  )}`;
+
+  // Clean up existing dataset if it exists
+  if (await client.hasDataset({ datasetName })) {
+    await client.deleteDataset({ datasetName });
+  }
+
+  // Create actual dataset
+  const dataset = await client.createDataset(datasetName, {
+    description: "Test dataset for multipart example upload",
+    dataType: "kv",
+  });
+
+  const pathname = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "test_data",
+    "parrot-icon.png"
+  );
+
+  // Create test examples
+  const exampleId = uuidv4();
+  const example: ExampleCreate = {
+    id: exampleId,
+    dataset_id: dataset.id,
+    inputs: { text: "hello world" },
+    attachments: {
+      test_file: ["image/png", fs.readFileSync(pathname)],
+    },
+  };
+
+  await client.createExample(example);
+
+  // Update
+  await client.updateExamples([
+    {
+      id: exampleId,
+      attachments: {
+        test_file3: ["image/png", fs.readFileSync(pathname)],
+      },
+      attachments_operations: {
+        rename: { test_file: "test_file2" },
+      },
+    },
+  ]);
+
+  const retrievedExample = await client.readExample(exampleId);
+  expect(retrievedExample.inputs.text).toEqual("hello world");
+  expect(Object.keys(retrievedExample.attachments ?? {}).sort()).toEqual(
+    ["test_file2", "test_file3"].sort()
+  );
+
+  // Clean up
+  await client.deleteDataset({ datasetName });
+});
+
+test("create example errors", async () => {
+  const client = new Client();
+  const datasetName = `__test_create_examples_go_backend${uuidv4().slice(
+    0,
+    4
+  )}`;
+
+  // Clean up existing dataset if it exists
+  if (await client.hasDataset({ datasetName })) {
+    await client.deleteDataset({ datasetName });
+  }
+
+  // Create actual dataset
+  const dataset = await client.createDataset(datasetName, {
+    description: "Test dataset for multipart example upload",
+    dataType: "kv",
+  });
+
+  const exampleId = uuidv4();
+  const example: ExampleCreate = {
+    id: exampleId,
+    dataset_id: dataset.id,
+    inputs: { text: "hello world" },
+    attachments: {
+      test_file: ["plain/txt", Buffer.from("data")],
+    },
+  };
+
+  const invalidExample: ExampleCreate = {
+    id: exampleId,
+    inputs: { text: "hello world" },
+    attachments: {
+      test_file: ["plain/txt", Buffer.from("data")],
+    },
+  };
+
+  const invalidExample2: ExampleCreate = {
+    id: exampleId,
+    dataset_id: dataset.id,
+    dataset_name: datasetName,
+    inputs: { text: "hello world" },
+    attachments: {
+      test_file: ["plain/txt", Buffer.from("data")],
+    },
+  };
+
+  await expect(
+    client.createExample(example, { foo: "bar" }, {})
+  ).rejects.toThrow(
+    "Cannot provide outputs or options when using ExampleCreate object"
+  );
+
+  await expect(client.createExample(invalidExample)).rejects.toThrow(
+    "Must provide either datasetName or datasetId"
+  );
+
+  await expect(client.createExample(invalidExample2)).rejects.toThrow(
+    "Must provide either datasetName or datasetId, not both"
+  );
+
+  await expect(client.createExample({ foo: "bar" }, {}, {})).rejects.toThrow(
+    "Must provide either datasetName or datasetId"
+  );
+
+  await expect(
+    client.createExample(
+      { foo: "bar" },
+      {},
+      { datasetId: dataset.id, datasetName: datasetName }
+    )
+  ).rejects.toThrow("Must provide either datasetName or datasetId, not both");
+
+  // Clean up
+  await client.deleteDataset({ datasetName });
 });

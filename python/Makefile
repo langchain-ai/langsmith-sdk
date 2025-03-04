@@ -36,16 +36,16 @@ tests_watch:
 	poetry run ptw --now . -- -vv -x  tests/unit_tests
 
 integration_tests:
-	poetry run python -m pytest -v --durations=10 --cov=langsmith --cov-report=term-missing --cov-report=html --cov-config=.coveragerc tests/integration_tests
+	poetry run python -m pytest -x -v --durations=10 --cov=langsmith --cov-report=term-missing --cov-report=html --cov-config=.coveragerc tests/integration_tests
 
 integration_tests_fast:
-	poetry run python -m pytest -n auto --durations=10 -v --cov=langsmith --cov-report=term-missing --cov-report=html --cov-config=.coveragerc tests/integration_tests
+	poetry run python -m pytest -x -n auto --durations=10 -v --cov=langsmith --cov-report=term-missing --cov-report=html --cov-config=.coveragerc tests/integration_tests
 
 doctest:
-	poetry run python -m pytest -n auto --durations=10 --doctest-modules langsmith
+	poetry run python -m pytest -n auto -x --durations=10 --doctest-modules langsmith
 
 evals:
-	poetry run python -m pytest tests/evaluation
+	poetry run python -m pytest -n auto -x tests/evaluation
 
 lint:
 	poetry run ruff check .
@@ -62,3 +62,13 @@ build:
 
 publish:
 	poetry publish --dry-run
+
+api_docs_build:
+	poetry run python docs/create_api_rst.py
+	cd docs && poetry run make html
+	poetry run python docs/scripts/custom_formatter.py docs/_build/html/
+	cp docs/_build/html/{reference,index}.html
+	open docs/_build/html/index.html
+
+api_docs_clean:
+	git clean -fd ./docs/

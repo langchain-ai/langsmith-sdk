@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures as cf
-import datetime
+import io
 import logging
 import pathlib
 import uuid
@@ -31,15 +31,17 @@ from langsmith import run_trees, schemas
 from langsmith import run_trees as rt
 from langsmith import utils as ls_utils
 from langsmith._internal import _aiter as aitertools
+from langsmith._internal._beta_decorator import _warn_once
 from langsmith.evaluation._runner import (
     AEVALUATOR_T,
     DATA_T,
     EVALUATOR_T,
-    SUMMARY_EVALUATOR_T,
     ExperimentResultRow,
+    _evaluators_include_attachments,
     _ExperimentManagerMixin,
     _extract_feedback_keys,
     _ForwardResults,
+    _include_attachments,
     _is_langchain_runnable,
     _load_examples_map,
     _load_experiment,
@@ -52,6 +54,7 @@ from langsmith.evaluation._runner import (
     _wrap_summary_evaluators,
 )
 from langsmith.evaluation.evaluator import (
+    SUMMARY_EVALUATOR_T,
     EvaluationResult,
     EvaluationResults,
     RunEvaluator,
@@ -59,6 +62,7 @@ from langsmith.evaluation.evaluator import (
 
 if TYPE_CHECKING:
     import pandas as pd
+    from langchain_core.runnables import Runnable
 
     DataFrame = pd.DataFrame
 else:
@@ -66,28 +70,39 @@ else:
 
 logger = logging.getLogger(__name__)
 
-ATARGET_T = Callable[[dict], Awaitable[dict]]
+ATARGET_T = Union[
+    Callable[[dict], Awaitable[dict]], Callable[[dict, dict], Awaitable[dict]]
+]
 
 
 async def aevaluate(
-    target: Union[ATARGET_T, AsyncIterable[dict]],
+    target: Union[
+        ATARGET_T, AsyncIterable[dict], Runnable, str, uuid.UUID, schemas.TracerSession
+    ],
     /,
-    data: Union[DATA_T, AsyncIterable[schemas.Example], Iterable[schemas.Example]],
+    data: Union[
+        DATA_T, AsyncIterable[schemas.Example], Iterable[schemas.Example], None
+    ] = None,
     evaluators: Optional[Sequence[Union[EVALUATOR_T, AEVALUATOR_T]]] = None,
     summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
     metadata: Optional[dict] = None,
     experiment_prefix: Optional[str] = None,
     description: Optional[str] = None,
-    max_concurrency: Optional[int] = None,
+    max_concurrency: Optional[int] = 0,
     num_repetitions: int = 1,
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
+    upload_results: bool = True,
+    **kwargs: Any,
 ) -> AsyncExperimentResults:
-    r"""Evaluate an async target system or function on a given dataset.
+    r"""Evaluate an async target system on a given dataset.
 
     Args:
-        target (Union[AsyncCallable[[dict], dict], AsyncIterable[dict]]): The async target system or function to evaluate.
+        target (AsyncCallable[[dict], dict] | AsyncIterable[dict] | Runnable | EXPERIMENT_T | Tuple[EXPERIMENT_T, EXPERIMENT_T]):
+            The target system or experiment(s) to evaluate. Can be an async function
+            that takes a dict and returns a dict, a langchain Runnable, an
+            existing experiment ID, or a two-tuple of experiment IDs.
         data (Union[DATA_T, AsyncIterable[schemas.Example]]): The dataset to evaluate on. Can be a dataset name, a list of
             examples, an async generator of examples, or an async iterable of examples.
         evaluators (Optional[Sequence[EVALUATOR_T]]): A list of evaluators to run
@@ -99,8 +114,9 @@ async def aevaluate(
         experiment_prefix (Optional[str]): A prefix to provide for your experiment name.
             Defaults to None.
         description (Optional[str]): A description of the experiment.
-        max_concurrency (Optional[int]): The maximum number of concurrent
-            evaluations to run. Defaults to None.
+        max_concurrency (int | None): The maximum number of concurrent
+            evaluations to run. If None then no limit is set. If 0 then no concurrency.
+            Defaults to 0.
         num_repetitions (int): The number of times to run the evaluation.
             Each item in the dataset will be run and evaluated this many times.
             Defaults to 1.
@@ -111,6 +127,9 @@ async def aevaluate(
         experiment (Optional[schemas.TracerSession]): An existing experiment to
             extend. If provided, experiment_prefix is ignored. For advanced
             usage only.
+        load_nested: Whether to load all child runs for the experiment.
+            Default is to only load the top-level root runs. Should only be specified
+            when evaluating an existing experiment.
 
     Returns:
         AsyncIterator[ExperimentResultRow]: An async iterator over the experiment results.
@@ -240,27 +259,82 @@ async def aevaluate(
         ...     )
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
+
+
+    .. versionchanged:: 0.2.0
+
+        'max_concurrency' default updated from None (no limit on concurrency)
+        to 0 (no concurrency at all).
     """  # noqa: E501
-    if experiment and experiment_prefix:
-        raise ValueError(
+    if isinstance(target, (str, uuid.UUID, schemas.TracerSession)):
+        invalid_args = {
+            "num_repetitions": num_repetitions > 1,
+            "experiment": bool(experiment),
+            "upload_results": not upload_results,
+            "experiment_prefix": bool(experiment_prefix),
+            "data": bool(data),
+        }
+        if any(invalid_args.values()):
+            msg = (
+                f"Received invalid arguments. "
+                f"{tuple(k for k, v in invalid_args.items() if v)} should not be "
+                f"specified when target is an existing experiment."
+            )
+            raise ValueError(msg)
+        target_id = target if isinstance(target, (str, uuid.UUID)) else target.id
+        logger.debug(f"Running evaluation over existing experiment {target_id}...")
+        return await aevaluate_existing(
+            target,
+            evaluators=evaluators,
+            summary_evaluators=summary_evaluators,
+            metadata=metadata,
+            max_concurrency=max_concurrency,
+            client=client,
+            blocking=blocking,
+            **kwargs,
+        )
+    elif isinstance(target, (list, tuple)):
+        msg = (
+            "Running a comparison of two existing experiments asynchronously is not "
+            "currently supported. Please use the `evaluate()` method instead and make "
+            "sure that your evaluators are defined as synchronous functions."
+        )
+        raise ValueError(msg)
+    elif kwargs:
+        msg = (
+            f"Received unsupported arguments {kwargs}. These arguments are not "
+            f"supported when creating a new experiment."
+        )
+        raise ValueError(msg)
+    elif not data:
+        msg = "Must specify 'data' when running evaluations over a target function."
+        raise ValueError(msg)
+    elif experiment and experiment_prefix:
+        msg = (
             "Expected at most one of 'experiment' or 'experiment_prefix',"
             " but both were provided. "
             f"Got: experiment={experiment}, experiment_prefix={experiment_prefix}"
         )
-    return await _aevaluate(
-        target,
-        data=data,
-        evaluators=evaluators,
-        summary_evaluators=summary_evaluators,
-        metadata=metadata,
-        experiment_prefix=experiment_prefix,
-        description=description,
-        max_concurrency=max_concurrency,
-        num_repetitions=num_repetitions,
-        client=client,
-        blocking=blocking,
-        experiment=experiment,
-    )
+        raise ValueError(msg)
+    else:
+        if not upload_results:
+            _warn_once("'upload_results' parameter is in beta.")
+        logger.debug(f"Running evaluation over target system {target}...")
+        return await _aevaluate(
+            target,
+            data=data,
+            evaluators=evaluators,
+            summary_evaluators=summary_evaluators,
+            metadata=metadata,
+            experiment_prefix=experiment_prefix,
+            description=description,
+            max_concurrency=max_concurrency,
+            num_repetitions=num_repetitions,
+            client=client,
+            blocking=blocking,
+            experiment=experiment,
+            upload_results=upload_results,
+        )
 
 
 async def aevaluate_existing(
@@ -269,11 +343,11 @@ async def aevaluate_existing(
     evaluators: Optional[Sequence[Union[EVALUATOR_T, AEVALUATOR_T]]] = None,
     summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
     metadata: Optional[dict] = None,
-    max_concurrency: Optional[int] = None,
+    max_concurrency: Optional[int] = 0,
     client: Optional[langsmith.Client] = None,
     load_nested: bool = False,
     blocking: bool = True,
-) -> AsyncIterator[ExperimentResultRow]:
+) -> AsyncExperimentResults:
     r"""Evaluate existing experiment runs asynchronously.
 
     Args:
@@ -282,7 +356,9 @@ async def aevaluate_existing(
         summary_evaluators (Optional[Sequence[SUMMARY_EVALUATOR_T]]): Optional sequence of evaluators
             to apply over the entire dataset.
         metadata (Optional[dict]): Optional metadata to include in the evaluation results.
-        max_concurrency (Optional[int]): Optional maximum number of concurrent evaluations.
+        max_concurrency (int | None): The maximum number of concurrent
+            evaluations to run. If None then no limit is set. If 0 then no concurrency.
+            Defaults to 0.
         client (Optional[langsmith.Client]): Optional Langsmith client to use for evaluation.
         load_nested: Whether to load all child runs for the experiment.
             Default is to only load the top-level root runs.
@@ -366,7 +442,7 @@ async def aevaluate_existing(
 
 
 async def _aevaluate(
-    target: Union[ATARGET_T, AsyncIterable[dict], Iterable[schemas.Run]],
+    target: Union[ATARGET_T, AsyncIterable[dict], Iterable[schemas.Run], Runnable],
     /,
     data: Union[DATA_T, AsyncIterable[schemas.Example]],
     evaluators: Optional[Sequence[Union[EVALUATOR_T, AEVALUATOR_T]]] = None,
@@ -379,6 +455,7 @@ async def _aevaluate(
     client: Optional[langsmith.Client] = None,
     blocking: bool = True,
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
+    upload_results: bool = True,
 ) -> AsyncExperimentResults:
     is_async_target = (
         asyncio.iscoroutinefunction(target)
@@ -401,6 +478,15 @@ async def _aevaluate(
         description=description,
         num_repetitions=num_repetitions,
         runs=runs,
+        include_attachments=_include_attachments(target)
+        or _evaluators_include_attachments(evaluators) > 0,
+        reuse_attachments=num_repetitions
+        * (
+            int(_include_attachments(target))
+            + _evaluators_include_attachments(evaluators)
+        )
+        > 1,
+        upload_results=upload_results,
     ).astart()
     cache_dir = ls_utils.get_cache_dir(None)
     if cache_dir is not None:
@@ -410,15 +496,24 @@ async def _aevaluate(
         cache_path = None
     with ls_utils.with_optional_cache(cache_path, ignore_hosts=[client.api_url]):
         if is_async_target:
-            manager = await manager.awith_predictions(
-                cast(ATARGET_T, target), max_concurrency=max_concurrency
-            )
-        if evaluators:
-            manager = await manager.awith_evaluators(
-                evaluators, max_concurrency=max_concurrency
-            )
-        if summary_evaluators:
-            manager = await manager.awith_summary_evaluators(summary_evaluators)
+            if evaluators:
+                # Run predictions and evaluations in a single pipeline
+                manager = await manager.awith_predictions_and_evaluators(
+                    cast(ATARGET_T, target), evaluators, max_concurrency=max_concurrency
+                )
+            else:
+                manager = await manager.awith_predictions(
+                    cast(ATARGET_T, target), max_concurrency=max_concurrency
+                )
+            if summary_evaluators:
+                manager = await manager.awith_summary_evaluators(summary_evaluators)
+        else:
+            if evaluators:
+                manager = await manager.awith_evaluators(
+                    evaluators, max_concurrency=max_concurrency
+                )
+            if summary_evaluators:
+                manager = await manager.awith_summary_evaluators(summary_evaluators)
         results = AsyncExperimentResults(manager)
         if blocking:
             await results.wait()
@@ -447,6 +542,18 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             sresults for the experiment.
         summary_results (Optional[Iterable[EvaluationResults]]): The aggregate results
             for the experiment.
+        num_repetitions (Optional[int], default=1): The number of repetitions for
+            the experiment.
+        include_attachments (Optional[bool], default=False): Whether to include
+            attachments. This is used for when we pull the examples for the experiment.
+        reuse_attachments (Optional[bool], default=False): Whether to reuse attachments
+            from examples. This is True if we need to reuse attachments across multiple
+            target/evaluator functions.
+        upload_results (Optional[bool], default=True): Whether to upload results
+            to Langsmith.
+        attachment_raw_data_dict (Optional[dict]): A dictionary to store raw data
+            for attachments. Only used if we reuse attachments across multiple
+            target/evaluator functions.
     """
 
     def __init__(
@@ -461,6 +568,10 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         summary_results: Optional[AsyncIterable[EvaluationResults]] = None,
         description: Optional[str] = None,
         num_repetitions: int = 1,
+        include_attachments: bool = False,
+        reuse_attachments: bool = False,
+        upload_results: bool = True,
+        attachment_raw_data_dict: Optional[dict] = None,
     ):
         super().__init__(
             experiment=experiment,
@@ -476,13 +587,82 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         self._evaluation_results = evaluation_results
         self._summary_results = summary_results
         self._num_repetitions = num_repetitions
+        self._include_attachments = include_attachments
+        self._reuse_attachments = reuse_attachments
+        self._upload_results = upload_results
+        self._attachment_raw_data_dict = attachment_raw_data_dict
+
+    def _reset_example_attachments(self, example: schemas.Example) -> schemas.Example:
+        """Reset attachment readers for an example.
+
+        This is only in the case that an attachment is going to be used by more
+        than 1 callable (target + evaluators). In that case we keep a single copy
+        of the attachment data in self._attachment_raw_data_dict, and create
+        readers from that data. This makes it so that we don't have to keep
+        copies of the same data in memory, instead we can just create readers
+        from the same data.
+        """
+        if not hasattr(example, "attachments") or not example.attachments:
+            return example
+
+        new_attachments: dict[str, schemas.AttachmentInfo] = {}
+        for name, attachment in example.attachments.items():
+            if (
+                self._attachment_raw_data_dict is not None
+                and str(example.id) + name in self._attachment_raw_data_dict
+            ):
+                new_attachments[name] = {
+                    "presigned_url": attachment["presigned_url"],
+                    "reader": io.BytesIO(
+                        self._attachment_raw_data_dict[str(example.id) + name]
+                    ),
+                    "mime_type": attachment["mime_type"],
+                }
+            else:
+                new_attachments[name] = attachment
+
+        # Create a new Example instance with the updated attachments
+        return schemas.Example(
+            id=example.id,
+            created_at=example.created_at,
+            dataset_id=example.dataset_id,
+            inputs=example.inputs,
+            outputs=example.outputs,
+            metadata=example.metadata,
+            modified_at=example.modified_at,
+            runs=example.runs,
+            source_run_id=example.source_run_id,
+            attachments=new_attachments,
+            _host_url=example._host_url,
+            _tenant_id=example._tenant_id,
+        )
 
     async def aget_examples(self) -> AsyncIterator[schemas.Example]:
         if self._examples is None:
-            self._examples = _aresolve_data(self._data, client=self.client)
+            self._examples = _aresolve_data(
+                self._data,
+                client=self.client,
+                include_attachments=self._include_attachments,
+            )
+            if self._reuse_attachments and self._attachment_raw_data_dict is None:
+                examples_copy, self._examples = aitertools.atee(self._examples)
+                self._attachment_raw_data_dict = {
+                    str(e.id) + name: value["reader"].read()
+                    async for e in examples_copy
+                    for name, value in (e.attachments or {}).items()
+                }
             if self._num_repetitions > 1:
+                examples_list = [example async for example in self._examples]
                 self._examples = async_chain_from_iterable(
-                    aitertools.atee(self._examples, self._num_repetitions)
+                    [
+                        async_iter_from_list(
+                            [
+                                self._reset_example_attachments(example)
+                                for example in examples_list
+                            ]
+                        )
+                        for _ in range(self._num_repetitions)
+                    ]
                 )
 
         self._examples, examples_iter = aitertools.atee(
@@ -535,7 +715,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                 "No examples found in the dataset."
                 "Please ensure the data provided to aevaluate is not empty."
             )
-        project = self._get_project(first_example)
+        project = self._get_project(first_example) if self._upload_results else None
         self._print_experiment_start(project, first_example)
         self._metadata["num_repetitions"] = self._num_repetitions
         return self.__class__(
@@ -545,6 +725,106 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             client=self.client,
             runs=self._runs,
             evaluation_results=self._evaluation_results,
+            include_attachments=self._include_attachments,
+            reuse_attachments=self._reuse_attachments,
+            upload_results=self._upload_results,
+            attachment_raw_data_dict=self._attachment_raw_data_dict,
+        )
+
+    def _get_example_with_readers(self, example: schemas.Example) -> schemas.Example:
+        new_attachments: dict[str, schemas.AttachmentInfo] = {}
+        for name, attachment in (example.attachments or {}).items():
+            if (
+                self._attachment_raw_data_dict is not None
+                and str(example.id) + name in self._attachment_raw_data_dict
+            ):
+                reader = io.BytesIO(
+                    self._attachment_raw_data_dict[str(example.id) + name]
+                )
+                new_attachments[name] = {
+                    "presigned_url": attachment["presigned_url"],
+                    "reader": reader,
+                    "mime_type": attachment["mime_type"],
+                }
+            else:
+                new_attachments[name] = attachment
+
+        return schemas.Example(
+            id=example.id,
+            created_at=example.created_at,
+            dataset_id=example.dataset_id,
+            inputs=example.inputs,
+            outputs=example.outputs,
+            metadata=example.metadata,
+            modified_at=example.modified_at,
+            runs=example.runs,
+            source_run_id=example.source_run_id,
+            attachments=new_attachments,
+            _host_url=example._host_url,
+            _tenant_id=example._tenant_id,
+        )
+
+    async def awith_predictions_and_evaluators(
+        self,
+        target: ATARGET_T,
+        evaluators: Sequence[Union[EVALUATOR_T, AEVALUATOR_T]],
+        /,
+        max_concurrency: Optional[int] = None,
+    ) -> _AsyncExperimentManager:
+        """Run predictions and evaluations in a single pipeline.
+
+        This allows evaluators to process results as soon as they're available from
+        the target function, rather than waiting for all predictions to complete first.
+        """
+        evaluators = _resolve_evaluators(evaluators)
+
+        if not hasattr(self, "_evaluator_executor"):
+            self._evaluator_executor = cf.ThreadPoolExecutor(max_workers=4)
+
+        async def process_examples():
+            """Create a single task per example.
+
+            That task is to run the target function and all the evaluators
+            sequentially.
+            """
+            async for pred in self._apredict(
+                target,
+                max_concurrency=max_concurrency,
+                include_attachments=_include_attachments(target),
+            ):
+                example, run = pred["example"], pred["run"]
+                result = self._arun_evaluators(
+                    evaluators,
+                    {
+                        "run": run,
+                        "example": example,
+                        "evaluation_results": {"results": []},
+                    },
+                    executor=self._evaluator_executor,
+                )
+                yield result
+
+        # Run the per-example tasks with max-concurrency
+        # This guarantees that max_concurrency is the upper limit
+        # for the number of target/evaluators that can be run in parallel
+        experiment_results = aitertools.aiter_with_concurrency(
+            max_concurrency,
+            process_examples(),
+            _eager_consumption_timeout=0.001,
+        )
+
+        r1, r2, r3 = aitertools.atee(experiment_results, 3, lock=asyncio.Lock())
+
+        return _AsyncExperimentManager(
+            (result["example"] async for result in r1),
+            experiment=self._experiment,
+            metadata=self._metadata,
+            client=self.client,
+            runs=(result["run"] async for result in r2),
+            evaluation_results=(result["evaluation_results"] async for result in r3),
+            summary_results=self._summary_results,
+            include_attachments=self._include_attachments,
+            upload_results=self._upload_results,
         )
 
     async def awith_predictions(
@@ -553,7 +833,11 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         /,
         max_concurrency: Optional[int] = None,
     ) -> _AsyncExperimentManager:
-        _experiment_results = self._apredict(target, max_concurrency=max_concurrency)
+        _experiment_results = self._apredict(
+            target,
+            max_concurrency=max_concurrency,
+            include_attachments=_include_attachments(target),
+        )
         r1, r2 = aitertools.atee(_experiment_results, 2, lock=asyncio.Lock())
         return _AsyncExperimentManager(
             (pred["example"] async for pred in r1),
@@ -561,6 +845,8 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             metadata=self._metadata,
             client=self.client,
             runs=(pred["run"] async for pred in r2),
+            include_attachments=self._include_attachments,
+            upload_results=self._upload_results,
         )
 
     async def awith_evaluators(
@@ -580,6 +866,8 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             runs=(result["run"] async for result in r2),
             evaluation_results=(result["evaluation_results"] async for result in r3),
             summary_results=self._summary_results,
+            include_attachments=self._include_attachments,
+            upload_results=self._upload_results,
         )
 
     async def awith_summary_evaluators(
@@ -596,6 +884,8 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             runs=self.aget_runs(),
             evaluation_results=self._evaluation_results,
             summary_results=aggregate_feedback_gen,
+            include_attachments=self._include_attachments,
+            upload_results=self._upload_results,
         )
 
     async def aget_results(self) -> AsyncIterator[ExperimentResultRow]:
@@ -622,7 +912,11 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
     ## Private methods
 
     async def _apredict(
-        self, target: ATARGET_T, /, max_concurrency: Optional[int] = None
+        self,
+        target: ATARGET_T,
+        /,
+        max_concurrency: Optional[int] = None,
+        include_attachments: bool = False,
     ) -> AsyncIterator[_ForwardResults]:
         fn = _ensure_async_traceable(target)
 
@@ -630,7 +924,12 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             async for example in await self.aget_examples():
                 # Yield the coroutine to be awaited later
                 yield _aforward(
-                    fn, example, self.experiment_name, self._metadata, self.client
+                    fn,
+                    self._get_example_with_readers(example),
+                    self.experiment_name,
+                    self._metadata,
+                    self.client,
+                    include_attachments,
                 )
 
         async for result in aitertools.aiter_with_concurrency(
@@ -675,24 +974,31 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                 **current_context,
                 "project_name": "evaluators",
                 "metadata": metadata,
-                "enabled": True,
+                "enabled": "local" if not self._upload_results else True,
                 "client": self.client,
             }
         ):
             run = current_results["run"]
             example = current_results["example"]
             eval_results = current_results["evaluation_results"]
-            for evaluator in evaluators:
+
+            async def _run_single_evaluator(evaluator: RunEvaluator):
+                evaluator_run_id = uuid.uuid4()
                 try:
-                    evaluator_response = await evaluator.aevaluate_run(
+                    evaluator_response = await evaluator.aevaluate_run(  # type: ignore[call-arg]
                         run=run,
-                        example=example,
+                        example=self._get_example_with_readers(example),
+                        evaluator_run_id=evaluator_run_id,
                     )
-                    eval_results["results"].extend(
+                    selected_results = self.client._select_eval_results(
+                        evaluator_response
+                    )
+
+                    if self._upload_results:
                         self.client._log_evaluation_feedback(
                             evaluator_response, run=run, _executor=executor
                         )
-                    )
+                    return selected_results
                 except Exception as e:
                     try:
                         feedback_keys = _extract_feedback_keys(evaluator)
@@ -701,19 +1007,21 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                             results=[
                                 EvaluationResult(
                                     key=key,
-                                    source_run_id=run.id,
+                                    source_run_id=evaluator_run_id,
                                     comment=repr(e),
                                     extra={"error": True},
                                 )
                                 for key in feedback_keys
                             ]
                         )
-                        eval_results["results"].extend(
-                            # TODO: This is a hack
+                        selected_results = self.client._select_eval_results(
+                            error_response
+                        )
+                        if self._upload_results:
                             self.client._log_evaluation_feedback(
                                 error_response, run=run, _executor=executor
                             )
-                        )
+                        return selected_results
                     except Exception as e2:
                         logger.debug(f"Error parsing feedback keys: {e2}")
                         pass
@@ -722,11 +1030,14 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                         f" run {run.id}: {repr(e)}",
                         exc_info=True,
                     )
-                    logger.error(
-                        f"Error running evaluator {repr(evaluator)} on"
-                        f" run {run.id}: {repr(e)}",
-                        exc_info=True,
-                    )
+
+            all_results = []
+            for evaluator in evaluators:
+                all_results.append(await _run_single_evaluator(evaluator))
+
+            for result in all_results:
+                if result is not None:
+                    eval_results["results"].extend(result)
             return ExperimentResultRow(
                 run=run,
                 example=example,
@@ -744,7 +1055,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             runs.append(run)
             examples.append(example)
         aggregate_feedback = []
-        project_id = self._get_experiment().id
+        project_id = self._get_experiment().id if self._upload_results else None
         current_context = rh.get_tracing_context()
         metadata = {
             **(current_context["metadata"] or {}),
@@ -758,7 +1069,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                 **current_context,
                 "project_name": "evaluators",
                 "metadata": metadata,
-                "enabled": True,
+                "enabled": "local" if not self._upload_results else True,
                 "client": self.client,
             }
         ):
@@ -770,16 +1081,17 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                         fn_name=evaluator.__name__,
                     )
                     aggregate_feedback.extend(flattened_results)
-                    for result in flattened_results:
-                        feedback = result.dict(exclude={"target_run_id"})
-                        evaluator_info = feedback.pop("evaluator_info", None)
-                        await aitertools.aio_to_thread(
-                            self.client.create_feedback,
-                            **feedback,
-                            run_id=None,
-                            project_id=project_id,
-                            source_info=evaluator_info,
-                        )
+                    if self._upload_results:
+                        for result in flattened_results:
+                            feedback = result.dict(exclude={"target_run_id"})
+                            evaluator_info = feedback.pop("evaluator_info", None)
+                            await aitertools.aio_to_thread(
+                                self.client.create_feedback,
+                                **feedback,
+                                run_id=None,
+                                project_id=project_id,
+                                source_info=evaluator_info,
+                            )
                 except Exception as e:
                     logger.error(
                         f"Error running summary evaluator {repr(evaluator)}: {e}",
@@ -815,6 +1127,8 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         return list(splits)
 
     async def _aend(self) -> None:
+        if not self._upload_results:
+            return
         experiment = self._experiment
         if experiment is None:
             raise ValueError("Experiment not started yet.")
@@ -824,8 +1138,10 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         project_metadata["dataset_splits"] = await self._get_dataset_splits()
         self.client.update_project(
             experiment.id,
-            end_time=datetime.datetime.now(datetime.timezone.utc),
-            metadata=project_metadata,
+            metadata={
+                **experiment.metadata,
+                **project_metadata,
+            },
         )
 
 
@@ -904,6 +1220,7 @@ async def _aforward(
     experiment_name: str,
     metadata: dict,
     client: langsmith.Client,
+    include_attachments: bool = False,
 ) -> _ForwardResults:
     run: Optional[schemas.RunBase] = None
 
@@ -913,8 +1230,13 @@ async def _aforward(
 
     with rh.tracing_context(enabled=True):
         try:
+            args = (
+                (example.inputs, example.attachments)
+                if include_attachments
+                else (example.inputs,)
+            )
             await fn(
-                example.inputs,
+                *args,
                 langsmith_extra=rh.LangSmithExtra(
                     reference_example_id=example.id,
                     on_end=_get_run,
@@ -966,17 +1288,22 @@ def _ensure_async_traceable(
         return target  # type: ignore
     else:
         if _is_langchain_runnable(target):
-            target = target.ainvoke  # type: ignore[attr-defined]
-        return rh.traceable(name="AsyncTarget")(target)
+            target = target.ainvoke  # type: ignore[union-attr]
+        return rh.traceable(name="AsyncTarget")(target)  # type: ignore[arg-type]
 
 
 def _aresolve_data(
-    data: Union[DATA_T, AsyncIterable[schemas.Example]], *, client: langsmith.Client
+    data: Union[DATA_T, AsyncIterable[schemas.Example]],
+    *,
+    client: langsmith.Client,
+    include_attachments: bool = False,
 ) -> AsyncIterator[schemas.Example]:
     """Return the examples for the given dataset."""
     if isinstance(data, AsyncIterable):
         return aitertools.ensure_async_iterator(data)
-    return aitertools.ensure_async_iterator(_resolve_data(data, client=client))
+    return aitertools.ensure_async_iterator(
+        _resolve_data(data, client=client, include_attachments=include_attachments)
+    )
 
 
 T = TypeVar("T")
@@ -989,3 +1316,11 @@ async def async_chain_from_iterable(
     for sub_iterable in iterable:
         async for item in sub_iterable:
             yield item
+
+
+async def async_iter_from_list(
+    examples: List[schemas.Example],
+) -> AsyncIterable[schemas.Example]:
+    """Convert a list of examples to an async iterable."""
+    for example in examples:
+        yield example

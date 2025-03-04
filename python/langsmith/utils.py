@@ -24,6 +24,7 @@ from typing import (
     Iterable,
     Iterator,
     List,
+    Literal,
     Mapping,
     Optional,
     Sequence,
@@ -91,7 +92,7 @@ class LangSmithMissingAPIKeyWarning(LangSmithWarning):
     """Warning for missing API key."""
 
 
-def tracing_is_enabled(ctx: Optional[dict] = None) -> bool:
+def tracing_is_enabled(ctx: Optional[dict] = None) -> Union[bool, Literal["local"]]:
     """Return True if tracing is enabled."""
     from langsmith.run_helpers import get_current_run_tree, get_tracing_context
 
@@ -769,10 +770,15 @@ def get_host_url(web_url: Optional[str], api_url: str):
     elif str(parsed_url.path).endswith("/api"):
         new_path = str(parsed_url.path).rsplit("/api", 1)[0]
         link = urllib_parse.urlunparse(parsed_url._replace(path=new_path))
+    elif str(parsed_url.path).endswith("/api/v1"):
+        new_path = str(parsed_url.path).rsplit("/api/v1", 1)[0]
+        link = urllib_parse.urlunparse(parsed_url._replace(path=new_path))
     elif str(parsed_url.netloc).startswith("eu."):
         link = "https://eu.smith.langchain.com"
     elif str(parsed_url.netloc).startswith("dev."):
         link = "https://dev.smith.langchain.com"
+    elif str(parsed_url.netloc).startswith("beta."):
+        link = "https://beta.smith.langchain.com"
     else:
         link = "https://smith.langchain.com"
     return link
@@ -794,3 +800,15 @@ def _get_function_name(fn: Callable, depth: int = 0) -> str:
         return _get_function_name(fn.__call__, depth + 1)
 
     return str(fn)
+
+
+def is_truish(val: Any) -> bool:
+    """Check if the value is truish.
+
+    Args:
+        val (Any): The value to check.
+
+    Returns:
+        bool: True if the value is truish, False otherwise.
+    """
+    return val is True or val == "true" or val == "True" or val == "TRUE" or val == "1"

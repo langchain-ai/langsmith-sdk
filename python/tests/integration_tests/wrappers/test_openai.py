@@ -369,3 +369,102 @@ async def test_wrap_openai_chat_async_tokens(test_case):
 
     filename = f"langsmith_py_wrap_openai_{test_case['description'].replace(' ', '_')}"
     _collect_requests(mock_session, filename)
+
+
+def test_parse_sync_api():
+    """Test that the sync parse method can be traced without errors."""
+    import openai  # noqa
+
+    mock_session = mock.MagicMock()
+    ls_client = langsmith.Client(session=mock_session)
+
+    original_client = openai.Client()
+    patched_client = wrap_openai(openai.Client(), tracing_extra={"client": ls_client})
+
+    messages = [{"role": "user", "content": "Say 'foo' then stop."}]
+
+    original = original_client.beta.chat.completions.parse(
+        messages=messages, model="gpt-3.5-turbo", temperature=0, seed=42, max_tokens=3
+    )
+    patched = patched_client.beta.chat.completions.parse(
+        messages=messages, model="gpt-3.5-turbo", temperature=0, seed=42, max_tokens=3
+    )
+
+    assert type(original) is type(patched)
+    assert original.choices == patched.choices
+
+    time.sleep(0.1)
+    for call in mock_session.request.call_args_list:
+        assert call[0][0].upper() in ["POST", "GET", "PATCH"]
+
+    _collect_requests(mock_session, "test_parse_sync_api")
+
+
+@pytest.mark.asyncio
+async def test_parse_async_api():
+    """Test that the async parse method can be traced without errors."""
+    import openai  # noqa
+
+    mock_session = mock.MagicMock()
+    ls_client = langsmith.Client(session=mock_session)
+
+    original_client = openai.AsyncClient()
+    patched_client = wrap_openai(
+        openai.AsyncClient(), tracing_extra={"client": ls_client}
+    )
+
+    messages = [{"role": "user", "content": "Say 'foo' then stop."}]
+
+    original = await original_client.beta.chat.completions.parse(
+        messages=messages, model="gpt-3.5-turbo", temperature=0, seed=42, max_tokens=3
+    )
+    patched = await patched_client.beta.chat.completions.parse(
+        messages=messages, model="gpt-3.5-turbo", temperature=0, seed=42, max_tokens=3
+    )
+
+    assert type(original) is type(patched)
+    assert original.choices == patched.choices
+
+    time.sleep(0.1)
+    for call in mock_session.request.call_args_list:
+        assert call[0][0].upper() in ["POST", "GET", "PATCH"]
+
+    _collect_requests(mock_session, "test_parse_async_api")
+
+
+def test_parse_tokens():
+    """
+    Test that usage tokens are captured for parse calls
+    """
+    import openai
+    from openai.types.chat import ChatCompletion
+
+    mock_session = mock.MagicMock()
+    ls_client = langsmith.Client(session=mock_session)
+    wrapped_oai_client = wrap_openai(
+        openai.Client(), tracing_extra={"client": ls_client}
+    )
+
+    collect = Collect()
+    messages = [{"role": "user", "content": "Check usage"}]
+
+    with langsmith.tracing_context(enabled=True):
+        res = wrapped_oai_client.beta.chat.completions.parse(
+            messages=messages,
+            model="gpt-3.5-turbo",
+            langsmith_extra={"on_end": collect},
+        )
+        assert isinstance(res, ChatCompletion)
+
+    usage_metadata = collect.run.outputs.get("usage_metadata")
+
+    if usage_metadata:
+        assert usage_metadata["input_tokens"] >= 0
+        assert usage_metadata["output_tokens"] >= 0
+        assert usage_metadata["total_tokens"] >= 0
+
+    time.sleep(0.1)
+    for call in mock_session.request.call_args_list:
+        assert call[0][0].upper() in ["POST", "GET", "PATCH"]
+
+    _collect_requests(mock_session, "test_parse_tokens")

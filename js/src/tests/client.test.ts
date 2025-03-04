@@ -122,6 +122,14 @@ describe("Client", () => {
       expect(result).toBe("https://example.com");
     });
 
+    it("should trim /api/v1 from the apiUrl", () => {
+      const client = new Client({
+        apiUrl: "https://my-other-domain.com/api/v1",
+      });
+      const result = (client as any).getHostUrl();
+      expect(result).toBe("https://my-other-domain.com");
+    });
+
     it("should return 'https://dev.smith.langchain.com' if apiUrl contains 'dev'", () => {
       const client = new Client({
         apiUrl: "https://dev.smith.langchain.com/api",
@@ -129,6 +137,15 @@ describe("Client", () => {
       });
       const result = (client as any).getHostUrl();
       expect(result).toBe("https://dev.smith.langchain.com");
+    });
+
+    it("should return 'https://beta.smith.langchain.com' if apiUrl contains 'beta'", () => {
+      const client = new Client({
+        apiUrl: "https://beta.smith.langchain.com/api",
+        apiKey: "test-api-key",
+      });
+      const result = (client as any).getHostUrl();
+      expect(result).toBe("https://beta.smith.langchain.com");
     });
 
     it("should return 'https://eu.smith.langchain.com' if apiUrl contains 'eu'", () => {

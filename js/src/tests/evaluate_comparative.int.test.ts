@@ -1,6 +1,10 @@
 import { evaluate } from "../evaluation/_runner.js";
-import { evaluateComparative } from "../evaluation/evaluate_comparative.js";
+import {
+  evaluateComparative,
+  _ComparativeEvaluator,
+} from "../evaluation/evaluate_comparative.js";
 import { Client } from "../index.js";
+import { Run } from "../schemas.js";
 import { waitUntilRunFound } from "./utils.js";
 import { v4 as uuidv4 } from "uuid";
 
@@ -51,9 +55,11 @@ describe("evaluate comparative", () => {
       [firstEval.experimentName, secondEval.experimentName],
       {
         evaluators: [
-          (runs) => ({
+          ({ runs }: { runs?: Run[] }) => ({
             key: "latter_precedence",
-            scores: Object.fromEntries(runs.map((run, i) => [run.id, i % 2])),
+            scores: Object.fromEntries(
+              runs?.map((run, i) => [run.id, i % 2]) ?? []
+            ),
           }),
         ],
       }
@@ -74,14 +80,144 @@ describe("evaluate comparative", () => {
       ],
       {
         evaluators: [
-          (runs) => ({
+          ({ runs }: { runs?: Run[] }) => ({
             key: "latter_precedence",
-            scores: Object.fromEntries(runs.map((run, i) => [run.id, i % 2])),
+            scores: Object.fromEntries(
+              runs?.map((run, i) => [run.id, i % 2]) ?? []
+            ),
           }),
         ],
       }
     );
 
     expect(pairwise.results.length).toEqual(2);
+  });
+
+  describe("evaluator formats", () => {
+    test("old format evaluator", async () => {
+      const pairwise = await evaluateComparative(
+        [
+          evaluate((input) => ({ foo: `first:${input.input}` }), {
+            data: TESTING_DATASET_NAME,
+          }),
+          evaluate((input) => ({ foo: `second:${input.input}` }), {
+            data: TESTING_DATASET_NAME,
+          }),
+        ],
+        {
+          evaluators: [
+            // Old format evaluator
+            (runs, example) => ({
+              key: "old_format",
+              scores: Object.fromEntries(
+                runs.map((run) => [
+                  run.id,
+                  run.outputs?.foo === `second:${example.inputs.input}` ? 1 : 0,
+                ])
+              ),
+            }),
+          ],
+        }
+      );
+
+      expect(pairwise.results.length).toEqual(2);
+      expect(pairwise.results[0].key).toBe("old_format");
+      // Second run in each pair should have score of 1
+      expect(Object.values(pairwise.results[0].scores)).toEqual([0, 1]);
+    });
+
+    test("new format evaluator", async () => {
+      const matchesSecondEvaluator: _ComparativeEvaluator = ({
+        runs,
+        inputs,
+        outputs,
+      }: {
+        runs?: Run[];
+        inputs?: Record<string, any>;
+        outputs?: Record<string, any>[];
+      }) => ({
+        key: "new_format",
+        scores: Object.fromEntries(
+          // Add null checks for the optional parameters
+          runs?.map((run, i) => [
+            run.id,
+            outputs?.[i]?.foo === `second:${inputs?.input}` ? 1 : 0,
+          ]) ?? []
+        ),
+      });
+
+      const pairwise = await evaluateComparative(
+        [
+          evaluate((input) => ({ foo: `first:${input.input}` }), {
+            data: TESTING_DATASET_NAME,
+          }),
+          evaluate((input) => ({ foo: `second:${input.input}` }), {
+            data: TESTING_DATASET_NAME,
+          }),
+        ],
+        {
+          evaluators: [matchesSecondEvaluator],
+        }
+      );
+
+      expect(pairwise.results.length).toEqual(2);
+      expect(pairwise.results[0].key).toBe("new_format");
+      // Second run in each pair should have score of 1
+      expect(Object.values(pairwise.results[0].scores)).toEqual([0, 1]);
+    });
+
+    test("mixed old and new format evaluators", async () => {
+      const matchesSecondEvaluator: _ComparativeEvaluator = ({
+        runs,
+        inputs,
+        outputs,
+      }: {
+        runs?: Run[];
+        inputs?: Record<string, any>;
+        outputs?: Record<string, any>[];
+      }) => ({
+        key: "new_format",
+        scores: Object.fromEntries(
+          runs?.map((run, i) => [
+            run.id,
+            outputs?.[i]?.foo === `second:${inputs?.input}` ? 1 : 0,
+          ]) ?? []
+        ),
+      });
+      const pairwise = await evaluateComparative(
+        [
+          evaluate((input) => ({ foo: `first:${input.input}` }), {
+            data: TESTING_DATASET_NAME,
+          }),
+          evaluate((input) => ({ foo: `second:${input.input}` }), {
+            data: TESTING_DATASET_NAME,
+          }),
+        ],
+        {
+          evaluators: [
+            // Old format
+            (runs, example) => ({
+              key: "old_format",
+              scores: Object.fromEntries(
+                runs.map((run) => [
+                  run.id,
+                  run.outputs?.foo === `second:${example.inputs.input}` ? 1 : 0,
+                ])
+              ),
+            }),
+            // New format
+            matchesSecondEvaluator,
+          ],
+        }
+      );
+
+      expect(pairwise.results.length).toEqual(4); // 2 examples × 2 evaluators
+      expect(pairwise.results.map((r) => r.key)).toContain("old_format");
+      expect(pairwise.results.map((r) => r.key)).toContain("new_format");
+      // Each evaluator should score the second run as 1
+      pairwise.results.forEach((result) => {
+        expect(Object.values(result.scores)).toEqual([0, 1]);
+      });
+    });
   });
 });
