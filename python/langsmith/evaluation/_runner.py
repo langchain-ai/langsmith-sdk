@@ -702,7 +702,7 @@ def evaluate_comparative(
         >>> prompt_2 = "You are an exceedingly helpful assistant."
         >>> def predict(inputs: dict, prompt: str) -> dict:
         ...     completion = wrapped_client.chat.completions.create(
-        ...         model="gpt-3.5-turbo",
+        ...         model="gpt-4o-mini",
         ...         messages=[
         ...             {"role": "system", "content": prompt},
         ...             {
@@ -729,12 +729,11 @@ def evaluate_comparative(
         View the evaluation results for experiment:...
         >>> results_1.wait()
         >>> results_2.wait()
-        >>> import time
-        >>> time.sleep(10)  # Wait for the traces to be fully processed
 
             Finally, you would compare the two prompts directly:
         >>> import json
         >>> from langsmith.evaluation import evaluate_comparative
+        >>> from langsmith import schemas
         >>> def score_preferences(runs: list, example: schemas.Example):
         ...     assert len(runs) == 2  # Comparing 2 systems
         ...     assert isinstance(example, schemas.Example)
@@ -767,7 +766,7 @@ def evaluate_comparative(
         ...         }
         ...     ]
         ...     completion = openai.Client().chat.completions.create(
-        ...         model="gpt-4o",
+        ...         model="gpt-4o-mini",
         ...         messages=[
         ...             {"role": "system", "content": "Select the better response."},
         ...             {
