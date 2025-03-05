@@ -766,7 +766,7 @@ def evaluate_comparative(
         ...         }
         ...     ]
         ...     completion = openai.Client().chat.completions.create(
-        ...         model="gpt-4o",
+        ...         model="gpt-4o-mini",
         ...         messages=[
         ...             {"role": "system", "content": "Select the better response."},
         ...             {

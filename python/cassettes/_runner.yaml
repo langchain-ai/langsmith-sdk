@@ -3552,4 +3552,2595 @@ interactions:
     status:
       code: 200
       message: OK
+- request:
+    body: '{"messages": [{"role": "system", "content": "You are a helpful assistant."},
+      {"role": "user", "content": "Context: The man is not steering a car\n\ninputs[''question'']"}],
+      "model": "gpt-4o-mini", "stream": false}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '211'
+      content-type:
+      - application/json
+      host:
+      - api.openai.com
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - 'false'
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 1.63.2
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.11.3
+    method: POST
+    uri: https://api.openai.com/v1/chat/completions
+  response:
+    body:
+      string: "{\n  \"id\": \"chatcmpl-B7mLKtShNLT5OJxIByLmQugZHGit3\",\n  \"object\":
+        \"chat.completion\",\n  \"created\": 1741193826,\n  \"model\": \"gpt-4o-mini-2024-07-18\",\n
+        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
+        \"assistant\",\n        \"content\": \"It seems like you've referenced \\\"inputs['question']\\\",
+        but it looks like the question itself is missing. Could you please provide
+        me with the question or specify what information you need regarding the context
+        that \\\"the man is not steering a car\\\"? I'd be happy to help!\",\n        \"refusal\":
+        null\n      },\n      \"logprobs\": null,\n      \"finish_reason\": \"stop\"\n
+        \   }\n  ],\n  \"usage\": {\n    \"prompt_tokens\": 31,\n    \"completion_tokens\":
+        54,\n    \"total_tokens\": 85,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\":
+        0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
+        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
+        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
+        \"default\",\n  \"system_fingerprint\": \"fp_06737a9306\"\n}\n"
+    headers:
+      CF-RAY:
+      - 91bb2680bb812f46-LAX
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Wed, 05 Mar 2025 16:57:06 GMT
+      Server:
+      - cloudflare
+      Set-Cookie:
+      - __cf_bm=LRTpqDB8boRezXEaCYxQvpn6Md3a83GTtgo0XTohsHY-1741193826-1.0.1.1-21oBWjgrnkc1JMV5yb7Dew6vkelgIEnwFmmPmcnxHi6i_4BKGq4CdiHli4goAasb1uP.UAltqipEuoK3EGy8wOEZ.XllRxV1vhFRPYPp9k0;
+        path=/; expires=Wed, 05-Mar-25 17:27:06 GMT; domain=.api.openai.com; HttpOnly;
+        Secure; SameSite=None
+      - _cfuvid=LnctKg.GD3moU1j7w8H7J5juoFxunk_nywNP0tvV58M-1741193826886-0.0.1.1-604800000;
+        path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '1052'
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '857'
+      openai-version:
+      - '2020-10-01'
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      x-ratelimit-limit-requests:
+      - '30000'
+      x-ratelimit-limit-tokens:
+      - '150000000'
+      x-ratelimit-remaining-requests:
+      - '29999'
+      x-ratelimit-remaining-tokens:
+      - '149999960'
+      x-ratelimit-reset-requests:
+      - 2ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_b3ac82069dc68f8d731752643872c4db
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"messages": [{"role": "system", "content": "You are a helpful assistant."},
+      {"role": "user", "content": "Context: The man is not steering a sedan\n\ninputs[''question'']"}],
+      "model": "gpt-4o-mini", "stream": false}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '213'
+      content-type:
+      - application/json
+      cookie:
+      - __cf_bm=LRTpqDB8boRezXEaCYxQvpn6Md3a83GTtgo0XTohsHY-1741193826-1.0.1.1-21oBWjgrnkc1JMV5yb7Dew6vkelgIEnwFmmPmcnxHi6i_4BKGq4CdiHli4goAasb1uP.UAltqipEuoK3EGy8wOEZ.XllRxV1vhFRPYPp9k0;
+        _cfuvid=LnctKg.GD3moU1j7w8H7J5juoFxunk_nywNP0tvV58M-1741193826886-0.0.1.1-604800000
+      host:
+      - api.openai.com
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - 'false'
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 1.63.2
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.11.3
+    method: POST
+    uri: https://api.openai.com/v1/chat/completions
+  response:
+    body:
+      string: "{\n  \"id\": \"chatcmpl-B7mLLcPMseEbQVHnw9MEy8eGO7lNp\",\n  \"object\":
+        \"chat.completion\",\n  \"created\": 1741193827,\n  \"model\": \"gpt-4o-mini-2024-07-18\",\n
+        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
+        \"assistant\",\n        \"content\": \"It seems like you might be looking
+        for an answer related to the context provided: \\\"The man is not steering
+        a sedan.\\\" Could you please clarify what specific information or response
+        you are seeking regarding this context? Are you looking for an explanation,
+        a related question, or something else?\",\n        \"refusal\": null\n      },\n
+        \     \"logprobs\": null,\n      \"finish_reason\": \"stop\"\n    }\n  ],\n
+        \ \"usage\": {\n    \"prompt_tokens\": 31,\n    \"completion_tokens\": 57,\n
+        \   \"total_tokens\": 88,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\":
+        0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
+        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
+        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
+        \"default\",\n  \"system_fingerprint\": \"fp_06737a9306\"\n}\n"
+    headers:
+      CF-RAY:
+      - 91bb268a8f752f46-LAX
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Wed, 05 Mar 2025 16:57:07 GMT
+      Server:
+      - cloudflare
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '1076'
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '820'
+      openai-version:
+      - '2020-10-01'
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      x-ratelimit-limit-requests:
+      - '30000'
+      x-ratelimit-limit-tokens:
+      - '150000000'
+      x-ratelimit-remaining-requests:
+      - '29999'
+      x-ratelimit-remaining-tokens:
+      - '149999959'
+      x-ratelimit-reset-requests:
+      - 2ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_be39264fb16c5434e9c517c2a102f006
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"messages": [{"role": "system", "content": "You are an exceedingly helpful
+      assistant."}, {"role": "user", "content": "Context: The man is not steering
+      a sedan\n\ninputs[''question'']"}], "model": "gpt-4o-mini", "stream": false}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '226'
+      content-type:
+      - application/json
+      cookie:
+      - __cf_bm=LRTpqDB8boRezXEaCYxQvpn6Md3a83GTtgo0XTohsHY-1741193826-1.0.1.1-21oBWjgrnkc1JMV5yb7Dew6vkelgIEnwFmmPmcnxHi6i_4BKGq4CdiHli4goAasb1uP.UAltqipEuoK3EGy8wOEZ.XllRxV1vhFRPYPp9k0;
+        _cfuvid=LnctKg.GD3moU1j7w8H7J5juoFxunk_nywNP0tvV58M-1741193826886-0.0.1.1-604800000
+      host:
+      - api.openai.com
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - 'false'
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 1.63.2
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.11.3
+    method: POST
+    uri: https://api.openai.com/v1/chat/completions
+  response:
+    body:
+      string: "{\n  \"id\": \"chatcmpl-B7mLMaq4pIHtxx3ok2m3hw5tt5spq\",\n  \"object\":
+        \"chat.completion\",\n  \"created\": 1741193828,\n  \"model\": \"gpt-4o-mini-2024-07-18\",\n
+        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
+        \"assistant\",\n        \"content\": \"It seems like your message got cut
+        off or you were about to provide a specific question related to the context
+        you mentioned. Could you please provide the full question or clarify what
+        you would like to know regarding the context where \\\"the man is not steering
+        a sedan\\\"? I'm here to help!\",\n        \"refusal\": null\n      },\n      \"logprobs\":
+        null,\n      \"finish_reason\": \"stop\"\n    }\n  ],\n  \"usage\": {\n    \"prompt_tokens\":
+        32,\n    \"completion_tokens\": 58,\n    \"total_tokens\": 90,\n    \"prompt_tokens_details\":
+        {\n      \"cached_tokens\": 0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
+        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
+        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
+        \"default\",\n  \"system_fingerprint\": \"fp_06737a9306\"\n}\n"
+    headers:
+      CF-RAY:
+      - 91bb2691887d5245-LAX
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Wed, 05 Mar 2025 16:57:09 GMT
+      Server:
+      - cloudflare
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '1070'
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '1020'
+      openai-version:
+      - '2020-10-01'
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      x-ratelimit-limit-requests:
+      - '30000'
+      x-ratelimit-limit-tokens:
+      - '150000000'
+      x-ratelimit-remaining-requests:
+      - '29999'
+      x-ratelimit-remaining-tokens:
+      - '149999956'
+      x-ratelimit-reset-requests:
+      - 2ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_1a1fdd8586757d08721f33a5a139c4b4
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"messages": [{"role": "system", "content": "You are a helpful assistant."},
+      {"role": "user", "content": "Context: The man is not steering a jeep\n\ninputs[''question'']"}],
+      "model": "gpt-4o-mini", "stream": false}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '212'
+      content-type:
+      - application/json
+      cookie:
+      - __cf_bm=LRTpqDB8boRezXEaCYxQvpn6Md3a83GTtgo0XTohsHY-1741193826-1.0.1.1-21oBWjgrnkc1JMV5yb7Dew6vkelgIEnwFmmPmcnxHi6i_4BKGq4CdiHli4goAasb1uP.UAltqipEuoK3EGy8wOEZ.XllRxV1vhFRPYPp9k0;
+        _cfuvid=LnctKg.GD3moU1j7w8H7J5juoFxunk_nywNP0tvV58M-1741193826886-0.0.1.1-604800000
+      host:
+      - api.openai.com
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - 'false'
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 1.63.2
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.11.3
+    method: POST
+    uri: https://api.openai.com/v1/chat/completions
+  response:
+    body:
+      string: "{\n  \"id\": \"chatcmpl-B7mLMEJ1czpKDoft2oLopd2lVgbIZ\",\n  \"object\":
+        \"chat.completion\",\n  \"created\": 1741193828,\n  \"model\": \"gpt-4o-mini-2024-07-18\",\n
+        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
+        \"assistant\",\n        \"content\": \"It seems like you are looking for information
+        or clarification related to the context provided: \\\"The man is not steering
+        a jeep.\\\" Could you please specify what type of information or assistance
+        you are looking for regarding this statement? For example, are you looking
+        for a discussion on reasons why he might not be steering, implications of
+        this action, or something else entirely?\",\n        \"refusal\": null\n      },\n
+        \     \"logprobs\": null,\n      \"finish_reason\": \"stop\"\n    }\n  ],\n
+        \ \"usage\": {\n    \"prompt_tokens\": 31,\n    \"completion_tokens\": 72,\n
+        \   \"total_tokens\": 103,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\":
+        0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
+        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
+        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
+        \"default\",\n  \"system_fingerprint\": \"fp_06737a9306\"\n}\n"
+    headers:
+      CF-RAY:
+      - 91bb2690af822f46-LAX
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Wed, 05 Mar 2025 16:57:09 GMT
+      Server:
+      - cloudflare
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '1166'
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '1333'
+      openai-version:
+      - '2020-10-01'
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      x-ratelimit-limit-requests:
+      - '30000'
+      x-ratelimit-limit-tokens:
+      - '150000000'
+      x-ratelimit-remaining-requests:
+      - '29999'
+      x-ratelimit-remaining-tokens:
+      - '149999960'
+      x-ratelimit-reset-requests:
+      - 2ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_c07f7d7e5b747bb3e8b6d904e8b379fa
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"messages": [{"role": "system", "content": "You are an exceedingly helpful
+      assistant."}, {"role": "user", "content": "Context: The man is not steering
+      a jeep\n\ninputs[''question'']"}], "model": "gpt-4o-mini", "stream": false}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '225'
+      content-type:
+      - application/json
+      cookie:
+      - __cf_bm=LRTpqDB8boRezXEaCYxQvpn6Md3a83GTtgo0XTohsHY-1741193826-1.0.1.1-21oBWjgrnkc1JMV5yb7Dew6vkelgIEnwFmmPmcnxHi6i_4BKGq4CdiHli4goAasb1uP.UAltqipEuoK3EGy8wOEZ.XllRxV1vhFRPYPp9k0;
+        _cfuvid=LnctKg.GD3moU1j7w8H7J5juoFxunk_nywNP0tvV58M-1741193826886-0.0.1.1-604800000
+      host:
+      - api.openai.com
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - 'false'
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 1.63.2
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.11.3
+    method: POST
+    uri: https://api.openai.com/v1/chat/completions
+  response:
+    body:
+      string: "{\n  \"id\": \"chatcmpl-B7mLNQyCAsXlQEtRzVnf1Ht1z1lyT\",\n  \"object\":
+        \"chat.completion\",\n  \"created\": 1741193829,\n  \"model\": \"gpt-4o-mini-2024-07-18\",\n
+        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
+        \"assistant\",\n        \"content\": \"It seems like you might have a specific
+        question related to the context you provided about a man not steering a jeep.
+        Could you please elaborate or specify what you would like to know or ask about
+        this situation?\",\n        \"refusal\": null\n      },\n      \"logprobs\":
+        null,\n      \"finish_reason\": \"stop\"\n    }\n  ],\n  \"usage\": {\n    \"prompt_tokens\":
+        32,\n    \"completion_tokens\": 42,\n    \"total_tokens\": 74,\n    \"prompt_tokens_details\":
+        {\n      \"cached_tokens\": 0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
+        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
+        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
+        \"default\",\n  \"system_fingerprint\": \"fp_06737a9306\"\n}\n"
+    headers:
+      CF-RAY:
+      - 91bb2698d9155245-LAX
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Wed, 05 Mar 2025 16:57:10 GMT
+      Server:
+      - cloudflare
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '992'
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '751'
+      openai-version:
+      - '2020-10-01'
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      x-ratelimit-limit-requests:
+      - '30000'
+      x-ratelimit-limit-tokens:
+      - '150000000'
+      x-ratelimit-remaining-requests:
+      - '29999'
+      x-ratelimit-remaining-tokens:
+      - '149999957'
+      x-ratelimit-reset-requests:
+      - 2ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_e6f71e1daa33ad43c8c261e4cea09d4f
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"messages": [{"role": "system", "content": "You are a helpful assistant."},
+      {"role": "user", "content": "Context: The man is not steering a car\n\ninputs[''question'']"}],
+      "model": "gpt-4o-mini", "stream": false}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '211'
+      content-type:
+      - application/json
+      cookie:
+      - __cf_bm=LRTpqDB8boRezXEaCYxQvpn6Md3a83GTtgo0XTohsHY-1741193826-1.0.1.1-21oBWjgrnkc1JMV5yb7Dew6vkelgIEnwFmmPmcnxHi6i_4BKGq4CdiHli4goAasb1uP.UAltqipEuoK3EGy8wOEZ.XllRxV1vhFRPYPp9k0;
+        _cfuvid=LnctKg.GD3moU1j7w8H7J5juoFxunk_nywNP0tvV58M-1741193826886-0.0.1.1-604800000
+      host:
+      - api.openai.com
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - 'false'
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 1.63.2
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.11.3
+    method: POST
+    uri: https://api.openai.com/v1/chat/completions
+  response:
+    body:
+      string: "{\n  \"id\": \"chatcmpl-B7mLO4wvw2zfo9Ff86WGOCA32siKa\",\n  \"object\":
+        \"chat.completion\",\n  \"created\": 1741193830,\n  \"model\": \"gpt-4o-mini-2024-07-18\",\n
+        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
+        \"assistant\",\n        \"content\": \"It seems that you want to inquire about
+        a situation where a man is not steering a car. Could you please elaborate
+        on what specific information or assistance you are seeking? For instance,
+        are you looking for an explanation about the possible reasons, implications,
+        or consequences of a man not steering a car?\",\n        \"refusal\": null\n
+        \     },\n      \"logprobs\": null,\n      \"finish_reason\": \"stop\"\n    }\n
+        \ ],\n  \"usage\": {\n    \"prompt_tokens\": 31,\n    \"completion_tokens\":
+        60,\n    \"total_tokens\": 91,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\":
+        0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
+        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
+        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
+        \"default\",\n  \"system_fingerprint\": \"fp_06737a9306\"\n}\n"
+    headers:
+      CF-Cache-Status:
+      - DYNAMIC
+      CF-RAY:
+      - 91bb269a0b8c2f46-LAX
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Wed, 05 Mar 2025 16:57:11 GMT
+      Server:
+      - cloudflare
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      content-length:
+      - '1089'
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '944'
+      openai-version:
+      - '2020-10-01'
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      x-ratelimit-limit-requests:
+      - '30000'
+      x-ratelimit-limit-tokens:
+      - '150000000'
+      x-ratelimit-remaining-requests:
+      - '29999'
+      x-ratelimit-remaining-tokens:
+      - '149999960'
+      x-ratelimit-reset-requests:
+      - 2ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_7b73cf356c693cc2b62fdd3bfbee9037
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"messages": [{"role": "system", "content": "You are an exceedingly helpful
+      assistant."}, {"role": "user", "content": "Context: The man is not steering
+      a convertible\n\ninputs[''question'']"}], "model": "gpt-4o-mini", "stream":
+      false}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '232'
+      content-type:
+      - application/json
+      cookie:
+      - __cf_bm=LRTpqDB8boRezXEaCYxQvpn6Md3a83GTtgo0XTohsHY-1741193826-1.0.1.1-21oBWjgrnkc1JMV5yb7Dew6vkelgIEnwFmmPmcnxHi6i_4BKGq4CdiHli4goAasb1uP.UAltqipEuoK3EGy8wOEZ.XllRxV1vhFRPYPp9k0;
+        _cfuvid=LnctKg.GD3moU1j7w8H7J5juoFxunk_nywNP0tvV58M-1741193826886-0.0.1.1-604800000
+      host:
+      - api.openai.com
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - 'false'
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 1.63.2
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.11.3
+    method: POST
+    uri: https://api.openai.com/v1/chat/completions
+  response:
+    body:
+      string: "{\n  \"id\": \"chatcmpl-B7mLO9dUkuz7i4NLCiojiAFgpMK77\",\n  \"object\":
+        \"chat.completion\",\n  \"created\": 1741193830,\n  \"model\": \"gpt-4o-mini-2024-07-18\",\n
+        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
+        \"assistant\",\n        \"content\": \"It seems like you might be looking
+        for a specific answer or analysis related to the context you provided, which
+        states that \\\"the man is not steering a convertible.\\\" Could you please
+        clarify your question or provide more details? This will help me assist you
+        better!\",\n        \"refusal\": null\n      },\n      \"logprobs\": null,\n
+        \     \"finish_reason\": \"stop\"\n    }\n  ],\n  \"usage\": {\n    \"prompt_tokens\":
+        32,\n    \"completion_tokens\": 52,\n    \"total_tokens\": 84,\n    \"prompt_tokens_details\":
+        {\n      \"cached_tokens\": 0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
+        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
+        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
+        \"default\",\n  \"system_fingerprint\": \"fp_06737a9306\"\n}\n"
+    headers:
+      CF-Cache-Status:
+      - DYNAMIC
+      CF-RAY:
+      - 91bb269eaf595245-LAX
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Wed, 05 Mar 2025 16:57:11 GMT
+      Server:
+      - cloudflare
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      content-length:
+      - '1047'
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '904'
+      openai-version:
+      - '2020-10-01'
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      x-ratelimit-limit-requests:
+      - '30000'
+      x-ratelimit-limit-tokens:
+      - '150000000'
+      x-ratelimit-remaining-requests:
+      - '29999'
+      x-ratelimit-remaining-tokens:
+      - '149999954'
+      x-ratelimit-reset-requests:
+      - 2ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_2336ccbafc4ba420c9b0d2715ac27cf4
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"messages": [{"role": "system", "content": "You are a helpful assistant."},
+      {"role": "user", "content": "Context: The man is not steering a convertible\n\ninputs[''question'']"}],
+      "model": "gpt-4o-mini", "stream": false}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '219'
+      content-type:
+      - application/json
+      cookie:
+      - __cf_bm=LRTpqDB8boRezXEaCYxQvpn6Md3a83GTtgo0XTohsHY-1741193826-1.0.1.1-21oBWjgrnkc1JMV5yb7Dew6vkelgIEnwFmmPmcnxHi6i_4BKGq4CdiHli4goAasb1uP.UAltqipEuoK3EGy8wOEZ.XllRxV1vhFRPYPp9k0;
+        _cfuvid=LnctKg.GD3moU1j7w8H7J5juoFxunk_nywNP0tvV58M-1741193826886-0.0.1.1-604800000
+      host:
+      - api.openai.com
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - 'false'
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 1.63.2
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.11.3
+    method: POST
+    uri: https://api.openai.com/v1/chat/completions
+  response:
+    body:
+      string: "{\n  \"id\": \"chatcmpl-B7mLPVpm3BBfNGCmxsQToHqtnSypu\",\n  \"object\":
+        \"chat.completion\",\n  \"created\": 1741193831,\n  \"model\": \"gpt-4o-mini-2024-07-18\",\n
+        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
+        \"assistant\",\n        \"content\": \"It seems like you might be looking
+        for a specific answer or interpretation related to the phrase \\\"the man
+        is not steering a convertible.\\\" Could you please provide more context or
+        clarify what you're looking for? Are you asking for a discussion about convertibles,
+        a metaphorical interpretation, or something else?\",\n        \"refusal\":
+        null\n      },\n      \"logprobs\": null,\n      \"finish_reason\": \"stop\"\n
+        \   }\n  ],\n  \"usage\": {\n    \"prompt_tokens\": 31,\n    \"completion_tokens\":
+        59,\n    \"total_tokens\": 90,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\":
+        0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
+        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
+        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
+        \"default\",\n  \"system_fingerprint\": \"fp_06737a9306\"\n}\n"
+    headers:
+      CF-RAY:
+      - 91bb26a4484a2f46-LAX
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Wed, 05 Mar 2025 16:57:12 GMT
+      Server:
+      - cloudflare
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '1095'
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '1100'
+      openai-version:
+      - '2020-10-01'
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      x-ratelimit-limit-requests:
+      - '30000'
+      x-ratelimit-limit-tokens:
+      - '150000000'
+      x-ratelimit-remaining-requests:
+      - '29999'
+      x-ratelimit-remaining-tokens:
+      - '149999957'
+      x-ratelimit-reset-requests:
+      - 2ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_f53674f07d71e52b6c0a8babe23457b4
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"messages": [{"role": "system", "content": "You are an exceedingly helpful
+      assistant."}, {"role": "user", "content": "Context: The man is not steering
+      a subcompact\n\ninputs[''question'']"}], "model": "gpt-4o-mini", "stream": false}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '231'
+      content-type:
+      - application/json
+      cookie:
+      - __cf_bm=LRTpqDB8boRezXEaCYxQvpn6Md3a83GTtgo0XTohsHY-1741193826-1.0.1.1-21oBWjgrnkc1JMV5yb7Dew6vkelgIEnwFmmPmcnxHi6i_4BKGq4CdiHli4goAasb1uP.UAltqipEuoK3EGy8wOEZ.XllRxV1vhFRPYPp9k0;
+        _cfuvid=LnctKg.GD3moU1j7w8H7J5juoFxunk_nywNP0tvV58M-1741193826886-0.0.1.1-604800000
+      host:
+      - api.openai.com
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - 'false'
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 1.63.2
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.11.3
+    method: POST
+    uri: https://api.openai.com/v1/chat/completions
+  response:
+    body:
+      string: "{\n  \"id\": \"chatcmpl-B7mLP0dt1aJH5iQijI7IYx0yBkmYn\",\n  \"object\":
+        \"chat.completion\",\n  \"created\": 1741193831,\n  \"model\": \"gpt-4o-mini-2024-07-18\",\n
+        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
+        \"assistant\",\n        \"content\": \"It seems you provided a context but
+        no specific question. If you're looking to ask something about the context
+        of a man not steering a subcompact, please clarify your question. For example,
+        are you interested in discussing the implications of this scenario, seeking
+        an explanation, or perhaps asking for more details about the situation? Let
+        me know how I can assist you!\",\n        \"refusal\": null\n      },\n      \"logprobs\":
+        null,\n      \"finish_reason\": \"stop\"\n    }\n  ],\n  \"usage\": {\n    \"prompt_tokens\":
+        33,\n    \"completion_tokens\": 72,\n    \"total_tokens\": 105,\n    \"prompt_tokens_details\":
+        {\n      \"cached_tokens\": 0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
+        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
+        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
+        \"default\",\n  \"system_fingerprint\": \"fp_06737a9306\"\n}\n"
+    headers:
+      CF-RAY:
+      - 91bb26a56f875245-LAX
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Wed, 05 Mar 2025 16:57:12 GMT
+      Server:
+      - cloudflare
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '1152'
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '1095'
+      openai-version:
+      - '2020-10-01'
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      x-ratelimit-limit-requests:
+      - '30000'
+      x-ratelimit-limit-tokens:
+      - '150000000'
+      x-ratelimit-remaining-requests:
+      - '29999'
+      x-ratelimit-remaining-tokens:
+      - '149999954'
+      x-ratelimit-reset-requests:
+      - 2ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_db66cc92a4d40b0abcb9d38a894c90e0
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"messages": [{"role": "system", "content": "You are an exceedingly helpful
+      assistant."}, {"role": "user", "content": "Context: The man is not steering
+      a SUV\n\ninputs[''question'']"}], "model": "gpt-4o-mini", "stream": false}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '224'
+      content-type:
+      - application/json
+      cookie:
+      - __cf_bm=LRTpqDB8boRezXEaCYxQvpn6Md3a83GTtgo0XTohsHY-1741193826-1.0.1.1-21oBWjgrnkc1JMV5yb7Dew6vkelgIEnwFmmPmcnxHi6i_4BKGq4CdiHli4goAasb1uP.UAltqipEuoK3EGy8wOEZ.XllRxV1vhFRPYPp9k0;
+        _cfuvid=LnctKg.GD3moU1j7w8H7J5juoFxunk_nywNP0tvV58M-1741193826886-0.0.1.1-604800000
+      host:
+      - api.openai.com
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - 'false'
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 1.63.2
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.11.3
+    method: POST
+    uri: https://api.openai.com/v1/chat/completions
+  response:
+    body:
+      string: "{\n  \"id\": \"chatcmpl-B7mLQBOloeT0JC5iU6lZ7cFoiSZQq\",\n  \"object\":
+        \"chat.completion\",\n  \"created\": 1741193832,\n  \"model\": \"gpt-4o-mini-2024-07-18\",\n
+        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
+        \"assistant\",\n        \"content\": \"It seems like your input is incomplete.
+        If you could provide me with the full context or specific question related
+        to \\\"the man is not steering an SUV,\\\" I\u2019d be glad to help you with
+        it!\",\n        \"refusal\": null\n      },\n      \"logprobs\": null,\n      \"finish_reason\":
+        \"stop\"\n    }\n  ],\n  \"usage\": {\n    \"prompt_tokens\": 32,\n    \"completion_tokens\":
+        42,\n    \"total_tokens\": 74,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\":
+        0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
+        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
+        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
+        \"default\",\n  \"system_fingerprint\": \"fp_06737a9306\"\n}\n"
+    headers:
+      CF-RAY:
+      - 91bb26ad1f995245-LAX
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Wed, 05 Mar 2025 16:57:13 GMT
+      Server:
+      - cloudflare
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '968'
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '754'
+      openai-version:
+      - '2020-10-01'
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      x-ratelimit-limit-requests:
+      - '30000'
+      x-ratelimit-limit-tokens:
+      - '150000000'
+      x-ratelimit-remaining-requests:
+      - '29999'
+      x-ratelimit-remaining-tokens:
+      - '149999957'
+      x-ratelimit-reset-requests:
+      - 2ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_01a032cd35aff80edc502bfab1169a61
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"messages": [{"role": "system", "content": "You are a helpful assistant."},
+      {"role": "user", "content": "Context: The man is not steering a subcompact\n\ninputs[''question'']"}],
+      "model": "gpt-4o-mini", "stream": false}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '218'
+      content-type:
+      - application/json
+      cookie:
+      - __cf_bm=LRTpqDB8boRezXEaCYxQvpn6Md3a83GTtgo0XTohsHY-1741193826-1.0.1.1-21oBWjgrnkc1JMV5yb7Dew6vkelgIEnwFmmPmcnxHi6i_4BKGq4CdiHli4goAasb1uP.UAltqipEuoK3EGy8wOEZ.XllRxV1vhFRPYPp9k0;
+        _cfuvid=LnctKg.GD3moU1j7w8H7J5juoFxunk_nywNP0tvV58M-1741193826886-0.0.1.1-604800000
+      host:
+      - api.openai.com
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - 'false'
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 1.63.2
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.11.3
+    method: POST
+    uri: https://api.openai.com/v1/chat/completions
+  response:
+    body:
+      string: "{\n  \"id\": \"chatcmpl-B7mLQKpuDTTDLMGqa5MRQUcG6GLhz\",\n  \"object\":
+        \"chat.completion\",\n  \"created\": 1741193832,\n  \"model\": \"gpt-4o-mini-2024-07-18\",\n
+        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
+        \"assistant\",\n        \"content\": \"It seems like you're referring to a
+        scenario involving a man and a subcompact vehicle. Could you please provide
+        more context or specify what you would like to know or discuss about this
+        situation?\",\n        \"refusal\": null\n      },\n      \"logprobs\": null,\n
+        \     \"finish_reason\": \"stop\"\n    }\n  ],\n  \"usage\": {\n    \"prompt_tokens\":
+        32,\n    \"completion_tokens\": 38,\n    \"total_tokens\": 70,\n    \"prompt_tokens_details\":
+        {\n      \"cached_tokens\": 0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
+        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
+        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
+        \"default\",\n  \"system_fingerprint\": \"fp_06737a9306\"\n}\n"
+    headers:
+      CF-RAY:
+      - 91bb26acab3f2f46-LAX
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Wed, 05 Mar 2025 16:57:13 GMT
+      Server:
+      - cloudflare
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '976'
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '893'
+      openai-version:
+      - '2020-10-01'
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      x-ratelimit-limit-requests:
+      - '30000'
+      x-ratelimit-limit-tokens:
+      - '150000000'
+      x-ratelimit-remaining-requests:
+      - '29999'
+      x-ratelimit-remaining-tokens:
+      - '149999957'
+      x-ratelimit-reset-requests:
+      - 2ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_5366cbdaf914e046c48e9cdc2eb357c3
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"messages": [{"role": "system", "content": "You are a helpful assistant."},
+      {"role": "user", "content": "Context: The man is not steering a car\n\ninputs[''question'']"}],
+      "model": "gpt-4o-mini", "stream": false}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '211'
+      content-type:
+      - application/json
+      cookie:
+      - __cf_bm=LRTpqDB8boRezXEaCYxQvpn6Md3a83GTtgo0XTohsHY-1741193826-1.0.1.1-21oBWjgrnkc1JMV5yb7Dew6vkelgIEnwFmmPmcnxHi6i_4BKGq4CdiHli4goAasb1uP.UAltqipEuoK3EGy8wOEZ.XllRxV1vhFRPYPp9k0;
+        _cfuvid=LnctKg.GD3moU1j7w8H7J5juoFxunk_nywNP0tvV58M-1741193826886-0.0.1.1-604800000
+      host:
+      - api.openai.com
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - 'false'
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 1.63.2
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.11.3
+    method: POST
+    uri: https://api.openai.com/v1/chat/completions
+  response:
+    body:
+      string: "{\n  \"id\": \"chatcmpl-B7mLRy81SEKF4ulABXm69zDC1Dg1w\",\n  \"object\":
+        \"chat.completion\",\n  \"created\": 1741193833,\n  \"model\": \"gpt-4o-mini-2024-07-18\",\n
+        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
+        \"assistant\",\n        \"content\": \"It seems you have provided a context
+        but no specific question related to that context. Could you please clarify
+        what you would like to know or discuss regarding \\\"the man is not steering
+        a car\\\"?\",\n        \"refusal\": null\n      },\n      \"logprobs\": null,\n
+        \     \"finish_reason\": \"stop\"\n    }\n  ],\n  \"usage\": {\n    \"prompt_tokens\":
+        31,\n    \"completion_tokens\": 39,\n    \"total_tokens\": 70,\n    \"prompt_tokens_details\":
+        {\n      \"cached_tokens\": 0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
+        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
+        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
+        \"default\",\n  \"system_fingerprint\": \"fp_06737a9306\"\n}\n"
+    headers:
+      CF-RAY:
+      - 91bb26b42bfa2f46-LAX
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Wed, 05 Mar 2025 16:57:14 GMT
+      Server:
+      - cloudflare
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '975'
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '648'
+      openai-version:
+      - '2020-10-01'
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      x-ratelimit-limit-requests:
+      - '30000'
+      x-ratelimit-limit-tokens:
+      - '150000000'
+      x-ratelimit-remaining-requests:
+      - '29999'
+      x-ratelimit-remaining-tokens:
+      - '149999959'
+      x-ratelimit-reset-requests:
+      - 2ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_210150ba6d472ed08c3745a179a9c90d
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"messages": [{"role": "system", "content": "You are a helpful assistant."},
+      {"role": "user", "content": "Context: The man is not steering a SUV\n\ninputs[''question'']"}],
+      "model": "gpt-4o-mini", "stream": false}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '211'
+      content-type:
+      - application/json
+      cookie:
+      - __cf_bm=LRTpqDB8boRezXEaCYxQvpn6Md3a83GTtgo0XTohsHY-1741193826-1.0.1.1-21oBWjgrnkc1JMV5yb7Dew6vkelgIEnwFmmPmcnxHi6i_4BKGq4CdiHli4goAasb1uP.UAltqipEuoK3EGy8wOEZ.XllRxV1vhFRPYPp9k0;
+        _cfuvid=LnctKg.GD3moU1j7w8H7J5juoFxunk_nywNP0tvV58M-1741193826886-0.0.1.1-604800000
+      host:
+      - api.openai.com
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - 'false'
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 1.63.2
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.11.3
+    method: POST
+    uri: https://api.openai.com/v1/chat/completions
+  response:
+    body:
+      string: "{\n  \"id\": \"chatcmpl-B7mLSZHTrvgCugGNkJ8iInsv8qeYG\",\n  \"object\":
+        \"chat.completion\",\n  \"created\": 1741193834,\n  \"model\": \"gpt-4o-mini-2024-07-18\",\n
+        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
+        \"assistant\",\n        \"content\": \"It seems like you're looking for insights
+        or confirmation based on the context provided: \\\"The man is not steering
+        a SUV.\\\" If you have a specific question or need assistance related to this
+        context, please let me know!\",\n        \"refusal\": null\n      },\n      \"logprobs\":
+        null,\n      \"finish_reason\": \"stop\"\n    }\n  ],\n  \"usage\": {\n    \"prompt_tokens\":
+        31,\n    \"completion_tokens\": 44,\n    \"total_tokens\": 75,\n    \"prompt_tokens_details\":
+        {\n      \"cached_tokens\": 0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
+        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
+        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
+        \"default\",\n  \"system_fingerprint\": \"fp_06737a9306\"\n}\n"
+    headers:
+      CF-RAY:
+      - 91bb26b8d91b2f46-LAX
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Wed, 05 Mar 2025 16:57:15 GMT
+      Server:
+      - cloudflare
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '999'
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '675'
+      openai-version:
+      - '2020-10-01'
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      x-ratelimit-limit-requests:
+      - '30000'
+      x-ratelimit-limit-tokens:
+      - '150000000'
+      x-ratelimit-remaining-requests:
+      - '29999'
+      x-ratelimit-remaining-tokens:
+      - '149999959'
+      x-ratelimit-reset-requests:
+      - 2ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_54c7ae5ffda98823c020a1f8071955ee
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"messages": [{"role": "system", "content": "Select the better response."},
+      {"role": "user", "content": "Option A: It seems like you''re looking for insights
+      or confirmation based on the context provided: \"The man is not steering a SUV.\"
+      If you have a specific question or need assistance related to this context,
+      please let me know!\n\nOption B: It seems like your input is incomplete. If
+      you could provide me with the full context or specific question related to \"the
+      man is not steering an SUV,\" I\u2019d be glad to help you with it!\n\nGround
+      Truth: No"}], "model": "gpt-4o-mini", "tool_choice": {"type": "function", "function":
+      {"name": "rank_preferences"}}, "tools": [{"type": "function", "function": {"name":
+      "rank_preferences", "description": "Saves the prefered response (''A'' or ''B'')",
+      "parameters": {"type": "object", "properties": {"reasoning": {"type": "string",
+      "description": "The reasoning behind the choice."}, "preferred_option": {"type":
+      "string", "enum": ["A", "B"], "description": "The preferred option, either ''A''
+      or ''B''"}}, "required": ["preferred_option"]}}}]}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '1086'
+      content-type:
+      - application/json
+      host:
+      - api.openai.com
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - 'false'
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 1.63.2
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.11.3
+    method: POST
+    uri: https://api.openai.com/v1/chat/completions
+  response:
+    body:
+      string: "{\n  \"id\": \"chatcmpl-B7mLaXc4ev6jTXMCmKi7rb9KrOH8z\",\n  \"object\":
+        \"chat.completion\",\n  \"created\": 1741193842,\n  \"model\": \"gpt-4o-mini-2024-07-18\",\n
+        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
+        \"assistant\",\n        \"content\": null,\n        \"tool_calls\": [\n          {\n
+        \           \"id\": \"call_L1KHCrPDuKAXMVaUaZRGxkUC\",\n            \"type\":
+        \"function\",\n            \"function\": {\n              \"name\": \"rank_preferences\",\n
+        \             \"arguments\": \"{\\\"reasoning\\\":\\\"Option A assumes the
+        user is seeking insights or confirmation and invites further clarification,
+        which may be helpful. Option B requests more information but implies that
+        the current context is not enough, which could be less engaging. Thus, Option
+        A is preferred for its openness to dialogue.\\\",\\\"preferred_option\\\":\\\"A\\\"}\"\n
+        \           }\n          }\n        ],\n        \"refusal\": null\n      },\n
+        \     \"logprobs\": null,\n      \"finish_reason\": \"stop\"\n    }\n  ],\n
+        \ \"usage\": {\n    \"prompt_tokens\": 187,\n    \"completion_tokens\": 63,\n
+        \   \"total_tokens\": 250,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\":
+        0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
+        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
+        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
+        \"default\",\n  \"system_fingerprint\": \"fp_06737a9306\"\n}\n"
+    headers:
+      CF-RAY:
+      - 91bb26eadd150925-LAX
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Wed, 05 Mar 2025 16:57:23 GMT
+      Server:
+      - cloudflare
+      Set-Cookie:
+      - __cf_bm=mGZHf4zZty4F7ZWEBmWMcMwGMit1bZZp0xuFCtf5rFs-1741193843-1.0.1.1-3QyA7_zVWHG0rAMfNNhCVFTd5CA.3XfPYqwqLg1f7mYWFDU_d_9GNbiJmyoQxBs8zo5P8xKplDTkoYD7L0dkymyrGlPUmEZxsLCxSuYLP.c;
+        path=/; expires=Wed, 05-Mar-25 17:27:23 GMT; domain=.api.openai.com; HttpOnly;
+        Secure; SameSite=None
+      - _cfuvid=TOVObQwLBl3C3SiOnciC8yYwBEKxlNwkKrxya7kZFdU-1741193843381-0.0.1.1-604800000;
+        path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '1378'
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '908'
+      openai-version:
+      - '2020-10-01'
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      x-ratelimit-limit-requests:
+      - '30000'
+      x-ratelimit-limit-tokens:
+      - '150000000'
+      x-ratelimit-remaining-requests:
+      - '29999'
+      x-ratelimit-remaining-tokens:
+      - '149999863'
+      x-ratelimit-reset-requests:
+      - 2ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_be4443533081b8425f86887ddff6ad16
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"messages": [{"role": "system", "content": "Select the better response."},
+      {"role": "user", "content": "Option A: It seems you have provided a context
+      but no specific question related to that context. Could you please clarify what
+      you would like to know or discuss regarding \"the man is not steering a car\"?\n\nOption
+      B: It seems like you''re looking for clarification or information related to
+      the input you''ve provided: \"The man is not steering a car.\" Could you please
+      provide more context or specify what you would like to know or discuss regarding
+      this statement?\n\nGround Truth: Yes"}], "model": "gpt-4o-mini", "tool_choice":
+      {"type": "function", "function": {"name": "rank_preferences"}}, "tools": [{"type":
+      "function", "function": {"name": "rank_preferences", "description": "Saves the
+      prefered response (''A'' or ''B'')", "parameters": {"type": "object", "properties":
+      {"reasoning": {"type": "string", "description": "The reasoning behind the choice."},
+      "preferred_option": {"type": "string", "enum": ["A", "B"], "description": "The
+      preferred option, either ''A'' or ''B''"}}, "required": ["preferred_option"]}}}]}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '1120'
+      content-type:
+      - application/json
+      host:
+      - api.openai.com
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - 'false'
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 1.63.2
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.11.3
+    method: POST
+    uri: https://api.openai.com/v1/chat/completions
+  response:
+    body:
+      string: "{\n  \"id\": \"chatcmpl-B7mLbLAefihVMZiRd3Lii6iE8Z1DR\",\n  \"object\":
+        \"chat.completion\",\n  \"created\": 1741193843,\n  \"model\": \"gpt-4o-mini-2024-07-18\",\n
+        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
+        \"assistant\",\n        \"content\": null,\n        \"tool_calls\": [\n          {\n
+        \           \"id\": \"call_KKAR2kRWwEUmVoS5rL3HYRo1\",\n            \"type\":
+        \"function\",\n            \"function\": {\n              \"name\": \"rank_preferences\",\n
+        \             \"arguments\": \"{\\\"preferred_option\\\":\\\"B\\\",\\\"reasoning\\\":\\\"Option
+        B is more direct and clearly asks for clarification, indicating it understands
+        the input is a statement and is seeking more information about it. It maintains
+        a conversational tone and is more engaging for the user.\\\"}\"\n            }\n
+        \         }\n        ],\n        \"refusal\": null\n      },\n      \"logprobs\":
+        null,\n      \"finish_reason\": \"stop\"\n    }\n  ],\n  \"usage\": {\n    \"prompt_tokens\":
+        186,\n    \"completion_tokens\": 51,\n    \"total_tokens\": 237,\n    \"prompt_tokens_details\":
+        {\n      \"cached_tokens\": 0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
+        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
+        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
+        \"default\",\n  \"system_fingerprint\": \"fp_06737a9306\"\n}\n"
+    headers:
+      CF-Cache-Status:
+      - DYNAMIC
+      CF-RAY:
+      - 91bb26f23fa81036-LAX
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Wed, 05 Mar 2025 16:57:24 GMT
+      Server:
+      - cloudflare
+      Set-Cookie:
+      - __cf_bm=VEz0xRnB7uv2ci1RXb5Dxaf1yKNUDpE1uAsQvQIC2qg-1741193844-1.0.1.1-u7QNR3HVopo36BLQumi2wo_vTPgjq70Z0nxeJGtMZZwnWAwT1SiS1TXH_UlCYI_Tq5v5t8DxAVNNqS37nxMBcf5j8wTeo5QLaB0nOmvinrc;
+        path=/; expires=Wed, 05-Mar-25 17:27:24 GMT; domain=.api.openai.com; HttpOnly;
+        Secure; SameSite=None
+      - _cfuvid=Z15T0B_Sdo0GWKUxpsZYTIL6Xljv5CYIm94R_OBTOhE-1741193844839-0.0.1.1-604800000;
+        path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      content-length:
+      - '1307'
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '1186'
+      openai-version:
+      - '2020-10-01'
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      x-ratelimit-limit-requests:
+      - '30000'
+      x-ratelimit-limit-tokens:
+      - '150000000'
+      x-ratelimit-remaining-requests:
+      - '29999'
+      x-ratelimit-remaining-tokens:
+      - '149999854'
+      x-ratelimit-reset-requests:
+      - 2ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_9ce5db6dfe5569f72da8625511e1662c
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"messages": [{"role": "system", "content": "Select the better response."},
+      {"role": "user", "content": "Option A: It seems like you''re referring to a
+      scenario involving a man and a subcompact vehicle. Could you please provide
+      more context or specify what you would like to know or discuss about this situation?\n\nOption
+      B: It seems you provided a context but no specific question. If you''re looking
+      to ask something about the context of a man not steering a subcompact, please
+      clarify your question. For example, are you interested in discussing the implications
+      of this scenario, seeking an explanation, or perhaps asking for more details
+      about the situation? Let me know how I can assist you!\n\nGround Truth: No"}],
+      "model": "gpt-4o-mini", "tool_choice": {"type": "function", "function": {"name":
+      "rank_preferences"}}, "tools": [{"type": "function", "function": {"name": "rank_preferences",
+      "description": "Saves the prefered response (''A'' or ''B'')", "parameters":
+      {"type": "object", "properties": {"reasoning": {"type": "string", "description":
+      "The reasoning behind the choice."}, "preferred_option": {"type": "string",
+      "enum": ["A", "B"], "description": "The preferred option, either ''A'' or ''B''"}},
+      "required": ["preferred_option"]}}}]}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '1243'
+      content-type:
+      - application/json
+      host:
+      - api.openai.com
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - 'false'
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 1.63.2
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.11.3
+    method: POST
+    uri: https://api.openai.com/v1/chat/completions
+  response:
+    body:
+      string: "{\n  \"id\": \"chatcmpl-B7mLdO0G8AbW6FxBzDlIDy2eXewKm\",\n  \"object\":
+        \"chat.completion\",\n  \"created\": 1741193845,\n  \"model\": \"gpt-4o-mini-2024-07-18\",\n
+        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
+        \"assistant\",\n        \"content\": null,\n        \"tool_calls\": [\n          {\n
+        \           \"id\": \"call_rNssL6XOi7GGXwhOhsP8Iias\",\n            \"type\":
+        \"function\",\n            \"function\": {\n              \"name\": \"rank_preferences\",\n
+        \             \"arguments\": \"{\\\"preferred_option\\\":\\\"A\\\",\\\"reasoning\\\":\\\"Option
+        A directly asks for more context or clarification, which encourages a clearer
+        dialogue. It is more straightforward and concise compared to Option B.\\\"}\"\n
+        \           }\n          }\n        ],\n        \"refusal\": null\n      },\n
+        \     \"logprobs\": null,\n      \"finish_reason\": \"stop\"\n    }\n  ],\n
+        \ \"usage\": {\n    \"prompt_tokens\": 211,\n    \"completion_tokens\": 38,\n
+        \   \"total_tokens\": 249,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\":
+        0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
+        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
+        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
+        \"default\",\n  \"system_fingerprint\": \"fp_06737a9306\"\n}\n"
+    headers:
+      CF-RAY:
+      - 91bb26fd587b1013-LAX
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Wed, 05 Mar 2025 16:57:25 GMT
+      Server:
+      - cloudflare
+      Set-Cookie:
+      - __cf_bm=25eMgPopHrBGmU0KWHMelZ5uQdjt1H9QjJPMmQHnxdE-1741193845-1.0.1.1-JD1frX2jbw3tiycruxgA4LyVKJ1.Khw3hWunk0vCmnXvcCy3n1783X7hdAH2fxBkYoKIBBhx5NYUAocTr.Tdqa0l9kJnTifjN77hW8S3tpg;
+        path=/; expires=Wed, 05-Mar-25 17:27:25 GMT; domain=.api.openai.com; HttpOnly;
+        Secure; SameSite=None
+      - _cfuvid=munlU6oa09GDuItczQxSUoa1TratbLLqvwCcKrmUuPk-1741193845917-0.0.1.1-604800000;
+        path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '1240'
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '526'
+      openai-version:
+      - '2020-10-01'
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      x-ratelimit-limit-requests:
+      - '30000'
+      x-ratelimit-limit-tokens:
+      - '150000000'
+      x-ratelimit-remaining-requests:
+      - '29999'
+      x-ratelimit-remaining-tokens:
+      - '149999822'
+      x-ratelimit-reset-requests:
+      - 2ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_2711dc49a50655aab19dae16c3d4d1e9
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"messages": [{"role": "system", "content": "Select the better response."},
+      {"role": "user", "content": "Option A: It seems that you want to inquire about
+      a situation where a man is not steering a car. Could you please elaborate on
+      what specific information or assistance you are seeking? For instance, are you
+      looking for an explanation about the possible reasons, implications, or consequences
+      of a man not steering a car?\n\nOption B: It seems like you may be trying to
+      ask about a scenario involving a man who is not steering a car. Could you please
+      provide more details or clarify your question so I can assist you better?\n\nGround
+      Truth: Yes"}], "model": "gpt-4o-mini", "tool_choice": {"type": "function", "function":
+      {"name": "rank_preferences"}}, "tools": [{"type": "function", "function": {"name":
+      "rank_preferences", "description": "Saves the prefered response (''A'' or ''B'')",
+      "parameters": {"type": "object", "properties": {"reasoning": {"type": "string",
+      "description": "The reasoning behind the choice."}, "preferred_option": {"type":
+      "string", "enum": ["A", "B"], "description": "The preferred option, either ''A''
+      or ''B''"}}, "required": ["preferred_option"]}}}]}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '1175'
+      content-type:
+      - application/json
+      host:
+      - api.openai.com
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - 'false'
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 1.63.2
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.11.3
+    method: POST
+    uri: https://api.openai.com/v1/chat/completions
+  response:
+    body:
+      string: "{\n  \"id\": \"chatcmpl-B7mLfrWJgS2xtJNHiu23Rv54niSLj\",\n  \"object\":
+        \"chat.completion\",\n  \"created\": 1741193847,\n  \"model\": \"gpt-4o-mini-2024-07-18\",\n
+        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
+        \"assistant\",\n        \"content\": null,\n        \"tool_calls\": [\n          {\n
+        \           \"id\": \"call_6DzaUJqJuhwuUb6WpJOy9lk6\",\n            \"type\":
+        \"function\",\n            \"function\": {\n              \"name\": \"rank_preferences\",\n
+        \             \"arguments\": \"{\\\"reasoning\\\":\\\"Option A provides a
+        more detailed and structured approach by inviting the user to specify their
+        needs, which encourages a more meaningful exchange of information. It also
+        touches on different aspects that might be relevant to the inquiry, such as
+        reasons and implications. Option B is less detailed and is more generic, which
+        may not elicit as thorough a response.\\\",\\\"preferred_option\\\":\\\"A\\\"}\"\n
+        \           }\n          }\n        ],\n        \"refusal\": null\n      },\n
+        \     \"logprobs\": null,\n      \"finish_reason\": \"stop\"\n    }\n  ],\n
+        \ \"usage\": {\n    \"prompt_tokens\": 201,\n    \"completion_tokens\": 77,\n
+        \   \"total_tokens\": 278,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\":
+        0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
+        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
+        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
+        \"default\",\n  \"system_fingerprint\": \"fp_06737a9306\"\n}\n"
+    headers:
+      CF-RAY:
+      - 91bb27083a232f73-LAX
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Wed, 05 Mar 2025 16:57:28 GMT
+      Server:
+      - cloudflare
+      Set-Cookie:
+      - __cf_bm=hmQKAXNvambBFvrWA31teqxrnjney99sSOXEkPiAJMI-1741193848-1.0.1.1-eRmQTIBLOnS48pzwSXL3C0Z72v1wEU64fz6PgpiqzrOIwLWLOQdblYx8DFKTTNDlaAfCTLlQ7uCc2e40CKsgE5VoctZyfVusUDjGBlIZ0Y4;
+        path=/; expires=Wed, 05-Mar-25 17:27:28 GMT; domain=.api.openai.com; HttpOnly;
+        Secure; SameSite=None
+      - _cfuvid=4_8F5VeH71HUhoCFNLJoSGSi6LdaJISFM.B7VK3xItc-1741193848116-0.0.1.1-604800000;
+        path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '1449'
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '973'
+      openai-version:
+      - '2020-10-01'
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      x-ratelimit-limit-requests:
+      - '30000'
+      x-ratelimit-limit-tokens:
+      - '150000000'
+      x-ratelimit-remaining-requests:
+      - '29999'
+      x-ratelimit-remaining-tokens:
+      - '149999840'
+      x-ratelimit-reset-requests:
+      - 2ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_27dd31457e0d866914aaf351180289ea
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"messages": [{"role": "system", "content": "Select the better response."},
+      {"role": "user", "content": "Option A: It seems like you might be looking for
+      a specific answer or interpretation related to the phrase \"the man is not steering
+      a convertible.\" Could you please provide more context or clarify what you''re
+      looking for? Are you asking for a discussion about convertibles, a metaphorical
+      interpretation, or something else?\n\nOption B: It seems like you might be looking
+      for a specific answer or analysis related to the context you provided, which
+      states that \"the man is not steering a convertible.\" Could you please clarify
+      your question or provide more details? This will help me assist you better!\n\nGround
+      Truth: No"}], "model": "gpt-4o-mini", "tool_choice": {"type": "function", "function":
+      {"name": "rank_preferences"}}, "tools": [{"type": "function", "function": {"name":
+      "rank_preferences", "description": "Saves the prefered response (''A'' or ''B'')",
+      "parameters": {"type": "object", "properties": {"reasoning": {"type": "string",
+      "description": "The reasoning behind the choice."}, "preferred_option": {"type":
+      "string", "enum": ["A", "B"], "description": "The preferred option, either ''A''
+      or ''B''"}}, "required": ["preferred_option"]}}}]}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '1258'
+      content-type:
+      - application/json
+      host:
+      - api.openai.com
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - 'false'
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 1.63.2
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.11.3
+    method: POST
+    uri: https://api.openai.com/v1/chat/completions
+  response:
+    body:
+      string: "{\n  \"id\": \"chatcmpl-B7mLh53X7IsBhICy0r3UAwVhOIC2s\",\n  \"object\":
+        \"chat.completion\",\n  \"created\": 1741193849,\n  \"model\": \"gpt-4o-mini-2024-07-18\",\n
+        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
+        \"assistant\",\n        \"content\": null,\n        \"tool_calls\": [\n          {\n
+        \           \"id\": \"call_CBBYWKqtyHBaXfN5gDVyzOlV\",\n            \"type\":
+        \"function\",\n            \"function\": {\n              \"name\": \"rank_preferences\",\n
+        \             \"arguments\": \"{\\\"reasoning\\\":\\\"Both options ask for
+        clarification, but Option B includes the phrase 'the context you provided,'
+        making it slightly more relevant and direct to the user's input. It also uses
+        the term 'analysis,' which may resonate more with someone seeking a deeper
+        understanding. Therefore, Option B is the better response.\\\",\\\"preferred_option\\\":\\\"B\\\"}\"\n
+        \           }\n          }\n        ],\n        \"refusal\": null\n      },\n
+        \     \"logprobs\": null,\n      \"finish_reason\": \"stop\"\n    }\n  ],\n
+        \ \"usage\": {\n    \"prompt_tokens\": 212,\n    \"completion_tokens\": 68,\n
+        \   \"total_tokens\": 280,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\":
+        0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
+        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
+        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
+        \"default\",\n  \"system_fingerprint\": \"fp_06737a9306\"\n}\n"
+    headers:
+      CF-RAY:
+      - 91bb2716a8a808cc-LAX
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Wed, 05 Mar 2025 16:57:31 GMT
+      Server:
+      - cloudflare
+      Set-Cookie:
+      - __cf_bm=GFxNzSVMFTVNEsNKs_Y0R7n6QOwpA2cuXK_ZAgk46Kk-1741193851-1.0.1.1-leeXzQUxzmgjN1ce.cOuyb0EwfieMT94x2PX63aHWH3J.mXUJ6q3VElQr2RcpNoxFl34GxcNT7JSPxJD_wdFlxwFm10wO7YskzgkqQiTSUA;
+        path=/; expires=Wed, 05-Mar-25 17:27:31 GMT; domain=.api.openai.com; HttpOnly;
+        Secure; SameSite=None
+      - _cfuvid=P_VCp_qEAqg_uPnOyGxtTccV_NOFyrTGZxXeRAMoukY-1741193851204-0.0.1.1-604800000;
+        path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '1393'
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '1726'
+      openai-version:
+      - '2020-10-01'
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      x-ratelimit-limit-requests:
+      - '30000'
+      x-ratelimit-limit-tokens:
+      - '150000000'
+      x-ratelimit-remaining-requests:
+      - '29999'
+      x-ratelimit-remaining-tokens:
+      - '149999819'
+      x-ratelimit-reset-requests:
+      - 2ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_4ae46b1c8477fa48b94d0881183324c1
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"messages": [{"role": "system", "content": "Select the better response."},
+      {"role": "user", "content": "Option A: It seems that you want to inquire about
+      a situation where a man is not steering a car. Could you please elaborate on
+      what specific information or assistance you are seeking? For instance, are you
+      looking for an explanation about the possible reasons, implications, or consequences
+      of a man not steering a car?\n\nOption B: It seems you might want to ask something
+      specific about the context provided. Could you please clarify or provide more
+      details regarding your question related to the scenario \"the man is not steering
+      a car\"? This will help me assist you better!\n\nGround Truth: Yes"}], "model":
+      "gpt-4o-mini", "tool_choice": {"type": "function", "function": {"name": "rank_preferences"}},
+      "tools": [{"type": "function", "function": {"name": "rank_preferences", "description":
+      "Saves the prefered response (''A'' or ''B'')", "parameters": {"type": "object",
+      "properties": {"reasoning": {"type": "string", "description": "The reasoning
+      behind the choice."}, "preferred_option": {"type": "string", "enum": ["A", "B"],
+      "description": "The preferred option, either ''A'' or ''B''"}}, "required":
+      ["preferred_option"]}}}]}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '1232'
+      content-type:
+      - application/json
+      host:
+      - api.openai.com
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - 'false'
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 1.63.2
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.11.3
+    method: POST
+    uri: https://api.openai.com/v1/chat/completions
+  response:
+    body:
+      string: "{\n  \"id\": \"chatcmpl-B7mLjFPWMcbdfF8j4oNT4la8uQBse\",\n  \"object\":
+        \"chat.completion\",\n  \"created\": 1741193851,\n  \"model\": \"gpt-4o-mini-2024-07-18\",\n
+        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
+        \"assistant\",\n        \"content\": null,\n        \"tool_calls\": [\n          {\n
+        \           \"id\": \"call_zgDGSjeXDgQK9yqZyhJ6Akoy\",\n            \"type\":
+        \"function\",\n            \"function\": {\n              \"name\": \"rank_preferences\",\n
+        \             \"arguments\": \"{\\\"preferred_option\\\":\\\"B\\\",\\\"reasoning\\\":\\\"Option
+        B invites more specific clarification from the user, making it more engaging
+        and encouraging a dialogue. It also emphasizes understanding the user's perspective,
+        which is helpful in providing accurate assistance.\\\"}\"\n            }\n
+        \         }\n        ],\n        \"refusal\": null\n      },\n      \"logprobs\":
+        null,\n      \"finish_reason\": \"stop\"\n    }\n  ],\n  \"usage\": {\n    \"prompt_tokens\":
+        208,\n    \"completion_tokens\": 46,\n    \"total_tokens\": 254,\n    \"prompt_tokens_details\":
+        {\n      \"cached_tokens\": 0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
+        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
+        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
+        \"default\",\n  \"system_fingerprint\": \"fp_06737a9306\"\n}\n"
+    headers:
+      CF-RAY:
+      - 91bb2723be032b98-LAX
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Wed, 05 Mar 2025 16:57:32 GMT
+      Server:
+      - cloudflare
+      Set-Cookie:
+      - __cf_bm=sudVotxXWHX2N9ZjGzBt9uCaawVoZd8VedXODIxhxwE-1741193852-1.0.1.1-3hYTCkow5mYtMujjNlTh3FYSxG.UKoj_jw.7jhdzalaPp9GYBplzChLueEKzrqD1Ve213fkfnT3NdRYTDzFzv8sSSpXoiEadm58N7usFzO0;
+        path=/; expires=Wed, 05-Mar-25 17:27:32 GMT; domain=.api.openai.com; HttpOnly;
+        Secure; SameSite=None
+      - _cfuvid=MNDcAu1.ZkNyFrX1vFYvM4kNA76s0Ap41yJvISw3RWY-1741193852378-0.0.1.1-604800000;
+        path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '1304'
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '832'
+      openai-version:
+      - '2020-10-01'
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      x-ratelimit-limit-requests:
+      - '30000'
+      x-ratelimit-limit-tokens:
+      - '150000000'
+      x-ratelimit-remaining-requests:
+      - '29999'
+      x-ratelimit-remaining-tokens:
+      - '149999826'
+      x-ratelimit-reset-requests:
+      - 2ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_24b508d99b39d3ad8cb3b29da6bf16af
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"messages": [{"role": "system", "content": "Select the better response."},
+      {"role": "user", "content": "Option A: It seems like you are looking for information
+      or clarification related to the context provided: \"The man is not steering
+      a jeep.\" Could you please specify what type of information or assistance you
+      are looking for regarding this statement? For example, are you looking for a
+      discussion on reasons why he might not be steering, implications of this action,
+      or something else entirely?\n\nOption B: It seems like you might have a specific
+      question related to the context you provided about a man not steering a jeep.
+      Could you please elaborate or specify what you would like to know or ask about
+      this situation?\n\nGround Truth: No"}], "model": "gpt-4o-mini", "tool_choice":
+      {"type": "function", "function": {"name": "rank_preferences"}}, "tools": [{"type":
+      "function", "function": {"name": "rank_preferences", "description": "Saves the
+      prefered response (''A'' or ''B'')", "parameters": {"type": "object", "properties":
+      {"reasoning": {"type": "string", "description": "The reasoning behind the choice."},
+      "preferred_option": {"type": "string", "enum": ["A", "B"], "description": "The
+      preferred option, either ''A'' or ''B''"}}, "required": ["preferred_option"]}}}]}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '1273'
+      content-type:
+      - application/json
+      host:
+      - api.openai.com
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - 'false'
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 1.63.2
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.11.3
+    method: POST
+    uri: https://api.openai.com/v1/chat/completions
+  response:
+    body:
+      string: "{\n  \"id\": \"chatcmpl-B7mLldUzxmWKpiduNdmveMA72zbKb\",\n  \"object\":
+        \"chat.completion\",\n  \"created\": 1741193853,\n  \"model\": \"gpt-4o-mini-2024-07-18\",\n
+        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
+        \"assistant\",\n        \"content\": null,\n        \"tool_calls\": [\n          {\n
+        \           \"id\": \"call_SejvH2n5T6oQdL6n3nU0laSR\",\n            \"type\":
+        \"function\",\n            \"function\": {\n              \"name\": \"rank_preferences\",\n
+        \             \"arguments\": \"{\\\"reasoning\\\":\\\"Option A provides more
+        detail by offering specific aspects to consider (reasons, implications), while
+        Option B is more generic in asking for elaboration. This makes Option A more
+        engaging and helpful for the user.\\\",\\\"preferred_option\\\":\\\"A\\\"}\"\n
+        \           }\n          }\n        ],\n        \"refusal\": null\n      },\n
+        \     \"logprobs\": null,\n      \"finish_reason\": \"stop\"\n    }\n  ],\n
+        \ \"usage\": {\n    \"prompt_tokens\": 215,\n    \"completion_tokens\": 51,\n
+        \   \"total_tokens\": 266,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\":
+        0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
+        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
+        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
+        \"default\",\n  \"system_fingerprint\": \"fp_06737a9306\"\n}\n"
+    headers:
+      CF-RAY:
+      - 91bb272f4e052b98-LAX
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Wed, 05 Mar 2025 16:57:34 GMT
+      Server:
+      - cloudflare
+      Set-Cookie:
+      - __cf_bm=7ZM4XnRV.TuaU9WeeBQHnRCb6HYec2pa7KQH4lyX9CY-1741193854-1.0.1.1-qbTCuZXMxNvZhN0QThs9vnlLQDrv5QaZUjyeeh0Pg2h0Q70KJ7Ngx0cyYalEb4Y6yBCuN7gQdwa4WLSMNo2vfmkDk5QNFv8fLzd7lzE_lWo;
+        path=/; expires=Wed, 05-Mar-25 17:27:34 GMT; domain=.api.openai.com; HttpOnly;
+        Secure; SameSite=None
+      - _cfuvid=88sYIpx.1BpIZ9xO4V.BAa1JmV799JQGEVnfL_S66lw-1741193854238-0.0.1.1-604800000;
+        path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '1298'
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '853'
+      openai-version:
+      - '2020-10-01'
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      x-ratelimit-limit-requests:
+      - '30000'
+      x-ratelimit-limit-tokens:
+      - '150000000'
+      x-ratelimit-remaining-requests:
+      - '29999'
+      x-ratelimit-remaining-tokens:
+      - '149999816'
+      x-ratelimit-reset-requests:
+      - 2ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_49b5a7502ee4f110b57bac063cde817a
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"messages": [{"role": "system", "content": "Select the better response."},
+      {"role": "user", "content": "Option A: It seems like you''ve referenced \"inputs[''question'']\",
+      but it looks like the question itself is missing. Could you please provide me
+      with the question or specify what information you need regarding the context
+      that \"the man is not steering a car\"? I''d be happy to help!\n\nOption B:
+      It seems like you may be looking for a response or an explanation based on the
+      context provided. Since the context states that \"the man is not steering a
+      car,\" I can provide information or answer questions related to that situation.
+      \n\nPlease provide the specific question or context you would like me to address!\n\nGround
+      Truth: Yes"}], "model": "gpt-4o-mini", "tool_choice": {"type": "function", "function":
+      {"name": "rank_preferences"}}, "tools": [{"type": "function", "function": {"name":
+      "rank_preferences", "description": "Saves the prefered response (''A'' or ''B'')",
+      "parameters": {"type": "object", "properties": {"reasoning": {"type": "string",
+      "description": "The reasoning behind the choice."}, "preferred_option": {"type":
+      "string", "enum": ["A", "B"], "description": "The preferred option, either ''A''
+      or ''B''"}}, "required": ["preferred_option"]}}}]}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '1265'
+      content-type:
+      - application/json
+      host:
+      - api.openai.com
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - 'false'
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 1.63.2
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.11.3
+    method: POST
+    uri: https://api.openai.com/v1/chat/completions
+  response:
+    body:
+      string: "{\n  \"id\": \"chatcmpl-B7mLm7SmJwSl92FRjrxFg7NuweVzZ\",\n  \"object\":
+        \"chat.completion\",\n  \"created\": 1741193854,\n  \"model\": \"gpt-4o-mini-2024-07-18\",\n
+        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
+        \"assistant\",\n        \"content\": null,\n        \"tool_calls\": [\n          {\n
+        \           \"id\": \"call_OpabgBUpJ00mE29iCriyVmul\",\n            \"type\":
+        \"function\",\n            \"function\": {\n              \"name\": \"rank_preferences\",\n
+        \             \"arguments\": \"{\\\"preferred_option\\\":\\\"B\\\",\\\"reasoning\\\":\\\"Option
+        B acknowledges the context directly and offers to provide information or answer
+        questions, making it more responsive and accommodating to the user's potential
+        needs.\\\"}\"\n            }\n          }\n        ],\n        \"refusal\":
+        null\n      },\n      \"logprobs\": null,\n      \"finish_reason\": \"stop\"\n
+        \   }\n  ],\n  \"usage\": {\n    \"prompt_tokens\": 216,\n    \"completion_tokens\":
+        38,\n    \"total_tokens\": 254,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\":
+        0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
+        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
+        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
+        \"default\",\n  \"system_fingerprint\": \"fp_06737a9306\"\n}\n"
+    headers:
+      CF-Cache-Status:
+      - DYNAMIC
+      CF-RAY:
+      - 91bb273809972b5a-LAX
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Wed, 05 Mar 2025 16:57:35 GMT
+      Server:
+      - cloudflare
+      Set-Cookie:
+      - __cf_bm=N7PKQJn..CQCfTC3TiJ6KxJ8Z3nZCiptOFDcJf1.8Xw-1741193855-1.0.1.1-RWA3UOknVfmeQa5mT.Ajp2MndzUGbprP9l2QvqMadLddSWqRBD.8eDc5DytPSy1vJRcJWcd84res7DcZz6zlhwjNiYpvIfNxFgfDtejj1zw;
+        path=/; expires=Wed, 05-Mar-25 17:27:35 GMT; domain=.api.openai.com; HttpOnly;
+        Secure; SameSite=None
+      - _cfuvid=curINso._dLGxo38hkScXURGMRLsUjYVTANfw.mAyMk-1741193855742-0.0.1.1-604800000;
+        path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      content-length:
+      - '1257'
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '927'
+      openai-version:
+      - '2020-10-01'
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      x-ratelimit-limit-requests:
+      - '30000'
+      x-ratelimit-limit-tokens:
+      - '150000000'
+      x-ratelimit-remaining-requests:
+      - '29999'
+      x-ratelimit-remaining-tokens:
+      - '149999819'
+      x-ratelimit-reset-requests:
+      - 2ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_00ada338f5344b3fa635574cec0717c7
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"messages": [{"role": "system", "content": "Select the better response."},
+      {"role": "user", "content": "Option A: It seems like you might be looking for
+      an answer related to the context provided: \"The man is not steering a sedan.\"
+      Could you please clarify what specific information or response you are seeking
+      regarding this context? Are you looking for an explanation, a related question,
+      or something else?\n\nOption B: It seems like your message got cut off or you
+      were about to provide a specific question related to the context you mentioned.
+      Could you please provide the full question or clarify what you would like to
+      know regarding the context where \"the man is not steering a sedan\"? I''m here
+      to help!\n\nGround Truth: No"}], "model": "gpt-4o-mini", "tool_choice": {"type":
+      "function", "function": {"name": "rank_preferences"}}, "tools": [{"type": "function",
+      "function": {"name": "rank_preferences", "description": "Saves the prefered
+      response (''A'' or ''B'')", "parameters": {"type": "object", "properties": {"reasoning":
+      {"type": "string", "description": "The reasoning behind the choice."}, "preferred_option":
+      {"type": "string", "enum": ["A", "B"], "description": "The preferred option,
+      either ''A'' or ''B''"}}, "required": ["preferred_option"]}}}]}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '1262'
+      content-type:
+      - application/json
+      host:
+      - api.openai.com
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - 'false'
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 1.63.2
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.11.3
+    method: POST
+    uri: https://api.openai.com/v1/chat/completions
+  response:
+    body:
+      string: "{\n  \"id\": \"chatcmpl-B7mLo15TTw4TeWMU3tKUAkJurIxwF\",\n  \"object\":
+        \"chat.completion\",\n  \"created\": 1741193856,\n  \"model\": \"gpt-4o-mini-2024-07-18\",\n
+        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
+        \"assistant\",\n        \"content\": null,\n        \"tool_calls\": [\n          {\n
+        \           \"id\": \"call_03YLLusRoIgnM5hn6AV37sbo\",\n            \"type\":
+        \"function\",\n            \"function\": {\n              \"name\": \"rank_preferences\",\n
+        \             \"arguments\": \"{\\\"reasoning\\\":\\\"Option B encourages
+        the user to provide more information while acknowledging a potential mistake,
+        making it more engaging and helpful compared to Option A which seems more
+        formal and less inviting.\\\",\\\"preferred_option\\\":\\\"B\\\"}\"\n            }\n
+        \         }\n        ],\n        \"refusal\": null\n      },\n      \"logprobs\":
+        null,\n      \"finish_reason\": \"stop\"\n    }\n  ],\n  \"usage\": {\n    \"prompt_tokens\":
+        216,\n    \"completion_tokens\": 43,\n    \"total_tokens\": 259,\n    \"prompt_tokens_details\":
+        {\n      \"cached_tokens\": 0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
+        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
+        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
+        \"default\",\n  \"system_fingerprint\": \"fp_06737a9306\"\n}\n"
+    headers:
+      CF-RAY:
+      - 91bb27426bc50fdc-LAX
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Wed, 05 Mar 2025 16:57:37 GMT
+      Server:
+      - cloudflare
+      Set-Cookie:
+      - __cf_bm=epNbpw4FhWUQv82.t1RU66uOzhds0oW6VAZQQCRwYQY-1741193857-1.0.1.1-uGGcHpz7wspXehCSJbV2TKRSYrOXzr2CKaITy65laHlfbIn1AjqE32AN9xMdovSEj_moRJuyRt1hzgRHfxo5.YW5miMvgAfuJZjug07BITI;
+        path=/; expires=Wed, 05-Mar-25 17:27:37 GMT; domain=.api.openai.com; HttpOnly;
+        Secure; SameSite=None
+      - _cfuvid=UvkX4XqfcjN7lhyPUh3FXFKHWCKlPwotS2MU0IvG7ns-1741193857574-0.0.1.1-604800000;
+        path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '1282'
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '866'
+      openai-version:
+      - '2020-10-01'
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      x-ratelimit-limit-requests:
+      - '30000'
+      x-ratelimit-limit-tokens:
+      - '150000000'
+      x-ratelimit-remaining-requests:
+      - '29999'
+      x-ratelimit-remaining-tokens:
+      - '149999819'
+      x-ratelimit-reset-requests:
+      - 2ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_3b2db5783fb1a1ac1c6331ae11c6cb94
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"messages": [{"role": "system", "content": "Select the better response."},
+      {"role": "user", "content": "Option A: It seems like you''ve referenced \"inputs[''question'']\",
+      but it looks like the question itself is missing. Could you please provide me
+      with the question or specify what information you need regarding the context
+      that \"the man is not steering a car\"? I''d be happy to help!\n\nOption B:
+      It seems like you are mentioning a scenario where a man is not steering a car.
+      Could you please provide more details or specify what information or assistance
+      you need regarding this context?\n\nGround Truth: Yes"}], "model": "gpt-4o-mini",
+      "tool_choice": {"type": "function", "function": {"name": "rank_preferences"}},
+      "tools": [{"type": "function", "function": {"name": "rank_preferences", "description":
+      "Saves the prefered response (''A'' or ''B'')", "parameters": {"type": "object",
+      "properties": {"reasoning": {"type": "string", "description": "The reasoning
+      behind the choice."}, "preferred_option": {"type": "string", "enum": ["A", "B"],
+      "description": "The preferred option, either ''A'' or ''B''"}}, "required":
+      ["preferred_option"]}}}]}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '1140'
+      content-type:
+      - application/json
+      host:
+      - api.openai.com
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - 'false'
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 1.63.2
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.11.3
+    method: POST
+    uri: https://api.openai.com/v1/chat/completions
+  response:
+    body:
+      string: "{\n  \"id\": \"chatcmpl-B7mLq4qBRbz3AcNfMOATAekHe0QOl\",\n  \"object\":
+        \"chat.completion\",\n  \"created\": 1741193858,\n  \"model\": \"gpt-4o-mini-2024-07-18\",\n
+        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
+        \"assistant\",\n        \"content\": null,\n        \"tool_calls\": [\n          {\n
+        \           \"id\": \"call_tpilhDx4IYATNC3e38MCxitc\",\n            \"type\":
+        \"function\",\n            \"function\": {\n              \"name\": \"rank_preferences\",\n
+        \             \"arguments\": \"{\\\"reasoning\\\":\\\"Option A asks for the
+        question explicitly, which can help clarify the situation more effectively.
+        It invites the user to provide specific information, indicating a willingness
+        to assist more accurately. Option B is more general and may not prompt the
+        user to provide the necessary context. Hence, A is preferable for clarity
+        and direction.\\\",\\\"preferred_option\\\":\\\"A\\\"}\"\n            }\n
+        \         }\n        ],\n        \"refusal\": null\n      },\n      \"logprobs\":
+        null,\n      \"finish_reason\": \"stop\"\n    }\n  ],\n  \"usage\": {\n    \"prompt_tokens\":
+        191,\n    \"completion_tokens\": 71,\n    \"total_tokens\": 262,\n    \"prompt_tokens_details\":
+        {\n      \"cached_tokens\": 0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
+        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
+        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
+        \"default\",\n  \"system_fingerprint\": \"fp_06737a9306\"\n}\n"
+    headers:
+      CF-Cache-Status:
+      - DYNAMIC
+      CF-RAY:
+      - 91bb274b0913cb8a-LAX
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Wed, 05 Mar 2025 16:57:39 GMT
+      Server:
+      - cloudflare
+      Set-Cookie:
+      - __cf_bm=yq8Q4qUBVx4H0qaggOMh3o5LLNZN0NUdUKnNMLgsdGQ-1741193859-1.0.1.1-Hn.iJWzwmqIGZNS5BMXS.KowpeyMyELfuyrIoclqVjahbJNEdMblGz5mQ4Radih.ULw.VbUVhX_t3ilOPi4I_pzUKUV4NKEI91_n72NUfN8;
+        path=/; expires=Wed, 05-Mar-25 17:27:39 GMT; domain=.api.openai.com; HttpOnly;
+        Secure; SameSite=None
+      - _cfuvid=0sLP_7.DdUgKaQzsUroZrO35pgV9BdVYpf.8oSxnys0-1741193859222-0.0.1.1-604800000;
+        path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      content-length:
+      - '1424'
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '1362'
+      openai-version:
+      - '2020-10-01'
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      x-ratelimit-limit-requests:
+      - '30000'
+      x-ratelimit-limit-tokens:
+      - '150000000'
+      x-ratelimit-remaining-requests:
+      - '29999'
+      x-ratelimit-remaining-tokens:
+      - '149999849'
+      x-ratelimit-reset-requests:
+      - 2ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_bee23b90d3bd221d2990baf0d892677a
+    status:
+      code: 200
+      message: OK
 version: 1

@@ -1,10 +1,69 @@
 """Pytest config for doctests."""
 
+import hashlib
+import json
 import os
 import re
 
 import pytest
 import vcr
+
+
+def get_request_hash(request):
+    """Generate a hash based on important parts of the request body."""
+    if not request.body:
+        return None
+
+    try:
+        # Try to decode and parse as JSON
+        if isinstance(request.body, bytes):
+            body_str = request.body.decode("utf-8")
+        else:
+            body_str = request.body
+
+        body_json = json.loads(body_str)
+
+        key_elements = {
+            k: v for k, v in body_json.items() if k in ("model", "messages", "tools")
+        }
+        # Hash the key elements
+        hash_input = json.dumps(key_elements, sort_keys=True)
+        return hashlib.md5(hash_input.encode()).hexdigest()
+    except:
+        # If parsing fails, return None
+        return None
+
+
+def custom_request_matcher(r1, r2):
+    """Custom matcher that uses request hashing for OpenAI API calls."""
+    # First check standard matchers
+    standard_match = all(
+        [
+            r1.method == r2.method,
+            r1.scheme == r2.scheme,
+            r1.host == r2.host,
+            r1.port == r2.port,
+            r1.path == r2.path,
+            r1.query == r2.query,
+        ]
+    )
+
+    if not standard_match:
+        return False
+
+    # For OpenAI API calls, use our custom hash-based matching
+    if "openai.com" in r1.host:
+        hash1 = get_request_hash(r1)
+        hash2 = get_request_hash(r2)
+
+        # If we couldn't hash either request, fall back to exact body matching
+        if hash1 is None or hash2 is None:
+            return r1.body == r2.body
+
+        return hash1 == hash2
+
+    # For other requests, use exact body matching
+    return r1.body == r2.body
 
 
 def pytest_addoption(parser):
@@ -93,7 +152,7 @@ def create_vcr_instance(record_mode):
         cassette_library_dir=cassette_dir,
         record_mode=record_mode,
         # For doctests, don't match on body since it might change slightly
-        match_on=["method", "scheme", "host", "port", "path", "query"],
+        match_on=["custom"],
         filter_headers=[
             "Authorization",
             "X-Api-Key",
@@ -106,6 +165,9 @@ def create_vcr_instance(record_mode):
         before_record_response=filter_response_data,
         decode_compressed_response=True,
     )
+    my_vcr.register_matcher("custom_body", custom_request_matcher)
+    my_vcr.match_on = ["custom_body"]
+
     return my_vcr
 
 
