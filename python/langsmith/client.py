@@ -265,7 +265,7 @@ def _format_feedback_score(score: Union[float, int, bool, None]):
     Returns:
         The formatted score
     """
-    if isinstance(score, (int, float)):
+    if isinstance(score, float):
         # Truncate at 4 decimal places
         return round(score, 4)
     return score
