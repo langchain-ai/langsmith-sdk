@@ -1,3 +1,7 @@
+"""Pytest config for doctests."""
+
+import hashlib
+import json
 import os
 import re
 
@@ -5,7 +9,78 @@ import pytest
 import vcr
 
 
+def get_request_hash(request):
+    """Generate a hash based on important parts of the request body."""
+    if not request.body:
+        return None
+
+    try:
+        # Try to decode and parse as JSON
+        if isinstance(request.body, bytes):
+            body_str = request.body.decode("utf-8")
+        else:
+            body_str = request.body
+
+        body_json = json.loads(body_str)
+
+        key_elements = {
+            k: v for k, v in body_json.items() if k in ("model", "messages", "tools")
+        }
+        # Hash the key elements
+        hash_input = json.dumps(key_elements, sort_keys=True)
+        return hashlib.md5(hash_input.encode()).hexdigest()
+    except BaseException:
+        # If parsing fails, return None
+        return None
+
+
+def custom_request_matcher(r1, r2):
+    """Match that uses request hashing for OpenAI API calls."""
+    # First check standard matchers
+    standard_match = all(
+        [
+            r1.method == r2.method,
+            r1.scheme == r2.scheme,
+            r1.host == r2.host,
+            r1.port == r2.port,
+            r1.path == r2.path,
+            r1.query == r2.query,
+        ]
+    )
+
+    if not standard_match:
+        return False
+
+    # For OpenAI API calls, use our custom hash-based matching
+    if "openai.com" in r1.host:
+        hash1 = get_request_hash(r1)
+        hash2 = get_request_hash(r2)
+
+        # If we couldn't hash either request, fall back to exact body matching
+        if hash1 is None or hash2 is None:
+            return r1.body == r2.body
+
+        return hash1 == hash2
+
+    # For other requests, use exact body matching
+    return r1.body == r2.body
+
+
+def pytest_addoption(parser):
+    """Pytest options."""
+    parser.addoption(
+        "--runslow", action="store_true", default=False, help="run slow tests"
+    )
+    parser.addoption(
+        "--vcr-mode",
+        type=str,
+        default="once",
+        help="VCR record mode: once, new_episodes, none, or all (default: all)",
+    )
+
+
 def pytest_collection_modifyitems(config, items):
+    """Configure tests to run."""
     if config.getoption("--runslow"):
         # --runslow given in cli: do not skip slow tests
         return
@@ -27,7 +102,6 @@ def is_ai_api_request(request):
 
 def filter_request_data(request):
     """Filter sensitive data from requests and only record AI API calls."""
-
     # Only record OpenAI and Anthropic API calls
     if not is_ai_api_request(request):
         return None  # Skip recording this request
@@ -77,7 +151,8 @@ def create_vcr_instance(record_mode):
     my_vcr = vcr.VCR(
         cassette_library_dir=cassette_dir,
         record_mode=record_mode,
-        match_on=["method", "scheme", "host", "port", "path", "query", "body"],
+        # For doctests, don't match on body since it might change slightly
+        match_on=["custom"],
         filter_headers=[
             "Authorization",
             "X-Api-Key",
@@ -90,6 +165,9 @@ def create_vcr_instance(record_mode):
         before_record_response=filter_response_data,
         decode_compressed_response=True,
     )
+    my_vcr.register_matcher("custom_body", custom_request_matcher)
+    my_vcr.match_on = ["custom_body"]
+
     return my_vcr
 
 
@@ -99,17 +177,23 @@ def vcr_fixture(request):
 
     This will record/replay only OpenAI and Anthropic API calls.
     """
+    # Check if this is a doctest
+    is_doctest = hasattr(request.node, "dtest")
 
-    # Get the record mode from command line
+    # Get the record mode from command line, but use a different default for doctests
     record_mode = request.config.getoption("--vcr-mode")
+    if is_doctest and record_mode == "once":
+        # For doctests, default to new_episodes which is more forgiving
+        record_mode = "new_episodes"
 
     # Create the VCR instance
     my_vcr = create_vcr_instance(record_mode)
 
     # Create a cassette name based on the test function
-    module_name = request.module.__name__.split(".")[-1]
-    test_name = request.function.__name__
-    cassette_name = f"{module_name}_{test_name}"
+    cassette_name = request.module.__name__.split(".")[-1]
+    if request.function:
+        test_name = request.function.__name__
+        cassette_name += f"_{test_name}"
 
     # Use the cassette for this test
     with my_vcr.use_cassette(f"{cassette_name}.yaml"):
