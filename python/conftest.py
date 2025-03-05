@@ -29,13 +29,13 @@ def get_request_hash(request):
         # Hash the key elements
         hash_input = json.dumps(key_elements, sort_keys=True)
         return hashlib.md5(hash_input.encode()).hexdigest()
-    except:
+    except BaseException:
         # If parsing fails, return None
         return None
 
 
 def custom_request_matcher(r1, r2):
-    """Custom matcher that uses request hashing for OpenAI API calls."""
+    """Match that uses request hashing for OpenAI API calls."""
     # First check standard matchers
     standard_match = all(
         [
