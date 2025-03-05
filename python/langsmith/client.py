@@ -256,6 +256,21 @@ def _validate_api_key_if_hosted(api_url: str, api_key: Optional[str]) -> None:
             )
 
 
+def _format_feedback_score(score: Union[float, int, bool, None]):
+    """Format a feedback score by truncating numerical values to 4 decimal places.
+
+    Args:
+        score: The score to format, can be a number or any other type
+
+    Returns:
+        The formatted score
+    """
+    if isinstance(score, float):
+        # Truncate at 4 decimal places
+        return round(score, 4)
+    return score
+
+
 def _get_tracing_sampling_rate() -> float | None:
     """Get the tracing sampling rate.
 
@@ -5536,7 +5551,7 @@ class Client:
                 run_id=_ensure_uuid(run_id, accept_null=True),
                 trace_id=_ensure_uuid(trace_id, accept_null=True),
                 key=key,
-                score=score,
+                score=_format_feedback_score(score),
                 value=value,
                 correction=correction,
                 comment=comment,
@@ -5630,7 +5645,7 @@ class Client:
         """
         feedback_update: Dict[str, Any] = {}
         if score is not None:
-            feedback_update["score"] = score
+            feedback_update["score"] = _format_feedback_score(score)
         if value is not None:
             feedback_update["value"] = value
         if correction is not None:
