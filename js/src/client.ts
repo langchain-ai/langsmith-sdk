@@ -387,6 +387,14 @@ const handle429 = async (response?: Response) => {
   return false;
 };
 
+function _formatFeedbackScore(score?: ScoreType): ScoreType | undefined {
+  if (typeof score === "number") {
+    // Truncate at 4 decimal places
+    return Number(score.toFixed(4));
+  }
+  return score;
+}
+
 export class AutoBatchQueue {
   items: {
     action: "create" | "update";
@@ -3343,7 +3351,7 @@ export class Client implements LangSmithTracingClientInterface {
       id: feedbackId ?? uuid.v4(),
       run_id: runId,
       key,
-      score,
+      score: _formatFeedbackScore(score),
       value,
       correction,
       comment,
@@ -3380,7 +3388,7 @@ export class Client implements LangSmithTracingClientInterface {
   ): Promise<void> {
     const feedbackUpdate: FeedbackUpdate = {};
     if (score !== undefined && score !== null) {
-      feedbackUpdate["score"] = score;
+      feedbackUpdate["score"] = _formatFeedbackScore(score);
     }
     if (value !== undefined && value !== null) {
       feedbackUpdate["value"] = value;
