@@ -38,7 +38,7 @@ jobs:
               - 'js/**'
 
   python_integration_test:
-    name: Python Integration Test
+    name: Python ${{ matrix.test-type }} Test
     needs: changed_files
     if: >
       (github.event_name == 'push') ||
@@ -48,23 +48,16 @@ jobs:
       )) ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.run-python-tests == 'true')
     runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        test-type: [integration, doctest, evals]
     defaults:
       run:
         working-directory: python
     steps:
       - uses: actions/checkout@v3
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v4
-        with:
-          python-version: 3.11
-          cache: "pip"
-      - name: Install poetry
-        run: pipx install poetry==1.4.2
-      - name: Install dependencies
-        run: |
-          poetry install --with dev
-          poetry run pip install -U langchain langchain_anthropic langchain_openai rapidfuzz pandas
-      - name: Run Python integration tests
+      - name: Run Python ${{ matrix.test-type }}
         uses: ./.github/actions/python-integration-tests
         with:
           python-version: 3.11
@@ -72,6 +65,7 @@ jobs:
           langchain-api-key-prod: ${{ secrets.LANGSMITH_API_KEY_PROD }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          test-type: ${{ matrix.test-type }}
 
   js_integration_test:
     name: JS Integration Test
