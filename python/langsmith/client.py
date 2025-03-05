@@ -258,10 +258,10 @@ def _validate_api_key_if_hosted(api_url: str, api_key: Optional[str]) -> None:
 
 def _format_feedback_score(score: Union[float, int, bool, None]):
     """Format a feedback score by truncating numerical values to 4 decimal places.
-    
+
     Args:
         score: The score to format, can be a number or any other type
-        
+
     Returns:
         The formatted score
     """
