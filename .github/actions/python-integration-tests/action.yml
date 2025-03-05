@@ -40,7 +40,7 @@ runs:
     - name: Install dependencies
       run: |
         poetry install --with dev
-        poetry run pip install -U langchain langchain_anthropic tiktoken rapidfuzz vcrpy numpy
+        poetry run pip install -U langchain langchian-openai langchain-anthropic tiktoken rapidfuzz vcrpy numpy
       shell: bash
       working-directory: python
 
