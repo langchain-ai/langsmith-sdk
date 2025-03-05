@@ -5,18 +5,6 @@ import pytest
 import vcr
 
 
-def pytest_addoption(parser):
-    parser.addoption(
-        "--runslow", action="store_true", default=False, help="run slow tests"
-    )
-    parser.addoption(
-        "--vcr-mode",
-        type=str,
-        default="once",
-        help="VCR record mode: once, new_episodes, none, or all (default: all)",
-    )
-
-
 def pytest_collection_modifyitems(config, items):
     if config.getoption("--runslow"):
         # --runslow given in cli: do not skip slow tests
