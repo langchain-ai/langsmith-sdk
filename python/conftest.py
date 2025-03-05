@@ -1,3 +1,5 @@
+"""Pytest config for doctests."""
+
 import os
 import re
 
@@ -6,6 +8,7 @@ import vcr
 
 
 def pytest_addoption(parser):
+    """Pytest options."""
     parser.addoption(
         "--runslow", action="store_true", default=False, help="run slow tests"
     )
@@ -18,6 +21,7 @@ def pytest_addoption(parser):
 
 
 def pytest_collection_modifyitems(config, items):
+    """Configure tests to run."""
     if config.getoption("--runslow"):
         # --runslow given in cli: do not skip slow tests
         return
@@ -39,7 +43,6 @@ def is_ai_api_request(request):
 
 def filter_request_data(request):
     """Filter sensitive data from requests and only record AI API calls."""
-
     # Only record OpenAI and Anthropic API calls
     if not is_ai_api_request(request):
         return None  # Skip recording this request
@@ -111,7 +114,6 @@ def vcr_fixture(request):
 
     This will record/replay only OpenAI and Anthropic API calls.
     """
-
     # Get the record mode from command line
     record_mode = request.config.getoption("--vcr-mode")
 
@@ -119,9 +121,10 @@ def vcr_fixture(request):
     my_vcr = create_vcr_instance(record_mode)
 
     # Create a cassette name based on the test function
-    module_name = request.module.__name__.split(".")[-1]
-    test_name = request.function.__name__
-    cassette_name = f"{module_name}_{test_name}"
+    cassette_name = request.module.__name__.split(".")[-1]
+    if request.function:
+        test_name = request.function.__name__
+        cassette_name += f"_{test_name}"
 
     # Use the cassette for this test
     with my_vcr.use_cassette(f"{cassette_name}.yaml"):
