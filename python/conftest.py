@@ -87,7 +87,7 @@ def filter_response_data(response):
 def create_vcr_instance(record_mode):
     """Create a configured VCR instance."""
     cassette_dir = os.path.join(os.path.dirname(__file__), "cassettes")
-    
+
     # Configure VCR
     my_vcr = vcr.VCR(
         cassette_library_dir=cassette_dir,
@@ -116,8 +116,8 @@ def vcr_fixture(request):
     This will record/replay only OpenAI and Anthropic API calls.
     """
     # Check if this is a doctest
-    is_doctest = hasattr(request.node, 'dtest')
-    
+    is_doctest = hasattr(request.node, "dtest")
+
     # Get the record mode from command line, but use a different default for doctests
     record_mode = request.config.getoption("--vcr-mode")
     if is_doctest and record_mode == "once":
