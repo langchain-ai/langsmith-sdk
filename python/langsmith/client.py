@@ -4161,7 +4161,7 @@ class Client:
                 "PATCH",
                 (
                     f"/v1/platform/datasets/{dataset_id}/examples"
-                    if self.api_url[-3:] == "/v1" or self.api_url[-4:] == "/v1/"
+                    if self.api_url[-3:] != "/v1" and self.api_url[-4:] != "/v1/"
                     else f"platform/datasets/{dataset_id}/examples"
                 ),
                 request_kwargs={
@@ -4235,7 +4235,7 @@ class Client:
                 "POST",
                 (
                     f"/v1/platform/datasets/{dataset_id}/examples"
-                    if self.api_url[-3:] == "/v1" or self.api_url[-4:] == "/v1/"
+                    if self.api_url[-3:] != "/v1" and self.api_url[-4:] != "/v1/"
                     else f"platform/datasets/{dataset_id}/examples"
                 ),
                 request_kwargs={
@@ -4284,7 +4284,7 @@ class Client:
                 "POST",
                 (
                     "/v1/platform/examples/multipart"
-                    if self.api_url[-3:] == "/v1" or self.api_url[-4:] == "/v1/"
+                    if self.api_url[-3:] != "/v1" and self.api_url[-4:] != "/v1/"
                     else "platform/examples/multipart"
                 ),
                 request_kwargs={
