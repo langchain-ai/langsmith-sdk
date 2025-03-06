@@ -4159,7 +4159,11 @@ class Client:
         try:
             response = self.request_with_retries(
                 "PATCH",
-                f"/v1/platform/datasets/{dataset_id}/examples",
+                (
+                    f"/v1/platform/datasets/{dataset_id}/examples"
+                    if "v1" not in self.api_url
+                    else f"platform/datasets/{dataset_id}/examples"
+                ),
                 request_kwargs={
                     "data": data,
                     "headers": {
@@ -4229,7 +4233,11 @@ class Client:
         try:
             response = self.request_with_retries(
                 "POST",
-                f"/v1/platform/datasets/{dataset_id}/examples",
+                (
+                    f"/v1/platform/datasets/{dataset_id}/examples"
+                    if "v1" not in self.api_url
+                    else f"platform/datasets/{dataset_id}/examples"
+                ),
                 request_kwargs={
                     "data": data,
                     "headers": {
@@ -4274,7 +4282,11 @@ class Client:
         try:
             response = self.request_with_retries(
                 "POST",
-                "/v1/platform/examples/multipart",
+                (
+                    "/v1/platform/examples/multipart"
+                    if "v1" not in self.api_url
+                    else "platform/examples/multipart"
+                ),
                 request_kwargs={
                     "data": data,
                     "headers": {
