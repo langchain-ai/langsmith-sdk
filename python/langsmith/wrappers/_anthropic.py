@@ -15,16 +15,19 @@ from typing import (
 )
 
 from typing_extensions import TypedDict
+from pydantic import TypeAdapter
+from contextlib import contextmanager, asynccontextmanager
 
 from langsmith import client as ls_client
 from langsmith import run_helpers
+from langsmith.schemas import InputTokenDetails, UsageMetadata
 
 if TYPE_CHECKING:
     from anthropic import Anthropic, AsyncAnthropic
     from anthropic.types import (
         Completion,
         Message,
-        MessageStreamEvent,
+        MessageStreamEvent
     )
 
 C = TypeVar("C", bound=Union["Anthropic", "AsyncAnthropic", Any])
@@ -42,6 +45,9 @@ def _get_not_given() -> Optional[Type]:
 
 
 def _strip_not_given(d: dict) -> dict:
+    if 'system' in d:
+        d['messages'] = [{"role": "system", "content": d['system']}] + d.get('messages', [])
+        d.pop('system')
     try:
         not_given = _get_not_given()
         if not_given is None:
@@ -71,8 +77,10 @@ def _accumulate_event(
 
     if event.type == "content_block_start":
         # TODO: check index <-- from anthropic SDK :)
+        adapter = TypeAdapter(ContentBlock)
+        content_block_instance = adapter.validate_python(event.content_block.model_dump())
         current_snapshot.content.append(
-            ContentBlock.construct(**event.content_block.model_dump()),  # type: ignore[attr-defined]
+            content_block_instance,  # type: ignore[attr-defined]
         )
     elif event.type == "content_block_delta":
         content = current_snapshot.content[event.index]
@@ -96,7 +104,28 @@ def _reduce_chat(all_chunks: List) -> dict:
             return {"output": all_chunks}
     if full_message is None:
         return {"output": all_chunks}
-    return full_message.model_dump()
+    d = full_message.model_dump()
+    d['usage_metadata'] = _create_usage_metadata(d.get("usage", {}))
+    d.pop("usage")
+    return d
+
+
+def _create_usage_metadata(anthropic_token_usage: dict) -> UsageMetadata:
+    input_tokens = anthropic_token_usage.get("input_tokens") or 0
+    output_tokens = anthropic_token_usage.get("output_tokens") or 0
+    total_tokens = input_tokens + output_tokens
+    input_token_details: dict = {
+        "cache_read": anthropic_token_usage.get("cache_creation_input_tokens", 0) + 
+            anthropic_token_usage.get("cache_read_input_tokens", 0)
+    }
+    return UsageMetadata(
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=total_tokens,
+        input_token_details=InputTokenDetails(
+            **{k: v for k, v in input_token_details.items() if v is not None}
+        ),
+    )
 
 
 def _reduce_completions(all_chunks: List[Completion]) -> dict:
@@ -114,6 +143,17 @@ def _reduce_completions(all_chunks: List[Completion]) -> dict:
 
     return d
 
+def _process_chat_completion(outputs: Any):
+    try:
+        rdict = outputs.model_dump()
+        anthropic_token_usage = rdict.pop("usage", None)
+        rdict["usage_metadata"] = (
+            _create_usage_metadata(anthropic_token_usage) if anthropic_token_usage else None
+        )
+        return rdict
+    except BaseException as e:
+        logger.debug(f"Error processing chat completion: {e}")
+        return {"output": outputs}
 
 def _get_wrapper(
     original_create: Callable,
@@ -126,31 +166,141 @@ def _get_wrapper(
 
     @functools.wraps(original_create)
     def create(*args, **kwargs):
-        stream = kwargs.get("stream")
+        stream = kwargs.get("stream", False)
         decorator = run_helpers.traceable(
             name=name,
             run_type="llm",
             reduce_fn=reduce_fn if force_stream or stream else None,
             process_inputs=_strip_not_given,
+            process_outputs=_process_chat_completion,
             **textra,
         )
 
-        return decorator(original_create)(*args, **kwargs)
+        result = decorator(original_create)(*args, **kwargs)
+        return result
 
     @functools.wraps(original_create)
     async def acreate(*args, **kwargs):
-        stream = kwargs.get("stream")
+        stream = kwargs.get("stream", False)
         decorator = run_helpers.traceable(
             name=name,
             run_type="llm",
             reduce_fn=reduce_fn if force_stream or stream else None,
             process_inputs=_strip_not_given,
+            process_outputs=_process_chat_completion,
             **textra,
         )
-        return await decorator(original_create)(*args, **kwargs)
+        result = await decorator(original_create)(*args, **kwargs)
+        return result
 
     return acreate if run_helpers.is_async(original_create) else create
 
+def _get_stream_wrapper(
+    original_stream: Callable,
+    name: str,
+    tracing_extra: Optional[TracingExtra] = None,
+) -> Callable:
+    """Creates a wrapper for Anthropic's streaming context manager."""
+    textra = tracing_extra or {}
+    is_async = 'async' in str(original_stream).lower()
+
+    if is_async:
+        class AsyncWrapperManager:
+            def __init__(self, *args2, **kwargs2):
+                self.args = args2
+                self.kwargs = kwargs2
+
+            async def __aenter__(self):
+                self._context = await original_stream(*self.args, **self.kwargs).__aenter__()
+                return self
+
+            async def __aexit__(self, *exc):
+                await self._context.__aexit__(*exc)
+
+            async def __aiter__(self):
+                trace_kwargs = self.kwargs.copy()
+                if "system" in trace_kwargs:
+                    trace_kwargs['messages'] = [{"role": "system", "content": trace_kwargs.pop("system")}] + trace_kwargs['messages']
+                
+                @run_helpers.traceable(name=name, reduce_fn=_reduce_chat, run_type="llm")
+                async def stream_generator(*args3, **kwargs3):
+                    async for chunk in self._context:
+                        yield chunk
+                
+                async for chunk in stream_generator(*self.args, **trace_kwargs):
+                    yield chunk
+
+            @property
+            def _raw_stream(self):
+                return self.__aiter__()
+
+            @property
+            def text_stream(self):
+                trace_kwargs = self.kwargs.copy()
+                if "system" in trace_kwargs:
+                    trace_kwargs['messages'] = [{"role": "system", "content": trace_kwargs.pop("system")}] + trace_kwargs['messages']
+                
+                @run_helpers.traceable(name=name, run_type="llm", reduce_fn=lambda x: ''.join(x))
+                async def text_stream_generator(*args3, **kwargs3):
+                    async for chunk in self._context.text_stream:
+                        yield chunk
+                    run_tree = run_helpers.get_current_run_tree()
+                    final_message = await self._context.get_final_message()
+                    run_tree.add_outputs(
+                        {"usage_metadata": _create_usage_metadata(final_message.usage.model_dump())}
+                    )
+
+                
+                return text_stream_generator(*self.args, **trace_kwargs)
+
+        return AsyncWrapperManager
+    else:
+        class WrapperManager:
+            def __init__(self, *args2, **kwargs2):
+                self.args = args2
+                self.kwargs = kwargs2
+
+            def __enter__(self):
+                self._context = original_stream(*self.args, **self.kwargs).__enter__()
+                return self
+
+            def __exit__(self, *exc):
+                self._context.__exit__(*exc)
+
+            def __iter__(self):
+                trace_kwargs = self.kwargs.copy()
+                if "system" in trace_kwargs:
+                    trace_kwargs['messages'] = [{"role": "system", "content": trace_kwargs.pop("system")}] + trace_kwargs['messages']
+                
+                @run_helpers.traceable(name=name, reduce_fn=_reduce_chat, run_type="llm")
+                def stream_generator(*args3, **kwargs3):
+                    for chunk in self._context:
+                        yield chunk
+                
+                for chunk in stream_generator(*self.args, **trace_kwargs):
+                    yield chunk
+
+            @property
+            def raw_stream(self):
+                return self.__iter__()
+
+            @property
+            def text_stream(self):
+                @run_helpers.traceable(name=name, run_type="llm", reduce_fn=lambda x: ''.join(x))
+                def text_stream(*args3, **kwargs3):
+                    yield from self._context.text_stream
+                    run_tree = run_helpers.get_current_run_tree()
+                    final_message = self._context.get_final_message()
+                    run_tree.add_outputs(
+                        {"usage_metadata": _create_usage_metadata(final_message.usage.model_dump())}
+                    )
+
+                trace_kwargs = self.kwargs.copy()
+                if "system" in trace_kwargs:
+                    trace_kwargs['messages'] = [{"role": "system", "content": trace_kwargs.pop("system")}] + trace_kwargs['messages']
+                return text_stream(*self.args, **trace_kwargs)
+
+        return WrapperManager
 
 class TracingExtra(TypedDict, total=False):
     metadata: Optional[Mapping[str, Any]]
@@ -194,17 +344,28 @@ def wrap_anthropic(client: C, *, tracing_extra: Optional[TracingExtra] = None) -
             )
             print(completion.content)
 
+            # You can also use the streaming context manager:
+            with client.messages.stream(
+                model="claude-3-5-sonnet-latest",
+                messages=messages,
+                max_tokens=1000,
+                system=system,
+            ) as stream:
+                for text in stream.text_stream:
+                    print(text, end="", flush=True)
+                message = stream.get_final_message()
+
     """  # noqa: E501
     client.messages.create = _get_wrapper(  # type: ignore[method-assign]
         client.messages.create,
         "ChatAnthropic",
+        _reduce_chat,
         tracing_extra=tracing_extra,
     )
-    client.messages.stream = _get_wrapper(  # type: ignore[method-assign]
+    # Use the stream-specific wrapper for the context manager-based stream method
+    client.messages.stream = _get_stream_wrapper(  # type: ignore[method-assign]
         client.messages.stream,
         "ChatAnthropic",
-        _reduce_chat,
-        force_stream=True,
         tracing_extra=tracing_extra,
     )
     client.completions.create = _get_wrapper(  # type: ignore[method-assign]
