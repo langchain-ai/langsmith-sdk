@@ -505,7 +505,7 @@ def traceable(
         ) -> Any:
             """Async version of wrapper function."""
             if not func_accepts_config:
-                    kwargs.pop("config", None)
+                kwargs.pop("config", None)
             run_container = await aitertools.aio_to_thread(
                 _setup_run,
                 func,
@@ -546,7 +546,7 @@ def traceable(
             *args: Any, langsmith_extra: Optional[LangSmithExtra] = None, **kwargs: Any
         ) -> AsyncGenerator:
             if not func_accepts_config:
-                    kwargs.pop("config", None)
+                kwargs.pop("config", None)
             run_container = await aitertools.aio_to_thread(
                 _setup_run,
                 func,
@@ -640,7 +640,7 @@ def traceable(
             *args: Any, langsmith_extra: Optional[LangSmithExtra] = None, **kwargs: Any
         ) -> Any:
             if not func_accepts_config:
-                    kwargs.pop("config", None)
+                kwargs.pop("config", None)
             run_container = _setup_run(
                 func,
                 container_input=container_input,
@@ -688,7 +688,7 @@ def traceable(
             *args: Any, langsmith_extra: Optional[LangSmithExtra] = None, **kwargs: Any
         ) -> Any:
             if not func_accepts_config:
-                    kwargs.pop("config", None)
+                kwargs.pop("config", None)
             trace_container = _setup_run(
                 func,
                 container_input=container_input,
@@ -720,7 +720,7 @@ def traceable(
             *args: Any, langsmith_extra: Optional[LangSmithExtra] = None, **kwargs: Any
         ) -> Any:
             if not func_accepts_config:
-                    kwargs.pop("config", None)
+                kwargs.pop("config", None)
             trace_container = await aitertools.aio_to_thread(
                 _setup_run,
                 func,
