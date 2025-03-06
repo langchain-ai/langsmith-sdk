@@ -36,15 +36,12 @@ import type {
   LangSmithJestlikeDescribeWrapperConfig,
 } from "./types.js";
 import { getEnvironmentVariable } from "../env.js";
-
-const DEFAULT_TEST_TIMEOUT = 30_000;
-
-const UUID5_NAMESPACE = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
-// From https://stackoverflow.com/a/29497680
-export const STRIP_ANSI_REGEX =
-  // eslint-disable-next-line no-control-regex
-  /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g;
-export const TEST_ID_DELIMITER = ", test_id=";
+import {
+  STRIP_ANSI_REGEX,
+  TEST_ID_DELIMITER,
+  DEFAULT_TEST_TIMEOUT,
+  UUID5_NAMESPACE,
+} from "./constants.js";
 
 export function logFeedback(
   feedback: SimpleEvaluationResult,
@@ -98,7 +95,7 @@ export function logOutputs(output: Record<string, unknown>) {
   context.setLoggedOutput(output);
 }
 
-export function objectHash(obj: KVMap, depth = 0): string {
+export function _objectHash(obj: KVMap, depth = 0): string {
   // Prevent infinite recursion
   if (depth > 50) {
     throw new Error(
@@ -107,14 +104,14 @@ export function objectHash(obj: KVMap, depth = 0): string {
   }
 
   if (Array.isArray(obj)) {
-    const arrayHash = obj.map((item) => objectHash(item, depth + 1)).join(",");
+    const arrayHash = obj.map((item) => _objectHash(item, depth + 1)).join(",");
     return crypto.createHash("sha256").update(arrayHash).digest("hex");
   }
 
   if (obj && typeof obj === "object") {
     const sortedHash = Object.keys(obj)
       .sort()
-      .map((key) => `${key}:${objectHash(obj[key], depth + 1)}`)
+      .map((key) => `${key}:${_objectHash(obj[key], depth + 1)}`)
       .join(",");
     return crypto.createHash("sha256").update(sortedHash).digest("hex");
   }
@@ -175,8 +172,8 @@ export function generateWrapperFromJestlikeMethods(
   ) {
     const identifier = JSON.stringify({
       datasetId,
-      inputsHash: objectHash(inputs),
-      outputsHash: objectHash(outputs ?? {}),
+      inputsHash: _objectHash(inputs),
+      outputsHash: _objectHash(outputs ?? {}),
     });
     return v5(identifier, UUID5_NAMESPACE);
   }
@@ -203,8 +200,8 @@ export function generateWrapperFromJestlikeMethods(
     try {
       example = await client.readExample(exampleId);
       if (
-        objectHash(example.inputs) !== objectHash(inputs) ||
-        objectHash(example.outputs ?? {}) !== objectHash(outputs ?? {}) ||
+        _objectHash(example.inputs) !== _objectHash(inputs) ||
+        _objectHash(example.outputs ?? {}) !== _objectHash(outputs ?? {}) ||
         example.dataset_id !== datasetId
       ) {
         await client.updateExample(exampleId, {
@@ -474,7 +471,7 @@ export function generateWrapperFromJestlikeMethods(
             const { dataset, createdAt, project, client, experimentUrl } =
               datasetSetupInfo.get(context.suiteUuid);
             const testInput: I = inputs;
-            const testOutput: O = referenceOutputs;
+            const testOutput: O = referenceOutputs ?? ({} as O);
             const testFeedback: SimpleEvaluationResult[] = [];
             const onFeedbackLogged = (feedback: SimpleEvaluationResult) =>
               testFeedback.push(feedback);
@@ -578,7 +575,7 @@ export function generateWrapperFromJestlikeMethods(
                       exampleId,
                       datasetId: dataset.id,
                       inputs,
-                      outputs: referenceOutputs,
+                      outputs: referenceOutputs ?? {},
                       metadata: {},
                       createdAt,
                     })
@@ -672,7 +669,7 @@ export function generateWrapperFromJestlikeMethods(
 
   function createEachMethod(method: (...args: any[]) => void) {
     function eachMethod<I extends KVMap, O extends KVMap>(
-      table: ({ inputs: I; referenceOutputs: O } & Record<string, any>)[],
+      table: ({ inputs: I; referenceOutputs?: O } & Record<string, any>)[],
       config?: LangSmithJestlikeWrapperConfig
     ) {
       const context = testWrapperAsyncLocalStorageInstance.getStore();
@@ -732,3 +729,12 @@ export function generateWrapperFromJestlikeMethods(
     toBeSemanticCloseTo,
   };
 }
+
+export function isInTestContext() {
+  const context = testWrapperAsyncLocalStorageInstance.getStore();
+  return context !== undefined;
+}
+
+export { wrapEvaluator } from "./vendor/evaluatedBy.js";
+
+export * from "./types.js";

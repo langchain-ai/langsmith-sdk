@@ -1,6 +1,6 @@
 {
   "name": "langsmith",
-  "version": "0.3.7",
+  "version": "0.3.12",
   "description": "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform.",
   "packageManager": "yarn@1.22.19",
   "files": [
@@ -73,6 +73,10 @@
     "singletons/traceable.js",
     "singletons/traceable.d.ts",
     "singletons/traceable.d.cts",
+    "utils/jestlike.cjs",
+    "utils/jestlike.js",
+    "utils/jestlike.d.ts",
+    "utils/jestlike.d.cts",
     "index.cjs",
     "index.js",
     "index.d.ts",
@@ -341,6 +345,15 @@
       },
       "import": "./singletons/traceable.js",
       "require": "./singletons/traceable.cjs"
+    },
+    "./utils/jestlike": {
+      "types": {
+        "import": "./utils/jestlike.d.ts",
+        "require": "./utils/jestlike.d.cts",
+        "default": "./utils/jestlike.d.ts"
+      },
+      "import": "./utils/jestlike.js",
+      "require": "./utils/jestlike.cjs"
     },
     "./package.json": "./package.json"
   }

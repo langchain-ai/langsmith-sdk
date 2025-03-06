@@ -6,7 +6,7 @@ import * as path from "node:path";
 import * as fs from "node:fs/promises";
 import { SimpleEvaluationResult } from "./types.js";
 import { ScoreType } from "../../schemas.js";
-import { STRIP_ANSI_REGEX, TEST_ID_DELIMITER } from "./index.js";
+import { STRIP_ANSI_REGEX, TEST_ID_DELIMITER } from "./constants.js";
 
 const FEEDBACK_COLLAPSE_THRESHOLD = 48;
 const MAX_TEST_PARAMS_LENGTH = 18;

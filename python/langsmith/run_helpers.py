@@ -178,6 +178,7 @@ def ensure_traceable(
     project_name: Optional[str] = None,
     process_inputs: Optional[Callable[[dict], dict]] = None,
     process_outputs: Optional[Callable[..., dict]] = None,
+    process_chunk: Optional[Callable] = None,
 ) -> SupportsLangsmithExtra[P, R]:
     """Ensure that a function is traceable."""
     if is_traceable_function(func):
@@ -191,6 +192,7 @@ def ensure_traceable(
         project_name=project_name,
         process_inputs=process_inputs,
         process_outputs=process_outputs,
+        process_chunk=process_chunk,
     )(func)
 
 
@@ -246,7 +248,7 @@ class SupportsLangsmithExtra(Protocol, Generic[P, R]):
         R: The return type of the callable.
     """
 
-    def __call__(
+    def __call__(  # type: ignore[valid-type]
         self,
         *args: P.args,
         langsmith_extra: Optional[LangSmithExtra] = None,
@@ -285,6 +287,7 @@ def traceable(
     project_name: Optional[str] = None,
     process_inputs: Optional[Callable[[dict], dict]] = None,
     process_outputs: Optional[Callable[..., dict]] = None,
+    process_chunk: Optional[Callable] = None,
     _invocation_params_fn: Optional[Callable[[dict], dict]] = None,
     dangerously_allow_filesystem: bool = False,
 ) -> Callable[[Callable[P, R]], SupportsLangsmithExtra[P, R]]: ...
@@ -473,6 +476,7 @@ def traceable(
         project_name=kwargs.pop("project_name", None),
         run_type=run_type,
         process_inputs=kwargs.pop("process_inputs", None),
+        process_chunk=kwargs.pop("process_chunk", None),
         invocation_params_fn=kwargs.pop("_invocation_params_fn", None),
         dangerously_allow_filesystem=kwargs.pop("dangerously_allow_filesystem", False),
     )
@@ -583,6 +587,7 @@ def traceable(
                     ),
                     accepts_context=accepts_context,
                     results=results,
+                    process_chunk=container_input.get("process_chunk"),
                 ):
                     yield item
             except BaseException as e:
@@ -659,6 +664,7 @@ def traceable(
                     run_container,
                     is_llm_run=run_type == "llm",
                     results=results,
+                    process_chunk=container_input.get("process_chunk"),
                 )
 
                 if function_return is not None:
@@ -1227,6 +1233,7 @@ class _ContainerInput(TypedDict, total=False):
     project_name: Optional[str]
     run_type: ls_client.RUN_TYPE_T
     process_inputs: Optional[Callable[[dict], dict]]
+    process_chunk: Optional[Callable]
     invocation_params_fn: Optional[Callable[[dict], dict]]
     dangerously_allow_filesystem: Optional[bool]
 
@@ -1566,10 +1573,15 @@ def _process_iterator(
     is_llm_run: bool,
     # Results is mutated
     results: List[Any],
+    process_chunk: Optional[Callable],
 ) -> Generator[T, None, Any]:
     try:
         while True:
             item: T = run_container["context"].run(next, generator)  # type: ignore[arg-type]
+            if process_chunk:
+                traced_item = process_chunk(item)
+            else:
+                traced_item = item
             if is_llm_run and run_container["new_run"]:
                 run_container["new_run"].add_event(
                     {
@@ -1577,10 +1589,10 @@ def _process_iterator(
                         "time": datetime.datetime.now(
                             datetime.timezone.utc
                         ).isoformat(),
-                        "kwargs": {"token": item},
+                        "kwargs": {"token": traced_item},
                     }
                 )
-            results.append(item)
+            results.append(traced_item)
             yield item
     except StopIteration as e:
         return e.value
@@ -1593,6 +1605,7 @@ async def _process_async_iterator(
     is_llm_run: bool,
     accepts_context: bool,
     results: List[Any],
+    process_chunk: Optional[Callable],
 ) -> AsyncGenerator[T, None]:
     try:
         while True:
@@ -1605,6 +1618,10 @@ async def _process_async_iterator(
                 # Python < 3.11
                 with tracing_context(**get_tracing_context(run_container["context"])):
                     item = await aitertools.py_anext(generator)
+            if process_chunk:
+                traced_item = process_chunk(item)
+            else:
+                traced_item = item
             if is_llm_run and run_container["new_run"]:
                 run_container["new_run"].add_event(
                     {
@@ -1612,10 +1629,10 @@ async def _process_async_iterator(
                         "time": datetime.datetime.now(
                             datetime.timezone.utc
                         ).isoformat(),
-                        "kwargs": {"token": item},
+                        "kwargs": {"token": traced_item},
                     }
                 )
-            results.append(item)
+            results.append(traced_item)
             yield item
     except StopAsyncIteration:
         pass
@@ -1690,6 +1707,7 @@ class _TracedStream(_TracedStreamBase, Generic[T]):
         stream: Iterator[T],
         trace_container: _TraceableContainer,
         reduce_fn: Optional[Callable] = None,
+        process_chunk: Optional[Callable] = None,
     ):
         super().__init__(
             stream=stream, trace_container=trace_container, reduce_fn=reduce_fn
@@ -1700,6 +1718,7 @@ class _TracedStream(_TracedStreamBase, Generic[T]):
             self.__ls_trace_container__,
             is_llm_run=self.__is_llm_run__,
             results=self.__ls_accumulated_output__,
+            process_chunk=process_chunk,
         )
 
     def __next__(self) -> T:
@@ -1736,6 +1755,7 @@ class _TracedAsyncStream(_TracedStreamBase, Generic[T]):
         stream: AsyncIterator[T],
         trace_container: _TraceableContainer,
         reduce_fn: Optional[Callable] = None,
+        process_chunk: Optional[Callable] = None,
     ):
         super().__init__(
             stream=stream, trace_container=trace_container, reduce_fn=reduce_fn
@@ -1747,6 +1767,7 @@ class _TracedAsyncStream(_TracedStreamBase, Generic[T]):
             is_llm_run=self.__is_llm_run__,
             accepts_context=aitertools.asyncio_accepts_context(),
             results=self.__ls_accumulated_output__,
+            process_chunk=process_chunk,
         )
 
     async def _aend_trace(self, error: Optional[BaseException] = None):

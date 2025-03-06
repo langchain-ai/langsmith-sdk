@@ -702,7 +702,7 @@ def evaluate_comparative(
         >>> prompt_2 = "You are an exceedingly helpful assistant."
         >>> def predict(inputs: dict, prompt: str) -> dict:
         ...     completion = wrapped_client.chat.completions.create(
-        ...         model="gpt-3.5-turbo",
+        ...         model="gpt-4o-mini",
         ...         messages=[
         ...             {"role": "system", "content": prompt},
         ...             {
@@ -729,12 +729,11 @@ def evaluate_comparative(
         View the evaluation results for experiment:...
         >>> results_1.wait()
         >>> results_2.wait()
-        >>> import time
-        >>> time.sleep(10)  # Wait for the traces to be fully processed
 
             Finally, you would compare the two prompts directly:
         >>> import json
         >>> from langsmith.evaluation import evaluate_comparative
+        >>> from langsmith import schemas
         >>> def score_preferences(runs: list, example: schemas.Example):
         ...     assert len(runs) == 2  # Comparing 2 systems
         ...     assert isinstance(example, schemas.Example)
@@ -767,7 +766,7 @@ def evaluate_comparative(
         ...         }
         ...     ]
         ...     completion = openai.Client().chat.completions.create(
-        ...         model="gpt-3.5-turbo",
+        ...         model="gpt-4o-mini",
         ...         messages=[
         ...             {"role": "system", "content": "Select the better response."},
         ...             {
@@ -1630,10 +1629,12 @@ class _ExperimentManager(_ExperimentManagerMixin):
             example = current_results["example"]
             eval_results = current_results["evaluation_results"]
             for evaluator in evaluators:
+                evaluator_run_id = uuid.uuid4()
                 try:
-                    evaluator_response = evaluator.evaluate_run(
+                    evaluator_response = evaluator.evaluate_run(  # type: ignore[call-arg]
                         run=run,
                         example=example,
+                        evaluator_run_id=evaluator_run_id,
                     )
 
                     eval_results["results"].extend(
@@ -1652,7 +1653,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                             results=[
                                 EvaluationResult(
                                     key=key,
-                                    source_run_id=run.id,
+                                    source_run_id=evaluator_run_id,
                                     comment=repr(e),
                                     extra={"error": True},
                                 )
@@ -2255,7 +2256,7 @@ def _flatten_experiment_results(
 ):
     return [
         {
-            **{f"inputs.{k}": v for k, v in x["example"].inputs.items()},
+            **{f"inputs.{k}": v for k, v in (x["example"].inputs or {}).items()},
             **{f"outputs.{k}": v for k, v in (x["run"].outputs or {}).items()},
             "error": x["run"].error,
             **(

@@ -580,6 +580,13 @@ export function traceable<Func extends (...args: any[]) => any>(
                 break;
               }
               chunks.push(result.value);
+              // Add new_token event for streaming LLM runs
+              if (currentRunTree && currentRunTree.run_type === "llm") {
+                currentRunTree.addEvent({
+                  name: "new_token",
+                  kwargs: { token: result.value },
+                });
+              }
               controller.enqueue(result.value);
             }
           },
@@ -612,6 +619,13 @@ export function traceable<Func extends (...args: any[]) => any>(
               break;
             }
             chunks.push(value);
+            // Add new_token event for streaming LLM runs
+            if (currentRunTree && currentRunTree.run_type === "llm") {
+              currentRunTree.addEvent({
+                name: "new_token",
+                kwargs: { token: value },
+              });
+            }
             yield value;
           }
         } catch (e) {

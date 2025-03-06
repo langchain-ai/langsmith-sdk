@@ -16,6 +16,10 @@ inputs:
   anthropic-api-key:
     description: "Anthropic API key"
     required: false
+  test-type:
+    description: "Type of test to run (integration, doctest, evals, or all)"
+    required: false
+    default: "all"
 runs:
   using: "composite"
   steps:
@@ -36,11 +40,12 @@ runs:
     - name: Install dependencies
       run: |
         poetry install --with dev
-        poetry run pip install -U langchain langchain_anthropic tiktoken rapidfuzz vcrpy numpy
+        poetry run pip install -U langchain langchain-openai langchain-anthropic tiktoken rapidfuzz vcrpy numpy
       shell: bash
       working-directory: python
 
     - name: Run integration tests
+      if: inputs.test-type == 'integration' || inputs.test-type == 'all'
       env:
         LANGSMITH_TRACING_V2: "true"
         LANGSMITH_ENDPOINT: https://beta.api.smith.langchain.com
@@ -53,6 +58,7 @@ runs:
       working-directory: python
 
     - name: Run doctest
+      if: inputs.test-type == 'doctest' || inputs.test-type == 'all'
       env:
         LANGSMITH_TRACING_V2: "true"
         LANGSMITH_ENDPOINT: https://api.smith.langchain.com
@@ -65,6 +71,7 @@ runs:
       working-directory: python
 
     - name: Run Evaluation
+      if: inputs.test-type == 'evals' || inputs.test-type == 'all'
       env:
           LANGSMITH_TRACING: "true"
           LANGSMITH_ENDPOINT: https://beta.api.smith.langchain.com
