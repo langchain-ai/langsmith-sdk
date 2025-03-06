@@ -504,6 +504,8 @@ def traceable(
             **kwargs: Any,
         ) -> Any:
             """Async version of wrapper function."""
+            if not func_accepts_config:
+                kwargs.pop("config", None)
             run_container = await aitertools.aio_to_thread(
                 _setup_run,
                 func,
@@ -517,8 +519,6 @@ def traceable(
                 accepts_context = aitertools.asyncio_accepts_context()
                 if func_accepts_parent_run:
                     kwargs["run_tree"] = run_container["new_run"]
-                if not func_accepts_config:
-                    kwargs.pop("config", None)
                 fr_coro = func(*args, **kwargs)
                 if accepts_context:
                     function_result = await asyncio.create_task(  # type: ignore[call-arg]
@@ -545,6 +545,8 @@ def traceable(
         async def async_generator_wrapper(
             *args: Any, langsmith_extra: Optional[LangSmithExtra] = None, **kwargs: Any
         ) -> AsyncGenerator:
+            if not func_accepts_config:
+                kwargs.pop("config", None)
             run_container = await aitertools.aio_to_thread(
                 _setup_run,
                 func,
@@ -560,8 +562,6 @@ def traceable(
                     # TODO: Nesting is ambiguous if a nested traceable function is only
                     # called mid-generation. Need to explicitly accept run_tree to get
                     # around this.
-                if not func_accepts_config:
-                    kwargs.pop("config", None)
                 async_gen_result = func(*args, **kwargs)
                 # Can't iterate through if it's a coroutine
                 accepts_context = aitertools.asyncio_accepts_context()
@@ -613,6 +613,8 @@ def traceable(
             **kwargs: Any,
         ) -> Any:
             """Create a new run or create_child() if run is passed in kwargs."""
+            if not func_accepts_config:
+                kwargs.pop("config", None)
             run_container = _setup_run(
                 func,
                 container_input=container_input,
@@ -626,8 +628,6 @@ def traceable(
             try:
                 if func_accepts_parent_run:
                     kwargs["run_tree"] = run_container["new_run"]
-                if not func_accepts_config:
-                    kwargs.pop("config", None)
                 function_result = run_container["context"].run(func, *args, **kwargs)
             except BaseException as e:
                 _on_run_end(run_container, error=e)
@@ -639,6 +639,8 @@ def traceable(
         def generator_wrapper(
             *args: Any, langsmith_extra: Optional[LangSmithExtra] = None, **kwargs: Any
         ) -> Any:
+            if not func_accepts_config:
+                kwargs.pop("config", None)
             run_container = _setup_run(
                 func,
                 container_input=container_input,
@@ -655,8 +657,6 @@ def traceable(
             try:
                 if func_accepts_parent_run:
                     kwargs["run_tree"] = run_container["new_run"]
-                if not func_accepts_config:
-                    kwargs.pop("config", None)
                 generator_result = run_container["context"].run(func, *args, **kwargs)
 
                 function_return = yield from _process_iterator(
@@ -687,6 +687,8 @@ def traceable(
         def stream_wrapper(
             *args: Any, langsmith_extra: Optional[LangSmithExtra] = None, **kwargs: Any
         ) -> Any:
+            if not func_accepts_config:
+                kwargs.pop("config", None)
             trace_container = _setup_run(
                 func,
                 container_input=container_input,
@@ -698,8 +700,6 @@ def traceable(
             try:
                 if func_accepts_parent_run:
                     kwargs["run_tree"] = trace_container["new_run"]
-                if not func_accepts_config:
-                    kwargs.pop("config", None)
                 stream = trace_container["context"].run(func, *args, **kwargs)
             except Exception as e:
                 _on_run_end(trace_container, error=e)
@@ -719,6 +719,8 @@ def traceable(
         async def async_stream_wrapper(
             *args: Any, langsmith_extra: Optional[LangSmithExtra] = None, **kwargs: Any
         ) -> Any:
+            if not func_accepts_config:
+                kwargs.pop("config", None)
             trace_container = await aitertools.aio_to_thread(
                 _setup_run,
                 func,
@@ -731,8 +733,6 @@ def traceable(
             try:
                 if func_accepts_parent_run:
                     kwargs["run_tree"] = trace_container["new_run"]
-                if not func_accepts_config:
-                    kwargs.pop("config", None)
                 stream = await func(*args, **kwargs)
             except Exception as e:
                 await aitertools.aio_to_thread(_on_run_end, trace_container, error=e)
