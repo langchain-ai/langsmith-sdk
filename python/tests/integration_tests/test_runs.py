@@ -31,7 +31,7 @@ def poll_runs_until_count(
     langchain_client: Client,
     project_name: str,
     count: int,
-    max_retries: int = 10,
+    max_retries: int = 15,
     sleep_time: int = 2,
     require_success: bool = True,
     filter_: Optional[str] = None,
