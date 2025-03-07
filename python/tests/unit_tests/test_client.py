@@ -37,6 +37,7 @@ from langsmith._internal import _orjson
 from langsmith._internal._serde import _serialize_json
 from langsmith.client import (
     Client,
+    _construct_url,
     _dataset_examples_path,
     _dumps_json,
     _is_langchain_hosted,
@@ -2436,3 +2437,13 @@ def test__dataset_examples_path():
         path = _dataset_examples_path(api_url + suffix, dataset_id)
         actual = (api_url + suffix).rstrip("/") + path
         assert expected == actual
+
+
+def test__construct_url():
+    api_url = "https://foobar.com/api"
+    pathname = "v1/platform/datasets/123/examples"
+    expected = "https://foobar.com/api/v1/platform/datasets/123/examples"
+    for suffix in ("", "/"):
+        for prefix in ("", "/", "https://foobar.com/api/"):
+            actual = _construct_url(api_url + suffix, prefix + pathname)
+            assert actual == expected
