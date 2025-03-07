@@ -4162,7 +4162,7 @@ class Client:
                 (
                     f"/v1/platform/datasets/{dataset_id}/examples"
                     if self.api_url[-3:] != "/v1" and self.api_url[-4:] != "/v1/"
-                    else f"platform/datasets/{dataset_id}/examples"
+                    else f"/platform/datasets/{dataset_id}/examples"
                 ),
                 request_kwargs={
                     "data": data,
@@ -4236,7 +4236,7 @@ class Client:
                 (
                     f"/v1/platform/datasets/{dataset_id}/examples"
                     if self.api_url[-3:] != "/v1" and self.api_url[-4:] != "/v1/"
-                    else f"platform/datasets/{dataset_id}/examples"
+                    else f"/platform/datasets/{dataset_id}/examples"
                 ),
                 request_kwargs={
                     "data": data,
@@ -4285,7 +4285,7 @@ class Client:
                 (
                     "/v1/platform/examples/multipart"
                     if self.api_url[-3:] != "/v1" and self.api_url[-4:] != "/v1/"
-                    else "platform/examples/multipart"
+                    else "/platform/examples/multipart"
                 ),
                 request_kwargs={
                     "data": data,
