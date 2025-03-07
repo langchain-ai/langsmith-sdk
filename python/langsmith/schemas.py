@@ -23,6 +23,7 @@ from typing_extensions import NotRequired, TypedDict
 try:
     from pydantic.v1 import (
         BaseModel,
+        ConfigDict,
         Field,  # type: ignore[import]
         PrivateAttr,
         StrictBool,
@@ -32,6 +33,7 @@ try:
 except ImportError:
     from pydantic import (  # type: ignore[assignment]
         BaseModel,
+        ConfigDict,
         Field,
         PrivateAttr,
         StrictBool,
@@ -72,6 +74,136 @@ class Attachment(NamedTuple):
 Attachments = Dict[str, Union[Tuple[str, bytes], Attachment, Tuple[str, Path]]]
 """Attachments associated with the run. 
 Each entry is a tuple of (mime_type, bytes), or (mime_type, file_path)"""
+
+
+class EvaluatorStructuredOutput(BaseModel):
+    """Evaluator structured output schema."""
+
+    hub_ref: str | None = None  # eg. efriis/my-prompt:latest
+
+    prompt: List[tuple[str, str]] | None = None
+    template_format: str | None = None
+    tool_schema: dict[str, Any] | None = Field(None, alias="schema")
+    variable_mapping: dict[str, str] | None = None
+
+    model: dict[str, Any]  # serialized chat_model
+
+
+class EvaluatorTopLevel(BaseModel):
+    """Schema for non-code evaluators."""
+
+    structured: EvaluatorStructuredOutput
+
+
+class CodeEvaluatorTopLevel(BaseModel):
+    """Schema for code evaluators."""
+
+    code: str
+
+
+class RunRulesAlertType(str, Enum):
+    """Enum for alert types."""
+
+    pagerduty = "pagerduty"
+
+
+class RunRulesAlertSchema(BaseModel):
+    """Schema for run rule alerts."""
+
+    type: RunRulesAlertType | None = RunRulesAlertType.pagerduty
+
+
+class PagerdutySeverity(str, Enum):
+    """Enum for severity."""
+
+    critical = "critical"
+    warning = "warning"
+    error = "error"
+    info = "info"
+
+
+class RunRulesPagerdutyAlertSchema(RunRulesAlertSchema):
+    """Schema for run rule pager duty alerts."""
+
+    routing_key: str
+    summary: str | None = None
+    severity: PagerdutySeverity | None = PagerdutySeverity.warning
+
+
+class RunRulesWebhookSchema(BaseModel):
+    """Schema for run rule webhooks."""
+
+    url: str
+    headers: dict[str, str] | None = None
+
+
+class RunRulesSchema(BaseModel):
+    """Run rules schema."""
+
+    id: UUID
+    tenant_id: UUID
+    is_enabled: bool = True
+    session_id: UUID | None = None
+    session_name: str | None = None
+    dataset_id: UUID | None = None
+    dataset_name: str | None = None
+    display_name: str
+
+    sampling_rate: float
+    filter: str | None = None
+    trace_filter: str | None = None
+    tree_filter: str | None = None
+
+    add_to_annotation_queue_id: UUID | None = None
+    add_to_annotation_queue_name: str | None = None
+
+    add_to_dataset_id: UUID | None = None
+    add_to_dataset_name: str | None = None
+    add_to_dataset_prefer_correction: bool = False
+
+    corrections_dataset_id: UUID | None = None
+    use_corrections_dataset: bool = False
+    num_few_shot_examples: int | None = None
+
+    evaluators: list[EvaluatorTopLevel] | None = None
+    code_evaluators: list[CodeEvaluatorTopLevel] | None = None
+    alerts: list[RunRulesPagerdutyAlertSchema] | None = Field(default_factory=list)
+    webhooks: list[RunRulesWebhookSchema] | None
+    extend_only: bool = False
+
+    created_at: datetime
+    updated_at: datetime
+    backfill_from: datetime | None = None
+    transient: bool = False
+
+    model_config = ConfigDict()
+    evaluator_version: int
+
+
+class RunRulesCreateSchema(BaseModel):
+    """Schema for creating runs."""
+
+    display_name: str
+    session_id: UUID | None = None
+    is_enabled: bool = True
+    dataset_id: UUID | None = None
+    sampling_rate: float
+    filter: str | None = None
+    trace_filter: str | None = None
+    tree_filter: str | None = None
+    backfill_from: datetime | None = None
+    use_corrections_dataset: bool = False
+    num_few_shot_examples: int | None = None
+    extend_only: bool = False
+    transient: bool = False
+
+    add_to_annotation_queue_id: UUID | None = None
+    add_to_dataset_id: UUID | None = None
+    add_to_dataset_prefer_correction: bool = False
+    evaluators: list[EvaluatorTopLevel] | None = None
+    code_evaluators: list[CodeEvaluatorTopLevel] | None = None
+    alerts: list[RunRulesPagerdutyAlertSchema] | None = Field(default_factory=list)
+    webhooks: list[RunRulesWebhookSchema] | None = None
 
 
 @runtime_checkable

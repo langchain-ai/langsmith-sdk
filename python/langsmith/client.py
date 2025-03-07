@@ -3288,6 +3288,61 @@ class Client:
         except ls_utils.LangSmithNotFoundError:
             return False
 
+    def create_run_rule(
+        self, *, rule: ls_schemas.RunRulesCreateSchema
+    ) -> ls_schemas.RunRulesSchema:
+        """Create a run rule.
+
+        Args:
+            rule (RunRulesCreateSchema):
+                The rule to create.
+
+        Returns:
+            Rule: The created rule.
+        """
+        path = "/runs/rules"
+        response = self.request_with_retries("POST", path, data=_dumps_json(rule))
+        result = response.json()
+        return ls_schemas.RunRulesSchema(**result)
+
+    def read_run_rules(
+        self,
+        *,
+        dataset_id: Optional[ID_TYPE] = None,
+        session_id: Optional[ID_TYPE] = None,
+        type: Optional[Literal["session", "dataset"]] = None,
+        name_contains: Optional[str] = None,
+        id: Optional[list[ID_TYPE]] = None,
+    ) -> list[ls_schemas.RunRulesSchema]:
+        """Read rules associated with a dataset.
+
+        Args:
+            dataset_id (Optional[Union[UUID, str]]):
+                The ID of the dataset to read.
+            session_id (Optional[Union[UUID, str]]):
+                The ID of the dataset to read.
+            type (Optional[Literal["session", "dataset"]]):
+                Where to read run rules from.
+            name_contains (Optional[str]):
+                Name to match run rules on.
+            id (Optional[list[ID_TYPE]]):
+                The run rule ids to read.
+
+        Returns:
+            Rules: The retrieved rules.
+        """
+        path = "/runs/rules"
+        params = {
+            **({"dataset_id": dataset_id} if dataset_id is not None else {}),
+            **({"session_id": session_id} if session_id is not None else {}),
+            **({"type": type} if type is not None else {}),
+            **({"name_contains": name_contains} if name_contains is not None else {}),
+            **({"id": id} if id is not None else {}),
+        }
+        response = self.request_with_retries("GET", path, params=params)
+        result = response.json()
+        return [ls_schemas.RunRulesSchema(**r) for r in result]
+
     @ls_utils.xor_args(("dataset_name", "dataset_id"))
     def read_dataset(
         self,
@@ -6988,6 +7043,7 @@ class Client:
         data: Optional[DATA_T] = None,
         evaluators: Optional[Sequence[EVALUATOR_T]] = None,
         summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
+        auto_evaluators: Optional[Sequence[ID_TYPE]] = None,
         metadata: Optional[dict] = None,
         experiment_prefix: Optional[str] = None,
         description: Optional[str] = None,
@@ -7007,6 +7063,7 @@ class Client:
         data: Optional[DATA_T] = None,
         evaluators: Optional[Sequence[COMPARATIVE_EVALUATOR_T]] = None,
         summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
+        auto_evaluators: Optional[Sequence[ID_TYPE]] = None,
         metadata: Optional[dict] = None,
         experiment_prefix: Optional[str] = None,
         description: Optional[str] = None,
@@ -7029,6 +7086,7 @@ class Client:
             Union[Sequence[EVALUATOR_T], Sequence[COMPARATIVE_EVALUATOR_T]]
         ] = None,
         summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
+        auto_evaluators: Optional[Sequence[ID_TYPE]] = None,
         metadata: Optional[dict] = None,
         experiment_prefix: Optional[str] = None,
         description: Optional[str] = None,
@@ -7054,6 +7112,9 @@ class Client:
             summary_evaluators (Optional[Sequence[SUMMARY_EVALUATOR_T]]): A list of summary
                 evaluators to run on the entire dataset. Should not be specified if
                 comparing two existing experiments. Defaults to None.
+            auto_evaluators (Optional[Sequnce[ID_TYPE]]): A list of the ids of the autoevaluators to
+                run on this experiment. If None, all the auto evaluators will be ran. Defaults
+                to None.
             metadata (Optional[dict]): Metadata to attach to the experiment.
                 Defaults to None.
             experiment_prefix (Optional[str]): A prefix to provide for your experiment name.
@@ -7263,6 +7324,7 @@ class Client:
             data=data,
             evaluators=evaluators,  # type: ignore[arg-type]
             summary_evaluators=summary_evaluators,
+            auto_evaluators=auto_evaluators,
             metadata=metadata,
             experiment_prefix=experiment_prefix,
             description=description,
@@ -7291,6 +7353,7 @@ class Client:
         ] = None,
         evaluators: Optional[Sequence[Union[EVALUATOR_T, AEVALUATOR_T]]] = None,
         summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
+        auto_evaluators: Optional[Sequence[ID_TYPE]] = None,
         metadata: Optional[dict] = None,
         experiment_prefix: Optional[str] = None,
         description: Optional[str] = None,
@@ -7314,6 +7377,9 @@ class Client:
                 on each example. Defaults to None.
             summary_evaluators (Optional[Sequence[SUMMARY_EVALUATOR_T]]): A list of summary
                 evaluators to run on the entire dataset. Defaults to None.
+            auto_evaluators (Optional[Sequnce[ID_TYPE]]): A list of the ids of the autoevaluators to
+                run on this experiment. If None, all the auto evaluators will be ran. Defaults
+                to None.
             metadata (Optional[dict]): Metadata to attach to the experiment.
                 Defaults to None.
             experiment_prefix (Optional[str]): A prefix to provide for your experiment name.
@@ -7504,6 +7570,7 @@ class Client:
             data=data,
             evaluators=evaluators,
             summary_evaluators=summary_evaluators,
+            auto_evaluators=auto_evaluators,
             metadata=metadata,
             experiment_prefix=experiment_prefix,
             description=description,
