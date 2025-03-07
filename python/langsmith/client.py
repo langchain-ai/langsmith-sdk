@@ -748,11 +748,7 @@ class Client:
                     with ls_utils.filter_logs(_urllib3_logger, logging_filters):
                         response = self.session.request(
                             method,
-                            (
-                                self.api_url + pathname
-                                if not pathname.startswith("http")
-                                else pathname
-                            ),
+                            _construct_url(self.api_url, pathname),
                             stream=False,
                             **request_kwargs,
                         )
@@ -7624,3 +7620,12 @@ def _dataset_examples_path(api_url: str, dataset_id: ID_TYPE) -> str:
         return f"/platform/datasets/{dataset_id}/examples"
     else:
         return f"/v1/platform/datasets/{dataset_id}/examples"
+
+
+def _construct_url(api_url: str, pathname: str) -> str:
+    if pathname.startswith("http"):
+        return pathname
+    elif pathname.startswith("/"):
+        return api_url.rstrip("/") + pathname
+    else:
+        return api_url.rstrip("/") + "/" + pathname
