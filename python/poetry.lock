@@ -12,6 +12,30 @@ files = [
 ]
 
 [[package]]
+name = "anthropic"
+version = "0.45.2"
+description = "The official Python library for the anthropic API"
+optional = false
+python-versions = ">=3.8"
+files = [
+    {file = "anthropic-0.45.2-py3-none-any.whl", hash = "sha256:ecd746f7274451dfcb7e1180571ead624c7e1195d1d46cb7c70143d2aedb4d35"},
+    {file = "anthropic-0.45.2.tar.gz", hash = "sha256:32a18b9ecd12c91b2be4cae6ca2ab46a06937b5aa01b21308d97a6d29794fb5e"},
+]
+
+[package.dependencies]
+anyio = ">=3.5.0,<5"
+distro = ">=1.7.0,<2"
+httpx = ">=0.23.0,<1"
+jiter = ">=0.4.0,<1"
+pydantic = ">=1.9.0,<3"
+sniffio = "*"
+typing-extensions = ">=4.10,<5"
+
+[package.extras]
+bedrock = ["boto3 (>=1.28.57)", "botocore (>=1.31.57)"]
+vertex = ["google-auth (>=2,<3)"]
+
+[[package]]
 name = "anyio"
 version = "4.8.0"
 description = "High level compatibility layer for multiple asynchronous event loop implementations"
@@ -448,18 +472,18 @@ testing = ["hatch", "pre-commit", "pytest", "tox"]
 
 [[package]]
 name = "fastapi"
-version = "0.115.8"
+version = "0.115.11"
 description = "FastAPI framework, high performance, easy to learn, fast to code, ready for production"
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "fastapi-0.115.8-py3-none-any.whl", hash = "sha256:753a96dd7e036b34eeef8babdfcfe3f28ff79648f86551eb36bfc1b0bf4a8cbf"},
-    {file = "fastapi-0.115.8.tar.gz", hash = "sha256:0ce9111231720190473e222cdf0f07f7206ad7e53ea02beb1d2dc36e2f0741e9"},
+    {file = "fastapi-0.115.11-py3-none-any.whl", hash = "sha256:32e1541b7b74602e4ef4a0260ecaf3aadf9d4f19590bba3e1bf2ac4666aa2c64"},
+    {file = "fastapi-0.115.11.tar.gz", hash = "sha256:cc81f03f688678b92600a65a5e618b93592c65005db37157147204d8924bf94f"},
 ]
 
 [package.dependencies]
 pydantic = ">=1.7.4,<1.8 || >1.8,<1.8.1 || >1.8.1,<2.0.0 || >2.0.0,<2.0.1 || >2.0.1,<2.1.0 || >2.1.0,<3.0.0"
-starlette = ">=0.40.0,<0.46.0"
+starlette = ">=0.40.0,<0.47.0"
 typing-extensions = ">=4.8.0"
 
 [package.extras]
@@ -979,13 +1003,13 @@ files = [
 
 [[package]]
 name = "openai"
-version = "1.63.2"
+version = "1.65.4"
 description = "The official Python library for the openai API"
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "openai-1.63.2-py3-none-any.whl", hash = "sha256:1f38b27b5a40814c2b7d8759ec78110df58c4a614c25f182809ca52b080ff4d4"},
-    {file = "openai-1.63.2.tar.gz", hash = "sha256:aeabeec984a7d2957b4928ceaa339e2ead19c61cfcf35ae62b7c363368d26360"},
+    {file = "openai-1.65.4-py3-none-any.whl", hash = "sha256:15566d46574b94eae3d18efc2f9a4ebd1366d1d44bfc1bdafeea7a5cf8271bcb"},
+    {file = "openai-1.65.4.tar.gz", hash = "sha256:0b08c58625d556f5c6654701af1023689c173eb0989ce8f73c7fd0eb22203c76"},
 ]
 
 [package.dependencies]
@@ -1468,13 +1492,13 @@ windows-terminal = ["colorama (>=0.4.6)"]
 
 [[package]]
 name = "pyperf"
-version = "2.8.1"
+version = "2.9.0"
 description = "Python module to run and analyze benchmarks"
 optional = false
 python-versions = ">=3.9"
 files = [
-    {file = "pyperf-2.8.1-py3-none-any.whl", hash = "sha256:12a974a800a96568575be51d229b88e6b14197d02440afd98e908d80a42a1a44"},
-    {file = "pyperf-2.8.1.tar.gz", hash = "sha256:ef103e21a4d04999315003026a2d659c48a7cfce5e1440f03d6e72591400713a"},
+    {file = "pyperf-2.9.0-py3-none-any.whl", hash = "sha256:215673fb60f3fbbc6c7a90b609b0806d8466fded8dd502bf5731e2b92506076e"},
+    {file = "pyperf-2.9.0.tar.gz", hash = "sha256:dbe0feef8ec1a465df191bba2576149762d15a8c9985c9fea93ab625d875c362"},
 ]
 
 [package.dependencies]
@@ -1801,13 +1825,13 @@ files = [
 
 [[package]]
 name = "starlette"
-version = "0.45.3"
+version = "0.46.0"
 description = "The little ASGI library that shines."
 optional = false
 python-versions = ">=3.9"
 files = [
-    {file = "starlette-0.45.3-py3-none-any.whl", hash = "sha256:dfb6d332576f136ec740296c7e8bb8c8a7125044e7c6da30744718880cdd059d"},
-    {file = "starlette-0.45.3.tar.gz", hash = "sha256:2cbcba2a75806f8a41c722141486f37c28e30a0921c5f6fe4346cb0dcee1302f"},
+    {file = "starlette-0.46.0-py3-none-any.whl", hash = "sha256:913f0798bd90ba90a9156383bcf1350a17d6259451d0d8ee27fc0cf2db609038"},
+    {file = "starlette-0.46.0.tar.gz", hash = "sha256:b359e4567456b28d473d0193f34c0de0ed49710d75ef183a74a5ce0499324f50"},
 ]
 
 [package.dependencies]
@@ -1928,13 +1952,13 @@ types-urllib3 = "*"
 
 [[package]]
 name = "types-requests"
-version = "2.32.0.20241016"
+version = "2.32.0.20250306"
 description = "Typing stubs for requests"
 optional = false
-python-versions = ">=3.8"
+python-versions = ">=3.9"
 files = [
-    {file = "types-requests-2.32.0.20241016.tar.gz", hash = "sha256:0d9cad2f27515d0e3e3da7134a1b6f28fb97129d86b867f24d9c726452634d95"},
-    {file = "types_requests-2.32.0.20241016-py3-none-any.whl", hash = "sha256:4195d62d6d3e043a4eaaf08ff8a62184584d2e8684e9d2aa178c7915a7da3747"},
+    {file = "types_requests-2.32.0.20250306-py3-none-any.whl", hash = "sha256:25f2cbb5c8710b2022f8bbee7b2b66f319ef14aeea2f35d80f18c9dbf3b60a0b"},
+    {file = "types_requests-2.32.0.20250306.tar.gz", hash = "sha256:0962352694ec5b2f95fda877ee60a159abdf84a0fc6fdace599f20acb41a03d1"},
 ]
 
 [package.dependencies]
@@ -1942,13 +1966,13 @@ urllib3 = ">=2"
 
 [[package]]
 name = "types-tqdm"
-version = "4.67.0.20241221"
+version = "4.67.0.20250301"
 description = "Typing stubs for tqdm"
 optional = false
-python-versions = ">=3.8"
+python-versions = ">=3.9"
 files = [
-    {file = "types_tqdm-4.67.0.20241221-py3-none-any.whl", hash = "sha256:a1f1c9cda5c2d8482d2c73957a5398bfdedda10f6bc7b3b4e812d5c910486d29"},
-    {file = "types_tqdm-4.67.0.20241221.tar.gz", hash = "sha256:e56046631056922385abe89aeb18af5611f471eadd7918a0ad7f34d84cd4c8cc"},
+    {file = "types_tqdm-4.67.0.20250301-py3-none-any.whl", hash = "sha256:8af97deb8e6874af833555dc1fe0fcd456b1a789470bf6cd8813d4e7ee4f6c5b"},
+    {file = "types_tqdm-4.67.0.20250301.tar.gz", hash = "sha256:5e89a38ad89b867823368eb97d9f90d2fc69806bb055dde62716a05da62b5e0d"},
 ]
 
 [package.dependencies]
@@ -2412,4 +2436,4 @@ vcr = []
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<4.0"
-content-hash = "0b91b9689e464a55364fd3f493dd3fd15fbac48f299f755cba14d61bedef1935"
+content-hash = "58926db79a7544278e7b234fb89860273a78a55d040f7651f313bf8f8b63d0cc"
