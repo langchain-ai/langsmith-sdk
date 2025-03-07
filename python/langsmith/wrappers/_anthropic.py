@@ -10,7 +10,6 @@ from typing import (
     List,
     Mapping,
     Optional,
-    Self,
     Sequence,
     Type,
     TypeVar,
@@ -18,7 +17,7 @@ from typing import (
 )
 
 from pydantic import TypeAdapter
-from typing_extensions import TypedDict
+from typing_extensions import Self, TypedDict
 
 from langsmith import client as ls_client
 from langsmith import run_helpers
