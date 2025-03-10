@@ -5,14 +5,12 @@ from __future__ import annotations
 import asyncio
 import datetime
 import uuid
+from collections.abc import AsyncIterator, Mapping, Sequence
 from typing import (
     Any,
-    AsyncIterator,
     Dict,
     List,
-    Mapping,
     Optional,
-    Sequence,
     Tuple,
     Union,
     cast,
@@ -1170,3 +1168,162 @@ class AsyncClient:
         for ex in resp.json()["examples"]:
             examples.append(ls_schemas.ExampleSearch(**ex, dataset_id=dataset_id))
         return examples
+
+    async def pull_prompt_commit(
+        self,
+        prompt_identifier: str,
+        *,
+        include_model: Optional[bool] = False,
+    ) -> ls_schemas.PromptCommit:
+        """Pull a prompt object from the LangSmith API.
+
+        Args:
+            prompt_identifier (str): The identifier of the prompt.
+            include_model (Optional[bool], default=False): Whether to include the model
+                information in the prompt data.
+
+        Returns:
+            PromptCommit: The prompt object.
+
+        Raises:
+            ValueError: If no commits are found for the prompt.
+        """
+        owner, prompt_name, commit_hash = ls_utils.parse_prompt_identifier(
+            prompt_identifier
+        )
+        response = await self._arequest_with_retries(
+            "GET",
+            (
+                f"/commits/{owner}/{prompt_name}/{commit_hash}"
+                f"{'?include_model=true' if include_model else ''}"
+            ),
+        )
+        return ls_schemas.PromptCommit(
+            **{"owner": owner, "repo": prompt_name, **response.json()}
+        )
+
+    async def list_prompt_commits(
+        self,
+        prompt_identifier: str,
+        *,
+        limit: Optional[int] = None,
+        offset: int = 0,
+        include_model: bool = False,
+    ) -> AsyncIterator[ls_schemas.ListedPromptCommit]:
+        """List commits for a given prompt.
+
+        Args:
+            prompt_identifier (str): The identifier of the prompt in the format 'owner/repo_name'.
+            limit (Optional[int]): The maximum number of commits to return. If None, returns all commits. Defaults to None.
+            offset (int, default=0): The number of commits to skip before starting to return results. Defaults to 0.
+            include_model (bool, default=False): Whether to include the model information in the commit data. Defaults to False.
+
+        Yields:
+            A ListedPromptCommit object for each commit.
+
+        Note:
+            This method uses pagination to retrieve commits. It will make multiple API calls if necessary to retrieve all commits
+            or up to the specified limit.
+        """
+        owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
+
+        params = {
+            "offset": offset,
+            "include_model": "true" if include_model else None,
+        }
+
+        path = f"/prompts/{owner}/{prompt_name}/commits"
+        ix = 0
+        async for commit in self._aget_paginated_list(path, params=params):
+            yield ls_schemas.ListedPromptCommit(
+                **{"owner": owner, "repo": prompt_name, **commit}
+            )
+            ix += 1
+            if limit is not None and ix >= limit:
+                break
+
+    async def pull_prompt(
+        self, prompt_identifier: str, *, include_model: Optional[bool] = False
+    ) -> Any:
+        """Pull a prompt and return it as a LangChain PromptTemplate.
+
+        This method requires `langchain_core`.
+
+        Args:
+            prompt_identifier (str): The identifier of the prompt.
+            include_model (Optional[bool], default=False): Whether to include the model information in the prompt data.
+
+        Returns:
+            Any: The prompt object in the specified format.
+        """
+        try:
+            import contextlib
+            import json
+
+            from langchain_core.language_models.base import BaseLanguageModel
+            from langchain_core.load.load import loads
+            from langchain_core.output_parsers import BaseOutputParser
+            from langchain_core.prompts import BasePromptTemplate
+            from langchain_core.prompts.structured import StructuredPrompt
+            from langchain_core.runnables.base import RunnableBinding, RunnableSequence
+        except ImportError:
+            raise ImportError(
+                "The client.pull_prompt function requires the langchain_core"
+                "package to run.\nInstall with `pip install langchain_core`"
+            )
+        try:
+            from langchain_core._api import suppress_langchain_beta_warning
+        except ImportError:
+
+            @contextlib.contextmanager
+            def suppress_langchain_beta_warning():
+                yield
+
+        prompt_object = await self.pull_prompt_commit(
+            prompt_identifier, include_model=include_model
+        )
+        with suppress_langchain_beta_warning():
+            prompt = loads(json.dumps(prompt_object.manifest))
+
+        if (
+            isinstance(prompt, BasePromptTemplate)
+            or isinstance(prompt, RunnableSequence)
+            and isinstance(prompt.first, BasePromptTemplate)
+        ):
+            prompt_template = (
+                prompt
+                if isinstance(prompt, BasePromptTemplate)
+                else (
+                    prompt.first
+                    if isinstance(prompt, RunnableSequence)
+                    and isinstance(prompt.first, BasePromptTemplate)
+                    else prompt
+                )
+            )
+            if include_model and prompt_object.model is not None:
+                if "model" in prompt_object.model and not isinstance(
+                    prompt, RunnableSequence
+                ):
+                    with suppress_langchain_beta_warning():
+                        # Import here to avoid breaking the whole method if
+                        # user doesn't have langchain-openai installed
+                        try:
+                            from langchain_openai import ChatOpenAI
+                        except ImportError:
+                            return prompt
+
+                        model = prompt_object.model
+                        model_name = model.get("model")
+                        temperature = model.get("temperature", 0)
+                        model_kwargs = model.get("model_kwargs", {})
+                        if model_name:
+                            llm = ChatOpenAI(
+                                model=model_name,
+                                temperature=temperature,
+                                model_kwargs=model_kwargs,
+                            )
+                            return prompt_template | llm
+                elif isinstance(prompt, RunnableSequence):
+                    return prompt
+
+        return prompt
