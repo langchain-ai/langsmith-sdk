@@ -141,6 +141,7 @@ interface _ExperimentManagerArgs {
   numRepetitions?: number;
   _runsArray?: Run[];
   includeAttachments?: boolean;
+  uploadResults?: boolean;
 }
 
 type BaseEvaluateOptions = {
@@ -197,6 +198,11 @@ export interface EvaluateOptions extends BaseEvaluateOptions {
    * @default false
    */
   includeAttachments?: boolean;
+  /**
+   * Whether to upload results to LangSmith.
+   * @default true
+   */
+  uploadResults?: boolean;
 }
 
 export interface ComparativeEvaluateOptions extends BaseEvaluateOptions {
@@ -276,6 +282,8 @@ export class _ExperimentManager {
   _description?: string;
 
   _includeAttachments?: boolean;
+
+  _uploadResults = true;
 
   get experimentName(): string {
     if (this._experimentName) {
@@ -394,6 +402,7 @@ export class _ExperimentManager {
     this._summaryResults = args.summaryResults;
     this._numRepetitions = args.numRepetitions;
     this._includeAttachments = args.includeAttachments;
+    this._uploadResults = args.uploadResults ?? true;
   }
 
   _getExperiment(): TracerSession {
@@ -633,7 +642,8 @@ export class _ExperimentManager {
           this.experimentName,
           this._metadata,
           this.client,
-          this._includeAttachments
+          this._includeAttachments,
+          this._uploadResults
         );
       }
     } else {
@@ -652,7 +662,8 @@ export class _ExperimentManager {
             this.experimentName,
             this._metadata,
             this.client,
-            this._includeAttachments
+            this._includeAttachments,
+            this._uploadResults
           )
         );
       }
@@ -692,9 +703,12 @@ export class _ExperimentManager {
           example,
           options
         );
-        evaluationResults.results.push(
-          ...(await fields.client.logEvaluationFeedback(evaluatorResponse, run))
-        );
+        const evalResults = evaluatorResponse.results || [];
+        evaluationResults.results.push(...evalResults);
+
+        if (this._uploadResults) {
+          await fields.client.logEvaluationFeedback(evaluatorResponse, run);
+        }
       } catch (e) {
         console.error(
           `Error running evaluator ${evaluator.evaluateRun.name} on run ${run.id}: ${e}`
@@ -974,6 +988,7 @@ async function _evaluate(
     runs: newRuns ?? undefined,
     numRepetitions: fields.numRepetitions ?? 1,
     includeAttachments: standardFields.includeAttachments,
+    uploadResults: standardFields.uploadResults,
   }).start();
 
   if (_isCallable(target)) {
@@ -1004,7 +1019,8 @@ async function _forward(
   experimentName: string,
   metadata: KVMap,
   client: Client,
-  includeAttachments?: boolean
+  includeAttachments?: boolean,
+  uploadResults = true
 ): Promise<_ForwardResults> {
   let run: BaseRun | null = null;
 
@@ -1023,7 +1039,7 @@ async function _forward(
         : new Date(example.created_at).toISOString(),
     },
     client,
-    tracingEnabled: true,
+    tracingEnabled: uploadResults,
   };
 
   const wrappedFn =
@@ -1037,20 +1053,21 @@ async function _forward(
           } catch {
             // no-op
           }
-          // Issue with retrieving LangChain callbacks, rely on interop
-          if (langChainCallbacks === undefined && !includeAttachments) {
-            return await fn.invoke(inputs);
-          } else if (langChainCallbacks === undefined && includeAttachments) {
-            return await fn.invoke(inputs, {
-              attachments: example.attachments,
-            });
-          } else if (!includeAttachments) {
-            return await fn.invoke(inputs, { callbacks: langChainCallbacks });
+          // Create options object with proper typing to avoid property access errors
+          const invokeOptions: Record<string, unknown> = {};
+
+          if (includeAttachments && example.attachments) {
+            invokeOptions.attachments = example.attachments;
+          }
+
+          if (langChainCallbacks !== undefined && uploadResults) {
+            invokeOptions.callbacks = langChainCallbacks;
+          }
+
+          if (Object.keys(invokeOptions).length > 0) {
+            return await fn.invoke(inputs, invokeOptions as TargetConfigT);
           } else {
-            return await fn.invoke(inputs, {
-              attachments: example.attachments,
-              callbacks: langChainCallbacks,
-            });
+            return await fn.invoke(inputs);
           }
         }, options)
       : traceable(fn, options);
