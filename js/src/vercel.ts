@@ -523,8 +523,8 @@ export class AISDKExporter {
         session_name:
           getLangSmithEnvironmentVariable("PROJECT") ??
           getLangSmithEnvironmentVariable("SESSION"),
-        start_time: Math.min(parsedStart, parsedEnd),
-        end_time: Math.max(parsedStart, parsedEnd),
+        start_time: new Date(Math.min(parsedStart, parsedEnd)).toISOString(),
+        end_time: new Date(Math.max(parsedStart, parsedEnd)).toISOString(),
       };
 
       return config;

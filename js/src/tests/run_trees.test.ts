@@ -94,7 +94,7 @@ test("distributed", () => {
   const parent = new RunTree({
     name: "parent_1",
     id: "00000000-0000-0000-0000-00000000000",
-    start_time: Date.parse("2021-05-03T00:00:00.000Z"),
+    start_time: "2021-05-03T00:00:00.000Z",
   });
 
   const serialized = parent.toHeaders();
@@ -102,7 +102,7 @@ test("distributed", () => {
   const child2 = RunTree.fromHeaders(serialized)?.createChild({
     name: "child_2",
     id: "00000000-0000-0000-0000-00000000001",
-    start_time: Date.parse("2021-05-03T00:00:01.000Z"),
+    start_time: "2021-05-03T00:00:01.000Z",
   });
 
   expect(JSON.parse(JSON.stringify(child2))).toMatchObject({

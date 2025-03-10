@@ -28,7 +28,7 @@ test.concurrent(
 
     const runId = uuidv4();
     const dottedOrder = convertToDottedOrderFormat(
-      new Date().getTime() / 1000,
+      (new Date().getTime() / 1000).toString(),
       runId
     );
     await langchainClient.createRun({
@@ -76,7 +76,7 @@ test.concurrent(
     const createRun = async () => {
       const runId = uuidv4();
       const dottedOrder = convertToDottedOrderFormat(
-        new Date().getTime() / 1000,
+        (new Date().getTime() / 1000).toString(),
         runId
       );
       await langchainClient.createRun({
@@ -93,7 +93,7 @@ test.concurrent(
         outputs: { output: ["Hi"] },
         dotted_order: dottedOrder,
         trace_id: runId,
-        end_time: Math.floor(new Date().getTime() / 1000),
+        end_time: Math.floor(new Date().getTime() / 1000).toString(),
       });
       await Promise.all([
         waitUntilRunFound(langchainClient, runId, true),
@@ -125,7 +125,7 @@ test.concurrent(
 
     const runId = uuidv4();
     const dottedOrder = convertToDottedOrderFormat(
-      new Date().getTime() / 1000,
+      (new Date().getTime() / 1000).toString(),
       runId
     );
     await langchainClient.createRun({
@@ -143,7 +143,7 @@ test.concurrent(
       outputs: { output: ["Hi"] },
       dotted_order: dottedOrder,
       trace_id: runId,
-      end_time: Math.floor(new Date().getTime() / 1000),
+      end_time: Math.floor(new Date().getTime() / 1000).toString(),
     });
     await Promise.all([
       waitUntilRunFound(langchainClient, runId, true),
@@ -206,7 +206,7 @@ test.concurrent(
 
     const runId = uuidv4();
     const dottedOrder = convertToDottedOrderFormat(
-      new Date().getTime() / 1000,
+      (new Date().getTime() / 1000).toString(),
       runId
     );
     const pathname = path.join(
@@ -231,7 +231,7 @@ test.concurrent(
       outputs: { output: ["Hi"] },
       dotted_order: dottedOrder,
       trace_id: runId,
-      end_time: Math.floor(new Date().getTime() / 1000),
+      end_time: Math.floor(new Date().getTime() / 1000).toString(),
     });
 
     await Promise.all([

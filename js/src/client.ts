@@ -236,8 +236,8 @@ interface CreateRunParams {
   inputs: KVMap;
   run_type: string;
   id?: string;
-  start_time?: number;
-  end_time?: number;
+  start_time?: string;
+  end_time?: string;
   extra?: KVMap;
   error?: string;
   serialized?: object;
@@ -934,7 +934,7 @@ export class Client implements LangSmithTracingClientInterface {
     const runCreate: RunCreate = this.prepareRunCreateOrUpdateInputs({
       session_name,
       ...run,
-      start_time: run.start_time ?? Date.now(),
+      start_time: run.start_time ?? new Date().toISOString(),
     });
     if (
       this.autoBatchTracing &&

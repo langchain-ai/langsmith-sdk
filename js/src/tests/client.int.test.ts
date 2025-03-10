@@ -302,8 +302,8 @@ test.concurrent(
       run_type: "llm",
       inputs: { prompt: "hello world" },
       outputs: { generation: "hi there" },
-      start_time: new Date().getTime(),
-      end_time: new Date().getTime(),
+      start_time: new Date().getTime().toString(),
+      end_time: new Date().getTime().toString(),
     });
 
     const runId2 = uuidv4();
@@ -314,8 +314,8 @@ test.concurrent(
       run_type: "llm",
       inputs: { prompt: "hello world 2" },
       outputs: { generation: "hi there 2" },
-      start_time: new Date().getTime(),
-      end_time: new Date().getTime(),
+      start_time: new Date().getTime().toString(),
+      end_time: new Date().getTime().toString(),
     });
 
     await langchainClient.createFeedback(runId, "test_feedback", {
@@ -345,8 +345,8 @@ test.concurrent(
       run_type: "llm",
       inputs: { prompt: "hello world" },
       outputs: { generation: "hi there" },
-      start_time: new Date().getTime(),
-      end_time: new Date().getTime(),
+      start_time: new Date().getTime().toString(),
+      end_time: new Date().getTime().toString(),
     });
 
     const runId2 = uuidv4();
@@ -356,12 +356,12 @@ test.concurrent(
       name: "test_run_2",
       run_type: "llm",
       inputs: { messages: "hello world 2" },
-      start_time: new Date().getTime(),
+      start_time: new Date().getTime().toString(),
     });
 
     await langchainClient.updateRun(runId2, {
       outputs: { generation: "hi there 2" },
-      end_time: new Date().getTime(),
+      end_time: new Date().getTime().toString(),
     });
     await waitUntilRunFound(langchainClient, runId, false);
     const run1 = await langchainClient.readRun(runId);
@@ -395,8 +395,8 @@ test.concurrent(
       run_type: "llm",
       inputs: { prompt: "hello world" },
       outputs: { generation: "hi there" },
-      start_time: new Date().getTime(),
-      end_time: new Date().getTime(),
+      start_time: new Date().getTime().toString(),
+      end_time: new Date().getTime().toString(),
     });
 
     const runId2 = uuidv4();
@@ -406,7 +406,7 @@ test.concurrent(
       name: "test_run_2_with_revision",
       run_type: "llm",
       inputs: { messages: "hello world 2" },
-      start_time: new Date().getTime(),
+      start_time: new Date().getTime().toString(),
       revision_id: "different_revision_id",
     });
     await waitUntilRunFound(
