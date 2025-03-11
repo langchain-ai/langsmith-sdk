@@ -70,7 +70,7 @@ multipart = "^1.0.0"
 httpx = ">=0.23.0,<0.28.0"
 
 [tool.poetry.group.lint.dependencies]
-openai = "^1.10"
+openai = "^1.55"
 
 
 [tool.poetry.group.test.dependencies]
