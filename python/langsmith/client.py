@@ -100,8 +100,13 @@ from langsmith._internal._operations import (
     serialized_feedback_operation_to_multipart_parts_and_context,
     serialized_run_operation_to_multipart_parts_and_context,
 )
+from langsmith._internal.otel._otel_exporter import OTELExporter
+from langsmith._internal.otel._otel_client import get_otlp_tracer_provider
 from langsmith._internal._serde import dumps_json as _dumps_json
 from langsmith.schemas import AttachmentInfo
+
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
 
 try:
     from zoneinfo import ZoneInfo  # type: ignore[import-not-found]
@@ -398,6 +403,7 @@ class Client:
         "compressed_traces",
         "_data_available_event",
         "_futures",
+        "otel_exporter",
     ]
 
     def __init__(
@@ -415,6 +421,7 @@ class Client:
         hide_outputs: Optional[Union[Callable[[dict], dict], bool]] = None,
         info: Optional[Union[dict, ls_schemas.LangSmithInfo]] = None,
         api_urls: Optional[Dict[str, str]] = None,
+        otel_tracer_provider: Optional[TracerProvider] = None,
     ) -> None:
         """Initialize a Client instance.
 
@@ -446,6 +453,8 @@ class Client:
                 URL in the dictionary. However, ONLY Runs are written (POST and PATCH)
                 to all URLs in the dictionary. Feedback, sessions, datasets, examples,
                 annotation queues and evaluation results are only written to the first.
+            otel_tracer_provider (Optional[TracerProvider]): Optional tracer provider for OpenTelemetry integration.
+                If not provided, a LangSmith-specific tracer provider will be used.
 
         Raises:
             LangSmithUserError: If the API key is not provided when using the hosted service.
@@ -576,6 +585,16 @@ class Client:
         self._settings: Union[ls_schemas.LangSmithSettings, None] = None
 
         self._manual_cleanup = False
+
+        if ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED")):
+            if otel_tracer_provider is None:
+                otel_tracer_provider = get_otlp_tracer_provider()
+            # Set as global tracer provider if we're creating a new one
+            trace.set_tracer_provider(otel_tracer_provider)
+        
+            self.otel_exporter: Optional[OTELExporter] = OTELExporter(tracer_provider=otel_tracer_provider)
+        else:
+            self.otel_exporter = None
 
     def _repr_html_(self) -> str:
         """Return an HTML representation of the instance with a link to the URL.
@@ -5592,6 +5611,7 @@ class Client:
                     self.tracing_queue is not None or self.compressed_traces is not None
                 )
                 and feedback.trace_id is not None
+                and self.otel_exporter is None
             ):
                 serialized_op = serialize_feedback_dict(feedback)
                 if self.compressed_traces is not None:
