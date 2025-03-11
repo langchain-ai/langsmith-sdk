@@ -110,11 +110,14 @@ except ImportError:
     class ZoneInfo:  # type: ignore[no-redef]
         """Introduced in python 3.9."""
 
+
 try:
-    from opentelemetry.sdk.trace import TracerProvider # type: ignore[import-untyped]
+    from opentelemetry.sdk.trace import TracerProvider  # type: ignore[import-untyped]
 except ImportError:
+
     class TracerProvider:  # type: ignore[no-redef]
         """Used for optional OTEL tracing."""
+
 
 if TYPE_CHECKING:
     import pandas as pd  # type: ignore
@@ -589,7 +592,10 @@ class Client:
         if ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED")):
             try:
                 from opentelemetry import trace as otel_trace
-                from langsmith._internal.otel._otel_client import get_otlp_tracer_provider
+
+                from langsmith._internal.otel._otel_client import (
+                    get_otlp_tracer_provider,
+                )
                 from langsmith._internal.otel._otel_exporter import OTELExporter
             except ImportError as e:
                 raise ImportError(

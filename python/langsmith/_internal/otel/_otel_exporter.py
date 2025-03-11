@@ -3,15 +3,18 @@
 import datetime
 import logging
 import uuid
-from typing import Any, List, Optional, Tuple, TYPE_CHECKING
+from typing import Any, List, Optional, Tuple
+
+from opentelemetry import trace  # type: ignore[import-untyped]
+from opentelemetry.trace import (  # type: ignore[import-untyped]
+    Span,
+    set_span_in_context,
+)
 
 from langsmith._internal import _orjson
 from langsmith._internal._operations import (
     SerializedRunOperation,
 )
-
-from opentelemetry import trace  # type: ignore[import-untyped]
-from opentelemetry.trace import Span, set_span_in_context  # type: ignore[import-untyped]
 
 logger = logging.getLogger(__name__)
 
