@@ -105,8 +105,14 @@ from langsmith._internal.otel._otel_client import get_otlp_tracer_provider
 from langsmith._internal._serde import dumps_json as _dumps_json
 from langsmith.schemas import AttachmentInfo
 
-from opentelemetry import trace
-from opentelemetry.sdk.trace import TracerProvider
+try:
+    from opentelemetry import trace as otel_trace
+    from opentelemetry.sdk.trace import TracerProvider
+except ImportError:
+    # These imports are only available if the 'otel' extra is installed
+    # via pip install langsmith[otel]
+    otel_trace = None  # type: ignore
+    TracerProvider = None  # type: ignore
 
 try:
     from zoneinfo import ZoneInfo  # type: ignore[import-not-found]
@@ -590,7 +596,7 @@ class Client:
             if otel_tracer_provider is None:
                 otel_tracer_provider = get_otlp_tracer_provider()
             # Set as global tracer provider if we're creating a new one
-            trace.set_tracer_provider(otel_tracer_provider)
+            otel_trace.set_tracer_provider(otel_tracer_provider)
         
             self.otel_exporter: Optional[OTELExporter] = OTELExporter(tracer_provider=otel_tracer_provider)
         else:

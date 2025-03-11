@@ -27,9 +27,7 @@ def get_otlp_tracer_provider() -> TracerProvider:
     # Set LangSmith-specific defaults if not already set in environment
     if "OTEL_EXPORTER_OTLP_ENDPOINT" not in os.environ:
         ls_endpoint = ls_utils.get_api_url(None)
-        # os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = f"{ls_endpoint}/otel"
-        os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "http://localhost:8080/otel"
-        print(f"OTEL_EXPORTER_OTLP_ENDPOINT set to {os.environ['OTEL_EXPORTER_OTLP_ENDPOINT']}")
+        os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = f"{ls_endpoint}/otel"
     
     # Configure headers with API key and project if available
     if "OTEL_EXPORTER_OTLP_HEADERS" not in os.environ:
@@ -49,7 +47,6 @@ def get_otlp_tracer_provider() -> TracerProvider:
     
     tracer_provider = TracerProvider(resource=resource)
     
-    # The OTLPSpanExporter will use the environment variables we just set
     otlp_exporter = OTLPSpanExporter()
     span_processor = BatchSpanProcessor(otlp_exporter)
     tracer_provider.add_span_processor(span_processor)
