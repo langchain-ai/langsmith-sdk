@@ -48,6 +48,17 @@ def _get_not_given() -> Optional[Type]:
         return None
 
 
+def _process_inputs(inputs: dict) -> dict:
+    inputs = _strip_not_given(inputs)
+    if isinstance(inputs.get("input"), str):
+        inputs["input"] = [{"role": "user", "content": inputs["input"]}]
+    if "instructions" in inputs and "input" in inputs:
+        inputs["input"] = [
+            {"role": "system", "content": inputs.pop("instructions")}
+        ] + inputs["input"]
+    return inputs
+
+
 def _strip_not_given(d: dict) -> dict:
     try:
         not_given = _get_not_given()
@@ -245,7 +256,7 @@ def _get_wrapper(
             name=name,
             run_type="llm",
             reduce_fn=reduce_fn if stream else None,
-            process_inputs=_strip_not_given,
+            process_inputs=_process_inputs,
             _invocation_params_fn=invocation_params_fn,
             process_outputs=process_outputs,
             **textra,
@@ -260,7 +271,7 @@ def _get_wrapper(
             name=name,
             run_type="llm",
             reduce_fn=reduce_fn if stream else None,
-            process_inputs=_strip_not_given,
+            process_inputs=_process_inputs,
             _invocation_params_fn=invocation_params_fn,
             process_outputs=process_outputs,
             **textra,
@@ -284,7 +295,7 @@ def _get_parse_wrapper(
             name=name,
             run_type="llm",
             reduce_fn=None,
-            process_inputs=_strip_not_given,
+            process_inputs=_process_inputs,
             _invocation_params_fn=invocation_params_fn,
             process_outputs=_process_chat_completion,
             **textra,
@@ -298,7 +309,7 @@ def _get_parse_wrapper(
             name=name,
             run_type="llm",
             reduce_fn=None,
-            process_inputs=_strip_not_given,
+            process_inputs=_process_inputs,
             _invocation_params_fn=invocation_params_fn,
             process_outputs=_process_chat_completion,
             **textra,
@@ -401,10 +412,15 @@ def wrap_openai(
         def process_outputs(response: Any):
             if response:
                 try:
-                    return {
-                        "output_text": response.output_text,
-                        **response.model_dump(mode="json"),
-                    }
+                    response_metadata = response.model_dump(
+                        mode="json", exclude_none=True
+                    )
+                    usage_metadata = response_metadata.pop("usage", None)
+                    message = response_metadata.pop("output")[0]
+                    message.pop("type", None)
+                    message["response_metadata"] = response_metadata
+                    message["usage_metadata"] = usage_metadata
+                    return message
                 except Exception:
                     return {"output": response}
             return {}
@@ -412,7 +428,7 @@ def wrap_openai(
         if hasattr(client.responses, "create"):
             client.responses.create = _get_wrapper(  # type: ignore[method-assign]
                 client.responses.create,
-                "openai.responses.create",
+                chat_name,
                 _reduce_response,
                 process_outputs=process_outputs,
                 tracing_extra=tracing_extra,
@@ -423,7 +439,7 @@ def wrap_openai(
         if hasattr(client.responses, "parse"):
             client.responses.parse = _get_parse_wrapper(  # type: ignore[method-assign]
                 client.responses.parse,
-                "openai.responses.parse",
+                chat_name,
                 tracing_extra=tracing_extra,
                 invocation_params_fn=functools.partial(
                     _infer_invocation_params, "chat"
