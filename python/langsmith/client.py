@@ -100,9 +100,9 @@ from langsmith._internal._operations import (
     serialized_feedback_operation_to_multipart_parts_and_context,
     serialized_run_operation_to_multipart_parts_and_context,
 )
-from langsmith._internal.otel._otel_exporter import OTELExporter
-from langsmith._internal.otel._otel_client import get_otlp_tracer_provider
 from langsmith._internal._serde import dumps_json as _dumps_json
+from langsmith._internal.otel._otel_client import get_otlp_tracer_provider
+from langsmith._internal.otel._otel_exporter import OTELExporter
 from langsmith.schemas import AttachmentInfo
 
 try:
@@ -597,8 +597,10 @@ class Client:
                 otel_tracer_provider = get_otlp_tracer_provider()
             # Set as global tracer provider if we're creating a new one
             otel_trace.set_tracer_provider(otel_tracer_provider)
-        
-            self.otel_exporter: Optional[OTELExporter] = OTELExporter(tracer_provider=otel_tracer_provider)
+
+            self.otel_exporter: Optional[OTELExporter] = OTELExporter(
+                tracer_provider=otel_tracer_provider
+            )
         else:
             self.otel_exporter = None
 

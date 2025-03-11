@@ -1,18 +1,24 @@
 """OpenTelemetry exporter for LangSmith runs."""
+
 import datetime
-import json
 import logging
 import uuid
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
-from opentelemetry import trace
 from langsmith._internal import _orjson
-
-from opentelemetry.trace import set_span_in_context, Span
-
 from langsmith._internal._operations import (
     SerializedRunOperation,
 )
+
+try:
+    from opentelemetry import trace
+    from opentelemetry.trace import Span, set_span_in_context
+except ImportError:
+    # These imports are only available if the 'otel' extra is installed
+    # via pip install langsmith[otel]
+    trace = None  # type: ignore
+    set_span_in_context = None  # type: ignore
+    Span = None  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -52,32 +58,28 @@ GEN_AI_ASSISTANT_MESSAGE = "gen_ai.assistant.message"
 GEN_AI_CHOICE = "gen_ai.choice"
 
 
-
 class OTELExporter:
     __slots__ = ["_tracer", "_spans"]
     """OpenTelemetry exporter for LangSmith runs."""
-    
+
     def __init__(self, tracer_provider=None):
         """Initialize the OTEL exporter.
-        
+
         Args:
             tracer_provider: Optional tracer provider to use. If not provided,
                 the global tracer provider will be used.
         """
-        self._tracer = trace.get_tracer(
-            "langsmith",
-            tracer_provider=tracer_provider
-        )
+        self._tracer = trace.get_tracer("langsmith", tracer_provider=tracer_provider)
         self._spans = {}
 
     def export_batch(self, operations: List[SerializedRunOperation]) -> None:
         """Export a batch of serialized run operations to OTEL.
-        
+
         Args:
             operations: List of serialized run operations to export.
         """
         # Create a dictionary mapping run IDs to their operations
-        
+
         for op in operations:
             try:
                 run_info = self._deserialize_run_info(op)
@@ -91,15 +93,16 @@ class OTELExporter:
                     self._update_span_for_run(op, run_info)
             except Exception as e:
                 logger.exception(f"Error processing operation {op.id}: {e}")
-    
+
     def _deserialize_run_info(self, op: SerializedRunOperation) -> Optional[dict]:
         """Deserialize the run info from the operation.
-        
+
         Args:
             op: The serialized run operation.
-            
+
         Returns:
-            The deserialized run info as a dictionary, or None if deserialization failed.
+            The deserialized run info as a dictionary, or None if deserialization
+            failed.
         """
         try:
             run_info = _orjson.loads(op._none)
@@ -109,19 +112,19 @@ class OTELExporter:
         except Exception as e:
             logger.exception(f"Failed to deserialize run info for {op.id}: {e}")
             return None
-    
+
     def _create_span_for_run(
-        self, 
-        op: SerializedRunOperation, 
-        run_info: dict, 
+        self,
+        op: SerializedRunOperation,
+        run_info: dict,
     ) -> Optional[Span]:
         """Create an OpenTelemetry span for a run operation.
-        
+
         Args:
             op: The serialized run operation.
             run_info: The deserialized run info.
             parent_span: Optional parent span.
-            
+
         Returns:
             The created span, or None if creation failed.
         """
@@ -131,7 +134,7 @@ class OTELExporter:
 
             end_time = run_info.get("end_time")
             end_time_utc_nano = self._as_utc_nano(end_time)
-        
+
             # Start the span
             parent_run_id = run_info.get("parent_run_id")
             if parent_run_id is not None and uuid.UUID(parent_run_id) in self._spans:
@@ -145,10 +148,10 @@ class OTELExporter:
                     run_info.get("name"),
                     start_time=start_time_utc_nano,
                 )
-            
+
             # Set all attributes
             self._set_span_attributes(span, run_info, op)
-            
+
             # Set status based on error
             if run_info.get("error"):
                 span.set_status(trace.StatusCode.ERROR)
@@ -169,11 +172,10 @@ class OTELExporter:
         except Exception as e:
             logger.exception(f"Failed to create span for run {op.id}: {e}")
             return None
-        
-        
+
     def _update_span_for_run(self, op: SerializedRunOperation, run_info: dict) -> None:
         """Update an OpenTelemetry span for a run operation.
-        
+
         Args:
             op: The serialized run operation.
             run_info: The deserialized run info.
@@ -183,9 +185,9 @@ class OTELExporter:
             if op.id not in self._spans:
                 logger.debug(f"No span found for run {op.id} during update")
                 return
-            
+
             span = self._spans[op.id]
-            
+
             # Update attributes
             self._set_span_attributes(span, run_info, op)
             # Update status based on error
@@ -194,7 +196,7 @@ class OTELExporter:
                 span.record_exception(Exception(run_info.get("error")))
             else:
                 span.set_status(trace.StatusCode.OK)
-            
+
             # End the span if end_time is present
             end_time = run_info.get("end_time")
             if end_time:
@@ -205,28 +207,27 @@ class OTELExporter:
                     span.end()
                 # Remove the span from our dictionary
                 del self._spans[op.id]
-                
+
         except Exception as e:
             logger.exception(f"Failed to update span for run {op.id}: {e}")
 
-    
     def _extract_model_name(self, run_info: dict) -> Optional[str]:
         """Extract model name from run info.
-        
+
         Args:
             run_info: The run info.
-            
+
         Returns:
             The model name, or None if not found.
         """
         # Try to get model name from metadata
         if run_info.get("extra") and run_info["extra"].get("metadata"):
             metadata = run_info["extra"]["metadata"]
-            
+
             # First check for ls_model_name in metadata
             if metadata.get("ls_model_name"):
                 return metadata["ls_model_name"]
-            
+
             # Then check invocation_params for model info
             if "invocation_params" in metadata:
                 invocation_params = metadata["invocation_params"]
@@ -235,12 +236,14 @@ class OTELExporter:
                     return invocation_params["model"]
                 elif invocation_params.get("model_name"):
                     return invocation_params["model_name"]
-        
+
         return None
-    
-    def _set_span_attributes(self, span: Span, run_info: dict, op: SerializedRunOperation) -> None:
+
+    def _set_span_attributes(
+        self, span: Span, run_info: dict, op: SerializedRunOperation
+    ) -> None:
         """Set attributes on the span.
-        
+
         Args:
             span: The span to set attributes on.
             run_info: The deserialized run info.
@@ -249,49 +252,55 @@ class OTELExporter:
         # Set LangSmith-specific attributes
         span.set_attribute(LANGSMITH_RUN_ID, str(op.id))
         span.set_attribute(LANGSMITH_TRACE_ID, str(op.trace_id))
-        
+
         if run_info.get("dotted_order"):
-            span.set_attribute(LANGSMITH_DOTTED_ORDER, str(run_info.get("dotted_order")))
-        
+            span.set_attribute(
+                LANGSMITH_DOTTED_ORDER, str(run_info.get("dotted_order"))
+            )
+
         if run_info.get("parent_run_id"):
-            span.set_attribute(LANGSMITH_PARENT_RUN_ID, str(run_info.get("parent_run_id")))
+            span.set_attribute(
+                LANGSMITH_PARENT_RUN_ID, str(run_info.get("parent_run_id"))
+            )
         if run_info.get("run_type"):
             span.set_attribute(LANGSMITH_RUN_TYPE, str(run_info.get("run_type")))
-        
+
         if run_info.get("name"):
             span.set_attribute(LANGSMITH_NAME, str(run_info.get("name")))
 
         if run_info.get("session_id"):
             span.set_attribute(LANGSMITH_SESSION_ID, str(run_info.get("session_id")))
         if run_info.get("session_name"):
-            span.set_attribute(LANGSMITH_SESSION_NAME, str(run_info.get("session_name")))
-        
+            span.set_attribute(
+                LANGSMITH_SESSION_NAME, str(run_info.get("session_name"))
+            )
+
         # Set GenAI attributes according to OTEL semantic conventions
         # Set gen_ai.operation.name
         operation_name = run_info.get("run_type", "chain")
         span.set_attribute(GEN_AI_OPERATION_NAME, operation_name)
-        
+
         # Set gen_ai.system
         self._set_gen_ai_system(span, run_info)
-        
+
         # Set model name if available
         model_name = self._extract_model_name(run_info)
         if model_name:
             span.set_attribute(GEN_AI_REQUEST_MODEL, model_name)
-        
+
         # Set token usage information
         if run_info.get("prompt_tokens") is not None:
             prompt_tokens = run_info["prompt_tokens"]
             span.set_attribute(GEN_AI_USAGE_INPUT_TOKENS, int(prompt_tokens))
-        
+
         if run_info.get("completion_tokens") is not None:
             completion_tokens = run_info["completion_tokens"]
             span.set_attribute(GEN_AI_USAGE_OUTPUT_TOKENS, int(completion_tokens))
-        
+
         if run_info.get("total_tokens") is not None:
             total_tokens = run_info["total_tokens"]
             span.set_attribute(GEN_AI_USAGE_TOTAL_TOKENS, int(total_tokens))
-        
+
         # Set other parameters from invocation_params
         self._set_invocation_parameters(span, run_info)
 
@@ -300,28 +309,27 @@ class OTELExporter:
         metadata = extra.get("metadata", {})
         for key, value in metadata.items():
             span.set_attribute(f"{LANGSMITH_METADATA}.{key}", value)
-        
+
         tags = run_info.get("tags")
         if tags:
             if isinstance(tags, list):
                 span.set_attribute(LANGSMITH_TAGS, ", ".join(tags))
             else:
                 span.set_attribute(LANGSMITH_TAGS, tags)
-        
-        
+
         # Set inputs/outputs if available
         self._set_io_attributes(span, op)
 
     def _set_gen_ai_system(self, span: Span, run_info: dict) -> None:
         """Set the gen_ai.system attribute on the span based on the model provider.
-        
+
         Args:
             span: The span to set attributes on.
             run_info: The deserialized run info.
         """
         # Default to "langchain" if we can't determine the system
         system = "langchain"
-        
+
         # Extract model name to determine the system
         model_name = self._extract_model_name(run_info)
         if model_name:
@@ -354,47 +362,53 @@ class OTELExporter:
                 system = "vertex_ai"
             elif "xai" in model_lower or "grok" in model_lower:
                 system = "xai"
-        
+
         span.set_attribute(GEN_AI_SYSTEM, system)
         setattr(span, "_gen_ai_system", system)
-    
+
     def _set_invocation_parameters(self, span: Span, run_info: dict) -> None:
         """Set invocation parameters on the span.
-        
+
         Args:
             span: The span to set attributes on.
             run_info: The deserialized run info.
         """
         if not (run_info.get("extra") and run_info["extra"].get("metadata")):
             return
-            
+
         metadata = run_info["extra"]["metadata"]
         if "invocation_params" not in metadata:
             return
-            
+
         invocation_params = metadata["invocation_params"]
-        
+
         # Set relevant invocation parameters
         if "max_tokens" in invocation_params:
-            span.set_attribute(GEN_AI_REQUEST_MAX_TOKENS, invocation_params["max_tokens"])
-        
+            span.set_attribute(
+                GEN_AI_REQUEST_MAX_TOKENS, invocation_params["max_tokens"]
+            )
+
         if "temperature" in invocation_params:
-            span.set_attribute(GEN_AI_REQUEST_TEMPERATURE, invocation_params["temperature"])
-        
+            span.set_attribute(
+                GEN_AI_REQUEST_TEMPERATURE, invocation_params["temperature"]
+            )
+
         if "top_p" in invocation_params:
             span.set_attribute(GEN_AI_REQUEST_TOP_P, invocation_params["top_p"])
-        
+
         if "frequency_penalty" in invocation_params:
-            span.set_attribute(GEN_AI_REQUEST_FREQUENCY_PENALTY, invocation_params["frequency_penalty"])
-        
+            span.set_attribute(
+                GEN_AI_REQUEST_FREQUENCY_PENALTY, invocation_params["frequency_penalty"]
+            )
+
         if "presence_penalty" in invocation_params:
-            span.set_attribute(GEN_AI_REQUEST_PRESENCE_PENALTY, invocation_params["presence_penalty"])
+            span.set_attribute(
+                GEN_AI_REQUEST_PRESENCE_PENALTY, invocation_params["presence_penalty"]
+            )
 
-
-    
     def _set_io_attributes(self, span: Span, op: SerializedRunOperation) -> None:
         """Set input/output attributes on the span.
-        
+
         Args:
             span: The span to set attributes on.
             op: The serialized run operation.
@@ -402,33 +416,43 @@ class OTELExporter:
         if op.inputs:
             try:
                 inputs = _orjson.loads(op.inputs)
-                
-                if isinstance(inputs, dict) and 'model' in inputs and isinstance(inputs.get('messages'), list):
-                    span.set_attribute(GEN_AI_REQUEST_MODEL, inputs['model'])
-                
+
+                if (
+                    isinstance(inputs, dict)
+                    and "model" in inputs
+                    and isinstance(inputs.get("messages"), list)
+                ):
+                    span.set_attribute(GEN_AI_REQUEST_MODEL, inputs["model"])
+
                 span.set_attribute(GENAI_PROMPT, op.inputs)
-                
+
             except Exception:
-                logger.debug("Failed to process inputs for run %s", op.id, exc_info=True)
-        
+                logger.debug(
+                    "Failed to process inputs for run %s", op.id, exc_info=True
+                )
+
         if op.outputs:
             try:
                 outputs = _orjson.loads(op.outputs)
-                
+
                 # Extract token usage from outputs (for LLM runs)
                 token_usage = self.get_unified_run_tokens(outputs)
                 if token_usage:
                     span.set_attribute(GEN_AI_USAGE_INPUT_TOKENS, token_usage[0])
                     span.set_attribute(GEN_AI_USAGE_OUTPUT_TOKENS, token_usage[1])
-                    span.set_attribute(GEN_AI_USAGE_TOTAL_TOKENS, token_usage[0] + token_usage[1])
-                    
-                    if 'model' in outputs:
-                        span.set_attribute(GEN_AI_RESPONSE_MODEL, str(outputs['model']))
-                
+                    span.set_attribute(
+                        GEN_AI_USAGE_TOTAL_TOKENS, token_usage[0] + token_usage[1]
+                    )
+
+                    if "model" in outputs:
+                        span.set_attribute(GEN_AI_RESPONSE_MODEL, str(outputs["model"]))
+
                 span.set_attribute(GENAI_COMPLETION, op.outputs)
-                
+
             except Exception:
-                logger.debug("Failed to process outputs for run %s", op.id, exc_info=True)
+                logger.debug(
+                    "Failed to process outputs for run %s", op.id, exc_info=True
+                )
 
     def _as_utc_nano(self, timestamp: Optional[str]) -> Optional[int]:
         if not timestamp:
@@ -438,7 +462,7 @@ class OTELExporter:
             return int(dt.astimezone(datetime.timezone.utc).timestamp() * 1_000_000_000)
         except ValueError:
             logger.exception(f"Failed to parse timestamp {timestamp}")
-            return None    
+            return None
 
     def get_unified_run_tokens(self, outputs: dict | None) -> Tuple[int, int] | None:
         if not outputs:
@@ -455,7 +479,9 @@ class OTELExporter:
             if not haystack or not isinstance(haystack, dict):
                 continue
 
-            if output := self._extract_unified_run_tokens(haystack.get("usage_metadata")):
+            if output := self._extract_unified_run_tokens(
+                haystack.get("usage_metadata")
+            ):
                 return output
 
             if (
@@ -492,8 +518,10 @@ class OTELExporter:
             ):
                 return output
         return None
-    
-    def _extract_unified_run_tokens(self, outputs: Any | None) -> Tuple[int, int] | None:
+
+    def _extract_unified_run_tokens(
+        self, outputs: Any | None
+    ) -> Tuple[int, int] | None:
         if not outputs or not isinstance(outputs, dict):
             return None
 

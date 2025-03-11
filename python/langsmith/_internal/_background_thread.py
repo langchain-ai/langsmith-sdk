@@ -176,12 +176,12 @@ def _otel_tracing_thread_handle_batch(
     """Handle a batch of tracing queue items by exporting them to OTEL."""
     try:
         ops = combine_serialized_queue_operations([item.item for item in batch])
-        
+
         run_ops = [op for op in ops if isinstance(op, SerializedRunOperation)]
-        
+
         if run_ops and client.otel_exporter is not None:
             client.otel_exporter.export_batch(run_ops)
-            
+
     except Exception:
         logger.error("Error in OTEL tracing queue", exc_info=True)
         # Exceptions are logged elsewhere, but we need to make sure the
@@ -248,9 +248,14 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
     num_known_refs = 3
 
     # Disable compression if explicitly set or if using OpenTelemetry
-    disable_compression = ls_utils.is_truish(ls_utils.get_env_var("DISABLE_RUN_COMPRESSION")) or client.otel_exporter is not None
+    disable_compression = (
+        ls_utils.is_truish(ls_utils.get_env_var("DISABLE_RUN_COMPRESSION"))
+        or client.otel_exporter is not None
+    )
     if not disable_compression and use_multipart:
-        if not (client.info.instance_flags or {}).get("zstd_compression_enabled", False):
+        if not (client.info.instance_flags or {}).get(
+            "zstd_compression_enabled", False
+        ):
             logger.warning(
                 "Run compression is not enabled. Please update to the latest "
                 "version of LangSmith. Falling back to regular multipart ingestion."
@@ -304,7 +309,9 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
             if client.otel_exporter is not None:
                 _otel_tracing_thread_handle_batch(client, tracing_queue, next_batch)
             else:
-                _tracing_thread_handle_batch(client, tracing_queue, next_batch, use_multipart)
+                _tracing_thread_handle_batch(
+                    client, tracing_queue, next_batch, use_multipart
+                )
 
     # drain the queue on exit
     while next_batch := _tracing_thread_drain_queue(
@@ -313,7 +320,9 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
         if client.otel_exporter is not None:
             _otel_tracing_thread_handle_batch(client, tracing_queue, next_batch)
         else:
-            _tracing_thread_handle_batch(client, tracing_queue, next_batch, use_multipart)
+            _tracing_thread_handle_batch(
+                client, tracing_queue, next_batch, use_multipart
+            )
 
 
 def tracing_control_thread_func_compress_parallel(
@@ -474,9 +483,7 @@ def _tracing_sub_thread_func(
         if next_batch := _tracing_thread_drain_queue(tracing_queue, limit=size_limit):
             seen_successive_empty_queues = 0
             if client.otel_exporter is not None:
-                _otel_tracing_thread_handle_batch(
-                    client, tracing_queue, next_batch
-                )
+                _otel_tracing_thread_handle_batch(client, tracing_queue, next_batch)
             else:
                 _tracing_thread_handle_batch(
                     client, tracing_queue, next_batch, use_multipart
@@ -491,4 +498,6 @@ def _tracing_sub_thread_func(
         if client.otel_exporter is not None:
             _otel_tracing_thread_handle_batch(client, tracing_queue, next_batch)
         else:
-            _tracing_thread_handle_batch(client, tracing_queue, next_batch, use_multipart)
+            _tracing_thread_handle_batch(
+                client, tracing_queue, next_batch, use_multipart
+            )
