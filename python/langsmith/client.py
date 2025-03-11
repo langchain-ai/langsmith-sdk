@@ -101,18 +101,7 @@ from langsmith._internal._operations import (
     serialized_run_operation_to_multipart_parts_and_context,
 )
 from langsmith._internal._serde import dumps_json as _dumps_json
-from langsmith._internal.otel._otel_client import get_otlp_tracer_provider
-from langsmith._internal.otel._otel_exporter import OTELExporter
 from langsmith.schemas import AttachmentInfo
-
-try:
-    from opentelemetry import trace as otel_trace  # type: ignore
-    from opentelemetry.sdk.trace import TracerProvider  # type: ignore
-except ImportError:
-    # These imports are only available if the 'otel' extra is installed
-    # via pip install langsmith[otel]
-    otel_trace = None  # type: ignore
-    TracerProvider = None  # type: ignore
 
 try:
     from zoneinfo import ZoneInfo  # type: ignore[import-not-found]
@@ -121,6 +110,11 @@ except ImportError:
     class ZoneInfo:  # type: ignore[no-redef]
         """Introduced in python 3.9."""
 
+try:
+    from opentelemetry.sdk.trace import TracerProvider # type: ignore[import-untyped]
+except ImportError:
+    class TracerProvider:  # type: ignore[no-redef]
+        """Used for optional OTEL tracing."""
 
 if TYPE_CHECKING:
     import pandas as pd  # type: ignore
@@ -593,6 +587,15 @@ class Client:
         self._manual_cleanup = False
 
         if ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED")):
+            try:
+                from opentelemetry import trace as otel_trace
+                from langsmith._internal.otel._otel_client import get_otlp_tracer_provider
+                from langsmith._internal.otel._otel_exporter import OTELExporter
+            except ImportError as e:
+                raise ImportError(
+                    "OpenTelemetry packages are required for OTEL tracing. "
+                    "Install them with: pip install langsmith[otel]"
+                ) from e
             if otel_tracer_provider is None:
                 otel_tracer_provider = get_otlp_tracer_provider()
             # Set as global tracer provider if we're creating a new one

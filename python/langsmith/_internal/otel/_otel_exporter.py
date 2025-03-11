@@ -3,22 +3,15 @@
 import datetime
 import logging
 import uuid
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple, TYPE_CHECKING
 
 from langsmith._internal import _orjson
 from langsmith._internal._operations import (
     SerializedRunOperation,
 )
 
-try:
-    from opentelemetry import trace  # type: ignore
-    from opentelemetry.trace import Span, set_span_in_context  # type: ignore
-except ImportError:
-    # These imports are only available if the 'otel' extra is installed
-    # via pip install langsmith[otel]
-    trace = None  # type: ignore
-    set_span_in_context = None  # type: ignore
-    Span = None  # type: ignore
+from opentelemetry import trace  # type: ignore[import-untyped]
+from opentelemetry.trace import Span, set_span_in_context  # type: ignore[import-untyped]
 
 logger = logging.getLogger(__name__)
 
