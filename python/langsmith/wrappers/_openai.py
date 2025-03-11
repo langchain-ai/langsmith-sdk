@@ -31,7 +31,7 @@ if TYPE_CHECKING:
         ChoiceDeltaToolCall,
     )
     from openai.types.completion import Completion
-    from openai.types.responses import ResponseStreamEvent
+    from openai.types.responses import ResponseStreamEvent  # type: ignore
 
 # Any is used since it may work with Azure or other providers
 C = TypeVar("C", bound=Union["OpenAI", "AsyncOpenAI", Any])
@@ -53,7 +53,11 @@ def _strip_not_given(d: dict) -> dict:
         not_given = _get_not_given()
         if not_given is None:
             return d
-        return {k: v for k, v in d.items() if not isinstance(v, not_given)}
+        return {
+            k: v
+            for k, v in d.items()
+            if not (isinstance(v, not_given) or (k.startswith("extra_") and v is None))
+        }
     except Exception as e:
         logger.error(f"Error stripping NotGiven: {e}")
         return d
