@@ -112,6 +112,7 @@ try:
             get_otlp_tracer_provider,
         )
         from langsmith._internal.otel._otel_exporter import OTELExporter
+
         HAS_OTEL = True
 except ImportError:
     pass
@@ -437,7 +438,7 @@ class Client:
         hide_outputs: Optional[Union[Callable[[dict], dict], bool]] = None,
         info: Optional[Union[dict, ls_schemas.LangSmithInfo]] = None,
         api_urls: Optional[Dict[str, str]] = None,
-        otel_tracer_provider: Optional["TracerProvider"] = None,
+        otel_tracer_provider: Optional[TracerProvider] = None,
     ) -> None:
         """Initialize a Client instance.
 
@@ -615,9 +616,7 @@ class Client:
             # Set as global tracer provider if we're creating a new one
             otel_trace.set_tracer_provider(otel_tracer_provider)
 
-            self.otel_exporter = OTELExporter(
-                tracer_provider=otel_tracer_provider
-            )
+            self.otel_exporter = OTELExporter(tracer_provider=otel_tracer_provider)
 
     def _repr_html_(self) -> str:
         """Return an HTML representation of the instance with a link to the URL.

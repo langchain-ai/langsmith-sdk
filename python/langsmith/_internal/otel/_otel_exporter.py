@@ -7,6 +7,10 @@ import warnings
 from typing import Any, List, Optional, Tuple
 
 from langsmith import utils as ls_utils
+from langsmith._internal import _orjson
+from langsmith._internal._operations import (
+    SerializedRunOperation,
+)
 
 HAS_OTEL = False
 try:
@@ -16,14 +20,10 @@ try:
             Span,
             set_span_in_context,
         )
+
         HAS_OTEL = True
 except ImportError:
     pass
-
-from langsmith._internal import _orjson
-from langsmith._internal._operations import (
-    SerializedRunOperation,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +55,7 @@ LANGSMITH_RUN_TYPE = "langsmith.span.kind"
 LANGSMITH_NAME = "langsmith.trace.name"
 LANGSMITH_METADATA = "langsmith.metadata"
 LANGSMITH_TAGS = "langsmith.span.tags"
+LANGSMITH_RUNTIME = "langsmith.span.runtime"
 
 # GenAI event names
 GEN_AI_SYSTEM_MESSAGE = "gen_ai.system.message"

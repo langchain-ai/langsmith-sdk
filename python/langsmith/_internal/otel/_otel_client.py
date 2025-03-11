@@ -18,10 +18,10 @@ try:
         from opentelemetry.sdk.trace.export import (
             BatchSpanProcessor,
         )
+
         HAS_OTEL = True
 except ImportError:
     pass
-
 
 
 def get_otlp_tracer_provider() -> "TracerProvider":
