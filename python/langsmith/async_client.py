@@ -1232,7 +1232,7 @@ class AsyncClient:
             "include_model": "true" if include_model else None,
         }
 
-        path = f"/prompts/{owner}/{prompt_name}/commits"
+        path = f"/commits/{owner}/{prompt_name}/"
         ix = 0
         async for commit in self._aget_paginated_list(path, params=params):
             yield ls_schemas.ListedPromptCommit(
@@ -1297,33 +1297,264 @@ class AsyncClient:
                     prompt.first
                     if isinstance(prompt, RunnableSequence)
                     and isinstance(prompt.first, BasePromptTemplate)
-                    else prompt
+                    else None
                 )
             )
-            if include_model and prompt_object.model is not None:
-                if "model" in prompt_object.model and not isinstance(
-                    prompt, RunnableSequence
-                ):
-                    with suppress_langchain_beta_warning():
-                        # Import here to avoid breaking the whole method if
-                        # user doesn't have langchain-openai installed
-                        try:
-                            from langchain_openai import ChatOpenAI
-                        except ImportError:
-                            return prompt
+            if prompt_template is None:
+                raise ls_utils.LangSmithError(
+                    "Prompt object is not a valid prompt template."
+                )
 
-                        model = prompt_object.model
-                        model_name = model.get("model")
-                        temperature = model.get("temperature", 0)
-                        model_kwargs = model.get("model_kwargs", {})
-                        if model_name:
-                            llm = ChatOpenAI(
-                                model=model_name,
-                                temperature=temperature,
-                                model_kwargs=model_kwargs,
-                            )
-                            return prompt_template | llm
-                elif isinstance(prompt, RunnableSequence):
-                    return prompt
+            if prompt_template.metadata is None:
+                prompt_template.metadata = {}
+            prompt_template.metadata.update(
+                {
+                    "lc_hub_owner": prompt_object.owner,
+                    "lc_hub_repo": prompt_object.repo,
+                    "lc_hub_commit_hash": prompt_object.commit_hash,
+                }
+            )
+            if (
+                include_model
+                and isinstance(prompt, RunnableSequence)
+                and isinstance(prompt.first, StructuredPrompt)
+                and (len(prompt.steps) == 2 and not isinstance(prompt.last, BaseOutputParser))
+            ):
+                if isinstance(prompt.last, RunnableBinding) and isinstance(
+                    prompt.last.bound, BaseLanguageModel
+                ):
+                    seq = cast(RunnableSequence, prompt.first | prompt.last.bound)
+                    if len(seq.steps) == 3:  # prompt | bound llm | output parser
+                        rebound_llm = seq.steps[1]
+                        prompt = RunnableSequence(
+                            prompt.first,
+                            rebound_llm.bind(**{**prompt.last.kwargs}),
+                            seq.last,
+                        )
+                    else:
+                        prompt = seq  # Not sure
+
+                elif isinstance(prompt.last, BaseLanguageModel):
+                    prompt = prompt.first | prompt.last  # type: ignore[no-redef, assignment]
 
         return prompt
+
+    async def _get_latest_commit_hash(
+        self, prompt_owner_and_name: str, limit: int = 1, offset: int = 0
+    ) -> Optional[str]:
+        """Get the latest commit hash for a prompt.
+
+        Args:
+            prompt_owner_and_name (str): The owner and name of the prompt.
+            limit (int, default=1): The maximum number of commits to fetch. Defaults to 1.
+            offset (int, default=0): The number of commits to skip. Defaults to 0.
+
+        Returns:
+            Optional[str]: The latest commit hash, or None if no commits are found.
+        """
+        response = await self._arequest_with_retries(
+            "GET",
+            f"/commits/{prompt_owner_and_name}/",
+            params={"limit": limit, "offset": offset},
+        )
+        commits = response.json()["commits"]
+        return commits[0]["commit_hash"] if commits else None
+
+    async def _like_or_unlike_prompt(
+        self, prompt_identifier: str, like: bool
+    ) -> Dict[str, int]:
+        """Like or unlike a prompt.
+
+        Args:
+            prompt_identifier (str): The identifier of the prompt.
+            like (bool): True to like the prompt, False to unlike it.
+
+        Returns:
+            A dictionary with the key 'likes' and the count of likes as the value.
+
+        Raises:
+            requests.exceptions.HTTPError: If the prompt is not found or
+            another error occurs.
+        """
+        owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
+        response = await self._arequest_with_retries(
+            "POST", f"/likes/{owner}/{prompt_name}", json={"like": like}
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def _get_prompt_url(self, prompt_identifier: str) -> str:
+        """Get a URL for a prompt.
+
+        Args:
+            prompt_identifier (str): The identifier of the prompt.
+
+        Returns:
+            str: The URL for the prompt.
+
+        """
+        owner, prompt_name, commit_hash = ls_utils.parse_prompt_identifier(
+            prompt_identifier
+        )
+
+        if not self._current_tenant_is_owner(owner):
+            return f"{self._host_url}/hub/{owner}/{prompt_name}:{commit_hash[:8]}"
+
+        settings = self._get_settings()
+        return (
+            f"{self._host_url}/prompts/{prompt_name}/{commit_hash[:8]}"
+            f"?organizationId={settings.id}"
+        )
+
+    async def _prompt_exists(self, prompt_identifier: str) -> bool:
+        """Check if a prompt exists.
+
+        Args:
+            prompt_identifier (str): The identifier of the prompt.
+
+        Returns:
+            bool: True if the prompt exists, False otherwise.
+        """
+        prompt = await self.get_prompt(prompt_identifier)
+        return True if prompt else False
+
+    async def like_prompt(self, prompt_identifier: str) -> Dict[str, int]:
+        """Like a prompt.
+
+        Args:
+            prompt_identifier (str): The identifier of the prompt.
+
+        Returns:
+            Dict[str, int]: A dictionary with the key 'likes' and the count of likes as the value.
+
+        """
+        return await self._like_or_unlike_prompt(prompt_identifier, like=True)
+
+    async def unlike_prompt(self, prompt_identifier: str) -> Dict[str, int]:
+        """Unlike a prompt.
+
+        Args:
+            prompt_identifier (str): The identifier of the prompt.
+
+        Returns:
+            Dict[str, int]: A dictionary with the key 'likes' and the count of likes as the value.
+
+        """
+        return await self._like_or_unlike_prompt(prompt_identifier, like=False)
+
+    async def list_prompts(
+        self,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+        is_public: Optional[bool] = None,
+        is_archived: Optional[bool] = False,
+        sort_field: ls_schemas.PromptSortField = ls_schemas.PromptSortField.updated_at,
+        sort_direction: Literal["desc", "asc"] = "desc",
+        query: Optional[str] = None,
+    ) -> ls_schemas.ListPromptsResponse:
+        """List prompts with pagination.
+
+        Args:
+            limit (int, default=100): The maximum number of prompts to return. Defaults to 100.
+            offset (int, default=0): The number of prompts to skip. Defaults to 0.
+            is_public (Optional[bool]): Filter prompts by if they are public.
+            is_archived (Optional[bool]): Filter prompts by if they are archived.
+            sort_field (PromptSortField): The field to sort by.
+              Defaults to "updated_at".
+            sort_direction (Literal["desc", "asc"], default="desc"): The order to sort by.
+              Defaults to "desc".
+            query (Optional[str]): Filter prompts by a search query.
+
+        Returns:
+            ListPromptsResponse: A response object containing
+            the list of prompts.
+        """
+        params = {
+            "limit": limit,
+            "offset": offset,
+            "is_public": (
+                "true" if is_public else "false" if is_public is not None else None
+            ),
+            "is_archived": "true" if is_archived else "false",
+            "sort_field": sort_field,
+            "sort_direction": sort_direction,
+            "query": query,
+            "match_prefix": "true" if query else None,
+        }
+
+        response = await self._arequest_with_retries("GET", "/repos/", params=params)
+        return ls_schemas.ListPromptsResponse(**response.json())
+
+    async def get_prompt(self, prompt_identifier: str) -> Optional[ls_schemas.Prompt]:
+        """Get a specific prompt by its identifier.
+
+        Args:
+            prompt_identifier (str): The identifier of the prompt.
+                The identifier should be in the format "prompt_name" or "owner/prompt_name".
+
+        Returns:
+            Optional[Prompt]: The prompt object.
+
+        Raises:
+            requests.exceptions.HTTPError: If the prompt is not found or
+                another error occurs.
+        """
+        owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
+        try:
+            response = await self._arequest_with_retries("GET", f"/repos/{owner}/{prompt_name}")
+            return ls_schemas.Prompt(**response.json()["repo"])
+        except ls_utils.LangSmithNotFoundError:
+            return None
+
+    async def create_prompt(
+        self,
+        prompt_identifier: str,
+        *,
+        description: Optional[str] = None,
+        readme: Optional[str] = None,
+        tags: Optional[Sequence[str]] = None,
+        is_public: bool = False,
+    ) -> ls_schemas.Prompt:
+        """Create a new prompt.
+
+        Does not attach prompt object, just creates an empty prompt.
+
+        Args:
+            prompt_identifier (str): The identifier of the prompt.
+                The identifier should be in the formatof owner/name:hash, name:hash, owner/name, or name
+            description (Optional[str]): A description of the prompt.
+            readme (Optional[str]): A readme for the prompt.
+            tags (Optional[Sequence[str]]): A list of tags for the prompt.
+            is_public (bool): Whether the prompt should be public. Defaults to False.
+
+        Returns:
+            Prompt: The created prompt object.
+
+        Raises:
+            ValueError: If the current tenant is not the owner.
+            HTTPError: If the server request fails.
+        """
+        settings = await self._get_settings()
+        if is_public and not settings.tenant_handle:
+            raise ls_utils.LangSmithUserError(
+                "Cannot create a public prompt without first\n"
+                "creating a LangChain Hub handle. "
+            )
+
+        owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
+        if not self._current_tenant_is_owner(owner):
+            raise ValueError("Cannot create a prompt for another owner.")
+
+        repo_data = {
+            "name": prompt_name,
+            "description": description,
+            "readme": readme,
+            "tags": tags or [],
+            "is_public": is_public,
+        }
+
+        response = await self._arequest_with_retries(
+            "POST", "/repos/", content=ls_client._dumps_json(repo_data)
+        )
+        return ls_schemas.Prompt(**response.json()["repo"])
