@@ -10,8 +10,8 @@ from opentelemetry.sdk.resources import (  # type: ignore[import-untyped]
     Resource,
 )
 from opentelemetry.sdk.trace import TracerProvider  # type: ignore[import-untyped]
-from opentelemetry.sdk.trace.export import (
-    BatchSpanProcessor,  # type: ignore[import-untyped]
+from opentelemetry.sdk.trace.export import (  # type: ignore[import-untyped]
+    BatchSpanProcessor,
 )
 
 from langsmith import utils as ls_utils
