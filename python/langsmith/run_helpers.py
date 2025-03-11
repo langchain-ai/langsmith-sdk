@@ -1248,7 +1248,23 @@ def _container_end(
     if run_tree is None:
         # Tracing not enabled
         return
-    outputs_ = outputs if isinstance(outputs, dict) else {"output": outputs}
+    if isinstance(outputs, dict):
+        outputs_ = outputs
+    elif (
+        outputs is not None
+        and hasattr(outputs, "model_dump")
+        and callable(outputs.model_dump)
+        and not isinstance(outputs, type)
+    ):
+        try:
+            outputs_ = outputs.model_dump(exclude_none=True, mode="json")
+        except Exception as e:
+            LOGGER.debug(
+                f"Failed to use model_dump to serialize {type(outputs)} to JSON: {e}"
+            )
+            outputs_ = {"output": outputs}
+    else:
+        outputs_ = {"output": outputs}
     error_ = None
     if error:
         stacktrace = utils._format_exc()
