@@ -5,7 +5,9 @@ import os
 from langsmith import utils as ls_utils
 
 try:
-    from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter  # type: ignore
+    from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
+        OTLPSpanExporter,  # type: ignore
+    )
     from opentelemetry.sdk.resources import SERVICE_NAME, Resource  # type: ignore
     from opentelemetry.sdk.trace import TracerProvider  # type: ignore
     from opentelemetry.sdk.trace.export import BatchSpanProcessor  # type: ignore

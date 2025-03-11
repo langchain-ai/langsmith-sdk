@@ -464,7 +464,9 @@ class OTELExporter:
             logger.exception(f"Failed to parse timestamp {timestamp}")
             return None
 
-    def get_unified_run_tokens(self, outputs: Optional[dict]) -> Optional[Tuple[int, int]]:
+    def get_unified_run_tokens(
+        self, outputs: Optional[dict]
+    ) -> Optional[Tuple[int, int]]:
         if not outputs:
             return None
 
