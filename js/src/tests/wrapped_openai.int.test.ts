@@ -624,6 +624,127 @@ test.concurrent("beta.chat.completions.parse", async () => {
   callSpy.mockClear();
 });
 
+test("responses.create", async () => {
+  const originalClient = new OpenAI();
+  const patchedClient = wrapOpenAI(new OpenAI());
+
+  const original = await originalClient.responses.create({
+    model: "gpt-4o-mini",
+    input: [{ role: "user", content: "What is the weather in SF?" }],
+    tools: [
+      {
+        type: "function",
+        name: "get_weather",
+        description: "Get the weather for a location",
+        parameters: {
+          type: "object",
+          properties: {
+            location: { type: "string" },
+          },
+          required: ["location"],
+          additionalProperties: false,
+        },
+        strict: true,
+      },
+    ],
+  });
+
+  const patched = await patchedClient.responses.create({
+    model: "gpt-4o-mini",
+    input: [{ role: "user", content: "What is the weather in SF?" }],
+    tools: [
+      {
+        type: "function",
+        name: "get_weather",
+        description: "Get the weather for a location",
+        parameters: {
+          type: "object",
+          properties: {
+            location: { type: "string" },
+          },
+          required: ["location"],
+          additionalProperties: false,
+        },
+        strict: true,
+      },
+    ],
+  });
+
+  expect(original.output[0].type).toBe("function_call");
+  expect("name" in original.output[0] && original.output[0].name).toBe(
+    "get_weather"
+  );
+  expect(patched.output[0].type).toBe("function_call");
+  expect("name" in patched.output[0] && patched.output[0].name).toBe(
+    "get_weather"
+  );
+});
+
+test.only("responses.create streaming", async () => {
+  const client = new Client({ autoBatchTracing: false });
+  const callSpy = jest
+    .spyOn((client as any).caller, "call")
+    .mockResolvedValue({ ok: true, text: () => "" });
+
+  const originalClient = new OpenAI();
+  const patchedClient = wrapOpenAI(new OpenAI(), { client });
+
+  const original = await originalClient.responses.create({
+    model: "gpt-4o-mini",
+    input: [{ role: "user", content: "What is the weather in SF?" }],
+    stream: true,
+    tools: [
+      {
+        type: "function",
+        name: "get_weather",
+        description: "Get the weather for a location",
+        parameters: {
+          type: "object",
+          properties: {
+            location: { type: "string" },
+          },
+          required: ["location"],
+          additionalProperties: false,
+        },
+        strict: true,
+      },
+    ],
+  });
+
+  const patched = await patchedClient.responses.create({
+    model: "gpt-4o-mini",
+    input: [{ role: "user", content: "What is the weather in SF?" }],
+    stream: true,
+    tools: [
+      {
+        type: "function",
+        name: "get_weather",
+        description: "Get the weather for a location",
+        parameters: {
+          type: "object",
+          properties: {
+            location: { type: "string" },
+          },
+          required: ["location"],
+          additionalProperties: false,
+        },
+        strict: true,
+      },
+    ],
+  });
+
+  const originalChunks: unknown[] = [];
+  for await (const chunk of original) {
+    originalChunks.push(chunk);
+  }
+  console.log(originalChunks);
+
+  const patchedChunks: unknown[] = [];
+  for await (const chunk of patched) {
+    patchedChunks.push(chunk);
+  }
+});
+
 const usageMetadataTestCases = [
   {
     description: "stream",
