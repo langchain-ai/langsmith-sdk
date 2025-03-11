@@ -11,8 +11,8 @@ from langsmith._internal._operations import (
 )
 
 try:
-    from opentelemetry import trace
-    from opentelemetry.trace import Span, set_span_in_context
+    from opentelemetry import trace  # type: ignore
+    from opentelemetry.trace import Span, set_span_in_context  # type: ignore
 except ImportError:
     # These imports are only available if the 'otel' extra is installed
     # via pip install langsmith[otel]
@@ -464,7 +464,7 @@ class OTELExporter:
             logger.exception(f"Failed to parse timestamp {timestamp}")
             return None
 
-    def get_unified_run_tokens(self, outputs: dict | None) -> Tuple[int, int] | None:
+    def get_unified_run_tokens(self, outputs: Optional[dict]) -> Optional[Tuple[int, int]]:
         if not outputs:
             return None
 
@@ -520,8 +520,8 @@ class OTELExporter:
         return None
 
     def _extract_unified_run_tokens(
-        self, outputs: Any | None
-    ) -> Tuple[int, int] | None:
+        self, outputs: Optional[Any]
+    ) -> Optional[Tuple[int, int]]:
         if not outputs or not isinstance(outputs, dict):
             return None
 

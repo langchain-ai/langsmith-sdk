@@ -106,8 +106,8 @@ from langsmith._internal.otel._otel_exporter import OTELExporter
 from langsmith.schemas import AttachmentInfo
 
 try:
-    from opentelemetry import trace as otel_trace
-    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry import trace as otel_trace  # type: ignore
+    from opentelemetry.sdk.trace import TracerProvider  # type: ignore
 except ImportError:
     # These imports are only available if the 'otel' extra is installed
     # via pip install langsmith[otel]

@@ -5,10 +5,10 @@ import os
 from langsmith import utils as ls_utils
 
 try:
-    from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-    from opentelemetry.sdk.resources import SERVICE_NAME, Resource
-    from opentelemetry.sdk.trace import TracerProvider
-    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+    from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter  # type: ignore
+    from opentelemetry.sdk.resources import SERVICE_NAME, Resource  # type: ignore
+    from opentelemetry.sdk.trace import TracerProvider  # type: ignore
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor  # type: ignore
 except ImportError:
     # These imports are only available if the 'otel' extra is installed
     # via pip install langsmith[otel]
