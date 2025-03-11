@@ -4,13 +4,13 @@ import os
 
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
     OTLPSpanExporter,
-)  # type: ignore[import-untyped]
-from opentelemetry.sdk.resources import (  # type: ignore[import-untyped]
+)  # type: ignore[import-not-found]
+from opentelemetry.sdk.resources import (  # type: ignore[import-not-found]
     SERVICE_NAME,
     Resource,
 )
-from opentelemetry.sdk.trace import TracerProvider  # type: ignore[import-untyped]
-from opentelemetry.sdk.trace.export import (  # type: ignore[import-untyped]
+from opentelemetry.sdk.trace import TracerProvider  # type: ignore[import-not-found]
+from opentelemetry.sdk.trace.export import (  # type: ignore[import-not-found]
     BatchSpanProcessor,
 )
 

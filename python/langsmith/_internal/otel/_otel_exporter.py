@@ -5,8 +5,8 @@ import logging
 import uuid
 from typing import Any, List, Optional, Tuple
 
-from opentelemetry import trace  # type: ignore[import-untyped]
-from opentelemetry.trace import (  # type: ignore[import-untyped]
+from opentelemetry import trace  # type: ignore[import-not-found]
+from opentelemetry.trace import (  # type: ignore[import-not-found]
     Span,
     set_span_in_context,
 )

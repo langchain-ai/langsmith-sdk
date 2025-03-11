@@ -112,7 +112,7 @@ except ImportError:
 
 
 try:
-    from opentelemetry.sdk.trace import TracerProvider  # type: ignore[import-untyped]
+    from opentelemetry.sdk.trace import TracerProvider  # type: ignore[import-not-found]
 except ImportError:
 
     class TracerProvider:  # type: ignore[no-redef]
