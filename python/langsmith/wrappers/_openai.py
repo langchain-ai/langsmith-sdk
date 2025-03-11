@@ -31,6 +31,7 @@ if TYPE_CHECKING:
         ChoiceDeltaToolCall,
     )
     from openai.types.completion import Completion
+    from openai.types.responses import ResponseStreamEvent
 
 # Any is used since it may work with Azure or other providers
 C = TypeVar("C", bound=Union["OpenAI", "AsyncOpenAI", Any])
@@ -303,6 +304,14 @@ def _get_parse_wrapper(
     return aparse if run_helpers.is_async(original_parse) else parse
 
 
+def _reduce_response(events: List[ResponseStreamEvent]) -> dict:
+    output_text = []
+    for event in events:
+        if event.type == "response.output_text.done":
+            output_text.append(event.text)
+    return {"output_text": "".join(output_text), "events": events}
+
+
 class TracingExtra(TypedDict, total=False):
     metadata: Optional[Mapping[str, Any]]
     tags: Optional[List[str]]
@@ -382,5 +391,41 @@ def wrap_openai(
             tracing_extra=tracing_extra,
             invocation_params_fn=functools.partial(_infer_invocation_params, "chat"),
         )
+    # For the responses API: "client.responses.create(**kwargs)"
+    if hasattr(client, "responses"):
+
+        def process_outputs(response: Any):
+            if response:
+                try:
+                    return {
+                        "output_text": response.output_text,
+                        **response.model_dump(mode="json"),
+                    }
+                except Exception:
+                    return {"output": response}
+            return {}
+
+        if hasattr(client.responses, "create"):
+            client.responses.create = _get_wrapper(  # type: ignore[method-assign]
+                client.responses.create,
+                "openai.responses.create",
+                _reduce_response,
+                process_outputs=process_outputs,
+                tracing_extra=tracing_extra,
+                invocation_params_fn=functools.partial(
+                    _infer_invocation_params, "chat"
+                ),
+            )
+        if hasattr(client.responses, "parse"):
+            client.responses.parse = _get_parse_wrapper(  # type: ignore[method-assign]
+                client.responses.parse,
+                "openai.responses.parse",
+                tracing_extra=tracing_extra,
+                invocation_params_fn=functools.partial(
+                    _infer_invocation_params, "chat"
+                ),
+            )
+
+        # TODO: Handle stream() correctly. It's a context manager.
 
     return client
