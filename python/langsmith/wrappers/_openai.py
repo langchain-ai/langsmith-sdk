@@ -430,6 +430,57 @@ def wrap_openai(
                 ),
             )
 
-        # TODO: Handle stream() correctly. It's a context manager.
+        # Handle stream() as a context manager
+        if hasattr(client.responses, "stream"):
+            original_stream = client.responses.stream
+
+            @functools.wraps(original_stream)
+            def wrapped_stream(*args, **kwargs):
+                from openai.lib.streaming.responses import ResponseStreamManager
+
+                invocation_params = _strip_not_given(
+                    _infer_invocation_params("chat", kwargs)
+                )
+
+                # Get the original ResponseStreamManager
+                manager = original_stream(*args, **kwargs)
+
+                # Create a trace to be used in the context manager
+                trace_ctx = run_helpers.trace(
+                    name="openai.responses.stream",
+                    run_type="llm",
+                    inputs=invocation_params,
+                    extra=tracing_extra,
+                )
+
+                class ProxyContextManager:
+
+                    def __init__(self, stream_manager: ResponseStreamManager):
+                        self.__stream_manager = stream_manager
+
+                    def __enter__(self):
+                        self._ls_run = trace_ctx.__enter__()
+                        self.__ls_stream = self.__stream_manager.__enter__()
+                        return self.__ls_stream
+
+                    def __exit__(self, exc_type, exc_val, exc_tb):
+                        self.__stream_manager.__exit__(exc_type, exc_val, exc_tb)
+                        try:
+                            result = self.__ls_stream.get_final_response()
+                            if hasattr(result, "model_dump"):
+                                self._ls_run.add_outputs(result.model_dump(mode="json"))
+                            else:
+                                self._ls_run.add_outputs(result)
+                        except Exception as e:
+                            logger.warning(f"Error getting final response: {e}")
+                        _ = trace_ctx.__exit__(exc_type, exc_val, exc_tb)
+
+                    def __getattr__(self, name):
+                        return getattr(self.__stream_manager, name)
+
+                return ProxyContextManager(manager)
+
+            # Replace the original stream method with our wrapped version
+            client.responses.stream = wrapped_stream  # type: ignore[method-assign]
 
     return client

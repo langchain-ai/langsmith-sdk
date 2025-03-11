@@ -475,7 +475,7 @@ def test_responses_sync_api():
     import openai  # noqa
 
     mock_session = mock.MagicMock()
-    ls_client = langsmith.Client(session=mock_session)
+    ls_client = langsmith.Client()  # session=mock_session)
 
     original_client = openai.Client()
     patched_client = wrap_openai(openai.Client(), tracing_extra={"client": ls_client})
@@ -537,27 +537,27 @@ def test_responses_sync_api():
     assert original_parse.output_text == patched_parse.output_text
 
     # # Test stream
-    # with original_client.responses.stream(
-    #     input="Say 'foo' then stop.",
-    #     model="gpt-4o-mini",
-    #     temperature=0,
-    #     max_output_tokens=16,
-    # ) as original_stream:
-    #     for _ in original_stream:
-    #         pass
-    # with patched_client.responses.stream(
-    #     input="Say 'foo' then stop.",
-    #     model="gpt-4o-mini",
-    #     temperature=0,
-    #     max_output_tokens=16,
-    # ) as patched_stream:
-    #     for _ in patched_stream:
-    #         pass
-    # original_chunks = list(original_stream)
-    # patched_chunks = list(patched_stream)
-    # assert len(original_chunks) == len(patched_chunks)
-    # for orig, patched in zip(original_chunks, patched_chunks):
-    #     assert orig.output_text == patched.output_text
+    patched_chunks = []
+    patched_streamer = patched_client.responses.stream(
+        input="Say 'foo' then stop.",
+        model="gpt-4o-mini",
+        temperature=0,
+        max_output_tokens=16,
+    )
+    with patched_streamer as patched_stream:
+        for chunk in patched_stream:
+            patched_chunks.append(chunk)
+
+    original_chunks = []
+    with original_client.responses.stream(
+        input="Say 'foo' then stop.",
+        model="gpt-4o-mini",
+        temperature=0,
+        max_output_tokens=16,
+    ) as original_stream:
+        for chunk in original_stream:
+            original_chunks.append(chunk)
+    assert len(original_chunks) == len(patched_chunks)
 
     time.sleep(0.1)
     for call in mock_session.request.call_args_list:
@@ -642,29 +642,29 @@ async def test_responses_async_api():
     ) == patched_parse.output_text.lower().strip(" .")
 
     # # Test stream
-    # async with original_client.responses.stream(
-    #     model="gpt-4o-mini",
-    #     messages=[{"role": "user", "content": "Say 'foo' then stop."}],
-    #     temperature=0,
-    #     seed=42,
-    #     max_tokens=16,
-    # ) as original_stream:
-    #     async for _ in original_stream:
-    #         pass
-    # async with patched_client.responses.stream(
-    #     model="gpt-4o-mini",
-    #     messages=[{"role": "user", "content": "Say 'foo' then stop."}],
-    #     temperature=0,
-    #     seed=42,
-    #     max_tokens=16,
-    # ) as patched_stream:
-    #     async for _ in patched_stream:
-    #         pass
-    # original_chunks = list(original_stream)
-    # patched_chunks = list(patched_stream)
-    # assert len(original_chunks) == len(patched_chunks)
-    # for orig, patched in zip(original_chunks, patched_chunks):
-    #     assert orig.output_text == patched.output_text
+    original_chunks = []
+    async with original_client.responses.stream(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": "Say 'foo' then stop."}],
+        temperature=0,
+        seed=42,
+        max_tokens=16,
+    ) as original_stream:
+        async for chunk in original_stream:
+            original_chunks.append(chunk)
+    patched_chunks = []
+    async with patched_client.responses.stream(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": "Say 'foo' then stop."}],
+        temperature=0,
+        seed=42,
+        max_tokens=16,
+    ) as patched_stream:
+        async for chunk in patched_stream:
+            patched_chunks.append(chunk)
+    assert len(original_chunks) == len(patched_chunks)
+    for orig, patched in zip(original_chunks, patched_chunks):
+        assert orig.output_text == patched.output_text
 
     time.sleep(0.1)
     for call in mock_session.request.call_args_list:
