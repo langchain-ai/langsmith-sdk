@@ -3,13 +3,22 @@
 import datetime
 import logging
 import uuid
+import warnings
 from typing import Any, List, Optional, Tuple
 
-from opentelemetry import trace  # type: ignore[import-not-found]
-from opentelemetry.trace import (  # type: ignore[import-not-found]
-    Span,
-    set_span_in_context,
-)
+from langsmith import utils as ls_utils
+
+HAS_OTEL = False
+try:
+    if ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED")):
+        from opentelemetry import trace
+        from opentelemetry.trace import (
+            Span,
+            set_span_in_context,
+        )
+        HAS_OTEL = True
+except ImportError:
+    pass
 
 from langsmith._internal import _orjson
 from langsmith._internal._operations import (
@@ -65,6 +74,13 @@ class OTELExporter:
             tracer_provider: Optional tracer provider to use. If not provided,
                 the global tracer provider will be used.
         """
+        if not HAS_OTEL:
+            warnings.warn(
+                "OTEL_ENABLED is set but OpenTelemetry packages are not installed. "
+                "Install with `pip install langsmith[otel]`"
+            )
+            return
+
         self._tracer = trace.get_tracer("langsmith", tracer_provider=tracer_provider)
         self._spans = {}
 

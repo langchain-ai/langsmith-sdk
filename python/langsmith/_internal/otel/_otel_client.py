@@ -2,22 +2,29 @@
 
 import os
 
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
-    OTLPSpanExporter,
-)  # type: ignore[import-not-found]
-from opentelemetry.sdk.resources import (  # type: ignore[import-not-found]
-    SERVICE_NAME,
-    Resource,
-)
-from opentelemetry.sdk.trace import TracerProvider  # type: ignore[import-not-found]
-from opentelemetry.sdk.trace.export import (  # type: ignore[import-not-found]
-    BatchSpanProcessor,
-)
-
 from langsmith import utils as ls_utils
 
+HAS_OTEL = False
+try:
+    if ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED")):
+        from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
+            OTLPSpanExporter,
+        )
+        from opentelemetry.sdk.resources import (
+            SERVICE_NAME,
+            Resource,
+        )
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import (
+            BatchSpanProcessor,
+        )
+        HAS_OTEL = True
+except ImportError:
+    pass
 
-def get_otlp_tracer_provider() -> TracerProvider:
+
+
+def get_otlp_tracer_provider() -> "TracerProvider":
     """Get the OTLP tracer provider for LangSmith.
 
     This function creates a tracer provider that exports spans using the OTLP protocol
@@ -34,6 +41,12 @@ def get_otlp_tracer_provider() -> TracerProvider:
         TracerProvider: The OTLP tracer provider.
     """
     # Set LangSmith-specific defaults if not already set in environment
+    if not HAS_OTEL:
+        raise ImportError(
+            "OpenTelemetry packages are required to use this function. "
+            "Please install with `pip install langsmith[otel]`"
+        )
+
     if "OTEL_EXPORTER_OTLP_ENDPOINT" not in os.environ:
         ls_endpoint = ls_utils.get_api_url(None)
         os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = f"{ls_endpoint}/otel"

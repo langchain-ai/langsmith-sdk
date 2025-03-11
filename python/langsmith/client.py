@@ -103,6 +103,19 @@ from langsmith._internal._operations import (
 from langsmith._internal._serde import dumps_json as _dumps_json
 from langsmith.schemas import AttachmentInfo
 
+HAS_OTEL = False
+try:
+    if ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED")):
+        from opentelemetry import trace as otel_trace
+
+        from langsmith._internal.otel._otel_client import (
+            get_otlp_tracer_provider,
+        )
+        from langsmith._internal.otel._otel_exporter import OTELExporter
+        HAS_OTEL = True
+except ImportError:
+    pass
+
 try:
     from zoneinfo import ZoneInfo  # type: ignore[import-not-found]
 except ImportError:
@@ -424,7 +437,7 @@ class Client:
         hide_outputs: Optional[Union[Callable[[dict], dict], bool]] = None,
         info: Optional[Union[dict, ls_schemas.LangSmithInfo]] = None,
         api_urls: Optional[Dict[str, str]] = None,
-        otel_tracer_provider: Optional[TracerProvider] = None,
+        otel_tracer_provider: Optional["TracerProvider"] = None,
     ) -> None:
         """Initialize a Client instance.
 
@@ -510,6 +523,8 @@ class Client:
         self.compressed_traces: Optional[CompressedTraces] = None
         self._data_available_event: Optional[threading.Event] = None
         self._futures: Optional[set[cf.Future]] = None
+        self.otel_exporter: Optional[OTELExporter] = None
+
         # Initialize auto batching
         if auto_batch_tracing:
             self.tracing_queue: Optional[PriorityQueue] = PriorityQueue()
@@ -590,28 +605,19 @@ class Client:
         self._manual_cleanup = False
 
         if ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED")):
-            try:
-                from opentelemetry import trace as otel_trace
-
-                from langsmith._internal.otel._otel_client import (
-                    get_otlp_tracer_provider,
+            if not HAS_OTEL:
+                warnings.warn(
+                    "OTEL_ENABLED is set but OpenTelemetry packages are not installed. "
+                    "Install with `pip install langsmith[otel]`"
                 )
-                from langsmith._internal.otel._otel_exporter import OTELExporter
-            except ImportError as e:
-                raise ImportError(
-                    "OpenTelemetry packages are required for OTEL tracing. "
-                    "Install them with: pip install langsmith[otel]"
-                ) from e
             if otel_tracer_provider is None:
                 otel_tracer_provider = get_otlp_tracer_provider()
             # Set as global tracer provider if we're creating a new one
             otel_trace.set_tracer_provider(otel_tracer_provider)
 
-            self.otel_exporter: Optional[OTELExporter] = OTELExporter(
+            self.otel_exporter = OTELExporter(
                 tracer_provider=otel_tracer_provider
             )
-        else:
-            self.otel_exporter = None
 
     def _repr_html_(self) -> str:
         """Return an HTML representation of the instance with a link to the URL.
