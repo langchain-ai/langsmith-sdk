@@ -2,7 +2,12 @@ import logging
 import uuid
 from typing import Any, Dict, Literal, Optional
 
-from agents import tracing  # type: ignore[import-untyped]
+try:
+    from agents import tracing  # type: ignore[import]
+
+    HAVE_AGENTS = True
+except ImportError:
+    HAVE_AGENTS = False
 
 from langsmith import client as ls_client
 
@@ -144,6 +149,11 @@ class LangsmithTracingProcessor(tracing.TracingProcessor):
     def __init__(self, client: Optional[ls_client.Client] = None):
         self.client = client or ls_client.Client()
         self._runs: Dict[str, str] = {}
+        if not HAVE_AGENTS:
+            raise ImportError(
+                "The `agents` package is not installed. "
+                "Please install it with `pip install langsmith[agents]`."
+            )
 
     def on_trace_start(self, trace: tracing.Trace) -> None:
         run_name = trace.name if trace.name else "Agent trace"
