@@ -24,6 +24,10 @@ type OpenAIType = {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     create: (...args: any[]) => any;
   };
+  responses?: {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    create: (...args: any[]) => any;
+  };
 };
 
 type ExtraRunTreeConfig = Pick<
@@ -164,6 +168,13 @@ const chatAggregator = (chunks: OpenAI.ChatCompletionChunk[]) => {
   );
 
   return aggregatedOutput;
+};
+
+const responsesAggregator = (
+  allChunks: OpenAI.ChatCompletionChunk[]
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): Record<string, any> => {
+  return allChunks[allChunks.length - 1];
 };
 
 const textAggregator = (
@@ -358,34 +369,60 @@ export const wrapOpenAI = <T extends OpenAIType>(
     },
   };
 
-  tracedOpenAIClient.completions = {
-    ...openai.completions,
-    create: traceable(openai.completions.create.bind(openai.completions), {
-      name: "OpenAI",
-      run_type: "llm",
-      aggregator: textAggregator,
-      argsConfigPath: [1, "langsmithExtra"],
-      getInvocationParams: (payload: unknown) => {
-        if (typeof payload !== "object" || payload == null) return undefined;
-        // we can safely do so, as the types are not exported in TSC
-        const params = payload as OpenAI.CompletionCreateParams;
+  if (openai.responses && openai.responses.create) {
+    tracedOpenAIClient.responses = {
+      ...openai.responses,
+      create: traceable(openai.responses.create.bind(openai.responses), {
+        name: "OpenAI",
+        run_type: "llm",
+        aggregator: responsesAggregator,
+        argsConfigPath: [1, "langsmithExtra"],
+        getInvocationParams: (payload: unknown) => {
+          if (typeof payload !== "object" || payload == null) return undefined;
+          return {
+            ls_provider: "openai",
+            ls_model_type: "chat",
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ls_model_name: (payload as any).model,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ls_max_tokens: (payload as any).max_output_tokens ?? undefined,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ls_temperature: (payload as any).temperature ?? undefined,
+          };
+        },
+        ...options,
+      }),
+    };
 
-        const ls_stop =
-          (typeof params.stop === "string" ? [params.stop] : params.stop) ??
-          undefined;
+    tracedOpenAIClient.completions = {
+      ...openai.completions,
+      create: traceable(openai.completions.create.bind(openai.completions), {
+        name: "OpenAI",
+        run_type: "llm",
+        aggregator: textAggregator,
+        argsConfigPath: [1, "langsmithExtra"],
+        getInvocationParams: (payload: unknown) => {
+          if (typeof payload !== "object" || payload == null) return undefined;
+          // we can safely do so, as the types are not exported in TSC
+          const params = payload as OpenAI.CompletionCreateParams;
 
-        return {
-          ls_provider: "openai",
-          ls_model_type: "llm",
-          ls_model_name: params.model,
-          ls_max_tokens: params.max_tokens ?? undefined,
-          ls_temperature: params.temperature ?? undefined,
-          ls_stop,
-        };
-      },
-      ...options,
-    }),
-  };
+          const ls_stop =
+            (typeof params.stop === "string" ? [params.stop] : params.stop) ??
+            undefined;
+
+          return {
+            ls_provider: "openai",
+            ls_model_type: "llm",
+            ls_model_name: params.model,
+            ls_max_tokens: params.max_tokens ?? undefined,
+            ls_temperature: params.temperature ?? undefined,
+            ls_stop,
+          };
+        },
+        ...options,
+      }),
+    };
+  }
 
   return tracedOpenAIClient as PatchedOpenAIClient<T>;
 };
