@@ -170,7 +170,7 @@ class LangsmithTracingProcessor(tracing.TracingProcessor):
             )
             self.client.create_run(**run_data)
         except Exception as e:
-            logger.error(f"Error creating trace run: {e}")
+            logger.exception(f"Error creating trace run: {e}")
 
     def on_trace_end(self, trace: tracing.Trace) -> None:
         run_id = self._runs.pop(trace.trace_id, None)
@@ -180,14 +180,10 @@ class LangsmithTracingProcessor(tracing.TracingProcessor):
                     run_id=run_id,
                 )
             except Exception as e:
-                logger.error(f"Error updating trace run: {e}")
+                logger.exception(f"Error updating trace run: {e}")
 
     def on_span_start(self, span: tracing.Span) -> None:
-        parent_run_id = None
-        if span.parent_id:
-            parent_run_id = self._runs.get(span.parent_id)
-        else:
-            parent_run_id = self._runs.get(span.trace_id)
+        parent_run_id = self._runs.get(span.parent_id or span.trace_id)
         span_run_id = str(uuid.uuid4())
         self._runs[span.span_id] = span_run_id
 
@@ -204,7 +200,7 @@ class LangsmithTracingProcessor(tracing.TracingProcessor):
             )
             self.client.create_run(**run_data)
         except Exception as e:
-            logger.error(f"Error creating span run: {e}")
+            logger.exception(f"Error creating span run: {e}")
 
     def on_span_end(self, span: tracing.Span) -> None:
         run_id = self._runs.pop(span.span_id, None)
