@@ -44,6 +44,20 @@ GEN_AI_RESPONSE_FINISH_REASONS = "gen_ai.response.finish_reasons"
 GENAI_PROMPT = "gen_ai.prompt"
 GENAI_COMPLETION = "gen_ai.completion"
 
+# Additional GenAI attributes
+GEN_AI_REQUEST_STREAMING = "gen_ai.request.streaming"
+GEN_AI_REQUEST_HEADERS = "gen_ai.request.headers"
+GEN_AI_REQUEST_EXTRA_QUERY = "gen_ai.request.extra_query"
+GEN_AI_REQUEST_EXTRA_BODY = "gen_ai.request.extra_body"
+GEN_AI_SERIALIZED_NAME = "gen_ai.serialized.name"
+GEN_AI_SERIALIZED_SIGNATURE = "gen_ai.serialized.signature"
+GEN_AI_SERIALIZED_DOC = "gen_ai.serialized.doc"
+GEN_AI_RESPONSE_ID = "gen_ai.response.id"
+GEN_AI_RESPONSE_SERVICE_TIER = "gen_ai.response.service_tier"
+GEN_AI_RESPONSE_SYSTEM_FINGERPRINT = "gen_ai.response.system_fingerprint"
+GEN_AI_USAGE_INPUT_TOKEN_DETAILS = "gen_ai.usage.input_token_details"
+GEN_AI_USAGE_OUTPUT_TOKEN_DETAILS = "gen_ai.usage.output_token_details"
+
 # LangSmith custom attributes
 LANGSMITH_RUN_ID = "langsmith.span.id"
 LANGSMITH_TRACE_ID = "langsmith.trace.id"
@@ -330,6 +344,16 @@ class OTELExporter:
             else:
                 span.set_attribute(LANGSMITH_TAGS, tags)
 
+        # Support additional serialized attributes, if present
+        if run_info.get("serialized") and isinstance(run_info["serialized"], dict):
+            serialized = run_info["serialized"]
+            if "name" in serialized and serialized["name"] is not None:
+                span.set_attribute(GEN_AI_SERIALIZED_NAME, serialized["name"])
+            if "signature" in serialized and serialized["signature"] is not None:
+                span.set_attribute(GEN_AI_SERIALIZED_SIGNATURE, serialized["signature"])
+            if "doc" in serialized and serialized["doc"] is not None:
+                span.set_attribute(GEN_AI_SERIALIZED_DOC, serialized["doc"])
+
         # Set inputs/outputs if available
         self._set_io_attributes(span, op)
 
@@ -430,12 +454,32 @@ class OTELExporter:
             try:
                 inputs = _orjson.loads(op.inputs)
 
-                if (
-                    isinstance(inputs, dict)
-                    and "model" in inputs
-                    and isinstance(inputs.get("messages"), list)
-                ):
-                    span.set_attribute(GEN_AI_REQUEST_MODEL, inputs["model"])
+                if isinstance(inputs, dict):
+                    if (
+                        "model" in inputs
+                        and isinstance(inputs.get("messages"), list)
+                        and inputs["model"] is not None
+                    ):
+                        span.set_attribute(GEN_AI_REQUEST_MODEL, inputs["model"])
+
+                    # Set additional request attributes if available.
+                    if "stream" in inputs and inputs["stream"] is not None:
+                        span.set_attribute(GEN_AI_REQUEST_STREAMING, inputs["stream"])
+                    if (
+                        "extra_headers" in inputs
+                        and inputs["extra_headers"] is not None
+                    ):
+                        span.set_attribute(
+                            GEN_AI_REQUEST_HEADERS, inputs["extra_headers"]
+                        )
+                    if "extra_query" in inputs and inputs["extra_query"] is not None:
+                        span.set_attribute(
+                            GEN_AI_REQUEST_EXTRA_QUERY, inputs["extra_query"]
+                        )
+                    if "extra_body" in inputs and inputs["extra_body"] is not None:
+                        span.set_attribute(
+                            GEN_AI_REQUEST_EXTRA_BODY, inputs["extra_body"]
+                        )
 
                 span.set_attribute(GENAI_PROMPT, op.inputs)
 
@@ -459,6 +503,62 @@ class OTELExporter:
 
                     if "model" in outputs:
                         span.set_attribute(GEN_AI_RESPONSE_MODEL, str(outputs["model"]))
+                # Extract additional response attributes.
+                if isinstance(outputs, dict):
+                    if "id" in outputs and outputs["id"] is not None:
+                        span.set_attribute(GEN_AI_RESPONSE_ID, outputs["id"])
+                    if "choices" in outputs and isinstance(outputs["choices"], list):
+                        finish_reasons = []
+                        for choice in outputs["choices"]:
+                            if (
+                                "finish_reason" in choice
+                                and choice["finish_reason"] is not None
+                            ):
+                                finish_reasons.append(str(choice["finish_reason"]))
+                        if finish_reasons:
+                            span.set_attribute(
+                                GEN_AI_RESPONSE_FINISH_REASONS,
+                                ", ".join(finish_reasons),
+                            )
+                    if (
+                        "service_tier" in outputs
+                        and outputs["service_tier"] is not None
+                    ):
+                        span.set_attribute(
+                            GEN_AI_RESPONSE_SERVICE_TIER, outputs["service_tier"]
+                        )
+                    if (
+                        "system_fingerprint" in outputs
+                        and outputs["system_fingerprint"] is not None
+                    ):
+                        span.set_attribute(
+                            GEN_AI_RESPONSE_SYSTEM_FINGERPRINT,
+                            outputs["system_fingerprint"],
+                        )
+                    if "usage_metadata" in outputs and isinstance(
+                        outputs["usage_metadata"], dict
+                    ):
+                        usage_metadata = outputs["usage_metadata"]
+                        if (
+                            "input_token_details" in usage_metadata
+                            and usage_metadata["input_token_details"] is not None
+                        ):
+                            input_token_details = str(
+                                usage_metadata["input_token_details"]
+                            )
+                            span.set_attribute(
+                                GEN_AI_USAGE_INPUT_TOKEN_DETAILS, input_token_details
+                            )
+                        if (
+                            "output_token_details" in usage_metadata
+                            and usage_metadata["output_token_details"] is not None
+                        ):
+                            output_token_details = str(
+                                usage_metadata["output_token_details"]
+                            )
+                            span.set_attribute(
+                                GEN_AI_USAGE_OUTPUT_TOKEN_DETAILS, output_token_details
+                            )
 
                 span.set_attribute(GENAI_COMPLETION, op.outputs)
 

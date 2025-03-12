@@ -608,7 +608,7 @@ class Client:
         if ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED")):
             if not HAS_OTEL:
                 warnings.warn(
-                    "OTEL_ENABLED is set but OpenTelemetry packages are not installed. "
+                    "LANGSMITH_OTEL_ENABLED is set but OpenTelemetry packages are not installed. "
                     "Install with `pip install langsmith[otel]`"
                 )
             if otel_tracer_provider is None:
