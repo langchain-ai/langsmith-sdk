@@ -152,7 +152,7 @@ class LangsmithTracingProcessor(tracing.TracingProcessor):
         if not HAVE_AGENTS:
             raise ImportError(
                 "The `agents` package is not installed. "
-                "Please install it with `pip install langsmith[agents]`."
+                "Please install it with `pip install langsmith[openai-agents]`."
             )
 
     def on_trace_start(self, trace: tracing.Trace) -> None:
