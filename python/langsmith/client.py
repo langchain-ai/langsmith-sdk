@@ -789,11 +789,7 @@ class Client:
                     with ls_utils.filter_logs(_urllib3_logger, logging_filters):
                         response = self.session.request(
                             method,
-                            (
-                                self.api_url + pathname
-                                if not pathname.startswith("http")
-                                else pathname
-                            ),
+                            _construct_url(self.api_url, pathname),
                             stream=False,
                             **request_kwargs,
                         )
@@ -4200,11 +4196,7 @@ class Client:
         try:
             response = self.request_with_retries(
                 "PATCH",
-                (
-                    f"/v1/platform/datasets/{dataset_id}/examples"
-                    if self.api_url[-3:] != "/v1" and self.api_url[-4:] != "/v1/"
-                    else f"platform/datasets/{dataset_id}/examples"
-                ),
+                _dataset_examples_path(self.api_url, dataset_id),
                 request_kwargs={
                     "data": data,
                     "headers": {
@@ -4274,11 +4266,7 @@ class Client:
         try:
             response = self.request_with_retries(
                 "POST",
-                (
-                    f"/v1/platform/datasets/{dataset_id}/examples"
-                    if self.api_url[-3:] != "/v1" and self.api_url[-4:] != "/v1/"
-                    else f"platform/datasets/{dataset_id}/examples"
-                ),
+                _dataset_examples_path(self.api_url, dataset_id),
                 request_kwargs={
                     "data": data,
                     "headers": {
@@ -4326,7 +4314,7 @@ class Client:
                 (
                     "/v1/platform/examples/multipart"
                     if self.api_url[-3:] != "/v1" and self.api_url[-4:] != "/v1/"
-                    else "platform/examples/multipart"
+                    else "/platform/examples/multipart"
                 ),
                 request_kwargs={
                     "data": data,
@@ -7667,3 +7655,19 @@ def _close_files(files: List[io.BufferedReader]) -> None:
         except Exception:
             logger.debug("Could not close file: %s", file.name)
             pass
+
+
+def _dataset_examples_path(api_url: str, dataset_id: ID_TYPE) -> str:
+    if api_url.rstrip("/").endswith("/v1"):
+        return f"/platform/datasets/{dataset_id}/examples"
+    else:
+        return f"/v1/platform/datasets/{dataset_id}/examples"
+
+
+def _construct_url(api_url: str, pathname: str) -> str:
+    if pathname.startswith("http"):
+        return pathname
+    elif pathname.startswith("/"):
+        return api_url.rstrip("/") + pathname
+    else:
+        return api_url.rstrip("/") + "/" + pathname

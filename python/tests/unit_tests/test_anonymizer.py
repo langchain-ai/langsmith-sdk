@@ -125,12 +125,11 @@ def test_replacer_declared_in_traceable():
 
     expected_inputs = {"from_": {"from_email": "[email address]"}, "body": body_}
     expected_outputs = {
-        "output": {
-            "user_email": "[email address]",
-            "user_id": "[uuid]",
-            "body": body_,
-        }
+        "user_email": "[email address]",
+        "user_id": "[uuid]",
+        "body": body_,
     }
+
     assert len(posts) == 1
     posted_data = posts[0]
     assert posted_data["inputs"] == expected_inputs

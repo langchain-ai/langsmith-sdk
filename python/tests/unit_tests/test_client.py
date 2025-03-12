@@ -37,6 +37,8 @@ from langsmith._internal import _orjson
 from langsmith._internal._serde import _serialize_json
 from langsmith.client import (
     Client,
+    _construct_url,
+    _dataset_examples_path,
     _dumps_json,
     _is_langchain_hosted,
     _parse_token_or_url,
@@ -2425,3 +2427,23 @@ def test_create_run_with_disabled_compression(mock_session_cls: mock.Mock) -> No
     run_parsed = json.loads(parts[0].value)
     assert run_parsed["trace_id"] == str(run_id)
     assert run_parsed["dotted_order"] == str(run_id)
+
+
+def test__dataset_examples_path():
+    dataset_id = "123"
+    api_url = "https://foobar.com/api"
+    expected = "https://foobar.com/api/v1/platform/datasets/123/examples"
+    for suffix in ("", "/", "/v1", "/v1/"):
+        path = _dataset_examples_path(api_url + suffix, dataset_id)
+        actual = (api_url + suffix).rstrip("/") + path
+        assert expected == actual
+
+
+def test__construct_url():
+    api_url = "https://foobar.com/api"
+    pathname = "v1/platform/datasets/123/examples"
+    expected = "https://foobar.com/api/v1/platform/datasets/123/examples"
+    for suffix in ("", "/"):
+        for prefix in ("", "/", "https://foobar.com/api/"):
+            actual = _construct_url(api_url + suffix, prefix + pathname)
+            assert actual == expected
