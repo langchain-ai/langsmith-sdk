@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "langsmith"
-version = "0.3.14rc0"
+version = "0.3.14rc1"
 description = "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform."
 authors = ["LangChain <support@langchain.dev>"]
 license = "MIT"
@@ -85,7 +85,7 @@ anthropic = "^0.45.0"
 [tool.poetry.extras]
 vcr = ["vcrpy"]
 langsmith_pyo3 = ["langsmith-pyo3"]
-otel = ["opentelemetry-api", "opentelemetry-sdk"]
+otel = ["opentelemetry-api", "opentelemetry-sdk", "opentelemetry-exporter-otlp-proto-http"]
 pytest = ["pytest", "rich", "vcrpy"]
 
 [build-system]
