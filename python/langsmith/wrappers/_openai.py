@@ -15,6 +15,15 @@ from typing import (
     Type,
     TypeVar,
     Union,
+    Self,
+    Iterator,
+    AsyncIterator
+)
+from typing_extensions import TypeVar
+
+TextFormatT = TypeVar(
+    "TextFormatT",
+    default=None,
 )
 
 from typing_extensions import TypedDict
@@ -22,6 +31,25 @@ from typing_extensions import TypedDict
 from langsmith import client as ls_client
 from langsmith import run_helpers
 from langsmith.schemas import InputTokenDetails, OutputTokenDetails, UsageMetadata
+
+# Try to import from different possible locations depending on OpenAI SDK version
+try:
+    from openai.types.responses import ParsedResponse
+    from openai.lib.streaming.responses import ResponseStream, AsyncResponseStream
+except ImportError:
+    try:
+        from openai.lib.responses import ParsedResponse
+        from openai.lib.streaming.responses import ResponseStream, AsyncResponseStream
+    except ImportError:
+        # Define fallback types if needed
+        class ParsedResponse:
+            pass
+        
+        class ResponseStream:
+            pass
+            
+        class AsyncResponseStream:
+            pass
 
 if TYPE_CHECKING:
     from openai import AsyncOpenAI, OpenAI
@@ -308,6 +336,143 @@ def _get_parse_wrapper(
     return aparse if run_helpers.is_async(original_parse) else parse
 
 
+def _get_stream_wrapper(
+    original_stream: Callable,
+    name: str,
+    tracing_extra: TracingExtra,
+    invocation_params_fn: Optional[Callable] = None,
+) -> Callable:
+    """Create a wrapper for OpenAI's streaming context manager."""
+    is_async = "async" in str(original_stream).lower()
+    configured_traceable = run_helpers.traceable(
+        name=name,
+        reduce_fn=_reduce_chat,
+        run_type="llm",
+        process_inputs=_strip_not_given,
+        _invocation_params_fn=invocation_params_fn,
+        **tracing_extra,
+    )
+
+    if is_async:
+        class AsyncResponseStreamWrapper:
+            def __init__(
+                self,
+                wrapped: AsyncResponseStream,
+                **kwargs,
+            ) -> None:
+                self._wrapped = wrapped
+                self._kwargs = kwargs
+                self._events = []
+
+            async def __anext__(self) -> ResponseStreamEvent[TextFormatT]:
+                event = await self._wrapped.__anext__()
+                self._events.append(event)
+                return event
+
+            async def __aiter__(self) -> AsyncIterator[ResponseStreamEvent[TextFormatT]]:
+                @configured_traceable
+                async def traced_iter(**_):
+                    async for chunk in self._wrapped.__aiter__():
+                        self._events.append(chunk)
+                        yield chunk
+                    run_tree = run_helpers.get_current_run_tree()
+                    if run_tree is not None:
+                        run_tree.outputs = _reduce_response(self._events)
+
+                async for chunk in traced_iter(**self._kwargs):
+                    yield chunk
+
+            async def __aenter__(self) -> Self:
+                await self._wrapped.__aenter__()
+                return self
+
+            async def __aexit__(self, *exc) -> None:
+                await self._wrapped.__aexit__(*exc)
+
+            async def close(self) -> None:
+                await self._wrapped.close()
+
+            async def get_final_response(self) -> ParsedResponse[TextFormatT]:
+                response = await self._wrapped.get_final_response()
+                return response
+            
+            async def until_done(self) -> Self:
+                await self._wrapped.until_done()
+                return self
+
+        class AsyncResponseStreamManagerWrapper:
+            def __init__(self, **kwargs):
+                self._kwargs = kwargs
+
+            async def __aenter__(self):
+                self._manager = original_stream(**self._kwargs)
+                stream = await self._manager.__aenter__()
+                return AsyncResponseStreamWrapper(stream, **self._kwargs)
+
+            async def __aexit__(self, *exc):
+                await self._manager.__aexit__(*exc)
+
+        return AsyncResponseStreamManagerWrapper
+    else:
+        class ResponseStreamWrapper:
+            def __init__(
+                self,
+                wrapped: ResponseStream,
+                **kwargs,
+            ) -> None:
+                self._wrapped = wrapped
+                self._kwargs = kwargs
+                self._events = []
+
+            def __next__(self) -> ResponseStreamEvent[TextFormatT]:
+                event = self._wrapped.__next__()
+                self._events.append(event)
+                return event
+
+            def __iter__(self) -> Iterator[ResponseStreamEvent[TextFormatT]]:
+                @configured_traceable
+                def traced_iter(**_):
+                    for chunk in self._wrapped.__iter__():
+                        self._events.append(chunk)
+                        yield chunk
+                    run_tree = run_helpers.get_current_run_tree()
+                    if run_tree is not None:
+                        run_tree.outputs = _reduce_response(self._events)
+
+                return traced_iter(**self._kwargs)
+
+            def __enter__(self) -> Self:
+                self._wrapped.__enter__()
+                return self
+
+            def __exit__(self, *exc) -> None:
+                self._wrapped.__exit__(*exc)
+
+            def close(self) -> None:
+                self._wrapped.close()
+
+            def get_final_response(self) -> ParsedResponse[TextFormatT]:
+                response = self._wrapped.get_final_response()
+                return response
+
+            def until_done(self) -> Self:
+                self._wrapped.until_done()
+                return self
+
+        class ResponseStreamManagerWrapper:
+            def __init__(self, **kwargs):
+                self._kwargs = kwargs
+
+            def __enter__(self):
+                self._manager = original_stream(**self._kwargs)
+                stream = self._manager.__enter__()
+                return ResponseStreamWrapper(stream, **self._kwargs)
+
+            def __exit__(self, *exc):
+                self._manager.__exit__(*exc)
+
+        return ResponseStreamManagerWrapper
+
 def _reduce_response(events: List[ResponseStreamEvent]) -> dict:
     output_text = []
     for event in events:
@@ -364,8 +529,18 @@ def wrap_openai(
                 model="gpt-4o-mini", messages=messages
             )
             print(completion.choices[0].message.content)
+            
+            # You can also use the streaming context manager:
+            with client.chat.completions.stream(
+                model="gpt-4o-mini",
+                messages=messages,
+            ) as stream:
+                for chunk in stream:
+                    if chunk.choices[0].delta.content:
+                        print(chunk.choices[0].delta.content, end="", flush=True)
 
     """  # noqa: E501
+    tracing_extra = tracing_extra or {}
     client.chat.completions.create = _get_wrapper(  # type: ignore[method-assign]
         client.chat.completions.create,
         chat_name,
@@ -374,6 +549,16 @@ def wrap_openai(
         invocation_params_fn=functools.partial(_infer_invocation_params, "chat"),
         process_outputs=_process_chat_completion,
     )
+    
+    # Wrap chat.completions.stream if it exists
+    if hasattr(client.chat.completions, "stream"):
+        client.chat.completions.stream = _get_stream_wrapper(  # type: ignore[method-assign]
+            client.chat.completions.stream,
+            chat_name,
+            tracing_extra=tracing_extra,
+            invocation_params_fn=functools.partial(_infer_invocation_params, "chat"),
+        )
+        
     client.completions.create = _get_wrapper(  # type: ignore[method-assign]
         client.completions.create,
         completions_name,
@@ -381,6 +566,15 @@ def wrap_openai(
         tracing_extra=tracing_extra,
         invocation_params_fn=functools.partial(_infer_invocation_params, "llm"),
     )
+    
+    # Wrap completions.stream if it exists
+    if hasattr(client.completions, "stream"):
+        client.completions.stream = _get_stream_wrapper(  # type: ignore[method-assign]
+            client.completions.stream,
+            completions_name,
+            tracing_extra=tracing_extra,
+            invocation_params_fn=functools.partial(_infer_invocation_params, "llm"),
+        )
 
     # Wrap beta.chat.completions.parse if it exists
     if (
@@ -395,6 +589,7 @@ def wrap_openai(
             tracing_extra=tracing_extra,
             invocation_params_fn=functools.partial(_infer_invocation_params, "chat"),
         )
+        
     # For the responses API: "client.responses.create(**kwargs)"
     if hasattr(client, "responses"):
 
@@ -429,7 +624,14 @@ def wrap_openai(
                     _infer_invocation_params, "chat"
                 ),
             )
-
-        # TODO: Handle stream() correctly. It's a context manager.
+        if hasattr(client.responses, "stream"):
+            client.responses.stream = _get_stream_wrapper(  # type: ignore[method-assign]
+                client.responses.stream,
+                "openai.responses.stream",
+                tracing_extra=tracing_extra,
+                invocation_params_fn=functools.partial(
+                    _infer_invocation_params, "chat"
+                ),
+            )
 
     return client
