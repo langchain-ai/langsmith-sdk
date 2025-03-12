@@ -49,13 +49,19 @@ def _extract_generation_span_data(
         "outputs": span_data.output,
         "metadata": {"model": span_data.model, "model_config": span_data.model_config},
     }
+    if span_data.usage:
+        data["usage_metadata"] = {
+            "total_tokens": span_data.usage.get("total_tokens"),
+            "input_tokens": span_data.usage.get("prompt_tokens"),
+            "output_tokens": span_data.usage.get("completion_tokens"),
+        }
     return data
 
 
 def _extract_response_span_data(span_data: tracing.ResponseSpanData) -> Dict[str, Any]:
     data: Dict[str, Any] = {}
     if span_data.input is not None:
-        data["inputs"] = {"messages": [inpt for inpt in span_data.input]}
+        data["inputs"] = {"messages": list(span_data.input)}
     if span_data.response is not None:
         data["outputs"] = {
             "messages": [output.model_dump() for output in span_data.response.output]
@@ -66,7 +72,13 @@ def _extract_response_span_data(span_data: tracing.ResponseSpanData) -> Dict[str
                 exclude={"input", "output", "metadata", "usage"}
             )
         )
-
+        if span_data.response.usage:
+            usage = span_data.response.usage
+            data["usage_metadata"] = {
+                "total_tokens": usage.total_tokens,
+                "input_tokens": usage.input_tokens,
+                "output_tokens": usage.output_tokens,
+            }
     return data
 
 
@@ -96,41 +108,6 @@ def _extract_custom_span_data(span_data: tracing.CustomSpanData) -> Dict[str, An
     return {"metadata": span_data.data}
 
 
-def _extract_usage_metadata(span: tracing.Span) -> Optional[Dict[str, Any]]:
-    usage_metadata = None
-    if isinstance(span.span_data, tracing.GenerationSpanData):
-        usage = span.span_data.usage
-        if usage:
-            usage_metadata = {
-                "total_tokens": (
-                    usage.get("total_tokens")
-                    if isinstance(usage, dict)
-                    else getattr(usage, "total_tokens", None)
-                ),
-                "input_tokens": (
-                    usage.get("prompt_tokens")
-                    if isinstance(usage, dict)
-                    else getattr(usage, "prompt_tokens", None)
-                ),
-                "output_tokens": (
-                    usage.get("completion_tokens")
-                    if isinstance(usage, dict)
-                    else getattr(usage, "completion_tokens", None)
-                ),
-            }
-    elif isinstance(span.span_data, tracing.ResponseSpanData):
-        response = span.span_data.response
-        if response is not None:
-            usage = getattr(response, "usage", None)
-            if usage:
-                usage_metadata = {
-                    "total_tokens": getattr(usage, "total_tokens", None),
-                    "input_tokens": getattr(usage, "input_tokens", None),
-                    "output_tokens": getattr(usage, "output_tokens", None),
-                }
-    return usage_metadata
-
-
 def _extract_span_data(span: tracing.Span) -> Dict[str, Any]:
     data: Dict[str, Any] = {}
 
@@ -151,9 +128,6 @@ def _extract_span_data(span: tracing.Span) -> Dict[str, Any]:
     else:
         return {}
 
-    usage_metadata = _extract_usage_metadata(span)
-    if usage_metadata:
-        data["usage_metadata"] = usage_metadata
     return data
 
 
@@ -226,18 +200,11 @@ class LangsmithTracingProcessor(tracing.TracingProcessor):
         run_id = self._runs.pop(span.span_id, None)
         if run_id:
             extracted = _extract_span_data(span)
-
-            outputs = extracted.get("outputs")
-            if outputs is not None:
-                usage_metadata = extracted.get("usage_metadata")
-                if usage_metadata:
-                    outputs["usage_metadata"] = usage_metadata
-
             run_data: dict = dict(
                 run_id=run_id,
                 error=span.error,
                 inputs=extracted.get("inputs", {}),
-                outputs=outputs,
+                outputs=extracted.get("outputs", {}),
                 extra={"metadata": extracted.get("metadata", {})},
             )
             self.client.update_run(**run_data)
