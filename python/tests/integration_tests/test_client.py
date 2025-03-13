@@ -33,6 +33,7 @@ from langsmith.schemas import (
     ExampleUpdate,
     ExampleUpdateWithAttachments,
     Run,
+    RunRulesCreateSchema,
 )
 from langsmith.utils import (
     LangSmithConflictError,
@@ -3012,3 +3013,49 @@ def test_annotation_queue_runs(langchain_client: Client):
 
     # Clean up
     langchain_client.delete_annotation_queue(queue.id)
+
+
+def test_excluding_auto_evaluators(langchain_client: Client):
+    """Test you can exclude auto evaluators from experiments."""
+    dataset_name = "__test_exclude_auto_evaluators" + uuid4().hex[:4]
+    dataset = _create_dataset(langchain_client, dataset_name)
+    example_id = uuid4()
+
+    # First create some examples with attachments
+    example = ExampleCreate(
+        id=example_id,
+        inputs={"text": "hello world"},
+    )
+
+    created_example = langchain_client.create_examples(
+        dataset_id=dataset.id, examples=[example]
+    )
+    assert created_example["count"] == 1
+
+    langchain_client.create_run_rule(
+        rule=RunRulesCreateSchema(
+            **{
+                "dataset_id": dataset.id,
+                "code_evaluators": [
+                    {
+                        "code": 'def perform_eval(run, example):\n  score = 1\n  return { "foobarbaz": score }'  # noqa: E501
+                    }
+                ],
+                "display_name": "my_rule",
+                "sampling_rate": 1,
+            }
+        )
+    )
+
+    # Wait for rule to propogate
+    time.sleep(5)
+
+    res = langchain_client.evaluate(lambda x: x, data=dataset.name, auto_evaluators=[])
+    results = [r for r in res]
+    target_run_id = results[0]["run"].id
+    # Cron job for running rules is set to 1 min intervals
+    time.sleep(60)
+    retrieved_run = langchain_client.read_run(run_id=target_run_id)
+    assert retrieved_run.feedback_stats is None
+
+    langchain_client.delete_dataset(dataset_id=dataset.id)
