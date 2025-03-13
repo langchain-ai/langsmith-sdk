@@ -344,7 +344,7 @@ def wrap_openai(
     completions_name: str = "OpenAI",
 ) -> C:
     """Patch the OpenAI client to make it traceable.
-    
+
     Supports:
     - Chat and Responses API's
     - Sync and async clients
@@ -392,9 +392,9 @@ def wrap_openai(
                 messages=messages,
             )
             print(response.output_text)
-    
+
     .. versionchanged:: 0.3.15
-        
+
         Support for Responses API added.
 
     """  # noqa: E501
