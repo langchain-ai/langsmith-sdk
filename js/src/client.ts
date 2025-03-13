@@ -811,7 +811,6 @@ export class Client implements LangSmithTracingClientInterface {
         // For new traces, apply sampling
         if (run.id === traceId) {
           if (this._shouldSample()) {
-            console.log("Sampling run", run.inputs);
             sampled.push(run);
           } else {
             this.filteredPostUuids.add(traceId);
