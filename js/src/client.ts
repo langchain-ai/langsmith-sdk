@@ -786,18 +786,6 @@ export class Client implements LangSmithTracingClientInterface {
       }
       return sampled;
     } else {
-      // const sampled = [];
-      // for (const run of runs) {
-      //   if (
-      //     (run.id !== run.trace_id &&
-      //       !this.filteredPostUuids.has(run.trace_id)) ||
-      //     this._shouldSample()
-      //   ) {
-      //     sampled.push(run);
-      //   } else {
-      //     this.filteredPostUuids.add(run.id);
-      //   }
-      // }
       // For new runs, sample at trace level to maintain consistency
       const sampled = [];
       for (const run of runs) {
