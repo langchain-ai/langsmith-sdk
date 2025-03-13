@@ -86,6 +86,7 @@ export interface ClientConfig {
    * Useful if encountering network rate limits at trace high volumes.
    */
   manualFlushMode?: boolean;
+  tracingSamplingRate?: number;
 }
 
 /**
@@ -330,10 +331,10 @@ export function mergeRuntimeEnvIntoRunCreate(run: RunCreate) {
   return run;
 }
 
-const getTracingSamplingRate = () => {
-  const samplingRateStr = getLangSmithEnvironmentVariable(
-    "TRACING_SAMPLING_RATE"
-  );
+const getTracingSamplingRate = (configRate?: number) => {
+  const samplingRateStr =
+    configRate?.toString() ??
+    getLangSmithEnvironmentVariable("TRACING_SAMPLING_RATE");
   if (samplingRateStr === undefined) {
     return undefined;
   }
@@ -520,7 +521,7 @@ export class Client implements LangSmithTracingClientInterface {
   constructor(config: ClientConfig = {}) {
     const defaultConfig = Client.getDefaultClientConfig();
 
-    this.tracingSampleRate = getTracingSamplingRate();
+    this.tracingSampleRate = getTracingSamplingRate(config.tracingSamplingRate);
     this.apiUrl = trimQuotes(config.apiUrl ?? defaultConfig.apiUrl) ?? "";
     if (this.apiUrl.endsWith("/")) {
       this.apiUrl = this.apiUrl.slice(0, -1);

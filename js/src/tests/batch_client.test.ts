@@ -676,10 +676,10 @@ describe.each(ENDPOINT_TYPES)(
     });
 
     it("should sample and see proper batching", async () => {
-      process.env.LANGSMITH_TRACING_SAMPLING_RATE = "0.5";
       const client = new Client({
         apiKey: "test-api-key",
         autoBatchTracing: true,
+        tracingSamplingRate: 0.5,
       });
       let counter = 0;
       jest.spyOn(client as any, "_shouldSample").mockImplementation(() => {
