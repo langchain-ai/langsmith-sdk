@@ -1,3 +1,4 @@
+import json
 import logging
 from typing import Any, Dict, Literal
 
@@ -13,6 +14,46 @@ logger = logging.getLogger(__name__)
 RunTypeT = Literal["tool", "chain", "llm", "retriever", "embedding", "prompt", "parser"]
 
 if HAVE_AGENTS:
+
+    def parse_io(data: Any, default_key: str = "output") -> Dict:
+        """Parse inputs or outputs into a dictionary format.
+
+        Args:
+            data: The data to parse (can be inputs or outputs)
+            default_key: The default key to use if data is not a dict
+                ("input" or "output")
+
+        Returns:
+            Dict: The parsed data as a dictionary
+        """
+        if isinstance(data, dict):
+            data_ = data
+        elif isinstance(data, str):
+            try:
+                parsed_json = json.loads(data)
+                if isinstance(parsed_json, dict):
+                    data_ = parsed_json
+                else:
+                    data_ = {default_key: data}
+            except json.JSONDecodeError:
+                data_ = {default_key: data}
+        elif (
+            data is not None
+            and hasattr(data, "model_dump")
+            and callable(data.model_dump)
+            and not isinstance(data, type)
+        ):
+            try:
+                data_ = data.model_dump(exclude_none=True, mode="json")
+            except Exception as e:
+                logger.debug(
+                    f"Failed to use model_dump to serialize {type(data)} to JSON: {e}"
+                )
+                data_ = {default_key: data}
+        else:
+            data_ = {default_key: data}
+
+        return data_
 
     def get_run_type(span: tracing.Span) -> RunTypeT:
         span_type = getattr(span.span_data, "type", None)
@@ -41,14 +82,17 @@ if HAVE_AGENTS:
     def _extract_function_span_data(
         span_data: tracing.FunctionSpanData,
     ) -> Dict[str, Any]:
-        return {"inputs": span_data.input, "outputs": span_data.output}
+        return {
+            "inputs": parse_io(span_data.input, "input"),
+            "outputs": parse_io(span_data.output, "output"),
+        }
 
     def _extract_generation_span_data(
         span_data: tracing.GenerationSpanData,
     ) -> Dict[str, Any]:
         data = {
-            "inputs": span_data.input,
-            "outputs": span_data.output,
+            "inputs": parse_io(span_data.input, "input"),
+            "outputs": parse_io(span_data.output, "output"),
             "metadata": {
                 "model": span_data.model,
                 "model_config": span_data.model_config,
