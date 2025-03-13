@@ -96,7 +96,7 @@ if HAVE_AGENTS:
                 extracted = agent_utils.extract_span_data(span)
                 run_data: dict = dict(
                     run_id=run_id,
-                    error=span.error,
+                    error=str(span.error) if span.error else None,
                     inputs=extracted.get("inputs", {}),
                     outputs=extracted.get("outputs", {}),
                     extra={"metadata": extracted.get("metadata", {})},
