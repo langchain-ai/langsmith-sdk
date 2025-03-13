@@ -23,26 +23,6 @@ from langsmith import client as ls_client
 from langsmith import run_helpers
 from langsmith.schemas import InputTokenDetails, OutputTokenDetails, UsageMetadata
 
-# Try to import from different possible locations depending on OpenAI SDK version
-try:
-    from openai.lib.streaming.responses import AsyncResponseStream, ResponseStream
-    from openai.types.responses import ParsedResponse
-except ImportError:
-    try:
-        from openai.lib.responses import ParsedResponse
-        from openai.lib.streaming.responses import AsyncResponseStream, ResponseStream
-    except ImportError:
-        # Define fallback types if needed
-        class ParsedResponse:
-            pass
-
-        class ResponseStream:
-            pass
-
-        class AsyncResponseStream:
-            pass
-
-
 if TYPE_CHECKING:
     from openai import AsyncOpenAI, OpenAI
     from openai.types.chat.chat_completion_chunk import (
@@ -274,32 +254,32 @@ def _get_wrapper(
     textra = tracing_extra or {}
 
     @functools.wraps(original_create)
-    def create(*args, stream: bool = False, **kwargs):
+    def create(*args, **kwargs):
         decorator = run_helpers.traceable(
             name=name,
             run_type="llm",
-            reduce_fn=reduce_fn if stream else None,
+            reduce_fn=reduce_fn if kwargs.get("stream") is True else None,
             process_inputs=_strip_not_given,
             _invocation_params_fn=invocation_params_fn,
             process_outputs=process_outputs,
             **textra,
         )
 
-        return decorator(original_create)(*args, stream=stream, **kwargs)
+        return decorator(original_create)(*args, **kwargs)
 
     @functools.wraps(original_create)
-    async def acreate(*args, stream: bool = False, **kwargs):
+    async def acreate(*args, **kwargs):
         kwargs = _strip_not_given(kwargs)
         decorator = run_helpers.traceable(
             name=name,
             run_type="llm",
-            reduce_fn=reduce_fn if stream else None,
+            reduce_fn=reduce_fn if kwargs.get("stream") is True else None,
             process_inputs=_strip_not_given,
             _invocation_params_fn=invocation_params_fn,
             process_outputs=process_outputs,
             **textra,
         )
-        return await decorator(original_create)(*args, stream=stream, **kwargs)
+        return await decorator(original_create)(*args, **kwargs)
 
     return acreate if run_helpers.is_async(original_create) else create
 
@@ -307,6 +287,7 @@ def _get_wrapper(
 def _get_parse_wrapper(
     original_parse: Callable,
     name: str,
+    process_outputs: Callable,
     tracing_extra: Optional[TracingExtra] = None,
     invocation_params_fn: Optional[Callable] = None,
 ) -> Callable:
@@ -320,7 +301,7 @@ def _get_parse_wrapper(
             reduce_fn=None,
             process_inputs=_strip_not_given,
             _invocation_params_fn=invocation_params_fn,
-            process_outputs=_process_chat_completion,
+            process_outputs=process_outputs,
             **textra,
         )
         return decorator(original_parse)(*args, **kwargs)
@@ -334,7 +315,7 @@ def _get_parse_wrapper(
             reduce_fn=None,
             process_inputs=_strip_not_given,
             _invocation_params_fn=invocation_params_fn,
-            process_outputs=_process_chat_completion,
+            process_outputs=process_outputs,
             **textra,
         )
         return await decorator(original_parse)(*args, **kwargs)
@@ -342,219 +323,11 @@ def _get_parse_wrapper(
     return aparse if run_helpers.is_async(original_parse) else parse
 
 
-def _get_stream_wrapper(
-    original_stream: Callable,
-    name: str,
-    tracing_extra: TracingExtra,
-    invocation_params_fn: Optional[Callable] = None,
-) -> Callable:
-    """Create a wrapper for OpenAI's streaming context manager."""
-    is_async = "async" in str(original_stream).lower()
-
-    if is_async:
-
-        @functools.wraps(original_stream)
-        async def wrapped_stream(*args, **kwargs):
-            from openai.lib.streaming.responses import AsyncResponseStreamManager
-
-            # Process the kwargs to get full input representation
-            processed_kwargs = _strip_not_given(kwargs)
-
-            # Extract the actual parameters that were passed to stream()
-            # This ensures we capture all the important arguments (input, model, etc.)
-            # not just the invocation parameters
-            inputs = processed_kwargs
-
-            # Apply invocation_params_fn for additional metadata if available
-            if invocation_params_fn:
-                invocation_params = invocation_params_fn(processed_kwargs)
-                # Add these as metadata rather than replacing the actual inputs
-                tracing_extra_with_params = dict(tracing_extra)
-                if "metadata" not in tracing_extra_with_params:
-                    tracing_extra_with_params["metadata"] = {}
-                tracing_extra_with_params["metadata"].update(
-                    {"invocation_params": invocation_params}
-                )
-            else:
-                tracing_extra_with_params = tracing_extra
-
-            # Get the original ResponseStreamManager
-            manager = original_stream(*args, **kwargs)
-
-            # Create a trace to be used in the context manager
-            trace_ctx = run_helpers.trace(
-                name=name,
-                run_type="llm",
-                inputs=inputs,  # Use the full processed kwargs as inputs
-                extra=tracing_extra_with_params,
-            )
-
-            class ProxyContextManager:
-                def __init__(self, stream_manager: AsyncResponseStreamManager):
-                    self.__stream_manager = stream_manager
-                    self.__events = []
-
-                async def __aenter__(self):
-                    self._ls_run = trace_ctx.__enter__()
-                    self.__ls_stream = await self.__stream_manager.__aenter__()
-                    return self
-
-                async def __aexit__(self, exc_type, exc_val, exc_tb):
-                    await self.__stream_manager.__aexit__(exc_type, exc_val, exc_tb)
-                    try:
-                        result = await self.__ls_stream.get_final_response()
-                        outputs = {}
-
-                        if hasattr(result, "model_dump"):
-                            result_dict = result.model_dump(mode="json")
-
-                            # Extract usage data if available
-                            if hasattr(result, "usage") and result.usage:
-                                usage_data = result.usage.model_dump()
-                                usage_metadata = _create_usage_metadata(usage_data)
-                                outputs["usage_metadata"] = usage_metadata
-
-                            outputs.update(
-                                {
-                                    "output": result_dict.get("output") or {},
-                                    "events": self.__events,
-                                }
-                            )
-
-                        self._ls_run.add_outputs(outputs)
-                    except Exception as e:
-                        logger.warning(f"Error getting final output: {e}")
-                    trace_ctx.__exit__(exc_type, exc_val, exc_tb)
-
-                async def __aiter__(self):
-                    async for chunk in self.__ls_stream:
-                        self.__events.append(chunk)
-                        yield chunk
-
-                async def __anext__(self):
-                    event = await self.__ls_stream.__anext__()
-                    self.__events.append(event)
-                    return event
-
-                async def close(self):
-                    await self.__ls_stream.close()
-
-                async def get_final_response(self):
-                    return await self.__ls_stream.get_final_response()
-
-                async def until_done(self):
-                    await self.__ls_stream.until_done()
-                    return self
-
-            return ProxyContextManager(manager)
-
-        return wrapped_stream
-    else:
-
-        @functools.wraps(original_stream)
-        def wrapped_stream(*args, **kwargs):
-            from openai.lib.streaming.responses import ResponseStreamManager
-
-            # Process the kwargs to get full input representation
-            processed_kwargs = _strip_not_given(kwargs)
-
-            # Extract the actual parameters that were passed to stream()
-            # This ensures we capture all the important arguments (input, model, etc.)
-            # not just the invocation parameters
-            inputs = processed_kwargs
-
-            # Apply invocation_params_fn for additional metadata if available
-            if invocation_params_fn:
-                invocation_params = invocation_params_fn(processed_kwargs)
-                # Add these as metadata rather than replacing the actual inputs
-                tracing_extra_with_params = dict(tracing_extra)
-                if "metadata" not in tracing_extra_with_params:
-                    tracing_extra_with_params["metadata"] = {}
-                tracing_extra_with_params["metadata"].update(
-                    {"invocation_params": invocation_params}
-                )
-            else:
-                tracing_extra_with_params = tracing_extra
-
-            # Get the original ResponseStreamManager
-            manager = original_stream(*args, **kwargs)
-
-            # Create a trace to be used in the context manager
-            trace_ctx = run_helpers.trace(
-                name=name,
-                run_type="llm",
-                inputs=inputs,  # Use the full processed kwargs as inputs
-                extra=tracing_extra_with_params,
-            )
-
-            class ProxyContextManager:
-                def __init__(self, stream_manager: ResponseStreamManager):
-                    self.__stream_manager = stream_manager
-                    self.__events = []
-
-                def __enter__(self):
-                    self._ls_run = trace_ctx.__enter__()
-                    self.__ls_stream = self.__stream_manager.__enter__()
-                    return self
-
-                def __exit__(self, exc_type, exc_val, exc_tb):
-                    self.__stream_manager.__exit__(exc_type, exc_val, exc_tb)
-                    try:
-                        result = self.__ls_stream.get_final_response()
-                        outputs = {}
-
-                        if hasattr(result, "model_dump"):
-                            result_dict = result.model_dump(mode="json")
-
-                            # Extract usage data if available
-                            if hasattr(result, "usage") and result.usage:
-                                usage_data = result.usage.model_dump()
-                                usage_metadata = _create_usage_metadata(usage_data)
-                                outputs["usage_metadata"] = usage_metadata
-
-                            outputs.update(
-                                {
-                                    "output": result_dict.get("output") or {},
-                                    "events": self.__events,
-                                }
-                            )
-
-                        self._ls_run.add_outputs(outputs)
-                    except Exception as e:
-                        logger.warning(f"Error getting final output: {e}")
-                    trace_ctx.__exit__(exc_type, exc_val, exc_tb)
-
-                def __iter__(self):
-                    for chunk in self.__ls_stream:
-                        self.__events.append(chunk)
-                        yield chunk
-
-                def __next__(self):
-                    event = self.__ls_stream.__next__()
-                    self.__events.append(event)
-                    return event
-
-                def close(self):
-                    self.__ls_stream.close()
-
-                def get_final_response(self):
-                    return self.__ls_stream.get_final_response()
-
-                def until_done(self):
-                    self.__ls_stream.until_done()
-                    return self
-
-            return ProxyContextManager(manager)
-
-        return wrapped_stream
-
-
-def _reduce_response(events: List[ResponseStreamEvent]) -> dict:
-    output_text = []
+def _reduce_response_events(events: list[ResponseStreamEvent]) -> dict:
     for event in events:
-        if event.type == "response.output_text.done":
-            output_text.append(event.text)
-    return {"output_text": "".join(output_text), "events": events}
+        if event.type == "response.completed":
+            return _process_responses_api_output(event.response)
+    return {}
 
 
 class TracingExtra(TypedDict, total=False):
@@ -617,12 +390,6 @@ def wrap_openai(
 
     """  # noqa: E501
     tracing_extra = tracing_extra or {}
-    # Store original stream methods if they exist
-    original_chat_stream = getattr(client.chat.completions, "stream", None)
-    original_completions_stream = getattr(client.completions, "stream", None)
-    original_responses_stream = None
-    if hasattr(client, "responses") and hasattr(client.responses, "stream"):
-        original_responses_stream = client.responses.stream
 
     # First wrap the create methods - these handle non-streaming cases
     client.chat.completions.create = _get_wrapper(  # type: ignore[method-assign]
@@ -642,23 +409,6 @@ def wrap_openai(
         invocation_params_fn=functools.partial(_infer_invocation_params, "llm"),
     )
 
-    # Now wrap streaming methods if they exist
-    if original_chat_stream:
-        client.chat.completions.stream = _get_stream_wrapper(  # type: ignore[method-assign]
-            original_chat_stream,
-            chat_name,
-            tracing_extra=tracing_extra,
-            invocation_params_fn=functools.partial(_infer_invocation_params, "chat"),
-        )
-
-    if original_completions_stream:
-        client.completions.stream = _get_stream_wrapper(  # type: ignore[method-assign]
-            original_completions_stream,
-            completions_name,
-            tracing_extra=tracing_extra,
-            invocation_params_fn=functools.partial(_infer_invocation_params, "llm"),
-        )
-
     # Wrap beta.chat.completions.parse if it exists
     if (
         hasattr(client, "beta")
@@ -669,36 +419,19 @@ def wrap_openai(
         client.beta.chat.completions.parse = _get_parse_wrapper(  # type: ignore[method-assign]
             client.beta.chat.completions.parse,  # type: ignore
             chat_name,
+            _process_chat_completion,
             tracing_extra=tracing_extra,
             invocation_params_fn=functools.partial(_infer_invocation_params, "chat"),
         )
 
     # For the responses API: "client.responses.create(**kwargs)"
     if hasattr(client, "responses"):
-
-        def process_outputs(response: Any):
-            if response:
-                try:
-                    return {
-                        "output_text": response.output_text,
-                        "message": (
-                            response.output.content[0].text
-                            if hasattr(response, "output")
-                            and hasattr(response.output, "content")
-                            else ""
-                        ),
-                        **response.model_dump(mode="json"),
-                    }
-                except Exception:
-                    return {"output": response}
-            return {}
-
         if hasattr(client.responses, "create"):
             client.responses.create = _get_wrapper(  # type: ignore[method-assign]
                 client.responses.create,
-                "openai.responses.create",
-                _reduce_response,
-                process_outputs=process_outputs,
+                chat_name,
+                _reduce_response_events,
+                process_outputs=_process_responses_api_output,
                 tracing_extra=tracing_extra,
                 invocation_params_fn=functools.partial(
                     _infer_invocation_params, "chat"
@@ -707,16 +440,8 @@ def wrap_openai(
         if hasattr(client.responses, "parse"):
             client.responses.parse = _get_parse_wrapper(  # type: ignore[method-assign]
                 client.responses.parse,
-                "openai.responses.parse",
-                tracing_extra=tracing_extra,
-                invocation_params_fn=functools.partial(
-                    _infer_invocation_params, "chat"
-                ),
-            )
-        if original_responses_stream:
-            client.responses.stream = _get_stream_wrapper(  # type: ignore[method-assign]
-                original_responses_stream,
-                "openai.responses.stream",
+                chat_name,
+                _process_responses_api_output,
                 tracing_extra=tracing_extra,
                 invocation_params_fn=functools.partial(
                     _infer_invocation_params, "chat"
@@ -724,3 +449,15 @@ def wrap_openai(
             )
 
     return client
+
+
+def _process_responses_api_output(response: Any) -> dict:
+    if response:
+        try:
+            output = response.model_dump(exclude_none=True, mode="json")
+            if usage := output.pop("usage", None):
+                output["usage_metadata"] = _create_usage_metadata(usage)
+            return output
+        except Exception:
+            return {"output": response}
+    return {}

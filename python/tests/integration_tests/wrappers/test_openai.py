@@ -7,9 +7,11 @@ from typing import Any
 from unittest import mock
 
 import pytest
+from pydantic import BaseModel
 
 import langsmith
 from langsmith.wrappers import wrap_openai
+
 
 @pytest.mark.parametrize("stream", [False, True])
 def test_chat_sync_api(stream: bool):
@@ -519,21 +521,32 @@ def test_responses_sync_api():
         originals.append(original_event)
         patched.append(patched_event)
     assert len(originals) == len(patched)
+
+    class Format(BaseModel):
+        speech: str
+
     # Test parse
     original_parse = original_client.responses.parse(
         input="Say 'foo' then stop.",
         model="gpt-4o-mini",
         temperature=0,
-        max_output_tokens=16,
+        max_output_tokens=32,
+        text_format=Format,
     )
     patched_parse = patched_client.responses.parse(
         input="Say 'foo' then stop.",
         model="gpt-4o-mini",
         temperature=0,
-        max_output_tokens=16,
+        max_output_tokens=32,
+        text_format=Format,
     )
-    assert type(original_parse) is type(patched_parse)
-    assert original_parse.output_text == patched_parse.output_text
+
+    assert isinstance(original_parse.output[0].content[0].parsed, Format)
+    assert isinstance(patched_parse.output[0].content[0].parsed, Format)
+    assert (
+        original_parse.output[0].content[0].parsed
+        == patched_parse.output[0].content[0].parsed
+    )
 
     # Test stream
     with original_client.responses.stream(
@@ -544,6 +557,7 @@ def test_responses_sync_api():
     ) as original_stream:
         for _ in original_stream:
             pass
+        original_full = original_stream.get_final_response()
     with patched_client.responses.stream(
         input="Say 'foo' then stop.",
         model="gpt-4o-mini",
@@ -552,11 +566,13 @@ def test_responses_sync_api():
     ) as patched_stream:
         for _ in patched_stream:
             pass
+        patched_full = patched_stream.get_final_response()
     original_chunks = list(original_stream)
     patched_chunks = list(patched_stream)
     assert len(original_chunks) == len(patched_chunks)
     for orig, patched in zip(original_chunks, patched_chunks):
         assert orig.output_text == patched.output_text
+    assert original_full.output_text == patched_full.output_text
 
     time.sleep(0.1)
     for call in mock_session.request.call_args_list:
@@ -619,49 +635,60 @@ async def test_responses_async_api():
         patched_chunks.append(chunk)
     assert len(original_chunks) == len(patched_chunks)
     for orig, patched in zip(original_chunks, patched_chunks):
-        pass
-        # assert orig.output_text == patched.output_text
+        assert orig.type == patched.type
+
+    # Test parse
+    class Format(BaseModel):
+        speech: str
 
     # Test parse
     original_parse = await original_client.responses.parse(
         input="Say 'foo' then stop.",
         model="gpt-4o-mini",
         temperature=0,
-        max_output_tokens=16,
+        max_output_tokens=32,
+        text_format=Format,
     )
     patched_parse = await patched_client.responses.parse(
         input="Say 'foo' then stop.",
         model="gpt-4o-mini",
         temperature=0,
-        max_output_tokens=16,
+        max_output_tokens=32,
+        text_format=Format,
     )
-    assert type(original_parse) is type(patched_parse)
-    assert original_parse.output_text.lower().strip(
-        " ."
-    ) == patched_parse.output_text.lower().strip(" .")
+
+    assert isinstance(original_parse.output[0].content[0].parsed, Format)
+    assert isinstance(patched_parse.output[0].content[0].parsed, Format)
+    assert (
+        original_parse.output[0].content[0].parsed
+        == patched_parse.output[0].content[0].parsed
+    )
 
     # Test stream
+    original_chunks = []
+    patched_chunks = []
     async with original_client.responses.stream(
         model="gpt-4o-mini",
         input=[{"role": "user", "content": "Say 'foo' then stop."}],
         temperature=0,
         max_output_tokens=16,
     ) as original_stream:
-        async for _ in original_stream:
-            pass
+        async for chunk in original_stream:
+            original_chunks.append(chunk)
+        original_full = await original_stream.get_final_response()
     async with patched_client.responses.stream(
         model="gpt-4o-mini",
         input=[{"role": "user", "content": "Say 'foo' then stop."}],
         temperature=0,
         max_output_tokens=16,
     ) as patched_stream:
-        async for _ in patched_stream:
-            pass
-    original_chunks = list(original_stream)
-    patched_chunks = list(patched_stream)
+        async for chunk in patched_stream:
+            patched_chunks.append(chunk)
+        patched_full = await patched_stream.get_final_response()
     assert len(original_chunks) == len(patched_chunks)
     for orig, patched in zip(original_chunks, patched_chunks):
-        assert orig.output_text == patched.output_text
+        assert orig.type == patched.type
+    assert original_full.output_text == patched_full.output_text
 
     time.sleep(0.1)
     for call in mock_session.request.call_args_list:
