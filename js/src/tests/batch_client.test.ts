@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable prefer-const */
+/* eslint-disable no-process-env */
 import { jest } from "@jest/globals";
 import { v4 as uuidv4 } from "uuid";
 import { Client, mergeRuntimeEnvIntoRunCreate } from "../client.js";
@@ -671,6 +672,142 @@ describe.each(ENDPOINT_TYPES)(
           })
         ),
         patch: [],
+      });
+    });
+
+    it("should sample and see proper batching", async () => {
+      const client = new Client({
+        apiKey: "test-api-key",
+        autoBatchTracing: true,
+        tracingSamplingRate: 0.5,
+      });
+      let counter = 0;
+      jest.spyOn(client as any, "_shouldSample").mockImplementation(() => {
+        counter += 1;
+        return counter % 2 !== 0;
+      });
+      const callSpy = jest
+        .spyOn((client as any).batchIngestCaller, "call")
+        .mockResolvedValue({
+          ok: true,
+          text: () => "",
+        });
+      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
+        return {
+          version: "foo",
+          batch_ingest_config: { ...extraBatchIngestConfig },
+        };
+      });
+      const projectName = "__test_batch";
+
+      const runParams = await Promise.all(
+        [...Array(4)].map(async (_, i) => {
+          const runId = uuidv4();
+          const dottedOrder = convertToDottedOrderFormat(
+            new Date().getTime() / 1000,
+            runId
+          );
+          const params = mergeRuntimeEnvIntoRunCreate({
+            id: runId,
+            project_name: projectName,
+            name: "test_run " + i,
+            run_type: "llm",
+            inputs: { text: "hello world " + i },
+            trace_id: runId,
+            dotted_order: dottedOrder,
+          } as RunCreate);
+          await client.createRun(params);
+          return params;
+        })
+      );
+
+      await client.awaitPendingTraceBatches();
+
+      const calledRequestParam: any = callSpy.mock.calls[0][2];
+      const batchBody = await parseMockRequestBody(calledRequestParam?.body);
+
+      const childRunParams = await Promise.all(
+        runParams.map(async (runParam, i) => {
+          const runId = uuidv4();
+          const dottedOrder = convertToDottedOrderFormat(
+            new Date().getTime() / 1000,
+            runId
+          );
+          const params = mergeRuntimeEnvIntoRunCreate({
+            id: runId,
+            project_name: projectName,
+            name: "test_child_run " + i,
+            run_type: "llm",
+            inputs: { text: "child world " + i },
+            trace_id: runParam.id,
+            dotted_order: [runParam.dotted_order, dottedOrder].join("."),
+          } as RunCreate);
+          await client.createRun(params);
+          await client.updateRun(runParam.id!, {
+            outputs: { output: ["Hi"] },
+            dotted_order: dottedOrder,
+            trace_id: runParam.id,
+            end_time: Math.floor(new Date().getTime() / 1000),
+          });
+          return params;
+        })
+      );
+
+      await client.awaitPendingTraceBatches();
+
+      const calledRequestParam2: any = callSpy.mock.calls[1][2];
+
+      const batchBody2 = await parseMockRequestBody(calledRequestParam2?.body);
+
+      expect(batchBody).toEqual({
+        post: runParams
+          .map((runParam, i) => {
+            if (i % 2 === 0) {
+              return expect.objectContaining({
+                id: runParam.id,
+                run_type: "llm",
+                inputs: {
+                  text: expect.stringContaining("hello world " + i),
+                },
+                trace_id: runParam.id,
+              });
+            } else {
+              return undefined;
+            }
+          })
+          .filter((item) => item !== undefined),
+        patch: [],
+      });
+
+      expect(batchBody2).toEqual({
+        post: childRunParams
+          .map((childRunParam, i) => {
+            if (i % 2 === 0) {
+              return expect.objectContaining({
+                id: childRunParam.id,
+                run_type: "llm",
+                inputs: {
+                  text: expect.stringContaining("child world " + i),
+                },
+                trace_id: runParams[i].id,
+              });
+            } else {
+              return undefined;
+            }
+          })
+          .filter((item) => item !== undefined),
+        patch: runParams
+          .map((runParam, i) => {
+            if (i % 2 === 0) {
+              return expect.objectContaining({
+                id: runParam.id,
+                trace_id: runParam.id,
+              });
+            } else {
+              return undefined;
+            }
+          })
+          .filter((item) => item !== undefined),
       });
     });
 
