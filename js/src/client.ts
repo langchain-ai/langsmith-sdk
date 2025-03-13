@@ -1058,7 +1058,8 @@ export class Client implements LangSmithTracingClientInterface {
       const batchItems = rawBatch[key].reverse();
       let batchItem = batchItems.pop();
       while (batchItem !== undefined) {
-        batchChunks[key].push(batchItem);
+        // Type is wrong but this is a deprecated code path anyway
+        batchChunks[key].push(batchItem as any);
         batchItem = batchItems.pop();
       }
     }
