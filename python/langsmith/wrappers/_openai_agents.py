@@ -2,6 +2,8 @@ import logging
 import uuid
 from typing import Dict, Optional
 
+from langsmith import run_trees as rt
+
 try:
     from agents import tracing  # type: ignore[import]
 
@@ -38,7 +40,7 @@ if HAVE_AGENTS:
         """
 
         def __init__(self, client: Optional[ls_client.Client] = None):
-            self.client = client or ls_client.Client()
+            self.client = client or rt.get_cached_client()
             self._runs: Dict[str, str] = {}
 
         def on_trace_start(self, trace: tracing.Trace) -> None:
