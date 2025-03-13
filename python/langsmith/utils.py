@@ -811,4 +811,6 @@ def is_truish(val: Any) -> bool:
     Returns:
         bool: True if the value is truish, False otherwise.
     """
-    return val is True or val == "true" or val == "True" or val == "TRUE" or val == "1"
+    if isinstance(val, str):
+        return val.lower() == "true" or val == "1"
+    return bool(val)

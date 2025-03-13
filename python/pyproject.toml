@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "langsmith"
-version = "0.3.13"
+version = "0.3.14rc1"
 description = "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform."
 authors = ["LangChain <support@langchain.dev>"]
 license = "MIT"
@@ -38,6 +38,11 @@ zstandard = "^0.23.0"
 rich = {version = "^13.9.4", optional = true}
 pytest = {version = ">=7.0.0", optional = true}
 packaging = ">=23.2"
+
+# Enabled via `otel` extra: `pip install langsmith[otel]`
+opentelemetry-sdk = {version = "^1.30.0", optional = true}
+opentelemetry-api = {version = "^1.30.0", optional = true}
+opentelemetry-exporter-otlp-proto-http = {version = "^1.30.0", optional = true}
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.3.1"
@@ -80,6 +85,7 @@ anthropic = "^0.45.0"
 [tool.poetry.extras]
 vcr = ["vcrpy"]
 langsmith_pyo3 = ["langsmith-pyo3"]
+otel = ["opentelemetry-api", "opentelemetry-sdk", "opentelemetry-exporter-otlp-proto-http"]
 pytest = ["pytest", "rich", "vcrpy"]
 
 [build-system]
