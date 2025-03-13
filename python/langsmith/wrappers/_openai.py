@@ -344,6 +344,12 @@ def wrap_openai(
     completions_name: str = "OpenAI",
 ) -> C:
     """Patch the OpenAI client to make it traceable.
+    
+    Supports:
+    - Chat and Responses API's
+    - Sync and async clients
+    - create() and parse() methods
+    - with and without streaming
 
     Args:
         client (Union[OpenAI, AsyncOpenAI]): The client to patch.
@@ -364,9 +370,10 @@ def wrap_openai(
             import openai
             from langsmith import wrappers
 
+            # Use OpenAI client same as you normally would.
             client = wrappers.wrap_openai(openai.OpenAI())
 
-            # Use OpenAI client same as you normally would:
+            # Chat API:
             messages = [
                 {"role": "system", "content": "You are a helpful assistant."},
                 {
@@ -379,14 +386,16 @@ def wrap_openai(
             )
             print(completion.choices[0].message.content)
 
-            # You can also use the streaming context manager:
-            with client.chat.completions.stream(
+            # Responses API:
+            response = client.responses.create(
                 model="gpt-4o-mini",
                 messages=messages,
-            ) as stream:
-                for chunk in stream:
-                    if chunk.choices[0].delta.content:
-                        print(chunk.choices[0].delta.content, end="", flush=True)
+            )
+            print(response.output_text)
+    
+    .. versionchanged:: 0.3.15
+        
+        Support for Responses API added.
 
     """  # noqa: E501
     tracing_extra = tracing_extra or {}
