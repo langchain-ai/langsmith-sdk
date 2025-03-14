@@ -3028,6 +3028,9 @@ class Client:
         Note: this will fetch whatever data exists in the DB. Results are not
         immediately available in the DB upon evaluation run completion.
 
+        Feedback score values will be returned as an average across all runs for
+        the experiment. Note that non-numeric feedback scores will be omitted.
+
         Args:
             project_id (Optional[Union[UUID, str]]): The ID of the project.
             project_name (Optional[str]): The name of the project.
