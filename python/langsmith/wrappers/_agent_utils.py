@@ -111,13 +111,9 @@ if HAVE_AGENTS:
     ) -> Dict[str, Any]:
         data: Dict[str, Any] = {}
         if span_data.input is not None:
-            data["inputs"] = {"messages": list(span_data.input)}
+            data["inputs"] = parse_io(span_data.input, "input")
         if span_data.response is not None:
-            data["outputs"] = {
-                "messages": [
-                    output.model_dump() for output in span_data.response.output
-                ]
-            }
+            data["outputs"] = parse_io(span_data.response.output, "output")
             data["metadata"] = span_data.response.metadata or {}
             data["metadata"].update(
                 span_data.response.model_dump(

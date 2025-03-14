@@ -104,13 +104,7 @@ if HAVE_AGENTS:
                 self.client.update_run(**run_data)
 
         def shutdown(self) -> None:
-            if self.client is not None:
-                self.client.flush()
-            else:
-                logger.warning("No client to flush")
+            self.client.flush()
 
         def force_flush(self) -> None:
-            if self.client is not None:
-                self.client.flush()
-            else:
-                logger.warning("No client to flush")
+            self.client.flush()
