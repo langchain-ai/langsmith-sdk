@@ -271,15 +271,20 @@ def _format_feedback_score(score: Union[float, int, bool, None]):
     return score
 
 
-def _get_tracing_sampling_rate() -> float | None:
+def _get_tracing_sampling_rate(
+    tracing_sampling_rate: Optional[float] = None,
+) -> float | None:
     """Get the tracing sampling rate.
 
     Returns:
         Optional[float]: The tracing sampling rate.
     """
-    sampling_rate_str = ls_utils.get_env_var("TRACING_SAMPLING_RATE")
-    if sampling_rate_str is None:
-        return None
+    if tracing_sampling_rate is None:
+        sampling_rate_str = ls_utils.get_env_var("TRACING_SAMPLING_RATE")
+        if not sampling_rate_str:
+            return None
+    else:
+        sampling_rate_str = str(tracing_sampling_rate)
     sampling_rate = float(sampling_rate_str)
     if sampling_rate < 0 or sampling_rate > 1:
         raise ls_utils.LangSmithUserError(
@@ -415,6 +420,7 @@ class Client:
         hide_outputs: Optional[Union[Callable[[dict], dict], bool]] = None,
         info: Optional[Union[dict, ls_schemas.LangSmithInfo]] = None,
         api_urls: Optional[Dict[str, str]] = None,
+        tracing_sampling_rate: Optional[float] = None,
     ) -> None:
         """Initialize a Client instance.
 
@@ -446,6 +452,10 @@ class Client:
                 URL in the dictionary. However, ONLY Runs are written (POST and PATCH)
                 to all URLs in the dictionary. Feedback, sessions, datasets, examples,
                 annotation queues and evaluation results are only written to the first.
+            tracing_sampling_rate (Optional[float]): The sampling rate for tracing. If provided,
+                overrides the LANGCHAIN_TRACING_SAMPLING_RATE environment variable.
+                Should be a float between 0 and 1, where 1 means trace everything
+                and 0 means trace nothing.
 
         Raises:
             LangSmithUserError: If the API key is not provided when using the hosted service.
@@ -464,7 +474,7 @@ class Client:
                 "and LANGSMITH_RUNS_ENDPOINTS."
             )
 
-        self.tracing_sample_rate = _get_tracing_sampling_rate()
+        self.tracing_sample_rate = _get_tracing_sampling_rate(tracing_sampling_rate)
         self._filtered_post_uuids: set[uuid.UUID] = set()
         self._write_api_urls: Mapping[str, Optional[str]] = _get_write_api_urls(
             api_urls
@@ -1179,6 +1189,11 @@ class Client:
                 {k: v for k, v in langchain_metadata.items() if k not in metadata}
             )
 
+    def _should_sample(self) -> bool:
+        if self.tracing_sample_rate is None:
+            return True
+        return random.random() < self.tracing_sample_rate
+
     def _filter_for_sampling(
         self, runs: Iterable[dict], *, patch: bool = False
     ) -> list[dict]:
@@ -1197,16 +1212,21 @@ class Client:
         else:
             sampled = []
             for run in runs:
-                if (
-                    # Child run
-                    run["id"] != run.get("trace_id")
-                    # Whose trace is included
-                    and run.get("trace_id") not in self._filtered_post_uuids
-                    # Or a root that's randomly sampled
-                ) or random.random() < self.tracing_sample_rate:
-                    sampled.append(run)
+                trace_id = run.get("trace_id") or run["id"]
+
+                # If we've already made a decision about this trace, follow it
+                if trace_id in self._filtered_post_uuids:
+                    continue
+
+                # For new traces, apply sampling
+                if run["id"] == trace_id:
+                    if self._should_sample():
+                        sampled.append(run)
+                    else:
+                        self._filtered_post_uuids.add(trace_id)
                 else:
-                    self._filtered_post_uuids.add(_as_uuid(run["id"]))
+                    # Child runs follow their trace's sampling decision
+                    sampled.append(run)
             return sampled
 
     def create_run(
