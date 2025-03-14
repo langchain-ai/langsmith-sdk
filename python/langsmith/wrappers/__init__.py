@@ -2,6 +2,6 @@
 
 from langsmith.wrappers._anthropic import wrap_anthropic
 from langsmith.wrappers._openai import wrap_openai
-from langsmith.wrappers._openai_agents import LangsmithTracingProcessor
+from langsmith.wrappers._openai_agents import OpenAIAgentsTracingProcessor
 
-__all__ = ["wrap_anthropic", "wrap_openai", "LangsmithTracingProcessor"]
+__all__ = ["wrap_anthropic", "wrap_openai", "OpenAIAgentsTracingProcessor"]
