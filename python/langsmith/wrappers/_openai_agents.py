@@ -1,3 +1,4 @@
+import datetime
 import logging
 import uuid
 from typing import Dict, Optional
@@ -44,7 +45,7 @@ if HAVE_AGENTS:
             self._runs: Dict[str, str] = {}
 
         def on_trace_start(self, trace: tracing.Trace) -> None:
-            run_name = trace.name if trace.name else "Agent trace"
+            run_name = trace.name if trace.name else "Agent workflow"
             trace_run_id = str(uuid.uuid4())
             self._runs[trace.trace_id] = trace_run_id
 
@@ -62,11 +63,11 @@ if HAVE_AGENTS:
 
         def on_trace_end(self, trace: tracing.Trace) -> None:
             run_id = self._runs.pop(trace.trace_id, None)
+            trace_dict = trace.export() or {}
+            metadata = trace_dict.get("metadata") or {}
             if run_id:
                 try:
-                    self.client.update_run(
-                        run_id=run_id,
-                    )
+                    self.client.update_run(run_id=run_id, extra={"metadata": metadata})
                 except Exception as e:
                     logger.exception(f"Error updating trace run: {e}")
 
@@ -77,6 +78,7 @@ if HAVE_AGENTS:
 
             run_name = agent_utils.get_run_name(span)
             run_type = agent_utils.get_run_type(span)
+            extracted = agent_utils.extract_span_data(span)
 
             try:
                 run_data: dict = dict(
@@ -84,8 +86,12 @@ if HAVE_AGENTS:
                     run_type=run_type,
                     id=span_run_id,
                     parent_run_id=parent_run_id,
-                    inputs={},
+                    inputs=extracted.get("inputs", {}),
                 )
+                if span.started_at:
+                    run_data["start_time"] = datetime.datetime.fromisoformat(
+                        span.started_at
+                    )
                 self.client.create_run(**run_data)
             except Exception as e:
                 logger.exception(f"Error creating span run: {e}")
@@ -94,13 +100,22 @@ if HAVE_AGENTS:
             run_id = self._runs.pop(span.span_id, None)
             if run_id:
                 extracted = agent_utils.extract_span_data(span)
+                metadata = extracted.get("metadata", {})
+                metadata["openai_parent_id"] = span.parent_id
+                metadata["openai_trace_id"] = span.trace_id
+                metadata["openai_span_id"] = span.span_id
+                extracted["metadata"] = metadata
                 run_data: dict = dict(
                     run_id=run_id,
                     error=str(span.error) if span.error else None,
-                    inputs=extracted.get("inputs", {}),
-                    outputs=extracted.get("outputs", {}),
-                    extra={"metadata": extracted.get("metadata", {})},
+                    outputs=extracted.pop("outputs", {}),
+                    inputs=extracted.pop("inputs", {}),
+                    extra=extracted,
                 )
+                if span.ended_at:
+                    run_data["end_time"] = datetime.datetime.fromisoformat(
+                        span.ended_at
+                    )
                 self.client.update_run(**run_data)
 
         def shutdown(self) -> None:

@@ -93,13 +93,13 @@ if HAVE_AGENTS:
         data = {
             "inputs": parse_io(span_data.input, "input"),
             "outputs": parse_io(span_data.output, "output"),
-            "metadata": {
+            "invocation_params": {
                 "model": span_data.model,
                 "model_config": span_data.model_config,
             },
         }
         if span_data.usage:
-            data["usage_metadata"] = {
+            data["outputs"]["usage_metadata"] = {
                 "total_tokens": span_data.usage.get("total_tokens"),
                 "input_tokens": span_data.usage.get("prompt_tokens"),
                 "output_tokens": span_data.usage.get("completion_tokens"),
@@ -111,31 +111,58 @@ if HAVE_AGENTS:
     ) -> Dict[str, Any]:
         data: Dict[str, Any] = {}
         if span_data.input is not None:
-            data["inputs"] = parse_io(span_data.input, "input")
+            data["inputs"] = {
+                "input": span_data.input,
+                "instructions": span_data.response.instructions,
+            }
         if span_data.response is not None:
-            data["outputs"] = parse_io(span_data.response.output, "output")
-            data["metadata"] = span_data.response.metadata or {}
-            data["metadata"].update(
-                span_data.response.model_dump(
-                    exclude={"input", "output", "metadata", "usage"}
+            response = span_data.response.model_dump(exclude_none=True, mode="json")
+            data["outputs"] = {"output": response.pop("output", [])}
+            if usage := response.pop("usage", None):
+                # tokens -> token
+                if "output_tokens_details" in usage:
+                    usage["output_token_details"] = usage.pop("output_tokens_details")
+                if "input_tokens_details" in usage:
+                    usage["input_token_details"] = usage.pop("input_tokens_details")
+                data["outputs"]["usage_metadata"] = usage
+
+            data["invocation_params"] = {
+                k: v
+                for k, v in response.items()
+                if k
+                in (
+                    "max_output_tokens",
+                    "model",
+                    "parallel_tool_calls",
+                    "reasoning",
+                    "temperature",
+                    "text",
+                    "tool_choice",
+                    "tools",
+                    "top_p",
+                    "truncation",
                 )
-            )
-            if span_data.response.usage:
-                usage = span_data.response.usage
-                data["usage_metadata"] = {
-                    "total_tokens": usage.total_tokens,
-                    "input_tokens": usage.input_tokens,
-                    "output_tokens": usage.output_tokens,
-                }
+            }
+            data["metadata"] = {
+                k: v
+                for k, v in response.items()
+                if k
+                not in (
+                    {"output", "usage", "instructions"}.union(data["invocation_params"])
+                )
+            }
+
         return data
 
     def _extract_agent_span_data(span_data: tracing.AgentSpanData) -> Dict[str, Any]:
         return {
-            "metadata": {
+            "invocation_params": {
                 "tools": span_data.tools,
                 "handoffs": span_data.handoffs,
+            },
+            "metadata": {
                 "output_type": span_data.output_type,
-            }
+            },
         }
 
     def _extract_handoff_span_data(
