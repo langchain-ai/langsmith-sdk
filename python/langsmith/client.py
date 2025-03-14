@@ -279,11 +279,12 @@ def _get_tracing_sampling_rate(
     Returns:
         Optional[float]: The tracing sampling rate.
     """
-    sampling_rate_str = str(tracing_sampling_rate) or ls_utils.get_env_var(
-        "TRACING_SAMPLING_RATE"
-    )
-    if sampling_rate_str is None:
-        return None
+    if tracing_sampling_rate is None:
+        sampling_rate_str = ls_utils.get_env_var("TRACING_SAMPLING_RATE")
+        if not sampling_rate_str:
+            return None
+    else:
+        sampling_rate_str = str(tracing_sampling_rate)
     sampling_rate = float(sampling_rate_str)
     if sampling_rate < 0 or sampling_rate > 1:
         raise ls_utils.LangSmithUserError(
