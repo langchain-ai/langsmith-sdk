@@ -153,6 +153,7 @@ def _load_package_modules(
                 "_internal.py",
                 "_expect.py",
                 "_openai.py",
+                "_openai_agents.py",
                 "_anthropic.py",
                 "_expect.py",
             }:
@@ -384,9 +385,10 @@ Here are quick links to some of the key classes and functions:
 | [Client](client/langsmith.client.Client) |  Synchronous client for interacting with the LangSmith API. |
 | [AsyncClient](async_client/langsmith.async_client.AsyncClient) | Asynchronous client for interacting with the LangSmith API. |
 | [traceable](run_helpers/langsmith.run_helpers.traceable) | Wrapper/decorator for tracing any function. |
+| [@pytest.mark.langsmith](/testing/langsmith.testing._internal.test) | LangSmith pytest integration. |
 | [wrap_openai](wrappers/langsmith.wrappers._openai.wrap_openai) | Wrapper for OpenAI client, adds LangSmith tracing to all OpenAI calls. |
 | [wrap_anthropic](wrappers/langsmith.wrappers._anthropic.wrap_anthropic) | Wrapper for Anthropic client, adds LangSmith tracing to all Anthropic calls. |
-| [@pytest.mark.langsmith](/testing/langsmith.testing._internal.test) | LangSmith pytest integration. |
+| [OpenAIAgentsTracingProcessor](wrappers/langsmith.wrappers._openai_agents.OpenAIAgentsTracingProcessor) | Tracer for OpenAI Agents. |
 
 ```{{toctree}}
 :maxdepth: 2
