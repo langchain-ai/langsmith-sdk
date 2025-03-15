@@ -122,8 +122,14 @@ if HAVE_AGENTS:
                 # tokens -> token
                 if "output_tokens_details" in usage:
                     usage["output_token_details"] = usage.pop("output_tokens_details")
+                    usage["output_token_details"]["reasoning"] = usage[
+                        "output_token_details"
+                    ].pop("reasoning_tokens", 0)
                 if "input_tokens_details" in usage:
                     usage["input_token_details"] = usage.pop("input_tokens_details")
+                    usage["input_token_details"]["cache_read"] = usage[
+                        "input_token_details"
+                    ].pop("cached_tokens", 0)
                 data["outputs"]["usage_metadata"] = usage
 
             data["invocation_params"] = {
