@@ -143,7 +143,7 @@ if HAVE_AGENTS:
                     "truncation",
                 )
             }
-            data["metadata"] = {
+            metadata = {
                 k: v
                 for k, v in response.items()
                 if k
@@ -151,6 +151,16 @@ if HAVE_AGENTS:
                     {"output", "usage", "instructions"}.union(data["invocation_params"])
                 )
             }
+            metadata.update(
+                {
+                    "ls_model_name": data["invocation_params"].get("model"),
+                    "ls_max_tokens": data["invocation_params"].get("max_output_tokens"),
+                    "ls_temperature": data["invocation_params"].get("temperature"),
+                    "ls_model_type": "chat",
+                    "ls_provider": "openai",
+                }
+            )
+            data["metadata"] = metadata
 
         return data
 
@@ -169,7 +179,7 @@ if HAVE_AGENTS:
         span_data: tracing.HandoffSpanData,
     ) -> Dict[str, Any]:
         return {
-            "metadata": {
+            "inputs": {
                 "from_agent": span_data.from_agent,
                 "to_agent": span_data.to_agent,
             }
