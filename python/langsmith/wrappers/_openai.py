@@ -73,9 +73,11 @@ def _infer_invocation_params(model_type: str, kwargs: dict):
     return {
         "ls_provider": "openai",
         "ls_model_type": model_type,
-        "ls_model_name": stripped.get("model", None),
-        "ls_temperature": stripped.get("temperature", None),
-        "ls_max_tokens": stripped.get("max_tokens", None),
+        "ls_model_name": stripped.get("model"),
+        "ls_temperature": stripped.get("temperature"),
+        "ls_max_tokens": stripped.get("max_tokens")
+        or stripped.get("max_completion_tokens")
+        or stripped.get("max_output_tokens"),
         "ls_stop": stop,
     }
 
