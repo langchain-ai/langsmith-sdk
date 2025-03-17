@@ -166,7 +166,11 @@ if HAVE_AGENTS:
             run_id = self._runs.pop(trace.trace_id, None)
             if run_id:
                 try:
-                    self.client.update_run(run_id=run_id, inputs=self._first_response_inputs.pop(trace.trace_id, {}), outputs=self._last_response_outputs.pop(trace.trace_id, {}))
+                    self.client.update_run(
+                        run_id=run_id,
+                        inputs=self._first_response_inputs.pop(trace.trace_id, {}),
+                        outputs=self._last_response_outputs.pop(trace.trace_id, {}),
+                    )
                 except Exception as e:
                     logger.exception(f"Error updating trace run: {e}")
 
@@ -204,8 +208,8 @@ if HAVE_AGENTS:
                 metadata["openai_trace_id"] = span.trace_id
                 metadata["openai_span_id"] = span.span_id
                 extracted["metadata"] = metadata
-                outputs=extracted.pop("outputs", {})
-                inputs=extracted.pop("inputs", {})
+                outputs = extracted.pop("outputs", {})
+                inputs = extracted.pop("inputs", {})
                 run_data: dict = dict(
                     run_id=run_id,
                     error=str(span.error) if span.error else None,
@@ -218,7 +222,9 @@ if HAVE_AGENTS:
                         span.ended_at
                     )
                 if isinstance(span.span_data, tracing.ResponseSpanData):
-                    self._first_response_inputs[span.trace_id] = self._first_response_inputs.get(span.trace_id) or inputs
+                    self._first_response_inputs[span.trace_id] = (
+                        self._first_response_inputs.get(span.trace_id) or inputs
+                    )
                     self._last_response_outputs[span.trace_id] = outputs
                 self.client.update_run(**run_data)
 
