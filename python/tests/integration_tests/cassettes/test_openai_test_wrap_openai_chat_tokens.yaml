@@ -522,4 +522,262 @@ interactions:
     status:
       code: 200
       message: OK
+- request:
+    body: '{"messages": [{"role": "user", "content": "howdy"}], "model": "gpt-4o-mini"}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '76'
+      content-type:
+      - application/json
+      host:
+      - api.openai.com
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - 'false'
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 1.66.3
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.11.3
+    method: POST
+    uri: https://api.openai.com/v1/chat/completions
+  response:
+    body:
+      string: "{\n  \"id\": \"chatcmpl-BAtrhgIjgO5QPbB32i9ebesvdiWhQ\",\n  \"object\":
+        \"chat.completion\",\n  \"created\": 1741937725,\n  \"model\": \"gpt-4o-mini-2024-07-18\",\n
+        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
+        \"assistant\",\n        \"content\": \"Howdy! How can I assist you today?\",\n
+        \       \"refusal\": null,\n        \"annotations\": []\n      },\n      \"logprobs\":
+        null,\n      \"finish_reason\": \"stop\"\n    }\n  ],\n  \"usage\": {\n    \"prompt_tokens\":
+        9,\n    \"completion_tokens\": 10,\n    \"total_tokens\": 19,\n    \"prompt_tokens_details\":
+        {\n      \"cached_tokens\": 0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
+        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
+        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
+        \"default\",\n  \"system_fingerprint\": \"fp_06737a9306\"\n}\n"
+    headers:
+      CF-RAY:
+      - 9202181a3fe62ef3-LAX
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Fri, 14 Mar 2025 07:35:25 GMT
+      Server:
+      - cloudflare
+      Set-Cookie:
+      - __cf_bm=ZXm2YLhZW4Df3d7y9eR7LW2vI9FjZvg5UoZIwLpc23Q-1741937725-1.0.1.1-LYlPSsup4ZFVSRd7SvzZI4X.CWWvm_a53DNUS_Sa.bXEoICKpfk2cqHynSl3QXOlrx5IQ8QdivcIzr3W.jAARyTSQN9GKzT.oouE4fF4EDQ;
+        path=/; expires=Fri, 14-Mar-25 08:05:25 GMT; domain=.api.openai.com; HttpOnly;
+        Secure; SameSite=None
+      - _cfuvid=dbRVvsgEzwd_VjyhNv5.7jmpXoF90wkzV8ZHPJQLUuk-1741937725310-0.0.1.1-604800000;
+        path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '840'
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '408'
+      openai-version:
+      - '2020-10-01'
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      x-ratelimit-limit-requests:
+      - '30000'
+      x-ratelimit-limit-tokens:
+      - '150000000'
+      x-ratelimit-remaining-requests:
+      - '29999'
+      x-ratelimit-remaining-tokens:
+      - '149999981'
+      x-ratelimit-reset-requests:
+      - 2ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_7510beb18110b371b3b767d574c4fe2c
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"messages": [{"role": "user", "content": "Write a bash script that takes
+      a matrix represented as a string with format ''[1,2],[3,4],[5,6]'' and prints
+      the transpose in the same format."}], "model": "o1-mini"}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '207'
+      content-type:
+      - application/json
+      host:
+      - api.openai.com
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - 'false'
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 1.66.3
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.11.3
+    method: POST
+    uri: https://api.openai.com/v1/chat/completions
+  response:
+    body:
+      string: "{\n  \"id\": \"chatcmpl-BAtrhGEcEJnixX0P6k0FD8btr1lrW\",\n  \"object\":
+        \"chat.completion\",\n  \"created\": 1741937725,\n  \"model\": \"o1-mini-2024-09-12\",\n
+        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
+        \"assistant\",\n        \"content\": \"Certainly! Below is a **Bash script**
+        that takes a matrix represented as a string in the format `'[1,2],[3,4],[5,6]'`
+        and prints its transpose in the same format. This script handles matrices
+        of arbitrary size.\\n\\n### Script: `transpose.sh`\\n\\n```bash\\n#!/bin/bash\\n\\n#
+        Check if an argument is provided\\nif [ $# -ne 1 ]; then\\n    echo \\\"Usage:
+        $0 '[1,2],[3,4],[5,6]'\\\"\\n    exit 1\\nfi\\n\\ninput=\\\"$1\\\"\\n\\n#
+        Step 1: Remove all spaces (optional, in case input has spaces)\\ninput=$(echo
+        \\\"$input\\\" | tr -d ' ')\\n\\n# Step 2: Extract rows by removing outer
+        brackets and splitting by '],['\\n# Remove the leading '[' and trailing ']'
+        if present\\nclean_input=$(echo \\\"$input\\\" | sed 's/^\\\\[//' | sed 's/\\\\]$//')\\n\\n#
+        Replace '],[' with a space to separate rows\\nrows=$(echo \\\"$clean_input\\\"
+        | sed 's/\\\\],\\\\[/ /g')\\n\\n# Split the rows into an array\\nIFS=' ' read
+        -r -a row_array <<< \\\"$rows\\\"\\n\\n# Determine the number of rows and
+        columns\\nnum_rows=${#row_array[@]}\\n# Split the first row by ',' to get
+        the number of columns\\nIFS=',' read -r -a first_row_array <<< \\\"${row_array[0]}\\\"\\nnum_cols=${#first_row_array[@]}\\n\\n#
+        Step 3: Create a 2D array to hold the matrix elements\\n# Initialize an empty
+        matrix\\ndeclare -a matrix\\n\\nfor ((i=0; i<num_rows; i++)); do\\n    IFS=','
+        read -r -a current_row <<< \\\"${row_array[i]}\\\"\\n    for ((j=0; j<num_cols;
+        j++)); do\\n        matrix[i*num_cols + j]=\\\"${current_row[j]}\\\"\\n    done\\ndone\\n\\n#
+        Step 4: Compute the transpose\\n# Initialize an array to hold transposed rows\\ndeclare
+        -a transpose_rows\\n\\nfor ((j=0; j<num_cols; j++)); do\\n    transposed_row=\\\"\\\"\\n
+        \   for ((i=0; i<num_rows; i++)); do\\n        element=\\\"${matrix[i*num_cols
+        + j]}\\\"\\n        transposed_row+=\\\"$element\\\"\\n        # Add comma
+        if not the last element in the row\\n        if [ $i -lt $((num_rows - 1))
+        ]; then\\n            transposed_row+=\\\",\\\"\\n        fi\\n    done\\n
+        \   transpose_rows[j]=\\\"[$transposed_row]\\\"\\ndone\\n\\n# Step 5: Join
+        the transposed rows with commas\\ntranspose_output=$(IFS=, ; echo \\\"${transpose_rows[*]}\\\")\\n\\n#
+        Print the transposed matrix\\necho \\\"$transpose_output\\\"\\n```\\n\\n###
+        How It Works\\n\\n1. **Input Validation:**\\n   - The script first checks
+        if exactly one argument is provided. If not, it displays usage instructions.\\n\\n2.
+        **Preprocessing:**\\n   - Removes any spaces from the input (optional step).\\n
+        \  - Strips the outer square brackets.\\n   - Splits the input string into
+        individual rows by replacing `],[` with a space.\\n\\n3. **Parsing the Matrix:**\\n
+        \  - Determines the number of rows and columns.\\n   - Splits each row into
+        individual elements and stores them in a 1D array to simulate a 2D matrix.\\n\\n4.
+        **Transposing the Matrix:**\\n   - Iterates over columns and rows to build
+        transposed rows.\\n   - Each transposed row is enclosed in square brackets.\\n\\n5.
+        **Output:**\\n   - Joins the transposed rows with commas and prints the result.\\n\\n###
+        Usage\\n\\n1. **Make the Script Executable:**\\n\\n   ```bash\\n   chmod +x
+        transpose.sh\\n   ```\\n\\n2. **Run the Script with a Matrix String:**\\n\\n
+        \  ```bash\\n   ./transpose.sh '[1,2],[3,4],[5,6]'\\n   ```\\n\\n   **Output:**\\n\\n
+        \  ```\\n   [1,3,5],[2,4,6]\\n   ```\\n\\n### Examples\\n\\n- **Example 1:**\\n\\n
+        \ ```bash\\n  ./transpose.sh '[1,2,3],[4,5,6]'\\n  ```\\n\\n  **Output:**\\n\\n
+        \ ```\\n  [1,4],[2,5],[3,6]\\n  ```\\n\\n- **Example 2:**\\n\\n  ```bash\\n
+        \ ./transpose.sh '[7,8],[9,10],[11,12]'\\n  ```\\n\\n  **Output:**\\n\\n  ```\\n
+        \ [7,9,11],[8,10,12]\\n  ```\\n\\n### Notes\\n\\n- **Assumptions:**\\n  -
+        The input matrix is well-formed, with each row containing the same number
+        of elements.\\n  - Elements are separated by commas, and rows are separated
+        by `],[`.\\n  \\n- **Limitations:**\\n  - The script does not handle nested
+        matrices or elements containing special characters.\\n  - It assumes numeric
+        or simple string elements without embedded commas.\\n\\nThis script provides
+        a straightforward way to transpose matrices represented as strings in the
+        specified format using Bash and common Unix utilities.\",\n        \"refusal\":
+        null,\n        \"annotations\": []\n      },\n      \"finish_reason\": \"stop\"\n
+        \   }\n  ],\n  \"usage\": {\n    \"prompt_tokens\": 43,\n    \"completion_tokens\":
+        2039,\n    \"total_tokens\": 2082,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\":
+        0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
+        {\n      \"reasoning_tokens\": 960,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
+        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
+        \"default\",\n  \"system_fingerprint\": \"fp_5c373483f1\"\n}\n"
+    headers:
+      CF-RAY:
+      - 92021820e9d47cce-LAX
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Fri, 14 Mar 2025 07:35:37 GMT
+      Server:
+      - cloudflare
+      Set-Cookie:
+      - __cf_bm=4QCIHmYKFZmIFYxFHQfc7vVezX7TVZv3NvpxtGYI7.0-1741937737-1.0.1.1-GXrWWN14GgNH6IowCHJKqLxwHgh56_toGs_e5pd3NIZR6KcWfMVTK6wPJB2_ms.J1.u38NUdEn.zBQEiJVdA6FpfxVfPBEfBDKh3k9brmeY;
+        path=/; expires=Fri, 14-Mar-25 08:05:37 GMT; domain=.api.openai.com; HttpOnly;
+        Secure; SameSite=None
+      - _cfuvid=fajwqMOh4Bq1tWILC9xD0Cp1SiBLo4MFa6JE1w3EnfM-1741937737165-0.0.1.1-604800000;
+        path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '4753'
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '11493'
+      openai-version:
+      - '2020-10-01'
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      x-ratelimit-limit-requests:
+      - '30000'
+      x-ratelimit-limit-tokens:
+      - '150000000'
+      x-ratelimit-remaining-requests:
+      - '29999'
+      x-ratelimit-remaining-tokens:
+      - '149999948'
+      x-ratelimit-reset-requests:
+      - 2ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_f5d7cdfa50618fd834c3eb705138d823
+    status:
+      code: 200
+      message: OK
 version: 1
