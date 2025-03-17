@@ -154,7 +154,7 @@ if HAVE_AGENTS:
                     run_type="chain",
                     id=trace_run_id,
                     revision_id=None,
-                    extra={"metadata": metadata} if metadata else None,
+                    extra={"metadata": metadata},
                 )
                 self.client.create_run(**run_data)
             except Exception as e:
@@ -162,11 +162,9 @@ if HAVE_AGENTS:
 
         def on_trace_end(self, trace: tracing.Trace) -> None:
             run_id = self._runs.pop(trace.trace_id, None)
-            trace_dict = trace.export() or {}
-            metadata = trace_dict.get("metadata") or {}
             if run_id:
                 try:
-                    self.client.update_run(run_id=run_id, extra={"metadata": metadata})
+                    self.client.update_run(run_id=run_id)
                 except Exception as e:
                     logger.exception(f"Error updating trace run: {e}")
 
