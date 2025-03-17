@@ -15,7 +15,57 @@ except ImportError:
     HAVE_AGENTS = False
 
     class OpenAIAgentsTracingProcessor:
-        """Stub class when agents package is not installed."""
+        """Tracing processor for the `OpenAI Agents SDK <https://openai.github.io/openai-agents-python/>`_.
+
+        Traces all intermediate steps of your OpenAI Agent to LangSmith.
+
+        Requirements: Make sure to install ``pip install -U langsmith[openai-agents]``.
+
+        Args:
+            client: An instance of langsmith.client.Client. If not provided,
+                a default client is created.
+
+        Example:
+            .. code-block:: python
+
+                from agents import (
+                    Agent,
+                    FileSearchTool,
+                    Runner,
+                    WebSearchTool,
+                    function_tool,
+                    set_trace_processors,
+                )
+
+                from langsmith.wrappers import OpenAIAgentsTracingProcessor
+
+                set_trace_processors([OpenAIAgentsTracingProcessor()])
+
+
+                @function_tool
+                def get_weather(city: str) -> str:
+                    return f"The weather in {city} is sunny"
+
+
+                haiku_agent = Agent(
+                    name="Haiku agent",
+                    instructions="Always respond in haiku form",
+                    model="o3-mini",
+                    tools=[get_weather],
+                )
+                agent = Agent(
+                    name="Assistant",
+                    tools=[WebSearchTool()],
+                    instructions="speak in spanish. use Haiku agent if they ask for a haiku or for the weather",
+                    handoffs=[haiku_agent],
+                )
+
+                result = await Runner.run(
+                    agent,
+                    "write a haiku about the weather today and tell me a recent news story about new york",
+                )
+                print(result.final_output)
+        """  # noqa: E501
 
         def __init__(self, *args, **kwargs):
             raise ImportError(
