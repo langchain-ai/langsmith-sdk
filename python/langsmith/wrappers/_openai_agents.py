@@ -136,8 +136,8 @@ if HAVE_AGENTS:
         def __init__(self, client: Optional[ls_client.Client] = None):
             self.client = client or rt.get_cached_client()
             self._runs: Dict[str, str] = {}
-            self._first_response_inputs = {}
-            self._last_response_outputs = {}
+            self._first_response_inputs: dict = {}
+            self._last_response_outputs: dict = {}
 
         def on_trace_start(self, trace: tracing.Trace) -> None:
             run_name = trace.name if trace.name else "Agent workflow"
