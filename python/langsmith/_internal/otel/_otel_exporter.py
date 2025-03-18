@@ -44,9 +44,6 @@ GEN_AI_RESPONSE_FINISH_REASONS = "gen_ai.response.finish_reasons"
 GENAI_PROMPT = "gen_ai.prompt"
 GENAI_COMPLETION = "gen_ai.completion"
 
-# Additional GenAI attributes
-GEN_AI_REQUEST_STREAMING = "gen_ai.request.streaming"
-GEN_AI_REQUEST_HEADERS = "gen_ai.request.headers"
 GEN_AI_REQUEST_EXTRA_QUERY = "gen_ai.request.extra_query"
 GEN_AI_REQUEST_EXTRA_BODY = "gen_ai.request.extra_body"
 GEN_AI_SERIALIZED_NAME = "gen_ai.serialized.name"
@@ -70,12 +67,26 @@ LANGSMITH_NAME = "langsmith.trace.name"
 LANGSMITH_METADATA = "langsmith.metadata"
 LANGSMITH_TAGS = "langsmith.span.tags"
 LANGSMITH_RUNTIME = "langsmith.span.runtime"
+LANGSMITH_REQUEST_STREAMING = "langsmith.request.streaming"
+LANGSMITH_REQUEST_HEADERS = "langsmith.request.headers"
 
 # GenAI event names
 GEN_AI_SYSTEM_MESSAGE = "gen_ai.system.message"
 GEN_AI_USER_MESSAGE = "gen_ai.user.message"
 GEN_AI_ASSISTANT_MESSAGE = "gen_ai.assistant.message"
 GEN_AI_CHOICE = "gen_ai.choice"
+
+WELL_KNOWN_OPERATION_NAMES = {
+    "llm": "chat",
+    "tool": "execute_tool",
+    "retriever": "embeddings",
+    "embedding": "embeddings",
+    "prompt": "chat",
+}
+
+
+def _get_operation_name(run_type: str) -> str:
+    return WELL_KNOWN_OPERATION_NAMES.get(run_type, run_type)
 
 
 class OTELExporter:
@@ -304,7 +315,7 @@ class OTELExporter:
 
         # Set GenAI attributes according to OTEL semantic conventions
         # Set gen_ai.operation.name
-        operation_name = run_info.get("run_type", "chain")
+        operation_name = _get_operation_name(run_info.get("run_type", "chain"))
         span.set_attribute(GEN_AI_OPERATION_NAME, operation_name)
 
         # Set gen_ai.system
@@ -464,13 +475,15 @@ class OTELExporter:
 
                     # Set additional request attributes if available.
                     if "stream" in inputs and inputs["stream"] is not None:
-                        span.set_attribute(GEN_AI_REQUEST_STREAMING, inputs["stream"])
+                        span.set_attribute(
+                            LANGSMITH_REQUEST_STREAMING, inputs["stream"]
+                        )
                     if (
                         "extra_headers" in inputs
                         and inputs["extra_headers"] is not None
                     ):
                         span.set_attribute(
-                            GEN_AI_REQUEST_HEADERS, inputs["extra_headers"]
+                            LANGSMITH_REQUEST_HEADERS, inputs["extra_headers"]
                         )
                     if "extra_query" in inputs and inputs["extra_query"] is not None:
                         span.set_attribute(

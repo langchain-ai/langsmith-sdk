@@ -178,9 +178,13 @@ def _otel_tracing_thread_handle_batch(
         ops = combine_serialized_queue_operations([item.item for item in batch])
 
         run_ops = [op for op in ops if isinstance(op, SerializedRunOperation)]
-
-        if run_ops and client.otel_exporter is not None:
-            client.otel_exporter.export_batch(run_ops)
+        if run_ops:
+            if client.otel_exporter is not None:
+                client.otel_exporter.export_batch(run_ops)
+            else:
+                logger.error(
+                    "Error in OTEL tracing queue: client.otel_exporter is None"
+                )
 
     except Exception:
         logger.error("Error in OTEL tracing queue", exc_info=True)
