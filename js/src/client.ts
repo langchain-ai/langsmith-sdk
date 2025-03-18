@@ -86,6 +86,7 @@ export interface ClientConfig {
    * Useful if encountering network rate limits at trace high volumes.
    */
   manualFlushMode?: boolean;
+  tracingSamplingRate?: number;
 }
 
 /**
@@ -330,10 +331,10 @@ export function mergeRuntimeEnvIntoRunCreate(run: RunCreate) {
   return run;
 }
 
-const getTracingSamplingRate = () => {
-  const samplingRateStr = getLangSmithEnvironmentVariable(
-    "TRACING_SAMPLING_RATE"
-  );
+const getTracingSamplingRate = (configRate?: number) => {
+  const samplingRateStr =
+    configRate?.toString() ??
+    getLangSmithEnvironmentVariable("TRACING_SAMPLING_RATE");
   if (samplingRateStr === undefined) {
     return undefined;
   }
@@ -520,7 +521,7 @@ export class Client implements LangSmithTracingClientInterface {
   constructor(config: ClientConfig = {}) {
     const defaultConfig = Client.getDefaultClientConfig();
 
-    this.tracingSampleRate = getTracingSamplingRate();
+    this.tracingSampleRate = getTracingSamplingRate(config.tracingSamplingRate);
     this.apiUrl = trimQuotes(config.apiUrl ?? defaultConfig.apiUrl) ?? "";
     if (this.apiUrl.endsWith("/")) {
       this.apiUrl = this.apiUrl.slice(0, -1);
@@ -759,6 +760,14 @@ export class Client implements LangSmithTracingClientInterface {
     }
   }
 
+  // Allows mocking for tests
+  private _shouldSample(): boolean {
+    if (this.tracingSampleRate === undefined) {
+      return true;
+    }
+    return Math.random() < this.tracingSampleRate;
+  }
+
   private _filterForSampling(
     runs: CreateRunParams[] | UpdateRunParams[],
     patch = false
@@ -778,16 +787,26 @@ export class Client implements LangSmithTracingClientInterface {
       }
       return sampled;
     } else {
+      // For new runs, sample at trace level to maintain consistency
       const sampled = [];
       for (const run of runs) {
-        if (
-          (run.id !== run.trace_id &&
-            !this.filteredPostUuids.has(run.trace_id)) ||
-          Math.random() < this.tracingSampleRate
-        ) {
-          sampled.push(run);
+        const traceId = run.trace_id ?? run.id;
+
+        // If we've already made a decision about this trace, follow it
+        if (this.filteredPostUuids.has(traceId)) {
+          continue;
+        }
+
+        // For new traces, apply sampling
+        if (run.id === traceId) {
+          if (this._shouldSample()) {
+            sampled.push(run);
+          } else {
+            this.filteredPostUuids.add(traceId);
+          }
         } else {
-          this.filteredPostUuids.add(run.id);
+          // Child runs follow their trace's sampling decision
+          sampled.push(run);
         }
       }
       return sampled;
@@ -1012,8 +1031,8 @@ export class Client implements LangSmithTracingClientInterface {
       preparedUpdateParams = standaloneUpdates;
     }
     const rawBatch = {
-      post: this._filterForSampling(preparedCreateParams),
-      patch: this._filterForSampling(preparedUpdateParams, true),
+      post: preparedCreateParams,
+      patch: preparedUpdateParams,
     };
     if (!rawBatch.post.length && !rawBatch.patch.length) {
       return;
@@ -1027,7 +1046,8 @@ export class Client implements LangSmithTracingClientInterface {
       const batchItems = rawBatch[key].reverse();
       let batchItem = batchItems.pop();
       while (batchItem !== undefined) {
-        batchChunks[key].push(batchItem);
+        // Type is wrong but this is a deprecated code path anyway
+        batchChunks[key].push(batchItem as any);
         batchItem = batchItems.pop();
       }
     }
