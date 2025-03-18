@@ -15,8 +15,8 @@ from langsmith._internal._operations import (
 HAS_OTEL = False
 try:
     if ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED")):
-        from opentelemetry import trace
-        from opentelemetry.trace import (
+        from opentelemetry import trace  # type: ignore[import]
+        from opentelemetry.trace import (  # type: ignore[import]
             Span,
             set_span_in_context,
         )

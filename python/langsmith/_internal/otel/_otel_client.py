@@ -7,15 +7,15 @@ from langsmith import utils as ls_utils
 HAS_OTEL = False
 try:
     if ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED")):
-        from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
+        from opentelemetry.exporter.otlp.proto.http.trace_exporter import (  # type: ignore[import]
             OTLPSpanExporter,
         )
-        from opentelemetry.sdk.resources import (
+        from opentelemetry.sdk.resources import (  # type: ignore[import]
             SERVICE_NAME,
             Resource,
         )
-        from opentelemetry.sdk.trace import TracerProvider
-        from opentelemetry.sdk.trace.export import (
+        from opentelemetry.sdk.trace import TracerProvider  # type: ignore[import]
+        from opentelemetry.sdk.trace.export import (  # type: ignore[import]
             BatchSpanProcessor,
         )
 
