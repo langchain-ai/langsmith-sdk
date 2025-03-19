@@ -5183,14 +5183,12 @@ class Client:
             "DELETE",
             "/examples",
             headers={**self._headers, "Content-Type": "application/json"},
-            data=_dumps_json(
-                {
-                    "ids": [
-                        str(_as_uuid(id_, f"example_ids[{i}]"))
-                        for i, id_ in enumerate(example_ids)
-                    ]
-                }
-            ),
+            params={
+                "example_ids": [
+                    str(_as_uuid(id_, f"example_ids[{i}]"))
+                    for i, id_ in enumerate(example_ids)
+                ]
+            },
         )
         ls_utils.raise_for_status_with_text(response)
 
