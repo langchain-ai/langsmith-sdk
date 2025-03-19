@@ -45,9 +45,9 @@ const runInputsToMap = (rawInputs: unknown[]) => {
   return inputs;
 };
 
-const handleRunInputs = (
-  inputs: KVMap,
-  processInputs: (inputs: Readonly<KVMap>) => KVMap
+const handleRunInputs = <Args extends unknown[]>(
+  inputs: any,
+  processInputs: (inputs: Readonly<ProcessInputs<Args>>) => KVMap
 ): KVMap => {
   try {
     return processInputs(inputs);
@@ -60,11 +60,11 @@ const handleRunInputs = (
   }
 };
 
-const handleRunOutputs = (
+const handleRunOutputs = <Return>(
   rawOutputs: unknown,
-  processOutputs: (outputs: Readonly<KVMap>) => KVMap
+  processOutputs: (outputs: Readonly<ProcessOutputs<Return>>) => KVMap
 ): KVMap => {
-  let outputs: KVMap;
+  let outputs: any;
 
   if (isKVMap(rawOutputs)) {
     outputs = rawOutputs;
@@ -107,7 +107,7 @@ const getTracingRunTree = <Args extends unknown[]>(
   getInvocationParams:
     | ((...args: Args) => InvocationParamsSchema | undefined)
     | undefined,
-  processInputs: (inputs: Readonly<KVMap>) => KVMap,
+  processInputs: (inputs: Readonly<ProcessInputs<Args>>) => KVMap,
   extractAttachments:
     | ((...args: Args) => [Attachments | undefined, KVMap])
     | undefined
@@ -123,7 +123,7 @@ const getTracingRunTree = <Args extends unknown[]>(
       | undefined
   );
   runTree.attachments = attached;
-  runTree.inputs = handleRunInputs(args, processInputs);
+  runTree.inputs = handleRunInputs<Args>(args, processInputs);
 
   const invocationParams = getInvocationParams?.(...inputs);
   if (invocationParams != null) {
@@ -317,6 +317,18 @@ const convertSerializableArg = (arg: unknown): unknown => {
   return arg;
 };
 
+type ProcessInputs<Args extends unknown[]> = Args extends []
+  ? Record<string, never>
+  : Args extends [infer Input]
+  ? Input extends KVMap
+    ? Input
+    : { input: Input }
+  : { args: Args };
+
+type ProcessOutputs<Return> = Return extends KVMap
+  ? Return
+  : { outputs: Return };
+
 /**
  * Higher-order function that takes function as input and returns a
  * "TraceableFunction" - a wrapped version of the input that
@@ -366,20 +378,33 @@ export function traceable<Func extends (...args: any[]) => any>(
      * This function should NOT mutate the inputs.
      * `processInputs` is not inherited by nested traceable functions.
      *
-     * @param inputs Key-value map of the function inputs.
+     * The input type is determined by:
+     * - If the wrapped function is called with only one argument, use this argument directly (if it's a KVMap) or as `{ input: argument }`
+     * - If called with multiple arguments, use `{ args: [...arguments] }`
+     * - If no arguments, use an empty object `{}`
+     *
+     * @param inputs Key-value map of the function inputs with proper typing.
      * @returns Transformed key-value map
      */
-    processInputs?: (inputs: Readonly<KVMap>) => KVMap;
+    processInputs?: (
+      inputs: Readonly<ProcessInputs<Parameters<Func>>>
+    ) => KVMap;
 
     /**
      * Apply transformations to the outputs before logging.
      * This function should NOT mutate the outputs.
      * `processOutputs` is not inherited by nested traceable functions.
      *
-     * @param outputs Key-value map of the function outputs
+     * The output type is determined by:
+     * - If the function returns a KVMap, use it directly
+     * - Otherwise, wrap the output as `{ outputs: returnValue }`
+     *
+     * @param outputs Key-value map of the function outputs with proper typing
      * @returns Transformed key-value map
      */
-    processOutputs?: (outputs: Readonly<KVMap>) => KVMap;
+    processOutputs?: (
+      outputs: Readonly<ProcessOutputs<ReturnType<Func>>>
+    ) => KVMap;
   }
 ) {
   type Inputs = Parameters<Func>;
@@ -823,3 +848,37 @@ export {
 } from "./singletons/traceable.js";
 
 export type { RunTreeLike, TraceableFunction } from "./singletons/types.js";
+
+const singlePrimitiveArg = traceable((a: string) => a, {
+  processInputs: (inputs) => ({ a: inputs.input }),
+  //                ^? Readonly<{ input: string; }>
+  processOutputs: (outputs) => ({ a: outputs.outputs }),
+  //                ^? Readonly<{ outputs: string; }>
+});
+const singleRecordArg = traceable((a: { a: number }) => a, {
+  processInputs: (inputs) => ({ a: inputs.a }),
+  //                ^? Readonly<{ a: number }>
+  processOutputs: (outputs) => ({ a: outputs.a }),
+  //                ^? Readonly<{ a: number }>
+});
+const multiplePrimitiveArgs = traceable((a: string, b: number) => ({ a, b }), {
+  processInputs: (inputs) => ({ a: inputs.args[0], b: inputs.args[1] }),
+  //                ^? Readonly<{ args: [a: string, b: number]; }>
+  processOutputs: (outputs) => ({ a: outputs.a, b: outputs.b }),
+  //                ^? Readonly<{ a: string; b: number; }>
+});
+const multipleRecordArgs = traceable(
+  (a: { a: number }, b: { b: string }) => ({ a: a.a, b: b.b }),
+  {
+    processInputs: (inputs) => ({ a: inputs.args[0].a, b: inputs.args[1].b }),
+    //                ^? Readonly<{ args: [{ a: number }, { b: string }]; }>
+    processOutputs: (outputs) => ({ a: outputs.a, b: outputs.b }),
+    //                ^? Readonly<{ a: number; b: string; }>
+  }
+);
+const noArgs = traceable(() => undefined, {
+  processInputs: (inputs) => inputs,
+  //                ^? Readonly<Record<string, never>>
+  processOutputs: (outputs) => outputs,
+  //                ^? Readonly<{ outputs: undefined; }>
+});
