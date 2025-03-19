@@ -623,10 +623,16 @@ class Client:
                     "LANGSMITH_OTEL_ENABLED is set but OpenTelemetry packages are not installed. "
                     "Install with `pip install langsmith[otel]`"
                 )
+            existing_provider = otel_trace.get_tracer_provider()
             if otel_tracer_provider is None:
-                otel_tracer_provider = get_otlp_tracer_provider()
-            # Set as global tracer provider if we're creating a new one
-            otel_trace.set_tracer_provider(otel_tracer_provider)
+                # Use existing global provider if available
+                if existing_provider and not isinstance(
+                    existing_provider, otel_trace.NoOpTracerProvider
+                ):
+                    otel_tracer_provider = cast(TracerProvider, existing_provider)
+                else:
+                    otel_tracer_provider = get_otlp_tracer_provider()
+                    otel_trace.set_tracer_provider(otel_tracer_provider)
 
             self.otel_exporter = OTELExporter(tracer_provider=otel_tracer_provider)
 
