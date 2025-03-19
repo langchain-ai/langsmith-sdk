@@ -849,6 +849,7 @@ export {
 
 export type { RunTreeLike, TraceableFunction } from "./singletons/types.js";
 
+// TEST CODE - MUST BE REMOVED BEFORE MERGING
 const singlePrimitiveArg = traceable((a: string) => a, {
   processInputs: (inputs) => ({ a: inputs.input }),
   //                ^? Readonly<{ input: string; }>
