@@ -348,10 +348,10 @@ def wrap_openai(
     """Patch the OpenAI client to make it traceable.
 
     Supports:
-    - Chat and Responses API's
-    - Sync and async clients
-    - create() and parse() methods
-    - with and without streaming
+        - Chat and Responses API's
+        - Sync and async OpenAI clients
+        - create() and parse() methods
+        - with and without streaming
 
     Args:
         client (Union[OpenAI, AsyncOpenAI]): The client to patch.
@@ -395,10 +395,9 @@ def wrap_openai(
             )
             print(response.output_text)
 
-    .. versionchanged:: 0.3.15
+    .. versionchanged:: 0.3.16
 
         Support for Responses API added.
-
     """  # noqa: E501
     tracing_extra = tracing_extra or {}
 
