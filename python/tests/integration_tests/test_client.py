@@ -106,6 +106,11 @@ def test_datasets(langchain_client: Client) -> None:
         outputs={"col2": "addedExampleCol2"},
         dataset_id=new_dataset.id,
     )
+    example_to_delete = langchain_client.create_example(
+        inputs={"col1": "addedExampleCol1"},
+        outputs={"col2": "addedExampleCol2"},
+        dataset_id=new_dataset.id,
+    )
     example_value = langchain_client.read_example(example.id)
     assert example_value.inputs is not None
     assert example_value.inputs["col1"] == "addedExampleCol1"
@@ -115,7 +120,7 @@ def test_datasets(langchain_client: Client) -> None:
     examples = list(
         langchain_client.list_examples(dataset_id=new_dataset.id)  # type: ignore
     )
-    assert len(examples) == 2
+    assert len(examples) == 3
     assert example.id in [example.id for example in examples]
 
     langchain_client.update_example(
@@ -167,6 +172,7 @@ def test_datasets(langchain_client: Client) -> None:
     assert (updated_example.metadata or {}).get("foo") == "qux"
 
     langchain_client.delete_example(example.id)
+    langchain_client.delete_examples(example_ids=[example_to_delete.id])
     examples2 = list(
         langchain_client.list_examples(dataset_id=new_dataset.id)  # type: ignore
     )
