@@ -75,7 +75,9 @@ def _infer_invocation_params(model_type: str, kwargs: dict):
         "ls_model_type": model_type,
         "ls_model_name": stripped.get("model"),
         "ls_temperature": stripped.get("temperature"),
-        "ls_max_tokens": stripped.get("max_tokens") or stripped.get("max_completion_tokens") or stripped.get("max_output_tokens"),
+        "ls_max_tokens": stripped.get("max_tokens")
+        or stripped.get("max_completion_tokens")
+        or stripped.get("max_output_tokens"),
         "ls_stop": stop,
     }
 
