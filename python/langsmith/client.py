@@ -103,12 +103,36 @@ from langsmith._internal._operations import (
 from langsmith._internal._serde import dumps_json as _dumps_json
 from langsmith.schemas import AttachmentInfo
 
+HAS_OTEL = False
+try:
+    if ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED")):
+        from opentelemetry import trace as otel_trace  # type: ignore[import]
+
+        from langsmith._internal.otel._otel_client import (
+            get_otlp_tracer_provider,
+        )
+        from langsmith._internal.otel._otel_exporter import OTELExporter
+
+        HAS_OTEL = True
+except ImportError:
+    raise ImportError(
+        "To use OTEL tracing, you must install it with `pip install langsmith[otel]`"
+    )
+
 try:
     from zoneinfo import ZoneInfo  # type: ignore[import-not-found]
 except ImportError:
 
     class ZoneInfo:  # type: ignore[no-redef]
         """Introduced in python 3.9."""
+
+
+try:
+    from opentelemetry.sdk.trace import TracerProvider  # type: ignore[import-not-found]
+except ImportError:
+
+    class TracerProvider:  # type: ignore[no-redef]
+        """Used for optional OTEL tracing."""
 
 
 if TYPE_CHECKING:
@@ -403,6 +427,7 @@ class Client:
         "compressed_traces",
         "_data_available_event",
         "_futures",
+        "otel_exporter",
     ]
 
     def __init__(
@@ -420,6 +445,7 @@ class Client:
         hide_outputs: Optional[Union[Callable[[dict], dict], bool]] = None,
         info: Optional[Union[dict, ls_schemas.LangSmithInfo]] = None,
         api_urls: Optional[Dict[str, str]] = None,
+        otel_tracer_provider: Optional[TracerProvider] = None,
         tracing_sampling_rate: Optional[float] = None,
     ) -> None:
         """Initialize a Client instance.
@@ -452,6 +478,8 @@ class Client:
                 URL in the dictionary. However, ONLY Runs are written (POST and PATCH)
                 to all URLs in the dictionary. Feedback, sessions, datasets, examples,
                 annotation queues and evaluation results are only written to the first.
+            otel_tracer_provider (Optional[TracerProvider]): Optional tracer provider for OpenTelemetry integration.
+                If not provided, a LangSmith-specific tracer provider will be used.
             tracing_sampling_rate (Optional[float]): The sampling rate for tracing. If provided,
                 overrides the LANGCHAIN_TRACING_SAMPLING_RATE environment variable.
                 Should be a float between 0 and 1, where 1 means trace everything
@@ -508,6 +536,8 @@ class Client:
         self.compressed_traces: Optional[CompressedTraces] = None
         self._data_available_event: Optional[threading.Event] = None
         self._futures: Optional[set[cf.Future]] = None
+        self.otel_exporter: Optional[OTELExporter] = None
+
         # Initialize auto batching
         if auto_batch_tracing:
             self.tracing_queue: Optional[PriorityQueue] = PriorityQueue()
@@ -586,6 +616,19 @@ class Client:
         self._settings: Union[ls_schemas.LangSmithSettings, None] = None
 
         self._manual_cleanup = False
+
+        if ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED")):
+            if not HAS_OTEL:
+                warnings.warn(
+                    "LANGSMITH_OTEL_ENABLED is set but OpenTelemetry packages are not installed. "
+                    "Install with `pip install langsmith[otel]`"
+                )
+            if otel_tracer_provider is None:
+                otel_tracer_provider = get_otlp_tracer_provider()
+            # Set as global tracer provider if we're creating a new one
+            otel_trace.set_tracer_provider(otel_tracer_provider)
+
+            self.otel_exporter = OTELExporter(tracer_provider=otel_tracer_provider)
 
     def _repr_html_(self) -> str:
         """Return an HTML representation of the instance with a link to the URL.
@@ -5603,6 +5646,7 @@ class Client:
                     self.tracing_queue is not None or self.compressed_traces is not None
                 )
                 and feedback.trace_id is not None
+                and self.otel_exporter is None
             ):
                 serialized_op = serialize_feedback_dict(feedback)
                 if self.compressed_traces is not None:
