@@ -113,7 +113,7 @@ def test_tracing_enabled():
         assert rt
         assert rt.parent_run_id is None
         assert "." not in rt.dotted_order
-        assert rt.parent_run is None
+        assert rt.parent_dotted_order is None
         return 1
 
     @traceable
