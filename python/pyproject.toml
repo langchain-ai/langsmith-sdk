@@ -41,6 +41,11 @@ packaging = ">=23.2"
 # Enabled via `openai-agents` extra: `pip install langsmith[openai-agents]`
 openai-agents = { version = "^0.0.3", optional = true }
 
+# Enabled via `otel` extra: `pip install langsmith[otel]`
+opentelemetry-sdk = {version = "^1.30.0", optional = true}
+opentelemetry-api = {version = "^1.30.0", optional = true}
+opentelemetry-exporter-otlp-proto-http = {version = "^1.30.0", optional = true}
+
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.3.1"
 black = ">=23.3,<25.0"
@@ -82,6 +87,7 @@ anthropic = "^0.45.0"
 [tool.poetry.extras]
 vcr = ["vcrpy"]
 langsmith_pyo3 = ["langsmith-pyo3"]
+otel = ["opentelemetry-api", "opentelemetry-sdk", "opentelemetry-exporter-otlp-proto-http"]
 pytest = ["pytest", "rich", "vcrpy"]
 openai-agents = ["openai-agents"]
 
