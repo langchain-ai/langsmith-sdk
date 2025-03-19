@@ -54,7 +54,9 @@ class RunTree(ls_schemas.RunBase):
     id: UUID = Field(default_factory=uuid4)
     run_type: str = Field(default="chain")
     start_time: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    # Note: no longer set.
     parent_run: Optional[RunTree] = Field(default=None, exclude=True)
+    parent_dotted_order: Optional[str] = Field(default=None, exclude=True)
     child_runs: List[RunTree] = Field(
         default_factory=list,
         exclude={"__all__": {"parent_run_id"}},
@@ -101,13 +103,15 @@ class RunTree(ls_schemas.RunBase):
             values["ls_client"] = values.pop("_client")
         if not values.get("ls_client"):
             values["ls_client"] = None
-        if values.get("parent_run") is not None:
-            values["parent_run_id"] = values["parent_run"].id
+        parent_run = values.pop("parent_run", None)
+        if parent_run is not None:
+            values["parent_run_id"] = parent_run.id
+            values["parent_dotted_order"] = parent_run.dotted_order
         if "id" not in values:
             values["id"] = uuid4()
         if "trace_id" not in values:
-            if "parent_run" in values:
-                values["trace_id"] = values["parent_run"].trace_id
+            if parent_run is not None:
+                values["trace_id"] = parent_run.trace_id
             else:
                 values["trace_id"] = values["id"]
         cast(dict, values.setdefault("extra", {}))
@@ -130,10 +134,9 @@ class RunTree(ls_schemas.RunBase):
         current_dotted_order = _create_current_dotted_order(
             values["start_time"], values["id"]
         )
-        if values["parent_run"]:
-            values["dotted_order"] = (
-                values["parent_run"].dotted_order + "." + current_dotted_order
-            )
+        parent_dotted_order = values.get("parent_dotted_order")
+        if parent_dotted_order is not None:
+            values["dotted_order"] = parent_dotted_order + "." + current_dotted_order
         else:
             values["dotted_order"] = current_dotted_order
         return values

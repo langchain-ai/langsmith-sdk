@@ -1296,8 +1296,7 @@ def test_from_runnable_config():
         assert rt
         assert rt.run_type == "retriever"
         assert rt.parent_run_id
-        assert rt.parent_run
-        assert rt.parent_run.run_type == "tool"
+        assert rt.parent_dotted_order
         assert rt.session_name == "foo"
         return my_grandchild_tool.invoke({"text": text}, {"run_id": gc_run_id})
 
