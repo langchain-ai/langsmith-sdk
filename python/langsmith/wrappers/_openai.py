@@ -75,9 +75,7 @@ def _infer_invocation_params(model_type: str, kwargs: dict):
         "ls_model_type": model_type,
         "ls_model_name": stripped.get("model"),
         "ls_temperature": stripped.get("temperature"),
-        "ls_max_tokens": stripped.get("max_tokens")
-        or stripped.get("max_completion_tokens")
-        or stripped.get("max_output_tokens"),
+        "ls_max_tokens": stripped.get("max_tokens") or stripped.get("max_completion_tokens") or stripped.get("max_output_tokens"),
         "ls_stop": stop,
     }
 
@@ -348,10 +346,10 @@ def wrap_openai(
     """Patch the OpenAI client to make it traceable.
 
     Supports:
-    - Chat and Responses API's
-    - Sync and async clients
-    - create() and parse() methods
-    - with and without streaming
+        - Chat and Responses API's
+        - Sync and async OpenAI clients
+        - create() and parse() methods
+        - with and without streaming
 
     Args:
         client (Union[OpenAI, AsyncOpenAI]): The client to patch.
@@ -395,10 +393,9 @@ def wrap_openai(
             )
             print(response.output_text)
 
-    .. versionchanged:: 0.3.15
+    .. versionchanged:: 0.3.16
 
         Support for Responses API added.
-
     """  # noqa: E501
     tracing_extra = tracing_extra or {}
 
