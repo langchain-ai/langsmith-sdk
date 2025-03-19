@@ -624,10 +624,19 @@ class Client:
                     "Install with `pip install langsmith[otel]`"
                 )
             existing_provider = otel_trace.get_tracer_provider()
+            tracer = existing_provider.get_tracer(__name__)
             if otel_tracer_provider is None:
                 # Use existing global provider if available
-                if existing_provider and not isinstance(
-                    existing_provider, otel_trace.NoOpTracerProvider
+                if not (
+                    isinstance(existing_provider, otel_trace.ProxyTracerProvider)
+                    and hasattr(tracer, "_tracer")
+                    and isinstance(
+                        cast(
+                            otel_trace.ProxyTracer,
+                            tracer,
+                        )._tracer,
+                        otel_trace.NoOpTracer,
+                    )
                 ):
                     otel_tracer_provider = cast(TracerProvider, existing_provider)
                 else:
