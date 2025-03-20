@@ -1690,7 +1690,7 @@ export class Client implements LangSmithTracingClientInterface {
       `${this.apiUrl}/runs/stats`,
       {
         method: "POST",
-        headers: this.headers,
+        headers: { ...this.headers, "Content-Type": "application/json" },
         body: JSON.stringify(filteredPayload),
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
