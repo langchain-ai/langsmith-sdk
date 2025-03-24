@@ -287,7 +287,6 @@ const convertSerializableArg = (arg: unknown): unknown => {
               Exclude<Iterator<unknown>["next" | "return" | "throw"], undefined>
             >
           ) => {
-            // @ts-expect-error TS cannot infer the argument types for the bound function
             const next = bound?.(...args);
             if (next != null) proxyState.push(next);
             return next;
