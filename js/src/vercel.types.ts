@@ -67,6 +67,7 @@ type DoGenerateTextSpan = TypedReadableSpan<
     "ai.operationId": "ai.generateText.doGenerate";
     "ai.prompt.format": string;
     "ai.prompt.messages": string;
+    "ai.prompt.tools": string[];
     "ai.response.text": string;
     "ai.response.toolCalls": string;
     "ai.response.finishReason": string;
@@ -93,6 +94,7 @@ type DoStreamTextSpan = TypedReadableSpan<
     "ai.operationId": "ai.streamText.doStream";
     "ai.prompt.format": string;
     "ai.prompt.messages": string;
+    "ai.prompt.tools": string[];
     "ai.response.text": string;
     "ai.response.toolCalls": string;
     "ai.response.msToFirstChunk": number;
