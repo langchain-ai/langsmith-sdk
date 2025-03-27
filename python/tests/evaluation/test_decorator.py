@@ -1,8 +1,8 @@
+import importlib
 import os
 import time
 
 import pytest
-import importlib
 
 from langsmith import testing as t
 
@@ -10,6 +10,7 @@ pytestmark = pytest.mark.skipif(
     not os.getenv("LANGSMITH_TRACING"),
     reason="LANGSMITH_TRACING environment variable not set",
 )
+
 
 @pytest.mark.langsmith
 @pytest.mark.parametrize("c", list(range(10)))
@@ -98,7 +99,6 @@ def test_slow_test():
     t.log_reference_outputs({"slow_result": "I am not fast"})
 
 
-
 @pytest.mark.skipif(
     not importlib.util.find_spec("langchain_core"),
     reason="langchain-core not installed",
@@ -106,6 +106,6 @@ def test_slow_test():
 @pytest.mark.langsmith
 def test_log_langchain_outputs() -> None:
     from langchain_core.messages import AIMessage
+
     t.log_inputs({"question": "foo"})
     t.log_outputs({"answer": AIMessage("bar")})
-
