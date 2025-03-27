@@ -810,7 +810,6 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             That task is to run the target function and all the evaluators
             sequentially.
             """
-
             async for example in await self.aget_examples():
                 yield process_example(example)
 
