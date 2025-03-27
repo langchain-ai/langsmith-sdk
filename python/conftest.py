@@ -205,7 +205,7 @@ original_exit = vcr.patch.ConnectionRemover.__exit__
 
 
 def safe_exit(self, *args):
-    """A safer version of ConnectionRemover.__exit__ that handles set modifications."""
+    """Create safer ConnectionRemover.__exit__."""
     for pool, connections in self._connection_pool_to_connections.items():
         readd_connections = []
         # Get all connections from the pool first
