@@ -778,8 +778,31 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         """
         evaluators = _resolve_evaluators(evaluators)
 
-        if not hasattr(self, "_evaluator_executor"):
-            self._evaluator_executor = cf.ThreadPoolExecutor(max_workers=4)
+        if not hasattr(self, "_evaluation_feedback_executor"):
+            self._evaluation_feedback_executor = cf.ThreadPoolExecutor(max_workers=4)
+
+        async def process_example(example: schemas.Example):
+            fn = _ensure_async_traceable(target)
+            # Yield the coroutine to be awaited later
+            pred = await _aforward(
+                fn,
+                self._get_example_with_readers(example),
+                self.experiment_name,
+                self._metadata,
+                self.client,
+                _include_attachments(target),
+            )
+            example, run = pred["example"], pred["run"]
+            result = await self._arun_evaluators(
+                evaluators,
+                {
+                    "run": run,
+                    "example": example,
+                    "evaluation_results": {"results": []},
+                },
+                feedback_executor=self._evaluation_feedback_executor,
+            )
+            return result
 
         async def process_examples():
             """Create a single task per example.
@@ -787,22 +810,11 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             That task is to run the target function and all the evaluators
             sequentially.
             """
-            async for pred in self._apredict(
-                target,
-                max_concurrency=max_concurrency,
-                include_attachments=_include_attachments(target),
-            ):
-                example, run = pred["example"], pred["run"]
-                result = self._arun_evaluators(
-                    evaluators,
-                    {
-                        "run": run,
-                        "example": example,
-                        "evaluation_results": {"results": []},
-                    },
-                    executor=self._evaluator_executor,
-                )
-                yield result
+
+            async for example in await self.aget_examples():
+                yield process_example(example)
+
+            await self._aend()
 
         # Run the per-example tasks with max-concurrency
         # This guarantees that max_concurrency is the upper limit
@@ -962,7 +974,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         self,
         evaluators: Sequence[RunEvaluator],
         current_results: ExperimentResultRow,
-        executor: cf.ThreadPoolExecutor,
+        feedback_executor: cf.ThreadPoolExecutor,
     ) -> ExperimentResultRow:
         current_context = rh.get_tracing_context()
         metadata = {
@@ -996,7 +1008,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
 
                     if self._upload_results:
                         self.client._log_evaluation_feedback(
-                            evaluator_response, run=run, _executor=executor
+                            evaluator_response, run=run, _executor=feedback_executor
                         )
                     return selected_results
                 except Exception as e:
@@ -1019,7 +1031,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                         )
                         if self._upload_results:
                             self.client._log_evaluation_feedback(
-                                error_response, run=run, _executor=executor
+                                error_response, run=run, _executor=feedback_executor
                             )
                         return selected_results
                     except Exception as e2:
