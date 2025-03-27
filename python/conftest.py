@@ -6,6 +6,8 @@ import os
 import re
 
 import pytest
+import vcr.patch
+
 import vcr
 
 
@@ -198,3 +200,37 @@ def vcr_fixture(request):
     # Use the cassette for this test
     with my_vcr.use_cassette(f"{cassette_name}.yaml"):
         yield
+
+original_exit = vcr.patch.ConnectionRemover.__exit__
+
+def safe_exit(self, *args):
+    """A safer version of ConnectionRemover.__exit__ that handles set modifications."""
+    for pool, connections in self._connection_pool_to_connections.items():
+        readd_connections = []
+        # Get all connections from the pool first
+        while pool.pool and not pool.pool.empty():
+            connection = pool.pool.get()
+            if isinstance(connection, self._connection_class):
+                try:
+                    # Use a safer way to remove - check first if it exists
+                    if connection in connections:
+                        connections.remove(connection)
+                    connection.close()
+                except (KeyError, RuntimeError):
+                    # Just close the connection if we can't remove it properly
+                    connection.close()
+            else:
+                readd_connections.append(connection)
+        
+        # Add connections back to the pool
+        for connection in readd_connections:
+            pool._put_conn(connection)
+        
+        # Use a copy of the set for iteration to avoid modification issues
+        for connection in list(connections):
+            try:
+                connection.close()
+            except Exception:
+                pass  # Ignore any errors while closing connections
+
+vcr.patch.ConnectionRemover.__exit__ = safe_exit
