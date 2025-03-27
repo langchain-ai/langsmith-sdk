@@ -6,9 +6,8 @@ import os
 import re
 
 import pytest
-import vcr.patch
-
 import vcr
+import vcr.patch
 
 
 def get_request_hash(request):
@@ -201,7 +200,9 @@ def vcr_fixture(request):
     with my_vcr.use_cassette(f"{cassette_name}.yaml"):
         yield
 
+
 original_exit = vcr.patch.ConnectionRemover.__exit__
+
 
 def safe_exit(self, *args):
     """A safer version of ConnectionRemover.__exit__ that handles set modifications."""
@@ -221,16 +222,17 @@ def safe_exit(self, *args):
                     connection.close()
             else:
                 readd_connections.append(connection)
-        
+
         # Add connections back to the pool
         for connection in readd_connections:
             pool._put_conn(connection)
-        
+
         # Use a copy of the set for iteration to avoid modification issues
         for connection in list(connections):
             try:
                 connection.close()
             except Exception:
                 pass  # Ignore any errors while closing connections
+
 
 vcr.patch.ConnectionRemover.__exit__ = safe_exit
