@@ -956,13 +956,13 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         evaluators: Sequence[RunEvaluator],
         max_concurrency: Optional[int] = None,
     ) -> AsyncIterator[ExperimentResultRow]:
-        with cf.ThreadPoolExecutor(max_workers=4) as executor:
+        with cf.ThreadPoolExecutor(max_workers=4) as feedback_executor:
 
             async def score_all():
                 async for current_results in self.aget_results():
                     # Yield the coroutine to be awaited later in aiter_with_concurrency
                     yield self._arun_evaluators(
-                        evaluators, current_results, executor=executor
+                        evaluators, current_results, feedback_executor=feedback_executor
                     )
 
             async for result in aitertools.aiter_with_concurrency(
