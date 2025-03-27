@@ -2,14 +2,15 @@ import os
 import time
 
 import pytest
+import importlib
 
 from langsmith import testing as t
 
-
-@pytest.mark.skipif(
+pytestmark = pytest.mark.skipif(
     not os.getenv("LANGSMITH_TRACING"),
     reason="LANGSMITH_TRACING environment variable not set",
 )
+
 @pytest.mark.langsmith
 @pytest.mark.parametrize("c", list(range(10)))
 async def test_addition_single(c):
@@ -32,10 +33,6 @@ async def my_app():
     return "hello"
 
 
-@pytest.mark.skipif(
-    not os.getenv("LANGSMITH_TRACING"),
-    reason="LANGSMITH_TRACING environment variable not set",
-)
 @pytest.mark.langsmith
 async def test_openai_says_hello():
     # Traced code will be included in the test case
@@ -54,10 +51,6 @@ async def test_openai_says_hello():
     assert "hello" in response.lower()
 
 
-@pytest.mark.skipif(
-    not os.getenv("LANGSMITH_TRACING"),
-    reason="LANGSMITH_TRACING environment variable not set",
-)
 @pytest.mark.xfail(reason="Test failure output case")
 @pytest.mark.langsmith(output_keys=["expected"])
 @pytest.mark.parametrize(
@@ -72,10 +65,6 @@ async def test_addition_parametrized(a: int, b: int, expected: int):
     assert a + b != expected
 
 
-@pytest.mark.skipif(
-    not os.getenv("LANGSMITH_TRACING"),
-    reason="LANGSMITH_TRACING environment variable not set",
-)
 @pytest.mark.langsmith
 @pytest.mark.parametrize("a,b", [[i, i] for i in range(20)])
 def test_param(a, b):
@@ -94,10 +83,6 @@ def reference_outputs() -> int:
     return 10
 
 
-@pytest.mark.skipif(
-    not os.getenv("LANGSMITH_TRACING"),
-    reason="LANGSMITH_TRACING environment variable not set",
-)
 @pytest.mark.langsmith(output_keys=["reference_outputs"])
 def test_fixture(inputs: int, reference_outputs: int):
     result = 2 * inputs
@@ -105,13 +90,22 @@ def test_fixture(inputs: int, reference_outputs: int):
     assert result == reference_outputs
 
 
-@pytest.mark.skipif(
-    not os.getenv("LANGSMITH_TRACING"),
-    reason="LANGSMITH_TRACING environment variable not set",
-)
 @pytest.mark.langsmith
 def test_slow_test():
     t.log_inputs({"slow": "I am slow"})
     time.sleep(5)
     t.log_outputs({"slow_result": "I am slow"})
     t.log_reference_outputs({"slow_result": "I am not fast"})
+
+
+
+@pytest.mark.skipif(
+    not importlib.util.find_spec("langchain_core"),
+    reason="langchain-core not installed",
+)
+@pytest.mark.langsmith
+def test_log_langchain_outputs() -> None:
+    from langchain_core.messages import AIMessage
+    t.log_inputs({"question": "foo"})
+    t.log_outputs({"answer": AIMessage("bar")})
+
