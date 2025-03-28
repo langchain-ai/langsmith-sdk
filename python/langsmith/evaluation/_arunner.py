@@ -781,11 +781,11 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         if not hasattr(self, "_evaluation_feedback_executor"):
             self._evaluation_feedback_executor = cf.ThreadPoolExecutor(max_workers=4)
 
+        traceable_target = _ensure_async_traceable(target)
         async def process_example(example: schemas.Example):
-            fn = _ensure_async_traceable(target)
             # Yield the coroutine to be awaited later
             pred = await _aforward(
-                fn,
+                traceable_target,
                 self._get_example_with_readers(example),
                 self.experiment_name,
                 self._metadata,
