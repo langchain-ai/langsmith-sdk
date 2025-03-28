@@ -332,11 +332,7 @@ def _merge_statuses(update: dict, current: dict, *, unpack: list[str]) -> dict:
     for path in unpack:
         if path_update := update.pop(path, None):
             path_current = current.get(path, {})
-            if (
-                isinstance(path_update, dict)
-                and path_current
-                and isinstance(path_current, dict)
-            ):
+            if isinstance(path_update, dict) and isinstance(path_current, dict):
                 current[path] = {**path_current, **path_update}
             else:
                 current[path] = path_update
