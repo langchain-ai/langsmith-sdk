@@ -782,6 +782,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             self._evaluation_feedback_executor = cf.ThreadPoolExecutor(max_workers=4)
 
         traceable_target = _ensure_async_traceable(target)
+
         async def process_example(example: schemas.Example):
             # Yield the coroutine to be awaited later
             pred = await _aforward(
