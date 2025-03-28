@@ -55,11 +55,22 @@ def test_json_serializable():
     assert not d.get("client") and not d.get("ls_client")
 
 
+A_DOTTED_ORDER = (
+    "20240412T202937370454Z152ce25c-064e-4742-bf36-8bb0389f8805."
+    "20240412T202937627763Zfe8b541f-e75a-4ee6-b92d-732710897194."
+    "20240412T202937708023Z625b30ed-2fbb-4387-81b1-cb5d6221e5b4."
+    "20240412T202937775748Z448dc09f-ad54-4475-b3a4-fa43018ca621."
+    "20240412T202937981350Z4cd59ea4-491e-4ed9-923f-48cd93e03755."
+    "20240412T202938078862Zcd168cf7-ee72-48c2-8ec0-50ab09821973."
+    "20240412T202938152278Z32481c1a-b83c-4b53-a52e-1ea893ffba51"
+)
+
+
 @pytest.mark.parametrize(
     "inputs, expected",
     [
         (
-            "20240412T202937370454Z152ce25c-064e-4742-bf36-8bb0389f8805.20240412T202937627763Zfe8b541f-e75a-4ee6-b92d-732710897194.20240412T202937708023Z625b30ed-2fbb-4387-81b1-cb5d6221e5b4.20240412T202937775748Z448dc09f-ad54-4475-b3a4-fa43018ca621.20240412T202937981350Z4cd59ea4-491e-4ed9-923f-48cd93e03755.20240412T202938078862Zcd168cf7-ee72-48c2-8ec0-50ab09821973.20240412T202938152278Z32481c1a-b83c-4b53-a52e-1ea893ffba51",
+            A_DOTTED_ORDER,
             [
                 (
                     datetime(2024, 4, 12, 20, 29, 37, 370454),
@@ -150,3 +161,29 @@ def test_nested_run_trees_from_dotted_order():
     assert grandparent_clone.id == grandparent.id
     assert grandparent_clone.parent_run_id is None
     assert grandparent_clone.dotted_order == grandparent.dotted_order
+
+
+def test_run_tree_from_headers_lg_api():
+    headers = {
+        "langsmith-trace": A_DOTTED_ORDER,
+        "langsmith-project": "foody-test",
+        "langsmith-tags": ["foo", "bar"],
+        "langsmith-metadata": {"foo": "bar"},
+    }
+    rt = run_trees.RunTree.from_headers(headers)
+    assert rt.dotted_order == A_DOTTED_ORDER
+    assert rt.session_name == "foody-test"
+    assert sorted(rt.tags) == sorted(["bar", "foo"])
+    assert rt.extra == {"metadata": {"foo": "bar"}}
+
+    headers = {
+        "langsmith-trace": A_DOTTED_ORDER,
+        "langsmith-project": "foody-test",
+        "langsmith-tags": "foo,bar",
+        "langsmith-metadata": json.dumps({"foo": "bar"}),
+    }
+    rt = run_trees.RunTree.from_headers(headers)
+    assert rt.dotted_order == A_DOTTED_ORDER
+    assert rt.session_name == "foody-test"
+    assert sorted(rt.tags) == sorted(["bar", "foo"])
+    assert rt.extra == {"metadata": {"foo": "bar"}}

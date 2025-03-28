@@ -555,7 +555,14 @@ class _Baggage:
     ):
         """Initialize the Baggage object."""
         self.metadata = metadata or {}
+        if isinstance(metadata, str):
+            try:
+                self.metadata = json.loads(metadata)
+            except Exception:
+                pass
         self.tags = tags or []
+        if isinstance(self.tags, str):
+            self.tags = self.tags.split(",")
         self.project_name = project_name
 
     @classmethod
@@ -587,7 +594,11 @@ class _Baggage:
         elif b"baggage" in headers:
             return cls.from_header(cast(bytes, headers[b"baggage"]).decode("utf-8"))
         else:
-            return cls.from_header(None)
+            return cls(
+                metadata=headers.get(LANGSMITH_METADATA),
+                tags=headers.get(LANGSMITH_TAGS),
+                project_name=headers.get(LANGSMITH_PROJECT),
+            )
 
     def to_header(self) -> str:
         """Return the Baggage object as a header value."""
