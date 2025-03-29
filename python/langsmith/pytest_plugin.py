@@ -7,6 +7,7 @@ import os
 import time
 from collections import defaultdict
 from threading import Lock
+from typing import Any
 
 import pytest
 
@@ -75,6 +76,7 @@ def pytest_runtest_call(item):
         request_obj = getattr(item, "_request", None)
         if request_obj is not None and "request" not in item.funcargs:
             item.funcargs["request"] = request_obj
+        if request_obj is not None and "request" not in item._fixtureinfo.argnames:
             # Create a new FuncFixtureInfo instance with updated argnames
             item._fixtureinfo = type(item._fixtureinfo)(
                 argnames=item._fixtureinfo.argnames + ("request",),
@@ -133,27 +135,11 @@ class LangSmithPlugin:
 
         with self.status_lock:
             current_status = self.process_status.get(process_id, {})
-            if status.get("feedback"):
-                current_status["feedback"] = {
-                    **current_status.get("feedback", {}),
-                    **status.pop("feedback"),
-                }
-            if status.get("inputs"):
-                current_status["inputs"] = {
-                    **current_status.get("inputs", {}),
-                    **status.pop("inputs"),
-                }
-            if status.get("reference_outputs"):
-                current_status["reference_outputs"] = {
-                    **current_status.get("reference_outputs", {}),
-                    **status.pop("reference_outputs"),
-                }
-            if status.get("outputs"):
-                current_status["outputs"] = {
-                    **current_status.get("outputs", {}),
-                    **status.pop("outputs"),
-                }
-            self.process_status[process_id] = {**current_status, **status}
+            self.process_status[process_id] = _merge_statuses(
+                status,
+                current_status,
+                unpack=["feedback", "inputs", "reference_outputs", "outputs"],
+            )
         self.live.update(self.generate_tables())
 
     def pytest_runtest_logstart(self, nodeid):
@@ -246,9 +232,11 @@ LangSmith URL: [bright_cyan]{self.test_suite_urls[suite_name]}[/bright_cyan]""" 
                 f"{_abbreviate(k, max_len=max_dynamic_col_width)}: {int(v) if isinstance(v, bool) else v}"  # noqa: E501
                 for k, v in status.get("feedback", {}).items()
             )
-            inputs = json.dumps(status.get("inputs", {}))
-            reference_outputs = json.dumps(status.get("reference_outputs", {}))
-            outputs = json.dumps(status.get("outputs", {}))
+            inputs = _dumps_with_fallback(status.get("inputs", {}))
+            reference_outputs = _dumps_with_fallback(
+                status.get("reference_outputs", {})
+            )
+            outputs = _dumps_with_fallback(status.get("outputs", {}))
             table.add_row(
                 _abbreviate_test_name(str(pid), max_len=max_dynamic_col_width),
                 _abbreviate(inputs, max_len=max_dynamic_col_width),
@@ -339,3 +327,21 @@ def _abbreviate_test_name(test_name: str, max_len: int) -> str:
         return "..." + file[-file_len:] + "::" + test
     else:
         return test_name
+
+
+def _merge_statuses(update: dict, current: dict, *, unpack: list[str]) -> dict:
+    for path in unpack:
+        if path_update := update.pop(path, None):
+            path_current = current.get(path, {})
+            if isinstance(path_update, dict) and isinstance(path_current, dict):
+                current[path] = {**path_current, **path_update}
+            else:
+                current[path] = path_update
+    return {**current, **update}
+
+
+def _dumps_with_fallback(obj: Any) -> str:
+    try:
+        return json.dumps(obj)
+    except Exception:
+        return "unserializable"

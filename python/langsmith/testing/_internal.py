@@ -1076,6 +1076,7 @@ def log_outputs(outputs: dict, /) -> None:
             "LANGSMITH_TRACING environment variable to 'true')."
         )
         raise ValueError(msg)
+    outputs = _dumpd(outputs)
     run_tree.add_outputs(outputs)
     test_case.log_outputs(outputs)
 
@@ -1302,3 +1303,25 @@ def _stringify(x: Any) -> str:
         return dumps_json(x).decode("utf-8", errors="surrogateescape")
     except Exception:
         return str(x)
+
+
+def _dumpd(x: Any) -> Any:
+    """Serialize LangChain Serializable objects."""
+    dumpd = _get_langchain_dumpd()
+    if not dumpd:
+        return x
+    try:
+        serialized = dumpd(x)
+        return serialized
+    except Exception:
+        return x
+
+
+@functools.lru_cache
+def _get_langchain_dumpd() -> Optional[Callable]:
+    try:
+        from langchain_core.load import dumpd
+
+        return dumpd
+    except ImportError:
+        return None
