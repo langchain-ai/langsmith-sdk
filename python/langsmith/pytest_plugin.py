@@ -74,8 +74,9 @@ def pytest_runtest_call(item):
         original_func = item.obj
         item.obj = ls_test(**kwargs)(original_func)
         request_obj = getattr(item, "_request", None)
-        if request_obj is not None and "request" in item.funcargs:
+        if request_obj is not None and "request" not in item.funcargs:
             item.funcargs["request"] = request_obj
+        if request_obj is not None and "request" not in item._fixtureinfo.argnames:
             # Create a new FuncFixtureInfo instance with updated argnames
             item._fixtureinfo = type(item._fixtureinfo)(
                 argnames=item._fixtureinfo.argnames + ("request",),
