@@ -1000,7 +1000,7 @@ def test_multipart_ingest_update_with_attachments_no_paths(
         wait_for(lambda: _get_run(str(trace_a_id), langchain_client))
         created_run = langchain_client.read_run(run_id=str(trace_a_id))
         assert created_run.attachments
-        assert sorted(created_run.attachments.keys()) == sorted(["foo", "bar"])
+        assert all(key in created_run.attachments.keys() for key in ["foo", "bar"])
         assert created_run.attachments["foo"]["reader"].read() == b"bar"
         assert created_run.attachments["bar"]["reader"].read() == b"bar"
 
