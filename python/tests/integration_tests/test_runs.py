@@ -261,7 +261,10 @@ async def test_nested_async_runs_with_threadpool(langchain_client: Client):
     # sort by dotted_order
     runs = sorted(runs, key=lambda run: run.dotted_order)
     trace_runs = sorted(trace_runs, key=lambda run: run.dotted_order)
-    assert runs == trace_runs
+    assert len(runs) == len(trace_runs)
+    assert all(
+        run.dict() == trace_run.dict() for run, trace_run in zip(runs, trace_runs)
+    )
     # Check that all instances of async_llm have a parent with
     # the same name (my_tool_run)
     name_to_ids_map = defaultdict(list)
