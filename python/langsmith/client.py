@@ -217,6 +217,7 @@ RUN_TYPE_T = Literal[
 ]
 
 
+@functools.lru_cache(maxsize=1)
 def _default_retry_config() -> Retry:
     """Get the default retry configuration.
 
