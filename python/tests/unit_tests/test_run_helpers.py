@@ -1771,7 +1771,7 @@ def test_traceable_input_attachments():
             )
             assert result == "foo"
 
-        for _ in range(10):
+        for _ in range(20):
             calls = _get_calls(mock_client)
             datas = _get_multipart_data(calls)
             if len(datas) >= 7:
