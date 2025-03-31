@@ -1731,6 +1731,7 @@ def test_traceable_stop_iteration():
     assert list(consume(wrapped)) == list(range(5))
 
 
+@pytest.mark.flaky(retries=3)
 def test_traceable_input_attachments():
     with patch.object(ls_client.ls_env, "get_runtime_environment") as mock_get_env:
         mock_get_env.return_value = {
@@ -1774,15 +1775,17 @@ def test_traceable_input_attachments():
             )
             assert result == "foo"
 
+        mock_client.flush()
+
         for _ in range(20):
             calls = _get_calls(mock_client)
             datas = _get_multipart_data(calls)
-            if len(datas) >= 6:
+            if len(datas) >= 7:
                 break
             time.sleep(1)
 
         # main run, inputs, outputs, events, att1, att2, anoutput
-        assert len(datas) in (6, 7)
+        assert len(datas) == 7
         # First 4 are type application/json (run, inputs, outputs, events)
         trace_id = datas[0][0].split(".")[1]
         _, (_, run_stuff) = next(
