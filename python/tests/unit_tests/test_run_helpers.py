@@ -1758,6 +1758,7 @@ def test_traceable_input_attachments():
                     scale_up_nthreads_limit=16,
                     scale_up_qsize_trigger=1000,
                     scale_down_nempty_trigger=4,
+                    instance_flags={"zstd_compression_enabled": True},
                 )
             ),
         )
