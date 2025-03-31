@@ -1,7 +1,7 @@
 # LangSmith Client SDKs
 
- [![Release Notes](https://img.shields.io/github/release/langchain-ai/langsmith-sdk?logo=python)](https://github.com/langchain-ai/langsmith-sdk/releases)
- [![Python Downloads](https://static.pepy.tech/badge/langsmith/month)](https://pepy.tech/project/langsmith)
+[![Release Notes](https://img.shields.io/github/release/langchain-ai/langsmith-sdk?logo=python)](https://github.com/langchain-ai/langsmith-sdk/releases)
+[![Python Downloads](https://static.pepy.tech/badge/langsmith/month)](https://pepy.tech/project/langsmith)
 
 ![NPM Version](https://img.shields.io/npm/v/langsmith?logo=npm)
 [![JS Downloads](https://img.shields.io/npm/dm/langsmith)](https://www.npmjs.com/package/langsmith)
@@ -20,8 +20,8 @@ To get started with the Python SDK, [install the package](https://pypi.org/proje
 
 ```bash
 pip install -U langsmith
-export LANGCHAIN_TRACING_V2=true
-export LANGCHAIN_API_KEY=ls_...
+export LANGSMITH_TRACING=true
+export LANGSMITH_API_KEY=ls_...
 ```
 
 Then start tracing your app:
@@ -43,8 +43,8 @@ To get started with the JavaScript / TypeScript SDK, [install the package](https
 
 ```bash
 yarn add langsmith
-export LANGCHAIN_TRACING_V2=true
-export LANGCHAIN_API_KEY=ls_...
+export LANGSMITH_TRACING=true
+export LANGSMITH_API_KEY=ls_...
 ```
 
 Then start tracing your app!

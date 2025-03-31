@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from typing import Dict, Iterable, Tuple
+from io import BufferedReader
+from typing import Dict, Iterable, Tuple, Union
 
-MultipartPart = Tuple[str, Tuple[None, bytes, str, Dict[str, str]]]
+MultipartPart = Tuple[
+    str, Tuple[None, Union[bytes, BufferedReader], str, Dict[str, str]]
+]
 
 
 class MultipartPartsAndContext:

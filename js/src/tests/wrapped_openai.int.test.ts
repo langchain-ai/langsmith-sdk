@@ -11,6 +11,13 @@ import { z } from "zod";
 import { UsageMetadata } from "../schemas.js";
 import fs from "fs";
 
+function parseRequestBody(body: any) {
+  // eslint-disable-next-line no-instanceof/no-instanceof
+  return body instanceof Uint8Array
+    ? JSON.parse(new TextDecoder().decode(body))
+    : JSON.parse(body);
+}
+
 test("wrapOpenAI should return type compatible with OpenAI", async () => {
   let originalClient = new OpenAI();
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -88,6 +95,26 @@ test.concurrent("chat.completions", async () => {
 
   expect(patchedChoices).toEqual(originalChoices);
   expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
+
+  // Verify token events were logged
+  const patchCalls = callSpy.mock.calls.filter(
+    (call) => (call[2] as any).method === "PATCH"
+  );
+  const lastPatchCall = patchCalls[patchCalls.length - 1];
+  const body = parseRequestBody((lastPatchCall[2] as any).body);
+
+  expect(body.events).toBeDefined();
+  const tokenEvents = body.events.filter(
+    (event: any) => event.name === "new_token"
+  );
+  expect(tokenEvents.length).toBeGreaterThan(0);
+  tokenEvents.forEach((event: any) => {
+    expect(event.name).toBe("new_token");
+    expect(event.kwargs).toBeDefined();
+    expect(event.kwargs.token).toBeDefined();
+    expect(event.time).toBeDefined();
+  });
+
   for (const call of callSpy.mock.calls) {
     expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);
   }
@@ -279,6 +306,26 @@ test.concurrent("chat completions with tool calling", async () => {
     removeToolCallId(originalChoices)
   );
   expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
+
+  // Verify token events were logged for tool calling stream
+  const patchCalls = callSpy.mock.calls.filter(
+    (call) => (call[2] as any).method === "PATCH"
+  );
+  const lastPatchCall = patchCalls[patchCalls.length - 1];
+  const body = parseRequestBody((lastPatchCall[2] as any).body);
+
+  expect(body.events).toBeDefined();
+  const tokenEvents = body.events.filter(
+    (event: any) => event.name === "new_token"
+  );
+  expect(tokenEvents.length).toBeGreaterThan(0);
+  tokenEvents.forEach((event: any) => {
+    expect(event.name).toBe("new_token");
+    expect(event.kwargs).toBeDefined();
+    expect(event.kwargs.token).toBeDefined();
+    expect(event.time).toBeDefined();
+  });
+
   for (const call of callSpy.mock.calls) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);
@@ -323,8 +370,8 @@ test.concurrent("chat completions with tool calling", async () => {
   for (const call of callSpy.mock.calls) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect(JSON.parse((call[2] as any).body).extra.metadata).toEqual({
+    const body = parseRequestBody((call[2] as any).body);
+    expect(body.extra.metadata).toEqual({
       thing1: "thing2",
       ls_model_name: "gpt-3.5-turbo",
       ls_model_type: "chat",
@@ -566,8 +613,8 @@ test.concurrent("beta.chat.completions.parse", async () => {
   for (const call of callSpy.mock.calls) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect(JSON.parse((call[2] as any).body).extra.metadata).toEqual({
+    const body = parseRequestBody((call[2] as any).body);
+    expect(body.extra.metadata).toEqual({
       ls_model_name: "gpt-4o-mini",
       ls_model_type: "chat",
       ls_provider: "openai",
@@ -655,7 +702,7 @@ describe("Usage Metadata Tests", () => {
         const requestBodies: any = {};
         for (const call of callSpy.mock.calls) {
           const request = call[2] as any;
-          const requestBody = JSON.parse(request.body);
+          const requestBody = parseRequestBody(request.body);
           if (request.method === "POST") {
             requestBodies["post"] = [requestBody];
           }

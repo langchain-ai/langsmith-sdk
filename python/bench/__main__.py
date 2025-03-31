@@ -28,7 +28,7 @@ benchmarks = (
     (
         "create_20_000_run_trees",
         create_run_trees,
-        10_000,
+        20_000,
     ),
     (
         "dumps_class_nested_py_branch_and_leaf_200x400",

@@ -398,8 +398,7 @@ def test_evaluate_results(
         assert r["evaluation_results"]["results"][0].extra == {"error": True}
 
     # test invalid evaluators
-    # args need to be positional
-    def eval1(*, inputs, outputs):
+    def eval1(bar, *, inputs, outputs):
         pass
 
     # if more than 2 positional args, they must all have default arg names
@@ -595,21 +594,18 @@ async def test_aevaluate_results(
         max_concurrency=None,
     )
     if not blocking:
-        deltas = []
-        last = None
+        deltas: list = []
         start = time.time()
+        last = start
         now = None
         async for _ in results:
             now = time.time()
-            if last is None:
-                elapsed = now - start
-                assert elapsed < 3
-            deltas.append((now - last) if last is not None else 0)  # type: ignore
+            deltas.append((now - last))
             last = now
         total = now - start  # type: ignore
-        assert total > 1.5
+        assert 3.2 > total > 1.5
 
-        # Essentially we want to check that 1 delay is > 1.5s and the rest are < 0.1s
+        # Essentially we want to check that most calls were very fast.
         assert len(deltas) == SPLIT_SIZE * NUM_REPETITIONS
 
         total_quick = sum([d < 0.5 for d in deltas])
@@ -617,7 +613,7 @@ async def test_aevaluate_results(
         tolerance = 3
         assert total_slow < tolerance
         assert total_quick > (SPLIT_SIZE * NUM_REPETITIONS - 1) - tolerance
-        assert any([d > 1 for d in deltas])
+        assert max(deltas) > (total / 3)
 
     async for r in results:
         assert r["run"].outputs["output"] == r["example"].inputs["in"] + 1  # type: ignore
@@ -692,8 +688,7 @@ async def test_aevaluate_results(
         assert r["evaluation_results"]["results"][0].extra == {"error": True}
 
     # test invalid evaluators
-    # args need to be positional
-    async def eval1(*, inputs, outputs):
+    async def eval1(bar, *, inputs, outputs):
         pass
 
     # if more than 2 positional args, they must all have default arg names
@@ -865,11 +860,77 @@ async def invalid_three_args_async(inputs, outputs, foo, *, optional=None):
     return {"score": 1}
 
 
-def invalid_no_positional(*, inputs, outputs, optional=None):
+def kwarg_valid_two_arbitrary(*, foo, bar, optional=None):
     return {"score": 1}
 
 
-async def invalid_no_positional_async(*, inputs, outputs, optional=None):
+def valid_additional_kwargs(*, foo, bar, optional=None, **kwargs):
+    return {"score": 1}
+
+
+def kwarg_valid_multiple_supported(
+    *, inputs, outputs, reference_outputs, optional=None
+):
+    return {"score": 1}
+
+
+async def kwarg_valid_two_arbitrary_async(*, foo, bar, optional=None):
+    return {"score": 1}
+
+
+async def valid_additional_kwargs_async(*, foo, bar, optional=None, **kwargs):
+    return {"score": 1}
+
+
+async def kwarg_valid_multiple_supported_async(
+    *, inputs, outputs, reference_outputs, optional=None
+):
+    return {"score": 1}
+
+
+def kwarg_invalid_single_unsupported(*, foo, optional=None):
+    return {"score": 1}
+
+
+def kwarg_invalid_three_args(*, inputs, outputs, foo, optional=None):
+    return {"score": 1}
+
+
+async def kwarg_invalid_single_unsupported_async(*, foo, optional=None):
+    return {"score": 1}
+
+
+async def kwarg_invalid_three_args_async(*, inputs, outputs, foo, optional=None):
+    return {"score": 1}
+
+
+def valid_mixed_positional_and_keyword(foo, *, bar, optional=None):
+    return {"score": 1}
+
+
+def valid_mixed_positional_and_keyword_with_reference_outputs(
+    inputs, outputs, *, reference_outputs, optional=None
+):
+    return {"score": 1}
+
+
+async def valid_mixed_positional_and_keyword_async(foo, *, bar, optional=None):
+    return {"score": 1}
+
+
+async def valid_mixed_positional_and_keyword_with_reference_outputs_async(
+    inputs, outputs, *, reference_outputs, optional=None
+):
+    return {"score": 1}
+
+
+def invalid_mixed_positional_and_keyword_three_args(baz, *, foo, bar, optional=None):
+    return {"score": 1}
+
+
+async def invalid_mixed_positional_and_keyword_three_args_async(
+    baz, *, foo, bar, optional=None
+):
     return {"score": 1}
 
 
@@ -881,6 +942,16 @@ VALID_EVALUATOR_CASES = [
     (valid_two_arbitrary_async, True),
     (valid_multiple_supported, False),
     (valid_multiple_supported_async, True),
+    (valid_mixed_positional_and_keyword, False),
+    (valid_mixed_positional_and_keyword_with_reference_outputs, False),
+    (valid_mixed_positional_and_keyword_async, True),
+    (valid_mixed_positional_and_keyword_with_reference_outputs_async, True),
+    (kwarg_valid_two_arbitrary, False),
+    (kwarg_valid_two_arbitrary_async, True),
+    (kwarg_valid_multiple_supported, False),
+    (kwarg_valid_multiple_supported_async, True),
+    (valid_additional_kwargs, False),
+    (valid_additional_kwargs_async, True),
 ]
 
 # Test cases that should raise ValueError
@@ -889,8 +960,12 @@ INVALID_EVALUATOR_CASES = [
     (invalid_single_unsupported_async, True),
     (invalid_three_args, False),
     (invalid_three_args_async, True),
-    (invalid_no_positional, False),
-    (invalid_no_positional_async, True),
+    (kwarg_invalid_single_unsupported, False),
+    (kwarg_invalid_single_unsupported_async, True),
+    (kwarg_invalid_three_args, False),
+    (kwarg_invalid_three_args_async, True),
+    (invalid_mixed_positional_and_keyword_three_args, False),
+    (invalid_mixed_positional_and_keyword_three_args_async, True),
 ]
 
 
@@ -900,6 +975,56 @@ def target(inputs, attachments):
 
 async def atarget(inputs, attachments):
     return {"foo": "bar"}
+
+
+def test_passing_kwargs_is_working():
+    session = mock.Mock()
+    ds_name = "my-dataset"
+    ds_id = "00886375-eb2a-4038-9032-efff60309896"
+
+    ds_example_responses = [_create_example(i) for i in range(10)]
+    ds_examples = [e[0] for e in ds_example_responses]
+    tenant_id = str(uuid.uuid4())
+    fake_request = FakeRequest(
+        ds_id, ds_name, [e[1] for e in ds_example_responses], tenant_id
+    )
+    session.request = fake_request.request
+    client = Client(api_url="http://localhost:1984", api_key="123", session=session)
+    client._tenant_id = tenant_id  # type: ignore
+
+    def _valid_mixed_positional_and_keyword_with_reference_outputs(
+        inputs, outputs, *, reference_outputs, optional=None
+    ):
+        assert list(inputs.keys()) == ["in"]
+        assert list(outputs.keys()) == ["foo"]
+        assert list(reference_outputs.keys()) == ["answer"]
+        return {"score": 1}
+
+    async def _async_valid_mixed_positional_and_keyword_with_reference_outputs(
+        inputs, outputs, *, reference_outputs, optional=None
+    ):
+        assert list(inputs.keys()) == ["in"]
+        assert list(outputs.keys()) == ["foo"]
+        assert list(reference_outputs.keys()) == ["answer"]
+        return {"score": 1}
+
+    func_1 = _normalize_evaluator_func(
+        _valid_mixed_positional_and_keyword_with_reference_outputs
+    )
+
+    func_2 = _normalize_evaluator_func(
+        _async_valid_mixed_positional_and_keyword_with_reference_outputs
+    )
+
+    res = evaluate(
+        target,
+        data=ds_examples,
+        evaluators=[func_1, func_2],
+        client=client,
+    )
+    for r in res:
+        assert r["evaluation_results"]["results"][0].score == 1
+        assert r["evaluation_results"]["results"][1].score == 1
 
 
 @pytest.mark.parametrize("func,is_async", VALID_EVALUATOR_CASES)
@@ -998,7 +1123,7 @@ def test__normalize_summary_evaluator(evaluator: Callable) -> None:
     assert normalized(runs, examples)["score"] == 12
 
 
-def summary_eval_kwargs(*, runs, examples):
+def summary_eval_kwargs(bar, *, runs, examples):
     return
 
 
@@ -1099,7 +1224,7 @@ async def test__normalize_comparison_evaluator_async(evaluator: Callable) -> Non
     assert await normalized(runs, example) == [2, 3]
 
 
-def comparison_eval_kwargs(*, runs, example):
+def comparison_eval_kwargs(bar, *, runs, example):
     return
 
 

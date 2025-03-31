@@ -54,7 +54,9 @@ class RunTree(ls_schemas.RunBase):
     id: UUID = Field(default_factory=uuid4)
     run_type: str = Field(default="chain")
     start_time: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    # Note: no longer set.
     parent_run: Optional[RunTree] = Field(default=None, exclude=True)
+    parent_dotted_order: Optional[str] = Field(default=None, exclude=True)
     child_runs: List[RunTree] = Field(
         default_factory=list,
         exclude={"__all__": {"parent_run_id"}},
@@ -74,6 +76,9 @@ class RunTree(ls_schemas.RunBase):
         default="", description="The order of the run in the tree."
     )
     trace_id: UUID = Field(default="", description="The trace id of the run.")  # type: ignore
+    dangerously_allow_filesystem: Optional[bool] = Field(
+        default=False, description="Whether to allow filesystem access for attachments."
+    )
 
     class Config:
         """Pydantic model configuration."""
@@ -98,13 +103,15 @@ class RunTree(ls_schemas.RunBase):
             values["ls_client"] = values.pop("_client")
         if not values.get("ls_client"):
             values["ls_client"] = None
-        if values.get("parent_run") is not None:
-            values["parent_run_id"] = values["parent_run"].id
+        parent_run = values.pop("parent_run", None)
+        if parent_run is not None:
+            values["parent_run_id"] = parent_run.id
+            values["parent_dotted_order"] = parent_run.dotted_order
         if "id" not in values:
             values["id"] = uuid4()
         if "trace_id" not in values:
-            if "parent_run" in values:
-                values["trace_id"] = values["parent_run"].trace_id
+            if parent_run is not None:
+                values["trace_id"] = parent_run.trace_id
             else:
                 values["trace_id"] = values["id"]
         cast(dict, values.setdefault("extra", {}))
@@ -127,10 +134,9 @@ class RunTree(ls_schemas.RunBase):
         current_dotted_order = _create_current_dotted_order(
             values["start_time"], values["id"]
         )
-        if values["parent_run"]:
-            values["dotted_order"] = (
-                values["parent_run"].dotted_order + "." + current_dotted_order
-            )
+        parent_dotted_order = values.get("parent_dotted_order")
+        if parent_dotted_order is not None:
+            values["dotted_order"] = parent_dotted_order + "." + current_dotted_order
         else:
             values["dotted_order"] = current_dotted_order
         return values
@@ -184,6 +190,19 @@ class RunTree(ls_schemas.RunBase):
         if self.outputs is None:
             self.outputs = {}
         self.outputs.update(outputs)
+
+    def add_inputs(self, inputs: Dict[str, Any]) -> None:
+        """Upsert the given outputs into the run.
+
+        Args:
+            outputs (Dict[str, Any]): A dictionary containing the outputs to be added.
+
+        Returns:
+            None
+        """
+        if self.inputs is None:
+            self.inputs = {}
+        self.inputs.update(inputs)
 
     def add_event(
         self,
@@ -279,7 +298,8 @@ class RunTree(ls_schemas.RunBase):
             project_name=self.session_name,
             ls_client=self.ls_client,
             tags=tags,
-            attachments=attachments or {},
+            attachments=attachments or {},  # type: ignore
+            dangerously_allow_filesystem=self.dangerously_allow_filesystem,
         )
         self.child_runs.append(run)
         return run
@@ -318,7 +338,9 @@ class RunTree(ls_schemas.RunBase):
         """Patch the run tree to the API in a background thread."""
         if not self.end_time:
             self.end()
-        attachments = self.attachments
+        attachments = {
+            a: v for a, v in self.attachments.items() if isinstance(v, tuple)
+        }
         try:
             # Avoid loading the same attachment twice
             if attachments:
@@ -341,6 +363,7 @@ class RunTree(ls_schemas.RunBase):
         self.client.update_run(
             name=self.name,
             run_id=self.id,
+            inputs=self.inputs.copy() if self.inputs else None,
             outputs=self.outputs.copy() if self.outputs else None,
             error=self.error,
             parent_run_id=self.parent_run_id,

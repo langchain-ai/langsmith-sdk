@@ -770,10 +770,15 @@ def get_host_url(web_url: Optional[str], api_url: str):
     elif str(parsed_url.path).endswith("/api"):
         new_path = str(parsed_url.path).rsplit("/api", 1)[0]
         link = urllib_parse.urlunparse(parsed_url._replace(path=new_path))
+    elif str(parsed_url.path).endswith("/api/v1"):
+        new_path = str(parsed_url.path).rsplit("/api/v1", 1)[0]
+        link = urllib_parse.urlunparse(parsed_url._replace(path=new_path))
     elif str(parsed_url.netloc).startswith("eu."):
         link = "https://eu.smith.langchain.com"
     elif str(parsed_url.netloc).startswith("dev."):
         link = "https://dev.smith.langchain.com"
+    elif str(parsed_url.netloc).startswith("beta."):
+        link = "https://beta.smith.langchain.com"
     else:
         link = "https://smith.langchain.com"
     return link
@@ -795,3 +800,17 @@ def _get_function_name(fn: Callable, depth: int = 0) -> str:
         return _get_function_name(fn.__call__, depth + 1)
 
     return str(fn)
+
+
+def is_truish(val: Any) -> bool:
+    """Check if the value is truish.
+
+    Args:
+        val (Any): The value to check.
+
+    Returns:
+        bool: True if the value is truish, False otherwise.
+    """
+    if isinstance(val, str):
+        return val.lower() == "true" or val == "1"
+    return bool(val)

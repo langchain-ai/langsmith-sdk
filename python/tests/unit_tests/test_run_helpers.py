@@ -1296,8 +1296,7 @@ def test_from_runnable_config():
         assert rt
         assert rt.run_type == "retriever"
         assert rt.parent_run_id
-        assert rt.parent_run
-        assert rt.parent_run.run_type == "tool"
+        assert rt.parent_dotted_order
         assert rt.session_name == "foo"
         return my_grandchild_tool.invoke({"text": text}, {"run_id": gc_run_id})
 
@@ -1391,11 +1390,9 @@ def test_io_interops():
     patches_dict = {d["id"]: d for d in patches_datas}
     child_patch = patches_dict[ids["child"]]
     assert child_patch["outputs"] == expected_at_stage["child_output"]
-    assert child_patch["inputs"] == expected_at_stage["child_input"]
     assert child_patch["name"] == "child"
     parent_patch = patches_dict[ids["the_parent"]]
     assert parent_patch["outputs"] == expected_at_stage["parent_output"]
-    assert parent_patch["inputs"] == expected_at_stage["parent_input"]
     assert parent_patch["name"] == "the_parent"
     for d in patches_datas:
         if d["id"] in ids_contains_serialized:
@@ -1774,7 +1771,7 @@ def test_traceable_input_attachments():
             )
             assert result == "foo"
 
-        for _ in range(10):
+        for _ in range(20):
             calls = _get_calls(mock_client)
             datas = _get_multipart_data(calls)
             if len(datas) >= 7:
@@ -1835,3 +1832,53 @@ def test__get_inputs_and_attachments_safe_unhashable_default() -> None:
     expected = {"x": {"b": "c"}}
     actual = _get_inputs_and_attachments_safe(inspect.signature(foo), x={"b": "c"})[0]
     assert expected == actual
+
+
+def test_traceable_iterator_process_chunk(mock_client: Client) -> None:
+    with tracing_context(enabled=True):
+
+        @traceable(client=mock_client, process_chunk=lambda x: x["val"])
+        def my_iterator_fn(a, b, d, **kwargs) -> Any:
+            assert kwargs == {"e": 5}
+            for i in range(a + b + d):
+                yield {"val": i, "squared": i**2}
+
+        expected = [{"val": x, "squared": x**2} for x in range(6)]
+        genout = my_iterator_fn(1, 2, 3, e=5)
+        results = list(genout)
+        assert results == expected
+    # check the mock_calls
+    mock_calls = _get_calls(mock_client, minimum=1)
+    assert 1 <= len(mock_calls) <= 2
+
+    call = mock_calls[0]
+    assert call.args[0] == "POST"
+    assert call.args[1].startswith("https://api.smith.langchain.com")
+    body = json.loads(mock_calls[0].kwargs["data"])
+    assert body["post"]
+    assert body["post"][0]["outputs"]["output"] == list(range(6))
+
+
+async def test_traceable_async_iterator_process_chunk(mock_client: Client) -> None:
+    with tracing_context(enabled=True):
+
+        @traceable(client=mock_client, process_chunk=lambda x: x["val"])
+        async def my_iterator_fn(a, b, d, **kwargs) -> Any:
+            assert kwargs == {"e": 5}
+            for i in range(a + b + d):
+                yield {"val": i, "squared": i**2}
+
+        expected = [{"val": x, "squared": x**2} for x in range(6)]
+        genout = my_iterator_fn(1, 2, 3, e=5)
+        results = [x async for x in genout]
+        assert results == expected
+    # check the mock_calls
+    mock_calls = _get_calls(mock_client, minimum=1)
+    assert 1 <= len(mock_calls) <= 2
+
+    call = mock_calls[0]
+    assert call.args[0] == "POST"
+    assert call.args[1].startswith("https://api.smith.langchain.com")
+    body = json.loads(mock_calls[0].kwargs["data"])
+    assert body["post"]
+    assert body["post"][0]["outputs"]["output"] == list(range(6))

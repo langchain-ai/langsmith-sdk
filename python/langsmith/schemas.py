@@ -39,6 +39,8 @@ except ImportError:
         StrictInt,
     )
 
+from pathlib import Path
+
 from typing_extensions import Literal
 
 SCORE_TYPE = Union[StrictBool, StrictInt, StrictFloat, None]
@@ -49,21 +51,25 @@ class Attachment(NamedTuple):
     """Annotated type that will be stored as an attachment if used.
 
     Examples:
-        --------
+
         .. code-block:: python
 
-        @traceable
-        def my_function(bar: int, my_val: Attachment):
-            # my_val will be stored as an attachment
-            # bar will be stored as inputs
-            return bar
+            from langsmith import traceable
+            from langsmith.schemas import Attachment
+
+
+            @traceable
+            def my_function(bar: int, my_val: Attachment):
+                # my_val will be stored as an attachment
+                # bar will be stored as inputs
+                return bar
     """
 
     mime_type: str
-    data: bytes
+    data: Union[bytes, Path]
 
 
-Attachments = Dict[str, Union[Tuple[str, bytes], Attachment]]
+Attachments = Dict[str, Union[Tuple[str, bytes], Attachment, Tuple[str, Path]]]
 """Attachments associated with the run. 
 Each entry is a tuple of (mime_type, bytes), or (mime_type, file_path)"""
 
@@ -76,12 +82,12 @@ class BinaryIOLike(Protocol):
         """Read function."""
         ...
 
-    def write(self, b: bytes) -> int:
-        """Write function."""
-        ...
-
     def seek(self, offset: int, whence: int = 0) -> int:
         """Seek function."""
+        ...
+
+    def getvalue(self) -> bytes:
+        """Get value function."""
         ...
 
 
@@ -89,7 +95,7 @@ class ExampleBase(BaseModel):
     """Example base model."""
 
     dataset_id: UUID
-    inputs: Dict[str, Any] = Field(default_factory=dict)
+    inputs: Optional[Dict[str, Any]] = Field(default=None)
     outputs: Optional[Dict[str, Any]] = Field(default=None)
     metadata: Optional[Dict[str, Any]] = Field(default=None)
 
@@ -100,27 +106,39 @@ class ExampleBase(BaseModel):
         arbitrary_types_allowed = True
 
 
-class ExampleCreate(ExampleBase):
-    """Example create model."""
-
-    id: Optional[UUID]
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    split: Optional[Union[str, List[str]]] = None
+class _AttachmentDict(TypedDict):
+    mime_type: str
+    data: Union[bytes, Path]
 
 
-class ExampleUploadWithAttachments(BaseModel):
+_AttachmentLike = Union[
+    Attachment, _AttachmentDict, Tuple[str, bytes], Tuple[str, Path]
+]
+
+
+class ExampleCreate(BaseModel):
     """Example upload with attachments."""
 
     id: Optional[UUID]
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    inputs: Dict[str, Any] = Field(default_factory=dict)
+    inputs: Optional[Dict[str, Any]] = Field(default=None)
     outputs: Optional[Dict[str, Any]] = Field(default=None)
     metadata: Optional[Dict[str, Any]] = Field(default=None)
     split: Optional[Union[str, List[str]]] = None
-    attachments: Optional[Attachments] = None
+    attachments: Optional[dict[str, _AttachmentLike]] = None
+    use_source_run_io: bool = False
+    use_source_run_attachments: Optional[List[str]] = None
+    source_run_id: Optional[UUID] = None
+
+    def __init__(self, **data):
+        """Initialize from dict."""
+        super().__init__(**data)
 
 
-class ExampleUpsertWithAttachments(ExampleUploadWithAttachments):
+ExampleUploadWithAttachments = ExampleCreate
+
+
+class ExampleUpsertWithAttachments(ExampleCreate):
     """Example create with attachments."""
 
     dataset_id: UUID
@@ -131,7 +149,7 @@ class AttachmentInfo(TypedDict):
 
     presigned_url: str
     reader: BinaryIOLike
-    mime_type: str
+    mime_type: Optional[str]
 
 
 class Example(ExampleBase):
@@ -195,31 +213,28 @@ class AttachmentsOperations(BaseModel):
 
 
 class ExampleUpdate(BaseModel):
-    """Update class for Example."""
+    """Example update with attachments."""
 
+    id: UUID
     dataset_id: Optional[UUID] = None
-    inputs: Optional[Dict[str, Any]] = None
-    outputs: Optional[Dict[str, Any]] = None
-    attachments_operations: Optional[AttachmentsOperations] = None
-    metadata: Optional[Dict[str, Any]] = None
+    inputs: Optional[Dict[str, Any]] = Field(default=None)
+    outputs: Optional[Dict[str, Any]] = Field(default=None)
+    metadata: Optional[Dict[str, Any]] = Field(default=None)
     split: Optional[Union[str, List[str]]] = None
+    attachments: Optional[Attachments] = None
+    attachments_operations: Optional[AttachmentsOperations] = None
 
     class Config:
         """Configuration class for the schema."""
 
         frozen = True
 
+    def __init__(self, **data):
+        """Initialize from dict."""
+        super().__init__(**data)
 
-class ExampleUpdateWithAttachments(ExampleUpdate):
-    """Example update with attachments."""
 
-    id: UUID
-    inputs: Dict[str, Any] = Field(default_factory=dict)
-    outputs: Optional[Dict[str, Any]] = Field(default=None)
-    metadata: Optional[Dict[str, Any]] = Field(default=None)
-    split: Optional[Union[str, List[str]]] = None
-    attachments: Optional[Attachments] = None
-    attachments_operations: Optional[AttachmentsOperations] = None
+ExampleUpdateWithAttachments = ExampleUpdate
 
 
 class DataType(str, Enum):
@@ -370,7 +385,9 @@ class RunBase(BaseModel):
     tags: Optional[List[str]] = None
     """Tags for categorizing or annotating the run."""
 
-    attachments: Attachments = Field(default_factory=dict)
+    attachments: Union[Attachments, Dict[str, AttachmentInfo]] = Field(
+        default_factory=dict
+    )
     """Attachments associated with the run.
     Each entry is a tuple of (mime_type, bytes)."""
 
@@ -389,6 +406,11 @@ class RunBase(BaseModel):
     def __repr__(self):
         """Return a string representation of the RunBase object."""
         return f"{self.__class__}(id={self.id}, name='{self.name}', run_type='{self.run_type}')"
+
+    class Config:
+        """Configuration class for the schema."""
+
+        arbitrary_types_allowed = True
 
 
 class Run(RunBase):
@@ -621,6 +643,8 @@ class FeedbackCreate(FeedbackBase):
     feedback_source: FeedbackSourceBase
     """The source of the feedback."""
     feedback_config: Optional[FeedbackConfig] = None
+    """The config for the feedback"""
+    error: Optional[bool] = None
 
 
 class Feedback(FeedbackBase):

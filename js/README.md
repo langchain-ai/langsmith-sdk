@@ -3,7 +3,6 @@
 ![NPM Version](https://img.shields.io/npm/v/langsmith?logo=npm)
 [![JS Downloads](https://img.shields.io/npm/dm/langsmith)](https://www.npmjs.com/package/langsmith)
 
-
 This package contains the TypeScript client for interacting with the [LangSmith platform](https://smith.langchain.com/).
 
 To install:
@@ -51,11 +50,11 @@ yarn add langchain
 Tracing can be activated by setting the following environment variables or by manually specifying the LangChainTracer.
 
 ```typescript
-process.env["LANGSMITH_TRACING"] = "true";
-process.env["LANGCHAIN_ENDPOINT"] = "https://api.smith.langchain.com";
-// process.env["LANGCHAIN_ENDPOINT"] = "https://eu.api.smith.langchain.com"; // If signed up in the EU region
-process.env["LANGCHAIN_API_KEY"] = "<YOUR-LANGSMITH-API-KEY>";
-// process.env["LANGCHAIN_PROJECT"] = "My Project Name"; // Optional: "default" is used if not set
+process.env.LANGSMITH_TRACING = "true";
+process.env.LANGSMITH_ENDPOINT = "https://api.smith.langchain.com";
+// process.env.LANGSMITH_ENDPOINT = "https://eu.api.smith.langchain.com"; // If signed up in the EU region
+process.env.LANGSMITH_API_KEY = "<YOUR-LANGSMITH-API-KEY>";
+// process.env.LANGSMITH_PROJECT = "My Project Name"; // Optional: "default" is used if not set
 ```
 
 > **Tip:** Projects are groups of traces. All runs are logged to a project. If not specified, the project is set to `default`.
@@ -83,9 +82,10 @@ or by directly specifying the connection information in the RunTree.
 1. **Copy the environment variables from the Settings Page and add them to your application.**
 
 ```shell
-export LANGCHAIN_API_KEY=<YOUR-LANGSMITH-API-KEY>
-# export LANGCHAIN_PROJECT="My Project Name" #  Optional: "default" is used if not set
-# export LANGCHAIN_ENDPOINT=https://api.smith.langchain.com # or your own server
+export LANGSMITH_TRACING="true";
+export LANGSMITH_API_KEY=<YOUR-LANGSMITH-API-KEY>
+# export LANGSMITH_PROJECT="My Project Name" #  Optional: "default" is used if not set
+# export LANGSMITH_ENDPOINT=https://api.smith.langchain.com # or your own server
 ```
 
 ## Integrations
@@ -102,7 +102,8 @@ is using the `wrapOpenAI` wrapper function available in LangSmith 0.1.3 and up.
 In order to use, you first need to set your LangSmith API key:
 
 ```shell
-export LANGCHAIN_API_KEY=<your-api-key>
+export LANGSMITH_TRACING="true";
+export LANGSMITH_API_KEY=<your-api-key>
 ```
 
 Next, you will need to install the LangSmith SDK and the OpenAI SDK:
@@ -345,9 +346,9 @@ const parentRunConfig: RunTreeConfig = {
     text: "Summarize this morning's meetings.",
   },
   serialized: {}, // Serialized representation of this chain
-  // project_name: "Defaults to the LANGCHAIN_PROJECT env var"
-  // apiUrl: "Defaults to the LANGCHAIN_ENDPOINT env var"
-  // apiKey: "Defaults to the LANGCHAIN_API_KEY env var"
+  // project_name: "Defaults to the LANGSMITH_PROJECT env var"
+  // apiUrl: "Defaults to the LANGSMITH_ENDPOINT env var"
+  // apiKey: "Defaults to the LANGSMITH_API_KEY env var"
 };
 
 const parentRun = new RunTree(parentRunConfig);
@@ -440,8 +441,8 @@ the web interface, as explained in the [LangSmith docs](https://docs.smith.langc
 ```typescript
 import { Client } from "langsmith/client";
 const client = new Client({
-  // apiUrl: "https://api.langchain.com", // Defaults to the LANGCHAIN_ENDPOINT env var
-  // apiKey: "my_api_key", // Defaults to the LANGCHAIN_API_KEY env var
+  // apiUrl: "https://api.langchain.com", // Defaults to the LANGSMITH_ENDPOINT env var
+  // apiKey: "my_api_key", // Defaults to the LANGSMITH_API_KEY env var
   /* callerOptions: {
          maxConcurrency?: Infinity; // Maximum number of concurrent requests to make
          maxRetries?: 6; // Maximum number of retries to make

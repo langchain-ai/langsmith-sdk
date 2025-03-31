@@ -1,6 +1,6 @@
 """Client for interacting with the LangSmith API.
 
-Use the client to customize API keys / workspace ocnnections, SSl certs,
+Use the client to customize API keys / workspace connections, SSL certs,
 etc. for tracing.
 
 Also used to create, read, update, and delete LangSmith resources
@@ -77,11 +77,8 @@ from langsmith._internal._background_thread import (
 from langsmith._internal._background_thread import (
     tracing_control_thread_func as _tracing_control_thread_func,
 )
-from langsmith._internal._background_thread import (
-    tracing_control_thread_func_compress_parallel as _tracing_control_thread_func_compress_parallel,
-)
 from langsmith._internal._beta_decorator import warn_beta
-from langsmith._internal._compressed_runs import CompressedRuns
+from langsmith._internal._compressed_traces import CompressedTraces
 from langsmith._internal._constants import (
     _AUTO_SCALE_UP_NTHREADS_LIMIT,
     _BLOCKSIZE_BYTES,
@@ -104,6 +101,23 @@ from langsmith._internal._operations import (
     serialized_run_operation_to_multipart_parts_and_context,
 )
 from langsmith._internal._serde import dumps_json as _dumps_json
+from langsmith.schemas import AttachmentInfo
+
+HAS_OTEL = False
+try:
+    if ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED")):
+        from opentelemetry import trace as otel_trace  # type: ignore[import]
+
+        from langsmith._internal.otel._otel_client import (
+            get_otlp_tracer_provider,
+        )
+        from langsmith._internal.otel._otel_exporter import OTELExporter
+
+        HAS_OTEL = True
+except ImportError:
+    raise ImportError(
+        "To use OTEL tracing, you must install it with `pip install langsmith[otel]`"
+    )
 
 try:
     from zoneinfo import ZoneInfo  # type: ignore[import-not-found]
@@ -111,6 +125,14 @@ except ImportError:
 
     class ZoneInfo:  # type: ignore[no-redef]
         """Introduced in python 3.9."""
+
+
+try:
+    from opentelemetry.sdk.trace import TracerProvider  # type: ignore[import-not-found]
+except ImportError:
+
+    class TracerProvider:  # type: ignore[no-redef]
+        """Used for optional OTEL tracing."""
 
 
 if TYPE_CHECKING:
@@ -140,7 +162,6 @@ logger = logging.getLogger(__name__)
 _urllib3_logger = logging.getLogger("urllib3.connectionpool")
 
 X_API_KEY = "x-api-key"
-WARNED_ATTACHMENTS = False
 EMPTY_SEQ: tuple[Dict, ...] = ()
 URLLIB3_SUPPORTS_BLOCKSIZE = "key_blocksize" in signature(PoolKey).parameters
 
@@ -259,15 +280,35 @@ def _validate_api_key_if_hosted(api_url: str, api_key: Optional[str]) -> None:
             )
 
 
-def _get_tracing_sampling_rate() -> float | None:
+def _format_feedback_score(score: Union[float, int, bool, None]):
+    """Format a feedback score by truncating numerical values to 4 decimal places.
+
+    Args:
+        score: The score to format, can be a number or any other type
+
+    Returns:
+        The formatted score
+    """
+    if isinstance(score, float):
+        # Truncate at 4 decimal places
+        return round(score, 4)
+    return score
+
+
+def _get_tracing_sampling_rate(
+    tracing_sampling_rate: Optional[float] = None,
+) -> float | None:
     """Get the tracing sampling rate.
 
     Returns:
         Optional[float]: The tracing sampling rate.
     """
-    sampling_rate_str = ls_utils.get_env_var("TRACING_SAMPLING_RATE")
-    if sampling_rate_str is None:
-        return None
+    if tracing_sampling_rate is None:
+        sampling_rate_str = ls_utils.get_env_var("TRACING_SAMPLING_RATE")
+        if not sampling_rate_str:
+            return None
+    else:
+        sampling_rate_str = str(tracing_sampling_rate)
     sampling_rate = float(sampling_rate_str)
     if sampling_rate < 0 or sampling_rate > 1:
         raise ls_utils.LangSmithUserError(
@@ -383,9 +424,10 @@ class Client:
         "_settings",
         "_manual_cleanup",
         "_pyo3_client",
-        "compressed_runs",
+        "compressed_traces",
         "_data_available_event",
         "_futures",
+        "otel_exporter",
     ]
 
     def __init__(
@@ -403,6 +445,8 @@ class Client:
         hide_outputs: Optional[Union[Callable[[dict], dict], bool]] = None,
         info: Optional[Union[dict, ls_schemas.LangSmithInfo]] = None,
         api_urls: Optional[Dict[str, str]] = None,
+        otel_tracer_provider: Optional[TracerProvider] = None,
+        tracing_sampling_rate: Optional[float] = None,
     ) -> None:
         """Initialize a Client instance.
 
@@ -434,6 +478,12 @@ class Client:
                 URL in the dictionary. However, ONLY Runs are written (POST and PATCH)
                 to all URLs in the dictionary. Feedback, sessions, datasets, examples,
                 annotation queues and evaluation results are only written to the first.
+            otel_tracer_provider (Optional[TracerProvider]): Optional tracer provider for OpenTelemetry integration.
+                If not provided, a LangSmith-specific tracer provider will be used.
+            tracing_sampling_rate (Optional[float]): The sampling rate for tracing. If provided,
+                overrides the LANGCHAIN_TRACING_SAMPLING_RATE environment variable.
+                Should be a float between 0 and 1, where 1 means trace everything
+                and 0 means trace nothing.
 
         Raises:
             LangSmithUserError: If the API key is not provided when using the hosted service.
@@ -452,7 +502,7 @@ class Client:
                 "and LANGSMITH_RUNS_ENDPOINTS."
             )
 
-        self.tracing_sample_rate = _get_tracing_sampling_rate()
+        self.tracing_sample_rate = _get_tracing_sampling_rate(tracing_sampling_rate)
         self._filtered_post_uuids: set[uuid.UUID] = set()
         self._write_api_urls: Mapping[str, Optional[str]] = _get_write_api_urls(
             api_urls
@@ -476,13 +526,6 @@ class Client:
         # Create a session and register a finalizer to close it
         session_ = session if session else requests.Session()
         self.session = session_
-        if ls_utils.get_env_var("USE_RUN_COMPRESSION"):
-            self._futures: set[cf.Future] = set()
-            self.compressed_runs: Optional[CompressedRuns] = CompressedRuns()
-            self._data_available_event = threading.Event()
-        else:
-            self.compressed_runs = None
-
         self._info = (
             info
             if info is None or isinstance(info, ls_schemas.LangSmithInfo)
@@ -490,17 +533,14 @@ class Client:
         )
         weakref.finalize(self, close_session, self.session)
         atexit.register(close_session, session_)
+        self.compressed_traces: Optional[CompressedTraces] = None
+        self._data_available_event: Optional[threading.Event] = None
+        self._futures: Optional[set[cf.Future]] = None
+        self.otel_exporter: Optional[OTELExporter] = None
+
         # Initialize auto batching
-        if auto_batch_tracing and self.compressed_runs is not None:
-            self.tracing_queue: Optional[PriorityQueue] = None
-            threading.Thread(
-                target=_tracing_control_thread_func_compress_parallel,
-                # arg must be a weakref to self to avoid the Thread object
-                # preventing garbage collection of the Client object
-                args=(weakref.ref(self),),
-            ).start()
-        elif auto_batch_tracing:
-            self.tracing_queue = PriorityQueue()
+        if auto_batch_tracing:
+            self.tracing_queue: Optional[PriorityQueue] = PriorityQueue()
 
             threading.Thread(
                 target=_tracing_control_thread_func,
@@ -576,6 +616,34 @@ class Client:
         self._settings: Union[ls_schemas.LangSmithSettings, None] = None
 
         self._manual_cleanup = False
+
+        if ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED")):
+            if not HAS_OTEL:
+                warnings.warn(
+                    "LANGSMITH_OTEL_ENABLED is set but OpenTelemetry packages are not installed. "
+                    "Install with `pip install langsmith[otel]`"
+                )
+            existing_provider = otel_trace.get_tracer_provider()
+            tracer = existing_provider.get_tracer(__name__)
+            if otel_tracer_provider is None:
+                # Use existing global provider if available
+                if not (
+                    isinstance(existing_provider, otel_trace.ProxyTracerProvider)
+                    and hasattr(tracer, "_tracer")
+                    and isinstance(
+                        cast(
+                            otel_trace.ProxyTracer,
+                            tracer,
+                        )._tracer,
+                        otel_trace.NoOpTracer,
+                    )
+                ):
+                    otel_tracer_provider = cast(TracerProvider, existing_provider)
+                else:
+                    otel_tracer_provider = get_otlp_tracer_provider()
+                    otel_trace.set_tracer_provider(otel_tracer_provider)
+
+            self.otel_exporter = OTELExporter(tracer_provider=otel_tracer_provider)
 
     def _repr_html_(self) -> str:
         """Return an HTML representation of the instance with a link to the URL.
@@ -748,11 +816,7 @@ class Client:
                     with ls_utils.filter_logs(_urllib3_logger, logging_filters):
                         response = self.session.request(
                             method,
-                            (
-                                self.api_url + pathname
-                                if not pathname.startswith("http")
-                                else pathname
-                            ),
+                            _construct_url(self.api_url, pathname),
                             stream=False,
                             **request_kwargs,
                         )
@@ -996,7 +1060,9 @@ class Client:
             ValueError: If the csv_file is not a string or tuple.
 
         Examples:
+
             .. code-block:: python
+
                 from langsmith import Client
                 import os
                 import pandas as pd
@@ -1057,7 +1123,9 @@ class Client:
             ValueError: If the csv_file is not a string or tuple.
 
         Examples:
+
             .. code-block:: python
+
                 from langsmith import Client
                 import os
 
@@ -1134,8 +1202,6 @@ class Client:
         Returns:
             dict: The transformed run object as a dictionary.
         """
-        global WARNED_ATTACHMENTS
-
         if hasattr(run, "dict") and callable(getattr(run, "dict")):
             run_create: dict = run.dict()  # type: ignore
         else:
@@ -1157,10 +1223,7 @@ class Client:
 
         # Only retain LLM & Prompt manifests
         if "serialized" in run_create:
-            if run_create.get("run_type") not in (
-                "llm",
-                "prompt",
-            ):
+            if run_create.get("run_type") not in ("llm", "prompt"):
                 # Drop completely
                 run_create.pop("serialized", None)
             elif run_create.get("serialized"):
@@ -1184,6 +1247,11 @@ class Client:
                 {k: v for k, v in langchain_metadata.items() if k not in metadata}
             )
 
+    def _should_sample(self) -> bool:
+        if self.tracing_sample_rate is None:
+            return True
+        return random.random() < self.tracing_sample_rate
+
     def _filter_for_sampling(
         self, runs: Iterable[dict], *, patch: bool = False
     ) -> list[dict]:
@@ -1202,16 +1270,21 @@ class Client:
         else:
             sampled = []
             for run in runs:
-                if (
-                    # Child run
-                    run["id"] != run.get("trace_id")
-                    # Whose trace is included
-                    and run.get("trace_id") not in self._filtered_post_uuids
-                    # Or a root that's randomly sampled
-                ) or random.random() < self.tracing_sample_rate:
-                    sampled.append(run)
+                trace_id = run.get("trace_id") or run["id"]
+
+                # If we've already made a decision about this trace, follow it
+                if trace_id in self._filtered_post_uuids:
+                    continue
+
+                # For new traces, apply sampling
+                if run["id"] == trace_id:
+                    if self._should_sample():
+                        sampled.append(run)
+                    else:
+                        self._filtered_post_uuids.add(trace_id)
                 else:
-                    self._filtered_post_uuids.add(_as_uuid(run["id"]))
+                    # Child runs follow their trace's sampling decision
+                    sampled.append(run)
             return sampled
 
     def create_run(
@@ -1222,6 +1295,7 @@ class Client:
         *,
         project_name: Optional[str] = None,
         revision_id: Optional[str] = None,
+        dangerously_allow_filesystem: bool = False,
         **kwargs: Any,
     ) -> None:
         """Persist a run to the LangSmith API.
@@ -1242,7 +1316,9 @@ class Client:
             LangSmithUserError: If the API key is not provided when using the hosted service.
 
         Examples:
+
             .. code-block:: python
+
                 from langsmith import Client
                 import datetime
                 from uuid import uuid4
@@ -1279,11 +1355,18 @@ class Client:
             return
         if revision_id is not None:
             run_create["extra"]["metadata"]["revision_id"] = revision_id
-        run_create = self._run_transform(
-            run_create,
-            copy=False,
-        )
+        run_create = self._run_transform(run_create, copy=False)
         self._insert_runtime_env([run_create])
+        if run_create.get("attachments") is not None:
+            for attachment in run_create["attachments"].values():
+                if (
+                    isinstance(attachment, tuple)
+                    and isinstance(attachment[1], Path)
+                    and not dangerously_allow_filesystem
+                ):
+                    raise ValueError(
+                        "Must set dangerously_allow_filesystem=True to allow passing in Paths for attachments."
+                    )
 
         if (
             # batch ingest requires trace_id and dotted_order to be set
@@ -1292,21 +1375,27 @@ class Client:
         ):
             if self._pyo3_client is not None:
                 self._pyo3_client.create_run(run_create)
-            elif self.compressed_runs is not None:
+            elif self.compressed_traces is not None:
+                if self._data_available_event is None:
+                    raise ValueError(
+                        "Run compression is enabled but threading event is not configured"
+                    )
                 serialized_op = serialize_run_dict("post", run_create)
-                multipart_form = (
+                multipart_form, opened_files = (
                     serialized_run_operation_to_multipart_parts_and_context(
                         serialized_op
                     )
                 )
-                with self.compressed_runs.lock:
+                with self.compressed_traces.lock:
                     compress_multipart_parts_and_context(
                         multipart_form,
-                        self.compressed_runs,
+                        self.compressed_traces,
                         _BOUNDARY,
                     )
-                    self.compressed_runs.run_count += 1
+                    self.compressed_traces.trace_count += 1
                     self._data_available_event.set()
+
+                _close_files(list(opened_files.values()))
             elif self.tracing_queue is not None:
                 serialized_op = serialize_run_dict("post", run_create)
                 self.tracing_queue.put(
@@ -1456,7 +1545,9 @@ class Client:
                 to be accepted by the API.
 
         Examples:
+
             .. code-block:: python
+
                 from langsmith import Client
                 import datetime
                 from uuid import uuid4
@@ -1593,11 +1684,14 @@ class Client:
         self, ops: list[Union[SerializedRunOperation, SerializedFeedbackOperation]]
     ) -> None:
         parts: list[MultipartPartsAndContext] = []
+        opened_files_dict: Dict[str, io.BufferedReader] = {}
         for op in ops:
             if isinstance(op, SerializedRunOperation):
-                parts.append(
+                part, opened_files = (
                     serialized_run_operation_to_multipart_parts_and_context(op)
                 )
+                parts.append(part)
+                opened_files_dict.update(opened_files)
             elif isinstance(op, SerializedFeedbackOperation):
                 parts.append(
                     serialized_feedback_operation_to_multipart_parts_and_context(op)
@@ -1606,7 +1700,10 @@ class Client:
                 logger.error("Unknown operation type in tracing queue: %s", type(op))
         acc_multipart = join_multipart_parts_and_context(parts)
         if acc_multipart:
-            self._send_multipart_req(acc_multipart)
+            try:
+                self._send_multipart_req(acc_multipart)
+            finally:
+                _close_files(list(opened_files_dict.values()))
 
     def multipart_ingest(
         self,
@@ -1618,6 +1715,7 @@ class Client:
         ] = None,
         *,
         pre_sampled: bool = False,
+        dangerously_allow_filesystem: bool = False,
     ) -> None:
         """Batch ingest/upsert multiple runs in the Langsmith system.
 
@@ -1643,7 +1741,9 @@ class Client:
                 to be accepted by the API.
 
         Examples:
+
             .. code-block:: python
+
                 from langsmith import Client
                 import datetime
                 from uuid import uuid4
@@ -1766,6 +1866,18 @@ class Client:
             )
         )
 
+        for op in serialized_ops:
+            if isinstance(op, SerializedRunOperation) and op.attachments:
+                for attachment in op.attachments.values():
+                    if (
+                        isinstance(attachment, tuple)
+                        and isinstance(attachment[1], Path)
+                        and not dangerously_allow_filesystem
+                    ):
+                        raise ValueError(
+                            "Must set dangerously_allow_filesystem=True to allow passing in Paths for attachments."
+                        )
+
         # sent the runs in multipart requests
         self._multipart_ingest_ops(serialized_ops)
 
@@ -1819,7 +1931,7 @@ class Client:
     def _send_compressed_multipart_req(
         self,
         data_stream: io.BytesIO,
-        compressed_runs_info: Optional[Tuple[int, int]],
+        compressed_traces_info: Optional[Tuple[int, int]],
         *,
         attempts: int = 3,
     ):
@@ -1837,10 +1949,14 @@ class Client:
                         "Content-Type": f"multipart/form-data; boundary={_BOUNDARY}",
                         "Content-Encoding": "zstd",
                         "X-Pre-Compressed-Size": (
-                            str(compressed_runs_info[0]) if compressed_runs_info else ""
+                            str(compressed_traces_info[0])
+                            if compressed_traces_info
+                            else ""
                         ),
                         "X-Post-Compressed-Size": (
-                            str(compressed_runs_info[1]) if compressed_runs_info else ""
+                            str(compressed_traces_info[1])
+                            if compressed_traces_info
+                            else ""
                         ),
                     }
 
@@ -1895,6 +2011,7 @@ class Client:
         extra: Optional[Dict] = None,
         tags: Optional[List[str]] = None,
         attachments: Optional[ls_schemas.Attachments] = None,
+        dangerously_allow_filesystem: bool = False,
         **kwargs: Any,
     ) -> None:
         """Update a run in the LangSmith API.
@@ -1917,7 +2034,9 @@ class Client:
             None
 
         Examples:
+
             .. code-block:: python
+
                 from langsmith import Client
                 import datetime
                 from uuid import uuid4
@@ -1958,9 +2077,18 @@ class Client:
             "session_name": kwargs.pop("session_name", None),
         }
         if attachments:
+            for _, attachment in attachments.items():
+                if (
+                    isinstance(attachment, tuple)
+                    and isinstance(attachment[1], Path)
+                    and not dangerously_allow_filesystem
+                ):
+                    raise ValueError(
+                        "Must set dangerously_allow_filesystem=True to allow passing in Paths for attachments."
+                    )
             data["attachments"] = attachments
         use_multipart = (
-            (self.tracing_queue is not None or self.compressed_runs is not None)
+            (self.tracing_queue is not None or self.compressed_traces is not None)
             # batch ingest requires trace_id and dotted_order to be set
             and data["trace_id"] is not None
             and data["dotted_order"] is not None
@@ -1988,20 +2116,25 @@ class Client:
             self._pyo3_client.update_run(data)
         elif use_multipart:
             serialized_op = serialize_run_dict(operation="patch", payload=data)
-            if self.compressed_runs is not None:
-                multipart_form = (
+            if self.compressed_traces is not None:
+                multipart_form, opened_files = (
                     serialized_run_operation_to_multipart_parts_and_context(
                         serialized_op
                     )
                 )
-                with self.compressed_runs.lock:
+                with self.compressed_traces.lock:
+                    if self._data_available_event is None:
+                        raise ValueError(
+                            "Run compression is enabled but threading event is not configured"
+                        )
                     compress_multipart_parts_and_context(
                         multipart_form,
-                        self.compressed_runs,
+                        self.compressed_traces,
                         _BOUNDARY,
                     )
-                    self.compressed_runs.run_count += 1
+                    self.compressed_traces.trace_count += 1
                     self._data_available_event.set()
+                _close_files(list(opened_files.values()))
             elif self.tracing_queue is not None:
                 self.tracing_queue.put(
                     TracingQueueItem(data["dotted_order"], serialized_op)
@@ -2025,10 +2158,15 @@ class Client:
                 },
             )
 
-    def flush_compressed_runs(self, attempts: int = 3) -> None:
+    def flush_compressed_traces(self, attempts: int = 3) -> None:
         """Force flush the currently buffered compressed runs."""
-        if self.compressed_runs is None:
+        if self.compressed_traces is None:
             return
+
+        if self._futures is None:
+            raise ValueError(
+                "Run compression is enabled but request pool futures is not set"
+            )
 
         # Attempt to drain and send any remaining data
         from langsmith._internal._background_thread import (
@@ -2036,7 +2174,7 @@ class Client:
             _tracing_thread_drain_compressed_buffer,
         )
 
-        final_data_stream, compressed_runs_info = (
+        final_data_stream, compressed_traces_info = (
             _tracing_thread_drain_compressed_buffer(
                 self, size_limit=1, size_limit_bytes=1
             )
@@ -2049,14 +2187,14 @@ class Client:
                 future = HTTP_REQUEST_THREAD_POOL.submit(
                     self._send_compressed_multipart_req,
                     final_data_stream,
-                    compressed_runs_info,
+                    compressed_traces_info,
                     attempts=attempts,
                 )
                 self._futures.add(future)
             except RuntimeError:
                 # In case the ThreadPoolExecutor is already shutdown
                 self._send_compressed_multipart_req(
-                    final_data_stream, compressed_runs_info, attempts=attempts
+                    final_data_stream, compressed_traces_info, attempts=attempts
                 )
 
         # If we got a future, wait for it to complete
@@ -2067,8 +2205,8 @@ class Client:
 
     def flush(self) -> None:
         """Flush either queue or compressed buffer, depending on mode."""
-        if self.compressed_runs is not None:
-            self.flush_compressed_runs()
+        if self.compressed_traces is not None:
+            self.flush_compressed_traces()
         elif self.tracing_queue is not None:
             self.tracing_queue.join()
 
@@ -2117,7 +2255,9 @@ class Client:
             Run: The run read from the LangSmith API.
 
         Examples:
+
             .. code-block:: python
+
                 from langsmith import Client
 
                 # Existing run
@@ -2129,7 +2269,12 @@ class Client:
         response = self.request_with_retries(
             "GET", f"/runs/{_as_uuid(run_id, 'run_id')}"
         )
-        run = ls_schemas.Run(**response.json(), _host_url=self._host_url)
+        attachments = _convert_stored_attachments_to_attachments_dict(
+            response.json(), attachments_key="s3_urls"
+        )
+        run = ls_schemas.Run(
+            attachments=attachments, **response.json(), _host_url=self._host_url
+        )
         if load_child_runs and run.child_run_ids:
             run = self._load_child_runs(run)
         return run
@@ -2310,7 +2455,13 @@ class Client:
         for i, run in enumerate(
             self._get_cursor_paginated_list("/runs/query", body=body_query)
         ):
-            yield ls_schemas.Run(**run, _host_url=self._host_url)
+            # Should this be behind a flag?
+            attachments = _convert_stored_attachments_to_attachments_dict(
+                run, attachments_key="s3_urls"
+            )
+            yield ls_schemas.Run(
+                attachments=attachments, **run, _host_url=self._host_url
+            )
             if limit is not None and i + 1 >= limit:
                 break
 
@@ -2935,6 +3086,9 @@ class Client:
         Note: this will fetch whatever data exists in the DB. Results are not
         immediately available in the DB upon evaluation run completion.
 
+        Feedback score values will be returned as an average across all runs for
+        the experiment. Note that non-numeric feedback scores will be omitted.
+
         Args:
             project_id (Optional[Union[UUID, str]]): The ID of the project.
             project_name (Optional[str]): The name of the project.
@@ -3162,7 +3316,6 @@ class Client:
         dataset: Dict[str, Any] = {
             "name": dataset_name,
             "data_type": data_type.value,
-            "created_at": datetime.datetime.now().isoformat(),
             "transformations": transformations,
             "extra": {"metadata": metadata} if metadata else None,
         }
@@ -3849,13 +4002,15 @@ class Client:
     def _prepare_multipart_data(
         self,
         examples: Union[
-            List[ls_schemas.ExampleUploadWithAttachments]
+            List[ls_schemas.ExampleCreate]
             | List[ls_schemas.ExampleUpsertWithAttachments]
-            | List[ls_schemas.ExampleUpdateWithAttachments],
+            | List[ls_schemas.ExampleUpdate],
         ],
         include_dataset_id: bool = False,
-    ) -> Tuple[Any, bytes]:
+        dangerously_allow_filesystem: bool = False,
+    ) -> tuple[Any, bytes, Dict[str, io.BufferedReader]]:
         parts: List[MultipartPart] = []
+        opened_files_dict: Dict[str, io.BufferedReader] = {}
         if include_dataset_id:
             if not isinstance(examples[0], ls_schemas.ExampleUpsertWithAttachments):
                 raise ValueError(
@@ -3866,28 +4021,50 @@ class Client:
 
         for example in examples:
             if (
-                not isinstance(example, ls_schemas.ExampleUploadWithAttachments)
+                not isinstance(example, ls_schemas.ExampleCreate)
                 and not isinstance(example, ls_schemas.ExampleUpsertWithAttachments)
-                and not isinstance(example, ls_schemas.ExampleUpdateWithAttachments)
+                and not isinstance(example, ls_schemas.ExampleUpdate)
             ):
                 raise ValueError(
-                    "The examples must be of type ExampleUploadWithAttachments"
+                    "The examples must be of type ExampleCreate"
                     " or ExampleUpsertWithAttachments"
-                    " or ExampleUpdateWithAttachments"
+                    " or ExampleUpdate"
                 )
             if example.id is not None:
                 example_id = str(example.id)
             else:
                 example_id = str(uuid.uuid4())
 
-            if isinstance(example, ls_schemas.ExampleUpdateWithAttachments):
+            if isinstance(example, ls_schemas.ExampleUpdate):
                 created_at = None
             else:
                 created_at = example.created_at
 
+            if isinstance(example, ls_schemas.ExampleCreate):
+                use_source_run_io = example.use_source_run_io
+                use_source_run_attachments = example.use_source_run_attachments
+                source_run_id = example.source_run_id
+            else:
+                use_source_run_io, use_source_run_attachments, source_run_id = (
+                    None,
+                    None,
+                    None,
+                )
+
             example_body = {
                 **({"dataset_id": dataset_id} if include_dataset_id else {}),
                 **({"created_at": created_at} if created_at is not None else {}),
+                **(
+                    {"use_source_run_io": use_source_run_io}
+                    if use_source_run_io
+                    else {}
+                ),
+                **(
+                    {"use_source_run_attachments": use_source_run_attachments}
+                    if use_source_run_attachments
+                    else {}
+                ),
+                **({"source_run_id": source_run_id} if source_run_id else {}),
             }
             if example.metadata is not None:
                 example_body["metadata"] = example.metadata
@@ -3907,19 +4084,20 @@ class Client:
                 )
             )
 
-            inputsb = _dumps_json(example.inputs)
+            if example.inputs:
+                inputsb = _dumps_json(example.inputs)
 
-            parts.append(
-                (
-                    f"{example_id}.inputs",
+                parts.append(
                     (
-                        None,
-                        inputsb,
-                        "application/json",
-                        {},
-                    ),
+                        f"{example_id}.inputs",
+                        (
+                            None,
+                            inputsb,
+                            "application/json",
+                            {},
+                        ),
+                    )
                 )
-            )
 
             if example.outputs:
                 outputsb = _dumps_json(example.outputs)
@@ -3937,33 +4115,33 @@ class Client:
 
             if example.attachments:
                 for name, attachment in example.attachments.items():
-                    if isinstance(attachment, tuple):
-                        if isinstance(attachment[1], Path):
-                            mime_type, file_path = attachment
-                            file_size = os.path.getsize(file_path)
+                    if isinstance(attachment, dict):
+                        mime_type = attachment["mime_type"]
+                        attachment_data = attachment["data"]
+                    else:
+                        mime_type, attachment_data = attachment
+                    if isinstance(attachment_data, Path):
+                        if dangerously_allow_filesystem:
+                            file_size = os.path.getsize(attachment_data)
+                            file = open(attachment_data, "rb")
+                            opened_files_dict[
+                                str(attachment_data) + str(uuid.uuid4())
+                            ] = file
+
                             parts.append(
                                 (
                                     f"{example_id}.attachment.{name}",
                                     (
                                         None,
-                                        open(file_path, "rb"),  # type: ignore[arg-type]
+                                        file,  # type: ignore[arg-type]
                                         f"{mime_type}; length={file_size}",
                                         {},
                                     ),
                                 )
                             )
                         else:
-                            mime_type, data = attachment
-                            parts.append(
-                                (
-                                    f"{example_id}.attachment.{name}",
-                                    (
-                                        None,
-                                        data,
-                                        f"{mime_type}; length={len(data)}",
-                                        {},
-                                    ),
-                                )
+                            raise ValueError(
+                                "dangerously_allow_filesystem must be True to upload files from the filesystem"
                             )
                     else:
                         parts.append(
@@ -3971,15 +4149,15 @@ class Client:
                                 f"{example_id}.attachment.{name}",
                                 (
                                     None,
-                                    attachment.data,
-                                    f"{attachment.mime_type}; length={len(attachment.data)}",
+                                    attachment_data,
+                                    f"{mime_type}; length={len(attachment_data)}",
                                     {},
                                 ),
                             )
                         )
 
             if (
-                isinstance(example, ls_schemas.ExampleUpdateWithAttachments)
+                isinstance(example, ls_schemas.ExampleUpdate)
                 and example.attachments_operations
             ):
                 attachments_operationsb = _dumps_json(example.attachments_operations)
@@ -4001,19 +4179,39 @@ class Client:
         else:
             data = encoder
 
-        return encoder, data
+        return encoder, data, opened_files_dict
 
     def update_examples_multipart(
         self,
         *,
         dataset_id: ID_TYPE,
-        updates: Optional[List[ls_schemas.ExampleUpdateWithAttachments]] = None,
+        updates: Optional[List[ls_schemas.ExampleUpdate]] = None,
+        dangerously_allow_filesystem: bool = False,
+    ) -> ls_schemas.UpsertExamplesResponse:
+        """Update examples using multipart.
+
+        .. deprecated:: 0.3.9
+
+            Use Client.update_examples instead. Will be removed in 0.4.0.
+        """
+        return self._update_examples_multipart(
+            dataset_id=dataset_id,
+            updates=updates,
+            dangerously_allow_filesystem=dangerously_allow_filesystem,
+        )
+
+    def _update_examples_multipart(
+        self,
+        *,
+        dataset_id: ID_TYPE,
+        updates: Optional[List[ls_schemas.ExampleUpdate]] = None,
+        dangerously_allow_filesystem: bool = False,
     ) -> ls_schemas.UpsertExamplesResponse:
         """Update examples using multipart.
 
         Args:
             dataset_id (Union[UUID, str]): The ID of the dataset to update.
-            updates (Optional[List[ExampleUpdateWithAttachments]]): The updates to apply to the examples.
+            updates (Optional[List[ExampleUpdate]]): The updates to apply to the examples.
 
         Raises:
             ValueError: If the multipart examples endpoint is not enabled.
@@ -4022,38 +4220,68 @@ class Client:
             "dataset_examples_multipart_enabled", False
         ):
             raise ValueError(
-                "Your LangSmith version does not allow using the multipart examples endpoint, please update to the latest version."
+                "Your LangSmith version does not allow using the latest examples "
+                "endpoints, please update to the latest version or downgrade your SDK "
+                "to langsmith<0.3.9."
             )
         if updates is None:
             updates = []
 
-        encoder, data = self._prepare_multipart_data(updates, include_dataset_id=False)
-
-        response = self.request_with_retries(
-            "PATCH",
-            f"/v1/platform/datasets/{dataset_id}/examples",
-            request_kwargs={
-                "data": data,
-                "headers": {
-                    **self._headers,
-                    "Content-Type": encoder.content_type,
-                },
-            },
+        encoder, data, opened_files_dict = self._prepare_multipart_data(
+            updates,
+            include_dataset_id=False,
+            dangerously_allow_filesystem=dangerously_allow_filesystem,
         )
-        ls_utils.raise_for_status_with_text(response)
+
+        try:
+            response = self.request_with_retries(
+                "PATCH",
+                _dataset_examples_path(self.api_url, dataset_id),
+                request_kwargs={
+                    "data": data,
+                    "headers": {
+                        **self._headers,
+                        "Content-Type": encoder.content_type,
+                    },
+                },
+            )
+            ls_utils.raise_for_status_with_text(response)
+        finally:
+            _close_files(list(opened_files_dict.values()))
         return response.json()
 
     def upload_examples_multipart(
         self,
         *,
         dataset_id: ID_TYPE,
-        uploads: Optional[List[ls_schemas.ExampleUploadWithAttachments]] = None,
+        uploads: Optional[List[ls_schemas.ExampleCreate]] = None,
+        dangerously_allow_filesystem: bool = False,
+    ) -> ls_schemas.UpsertExamplesResponse:
+        """Upload examples using multipart.
+
+        .. deprecated:: 0.3.9
+
+            Use Client.create_examples instead. Will be removed in 0.4.0.
+        """
+        return self._upload_examples_multipart(
+            dataset_id=dataset_id,
+            uploads=uploads,
+            dangerously_allow_filesystem=dangerously_allow_filesystem,
+        )
+
+    def _upload_examples_multipart(
+        self,
+        *,
+        dataset_id: ID_TYPE,
+        uploads: Optional[List[ls_schemas.ExampleCreate]] = None,
+        dangerously_allow_filesystem: bool = False,
     ) -> ls_schemas.UpsertExamplesResponse:
         """Upload examples using multipart.
 
         Args:
             dataset_id (Union[UUID, str]): The ID of the dataset to upload to.
-            uploads (Optional[List[ExampleUploadWithAttachments]]): The examples to upload.
+            uploads (Optional[List[ExampleCreate]]): The examples to upload.
+            dangerously_allow_filesystem (bool): Whether to allow uploading files from the filesystem.
 
         Returns:
             ls_schemas.UpsertExamplesResponse: The count and ids of the successfully uploaded examples
@@ -4069,32 +4297,42 @@ class Client:
             )
         if uploads is None:
             uploads = []
-        encoder, data = self._prepare_multipart_data(uploads, include_dataset_id=False)
-
-        response = self.request_with_retries(
-            "POST",
-            f"/v1/platform/datasets/{dataset_id}/examples",
-            request_kwargs={
-                "data": data,
-                "headers": {
-                    **self._headers,
-                    "Content-Type": encoder.content_type,
-                },
-            },
+        encoder, data, opened_files_dict = self._prepare_multipart_data(
+            uploads,
+            include_dataset_id=False,
+            dangerously_allow_filesystem=dangerously_allow_filesystem,
         )
-        ls_utils.raise_for_status_with_text(response)
+
+        try:
+            response = self.request_with_retries(
+                "POST",
+                _dataset_examples_path(self.api_url, dataset_id),
+                request_kwargs={
+                    "data": data,
+                    "headers": {
+                        **self._headers,
+                        "Content-Type": encoder.content_type,
+                    },
+                },
+            )
+            ls_utils.raise_for_status_with_text(response)
+        finally:
+            _close_files(list(opened_files_dict.values()))
         return response.json()
 
     def upsert_examples_multipart(
         self,
         *,
         upserts: Optional[List[ls_schemas.ExampleUpsertWithAttachments]] = None,
+        dangerously_allow_filesystem: bool = False,
     ) -> ls_schemas.UpsertExamplesResponse:
         """Upsert examples.
 
-        .. deprecated:: 0.1.0
-           This method is deprecated. Use :func:`langsmith.upload_examples_multipart` instead.
-        """  # noqa: E501
+        .. deprecated:: 0.3.9
+
+            Use Client.create_examples and Client.update_examples instead. Will be
+            removed in 0.4.0.
+        """
         if not (self.info.instance_flags or {}).get(
             "examples_multipart_enabled", False
         ):
@@ -4104,116 +4342,183 @@ class Client:
         if upserts is None:
             upserts = []
 
-        encoder, data = self._prepare_multipart_data(upserts, include_dataset_id=True)
-
-        response = self.request_with_retries(
-            "POST",
-            "/v1/platform/examples/multipart",
-            request_kwargs={
-                "data": data,
-                "headers": {
-                    **self._headers,
-                    "Content-Type": encoder.content_type,
-                },
-            },
+        encoder, data, opened_files_dict = self._prepare_multipart_data(
+            upserts,
+            include_dataset_id=True,
+            dangerously_allow_filesystem=dangerously_allow_filesystem,
         )
-        ls_utils.raise_for_status_with_text(response)
+
+        try:
+            response = self.request_with_retries(
+                "POST",
+                (
+                    "/v1/platform/examples/multipart"
+                    if self.api_url[-3:] != "/v1" and self.api_url[-4:] != "/v1/"
+                    else "/platform/examples/multipart"
+                ),
+                request_kwargs={
+                    "data": data,
+                    "headers": {
+                        **self._headers,
+                        "Content-Type": encoder.content_type,
+                    },
+                },
+            )
+            ls_utils.raise_for_status_with_text(response)
+        finally:
+            _close_files(list(opened_files_dict.values()))
         return response.json()
 
+    @ls_utils.xor_args(("dataset_id", "dataset_name"))
     def create_examples(
         self,
         *,
-        inputs: Sequence[Mapping[str, Any]],
-        outputs: Optional[Sequence[Optional[Mapping[str, Any]]]] = None,
-        metadata: Optional[Sequence[Optional[Mapping[str, Any]]]] = None,
-        splits: Optional[Sequence[Optional[str | List[str]]]] = None,
-        source_run_ids: Optional[Sequence[Optional[ID_TYPE]]] = None,
-        ids: Optional[Sequence[Optional[ID_TYPE]]] = None,
-        dataset_id: Optional[ID_TYPE] = None,
         dataset_name: Optional[str] = None,
+        dataset_id: Optional[ID_TYPE] = None,
+        examples: Optional[Sequence[ls_schemas.ExampleCreate | dict]] = None,
+        dangerously_allow_filesystem: bool = False,
         **kwargs: Any,
-    ) -> None:
+    ) -> ls_schemas.UpsertExamplesResponse:
         """Create examples in a dataset.
 
         Args:
-            inputs (Sequence[Mapping[str, Any]]):
-                The input values for the examples.
-            outputs (Optional[Sequence[Optional[Mapping[str, Any]]]]):
-                The output values for the examples.
-            metadata (Optional[Sequence[Optional[Mapping[str, Any]]]]):
-                The metadata for the examples.
-            splits (Optional[Sequence[Optional[str | List[str]]]]):
-                The splits for the examples, which are divisions
-                of your dataset such as 'train', 'test', or 'validation'.
-            source_run_ids (Optional[Sequence[Optional[Union[UUID, str]]]]):
-                    The IDs of the source runs associated with the examples.
-            ids (Optional[Sequence[Union[UUID, str]]]):
-                The IDs of the examples.
-            dataset_id (Optional[Union[UUID, str]]):
-                The ID of the dataset to create the examples in.
-            dataset_name (Optional[str]):
-                The name of the dataset to create the examples in.
-            **kwargs: Any: Additional keyword arguments are ignored.
+            dataset_name (str | None):
+                The name of the dataset to create the examples in. Must specify exactly
+                one of dataset_name or dataset_id.
+            dataset_id (UUID | str | None):
+                The ID of the dataset to create the examples in. Must specify exactly
+                one of dataset_name or dataset_id
+            examples (Sequence[ExampleCreate | dict]):
+                The examples to create.
+            dangerously_allow_filesystem (bool):
+                Whether to allow uploading files from the filesystem.
+            **kwargs (Any): Legacy keyword args. Should not be specified if 'examples' is specified.
+
+                - inputs (Sequence[Mapping[str, Any]]): The input values for the examples.
+                - outputs (Optional[Sequence[Optional[Mapping[str, Any]]]]): The output values for the examples.
+                - metadata (Optional[Sequence[Optional[Mapping[str, Any]]]]): The metadata for the examples.
+                - splits (Optional[Sequence[Optional[str | List[str]]]]): The splits for the examples, which are divisions of your dataset such as 'train', 'test', or 'validation'.
+                - source_run_ids (Optional[Sequence[Optional[Union[UUID, str]]]]): The IDs of the source runs associated with the examples.
+                - ids (Optional[Sequence[Union[UUID, str]]]): The IDs of the examples.
 
         Raises:
-            ValueError: If neither dataset_id nor dataset_name is provided.
+            ValueError: If 'examples' and legacy args are both provided.
 
         Returns:
-            None
-        """
-        if dataset_id is None and dataset_name is None:
-            raise ValueError("Either dataset_id or dataset_name must be provided.")
+            The LangSmith JSON response. Includes 'count' and 'example_ids'.
 
-        if dataset_id is None:
+        .. versionchanged:: 0.3.11
+
+            Updated to take argument 'examples', a single list where each
+            element is the full example to create. This should be used instead of the
+            legacy 'inputs', 'outputs', etc. arguments which split each examples
+            attributes across arguments.
+
+            Updated to support creating examples with attachments.
+
+        Example:
+            .. code-block:: python
+
+                from langsmith import Client
+
+                client = Client()
+
+                dataset = client.create_dataset("agent-qa")
+
+                examples = [
+                    {
+                        "inputs": {"question": "what's an agent"},
+                        "outputs": {"answer": "an agent is..."},
+                        "metadata": {"difficulty": "easy"},
+                    },
+                    {
+                        "inputs": {
+                            "question": "can you explain the agent architecture in this diagram?"
+                        },
+                        "outputs": {"answer": "this diagram shows..."},
+                        "attachments": {"diagram": {"mime_type": "image/png", "data": b"..."}},
+                        "metadata": {"difficulty": "medium"},
+                    },
+                    # more examples...
+                ]
+
+                response = client.create_examples(dataset_name="agent-qa", examples=examples)
+                # -> {"example_ids": [...
+        """  # noqa: E501
+        if kwargs and examples:
+            kwarg_keys = ", ".join([f"'{k}'" for k in kwargs])
+            raise ValueError(
+                f"Cannot specify {kwarg_keys} when 'examples' is specified."
+            )
+
+        supported_kwargs = {
+            "inputs",
+            "outputs",
+            "metadata",
+            "splits",
+            "ids",
+            "source_run_ids",
+        }
+        if kwargs and (unsupported := set(kwargs).difference(supported_kwargs)):
+            raise ValueError(
+                f"Received unsupported keyword arguments: {tuple(unsupported)}."
+            )
+
+        if not (dataset_id or dataset_name):
+            raise ValueError("Either dataset_id or dataset_name must be provided.")
+        elif not dataset_id:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
 
-        sequence_args = {
-            "outputs": outputs,
-            "metadata": metadata,
-            "splits": splits,
-            "ids": ids,
-            "source_run_ids": source_run_ids,
-        }
-        # Since inputs are required, we will check against them
-        input_len = len(inputs)
-        for arg_name, arg_value in sequence_args.items():
-            if arg_value is not None and len(arg_value) != input_len:
-                raise ValueError(
-                    f"Length of {arg_name} ({len(arg_value)}) does not match"
-                    f" length of inputs ({input_len})"
-                )
-        examples = [
-            {
-                "inputs": in_,
-                "outputs": out_,
-                "dataset_id": dataset_id,
-                "metadata": metadata_,
-                "split": split_,
-                "id": id_ or str(uuid.uuid4()),
-                "source_run_id": source_run_id_,
-            }
-            for in_, out_, metadata_, split_, id_, source_run_id_ in zip(
-                inputs,
-                outputs or [None] * len(inputs),
-                metadata or [None] * len(inputs),
-                splits or [None] * len(inputs),
-                ids or [None] * len(inputs),
-                source_run_ids or [None] * len(inputs),
-            )
-        ]
+        if examples:
+            uploads = [
+                ls_schemas.ExampleCreate(**x) if isinstance(x, dict) else x
+                for x in examples
+            ]
 
-        response = self.request_with_retries(
-            "POST",
-            "/examples/bulk",
-            headers={**self._headers, "Content-Type": "application/json"},
-            data=_dumps_json(examples),
+        # For backwards compatibility
+        else:
+            inputs = kwargs.get("inputs")
+            if not inputs:
+                raise ValueError("Must specify either 'examples' or 'inputs.'")
+            # Since inputs are required, we will check against them
+            input_len = len(inputs)
+            for arg_name, arg_value in kwargs.items():
+                if arg_value is not None and len(arg_value) != input_len:
+                    raise ValueError(
+                        f"Length of {arg_name} ({len(arg_value)}) does not match"
+                        f" length of inputs ({input_len})"
+                    )
+            uploads = [
+                ls_schemas.ExampleCreate(
+                    **{
+                        "inputs": in_,
+                        "outputs": out_,
+                        "metadata": metadata_,
+                        "split": split_,
+                        "id": id_ or str(uuid.uuid4()),
+                        "source_run_id": source_run_id_,
+                    }
+                )
+                for in_, out_, metadata_, split_, id_, source_run_id_ in zip(
+                    inputs,
+                    kwargs.get("outputs") or (None for _ in range(input_len)),
+                    kwargs.get("metadata") or (None for _ in range(input_len)),
+                    kwargs.get("splits") or (None for _ in range(input_len)),
+                    kwargs.get("ids") or (None for _ in range(input_len)),
+                    kwargs.get("source_run_ids") or (None for _ in range(input_len)),
+                )
+            ]
+
+        return self._upload_examples_multipart(
+            dataset_id=cast(uuid.UUID, dataset_id),
+            uploads=uploads,
+            dangerously_allow_filesystem=dangerously_allow_filesystem,
         )
-        ls_utils.raise_for_status_with_text(response)
 
     @ls_utils.xor_args(("dataset_id", "dataset_name"))
     def create_example(
         self,
-        inputs: Mapping[str, Any],
+        inputs: Optional[Mapping[str, Any]] = None,
         dataset_id: Optional[ID_TYPE] = None,
         dataset_name: Optional[str] = None,
         created_at: Optional[datetime.datetime] = None,
@@ -4222,6 +4527,9 @@ class Client:
         split: Optional[str | List[str]] = None,
         example_id: Optional[ID_TYPE] = None,
         source_run_id: Optional[ID_TYPE] = None,
+        use_source_run_io: bool = False,
+        use_source_run_attachments: Optional[List[str]] = None,
+        attachments: Optional[ls_schemas.Attachments] = None,
     ) -> ls_schemas.Example:
         """Create a dataset example in the LangSmith API.
 
@@ -4250,37 +4558,44 @@ class Client:
                 example will be created.
             source_run_id (Optional[Union[UUID, str]]):
                 The ID of the source run associated with this example.
+            use_source_run_io (bool):
+                Whether to use the inputs, outputs, and attachments from the source run.
+            use_source_run_attachments (Optional[List[str]]):
+                Which attachments to use from the source run. If use_source_run_io
+                is True, all attachments will be used regardless of this param.
+            attachments (Optional[Attachments]):
+                The attachments for the example.
 
         Returns:
             Example: The created example.
         """
+        if inputs is None and not use_source_run_io:
+            raise ValueError("Must provide either inputs or use_source_run_io")
+
         if dataset_id is None:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
 
-        data = {
-            "inputs": inputs,
-            "outputs": outputs,
-            "dataset_id": dataset_id,
-            "metadata": metadata,
-            "split": split,
-            "source_run_id": source_run_id,
-        }
+        data = ls_schemas.ExampleCreate(
+            **{
+                "inputs": inputs,
+                "outputs": outputs,
+                "metadata": metadata,
+                "split": split,
+                "source_run_id": source_run_id,
+                "use_source_run_io": use_source_run_io,
+                "use_source_run_attachments": use_source_run_attachments,
+                "attachments": attachments,
+            }
+        )
         if created_at:
-            data["created_at"] = created_at.isoformat()
-        data["id"] = example_id or str(uuid.uuid4())
-        response = self.request_with_retries(
-            "POST",
-            "/examples",
-            headers={**self._headers, "Content-Type": "application/json"},
-            data=_dumps_json({k: v for k, v in data.items() if v is not None}),
+            data.created_at = created_at
+        data.id = (
+            (uuid.UUID(example_id) if isinstance(example_id, str) else example_id)
+            if example_id
+            else uuid.uuid4()
         )
-        ls_utils.raise_for_status_with_text(response)
-        result = response.json()
-        return ls_schemas.Example(
-            **result,
-            _host_url=self._host_url,
-            _tenant_id=self._get_optional_tenant_id(),
-        )
+        self._upload_examples_multipart(dataset_id=dataset_id, uploads=[data])
+        return self.read_example(example_id=data.id)
 
     def read_example(
         self, example_id: ID_TYPE, *, as_of: Optional[datetime.datetime] = None
@@ -4306,17 +4621,9 @@ class Client:
         )
 
         example = response.json()
-        attachments = {}
-        if example.get("attachment_urls"):
-            for key, value in example["attachment_urls"].items():
-                response = requests.get(value["presigned_url"], stream=True)
-                response.raise_for_status()
-                reader = io.BytesIO(response.content)
-                attachments[key.removeprefix("attachment.")] = {
-                    "presigned_url": value["presigned_url"],
-                    "reader": reader,
-                    "mime_type": value.get("mime_type"),
-                }
+        attachments = _convert_stored_attachments_to_attachments_dict(
+            example, attachments_key="attachment_urls"
+        )
 
         return ls_schemas.Example(
             **{k: v for k, v in example.items() if k != "attachment_urls"},
@@ -4362,7 +4669,7 @@ class Client:
             offset (int, default=0): The offset to start from. Defaults to 0.
             limit (Optional[int]): The maximum number of examples to return.
             metadata (Optional[dict]): A dictionary of metadata to filter by.
-            filter (Optional[str]): A structured fileter string to apply to
+            filter (Optional[str]): A structured filter string to apply to
                 the examples.
             include_attachments (bool, default=False): Whether to include the
                 attachments in the response. Defaults to False.
@@ -4441,17 +4748,9 @@ class Client:
         for i, example in enumerate(
             self._get_paginated_list("/examples", params=params)
         ):
-            attachments = {}
-            if example.get("attachment_urls"):
-                for key, value in example["attachment_urls"].items():
-                    response = requests.get(value["presigned_url"], stream=True)
-                    response.raise_for_status()
-                    reader = io.BytesIO(response.content)
-                    attachments[key.removeprefix("attachment.")] = {
-                        "presigned_url": value["presigned_url"],
-                        "reader": reader,
-                        "mime_type": value.get("mime_type"),
-                    }
+            attachments = _convert_stored_attachments_to_attachments_dict(
+                example, attachments_key="attachment_urls"
+            )
 
             yield ls_schemas.Example(
                 **{k: v for k, v in example.items() if k != "attachment_urls"},
@@ -4605,6 +4904,7 @@ class Client:
         split: Optional[str | List[str]] = None,
         dataset_id: Optional[ID_TYPE] = None,
         attachments_operations: Optional[ls_schemas.AttachmentsOperations] = None,
+        attachments: Optional[ls_schemas.Attachments] = None,
     ) -> Dict[str, Any]:
         """Update a specific example.
 
@@ -4624,6 +4924,8 @@ class Client:
                 The ID of the dataset to update.
             attachments_operations (Optional[AttachmentsOperations]):
                 The attachments operations to perform.
+            attachments (Optional[Attachments]):
+                The attachments to add to the example.
 
         Returns:
             Dict[str, Any]: The updated example.
@@ -4635,116 +4937,222 @@ class Client:
                 raise ValueError(
                     "Your LangSmith version does not allow using the attachment operations, please update to the latest version."
                 )
-        example = dict(
+        example_dict = dict(
             inputs=inputs,
             outputs=outputs,
-            dataset_id=dataset_id,
+            id=example_id,
             metadata=metadata,
             split=split,
             attachments_operations=attachments_operations,
+            attachments=attachments,
         )
-        response = self.request_with_retries(
-            "PATCH",
-            f"/examples/{_as_uuid(example_id, 'example_id')}",
-            headers={**self._headers, "Content-Type": "application/json"},
-            data=_dumps_json({k: v for k, v in example.items() if v is not None}),
+        example = ls_schemas.ExampleUpdate(
+            **{k: v for k, v in example_dict.items() if v is not None}
         )
-        ls_utils.raise_for_status_with_text(response)
-        return response.json()
+
+        if dataset_id is not None:
+            return dict(
+                self._update_examples_multipart(
+                    dataset_id=dataset_id, updates=[example]
+                )
+            )
+        else:
+            dataset_id = self.read_example(example_id).dataset_id
+            return dict(
+                self._update_examples_multipart(
+                    dataset_id=dataset_id, updates=[example]
+                )
+            )
 
     def update_examples(
         self,
         *,
-        example_ids: Sequence[ID_TYPE],
-        inputs: Optional[Sequence[Optional[Dict[str, Any]]]] = None,
-        outputs: Optional[Sequence[Optional[Mapping[str, Any]]]] = None,
-        metadata: Optional[Sequence[Optional[Dict]]] = None,
-        splits: Optional[Sequence[Optional[str | List[str]]]] = None,
-        dataset_ids: Optional[Sequence[Optional[ID_TYPE]]] = None,
-        attachments_operations: Optional[
-            Sequence[Optional[ls_schemas.AttachmentsOperations]]
-        ] = None,
+        dataset_name: str | None = None,
+        dataset_id: ID_TYPE | None = None,
+        updates: Optional[Sequence[ls_schemas.ExampleUpdate | dict]] = None,
+        dangerously_allow_filesystem: bool = False,
+        **kwargs: Any,
     ) -> Dict[str, Any]:
         """Update multiple examples.
 
+         Examples are expected to all be part of the same dataset.
+
         Args:
-            example_ids (Sequence[Union[UUID, str]]):
-                The IDs of the examples to update.
-            inputs (Optional[Sequence[Optional[Dict[str, Any]]]):
-                The input values for the examples.
-            outputs (Optional[Sequence[Optional[Mapping[str, Any]]]]):
-                The output values for the examples.
-            metadata (Optional[Sequence[Optional[Mapping[str, Any]]]]):
-                The metadata for the examples.
-            splits (Optional[Sequence[Optional[str | List[str]]]]):
-                The splits for the examples, which are divisions
-                of your dataset such as 'train', 'test', or 'validation'.
-            dataset_ids (Optional[Sequence[Optional[Union[UUID, str]]]]):
-                The IDs of the datasets to move the examples to.
-            attachments_operations (Optional[Sequence[Optional[ls_schemas.AttachmentsOperations]]):
-                The operations to perform on the attachments.
+             dataset_name (str | None):
+                 The name of the dataset to update. Should specify exactly one of
+                 'dataset_name' or 'dataset_id'.
+             dataset_id (UUID | str | None):
+                 The ID of the dataset to update. Should specify exactly one of
+                 'dataset_name' or 'dataset_id'.
+             updates (Sequence[ExampleUpdate | dict] | None):
+                 The example updates. Overwrites any specified fields and does not
+                 update any unspecified fields.
+             dangerously_allow_filesystem (bool):
+                 Whether to allow using filesystem paths as attachments.
+             **kwargs (Any):
+                 Legacy keyword args. Should not be specified if 'updates' is specified.
+
+                 - example_ids (Sequence[UUID | str]): The IDs of the examples to update.
+                 - inputs (Sequence[dict | None] | None): The input values for the examples.
+                 - outputs (Sequence[dict | None] | None): The output values for the examples.
+                 - metadata (Sequence[dict | None] | None): The metadata for the examples.
+                 - splits (Sequence[str | list[str] | None] | None): The splits for the examples, which are divisions of your dataset such as 'train', 'test', or 'validation'.
+                 - attachments_operations (Sequence[AttachmentsOperations | None] | None): The operations to perform on the attachments.
+                 - dataset_ids (Sequence[UUID | str] | None): The IDs of the datasets to move the examples to.
 
         Returns:
-            Dict[str, Any]: The response from the server (specifies the number of examples updated).
-        """
-        if attachments_operations is not None:
-            if not (self.info.instance_flags or {}).get(
-                "dataset_examples_multipart_enabled", False
+             The LangSmith JSON response. Includes 'message', 'count', and 'example_ids'.
+
+         .. versionchanged:: 0.3.9
+
+             Updated to ...
+
+        Example:
+
+             .. code-block:: python
+
+                 from langsmith import Client
+
+                 client = Client()
+
+                 dataset = client.create_dataset("agent-qa")
+
+                 examples = [
+                     {
+                         "inputs": {"question": "what's an agent"},
+                         "outputs": {"answer": "an agent is..."},
+                         "metadata": {"difficulty": "easy"},
+                     },
+                     {
+                         "inputs": {
+                             "question": "can you explain the agent architecture in this diagram?"
+                         },
+                         "outputs": {"answer": "this diagram shows..."},
+                         "attachments": {"diagram": {"mime_type": "image/png", "data": b"..."}},
+                         "metadata": {"difficulty": "medium"},
+                     },
+                     # more examples...
+                 ]
+
+                 response = client.create_examples(dataset_name="agent-qa", examples=examples)
+                 example_ids = response["example_ids"]
+
+                 updates = [
+                     {
+                         "id": example_ids[0],
+                         "inputs": {"question": "what isn't an agent"},
+                         "outputs": {"answer": "an agent is not..."},
+                     },
+                     {
+                         "id": example_ids[1],
+                         "attachments_operations": [
+                             {"rename": {"diagram": "agent_diagram"}, "retain": []}
+                         ],
+                     },
+                 ]
+                 response = client.update_examples(dataset_name="agent-qa", updates=updates)
+                 # -> {"example_ids": [...
+        """  # noqa: E501
+        if kwargs and updates:
+            raise ValueError(
+                f"Must pass in either 'updates' or args {tuple(kwargs)}, not both."
+            )
+        if not (kwargs or updates):
+            raise ValueError("Please pass in a non-empty sequence for arg 'updates'.")
+
+        if dataset_name and dataset_id:
+            raise ValueError(
+                "Must pass in exactly one of 'dataset_name' or 'dataset_id'."
+            )
+        elif dataset_name:
+            dataset_id = self.read_dataset(dataset_name=dataset_name).id
+
+        if updates:
+            updates_obj = [
+                ls_schemas.ExampleUpdate(**x) if isinstance(x, dict) else x
+                for x in updates
+            ]
+
+            if not dataset_id:
+                if updates_obj[0].dataset_id:
+                    dataset_id = updates_obj[0].dataset_id
+                else:
+                    raise ValueError(
+                        "Must pass in (exactly) one of 'dataset_name' or 'dataset_id'."
+                    )
+
+        # For backwards compatibility
+        else:
+            example_ids = kwargs.get("example_ids", None)
+            if not example_ids:
+                raise ValueError(
+                    "Must pass in (exactly) one of 'updates' or 'example_ids'."
+                )
+            if not dataset_id:
+                if "dataset_ids" not in kwargs:
+                    # Assume all examples belong to same dataset
+                    dataset_id = self.read_example(example_ids[0]).dataset_id
+                elif len(set(kwargs["dataset_ids"])) > 1:
+                    raise ValueError("Dataset IDs must be the same for all examples")
+                elif not kwargs["dataset_ids"][0]:
+                    raise ValueError("If specified, dataset_ids must be non-null.")
+                else:
+                    dataset_id = kwargs["dataset_ids"][0]
+
+            multipart_enabled = (self.info.instance_flags or {}).get(
+                "dataset_examples_multipart_enabled"
+            )
+            if (
+                not multipart_enabled
+                and (kwargs.get("attachments_operations") or kwargs.get("attachments"))
+                is not None
             ):
                 raise ValueError(
-                    "Your LangSmith version does not allow using the attachment operations, please update to the latest version."
+                    "Your LangSmith version does not allow using the attachment "
+                    "operations, please update to the latest version."
                 )
-        sequence_args = {
-            "inputs": inputs,
-            "outputs": outputs,
-            "metadata": metadata,
-            "splits": splits,
-            "dataset_ids": dataset_ids,
-            "attachments_operations": attachments_operations,
-        }
-        # Since inputs are required, we will check against them
-        examples_len = len(example_ids)
-        for arg_name, arg_value in sequence_args.items():
-            if arg_value is not None and len(arg_value) != examples_len:
-                raise ValueError(
-                    f"Length of {arg_name} ({len(arg_value)}) does not match"
-                    f" length of examples ({examples_len})"
+            # Since ids are required, we will check against them
+            examples_len = len(example_ids)
+            for arg_name, arg_value in kwargs.items():
+                if arg_value is not None and len(arg_value) != examples_len:
+                    raise ValueError(
+                        f"Length of {arg_name} ({len(arg_value)}) does not match"
+                        f" length of examples ({examples_len})"
+                    )
+            updates_obj = [
+                ls_schemas.ExampleUpdate(
+                    **{
+                        "id": id_,
+                        "inputs": in_,
+                        "outputs": out_,
+                        "dataset_id": dataset_id_,
+                        "metadata": metadata_,
+                        "split": split_,
+                        "attachments": attachments_,
+                        "attachments_operations": attachments_operations_,
+                    }
                 )
-        examples = [
-            {
-                "id": id_,
-                "inputs": in_,
-                "outputs": out_,
-                "dataset_id": dataset_id_,
-                "metadata": metadata_,
-                "split": split_,
-                "attachments_operations": attachments_operations_,
-            }
-            for id_, in_, out_, metadata_, split_, dataset_id_, attachments_operations_ in zip(
-                example_ids,
-                inputs or [None] * len(example_ids),
-                outputs or [None] * len(example_ids),
-                metadata or [None] * len(example_ids),
-                splits or [None] * len(example_ids),
-                dataset_ids or [None] * len(example_ids),
-                attachments_operations or [None] * len(example_ids),
-            )
-        ]
-        response = self.request_with_retries(
-            "PATCH",
-            "/examples/bulk",
-            headers={**self._headers, "Content-Type": "application/json"},
-            data=(
-                _dumps_json(
-                    [
-                        {k: v for k, v in example.items() if v is not None}
-                        for example in examples
-                    ]
+                for id_, in_, out_, metadata_, split_, dataset_id_, attachments_, attachments_operations_ in zip(
+                    example_ids,
+                    kwargs.get("inputs", (None for _ in range(examples_len))),
+                    kwargs.get("outputs", (None for _ in range(examples_len))),
+                    kwargs.get("metadata", (None for _ in range(examples_len))),
+                    kwargs.get("splits", (None for _ in range(examples_len))),
+                    kwargs.get("dataset_ids", (None for _ in range(examples_len))),
+                    kwargs.get("attachments", (None for _ in range(examples_len))),
+                    kwargs.get(
+                        "attachments_operations", (None for _ in range(examples_len))
+                    ),
                 )
-            ),
+            ]
+
+        response = self._update_examples_multipart(
+            dataset_id=cast(uuid.UUID, dataset_id),
+            updates=updates_obj,
+            dangerously_allow_filesystem=dangerously_allow_filesystem,
         )
-        ls_utils.raise_for_status_with_text(response)
-        return response.json()
+
+        return {"message": f"{response.get('count', 0)} examples updated", **response}
 
     def delete_example(self, example_id: ID_TYPE) -> None:
         """Delete an example by ID.
@@ -4775,14 +5183,12 @@ class Client:
             "DELETE",
             "/examples",
             headers={**self._headers, "Content-Type": "application/json"},
-            data=_dumps_json(
-                {
-                    "ids": [
-                        str(_as_uuid(id_, f"example_ids[{i}]"))
-                        for i, id_ in enumerate(example_ids)
-                    ]
-                }
-            ),
+            params={
+                "example_ids": [
+                    str(_as_uuid(id_, f"example_ids[{i}]"))
+                    for i, id_ in enumerate(example_ids)
+                ]
+            },
         )
         ls_utils.raise_for_status_with_text(response)
 
@@ -5032,6 +5438,7 @@ class Client:
                 run_id_ = res.target_run_id
             elif run is not None:
                 run_id_ = run.id
+            error = res.extra.get("error", None) if res.extra is not None else None
 
             _submit_feedback(
                 run_id=run_id_,
@@ -5049,6 +5456,7 @@ class Client:
                 project_id=project_id,
                 extra=res.extra,
                 trace_id=run.trace_id if run else None,
+                error=error,
             )
         return results
 
@@ -5118,6 +5526,7 @@ class Client:
         feedback_group_id: Optional[ID_TYPE] = None,
         extra: Optional[Dict] = None,
         trace_id: Optional[ID_TYPE] = None,
+        error: Optional[bool] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
         """Create a feedback in the LangSmith API.
@@ -5221,7 +5630,7 @@ class Client:
                 run_id=_ensure_uuid(run_id, accept_null=True),
                 trace_id=_ensure_uuid(trace_id, accept_null=True),
                 key=key,
-                score=score,
+                score=_format_feedback_score(score),
                 value=value,
                 correction=correction,
                 comment=comment,
@@ -5235,6 +5644,7 @@ class Client:
                 ),
                 feedback_group_id=_ensure_uuid(feedback_group_id, accept_null=True),
                 extra=extra,
+                error=error,
             )
 
             use_multipart = (self.info.batch_ingest_config or {}).get(
@@ -5245,13 +5655,32 @@ class Client:
                 use_multipart
                 and self.info.version  # TODO: Remove version check once versions have updated
                 and ls_utils.is_version_greater_or_equal(self.info.version, "0.8.10")
-                and self.tracing_queue is not None
+                and (
+                    self.tracing_queue is not None or self.compressed_traces is not None
+                )
                 and feedback.trace_id is not None
+                and self.otel_exporter is None
             ):
                 serialized_op = serialize_feedback_dict(feedback)
-                self.tracing_queue.put(
-                    TracingQueueItem(str(feedback.id), serialized_op)
-                )
+                if self.compressed_traces is not None:
+                    multipart_form = (
+                        serialized_feedback_operation_to_multipart_parts_and_context(
+                            serialized_op
+                        )
+                    )
+                    with self.compressed_traces.lock:
+                        compress_multipart_parts_and_context(
+                            multipart_form,
+                            self.compressed_traces,
+                            _BOUNDARY,
+                        )
+                        self.compressed_traces.trace_count += 1
+                        if self._data_available_event:
+                            self._data_available_event.set()
+                elif self.tracing_queue is not None:
+                    self.tracing_queue.put(
+                        TracingQueueItem(str(feedback.id), serialized_op)
+                    )
             else:
                 feedback_block = _dumps_json(feedback.dict(exclude_none=True))
                 self.request_with_retries(
@@ -5296,7 +5725,7 @@ class Client:
         """
         feedback_update: Dict[str, Any] = {}
         if score is not None:
-            feedback_update["score"] = score
+            feedback_update["score"] = _format_feedback_score(score)
         if value is not None:
             feedback_update["value"] = value
         if correction is not None:
@@ -5701,7 +6130,7 @@ class Client:
         body = {
             "name": name,
             "description": description,
-            "id": queue_id or str(uuid.uuid4()),
+            "id": str(queue_id) if queue_id is not None else str(uuid.uuid4()),
         }
         response = self.request_with_retries(
             "POST",
@@ -5906,6 +6335,7 @@ class Client:
         """Asynchronously run the Chain or language model on a dataset.
 
         .. deprecated:: 0.1.0
+
            This method is deprecated. Use :func:`langsmith.aevaluate` instead.
         """  # noqa: E501
         warnings.warn(
@@ -5954,6 +6384,7 @@ class Client:
         """Run the Chain or language model on a dataset.
 
         .. deprecated:: 0.1.0
+
            This method is deprecated. Use :func:`langsmith.aevaluate` instead.
         """  # noqa: E501  # noqa: E501
         warnings.warn(
@@ -7232,3 +7663,49 @@ def convert_prompt_to_anthropic_format(
         return anthropic._get_request_payload(messages, stop=stop)
     except Exception as e:
         raise ls_utils.LangSmithError(f"Error converting to Anthropic format: {e}")
+
+
+def _convert_stored_attachments_to_attachments_dict(
+    data: dict, *, attachments_key: str
+) -> dict[str, AttachmentInfo]:
+    """Convert attachments from the backend database format to the user facing format."""
+    attachments_dict = {}
+    if attachments_key in data and data[attachments_key]:
+        for key, value in data[attachments_key].items():
+            response = requests.get(value["presigned_url"], stream=True)
+            response.raise_for_status()
+            reader = io.BytesIO(response.content)
+            attachments_dict[key.removeprefix("attachment.")] = AttachmentInfo(
+                **{
+                    "presigned_url": value["presigned_url"],
+                    "reader": reader,
+                    "mime_type": value.get("mime_type"),
+                }
+            )
+    return attachments_dict
+
+
+def _close_files(files: List[io.BufferedReader]) -> None:
+    """Close all opened files used in multipart requests."""
+    for file in files:
+        try:
+            file.close()
+        except Exception:
+            logger.debug("Could not close file: %s", file.name)
+            pass
+
+
+def _dataset_examples_path(api_url: str, dataset_id: ID_TYPE) -> str:
+    if api_url.rstrip("/").endswith("/v1"):
+        return f"/platform/datasets/{dataset_id}/examples"
+    else:
+        return f"/v1/platform/datasets/{dataset_id}/examples"
+
+
+def _construct_url(api_url: str, pathname: str) -> str:
+    if pathname.startswith("http"):
+        return pathname
+    elif pathname.startswith("/"):
+        return api_url.rstrip("/") + pathname
+    else:
+        return api_url.rstrip("/") + "/" + pathname

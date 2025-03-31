@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import itertools
 import logging
+import os
 import uuid
-from typing import Literal, Optional, Union, cast
+from io import BufferedReader
+from typing import Dict, Iterable, Literal, Optional, Tuple, Union, cast
 
 from langsmith import schemas as ls_schemas
 from langsmith._internal import _orjson
-from langsmith._internal._compressed_runs import CompressedRuns
+from langsmith._internal._compressed_traces import CompressedTraces
 from langsmith._internal._multipart import MultipartPart, MultipartPartsAndContext
 from langsmith._internal._serde import dumps_json as _dumps_json
 
@@ -212,9 +214,9 @@ def serialized_feedback_operation_to_multipart_parts_and_context(
 
 def serialized_run_operation_to_multipart_parts_and_context(
     op: SerializedRunOperation,
-) -> MultipartPartsAndContext:
+) -> tuple[MultipartPartsAndContext, Dict[str, BufferedReader]]:
     acc_parts: list[MultipartPart] = []
-
+    opened_files_dict: Dict[str, BufferedReader] = {}
     # this is main object, minus inputs/outputs/events/attachments
     acc_parts.append(
         (
@@ -247,7 +249,7 @@ def serialized_run_operation_to_multipart_parts_and_context(
             ),
         )
     if op.attachments:
-        for n, (content_type, valb) in op.attachments.items():
+        for n, (content_type, data_or_path) in op.attachments.items():
             if "." in n:
                 logger.warning(
                     f"Skipping logging of attachment '{n}' "
@@ -257,28 +259,43 @@ def serialized_run_operation_to_multipart_parts_and_context(
                 )
                 continue
 
-            acc_parts.append(
-                (
-                    f"attachment.{op.id}.{n}",
+            if isinstance(data_or_path, bytes):
+                acc_parts.append(
                     (
-                        None,
-                        valb,
-                        content_type,
-                        {"Content-Length": str(len(valb))},
-                    ),
+                        f"attachment.{op.id}.{n}",
+                        (
+                            None,
+                            data_or_path,
+                            content_type,
+                            {"Content-Length": str(len(data_or_path))},
+                        ),
+                    )
                 )
-            )
-    return MultipartPartsAndContext(
-        acc_parts,
-        f"trace={op.trace_id},id={op.id}",
+            else:
+                file_size = os.path.getsize(data_or_path)
+                file = open(data_or_path, "rb")
+                opened_files_dict[str(data_or_path) + str(uuid.uuid4())] = file
+                acc_parts.append(
+                    (
+                        f"attachment.{op.id}.{n}",
+                        (
+                            None,
+                            file,
+                            f"{content_type}; length={file_size}",
+                            {},
+                        ),
+                    )
+                )
+    return (
+        MultipartPartsAndContext(acc_parts, f"trace={op.trace_id},id={op.id}"),
+        opened_files_dict,
     )
 
 
-def compress_multipart_parts_and_context(
+def encode_multipart_parts_and_context(
     parts_and_context: MultipartPartsAndContext,
-    compressed_runs: CompressedRuns,
     boundary: str,
-) -> None:
+) -> Iterable[Tuple[bytes, Union[bytes, BufferedReader]]]:
     for part_name, (filename, data, content_type, headers) in parts_and_context.parts:
         header_parts = [
             f"--{boundary}\r\n",
@@ -296,15 +313,29 @@ def compress_multipart_parts_and_context(
             ]
         )
 
-        compressed_runs.compressor_writer.write("".join(header_parts).encode())
+        yield ("".join(header_parts).encode(), data)
+
+
+def compress_multipart_parts_and_context(
+    parts_and_context: MultipartPartsAndContext,
+    compressed_traces: CompressedTraces,
+    boundary: str,
+) -> None:
+    for headers, data in encode_multipart_parts_and_context(
+        parts_and_context, boundary
+    ):
+        compressed_traces.compressor_writer.write(headers)
 
         if isinstance(data, (bytes, bytearray)):
-            compressed_runs.uncompressed_size += len(data)
-            compressed_runs.compressor_writer.write(data)
+            compressed_traces.uncompressed_size += len(data)
+            compressed_traces.compressor_writer.write(data)
         else:
-            encoded_data = str(data).encode()
-            compressed_runs.uncompressed_size += len(encoded_data)
-            compressed_runs.compressor_writer.write(encoded_data)
+            if isinstance(data, BufferedReader):
+                encoded_data = data.read()
+            else:
+                encoded_data = str(data).encode()
+            compressed_traces.uncompressed_size += len(encoded_data)
+            compressed_traces.compressor_writer.write(encoded_data)
 
         # Write part terminator
-        compressed_runs.compressor_writer.write(b"\r\n")
+        compressed_traces.compressor_writer.write(b"\r\n")

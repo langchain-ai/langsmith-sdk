@@ -37,6 +37,8 @@ from langsmith._internal import _orjson
 from langsmith._internal._serde import _serialize_json
 from langsmith.client import (
     Client,
+    _construct_url,
+    _dataset_examples_path,
     _dumps_json,
     _is_langchain_hosted,
     _parse_token_or_url,
@@ -1248,6 +1250,110 @@ def test_batch_ingest_run_splits_large_batches(
         assert len(request_bodies) == len(set([body["id"] for body in request_bodies]))
 
 
+def test_sampling_and_batching():
+    """Test that sampling and batching work correctly."""
+    # Setup mock client
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_session.request.return_value = mock_response
+
+    counter = 0
+
+    def mock_should_sample():
+        nonlocal counter
+        counter += 1
+        return counter % 2 != 0
+
+    with patch(
+        "langsmith.client.Client._should_sample", side_effect=mock_should_sample
+    ):
+        client = Client(
+            api_key="test-api-key",
+            auto_batch_tracing=True,
+            tracing_sampling_rate=0.5,
+            session=mock_session,
+        )
+
+        project_name = "__test_batch"
+
+        # Create parent runs
+        run_params = []
+        for i in range(4):
+            run_id = uuid.uuid4()
+            params = {
+                "id": run_id,
+                "project_name": project_name,
+                "name": f"test_run {i}",
+                "run_type": "llm",
+                "inputs": {"text": f"hello world {i}"},
+                "dotted_order": "foo",
+                "trace_id": run_id,
+            }
+            client.create_run(**params)
+            run_params.append(params)
+
+        client.flush()
+
+        # Create child runs and update parent runs
+        child_run_params = []
+        for i, run_param in enumerate(run_params):
+            child_run_id = uuid.uuid4()
+            child_params = {
+                "id": child_run_id,
+                "project_name": project_name,
+                "name": f"test_child_run {i}",
+                "run_type": "llm",
+                "inputs": {"text": f"child world {i}"},
+                "dotted_order": "foo",
+                "trace_id": run_param["id"],
+            }
+            client.create_run(**child_params)
+            child_run_params.append(child_params)
+
+        client.flush()
+
+        # Verify all requests
+        post_calls = [
+            call
+            for call in mock_session.request.mock_calls
+            if call.args and call.args[0] == "POST"
+        ]
+        assert len(post_calls) >= 2
+
+        # Verify that only odd-numbered runs were sampled (due to our counter logic)
+        assert post_calls[0].args[1].endswith("/runs/batch")
+        assert post_calls[1].args[1].endswith("/runs/batch")
+
+        data = post_calls[0].kwargs["data"]
+        if isinstance(data, bytes):
+            data = data.decode("utf-8")
+        batch_data = json.loads(data)
+
+        # Verify posts only contain odd-numbered runs
+        assert len(batch_data.get("post", [])) == 2
+        for post in batch_data.get("post", []):
+            assert "text" in post["inputs"]
+            if "hello world" in post["inputs"]["text"]:
+                i = int(post["inputs"]["text"].split()[-1])
+                assert i % 2 == 0
+            elif "child world" in post["inputs"]["text"]:
+                i = int(post["inputs"]["text"].split()[-1])
+                assert i % 2 == 0
+
+        data = post_calls[1].kwargs["data"]
+        if isinstance(data, bytes):
+            data = data.decode("utf-8")
+        batch_data = json.loads(data)
+        assert len(batch_data.get("post", [])) == 2
+        for p in batch_data.get("post", []):
+            run_id = p["id"]
+            original_run = next((r for r in run_params if str(r["id"]) == run_id), None)
+            if original_run:
+                i = int(original_run["name"].split()[-1])
+                assert i % 2 == 0
+
+
 @mock.patch("langsmith.client.requests.Session")
 def test_select_eval_results(mock_session_cls: mock.Mock):
     expected = EvaluationResult(
@@ -2069,3 +2175,379 @@ def test_evaluate_methods() -> None:
     eval_args = set(inspect.signature(aevaluate).parameters).difference({"client"})
     extra_args = client_args - eval_args
     assert not extra_args
+
+
+@patch("langsmith.client.requests.Session")
+def test_create_run_with_zstd_compression(mock_session_cls: mock.Mock) -> None:
+    """Test that runs are sent using zstd compression when compression is enabled."""
+    # Prepare a mocked session
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_session.request.return_value = mock_response
+    mock_session_cls.return_value = mock_session
+
+    with patch.dict("os.environ", {}, clear=True):
+        info = ls_schemas.LangSmithInfo(
+            version="0.6.0",
+            instance_flags={"zstd_compression_enabled": True},
+            batch_ingest_config=ls_schemas.BatchIngestConfig(
+                use_multipart_endpoint=True,
+                size_limit=1,
+                size_limit_bytes=128,
+                scale_up_nthreads_limit=4,
+                scale_up_qsize_trigger=3,
+                scale_down_nempty_trigger=1,
+            ),
+        )
+        client = Client(
+            api_url="http://localhost:1984",
+            api_key="123",
+            auto_batch_tracing=True,
+            session=mock_session,
+            info=info,
+        )
+
+        # Create a few runs with larger payloads so there's something to compress
+        for i in range(2):
+            run_id = uuid.uuid4()
+            client.create_run(
+                name=f"my_test_run_{i}",
+                run_type="llm",
+                inputs={"some_key": "some_val" * 1000},
+                id=run_id,
+                trace_id=run_id,
+                dotted_order=str(run_id),
+            )
+
+        # Let the background threads flush
+        if client.tracing_queue:
+            client.tracing_queue.join()
+        if client._futures is not None:
+            for fut in client._futures:
+                fut.result()
+
+    time.sleep(0.1)
+
+    # Inspect the calls
+    post_calls = []
+    for call_obj in mock_session.request.mock_calls:
+        if call_obj.args and call_obj.args[0] == "POST":
+            post_calls.append(call_obj)
+    assert (
+        len(post_calls) >= 1
+    ), "Expected at least one POST to the compression endpoint"
+
+    call_data = post_calls[0][2]["data"]
+
+    if hasattr(call_data, "read"):
+        call_data = call_data.read()
+
+    zstd_magic = b"\x28\xb5\x2f\xfd"
+    assert call_data.startswith(zstd_magic), (
+        "Expected the request body to start with zstd magic bytes; "
+        "it appears runs were not compressed."
+    )
+
+
+@patch("langsmith.client.requests.Session")
+def test_create_feedback_with_zstd_compression(mock_session_cls: mock.Mock) -> None:
+    """Test that feedback is sent using zstd compression when compression is enabled."""
+    # Prepare a mocked session
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_session.request.return_value = mock_response
+    mock_session_cls.return_value = mock_session
+
+    with patch.dict("os.environ", {}, clear=True):
+        info = ls_schemas.LangSmithInfo(
+            version="0.8.11",
+            instance_flags={"zstd_compression_enabled": True},
+            batch_ingest_config=ls_schemas.BatchIngestConfig(
+                use_multipart_endpoint=True,
+                size_limit=1,
+                size_limit_bytes=128,
+                scale_up_nthreads_limit=4,
+                scale_up_qsize_trigger=3,
+                scale_down_nempty_trigger=1,
+            ),
+        )
+        client = Client(
+            api_url="http://localhost:1984",
+            api_key="123",
+            auto_batch_tracing=True,
+            session=mock_session,
+            info=info,
+        )
+
+        # Create a few runs with larger payloads so there's something to compress
+        run_id = uuid.uuid4()
+
+        feedback_data = {
+            "comment": "test comment",
+            "score": 0.95,
+        }
+        client.create_feedback(
+            run_id=run_id, key="test_key", trace_id=run_id, **feedback_data
+        )
+
+        # Let the background threads flush
+        if client.tracing_queue:
+            client.tracing_queue.join()
+        if client._futures is not None:
+            for fut in client._futures:
+                fut.result()
+
+        time.sleep(0.1)
+
+    # Inspect the calls
+    post_calls = [
+        call_obj
+        for call_obj in mock_session.request.mock_calls
+        if call_obj.args and call_obj.args[0] == "POST"
+    ]
+    assert len(post_calls) == 1, "Expected exactly one POST request"
+
+    call_data = post_calls[0][2]["data"]
+    if hasattr(call_data, "read"):
+        call_data = call_data.read()
+
+    # Check for zstd magic bytes
+    zstd_magic = b"\x28\xb5\x2f\xfd"
+    assert call_data.startswith(zstd_magic), (
+        "Expected the request body to start with zstd magic bytes; "
+        "it appears feedback was not compressed."
+    )
+
+    # Verify Content-Encoding header
+    headers = post_calls[0][2]["headers"]
+    assert (
+        headers.get("Content-Encoding") == "zstd"
+    ), "Expected Content-Encoding header to be 'zstd'"
+
+
+@patch("langsmith.client.requests.Session")
+def test_create_run_without_compression_support(mock_session_cls: mock.Mock) -> None:
+    """Test that runs use regular multipart when server doesn't support compression."""
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_session.request.return_value = mock_response
+    mock_session_cls.return_value = mock_session
+
+    with patch.dict("os.environ", {}, clear=True):
+        info = ls_schemas.LangSmithInfo(
+            version="0.6.0",
+            instance_flags={},  # No compression flag
+            batch_ingest_config=ls_schemas.BatchIngestConfig(
+                use_multipart_endpoint=True,
+                size_limit=1,
+                size_limit_bytes=128,
+                scale_up_nthreads_limit=4,
+                scale_up_qsize_trigger=3,
+                scale_down_nempty_trigger=1,
+            ),
+        )
+        client = Client(
+            api_url="http://localhost:1984",
+            api_key="123",
+            auto_batch_tracing=True,
+            session=mock_session,
+            info=info,
+        )
+
+        run_id = uuid.uuid4()
+        inputs = {"key": "there"}
+        client.create_run(
+            name="test_run",
+            run_type="llm",
+            inputs=inputs,
+            id=run_id,
+            trace_id=run_id,
+            dotted_order=str(run_id),
+        )
+
+        outputs = {"key": "hi there"}
+
+        client.update_run(
+            run_id,
+            outputs=outputs,
+            end_time=datetime.now(timezone.utc),
+            trace_id=run_id,
+            dotted_order=str(run_id),
+        )
+
+        if client.tracing_queue:
+            client.tracing_queue.join()
+
+    time.sleep(0.1)
+
+    post_calls = [
+        call_obj
+        for call_obj in mock_session.request.mock_calls
+        if call_obj.args and call_obj.args[0] == "POST"
+    ]
+    assert len(post_calls) >= 1
+
+    payloads = [
+        (call[2]["headers"], call[2]["data"])
+        for call in mock_session.request.mock_calls
+        if call.args and call.args[1].endswith("runs/multipart")
+    ]
+    if not payloads:
+        assert False, "No payloads found"
+
+    parts: List[MultipartPart] = []
+    for payload in payloads:
+        headers, data = payload
+        assert headers["Content-Type"].startswith("multipart/form-data")
+        assert isinstance(data, bytes)
+        boundary = parse_options_header(headers["Content-Type"])[1]["boundary"]
+        parser = MultipartParser(io.BytesIO(data), boundary)
+        parts.extend(parser.parts())
+
+    assert [p.name for p in parts] == [
+        f"post.{run_id}",
+        f"post.{run_id}.inputs",
+        f"post.{run_id}.outputs",
+    ]
+    assert [p.headers.get("content-type") for p in parts] == [
+        "application/json",
+        "application/json",
+        "application/json",
+    ]
+
+    outputs_parsed = json.loads(parts[2].value)
+    assert outputs_parsed == outputs
+    inputs_parsed = json.loads(parts[1].value)
+    assert inputs_parsed == inputs
+    run_parsed = json.loads(parts[0].value)
+    assert run_parsed["trace_id"] == str(run_id)
+    assert run_parsed["dotted_order"] == str(run_id)
+
+
+@patch("langsmith.client.requests.Session")
+def test_create_run_with_disabled_compression(mock_session_cls: mock.Mock) -> None:
+    """Test that runs use regular multipart when compression is explicitly disabled."""
+
+    # Clear the cache to ensure the environment variable is re-evaluated
+    ls_utils.get_env_var.cache_clear()
+
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_session.request.return_value = mock_response
+    mock_session_cls.return_value = mock_session
+
+    with patch.dict(
+        "os.environ", {"LANGSMITH_DISABLE_RUN_COMPRESSION": "true"}, clear=True
+    ):
+        info = ls_schemas.LangSmithInfo(
+            version="0.6.0",
+            instance_flags={"zstd_compression_enabled": True},  # Enabled on server
+            batch_ingest_config=ls_schemas.BatchIngestConfig(
+                use_multipart_endpoint=True,
+                size_limit=1,
+                size_limit_bytes=128,
+                scale_up_nthreads_limit=4,
+                scale_up_qsize_trigger=3,
+                scale_down_nempty_trigger=1,
+            ),
+        )
+        client = Client(
+            api_url="http://localhost:1984",
+            api_key="123",
+            auto_batch_tracing=True,
+            session=mock_session,
+            info=info,
+        )
+
+        run_id = uuid.uuid4()
+        inputs = {"key": "there"}
+        client.create_run(
+            name="test_run",
+            run_type="llm",
+            inputs=inputs,
+            id=run_id,
+            trace_id=run_id,
+            dotted_order=str(run_id),
+        )
+
+        outputs = {"key": "hi there"}
+        client.update_run(
+            run_id,
+            outputs=outputs,
+            end_time=datetime.now(timezone.utc),
+            trace_id=run_id,
+            dotted_order=str(run_id),
+        )
+
+        # Let the background threads flush
+        if client.tracing_queue:
+            client.tracing_queue.join()
+
+    time.sleep(0.1)
+
+    post_calls = [
+        call_obj
+        for call_obj in mock_session.request.mock_calls
+        if call_obj.args and call_obj.args[0] == "POST"
+    ]
+    assert len(post_calls) >= 1
+
+    payloads = [
+        (call[2]["headers"], call[2]["data"])
+        for call in mock_session.request.mock_calls
+        if call.args and call.args[1].endswith("runs/multipart")
+    ]
+    if not payloads:
+        assert False, "No payloads found"
+
+    parts: List[MultipartPart] = []
+    for payload in payloads:
+        headers, data = payload
+        assert headers["Content-Type"].startswith("multipart/form-data")
+        assert isinstance(data, bytes)
+        boundary = parse_options_header(headers["Content-Type"])[1]["boundary"]
+        parser = MultipartParser(io.BytesIO(data), boundary)
+        parts.extend(parser.parts())
+
+    assert [p.name for p in parts] == [
+        f"post.{run_id}",
+        f"post.{run_id}.inputs",
+        f"post.{run_id}.outputs",
+    ]
+    assert [p.headers.get("content-type") for p in parts] == [
+        "application/json",
+        "application/json",
+        "application/json",
+    ]
+
+    outputs_parsed = json.loads(parts[2].value)
+    assert outputs_parsed == outputs
+    inputs_parsed = json.loads(parts[1].value)
+    assert inputs_parsed == inputs
+    run_parsed = json.loads(parts[0].value)
+    assert run_parsed["trace_id"] == str(run_id)
+    assert run_parsed["dotted_order"] == str(run_id)
+
+
+def test__dataset_examples_path():
+    dataset_id = "123"
+    api_url = "https://foobar.com/api"
+    expected = "https://foobar.com/api/v1/platform/datasets/123/examples"
+    for suffix in ("", "/", "/v1", "/v1/"):
+        path = _dataset_examples_path(api_url + suffix, dataset_id)
+        actual = (api_url + suffix).rstrip("/") + path
+        assert expected == actual
+
+
+def test__construct_url():
+    api_url = "https://foobar.com/api"
+    pathname = "v1/platform/datasets/123/examples"
+    expected = "https://foobar.com/api/v1/platform/datasets/123/examples"
+    for suffix in ("", "/"):
+        for prefix in ("", "/", "https://foobar.com/api/"):
+            actual = _construct_url(api_url + suffix, prefix + pathname)
+            assert actual == expected

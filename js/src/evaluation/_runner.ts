@@ -56,13 +56,13 @@ export type DataT = string | AsyncIterable<Example> | Example[];
 type DeprecatedSyncSummaryEvaluator = (
   runs: Array<Run>,
   examples: Array<Example>
-) => EvaluationResult | EvaluationResults;
+) => EvaluationResult | EvaluationResult[] | EvaluationResults;
 
 /** @deprecated Use object parameter version instead: (args: { runs, examples, inputs, outputs, referenceOutputs }) => ... */
 type DeprecatedAsyncSummaryEvaluator = (
   runs: Array<Run>,
   examples: Array<Example>
-) => Promise<EvaluationResult | EvaluationResults>;
+) => Promise<EvaluationResult | EvaluationResult[] | EvaluationResults>;
 
 // Summary evaluator runs over the whole dataset
 export type SummaryEvaluatorT =
@@ -74,14 +74,14 @@ export type SummaryEvaluatorT =
       inputs: Array<Record<string, any>>;
       outputs: Array<Record<string, any>>;
       referenceOutputs?: Array<Record<string, any>>;
-    }) => EvaluationResult | EvaluationResults)
+    }) => EvaluationResult | EvaluationResult[] | EvaluationResults)
   | ((args: {
       runs: Array<Run>;
       examples: Array<Example>;
       inputs: Array<Record<string, any>>;
       outputs: Array<Record<string, any>>;
       referenceOutputs?: Array<Record<string, any>>;
-    }) => Promise<EvaluationResult | EvaluationResults>);
+    }) => Promise<EvaluationResult | EvaluationResult[] | EvaluationResults>);
 
 /** @deprecated Use object parameter version instead: (args: { run, example, inputs, outputs, referenceOutputs }) => ... */
 type DeprecatedRunEvaluator = RunEvaluator;
@@ -90,13 +90,13 @@ type DeprecatedRunEvaluator = RunEvaluator;
 type DeprecatedFunctionEvaluator = (
   run: Run,
   example?: Example
-) => EvaluationResult | EvaluationResults;
+) => EvaluationResult | EvaluationResult[] | EvaluationResults;
 
 /** @deprecated Use object parameter version instead: (args: { run, example, inputs, outputs, referenceOutputs }) => ... */
 type DeprecatedAsyncFunctionEvaluator = (
   run: Run,
   example?: Example
-) => Promise<EvaluationResult | EvaluationResults>;
+) => Promise<EvaluationResult | EvaluationResult[] | EvaluationResults>;
 
 // Row-level evaluator
 export type EvaluatorT =
@@ -110,7 +110,7 @@ export type EvaluatorT =
       outputs: Record<string, any>;
       referenceOutputs?: Record<string, any>;
       attachments?: Record<string, any>;
-    }) => EvaluationResult | EvaluationResults)
+    }) => EvaluationResult | EvaluationResult[] | EvaluationResults)
   | ((args: {
       run: Run;
       example: Example;
@@ -118,7 +118,7 @@ export type EvaluatorT =
       outputs: Record<string, any>;
       referenceOutputs?: Record<string, any>;
       attachments?: Record<string, any>;
-    }) => Promise<EvaluationResult | EvaluationResults>);
+    }) => Promise<EvaluationResult | EvaluationResult[] | EvaluationResults>);
 
 interface _ForwardResults {
   run: Run;
@@ -877,7 +877,6 @@ export class _ExperimentManager {
     }
 
     await this.client.updateProject(experiment.id, {
-      endTime: new Date().toISOString(),
       metadata: projectMetadata,
     });
   }
@@ -1125,12 +1124,14 @@ async function wrapSummaryEvaluators(
     const wrapperInner = (
       runs: Run[],
       examples: Example[]
-    ): Promise<EvaluationResult | EvaluationResults> => {
+    ): Promise<EvaluationResult | EvaluationResult[] | EvaluationResults> => {
       const wrapperSuperInner = traceable(
         (
           _runs_: string,
           _examples_: string
-        ): Promise<EvaluationResult | EvaluationResults> => {
+        ): Promise<
+          EvaluationResult | EvaluationResult[] | EvaluationResults
+        > => {
           // Check if the evaluator expects an object parameter
           if (evaluator.length === 1) {
             const inputs = examples.map((ex) => ex.inputs);
@@ -1145,7 +1146,7 @@ async function wrapSummaryEvaluators(
                   inputs: Record<string, any>[];
                   outputs: Record<string, any>[];
                   referenceOutputs?: Record<string, any>[];
-                }) => EvaluationResult | EvaluationResults
+                }) => EvaluationResult | EvaluationResult[] | EvaluationResults
               )({
                 runs,
                 examples,

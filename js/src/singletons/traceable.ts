@@ -52,7 +52,7 @@ export const getCurrentRunTree = () => {
       [
         "Could not get the current run tree.",
         "",
-        "Please make sure you are calling this method within a traceable function or the tracing is enabled.",
+        "Please make sure you are calling this method within a traceable function and that tracing is enabled.",
       ].join("\n")
     );
   }

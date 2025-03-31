@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "langsmith"
-version = "0.2.10"
+version = "0.3.20"
 description = "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform."
 authors = ["LangChain <support@langchain.dev>"]
 license = "MIT"
@@ -21,9 +21,6 @@ keywords = [
 ]
 packages = [{ include = "langsmith" }]
 
-[tool.poetry.scripts]
-langsmith = "langsmith.cli.main:main"
-
 [tool.poetry.dependencies]
 python = ">=3.9,<4.0"
 pydantic = [
@@ -37,11 +34,20 @@ requests-toolbelt = "^1.0.0"
 
 # Enabled via `langsmith_pyo3` extra: `pip install langsmith[langsmith_pyo3]`.
 langsmith-pyo3 = { version = "^0.1.0rc2", optional = true }
-# Enabled via `compression` extra: `pip install langsmith[compression]`.
-zstandard = { version = "^0.23.0", optional = true }
+zstandard = "^0.23.0"
+rich = {version = "^13.9.4", optional = true}
+pytest = {version = ">=7.0.0", optional = true}
+packaging = ">=23.2"
+# Enabled via `openai-agents` extra: `pip install langsmith[openai-agents]`
+openai-agents = { version = ">=0.0.3,<0.1", optional = true }
+
+# Enabled via `otel` extra: `pip install langsmith[otel]`
+opentelemetry-sdk = {version = "^1.30.0", optional = true}
+opentelemetry-api = {version = "^1.30.0", optional = true}
+opentelemetry-exporter-otlp-proto-http = {version = "^1.30.0", optional = true}
 
 [tool.poetry.group.dev.dependencies]
-pytest = "^7.3.1"
+pytest = "^8.3.5"
 black = ">=23.3,<25.0"
 mypy = "^1.9.0"
 ruff = "^0.6.9"
@@ -58,7 +64,7 @@ pytest-xdist = "^3.5.0"
 pytest-cov = "^4.1.0"
 dataclasses-json = "^0.6.4"
 types-tqdm = "^4.66.0.20240106"
-vcrpy = "^6.0.1"
+vcrpy = ">=7.0.0"
 fastapi = "^0.115.4"
 uvicorn = "^0.29.0"
 pytest-rerunfailures = "^14.0"
@@ -66,18 +72,25 @@ pytest-socket = "^0.7.0"
 pyperf = "^2.7.0"
 py-spy = "^0.3.14"
 multipart = "^1.0.0"
+# Hack to get tests/integration_tests/test_context_propagation.py to pass
+# TODO: remove
+httpx = ">=0.23.0,<0.28.0"
+rich = "^13.9.4"
 
 [tool.poetry.group.lint.dependencies]
-openai = "^1.10"
+openai = "^1.55"
 
 
 [tool.poetry.group.test.dependencies]
 pytest-socket = "^0.7.0"
+anthropic = "^0.45.0"
 
 [tool.poetry.extras]
 vcr = ["vcrpy"]
 langsmith_pyo3 = ["langsmith-pyo3"]
-compression = ["zstandard"]
+otel = ["opentelemetry-api", "opentelemetry-sdk", "opentelemetry-exporter-otlp-proto-http"]
+pytest = ["pytest", "rich", "vcrpy"]
+openai-agents = ["openai-agents"]
 
 [build-system]
 requires = ["poetry-core"]
@@ -130,3 +143,10 @@ disallow_untyped_defs = "True"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 markers = ["slow: long-running tests"]
+
+[project]
+name = "langsmith"
+dynamic = ["version"]
+
+[tool.poetry.plugins."pytest11"]
+langsmith_plugin = "langsmith.pytest_plugin"

@@ -201,6 +201,99 @@ def _has_pandas() -> bool:
         return False
 
 
+async def test_aevaluate():
+    client = Client()
+    dataset = client.clone_public_dataset(
+        "https://smith.langchain.com/public/2bbf4a10-c3d5-4868-9e96-400df97fed69/d"
+    )
+
+    def accuracy(run: Run, example: Example):
+        pred = run.outputs["output"]  # type: ignore
+        expected = example.outputs["answer"]  # type: ignore
+        return {"score": expected.lower() == pred.lower()}
+
+    async def slow_accuracy(run: Run, example: Example):
+        pred = run.outputs["output"]  # type: ignore
+        expected = example.outputs["answer"]  # type: ignore
+        await asyncio.sleep(2)
+        return {"score": expected.lower() == pred.lower()}
+
+    def precision(runs: Sequence[Run], examples: Sequence[Example]):
+        predictions = [run.outputs["output"].lower() for run in runs]  # type: ignore
+        expected = [example.outputs["answer"].lower() for example in examples]  # type: ignore
+        tp = sum([p == e for p, e in zip(predictions, expected) if p == "yes"])
+        fp = sum([p == "yes" and e == "no" for p, e in zip(predictions, expected)])
+        return {"score": tp / (tp + fp)}
+
+    async def apredict(inputs: dict) -> dict:
+        await asyncio.sleep(0.1)
+        return {"output": "Yes"}
+
+    results = await aevaluate(
+        apredict,
+        data=dataset.name,
+        evaluators=[accuracy, slow_accuracy],
+        summary_evaluators=[precision],
+        experiment_prefix="My Experiment",
+        description="My Experiment Description",
+        metadata={"my-prompt-version": "abcd-1234", "function": "aevaluate"},
+    )
+    assert len(results) == 10
+    if _has_pandas():
+        df = results.to_pandas()
+        assert len(df) == 10
+    all_examples = list(client.list_examples(dataset_name=dataset.name))
+    async for _ in results:
+        pass
+
+    # Wait for there to be same num runs vs. examples
+    def check_run_count():
+        current_runs = list(
+            client.list_runs(project_name=results.experiment_name, is_root=True)
+        )
+        for r in current_runs:
+            assert "accuracy" in r.feedback_stats
+            assert "slow_accuracy" in r.feedback_stats
+        return current_runs, len(current_runs) == len(all_examples)
+
+    final_runs = wait_for(check_run_count, max_sleep_time=60, sleep_time=2)
+
+    assert len(final_runs) == len(
+        all_examples
+    ), f"Expected {len(all_examples)} runs, but got {len(final_runs)}"
+
+    # Run it again with the existing project
+    results2 = await aevaluate(
+        apredict,
+        data=dataset.name,
+        evaluators=[accuracy],
+        summary_evaluators=[precision],
+        experiment=results.experiment_name,
+    )
+    assert len(results2) == 10
+
+    # ... and again with the object
+    experiment = client.read_project(project_name=results.experiment_name)
+    results3 = await aevaluate(
+        apredict,
+        data=dataset.name,
+        evaluators=[accuracy],
+        summary_evaluators=[precision],
+        experiment=experiment,
+    )
+    assert len(results3) == 10
+
+    # ... and again with the ID
+    results4 = await aevaluate(
+        apredict,
+        data=dataset.name,
+        evaluators=[accuracy],
+        summary_evaluators=[precision],
+        experiment=str(experiment.id),
+    )
+    assert len(results4) == 10
+
+
 def test_evaluate():
     client = Client()
     _ = client.clone_public_dataset(
@@ -278,111 +371,6 @@ def test_evaluate():
     # ... and again with the ID
     results4 = evaluate(
         predict,
-        data=client.list_examples(dataset_name=dataset_name, as_of="test_version"),
-        evaluators=[accuracy],
-        summary_evaluators=[precision],
-        experiment=str(experiment.id),
-    )
-    assert len(results4) == 10
-
-
-async def test_aevaluate():
-    client = Client()
-    _ = client.clone_public_dataset(
-        "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/d"
-    )
-    dataset_name = "Evaluate Examples"
-
-    def accuracy(run: Run, example: Example):
-        pred = run.outputs["output"]  # type: ignore
-        expected = example.outputs["answer"]  # type: ignore
-        return {"score": expected.lower() == pred.lower()}
-
-    async def slow_accuracy(run: Run, example: Example):
-        pred = run.outputs["output"]  # type: ignore
-        expected = example.outputs["answer"]  # type: ignore
-        await asyncio.sleep(5)
-        return {"score": expected.lower() == pred.lower()}
-
-    def precision(runs: Sequence[Run], examples: Sequence[Example]):
-        predictions = [run.outputs["output"].lower() for run in runs]  # type: ignore
-        expected = [example.outputs["answer"].lower() for example in examples]  # type: ignore
-        tp = sum([p == e for p, e in zip(predictions, expected) if p == "yes"])
-        fp = sum([p == "yes" and e == "no" for p, e in zip(predictions, expected)])
-        return {"score": tp / (tp + fp)}
-
-    async def apredict(inputs: dict) -> dict:
-        await asyncio.sleep(0.1)
-        return {"output": "Yes"}
-
-    results = await aevaluate(
-        apredict,
-        data=client.list_examples(dataset_name=dataset_name, as_of="test_version"),
-        evaluators=[accuracy, slow_accuracy],
-        summary_evaluators=[precision],
-        experiment_prefix="My Experiment",
-        description="My Experiment Description",
-        metadata={
-            "my-prompt-version": "abcd-1234",
-            "function": "aevaluate",
-        },
-        num_repetitions=2,
-    )
-    assert len(results) == 20
-    if _has_pandas():
-        df = results.to_pandas()
-        assert len(df) == 20
-    examples = client.list_examples(dataset_name=dataset_name, as_of="test_version")
-    all_results = [r async for r in results]
-    all_examples = []
-    for example in examples:
-        count = 0
-        for r in all_results:
-            if r["run"].reference_example_id == example.id:
-                count += 1
-        assert count == 2
-        all_examples.append(example)
-
-    # Wait for there to be 2x runs vs. examples
-    def check_run_count():
-        current_runs = list(
-            client.list_runs(project_name=results.experiment_name, is_root=True)
-        )
-        for r in current_runs:
-            assert "accuracy" in r.feedback_stats
-            assert "slow_accuracy" in r.feedback_stats
-        return current_runs, len(current_runs) == 2 * len(all_examples)
-
-    final_runs = wait_for(check_run_count, max_sleep_time=60, sleep_time=2)
-
-    assert len(final_runs) == 2 * len(
-        all_examples
-    ), f"Expected {2 * len(all_examples)} runs, but got {len(final_runs)}"
-
-    # Run it again with the existing project
-    results2 = await aevaluate(
-        apredict,
-        data=client.list_examples(dataset_name=dataset_name, as_of="test_version"),
-        evaluators=[accuracy],
-        summary_evaluators=[precision],
-        experiment=results.experiment_name,
-    )
-    assert len(results2) == 10
-
-    # ... and again with the object
-    experiment = client.read_project(project_name=results.experiment_name)
-    results3 = await aevaluate(
-        apredict,
-        data=client.list_examples(dataset_name=dataset_name, as_of="test_version"),
-        evaluators=[accuracy],
-        summary_evaluators=[precision],
-        experiment=experiment,
-    )
-    assert len(results3) == 10
-
-    # ... and again with the ID
-    results4 = await aevaluate(
-        apredict,
         data=client.list_examples(dataset_name=dataset_name, as_of="test_version"),
         evaluators=[accuracy],
         summary_evaluators=[precision],
@@ -484,3 +472,79 @@ async def test_aevaluate_good_error():
             predict,
             data=(_ for _ in range(0)),
         )
+
+
+async def test_aevaluate_large_dataset_and_concurrency():
+    client = Client()
+    _ = client.clone_public_dataset(
+        "https://smith.langchain.com/public/2bbf4a10-c3d5-4868-9e96-400df97fed69/d"
+    )
+    dataset_name = "Evaluate Examples"
+
+    async def mock_chat_completion(*, messages):
+        await asyncio.sleep(1)
+        return {
+            "role": "assistant",
+            "content": "Still thinking...",
+        }
+
+    def simulate_conversation_turn(*, existing, model_response):
+        return existing + [
+            model_response,
+            {"role": "human", "content": "Think harder!"},
+        ]
+
+    # Will be traced by default
+    async def target(inputs: dict) -> dict:
+        messages = [
+            {
+                "role": "system",
+                "content": "Come up with a math equation that solves the puzzle.",
+            },
+            # This dataset has inputs as a dict with a "statement" key
+            {"role": "user", "content": "foo"},
+        ]
+        res = await mock_chat_completion(model="gpt-4o-mini", messages=messages)
+        messages = simulate_conversation_turn(existing=messages, model_response=res)
+
+        return {"equation": res}
+
+    async def mock_evaluator_chat_completion(*, model, messages):
+        await asyncio.sleep(2)
+        return {
+            "role": "assistant",
+            "content": str(0.5),
+        }
+
+    async def mock_correctness_evaluator(outputs: dict, reference_outputs: dict):
+        messages = [
+            {"role": "system", "content": "Assign a score to the following output."},
+            {
+                "role": "user",
+                "content": f"""
+Actual: {outputs["equation"]}
+""",
+            },
+        ]
+        res = await mock_evaluator_chat_completion(model="o3-mini", messages=messages)
+        return {
+            "key": "correctness",
+            "score": float(res["content"]),
+            "comment": "The answer was a good attempt, but incorrect.",
+        }
+
+    client = Client()
+
+    start = time.time()
+
+    await client.aevaluate(
+        target,
+        data=client.list_examples(dataset_name=dataset_name, as_of="test_version"),
+        evaluators=[
+            mock_correctness_evaluator,
+        ],
+        max_concurrency=3,
+    )
+
+    finish_time = time.time()
+    assert (finish_time - start) <= 8.5

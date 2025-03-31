@@ -10,7 +10,7 @@ import {
   Example,
   ExampleCreate,
   ExampleUpdate,
-  ExampleUpdateWithId,
+  ExampleUpdateWithoutId,
   Feedback,
   FeedbackConfig,
   FeedbackIngestToken,
@@ -35,13 +35,12 @@ import {
   AnnotationQueue,
   RunWithAnnotationQueueInfo,
   Attachments,
-  ExampleUploadWithAttachments,
   UploadExamplesResponse,
-  ExampleUpdateWithAttachments,
   UpdateExamplesResponse,
   RawExample,
   AttachmentInfo,
   AttachmentData,
+  DatasetVersion,
 } from "./schemas.js";
 import {
   convertLangChainMessageToExample,
@@ -66,7 +65,7 @@ import { parsePromptIdentifier } from "./utils/prompts.js";
 import { raiseForStatus } from "./utils/error.js";
 import { _getFetchImplementation } from "./singletons/fetch.js";
 
-import { stringify as stringifyForTracing } from "./utils/fast-safe-stringify/index.js";
+import { serialize as serializePayloadForTracing } from "./utils/fast-safe-stringify/index.js";
 
 export interface ClientConfig {
   apiUrl?: string;
@@ -87,6 +86,7 @@ export interface ClientConfig {
    * Useful if encountering network rate limits at trace high volumes.
    */
   manualFlushMode?: boolean;
+  tracingSamplingRate?: number;
 }
 
 /**
@@ -282,6 +282,21 @@ export type CreateExampleOptions = {
   split?: string | string[];
   /** The ID of the source run associated with this example. */
   sourceRunId?: string;
+  /** Whether to use the inputs and outputs from the source run. */
+  useSourceRunIO?: boolean;
+  /** Which attachments from the source run to use. */
+  useSourceRunAttachments?: string[];
+  /** Attachments for the example */
+  attachments?: Attachments;
+};
+
+export type CreateProjectParams = {
+  projectName: string;
+  description?: string | null;
+  metadata?: RecordStringAny | null;
+  upsert?: boolean;
+  projectExtra?: RecordStringAny | null;
+  referenceDatasetId?: string | null;
 };
 
 type AutoBatchQueueItem = {
@@ -316,10 +331,10 @@ export function mergeRuntimeEnvIntoRunCreate(run: RunCreate) {
   return run;
 }
 
-const getTracingSamplingRate = () => {
-  const samplingRateStr = getLangSmithEnvironmentVariable(
-    "TRACING_SAMPLING_RATE"
-  );
+const getTracingSamplingRate = (configRate?: number) => {
+  const samplingRateStr =
+    configRate?.toString() ??
+    getLangSmithEnvironmentVariable("TRACING_SAMPLING_RATE");
   if (samplingRateStr === undefined) {
     return undefined;
   }
@@ -373,6 +388,14 @@ const handle429 = async (response?: Response) => {
   return false;
 };
 
+function _formatFeedbackScore(score?: ScoreType): ScoreType | undefined {
+  if (typeof score === "number") {
+    // Truncate at 4 decimal places
+    return Number(score.toFixed(4));
+  }
+  return score;
+}
+
 export class AutoBatchQueue {
   items: {
     action: "create" | "update";
@@ -395,7 +418,7 @@ export class AutoBatchQueue {
       // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/Promise
       itemPromiseResolve = resolve;
     });
-    const size = stringifyForTracing(item.item).length;
+    const size = serializePayloadForTracing(item.item).length;
     this.items.push({
       action: item.action,
       payload: item.item,
@@ -498,7 +521,7 @@ export class Client implements LangSmithTracingClientInterface {
   constructor(config: ClientConfig = {}) {
     const defaultConfig = Client.getDefaultClientConfig();
 
-    this.tracingSampleRate = getTracingSamplingRate();
+    this.tracingSampleRate = getTracingSamplingRate(config.tracingSamplingRate);
     this.apiUrl = trimQuotes(config.apiUrl ?? defaultConfig.apiUrl) ?? "";
     if (this.apiUrl.endsWith("/")) {
       this.apiUrl = this.apiUrl.slice(0, -1);
@@ -565,6 +588,9 @@ export class Client implements LangSmithTracingClientInterface {
     } else if (isLocalhost(this.apiUrl)) {
       this.webUrl = "http://localhost:3000";
       return this.webUrl;
+    } else if (this.apiUrl.endsWith("/api/v1")) {
+      this.webUrl = this.apiUrl.replace("/api/v1", "");
+      return this.webUrl;
     } else if (
       this.apiUrl.includes("/api") &&
       !this.apiUrl.split(".", 1)[0].endsWith("api")
@@ -576,6 +602,9 @@ export class Client implements LangSmithTracingClientInterface {
       return this.webUrl;
     } else if (this.apiUrl.split(".", 1)[0].includes("eu")) {
       this.webUrl = "https://eu.smith.langchain.com";
+      return this.webUrl;
+    } else if (this.apiUrl.split(".", 1)[0].includes("beta")) {
+      this.webUrl = "https://beta.smith.langchain.com";
       return this.webUrl;
     } else {
       this.webUrl = "https://smith.langchain.com";
@@ -731,6 +760,14 @@ export class Client implements LangSmithTracingClientInterface {
     }
   }
 
+  // Allows mocking for tests
+  private _shouldSample(): boolean {
+    if (this.tracingSampleRate === undefined) {
+      return true;
+    }
+    return Math.random() < this.tracingSampleRate;
+  }
+
   private _filterForSampling(
     runs: CreateRunParams[] | UpdateRunParams[],
     patch = false
@@ -750,16 +787,26 @@ export class Client implements LangSmithTracingClientInterface {
       }
       return sampled;
     } else {
+      // For new runs, sample at trace level to maintain consistency
       const sampled = [];
       for (const run of runs) {
-        if (
-          (run.id !== run.trace_id &&
-            !this.filteredPostUuids.has(run.trace_id)) ||
-          Math.random() < this.tracingSampleRate
-        ) {
-          sampled.push(run);
+        const traceId = run.trace_id ?? run.id;
+
+        // If we've already made a decision about this trace, follow it
+        if (this.filteredPostUuids.has(traceId)) {
+          continue;
+        }
+
+        // For new traces, apply sampling
+        if (run.id === traceId) {
+          if (this._shouldSample()) {
+            sampled.push(run);
+          } else {
+            this.filteredPostUuids.add(traceId);
+          }
         } else {
-          this.filteredPostUuids.add(run.id);
+          // Child runs follow their trace's sampling decision
+          sampled.push(run);
         }
       }
       return sampled;
@@ -927,7 +974,7 @@ export class Client implements LangSmithTracingClientInterface {
       {
         method: "POST",
         headers,
-        body: stringifyForTracing(mergedRunCreateParam),
+        body: serializePayloadForTracing(mergedRunCreateParam),
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       }
@@ -984,8 +1031,8 @@ export class Client implements LangSmithTracingClientInterface {
       preparedUpdateParams = standaloneUpdates;
     }
     const rawBatch = {
-      post: this._filterForSampling(preparedCreateParams),
-      patch: this._filterForSampling(preparedUpdateParams, true),
+      post: preparedCreateParams,
+      patch: preparedUpdateParams,
     };
     if (!rawBatch.post.length && !rawBatch.patch.length) {
       return;
@@ -999,16 +1046,17 @@ export class Client implements LangSmithTracingClientInterface {
       const batchItems = rawBatch[key].reverse();
       let batchItem = batchItems.pop();
       while (batchItem !== undefined) {
-        batchChunks[key].push(batchItem);
+        // Type is wrong but this is a deprecated code path anyway
+        batchChunks[key].push(batchItem as any);
         batchItem = batchItems.pop();
       }
     }
     if (batchChunks.post.length > 0 || batchChunks.patch.length > 0) {
-      await this._postBatchIngestRuns(stringifyForTracing(batchChunks));
+      await this._postBatchIngestRuns(serializePayloadForTracing(batchChunks));
     }
   }
 
-  private async _postBatchIngestRuns(body: string) {
+  private async _postBatchIngestRuns(body: Uint8Array) {
     const headers = {
       ...this.headers,
       "Content-Type": "application/json",
@@ -1045,6 +1093,7 @@ export class Client implements LangSmithTracingClientInterface {
     // transform and convert to dicts
     const allAttachments: Record<string, Attachments> = {};
     let preparedCreateParams = [];
+
     for (const create of runCreates ?? []) {
       const preparedCreate = this.prepareRunCreateOrUpdateInputs(create);
       if (
@@ -1127,7 +1176,7 @@ export class Client implements LangSmithTracingClientInterface {
           originalPayload;
         const fields = { inputs, outputs, events };
         // encode the main run payload
-        const stringifiedPayload = stringifyForTracing(payload);
+        const stringifiedPayload = serializePayloadForTracing(payload);
         accumulatedParts.push({
           name: `${method}.${payload.id}`,
           payload: new Blob([stringifiedPayload], {
@@ -1139,7 +1188,7 @@ export class Client implements LangSmithTracingClientInterface {
           if (value === undefined) {
             continue;
           }
-          const stringifiedValue = stringifyForTracing(value);
+          const stringifiedValue = serializePayloadForTracing(value);
           accumulatedParts.push({
             name: `${method}.${payload.id}.${key}`,
             payload: new Blob([stringifiedValue], {
@@ -1285,7 +1334,7 @@ export class Client implements LangSmithTracingClientInterface {
       {
         method: "PATCH",
         headers,
-        body: stringifyForTracing(run),
+        body: serializePayloadForTracing(run),
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       }
@@ -1391,6 +1440,7 @@ export class Client implements LangSmithTracingClientInterface {
    * @param query - The query string to filter by.
    * @param filter - The filter string to apply to the run spans.
    * @param traceFilter - The filter string to apply on the root run of the trace.
+   * @param treeFilter - The filter string to apply on other runs in the trace.
    * @param limit - The maximum number of runs to retrieve.
    * @returns {AsyncIterable<Run>} - The runs.
    *
@@ -1898,14 +1948,7 @@ export class Client implements LangSmithTracingClientInterface {
     upsert = false,
     projectExtra = null,
     referenceDatasetId = null,
-  }: {
-    projectName: string;
-    description?: string | null;
-    metadata?: RecordStringAny | null;
-    upsert?: boolean;
-    projectExtra?: RecordStringAny | null;
-    referenceDatasetId?: string | null;
-  }): Promise<TracerSession> {
+  }: CreateProjectParams): Promise<TracerSession> {
     const upsert_ = upsert ? `?upsert=true` : "";
     const endpoint = `${this.apiUrl}/sessions${upsert_}`;
     const extra: RecordStringAny = projectExtra || {};
@@ -2395,7 +2438,7 @@ export class Client implements LangSmithTracingClientInterface {
     } else if (datasetName !== undefined) {
       datasetId = (await this.readDataset({ datasetName })).id;
     } else {
-      throw new Error("Must provide datasetName or datasetId");
+      throw new Error("Must provide either datasetName or datasetId");
     }
     const response = await this._getResponse(`${path}/${datasetId}/openai_ft`);
     const datasetText = await response.text();
@@ -2478,6 +2521,53 @@ export class Client implements LangSmithTracingClientInterface {
     );
     await raiseForStatus(response, "update dataset");
     return (await response.json()) as Dataset;
+  }
+
+  /**
+   * Updates a tag on a dataset.
+   *
+   * If the tag is already assigned to a different version of this dataset,
+   * the tag will be moved to the new version. The as_of parameter is used to
+   * determine which version of the dataset to apply the new tags to.
+   *
+   * It must be an exact version of the dataset to succeed. You can
+   * use the "readDatasetVersion" method to find the exact version
+   * to apply the tags to.
+   * @param params.datasetId The ID of the dataset to update. Must be provided if "datasetName" is not provided.
+   * @param params.datasetName The name of the dataset to update. Must be provided if "datasetId" is not provided.
+   * @param params.asOf The timestamp of the dataset to apply the new tags to.
+   * @param params.tag The new tag to apply to the dataset.
+   */
+  public async updateDatasetTag(props: {
+    datasetId?: string;
+    datasetName?: string;
+    asOf: string | Date;
+    tag: string;
+  }): Promise<void> {
+    const { datasetId, datasetName, asOf, tag } = props;
+
+    if (!datasetId && !datasetName) {
+      throw new Error("Must provide either datasetName or datasetId");
+    }
+    const _datasetId =
+      datasetId ?? (await this.readDataset({ datasetName })).id;
+    assertUuid(_datasetId);
+
+    const response = await this.caller.call(
+      _getFetchImplementation(),
+      `${this.apiUrl}/datasets/${_datasetId}/tags`,
+      {
+        method: "PUT",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          as_of: typeof asOf === "string" ? asOf : asOf.toISOString(),
+          tag,
+        }),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+    await raiseForStatus(response, "update dataset tags");
   }
 
   public async deleteDataset({
@@ -2620,113 +2710,182 @@ export class Client implements LangSmithTracingClientInterface {
     return result["examples"] as ExampleSearch[];
   }
 
+  public async createExample(update: ExampleCreate): Promise<Example>;
+
+  /**
+   * @deprecated This signature is deprecated, use createExample(update: ExampleCreate) instead
+   */
   public async createExample(
     inputs: KVMap,
     outputs: KVMap,
-    {
-      datasetId,
-      datasetName,
-      createdAt,
-      exampleId,
-      metadata,
-      split,
-      sourceRunId,
-    }: CreateExampleOptions
+    options: CreateExampleOptions
+  ): Promise<Example>;
+
+  public async createExample(
+    inputsOrUpdate: KVMap | ExampleCreate,
+    outputs?: KVMap,
+    options?: CreateExampleOptions
   ): Promise<Example> {
-    let datasetId_ = datasetId;
-    if (datasetId_ === undefined && datasetName === undefined) {
+    if (isExampleCreate(inputsOrUpdate)) {
+      if (outputs !== undefined || options !== undefined) {
+        throw new Error(
+          "Cannot provide outputs or options when using ExampleCreate object"
+        );
+      }
+    }
+
+    let datasetId_ = outputs ? options?.datasetId : inputsOrUpdate.dataset_id;
+    const datasetName_ = outputs
+      ? options?.datasetName
+      : inputsOrUpdate.dataset_name;
+    if (datasetId_ === undefined && datasetName_ === undefined) {
       throw new Error("Must provide either datasetName or datasetId");
-    } else if (datasetId_ !== undefined && datasetName !== undefined) {
+    } else if (datasetId_ !== undefined && datasetName_ !== undefined) {
       throw new Error("Must provide either datasetName or datasetId, not both");
     } else if (datasetId_ === undefined) {
-      const dataset = await this.readDataset({ datasetName });
+      const dataset = await this.readDataset({ datasetName: datasetName_ });
       datasetId_ = dataset.id;
     }
 
-    const createdAt_ = createdAt || new Date();
-    const data: ExampleCreate = {
-      dataset_id: datasetId_,
-      inputs,
-      outputs,
-      created_at: createdAt_?.toISOString(),
-      id: exampleId,
-      metadata,
-      split,
-      source_run_id: sourceRunId,
-    };
+    const createdAt_ =
+      (outputs ? options?.createdAt : inputsOrUpdate.created_at) || new Date();
+    let data: ExampleCreate;
+    if (!isExampleCreate(inputsOrUpdate)) {
+      data = {
+        inputs: inputsOrUpdate,
+        outputs,
+        created_at: createdAt_?.toISOString(),
+        id: options?.exampleId,
+        metadata: options?.metadata,
+        split: options?.split,
+        source_run_id: options?.sourceRunId,
+        use_source_run_io: options?.useSourceRunIO,
+        use_source_run_attachments: options?.useSourceRunAttachments,
+        attachments: options?.attachments,
+      };
+    } else {
+      data = inputsOrUpdate;
+    }
 
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/examples`,
-      {
-        method: "POST",
-        headers: { ...this.headers, "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
-      }
+    const response = await this._uploadExamplesMultipart(datasetId_, [data]);
+    const example = await this.readExample(
+      response.example_ids?.[0] ?? uuid.v4()
     );
-
-    await raiseForStatus(response, "create example");
-    const result = await response.json();
-    return result as Example;
+    return example;
   }
 
+  public async createExamples(uploads: ExampleCreate[]): Promise<Example[]>;
+  /** @deprecated Use the uploads-only overload instead */
   public async createExamples(props: {
-    inputs: Array<KVMap>;
+    inputs?: Array<KVMap>;
     outputs?: Array<KVMap>;
     metadata?: Array<KVMap>;
     splits?: Array<string | Array<string>>;
     sourceRunIds?: Array<string>;
+    useSourceRunIOs?: Array<boolean>;
+    useSourceRunAttachments?: Array<string[]>;
+    attachments?: Array<Attachments>;
     exampleIds?: Array<string>;
     datasetId?: string;
     datasetName?: string;
-  }): Promise<Example[]> {
+  }): Promise<Example[]>;
+  public async createExamples(
+    propsOrUploads:
+      | ExampleCreate[]
+      | {
+          inputs?: Array<KVMap>;
+          outputs?: Array<KVMap>;
+          metadata?: Array<KVMap>;
+          splits?: Array<string | Array<string>>;
+          sourceRunIds?: Array<string>;
+          useSourceRunIOs?: Array<boolean>;
+          useSourceRunAttachments?: Array<string[]>;
+          attachments?: Array<Attachments>;
+          exampleIds?: Array<string>;
+          datasetId?: string;
+          datasetName?: string;
+        }
+  ): Promise<Example[]> {
+    if (Array.isArray(propsOrUploads)) {
+      if (propsOrUploads.length === 0) {
+        return [];
+      }
+
+      const uploads = propsOrUploads;
+      let datasetId_ = uploads[0].dataset_id;
+      const datasetName_ = uploads[0].dataset_name;
+
+      if (datasetId_ === undefined && datasetName_ === undefined) {
+        throw new Error("Must provide either datasetName or datasetId");
+      } else if (datasetId_ !== undefined && datasetName_ !== undefined) {
+        throw new Error(
+          "Must provide either datasetName or datasetId, not both"
+        );
+      } else if (datasetId_ === undefined) {
+        const dataset = await this.readDataset({ datasetName: datasetName_ });
+        datasetId_ = dataset.id;
+      }
+
+      const response = await this._uploadExamplesMultipart(datasetId_, uploads);
+      const examples = await Promise.all(
+        response.example_ids.map((id) => this.readExample(id))
+      );
+      return examples;
+    }
+
     const {
       inputs,
       outputs,
       metadata,
+      splits,
       sourceRunIds,
+      useSourceRunIOs,
+      useSourceRunAttachments,
+      attachments,
       exampleIds,
       datasetId,
       datasetName,
-    } = props;
+    } = propsOrUploads;
+
+    if (inputs === undefined) {
+      throw new Error("Must provide inputs when using legacy parameters");
+    }
+
     let datasetId_ = datasetId;
-    if (datasetId_ === undefined && datasetName === undefined) {
+    const datasetName_ = datasetName;
+
+    if (datasetId_ === undefined && datasetName_ === undefined) {
       throw new Error("Must provide either datasetName or datasetId");
-    } else if (datasetId_ !== undefined && datasetName !== undefined) {
+    } else if (datasetId_ !== undefined && datasetName_ !== undefined) {
       throw new Error("Must provide either datasetName or datasetId, not both");
     } else if (datasetId_ === undefined) {
-      const dataset = await this.readDataset({ datasetName });
+      const dataset = await this.readDataset({ datasetName: datasetName_ });
       datasetId_ = dataset.id;
     }
 
-    const formattedExamples = inputs.map((input, idx) => {
+    const formattedExamples: ExampleCreate[] = inputs.map((input, idx) => {
       return {
         dataset_id: datasetId_,
         inputs: input,
-        outputs: outputs ? outputs[idx] : undefined,
-        metadata: metadata ? metadata[idx] : undefined,
-        split: props.splits ? props.splits[idx] : undefined,
-        id: exampleIds ? exampleIds[idx] : undefined,
-        source_run_id: sourceRunIds ? sourceRunIds[idx] : undefined,
-      };
+        outputs: outputs?.[idx],
+        metadata: metadata?.[idx],
+        split: splits?.[idx],
+        id: exampleIds?.[idx],
+        attachments: attachments?.[idx],
+        source_run_id: sourceRunIds?.[idx],
+        use_source_run_io: useSourceRunIOs?.[idx],
+        use_source_run_attachments: useSourceRunAttachments?.[idx],
+      } as ExampleCreate;
     });
 
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/examples/bulk`,
-      {
-        method: "POST",
-        headers: { ...this.headers, "Content-Type": "application/json" },
-        body: JSON.stringify(formattedExamples),
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
-      }
+    const response = await this._uploadExamplesMultipart(
+      datasetId_,
+      formattedExamples
     );
-    await raiseForStatus(response, "create examples");
-    const result = await response.json();
-    return result as Example[];
+    const examples = await Promise.all(
+      response.example_ids.map((id) => this.readExample(id))
+    );
+    return examples;
   }
 
   public async createLLMExample(
@@ -2765,7 +2924,6 @@ export class Client implements LangSmithTracingClientInterface {
     const { attachment_urls, ...rest } = rawExample;
     const example: Example = rest;
     if (attachment_urls) {
-      // add attachments back to the example
       example.attachments = Object.entries(attachment_urls).reduce(
         (acc, [key, value]) => {
           acc[key.slice("attachment.".length)] = {
@@ -2901,42 +3059,124 @@ export class Client implements LangSmithTracingClientInterface {
     await response.json();
   }
 
+  /**
+   * @deprecated This signature is deprecated, use updateExample(update: ExampleUpdate) instead
+   */
   public async updateExample(
     exampleId: string,
-    update: ExampleUpdate
+    update: ExampleUpdateWithoutId
+  ): Promise<object>;
+
+  public async updateExample(update: ExampleUpdate): Promise<object>;
+
+  public async updateExample(
+    exampleIdOrUpdate: string | ExampleUpdate,
+    update?: ExampleUpdateWithoutId
   ): Promise<object> {
+    let exampleId: string;
+    if (update) {
+      exampleId = exampleIdOrUpdate as string;
+    } else {
+      exampleId = (exampleIdOrUpdate as ExampleUpdate).id;
+    }
+
     assertUuid(exampleId);
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/examples/${exampleId}`,
-      {
-        method: "PATCH",
-        headers: { ...this.headers, "Content-Type": "application/json" },
-        body: JSON.stringify(update),
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
-      }
-    );
-    await raiseForStatus(response, "update example");
-    const result = await response.json();
-    return result;
+
+    let updateToUse: ExampleUpdate;
+    if (update) {
+      updateToUse = { id: exampleId, ...update };
+    } else {
+      updateToUse = exampleIdOrUpdate as ExampleUpdate;
+    }
+
+    let datasetId: string;
+    if (updateToUse.dataset_id !== undefined) {
+      datasetId = updateToUse.dataset_id;
+    } else {
+      const example = await this.readExample(exampleId);
+      datasetId = example.dataset_id;
+    }
+
+    return this._updateExamplesMultipart(datasetId, [updateToUse]);
   }
 
-  public async updateExamples(update: ExampleUpdateWithId[]): Promise<object> {
+  public async updateExamples(update: ExampleUpdate[]): Promise<object> {
+    // We will naively get dataset id from first example and assume it works for all
+    let datasetId: string;
+    if (update[0].dataset_id === undefined) {
+      const example = await this.readExample(update[0].id);
+      datasetId = example.dataset_id;
+    } else {
+      datasetId = update[0].dataset_id;
+    }
+
+    return this._updateExamplesMultipart(datasetId, update);
+  }
+
+  /**
+   * Get dataset version by closest date or exact tag.
+   *
+   * Use this to resolve the nearest version to a given timestamp or for a given tag.
+   *
+   * @param options The options for getting the dataset version
+   * @param options.datasetId The ID of the dataset
+   * @param options.datasetName The name of the dataset
+   * @param options.asOf The timestamp of the dataset to retrieve
+   * @param options.tag The tag of the dataset to retrieve
+   * @returns The dataset version
+   */
+  public async readDatasetVersion({
+    datasetId,
+    datasetName,
+    asOf,
+    tag,
+  }: {
+    datasetId?: string;
+    datasetName?: string;
+    asOf?: string | Date;
+    tag?: string;
+  }): Promise<DatasetVersion> {
+    let resolvedDatasetId: string;
+    if (!datasetId) {
+      const dataset = await this.readDataset({ datasetName });
+      resolvedDatasetId = dataset.id;
+    } else {
+      resolvedDatasetId = datasetId;
+    }
+
+    assertUuid(resolvedDatasetId);
+
+    if ((asOf && tag) || (!asOf && !tag)) {
+      throw new Error("Exactly one of asOf and tag must be specified.");
+    }
+
+    const params = new URLSearchParams();
+    if (asOf !== undefined) {
+      params.append(
+        "as_of",
+        typeof asOf === "string" ? asOf : asOf.toISOString()
+      );
+    }
+    if (tag !== undefined) {
+      params.append("tag", tag);
+    }
+
     const response = await this.caller.call(
       _getFetchImplementation(),
-      `${this.apiUrl}/examples/bulk`,
+      `${
+        this.apiUrl
+      }/datasets/${resolvedDatasetId}/version?${params.toString()}`,
       {
-        method: "PATCH",
-        headers: { ...this.headers, "Content-Type": "application/json" },
-        body: JSON.stringify(update),
+        method: "GET",
+        headers: { ...this.headers },
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       }
     );
-    await raiseForStatus(response, "update examples");
-    const result = await response.json();
-    return result;
+
+    await raiseForStatus(response, "read dataset version");
+
+    return await response.json();
   }
 
   public async listDatasetSplits({
@@ -3131,7 +3371,7 @@ export class Client implements LangSmithTracingClientInterface {
       id: feedbackId ?? uuid.v4(),
       run_id: runId,
       key,
-      score,
+      score: _formatFeedbackScore(score),
       value,
       correction,
       comment,
@@ -3168,7 +3408,7 @@ export class Client implements LangSmithTracingClientInterface {
   ): Promise<void> {
     const feedbackUpdate: FeedbackUpdate = {};
     if (score !== undefined && score !== null) {
-      feedbackUpdate["score"] = score;
+      feedbackUpdate["score"] = _formatFeedbackScore(score);
     }
     if (value !== undefined && value !== null) {
       feedbackUpdate["value"] = value;
@@ -3257,10 +3497,10 @@ export class Client implements LangSmithTracingClientInterface {
    * applications the ability to submit feedback without needing
    * to expose an API key.
    *
-   * @param runId - The ID of the run.
-   * @param feedbackKey - The feedback key.
-   * @param options - Additional options for the token.
-   * @param options.expiration - The expiration time for the token.
+   * @param runId The ID of the run.
+   * @param feedbackKey The feedback key.
+   * @param options Additional options for the token.
+   * @param options.expiration The expiration time for the token.
    *
    * @returns A promise that resolves to a FeedbackIngestToken.
    */
@@ -3385,11 +3625,13 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   _selectEvalResults(
-    results: EvaluationResult | EvaluationResults
+    results: EvaluationResult | EvaluationResult[] | EvaluationResults
   ): Array<EvaluationResult> {
     let results_: Array<EvaluationResult>;
     if ("results" in results) {
       results_ = results.results;
+    } else if (Array.isArray(results)) {
+      results_ = results;
     } else {
       results_ = [results];
     }
@@ -3397,7 +3639,10 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   async _logEvaluationFeedback(
-    evaluatorResponse: EvaluationResult | EvaluationResults,
+    evaluatorResponse:
+      | EvaluationResult
+      | EvaluationResult[]
+      | EvaluationResults,
     run?: Run,
     sourceInfo?: { [key: string]: any }
   ): Promise<[results: EvaluationResult[], feedbacks: Feedback[]]> {
@@ -3436,7 +3681,10 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   public async logEvaluationFeedback(
-    evaluatorResponse: EvaluationResult | EvaluationResults,
+    evaluatorResponse:
+      | EvaluationResult
+      | EvaluationResult[]
+      | EvaluationResults,
     run?: Run,
     sourceInfo?: { [key: string]: any }
   ): Promise<EvaluationResult[]> {
@@ -3983,7 +4231,14 @@ export class Client implements LangSmithTracingClientInterface {
    */
   public async updateExamplesMultipart(
     datasetId: string,
-    updates: ExampleUpdateWithAttachments[] = []
+    updates: ExampleUpdate[] = []
+  ): Promise<UpdateExamplesResponse> {
+    return this._updateExamplesMultipart(datasetId, updates);
+  }
+
+  private async _updateExamplesMultipart(
+    datasetId: string,
+    updates: ExampleUpdate[] = []
   ): Promise<UpdateExamplesResponse> {
     if (!(await this._getMultiPartSupport())) {
       throw new Error(
@@ -4002,15 +4257,15 @@ export class Client implements LangSmithTracingClientInterface {
       };
 
       // Add main example data
-      const stringifiedExample = stringifyForTracing(exampleBody);
+      const stringifiedExample = serializePayloadForTracing(exampleBody);
       const exampleBlob = new Blob([stringifiedExample], {
         type: "application/json",
       });
       formData.append(exampleId, exampleBlob);
 
-      // Add inputs
+      // Add inputs if present
       if (example.inputs) {
-        const stringifiedInputs = stringifyForTracing(example.inputs);
+        const stringifiedInputs = serializePayloadForTracing(example.inputs);
         const inputsBlob = new Blob([stringifiedInputs], {
           type: "application/json",
         });
@@ -4019,7 +4274,7 @@ export class Client implements LangSmithTracingClientInterface {
 
       // Add outputs if present
       if (example.outputs) {
-        const stringifiedOutputs = stringifyForTracing(example.outputs);
+        const stringifiedOutputs = serializePayloadForTracing(example.outputs);
         const outputsBlob = new Blob([stringifiedOutputs], {
           type: "application/json",
         });
@@ -4046,7 +4301,7 @@ export class Client implements LangSmithTracingClientInterface {
       }
 
       if (example.attachments_operations) {
-        const stringifiedAttachmentsOperations = stringifyForTracing(
+        const stringifiedAttachmentsOperations = serializePayloadForTracing(
           example.attachments_operations
         );
         const attachmentsOperationsBlob = new Blob(
@@ -4062,9 +4317,10 @@ export class Client implements LangSmithTracingClientInterface {
       }
     }
 
+    const datasetIdToUse = datasetId ?? updates[0]?.dataset_id;
     const response = await this.caller.call(
       _getFetchImplementation(),
-      `${this.apiUrl}/v1/platform/datasets/${datasetId}/examples`,
+      `${this.apiUrl}/v1/platform/datasets/${datasetIdToUse}/examples`,
       {
         method: "PATCH",
         headers: this.headers,
@@ -4079,10 +4335,18 @@ export class Client implements LangSmithTracingClientInterface {
    * Upload examples with attachments using multipart form data.
    * @param uploads List of ExampleUploadWithAttachments objects to upload
    * @returns Promise with the upload response
+   * @deprecated This method is deprecated and will be removed in future LangSmith versions, please use `createExamples` instead
    */
   public async uploadExamplesMultipart(
     datasetId: string,
-    uploads: ExampleUploadWithAttachments[] = []
+    uploads: ExampleCreate[] = []
+  ): Promise<UploadExamplesResponse> {
+    return this._uploadExamplesMultipart(datasetId, uploads);
+  }
+
+  private async _uploadExamplesMultipart(
+    datasetId: string,
+    uploads: ExampleCreate[] = []
   ): Promise<UploadExamplesResponse> {
     if (!(await this._getMultiPartSupport())) {
       throw new Error(
@@ -4099,25 +4363,34 @@ export class Client implements LangSmithTracingClientInterface {
         created_at: example.created_at,
         ...(example.metadata && { metadata: example.metadata }),
         ...(example.split && { split: example.split }),
+        ...(example.source_run_id && { source_run_id: example.source_run_id }),
+        ...(example.use_source_run_io && {
+          use_source_run_io: example.use_source_run_io,
+        }),
+        ...(example.use_source_run_attachments && {
+          use_source_run_attachments: example.use_source_run_attachments,
+        }),
       };
 
       // Add main example data
-      const stringifiedExample = stringifyForTracing(exampleBody);
+      const stringifiedExample = serializePayloadForTracing(exampleBody);
       const exampleBlob = new Blob([stringifiedExample], {
         type: "application/json",
       });
       formData.append(exampleId, exampleBlob);
 
-      // Add inputs
-      const stringifiedInputs = stringifyForTracing(example.inputs);
-      const inputsBlob = new Blob([stringifiedInputs], {
-        type: "application/json",
-      });
-      formData.append(`${exampleId}.inputs`, inputsBlob);
+      // Add inputs if present
+      if (example.inputs) {
+        const stringifiedInputs = serializePayloadForTracing(example.inputs);
+        const inputsBlob = new Blob([stringifiedInputs], {
+          type: "application/json",
+        });
+        formData.append(`${exampleId}.inputs`, inputsBlob);
+      }
 
       // Add outputs if present
       if (example.outputs) {
-        const stringifiedOutputs = stringifyForTracing(example.outputs);
+        const stringifiedOutputs = serializePayloadForTracing(example.outputs);
         const outputsBlob = new Blob([stringifiedOutputs], {
           type: "application/json",
         });
@@ -4172,7 +4445,6 @@ export class Client implements LangSmithTracingClientInterface {
     }
 
     const [owner, promptName] = parsePromptIdentifier(promptIdentifier);
-
     if (!(await this._currentTenantIsOwner(owner))) {
       throw await this._ownerConflictError("update a prompt", owner);
     }
@@ -4470,4 +4742,8 @@ export interface LangSmithTracingClientInterface {
   createRun: (run: CreateRunParams) => Promise<void>;
 
   updateRun: (runId: string, run: RunUpdate) => Promise<void>;
+}
+
+function isExampleCreate(input: KVMap | ExampleCreate): input is ExampleCreate {
+  return "dataset_id" in input || "dataset_name" in input;
 }
