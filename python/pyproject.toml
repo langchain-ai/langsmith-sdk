@@ -47,7 +47,7 @@ opentelemetry-api = {version = "^1.30.0", optional = true}
 opentelemetry-exporter-otlp-proto-http = {version = "^1.30.0", optional = true}
 
 [tool.poetry.group.dev.dependencies]
-pytest = "^7.3.1"
+pytest = "^8.3.5"
 black = ">=23.3,<25.0"
 mypy = "^1.9.0"
 ruff = "^0.6.9"
@@ -64,7 +64,7 @@ pytest-xdist = "^3.5.0"
 pytest-cov = "^4.1.0"
 dataclasses-json = "^0.6.4"
 types-tqdm = "^4.66.0.20240106"
-vcrpy = "^6.0.1"
+vcrpy = ">=7.0.0"
 fastapi = "^0.115.4"
 uvicorn = "^0.29.0"
 pytest-rerunfailures = "^14.0"
@@ -75,6 +75,7 @@ multipart = "^1.0.0"
 # Hack to get tests/integration_tests/test_context_propagation.py to pass
 # TODO: remove
 httpx = ">=0.23.0,<0.28.0"
+rich = "^13.9.4"
 
 [tool.poetry.group.lint.dependencies]
 openai = "^1.55"
