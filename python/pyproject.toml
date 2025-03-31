@@ -76,6 +76,7 @@ multipart = "^1.0.0"
 # TODO: remove
 httpx = ">=0.23.0,<0.28.0"
 rich = "^13.9.4"
+pytest-retry = "^1.7.0"
 
 [tool.poetry.group.lint.dependencies]
 openai = "^1.55"
