@@ -4085,7 +4085,7 @@ class Client:
                 )
             )
 
-            inputsb = _dumps_json(example.inputs)
+            inputsb = _dumps_json(example.inputs or {})
 
             parts.append(
                 (
@@ -4099,7 +4099,7 @@ class Client:
                 )
             )
 
-            outputsb = _dumps_json(example.outputs)
+            outputsb = _dumps_json(example.outputs or {})
             parts.append(
                 (
                     f"{example_id}.outputs",
