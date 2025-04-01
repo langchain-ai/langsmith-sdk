@@ -1,11 +1,9 @@
 import datetime
 import logging
 import uuid
-import warnings
-from typing import Any, Dict, Optional, cast
+from typing import Dict, Optional
 
 from langsmith import run_trees as rt
-from langsmith.run_helpers import _VALID_RUN_TYPES
 
 try:
     from agents import tracing  # type: ignore[import]
@@ -92,6 +90,10 @@ if HAVE_AGENTS:
         Args:
             client: An instance of langsmith.client.Client. If not provided,
                 a default client is created.
+            metadata: Metadata to associate with all traces.
+            tags: Tags to associate with all traces.
+            project_name: LangSmith project to trace to.
+            name: Name of the root trace.
 
         Example:
             .. code-block:: python
@@ -138,54 +140,27 @@ if HAVE_AGENTS:
         def __init__(
             self,
             client: Optional[ls_client.Client] = None,
-            langsmith_extra: Optional[Dict[str, Any]] = None,
+            *,
+            metadata: Optional[dict] = None,
+            tags: Optional[list[str]] = None,
+            project_name: Optional[str] = None,
+            name: Optional[str] = None,
         ):
             self.client = client or rt.get_cached_client()
+            self._metadata = metadata
+            self._tags = tags
+            self._project_name = project_name
+            self._name = name
+
             self._runs: Dict[str, str] = {}
-            self._langsmith_extra = (
-                self._validate_langsmith_extra(langsmith_extra)
-                if langsmith_extra
-                else {}
-            )
-
-        def _validate_langsmith_extra(self, extra: Dict[str, Any]) -> Dict[str, Any]:
-            allowed_keys = {
-                "name",
-                "metadata",
-                "tags",
-                "project_name",
-                "client",
-                "run_type",
-            }
-            filtered_extra = {k: v for k, v in extra.items() if k in allowed_keys}
-            invalid_keys = set(extra.keys()) - allowed_keys
-            if invalid_keys:
-                logger.warning(
-                    f"Invalid keys in langsmith_extra will be ignored: {invalid_keys}. "
-                    f"Allowed keys are: {allowed_keys}"
-                )
-            if "run_type" in filtered_extra:
-                run_type = cast(ls_client.RUN_TYPE_T, filtered_extra["run_type"])
-                if run_type not in _VALID_RUN_TYPES:
-                    warnings.warn(
-                        f"Unrecognized run_type: {run_type}. "
-                        f"Must be one of: {_VALID_RUN_TYPES}."
-                        f" Did you mean to use a different name instead?"
-                    )
-                    filtered_extra.pop("run_type")
-            if "metadata" in filtered_extra:
-                metadata = filtered_extra.pop("metadata")
-                if not isinstance(metadata, dict):
-                    warnings.warn(
-                        f"metadata must be a dictionary, got {type(metadata)}. "
-                    )
-                    metadata = {}
-                filtered_extra["extra"] = {"metadata": metadata}
-
-            return filtered_extra
 
         def on_trace_start(self, trace: tracing.Trace) -> None:
-            run_name = trace.name if trace.name else "Agent workflow"
+            if self._name:
+                run_name = self._name
+            elif trace.name:
+                run_name = trace.name
+            else:
+                run_name = "Agent workflow"
             trace_run_id = str(uuid.uuid4())
             self._runs[trace.trace_id] = trace_run_id
 
@@ -194,28 +169,21 @@ if HAVE_AGENTS:
                     inputs={},
                     id=trace_run_id,
                     revision_id=None,
+                    run_type="chain",
+                    name=run_name,
+                    extra={"metadata": self._metadata} if self._metadata else None,
+                    tags=self._tags,
                 )
-                if "name" not in self._langsmith_extra:
-                    run_data["name"] = run_name
-                if "run_type" not in self._langsmith_extra:
-                    run_data["run_type"] = "chain"
-                self.client.create_run(**run_data, **self._langsmith_extra)
+                self.client.create_run(**run_data)
             except Exception as e:
                 logger.exception(f"Error creating trace run: {e}")
 
         def on_trace_end(self, trace: tracing.Trace) -> None:
             run_id = self._runs.pop(trace.trace_id, None)
             trace_dict = trace.export() or {}
-            metadata = trace_dict.get("metadata") or {}
+            metadata = {**(trace_dict.get("metadata") or {}), **(self._metadata or {})}
             if run_id:
                 try:
-                    # Merge with existing metadata if present
-                    if (
-                        "extra" in self._langsmith_extra
-                        and "metadata" in self._langsmith_extra["extra"]
-                    ):
-                        user_metadata = self._langsmith_extra["extra"]["metadata"]
-                        metadata.update(user_metadata)
                     self.client.update_run(run_id=run_id, extra={"metadata": metadata})
                 except Exception as e:
                     logger.exception(f"Error updating trace run: {e}")
