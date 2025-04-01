@@ -572,6 +572,7 @@ class _LangSmithTestSuite:
         pytest_plugin=None,
         pytest_nodeid=None,
     ) -> None:
+        inputs = inputs or {}
         if pytest_plugin and pytest_nodeid:
             update = {"inputs": inputs, "reference_outputs": outputs}
             update = {k: v for k, v in update.items() if v is not None}
@@ -592,7 +593,7 @@ class _LangSmithTestSuite:
             )
         else:
             if (
-                (inputs is not None and inputs != example.inputs)
+                (inputs != example.inputs)
                 or (outputs is not None and outputs != example.outputs)
                 or (metadata is not None and metadata != example.metadata)
                 or str(example.dataset_id) != str(self.id)
