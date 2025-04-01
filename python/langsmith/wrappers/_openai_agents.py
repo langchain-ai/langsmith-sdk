@@ -163,16 +163,18 @@ if HAVE_AGENTS:
                 run_name = "Agent workflow"
             trace_run_id = str(uuid.uuid4())
             self._runs[trace.trace_id] = trace_run_id
+            run_extra = {"metadata": self._metadata} if self._metadata else {}
 
             try:
                 run_data: dict = dict(
+                    name=run_name,
                     inputs={},
+                    run_type="chain",
                     id=trace_run_id,
                     revision_id=None,
-                    run_type="chain",
-                    name=run_name,
-                    extra={"metadata": self._metadata} if self._metadata else None,
+                    extra=run_extra,
                     tags=self._tags,
+                    project_name=self._project_name,
                 )
                 self.client.create_run(**run_data)
             except Exception as e:
