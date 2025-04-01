@@ -1583,8 +1583,12 @@ def _get_inputs_and_attachments_safe(
         return {"args": args, "kwargs": kwargs}, {}
 
 
-def _set_tracing_context(context: Dict[str, Any]):
+def _set_tracing_context(context: Optional[Dict[str, Any]] = None):
     """Set the tracing context."""
+    if context is None:
+        for k, v in _CONTEXT_KEYS.items():
+            v.set(None)
+        return
     for k, v in context.items():
         var = _CONTEXT_KEYS[k]
         var.set(v)
