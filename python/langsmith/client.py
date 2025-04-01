@@ -4085,34 +4085,33 @@ class Client:
                 )
             )
 
-            if example.inputs:
-                inputsb = _dumps_json(example.inputs)
 
-                parts.append(
-                    (
-                        f"{example_id}.inputs",
-                        (
-                            None,
-                            inputsb,
-                            "application/json",
-                            {},
-                        ),
-                    )
-                )
+            inputsb = _dumps_json(example.inputs)
 
-            if example.outputs:
-                outputsb = _dumps_json(example.outputs)
-                parts.append(
+            parts.append(
+                (
+                    f"{example_id}.inputs",
                     (
-                        f"{example_id}.outputs",
-                        (
-                            None,
-                            outputsb,
-                            "application/json",
-                            {},
-                        ),
-                    )
+                        None,
+                        inputsb,
+                        "application/json",
+                        {},
+                    ),
                 )
+            )
+
+            outputsb = _dumps_json(example.outputs)
+            parts.append(
+                (
+                    f"{example_id}.outputs",
+                    (
+                        None,
+                        outputsb,
+                        "application/json",
+                        {},
+                    ),
+                )
+            )
 
             if example.attachments:
                 for name, attachment in example.attachments.items():
