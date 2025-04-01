@@ -4085,7 +4085,6 @@ class Client:
                 )
             )
 
-
             inputsb = _dumps_json(example.inputs)
 
             parts.append(

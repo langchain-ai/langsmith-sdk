@@ -566,7 +566,7 @@ class _LangSmithTestSuite:
         self,
         example_id: uuid.UUID,
         *,
-        inputs: Optional[dict] = None,
+        inputs: Optional[dict] = {},
         outputs: Optional[dict] = None,
         metadata: Optional[dict] = None,
         pytest_plugin=None,
