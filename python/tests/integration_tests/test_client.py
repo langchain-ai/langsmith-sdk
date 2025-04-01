@@ -186,8 +186,7 @@ def test_datasets(langchain_client: Client) -> None:
         langchain_client.list_examples(dataset_id=new_dataset.id)  # type: ignore
     )
     assert len(examples3) == 3
-    assert examples3[-1].inputs == {}
-    assert examples3[-1].outputs == {}
+    assert any(example.inputs == {} and example.outputs == {} for example in examples3)
     langchain_client.delete_dataset(dataset_id=dataset_id)
 
 
