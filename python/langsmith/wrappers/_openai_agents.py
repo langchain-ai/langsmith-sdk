@@ -199,7 +199,7 @@ if HAVE_AGENTS:
 
             try:
                 run_data: dict = dict(
-                    run_name=run_name,
+                    name=run_name,
                     run_type=run_type,
                     id=span_run_id,
                     parent_run_id=parent_run_id,
