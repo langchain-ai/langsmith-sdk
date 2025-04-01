@@ -203,15 +203,11 @@ if HAVE_AGENTS:
                     parent_run_id=parent_run_id,
                     inputs=extracted.get("inputs", {}),
                 )
-                if "name" not in self._langsmith_extra:
-                    run_data["name"] = run_name
-                if "run_type" not in self._langsmith_extra:
-                    run_data["run_type"] = run_type
                 if span.started_at:
                     run_data["start_time"] = datetime.datetime.fromisoformat(
                         span.started_at
                     )
-                self.client.create_run(**run_data, **self._langsmith_extra)
+                self.client.create_run(**run_data)
             except Exception as e:
                 logger.exception(f"Error creating span run: {e}")
 
@@ -226,13 +222,6 @@ if HAVE_AGENTS:
                 metadata["openai_trace_id"] = span.trace_id
                 metadata["openai_span_id"] = span.span_id
 
-                # Merge with existing metadata from langsmith_extra if it exists
-                if (
-                    "extra" in self._langsmith_extra
-                    and "metadata" in self._langsmith_extra["extra"]
-                ):
-                    user_metadata = self._langsmith_extra["extra"]["metadata"]
-                    metadata.update(user_metadata)
                 extracted["metadata"] = metadata
                 run_data: dict = dict(
                     run_id=run_id,
