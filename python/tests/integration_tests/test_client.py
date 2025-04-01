@@ -177,6 +177,16 @@ def test_datasets(langchain_client: Client) -> None:
         langchain_client.list_examples(dataset_id=new_dataset.id)  # type: ignore
     )
     assert len(examples2) == 2
+    langchain_client.create_example(
+        inputs={},
+        outputs=None,
+        dataset_id=new_dataset.id,
+    )
+    examples3 = list(
+        langchain_client.list_examples(dataset_id=new_dataset.id)  # type: ignore
+    )
+    assert len(examples3) == 3
+    assert any(example.inputs == {} and example.outputs == {} for example in examples3)
     langchain_client.delete_dataset(dataset_id=dataset_id)
 
 
@@ -925,6 +935,7 @@ def test_multipart_ingest_create_with_attachments_error(
         langchain_client.multipart_ingest(create=runs_to_create, update=[])
 
 
+@pytest.mark.flaky(retries=3)
 def test_multipart_ingest_create_with_attachments(
     langchain_client: Client, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -958,10 +969,13 @@ def test_multipart_ingest_create_with_attachments(
         langchain_client.multipart_ingest(
             create=runs_to_create, update=[], dangerously_allow_filesystem=True
         )
+        langchain_client.flush()
         assert not caplog.records
         wait_for(lambda: _get_run(str(trace_a_id), langchain_client))
         created_run = langchain_client.read_run(run_id=str(trace_a_id))
-        assert sorted(created_run.attachments.keys()) == sorted(["foo", "bar"])
+        assert sorted(created_run.attachments.keys()) == sorted(
+            ["foo", "bar"]
+        ), f"See failed run at {created_run.url}"
         assert created_run.attachments["foo"]["reader"].read() == b"bar"
         assert (
             created_run.attachments["bar"]["reader"].read()

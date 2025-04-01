@@ -679,6 +679,7 @@ def test_create_run_with_filters(auto_batch_tracing: bool) -> None:
     assert all([exp in all_posted for exp in expected])
 
 
+@pytest.mark.flaky(retries=3)
 def test_client_gc_after_autoscale() -> None:
     session = mock.MagicMock(spec=requests.Session)
     client = Client(

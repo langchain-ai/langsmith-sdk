@@ -614,6 +614,22 @@ export class AISDKExporter {
           return result;
         })();
 
+        const invocationParams = ((): KVMap | undefined => {
+          if ("ai.prompt.tools" in span.attributes) {
+            return {
+              tools: span.attributes["ai.prompt.tools"].flatMap((tool) => {
+                try {
+                  return JSON.parse(tool);
+                } catch {
+                  // pass
+                }
+                return [];
+              }),
+            };
+          }
+          return {};
+        })();
+
         const events: KVMap[] = [];
         const firstChunkEvent = span.events.find(
           (i) => i.name === "ai.stream.firstChunk"
@@ -633,6 +649,7 @@ export class AISDKExporter {
           outputs,
           events,
           extra: {
+            invocation_params: invocationParams,
             batch_size: 1,
             metadata: {
               ls_provider: span.attributes["ai.model.provider"]

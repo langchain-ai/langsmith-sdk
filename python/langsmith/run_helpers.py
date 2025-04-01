@@ -74,6 +74,8 @@ _CONTEXT_KEYS: Dict[str, contextvars.ContextVar] = {
     "client": _CLIENT,
 }
 
+_EXCLUDED_FRAME_FNAME = "langsmith/run_helpers.py"
+
 
 def get_current_run_tree() -> Optional[run_trees.RunTree]:
     """Get the current run tree."""
@@ -532,10 +534,11 @@ def traceable(
                         function_result = await fr_coro
             except BaseException as e:
                 # shield from cancellation, given we're catching all exceptions
+                _cleanup_traceback(e)
                 await asyncio.shield(
                     aitertools.aio_to_thread(_on_run_end, run_container, error=e)
                 )
-                raise e
+                raise
             await aitertools.aio_to_thread(
                 _on_run_end, run_container, outputs=function_result
             )
@@ -591,6 +594,7 @@ def traceable(
                 ):
                     yield item
             except BaseException as e:
+                _cleanup_traceback(e)
                 await asyncio.shield(
                     aitertools.aio_to_thread(
                         _on_run_end,
@@ -599,7 +603,7 @@ def traceable(
                         outputs=_get_function_result(results, reduce_fn),
                     )
                 )
-                raise e
+                raise
             await aitertools.aio_to_thread(
                 _on_run_end,
                 run_container,
@@ -630,8 +634,9 @@ def traceable(
                     kwargs["run_tree"] = run_container["new_run"]
                 function_result = run_container["context"].run(func, *args, **kwargs)
             except BaseException as e:
+                _cleanup_traceback(e)
                 _on_run_end(run_container, error=e)
-                raise e
+                raise
             _on_run_end(run_container, outputs=function_result)
             return function_result
 
@@ -671,12 +676,13 @@ def traceable(
                     results.append(function_return)
 
             except BaseException as e:
+                _cleanup_traceback(e)
                 _on_run_end(
                     run_container,
                     error=e,
                     outputs=_get_function_result(results, reduce_fn),
                 )
-                raise e
+                raise
             _on_run_end(run_container, outputs=_get_function_result(results, reduce_fn))
 
             return function_return
@@ -703,6 +709,7 @@ def traceable(
                     kwargs["run_tree"] = trace_container["new_run"]
                 stream = trace_container["context"].run(func, *args, **kwargs)
             except Exception as e:
+                _cleanup_traceback(e)
                 _on_run_end(trace_container, error=e)
                 raise
 
@@ -1576,8 +1583,12 @@ def _get_inputs_and_attachments_safe(
         return {"args": args, "kwargs": kwargs}, {}
 
 
-def _set_tracing_context(context: Dict[str, Any]):
+def _set_tracing_context(context: Optional[Dict[str, Any]] = None):
     """Set the tracing context."""
+    if context is None:
+        for k, v in _CONTEXT_KEYS.items():
+            v.set(None)
+        return
     for k, v in context.items():
         var = _CONTEXT_KEYS[k]
         var.set(v)
@@ -1748,6 +1759,7 @@ class _TracedStream(_TracedStreamBase, Generic[T]):
         try:
             yield from self.__ls__gen__
         except BaseException as e:
+            _cleanup_traceback(e)
             self._end_trace(error=e)
             raise
         else:
@@ -1830,3 +1842,13 @@ def _get_function_result(results: list, reduce_fn: Callable) -> Any:
                 return results
         else:
             return results
+
+
+def _cleanup_traceback(e: BaseException):
+    tb_ = e.__traceback__
+    if tb_:
+        while tb_.tb_next is not None and tb_.tb_frame.f_code.co_filename.endswith(
+            _EXCLUDED_FRAME_FNAME
+        ):
+            tb_ = tb_.tb_next
+        e.__traceback__ = tb_

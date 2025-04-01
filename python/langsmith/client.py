@@ -217,6 +217,7 @@ RUN_TYPE_T = Literal[
 ]
 
 
+@functools.lru_cache(maxsize=1)
 def _default_retry_config() -> Retry:
     """Get the default retry configuration.
 
@@ -4084,34 +4085,32 @@ class Client:
                 )
             )
 
-            if example.inputs:
-                inputsb = _dumps_json(example.inputs)
+            inputsb = _dumps_json(example.inputs or {})
 
-                parts.append(
+            parts.append(
+                (
+                    f"{example_id}.inputs",
                     (
-                        f"{example_id}.inputs",
-                        (
-                            None,
-                            inputsb,
-                            "application/json",
-                            {},
-                        ),
-                    )
+                        None,
+                        inputsb,
+                        "application/json",
+                        {},
+                    ),
                 )
+            )
 
-            if example.outputs:
-                outputsb = _dumps_json(example.outputs)
-                parts.append(
+            outputsb = _dumps_json(example.outputs or {})
+            parts.append(
+                (
+                    f"{example_id}.outputs",
                     (
-                        f"{example_id}.outputs",
-                        (
-                            None,
-                            outputsb,
-                            "application/json",
-                            {},
-                        ),
-                    )
+                        None,
+                        outputsb,
+                        "application/json",
+                        {},
+                    ),
                 )
+            )
 
             if example.attachments:
                 for name, attachment in example.attachments.items():
@@ -7672,6 +7671,8 @@ def _convert_stored_attachments_to_attachments_dict(
     attachments_dict = {}
     if attachments_key in data and data[attachments_key]:
         for key, value in data[attachments_key].items():
+            if not key.startswith("attachment."):
+                continue
             response = requests.get(value["presigned_url"], stream=True)
             response.raise_for_status()
             reader = io.BytesIO(response.content)
