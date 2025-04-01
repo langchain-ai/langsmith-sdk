@@ -218,12 +218,9 @@ if HAVE_AGENTS:
             if run_id:
                 extracted = agent_utils.extract_span_data(span)
                 metadata = extracted.get("metadata", {})
-
-                # Add OpenAI span IDs to metadata
                 metadata["openai_parent_id"] = span.parent_id
                 metadata["openai_trace_id"] = span.trace_id
                 metadata["openai_span_id"] = span.span_id
-
                 extracted["metadata"] = metadata
                 run_data: dict = dict(
                     run_id=run_id,
