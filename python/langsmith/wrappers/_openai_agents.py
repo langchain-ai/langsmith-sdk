@@ -90,6 +90,10 @@ if HAVE_AGENTS:
         Args:
             client: An instance of langsmith.client.Client. If not provided,
                 a default client is created.
+            metadata: Metadata to associate with all traces.
+            tags: Tags to associate with all traces.
+            project_name: LangSmith project to trace to.
+            name: Name of the root trace.
 
         Example:
             .. code-block:: python
@@ -133,14 +137,33 @@ if HAVE_AGENTS:
                 print(result.final_output)
         """  # noqa: E501
 
-        def __init__(self, client: Optional[ls_client.Client] = None):
+        def __init__(
+            self,
+            client: Optional[ls_client.Client] = None,
+            *,
+            metadata: Optional[dict] = None,
+            tags: Optional[list[str]] = None,
+            project_name: Optional[str] = None,
+            name: Optional[str] = None,
+        ):
             self.client = client or rt.get_cached_client()
+            self._metadata = metadata
+            self._tags = tags
+            self._project_name = project_name
+            self._name = name
+
             self._runs: Dict[str, str] = {}
 
         def on_trace_start(self, trace: tracing.Trace) -> None:
-            run_name = trace.name if trace.name else "Agent workflow"
+            if self._name:
+                run_name = self._name
+            elif trace.name:
+                run_name = trace.name
+            else:
+                run_name = "Agent workflow"
             trace_run_id = str(uuid.uuid4())
             self._runs[trace.trace_id] = trace_run_id
+            run_extra = {"metadata": self._metadata} if self._metadata else {}
 
             try:
                 run_data: dict = dict(
@@ -149,6 +172,9 @@ if HAVE_AGENTS:
                     run_type="chain",
                     id=trace_run_id,
                     revision_id=None,
+                    extra=run_extra,
+                    tags=self._tags,
+                    project_name=self._project_name,
                 )
                 self.client.create_run(**run_data)
             except Exception as e:
@@ -157,7 +183,7 @@ if HAVE_AGENTS:
         def on_trace_end(self, trace: tracing.Trace) -> None:
             run_id = self._runs.pop(trace.trace_id, None)
             trace_dict = trace.export() or {}
-            metadata = trace_dict.get("metadata") or {}
+            metadata = {**(trace_dict.get("metadata") or {}), **(self._metadata or {})}
             if run_id:
                 try:
                     self.client.update_run(run_id=run_id, extra={"metadata": metadata})
