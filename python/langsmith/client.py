@@ -3599,6 +3599,91 @@ class Client:
         )
         ls_utils.raise_for_status_with_text(response)
 
+    def update_dataset(
+        self,
+        *,
+        dataset_id: Optional[ID_TYPE] = None,
+        dataset_name: Optional[str] = None,
+        name: Optional[str] = None,
+        description: Optional[str] = None,
+        data_type: Optional[Union[str, ls_schemas.DataType]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        transformations: Optional[List[Dict[str, Any]]] = None,
+    ) -> ls_schemas.Dataset:
+        """Update a dataset.
+
+        Args:
+            dataset_id (Optional[Union[UUID, str]]):
+                The ID of the dataset to update.
+            dataset_name (Optional[str]):
+                The name of the dataset to update.
+            name (Optional[str]):
+                The new name for the dataset.
+            description (Optional[str]):
+                The new description for the dataset.
+            data_type (Optional[Union[str, DataType]]):
+                The new data type for the dataset.
+            metadata (Optional[Dict[str, Any]]):
+                The new metadata for the dataset.
+            transformations (Optional[List[Dict[str, Any]]]):
+                The new transformations for the dataset.
+
+        Returns:
+            Dataset: The updated dataset.
+        
+        Examples:
+            .. code-block:: python
+
+                # Update a dataset by name
+                client.update_dataset(
+                    dataset_name="my-dataset",
+                    name="new-dataset-name",
+                    description="New description"
+                )
+
+                # Update a dataset by ID
+                client.update_dataset(
+                    dataset_id="11111111-2222-3333-4444-555555555555",
+                    description="Updated description",
+                    data_type="llm"
+                )
+        """
+        if dataset_name is not None:
+            dataset_id = self.read_dataset(dataset_name=dataset_name).id
+        if dataset_id is None:
+            raise ValueError("Must provide either dataset name or ID")
+        
+        # Prepare the update payload with only non-None values
+        payload = {}
+        if name is not None:
+            payload["name"] = name
+        if description is not None:
+            payload["description"] = description
+        if data_type is not None:
+            payload["data_type"] = data_type
+        if metadata is not None:
+            payload["metadata"] = metadata
+        if transformations is not None:
+            payload["transformations"] = transformations
+        
+        # Send the PATCH request
+        response = self.request_with_retries(
+            "PATCH",
+            f"/datasets/{_as_uuid(dataset_id, 'dataset_id')}",
+            headers=self._headers,
+            json=payload,
+        )
+        ls_utils.raise_for_status_with_text(response)
+        
+        # Parse the response into a Dataset object
+        response_json = response.json()
+        dataset = ls_schemas.Dataset(
+            **response_json,
+            _host_url=self.host_url,
+            _tenant_id=self.tenant_id,
+        )
+        return dataset
+
     def update_dataset_tag(
         self,
         *,

@@ -574,6 +574,359 @@ def test_create_dataset(langchain_client: Client) -> None:
     langchain_client.delete_dataset(dataset_id=dataset.id)
 
 
+def test_update_dataset_basic(langchain_client: Client) -> None:
+    """Test basic update functionality for datasets."""
+    dataset_name = "__test_update_dataset" + uuid4().hex[:4]
+    new_name = "__test_updated_dataset" + uuid4().hex[:4]
+    
+    try:
+        # Create dataset with initial values
+        dataset = langchain_client.create_dataset(
+            dataset_name=dataset_name,
+            description="Initial description",
+            data_type=DataType.kv
+        )
+        
+        # Update the dataset
+        updated_dataset = langchain_client.update_dataset(
+            dataset_id=dataset.id,
+            name=new_name,
+            description="Updated description",
+            data_type=DataType.llm
+        )
+        
+        # Verify updates
+        assert updated_dataset.name == new_name
+        assert updated_dataset.description == "Updated description"
+        assert updated_dataset.data_type == DataType.llm
+        
+        # Confirm changes persist by reading the dataset
+        read_dataset = langchain_client.read_dataset(dataset_id=dataset.id)
+        assert read_dataset.name == new_name
+        assert read_dataset.description == "Updated description"
+        assert read_dataset.data_type == DataType.llm
+        
+    finally:
+        # Clean up
+        try:
+            langchain_client.delete_dataset(dataset_name=new_name)
+        except:
+            try:
+                langchain_client.delete_dataset(dataset_name=dataset_name)
+            except:
+                pass
+
+
+def test_update_dataset_partial(langchain_client: Client) -> None:
+    """Test partial updates for datasets."""
+    dataset_name = "__test_update_dataset_partial" + uuid4().hex[:4]
+    new_name = "__test_updated_dataset_partial" + uuid4().hex[:4]
+    
+    try:
+        # Create dataset with initial values
+        dataset = langchain_client.create_dataset(
+            dataset_name=dataset_name,
+            description="Initial description",
+            data_type=DataType.kv
+        )
+        
+        # Update only the name
+        updated_dataset = langchain_client.update_dataset(
+            dataset_id=dataset.id,
+            name=new_name
+        )
+        
+        # Verify only name was updated
+        assert updated_dataset.name == new_name
+        assert updated_dataset.description == "Initial description"
+        assert updated_dataset.data_type == DataType.kv
+        
+        # Update only the description
+        updated_dataset = langchain_client.update_dataset(
+            dataset_id=dataset.id,
+            description="Updated description"
+        )
+        
+        # Verify only description was updated
+        assert updated_dataset.name == new_name
+        assert updated_dataset.description == "Updated description"
+        assert updated_dataset.data_type == DataType.kv
+        
+    finally:
+        # Clean up
+        try:
+            langchain_client.delete_dataset(dataset_name=new_name)
+        except:
+            try:
+                langchain_client.delete_dataset(dataset_name=dataset_name)
+            except:
+                pass
+
+
+def test_update_dataset_metadata(langchain_client: Client) -> None:
+    """Test updating dataset metadata."""
+    dataset_name = "__test_update_dataset_metadata" + uuid4().hex[:4]
+    
+    try:
+        # Create dataset with initial metadata
+        dataset = langchain_client.create_dataset(
+            dataset_name=dataset_name,
+            metadata={"key1": "value1", "key2": "value2"}
+        )
+        
+        # Update metadata
+        updated_dataset = langchain_client.update_dataset(
+            dataset_id=dataset.id,
+            metadata={"key1": "new_value", "key3": "value3"}
+        )
+        
+        # Verify metadata updates
+        assert updated_dataset.metadata.get("key1") == "new_value"
+        assert updated_dataset.metadata.get("key3") == "value3"
+        assert "key2" not in updated_dataset.metadata
+        
+        # Read dataset to confirm persistence
+        read_dataset = langchain_client.read_dataset(dataset_id=dataset.id)
+        assert read_dataset.metadata.get("key1") == "new_value"
+        assert read_dataset.metadata.get("key3") == "value3"
+        assert "key2" not in read_dataset.metadata
+        
+    finally:
+        # Clean up
+        try:
+            langchain_client.delete_dataset(dataset_name=dataset_name)
+        except:
+            pass
+
+
+def test_update_dataset_schema(langchain_client: Client) -> None:
+    """Test updating dataset schema."""
+    dataset_name = "__test_update_dataset_schema" + uuid4().hex[:4]
+    
+    try:
+        # Define initial schema
+        class InitialInputSchema(BaseModel):
+            input: str
+            
+        class InitialOutputSchema(BaseModel):
+            output: str
+            
+        # Create dataset with initial schema
+        dataset = langchain_client.create_dataset(
+            dataset_name=dataset_name,
+            inputs_schema=InitialInputSchema.model_json_schema(),
+            outputs_schema=InitialOutputSchema.model_json_schema()
+        )
+        
+        # Create a valid example
+        langchain_client.create_example(
+            inputs={"input": "hello world"},
+            outputs={"output": "hello"},
+            dataset_id=dataset.id
+        )
+        
+        # Define updated schema
+        class UpdatedInputSchema(BaseModel):
+            input: str
+            context: str
+            
+        class UpdatedOutputSchema(BaseModel):
+            output: str
+            confidence: float
+        
+        # Update the input and output schema
+        updated_dataset = langchain_client.update_dataset(
+            dataset_id=dataset.id,
+            inputs_schema=UpdatedInputSchema.model_json_schema(),
+            outputs_schema=UpdatedOutputSchema.model_json_schema()
+        )
+        
+        # Verify the schemas were updated
+        assert updated_dataset.inputs_schema == UpdatedInputSchema.model_json_schema()
+        assert updated_dataset.outputs_schema == UpdatedOutputSchema.model_json_schema()
+        
+        # Verify old examples are still valid (server doesn't validate existing examples against new schema)
+        examples = list(langchain_client.list_examples(dataset_id=dataset.id))
+        assert len(examples) == 1
+        
+        # Test that new examples must conform to updated schema
+        # This should fail because it's missing the required 'context' field
+        with pytest.raises(LangSmithError):
+            langchain_client.create_example(
+                inputs={"input": "new input"},
+                outputs={"output": "new output"},
+                dataset_id=dataset.id
+            )
+        
+        # This should work as it has all required fields
+        valid_example = langchain_client.create_example(
+            inputs={"input": "new input", "context": "some context"},
+            outputs={"output": "new output", "confidence": 0.95},
+            dataset_id=dataset.id
+        )
+        
+        # Verify the example was created
+        examples = list(langchain_client.list_examples(dataset_id=dataset.id))
+        assert len(examples) == 2
+        assert valid_example.id in [ex.id for ex in examples]
+        
+    finally:
+        # Clean up
+        try:
+            langchain_client.delete_dataset(dataset_name=dataset_name)
+        except:
+            pass
+
+
+def test_update_dataset_transformations(langchain_client: Client) -> None:
+    """Test updating dataset transformations."""
+    dataset_name = "__test_update_dataset_transformations" + uuid4().hex[:4]
+    
+    try:
+        # Create dataset
+        dataset = langchain_client.create_dataset(
+            dataset_name=dataset_name,
+            data_type=DataType.llm
+        )
+        
+        # Update with transformations
+        transformations = [
+            {"path": ["input"], "transformation_type": "remove_extra_fields"},
+            {"path": ["output"], "transformation_type": "convert_to_openai_message"}
+        ]
+        
+        updated_dataset = langchain_client.update_dataset(
+            dataset_id=dataset.id,
+            transformations=transformations
+        )
+        
+        # Verify the transformations were updated
+        assert len(updated_dataset.transformations or []) == 2
+        assert updated_dataset.transformations[0]["path"] == ["input"]
+        assert updated_dataset.transformations[0]["transformation_type"] == "remove_extra_fields"
+        assert updated_dataset.transformations[1]["path"] == ["output"]
+        assert updated_dataset.transformations[1]["transformation_type"] == "convert_to_openai_message"
+        
+        # Read dataset to confirm persistence
+        read_dataset = langchain_client.read_dataset(dataset_id=dataset.id)
+        assert len(read_dataset.transformations or []) == 2
+        
+        # Update transformations to a new value
+        new_transformations = [
+            {"path": ["input"], "transformation_type": "convert_to_openai_tool"}
+        ]
+        
+        updated_dataset = langchain_client.update_dataset(
+            dataset_id=dataset.id,
+            transformations=new_transformations
+        )
+        
+        # Verify the transformations were replaced (not appended)
+        assert len(updated_dataset.transformations or []) == 1
+        assert updated_dataset.transformations[0]["path"] == ["input"]
+        assert updated_dataset.transformations[0]["transformation_type"] == "convert_to_openai_tool"
+        
+    finally:
+        # Clean up
+        try:
+            langchain_client.delete_dataset(dataset_name=dataset_name)
+        except:
+            pass
+
+
+def test_update_dataset_by_name(langchain_client: Client) -> None:
+    """Test updating a dataset by name instead of ID."""
+    dataset_name = "__test_update_dataset_by_name" + uuid4().hex[:4]
+    new_name = "__test_updated_dataset_by_name" + uuid4().hex[:4]
+    
+    try:
+        # Create dataset with initial values
+        dataset = langchain_client.create_dataset(
+            dataset_name=dataset_name,
+            description="Initial description"
+        )
+        
+        # Update the dataset using name instead of ID
+        updated_dataset = langchain_client.update_dataset(
+            dataset_name=dataset_name,
+            name=new_name,
+            description="Updated description"
+        )
+        
+        # Verify updates
+        assert updated_dataset.name == new_name
+        assert updated_dataset.description == "Updated description"
+        
+        # Confirm changes persist by reading the dataset
+        read_dataset = langchain_client.read_dataset(dataset_id=dataset.id)
+        assert read_dataset.name == new_name
+        assert read_dataset.description == "Updated description"
+        
+        # Try to read by old name (should fail)
+        with pytest.raises(LangSmithNotFoundError):
+            langchain_client.read_dataset(dataset_name=dataset_name)
+            
+        # Read by new name (should succeed)
+        read_dataset_by_name = langchain_client.read_dataset(dataset_name=new_name)
+        assert read_dataset_by_name.id == dataset.id
+        
+    finally:
+        # Clean up
+        try:
+            langchain_client.delete_dataset(dataset_name=new_name)
+        except:
+            try:
+                langchain_client.delete_dataset(dataset_name=dataset_name)
+            except:
+                pass
+
+
+def test_update_dataset_errors(langchain_client: Client) -> None:
+    """Test error cases for update_dataset method."""
+    non_existent_id = uuid4()
+    
+    # Test updating non-existent dataset
+    with pytest.raises(LangSmithNotFoundError):
+        langchain_client.update_dataset(
+            dataset_id=non_existent_id,
+            name="New name"
+        )
+    
+    # Test updating non-existent dataset by name
+    non_existent_name = "__non_existent_dataset" + uuid4().hex[:4]
+    with pytest.raises(LangSmithNotFoundError):
+        langchain_client.update_dataset(
+            dataset_name=non_existent_name,
+            description="Updated description"
+        )
+    
+    # Test updating with name that already exists
+    dataset_name1 = "__test_update_dataset_errors1" + uuid4().hex[:4]
+    dataset_name2 = "__test_update_dataset_errors2" + uuid4().hex[:4]
+    
+    try:
+        # Create two datasets
+        dataset1 = langchain_client.create_dataset(dataset_name=dataset_name1)
+        dataset2 = langchain_client.create_dataset(dataset_name=dataset_name2)
+        
+        # Try to update dataset2 with dataset1's name
+        with pytest.raises(LangSmithConflictError):
+            langchain_client.update_dataset(
+                dataset_id=dataset2.id,
+                name=dataset_name1
+            )
+    finally:
+        # Clean up
+        try:
+            langchain_client.delete_dataset(dataset_name=dataset_name1)
+        except:
+            pass
+        try:
+            langchain_client.delete_dataset(dataset_name=dataset_name2)
+        except:
+            pass
+
+
 def test_dataset_schema_validation(langchain_client: Client) -> None:
     dataset_name = "__test_create_dataset" + uuid4().hex[:4]
     if langchain_client.has_dataset(dataset_name=dataset_name):
