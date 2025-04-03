@@ -4647,6 +4647,8 @@ class Client:
         include_attachments: bool = False,
         **kwargs: Any,
     ) -> Iterator[ls_schemas.Example]:
+        if "split" in kwargs:
+            raise ValueError("You passed in 'split', but the parameter name is 'splits' (plural). Please use 'splits' instead.")
         r"""Retrieve the example rows of the specified dataset.
 
         Args:

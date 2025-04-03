@@ -631,6 +631,8 @@ class AsyncClient:
         dataset_name: Optional[str] = None,
         **kwargs: Any,
     ) -> AsyncIterator[ls_schemas.Example]:
+        if "split" in kwargs:
+            raise ValueError("You passed in 'split', but the parameter name is 'splits' (plural). Please use 'splits' instead.")
         """List examples."""
         params = kwargs.copy()
         if dataset_id:
