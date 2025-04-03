@@ -1400,7 +1400,6 @@ def _setup_run(
     id_ = id_ or str(uuid.uuid4())
     signature = inspect.signature(func)
     name_ = name or utils._get_function_name(func)
-    docstring = func.__doc__
     extra_inner = _collect_extra(extra_outer, langsmith_extra)
     outer_metadata = _METADATA.get()
     outer_tags = _TAGS.get()
@@ -1437,11 +1436,6 @@ def _setup_run(
         new_run = parent_run_.create_child(
             name=name_,
             run_type=run_type,
-            serialized={
-                "name": name,
-                "signature": str(signature),
-                "doc": docstring,
-            },
             inputs=inputs,
             tags=tags_,
             extra=extra_inner,
@@ -1452,11 +1446,6 @@ def _setup_run(
         new_run = run_trees.RunTree(
             id=ls_client._ensure_uuid(id_),
             name=name_,
-            serialized={
-                "name": name,
-                "signature": str(signature),
-                "doc": docstring,
-            },
             inputs=inputs,
             run_type=run_type,
             reference_example_id=ls_client._ensure_uuid(
