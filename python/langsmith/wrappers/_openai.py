@@ -239,6 +239,7 @@ def _process_chat_completion(outputs: Any):
         rdict["usage_metadata"] = (
             _create_usage_metadata(oai_token_usage) if oai_token_usage else None
         )
+
         return rdict
     except BaseException as e:
         logger.debug(f"Error processing chat completion: {e}")
@@ -252,6 +253,7 @@ def _get_wrapper(
     tracing_extra: Optional[TracingExtra] = None,
     invocation_params_fn: Optional[Callable] = None,
     process_outputs: Optional[Callable] = None,
+    process_metadata: Optional[Callable] = None,
 ) -> Callable:
     textra = tracing_extra or {}
 
@@ -264,6 +266,7 @@ def _get_wrapper(
             process_inputs=_strip_not_given,
             _invocation_params_fn=invocation_params_fn,
             process_outputs=process_outputs,
+            process_metadata=process_metadata,
             **textra,
         )
 
@@ -279,6 +282,7 @@ def _get_wrapper(
             process_inputs=_strip_not_given,
             _invocation_params_fn=invocation_params_fn,
             process_outputs=process_outputs,
+            process_metadata=process_metadata,
             **textra,
         )
         return await decorator(original_create)(*args, **kwargs)
@@ -336,6 +340,71 @@ class TracingExtra(TypedDict, total=False):
     metadata: Optional[Mapping[str, Any]]
     tags: Optional[List[str]]
     client: Optional[ls_client.Client]
+
+
+def _extract_tool_call_metadata(outputs: Any) -> dict:
+    """Extract tool call names from the outputs and return them as metadata.
+
+    Args:
+        outputs: The output from the OpenAI API
+
+    Returns:
+        dict: A dictionary with ls_tool_calls if tool calls are present
+    """
+    try:
+        if not outputs.get("choices"):
+            return {}
+
+        tool_calls = []
+        for choice in outputs["choices"]:
+            if choice.get("finish_reason", None) == "tool_calls" and choice.get(
+                "message"
+            ):
+                message = choice["message"]
+                if message.get("tool_calls") and message["tool_calls"]:
+                    for tool_call in message["tool_calls"]:
+                        if tool_call.get("function") and tool_call["function"].get(
+                            "name"
+                        ):
+                            tool_calls.append(tool_call["function"]["name"])
+
+        if tool_calls:
+            return {"ls_tool_calls": tool_calls}
+        return {}
+    except Exception as e:
+        logger.debug(f"Error extracting tool call metadata: {e}")
+        return {}
+
+
+def _extract_tool_call_metadata_responses_api(outputs: Any) -> dict:
+    """Extract tool calls from outputs of responses API call and return as metadata.
+
+    Args:
+        outputs: The output from the OpenAI API
+
+    Returns:
+        dict: A dictionary with ls_tool_calls if tool calls are present
+    """
+    try:
+        if not outputs.get("output"):
+            return {}
+
+        tool_calls = []
+        for output in outputs["output"]:
+            if output.get("type", None) in [
+                "function_call",
+                "file_search_call",
+                "computer_call",
+                "web_search_call",
+            ]:
+                tool_calls.append(output.get("name", output["type"][:-5]))
+
+        if tool_calls:
+            return {"ls_tool_calls": tool_calls}
+        return {}
+    except Exception as e:
+        logger.debug(f"Error extracting tool call metadata: {e}")
+        return {}
 
 
 def wrap_openai(
@@ -409,6 +478,7 @@ def wrap_openai(
         tracing_extra=tracing_extra,
         invocation_params_fn=functools.partial(_infer_invocation_params, "chat"),
         process_outputs=_process_chat_completion,
+        process_metadata=_extract_tool_call_metadata,
     )
 
     client.completions.create = _get_wrapper(  # type: ignore[method-assign]
@@ -446,6 +516,7 @@ def wrap_openai(
                 invocation_params_fn=functools.partial(
                     _infer_invocation_params, "chat"
                 ),
+                process_metadata=_extract_tool_call_metadata_responses_api,
             )
         if hasattr(client.responses, "parse"):
             client.responses.parse = _get_parse_wrapper(  # type: ignore[method-assign]

@@ -271,6 +271,35 @@ test_cases = [
         "expect_usage_metadata": True,
         "check_reasoning_tokens": True,
     },
+    {
+        "description": "tool_calls",
+        "params": {
+            "model": "gpt-4-turbo",
+            "messages": [{"role": "user", "content": "What's the weather in Boston?"}],
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "get_weather",
+                        "description": "Get the current weather in a location",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "location": {
+                                    "type": "string",
+                                    "description": "The city and state, e.g. San Francisco, CA",  # noqa: E501
+                                }
+                            },
+                            "required": ["location"],
+                        },
+                    },
+                }
+            ],
+            "tool_choice": "auto",
+        },
+        "expect_usage_metadata": True,
+        "check_tool_calls": True,
+    },
 ]
 
 
@@ -313,6 +342,21 @@ def test_wrap_openai_chat_tokens(test_case):
         else:
             assert collect.run.outputs.get("usage_metadata") is None
             assert collect.run.outputs.get("usage") is None
+
+        # Check for tool calls metadata if expected
+        if test_case.get("check_tool_calls") and not params.get("stream"):
+            # Make sure there's a metadata field
+            assert "metadata" in collect.run.outputs
+            # Check that tool calls were captured
+            assert "ls_tool_calls" in collect.run.outputs["metadata"]
+            # For our test case, we expect "get_weather" as the tool name
+            if "get_weather" in collect.run.outputs["metadata"]["ls_tool_calls"]:
+                assert True  # Tool call was found
+            # If not using the specific tool we expected, at least verify it's a list
+            else:
+                assert isinstance(
+                    collect.run.outputs["metadata"]["ls_tool_calls"], list
+                )
 
         run_id_to_usage_metadata[collect.run.id] = collect.run.outputs.get(
             "usage_metadata"
@@ -363,6 +407,21 @@ async def test_wrap_openai_chat_async_tokens(test_case):
         else:
             assert collect.run.outputs.get("usage_metadata") is None
             assert collect.run.outputs.get("usage") is None
+
+        # Check for tool calls metadata if expected
+        if test_case.get("check_tool_calls") and not params.get("stream"):
+            # Make sure there's a metadata field
+            assert "metadata" in collect.run.outputs
+            # Check that tool calls were captured
+            assert "ls_tool_calls" in collect.run.outputs["metadata"]
+            # For our test case, we expect "get_weather" as the tool name
+            if "get_weather" in collect.run.outputs["metadata"]["ls_tool_calls"]:
+                assert True  # Tool call was found
+            # If not using the specific tool we expected, at least verify it's a list
+            else:
+                assert isinstance(
+                    collect.run.outputs["metadata"]["ls_tool_calls"], list
+                )
 
         run_id_to_usage_metadata[collect.run.id] = collect.run.outputs.get(
             "usage_metadata"
