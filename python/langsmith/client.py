@@ -33,23 +33,19 @@ import typing
 import uuid
 import warnings
 import weakref
+from collections.abc import AsyncIterable, Iterable, Iterator, Mapping, Sequence
 from inspect import signature
 from pathlib import Path
 from queue import PriorityQueue
 from typing import (
     TYPE_CHECKING,
     Any,
-    AsyncIterable,
     Callable,
     DefaultDict,
     Dict,
-    Iterable,
-    Iterator,
     List,
     Literal,
-    Mapping,
     Optional,
-    Sequence,
     Tuple,
     Type,
     Union,
@@ -867,7 +863,7 @@ class Client:
                             )
                         elif response.status_code == 409:
                             raise ls_utils.LangSmithConflictError(
-                                f"Conflict for {pathname}. {repr(e)}" f"{_context}"
+                                f"Conflict for {pathname}. {repr(e)}{_context}"
                             )
                         else:
                             raise ls_utils.LangSmithError(
@@ -877,8 +873,7 @@ class Client:
 
                     else:
                         raise ls_utils.LangSmithUserError(
-                            f"Failed to {method} {pathname} in LangSmith API."
-                            f" {repr(e)}"
+                            f"Failed to {method} {pathname} in LangSmith API. {repr(e)}"
                         )
                 except requests.ConnectionError as e:
                     recommendation = (
@@ -3606,8 +3601,9 @@ class Client:
         dataset_name: Optional[str] = None,
         name: Optional[str] = None,
         description: Optional[str] = None,
-        data_type: Optional[Union[str, ls_schemas.DataType]] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        inputs_schema: Optional[Dict[str, Any]] = None,
+        outputs_schema: Optional[Dict[str, Any]] = None,
+        patch_examples: Optional[Dict[ID_TYPE, ls_schemas.ExampleUpdate]] = None,
         transformations: Optional[List[Dict[str, Any]]] = None,
     ) -> ls_schemas.Dataset:
         """Update a dataset.
@@ -3623,14 +3619,18 @@ class Client:
                 The new description for the dataset.
             data_type (Optional[Union[str, DataType]]):
                 The new data type for the dataset.
-            metadata (Optional[Dict[str, Any]]):
-                The new metadata for the dataset.
+            inputs_schema (Optional[Dict[str, Any]]):
+                The new input schema for the dataset.
+            outputs_schema (Optional[Dict[str, Any]]):
+                The new output schema for the dataset.
+            patch_examples (Optional[Dict[ID_TYPE, ls_schemas.ExampleUpdate]]):
+                The patch operations for the dataset examples.
             transformations (Optional[List[Dict[str, Any]]]):
                 The new transformations for the dataset.
 
         Returns:
             Dataset: The updated dataset.
-        
+
         Examples:
             .. code-block:: python
 
@@ -3638,34 +3638,36 @@ class Client:
                 client.update_dataset(
                     dataset_name="my-dataset",
                     name="new-dataset-name",
-                    description="New description"
+                    description="New description",
                 )
 
                 # Update a dataset by ID
                 client.update_dataset(
                     dataset_id="11111111-2222-3333-4444-555555555555",
                     description="Updated description",
-                    data_type="llm"
+                    data_type="llm",
                 )
         """
         if dataset_name is not None:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
         if dataset_id is None:
             raise ValueError("Must provide either dataset name or ID")
-        
+
         # Prepare the update payload with only non-None values
         payload = {}
         if name is not None:
             payload["name"] = name
         if description is not None:
             payload["description"] = description
-        if data_type is not None:
-            payload["data_type"] = data_type
-        if metadata is not None:
-            payload["metadata"] = metadata
+        if inputs_schema is not None:
+            payload["inputs_schema_definition"] = inputs_schema
+        if outputs_schema is not None:
+            payload["outputs_schema_definition"] = outputs_schema
+        if patch_examples is not None:
+            payload["patch_examples"] = patch_examples
         if transformations is not None:
             payload["transformations"] = transformations
-        
+
         # Send the PATCH request
         response = self.request_with_retries(
             "PATCH",
@@ -3674,13 +3676,13 @@ class Client:
             json=payload,
         )
         ls_utils.raise_for_status_with_text(response)
-        
+
         # Parse the response into a Dataset object
         response_json = response.json()
         dataset = ls_schemas.Dataset(
             **response_json,
-            _host_url=self.host_url,
-            _tenant_id=self.tenant_id,
+            _host_url=self._host_url,
+            _tenant_id=self._tenant_id,
         )
         return dataset
 
