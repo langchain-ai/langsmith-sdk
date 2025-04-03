@@ -151,6 +151,8 @@ if HAVE_AGENTS:
             self._tags = tags
             self._project_name = project_name
             self._name = name
+            self._first_response_inputs: dict = {}
+            self._last_response_outputs: dict = {}
 
             self._runs: Dict[str, str] = {}
 
@@ -163,7 +165,11 @@ if HAVE_AGENTS:
                 run_name = "Agent workflow"
             trace_run_id = str(uuid.uuid4())
             self._runs[trace.trace_id] = trace_run_id
-            run_extra = {"metadata": self._metadata} if self._metadata else {}
+            run_extra = {"metadata": self._metadata or {}}
+
+            trace_dict = trace.export() or {}
+            if trace_dict.get("group_id") is not None:
+                run_extra["metadata"]["thread_id"] = trace_dict["group_id"]
 
             try:
                 run_data: dict = dict(
@@ -186,7 +192,12 @@ if HAVE_AGENTS:
             metadata = {**(trace_dict.get("metadata") or {}), **(self._metadata or {})}
             if run_id:
                 try:
-                    self.client.update_run(run_id=run_id, extra={"metadata": metadata})
+                    self.client.update_run(
+                        run_id=run_id,
+                        inputs=self._first_response_inputs.pop(trace.trace_id, {}),
+                        outputs=self._last_response_outputs.pop(trace.trace_id, {}),
+                        extra={"metadata": metadata},
+                    )
                 except Exception as e:
                     logger.exception(f"Error updating trace run: {e}")
 
@@ -224,17 +235,26 @@ if HAVE_AGENTS:
                 metadata["openai_trace_id"] = span.trace_id
                 metadata["openai_span_id"] = span.span_id
                 extracted["metadata"] = metadata
+                outputs = extracted.pop("outputs", {})
+                inputs = extracted.pop("inputs", {})
                 run_data: dict = dict(
                     run_id=run_id,
                     error=str(span.error) if span.error else None,
-                    outputs=extracted.pop("outputs", {}),
-                    inputs=extracted.pop("inputs", {}),
+                    outputs=outputs,
+                    inputs=inputs,
                     extra=extracted,
                 )
                 if span.ended_at:
                     run_data["end_time"] = datetime.datetime.fromisoformat(
                         span.ended_at
                     )
+
+                if isinstance(span.span_data, tracing.ResponseSpanData):
+                    self._first_response_inputs[span.trace_id] = (
+                        self._first_response_inputs.get(span.trace_id) or inputs
+                    )
+                    self._last_response_outputs[span.trace_id] = outputs
+
                 self.client.update_run(**run_data)
 
         def shutdown(self) -> None:
