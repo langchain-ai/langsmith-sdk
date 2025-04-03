@@ -289,6 +289,7 @@ def traceable(
     project_name: Optional[str] = None,
     process_inputs: Optional[Callable[[dict], dict]] = None,
     process_outputs: Optional[Callable[..., dict]] = None,
+    process_metadata: Optional[Callable[..., dict]] = None,
     process_chunk: Optional[Callable] = None,
     _invocation_params_fn: Optional[Callable[[dict], dict]] = None,
     dangerously_allow_filesystem: bool = False,
@@ -320,6 +321,8 @@ def traceable(
             Defaults to None.
         process_outputs: Custom serialization / processing function for outputs.
             Defaults to None.
+        process_metadata: Function to extract metadata from the outputs. The metadata
+            will be added to the run. Defaults to None.
         dangerously_allow_filesystem: Whether to allow filesystem access for attachments.
             Defaults to False.
 
@@ -483,8 +486,11 @@ def traceable(
         dangerously_allow_filesystem=kwargs.pop("dangerously_allow_filesystem", False),
     )
     outputs_processor = kwargs.pop("process_outputs", None)
+    metadata_processor = kwargs.pop("process_metadata", None)
     _on_run_end = functools.partial(
-        _handle_container_end, outputs_processor=outputs_processor
+        _handle_container_end,
+        outputs_processor=outputs_processor,
+        metadata_processor=metadata_processor,
     )
 
     if kwargs:
@@ -1249,6 +1255,7 @@ def _container_end(
     container: _TraceableContainer,
     outputs: Optional[Any] = None,
     error: Optional[BaseException] = None,
+    additional_metadata: Optional[Dict[str, Any]] = None,
 ) -> None:
     """End the run."""
     run_tree = container.get("new_run")
@@ -1276,6 +1283,12 @@ def _container_end(
     if error:
         stacktrace = utils._format_exc()
         error_ = f"{repr(error)}\n\n{stacktrace}"
+
+    # Apply additional metadata to the run if provided
+    if additional_metadata and isinstance(additional_metadata, dict):
+        for key, value in additional_metadata.items():
+            run_tree.metadata[key] = value
+
     run_tree.end(outputs=outputs_, error=error_)
     if utils.tracing_is_enabled() is True:
         run_tree.patch()
@@ -1493,12 +1506,34 @@ def _handle_container_end(
     outputs: Optional[Any] = None,
     error: Optional[BaseException] = None,
     outputs_processor: Optional[Callable[..., dict]] = None,
+    metadata_processor: Optional[Callable[..., dict]] = None,
 ) -> None:
     """Handle the end of run."""
     try:
+        processed_outputs = None
         if outputs_processor is not None:
-            outputs = outputs_processor(outputs)
-        _container_end(container, outputs=outputs, error=error)
+            processed_outputs = outputs_processor(outputs)
+
+        # Process metadata if a metadata processor is provided
+        additional_metadata = {}
+        if metadata_processor is not None and (
+            outputs is not None or processed_outputs is not None
+        ):
+            try:
+                extracted_metadata = metadata_processor(
+                    processed_outputs if processed_outputs is not None else outputs
+                )
+                if extracted_metadata and isinstance(extracted_metadata, dict):
+                    additional_metadata = extracted_metadata
+            except Exception as e:
+                LOGGER.debug(f"Error processing metadata: {e}")
+
+        _container_end(
+            container,
+            outputs=processed_outputs or outputs,
+            error=error,
+            additional_metadata=additional_metadata,
+        )
     except BaseException as e:
         LOGGER.warning(f"Unable to process trace outputs: {repr(e)}")
 
