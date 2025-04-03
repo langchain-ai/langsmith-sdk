@@ -168,7 +168,7 @@ if HAVE_AGENTS:
             run_extra = {"metadata": self._metadata} if self._metadata else {}
 
             trace_dict = trace.export() or {}
-            if trace_dict is not None and trace_dict.get("group_id") is not None:
+            if trace_dict.get("group_id") is not None:
                 run_extra["metadata"]["thread_id"] = trace_dict["group_id"]
 
             try:
