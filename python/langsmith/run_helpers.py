@@ -1437,11 +1437,6 @@ def _setup_run(
         new_run = parent_run_.create_child(
             name=name_,
             run_type=run_type,
-            serialized={
-                "name": name,
-                "signature": str(signature),
-                "doc": docstring,
-            },
             inputs=inputs,
             tags=tags_,
             extra=extra_inner,
@@ -1452,11 +1447,6 @@ def _setup_run(
         new_run = run_trees.RunTree(
             id=ls_client._ensure_uuid(id_),
             name=name_,
-            serialized={
-                "name": name,
-                "signature": str(signature),
-                "doc": docstring,
-            },
             inputs=inputs,
             run_type=run_type,
             reference_example_id=ls_client._ensure_uuid(
