@@ -1,7 +1,7 @@
 import datetime
 import logging
 import uuid
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
 from langsmith import run_trees as rt
 
@@ -170,7 +170,6 @@ if HAVE_AGENTS:
             trace_dict = trace.export() or {}
             if trace_dict is not None and trace_dict.get("group_id") is not None:
                 run_extra["metadata"]["thread_id"] = trace_dict["group_id"]
-
 
             try:
                 run_data: dict = dict(
