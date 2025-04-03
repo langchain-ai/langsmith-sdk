@@ -165,7 +165,7 @@ if HAVE_AGENTS:
                 run_name = "Agent workflow"
             trace_run_id = str(uuid.uuid4())
             self._runs[trace.trace_id] = trace_run_id
-            run_extra = {"metadata": self._metadata} if self._metadata else {}
+            run_extra = {"metadata": self._metadata or {}}
 
             trace_dict = trace.export() or {}
             if trace_dict.get("group_id") is not None:
