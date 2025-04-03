@@ -47,6 +47,27 @@ SCORE_TYPE = Union[StrictBool, StrictInt, StrictFloat, None]
 VALUE_TYPE = Union[Dict, str, None]
 
 
+class AttachmentsOperations(BaseModel):
+    rename: Dict[str, str] = Field(
+        default_factory=dict, description="Mapping of old attachment names to new names"
+    )
+    retain: List[str] = Field(
+        default_factory=list, description="List of attachment names to keep"
+    )
+
+
+class ExampleUpdate(BaseModel):
+    """Update class for Example."""
+
+    dataset_id: UUID | None = None
+    inputs: Dict[str, Any] | None = None
+    outputs: Dict[str, Any] | None = None
+    attachments_operations: AttachmentsOperations | None = None
+    metadata: Dict[str, Any] | None = None
+    split: list[str] | str | None = None
+    overwrite: bool = False
+
+
 class Attachment(NamedTuple):
     """Annotated type that will be stored as an attachment if used.
 
