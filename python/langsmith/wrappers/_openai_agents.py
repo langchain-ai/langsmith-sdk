@@ -1,6 +1,5 @@
 import datetime
 import logging
-import uuid
 from typing import Dict, Optional
 
 from langsmith import run_trees as rt
@@ -155,32 +154,36 @@ if HAVE_AGENTS:
             self._last_response_outputs: dict = {}
 
             self._runs: Dict[str, str] = {}
-            
+
         def _convert_to_uuid(self, id_str: str) -> str:
             """Convert an OpenAI trace/span ID to a UUID.
-            
+
             Args:
-                id_str: The ID string in OpenAI format like 'trace_1ac36c4150794534a31a4df551c36f97'
-                
+                id_str: The ID string in OpenAI format like
+                    'trace_1ac36c4150794534a31a4df551c36f97'
+
             Returns:
                 A UUID string
             """
             # Extract the hex part after the prefix
-            if '_' in id_str:
-                hex_part = id_str.split('_', 1)[1]
+            if "_" in id_str:
+                hex_part = id_str.split("_", 1)[1]
             else:
                 hex_part = id_str
-                
+
             # Ensure the hex part is 32 characters (16 bytes)
             if len(hex_part) < 32:
                 # Pad with zeros if needed
-                hex_part = hex_part.ljust(32, '0')
+                hex_part = hex_part.ljust(32, "0")
             elif len(hex_part) > 32:
                 # Truncate if too long
                 hex_part = hex_part[:32]
-                
+
             # Format as UUID
-            return f"{hex_part[:8]}-{hex_part[8:12]}-{hex_part[12:16]}-{hex_part[16:20]}-{hex_part[20:]}"
+            return (
+                f"{hex_part[:8]}-{hex_part[8:12]}-"
+                f"{hex_part[12:16]}-{hex_part[16:20]}-{hex_part[20:]}"
+            )
 
         def on_trace_start(self, trace: tracing.Trace) -> None:
             if self._name:
@@ -189,7 +192,7 @@ if HAVE_AGENTS:
                 run_name = trace.name
             else:
                 run_name = "Agent workflow"
-            
+
             # Convert trace.trace_id to UUID
             trace_run_id = self._convert_to_uuid(trace.trace_id)
             self._runs[trace.trace_id] = trace_run_id
