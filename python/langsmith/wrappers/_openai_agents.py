@@ -145,6 +145,7 @@ if HAVE_AGENTS:
             tags: Optional[list[str]] = None,
             project_name: Optional[str] = None,
             name: Optional[str] = None,
+            run_id: Optional[str] = None,
         ):
             self.client = client or rt.get_cached_client()
             self._metadata = metadata
@@ -153,6 +154,7 @@ if HAVE_AGENTS:
             self._name = name
             self._first_response_inputs: dict = {}
             self._last_response_outputs: dict = {}
+            self._run_id = run_id
 
             self._runs: Dict[str, str] = {}
 
@@ -163,7 +165,11 @@ if HAVE_AGENTS:
                 run_name = trace.name
             else:
                 run_name = "Agent workflow"
-            trace_run_id = str(uuid.uuid4())
+
+            if self._run_id:
+                trace_run_id = self._run_id
+            else:
+                trace_run_id = str(uuid.uuid4())    
             self._runs[trace.trace_id] = trace_run_id
             run_extra = {"metadata": self._metadata or {}}
 
