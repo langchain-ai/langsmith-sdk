@@ -339,3 +339,4 @@ def compress_multipart_parts_and_context(
 
         # Write part terminator
         compressed_traces.compressor_writer.write(b"\r\n")
+    compressed_traces._context.append(parts_and_context.context)

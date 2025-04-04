@@ -129,6 +129,7 @@ def _tracing_thread_drain_compressed_buffer(
         client.compressed_traces.compressor_writer.close()
 
         filled_buffer = client.compressed_traces.buffer
+        filled_buffer.context = client.compressed_traces._context
 
         compressed_traces_info = (pre_compressed_size, current_size)
 
