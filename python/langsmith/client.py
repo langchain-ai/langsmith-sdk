@@ -822,7 +822,6 @@ class Client:
                             **request_kwargs,
                         )
                     ls_utils.raise_for_status_with_text(response)
-                    logger.debug("Request succeeded for %s %s. Context: %s", method, pathname, _context)
                     return response
                 except requests.exceptions.ReadTimeout as e:
                     logger.debug("Passing on exception %s", e)
@@ -1660,6 +1659,7 @@ class Client:
     def _post_batch_ingest_runs(self, body: bytes, *, _context: str):
         for api_url, api_key in self._write_api_urls.items():
             try:
+                logger.debug(f"Sending batch ingest request with context: {_context}")
                 self.request_with_retries(
                     "POST",
                     f"{api_url}/runs/batch",
@@ -1894,6 +1894,7 @@ class Client:
                         data = encoder.to_string()
                     else:
                         data = encoder
+                    logger.debug(f"Sending multipart request with context: {_context}")
                     self.request_with_retries(
                         "POST",
                         f"{api_url}/runs/multipart",
@@ -1938,7 +1939,7 @@ class Client:
         attempts: int = 3,
     ):
         """Send a zstd-compressed multipart form data stream to the backend."""
-        _context: str = ""
+        _context: str = "; ".join(getattr(data_stream, "context", []))
 
         for api_url, api_key in self._write_api_urls.items():
             data_stream.seek(0)
@@ -1961,7 +1962,9 @@ class Client:
                             else ""
                         ),
                     }
-
+                    logger.debug(
+                        f"Sending compressed multipart request with context: {_context}"
+                    )
                     self.request_with_retries(
                         "POST",
                         f"{api_url}/runs/multipart",
