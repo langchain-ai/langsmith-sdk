@@ -14,6 +14,7 @@ class CompressedTraces:
         self.trace_count = 0
         self.lock = threading.Lock()
         self.uncompressed_size = 0
+        self._context = []
 
         self.compressor_writer = ZstdCompressor(
             level=compression_level, threads=-1
@@ -23,7 +24,7 @@ class CompressedTraces:
         self.buffer = io.BytesIO()
         self.trace_count = 0
         self.uncompressed_size = 0
-
+        self._context = []
         self.compressor_writer = ZstdCompressor(
             level=compression_level, threads=-1
         ).stream_writer(self.buffer, closefd=False)
