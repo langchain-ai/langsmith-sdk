@@ -12,7 +12,7 @@ class LangSmithEvalReporter extends DefaultReporter {
     for (const file of files) {
       for (const task of file.tasks) {
         const testModule = this.ctx.state.getReportedEntity(task) as TestModule;
-        const tests = [...testModule.children?.allTests()].map((test) => {
+        const tests = [...testModule.children.allTests()].map((test) => {
           return {
             title: test.name,
             status: test.result()?.state ?? "skipped",
