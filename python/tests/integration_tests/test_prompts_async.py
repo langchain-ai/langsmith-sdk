@@ -413,7 +413,7 @@ async def test_create_commit(
     except ls_utils.LangSmithError as e:
         err = str(e)
         assert "Manifest must have an id field" in err
-        assert "400 AsyncClient Error" in err
+        assert "400 Bad Request" in err
     except Exception as e:
         pytest.fail(f"Unexpected exception raised: {e}")
 
@@ -425,7 +425,7 @@ async def test_create_commit(
     except ls_utils.LangSmithError as e:
         err = str(e)
         assert "Manifest type hi is not supported" in err
-        assert "400 AsyncClient Error" in err
+        assert "400 Bad Request" in err
     except Exception as e:
         pytest.fail(f"Unexpected exception raised: {e}")
 

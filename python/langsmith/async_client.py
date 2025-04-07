@@ -142,7 +142,7 @@ class AsyncClient:
                     )
                 else:
                     raise ls_utils.LangSmithError(
-                        f"Failed to {method} {endpoint} in LangSmith" f" API. {repr(e)}"
+                        f"Failed to {method} {endpoint} in LangSmith API. {repr(e)}"
                     )
             except httpx.RequestError as e:
                 if attempt == max_retries - 1:
@@ -1487,7 +1487,7 @@ class AsyncClient:
             HTTPError: If the server request fails.
             ValueError: If the prompt does not exist.
         """
-        if not self._prompt_exists(prompt_identifier):
+        if not (await self._prompt_exists(prompt_identifier)):
             raise ls_utils.LangSmithNotFoundError(
                 "Prompt does not exist, you must create it first."
             )
