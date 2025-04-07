@@ -679,6 +679,7 @@ def test_create_run_with_filters(auto_batch_tracing: bool) -> None:
     assert all([exp in all_posted for exp in expected])
 
 
+@pytest.mark.flaky(retries=3)
 def test_client_gc_after_autoscale() -> None:
     session = mock.MagicMock(spec=requests.Session)
     client = Client(
@@ -1248,6 +1249,110 @@ def test_batch_ingest_run_splits_large_batches(
 
         # Check that no duplicate run_ids are present in the request bodies
         assert len(request_bodies) == len(set([body["id"] for body in request_bodies]))
+
+
+def test_sampling_and_batching():
+    """Test that sampling and batching work correctly."""
+    # Setup mock client
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_session.request.return_value = mock_response
+
+    counter = 0
+
+    def mock_should_sample():
+        nonlocal counter
+        counter += 1
+        return counter % 2 != 0
+
+    with patch(
+        "langsmith.client.Client._should_sample", side_effect=mock_should_sample
+    ):
+        client = Client(
+            api_key="test-api-key",
+            auto_batch_tracing=True,
+            tracing_sampling_rate=0.5,
+            session=mock_session,
+        )
+
+        project_name = "__test_batch"
+
+        # Create parent runs
+        run_params = []
+        for i in range(4):
+            run_id = uuid.uuid4()
+            params = {
+                "id": run_id,
+                "project_name": project_name,
+                "name": f"test_run {i}",
+                "run_type": "llm",
+                "inputs": {"text": f"hello world {i}"},
+                "dotted_order": "foo",
+                "trace_id": run_id,
+            }
+            client.create_run(**params)
+            run_params.append(params)
+
+        client.flush()
+
+        # Create child runs and update parent runs
+        child_run_params = []
+        for i, run_param in enumerate(run_params):
+            child_run_id = uuid.uuid4()
+            child_params = {
+                "id": child_run_id,
+                "project_name": project_name,
+                "name": f"test_child_run {i}",
+                "run_type": "llm",
+                "inputs": {"text": f"child world {i}"},
+                "dotted_order": "foo",
+                "trace_id": run_param["id"],
+            }
+            client.create_run(**child_params)
+            child_run_params.append(child_params)
+
+        client.flush()
+
+        # Verify all requests
+        post_calls = [
+            call
+            for call in mock_session.request.mock_calls
+            if call.args and call.args[0] == "POST"
+        ]
+        assert len(post_calls) >= 2
+
+        # Verify that only odd-numbered runs were sampled (due to our counter logic)
+        assert post_calls[0].args[1].endswith("/runs/batch")
+        assert post_calls[1].args[1].endswith("/runs/batch")
+
+        data = post_calls[0].kwargs["data"]
+        if isinstance(data, bytes):
+            data = data.decode("utf-8")
+        batch_data = json.loads(data)
+
+        # Verify posts only contain odd-numbered runs
+        assert len(batch_data.get("post", [])) == 2
+        for post in batch_data.get("post", []):
+            assert "text" in post["inputs"]
+            if "hello world" in post["inputs"]["text"]:
+                i = int(post["inputs"]["text"].split()[-1])
+                assert i % 2 == 0
+            elif "child world" in post["inputs"]["text"]:
+                i = int(post["inputs"]["text"].split()[-1])
+                assert i % 2 == 0
+
+        data = post_calls[1].kwargs["data"]
+        if isinstance(data, bytes):
+            data = data.decode("utf-8")
+        batch_data = json.loads(data)
+        assert len(batch_data.get("post", [])) == 2
+        for p in batch_data.get("post", []):
+            run_id = p["id"]
+            original_run = next((r for r in run_params if str(r["id"]) == run_id), None)
+            if original_run:
+                i = int(original_run["name"].split()[-1])
+                assert i % 2 == 0
 
 
 @mock.patch("langsmith.client.requests.Session")

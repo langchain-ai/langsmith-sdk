@@ -572,6 +572,7 @@ class _LangSmithTestSuite:
         pytest_plugin=None,
         pytest_nodeid=None,
     ) -> None:
+        inputs = inputs or {}
         if pytest_plugin and pytest_nodeid:
             update = {"inputs": inputs, "reference_outputs": outputs}
             update = {k: v for k, v in update.items() if v is not None}
@@ -592,7 +593,7 @@ class _LangSmithTestSuite:
             )
         else:
             if (
-                (inputs is not None and inputs != example.inputs)
+                (inputs != example.inputs)
                 or (outputs is not None and outputs != example.outputs)
                 or (metadata is not None and metadata != example.metadata)
                 or str(example.dataset_id) != str(self.id)
@@ -1076,6 +1077,7 @@ def log_outputs(outputs: dict, /) -> None:
             "LANGSMITH_TRACING environment variable to 'true')."
         )
         raise ValueError(msg)
+    outputs = _dumpd(outputs)
     run_tree.add_outputs(outputs)
     test_case.log_outputs(outputs)
 
@@ -1302,3 +1304,25 @@ def _stringify(x: Any) -> str:
         return dumps_json(x).decode("utf-8", errors="surrogateescape")
     except Exception:
         return str(x)
+
+
+def _dumpd(x: Any) -> Any:
+    """Serialize LangChain Serializable objects."""
+    dumpd = _get_langchain_dumpd()
+    if not dumpd:
+        return x
+    try:
+        serialized = dumpd(x)
+        return serialized
+    except Exception:
+        return x
+
+
+@functools.lru_cache
+def _get_langchain_dumpd() -> Optional[Callable]:
+    try:
+        from langchain_core.load import dumpd
+
+        return dumpd
+    except ImportError:
+        return None

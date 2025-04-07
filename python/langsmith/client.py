@@ -103,12 +103,36 @@ from langsmith._internal._operations import (
 from langsmith._internal._serde import dumps_json as _dumps_json
 from langsmith.schemas import AttachmentInfo
 
+HAS_OTEL = False
+try:
+    if ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED")):
+        from opentelemetry import trace as otel_trace  # type: ignore[import]
+
+        from langsmith._internal.otel._otel_client import (
+            get_otlp_tracer_provider,
+        )
+        from langsmith._internal.otel._otel_exporter import OTELExporter
+
+        HAS_OTEL = True
+except ImportError:
+    raise ImportError(
+        "To use OTEL tracing, you must install it with `pip install langsmith[otel]`"
+    )
+
 try:
     from zoneinfo import ZoneInfo  # type: ignore[import-not-found]
 except ImportError:
 
     class ZoneInfo:  # type: ignore[no-redef]
         """Introduced in python 3.9."""
+
+
+try:
+    from opentelemetry.sdk.trace import TracerProvider  # type: ignore[import-not-found]
+except ImportError:
+
+    class TracerProvider:  # type: ignore[no-redef]
+        """Used for optional OTEL tracing."""
 
 
 if TYPE_CHECKING:
@@ -193,6 +217,7 @@ RUN_TYPE_T = Literal[
 ]
 
 
+@functools.lru_cache(maxsize=1)
 def _default_retry_config() -> Retry:
     """Get the default retry configuration.
 
@@ -271,15 +296,20 @@ def _format_feedback_score(score: Union[float, int, bool, None]):
     return score
 
 
-def _get_tracing_sampling_rate() -> float | None:
+def _get_tracing_sampling_rate(
+    tracing_sampling_rate: Optional[float] = None,
+) -> float | None:
     """Get the tracing sampling rate.
 
     Returns:
         Optional[float]: The tracing sampling rate.
     """
-    sampling_rate_str = ls_utils.get_env_var("TRACING_SAMPLING_RATE")
-    if sampling_rate_str is None:
-        return None
+    if tracing_sampling_rate is None:
+        sampling_rate_str = ls_utils.get_env_var("TRACING_SAMPLING_RATE")
+        if not sampling_rate_str:
+            return None
+    else:
+        sampling_rate_str = str(tracing_sampling_rate)
     sampling_rate = float(sampling_rate_str)
     if sampling_rate < 0 or sampling_rate > 1:
         raise ls_utils.LangSmithUserError(
@@ -398,6 +428,7 @@ class Client:
         "compressed_traces",
         "_data_available_event",
         "_futures",
+        "otel_exporter",
     ]
 
     def __init__(
@@ -415,6 +446,8 @@ class Client:
         hide_outputs: Optional[Union[Callable[[dict], dict], bool]] = None,
         info: Optional[Union[dict, ls_schemas.LangSmithInfo]] = None,
         api_urls: Optional[Dict[str, str]] = None,
+        otel_tracer_provider: Optional[TracerProvider] = None,
+        tracing_sampling_rate: Optional[float] = None,
     ) -> None:
         """Initialize a Client instance.
 
@@ -446,6 +479,12 @@ class Client:
                 URL in the dictionary. However, ONLY Runs are written (POST and PATCH)
                 to all URLs in the dictionary. Feedback, sessions, datasets, examples,
                 annotation queues and evaluation results are only written to the first.
+            otel_tracer_provider (Optional[TracerProvider]): Optional tracer provider for OpenTelemetry integration.
+                If not provided, a LangSmith-specific tracer provider will be used.
+            tracing_sampling_rate (Optional[float]): The sampling rate for tracing. If provided,
+                overrides the LANGCHAIN_TRACING_SAMPLING_RATE environment variable.
+                Should be a float between 0 and 1, where 1 means trace everything
+                and 0 means trace nothing.
 
         Raises:
             LangSmithUserError: If the API key is not provided when using the hosted service.
@@ -464,7 +503,7 @@ class Client:
                 "and LANGSMITH_RUNS_ENDPOINTS."
             )
 
-        self.tracing_sample_rate = _get_tracing_sampling_rate()
+        self.tracing_sample_rate = _get_tracing_sampling_rate(tracing_sampling_rate)
         self._filtered_post_uuids: set[uuid.UUID] = set()
         self._write_api_urls: Mapping[str, Optional[str]] = _get_write_api_urls(
             api_urls
@@ -498,6 +537,8 @@ class Client:
         self.compressed_traces: Optional[CompressedTraces] = None
         self._data_available_event: Optional[threading.Event] = None
         self._futures: Optional[set[cf.Future]] = None
+        self.otel_exporter: Optional[OTELExporter] = None
+
         # Initialize auto batching
         if auto_batch_tracing:
             self.tracing_queue: Optional[PriorityQueue] = PriorityQueue()
@@ -576,6 +617,34 @@ class Client:
         self._settings: Union[ls_schemas.LangSmithSettings, None] = None
 
         self._manual_cleanup = False
+
+        if ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED")):
+            if not HAS_OTEL:
+                warnings.warn(
+                    "LANGSMITH_OTEL_ENABLED is set but OpenTelemetry packages are not installed. "
+                    "Install with `pip install langsmith[otel]`"
+                )
+            existing_provider = otel_trace.get_tracer_provider()
+            tracer = existing_provider.get_tracer(__name__)
+            if otel_tracer_provider is None:
+                # Use existing global provider if available
+                if not (
+                    isinstance(existing_provider, otel_trace.ProxyTracerProvider)
+                    and hasattr(tracer, "_tracer")
+                    and isinstance(
+                        cast(
+                            otel_trace.ProxyTracer,
+                            tracer,
+                        )._tracer,
+                        otel_trace.NoOpTracer,
+                    )
+                ):
+                    otel_tracer_provider = cast(TracerProvider, existing_provider)
+                else:
+                    otel_tracer_provider = get_otlp_tracer_provider()
+                    otel_trace.set_tracer_provider(otel_tracer_provider)
+
+            self.otel_exporter = OTELExporter(tracer_provider=otel_tracer_provider)
 
     def _repr_html_(self) -> str:
         """Return an HTML representation of the instance with a link to the URL.
@@ -1179,6 +1248,11 @@ class Client:
                 {k: v for k, v in langchain_metadata.items() if k not in metadata}
             )
 
+    def _should_sample(self) -> bool:
+        if self.tracing_sample_rate is None:
+            return True
+        return random.random() < self.tracing_sample_rate
+
     def _filter_for_sampling(
         self, runs: Iterable[dict], *, patch: bool = False
     ) -> list[dict]:
@@ -1197,16 +1271,21 @@ class Client:
         else:
             sampled = []
             for run in runs:
-                if (
-                    # Child run
-                    run["id"] != run.get("trace_id")
-                    # Whose trace is included
-                    and run.get("trace_id") not in self._filtered_post_uuids
-                    # Or a root that's randomly sampled
-                ) or random.random() < self.tracing_sample_rate:
-                    sampled.append(run)
+                trace_id = run.get("trace_id") or run["id"]
+
+                # If we've already made a decision about this trace, follow it
+                if trace_id in self._filtered_post_uuids:
+                    continue
+
+                # For new traces, apply sampling
+                if run["id"] == trace_id:
+                    if self._should_sample():
+                        sampled.append(run)
+                    else:
+                        self._filtered_post_uuids.add(trace_id)
                 else:
-                    self._filtered_post_uuids.add(_as_uuid(run["id"]))
+                    # Child runs follow their trace's sampling decision
+                    sampled.append(run)
             return sampled
 
     def create_run(
@@ -3008,6 +3087,9 @@ class Client:
         Note: this will fetch whatever data exists in the DB. Results are not
         immediately available in the DB upon evaluation run completion.
 
+        Feedback score values will be returned as an average across all runs for
+        the experiment. Note that non-numeric feedback scores will be omitted.
+
         Args:
             project_id (Optional[Union[UUID, str]]): The ID of the project.
             project_name (Optional[str]): The name of the project.
@@ -4003,34 +4085,32 @@ class Client:
                 )
             )
 
-            if example.inputs:
-                inputsb = _dumps_json(example.inputs)
+            inputsb = _dumps_json(example.inputs or {})
 
-                parts.append(
+            parts.append(
+                (
+                    f"{example_id}.inputs",
                     (
-                        f"{example_id}.inputs",
-                        (
-                            None,
-                            inputsb,
-                            "application/json",
-                            {},
-                        ),
-                    )
+                        None,
+                        inputsb,
+                        "application/json",
+                        {},
+                    ),
                 )
+            )
 
-            if example.outputs:
-                outputsb = _dumps_json(example.outputs)
-                parts.append(
+            outputsb = _dumps_json(example.outputs or {})
+            parts.append(
+                (
+                    f"{example_id}.outputs",
                     (
-                        f"{example_id}.outputs",
-                        (
-                            None,
-                            outputsb,
-                            "application/json",
-                            {},
-                        ),
-                    )
+                        None,
+                        outputsb,
+                        "application/json",
+                        {},
+                    ),
                 )
+            )
 
             if example.attachments:
                 for name, attachment in example.attachments.items():
@@ -5102,14 +5182,12 @@ class Client:
             "DELETE",
             "/examples",
             headers={**self._headers, "Content-Type": "application/json"},
-            data=_dumps_json(
-                {
-                    "ids": [
-                        str(_as_uuid(id_, f"example_ids[{i}]"))
-                        for i, id_ in enumerate(example_ids)
-                    ]
-                }
-            ),
+            params={
+                "example_ids": [
+                    str(_as_uuid(id_, f"example_ids[{i}]"))
+                    for i, id_ in enumerate(example_ids)
+                ]
+            },
         )
         ls_utils.raise_for_status_with_text(response)
 
@@ -5580,6 +5658,7 @@ class Client:
                     self.tracing_queue is not None or self.compressed_traces is not None
                 )
                 and feedback.trace_id is not None
+                and self.otel_exporter is None
             ):
                 serialized_op = serialize_feedback_dict(feedback)
                 if self.compressed_traces is not None:
@@ -7592,6 +7671,8 @@ def _convert_stored_attachments_to_attachments_dict(
     attachments_dict = {}
     if attachments_key in data and data[attachments_key]:
         for key, value in data[attachments_key].items():
+            if not key.startswith("attachment."):
+                continue
             response = requests.get(value["presigned_url"], stream=True)
             response.raise_for_status()
             reader = io.BytesIO(response.content)

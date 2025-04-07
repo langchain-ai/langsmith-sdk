@@ -171,6 +171,12 @@ test.concurrent("Test LangSmith Client Dataset CRD", async () => {
     client.listExamples({ datasetId: newDataset.id })
   );
   expect(examples2.length).toBe(2);
+  await client.createExample({ dataset_id: newDataset.id, inputs: {} });
+
+  const examples3 = await toArray(
+    client.listExamples({ datasetId: newDataset.id })
+  );
+  expect(examples3.length).toBe(3);
 
   await client.deleteDataset({ datasetId });
   const rawDataset = await client.createDataset(fileName, {

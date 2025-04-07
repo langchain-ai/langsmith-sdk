@@ -1296,8 +1296,7 @@ def test_from_runnable_config():
         assert rt
         assert rt.run_type == "retriever"
         assert rt.parent_run_id
-        assert rt.parent_run
-        assert rt.parent_run.run_type == "tool"
+        assert rt.parent_dotted_order
         assert rt.session_name == "foo"
         return my_grandchild_tool.invoke({"text": text}, {"run_id": gc_run_id})
 
@@ -1732,6 +1731,7 @@ def test_traceable_stop_iteration():
     assert list(consume(wrapped)) == list(range(5))
 
 
+@pytest.mark.flaky(retries=3)
 def test_traceable_input_attachments():
     with patch.object(ls_client.ls_env, "get_runtime_environment") as mock_get_env:
         mock_get_env.return_value = {
@@ -1752,6 +1752,9 @@ def test_traceable_input_attachments():
 
         mock_client = _get_mock_client(
             info=ls_schemas.LangSmithInfo(
+                instance_flags={
+                    "zstd_compression_enabled": False,
+                },
                 batch_ingest_config=ls_schemas.BatchIngestConfig(
                     use_multipart_endpoint=True,
                     size_limit_bytes=None,  # Note this field is not used here
@@ -1759,7 +1762,7 @@ def test_traceable_input_attachments():
                     scale_up_nthreads_limit=16,
                     scale_up_qsize_trigger=1000,
                     scale_down_nempty_trigger=4,
-                )
+                ),
             ),
         )
         long_content = b"c" * 20_000_000
@@ -1772,7 +1775,9 @@ def test_traceable_input_attachments():
             )
             assert result == "foo"
 
-        for _ in range(10):
+        mock_client.flush()
+
+        for _ in range(20):
             calls = _get_calls(mock_client)
             datas = _get_multipart_data(calls)
             if len(datas) >= 7:

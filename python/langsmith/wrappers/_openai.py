@@ -31,6 +31,7 @@ if TYPE_CHECKING:
         ChoiceDeltaToolCall,
     )
     from openai.types.completion import Completion
+    from openai.types.responses import ResponseStreamEvent  # type: ignore
 
 # Any is used since it may work with Azure or other providers
 C = TypeVar("C", bound=Union["OpenAI", "AsyncOpenAI", Any])
@@ -52,7 +53,11 @@ def _strip_not_given(d: dict) -> dict:
         not_given = _get_not_given()
         if not_given is None:
             return d
-        return {k: v for k, v in d.items() if not isinstance(v, not_given)}
+        return {
+            k: v
+            for k, v in d.items()
+            if not (isinstance(v, not_given) or (k.startswith("extra_") and v is None))
+        }
     except Exception as e:
         logger.error(f"Error stripping NotGiven: {e}")
         return d
@@ -68,9 +73,11 @@ def _infer_invocation_params(model_type: str, kwargs: dict):
     return {
         "ls_provider": "openai",
         "ls_model_type": model_type,
-        "ls_model_name": stripped.get("model", None),
-        "ls_temperature": stripped.get("temperature", None),
-        "ls_max_tokens": stripped.get("max_tokens", None),
+        "ls_model_name": stripped.get("model"),
+        "ls_temperature": stripped.get("temperature"),
+        "ls_max_tokens": stripped.get("max_tokens")
+        or stripped.get("max_completion_tokens")
+        or stripped.get("max_output_tokens"),
         "ls_stop": stop,
     }
 
@@ -179,24 +186,38 @@ def _reduce_completions(all_chunks: List[Completion]) -> dict:
 
 
 def _create_usage_metadata(oai_token_usage: dict) -> UsageMetadata:
-    input_tokens = oai_token_usage.get("prompt_tokens") or 0
-    output_tokens = oai_token_usage.get("completion_tokens") or 0
+    input_tokens = (
+        oai_token_usage.get("prompt_tokens") or oai_token_usage.get("input_tokens") or 0
+    )
+    output_tokens = (
+        oai_token_usage.get("completion_tokens")
+        or oai_token_usage.get("output_tokens")
+        or 0
+    )
     total_tokens = oai_token_usage.get("total_tokens") or input_tokens + output_tokens
     input_token_details: dict = {
-        "audio": (oai_token_usage.get("prompt_tokens_details") or {}).get(
-            "audio_tokens"
-        ),
-        "cache_read": (oai_token_usage.get("prompt_tokens_details") or {}).get(
-            "cached_tokens"
-        ),
+        "audio": (
+            oai_token_usage.get("prompt_tokens_details")
+            or oai_token_usage.get("input_tokens_details")
+            or {}
+        ).get("audio_tokens"),
+        "cache_read": (
+            oai_token_usage.get("prompt_tokens_details")
+            or oai_token_usage.get("input_tokens_details")
+            or {}
+        ).get("cached_tokens"),
     }
     output_token_details: dict = {
-        "audio": (oai_token_usage.get("completion_tokens_details") or {}).get(
-            "audio_tokens"
-        ),
-        "reasoning": (oai_token_usage.get("completion_tokens_details") or {}).get(
-            "reasoning_tokens"
-        ),
+        "audio": (
+            oai_token_usage.get("completion_tokens_details")
+            or oai_token_usage.get("output_tokens_details")
+            or {}
+        ).get("audio_tokens"),
+        "reasoning": (
+            oai_token_usage.get("completion_tokens_details")
+            or oai_token_usage.get("output_tokens_details")
+            or {}
+        ).get("reasoning_tokens"),
     }
     return UsageMetadata(
         input_tokens=input_tokens,
@@ -235,32 +256,32 @@ def _get_wrapper(
     textra = tracing_extra or {}
 
     @functools.wraps(original_create)
-    def create(*args, stream: bool = False, **kwargs):
+    def create(*args, **kwargs):
         decorator = run_helpers.traceable(
             name=name,
             run_type="llm",
-            reduce_fn=reduce_fn if stream else None,
+            reduce_fn=reduce_fn if kwargs.get("stream") is True else None,
             process_inputs=_strip_not_given,
             _invocation_params_fn=invocation_params_fn,
             process_outputs=process_outputs,
             **textra,
         )
 
-        return decorator(original_create)(*args, stream=stream, **kwargs)
+        return decorator(original_create)(*args, **kwargs)
 
     @functools.wraps(original_create)
-    async def acreate(*args, stream: bool = False, **kwargs):
+    async def acreate(*args, **kwargs):
         kwargs = _strip_not_given(kwargs)
         decorator = run_helpers.traceable(
             name=name,
             run_type="llm",
-            reduce_fn=reduce_fn if stream else None,
+            reduce_fn=reduce_fn if kwargs.get("stream") is True else None,
             process_inputs=_strip_not_given,
             _invocation_params_fn=invocation_params_fn,
             process_outputs=process_outputs,
             **textra,
         )
-        return await decorator(original_create)(*args, stream=stream, **kwargs)
+        return await decorator(original_create)(*args, **kwargs)
 
     return acreate if run_helpers.is_async(original_create) else create
 
@@ -268,6 +289,7 @@ def _get_wrapper(
 def _get_parse_wrapper(
     original_parse: Callable,
     name: str,
+    process_outputs: Callable,
     tracing_extra: Optional[TracingExtra] = None,
     invocation_params_fn: Optional[Callable] = None,
 ) -> Callable:
@@ -281,7 +303,7 @@ def _get_parse_wrapper(
             reduce_fn=None,
             process_inputs=_strip_not_given,
             _invocation_params_fn=invocation_params_fn,
-            process_outputs=_process_chat_completion,
+            process_outputs=process_outputs,
             **textra,
         )
         return decorator(original_parse)(*args, **kwargs)
@@ -295,12 +317,19 @@ def _get_parse_wrapper(
             reduce_fn=None,
             process_inputs=_strip_not_given,
             _invocation_params_fn=invocation_params_fn,
-            process_outputs=_process_chat_completion,
+            process_outputs=process_outputs,
             **textra,
         )
         return await decorator(original_parse)(*args, **kwargs)
 
     return aparse if run_helpers.is_async(original_parse) else parse
+
+
+def _reduce_response_events(events: list[ResponseStreamEvent]) -> dict:
+    for event in events:
+        if event.type == "response.completed":
+            return _process_responses_api_output(event.response)
+    return {}
 
 
 class TracingExtra(TypedDict, total=False):
@@ -317,6 +346,12 @@ def wrap_openai(
     completions_name: str = "OpenAI",
 ) -> C:
     """Patch the OpenAI client to make it traceable.
+
+    Supports:
+        - Chat and Responses API's
+        - Sync and async OpenAI clients
+        - create() and parse() methods
+        - with and without streaming
 
     Args:
         client (Union[OpenAI, AsyncOpenAI]): The client to patch.
@@ -337,9 +372,10 @@ def wrap_openai(
             import openai
             from langsmith import wrappers
 
+            # Use OpenAI client same as you normally would.
             client = wrappers.wrap_openai(openai.OpenAI())
 
-            # Use OpenAI client same as you normally would:
+            # Chat API:
             messages = [
                 {"role": "system", "content": "You are a helpful assistant."},
                 {
@@ -352,7 +388,20 @@ def wrap_openai(
             )
             print(completion.choices[0].message.content)
 
+            # Responses API:
+            response = client.responses.create(
+                model="gpt-4o-mini",
+                messages=messages,
+            )
+            print(response.output_text)
+
+    .. versionchanged:: 0.3.16
+
+        Support for Responses API added.
     """  # noqa: E501
+    tracing_extra = tracing_extra or {}
+
+    # First wrap the create methods - these handle non-streaming cases
     client.chat.completions.create = _get_wrapper(  # type: ignore[method-assign]
         client.chat.completions.create,
         chat_name,
@@ -361,6 +410,7 @@ def wrap_openai(
         invocation_params_fn=functools.partial(_infer_invocation_params, "chat"),
         process_outputs=_process_chat_completion,
     )
+
     client.completions.create = _get_wrapper(  # type: ignore[method-assign]
         client.completions.create,
         completions_name,
@@ -379,8 +429,45 @@ def wrap_openai(
         client.beta.chat.completions.parse = _get_parse_wrapper(  # type: ignore[method-assign]
             client.beta.chat.completions.parse,  # type: ignore
             chat_name,
+            _process_chat_completion,
             tracing_extra=tracing_extra,
             invocation_params_fn=functools.partial(_infer_invocation_params, "chat"),
         )
 
+    # For the responses API: "client.responses.create(**kwargs)"
+    if hasattr(client, "responses"):
+        if hasattr(client.responses, "create"):
+            client.responses.create = _get_wrapper(  # type: ignore[method-assign]
+                client.responses.create,
+                chat_name,
+                _reduce_response_events,
+                process_outputs=_process_responses_api_output,
+                tracing_extra=tracing_extra,
+                invocation_params_fn=functools.partial(
+                    _infer_invocation_params, "chat"
+                ),
+            )
+        if hasattr(client.responses, "parse"):
+            client.responses.parse = _get_parse_wrapper(  # type: ignore[method-assign]
+                client.responses.parse,
+                chat_name,
+                _process_responses_api_output,
+                tracing_extra=tracing_extra,
+                invocation_params_fn=functools.partial(
+                    _infer_invocation_params, "chat"
+                ),
+            )
+
     return client
+
+
+def _process_responses_api_output(response: Any) -> dict:
+    if response:
+        try:
+            output = response.model_dump(exclude_none=True, mode="json")
+            if usage := output.pop("usage", None):
+                output["usage_metadata"] = _create_usage_metadata(usage)
+            return output
+        except Exception:
+            return {"output": response}
+    return {}

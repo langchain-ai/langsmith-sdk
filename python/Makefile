@@ -22,6 +22,7 @@ profile-background-thread:
 view-profile:
 	poetry run snakeviz profiles/${PROFILE_NAME}.prof
 
+TEST ?= "tests/unit_tests"
 tests:
 	env \
 	 -u LANGCHAIN_PROJECT \
@@ -30,16 +31,17 @@ tests:
 	 -u LANGSMITH_TRACING \
 	 PYTHONDEVMODE=1 \
 	 PYTHONASYNCIODEBUG=1 \
-	 poetry run python -m pytest --disable-socket --allow-unix-socket -n auto --durations=10 tests/unit_tests
+	 poetry run python -m pytest --disable-socket --allow-unix-socket -n auto --durations=10 ${TEST}
 
 tests_watch:
 	poetry run ptw --now . -- -vv -x  tests/unit_tests
 
+INT_TEST ?= "tests/integration_tests"
 integration_tests:
-	poetry run python -m pytest -x -v --durations=10 --cov=langsmith --cov-report=term-missing --cov-report=html --cov-config=.coveragerc tests/integration_tests
+	poetry run python -m pytest -x -v --durations=10 --cov=langsmith --cov-report=term-missing --cov-report=html --cov-config=.coveragerc ${INT_TEST}
 
 integration_tests_fast:
-	poetry run python -m pytest -x -n auto --durations=10 -v --cov=langsmith --cov-report=term-missing --cov-report=html --cov-config=.coveragerc tests/integration_tests
+	poetry run python -m pytest -x -n auto --durations=10 -v --cov=langsmith --cov-report=term-missing --cov-report=html --cov-config=.coveragerc ${INT_TEST}
 
 doctest:
 	poetry run python -m pytest -n auto -x --durations=10 --doctest-modules langsmith
