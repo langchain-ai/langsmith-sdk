@@ -142,8 +142,7 @@ class AsyncClient:
                     )
                 else:
                     raise ls_utils.LangSmithError(
-                        f"Failed to {method} {endpoint} in LangSmith"
-                        f" API. {repr(e)}"
+                        f"Failed to {method} {endpoint} in LangSmith" f" API. {repr(e)}"
                     )
             except httpx.RequestError as e:
                 if attempt == max_retries - 1:
@@ -1375,13 +1374,19 @@ class AsyncClient:
                 "true" if is_public else "false" if is_public is not None else None
             ),
             "is_archived": "true" if is_archived else "false",
-            "sort_field": sort_field.value if isinstance(sort_field, ls_schemas.PromptSortField) else sort_field,
+            "sort_field": (
+                sort_field.value
+                if isinstance(sort_field, ls_schemas.PromptSortField)
+                else sort_field
+            ),
             "sort_direction": sort_direction,
             "query": query,
             "match_prefix": "true" if query else None,
         }
 
-        response = await self._arequest_with_retries("GET", "/repos/", params=_exclude_none(params))
+        response = await self._arequest_with_retries(
+            "GET", "/repos/", params=_exclude_none(params)
+        )
         return ls_schemas.ListPromptsResponse(**response.json())
 
     async def get_prompt(self, prompt_identifier: str) -> Optional[ls_schemas.Prompt]:
@@ -1853,4 +1858,3 @@ class AsyncClient:
 def _exclude_none(d: dict) -> dict:
     """Exclude None values from a dictionary."""
     return {k: v for k, v in d.items() if v is not None}
-    
