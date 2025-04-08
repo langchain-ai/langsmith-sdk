@@ -33,23 +33,19 @@ import typing
 import uuid
 import warnings
 import weakref
+from collections.abc import AsyncIterable, Iterable, Iterator, Mapping, Sequence
 from inspect import signature
 from pathlib import Path
 from queue import PriorityQueue
 from typing import (
     TYPE_CHECKING,
     Any,
-    AsyncIterable,
     Callable,
     DefaultDict,
     Dict,
-    Iterable,
-    Iterator,
     List,
     Literal,
-    Mapping,
     Optional,
-    Sequence,
     Tuple,
     Type,
     Union,
@@ -76,6 +72,9 @@ from langsmith._internal._background_thread import (
 )
 from langsmith._internal._background_thread import (
     tracing_control_thread_func as _tracing_control_thread_func,
+)
+from langsmith._internal._background_thread import (
+    tracing_control_thread_func_compress_parallel as _tracing_control_thread_func_compress_parallel,
 )
 from langsmith._internal._beta_decorator import warn_beta
 from langsmith._internal._compressed_traces import CompressedTraces
@@ -429,6 +428,8 @@ class Client:
         "_data_available_event",
         "_futures",
         "otel_exporter",
+        "_tracing_control_thread",
+        "_compress_control_thread",
     ]
 
     def __init__(
@@ -535,6 +536,7 @@ class Client:
         weakref.finalize(self, close_session, self.session)
         atexit.register(close_session, session_)
         self.compressed_traces: Optional[CompressedTraces] = None
+        self._compress_control_thread: Optional[threading.Thread] = None
         self._data_available_event: Optional[threading.Event] = None
         self._futures: Optional[set[cf.Future]] = None
         self.otel_exporter: Optional[OTELExporter] = None
@@ -543,14 +545,16 @@ class Client:
         if auto_batch_tracing:
             self.tracing_queue: Optional[PriorityQueue] = PriorityQueue()
 
-            threading.Thread(
+            self._tracing_control_thread: Optional[threading.Thread] = threading.Thread(
                 target=_tracing_control_thread_func,
                 # arg must be a weakref to self to avoid the Thread object
                 # preventing garbage collection of the Client object
                 args=(weakref.ref(self),),
-            ).start()
+            )
+            self._tracing_control_thread.start()
         else:
             self.tracing_queue = None
+            self._tracing_control_thread = None
 
         # Mount the HTTPAdapter with the retry configuration.
         adapter = _LangSmithHttpAdapter(
@@ -654,6 +658,28 @@ class Client:
         """
         link = self._host_url
         return f'<a href="{link}", target="_blank" rel="noopener">LangSmith Client</a>'
+
+    def _ensure_thread_running(
+        self, thread_attr_name: str, thread_func: Callable, *thread_args: Any
+    ) -> None:
+        """Ensure that a thread is running, and start it if not.
+
+        Args:
+            thread_attr_name (str): The name of the thread attribute on self
+            thread_func (Callable): The function to run in the thread
+            *thread_args (Any): Additional arguments to pass to thread_func
+        """
+        thread = getattr(self, thread_attr_name)
+        if not thread or not thread.is_alive():
+            logger.debug(
+                f"{thread_attr_name.lstrip('_')} thread not active. Restarting..."
+            )
+            thread = threading.Thread(
+                target=thread_func,
+                args=(weakref.ref(self), *thread_args),
+            )
+            setattr(self, thread_attr_name, thread)
+            thread.start()
 
     def __repr__(self) -> str:
         """Return a string representation of the instance with a link to the URL.
@@ -1391,6 +1417,11 @@ class Client:
                     "Adding compressed multipart to queue with context: %s",
                     multipart_form.context,
                 )
+                self._ensure_thread_running(
+                    "_compress_control_thread",
+                    _tracing_control_thread_func_compress_parallel,
+                    weakref.ref(self),
+                )
                 with self.compressed_traces.lock:
                     compress_multipart_parts_and_context(
                         multipart_form,
@@ -1402,6 +1433,11 @@ class Client:
 
                 _close_files(list(opened_files.values()))
             elif self.tracing_queue is not None:
+                self._ensure_thread_running(
+                    "_tracing_control_thread",
+                    _tracing_control_thread_func,
+                    weakref.ref(self),
+                )
                 serialized_op = serialize_run_dict("post", run_create)
                 logger.log(
                     5,
@@ -2132,6 +2168,11 @@ class Client:
         elif use_multipart:
             serialized_op = serialize_run_dict(operation="patch", payload=data)
             if self.compressed_traces is not None:
+                self._ensure_thread_running(
+                    "_compress_control_thread",
+                    _tracing_control_thread_func_compress_parallel,
+                    weakref.ref(self),
+                )
                 multipart_form, opened_files = (
                     serialized_run_operation_to_multipart_parts_and_context(
                         serialized_op
@@ -2161,6 +2202,11 @@ class Client:
                     "Adding to tracing queue: trace_id=%s, run_id=%s",
                     serialized_op.trace_id,
                     serialized_op.id,
+                )
+                self._ensure_thread_running(
+                    "_tracing_control_thread",
+                    _tracing_control_thread_func,
+                    weakref.ref(self),
                 )
                 self.tracing_queue.put(
                     TracingQueueItem(data["dotted_order"], serialized_op)
@@ -5687,6 +5733,11 @@ class Client:
             ):
                 serialized_op = serialize_feedback_dict(feedback)
                 if self.compressed_traces is not None:
+                    self._ensure_thread_running(
+                        "_compress_control_thread",
+                        _tracing_control_thread_func_compress_parallel,
+                        weakref.ref(self),
+                    )
                     multipart_form = (
                         serialized_feedback_operation_to_multipart_parts_and_context(
                             serialized_op
@@ -5702,6 +5753,11 @@ class Client:
                         if self._data_available_event:
                             self._data_available_event.set()
                 elif self.tracing_queue is not None:
+                    self._ensure_thread_running(
+                        "_tracing_control_thread",
+                        _tracing_control_thread_func,
+                        weakref.ref(self),
+                    )
                     self.tracing_queue.put(
                         TracingQueueItem(str(feedback.id), serialized_op)
                     )
