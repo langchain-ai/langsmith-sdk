@@ -269,10 +269,11 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
             client._futures = set()
             client.compressed_traces = CompressedTraces()
             client._data_available_event = threading.Event()
-            threading.Thread(
+            client._compress_control_thread = threading.Thread(
                 target=tracing_control_thread_func_compress_parallel,
                 args=(weakref.ref(client),),
-            ).start()
+            )
+            client._compress_control_thread.start()
 
             num_known_refs += 1
 
