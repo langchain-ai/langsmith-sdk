@@ -43,6 +43,9 @@ integration_tests:
 integration_tests_fast:
 	poetry run python -m pytest -x -n auto --durations=10 -v --cov=langsmith --cov-report=term-missing --cov-report=html --cov-config=.coveragerc ${INT_TEST}
 
+integration_tests_watch:
+	poetry run ptw --now . -- -vv -x  ${INT_TEST}
+
 doctest:
 	poetry run python -m pytest -n auto -x --durations=10 --doctest-modules langsmith
 
