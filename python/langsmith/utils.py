@@ -154,7 +154,7 @@ def raise_for_status_with_text(
         raise httpx.HTTPStatusError(
             f"{str(e)}: {response.text}",
             request=response.request,  # type: ignore[arg-type]
-            response=response,
+            response=response,  # type: ignore[arg-type]
         ) from e
 
 
