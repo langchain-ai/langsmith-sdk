@@ -274,7 +274,9 @@ def _validate_api_key_if_hosted(api_url: str, api_key: Optional[str]) -> None:
     """
     # If the domain is langchain.com, raise error if no api_key
     if not api_key:
-        if _is_langchain_hosted(api_url):
+        if _is_langchain_hosted(api_url) and not ls_utils.is_truish(
+            ls_utils.get_env_var("OTEL_ENABLED")
+        ):
             warnings.warn(
                 "API key must be provided when using hosted LangSmith API",
                 ls_utils.LangSmithMissingAPIKeyWarning,
