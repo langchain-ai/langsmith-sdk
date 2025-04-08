@@ -129,6 +129,7 @@ def _tracing_thread_drain_compressed_buffer(
         client.compressed_traces.compressor_writer.close()
 
         filled_buffer = client.compressed_traces.buffer
+        filled_buffer.context = client.compressed_traces._context
 
         compressed_traces_info = (pre_compressed_size, current_size)
 
@@ -327,6 +328,7 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
             _tracing_thread_handle_batch(
                 client, tracing_queue, next_batch, use_multipart
             )
+        logger.debug("Tracing control thread is shutting down")
 
 
 def tracing_control_thread_func_compress_parallel(
@@ -455,6 +457,7 @@ def tracing_control_thread_func_compress_parallel(
 
     except Exception:
         logger.error("Error in final cleanup", exc_info=True)
+    logger.debug("Compressed traces control thread is shutting down")
 
 
 def _tracing_sub_thread_func(
@@ -505,3 +508,4 @@ def _tracing_sub_thread_func(
             _tracing_thread_handle_batch(
                 client, tracing_queue, next_batch, use_multipart
             )
+        logger.debug("Tracing control sub-thread is shutting down")
