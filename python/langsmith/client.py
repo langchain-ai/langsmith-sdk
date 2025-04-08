@@ -867,7 +867,7 @@ class Client:
                             )
                         elif response.status_code == 409:
                             raise ls_utils.LangSmithConflictError(
-                                f"Conflict for {pathname}. {repr(e)}" f"{_context}"
+                                f"Conflict for {pathname}. {repr(e)}{_context}"
                             )
                         else:
                             raise ls_utils.LangSmithError(
@@ -877,8 +877,7 @@ class Client:
 
                     else:
                         raise ls_utils.LangSmithUserError(
-                            f"Failed to {method} {pathname} in LangSmith API."
-                            f" {repr(e)}"
+                            f"Failed to {method} {pathname} in LangSmith API. {repr(e)}"
                         )
                 except requests.ConnectionError as e:
                     recommendation = (
@@ -1387,6 +1386,11 @@ class Client:
                         serialized_op
                     )
                 )
+                if ls_utils.is_truish(ls_utils.get_env_var("DEBUG_TRACING_QUEUE")):
+                    logger.debug(
+                        "Adding compressed multipart to queue with context: %s",
+                        multipart_form.context,
+                    )
                 with self.compressed_traces.lock:
                     compress_multipart_parts_and_context(
                         multipart_form,
@@ -1399,6 +1403,12 @@ class Client:
                 _close_files(list(opened_files.values()))
             elif self.tracing_queue is not None:
                 serialized_op = serialize_run_dict("post", run_create)
+                if ls_utils.is_truish(ls_utils.get_env_var("DEBUG_TRACING_QUEUE")):
+                    logger.debug(
+                        "Adding to tracing queue: trace_id=%s, run_id=%s",
+                        serialized_op.trace_id,
+                        serialized_op.id,
+                    )
                 self.tracing_queue.put(
                     TracingQueueItem(run_create["dotted_order"], serialized_op)
                 )
@@ -2127,6 +2137,11 @@ class Client:
                         serialized_op
                     )
                 )
+                if ls_utils.is_truish(ls_utils.get_env_var("DEBUG_TRACING_QUEUE")):
+                    logger.debug(
+                        "Adding compressed multipart to queue with context: %s",
+                        multipart_form.context,
+                    )
                 with self.compressed_traces.lock:
                     if self._data_available_event is None:
                         raise ValueError(
@@ -2141,6 +2156,12 @@ class Client:
                     self._data_available_event.set()
                 _close_files(list(opened_files.values()))
             elif self.tracing_queue is not None:
+                if ls_utils.is_truish(ls_utils.get_env_var("DEBUG_TRACING_QUEUE")):
+                    logger.debug(
+                        "Adding to tracing queue: trace_id=%s, run_id=%s",
+                        serialized_op.trace_id,
+                        serialized_op.id,
+                    )
                 self.tracing_queue.put(
                     TracingQueueItem(data["dotted_order"], serialized_op)
                 )
