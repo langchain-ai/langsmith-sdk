@@ -448,7 +448,7 @@ async def test_annotation_queue_runs(async_client: AsyncClient):
     )
 
     # Test that runs are deleted
-    with pytest.raises(ls_utils.LangSmithAPIError):
+    with pytest.raises(ls_utils.LangSmithNotFoundError):
         await async_client.get_run_from_annotation_queue(queue_id=queue.id, index=2)
 
     run_1 = await async_client.get_run_from_annotation_queue(queue_id=queue.id, index=0)
