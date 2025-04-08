@@ -734,7 +734,7 @@ async def test_tool_call_chunking():
     collect = Collect()
     with langsmith.tracing_context(enabled=True):
         chunks = await client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o",
             messages=messages,
             tools=tools,
             tool_choice="auto",

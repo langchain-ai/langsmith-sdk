@@ -118,7 +118,7 @@ def _reduce_choices(choices: List[Choice]) -> dict:
                 "index": index,
                 "id": next((c.id for c in tool_call_chunks if c.id), None),
                 "type": next((c.type for c in tool_call_chunks if c.type), None),
-                "function": {"name": "", "arguments": ""}
+                "function": {"name": "", "arguments": ""},
             }
             for chunk in tool_call_chunks:
                 if getattr(chunk, "function", None):
@@ -127,7 +127,9 @@ def _reduce_choices(choices: List[Choice]) -> dict:
                         message["tool_calls"][index]["function"]["name"] += name_
                     arguments_ = getattr(chunk.function, "arguments", None)
                     if arguments_:
-                        message["tool_calls"][index]["function"]["arguments"] += arguments_
+                        message["tool_calls"][index]["function"]["arguments"] += (
+                            arguments_
+                        )
     return {
         "index": getattr(choices[0], "index", 0) if choices else 0,
         "finish_reason": next(
