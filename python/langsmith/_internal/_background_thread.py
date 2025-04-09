@@ -102,41 +102,47 @@ def _tracing_thread_drain_queue(
 def _tracing_thread_drain_compressed_buffer(
     client: Client, size_limit: int = 100, size_limit_bytes: int | None = 20_971_520
 ) -> Tuple[Optional[io.BytesIO], Optional[Tuple[int, int]]]:
-    if client.compressed_traces is None:
-        return None, None
-    with client.compressed_traces.lock:
-        client.compressed_traces.compressor_writer.flush()
-        current_size = client.compressed_traces.buffer.tell()
-
-        pre_compressed_size = client.compressed_traces.uncompressed_size
-
-        if size_limit is not None and size_limit <= 0:
-            raise ValueError(f"size_limit must be positive; got {size_limit}")
-        if size_limit_bytes is not None and size_limit_bytes < 0:
-            raise ValueError(
-                f"size_limit_bytes must be nonnegative; got {size_limit_bytes}"
-            )
-
-        if (size_limit_bytes is None or current_size < size_limit_bytes) and (
-            size_limit is None or client.compressed_traces.trace_count < size_limit
-        ):
+    try:
+        if client.compressed_traces is None:
             return None, None
+        with client.compressed_traces.lock:
+            client.compressed_traces.compressor_writer.flush()
+            current_size = client.compressed_traces.buffer.tell()
 
-        # Write final boundary and close compression stream
-        client.compressed_traces.compressor_writer.write(
-            f"--{_BOUNDARY}--\r\n".encode()
-        )
-        client.compressed_traces.compressor_writer.close()
+            pre_compressed_size = client.compressed_traces.uncompressed_size
 
-        filled_buffer = client.compressed_traces.buffer
-        filled_buffer.context = client.compressed_traces._context
+            if size_limit is not None and size_limit <= 0:
+                raise ValueError(f"size_limit must be positive; got {size_limit}")
+            if size_limit_bytes is not None and size_limit_bytes < 0:
+                raise ValueError(
+                    f"size_limit_bytes must be nonnegative; got {size_limit_bytes}"
+                )
 
-        compressed_traces_info = (pre_compressed_size, current_size)
+            if (size_limit_bytes is None or current_size < size_limit_bytes) and (
+                size_limit is None or client.compressed_traces.trace_count < size_limit
+            ):
+                return None, None
 
-        client.compressed_traces.reset()
+            # Write final boundary and close compression stream
+            client.compressed_traces.compressor_writer.write(
+                f"--{_BOUNDARY}--\r\n".encode()
+            )
+            client.compressed_traces.compressor_writer.close()
 
-    filled_buffer.seek(0)
-    return (filled_buffer, compressed_traces_info)
+            filled_buffer = client.compressed_traces.buffer
+            filled_buffer.context = client.compressed_traces._context
+
+            compressed_traces_info = (pre_compressed_size, current_size)
+
+            client.compressed_traces.reset()
+
+        filled_buffer.seek(0)
+        return (filled_buffer, compressed_traces_info)
+    except Exception:
+        logger.error("Error in tracing queue", exc_info=True)
+        # exceptions are logged elsewhere, but we need to make sure the
+        # background thread continues to run
+        return None, None
 
 
 def _tracing_thread_handle_batch(
