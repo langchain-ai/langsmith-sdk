@@ -3654,7 +3654,7 @@ class Client:
             raise ValueError("Must provide either dataset name or ID")
 
         # Prepare the update payload with only non-None values
-        payload = {}
+        payload: dict[str, Any] = {}
         if name is not None:
             payload["name"] = name
         if description is not None:
