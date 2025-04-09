@@ -1426,7 +1426,6 @@ class Client:
                 self._ensure_thread_running(
                     "_compress_control_thread",
                     _tracing_control_thread_func_compress_parallel,
-                    weakref.ref(self),
                 )
                 with self.compressed_traces.lock:
                     compress_multipart_parts_and_context(
@@ -1442,7 +1441,6 @@ class Client:
                 self._ensure_thread_running(
                     "_tracing_control_thread",
                     _tracing_control_thread_func,
-                    weakref.ref(self),
                 )
                 serialized_op = serialize_run_dict("post", run_create)
                 logger.log(
@@ -2177,7 +2175,6 @@ class Client:
                 self._ensure_thread_running(
                     "_compress_control_thread",
                     _tracing_control_thread_func_compress_parallel,
-                    weakref.ref(self),
                 )
                 multipart_form, opened_files = (
                     serialized_run_operation_to_multipart_parts_and_context(
@@ -2212,7 +2209,6 @@ class Client:
                 self._ensure_thread_running(
                     "_tracing_control_thread",
                     _tracing_control_thread_func,
-                    weakref.ref(self),
                 )
                 self.tracing_queue.put(
                     TracingQueueItem(data["dotted_order"], serialized_op)
@@ -5742,7 +5738,6 @@ class Client:
                     self._ensure_thread_running(
                         "_compress_control_thread",
                         _tracing_control_thread_func_compress_parallel,
-                        weakref.ref(self),
                     )
                     multipart_form = (
                         serialized_feedback_operation_to_multipart_parts_and_context(
@@ -5762,7 +5757,6 @@ class Client:
                     self._ensure_thread_running(
                         "_tracing_control_thread",
                         _tracing_control_thread_func,
-                        weakref.ref(self),
                     )
                     self.tracing_queue.put(
                         TracingQueueItem(str(feedback.id), serialized_op)
