@@ -102,41 +102,52 @@ def _tracing_thread_drain_queue(
 def _tracing_thread_drain_compressed_buffer(
     client: Client, size_limit: int = 100, size_limit_bytes: int | None = 20_971_520
 ) -> Tuple[Optional[io.BytesIO], Optional[Tuple[int, int]]]:
-    if client.compressed_traces is None:
-        return None, None
-    with client.compressed_traces.lock:
-        client.compressed_traces.compressor_writer.flush()
-        current_size = client.compressed_traces.buffer.tell()
-
-        pre_compressed_size = client.compressed_traces.uncompressed_size
-
-        if size_limit is not None and size_limit <= 0:
-            raise ValueError(f"size_limit must be positive; got {size_limit}")
-        if size_limit_bytes is not None and size_limit_bytes < 0:
-            raise ValueError(
-                f"size_limit_bytes must be nonnegative; got {size_limit_bytes}"
-            )
-
-        if (size_limit_bytes is None or current_size < size_limit_bytes) and (
-            size_limit is None or client.compressed_traces.trace_count < size_limit
-        ):
+    try:
+        if client.compressed_traces is None:
             return None, None
+        with client.compressed_traces.lock:
+            client.compressed_traces.compressor_writer.flush()
+            current_size = client.compressed_traces.buffer.tell()
 
-        # Write final boundary and close compression stream
-        client.compressed_traces.compressor_writer.write(
-            f"--{_BOUNDARY}--\r\n".encode()
+            pre_compressed_size = client.compressed_traces.uncompressed_size
+
+            if size_limit is not None and size_limit <= 0:
+                raise ValueError(f"size_limit must be positive; got {size_limit}")
+            if size_limit_bytes is not None and size_limit_bytes < 0:
+                raise ValueError(
+                    f"size_limit_bytes must be nonnegative; got {size_limit_bytes}"
+                )
+
+            if (size_limit_bytes is None or current_size < size_limit_bytes) and (
+                size_limit is None or client.compressed_traces.trace_count < size_limit
+            ):
+                return None, None
+
+            # Write final boundary and close compression stream
+            client.compressed_traces.compressor_writer.write(
+                f"--{_BOUNDARY}--\r\n".encode()
+            )
+            client.compressed_traces.compressor_writer.close()
+
+            filled_buffer = client.compressed_traces.buffer
+            filled_buffer.context = client.compressed_traces._context
+
+            compressed_traces_info = (pre_compressed_size, current_size)
+
+            client.compressed_traces.reset()
+
+        filled_buffer.seek(0)
+        return (filled_buffer, compressed_traces_info)
+    except Exception:
+        logger.error(
+            "LangSmith tracing error: Failed to submit trace data.\n"
+            "This does not affect your application's runtime.\n"
+            "Error details:",
+            exc_info=True,
         )
-        client.compressed_traces.compressor_writer.close()
-
-        filled_buffer = client.compressed_traces.buffer
-        filled_buffer.context = client.compressed_traces._context
-
-        compressed_traces_info = (pre_compressed_size, current_size)
-
-        client.compressed_traces.reset()
-
-    filled_buffer.seek(0)
-    return (filled_buffer, compressed_traces_info)
+        # exceptions are logged elsewhere, but we need to make sure the
+        # background thread continues to run
+        return None, None
 
 
 def _tracing_thread_handle_batch(
@@ -160,7 +171,12 @@ def _tracing_thread_handle_batch(
             client._batch_ingest_run_ops(cast(List[SerializedRunOperation], ops))
 
     except Exception:
-        logger.error("Error in tracing queue", exc_info=True)
+        logger.error(
+            "LangSmith tracing error: Failed to submit trace data.\n"
+            "This does not affect your application's runtime.\n"
+            "Error details:",
+            exc_info=True,
+        )
         # exceptions are logged elsewhere, but we need to make sure the
         # background thread continues to run
         pass
@@ -184,11 +200,18 @@ def _otel_tracing_thread_handle_batch(
                 client.otel_exporter.export_batch(run_ops)
             else:
                 logger.error(
-                    "Error in OTEL tracing queue: client.otel_exporter is None"
+                    "LangSmith tracing error: Failed to submit OTEL trace data.\n"
+                    "This does not affect your application's runtime.\n"
+                    "Error details: client.otel_exporter is None"
                 )
 
     except Exception:
-        logger.error("Error in OTEL tracing queue", exc_info=True)
+        logger.error(
+            "LangSmith tracing error: Failed to submit OTEL trace data.\n"
+            "This does not affect your application's runtime.\n"
+            "Error details:",
+            exc_info=True,
+        )
         # Exceptions are logged elsewhere, but we need to make sure the
         # background thread continues to run
     finally:
@@ -343,7 +366,11 @@ def tracing_control_thread_func_compress_parallel(
         or client._data_available_event is None
         or client._futures is None
     ):
-        logger.error("Required compression attributes not initialized")
+        logger.error(
+            "LangSmith tracing error: Required compression attributes not "
+            "initialized.\nThis may affect trace submission but does not "
+            "impact your application's runtime."
+        )
         return
 
     batch_ingest_config = _ensure_ingest_config(client.info)
@@ -456,7 +483,12 @@ def tracing_control_thread_func_compress_parallel(
                 )
 
     except Exception:
-        logger.error("Error in final cleanup", exc_info=True)
+        logger.error(
+            "LangSmith tracing error: Failed during final cleanup.\n"
+            "This does not affect your application's runtime.\n"
+            "Error details:",
+            exc_info=True,
+        )
     logger.debug("Compressed traces control thread is shutting down")
 
 
