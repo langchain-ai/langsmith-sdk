@@ -367,8 +367,9 @@ def tracing_control_thread_func_compress_parallel(
         or client._futures is None
     ):
         logger.error(
-            "LangSmith tracing error: Required compression attributes not initialized.\n"
-            "This may affect trace submission but does not impact your application's runtime."
+            "LangSmith tracing error: Required compression attributes not "
+            "initialized.\nThis may affect trace submission but does not "
+            "impact your application's runtime."
         )
         return
 
