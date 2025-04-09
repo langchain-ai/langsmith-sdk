@@ -139,7 +139,12 @@ def _tracing_thread_drain_compressed_buffer(
         filled_buffer.seek(0)
         return (filled_buffer, compressed_traces_info)
     except Exception:
-        logger.error("Error in tracing queue", exc_info=True)
+        logger.error(
+            "LangSmith tracing error: Failed to submit trace data.\n"
+            "This does not affect your application's runtime.\n"
+            "Error details:",
+            exc_info=True,
+        )
         # exceptions are logged elsewhere, but we need to make sure the
         # background thread continues to run
         return None, None
@@ -166,7 +171,12 @@ def _tracing_thread_handle_batch(
             client._batch_ingest_run_ops(cast(List[SerializedRunOperation], ops))
 
     except Exception:
-        logger.error("Error in tracing queue", exc_info=True)
+        logger.error(
+            "LangSmith tracing error: Failed to submit trace data.\n"
+            "This does not affect your application's runtime.\n"
+            "Error details:",
+            exc_info=True,
+        )
         # exceptions are logged elsewhere, but we need to make sure the
         # background thread continues to run
         pass
@@ -190,11 +200,18 @@ def _otel_tracing_thread_handle_batch(
                 client.otel_exporter.export_batch(run_ops)
             else:
                 logger.error(
-                    "Error in OTEL tracing queue: client.otel_exporter is None"
+                    "LangSmith tracing error: Failed to submit OTEL trace data.\n"
+                    "This does not affect your application's runtime.\n"
+                    "Error details: client.otel_exporter is None"
                 )
 
     except Exception:
-        logger.error("Error in OTEL tracing queue", exc_info=True)
+        logger.error(
+            "LangSmith tracing error: Failed to submit OTEL trace data.\n"
+            "This does not affect your application's runtime.\n"
+            "Error details:",
+            exc_info=True,
+        )
         # Exceptions are logged elsewhere, but we need to make sure the
         # background thread continues to run
     finally:
@@ -349,7 +366,10 @@ def tracing_control_thread_func_compress_parallel(
         or client._data_available_event is None
         or client._futures is None
     ):
-        logger.error("Required compression attributes not initialized")
+        logger.error(
+            "LangSmith tracing error: Required compression attributes not initialized.\n"
+            "This may affect trace submission but does not impact your application's runtime."
+        )
         return
 
     batch_ingest_config = _ensure_ingest_config(client.info)
@@ -462,7 +482,12 @@ def tracing_control_thread_func_compress_parallel(
                 )
 
     except Exception:
-        logger.error("Error in final cleanup", exc_info=True)
+        logger.error(
+            "LangSmith tracing error: Failed during final cleanup.\n"
+            "This does not affect your application's runtime.\n"
+            "Error details:",
+            exc_info=True,
+        )
     logger.debug("Compressed traces control thread is shutting down")
 
 
