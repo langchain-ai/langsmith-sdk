@@ -4246,8 +4246,8 @@ class Client:
             "dataset_examples_multipart_enabled", False
         ):
             raise ValueError(
-                "Your LangSmith version does not allow using the latest examples "
-                "endpoints, please update to the latest version or downgrade your SDK "
+                "Your LangSmith deployment does not allow using the latest examples "
+                "endpoints, please upgrade your deployment to the latest version or downgrade your SDK "
                 "to langsmith<0.3.9."
             )
         if updates is None:
@@ -4319,7 +4319,7 @@ class Client:
             "dataset_examples_multipart_enabled", False
         ):
             raise ValueError(
-                "Your LangSmith version does not allow using the multipart examples endpoint, please update to the latest version."
+                "Your LangSmith deployment does not allow using the multipart examples endpoint, please upgrade your deployment to the latest version."
             )
         if uploads is None:
             uploads = []
@@ -4363,7 +4363,7 @@ class Client:
             "examples_multipart_enabled", False
         ):
             raise ValueError(
-                "Your LangSmith version does not allow using the multipart examples endpoint, please update to the latest version."
+                "Your LangSmith deployment does not allow using the multipart examples endpoint, please upgrade your deployment to the latest version."
             )
         if upserts is None:
             upserts = []
@@ -4961,7 +4961,7 @@ class Client:
                 "dataset_examples_multipart_enabled", False
             ):
                 raise ValueError(
-                    "Your LangSmith version does not allow using the attachment operations, please update to the latest version."
+                    "Your LangSmith deployment does not allow using the attachment operations, please upgrade your deployment to the latest version."
                 )
         example_dict = dict(
             inputs=inputs,
@@ -5134,8 +5134,8 @@ class Client:
                 is not None
             ):
                 raise ValueError(
-                    "Your LangSmith version does not allow using the attachment "
-                    "operations, please update to the latest version."
+                    "Your LangSmith deployment does not allow using the attachment "
+                    "operations, please upgrade your deployment to the latest version."
                 )
             # Since ids are required, we will check against them
             examples_len = len(example_ids)
