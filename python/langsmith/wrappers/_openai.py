@@ -94,7 +94,7 @@ def _reduce_choices(choices: List[Choice]) -> dict:
             break
     tool_calls: DefaultDict[int, List[ChoiceDeltaToolCall]] = defaultdict(list)
     for c in choices:
-        if hasattr(c, "delta") and getattr(c.delta, "content", None):
+        if hasattr(c, "delta"):
             if getattr(c.delta, "content", None):
                 message["content"] += c.delta.content
             if getattr(c.delta, "function_call", None):
@@ -110,30 +110,26 @@ def _reduce_choices(choices: List[Choice]) -> dict:
                 tool_calls_list = c.delta.tool_calls
                 if tool_calls_list is not None:
                     for tool_call in tool_calls_list:
-                        tool_calls[c.index].append(tool_call)
+                        tool_calls[tool_call.index].append(tool_call)
     if tool_calls:
-        message["tool_calls"] = [None for _ in tool_calls.keys()]
+        message["tool_calls"] = [None for _ in range(max(tool_calls.keys()) + 1)]
         for index, tool_call_chunks in tool_calls.items():
             message["tool_calls"][index] = {
                 "index": index,
                 "id": next((c.id for c in tool_call_chunks if c.id), None),
                 "type": next((c.type for c in tool_call_chunks if c.type), None),
+                "function": {"name": "", "arguments": ""},
             }
             for chunk in tool_call_chunks:
                 if getattr(chunk, "function", None):
-                    if not message["tool_calls"][index].get("function"):
-                        message["tool_calls"][index]["function"] = {
-                            "name": "",
-                            "arguments": "",
-                        }
                     name_ = getattr(chunk.function, "name", None)
                     if name_:
-                        fn_ = message["tool_calls"][index]["function"]
-                        fn_["name"] += name_
+                        message["tool_calls"][index]["function"]["name"] += name_
                     arguments_ = getattr(chunk.function, "arguments", None)
                     if arguments_:
-                        fn_ = message["tool_calls"][index]["function"]
-                        fn_["arguments"] += arguments_
+                        message["tool_calls"][index]["function"][
+                            "arguments"
+                        ] += arguments_
     return {
         "index": getattr(choices[0], "index", 0) if choices else 0,
         "finish_reason": next(

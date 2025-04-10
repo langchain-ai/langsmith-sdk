@@ -274,7 +274,9 @@ def _validate_api_key_if_hosted(api_url: str, api_key: Optional[str]) -> None:
     """
     # If the domain is langchain.com, raise error if no api_key
     if not api_key:
-        if _is_langchain_hosted(api_url):
+        if _is_langchain_hosted(api_url) and not ls_utils.is_truish(
+            ls_utils.get_env_var("OTEL_ENABLED")
+        ):
             warnings.warn(
                 "API key must be provided when using hosted LangSmith API",
                 ls_utils.LangSmithMissingAPIKeyWarning,
@@ -822,6 +824,7 @@ class Client:
                             **request_kwargs,
                         )
                     ls_utils.raise_for_status_with_text(response)
+                    logger.debug("Request succeeded for %s %s. Context: %s", method, pathname, _context)
                     return response
                 except requests.exceptions.ReadTimeout as e:
                     logger.debug("Passing on exception %s", e)
@@ -867,7 +870,7 @@ class Client:
                             )
                         elif response.status_code == 409:
                             raise ls_utils.LangSmithConflictError(
-                                f"Conflict for {pathname}. {repr(e)}" f"{_context}"
+                                f"Conflict for {pathname}. {repr(e)}{_context}"
                             )
                         else:
                             raise ls_utils.LangSmithError(
@@ -877,8 +880,7 @@ class Client:
 
                     else:
                         raise ls_utils.LangSmithUserError(
-                            f"Failed to {method} {pathname} in LangSmith API."
-                            f" {repr(e)}"
+                            f"Failed to {method} {pathname} in LangSmith API. {repr(e)}"
                         )
                 except requests.ConnectionError as e:
                     recommendation = (
@@ -1387,6 +1389,11 @@ class Client:
                         serialized_op
                     )
                 )
+                logger.log(
+                    5,
+                    "Adding compressed multipart to queue with context: %s",
+                    multipart_form.context,
+                )
                 with self.compressed_traces.lock:
                     compress_multipart_parts_and_context(
                         multipart_form,
@@ -1399,6 +1406,12 @@ class Client:
                 _close_files(list(opened_files.values()))
             elif self.tracing_queue is not None:
                 serialized_op = serialize_run_dict("post", run_create)
+                logger.log(
+                    5,
+                    "Adding to tracing queue: trace_id=%s, run_id=%s",
+                    serialized_op.trace_id,
+                    serialized_op.id,
+                )
                 self.tracing_queue.put(
                     TracingQueueItem(run_create["dotted_order"], serialized_op)
                 )
@@ -1659,6 +1672,7 @@ class Client:
     def _post_batch_ingest_runs(self, body: bytes, *, _context: str):
         for api_url, api_key in self._write_api_urls.items():
             try:
+                logger.debug(f"Sending batch ingest request with context: {_context}")
                 self.request_with_retries(
                     "POST",
                     f"{api_url}/runs/batch",
@@ -1893,6 +1907,7 @@ class Client:
                         data = encoder.to_string()
                     else:
                         data = encoder
+                    logger.debug(f"Sending multipart request with context: {_context}")
                     self.request_with_retries(
                         "POST",
                         f"{api_url}/runs/multipart",
@@ -1937,7 +1952,7 @@ class Client:
         attempts: int = 3,
     ):
         """Send a zstd-compressed multipart form data stream to the backend."""
-        _context: str = ""
+        _context: str = "; ".join(getattr(data_stream, "context", []))
 
         for api_url, api_key in self._write_api_urls.items():
             data_stream.seek(0)
@@ -1960,7 +1975,9 @@ class Client:
                             else ""
                         ),
                     }
-
+                    logger.debug(
+                        f"Sending compressed multipart request with context: {_context}"
+                    )
                     self.request_with_retries(
                         "POST",
                         f"{api_url}/runs/multipart",
@@ -2123,6 +2140,11 @@ class Client:
                         serialized_op
                     )
                 )
+                logger.log(
+                    5,
+                    "Adding compressed multipart to queue with context: %s",
+                    multipart_form.context,
+                )
                 with self.compressed_traces.lock:
                     if self._data_available_event is None:
                         raise ValueError(
@@ -2137,6 +2159,12 @@ class Client:
                     self._data_available_event.set()
                 _close_files(list(opened_files.values()))
             elif self.tracing_queue is not None:
+                logger.log(
+                    5,
+                    "Adding to tracing queue: trace_id=%s, run_id=%s",
+                    serialized_op.trace_id,
+                    serialized_op.id,
+                )
                 self.tracing_queue.put(
                     TracingQueueItem(data["dotted_order"], serialized_op)
                 )
