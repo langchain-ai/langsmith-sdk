@@ -178,6 +178,24 @@ def _process_chat_completion(outputs: Any):
         return {"output": outputs}
 
 
+def _process_tool_calls_metadata(outputs: Any) -> dict:
+    try:
+        if not outputs.get("message") or not outputs["message"].get("content"):
+            return {}
+
+        tool_calls = []
+        for part in outputs["message"]["content"]:
+            if part.get("type", None) == "tool_use":
+                tool_calls.append(part.get("name", "unknown_tool"))
+
+        if tool_calls:
+            return {"ls_tool_calls": tool_calls}
+        return {}
+    except Exception as e:
+        logger.debug(f"Error extracting tool call metadata: {e}")
+        return {}
+
+
 def _get_wrapper(
     original_create: Callable,
     name: str,
@@ -194,6 +212,7 @@ def _get_wrapper(
             process_inputs=_strip_not_given,
             process_outputs=_process_chat_completion,
             _invocation_params_fn=_infer_ls_params,
+            process_metadata=_process_tool_calls_metadata,
             **tracing_extra,
         )
 
@@ -210,6 +229,7 @@ def _get_wrapper(
             process_inputs=_strip_not_given,
             process_outputs=_process_chat_completion,
             _invocation_params_fn=_infer_ls_params,
+            process_metadata=_process_tool_calls_metadata,
             **tracing_extra,
         )
         result = await decorator(original_create)(*args, **kwargs)
@@ -232,6 +252,7 @@ def _get_stream_wrapper(
         reduce_fn=_reduce_chat_chunks,
         run_type="llm",
         process_inputs=_strip_not_given,
+        process_metadata=_process_tool_calls_metadata,
         _invocation_params_fn=_infer_ls_params,
         **tracing_extra,
     )
@@ -239,7 +260,6 @@ def _get_stream_wrapper(
         name=name,
         run_type="llm",
         process_inputs=_strip_not_given,
-        process_outputs=_process_chat_completion,
         _invocation_params_fn=_infer_ls_params,
         **tracing_extra,
     )
@@ -264,6 +284,9 @@ def _get_stream_wrapper(
                     run_tree = run_helpers.get_current_run_tree()
                     final_message = await self._wrapped.get_final_message()
                     run_tree.outputs = _process_chat_completion(final_message)
+                    run_tree.extra["metadata"].update(
+                        _process_tool_calls_metadata(run_tree.outputs)
+                    )
 
                 return _text_stream(**self._kwargs)
 
@@ -281,8 +304,11 @@ def _get_stream_wrapper(
 
             async def __aiter__(self) -> AsyncIterator[MessageStreamEvent]:
                 @configured_traceable
-                def traced_iter(**_):
-                    return self._wrapped.__aiter__()
+                async def traced_iter(**_):
+                    iterator = self._wrapped.__aiter__()
+
+                    async for chunk in iterator:
+                        yield chunk
 
                 async for chunk in traced_iter(**self._kwargs):
                     yield chunk
@@ -350,6 +376,9 @@ def _get_stream_wrapper(
                     run_tree = run_helpers.get_current_run_tree()
                     final_message = self._wrapped.get_final_message()
                     run_tree.outputs = _process_chat_completion(final_message)
+                    run_tree.extra["metadata"].update(
+                        _process_tool_calls_metadata(run_tree.outputs)
+                    )
 
                 return _text_stream(**self._kwargs)
 
@@ -357,10 +386,17 @@ def _get_stream_wrapper(
                 return self.__iter__().__next__()
 
             def __iter__(self):
+                # Create a generator function that we'll wrap with traceable
+                # This ensures the run_tree is accessible inside the function
                 @configured_traceable
                 def traced_iter(**_):
-                    return self._wrapped.__iter__()
+                    # Get the iterator
+                    iterator = self._wrapped.__iter__()
 
+                    # Yield each chunk
+                    yield from iterator
+
+                # Return the traceable iterator
                 return traced_iter(**self._kwargs)
 
             def __enter__(self) -> Self:
