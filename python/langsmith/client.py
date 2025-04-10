@@ -58,7 +58,6 @@ from typing import (
 from urllib import parse as urllib_parse
 
 import requests
-from pydantic import BaseModel
 from requests import adapters as requests_adapters
 from requests_toolbelt import (  # type: ignore[import-untyped]
     multipart as rqtb_multipart,
