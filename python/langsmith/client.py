@@ -4535,17 +4535,20 @@ class Client:
                 )
             ]
 
-        try:
+        if (self.info.instance_flags or {}).get(
+            "dataset_examples_multipart_enabled", False
+        ):
             return self._upload_examples_multipart(
                 dataset_id=cast(uuid.UUID, dataset_id),
                 uploads=uploads,
                 dangerously_allow_filesystem=dangerously_allow_filesystem,
             )
-        except Exception:
+        else:
             for upload in uploads:
-                if dump_model(upload).get("attachments", None):
-                    raise ValueError(
-                        "Must upgrade your LangSmith version to use attachments"
+                if getattr(upload, "attachments") is not None:
+                    upload.attachments = None
+                    warnings.warn(
+                        "Must upgrade your LangSmith version to use attachments."
                     )
             # fallback to old method
             response = self.request_with_retries(
@@ -4642,15 +4645,16 @@ class Client:
             else uuid.uuid4()
         )
 
-        try:
+        if (self.info.instance_flags or {}).get(
+            "dataset_examples_multipart_enabled", False
+        ):
             self._upload_examples_multipart(dataset_id=dataset_id, uploads=[data])
             return self.read_example(example_id=data.id)
-        except Exception:
+        else:
             # fallback to old method
-            if dump_model(data).get("attachments", None):
-                raise ValueError(
-                    "Must upgrade your LangSmith version to use attachments"
-                )
+            if getattr(data, "attachments") is not None:
+                data.attachments = None
+                warnings.warn("Must upgrade your LangSmith version to use attachments")
             response = self.request_with_retries(
                 "POST",
                 "/examples",
@@ -5023,15 +5027,18 @@ class Client:
             **{k: v for k, v in example_dict.items() if v is not None}
         )
 
-        try:
-            if dataset_id is None:
-                dataset_id = self.read_example(example_id).dataset_id
+        if dataset_id is None:
+            dataset_id = self.read_example(example_id).dataset_id
+
+        if (self.info.instance_flags or {}).get(
+            "dataset_examples_multipart_enabled", False
+        ):
             return dict(
                 self._update_examples_multipart(
                     dataset_id=dataset_id, updates=[example]
                 )
             )
-        except Exception:
+        else:
             # fallback to old method
             response = self.request_with_retries(
                 "PATCH",
@@ -5234,7 +5241,9 @@ class Client:
             ]
 
         response: Any = None
-        try:
+        if (self.info.instance_flags or {}).get(
+            "dataset_examples_multipart_enabled", False
+        ):
             response = self._update_examples_multipart(
                 dataset_id=cast(uuid.UUID, dataset_id),
                 updates=updates_obj,
@@ -5245,7 +5254,7 @@ class Client:
                 "message": f"{response.get('count', 0)} examples updated",
                 **response,
             }
-        except Exception:
+        else:
             # fallback to old method
             response = self.request_with_retries(
                 "PATCH",
