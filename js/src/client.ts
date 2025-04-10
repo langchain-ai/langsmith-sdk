@@ -4242,7 +4242,7 @@ export class Client implements LangSmithTracingClientInterface {
   ): Promise<UpdateExamplesResponse> {
     if (!(await this._getMultiPartSupport())) {
       throw new Error(
-        "Your LangSmith version does not allow using the multipart examples endpoint, please update to the latest version."
+        "Your LangSmith deployment does not allow using the multipart examples endpoint, please upgrade your deployment to the latest version."
       );
     }
     const formData = new FormData();
@@ -4350,7 +4350,7 @@ export class Client implements LangSmithTracingClientInterface {
   ): Promise<UploadExamplesResponse> {
     if (!(await this._getMultiPartSupport())) {
       throw new Error(
-        "Your LangSmith version does not allow using the multipart examples endpoint, please update to the latest version."
+        "Your LangSmith deployment does not allow using the multipart examples endpoint, please upgrade your deployment to the latest version."
       );
     }
     const formData = new FormData();
