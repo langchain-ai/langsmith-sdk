@@ -4404,7 +4404,7 @@ class Client:
         examples: Optional[Sequence[ls_schemas.ExampleCreate | dict]] = None,
         dangerously_allow_filesystem: bool = False,
         **kwargs: Any,
-    ) -> ls_schemas.UpsertExamplesResponse:
+    ) -> ls_schemas.UpsertExamplesResponse | None:
         """Create examples in a dataset.
 
         Args:
@@ -4535,11 +4535,32 @@ class Client:
                 )
             ]
 
-        return self._upload_examples_multipart(
-            dataset_id=cast(uuid.UUID, dataset_id),
-            uploads=uploads,
-            dangerously_allow_filesystem=dangerously_allow_filesystem,
-        )
+        try:
+            return self._upload_examples_multipart(
+                dataset_id=cast(uuid.UUID, dataset_id),
+                uploads=uploads,
+                dangerously_allow_filesystem=dangerously_allow_filesystem,
+            )
+        except Exception:
+            for upload in uploads:
+                if dump_model(upload).get("attachments", None):
+                    raise ValueError(
+                        "Must upgrade your LangSmith version to use attachments"
+                    )
+            # fallback to old method
+            response = self.request_with_retries(
+                "POST",
+                "/examples/bulk",
+                headers={**self._headers, "Content-Type": "application/json"},
+                data=_dumps_json(
+                    [
+                        {**dump_model(upload), "dataset_id": str(dataset_id)}
+                        for upload in uploads
+                    ]
+                ),
+            )
+            ls_utils.raise_for_status_with_text(response)
+            return None
 
     @ls_utils.xor_args(("dataset_id", "dataset_name"))
     def create_example(
@@ -4620,8 +4641,34 @@ class Client:
             if example_id
             else uuid.uuid4()
         )
-        self._upload_examples_multipart(dataset_id=dataset_id, uploads=[data])
-        return self.read_example(example_id=data.id)
+
+        try:
+            self._upload_examples_multipart(dataset_id=dataset_id, uploads=[data])
+            return self.read_example(example_id=data.id)
+        except Exception:
+            # fallback to old method
+            if dump_model(data).get("attachments", None):
+                raise ValueError(
+                    "Must upgrade your LangSmith version to use attachments"
+                )
+            response = self.request_with_retries(
+                "POST",
+                "/examples",
+                headers={**self._headers, "Content-Type": "application/json"},
+                data=_dumps_json(
+                    {
+                        **{k: v for k, v in dump_model(data).items() if v is not None},
+                        "dataset_id": str(dataset_id),
+                    }
+                ),
+            )
+            ls_utils.raise_for_status_with_text(response)
+            result = response.json()
+            return ls_schemas.Example(
+                **result,
+                _host_url=self._host_url,
+                _tenant_id=self._get_optional_tenant_id(),
+            )
 
     def read_example(
         self, example_id: ID_TYPE, *, as_of: Optional[datetime.datetime] = None
@@ -4976,19 +5023,33 @@ class Client:
             **{k: v for k, v in example_dict.items() if v is not None}
         )
 
-        if dataset_id is not None:
+        try:
+            if dataset_id is None:
+                dataset_id = self.read_example(example_id).dataset_id
             return dict(
                 self._update_examples_multipart(
                     dataset_id=dataset_id, updates=[example]
                 )
             )
-        else:
-            dataset_id = self.read_example(example_id).dataset_id
-            return dict(
-                self._update_examples_multipart(
-                    dataset_id=dataset_id, updates=[example]
-                )
+        except Exception:
+            # fallback to old method
+            response = self.request_with_retries(
+                "PATCH",
+                f"/examples/{_as_uuid(example_id, 'example_id')}",
+                headers={**self._headers, "Content-Type": "application/json"},
+                data=_dumps_json(
+                    {
+                        **{
+                            k: v
+                            for k, v in dump_model(example).items()
+                            if v is not None
+                        },
+                        "dataset_id": str(dataset_id),
+                    }
+                ),
             )
+            ls_utils.raise_for_status_with_text(response)
+            return response.json()
 
     def update_examples(
         self,
@@ -5172,13 +5233,39 @@ class Client:
                 )
             ]
 
-        response = self._update_examples_multipart(
-            dataset_id=cast(uuid.UUID, dataset_id),
-            updates=updates_obj,
-            dangerously_allow_filesystem=dangerously_allow_filesystem,
-        )
+        response: Any = None
+        try:
+            response = self._update_examples_multipart(
+                dataset_id=cast(uuid.UUID, dataset_id),
+                updates=updates_obj,
+                dangerously_allow_filesystem=dangerously_allow_filesystem,
+            )
 
-        return {"message": f"{response.get('count', 0)} examples updated", **response}
+            return {
+                "message": f"{response.get('count', 0)} examples updated",
+                **response,
+            }
+        except Exception:
+            # fallback to old method
+            response = self.request_with_retries(
+                "PATCH",
+                "/examples/bulk",
+                headers={**self._headers, "Content-Type": "application/json"},
+                data=(
+                    _dumps_json(
+                        [
+                            {
+                                k: v
+                                for k, v in dump_model(example).items()
+                                if v is not None
+                            }
+                            for example in updates_obj
+                        ]
+                    )
+                ),
+            )
+            ls_utils.raise_for_status_with_text(response)
+            return response.json()
 
     def delete_example(self, example_id: ID_TYPE) -> None:
         """Delete an example by ID.
@@ -7737,3 +7824,13 @@ def _construct_url(api_url: str, pathname: str) -> str:
         return api_url.rstrip("/") + pathname
     else:
         return api_url.rstrip("/") + "/" + pathname
+
+
+def dump_model(model):
+    """Dump model depending on pydantic version."""
+    if hasattr(model, "model_dump"):
+        return model.model_dump()
+    elif hasattr(model, "dict"):
+        return model.dict()
+    else:
+        raise TypeError("Unsupported model type")
