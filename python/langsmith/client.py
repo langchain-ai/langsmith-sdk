@@ -7836,7 +7836,7 @@ def _construct_url(api_url: str, pathname: str) -> str:
         return api_url.rstrip("/") + "/" + pathname
 
 
-def dump_model(model: BaseModel) -> dict[str, Any]:
+def dump_model(model) -> dict[str, Any]:
     """Dump model depending on pydantic version."""
     if hasattr(model, "model_dump"):
         return model.model_dump()
