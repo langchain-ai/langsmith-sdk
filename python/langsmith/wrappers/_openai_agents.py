@@ -287,7 +287,10 @@ if HAVE_AGENTS:
                     )
                     self._last_response_outputs[span.trace_id] = outputs
 
-                self.client.update_run(**run_data)
+                try:
+                    self.client.update_run(**run_data)
+                except Exception as e:
+                    logger.exception(f"Error updating trace run: {e}")
 
         def shutdown(self) -> None:
             self.client.flush()
