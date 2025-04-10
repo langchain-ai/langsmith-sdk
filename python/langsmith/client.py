@@ -2184,6 +2184,7 @@ class Client:
                     "data": _dumps_json(run_update),
                     "headers": headers,
                 },
+                to_ignore=(ls_utils.LangSmithConflictError,),
             )
 
     def flush_compressed_traces(self, attempts: int = 3) -> None:
