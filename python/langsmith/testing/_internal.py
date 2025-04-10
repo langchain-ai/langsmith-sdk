@@ -560,7 +560,10 @@ class _LangSmithTestSuite:
         self._executor.submit(self._submit_result, run_id, score)
 
     def _submit_result(self, run_id: uuid.UUID, score: Optional[int]) -> None:
-        self.client.create_feedback(run_id, key="pass", score=score, trace_id=run_id)
+        self.client.create_feedback(
+            run_id, key="pass", score=score, trace_id=run_id
+        )  # trace_id will always be run_id here because you're the feedback is on the
+        # root test run
 
     def sync_example(
         self,
