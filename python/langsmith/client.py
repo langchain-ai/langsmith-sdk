@@ -824,7 +824,12 @@ class Client:
                             **request_kwargs,
                         )
                     ls_utils.raise_for_status_with_text(response)
-                    logger.debug("Request succeeded for %s %s. Context: %s", method, pathname, _context)
+                    logger.debug(
+                        "Request succeeded for %s %s. Context: %s",
+                        method,
+                        pathname,
+                        _context,
+                    )
                     return response
                 except requests.exceptions.ReadTimeout as e:
                     logger.debug("Passing on exception %s", e)
@@ -2185,6 +2190,7 @@ class Client:
                     "data": _dumps_json(run_update),
                     "headers": headers,
                 },
+                to_ignore=(ls_utils.LangSmithConflictError,),
             )
 
     def flush_compressed_traces(self, attempts: int = 3) -> None:
