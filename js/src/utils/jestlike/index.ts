@@ -35,7 +35,7 @@ import type {
   LangSmithJestlikeDescribeWrapper,
   LangSmithJestlikeDescribeWrapperConfig,
 } from "./types.js";
-import { getEnvironmentVariable } from "../env.js";
+import { getEnvironmentVariable, isJsDom } from "../env.js";
 import {
   STRIP_ANSI_REGEX,
   TEST_ID_DELIMITER,
@@ -278,6 +278,11 @@ export function generateWrapperFromJestlikeMethods(
   function wrapDescribeMethod(
     method: (name: string, fn: () => void | Promise<void>) => void
   ): LangSmithJestlikeDescribeWrapper {
+    if (isJsDom()) {
+      console.error(
+        `[LANGSMITH]: You seem to be using a jsdom environment. This is not supported and you may experience unexpected behavior. Please set the "environment" or "testEnvironment" field in your test config file to "node".`
+      );
+    }
     return function (
       testSuiteName: string,
       fn: () => void | Promise<void>,
