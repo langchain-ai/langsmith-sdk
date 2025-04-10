@@ -4405,7 +4405,7 @@ class Client:
         examples: Optional[Sequence[ls_schemas.ExampleCreate | dict]] = None,
         dangerously_allow_filesystem: bool = False,
         **kwargs: Any,
-    ) -> ls_schemas.UpsertExamplesResponse | None:
+    ) -> ls_schemas.UpsertExamplesResponse | dict[str, Any]:
         """Create examples in a dataset.
 
         Args:
@@ -4564,7 +4564,7 @@ class Client:
                 ),
             )
             ls_utils.raise_for_status_with_text(response)
-            return None
+            return response.json()
 
     @ls_utils.xor_args(("dataset_id", "dataset_name"))
     def create_example(
