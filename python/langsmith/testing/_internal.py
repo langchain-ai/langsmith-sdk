@@ -638,7 +638,7 @@ class _LangSmithTestSuite:
             )
 
     def _create_feedback(self, run_id: ID_TYPE, feedback: dict, **kwargs: Any) -> None:
-        self.client.create_feedback(run_id, **feedback, **kwargs)
+        self.client.create_feedback(run_id, **feedback, **kwargs, trace_id=run_id)
 
     def shutdown(self):
         self._executor.shutdown()
