@@ -346,7 +346,8 @@ class OTELExporter:
         extra = run_info.get("extra", {})
         metadata = extra.get("metadata", {})
         for key, value in metadata.items():
-            span.set_attribute(f"{LANGSMITH_METADATA}.{key}", value)
+            if value is not None:
+                span.set_attribute(f"{LANGSMITH_METADATA}.{key}", value)
 
         tags = run_info.get("tags")
         if tags:
