@@ -81,7 +81,6 @@ def parameterized_multipart_client(request) -> Client:
         info={
             "instance_flags": {
                 "dataset_examples_multipart_enabled": request.param,
-                "examples_multipart_enabled": True,
             }
         }
     )

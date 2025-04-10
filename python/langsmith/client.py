@@ -58,6 +58,7 @@ from typing import (
 from urllib import parse as urllib_parse
 
 import requests
+from pydantic import BaseModel
 from requests import adapters as requests_adapters
 from requests_toolbelt import (  # type: ignore[import-untyped]
     multipart as rqtb_multipart,
@@ -7835,7 +7836,7 @@ def _construct_url(api_url: str, pathname: str) -> str:
         return api_url.rstrip("/") + "/" + pathname
 
 
-def dump_model(model):
+def dump_model(model: BaseModel) -> dict[str, Any]:
     """Dump model depending on pydantic version."""
     if hasattr(model, "model_dump"):
         return model.model_dump()
