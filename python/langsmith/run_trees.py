@@ -281,6 +281,9 @@ class RunTree(ls_schemas.RunBase):
         attachments: Optional[ls_schemas.Attachments] = None,
     ) -> RunTree:
         """Add a child run to the run tree."""
+        extra = extra or {}
+        metadata = extra.setdefault("metadata", {})
+        extra["metadata"] = self.metadata | metadata
         serialized_ = serialized or {"name": name}
         run = RunTree(
             name=name,
@@ -293,7 +296,7 @@ class RunTree(ls_schemas.RunBase):
             reference_example_id=reference_example_id,
             start_time=start_time or datetime.now(timezone.utc),
             end_time=end_time,
-            extra=extra or {},
+            extra=extra,
             parent_run=self,
             project_name=self.session_name,
             ls_client=self.ls_client,
