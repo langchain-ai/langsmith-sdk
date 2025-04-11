@@ -592,6 +592,7 @@ export function generateWrapperFromJestlikeMethods(
                   project_name: project!.name,
                   metadata: {
                     ...config?.metadata,
+                    test_name: name,
                   },
                   client,
                   tracingEnabled: true,
