@@ -422,6 +422,7 @@ export class RunTree implements BaseRun {
         trace_id: this.trace_id,
         tags: this.tags,
         attachments: this.attachments,
+        session_name: this.project_name,
       };
 
       await this.client.updateRun(this.id, runUpdate);
@@ -525,9 +526,9 @@ export class RunTree implements BaseRun {
     const rawHeaders: Record<string, string | string[] | null> =
       "get" in headers && typeof headers.get === "function"
         ? {
-            "langsmith-trace": headers.get("langsmith-trace"),
-            baggage: headers.get("baggage"),
-          }
+          "langsmith-trace": headers.get("langsmith-trace"),
+          baggage: headers.get("baggage"),
+        }
         : (headers as Record<string, string | string[]>);
 
     const headerTrace = rawHeaders["langsmith-trace"];

@@ -367,6 +367,7 @@ class RunTree(ls_schemas.RunBase):
             outputs=self.outputs.copy() if self.outputs else None,
             error=self.error,
             parent_run_id=self.parent_run_id,
+            session_name=self.session_name,
             reference_example_id=self.reference_example_id,
             end_time=self.end_time,
             dotted_order=self.dotted_order,
