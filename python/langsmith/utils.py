@@ -107,8 +107,13 @@ def tracing_is_enabled(ctx: Optional[dict] = None) -> Union[bool, Literal["local
     if get_current_run_tree():
         return True
     # Finally, check the global environment
+    return _tracing_env_var_active()
+
+
+@functools.lru_cache(maxsize=1)
+def _tracing_env_var_active() -> bool:
     var_result = get_env_var("TRACING_V2", default=get_env_var("TRACING", default=""))
-    return var_result == "true"
+    return var_result is not None and var_result.lower() in ("true", "t")
 
 
 def test_tracking_is_disabled() -> bool:
