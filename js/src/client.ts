@@ -4426,6 +4426,7 @@ export class Client implements LangSmithTracingClientInterface {
         body: formData,
       }
     );
+    await raiseForStatus(response, "upload examples");
     const result = await response.json();
     return result;
   }
