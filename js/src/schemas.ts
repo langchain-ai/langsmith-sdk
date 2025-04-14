@@ -271,7 +271,7 @@ export interface ExampleCreate {
   use_source_run_attachments?: string[];
 }
 
-export interface ExampleUploadWithAttachments extends ExampleCreate { }
+export interface ExampleUploadWithAttachments extends ExampleCreate {}
 export interface ExampleUpdate {
   id: string;
   inputs?: KVMap;
@@ -283,16 +283,16 @@ export interface ExampleUpdate {
   dataset_id?: string;
 }
 
-export interface ExampleUpdateWithoutId extends Omit<ExampleUpdate, "id"> { }
+export interface ExampleUpdateWithoutId extends Omit<ExampleUpdate, "id"> {}
 
-export interface ExampleUpdateWithAttachments extends ExampleUpdate { }
+export interface ExampleUpdateWithAttachments extends ExampleUpdate {}
 
 export interface UploadExamplesResponse {
   count: number;
   example_ids: string[];
 }
 
-export interface UpdateExamplesResponse extends UploadExamplesResponse { }
+export interface UpdateExamplesResponse extends UploadExamplesResponse {}
 
 export interface Example extends BaseExample {
   id: string;
@@ -318,7 +318,7 @@ export interface RawExample extends BaseExample {
   attachment_urls?: Record<string, RawAttachmentInfo>;
 }
 
-export interface ExampleUpdateWithId extends ExampleUpdate { }
+export interface ExampleUpdateWithId extends ExampleUpdate {}
 
 export interface ExampleSearch extends BaseExample {
   id: string;

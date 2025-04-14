@@ -526,9 +526,9 @@ export class RunTree implements BaseRun {
     const rawHeaders: Record<string, string | string[] | null> =
       "get" in headers && typeof headers.get === "function"
         ? {
-          "langsmith-trace": headers.get("langsmith-trace"),
-          baggage: headers.get("baggage"),
-        }
+            "langsmith-trace": headers.get("langsmith-trace"),
+            baggage: headers.get("baggage"),
+          }
         : (headers as Record<string, string | string[]>);
 
     const headerTrace = rawHeaders["langsmith-trace"];
