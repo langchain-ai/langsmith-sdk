@@ -422,6 +422,7 @@ export class RunTree implements BaseRun {
         trace_id: this.trace_id,
         tags: this.tags,
         attachments: this.attachments,
+        session_name: this.project_name,
       };
 
       await this.client.updateRun(this.id, runUpdate);
