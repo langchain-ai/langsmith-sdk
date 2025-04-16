@@ -99,10 +99,10 @@ test("distributed", () => {
   });
 
   const serialized = parent.toHeaders();
+  expect(serialized.baggage).toContain("test_project");
 
   const child2 = RunTree.fromHeaders(serialized)?.createChild({
     name: "child_2",
-    project_name: "test_project",
     id: "00000000-0000-0000-0000-00000000001",
     start_time: Date.parse("2021-05-03T00:00:01.000Z"),
   });
