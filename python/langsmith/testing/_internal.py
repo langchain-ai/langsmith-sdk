@@ -1284,7 +1284,7 @@ def trace_feedback(
     metadata = {
         "experiment": test_case.test_suite.experiment.name,
         "reference_example_id": test_case.example_id,
-        "reference_run_id": parent_run.id,
+        "reference_run_id": test_case.run_id,
     }
     with rh.trace(
         name=name,
