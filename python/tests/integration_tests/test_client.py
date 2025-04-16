@@ -2207,6 +2207,26 @@ def test_new_update_examples(parameterized_multipart_client: Client) -> None:
     assert retrieved_example.dataset_id == dataset.id
     assert retrieved_example.inputs == example_update.inputs
     assert retrieved_example.outputs == example_update.outputs
+
+    # Should not clear inputs/outputs/other fields
+    example_update_2 = ExampleUpdate(
+        id=example_id,
+        metadata={"small_update": "just_metadata"},
+    )
+
+    parameterized_multipart_client.update_examples(
+        dataset_id=dataset.id, updates=[example_update_2]
+    )
+
+    retrieved_example = parameterized_multipart_client.read_example(
+        example_id=example_id
+    )
+
+    assert retrieved_example.id == example_id
+    assert retrieved_example.dataset_id == dataset.id
+    assert retrieved_example.inputs == example_update.inputs
+    assert retrieved_example.outputs == example_update.outputs
+
     if supports_attachments:
         assert retrieved_example.attachments.keys() == example_update.attachments.keys()
 
