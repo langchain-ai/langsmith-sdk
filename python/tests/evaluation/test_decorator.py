@@ -68,6 +68,7 @@ async def test_composite_evaluator():
             grade = 1 if "hello" in response else 0
             t.log_feedback(key="composite_judge", score=grade)
             return grade
+
     my_composite_evaluator(response)
 
     assert "hello" in response.lower()
