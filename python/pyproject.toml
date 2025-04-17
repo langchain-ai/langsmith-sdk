@@ -151,3 +151,7 @@ dynamic = ["version"]
 
 [tool.poetry.plugins."pytest11"]
 langsmith_plugin = "langsmith.pytest_plugin"
+
+[tool.poetry_bumpversion.file."langsmith/__init__.py"]
+search = '__version__ = "{current_version}"'
+replace = '__version__ = "{new_version}"'
