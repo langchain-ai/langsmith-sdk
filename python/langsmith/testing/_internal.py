@@ -695,9 +695,10 @@ class _TestCase:
         self.run_id = run_id
         self.pytest_plugin = pytest_plugin
         self.pytest_nodeid = pytest_nodeid
-        self._logged_reference_outputs: Optional[dict] = None
         self.inputs = inputs
         self.reference_outputs = reference_outputs
+        self._logged_reference_outputs: Optional[dict] = None
+        self._logged_outputs: Optional[dict] = None
 
         if pytest_plugin and pytest_nodeid:
             pytest_plugin.add_process_to_test_suite(
@@ -738,6 +739,7 @@ class _TestCase:
             )
 
     def log_outputs(self, outputs: dict) -> None:
+        self._logged_outputs = outputs
         if self.pytest_plugin and self.pytest_nodeid:
             self.pytest_plugin.update_process_status(
                 self.pytest_nodeid, {"outputs": outputs}
@@ -1272,9 +1274,8 @@ def trace_feedback(
         logger.info("LANGSMITH_TEST_TRACKING is set to 'false'. Skipping log_feedback.")
         yield None
         return
-    parent_run = rh.get_current_run_tree()
     test_case = _TEST_CASE.get()
-    if not parent_run or not test_case:
+    if not test_case:
         msg = (
             "trace_feedback should only be called within a pytest test decorated with "
             "@pytest.mark.langsmith, and with tracing enabled (by setting the "
@@ -1284,11 +1285,11 @@ def trace_feedback(
     metadata = {
         "experiment": test_case.test_suite.experiment.name,
         "reference_example_id": test_case.example_id,
-        "reference_run_id": parent_run.id,
+        "reference_run_id": test_case.run_id,
     }
     with rh.trace(
         name=name,
-        inputs=parent_run.outputs,
+        inputs=test_case._logged_outputs,
         parent="ignore",
         project_name="evaluators",
         metadata=metadata,
