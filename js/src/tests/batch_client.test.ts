@@ -5,7 +5,6 @@ import { jest } from "@jest/globals";
 import { v4 as uuidv4 } from "uuid";
 import { Client, mergeRuntimeEnvIntoRunCreate } from "../client.js";
 import { convertToDottedOrderFormat } from "../run_trees.js";
-import { _getFetchImplementation } from "../singletons/fetch.js";
 import { RunCreate } from "../schemas.js";
 
 const parseMockRequestBody = async (
@@ -81,8 +80,6 @@ const ENDPOINT_TYPES = [
   "batch",
   "multipart",
 ];
-
-const fetchImplementation = _getFetchImplementation();
 
 describe.each(ENDPOINT_TYPES)(
   "Batch client tracing with %s endpoint",
