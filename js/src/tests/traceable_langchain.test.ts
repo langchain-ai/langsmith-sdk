@@ -39,6 +39,8 @@ describe("to langchain", () => {
     const result = await main({ text: "Hello world" });
     expect(result).toEqual("Hello world");
 
+    await awaitAllCallbacks();
+
     expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
       nodes: [
         "main:0",

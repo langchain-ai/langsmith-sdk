@@ -73,9 +73,9 @@ export interface ClientConfig {
   callerOptions?: AsyncCallerParams;
   timeout_ms?: number;
   webUrl?: string;
-  anonymizer?: (values: KVMap) => KVMap;
-  hideInputs?: boolean | ((inputs: KVMap) => KVMap);
-  hideOutputs?: boolean | ((outputs: KVMap) => KVMap);
+  anonymizer?: (values: KVMap) => KVMap | Promise<KVMap>;
+  hideInputs?: boolean | ((inputs: KVMap) => KVMap | Promise<KVMap>);
+  hideOutputs?: boolean | ((outputs: KVMap) => KVMap | Promise<KVMap>);
   autoBatchTracing?: boolean;
   batchSizeBytesLimit?: number;
   blockOnRootRunFinalization?: boolean;
@@ -488,9 +488,9 @@ export class Client implements LangSmithTracingClientInterface {
 
   private _tenantId: string | null = null;
 
-  private hideInputs?: boolean | ((inputs: KVMap) => KVMap);
+  private hideInputs?: boolean | ((inputs: KVMap) => KVMap | Promise<KVMap>);
 
-  private hideOutputs?: boolean | ((outputs: KVMap) => KVMap);
+  private hideOutputs?: boolean | ((outputs: KVMap) => KVMap | Promise<KVMap>);
 
   private tracingSampleRate?: number;
 
@@ -633,7 +633,7 @@ export class Client implements LangSmithTracingClientInterface {
     return headers;
   }
 
-  private processInputs(inputs: KVMap): KVMap {
+  private async processInputs(inputs: KVMap): Promise<KVMap> {
     if (this.hideInputs === false) {
       return inputs;
     }
@@ -646,7 +646,7 @@ export class Client implements LangSmithTracingClientInterface {
     return inputs;
   }
 
-  private processOutputs(outputs: KVMap): KVMap {
+  private async processOutputs(outputs: KVMap): Promise<KVMap> {
     if (this.hideOutputs === false) {
       return outputs;
     }
@@ -659,17 +659,21 @@ export class Client implements LangSmithTracingClientInterface {
     return outputs;
   }
 
-  private prepareRunCreateOrUpdateInputs(run: RunUpdate): RunUpdate;
-  private prepareRunCreateOrUpdateInputs(run: RunCreate): RunCreate;
-  private prepareRunCreateOrUpdateInputs(
+  private async prepareRunCreateOrUpdateInputs(
+    run: RunUpdate
+  ): Promise<RunUpdate>;
+  private async prepareRunCreateOrUpdateInputs(
+    run: RunCreate
+  ): Promise<RunCreate>;
+  private async prepareRunCreateOrUpdateInputs(
     run: RunCreate | RunUpdate
-  ): RunCreate | RunUpdate {
+  ): Promise<RunCreate | RunUpdate> {
     const runParams = { ...run };
     if (runParams.inputs !== undefined) {
-      runParams.inputs = this.processInputs(runParams.inputs);
+      runParams.inputs = await this.processInputs(runParams.inputs);
     }
     if (runParams.outputs !== undefined) {
-      runParams.outputs = this.processOutputs(runParams.outputs);
+      runParams.outputs = await this.processOutputs(runParams.outputs);
     }
     return runParams;
   }
@@ -980,7 +984,7 @@ export class Client implements LangSmithTracingClientInterface {
     const session_name = run.project_name;
     delete run.project_name;
 
-    const runCreate: RunCreate = this.prepareRunCreateOrUpdateInputs({
+    const runCreate: RunCreate = await this.prepareRunCreateOrUpdateInputs({
       session_name,
       ...run,
       start_time: run.start_time ?? Date.now(),
@@ -1026,14 +1030,16 @@ export class Client implements LangSmithTracingClientInterface {
     if (runCreates === undefined && runUpdates === undefined) {
       return;
     }
-    let preparedCreateParams =
+    let preparedCreateParams = await Promise.all(
       runCreates?.map((create) =>
         this.prepareRunCreateOrUpdateInputs(create)
-      ) ?? [];
-    let preparedUpdateParams =
+      ) ?? []
+    );
+    let preparedUpdateParams = await Promise.all(
       runUpdates?.map((update) =>
         this.prepareRunCreateOrUpdateInputs(update)
-      ) ?? [];
+      ) ?? []
+    );
 
     if (preparedCreateParams.length > 0 && preparedUpdateParams.length > 0) {
       const createById = preparedCreateParams.reduce(
@@ -1125,7 +1131,7 @@ export class Client implements LangSmithTracingClientInterface {
     let preparedCreateParams = [];
 
     for (const create of runCreates ?? []) {
-      const preparedCreate = this.prepareRunCreateOrUpdateInputs(create);
+      const preparedCreate = await this.prepareRunCreateOrUpdateInputs(create);
       if (
         preparedCreate.id !== undefined &&
         preparedCreate.attachments !== undefined
@@ -1137,7 +1143,9 @@ export class Client implements LangSmithTracingClientInterface {
     }
     let preparedUpdateParams = [];
     for (const update of runUpdates ?? []) {
-      preparedUpdateParams.push(this.prepareRunCreateOrUpdateInputs(update));
+      preparedUpdateParams.push(
+        await this.prepareRunCreateOrUpdateInputs(update)
+      );
     }
 
     // require trace_id and dotted_order
@@ -1322,11 +1330,11 @@ export class Client implements LangSmithTracingClientInterface {
   public async updateRun(runId: string, run: RunUpdate): Promise<void> {
     assertUuid(runId);
     if (run.inputs) {
-      run.inputs = this.processInputs(run.inputs);
+      run.inputs = await this.processInputs(run.inputs);
     }
 
     if (run.outputs) {
-      run.outputs = this.processOutputs(run.outputs);
+      run.outputs = await this.processOutputs(run.outputs);
     }
     // TODO: Untangle types
     const data: UpdateRunParams = { ...run, id: runId };
