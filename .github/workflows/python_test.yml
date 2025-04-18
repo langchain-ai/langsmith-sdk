@@ -40,6 +40,8 @@ jobs:
           poetry run pip install -U langchain langchain-core langchain_anthropic langchain_openai
       - name: Build ${{ matrix.python-version }}
         run: poetry build
+      - name: Check version alignment
+        run: make check-version
       - name: Lint ${{ matrix.python-version }}
         run: make lint
       - name: Run Unit tests ${{ matrix.python-version }}
