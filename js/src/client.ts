@@ -522,7 +522,7 @@ export class Client implements LangSmithTracingClientInterface {
 
   private manualFlushMode = false;
 
-  debug = getLangSmithEnvironmentVariable("DEBUG") === "true";
+  debug = getEnvironmentVariable("LANGSMITH_DEBUG") === "true";
 
   constructor(config: ClientConfig = {}) {
     const defaultConfig = Client.getDefaultClientConfig();
