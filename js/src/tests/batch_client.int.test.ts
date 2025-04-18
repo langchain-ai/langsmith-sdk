@@ -14,46 +14,50 @@ import {
 import { traceable } from "../traceable.js";
 import { overrideFetchImplementation } from "../singletons/fetch.js";
 
-test.only("Test persist update run", async () => {
-  const langchainClient = new Client({
-    autoBatchTracing: true,
-    callerOptions: { maxRetries: 2 },
-    timeout_ms: 30_000,
-  });
-  const projectName =
-    "__test_persist_update_run_batch_1" + uuidv4().substring(0, 4);
-  await deleteProject(langchainClient, projectName);
+test.concurrent(
+  "Test persist update run",
+  async () => {
+    const langchainClient = new Client({
+      autoBatchTracing: true,
+      callerOptions: { maxRetries: 2 },
+      timeout_ms: 30_000,
+    });
+    const projectName =
+      "__test_persist_update_run_batch_1" + uuidv4().substring(0, 4);
+    await deleteProject(langchainClient, projectName);
 
-  const runId = uuidv4();
-  const dottedOrder = convertToDottedOrderFormat(
-    new Date().getTime() / 1000,
-    runId
-  );
-  await langchainClient.createRun({
-    id: runId,
-    project_name: projectName,
-    name: "test_run",
-    run_type: "llm",
-    inputs: { text: "hello world" },
-    trace_id: runId,
-    dotted_order: dottedOrder,
-  });
+    const runId = uuidv4();
+    const dottedOrder = convertToDottedOrderFormat(
+      new Date().getTime() / 1000,
+      runId
+    );
+    await langchainClient.createRun({
+      id: runId,
+      project_name: projectName,
+      name: "test_run",
+      run_type: "llm",
+      inputs: { text: "hello world" },
+      trace_id: runId,
+      dotted_order: dottedOrder,
+    });
 
-  await langchainClient.updateRun(runId, {
-    outputs: { output: ["Hi"] },
-    dotted_order: dottedOrder,
-    trace_id: runId,
-  });
+    await langchainClient.updateRun(runId, {
+      outputs: { output: ["Hi"] },
+      dotted_order: dottedOrder,
+      trace_id: runId,
+    });
 
-  await Promise.all([
-    waitUntilRunFound(langchainClient, runId, true),
-    waitUntilProjectFound(langchainClient, projectName),
-  ]);
+    await Promise.all([
+      waitUntilRunFound(langchainClient, runId, true),
+      waitUntilProjectFound(langchainClient, projectName),
+    ]);
 
-  const storedRun = await langchainClient.readRun(runId);
-  expect(storedRun.id).toEqual(runId);
-  await langchainClient.deleteProject({ projectName });
-}, 180_000);
+    const storedRun = await langchainClient.readRun(runId);
+    expect(storedRun.id).toEqual(runId);
+    await langchainClient.deleteProject({ projectName });
+  },
+  180_000
+);
 
 test.concurrent(
   "Test persist update runs above the batch size limit",
