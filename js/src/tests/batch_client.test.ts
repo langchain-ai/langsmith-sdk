@@ -5,7 +5,6 @@ import { jest } from "@jest/globals";
 import { v4 as uuidv4 } from "uuid";
 import { Client, mergeRuntimeEnvIntoRunCreate } from "../client.js";
 import { convertToDottedOrderFormat } from "../run_trees.js";
-import { _getFetchImplementation } from "../singletons/fetch.js";
 import { RunCreate } from "../schemas.js";
 
 const parseMockRequestBody = async (
@@ -148,7 +147,7 @@ describe.each(ENDPOINT_TYPES)(
       });
 
       expect(callSpy).toHaveBeenCalledWith(
-        _getFetchImplementation(),
+        expect.any(Function),
         expectedTraceURL,
         expect.objectContaining({
           body: expect.any(endpointType === "batch" ? Uint8Array : ArrayBuffer),
@@ -262,7 +261,7 @@ describe.each(ENDPOINT_TYPES)(
       });
 
       expect(callSpy).toHaveBeenCalledWith(
-        _getFetchImplementation(),
+        expect.any(Function),
         expectedTraceURL,
         expect.objectContaining({
           body: expect.any(endpointType === "batch" ? Uint8Array : ArrayBuffer),
@@ -343,7 +342,7 @@ describe.each(ENDPOINT_TYPES)(
       });
 
       expect(callSpy).toHaveBeenCalledWith(
-        _getFetchImplementation(),
+        expect.any(Function),
         expectedTraceURL,
         expect.objectContaining({
           body: expect.any(endpointType === "batch" ? Uint8Array : ArrayBuffer),
@@ -1076,7 +1075,7 @@ describe.each(ENDPOINT_TYPES)(
       });
 
       expect(callSpy).toHaveBeenCalledWith(
-        _getFetchImplementation(),
+        expect.any(Function),
         "https://api.smith.langchain.com/runs/batch",
         expect.objectContaining({
           body: expect.any(Uint8Array),
@@ -1168,7 +1167,7 @@ describe.each(ENDPOINT_TYPES)(
       });
 
       expect(callSpy).toHaveBeenCalledWith(
-        _getFetchImplementation(),
+        expect.any(Function),
         expectedTraceURL,
         expect.objectContaining({
           body: expect.any(endpointType === "batch" ? Uint8Array : ArrayBuffer),

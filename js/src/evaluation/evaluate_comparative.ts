@@ -314,7 +314,10 @@ export async function evaluateComparative(
     }
   }
 
-  const caller = new AsyncCaller({ maxConcurrency: options.maxConcurrency });
+  const caller = new AsyncCaller({
+    maxConcurrency: options.maxConcurrency,
+    debug: client.debug,
+  });
 
   async function evaluateAndSubmitFeedback(
     runs: Run[],
