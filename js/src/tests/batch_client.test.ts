@@ -82,6 +82,8 @@ const ENDPOINT_TYPES = [
   "multipart",
 ];
 
+const fetchImplementation = _getFetchImplementation();
+
 describe.each(ENDPOINT_TYPES)(
   "Batch client tracing with %s endpoint",
   (endpointType) => {
@@ -148,7 +150,7 @@ describe.each(ENDPOINT_TYPES)(
       });
 
       expect(callSpy).toHaveBeenCalledWith(
-        _getFetchImplementation(),
+        expect.any(Function),
         expectedTraceURL,
         expect.objectContaining({
           body: expect.any(endpointType === "batch" ? Uint8Array : ArrayBuffer),
@@ -262,7 +264,7 @@ describe.each(ENDPOINT_TYPES)(
       });
 
       expect(callSpy).toHaveBeenCalledWith(
-        _getFetchImplementation(),
+        expect.any(Function),
         expectedTraceURL,
         expect.objectContaining({
           body: expect.any(endpointType === "batch" ? Uint8Array : ArrayBuffer),
@@ -343,7 +345,7 @@ describe.each(ENDPOINT_TYPES)(
       });
 
       expect(callSpy).toHaveBeenCalledWith(
-        _getFetchImplementation(),
+        expect.any(Function),
         expectedTraceURL,
         expect.objectContaining({
           body: expect.any(endpointType === "batch" ? Uint8Array : ArrayBuffer),
@@ -1076,7 +1078,7 @@ describe.each(ENDPOINT_TYPES)(
       });
 
       expect(callSpy).toHaveBeenCalledWith(
-        _getFetchImplementation(),
+        expect.any(Function),
         "https://api.smith.langchain.com/runs/batch",
         expect.objectContaining({
           body: expect.any(Uint8Array),
@@ -1168,7 +1170,7 @@ describe.each(ENDPOINT_TYPES)(
       });
 
       expect(callSpy).toHaveBeenCalledWith(
-        _getFetchImplementation(),
+        expect.any(Function),
         expectedTraceURL,
         expect.objectContaining({
           body: expect.any(endpointType === "batch" ? Uint8Array : ArrayBuffer),
