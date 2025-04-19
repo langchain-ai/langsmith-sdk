@@ -155,6 +155,140 @@ describe.each(ENDPOINT_TYPES)(
       );
     });
 
+    it("should hide inputs and outputs", async () => {
+      const client = new Client({
+        apiKey: "test-api-key",
+        autoBatchTracing: true,
+        hideInputs: () => ({ hidden: "inputs" }),
+        hideOutputs: () => ({ hidden: "outputs" }),
+      });
+      const callSpy = jest
+        .spyOn((client as any).batchIngestCaller, "call")
+        .mockResolvedValue({
+          ok: true,
+          text: () => "",
+        });
+      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
+        return {
+          version: "foo",
+          batch_ingest_config: { ...extraBatchIngestConfig },
+        };
+      });
+      const projectName = "__test_batch";
+
+      const runId = uuidv4();
+      const dottedOrder = convertToDottedOrderFormat(
+        new Date().getTime() / 1000,
+        runId
+      );
+      await client.createRun({
+        id: runId,
+        project_name: projectName,
+        name: "test_run",
+        run_type: "llm",
+        inputs: { text: "hello world" },
+        outputs: { text: "hello world" },
+        trace_id: runId,
+        dotted_order: dottedOrder,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      const calledRequestParam: any = callSpy.mock.calls[0][2];
+      expect(await parseMockRequestBody(calledRequestParam?.body)).toEqual({
+        post: [
+          expect.objectContaining({
+            id: runId,
+            run_type: "llm",
+            inputs: {
+              hidden: "inputs",
+            },
+            outputs: {
+              hidden: "outputs",
+            },
+            trace_id: runId,
+            dotted_order: dottedOrder,
+          }),
+        ],
+        patch: [],
+      });
+
+      expect(callSpy).toHaveBeenCalledWith(
+        expect.any(Function),
+        expectedTraceURL,
+        expect.objectContaining({
+          body: expect.any(endpointType === "batch" ? Uint8Array : ArrayBuffer),
+        })
+      );
+    });
+
+    it("should hide inputs and outputs with an async function", async () => {
+      const client = new Client({
+        apiKey: "test-api-key",
+        autoBatchTracing: true,
+        hideInputs: async () => ({ hidden: "inputs" }),
+        hideOutputs: async () => ({ hidden: "outputs" }),
+      });
+      const callSpy = jest
+        .spyOn((client as any).batchIngestCaller, "call")
+        .mockResolvedValue({
+          ok: true,
+          text: () => "",
+        });
+      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
+        return {
+          version: "foo",
+          batch_ingest_config: { ...extraBatchIngestConfig },
+        };
+      });
+      const projectName = "__test_batch";
+
+      const runId = uuidv4();
+      const dottedOrder = convertToDottedOrderFormat(
+        new Date().getTime() / 1000,
+        runId
+      );
+      await client.createRun({
+        id: runId,
+        project_name: projectName,
+        name: "test_run",
+        run_type: "llm",
+        inputs: { text: "hello world" },
+        outputs: { text: "hello world" },
+        trace_id: runId,
+        dotted_order: dottedOrder,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      const calledRequestParam: any = callSpy.mock.calls[0][2];
+      expect(await parseMockRequestBody(calledRequestParam?.body)).toEqual({
+        post: [
+          expect.objectContaining({
+            id: runId,
+            run_type: "llm",
+            inputs: {
+              hidden: "inputs",
+            },
+            outputs: {
+              hidden: "outputs",
+            },
+            trace_id: runId,
+            dotted_order: dottedOrder,
+          }),
+        ],
+        patch: [],
+      });
+
+      expect(callSpy).toHaveBeenCalledWith(
+        expect.any(Function),
+        expectedTraceURL,
+        expect.objectContaining({
+          body: expect.any(endpointType === "batch" ? Uint8Array : ArrayBuffer),
+        })
+      );
+    });
+
     it("should not throw an error if fetch fails for batch requests", async () => {
       const client = new Client({
         apiKey: "test-api-key",
