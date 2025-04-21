@@ -196,6 +196,59 @@ interface ListRunsParams {
   select?: string[];
 }
 
+interface GroupRunsParams {
+  /**
+   * The ID or IDs of the project(s) to filter by.
+   */
+  projectId: string;
+
+  /**
+   * @example "conversation"
+   */
+  groupBy: string;
+
+  /**
+   * The filter string to apply.
+   *
+   * Run Filtering:
+   * Listing runs with query params is useful for simple queries, but doesn't support many common needs, such as filtering by metadata, tags, or other fields.
+   * LangSmith supports a filter query language to permit more complex filtering operations when fetching runs. This guide will provide a high level overview of the grammar as well as a few examples of when it can be useful.
+   * If you'd prefer a more visual guide, you can get a taste of the language by viewing the table of runs on any of your projects' pages. We provide some recommended filters to get you started that you can copy and use the SDK.
+   *
+   * Grammar:
+   * The filtering grammar is based on common comparators on fields in the run object. Supported comparators include:
+   * - gte (greater than or equal to)
+   * - gt (greater than)
+   * - lte (less than or equal to)
+   * - lt (less than)
+   * - eq (equal to)
+   * - neq (not equal to)
+   * - has (check if run contains a tag or metadata json blob)
+   * - search (search for a substring in a string field)
+   */
+  filter?: string;
+
+  /**
+   * The start time to filter by.
+   */
+  startTime?: Date;
+
+  /**
+   * The end time to filter by.
+   */
+  endTime?: Date;
+
+  /**
+   * The maximum number of runs to retrieve.
+   */
+  limit?: number;
+
+  /**
+   * The maximum number of runs to retrieve.
+   */
+  offset?: number;
+}
+
 interface UploadCSVParams {
   csvFile: Blob;
   fileName: string;
@@ -1609,6 +1662,60 @@ export class Client implements LangSmithTracingClientInterface {
         yield* runs;
       } else {
         yield* runs;
+      }
+    }
+  }
+
+  public async *groupRuns(props: GroupRunsParams): AsyncIterable<Run[]> {
+    const { projectId, groupBy, filter, startTime, endTime, limit, offset } =
+      props;
+    const baseBody = {
+      session_id: projectId,
+      group_by: groupBy,
+      filter,
+      start_time: startTime ? startTime.toISOString() : null,
+      end_time: endTime ? endTime.toISOString() : null,
+      limit: Number(limit) || 100,
+    };
+
+    let currentOffset = Number(offset) || 0;
+
+    const path = "/runs/group";
+    const url = `${this.apiUrl}${path}`;
+
+    while (true) {
+      const currentBody = {
+        ...baseBody,
+        offset: currentOffset,
+      };
+
+      // Remove undefined values from the payload
+      const filteredPayload = Object.fromEntries(
+        Object.entries(currentBody).filter(([_, value]) => value !== undefined)
+      );
+
+      const response = await this.caller.call(_getFetchImplementation(), url, {
+        method: "POST",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify(filteredPayload),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      });
+
+      await raiseForStatus(response, `Failed to fetch ${path}`);
+
+      const items: { groups: Run[]; total: number } = await response.json();
+      const { groups, total } = items;
+
+      if (groups.length === 0) {
+        break;
+      }
+
+      yield groups;
+      currentOffset += groups.length;
+
+      if (currentOffset >= total) {
+        break;
       }
     }
   }
