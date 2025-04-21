@@ -223,18 +223,15 @@ if HAVE_AGENTS:
 
         return data
 
-    def _create_current_dotted_order(
-        start_time: Optional[datetime], run_id: Optional[str]
+    def ensure_dotted_order(
+        start_time: Optional[datetime],
+        run_id: Optional[str],
+        parent_dotted_order: Optional[str] = None,
     ) -> str:
-        """Create the current dotted order."""
+        """Create a dotted order from a start time and run id."""
         st = start_time or datetime.now(timezone.utc)
         id_ = run_id or str(uuid4())
-        return st.strftime("%Y%m%dT%H%M%S%fZ") + id_
-
-    def ensure_dotted_order(
-        start_time: datetime, run_id: str, parent_dotted_order: Optional[str] = None
-    ) -> str:
-        current_dotted_order = _create_current_dotted_order(start_time, run_id)
+        current_dotted_order = st.strftime("%Y%m%dT%H%M%S%fZ") + id_
         if parent_dotted_order is not None:
             return parent_dotted_order + "." + current_dotted_order
         return current_dotted_order
