@@ -123,6 +123,11 @@ interface ListRunsParams {
   parentRunId?: string;
 
   /**
+   * The order by run start date
+   */
+  order?: "asc" | "desc";
+
+  /**
    * The ID of the reference example to filter by.
    */
   referenceExampleId?: string;
@@ -1595,6 +1600,7 @@ export class Client implements LangSmithTracingClientInterface {
       treeFilter,
       limit,
       select,
+      order,
     } = props;
     let projectIds: string[] = [];
     if (projectId) {
@@ -1658,6 +1664,7 @@ export class Client implements LangSmithTracingClientInterface {
       trace: traceId,
       select: select ? select : default_select,
       is_root: isRoot,
+      order,
     };
 
     let runsYielded = 0;
