@@ -10,7 +10,6 @@ import contextvars
 import functools
 import inspect
 from collections import deque
-from contextlib import AbstractAsyncContextManager
 from collections.abc import (
     AsyncGenerator,
     AsyncIterable,
@@ -20,6 +19,7 @@ from collections.abc import (
     Iterable,
     Iterator,
 )
+from contextlib import AbstractAsyncContextManager
 from typing import (
     Any,
     Callable,
