@@ -5,8 +5,9 @@ from __future__ import annotations
 import json
 import logging
 import sys
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union, cast
+from typing import Any, Optional, Union, cast
 from uuid import UUID, uuid4
 
 try:
@@ -57,7 +58,7 @@ class RunTree(ls_schemas.RunBase):
     # Note: no longer set.
     parent_run: Optional[RunTree] = Field(default=None, exclude=True)
     parent_dotted_order: Optional[str] = Field(default=None, exclude=True)
-    child_runs: List[RunTree] = Field(
+    child_runs: list[RunTree] = Field(
         default_factory=list,
         exclude={"__all__": {"parent_run_id"}},
     )
@@ -66,9 +67,9 @@ class RunTree(ls_schemas.RunBase):
         alias="project_name",
     )
     session_id: Optional[UUID] = Field(default=None, alias="project_id")
-    extra: Dict = Field(default_factory=dict)
-    tags: Optional[List[str]] = Field(default_factory=list)
-    events: List[Dict] = Field(default_factory=list)
+    extra: dict = Field(default_factory=dict)
+    tags: Optional[list[str]] = Field(default_factory=list)
+    events: list[dict] = Field(default_factory=list)
     """List of events associated with the run, like
     start and end events."""
     ls_client: Optional[Any] = Field(default=None, exclude=True)
@@ -171,14 +172,14 @@ class RunTree(ls_schemas.RunBase):
             self.tags = []
         self.tags.extend(tags)
 
-    def add_metadata(self, metadata: Dict[str, Any]) -> None:
+    def add_metadata(self, metadata: dict[str, Any]) -> None:
         """Add metadata to the run."""
         if self.extra is None:
             self.extra = {}
         metadata_: dict = cast(dict, self.extra).setdefault("metadata", {})
         metadata_.update(metadata)
 
-    def add_outputs(self, outputs: Dict[str, Any]) -> None:
+    def add_outputs(self, outputs: dict[str, Any]) -> None:
         """Upsert the given outputs into the run.
 
         Args:
@@ -191,7 +192,7 @@ class RunTree(ls_schemas.RunBase):
             self.outputs = {}
         self.outputs.update(outputs)
 
-    def add_inputs(self, inputs: Dict[str, Any]) -> None:
+    def add_inputs(self, inputs: dict[str, Any]) -> None:
         """Upsert the given outputs into the run.
 
         Args:
@@ -243,11 +244,11 @@ class RunTree(ls_schemas.RunBase):
     def end(
         self,
         *,
-        outputs: Optional[Dict] = None,
+        outputs: Optional[dict] = None,
         error: Optional[str] = None,
         end_time: Optional[datetime] = None,
         events: Optional[Sequence[ls_schemas.RunEvent]] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: Optional[dict[str, Any]] = None,
     ) -> None:
         """Set the end time of the run and all child runs."""
         self.end_time = end_time or datetime.now(timezone.utc)
@@ -269,15 +270,15 @@ class RunTree(ls_schemas.RunBase):
         run_type: RUN_TYPE_T = "chain",
         *,
         run_id: Optional[ID_TYPE] = None,
-        serialized: Optional[Dict] = None,
-        inputs: Optional[Dict] = None,
-        outputs: Optional[Dict] = None,
+        serialized: Optional[dict] = None,
+        inputs: Optional[dict] = None,
+        outputs: Optional[dict] = None,
         error: Optional[str] = None,
         reference_example_id: Optional[UUID] = None,
         start_time: Optional[datetime] = None,
         end_time: Optional[datetime] = None,
-        tags: Optional[List[str]] = None,
-        extra: Optional[Dict] = None,
+        tags: Optional[list[str]] = None,
+        extra: Optional[dict] = None,
         attachments: Optional[ls_schemas.Attachments] = None,
     ) -> RunTree:
         """Add a child run to the run tree."""
@@ -524,7 +525,7 @@ class RunTree(ls_schemas.RunBase):
 
         return RunTree(**init_args)
 
-    def to_headers(self) -> Dict[str, str]:
+    def to_headers(self) -> dict[str, str]:
         """Return the RunTree as a dictionary of headers."""
         headers = {}
         if self.trace_id:
@@ -550,8 +551,8 @@ class _Baggage:
 
     def __init__(
         self,
-        metadata: Optional[Dict[str, str]] = None,
-        tags: Optional[List[str]] = None,
+        metadata: Optional[dict[str, str]] = None,
+        tags: Optional[list[str]] = None,
         project_name: Optional[str] = None,
     ):
         """Initialize the Baggage object."""
@@ -610,7 +611,7 @@ class _Baggage:
         return ",".join(items)
 
 
-def _parse_dotted_order(dotted_order: str) -> List[Tuple[datetime, UUID]]:
+def _parse_dotted_order(dotted_order: str) -> list[tuple[datetime, UUID]]:
     """Parse the dotted order string."""
     parts = dotted_order.split(".")
     return [

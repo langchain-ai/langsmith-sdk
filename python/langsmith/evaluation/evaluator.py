@@ -6,15 +6,12 @@ import asyncio
 import inspect
 import uuid
 from abc import abstractmethod
+from collections.abc import Awaitable, Sequence
 from typing import (
     Any,
-    Awaitable,
     Callable,
-    Dict,
-    List,
     Literal,
     Optional,
-    Sequence,
     Union,
     cast,
 )
@@ -68,7 +65,7 @@ class FeedbackConfig(TypedDict, total=False):
     """The minimum permitted value (if continuous type)."""
     max: Optional[Union[float, int]]
     """The maximum value permitted value (if continuous type)."""
-    categories: Optional[List[Union[Category, dict]]]
+    categories: Optional[list[Union[Category, dict]]]
 
 
 class EvaluationResult(BaseModel):
@@ -82,9 +79,9 @@ class EvaluationResult(BaseModel):
     """The value for this evaluation, if not numeric."""
     comment: Optional[str] = None
     """An explanation regarding the evaluation."""
-    correction: Optional[Dict] = None
+    correction: Optional[dict] = None
     """What the correct value should be, if applicable."""
-    evaluator_info: Dict = Field(default_factory=dict)
+    evaluator_info: dict = Field(default_factory=dict)
     """Additional information about the evaluator."""
     feedback_config: Optional[Union[FeedbackConfig, dict]] = None
     """The configuration used to generate this feedback."""
@@ -95,7 +92,7 @@ class EvaluationResult(BaseModel):
     
     If none provided, the evaluation feedback is applied to the
     root trace being."""
-    extra: Optional[Dict] = None
+    extra: Optional[dict] = None
     """Metadata for the evaluator run."""
 
     class Config:
@@ -125,7 +122,7 @@ class EvaluationResults(TypedDict, total=False):
     metrics at once.
     """
 
-    results: List[EvaluationResult]
+    results: list[EvaluationResult]
     """The evaluation results."""
 
 
@@ -169,11 +166,11 @@ class ComparisonEvaluationResult(BaseModel):
 
     key: str
     """The aspect, metric name, or label for this evaluation."""
-    scores: Dict[Union[uuid.UUID, str], SCORE_TYPE]
+    scores: dict[Union[uuid.UUID, str], SCORE_TYPE]
     """The scores for each run in the comparison."""
     source_run_id: Optional[Union[uuid.UUID, str]] = None
     """The ID of the trace of the evaluator itself."""
-    comment: Optional[Union[str, Dict[Union[uuid.UUID, str], str]]] = None
+    comment: Optional[Union[str, dict[Union[uuid.UUID, str], str]]] = None
     """Comment for the scores. If a string, it's shared across all target runs.
     If a dict, it maps run IDs to individual comments."""
 
@@ -340,7 +337,7 @@ class DynamicRunEvaluator(RunEvaluator):
                 return running_loop.run_until_complete(self.aevaluate_run(run, example))
         if evaluator_run_id is None:
             evaluator_run_id = uuid.uuid4()
-        metadata: Dict[str, Any] = {"target_run_id": run.id}
+        metadata: dict[str, Any] = {"target_run_id": run.id}
         if getattr(run, "session_id", None):
             metadata["experiment"] = str(run.session_id)
         result = self.func(
@@ -373,7 +370,7 @@ class DynamicRunEvaluator(RunEvaluator):
             return await super().aevaluate_run(run, example)
         if evaluator_run_id is None:
             evaluator_run_id = uuid.uuid4()
-        metadata: Dict[str, Any] = {"target_run_id": run.id}
+        metadata: dict[str, Any] = {"target_run_id": run.id}
         if getattr(run, "session_id", None):
             metadata["experiment"] = str(run.session_id)
         result = await self.afunc(
@@ -582,7 +579,7 @@ class DynamicComparisonRunEvaluator:
         return f"<DynamicComparisonRunEvaluator {self._name}>"
 
     @staticmethod
-    def _get_tags(runs: Sequence[Run]) -> List[str]:
+    def _get_tags(runs: Sequence[Run]) -> list[str]:
         """Extract tags from runs."""
         # Add tags to support filtering
         tags = []
@@ -890,7 +887,7 @@ SUMMARY_EVALUATOR_T = Union[
         Union[EvaluationResult, EvaluationResults],
     ],
     Callable[
-        [List[schemas.Run], List[schemas.Example]],
+        [list[schemas.Run], list[schemas.Example]],
         Union[EvaluationResult, EvaluationResults],
     ],
 ]

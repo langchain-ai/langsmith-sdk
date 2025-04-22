@@ -1,10 +1,8 @@
 """Evaluation Helpers."""
 
-from typing import TYPE_CHECKING, Any, List
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from typing import List
-
     from langsmith.evaluation._arunner import (
         aevaluate,
         aevaluate_existing,
@@ -88,5 +86,5 @@ __all__ = [
 ]
 
 
-def __dir__() -> List[str]:
+def __dir__() -> list[str]:
     return __all__

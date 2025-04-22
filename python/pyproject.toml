@@ -108,11 +108,12 @@ lint.select = [
   "UP",
 ]
 lint.ignore = [
-  "UP006",
   "UP007",
   # Relax the convention by _not_ requiring documentation for every function parameter.
   "D417",
 ]
+target-version = "py39"
+
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 

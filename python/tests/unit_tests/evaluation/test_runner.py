@@ -1261,7 +1261,7 @@ def test_invalid_evaluate_args() -> None:
         {"num_repetitions": 2},
         {"experiment": "foo"},
         {"upload_results": False},
-        {"summary_evaluators": [(lambda a, b: 2)]},
+        {"summary_evaluators": [lambda a, b: 2]},
         {"data": "data"},
     ]:
         with pytest.raises(
