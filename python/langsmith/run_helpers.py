@@ -11,27 +11,25 @@ import inspect
 import logging
 import uuid
 import warnings
-from contextvars import copy_context
-from typing import (
-    TYPE_CHECKING,
-    Any,
+from collections.abc import (
     AsyncGenerator,
     AsyncIterator,
     Awaitable,
-    Callable,
-    Dict,
     Generator,
-    Generic,
     Iterator,
-    List,
-    Literal,
     Mapping,
+    Sequence,
+)
+from contextvars import copy_context
+from typing import (
+    TYPE_CHECKING,
+    Annotated,
+    Any,
+    Callable,
+    Generic,
+    Literal,
     Optional,
     Protocol,
-    Sequence,
-    Set,
-    Tuple,
-    Type,
     TypedDict,
     TypeVar,
     Union,
@@ -40,7 +38,7 @@ from typing import (
     runtime_checkable,
 )
 
-from typing_extensions import Annotated, ParamSpec, TypeGuard, get_args, get_origin
+from typing_extensions import ParamSpec, TypeGuard, get_args, get_origin
 
 from langsmith import client as ls_client
 from langsmith import run_trees, schemas, utils
@@ -57,15 +55,15 @@ _PARENT_RUN_TREE = contextvars.ContextVar[Optional[run_trees.RunTree]](
     "_PARENT_RUN_TREE", default=None
 )
 _PROJECT_NAME = contextvars.ContextVar[Optional[str]]("_PROJECT_NAME", default=None)
-_TAGS = contextvars.ContextVar[Optional[List[str]]]("_TAGS", default=None)
-_METADATA = contextvars.ContextVar[Optional[Dict[str, Any]]]("_METADATA", default=None)
+_TAGS = contextvars.ContextVar[Optional[list[str]]]("_TAGS", default=None)
+_METADATA = contextvars.ContextVar[Optional[dict[str, Any]]]("_METADATA", default=None)
 
 
 _TRACING_ENABLED = contextvars.ContextVar[Optional[Union[bool, Literal["local"]]]](
     "_TRACING_ENABLED", default=None
 )
 _CLIENT = contextvars.ContextVar[Optional[ls_client.Client]]("_CLIENT", default=None)
-_CONTEXT_KEYS: Dict[str, contextvars.ContextVar] = {
+_CONTEXT_KEYS: dict[str, contextvars.ContextVar] = {
     "parent": _PARENT_RUN_TREE,
     "project_name": _PROJECT_NAME,
     "tags": _TAGS,
@@ -84,7 +82,7 @@ def get_current_run_tree() -> Optional[run_trees.RunTree]:
 
 def get_tracing_context(
     context: Optional[contextvars.Context] = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Get the current tracing context."""
     if context is None:
         return {
@@ -102,8 +100,8 @@ def get_tracing_context(
 def tracing_context(
     *,
     project_name: Optional[str] = None,
-    tags: Optional[List[str]] = None,
-    metadata: Optional[Dict[str, Any]] = None,
+    tags: Optional[list[str]] = None,
+    metadata: Optional[dict[str, Any]] = None,
     parent: Optional[Union[run_trees.RunTree, Mapping, str, Literal[False]]] = None,
     enabled: Optional[Union[bool, Literal["local"]]] = None,
     client: Optional[ls_client.Client] = None,
@@ -174,7 +172,7 @@ def ensure_traceable(
     *,
     name: Optional[str] = None,
     metadata: Optional[Mapping[str, Any]] = None,
-    tags: Optional[List[str]] = None,
+    tags: Optional[list[str]] = None,
     client: Optional[ls_client.Client] = None,
     reduce_fn: Optional[Callable[[Sequence], dict]] = None,
     project_name: Optional[str] = None,
@@ -212,7 +210,7 @@ class LangSmithExtra(TypedDict, total=False):
     """Optional name for the run."""
     reference_example_id: Optional[ls_client.ID_TYPE]
     """Optional ID of a reference example."""
-    run_extra: Optional[Dict]
+    run_extra: Optional[dict]
     """Optional additional run information."""
     parent: Optional[Union[run_trees.RunTree, str, Mapping]]
     """Optional parent run, can be a RunTree, string, or mapping."""
@@ -220,9 +218,9 @@ class LangSmithExtra(TypedDict, total=False):
     """Optional run tree (deprecated)."""
     project_name: Optional[str]
     """Optional name of the project."""
-    metadata: Optional[Dict[str, Any]]
+    metadata: Optional[dict[str, Any]]
     """Optional metadata for the run."""
-    tags: Optional[List[str]]
+    tags: Optional[list[str]]
     """Optional list of tags for the run."""
     run_id: Optional[ls_client.ID_TYPE]
     """Optional ID for the run."""
@@ -283,7 +281,7 @@ def traceable(
     *,
     name: Optional[str] = None,
     metadata: Optional[Mapping[str, Any]] = None,
-    tags: Optional[List[str]] = None,
+    tags: Optional[list[str]] = None,
     client: Optional[ls_client.Client] = None,
     reduce_fn: Optional[Callable[[Sequence], dict]] = None,
     project_name: Optional[str] = None,
@@ -558,7 +556,7 @@ def traceable(
                 args=args,
                 kwargs=kwargs,
             )
-            results: List[Any] = []
+            results: list[Any] = []
             try:
                 if func_accepts_parent_run:
                     kwargs["run_tree"] = run_container["new_run"]
@@ -656,7 +654,7 @@ def traceable(
             func_accepts_parent_run = (
                 inspect.signature(func).parameters.get("run_tree", None) is not None
             )
-            results: List[Any] = []
+            results: list[Any] = []
             function_return: Any = None
 
             try:
@@ -860,18 +858,18 @@ class trace:
         name: str,
         run_type: ls_client.RUN_TYPE_T = "chain",
         *,
-        inputs: Optional[Dict] = None,
-        extra: Optional[Dict] = None,
+        inputs: Optional[dict] = None,
+        extra: Optional[dict] = None,
         project_name: Optional[str] = None,
         parent: Optional[
             Union[run_trees.RunTree, str, Mapping, Literal["ignore"]]
         ] = None,
-        tags: Optional[List[str]] = None,
+        tags: Optional[list[str]] = None,
         metadata: Optional[Mapping[str, Any]] = None,
         client: Optional[ls_client.Client] = None,
         run_id: Optional[ls_client.ID_TYPE] = None,
         reference_example_id: Optional[ls_client.ID_TYPE] = None,
-        exceptions_to_handle: Optional[Tuple[Type[BaseException], ...]] = None,
+        exceptions_to_handle: Optional[tuple[type[BaseException], ...]] = None,
         attachments: Optional[schemas.Attachments] = None,
         **kwargs: Any,
     ):
@@ -980,7 +978,7 @@ class trace:
 
     def _teardown(
         self,
-        exc_type: Optional[Type[BaseException]],
+        exc_type: Optional[type[BaseException]],
         exc_value: Optional[BaseException],
         traceback: Optional[TracebackType],
     ) -> None:
@@ -1024,7 +1022,7 @@ class trace:
 
     def __exit__(
         self,
-        exc_type: Optional[Type[BaseException]] = None,
+        exc_type: Optional[type[BaseException]] = None,
         exc_value: Optional[BaseException] = None,
         traceback: Optional[TracebackType] = None,
     ) -> None:
@@ -1051,7 +1049,7 @@ class trace:
 
     async def __aexit__(
         self,
-        exc_type: Optional[Type[BaseException]] = None,
+        exc_type: Optional[type[BaseException]] = None,
         exc_value: Optional[BaseException] = None,
         traceback: Optional[TracebackType] = None,
     ) -> None:
@@ -1222,8 +1220,8 @@ class _TraceableContainer(TypedDict, total=False):
     new_run: Optional[run_trees.RunTree]
     project_name: Optional[str]
     outer_project: Optional[str]
-    outer_metadata: Optional[Dict[str, Any]]
-    outer_tags: Optional[List[str]]
+    outer_metadata: Optional[dict[str, Any]]
+    outer_tags: Optional[list[str]]
     on_end: Optional[Callable[[run_trees.RunTree], Any]]
     context: contextvars.Context
 
@@ -1231,10 +1229,10 @@ class _TraceableContainer(TypedDict, total=False):
 class _ContainerInput(TypedDict, total=False):
     """Typed response when initializing a run a traceable."""
 
-    extra_outer: Optional[Dict]
+    extra_outer: Optional[dict]
     name: Optional[str]
-    metadata: Optional[Dict[str, Any]]
-    tags: Optional[List[str]]
+    metadata: Optional[dict[str, Any]]
+    tags: Optional[list[str]]
     client: Optional[ls_client.Client]
     reduce_fn: Optional[Callable]
     project_name: Optional[str]
@@ -1498,7 +1496,7 @@ def _is_traceable_function(func: Any) -> bool:
 
 def _get_inputs(
     signature: inspect.Signature, *args: Any, **kwargs: Any
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Return a dictionary of inputs from the function signature."""
     bound = signature.bind_partial(*args, **kwargs)
     bound.apply_defaults()
@@ -1518,7 +1516,7 @@ def _get_inputs(
 
 def _get_inputs_safe(
     signature: inspect.Signature, *args: Any, **kwargs: Any
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     try:
         return _get_inputs(signature, *args, **kwargs)
     except BaseException as e:
@@ -1533,18 +1531,18 @@ def _is_attachment(param: inspect.Parameter) -> bool:
     )
 
 
-def _attachment_args_helper(signature: inspect.Signature) -> Set[str]:
+def _attachment_args_helper(signature: inspect.Signature) -> set[str]:
     return {
         name for name, param in signature.parameters.items() if _is_attachment(param)
     }
 
 
 @functools.lru_cache(maxsize=1000)
-def _cached_attachment_args(signature: inspect.Signature) -> Set[str]:
+def _cached_attachment_args(signature: inspect.Signature) -> set[str]:
     return _attachment_args_helper(signature)
 
 
-def _attachment_args(signature: inspect.Signature) -> Set[str]:
+def _attachment_args(signature: inspect.Signature) -> set[str]:
     # Caching signatures fails if there's unhashable default values.
     try:
         return _cached_attachment_args(signature)
@@ -1554,7 +1552,7 @@ def _attachment_args(signature: inspect.Signature) -> Set[str]:
 
 def _get_inputs_and_attachments_safe(
     signature: inspect.Signature, *args: Any, **kwargs: Any
-) -> Tuple[dict, schemas.Attachments]:
+) -> tuple[dict, schemas.Attachments]:
     try:
         inferred = _get_inputs(signature, *args, **kwargs)
         attachment_args = _attachment_args(signature)
@@ -1572,7 +1570,7 @@ def _get_inputs_and_attachments_safe(
         return {"args": args, "kwargs": kwargs}, {}
 
 
-def _set_tracing_context(context: Optional[Dict[str, Any]] = None):
+def _set_tracing_context(context: Optional[dict[str, Any]] = None):
     """Set the tracing context."""
     if context is None:
         for k, v in _CONTEXT_KEYS.items():
@@ -1588,7 +1586,7 @@ def _process_iterator(
     run_container: _TraceableContainer,
     is_llm_run: bool,
     # Results is mutated
-    results: List[Any],
+    results: list[Any],
     process_chunk: Optional[Callable],
 ) -> Generator[T, None, Any]:
     try:
@@ -1620,7 +1618,7 @@ async def _process_async_iterator(
     *,
     is_llm_run: bool,
     accepts_context: bool,
-    results: List[Any],
+    results: list[Any],
     process_chunk: Optional[Callable],
 ) -> AsyncGenerator[T, None]:
     try:

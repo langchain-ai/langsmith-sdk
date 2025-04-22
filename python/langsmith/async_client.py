@@ -7,15 +7,11 @@ import contextlib
 import datetime
 import json
 import uuid
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import AsyncGenerator, AsyncIterator, Mapping, Sequence
 from typing import (
     Any,
-    AsyncGenerator,
-    Dict,
-    List,
     Literal,
     Optional,
-    Tuple,
     Union,
     cast,
 )
@@ -41,7 +37,7 @@ class AsyncClient:
         api_key: Optional[str] = None,
         timeout_ms: Optional[
             Union[
-                int, Tuple[Optional[int], Optional[int], Optional[int], Optional[int]]
+                int, tuple[Optional[int], Optional[int], Optional[int], Optional[int]]
             ]
         ] = None,
         retry_config: Optional[Mapping[str, Any]] = None,
@@ -59,7 +55,7 @@ class AsyncClient:
         ls_client._validate_api_key_if_hosted(api_url, api_key)
 
         if isinstance(timeout_ms, int):
-            timeout_: Union[Tuple, float] = (timeout_ms / 1000, None, None, None)
+            timeout_: Union[tuple, float] = (timeout_ms / 1000, None, None, None)
         elif isinstance(timeout_ms, tuple):
             timeout_ = tuple([t / 1000 if t is not None else None for t in timeout_ms])
         else:
@@ -121,8 +117,7 @@ class AsyncClient:
                     )
                 elif response.status_code == 408:
                     raise ls_utils.LangSmithRequestTimeout(
-                        f"Client took too long to send request to {method}"
-                        f"{endpoint}"
+                        f"Client took too long to send request to {method}{endpoint}"
                     )
                 elif response.status_code == 429:
                     raise ls_utils.LangSmithRateLimitError(
@@ -155,8 +150,8 @@ class AsyncClient:
     async def _aget_paginated_list(
         self,
         path: str,
-        params: Optional[Dict[str, Any]] = None,
-    ) -> AsyncIterator[Dict[str, Any]]:
+        params: Optional[dict[str, Any]] = None,
+    ) -> AsyncIterator[dict[str, Any]]:
         """Get a paginated list of items."""
         params = params or {}
         offset = params.get("offset", 0)
@@ -206,7 +201,7 @@ class AsyncClient:
     async def create_run(
         self,
         name: str,
-        inputs: Dict[str, Any],
+        inputs: dict[str, Any],
         run_type: str,
         *,
         project_name: Optional[str] = None,
@@ -417,7 +412,7 @@ class AsyncClient:
             )
             project_ids.extend([project.id for project in projects])
 
-        body_query: Dict[str, Any] = {
+        body_query: dict[str, Any] = {
             "session": project_ids if project_ids else None,
             "run_type": run_type,
             "reference_example": (
@@ -623,8 +618,8 @@ class AsyncClient:
 
     async def create_example(
         self,
-        inputs: Dict[str, Any],
-        outputs: Optional[Dict[str, Any]] = None,
+        inputs: dict[str, Any],
+        outputs: Optional[dict[str, Any]] = None,
         dataset_id: Optional[ls_client.ID_TYPE] = None,
         dataset_name: Optional[str] = None,
         **kwargs: Any,
@@ -796,7 +791,7 @@ class AsyncClient:
         Returns:
             The pre-signed URL for uploading feedback data.
         """
-        body: Dict[str, Any] = {
+        body: dict[str, Any] = {
             "run_id": run_id,
             "feedback_key": feedback_key,
             "feedback_config": feedback_config,
@@ -886,7 +881,7 @@ class AsyncClient:
     async def list_annotation_queues(
         self,
         *,
-        queue_ids: Optional[List[ID_TYPE]] = None,
+        queue_ids: Optional[list[ID_TYPE]] = None,
         name: Optional[str] = None,
         name_contains: Optional[str] = None,
         limit: Optional[int] = None,
@@ -1018,7 +1013,7 @@ class AsyncClient:
         ls_utils.raise_for_status_with_text(response)
 
     async def add_runs_to_annotation_queue(
-        self, queue_id: ID_TYPE, *, run_ids: List[ID_TYPE]
+        self, queue_id: ID_TYPE, *, run_ids: list[ID_TYPE]
     ) -> None:
         """Add runs to an annotation queue with the specified queue ID.
 
@@ -1123,7 +1118,7 @@ class AsyncClient:
         dataset_id: ls_client.ID_TYPE,
         filter: Optional[str] = None,
         **kwargs: Any,
-    ) -> List[ls_schemas.ExampleSearch]:
+    ) -> list[ls_schemas.ExampleSearch]:
         r"""Retrieve the dataset examples whose inputs best match the current inputs.
 
         **Note**: Must have few-shot indexing enabled for the dataset. See
@@ -1259,7 +1254,7 @@ class AsyncClient:
 
     async def _like_or_unlike_prompt(
         self, prompt_identifier: str, like: bool
-    ) -> Dict[str, int]:
+    ) -> dict[str, int]:
         """Like or unlike a prompt.
 
         Args:
@@ -1315,7 +1310,7 @@ class AsyncClient:
         prompt = await self.get_prompt(prompt_identifier)
         return True if prompt else False
 
-    async def like_prompt(self, prompt_identifier: str) -> Dict[str, int]:
+    async def like_prompt(self, prompt_identifier: str) -> dict[str, int]:
         """Like a prompt.
 
         Args:
@@ -1327,7 +1322,7 @@ class AsyncClient:
         """
         return await self._like_or_unlike_prompt(prompt_identifier, like=True)
 
-    async def unlike_prompt(self, prompt_identifier: str) -> Dict[str, int]:
+    async def unlike_prompt(self, prompt_identifier: str) -> dict[str, int]:
         """Unlike a prompt.
 
         Args:
@@ -1453,7 +1448,7 @@ class AsyncClient:
         if not (await self._current_tenant_is_owner(owner=owner)):
             raise (await self._owner_conflict_error("create a prompt", owner))
 
-        json: Dict[str, Union[str, bool, Sequence[str]]] = {
+        json: dict[str, Union[str, bool, Sequence[str]]] = {
             "repo_handle": prompt_name,
             "description": description or "",
             "readme": readme or "",
@@ -1529,7 +1524,7 @@ class AsyncClient:
         tags: Optional[Sequence[str]] = None,
         is_public: Optional[bool] = None,
         is_archived: Optional[bool] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Update a prompt's metadata.
 
         To update the content of a prompt, use push_prompt or create_commit instead.
@@ -1558,7 +1553,7 @@ class AsyncClient:
                 "https://smith.langchain.com/prompts"
             )
 
-        json: Dict[str, Union[str, bool, Sequence[str]]] = {}
+        json: dict[str, Union[str, bool, Sequence[str]]] = {}
 
         if description is not None:
             json["description"] = description

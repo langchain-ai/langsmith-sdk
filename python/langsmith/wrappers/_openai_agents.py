@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime, timezone
-from typing import Dict, Optional, TypedDict
+from typing import Optional, TypedDict
 from uuid import uuid4
 
 from langsmith import run_trees as rt
@@ -161,7 +161,7 @@ if HAVE_AGENTS:
             self._first_response_inputs: dict = {}
             self._last_response_outputs: dict = {}
 
-            self._runs: Dict[str, RunData] = {}
+            self._runs: dict[str, RunData] = {}
 
         def on_trace_start(self, trace: tracing.Trace) -> None:
             if self._name:
