@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from io import BufferedReader
-from typing import Dict, Iterable, Tuple, Union
+from typing import Union
 
-MultipartPart = Tuple[
-    str, Tuple[None, Union[bytes, BufferedReader], str, Dict[str, str]]
+MultipartPart = tuple[
+    str, tuple[None, Union[bytes, BufferedReader], str, dict[str, str]]
 ]
 
 

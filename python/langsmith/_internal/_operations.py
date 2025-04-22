@@ -4,8 +4,9 @@ import itertools
 import logging
 import os
 import uuid
+from collections.abc import Iterable
 from io import BufferedReader
-from typing import Dict, Iterable, Literal, Optional, Tuple, Union, cast
+from typing import Literal, Optional, Union, cast
 
 from langsmith import schemas as ls_schemas
 from langsmith._internal import _orjson
@@ -214,9 +215,9 @@ def serialized_feedback_operation_to_multipart_parts_and_context(
 
 def serialized_run_operation_to_multipart_parts_and_context(
     op: SerializedRunOperation,
-) -> tuple[MultipartPartsAndContext, Dict[str, BufferedReader]]:
+) -> tuple[MultipartPartsAndContext, dict[str, BufferedReader]]:
     acc_parts: list[MultipartPart] = []
-    opened_files_dict: Dict[str, BufferedReader] = {}
+    opened_files_dict: dict[str, BufferedReader] = {}
     # this is main object, minus inputs/outputs/events/attachments
     acc_parts.append(
         (
@@ -295,7 +296,7 @@ def serialized_run_operation_to_multipart_parts_and_context(
 def encode_multipart_parts_and_context(
     parts_and_context: MultipartPartsAndContext,
     boundary: str,
-) -> Iterable[Tuple[bytes, Union[bytes, BufferedReader]]]:
+) -> Iterable[tuple[bytes, Union[bytes, BufferedReader]]]:
     for part_name, (filename, data, content_type, headers) in parts_and_context.parts:
         header_parts = [
             f"--{boundary}\r\n",

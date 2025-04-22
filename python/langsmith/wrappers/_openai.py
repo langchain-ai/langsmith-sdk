@@ -8,11 +8,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    DefaultDict,
-    Dict,
-    List,
     Optional,
-    Type,
     TypeVar,
     Union,
 )
@@ -39,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 
 @functools.lru_cache
-def _get_not_given() -> Optional[Type]:
+def _get_not_given() -> Optional[type]:
     try:
         from openai._types import NotGiven
 
@@ -82,9 +78,9 @@ def _infer_invocation_params(model_type: str, kwargs: dict):
     }
 
 
-def _reduce_choices(choices: List[Choice]) -> dict:
+def _reduce_choices(choices: list[Choice]) -> dict:
     reversed_choices = list(reversed(choices))
-    message: Dict[str, Any] = {
+    message: dict[str, Any] = {
         "role": "assistant",
         "content": "",
     }
@@ -92,7 +88,7 @@ def _reduce_choices(choices: List[Choice]) -> dict:
         if hasattr(c, "delta") and getattr(c.delta, "role", None):
             message["role"] = c.delta.role
             break
-    tool_calls: DefaultDict[int, List[ChoiceDeltaToolCall]] = defaultdict(list)
+    tool_calls: defaultdict[int, list[ChoiceDeltaToolCall]] = defaultdict(list)
     for c in choices:
         if hasattr(c, "delta"):
             if getattr(c.delta, "content", None):
@@ -144,8 +140,8 @@ def _reduce_choices(choices: List[Choice]) -> dict:
     }
 
 
-def _reduce_chat(all_chunks: List[ChatCompletionChunk]) -> dict:
-    choices_by_index: DefaultDict[int, List[Choice]] = defaultdict(list)
+def _reduce_chat(all_chunks: list[ChatCompletionChunk]) -> dict:
+    choices_by_index: defaultdict[int, list[Choice]] = defaultdict(list)
     for chunk in all_chunks:
         for choice in chunk.choices:
             choices_by_index[choice.index].append(choice)
@@ -165,7 +161,7 @@ def _reduce_chat(all_chunks: List[ChatCompletionChunk]) -> dict:
     return d
 
 
-def _reduce_completions(all_chunks: List[Completion]) -> dict:
+def _reduce_completions(all_chunks: list[Completion]) -> dict:
     all_content = []
     for chunk in all_chunks:
         content = chunk.choices[0].text
@@ -330,7 +326,7 @@ def _reduce_response_events(events: list[ResponseStreamEvent]) -> dict:
 
 class TracingExtra(TypedDict, total=False):
     metadata: Optional[Mapping[str, Any]]
-    tags: Optional[List[str]]
+    tags: Optional[list[str]]
     client: Optional[ls_client.Client]
 
 
