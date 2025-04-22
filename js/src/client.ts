@@ -362,6 +362,22 @@ type MultipartPart = {
   payload: Blob;
 };
 
+type Thread = {
+  filter: string;
+  count: number;
+  total_tokens: number;
+  total_cost: number | null;
+  min_start_time: string;
+  max_start_time: string;
+  latency_p50: number;
+  latency_p99: number;
+  feedback_stats: any | null;
+  group_key: string;
+  first_inputs: string;
+  last_outputs: string;
+  last_error: string | null;
+};
+
 export function mergeRuntimeEnvIntoRunCreate(run: RunCreate) {
   const runtimeEnv = getRuntimeEnvironment();
   const envVars = getLangChainEnvVarsMetadata();
@@ -1666,7 +1682,7 @@ export class Client implements LangSmithTracingClientInterface {
     }
   }
 
-  public async *groupRuns(props: GroupRunsParams): AsyncIterable<Run[]> {
+  public async *groupRuns(props: GroupRunsParams): AsyncIterable<Thread> {
     const { projectId, groupBy, filter, startTime, endTime, limit, offset } =
       props;
     const baseBody = {
@@ -1704,14 +1720,16 @@ export class Client implements LangSmithTracingClientInterface {
 
       await raiseForStatus(response, `Failed to fetch ${path}`);
 
-      const items: { groups: Run[]; total: number } = await response.json();
+      const items: { groups: Thread[]; total: number } = await response.json();
       const { groups, total } = items;
 
       if (groups.length === 0) {
         break;
       }
 
-      yield groups;
+      for (const thread of groups) {
+        yield thread;
+      }
       currentOffset += groups.length;
 
       if (currentOffset >= total) {
