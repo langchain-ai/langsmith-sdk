@@ -268,9 +268,9 @@ def test_async_methods() -> None:
         sync_args = set(inspect.signature(Client.__dict__[sync_method]).parameters)
         async_args = set(inspect.signature(Client.__dict__[async_method]).parameters)
         extra_args = sync_args - async_args
-        assert not extra_args, (
-            f"Extra args for {async_method} (compared to {sync_method}): {extra_args}"
-        )
+        assert (
+            not extra_args
+        ), f"Extra args for {async_method} (compared to {sync_method}): {extra_args}"
 
 
 def test_create_run_unicode() -> None:
@@ -943,9 +943,9 @@ def test_serialize_json(caplog) -> None:
         "my_mock": MagicMock(text="Hello, world"),
     }
     res = _orjson.loads(_dumps_json(to_serialize))
-    assert "model_dump" not in caplog.text, (
-        f"Unexpected error logs were emitted: {caplog.text}"
-    )
+    assert (
+        "model_dump" not in caplog.text
+    ), f"Unexpected error logs were emitted: {caplog.text}"
 
     expected = {
         "uid": str(uid),
@@ -2234,9 +2234,9 @@ def test_create_run_with_zstd_compression(mock_session_cls: mock.Mock) -> None:
     for call_obj in mock_session.request.mock_calls:
         if call_obj.args and call_obj.args[0] == "POST":
             post_calls.append(call_obj)
-    assert len(post_calls) >= 1, (
-        "Expected at least one POST to the compression endpoint"
-    )
+    assert (
+        len(post_calls) >= 1
+    ), "Expected at least one POST to the compression endpoint"
 
     call_data = post_calls[0][2]["data"]
 
@@ -2322,9 +2322,9 @@ def test_create_feedback_with_zstd_compression(mock_session_cls: mock.Mock) -> N
 
     # Verify Content-Encoding header
     headers = post_calls[0][2]["headers"]
-    assert headers.get("Content-Encoding") == "zstd", (
-        "Expected Content-Encoding header to be 'zstd'"
-    )
+    assert (
+        headers.get("Content-Encoding") == "zstd"
+    ), "Expected Content-Encoding header to be 'zstd'"
 
 
 @patch("langsmith.client.requests.Session")
