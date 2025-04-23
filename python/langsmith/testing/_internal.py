@@ -13,15 +13,13 @@ import threading
 import time
 import uuid
 import warnings
+from collections.abc import Generator, Sequence
 from concurrent.futures import Future
 from pathlib import Path
 from typing import (
     Any,
     Callable,
-    Generator,
     Optional,
-    Sequence,
-    Tuple,
     TypeVar,
     Union,
     cast,
@@ -431,7 +429,7 @@ def _start_experiment(
 
 def _get_example_id(
     func: Callable, inputs: Optional[dict], suite_id: uuid.UUID
-) -> Tuple[uuid.UUID, str]:
+) -> tuple[uuid.UUID, str]:
     try:
         file_path = str(Path(inspect.getfile(func)).relative_to(Path.cwd()))
     except ValueError:

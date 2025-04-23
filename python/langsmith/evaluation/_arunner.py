@@ -8,18 +8,12 @@ import io
 import logging
 import pathlib
 import uuid
+from collections.abc import AsyncIterable, AsyncIterator, Awaitable, Iterable, Sequence
 from typing import (
     TYPE_CHECKING,
     Any,
-    AsyncIterable,
-    AsyncIterator,
-    Awaitable,
     Callable,
-    Dict,
-    Iterable,
-    List,
     Optional,
-    Sequence,
     TypeVar,
     Union,
     cast,
@@ -910,7 +904,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                 evaluation_results=evaluation_results,
             )
 
-    async def aget_summary_scores(self) -> Dict[str, List[dict]]:
+    async def aget_summary_scores(self) -> dict[str, list[dict]]:
         if self._summary_results is None:
             return {"results": []}
         return {
@@ -1163,7 +1157,7 @@ class AsyncExperimentResults:
         experiment_manager: _AsyncExperimentManager,
     ):
         self._manager = experiment_manager
-        self._results: List[ExperimentResultRow] = []
+        self._results: list[ExperimentResultRow] = []
         self._lock = asyncio.Lock()
         self._task = asyncio.create_task(self._process_data(self._manager))
         self._processed_count = 0
@@ -1331,7 +1325,7 @@ async def async_chain_from_iterable(
 
 
 async def async_iter_from_list(
-    examples: List[schemas.Example],
+    examples: list[schemas.Example],
 ) -> AsyncIterable[schemas.Example]:
     """Convert a list of examples to an async iterable."""
     for example in examples:

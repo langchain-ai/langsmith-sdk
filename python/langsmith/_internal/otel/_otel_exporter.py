@@ -4,7 +4,7 @@ import datetime
 import logging
 import uuid
 import warnings
-from typing import Any, List, Optional, Tuple
+from typing import Any, Optional
 
 from langsmith import utils as ls_utils
 from langsmith._internal import _orjson
@@ -110,7 +110,7 @@ class OTELExporter:
         self._tracer = trace.get_tracer("langsmith", tracer_provider=tracer_provider)
         self._spans = {}
 
-    def export_batch(self, operations: List[SerializedRunOperation]) -> None:
+    def export_batch(self, operations: list[SerializedRunOperation]) -> None:
         """Export a batch of serialized run operations to OTEL.
 
         Args:
@@ -593,7 +593,7 @@ class OTELExporter:
 
     def get_unified_run_tokens(
         self, outputs: Optional[dict]
-    ) -> Optional[Tuple[int, int]]:
+    ) -> Optional[tuple[int, int]]:
         if not outputs:
             return None
 
@@ -650,7 +650,7 @@ class OTELExporter:
 
     def _extract_unified_run_tokens(
         self, outputs: Optional[Any]
-    ) -> Optional[Tuple[int, int]]:
+    ) -> Optional[tuple[int, int]]:
         if not outputs or not isinstance(outputs, dict):
             return None
 

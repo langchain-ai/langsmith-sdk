@@ -1,4 +1,4 @@
-from typing import Any, Callable, Dict, Literal, Optional
+from typing import Any, Callable, Literal, Optional
 
 from typing_extensions import TypedDict
 
@@ -47,7 +47,7 @@ class EditDistance:
                 "Please install it with `pip install -U rapidfuzz`."
             )
 
-        module_map: Dict[str, Any] = {
+        module_map: dict[str, Any] = {
             "damerau_levenshtein": rf_distance.DamerauLevenshtein,
             "levenshtein": rf_distance.Levenshtein,
             "jaro": rf_distance.Jaro,

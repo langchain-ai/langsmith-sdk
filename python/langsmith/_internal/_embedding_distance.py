@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    List,
     Literal,
     Optional,
-    Sequence,
     Union,
 )
 
@@ -20,7 +19,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-Matrix = Union[List[List[float]], List[Any], Any]
+Matrix = Union[list[list[float]], list[Any], Any]
 
 
 def cosine_similarity(X: Matrix, Y: Matrix) -> np.ndarray:
@@ -82,7 +81,7 @@ def _get_openai_encoder() -> Callable[[Sequence[str]], Sequence[Sequence[float]]
 
 
 class EmbeddingConfig(TypedDict, total=False):
-    encoder: Callable[[List[str]], Sequence[Sequence[float]]]
+    encoder: Callable[[list[str]], Sequence[Sequence[float]]]
     metric: Literal["cosine", "euclidean", "manhattan", "chebyshev", "hamming"]
 
 

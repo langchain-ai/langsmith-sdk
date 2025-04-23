@@ -12,9 +12,7 @@ from multiprocessing import cpu_count
 from queue import Empty, Queue
 from typing import (
     TYPE_CHECKING,
-    List,
     Optional,
-    Tuple,
     Union,
     cast,
 )
@@ -80,8 +78,8 @@ class TracingQueueItem:
 
 def _tracing_thread_drain_queue(
     tracing_queue: Queue, limit: int = 100, block: bool = True
-) -> List[TracingQueueItem]:
-    next_batch: List[TracingQueueItem] = []
+) -> list[TracingQueueItem]:
+    next_batch: list[TracingQueueItem] = []
     try:
         # wait 250ms for the first item, then
         # - drain the queue with a 50ms block timeout
@@ -101,7 +99,7 @@ def _tracing_thread_drain_queue(
 
 def _tracing_thread_drain_compressed_buffer(
     client: Client, size_limit: int = 100, size_limit_bytes: int | None = 20_971_520
-) -> Tuple[Optional[io.BytesIO], Optional[Tuple[int, int]]]:
+) -> tuple[Optional[io.BytesIO], Optional[tuple[int, int]]]:
     try:
         if client.compressed_traces is None:
             return None, None
@@ -153,7 +151,7 @@ def _tracing_thread_drain_compressed_buffer(
 def _tracing_thread_handle_batch(
     client: Client,
     tracing_queue: Queue,
-    batch: List[TracingQueueItem],
+    batch: list[TracingQueueItem],
     use_multipart: bool,
 ) -> None:
     try:
@@ -168,7 +166,7 @@ def _tracing_thread_handle_batch(
                 ops = [
                     op for op in ops if not isinstance(op, SerializedFeedbackOperation)
                 ]
-            client._batch_ingest_run_ops(cast(List[SerializedRunOperation], ops))
+            client._batch_ingest_run_ops(cast(list[SerializedRunOperation], ops))
 
     except Exception:
         logger.error(
@@ -188,7 +186,7 @@ def _tracing_thread_handle_batch(
 def _otel_tracing_thread_handle_batch(
     client: Client,
     tracing_queue: Queue,
-    batch: List[TracingQueueItem],
+    batch: list[TracingQueueItem],
 ) -> None:
     """Handle a batch of tracing queue items by exporting them to OTEL."""
     try:
@@ -271,7 +269,7 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
     scale_up_qsize_trigger: int = batch_ingest_config["scale_up_qsize_trigger"]
     use_multipart = batch_ingest_config.get("use_multipart_endpoint", False)
 
-    sub_threads: List[threading.Thread] = []
+    sub_threads: list[threading.Thread] = []
     # 1 for this func, 1 for getrefcount, 1 for _get_data_type_cached
     num_known_refs = 3
 

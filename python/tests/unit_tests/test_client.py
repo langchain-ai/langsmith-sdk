@@ -268,10 +268,9 @@ def test_async_methods() -> None:
         sync_args = set(inspect.signature(Client.__dict__[sync_method]).parameters)
         async_args = set(inspect.signature(Client.__dict__[async_method]).parameters)
         extra_args = sync_args - async_args
-        assert not extra_args, (
-            f"Extra args for {async_method} "
-            f"(compared to {sync_method}): {extra_args}"
-        )
+        assert (
+            not extra_args
+        ), f"Extra args for {async_method} (compared to {sync_method}): {extra_args}"
 
 
 def test_create_run_unicode() -> None:
