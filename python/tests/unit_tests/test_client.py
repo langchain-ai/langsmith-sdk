@@ -2551,3 +2551,54 @@ def test__construct_url():
         for prefix in ("", "/", "https://foobar.com/api/"):
             actual = _construct_url(api_url + suffix, prefix + pathname)
             assert actual == expected
+
+
+@mock.patch("langsmith.client.requests.Session")
+def test_list_shared_examples_pagination(mock_session_cls: mock.Mock) -> None:
+    """Test list_shared_examples handles pagination correctly."""
+    mock_session = mock.Mock()
+
+    def mock_request(*args, **kwargs):
+        response = mock.Mock()
+        response.status_code = 200
+
+        if "/info" in args[1]:
+            response.json.return_value = {}
+            return response
+
+        # First request will return 100 examples, second request 50 examples
+        if kwargs.get('params', {}).get('offset', 0) == 0:
+            examples = [
+                {
+                    "id": str(uuid.uuid4()),
+                    "created_at": _CREATED_AT.isoformat(),
+                    "inputs": {"text": f"input_{i}"},
+                    "outputs": {"result": f"output_{i}"},
+                    "dataset_id": str(uuid.uuid4())
+                }
+                for i in range(100)
+            ]
+        else:
+            examples = [
+                {
+                    "id": str(uuid.uuid4()),
+                    "created_at": _CREATED_AT.isoformat(),
+                    "inputs": {"text": f"input_{i}"},
+                    "outputs": {"result": f"output_{i}"},
+                    "dataset_id": str(uuid.uuid4())
+                }
+                for i in range(100, 150)
+            ]
+
+        response.json.return_value = examples
+        return response
+
+    mock_session.request.side_effect = mock_request
+    mock_session_cls.return_value = mock_session
+
+    client = Client(api_url="http://localhost:1984", api_key="fake-key", session=mock_session)
+    examples = list(client.list_shared_examples(str(uuid.uuid4())))
+
+    assert len(examples) == 150  # Should get all examples
+    assert examples[0].inputs["text"] == "input_0"
+    assert examples[149].inputs["text"] == "input_149"
