@@ -1950,7 +1950,7 @@ class Client:
                     except Exception:
                         logger.warning(f"Failed to multipart ingest runs: {repr(e)}")
                     # do not retry by default
-                    return
+                    break
 
     def _send_compressed_multipart_req(
         self,
@@ -2022,7 +2022,7 @@ class Client:
                             f"Failed to send compressed multipart ingest: {repr(e)}"
                         )
                     # Do not retry by default after unknown exceptions
-                    return
+                    break
 
     def update_run(
         self,
