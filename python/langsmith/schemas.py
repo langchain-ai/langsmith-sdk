@@ -20,6 +20,7 @@ from typing_extensions import NotRequired, TypedDict
 try:
     from pydantic.v1 import (
         BaseModel,
+        ConfigDict,
         Field,  # type: ignore[import]
         PrivateAttr,
         StrictBool,
@@ -29,6 +30,7 @@ try:
 except ImportError:
     from pydantic import (  # type: ignore[assignment]
         BaseModel,
+        ConfigDict,
         Field,
         PrivateAttr,
         StrictBool,
@@ -127,9 +129,16 @@ class ExampleCreate(BaseModel):
     use_source_run_attachments: Optional[list[str]] = None
     source_run_id: Optional[UUID] = None
 
+    model_config = ConfigDict(extra="forbid")
+
     def __init__(self, **data):
         """Initialize from dict."""
         super().__init__(**data)
+
+    class Config:
+        """Config."""
+
+        extra = "forbid"
 
 
 ExampleUploadWithAttachments = ExampleCreate
