@@ -120,7 +120,7 @@ class ExampleCreate(BaseModel):
 
     id: Optional[UUID]
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    inputs: Optional[dict[str, Any]] = Field(default=None)
+    inputs: dict[str, Any]
     outputs: Optional[dict[str, Any]] = Field(default=None)
     metadata: Optional[dict[str, Any]] = Field(default=None)
     split: Optional[Union[str, list[str]]] = None
