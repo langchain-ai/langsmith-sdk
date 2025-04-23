@@ -1,6 +1,5 @@
 """LangSmith Client."""
 
-from importlib import metadata
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -18,16 +17,11 @@ if TYPE_CHECKING:
     )
     from langsmith.run_trees import RunTree
     from langsmith.testing._internal import test, unit
-    from langsmith.utils import (
-        ContextThreadPoolExecutor,
-    )
+    from langsmith.utils import ContextThreadPoolExecutor
 
 # Avoid calling into importlib on every call to __version__
-version = ""
-try:
-    version = metadata.version(__package__)
-except metadata.PackageNotFoundError:
-    pass
+__version__ = "0.3.33"
+version = __version__  # for backwards compatibility
 
 
 def __getattr__(name: str) -> Any:
@@ -108,9 +102,7 @@ def __getattr__(name: str) -> Any:
 
         return unit
     elif name == "ContextThreadPoolExecutor":
-        from langsmith.utils import (
-            ContextThreadPoolExecutor,
-        )
+        from langsmith.utils import ContextThreadPoolExecutor
 
         return ContextThreadPoolExecutor
 

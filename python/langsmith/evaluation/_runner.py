@@ -16,21 +16,13 @@ import random
 import textwrap
 import threading
 import uuid
+from collections.abc import Awaitable, Generator, Iterable, Iterator, Sequence
 from contextvars import copy_context
 from typing import (
     TYPE_CHECKING,
     Any,
-    Awaitable,
     Callable,
-    DefaultDict,
-    Dict,
-    Generator,
-    Iterable,
-    Iterator,
-    List,
     Optional,
-    Sequence,
-    Tuple,
     TypeVar,
     Union,
     cast,
@@ -113,7 +105,7 @@ def evaluate(
 
 @overload
 def evaluate(
-    target: Union[Tuple[EXPERIMENT_T, EXPERIMENT_T]],
+    target: Union[tuple[EXPERIMENT_T, EXPERIMENT_T]],
     /,
     data: Optional[DATA_T] = None,
     evaluators: Optional[Sequence[COMPARATIVE_EVALUATOR_T]] = None,
@@ -132,7 +124,7 @@ def evaluate(
 
 
 def evaluate(
-    target: Union[TARGET_T, Runnable, EXPERIMENT_T, Tuple[EXPERIMENT_T, EXPERIMENT_T]],
+    target: Union[TARGET_T, Runnable, EXPERIMENT_T, tuple[EXPERIMENT_T, EXPERIMENT_T]],
     /,
     data: Optional[DATA_T] = None,
     evaluators: Optional[
@@ -552,7 +544,7 @@ class ExperimentResults:
 
     def __init__(self, experiment_manager: _ExperimentManager, blocking: bool = True):
         self._manager = experiment_manager
-        self._results: List[ExperimentResultRow] = []
+        self._results: list[ExperimentResultRow] = []
         self._queue: queue.Queue[ExperimentResultRow] = queue.Queue()
         self._processing_complete = threading.Event()
         if not blocking:
@@ -639,7 +631,7 @@ COMPARATIVE_EVALUATOR_T = Callable[
 
 
 def evaluate_comparative(
-    experiments: Tuple[EXPERIMENT_T, EXPERIMENT_T],
+    experiments: tuple[EXPERIMENT_T, EXPERIMENT_T],
     /,
     evaluators: Sequence[COMPARATIVE_EVALUATOR_T],
     experiment_prefix: Optional[str] = None,
@@ -866,7 +858,7 @@ def evaluate_comparative(
     )
     _print_comparative_experiment_start(
         cast(
-            Tuple[schemas.TracerSessionResult, schemas.TracerSessionResult],
+            tuple[schemas.TracerSessionResult, schemas.TracerSessionResult],
             tuple(projects),
         ),
         comparative_experiment,
@@ -899,7 +891,7 @@ def evaluate_comparative(
             example_ids=example_ids_batch,
         ):
             data[e.id] = e
-    runs_dict: Dict[uuid.UUID, List[schemas.Run]] = collections.defaultdict(list)
+    runs_dict: dict[uuid.UUID, list[schemas.Run]] = collections.defaultdict(list)
     for runs_list in runs:
         for run in runs_list:
             if run.reference_example_id in data:
@@ -985,7 +977,7 @@ class ComparativeExperimentResults:
     def __init__(
         self,
         results: dict,
-        examples: Optional[Dict[uuid.UUID, schemas.Example]] = None,
+        examples: Optional[dict[uuid.UUID, schemas.Example]] = None,
     ):
         self._results = results
         self._examples = examples
@@ -1006,7 +998,7 @@ class ComparativeExperimentResults:
 
 
 def _print_comparative_experiment_start(
-    experiments: Tuple[schemas.TracerSession, schemas.TracerSession],
+    experiments: tuple[schemas.TracerSession, schemas.TracerSession],
     comparative_experiment: schemas.ComparativeExperiment,
 ) -> None:
     url = experiments[0].url or experiments[1].url
@@ -1113,7 +1105,7 @@ def _load_traces(
     project: Union[str, uuid.UUID, schemas.TracerSession],
     client: langsmith.Client,
     load_nested: bool = False,
-) -> List[schemas.Run]:
+) -> list[schemas.Run]:
     """Load nested traces for a given project."""
     is_root = None if load_nested else True
     if isinstance(project, schemas.TracerSession):
@@ -1125,7 +1117,9 @@ def _load_traces(
     if not load_nested:
         return list(runs)
 
-    treemap: DefaultDict[uuid.UUID, List[schemas.Run]] = collections.defaultdict(list)
+    treemap: collections.defaultdict[uuid.UUID, list[schemas.Run]] = (
+        collections.defaultdict(list)
+    )
     results = []
     all_runs = {}
     for run in runs:
@@ -1141,7 +1135,7 @@ def _load_traces(
 
 def _load_examples_map(
     client: langsmith.Client, project: schemas.TracerSession
-) -> Dict[uuid.UUID, schemas.Example]:
+) -> dict[uuid.UUID, schemas.Example]:
     return {
         e.id: e
         for e in client.list_examples(
@@ -1430,7 +1424,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
     def runs(self) -> Iterable[schemas.Run]:
         if self._runs is None:
             raise ValueError(
-                "Runs not provided in this experiment." " Please predict first."
+                "Runs not provided in this experiment. Please predict first."
             )
         self._runs, runs_iter = itertools.tee(self._runs)
         return runs_iter
@@ -1544,7 +1538,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                 evaluation_results=evaluation_results,
             )
 
-    def get_summary_scores(self) -> Dict[str, List[dict]]:
+    def get_summary_scores(self) -> dict[str, list[dict]]:
         """If summary_evaluators were applied, consume and return the results."""
         if self._summary_results is None:
             return {"results": []}
@@ -1846,7 +1840,7 @@ def _resolve_evaluators(
 
 def _wrap_summary_evaluators(
     evaluators: Sequence[SUMMARY_EVALUATOR_T],
-) -> List[SUMMARY_EVALUATOR_T]:
+) -> list[SUMMARY_EVALUATOR_T]:
     def _wrap(evaluator: SUMMARY_EVALUATOR_T) -> SUMMARY_EVALUATOR_T:
         eval_name = getattr(evaluator, "__name__", "BatchEvaluator")
         evaluator = _normalize_summary_evaluator(evaluator)
@@ -2045,7 +2039,7 @@ def _resolve_experiment(
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]],
     runs: Optional[Iterable[schemas.Run]],
     client: langsmith.Client,
-) -> Tuple[
+) -> tuple[
     Optional[Union[schemas.TracerSession, str]], Optional[Iterable[schemas.Run]]
 ]:
     # TODO: Remove this, handle outside the manager

@@ -4,6 +4,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import * as ls from "../../jest/index.js";
 import { type SimpleEvaluator } from "../../jest/index.js";
 import { _objectHash } from "../../utils/jestlike/index.js";
+import { traceable } from "../../traceable.js";
 
 const myEvaluator: SimpleEvaluator = (params) => {
   const { referenceOutputs, outputs } = params;
@@ -89,6 +90,28 @@ ls.describe(
           .expect(res)
           .evaluatedBy(myEvaluator)
           .toBeGreaterThanOrEqual(0.5);
+        return res;
+      }
+    );
+
+    ls.test(
+      "Logging feedback should work in nested traceable",
+      {
+        inputs: { nested: "nested" },
+        referenceOutputs: { nested: "nested" },
+      },
+      async ({ inputs: _inputs, referenceOutputs: _referenceOutputs }) => {
+        const myApp = () => {
+          return { bar: "goodval" };
+        };
+        const res = myApp();
+        const nested = traceable(() => {
+          ls.logFeedback({
+            key: "nested",
+            score: 0.8,
+          });
+        });
+        await nested();
         return res;
       }
     );

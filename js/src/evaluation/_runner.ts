@@ -639,6 +639,7 @@ export class _ExperimentManager {
     } else {
       const caller = new AsyncCaller({
         maxConcurrency,
+        debug: this.client.debug,
       });
 
       const futures: Array<Promise<_ForwardResults>> = [];
@@ -734,6 +735,7 @@ export class _ExperimentManager {
     } else {
       const caller = new AsyncCaller({
         maxConcurrency,
+        debug: this.client.debug,
       });
       const futures: Promise<ExperimentResultRow>[] = [];
       for await (const currentResults of this.getResults()) {

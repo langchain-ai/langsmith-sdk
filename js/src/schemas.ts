@@ -231,6 +231,7 @@ export interface RunUpdate {
   reference_example_id?: string;
   events?: KVMap[];
   session_id?: string;
+  session_name?: string;
   /** Unique ID assigned to every run within this nested trace. **/
   trace_id?: string;
 

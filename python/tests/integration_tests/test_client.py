@@ -73,7 +73,20 @@ def langchain_client() -> Client:
     )
 
 
-def test_datasets(langchain_client: Client) -> None:
+@pytest.fixture(params=[True, False])
+def parameterized_multipart_client(request) -> Client:
+    """Client fixture with parameterized dataset_examples_multipart_enabled setting."""
+    get_env_var.cache_clear()
+    return Client(
+        info={
+            "instance_flags": {
+                "dataset_examples_multipart_enabled": request.param,
+            }
+        }
+    )
+
+
+def test_datasets(parameterized_multipart_client: Client) -> None:
     """Test datasets."""
     csv_content = "col1,col2\nval1,val2"
     blob_data = io.BytesIO(csv_content.encode("utf-8"))
@@ -82,7 +95,7 @@ def test_datasets(langchain_client: Client) -> None:
     input_keys = ["col1"]
     output_keys = ["col2"]
     filename = "".join(random.sample(string.ascii_lowercase, 10)) + ".csv"
-    new_dataset = langchain_client.upload_csv(
+    new_dataset = parameterized_multipart_client.upload_csv(
         csv_file=(filename, blob_data),
         description=description,
         input_keys=input_keys,
@@ -91,64 +104,66 @@ def test_datasets(langchain_client: Client) -> None:
     assert new_dataset.id is not None
     assert new_dataset.description == description
 
-    dataset = langchain_client.read_dataset(dataset_id=new_dataset.id)
+    dataset = parameterized_multipart_client.read_dataset(dataset_id=new_dataset.id)
     dataset_id = dataset.id
-    dataset2 = langchain_client.read_dataset(dataset_id=dataset_id)
+    dataset2 = parameterized_multipart_client.read_dataset(dataset_id=dataset_id)
     assert dataset.id == dataset2.id
 
-    datasets = list(langchain_client.list_datasets())
+    datasets = list(parameterized_multipart_client.list_datasets())
     assert len(datasets) > 0
     assert dataset_id in [dataset.id for dataset in datasets]
 
     # Test Example CRD
-    example = langchain_client.create_example(
+    example = parameterized_multipart_client.create_example(
         inputs={"col1": "addedExampleCol1"},
         outputs={"col2": "addedExampleCol2"},
         dataset_id=new_dataset.id,
     )
-    example_to_delete = langchain_client.create_example(
+    example_to_delete = parameterized_multipart_client.create_example(
         inputs={"col1": "addedExampleCol1"},
         outputs={"col2": "addedExampleCol2"},
         dataset_id=new_dataset.id,
     )
-    example_value = langchain_client.read_example(example.id)
+    example_value = parameterized_multipart_client.read_example(example.id)
     assert example_value.inputs is not None
     assert example_value.inputs["col1"] == "addedExampleCol1"
     assert example_value.outputs is not None
     assert example_value.outputs["col2"] == "addedExampleCol2"
 
     examples = list(
-        langchain_client.list_examples(dataset_id=new_dataset.id)  # type: ignore
+        parameterized_multipart_client.list_examples(dataset_id=new_dataset.id)  # type: ignore
     )
     assert len(examples) == 3
     assert example.id in [example.id for example in examples]
 
-    langchain_client.update_example(
+    parameterized_multipart_client.update_example(
         example_id=example.id,
         inputs={"col1": "updatedExampleCol1"},
         outputs={"col2": "updatedExampleCol2"},
         metadata={"foo": "bar"},
     )
-    updated_example = langchain_client.read_example(example.id)
+    updated_example = parameterized_multipart_client.read_example(example.id)
     assert updated_example.id == example.id
-    updated_example_value = langchain_client.read_example(updated_example.id)
+    updated_example_value = parameterized_multipart_client.read_example(
+        updated_example.id
+    )
     assert updated_example_value.inputs["col1"] == "updatedExampleCol1"
     assert updated_example_value.outputs is not None
     assert updated_example_value.outputs["col2"] == "updatedExampleCol2"
     assert (updated_example_value.metadata or {}).get("foo") == "bar"
 
-    new_example = langchain_client.create_example(
+    new_example = parameterized_multipart_client.create_example(
         inputs={"col1": "newAddedExampleCol1"},
         outputs={"col2": "newAddedExampleCol2"},
         dataset_id=new_dataset.id,
     )
-    example_value = langchain_client.read_example(new_example.id)
+    example_value = parameterized_multipart_client.read_example(new_example.id)
     assert example_value.inputs is not None
     assert example_value.inputs["col1"] == "newAddedExampleCol1"
     assert example_value.outputs is not None
     assert example_value.outputs["col2"] == "newAddedExampleCol2"
 
-    langchain_client.update_examples(
+    parameterized_multipart_client.update_examples(
         example_ids=[new_example.id, example.id],
         inputs=[{"col1": "newUpdatedExampleCol1"}, {"col1": "newNewUpdatedExampleCol"}],
         outputs=[
@@ -157,37 +172,44 @@ def test_datasets(langchain_client: Client) -> None:
         ],
         metadata=[{"foo": "baz"}, {"foo": "qux"}],
     )
-    updated_example = langchain_client.read_example(new_example.id)
+    updated_example = parameterized_multipart_client.read_example(new_example.id)
     assert updated_example.id == new_example.id
     assert updated_example.inputs["col1"] == "newUpdatedExampleCol1"
     assert updated_example.outputs is not None
     assert updated_example.outputs["col2"] == "newUpdatedExampleCol2"
     assert (updated_example.metadata or {}).get("foo") == "baz"
 
-    updated_example = langchain_client.read_example(example.id)
+    updated_example = parameterized_multipart_client.read_example(example.id)
     assert updated_example.id == example.id
     assert updated_example.inputs["col1"] == "newNewUpdatedExampleCol"
     assert updated_example.outputs is not None
     assert updated_example.outputs["col2"] == "newNewUpdatedExampleCol2"
     assert (updated_example.metadata or {}).get("foo") == "qux"
 
-    langchain_client.delete_example(example.id)
-    langchain_client.delete_examples(example_ids=[example_to_delete.id])
+    parameterized_multipart_client.delete_example(example.id)
+    parameterized_multipart_client.delete_examples(example_ids=[example_to_delete.id])
     examples2 = list(
-        langchain_client.list_examples(dataset_id=new_dataset.id)  # type: ignore
+        parameterized_multipart_client.list_examples(dataset_id=new_dataset.id)  # type: ignore
     )
     assert len(examples2) == 2
-    langchain_client.create_example(
+    parameterized_multipart_client.create_example(
         inputs={},
         outputs=None,
         dataset_id=new_dataset.id,
     )
     examples3 = list(
-        langchain_client.list_examples(dataset_id=new_dataset.id)  # type: ignore
+        parameterized_multipart_client.list_examples(dataset_id=new_dataset.id)  # type: ignore
     )
+    supports_none_outputs = (
+        parameterized_multipart_client.info.instance_flags or {}
+    ).get("dataset_examples_multipart_enabled", False)
     assert len(examples3) == 3
-    assert any(example.inputs == {} and example.outputs == {} for example in examples3)
-    langchain_client.delete_dataset(dataset_id=dataset_id)
+    assert any(
+        example.inputs == {}
+        and example.outputs == ({} if supports_none_outputs else None)
+        for example in examples3
+    )
+    parameterized_multipart_client.delete_dataset(dataset_id=dataset_id)
 
 
 def _create_dataset(client: Client, dataset_name: str) -> Dataset:
@@ -2213,39 +2235,54 @@ def test_examples_length_validation(langchain_client: Client) -> None:
     langchain_client.delete_dataset(dataset_id=dataset.id)
 
 
-def test_new_create_example(langchain_client: Client) -> None:
+def test_new_create_example(parameterized_multipart_client: Client) -> None:
     """Test create_examples works with multipart style input."""
     dataset_name = "__test_update_examples_output" + uuid4().hex[:4]
-    dataset = _create_dataset(langchain_client, dataset_name)
+    dataset = _create_dataset(parameterized_multipart_client, dataset_name)
+
+    supports_attachments = (
+        parameterized_multipart_client.info.instance_flags or {}
+    ).get("dataset_examples_multipart_enabled", False)
 
     example_id = uuid4()
-    langchain_client.create_example(
+    parameterized_multipart_client.create_example(
         dataset_name=dataset_name,
         example_id=example_id,
         inputs={"query": "What's in this image?"},
         outputs={"answer": "A test image"},
-        attachments={
-            "image1": ("image/png", b"fake image data 1"),
-            "image2": ("image/png", b"fake image data 2"),
-        },
+        attachments=(
+            {
+                "image1": ("image/png", b"fake image data 1"),
+                "image2": ("image/png", b"fake image data 2"),
+            }
+            if supports_attachments
+            else None
+        ),
     )
 
-    retrieved_example = langchain_client.read_example(example_id=example_id)
+    retrieved_example = parameterized_multipart_client.read_example(
+        example_id=example_id
+    )
 
     assert retrieved_example.id == example_id
     assert retrieved_example.dataset_id == dataset.id
     assert retrieved_example.inputs == {"query": "What's in this image?"}
     assert retrieved_example.outputs == {"answer": "A test image"}
-    assert list(retrieved_example.attachments.keys()) == ["image1", "image2"]
+    if supports_attachments:
+        assert list(retrieved_example.attachments.keys()) == ["image1", "image2"]
 
     # Clean up
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    parameterized_multipart_client.delete_dataset(dataset_id=dataset.id)
 
 
-def test_new_create_examples(langchain_client: Client) -> None:
+def test_new_create_examples(parameterized_multipart_client: Client) -> None:
     """Test create_examples works with multipart style input."""
     dataset_name = "__test_update_examples_output" + uuid4().hex[:4]
-    dataset = _create_dataset(langchain_client, dataset_name)
+    dataset = _create_dataset(parameterized_multipart_client, dataset_name)
+
+    supports_attachments = (
+        parameterized_multipart_client.info.instance_flags or {}
+    ).get("dataset_examples_multipart_enabled", False)
 
     example_id = uuid4()
     example = dict(
@@ -2258,31 +2295,45 @@ def test_new_create_examples(langchain_client: Client) -> None:
         },
     )
 
-    # Use new way of passing example
-    langchain_client.create_examples(dataset_name=dataset_name, examples=[example])
+    if not supports_attachments:
+        del example["attachments"]
 
-    retrieved_example = langchain_client.read_example(example_id=example_id)
-    examples_in_dataset = langchain_client.list_examples(dataset_id=dataset.id)
+    # Use new way of passing example
+    parameterized_multipart_client.create_examples(
+        dataset_name=dataset_name, examples=[example]
+    )
+
+    retrieved_example = parameterized_multipart_client.read_example(
+        example_id=example_id
+    )
+    examples_in_dataset = parameterized_multipart_client.list_examples(
+        dataset_id=dataset.id
+    )
     assert len(list(examples_in_dataset)) == 1
 
     assert retrieved_example.id == example_id
     assert retrieved_example.dataset_id == dataset.id
     assert retrieved_example.inputs == example["inputs"]
     assert retrieved_example.outputs == example["outputs"]
-    assert retrieved_example.attachments.keys() == example["attachments"].keys()
+    if supports_attachments:
+        assert retrieved_example.attachments.keys() == example["attachments"].keys()
 
     # Use old way of passing example
     # Can't pass in attachments this way
     example_id2 = uuid4()
-    langchain_client.create_examples(
+    parameterized_multipart_client.create_examples(
         dataset_name=dataset_name,
         ids=[example_id2],
         inputs=[{"query": "What's not in this image?"}],
         outputs=[{"answer": "A real image"}],
     )
 
-    retrieved_example = langchain_client.read_example(example_id=example_id2)
-    examples_in_dataset = langchain_client.list_examples(dataset_id=dataset.id)
+    retrieved_example = parameterized_multipart_client.read_example(
+        example_id=example_id2
+    )
+    examples_in_dataset = parameterized_multipart_client.list_examples(
+        dataset_id=dataset.id
+    )
     assert len(list(examples_in_dataset)) == 2
 
     assert retrieved_example.id == example_id2
@@ -2291,13 +2342,17 @@ def test_new_create_examples(langchain_client: Client) -> None:
     assert retrieved_example.outputs == {"answer": "A real image"}
 
     # Clean up
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    parameterized_multipart_client.delete_dataset(dataset_id=dataset.id)
 
 
-def test_new_update_examples(langchain_client: Client) -> None:
+def test_new_update_examples(parameterized_multipart_client: Client) -> None:
     """Test update_examples works with multipart style input."""
     dataset_name = "__test_update_examples_output" + uuid4().hex[:4]
-    dataset = _create_dataset(langchain_client, dataset_name)
+    dataset = _create_dataset(parameterized_multipart_client, dataset_name)
+
+    supports_attachments = (
+        parameterized_multipart_client.info.instance_flags or {}
+    ).get("dataset_examples_multipart_enabled", False)
 
     example_id = uuid4()
     example = dict(
@@ -2310,50 +2365,73 @@ def test_new_update_examples(langchain_client: Client) -> None:
         },
     )
 
+    if not supports_attachments:
+        del example["attachments"]
+
     # Create some valid examples for testing update
-    langchain_client.create_examples(dataset_name=dataset_name, examples=[example])
+    parameterized_multipart_client.create_examples(
+        dataset_name=dataset_name, examples=[example]
+    )
 
     example_update = ExampleUpdate(
         id=example_id,
         inputs={"query": "What's not in this image?"},
         outputs={"answer": "A real image"},
-        attachments={
-            "image3": ("image/png", b"fake image data 3"),
-        },
+        attachments=(
+            {
+                "image3": ("image/png", b"fake image data 3"),
+            }
+            if supports_attachments
+            else None
+        ),
     )
 
-    langchain_client.update_examples(dataset_id=dataset.id, updates=[example_update])
+    parameterized_multipart_client.update_examples(
+        dataset_id=dataset.id, updates=[example_update]
+    )
 
-    retrieved_example = langchain_client.read_example(example_id=example_id)
+    retrieved_example = parameterized_multipart_client.read_example(
+        example_id=example_id
+    )
 
     assert retrieved_example.id == example_id
     assert retrieved_example.dataset_id == dataset.id
     assert retrieved_example.inputs == example_update.inputs
     assert retrieved_example.outputs == example_update.outputs
-    assert retrieved_example.attachments.keys() == example_update.attachments.keys()
+    if supports_attachments:
+        assert retrieved_example.attachments.keys() == example_update.attachments.keys()
 
-    langchain_client.update_examples(
+    parameterized_multipart_client.update_examples(
         dataset_ids=[dataset.id],
         example_ids=[example_id],
         inputs=[{"query": "What's not in this image?"}],
         outputs=[{"answer": "A real image"}],
-        attachments=[
+        **(
             {
-                "image4": ("image/png", b"fake image data 4"),
+                "attachments": [
+                    {
+                        "image4": ("image/png", b"fake image data 4"),
+                    }
+                ]
             }
-        ],
+            if supports_attachments
+            else {}
+        ),
     )
 
-    retrieved_example = langchain_client.read_example(example_id=example_id)
+    retrieved_example = parameterized_multipart_client.read_example(
+        example_id=example_id
+    )
 
     assert retrieved_example.id == example_id
     assert retrieved_example.dataset_id == dataset.id
     assert retrieved_example.inputs == example_update.inputs
     assert retrieved_example.outputs == example_update.outputs
-    assert list(retrieved_example.attachments.keys()) == ["image4"]
+    if supports_attachments:
+        assert list(retrieved_example.attachments.keys()) == ["image4"]
 
     # Clean up
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    parameterized_multipart_client.delete_dataset(dataset_id=dataset.id)
 
 
 def test_update_examples_multiple_datasets(langchain_client: Client) -> None:

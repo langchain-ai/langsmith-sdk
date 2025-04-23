@@ -12,9 +12,7 @@ from multiprocessing import cpu_count
 from queue import Empty, Queue
 from typing import (
     TYPE_CHECKING,
-    List,
     Optional,
-    Tuple,
     Union,
     cast,
 )
@@ -80,8 +78,8 @@ class TracingQueueItem:
 
 def _tracing_thread_drain_queue(
     tracing_queue: Queue, limit: int = 100, block: bool = True
-) -> List[TracingQueueItem]:
-    next_batch: List[TracingQueueItem] = []
+) -> list[TracingQueueItem]:
+    next_batch: list[TracingQueueItem] = []
     try:
         # wait 250ms for the first item, then
         # - drain the queue with a 50ms block timeout
@@ -101,47 +99,59 @@ def _tracing_thread_drain_queue(
 
 def _tracing_thread_drain_compressed_buffer(
     client: Client, size_limit: int = 100, size_limit_bytes: int | None = 20_971_520
-) -> Tuple[Optional[io.BytesIO], Optional[Tuple[int, int]]]:
-    if client.compressed_traces is None:
-        return None, None
-    with client.compressed_traces.lock:
-        client.compressed_traces.compressor_writer.flush()
-        current_size = client.compressed_traces.buffer.tell()
-
-        pre_compressed_size = client.compressed_traces.uncompressed_size
-
-        if size_limit is not None and size_limit <= 0:
-            raise ValueError(f"size_limit must be positive; got {size_limit}")
-        if size_limit_bytes is not None and size_limit_bytes < 0:
-            raise ValueError(
-                f"size_limit_bytes must be nonnegative; got {size_limit_bytes}"
-            )
-
-        if (size_limit_bytes is None or current_size < size_limit_bytes) and (
-            size_limit is None or client.compressed_traces.trace_count < size_limit
-        ):
+) -> tuple[Optional[io.BytesIO], Optional[tuple[int, int]]]:
+    try:
+        if client.compressed_traces is None:
             return None, None
+        with client.compressed_traces.lock:
+            client.compressed_traces.compressor_writer.flush()
+            current_size = client.compressed_traces.buffer.tell()
 
-        # Write final boundary and close compression stream
-        client.compressed_traces.compressor_writer.write(
-            f"--{_BOUNDARY}--\r\n".encode()
+            pre_compressed_size = client.compressed_traces.uncompressed_size
+
+            if size_limit is not None and size_limit <= 0:
+                raise ValueError(f"size_limit must be positive; got {size_limit}")
+            if size_limit_bytes is not None and size_limit_bytes < 0:
+                raise ValueError(
+                    f"size_limit_bytes must be nonnegative; got {size_limit_bytes}"
+                )
+
+            if (size_limit_bytes is None or current_size < size_limit_bytes) and (
+                size_limit is None or client.compressed_traces.trace_count < size_limit
+            ):
+                return None, None
+
+            # Write final boundary and close compression stream
+            client.compressed_traces.compressor_writer.write(
+                f"--{_BOUNDARY}--\r\n".encode()
+            )
+            client.compressed_traces.compressor_writer.close()
+
+            filled_buffer = client.compressed_traces.buffer
+            filled_buffer.context = client.compressed_traces._context
+
+            compressed_traces_info = (pre_compressed_size, current_size)
+
+            client.compressed_traces.reset()
+
+        filled_buffer.seek(0)
+        return (filled_buffer, compressed_traces_info)
+    except Exception:
+        logger.error(
+            "LangSmith tracing error: Failed to submit trace data.\n"
+            "This does not affect your application's runtime.\n"
+            "Error details:",
+            exc_info=True,
         )
-        client.compressed_traces.compressor_writer.close()
-
-        filled_buffer = client.compressed_traces.buffer
-
-        compressed_traces_info = (pre_compressed_size, current_size)
-
-        client.compressed_traces.reset()
-
-    filled_buffer.seek(0)
-    return (filled_buffer, compressed_traces_info)
+        # exceptions are logged elsewhere, but we need to make sure the
+        # background thread continues to run
+        return None, None
 
 
 def _tracing_thread_handle_batch(
     client: Client,
     tracing_queue: Queue,
-    batch: List[TracingQueueItem],
+    batch: list[TracingQueueItem],
     use_multipart: bool,
 ) -> None:
     try:
@@ -156,10 +166,15 @@ def _tracing_thread_handle_batch(
                 ops = [
                     op for op in ops if not isinstance(op, SerializedFeedbackOperation)
                 ]
-            client._batch_ingest_run_ops(cast(List[SerializedRunOperation], ops))
+            client._batch_ingest_run_ops(cast(list[SerializedRunOperation], ops))
 
     except Exception:
-        logger.error("Error in tracing queue", exc_info=True)
+        logger.error(
+            "LangSmith tracing error: Failed to submit trace data.\n"
+            "This does not affect your application's runtime.\n"
+            "Error details:",
+            exc_info=True,
+        )
         # exceptions are logged elsewhere, but we need to make sure the
         # background thread continues to run
         pass
@@ -171,7 +186,7 @@ def _tracing_thread_handle_batch(
 def _otel_tracing_thread_handle_batch(
     client: Client,
     tracing_queue: Queue,
-    batch: List[TracingQueueItem],
+    batch: list[TracingQueueItem],
 ) -> None:
     """Handle a batch of tracing queue items by exporting them to OTEL."""
     try:
@@ -183,11 +198,18 @@ def _otel_tracing_thread_handle_batch(
                 client.otel_exporter.export_batch(run_ops)
             else:
                 logger.error(
-                    "Error in OTEL tracing queue: client.otel_exporter is None"
+                    "LangSmith tracing error: Failed to submit OTEL trace data.\n"
+                    "This does not affect your application's runtime.\n"
+                    "Error details: client.otel_exporter is None"
                 )
 
     except Exception:
-        logger.error("Error in OTEL tracing queue", exc_info=True)
+        logger.error(
+            "LangSmith tracing error: Failed to submit OTEL trace data.\n"
+            "This does not affect your application's runtime.\n"
+            "Error details:",
+            exc_info=True,
+        )
         # Exceptions are logged elsewhere, but we need to make sure the
         # background thread continues to run
     finally:
@@ -247,7 +269,7 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
     scale_up_qsize_trigger: int = batch_ingest_config["scale_up_qsize_trigger"]
     use_multipart = batch_ingest_config.get("use_multipart_endpoint", False)
 
-    sub_threads: List[threading.Thread] = []
+    sub_threads: list[threading.Thread] = []
     # 1 for this func, 1 for getrefcount, 1 for _get_data_type_cached
     num_known_refs = 3
 
@@ -327,6 +349,7 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
             _tracing_thread_handle_batch(
                 client, tracing_queue, next_batch, use_multipart
             )
+        logger.debug("Tracing control thread is shutting down")
 
 
 def tracing_control_thread_func_compress_parallel(
@@ -341,7 +364,11 @@ def tracing_control_thread_func_compress_parallel(
         or client._data_available_event is None
         or client._futures is None
     ):
-        logger.error("Required compression attributes not initialized")
+        logger.error(
+            "LangSmith tracing error: Required compression attributes not "
+            "initialized.\nThis may affect trace submission but does not "
+            "impact your application's runtime."
+        )
         return
 
     batch_ingest_config = _ensure_ingest_config(client.info)
@@ -454,7 +481,13 @@ def tracing_control_thread_func_compress_parallel(
                 )
 
     except Exception:
-        logger.error("Error in final cleanup", exc_info=True)
+        logger.error(
+            "LangSmith tracing error: Failed during final cleanup.\n"
+            "This does not affect your application's runtime.\n"
+            "Error details:",
+            exc_info=True,
+        )
+    logger.debug("Compressed traces control thread is shutting down")
 
 
 def _tracing_sub_thread_func(
@@ -505,3 +538,4 @@ def _tracing_sub_thread_func(
             _tracing_thread_handle_batch(
                 client, tracing_queue, next_batch, use_multipart
             )
+        logger.debug("Tracing control sub-thread is shutting down")

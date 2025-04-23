@@ -10,22 +10,21 @@ import contextvars
 import functools
 import inspect
 from collections import deque
-from typing import (
-    Any,
-    AsyncContextManager,
+from collections.abc import (
     AsyncGenerator,
     AsyncIterable,
     AsyncIterator,
     Awaitable,
-    Callable,
     Coroutine,
-    Deque,
-    Generic,
     Iterable,
     Iterator,
-    List,
+)
+from contextlib import AbstractAsyncContextManager
+from typing import (
+    Any,
+    Callable,
+    Generic,
     Optional,
-    Tuple,
     TypeVar,
     Union,
     cast,
@@ -86,10 +85,10 @@ class NoLock:
 async def tee_peer(
     iterator: AsyncIterator[T],
     # the buffer specific to this peer
-    buffer: Deque[T],
+    buffer: deque[T],
     # the buffers of all peers, including our own
-    peers: List[Deque[T]],
-    lock: AsyncContextManager[Any],
+    peers: list[deque[T]],
+    lock: AbstractAsyncContextManager[Any],
 ) -> AsyncGenerator[T, None]:
     """Iterate over :py:func:`~.tee`."""
     try:
@@ -167,10 +166,10 @@ class Tee(Generic[T]):
         iterable: AsyncIterator[T],
         n: int = 2,
         *,
-        lock: Optional[AsyncContextManager[Any]] = None,
+        lock: Optional[AbstractAsyncContextManager[Any]] = None,
     ):
         self._iterator = iterable.__aiter__()  # before 3.10 aiter() doesn't exist
-        self._buffers: List[Deque[T]] = [deque() for _ in range(n)]
+        self._buffers: list[deque[T]] = [deque() for _ in range(n)]
         self._children = tuple(
             tee_peer(
                 iterator=self._iterator,
@@ -188,11 +187,11 @@ class Tee(Generic[T]):
     def __getitem__(self, item: int) -> AsyncIterator[T]: ...
 
     @overload
-    def __getitem__(self, item: slice) -> Tuple[AsyncIterator[T], ...]: ...
+    def __getitem__(self, item: slice) -> tuple[AsyncIterator[T], ...]: ...
 
     def __getitem__(
         self, item: Union[int, slice]
-    ) -> Union[AsyncIterator[T], Tuple[AsyncIterator[T], ...]]:
+    ) -> Union[AsyncIterator[T], tuple[AsyncIterator[T], ...]]:
         return self._children[item]
 
     def __iter__(self) -> Iterator[AsyncIterator[T]]:

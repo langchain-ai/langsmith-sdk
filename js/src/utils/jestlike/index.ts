@@ -35,7 +35,7 @@ import type {
   LangSmithJestlikeDescribeWrapper,
   LangSmithJestlikeDescribeWrapperConfig,
 } from "./types.js";
-import { getEnvironmentVariable } from "../env.js";
+import { getEnvironmentVariable, isJsDom } from "../env.js";
 import {
   STRIP_ANSI_REGEX,
   TEST_ID_DELIMITER,
@@ -69,7 +69,7 @@ export function logFeedback(
     exampleId: context.currentExample.id,
     feedback: feedback,
     context,
-    runTree: trackingEnabled(context) ? getCurrentRunTree() : undefined,
+    runTree: context.testRootRunTree,
     client: context.client,
   });
 }
@@ -278,6 +278,11 @@ export function generateWrapperFromJestlikeMethods(
   function wrapDescribeMethod(
     method: (name: string, fn: () => void | Promise<void>) => void
   ): LangSmithJestlikeDescribeWrapper {
+    if (isJsDom()) {
+      console.error(
+        `[LANGSMITH]: You seem to be using a jsdom environment. This is not supported and you may experience unexpected behavior. Please set the "environment" or "testEnvironment" field in your test config file to "node".`
+      );
+    }
     return function (
       testSuiteName: string,
       fn: () => void | Promise<void>,
@@ -486,59 +491,72 @@ export function generateWrapperFromJestlikeMethods(
             };
             let exampleId: string;
             const runTestFn = async () => {
-              const testContext =
-                testWrapperAsyncLocalStorageInstance.getStore();
+              let testContext = testWrapperAsyncLocalStorageInstance.getStore();
               if (testContext === undefined) {
                 throw new Error(
                   "Could not identify test context. Please contact us for help."
                 );
               }
-              try {
-                const res = await testFn({
-                  ...rest,
-                  inputs: testInput,
-                  referenceOutputs: testOutput,
-                });
-                _logTestFeedback({
-                  exampleId,
-                  feedback: { key: "pass", score: true },
-                  context: testContext,
-                  runTree: trackingEnabled(testContext)
+              return testWrapperAsyncLocalStorageInstance.run(
+                {
+                  ...testContext,
+                  testRootRunTree: trackingEnabled(testContext)
                     ? getCurrentRunTree()
                     : undefined,
-                  client: testContext.client,
-                });
-                if (res != null) {
-                  if (loggedOutput !== undefined) {
-                    console.warn(
-                      `[WARN]: Returned value from test function will override output set by previous "logOutputs()" call.`
+                },
+                async () => {
+                  testContext = testWrapperAsyncLocalStorageInstance.getStore();
+                  if (testContext === undefined) {
+                    throw new Error(
+                      "Could not identify test context after setting test root run tree. Please contact us for help."
                     );
                   }
-                  loggedOutput =
-                    typeof res === "object"
-                      ? (res as Record<string, unknown>)
-                      : { result: res };
+                  try {
+                    const res = await testFn({
+                      ...rest,
+                      inputs: testInput,
+                      referenceOutputs: testOutput,
+                    });
+                    _logTestFeedback({
+                      exampleId,
+                      feedback: { key: "pass", score: true },
+                      context: testContext,
+                      runTree: testContext.testRootRunTree,
+                      client: testContext.client,
+                    });
+                    if (res != null) {
+                      if (loggedOutput !== undefined) {
+                        console.warn(
+                          `[WARN]: Returned value from test function will override output set by previous "logOutputs()" call.`
+                        );
+                      }
+                      loggedOutput =
+                        typeof res === "object"
+                          ? (res as Record<string, unknown>)
+                          : { result: res };
+                    }
+                    return loggedOutput;
+                  } catch (e: any) {
+                    _logTestFeedback({
+                      exampleId,
+                      feedback: { key: "pass", score: false },
+                      context: testContext,
+                      runTree: testContext.testRootRunTree,
+                      client: testContext.client,
+                    });
+                    const rawError = e;
+                    const strippedErrorMessage = e.message.replace(
+                      STRIP_ANSI_REGEX,
+                      ""
+                    );
+                    const langsmithFriendlyError = new Error(
+                      strippedErrorMessage
+                    );
+                    (langsmithFriendlyError as any).rawJestError = rawError;
+                    throw langsmithFriendlyError;
+                  }
                 }
-                return loggedOutput;
-              } catch (e: any) {
-                _logTestFeedback({
-                  exampleId,
-                  feedback: { key: "pass", score: false },
-                  context: testContext,
-                  runTree: trackingEnabled(testContext)
-                    ? getCurrentRunTree()
-                    : undefined,
-                  client: testContext.client,
-                });
-                const rawError = e;
-                const strippedErrorMessage = e.message.replace(
-                  STRIP_ANSI_REGEX,
-                  ""
-                );
-                const langsmithFriendlyError = new Error(strippedErrorMessage);
-                (langsmithFriendlyError as any).rawJestError = rawError;
-                throw langsmithFriendlyError;
-              }
+              );
             };
             try {
               if (trackingEnabled(context)) {

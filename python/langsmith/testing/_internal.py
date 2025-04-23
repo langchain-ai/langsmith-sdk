@@ -13,15 +13,13 @@ import threading
 import time
 import uuid
 import warnings
+from collections.abc import Generator, Sequence
 from concurrent.futures import Future
 from pathlib import Path
 from typing import (
     Any,
     Callable,
-    Generator,
     Optional,
-    Sequence,
-    Tuple,
     TypeVar,
     Union,
     cast,
@@ -431,7 +429,7 @@ def _start_experiment(
 
 def _get_example_id(
     func: Callable, inputs: Optional[dict], suite_id: uuid.UUID
-) -> Tuple[uuid.UUID, str]:
+) -> tuple[uuid.UUID, str]:
     try:
         file_path = str(Path(inspect.getfile(func)).relative_to(Path.cwd()))
     except ValueError:
@@ -464,13 +462,13 @@ def _end_tests(test_suite: _LangSmithTestSuite):
         test_suite.client.update_dataset_tag(
             dataset_id=dataset_id,
             as_of=dataset_version,
-            tag=f'git:commit:{git_info["commit"]}',
+            tag=f"git:commit:{git_info['commit']}",
         )
     if dataset_version and git_info["branch"] is not None:
         test_suite.client.update_dataset_tag(
             dataset_id=dataset_id,
             as_of=dataset_version,
-            tag=f'git:branch:{git_info["branch"]}',
+            tag=f"git:branch:{git_info['branch']}",
         )
 
 
@@ -560,7 +558,9 @@ class _LangSmithTestSuite:
         self._executor.submit(self._submit_result, run_id, score)
 
     def _submit_result(self, run_id: uuid.UUID, score: Optional[int]) -> None:
-        self.client.create_feedback(run_id, key="pass", score=score)
+        # trace_id will always be run_id here because the feedback is on the root
+        # test run
+        self.client.create_feedback(run_id, key="pass", score=score, trace_id=run_id)
 
     def sync_example(
         self,
@@ -635,7 +635,9 @@ class _LangSmithTestSuite:
             )
 
     def _create_feedback(self, run_id: ID_TYPE, feedback: dict, **kwargs: Any) -> None:
-        self.client.create_feedback(run_id, **feedback, **kwargs)
+        # trace_id will always be run_id here because the feedback is on the root
+        # test run
+        self.client.create_feedback(run_id, **feedback, **kwargs, trace_id=run_id)
 
     def shutdown(self):
         self._executor.shutdown()
@@ -691,9 +693,10 @@ class _TestCase:
         self.run_id = run_id
         self.pytest_plugin = pytest_plugin
         self.pytest_nodeid = pytest_nodeid
-        self._logged_reference_outputs: Optional[dict] = None
         self.inputs = inputs
         self.reference_outputs = reference_outputs
+        self._logged_reference_outputs: Optional[dict] = None
+        self._logged_outputs: Optional[dict] = None
 
         if pytest_plugin and pytest_nodeid:
             pytest_plugin.add_process_to_test_suite(
@@ -734,6 +737,7 @@ class _TestCase:
             )
 
     def log_outputs(self, outputs: dict) -> None:
+        self._logged_outputs = outputs
         if self.pytest_plugin and self.pytest_nodeid:
             self.pytest_plugin.update_process_status(
                 self.pytest_nodeid, {"outputs": outputs}
@@ -914,10 +918,11 @@ def _run_test(
             "reference_example_id": str(test_case.example_id),
         },
     }
-    with rh.tracing_context(
-        **{**current_context, "metadata": metadata}
-    ), ls_utils.with_optional_cache(
-        cache_path, ignore_hosts=[test_case.test_suite.client.api_url]
+    with (
+        rh.tracing_context(**{**current_context, "metadata": metadata}),
+        ls_utils.with_optional_cache(
+            cache_path, ignore_hosts=[test_case.test_suite.client.api_url]
+        ),
     ):
         _test()
 
@@ -982,10 +987,11 @@ async def _arun_test(
             "reference_example_id": str(test_case.example_id),
         },
     }
-    with rh.tracing_context(
-        **{**current_context, "metadata": metadata}
-    ), ls_utils.with_optional_cache(
-        cache_path, ignore_hosts=[test_case.test_suite.client.api_url]
+    with (
+        rh.tracing_context(**{**current_context, "metadata": metadata}),
+        ls_utils.with_optional_cache(
+            cache_path, ignore_hosts=[test_case.test_suite.client.api_url]
+        ),
     ):
         await _test()
 
@@ -1020,9 +1026,7 @@ def log_inputs(inputs: dict, /) -> None:
                 assert foo(x, y) == 2
     """
     if ls_utils.test_tracking_is_disabled():
-        logger.info(
-            "LANGSMITH_TEST_TRACKING is set to 'false'." " Skipping log_inputs."
-        )
+        logger.info("LANGSMITH_TEST_TRACKING is set to 'false'. Skipping log_inputs.")
         return
     run_tree = rh.get_current_run_tree()
     test_case = _TEST_CASE.get()
@@ -1064,9 +1068,7 @@ def log_outputs(outputs: dict, /) -> None:
                 assert result == 2
     """
     if ls_utils.test_tracking_is_disabled():
-        logger.info(
-            "LANGSMITH_TEST_TRACKING is set to 'false'." " Skipping log_outputs."
-        )
+        logger.info("LANGSMITH_TEST_TRACKING is set to 'false'. Skipping log_outputs.")
         return
     run_tree = rh.get_current_run_tree()
     test_case = _TEST_CASE.get()
@@ -1110,8 +1112,7 @@ def log_reference_outputs(reference_outputs: dict, /) -> None:
     """
     if ls_utils.test_tracking_is_disabled():
         logger.info(
-            "LANGSMITH_TEST_TRACKING is set to 'false'."
-            " Skipping log_reference_outputs."
+            "LANGSMITH_TEST_TRACKING is set to 'false'. Skipping log_reference_outputs."
         )
         return
     test_case = _TEST_CASE.get()
@@ -1164,9 +1165,7 @@ def log_feedback(
                 assert result == expected
     """
     if ls_utils.test_tracking_is_disabled():
-        logger.info(
-            "LANGSMITH_TEST_TRACKING is set to 'false'." " Skipping log_feedback."
-        )
+        logger.info("LANGSMITH_TEST_TRACKING is set to 'false'. Skipping log_feedback.")
         return
     if feedback and any((key, score, value)):
         msg = "Must specify one of 'feedback' and ('key', 'score', 'value'), not both."
@@ -1270,14 +1269,11 @@ def trace_feedback(
                 assert "hello" in response.choices[0].message.content.lower()
     """  # noqa: E501
     if ls_utils.test_tracking_is_disabled():
-        logger.info(
-            "LANGSMITH_TEST_TRACKING is set to 'false'." " Skipping log_feedback."
-        )
+        logger.info("LANGSMITH_TEST_TRACKING is set to 'false'. Skipping log_feedback.")
         yield None
         return
-    parent_run = rh.get_current_run_tree()
     test_case = _TEST_CASE.get()
-    if not parent_run or not test_case:
+    if not test_case:
         msg = (
             "trace_feedback should only be called within a pytest test decorated with "
             "@pytest.mark.langsmith, and with tracing enabled (by setting the "
@@ -1287,11 +1283,11 @@ def trace_feedback(
     metadata = {
         "experiment": test_case.test_suite.experiment.name,
         "reference_example_id": test_case.example_id,
-        "reference_run_id": parent_run.id,
+        "reference_run_id": test_case.run_id,
     }
     with rh.trace(
         name=name,
-        inputs=parent_run.outputs,
+        inputs=test_case._logged_outputs,
         parent="ignore",
         project_name="evaluators",
         metadata=metadata,

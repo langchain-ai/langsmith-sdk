@@ -2,7 +2,7 @@ import re  # noqa
 import inspect
 from abc import abstractmethod
 from collections import defaultdict
-from typing import Any, Callable, List, Optional, Tuple, TypedDict, Union
+from typing import Any, Callable, Optional, TypedDict, Union
 
 
 class _ExtractOptions(TypedDict):
@@ -18,15 +18,15 @@ class StringNode(TypedDict):
     value: str
     """String value."""
 
-    path: List[Union[str, int]]
+    path: list[Union[str, int]]
     """Path to the string node in the data."""
 
 
-def _extract_string_nodes(data: Any, options: _ExtractOptions) -> List[StringNode]:
+def _extract_string_nodes(data: Any, options: _ExtractOptions) -> list[StringNode]:
     max_depth = options.get("max_depth") or 10
 
-    queue: List[Tuple[Any, int, List[Union[str, int]]]] = [(data, 0, [])]
-    result: List[StringNode] = []
+    queue: list[tuple[Any, int, list[Union[str, int]]]] = [(data, 0, [])]
+    result: list[StringNode] = []
 
     while queue:
         task = queue.pop(0)
@@ -54,7 +54,7 @@ class StringNodeProcessor:
     """Processes a list of string nodes for masking."""
 
     @abstractmethod
-    def mask_nodes(self, nodes: List[StringNode]) -> List[StringNode]:
+    def mask_nodes(self, nodes: list[StringNode]) -> list[StringNode]:
         """Accept and return a list of string nodes to be masked."""
 
 
@@ -81,14 +81,14 @@ class StringNodeRule(TypedDict):
 class RuleNodeProcessor(StringNodeProcessor):
     """String node processor that uses a list of rules to replace sensitive data."""
 
-    rules: List[StringNodeRule]
+    rules: list[StringNodeRule]
     """List of rules to apply for replacing sensitive data.
 
     Each rule is a StringNodeRule, which contains a regex pattern to match
     and an optional replacement string.
     """
 
-    def __init__(self, rules: List[StringNodeRule]):
+    def __init__(self, rules: list[StringNodeRule]):
         """Initialize the processor with a list of rules."""
         self.rules = [
             {
@@ -106,7 +106,7 @@ class RuleNodeProcessor(StringNodeProcessor):
             for rule in rules
         ]
 
-    def mask_nodes(self, nodes: List[StringNode]) -> List[StringNode]:
+    def mask_nodes(self, nodes: list[StringNode]) -> list[StringNode]:
         """Mask nodes using the rules."""
         result = []
         for item in nodes:
@@ -121,7 +121,7 @@ class RuleNodeProcessor(StringNodeProcessor):
 class CallableNodeProcessor(StringNodeProcessor):
     """String node processor that uses a callable function to replace sensitive data."""
 
-    func: Union[Callable[[str], str], Callable[[str, List[Union[str, int]]], str]]
+    func: Union[Callable[[str], str], Callable[[str, list[Union[str, int]]], str]]
     """The callable function used to replace sensitive data.
     
     It can be either a function that takes a single string argument and returns a string,
@@ -136,15 +136,15 @@ class CallableNodeProcessor(StringNodeProcessor):
 
     def __init__(
         self,
-        func: Union[Callable[[str], str], Callable[[str, List[Union[str, int]]], str]],
+        func: Union[Callable[[str], str], Callable[[str, list[Union[str, int]]], str]],
     ):
         """Initialize the processor with a callable function."""
         self.func = func
         self.accepts_path = len(inspect.signature(func).parameters) == 2
 
-    def mask_nodes(self, nodes: List[StringNode]) -> List[StringNode]:
+    def mask_nodes(self, nodes: list[StringNode]) -> list[StringNode]:
         """Mask nodes using the callable function."""
-        retval: List[StringNode] = []
+        retval: list[StringNode] = []
         for node in nodes:
             candidate = (
                 self.func(node["value"], node["path"])  # type: ignore[call-arg]
@@ -157,8 +157,8 @@ class CallableNodeProcessor(StringNodeProcessor):
 
 
 ReplacerType = Union[
-    Callable[[str, List[Union[str, int]]], str],
-    List[StringNodeRule],
+    Callable[[str, list[Union[str, int]]], str],
+    list[StringNodeRule],
     StringNodeProcessor,
 ]
 

@@ -115,16 +115,22 @@ interface HeadersLike {
 class Baggage {
   metadata: KVMap | undefined;
   tags: string[] | undefined;
-
-  constructor(metadata: KVMap | undefined, tags: string[] | undefined) {
+  project_name: string | undefined;
+  constructor(
+    metadata: KVMap | undefined,
+    tags: string[] | undefined,
+    project_name: string | undefined
+  ) {
     this.metadata = metadata;
     this.tags = tags;
+    this.project_name = project_name;
   }
 
   static fromHeader(value: string) {
     const items = value.split(",");
     let metadata: KVMap = {};
     let tags: string[] = [];
+    let project_name: string | undefined;
     for (const item of items) {
       const [key, uriValue] = item.split("=");
       const value = decodeURIComponent(uriValue);
@@ -132,10 +138,12 @@ class Baggage {
         metadata = JSON.parse(value);
       } else if (key === "langsmith-tags") {
         tags = value.split(",");
+      } else if (key === "langsmith-project") {
+        project_name = value;
       }
     }
 
-    return new Baggage(metadata, tags);
+    return new Baggage(metadata, tags, project_name);
   }
 
   toHeader(): string {
@@ -150,6 +158,10 @@ class Baggage {
     if (this.tags && this.tags.length > 0) {
       items.push(`langsmith-tags=${encodeURIComponent(this.tags.join(","))}`);
     }
+    if (this.project_name) {
+      items.push(`langsmith-project=${encodeURIComponent(this.project_name)}`);
+    }
+
     return items.join(",");
   }
 }
@@ -422,6 +434,7 @@ export class RunTree implements BaseRun {
         trace_id: this.trace_id,
         tags: this.tags,
         attachments: this.attachments,
+        session_name: this.project_name,
       };
 
       await this.client.updateRun(this.id, runUpdate);
@@ -555,6 +568,7 @@ export class RunTree implements BaseRun {
       const baggage = Baggage.fromHeader(rawHeaders["baggage"]);
       config.metadata = baggage.metadata;
       config.tags = baggage.tags;
+      config.project_name = baggage.project_name;
     }
 
     return new RunTree(config);
@@ -563,7 +577,11 @@ export class RunTree implements BaseRun {
   toHeaders(headers?: HeadersLike) {
     const result = {
       "langsmith-trace": this.dotted_order,
-      baggage: new Baggage(this.extra?.metadata, this.tags).toHeader(),
+      baggage: new Baggage(
+        this.extra?.metadata,
+        this.tags,
+        this.project_name
+      ).toHeader(),
     };
 
     if (headers) {
