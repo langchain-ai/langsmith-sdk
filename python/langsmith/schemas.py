@@ -21,6 +21,7 @@ try:
     from pydantic.v1 import (
         BaseModel,
         ConfigDict,
+        Extra,
         Field,  # type: ignore[import]
         PrivateAttr,
         StrictBool,
@@ -31,6 +32,7 @@ except ImportError:
     from pydantic import (  # type: ignore[assignment]
         BaseModel,
         ConfigDict,
+        Extra,
         Field,
         PrivateAttr,
         StrictBool,
@@ -129,7 +131,7 @@ class ExampleCreate(BaseModel):
     use_source_run_attachments: Optional[list[str]] = None
     source_run_id: Optional[UUID] = None
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra=Extra.forbid)
 
     def __init__(self, **data):
         """Initialize from dict."""
