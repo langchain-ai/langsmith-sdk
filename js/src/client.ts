@@ -205,7 +205,12 @@ interface GroupRunsParams {
   /**
    * The ID or IDs of the project(s) to filter by.
    */
-  projectId: string;
+  projectId?: string;
+
+  /**
+   * The ID or IDs of the project(s) to filter by.
+   */
+  projectName?: string;
 
   /**
    * @example "conversation"
@@ -1690,10 +1695,21 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   public async *groupRuns(props: GroupRunsParams): AsyncIterable<Thread> {
-    const { projectId, groupBy, filter, startTime, endTime, limit, offset } =
-      props;
+    const {
+      projectId,
+      projectName,
+      groupBy,
+      filter,
+      startTime,
+      endTime,
+      limit,
+      offset,
+    } = props;
+
+    const sessionId = projectId || (await this.readProject({ projectName })).id;
+
     const baseBody = {
-      session_id: projectId,
+      session_id: sessionId,
       group_by: groupBy,
       filter,
       start_time: startTime ? startTime.toISOString() : null,
