@@ -81,6 +81,17 @@ class LangSmithConnectionError(LangSmithError):
     """Couldn't connect to the LangSmith API."""
 
 
+class LangSmithExceptionGroup(LangSmithError):
+    """Port of ExceptionGroup for Py < 3.11."""
+
+    def __init__(
+        self, *args: Any, exceptions: Sequence[Exception], **kwargs: Any
+    ) -> None:
+        """Initialize."""
+        super().__init__(*args, **kwargs)
+        self.exceptions = exceptions
+
+
 ## Warning classes
 
 
