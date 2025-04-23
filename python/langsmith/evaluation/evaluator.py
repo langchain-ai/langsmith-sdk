@@ -425,9 +425,11 @@ def _maxsize_repr(obj: Any):
 
 
 def _serialize_inputs(inputs: dict) -> dict:
-    run_truncated = _maxsize_repr(inputs.get("run"))
-    example_truncated = _maxsize_repr(inputs.get("example"))
-    return {"run": run_truncated, "example": example_truncated}
+    run = inputs.get("run")
+    example = inputs.get("example")
+    run_inputs_truncated: str = _maxsize_repr(run.inputs.get("inputs", ""))
+    example_inputs_truncated: str = _maxsize_repr(example.inputs)
+    return {"run": run_inputs_truncated, "example": example_inputs_truncated}
 
 
 class DynamicComparisonRunEvaluator:

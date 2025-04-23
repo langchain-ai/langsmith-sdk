@@ -10,7 +10,7 @@ import pytest
 from langsmith import Client, aevaluate, evaluate, expect, test
 from langsmith.evaluation import EvaluationResult, EvaluationResults
 from langsmith.schemas import Example, Run
-
+from langsmith.evaluation.evaluator import _serialize_inputs
 T = TypeVar("T")
 
 
@@ -548,3 +548,44 @@ Actual: {outputs["equation"]}
 
     finish_time = time.time()
     assert (finish_time - start) <= 8.5
+
+
+def test_serialize_inputs():
+    from datetime import datetime, timezone
+    from uuid import uuid4
+
+    # Create minimal valid Run objects
+    run = Run(
+        id=uuid4(),
+        name="test_run",
+        start_time=datetime.now(timezone.utc),
+        run_type="llm",
+        trace_id=uuid4(),
+        inputs={"query": "test"}
+    )
+
+    example = Run(
+        id=uuid4(),
+        name="test_example",
+        start_time=datetime.now(timezone.utc),
+        run_type="llm",
+        trace_id=uuid4(),
+        inputs={"input": "example"}
+    )
+
+    # Test cases
+    test_cases_pairs = [
+        # Test with both run and example
+        ({"run": run, "example": example},
+         {"run": repr({"query": "test"}), "example": repr({"input": "example"})}),
+        # Test with only run
+        ({"run": run, "example": None}, 
+         {"run": repr({"query": "test"}), "example": repr({})}),
+        # Test with empty inputs
+        ({},
+         {"run": repr({}), "example": repr({})})
+    ]
+
+    for inputs, expected in test_cases_pairs:
+        result = _serialize_inputs(inputs)
+        assert result == expected
