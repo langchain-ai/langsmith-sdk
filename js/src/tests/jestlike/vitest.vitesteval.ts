@@ -88,7 +88,7 @@ ls.describe(
       }
     );
 
-    ls.test.each(
+    ls.test.concurrent.each(
       [
         {
           inputs: {
@@ -115,6 +115,7 @@ ls.describe(
           return { bar: "bad" };
         };
         const res = myApp();
+        await new Promise((resolve) => setTimeout(resolve, 3000));
         await ls
           .expect(res)
           .evaluatedBy(myEvaluator)

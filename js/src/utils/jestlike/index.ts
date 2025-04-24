@@ -288,8 +288,21 @@ export function generateWrapperFromJestlikeMethods(
       fn: () => void | Promise<void>,
       experimentConfig?: LangSmithJestlikeDescribeWrapperConfig
     ) {
+      if (testWrapperAsyncLocalStorageInstance.getStore() !== undefined) {
+        throw new Error(
+          [
+            `You seem to be nesting an ls.describe block named "${testSuiteName}" inside another ls.describe block.`,
+            "This is not supported because each ls.describe block corresponds to a LangSmith dataset.",
+            "To logically group tests, nest the native Jest or Vitest describe methods instead.",
+          ].join("\n")
+        );
+      }
       const client = experimentConfig?.client ?? DEFAULT_TEST_CLIENT;
       const suiteName = experimentConfig?.testSuiteName ?? testSuiteName;
+      let setupPromiseResolver;
+      const setupPromise = new Promise<void>((resolve) => {
+        setupPromiseResolver = resolve;
+      });
       return method(suiteName, () => {
         const startTime = new Date();
         const suiteUuid = v4();
@@ -326,11 +339,13 @@ export function generateWrapperFromJestlikeMethods(
             metadata: suiteMetadata,
           },
           enableTestTracking: experimentConfig?.enableTestTracking,
+          setupPromise,
         };
 
         beforeAll(async () => {
           const storageValue = await runDatasetSetup(context);
           datasetSetupInfo.set(suiteUuid, storageValue);
+          setupPromiseResolver!();
         });
 
         afterAll(async () => {
@@ -419,6 +434,7 @@ export function generateWrapperFromJestlikeMethods(
   const lsDescribe = Object.assign(wrapDescribeMethod(describe), {
     only: wrapDescribeMethod(describe.only),
     skip: wrapDescribeMethod(describe.skip),
+    concurrent: wrapDescribeMethod(describe.concurrent),
   });
 
   function wrapTestMethod(method: (...args: any[]) => void) {
@@ -458,7 +474,11 @@ export function generateWrapperFromJestlikeMethods(
           `${name}${
             totalRuns > 1 ? `, run ${i}` : ""
           }${TEST_ID_DELIMITER}${testUuid}`,
-          async () => {
+          async (...args: any[]) => {
+            // Jest will magically introspect args and expect a "done" callback if we use a non-spread parameter
+            // so to obtain and pass Vitest test context through into the test function, we must refer to Vitest args
+            // using this signature
+            const jestlikeArgs = args[0];
             if (context === undefined) {
               throw new Error(
                 [
@@ -468,6 +488,11 @@ export function generateWrapperFromJestlikeMethods(
                 ].join("\n")
               );
             }
+            // Jest .concurrent is super buggy and doesn't wait for beforeAll to complete
+            // before running test functions, so we need to wait for the setup promise
+            // to resolve before we can continue.
+            // Seee https://github.com/jestjs/jest/issues/4281
+            await context.setupPromise;
             if (!datasetSetupInfo.get(context.suiteUuid)) {
               throw new Error(
                 "Dataset failed to initialize. Please check your LangSmith environment variables."
@@ -512,11 +537,18 @@ export function generateWrapperFromJestlikeMethods(
                     );
                   }
                   try {
-                    const res = await testFn({
-                      ...rest,
-                      inputs: testInput,
-                      referenceOutputs: testOutput,
-                    });
+                    const res = await testFn(
+                      Object.assign(
+                        typeof jestlikeArgs === "object" && jestlikeArgs != null
+                          ? jestlikeArgs
+                          : {},
+                        {
+                          ...rest,
+                          inputs: testInput,
+                          referenceOutputs: testOutput,
+                        }
+                      )
+                    );
                     _logTestFeedback({
                       exampleId,
                       feedback: { key: "pass", score: true },
@@ -725,6 +757,17 @@ export function generateWrapperFromJestlikeMethods(
     return eachMethod;
   }
 
+  // Roughly mirrors: https://jestjs.io/docs/api#methods
+  const concurrentMethod = Object.assign(wrapTestMethod(test.concurrent), {
+    each: createEachMethod(test.concurrent),
+    only: Object.assign(wrapTestMethod(test.concurrent.only), {
+      each: createEachMethod(test.concurrent.only),
+    }),
+    skip: Object.assign(wrapTestMethod(test.concurrent.skip), {
+      each: createEachMethod(test.concurrent.skip),
+    }),
+  });
+
   const lsTest = Object.assign(wrapTestMethod(test), {
     only: Object.assign(wrapTestMethod(test.only), {
       each: createEachMethod(test.only),
@@ -732,6 +775,7 @@ export function generateWrapperFromJestlikeMethods(
     skip: Object.assign(wrapTestMethod(test.skip), {
       each: createEachMethod(test.skip),
     }),
+    concurrent: concurrentMethod,
     each: createEachMethod(test),
   });
 
