@@ -136,7 +136,7 @@ ls.describe(
       }
     );
 
-    ls.test.each(
+    ls.test.concurrent.each(
       [
         {
           inputs: {
