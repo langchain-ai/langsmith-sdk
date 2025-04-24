@@ -1413,17 +1413,26 @@ class Client:
             self._create_run(run_create)
 
     def _create_run(self, run_create: dict):
+        errors = []
         for api_url, api_key in self._write_api_urls.items():
             headers = {**self._headers, X_API_KEY: api_key}
-            self.request_with_retries(
-                "POST",
-                f"{api_url}/runs",
-                request_kwargs={
-                    "data": _dumps_json(run_create),
-                    "headers": headers,
-                },
-                to_ignore=(ls_utils.LangSmithConflictError,),
-            )
+            try:
+                self.request_with_retries(
+                    "POST",
+                    f"{api_url}/runs",
+                    request_kwargs={
+                        "data": _dumps_json(run_create),
+                        "headers": headers,
+                    },
+                    to_ignore=(ls_utils.LangSmithConflictError,),
+                )
+            except Exception as e:
+                errors.append(e)
+        if errors:
+            if len(errors) > 1:
+                raise ls_utils.LangSmithExceptionGroup(exceptions=errors)
+            else:
+                raise errors[0]
 
     def _hide_run_inputs(self, inputs: dict):
         if self._hide_inputs is True:
@@ -1932,7 +1941,7 @@ class Client:
                     except Exception:
                         logger.warning(f"Failed to multipart ingest runs: {repr(e)}")
                     # do not retry by default
-                    return
+                    break
 
     def _send_compressed_multipart_req(
         self,
@@ -2004,7 +2013,7 @@ class Client:
                             f"Failed to send compressed multipart ingest: {repr(e)}"
                         )
                     # Do not retry by default after unknown exceptions
-                    return
+                    break
 
     def update_run(
         self,
