@@ -302,11 +302,11 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
         if not client or (
             hasattr(client, "_manual_cleanup") and client._manual_cleanup
         ):
-            logger.log(5, "Client is being cleaned up, stopping tracing thread")
+            logger.debug("Client is being cleaned up, stopping tracing thread")
             return False
         if not threading.main_thread().is_alive():
             # main thread is dead. should not be active
-            logger.log(5, "Main thread is dead, stopping tracing thread")
+            logger.debug("Main thread is dead, stopping tracing thread")
             return False
 
         if hasattr(sys, "getrefcount"):
@@ -316,8 +316,7 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
                 sub_threads
             )
             if not should_keep_thread:
-                logger.log(
-                    5,
+                logger.debug(
                     "Client refs count indicates we're the only remaining reference to the client, stopping tracing thread",
                 )
             return should_keep_thread
@@ -391,11 +390,11 @@ def tracing_control_thread_func_compress_parallel(
         if not client or (
             hasattr(client, "_manual_cleanup") and client._manual_cleanup
         ):
-            logger.log(5, "Client is being cleaned up, stopping compression thread")
+            logger.debug("Client is being cleaned up, stopping compression thread")
             return False
         if not threading.main_thread().is_alive():
             # main thread is dead. should not be active
-            logger.log(5, "Main thread is dead, stopping compression thread")
+            logger.debug("Main thread is dead, stopping compression thread")
             return False
         if hasattr(sys, "getrefcount"):
             # check if client refs count indicates we're the only remaining
@@ -408,8 +407,7 @@ def tracing_control_thread_func_compress_parallel(
             )
             should_keep_thread = sys.getrefcount(client) > num_known_refs + active_count
             if not should_keep_thread:
-                logger.log(
-                    5,
+                logger.debug(
                     "Client refs count indicates we're the only remaining reference to the client, stopping compression thread",
                 )
             return should_keep_thread
