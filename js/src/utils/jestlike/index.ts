@@ -276,11 +276,17 @@ export function generateWrapperFromJestlikeMethods(
   }
 
   function wrapDescribeMethod(
-    method: (name: string, fn: () => void | Promise<void>) => void
+    method: (name: string, fn: () => void | Promise<void>) => void,
+    methodName: string
   ): LangSmithJestlikeDescribeWrapper {
     if (isJsDom()) {
       console.error(
         `[LANGSMITH]: You seem to be using a jsdom environment. This is not supported and you may experience unexpected behavior. Please set the "environment" or "testEnvironment" field in your test config file to "node".`
+      );
+    }
+    if (typeof method !== "function") {
+      throw new Error(
+        `"${methodName}" is not supported in your test runner environment. We generally recommend using Vitest for best results.`
       );
     }
     return function (
@@ -431,10 +437,10 @@ export function generateWrapperFromJestlikeMethods(
     };
   }
 
-  const lsDescribe = Object.assign(wrapDescribeMethod(describe), {
-    only: wrapDescribeMethod(describe.only),
-    skip: wrapDescribeMethod(describe.skip),
-    concurrent: wrapDescribeMethod(describe.concurrent),
+  const lsDescribe = Object.assign(wrapDescribeMethod(describe, "describe"), {
+    only: wrapDescribeMethod(describe.only, "describe.only"),
+    skip: wrapDescribeMethod(describe.skip, "describe.skip"),
+    concurrent: wrapDescribeMethod(describe.concurrent, "describe.concurrent"),
   });
 
   function wrapTestMethod(method: (...args: any[]) => void) {
@@ -475,9 +481,10 @@ export function generateWrapperFromJestlikeMethods(
             totalRuns > 1 ? `, run ${i}` : ""
           }${TEST_ID_DELIMITER}${testUuid}`,
           async (...args: any[]) => {
-            // Jest will magically introspect args and expect a "done" callback if we use a non-spread parameter
-            // so to obtain and pass Vitest test context through into the test function, we must refer to Vitest args
-            // using this signature
+            // Jest will magically introspect args and pass a "done" callback if
+            // we use a non-spread parameter. To obtain and pass Vitest test context
+            // through into the test function, we must therefore refer to Vitest
+            // args using this signature
             const jestlikeArgs = args[0];
             if (context === undefined) {
               throw new Error(
