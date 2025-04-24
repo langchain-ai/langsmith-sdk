@@ -110,7 +110,9 @@ class OTELExporter:
         self._tracer = trace.get_tracer("langsmith", tracer_provider=tracer_provider)
         self._spans = {}
 
-    def export_batch(self, operations: list[SerializedRunOperation]) -> None:
+    def export_batch(
+        self, operations: list[SerializedRunOperation], context_map: dict[str, Any]
+    ) -> None:
         """Export a batch of serialized run operations to OTEL.
 
         Args:
@@ -124,7 +126,9 @@ class OTELExporter:
                 if not run_info:
                     continue
                 if op.operation == "post":
-                    span = self._create_span_for_run(op, run_info)
+                    span = self._create_span_for_run(
+                        op, run_info, context_map.get(op.id)
+                    )
                     if span:
                         self._spans[op.id] = span
                 else:
@@ -155,6 +159,7 @@ class OTELExporter:
         self,
         op: SerializedRunOperation,
         run_info: dict,
+        context: Optional[Any] = None,
     ) -> Optional["Span"]:
         """Create an OpenTelemetry span for a run operation.
 
@@ -184,6 +189,7 @@ class OTELExporter:
             else:
                 span = self._tracer.start_span(
                     run_info.get("name"),
+                    context=context,
                     start_time=start_time_utc_nano,
                 )
 

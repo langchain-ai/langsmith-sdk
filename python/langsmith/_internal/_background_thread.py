@@ -12,6 +12,7 @@ from multiprocessing import cpu_count
 from queue import Empty, Queue
 from typing import (
     TYPE_CHECKING,
+    Any,
     Optional,
     Union,
     cast,
@@ -52,16 +53,19 @@ class TracingQueueItem:
 
     priority: str
     item: Union[SerializedRunOperation, SerializedFeedbackOperation]
+    context: Optional[Any]
 
-    __slots__ = ("priority", "item")
+    __slots__ = ("priority", "item", "context")
 
     def __init__(
         self,
         priority: str,
         item: Union[SerializedRunOperation, SerializedFeedbackOperation],
+        context: Optional[Any] = None,
     ) -> None:
         self.priority = priority
         self.item = item
+        self.context = context
 
     def __lt__(self, other: TracingQueueItem) -> bool:
         return (self.priority, self.item.__class__) < (
@@ -193,9 +197,10 @@ def _otel_tracing_thread_handle_batch(
         ops = combine_serialized_queue_operations([item.item for item in batch])
 
         run_ops = [op for op in ops if isinstance(op, SerializedRunOperation)]
+        context_map = {item.item.id: item.context for item in batch}
         if run_ops:
             if client.otel_exporter is not None:
-                client.otel_exporter.export_batch(run_ops)
+                client.otel_exporter.export_batch(run_ops, context_map)
             else:
                 logger.error(
                     "LangSmith tracing error: Failed to submit OTEL trace data.\n"

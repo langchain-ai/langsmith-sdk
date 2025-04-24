@@ -103,6 +103,7 @@ try:
             get_otlp_tracer_provider,
         )
         from langsmith._internal.otel._otel_exporter import OTELExporter
+        from opentelemetry.trace import set_span_in_context
 
         HAS_OTEL = True
 except ImportError:
@@ -1402,9 +1403,18 @@ class Client:
                     serialized_op.trace_id,
                     serialized_op.id,
                 )
-                self.tracing_queue.put(
-                    TracingQueueItem(run_create["dotted_order"], serialized_op)
-                )
+                if HAS_OTEL:
+                    self.tracing_queue.put(
+                        TracingQueueItem(
+                            run_create["dotted_order"],
+                            serialized_op,
+                            context=set_span_in_context(otel_trace.get_current_span()),
+                        )
+                    )
+                else:
+                    self.tracing_queue.put(
+                        TracingQueueItem(run_create["dotted_order"], serialized_op)
+                    )
             else:
                 # Neither Rust nor Python batch ingestion is configured,
                 # fall back to the non-batch approach.
@@ -2164,9 +2174,18 @@ class Client:
                     serialized_op.trace_id,
                     serialized_op.id,
                 )
-                self.tracing_queue.put(
-                    TracingQueueItem(data["dotted_order"], serialized_op)
-                )
+                if HAS_OTEL:
+                    self.tracing_queue.put(
+                        TracingQueueItem(
+                            data["dotted_order"],
+                            serialized_op,
+                            context=set_span_in_context(otel_trace.get_current_span()),
+                        )
+                    )
+                else:
+                    self.tracing_queue.put(
+                        TracingQueueItem(data["dotted_order"], serialized_op)
+                    )
         else:
             self._update_run(data)
 
