@@ -317,7 +317,8 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
             )
             if not should_keep_thread:
                 logger.debug(
-                    "Client refs count indicates we're the only remaining reference to the client, stopping tracing thread",
+                    "Client refs count indicates we're the only remaining reference "
+                    "to the client, stopping tracing thread",
                 )
             return should_keep_thread
         else:
@@ -408,7 +409,8 @@ def tracing_control_thread_func_compress_parallel(
             should_keep_thread = sys.getrefcount(client) > num_known_refs + active_count
             if not should_keep_thread:
                 logger.debug(
-                    "Client refs count indicates we're the only remaining reference to the client, stopping compression thread",
+                    "Client refs count indicates we're the only remaining reference "
+                    "to the client, stopping compression thread",
                 )
             return should_keep_thread
         else:
