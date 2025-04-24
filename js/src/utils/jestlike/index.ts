@@ -284,16 +284,16 @@ export function generateWrapperFromJestlikeMethods(
         `[LANGSMITH]: You seem to be using a jsdom environment. This is not supported and you may experience unexpected behavior. Please set the "environment" or "testEnvironment" field in your test config file to "node".`
       );
     }
-    if (typeof method !== "function") {
-      throw new Error(
-        `"${methodName}" is not supported in your test runner environment. We generally recommend using Vitest for best results.`
-      );
-    }
     return function (
       testSuiteName: string,
       fn: () => void | Promise<void>,
       experimentConfig?: LangSmithJestlikeDescribeWrapperConfig
     ) {
+      if (typeof method !== "function") {
+        throw new Error(
+          `"${methodName}" is not supported by your test runner.`
+        );
+      }
       if (testWrapperAsyncLocalStorageInstance.getStore() !== undefined) {
         throw new Error(
           [
