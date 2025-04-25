@@ -1,5 +1,7 @@
 """OpenTelemetry exporter for LangSmith runs."""
 
+from __future__ import annotations
+
 import datetime
 import logging
 import uuid
@@ -114,7 +116,7 @@ class OTELExporter:
     def export_batch(
         self,
         operations: list[SerializedRunOperation],
-        otel_context_map: dict[uuid.UUID, Optional["Context"]],
+        otel_context_map: dict[uuid.UUID, Optional[Context]],
     ) -> None:
         """Export a batch of serialized run operations to OTEL.
 
@@ -162,8 +164,8 @@ class OTELExporter:
         self,
         op: SerializedRunOperation,
         run_info: dict,
-        otel_context: Optional["Context"] = None,
-    ) -> Optional["Span"]:
+        otel_context: Optional[Context] = None,
+    ) -> Optional[Span]:
         """Create an OpenTelemetry span for a run operation.
 
         Args:
@@ -287,7 +289,7 @@ class OTELExporter:
         return None
 
     def _set_span_attributes(
-        self, span: "Span", run_info: dict, op: SerializedRunOperation
+        self, span: Span, run_info: dict, op: SerializedRunOperation
     ) -> None:
         """Set attributes on the span.
 
@@ -378,7 +380,7 @@ class OTELExporter:
         # Set inputs/outputs if available
         self._set_io_attributes(span, op)
 
-    def _set_gen_ai_system(self, span: "Span", run_info: dict) -> None:
+    def _set_gen_ai_system(self, span: Span, run_info: dict) -> None:
         """Set the gen_ai.system attribute on the span based on the model provider.
 
         Args:
@@ -424,7 +426,7 @@ class OTELExporter:
         span.set_attribute(GEN_AI_SYSTEM, system)
         setattr(span, "_gen_ai_system", system)
 
-    def _set_invocation_parameters(self, span: "Span", run_info: dict) -> None:
+    def _set_invocation_parameters(self, span: Span, run_info: dict) -> None:
         """Set invocation parameters on the span.
 
         Args:
@@ -464,7 +466,7 @@ class OTELExporter:
                 GEN_AI_REQUEST_PRESENCE_PENALTY, invocation_params["presence_penalty"]
             )
 
-    def _set_io_attributes(self, span: "Span", op: SerializedRunOperation) -> None:
+    def _set_io_attributes(self, span: Span, op: SerializedRunOperation) -> None:
         """Set input/output attributes on the span.
 
         Args:
