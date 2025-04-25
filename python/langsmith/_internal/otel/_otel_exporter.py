@@ -114,7 +114,7 @@ class OTELExporter:
     def export_batch(
         self,
         operations: list[SerializedRunOperation],
-        otel_context_map: dict[uuid.UUID, Context | None],
+        otel_context_map: dict[uuid.UUID, Optional[Context]],
     ) -> None:
         """Export a batch of serialized run operations to OTEL.
 
