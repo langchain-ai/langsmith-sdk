@@ -426,7 +426,8 @@ def test_evaluate_results(
         return metadata
 
     results = client.evaluate(predict_with_meta, data=ds_examples[:1])
-    assert results[0]["run"].outputs == ds_examples[0].metadata
+    for r, ex in zip(results, ds_examples):
+        assert r["run"].outputs == ex.metadata
 
 
 def test_evaluate_raises_for_async():
