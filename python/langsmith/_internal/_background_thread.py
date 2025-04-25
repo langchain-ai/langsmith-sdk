@@ -306,7 +306,7 @@ def tracing_control_thread_func(
             client._bg_threads.append(compress_thread)
             compress_thread.start()
 
-    def keep_thread_active() -> bool:
+    def keep_thread_active(client: Optional[Client] = client) -> bool:
         # if `client.cleanup()` was called, stop thread
         if not client or (
             hasattr(client, "_manual_cleanup") and client._manual_cleanup
@@ -382,7 +382,7 @@ def tracing_control_thread_func_compress_parallel(
     size_limit: int = batch_ingest_config["size_limit"]
     size_limit_bytes = batch_ingest_config.get("size_limit_bytes", 20_971_520)
 
-    def keep_thread_active() -> bool:
+    def keep_thread_active(client: Optional[Client] = client) -> bool:
         # if `client.cleanup()` was called, stop thread
         if not client or (
             hasattr(client, "_manual_cleanup") and client._manual_cleanup
