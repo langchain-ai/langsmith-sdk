@@ -33,7 +33,7 @@ from langsmith._internal._operations import (
 )
 
 if TYPE_CHECKING:
-    from opentelemetry.context.context import Context
+    from opentelemetry.context.context import Context  # type: ignore[import]
 
     from langsmith.client import Client
 
