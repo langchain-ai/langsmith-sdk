@@ -4,7 +4,6 @@ import concurrent.futures as cf
 import functools
 import io
 import logging
-import sys
 import threading
 import time
 import weakref
@@ -257,7 +256,9 @@ def _ensure_ingest_config(
         return default_config
 
 
-def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
+def tracing_control_thread_func(
+    client_ref: weakref.ref[Client], shutdown_event: threading.Event
+) -> None:
     client = client_ref()
     if client is None:
         return
@@ -270,8 +271,6 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
     use_multipart = batch_ingest_config.get("use_multipart_endpoint", False)
 
     sub_threads: list[threading.Thread] = []
-    # 1 for this func, 1 for getrefcount, 1 for _get_data_type_cached
-    num_known_refs = 3
 
     # Disable compression if explicitly set or if using OpenTelemetry
     disable_compression = (
@@ -290,12 +289,12 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
             client._futures = set()
             client.compressed_traces = CompressedTraces()
             client._data_available_event = threading.Event()
-            threading.Thread(
+            compress_thread = threading.Thread(
                 target=tracing_control_thread_func_compress_parallel,
-                args=(weakref.ref(client),),
-            ).start()
-
-            num_known_refs += 1
+                args=(weakref.ref(client), shutdown_event),
+            )
+            client._bg_threads.append(compress_thread)
+            compress_thread.start()
 
     def keep_thread_active() -> bool:
         # if `client.cleanup()` was called, stop thread
@@ -309,22 +308,7 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
             logger.debug("Main thread is dead, stopping tracing thread")
             return False
 
-        if hasattr(sys, "getrefcount"):
-            # check if client refs count indicates we're the only remaining
-            # reference to the client
-            should_keep_thread = sys.getrefcount(client) > num_known_refs + len(
-                sub_threads
-            )
-            if not should_keep_thread:
-                logger.debug(
-                    "Client refs count indicates we're the only remaining reference "
-                    "to the client, stopping tracing thread",
-                )
-            return should_keep_thread
-        else:
-            # in PyPy, there is no sys.getrefcount attribute
-            # for now, keep thread alive
-            return True
+        return not shutdown_event.is_set()
 
     # loop until
     while keep_thread_active():
@@ -337,7 +321,7 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
         ):
             new_thread = threading.Thread(
                 target=_tracing_sub_thread_func,
-                args=(weakref.ref(client), use_multipart),
+                args=(weakref.ref(client), use_multipart, shutdown_event),
             )
             sub_threads.append(new_thread)
             new_thread.start()
@@ -363,7 +347,9 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
 
 
 def tracing_control_thread_func_compress_parallel(
-    client_ref: weakref.ref[Client], flush_interval: float = 0.5
+    client_ref: weakref.ref[Client],
+    shutdown_event: threading.Event,
+    flush_interval: float = 0.5,
 ) -> None:
     client = client_ref()
     if client is None:
@@ -384,8 +370,6 @@ def tracing_control_thread_func_compress_parallel(
     batch_ingest_config = _ensure_ingest_config(client.info)
     size_limit: int = batch_ingest_config["size_limit"]
     size_limit_bytes = batch_ingest_config.get("size_limit_bytes", 20_971_520)
-    # one for this func, one for the parent tracing thread, one for getrefcount, one for _get_data_type_cached
-    num_known_refs = 4
 
     def keep_thread_active() -> bool:
         # if `client.cleanup()` was called, stop thread
@@ -398,26 +382,7 @@ def tracing_control_thread_func_compress_parallel(
             # main thread is dead. should not be active
             logger.debug("Main thread is dead, stopping compression thread")
             return False
-        if hasattr(sys, "getrefcount"):
-            # check if client refs count indicates we're the only remaining
-            # reference to the client
-
-            # Count active threads
-            thread_pool = HTTP_REQUEST_THREAD_POOL._threads
-            active_count = sum(
-                1 for thread in thread_pool if thread is not None and thread.is_alive()
-            )
-            should_keep_thread = sys.getrefcount(client) > num_known_refs + active_count
-            if not should_keep_thread:
-                logger.debug(
-                    "Client refs count indicates we're the only remaining reference "
-                    "to the client, stopping compression thread",
-                )
-            return should_keep_thread
-        else:
-            # in PyPy, there is no sys.getrefcount attribute
-            # for now, keep thread alive
-            return True
+        return not shutdown_event.is_set()
 
     last_flush_time = time.monotonic()
 
@@ -511,6 +476,7 @@ def tracing_control_thread_func_compress_parallel(
 def _tracing_sub_thread_func(
     client_ref: weakref.ref[Client],
     use_multipart: bool,
+    shutdown_event: threading.Event,
 ) -> None:
     client = client_ref()
     if client is None:
@@ -534,6 +500,7 @@ def _tracing_sub_thread_func(
         # or we've seen the queue empty 4 times in a row
         and seen_successive_empty_queues
         <= batch_ingest_config["scale_down_nempty_trigger"]
+        and not shutdown_event.is_set()
     ):
         if next_batch := _tracing_thread_drain_queue(tracing_queue, limit=size_limit):
             seen_successive_empty_queues = 0

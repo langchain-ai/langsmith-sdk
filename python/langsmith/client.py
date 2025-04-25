@@ -240,12 +240,22 @@ def _default_retry_config() -> Retry:
     return ls_utils.LangSmithRetry(**retry_params)  # type: ignore
 
 
-def close_session(session: requests.Session) -> None:
-    """Close the session.
+def close_session(
+    session: requests.Session,
+    shutdown_event: threading.Event | None = None,
+    bg_threads: list[threading.Thread] | None = None,
+) -> None:
+    """Stop background threads cleanly, then close the requests.Session."""
+    if shutdown_event is not None:
+        logger.debug("Setting shutdown event")
+        shutdown_event.set()
 
-    Args:
-        session (requests.Session): The session to close.
-    """
+    if bg_threads:
+        logger.debug("Joining background threads")
+        for t in bg_threads:
+            t.join(timeout=1.0)
+
+    # Only after all threads are gone is it safe to close the pool.
     logger.debug("Closing Client.session")
     session.close()
 
@@ -422,6 +432,8 @@ class Client:
         "_data_available_event",
         "_futures",
         "otel_exporter",
+        "_shutdown_event",
+        "_bg_threads",
     ]
 
     def __init__(
@@ -525,8 +537,12 @@ class Client:
             if info is None or isinstance(info, ls_schemas.LangSmithInfo)
             else ls_schemas.LangSmithInfo(**info)
         )
-        weakref.finalize(self, close_session, self.session)
-        atexit.register(close_session, session_)
+        self._shutdown_event = threading.Event()
+        self._bg_threads: list[threading.Thread] = []
+        weakref.finalize(
+            self, close_session, self.session, self._shutdown_event, self._bg_threads
+        )
+        atexit.register(close_session, session_, self._shutdown_event, self._bg_threads)
         self.compressed_traces: Optional[CompressedTraces] = None
         self._data_available_event: Optional[threading.Event] = None
         self._futures: Optional[set[cf.Future]] = None
@@ -536,12 +552,14 @@ class Client:
         if auto_batch_tracing:
             self.tracing_queue: Optional[PriorityQueue] = PriorityQueue()
 
-            threading.Thread(
+            tracing_thread = threading.Thread(
                 target=_tracing_control_thread_func,
                 # arg must be a weakref to self to avoid the Thread object
                 # preventing garbage collection of the Client object
-                args=(weakref.ref(self),),
-            ).start()
+                args=(weakref.ref(self), self._shutdown_event),
+            )
+            self._bg_threads.append(tracing_thread)
+            tracing_thread.start()
         else:
             self.tracing_queue = None
 
