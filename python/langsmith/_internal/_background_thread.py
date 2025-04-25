@@ -32,6 +32,8 @@ from langsmith._internal._operations import (
 )
 
 if TYPE_CHECKING:
+    from opentelemetry.context.context import Context  # type: ignore[import]
+
     from langsmith.client import Client
 
 logger = logging.getLogger("langsmith.client")
@@ -51,16 +53,19 @@ class TracingQueueItem:
 
     priority: str
     item: Union[SerializedRunOperation, SerializedFeedbackOperation]
+    otel_context: Optional[Context]
 
-    __slots__ = ("priority", "item")
+    __slots__ = ("priority", "item", "otel_context")
 
     def __init__(
         self,
         priority: str,
         item: Union[SerializedRunOperation, SerializedFeedbackOperation],
+        otel_context: Optional[Context] = None,
     ) -> None:
         self.priority = priority
         self.item = item
+        self.otel_context = otel_context
 
     def __lt__(self, other: TracingQueueItem) -> bool:
         return (self.priority, self.item.__class__) < (
@@ -192,9 +197,14 @@ def _otel_tracing_thread_handle_batch(
         ops = combine_serialized_queue_operations([item.item for item in batch])
 
         run_ops = [op for op in ops if isinstance(op, SerializedRunOperation)]
+        otel_context_map = {
+            item.item.id: item.otel_context
+            for item in batch
+            if isinstance(item.item, SerializedRunOperation)
+        }
         if run_ops:
             if client.otel_exporter is not None:
-                client.otel_exporter.export_batch(run_ops)
+                client.otel_exporter.export_batch(run_ops, otel_context_map)
             else:
                 logger.error(
                     "LangSmith tracing error: Failed to submit OTEL trace data.\n"
