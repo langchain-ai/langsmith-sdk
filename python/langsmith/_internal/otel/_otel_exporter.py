@@ -26,6 +26,7 @@ try:
 except ImportError:
     pass
 
+
 logger = logging.getLogger(__name__)
 
 # OpenTelemetry GenAI semconv attribute names
@@ -114,7 +115,7 @@ class OTELExporter:
     def export_batch(
         self,
         operations: list[SerializedRunOperation],
-        otel_context_map: dict[uuid.UUID, Optional[Context]],
+        otel_context_map: dict[uuid.UUID, Optional["Context"]],
     ) -> None:
         """Export a batch of serialized run operations to OTEL.
 
@@ -162,7 +163,7 @@ class OTELExporter:
         self,
         op: SerializedRunOperation,
         run_info: dict,
-        otel_context: Optional[Context] = None,
+        otel_context: Optional["Context"] = None,
     ) -> Optional["Span"]:
         """Create an OpenTelemetry span for a run operation.
 
