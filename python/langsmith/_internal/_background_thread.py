@@ -271,9 +271,10 @@ def tracing_control_thread_func(
 ) -> None:
     if client_ref() is None:
         return
-    tracing_queue = client_ref().tracing_queue
+    client = cast(Client, client_ref())
+    tracing_queue = client.tracing_queue
     assert tracing_queue is not None
-    batch_ingest_config = _ensure_ingest_config(client_ref().info)
+    batch_ingest_config = _ensure_ingest_config(client.info)
     size_limit: int = batch_ingest_config["size_limit"]
     scale_up_nthreads_limit: int = batch_ingest_config["scale_up_nthreads_limit"]
     scale_up_qsize_trigger: int = batch_ingest_config["scale_up_qsize_trigger"]
@@ -284,10 +285,10 @@ def tracing_control_thread_func(
     # Disable compression if explicitly set or if using OpenTelemetry
     disable_compression = (
         ls_utils.is_truish(ls_utils.get_env_var("DISABLE_RUN_COMPRESSION"))
-        or client_ref().otel_exporter is not None
+        or client.otel_exporter is not None
     )
     if not disable_compression and use_multipart:
-        if not (client_ref().info.instance_flags or {}).get(
+        if not (client.info.instance_flags or {}).get(
             "zstd_compression_enabled", False
         ):
             logger.warning(
@@ -295,20 +296,20 @@ def tracing_control_thread_func(
                 "version of LangSmith. Falling back to regular multipart ingestion."
             )
         else:
-            client_ref()._futures = set()
-            client_ref().compressed_traces = CompressedTraces()
-            client_ref()._data_available_event = threading.Event()
+            client._futures = set()
+            client.compressed_traces = CompressedTraces()
+            client._data_available_event = threading.Event()
             compress_thread = threading.Thread(
                 target=tracing_control_thread_func_compress_parallel,
                 args=(weakref.ref(client_ref()), shutdown_event),
             )
-            client_ref()._bg_threads.append(compress_thread)
+            client._bg_threads.append(compress_thread)
             compress_thread.start()
 
     def keep_thread_active() -> bool:
         # if `client.cleanup()` was called, stop thread
-        if not client_ref() or (
-            hasattr(client_ref(), "_manual_cleanup") and client_ref()._manual_cleanup
+        if not client or (
+            hasattr(client, "_manual_cleanup") and client._manual_cleanup
         ):
             logger.debug("Client is being cleaned up, stopping tracing thread")
             return False
@@ -335,24 +336,22 @@ def tracing_control_thread_func(
             sub_threads.append(new_thread)
             new_thread.start()
         if next_batch := _tracing_thread_drain_queue(tracing_queue, limit=size_limit):
-            if client_ref().otel_exporter is not None:
-                _otel_tracing_thread_handle_batch(
-                    client_ref(), tracing_queue, next_batch
-                )
+            if client.otel_exporter is not None:
+                _otel_tracing_thread_handle_batch(client, tracing_queue, next_batch)
             else:
                 _tracing_thread_handle_batch(
-                    client_ref(), tracing_queue, next_batch, use_multipart
+                    client, tracing_queue, next_batch, use_multipart
                 )
 
     # drain the queue on exit
     while next_batch := _tracing_thread_drain_queue(
         tracing_queue, limit=size_limit, block=False
     ):
-        if client_ref().otel_exporter is not None:
-            _otel_tracing_thread_handle_batch(client_ref(), tracing_queue, next_batch)
+        if client.otel_exporter is not None:
+            _otel_tracing_thread_handle_batch(client, tracing_queue, next_batch)
         else:
             _tracing_thread_handle_batch(
-                client_ref(), tracing_queue, next_batch, use_multipart
+                client, tracing_queue, next_batch, use_multipart
             )
     logger.debug("Tracing control thread is shutting down")
 
@@ -364,11 +363,11 @@ def tracing_control_thread_func_compress_parallel(
 ) -> None:
     if client_ref() is None:
         return
-
+    client = cast(Client, client_ref())
     if (
-        client_ref().compressed_traces is None
-        or client_ref()._data_available_event is None
-        or client_ref()._futures is None
+        client.compressed_traces is None
+        or client._data_available_event is None
+        or client._futures is None
     ):
         logger.error(
             "LangSmith tracing error: Required compression attributes not "
@@ -377,14 +376,14 @@ def tracing_control_thread_func_compress_parallel(
         )
         return
 
-    batch_ingest_config = _ensure_ingest_config(client_ref().info)
+    batch_ingest_config = _ensure_ingest_config(client.info)
     size_limit: int = batch_ingest_config["size_limit"]
     size_limit_bytes = batch_ingest_config.get("size_limit_bytes", 20_971_520)
 
     def keep_thread_active() -> bool:
         # if `client.cleanup()` was called, stop thread
-        if not client_ref() or (
-            hasattr(client_ref(), "_manual_cleanup") and client_ref()._manual_cleanup
+        if not client or (
+            hasattr(client, "_manual_cleanup") and client._manual_cleanup
         ):
             logger.debug("Client is being cleaned up, stopping compression thread")
             return False
@@ -397,28 +396,28 @@ def tracing_control_thread_func_compress_parallel(
     last_flush_time = time.monotonic()
 
     while True:
-        triggered = client_ref()._data_available_event.wait(timeout=0.05)
+        triggered = client._data_available_event.wait(timeout=0.05)
         if not keep_thread_active():
             break
 
         # If data arrived, clear the event and attempt a drain
         if triggered:
-            client_ref()._data_available_event.clear()
+            client._data_available_event.clear()
 
             data_stream, compressed_traces_info = (
                 _tracing_thread_drain_compressed_buffer
-            )(client_ref(), size_limit, size_limit_bytes)
+            )(client, size_limit, size_limit_bytes)
             # If we have data, submit the send request
             if data_stream is not None:
                 try:
                     future = HTTP_REQUEST_THREAD_POOL.submit(
-                        client_ref()._send_compressed_multipart_req,
+                        client._send_compressed_multipart_req,
                         data_stream,
                         compressed_traces_info,
                     )
-                    client_ref()._futures.add(future)
+                    client._futures.add(future)
                 except RuntimeError:
-                    client_ref()._send_compressed_multipart_req(
+                    client._send_compressed_multipart_req(
                         data_stream,
                         compressed_traces_info,
                     )
@@ -428,7 +427,7 @@ def tracing_control_thread_func_compress_parallel(
             if (time.monotonic() - last_flush_time) >= flush_interval:
                 data_stream, compressed_traces_info = (
                     _tracing_thread_drain_compressed_buffer(
-                        client_ref(), size_limit=1, size_limit_bytes=1
+                        client, size_limit=1, size_limit_bytes=1
                     )
                 )
                 if data_stream is not None:
@@ -436,14 +435,14 @@ def tracing_control_thread_func_compress_parallel(
                         cf.wait(
                             [
                                 HTTP_REQUEST_THREAD_POOL.submit(
-                                    client_ref()._send_compressed_multipart_req,
+                                    client._send_compressed_multipart_req,
                                     data_stream,
                                     compressed_traces_info,
                                 )
                             ]
                         )
                     except RuntimeError:
-                        client_ref()._send_compressed_multipart_req(
+                        client._send_compressed_multipart_req(
                             data_stream,
                             compressed_traces_info,
                         )
@@ -453,7 +452,7 @@ def tracing_control_thread_func_compress_parallel(
     try:
         final_data_stream, compressed_traces_info = (
             _tracing_thread_drain_compressed_buffer(
-                client_ref(), size_limit=1, size_limit_bytes=1
+                client, size_limit=1, size_limit_bytes=1
             )
         )
         if final_data_stream is not None:
@@ -461,14 +460,14 @@ def tracing_control_thread_func_compress_parallel(
                 cf.wait(
                     [
                         HTTP_REQUEST_THREAD_POOL.submit(
-                            client_ref()._send_compressed_multipart_req,
+                            client._send_compressed_multipart_req,
                             final_data_stream,
                             compressed_traces_info,
                         )
                     ]
                 )
             except RuntimeError:
-                client_ref()._send_compressed_multipart_req(
+                client._send_compressed_multipart_req(
                     final_data_stream,
                     compressed_traces_info,
                 )
@@ -490,15 +489,16 @@ def _tracing_sub_thread_func(
 ) -> None:
     if client_ref() is None:
         return
+    client = cast(Client, client_ref())
     try:
-        if not client_ref().info:
+        if not client.info:
             return
     except BaseException as e:
         logger.debug("Error in tracing control thread: %s", e)
         return
-    tracing_queue = client_ref().tracing_queue
+    tracing_queue = client.tracing_queue
     assert tracing_queue is not None
-    batch_ingest_config = _ensure_ingest_config(client_ref().info)
+    batch_ingest_config = _ensure_ingest_config(client.info)
     size_limit = batch_ingest_config.get("size_limit", 100)
     seen_successive_empty_queues = 0
 
@@ -513,13 +513,11 @@ def _tracing_sub_thread_func(
     ):
         if next_batch := _tracing_thread_drain_queue(tracing_queue, limit=size_limit):
             seen_successive_empty_queues = 0
-            if client_ref().otel_exporter is not None:
-                _otel_tracing_thread_handle_batch(
-                    client_ref(), tracing_queue, next_batch
-                )
+            if client.otel_exporter is not None:
+                _otel_tracing_thread_handle_batch(client, tracing_queue, next_batch)
             else:
                 _tracing_thread_handle_batch(
-                    client_ref(), tracing_queue, next_batch, use_multipart
+                    client, tracing_queue, next_batch, use_multipart
                 )
         else:
             seen_successive_empty_queues += 1
@@ -528,10 +526,10 @@ def _tracing_sub_thread_func(
     while next_batch := _tracing_thread_drain_queue(
         tracing_queue, limit=size_limit, block=False
     ):
-        if client_ref().otel_exporter is not None:
-            _otel_tracing_thread_handle_batch(client_ref(), tracing_queue, next_batch)
+        if client.otel_exporter is not None:
+            _otel_tracing_thread_handle_batch(client, tracing_queue, next_batch)
         else:
             _tracing_thread_handle_batch(
-                client_ref(), tracing_queue, next_batch, use_multipart
+                client, tracing_queue, next_batch, use_multipart
             )
     logger.debug("Tracing control sub-thread is shutting down")
