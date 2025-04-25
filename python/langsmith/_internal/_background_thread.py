@@ -384,7 +384,8 @@ def tracing_control_thread_func_compress_parallel(
     batch_ingest_config = _ensure_ingest_config(client.info)
     size_limit: int = batch_ingest_config["size_limit"]
     size_limit_bytes = batch_ingest_config.get("size_limit_bytes", 20_971_520)
-    num_known_refs = 3
+    # one for this func, one for the parent tracing thread, one for getrefcount, one for _get_data_type_cached
+    num_known_refs = 4
 
     def keep_thread_active() -> bool:
         # if `client.cleanup()` was called, stop thread
