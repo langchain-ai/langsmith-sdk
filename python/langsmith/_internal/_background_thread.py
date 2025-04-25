@@ -54,7 +54,7 @@ class TracingQueueItem:
 
     priority: str
     item: Union[SerializedRunOperation, SerializedFeedbackOperation]
-    otel_context: Optional[Context]
+    otel_context: Optional["Context"]
 
     __slots__ = ("priority", "item", "otel_context")
 
@@ -62,7 +62,7 @@ class TracingQueueItem:
         self,
         priority: str,
         item: Union[SerializedRunOperation, SerializedFeedbackOperation],
-        otel_context: Optional[Context] = None,
+        otel_context: Optional["Context"] = None,
     ) -> None:
         self.priority = priority
         self.item = item

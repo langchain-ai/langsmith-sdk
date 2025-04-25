@@ -98,7 +98,7 @@ HAS_OTEL = False
 try:
     if ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED")):
         from opentelemetry import trace as otel_trace  # type: ignore[import]
-        from opentelemetry.trace import set_span_in_context
+        from opentelemetry.trace import set_span_in_context  # type: ignore[import]
 
         from langsmith._internal.otel._otel_client import (
             get_otlp_tracer_provider,
