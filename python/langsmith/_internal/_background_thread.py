@@ -344,6 +344,7 @@ def tracing_control_thread_func(
                 client, tracing_queue, next_batch, use_multipart
             )
     logger.debug("Tracing control thread is shutting down")
+    del client
 
 
 def tracing_control_thread_func_compress_parallel(
@@ -471,6 +472,7 @@ def tracing_control_thread_func_compress_parallel(
             exc_info=True,
         )
     logger.debug("Compressed traces control thread is shutting down")
+    del client
 
 
 def _tracing_sub_thread_func(
@@ -524,3 +526,4 @@ def _tracing_sub_thread_func(
                 client, tracing_queue, next_batch, use_multipart
             )
     logger.debug("Tracing control sub-thread is shutting down")
+    del client
