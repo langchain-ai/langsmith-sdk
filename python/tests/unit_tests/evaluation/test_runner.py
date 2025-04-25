@@ -151,12 +151,14 @@ def _create_example(idx: int) -> Tuple[ls_schemas.Example, Dict[str, Any]]:
         outputs={"answer": idx + 1},
         dataset_id="00886375-eb2a-4038-9032-efff60309896",
         created_at=_created_at,
+        metadata={"meta": idx},
     ), {
         "id": _id,
         "dataset_id": "00886375-eb2a-4038-9032-efff60309896",
         "created_at": _created_at,
         "inputs": {"in": idx},
         "outputs": {"answer": idx + 1},
+        "metadata": {"meta": idx},
         "attachment_urls": None,
     }
 
