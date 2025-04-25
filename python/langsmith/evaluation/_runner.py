@@ -1055,8 +1055,7 @@ def _evaluate(
         # If provided, we don't need to create a new experiment.
         runs=runs,
         # Create or resolve the experiment.
-        include_attachments=_include_attachments(target)
-        or _evaluators_include_attachments(evaluators) > 0,
+        include_attachments=_include_attachments(target, evaluators),
         upload_results=upload_results,
     ).start()
     cache_dir = ls_utils.get_cache_dir(None)
@@ -1459,7 +1458,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             self._predict,
             target,
             max_concurrency=max_concurrency,
-            include_attachments=_include_attachments(target),
+            include_attachments=_target_include_attachments(target),
         )
         r1, r2 = itertools.tee(_experiment_results, 2)
         return _ExperimentManager(
@@ -1901,15 +1900,10 @@ def _forward(
             client=client,
         )
         try:
-            args = (
-                (example.inputs, example.attachments)
-                if include_attachments
-                else (example.inputs,)
-            )
-            fn(
-                *args,
-                langsmith_extra=langsmith_extra,
-            )
+            arg_names = _get_target_args(fn)
+            args = [getattr(example, argn) for argn in arg_names]
+            fn(*args, langsmith_extra=langsmith_extra)
+            # Reset attachment readers if attachments were used.
             if include_attachments and example.attachments is not None:
                 for attachment in example.attachments:
                     reader = example.attachments[attachment]["reader"]
@@ -1981,31 +1975,41 @@ def _ensure_traceable(
     return fn
 
 
-def _evaluators_include_attachments(
-    evaluators: Optional[Sequence[Union[EVALUATOR_T, AEVALUATOR_T]]],
-) -> int:
+def _include_attachments(target: Any, evaluators: Optional[Sequence]) -> bool:
+    return _target_include_attachments(target) or bool(
+        _evaluators_include_attachments(evaluators)
+    )
+
+
+def _evaluators_include_attachments(evaluators: Optional[Sequence]) -> int:
     if evaluators is None:
         return 0
 
-    def evaluator_uses_attachments(evaluator: Any) -> bool:
-        if not callable(evaluator):
-            return False
-        sig = inspect.signature(evaluator)
-        params = list(sig.parameters.values())
-        positional_params = [
-            p for p in params if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
-        ]
-        return any(p.name == "attachments" for p in positional_params)
-
-    return sum(evaluator_uses_attachments(e) for e in evaluators)
+    return sum(_evaluator_uses_attachments(e) for e in evaluators)
 
 
-def _include_attachments(
-    target: Any,
-) -> bool:
-    """Whether the target function accepts attachments."""
-    if _is_langchain_runnable(target) or not callable(target):
+def _evaluator_uses_attachments(evaluator: Any) -> bool:
+    if not callable(evaluator):
         return False
+    sig = inspect.signature(evaluator)
+    params = list(sig.parameters.values())
+    positional_params = [
+        p for p in params if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+    ]
+    return any(p.name == "attachments" for p in positional_params)
+
+
+def _target_include_attachments(target: Any) -> bool:
+    """Whether the target function accepts attachments."""
+    return "attachments" in _get_target_args(target)
+
+
+def _get_target_args(target: Any) -> list[str]:
+    """Whether the target function accepts attachments."""
+    if not callable(target):
+        return []
+    if _is_langchain_runnable(target):
+        return ["inputs"]
     # Check function signature
     sig = inspect.signature(target)
     params = list(sig.parameters.values())
@@ -2018,21 +2022,27 @@ def _include_attachments(
         raise ValueError(
             "Target function must accept at least one positional argument (inputs)."
         )
-    elif len(positional_no_default) > 2:
+    elif len(positional_no_default) > 3:
         raise ValueError(
-            "Target function must accept at most two "
-            "arguments without default values: (inputs, attachments)."
+            "Target function must accept at most three "
+            "arguments without default values: (inputs, attachments, metadata)."
         )
-    elif len(positional_no_default) == 2:
-        if [p.name for p in positional_no_default] != ["inputs", "attachments"]:
-            raise ValueError(
-                "When passing 2 positional arguments, they must be named "
-                "'inputs' and 'attachments', respectively. Received: "
-                f"{[p.name for p in positional_no_default]}"
-            )
-        return True
+    elif len(positional_no_default) > 1 and {
+        p.name for p in positional_no_default
+    }.difference(["inputs", "attachments", "metadata"]):
+        raise ValueError(
+            "When passing multiple positional arguments without default values, they "
+            "must be named 'inputs', 'attachments', or 'metadata'. Received: "
+            f"{[p.name for p in positional_no_default]}"
+        )
     else:
-        return [p.name for p in positional_params[:2]] == ["inputs", "attachments"]
+        args = []
+        for p in positional_params[:3]:
+            if p.name in {"inputs", "attachments", "metadata"}:
+                args.append(p.name)
+            else:
+                break
+        return args or ["inputs"]
 
 
 def _resolve_experiment(
