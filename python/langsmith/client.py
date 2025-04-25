@@ -98,12 +98,12 @@ HAS_OTEL = False
 try:
     if ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED")):
         from opentelemetry import trace as otel_trace  # type: ignore[import]
+        from opentelemetry.trace import set_span_in_context
 
         from langsmith._internal.otel._otel_client import (
             get_otlp_tracer_provider,
         )
         from langsmith._internal.otel._otel_exporter import OTELExporter
-        from opentelemetry.trace import set_span_in_context
 
         HAS_OTEL = True
 except ImportError:
@@ -1408,7 +1408,9 @@ class Client:
                         TracingQueueItem(
                             run_create["dotted_order"],
                             serialized_op,
-                            context=set_span_in_context(otel_trace.get_current_span()),
+                            otel_context=set_span_in_context(
+                                otel_trace.get_current_span()
+                            ),
                         )
                     )
                 else:
@@ -2179,7 +2181,9 @@ class Client:
                         TracingQueueItem(
                             data["dotted_order"],
                             serialized_op,
-                            context=set_span_in_context(otel_trace.get_current_span()),
+                            otel_context=set_span_in_context(
+                                otel_trace.get_current_span()
+                            ),
                         )
                     )
                 else:

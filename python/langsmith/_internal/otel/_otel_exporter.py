@@ -16,6 +16,7 @@ HAS_OTEL = False
 try:
     if ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED")):
         from opentelemetry import trace  # type: ignore[import]
+        from opentelemetry.context.context import Context  # type: ignore[import]
         from opentelemetry.trace import (  # type: ignore[import]
             Span,
             set_span_in_context,
@@ -111,7 +112,9 @@ class OTELExporter:
         self._spans = {}
 
     def export_batch(
-        self, operations: list[SerializedRunOperation], context_map: dict[str, Any]
+        self,
+        operations: list[SerializedRunOperation],
+        otel_context_map: dict[uuid.UUID, Context | None],
     ) -> None:
         """Export a batch of serialized run operations to OTEL.
 
@@ -127,7 +130,7 @@ class OTELExporter:
                     continue
                 if op.operation == "post":
                     span = self._create_span_for_run(
-                        op, run_info, context_map.get(op.id)
+                        op, run_info, otel_context_map.get(op.id)
                     )
                     if span:
                         self._spans[op.id] = span
@@ -159,7 +162,7 @@ class OTELExporter:
         self,
         op: SerializedRunOperation,
         run_info: dict,
-        context: Optional[Any] = None,
+        otel_context: Optional[Context] = None,
     ) -> Optional["Span"]:
         """Create an OpenTelemetry span for a run operation.
 
@@ -189,7 +192,7 @@ class OTELExporter:
             else:
                 span = self._tracer.start_span(
                     run_info.get("name"),
-                    context=context,
+                    context=otel_context,
                     start_time=start_time_utc_nano,
                 )
 
