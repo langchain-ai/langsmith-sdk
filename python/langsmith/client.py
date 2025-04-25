@@ -98,6 +98,7 @@ HAS_OTEL = False
 try:
     if ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED")):
         from opentelemetry import trace as otel_trace  # type: ignore[import]
+        from opentelemetry.trace import set_span_in_context  # type: ignore[import]
 
         from langsmith._internal.otel._otel_client import (
             get_otlp_tracer_provider,
@@ -1402,9 +1403,20 @@ class Client:
                     serialized_op.trace_id,
                     serialized_op.id,
                 )
-                self.tracing_queue.put(
-                    TracingQueueItem(run_create["dotted_order"], serialized_op)
-                )
+                if HAS_OTEL:
+                    self.tracing_queue.put(
+                        TracingQueueItem(
+                            run_create["dotted_order"],
+                            serialized_op,
+                            otel_context=set_span_in_context(
+                                otel_trace.get_current_span()
+                            ),
+                        )
+                    )
+                else:
+                    self.tracing_queue.put(
+                        TracingQueueItem(run_create["dotted_order"], serialized_op)
+                    )
             else:
                 # Neither Rust nor Python batch ingestion is configured,
                 # fall back to the non-batch approach.
@@ -2164,9 +2176,20 @@ class Client:
                     serialized_op.trace_id,
                     serialized_op.id,
                 )
-                self.tracing_queue.put(
-                    TracingQueueItem(data["dotted_order"], serialized_op)
-                )
+                if HAS_OTEL:
+                    self.tracing_queue.put(
+                        TracingQueueItem(
+                            data["dotted_order"],
+                            serialized_op,
+                            otel_context=set_span_in_context(
+                                otel_trace.get_current_span()
+                            ),
+                        )
+                    )
+                else:
+                    self.tracing_queue.put(
+                        TracingQueueItem(data["dotted_order"], serialized_op)
+                    )
         else:
             self._update_run(data)
 
