@@ -806,7 +806,7 @@ export class AISDKExporter {
       const parentId =
         // Backcompat shim to support OTEL 1.x and 2.x
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (span as any)?.parentSpanId ??
+        (span as any).parentSpanId ??
         span.parentSpanContext?.spanId ??
         undefined;
       this.traceByMap[traceId] ??= {
