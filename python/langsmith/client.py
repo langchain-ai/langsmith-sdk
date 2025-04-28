@@ -530,7 +530,7 @@ class Client:
         atexit.register(close_session, session_)
         self.compressed_traces: Optional[CompressedTraces] = None
         self._data_available_event: Optional[threading.Event] = None
-        self._futures: Optional[set[cf.Future]] = None
+        self._futures: Optional[weakref.WeakSet[cf.Future]] = None
         self.otel_exporter: Optional[OTELExporter] = None
 
         # Initialize auto batching
@@ -2250,7 +2250,8 @@ class Client:
 
         # If we got a future, wait for it to complete
         if self._futures:
-            done, _ = cf.wait(self._futures)
+            futures = list(self._futures)
+            done, _ = cf.wait(futures)
             # Remove completed futures
             self._futures.difference_update(done)
 
