@@ -214,6 +214,8 @@ class DynamicRunEvaluator(RunEvaluator):
             (afunc, prepare_inputs) = _normalize_evaluator_func(afunc)  # type: ignore[assignment]
 
         def process_inputs(inputs: dict) -> dict:
+            if prepare_inputs is None:
+                return inputs
             (_, _, traced_inputs) = prepare_inputs(
                 inputs.get("run"), inputs.get("example")
             )
@@ -458,6 +460,8 @@ class DynamicComparisonRunEvaluator:
             (afunc, prepare_inputs) = _normalize_comparison_evaluator_func(afunc)  # type: ignore[assignment]
 
         def process_inputs(inputs: dict) -> dict:
+            if prepare_inputs is None:
+                return inputs
             (_, _, traced_inputs) = prepare_inputs(
                 inputs.get("runs"), inputs.get("example")
             )
@@ -644,9 +648,12 @@ def comparison_evaluator(
 
 def _normalize_evaluator_func(
     func: Callable,
-) -> Union[
-    Callable[[Run, Optional[Example]], _RUNNABLE_OUTPUT],
-    Callable[[Run, Optional[Example]], Awaitable[_RUNNABLE_OUTPUT]],
+) -> tuple[
+    Union[
+        Callable[[Run, Optional[Example]], _RUNNABLE_OUTPUT],
+        Callable[[Run, Optional[Example]], Awaitable[_RUNNABLE_OUTPUT]],
+    ],
+    Optional[Callable[..., dict]],
 ]:
     supported_args = (
         "run",
@@ -688,7 +695,9 @@ def _normalize_evaluator_func(
     else:
         if inspect.iscoroutinefunction(func):
 
-            def _prepare_inputs(run: Run, example: Optional[Example]) -> dict:
+            def _prepare_inputs(
+                run: Run, example: Optional[Example]
+            ) -> tuple[list, dict, dict]:
                 arg_map = {
                     "run": run,
                     "example": example,
@@ -732,7 +741,9 @@ def _normalize_evaluator_func(
 
         else:
 
-            def _prepare_inputs(run: Run, example: Optional[Example]) -> dict:
+            def _prepare_inputs(
+                run: Run, example: Optional[Example]
+            ) -> tuple[list, dict, dict]:
                 arg_map = {
                     "run": run,
                     "example": example,
@@ -775,9 +786,12 @@ def _normalize_evaluator_func(
 
 def _normalize_comparison_evaluator_func(
     func: Callable,
-) -> Union[
-    Callable[[Sequence[Run], Optional[Example]], _COMPARISON_OUTPUT],
-    Callable[[Sequence[Run], Optional[Example]], Awaitable[_COMPARISON_OUTPUT]],
+) -> tuple[
+    Union[
+        Callable[[Sequence[Run], Optional[Example]], _COMPARISON_OUTPUT],
+        Callable[[Sequence[Run], Optional[Example]], Awaitable[_COMPARISON_OUTPUT]],
+    ],
+    Optional[Callable[..., dict]],
 ]:
     supported_args = ("runs", "example", "inputs", "outputs", "reference_outputs")
     sig = inspect.signature(func)
@@ -814,7 +828,7 @@ def _normalize_comparison_evaluator_func(
 
             def _prepare_inputs(
                 runs: Sequence[Run], example: Optional[Example]
-            ) -> dict:
+            ) -> tuple[list, dict, dict]:
                 arg_map = {
                     "runs": runs,
                     "example": example,
@@ -859,7 +873,7 @@ def _normalize_comparison_evaluator_func(
 
             def _prepare_inputs(
                 runs: Sequence[Run], example: Optional[Example]
-            ) -> dict:
+            ) -> tuple[list, dict, dict]:
                 arg_map = {
                     "runs": runs,
                     "example": example,
