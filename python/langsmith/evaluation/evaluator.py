@@ -719,11 +719,11 @@ def _normalize_evaluator_func(
                             args.append(arg_map[param_name])
                         else:
                             kwargs[param_name] = arg_map[param_name]
-                    traced_inputs[param_name] = (
-                        _maxsize_repr(arg_map[param_name])
-                        if param_name in ("run", "example")
-                        else arg_map[param_name]
-                    )
+                        traced_inputs[param_name] = (
+                            _maxsize_repr(arg_map[param_name])
+                            if param_name in ("run", "example")
+                            else arg_map[param_name]
+                        )
                 return args, kwargs, traced_inputs
 
             async def awrapper(
@@ -765,11 +765,11 @@ def _normalize_evaluator_func(
                             args.append(arg_map[param_name])
                         else:
                             kwargs[param_name] = arg_map[param_name]
-                    traced_inputs[param_name] = (
-                        _maxsize_repr(arg_map[param_name])
-                        if param_name in ("run", "example")
-                        else arg_map[param_name]
-                    )
+                        traced_inputs[param_name] = (
+                            _maxsize_repr(arg_map[param_name])
+                            if param_name in ("run", "example")
+                            else arg_map[param_name]
+                        )
                 return args, kwargs, traced_inputs
 
             def wrapper(run: Run, example: Optional[Example]) -> _RUNNABLE_OUTPUT:
@@ -849,11 +849,11 @@ def _normalize_comparison_evaluator_func(
                             args.append(arg_map[param_name])
                         else:
                             kwargs[param_name] = arg_map[param_name]
-                    traced_inputs[param_name] = (
-                        _maxsize_repr(arg_map[param_name])
-                        if param_name in ("runs", "example")
-                        else arg_map[param_name]
-                    )
+                        traced_inputs[param_name] = (
+                            _maxsize_repr(arg_map[param_name])
+                            if param_name in ("runs", "example")
+                            else arg_map[param_name]
+                        )
                 return args, kwargs, traced_inputs
 
             async def awrapper(
@@ -894,11 +894,11 @@ def _normalize_comparison_evaluator_func(
                             args.append(arg_map[param_name])
                         else:
                             kwargs[param_name] = arg_map[param_name]
-                    traced_inputs[param_name] = (
-                        _maxsize_repr(arg_map[param_name])
-                        if param_name in ("runs", "example")
-                        else arg_map[param_name]
-                    )
+                        traced_inputs[param_name] = (
+                            _maxsize_repr(arg_map[param_name])
+                            if param_name in ("runs", "example")
+                            else arg_map[param_name]
+                        )
                 return args, kwargs, traced_inputs
 
             def wrapper(
