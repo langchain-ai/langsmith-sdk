@@ -251,7 +251,7 @@ test("traceable", async () => {
   expect(storedRun.outputs).toEqual(result);
 });
 
-test.only("nested generateText", async () => {
+test("nested generateText", async () => {
   const runId = uuid();
   const childRunId = uuid();
 
