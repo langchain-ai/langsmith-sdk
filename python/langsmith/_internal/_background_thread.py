@@ -297,7 +297,7 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
                 "version of LangSmith. Falling back to regular multipart ingestion."
             )
         else:
-            client._futures = set()
+            client._futures = weakref.WeakSet()
             client.compressed_traces = CompressedTraces()
             client._data_available_event = threading.Event()
             threading.Thread(
@@ -394,7 +394,9 @@ def tracing_control_thread_func_compress_parallel(
     batch_ingest_config = _ensure_ingest_config(client.info)
     size_limit: int = batch_ingest_config["size_limit"]
     size_limit_bytes = batch_ingest_config.get("size_limit_bytes", 20_971_520)
-    num_known_refs = 3
+    # One for this func, one for the parent thread, one for getrefcount,
+    # one for _get_data_type_cached
+    num_known_refs = 4
 
     def keep_thread_active() -> bool:
         # if `client.cleanup()` was called, stop thread
@@ -410,13 +412,7 @@ def tracing_control_thread_func_compress_parallel(
         if hasattr(sys, "getrefcount"):
             # check if client refs count indicates we're the only remaining
             # reference to the client
-
-            # Count active threads
-            thread_pool = HTTP_REQUEST_THREAD_POOL._threads
-            active_count = sum(
-                1 for thread in thread_pool if thread is not None and thread.is_alive()
-            )
-            should_keep_thread = sys.getrefcount(client) > num_known_refs + active_count
+            should_keep_thread = sys.getrefcount(client) > num_known_refs
             if not should_keep_thread:
                 logger.debug(
                     "Client refs count indicates we're the only remaining reference "
