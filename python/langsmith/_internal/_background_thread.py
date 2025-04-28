@@ -297,7 +297,7 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
                 "version of LangSmith. Falling back to regular multipart ingestion."
             )
         else:
-            client._futures = set()
+            client._futures = weakref.WeakSet()
             client.compressed_traces = CompressedTraces()
             client._data_available_event = threading.Event()
             threading.Thread(
