@@ -322,7 +322,9 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
         if hasattr(sys, "getrefcount"):
             # check if client refs count indicates we're the only remaining
             # reference to the client
-            should_keep_thread = sys.getrefcount(client) > num_known_refs
+            should_keep_thread = sys.getrefcount(client) > num_known_refs + len(
+                sub_threads
+            )
             if not should_keep_thread:
                 logger.debug(
                     "Client refs count indicates we're the only remaining reference "
