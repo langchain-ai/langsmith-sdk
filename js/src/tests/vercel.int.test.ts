@@ -20,10 +20,9 @@ import { waitUntilRunFound, toArray } from "./utils.js";
 const client = new Client();
 // Not using @opentelemetry/sdk-node because we need to force flush
 // the spans to ensure they are sent to LangSmith between tests
-const provider = new NodeTracerProvider();
-provider.addSpanProcessor(
-  new BatchSpanProcessor(new AISDKExporter({ client }))
-);
+const provider = new NodeTracerProvider({
+  spanProcessors: [new BatchSpanProcessor(new AISDKExporter({ client }))],
+});
 provider.register();
 
 test("generateText", async () => {
