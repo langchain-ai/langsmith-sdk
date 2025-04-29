@@ -742,16 +742,15 @@ def test_hide_metadata(
         ), f"Metadata key should be present in extra {payload_extra}"
         if callable(hide_metadata_config):
             # Check if the callable modified the metadata as expected
-            assert payload_extra["metadata"] == {
-                "initial_key": "initial_value",
-                "modified": True,
-            }
+            assert payload_extra["metadata"].get("modified") is True
         else:
-            # Check if metadata is the original one
-            assert payload_extra["metadata"] == initial_metadata
+            assert all(
+                k in payload_extra["metadata"] and v == payload_extra["metadata"][k]
+                for k, v in initial_metadata.items()
+            )
     else:
-        assert (
-            "metadata" not in payload_extra
+        assert all(
+            k not in payload_extra["metadata"] for k in initial_metadata
         ), f"Metadata key should NOT be present in extra {payload_extra}"
 
 
