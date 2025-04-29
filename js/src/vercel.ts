@@ -803,7 +803,12 @@ export class AISDKExporter {
 
     for (const span of typedSpans) {
       const { traceId, spanId } = span.spanContext();
-      const parentId = span.parentSpanId ?? undefined;
+      const parentId =
+        // Backcompat shim to support OTEL 1.x and 2.x
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (span as any).parentSpanId ??
+        span.parentSpanContext?.spanId ??
+        undefined;
       this.traceByMap[traceId] ??= {
         childMap: {},
         nodeMap: {},

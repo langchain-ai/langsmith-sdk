@@ -1486,9 +1486,6 @@ class Client:
     def _hide_run_metadata(self, metadata: dict) -> dict:
         if self._hide_metadata is True:
             return {}
-        if self._anonymizer:
-            json_metadata = _orjson.loads(_dumps_json(metadata))
-            return self._anonymizer(json_metadata)
         if self._hide_metadata is False:
             return metadata
         return self._hide_metadata(metadata)
