@@ -6288,7 +6288,7 @@ class Client:
             json={k: v for k, v in body.items() if v is not None},
         )
         ls_utils.raise_for_status_with_text(response)
-        return ls_schemas.AnnotationQueue(
+        return ls_schemas.AnnotationQueueDetails(
             **response.json(),
         )
 
