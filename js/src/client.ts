@@ -3852,7 +3852,6 @@ export class Client implements LangSmithTracingClientInterface {
     );
     await raiseForStatus(response, "read annotation queue");
     const data = await response.json();
-    console.log("LEEDLE", data);
     return data as AnnotationQueueDetails;
   }
 
