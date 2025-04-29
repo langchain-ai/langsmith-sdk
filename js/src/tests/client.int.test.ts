@@ -1282,7 +1282,7 @@ test("annotationqueue crud with rubric instructions", async () => {
       "This is a rubric instruction"
     );
 
-    // 1b. Update the annotation queue rubric instructions and check that it is updated
+    // 1b. Update the annotation queue rubric instructions
     const newInstructions = "Updated rubric instructions";
     await client.updateAnnotationQueue(queue.id, {
       name: queueName,
@@ -1324,7 +1324,7 @@ test("annotationqueue crud with rubric instructions 2", async () => {
     expect(fetchedQueue.name).toBe(queueName);
     expect(fetchedQueue.rubric_instructions).toBeNull();
 
-    // 1b. Update the annotation queue rubric instructions and check that it is updated
+    // 1b. Update the annotation queue rubric instructions
     const newInstructions = "Updated rubric instructions";
     await client.updateAnnotationQueue(queue.id, {
       name: queueName,

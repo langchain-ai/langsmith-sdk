@@ -3135,7 +3135,7 @@ def test_annotation_queue_with_rubric_instructions(langchain_client: Client):
         assert fetched_queue.name == queue_name
         assert fetched_queue.rubric_instructions == "This is a rubric instruction"
 
-        # 1b. Update the annotation queue rubric instructions and check that it is updated
+        # 1b. Update the annotation queue rubric instructions
         new_instructions = "Updated rubric instructions"
         langchain_client.update_annotation_queue(
             queue.id,
@@ -3154,7 +3154,7 @@ def test_annotation_queue_with_rubric_instructions(langchain_client: Client):
 
 
 def test_annotation_queue_with_rubric_instructions_2(langchain_client: Client):
-    """Test CRUD operations on annotation queue with rubric instructions added after creation."""
+    """Test CRUD operations on annotation queue with rubric instructions."""
     queue_name = f"test-queue-{str(uuid.uuid4())[:8]}"
     project_name = f"test-project-{str(uuid.uuid4())[:8]}"
     queue_id = uuid.uuid4()
@@ -3175,7 +3175,7 @@ def test_annotation_queue_with_rubric_instructions_2(langchain_client: Client):
         assert fetched_queue.name == queue_name
         assert fetched_queue.rubric_instructions is None
 
-        # 1b. Update the annotation queue rubric instructions and check that it is updated
+        # 1b. Update the annotation queue rubric instructions
         new_instructions = "Updated rubric instructions"
         langchain_client.update_annotation_queue(
             queue.id,
