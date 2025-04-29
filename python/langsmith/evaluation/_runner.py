@@ -37,6 +37,7 @@ from langsmith import run_trees as rt
 from langsmith import schemas
 from langsmith import utils as ls_utils
 from langsmith._internal._beta_decorator import _warn_once
+from langsmith.client import ID_TYPE
 from langsmith.evaluation.evaluator import (
     SUMMARY_EVALUATOR_T,
     ComparisonEvaluationResult,
@@ -90,6 +91,7 @@ def evaluate(
     data: Optional[DATA_T] = None,
     evaluators: Optional[Sequence[EVALUATOR_T]] = None,
     summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
+    auto_evaluators: Optional[Sequence[ID_TYPE]] = None,
     metadata: Optional[dict] = None,
     experiment_prefix: Optional[str] = None,
     description: Optional[str] = None,
@@ -110,6 +112,7 @@ def evaluate(
     data: Optional[DATA_T] = None,
     evaluators: Optional[Sequence[COMPARATIVE_EVALUATOR_T]] = None,
     summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
+    auto_evaluators: Optional[Sequence[ID_TYPE]] = None,
     metadata: Optional[dict] = None,
     experiment_prefix: Optional[str] = None,
     description: Optional[str] = None,
@@ -131,6 +134,7 @@ def evaluate(
         Union[Sequence[EVALUATOR_T], Sequence[COMPARATIVE_EVALUATOR_T]]
     ] = None,
     summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
+    auto_evaluators: Optional[Sequence[ID_TYPE]] = None,
     metadata: Optional[dict] = None,
     experiment_prefix: Optional[str] = None,
     description: Optional[str] = None,
@@ -157,6 +161,9 @@ def evaluate(
         summary_evaluators (Sequence[SUMMARY_EVALUATOR_T] | None): A list of summary
             evaluators to run on the entire dataset. Should not be specified if
             comparing two existing experiments. Defaults to None.
+        auto_evaluators (Optional[Sequnce[ID_TYPE]]): A list of the ids of the autoevaluators to
+            run on this experiment. If None, all the auto evaluators will be ran. Defaults
+            to None.
         metadata (dict | None): Metadata to attach to the experiment.
             Defaults to None.
         experiment_prefix (str | None): A prefix to provide for your experiment name.
@@ -323,6 +330,7 @@ def evaluate(
             "upload_results": not upload_results,
             "experiment_prefix": bool(experiment_prefix),
             "data": bool(data),
+            "auto_evaluators": auto_evaluators is not None,
         }
         if any(invalid_args.values()):
             msg = (
@@ -350,6 +358,7 @@ def evaluate(
             "upload_results": not upload_results,
             "summary_evaluators": bool(summary_evaluators),
             "data": bool(data),
+            "auto_evaluators": auto_evaluators is not None,
         }
         if len(target) != 2 or not all(
             isinstance(t, (str, uuid.UUID, schemas.TracerSession)) for t in target
@@ -420,6 +429,7 @@ def evaluate(
             data=data,
             evaluators=cast(Optional[Sequence[EVALUATOR_T]], evaluators),
             summary_evaluators=summary_evaluators,
+            auto_evaluators=auto_evaluators,
             metadata=metadata,
             experiment_prefix=experiment_prefix,
             description=description,
@@ -1026,6 +1036,7 @@ def _evaluate(
     data: DATA_T,
     evaluators: Optional[Sequence[EVALUATOR_T]] = None,
     summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
+    auto_evaluators: Optional[Sequence[ID_TYPE]] = None,
     metadata: Optional[dict] = None,
     experiment_prefix: Optional[str] = None,
     description: Optional[str] = None,
@@ -1057,6 +1068,7 @@ def _evaluate(
         # Create or resolve the experiment.
         include_attachments=_include_attachments(target, evaluators),
         upload_results=upload_results,
+        auto_evaluators=auto_evaluators,
     ).start()
     cache_dir = ls_utils.get_cache_dir(None)
     cache_path = (
@@ -1217,7 +1229,10 @@ class _ExperimentManagerMixin:
         return project_metadata
 
     def _create_experiment(
-        self, dataset_id: uuid.UUID, metadata: dict
+        self,
+        dataset_id: uuid.UUID,
+        metadata: dict,
+        auto_evaluators: Optional[Sequence[ID_TYPE]] = None,
     ) -> schemas.TracerSession:
         # There is a chance of name collision, so we'll retry
         starting_name = self._experiment_name
@@ -1229,6 +1244,11 @@ class _ExperimentManagerMixin:
                     description=self._description,
                     reference_dataset_id=dataset_id,
                     metadata=metadata,
+                    project_extra=(
+                        {"evaluator_info": {"selected_rules": auto_evaluators}}
+                        if auto_evaluators is not None
+                        else {}
+                    ),
                 )
             except ls_utils.LangSmithConflictError:
                 self._experiment_name = f"{starting_name}-{str(uuid.uuid4().hex[:6])}"
@@ -1237,11 +1257,15 @@ class _ExperimentManagerMixin:
             " Please try again with a different experiment name."
         )
 
-    def _get_project(self, first_example: schemas.Example) -> schemas.TracerSession:
+    def _get_project(
+        self,
+        first_example: schemas.Example,
+        auto_evaluators: Optional[Sequence[ID_TYPE]] = None,
+    ) -> schemas.TracerSession:
         if self._experiment is None:
             project_metadata = self._get_experiment_metadata()
             project = self._create_experiment(
-                first_example.dataset_id, project_metadata
+                first_example.dataset_id, project_metadata, auto_evaluators
             )
         else:
             project = self._experiment
@@ -1310,6 +1334,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         reuse_attachments: bool = False,
         upload_results: bool = True,
         attachment_raw_data_dict: Optional[dict] = None,
+        auto_evaluators: Optional[Sequence[ID_TYPE]] = None,
     ):
         super().__init__(
             experiment=experiment,
@@ -1327,6 +1352,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         self._reuse_attachments = reuse_attachments
         self._upload_results = upload_results
         self._attachment_raw_data_dict = attachment_raw_data_dict
+        self._auto_evaluators = auto_evaluators
 
     def _reset_example_attachment_readers(
         self, example: schemas.Example
@@ -1430,7 +1456,11 @@ class _ExperimentManager(_ExperimentManagerMixin):
 
     def start(self) -> _ExperimentManager:
         first_example = next(itertools.islice(self.examples, 1))
-        project = self._get_project(first_example) if self._upload_results else None
+        project = (
+            self._get_project(first_example, self._auto_evaluators)
+            if self._upload_results
+            else None
+        )
         self._print_experiment_start(project, first_example)
         self._metadata["num_repetitions"] = self._num_repetitions
         return self.__class__(

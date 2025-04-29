@@ -26,6 +26,7 @@ from langsmith import run_trees as rt
 from langsmith import utils as ls_utils
 from langsmith._internal import _aiter as aitertools
 from langsmith._internal._beta_decorator import _warn_once
+from langsmith.client import ID_TYPE
 from langsmith.evaluation._runner import (
     AEVALUATOR_T,
     DATA_T,
@@ -80,6 +81,7 @@ async def aevaluate(
     ] = None,
     evaluators: Optional[Sequence[Union[EVALUATOR_T, AEVALUATOR_T]]] = None,
     summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
+    auto_evaluators: Optional[Sequence[ID_TYPE]] = None,
     metadata: Optional[dict] = None,
     experiment_prefix: Optional[str] = None,
     description: Optional[str] = None,
@@ -104,6 +106,9 @@ async def aevaluate(
             on each example. Defaults to None.
         summary_evaluators (Optional[Sequence[SUMMARY_EVALUATOR_T]]): A list of summary
             evaluators to run on the entire dataset. Defaults to None.
+        auto_evaluators (Optional[Sequnce[ID_TYPE]]): A list of the ids of the autoevaluators to
+            run on this experiment. If None, all the auto evaluators will be ran. Defaults
+            to None.
         metadata (Optional[dict]): Metadata to attach to the experiment.
             Defaults to None.
         experiment_prefix (Optional[str]): A prefix to provide for your experiment name.
@@ -268,6 +273,7 @@ async def aevaluate(
             "upload_results": not upload_results,
             "experiment_prefix": bool(experiment_prefix),
             "data": bool(data),
+            "auto_evaluators": auto_evaluators is not None,
         }
         if any(invalid_args.values()):
             msg = (
@@ -320,6 +326,7 @@ async def aevaluate(
             data=data,
             evaluators=evaluators,
             summary_evaluators=summary_evaluators,
+            auto_evaluators=auto_evaluators,
             metadata=metadata,
             experiment_prefix=experiment_prefix,
             description=description,
@@ -442,6 +449,7 @@ async def _aevaluate(
     data: Union[DATA_T, AsyncIterable[schemas.Example]],
     evaluators: Optional[Sequence[Union[EVALUATOR_T, AEVALUATOR_T]]] = None,
     summary_evaluators: Optional[Sequence[SUMMARY_EVALUATOR_T]] = None,
+    auto_evaluators: Optional[Sequence[ID_TYPE]] = None,
     metadata: Optional[dict] = None,
     experiment_prefix: Optional[str] = None,
     description: Optional[str] = None,
@@ -479,6 +487,7 @@ async def _aevaluate(
         include_attachments=num_include_attachments > 0,
         reuse_attachments=num_repetitions * num_include_attachments > 1,
         upload_results=upload_results,
+        auto_evaluators=auto_evaluators,
     ).astart()
     cache_dir = ls_utils.get_cache_dir(None)
     if cache_dir is not None:
@@ -564,6 +573,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         reuse_attachments: bool = False,
         upload_results: bool = True,
         attachment_raw_data_dict: Optional[dict] = None,
+        auto_evaluators: Optional[Sequence[ID_TYPE]] = None,
     ):
         super().__init__(
             experiment=experiment,
@@ -583,6 +593,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         self._reuse_attachments = reuse_attachments
         self._upload_results = upload_results
         self._attachment_raw_data_dict = attachment_raw_data_dict
+        self._auto_evaluators = auto_evaluators
 
     def _reset_example_attachments(self, example: schemas.Example) -> schemas.Example:
         """Reset attachment readers for an example.
@@ -707,7 +718,11 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                 "No examples found in the dataset."
                 "Please ensure the data provided to aevaluate is not empty."
             )
-        project = self._get_project(first_example) if self._upload_results else None
+        project = (
+            self._get_project(first_example, self._auto_evaluators)
+            if self._upload_results
+            else None
+        )
         self._print_experiment_start(project, first_example)
         self._metadata["num_repetitions"] = self._num_repetitions
         return self.__class__(
