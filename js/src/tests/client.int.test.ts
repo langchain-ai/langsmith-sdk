@@ -1278,7 +1278,9 @@ test("annotationqueue crud with rubric instructions", async () => {
     const fetchedQueue = await client.readAnnotationQueue(queue.id);
     expect(fetchedQueue).toBeDefined();
     expect(fetchedQueue.name).toBe(queueName);
-    expect(fetchedQueue.rubric_instructions).toBe("This is a rubric instruction");
+    expect(fetchedQueue.rubric_instructions).toBe(
+      "This is a rubric instruction"
+    );
 
     // 1b. Update the annotation queue rubric instructions and check that it is updated
     const newInstructions = "Updated rubric instructions";

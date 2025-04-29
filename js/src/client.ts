@@ -3837,7 +3837,9 @@ export class Client implements LangSmithTracingClientInterface {
    * @param queueId - The ID of the annotation queue to read
    * @returns The AnnotationQueueDetails object
    */
-  public async readAnnotationQueue(queueId: string): Promise<AnnotationQueueDetails> {
+  public async readAnnotationQueue(
+    queueId: string
+  ): Promise<AnnotationQueueDetails> {
     const response = await this.caller.call(
       _getFetchImplementation(this.debug),
       `${this.apiUrl}/annotation-queues/${assertUuid(queueId, "queueId")}`,
@@ -3876,7 +3878,11 @@ export class Client implements LangSmithTracingClientInterface {
       {
         method: "PATCH",
         headers: { ...this.headers, "Content-Type": "application/json" },
-        body: JSON.stringify({ name, description, rubric_instructions: rubricInstructions }),
+        body: JSON.stringify({
+          name,
+          description,
+          rubric_instructions: rubricInstructions,
+        }),
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       }
