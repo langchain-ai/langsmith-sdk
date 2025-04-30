@@ -41,7 +41,7 @@ import {
   AttachmentInfo,
   AttachmentData,
   DatasetVersion,
-  AnnotationQueueDetails,
+  AnnotationQueueWithDetails,
 } from "./schemas.js";
 import {
   convertLangChainMessageToExample,
@@ -3803,7 +3803,7 @@ export class Client implements LangSmithTracingClientInterface {
     description?: string;
     queueId?: string;
     rubricInstructions?: string;
-  }): Promise<AnnotationQueueDetails> {
+  }): Promise<AnnotationQueueWithDetails> {
     const { name, description, queueId, rubricInstructions } = options;
     const body = {
       name,
@@ -3835,11 +3835,11 @@ export class Client implements LangSmithTracingClientInterface {
   /**
    * Read an annotation queue with the specified queue ID.
    * @param queueId - The ID of the annotation queue to read
-   * @returns The AnnotationQueueDetails object
+   * @returns The AnnotationQueueWithDetails object
    */
   public async readAnnotationQueue(
     queueId: string
-  ): Promise<AnnotationQueueDetails> {
+  ): Promise<AnnotationQueueWithDetails> {
     const response = await this.caller.call(
       _getFetchImplementation(this.debug),
       `${this.apiUrl}/annotation-queues/${assertUuid(queueId, "queueId")}`,
@@ -3852,7 +3852,7 @@ export class Client implements LangSmithTracingClientInterface {
     );
     await raiseForStatus(response, "read annotation queue");
     const data = await response.json();
-    return data as AnnotationQueueDetails;
+    return data as AnnotationQueueWithDetails;
   }
 
   /**

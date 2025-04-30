@@ -567,7 +567,7 @@ export interface AnnotationQueue {
   tenant_id: string;
 }
 
-export interface AnnotationQueueDetails extends AnnotationQueue {
+export interface AnnotationQueueWithDetails extends AnnotationQueue {
   /** The rubric instructions for the annotation queue. */
   rubric_instructions?: string;
 }

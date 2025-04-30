@@ -6260,7 +6260,7 @@ class Client:
         description: Optional[str] = None,
         queue_id: Optional[ID_TYPE] = None,
         rubric_instructions: Optional[str] = None,
-    ) -> ls_schemas.AnnotationQueueDetails:
+    ) -> ls_schemas.AnnotationQueueWithDetails:
         """Create an annotation queue on the LangSmith API.
 
         Args:
@@ -6288,7 +6288,7 @@ class Client:
             json={k: v for k, v in body.items() if v is not None},
         )
         ls_utils.raise_for_status_with_text(response)
-        return ls_schemas.AnnotationQueueDetails(
+        return ls_schemas.AnnotationQueueWithDetails(
             **response.json(),
         )
 
@@ -6308,7 +6308,7 @@ class Client:
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
-        return ls_schemas.AnnotationQueueDetails(**response.json())
+        return ls_schemas.AnnotationQueueWithDetails(**response.json())
 
     def update_annotation_queue(
         self,

@@ -790,7 +790,7 @@ class AnnotationQueue(BaseModel):
     """The ID of the tenant associated with the annotation queue."""
 
 
-class AnnotationQueueDetails(AnnotationQueue):
+class AnnotationQueueWithDetails(AnnotationQueue):
     """Represents an annotation queue with details."""
 
     rubric_instructions: Optional[str] = None
