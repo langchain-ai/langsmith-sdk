@@ -6259,7 +6259,8 @@ class Client:
         name: str,
         description: Optional[str] = None,
         queue_id: Optional[ID_TYPE] = None,
-    ) -> ls_schemas.AnnotationQueue:
+        rubric_instructions: Optional[str] = None,
+    ) -> ls_schemas.AnnotationQueueWithDetails:
         """Create an annotation queue on the LangSmith API.
 
         Args:
@@ -6269,6 +6270,8 @@ class Client:
                 The description of the annotation queue.
             queue_id (Optional[Union[UUID, str]]):
                 The ID of the annotation queue.
+            rubric_instructions (Optional[str]):
+                The rubric instructions for the annotation queue.
 
         Returns:
             AnnotationQueue: The created annotation queue object.
@@ -6277,6 +6280,7 @@ class Client:
             "name": name,
             "description": description,
             "id": str(queue_id) if queue_id is not None else str(uuid.uuid4()),
+            "rubric_instructions": rubric_instructions,
         }
         response = self.request_with_retries(
             "POST",
@@ -6284,7 +6288,7 @@ class Client:
             json={k: v for k, v in body.items() if v is not None},
         )
         ls_utils.raise_for_status_with_text(response)
-        return ls_schemas.AnnotationQueue(
+        return ls_schemas.AnnotationQueueWithDetails(
             **response.json(),
         )
 
@@ -6297,11 +6301,22 @@ class Client:
         Returns:
             AnnotationQueue: The annotation queue object.
         """
-        # TODO: Replace when actual endpoint is added
-        return next(self.list_annotation_queues(queue_ids=[queue_id]))
+        base_url = f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}"
+        response = self.request_with_retries(
+            "GET",
+            f"{base_url}",
+            headers=self._headers,
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return ls_schemas.AnnotationQueueWithDetails(**response.json())
 
     def update_annotation_queue(
-        self, queue_id: ID_TYPE, *, name: str, description: Optional[str] = None
+        self,
+        queue_id: ID_TYPE,
+        *,
+        name: str,
+        description: Optional[str] = None,
+        rubric_instructions: Optional[str] = None,
     ) -> None:
         """Update an annotation queue with the specified queue_id.
 
@@ -6309,6 +6324,8 @@ class Client:
             queue_id (Union[UUID, str]): The ID of the annotation queue to update.
             name (str): The new name for the annotation queue.
             description (Optional[str]): The new description for the
+                annotation queue. Defaults to None.
+            rubric_instructions (Optional[str]): The new rubric instructions for the
                 annotation queue. Defaults to None.
 
         Returns:
@@ -6320,6 +6337,7 @@ class Client:
             json={
                 "name": name,
                 "description": description,
+                "rubric_instructions": rubric_instructions,
             },
         )
         ls_utils.raise_for_status_with_text(response)
