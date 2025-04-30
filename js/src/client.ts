@@ -677,7 +677,7 @@ export class Client implements LangSmithTracingClientInterface {
     if (this.hideMetadata === false || this.hideMetadata === undefined) {
       return metadata;
     }
-    return this.hideMetadata(metadata);
+    return await Promise.resolve(this.hideMetadata(metadata));
   }
 
   private async prepareRunCreateOrUpdateInputs(
