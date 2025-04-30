@@ -41,6 +41,7 @@ import {
   AttachmentInfo,
   AttachmentData,
   DatasetVersion,
+  AnnotationQueueWithDetails,
 } from "./schemas.js";
 import {
   convertLangChainMessageToExample,
@@ -3801,12 +3802,14 @@ export class Client implements LangSmithTracingClientInterface {
     name: string;
     description?: string;
     queueId?: string;
-  }): Promise<AnnotationQueue> {
-    const { name, description, queueId } = options;
+    rubricInstructions?: string;
+  }): Promise<AnnotationQueueWithDetails> {
+    const { name, description, queueId, rubricInstructions } = options;
     const body = {
       name,
       description,
       id: queueId || uuid.v4(),
+      rubric_instructions: rubricInstructions,
     };
 
     const response = await this.caller.call(
@@ -3832,17 +3835,24 @@ export class Client implements LangSmithTracingClientInterface {
   /**
    * Read an annotation queue with the specified queue ID.
    * @param queueId - The ID of the annotation queue to read
-   * @returns The AnnotationQueue object
+   * @returns The AnnotationQueueWithDetails object
    */
-  public async readAnnotationQueue(queueId: string): Promise<AnnotationQueue> {
-    // TODO: Replace when actual endpoint is added
-    const queueIteratorResult = await this.listAnnotationQueues({
-      queueIds: [queueId],
-    }).next();
-    if (queueIteratorResult.done) {
-      throw new Error(`Annotation queue with ID ${queueId} not found`);
-    }
-    return queueIteratorResult.value;
+  public async readAnnotationQueue(
+    queueId: string
+  ): Promise<AnnotationQueueWithDetails> {
+    const response = await this.caller.call(
+      _getFetchImplementation(this.debug),
+      `${this.apiUrl}/annotation-queues/${assertUuid(queueId, "queueId")}`,
+      {
+        method: "GET",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+    await raiseForStatus(response, "read annotation queue");
+    const data = await response.json();
+    return data as AnnotationQueueWithDetails;
   }
 
   /**
@@ -3857,16 +3867,21 @@ export class Client implements LangSmithTracingClientInterface {
     options: {
       name: string;
       description?: string;
+      rubricInstructions?: string;
     }
   ): Promise<void> {
-    const { name, description } = options;
+    const { name, description, rubricInstructions } = options;
     const response = await this.caller.call(
       _getFetchImplementation(this.debug),
       `${this.apiUrl}/annotation-queues/${assertUuid(queueId, "queueId")}`,
       {
         method: "PATCH",
         headers: { ...this.headers, "Content-Type": "application/json" },
-        body: JSON.stringify({ name, description }),
+        body: JSON.stringify({
+          name,
+          description,
+          rubric_instructions: rubricInstructions,
+        }),
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       }

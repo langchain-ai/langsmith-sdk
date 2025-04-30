@@ -790,6 +790,13 @@ class AnnotationQueue(BaseModel):
     """The ID of the tenant associated with the annotation queue."""
 
 
+class AnnotationQueueWithDetails(AnnotationQueue):
+    """Represents an annotation queue with details."""
+
+    rubric_instructions: Optional[str] = None
+    """The rubric instructions for the annotation queue."""
+
+
 class BatchIngestConfig(TypedDict, total=False):
     """Configuration for batch ingestion."""
 

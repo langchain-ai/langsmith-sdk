@@ -1257,6 +1257,92 @@ test("annotationqueue crud", async () => {
   }
 });
 
+test("annotationqueue crud with rubric instructions", async () => {
+  const client = new Client();
+  const queueName = `test-queue-${uuidv4().substring(0, 8)}`;
+  const projectName = `test-project-${uuidv4().substring(0, 8)}`;
+  const queueId = uuidv4();
+
+  try {
+    // 1. Create an annotation queue
+    const queue = await client.createAnnotationQueue({
+      name: queueName,
+      description: "Initial description",
+      queueId,
+      rubricInstructions: "This is a rubric instruction",
+    });
+    expect(queue).toBeDefined();
+    expect(queue.name).toBe(queueName);
+
+    // 1a. Get the annotation queue
+    const fetchedQueue = await client.readAnnotationQueue(queue.id);
+    expect(fetchedQueue).toBeDefined();
+    expect(fetchedQueue.name).toBe(queueName);
+    expect(fetchedQueue.rubric_instructions).toBe(
+      "This is a rubric instruction"
+    );
+
+    // 1b. Update the annotation queue rubric instructions
+    const newInstructions = "Updated rubric instructions";
+    await client.updateAnnotationQueue(queue.id, {
+      name: queueName,
+      rubricInstructions: newInstructions,
+    });
+    const updatedQueue = await client.readAnnotationQueue(queue.id);
+    expect(updatedQueue.rubric_instructions).toBe(newInstructions);
+  } finally {
+    // 6. Delete the annotation queue
+    await client.deleteAnnotationQueue(queueId);
+
+    // Clean up the project
+    if (await client.hasProject({ projectName })) {
+      await client.deleteProject({ projectName });
+    }
+  }
+});
+
+test("annotationqueue crud with rubric instructions 2", async () => {
+  const client = new Client();
+  const queueName = `test-queue-${uuidv4().substring(0, 8)}`;
+  const projectName = `test-project-${uuidv4().substring(0, 8)}`;
+  const queueId = uuidv4();
+
+  try {
+    // 1. Create an annotation queue
+    const queue = await client.createAnnotationQueue({
+      name: queueName,
+      description: "Initial description",
+      queueId,
+    });
+    expect(queue).toBeDefined();
+    expect(queue.name).toBe(queueName);
+    expect(queue.rubric_instructions).toBeUndefined();
+
+    // 1a. Get the annotation queue
+    const fetchedQueue = await client.readAnnotationQueue(queue.id);
+    expect(fetchedQueue).toBeDefined();
+    expect(fetchedQueue.name).toBe(queueName);
+    expect(fetchedQueue.rubric_instructions).toBeNull();
+
+    // 1b. Update the annotation queue rubric instructions
+    const newInstructions = "Updated rubric instructions";
+    await client.updateAnnotationQueue(queue.id, {
+      name: queueName,
+      rubricInstructions: newInstructions,
+    });
+    const updatedQueue = await client.readAnnotationQueue(queue.id);
+    expect(updatedQueue.rubric_instructions).toBe(newInstructions);
+  } finally {
+    // 6. Delete the annotation queue
+    await client.deleteAnnotationQueue(queueId);
+
+    // Clean up the project
+    if (await client.hasProject({ projectName })) {
+      await client.deleteProject({ projectName });
+    }
+  }
+});
+
 test("upload examples multipart", async () => {
   const client = new Client();
   const datasetName = `__test_upload_examples_multipart${uuidv4().slice(0, 4)}`;
