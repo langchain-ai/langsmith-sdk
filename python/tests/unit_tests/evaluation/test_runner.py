@@ -20,7 +20,7 @@ from langchain_core.runnables import chain as as_runnable
 
 from langsmith import Client, aevaluate, evaluate
 from langsmith import schemas as ls_schemas
-from langsmith.evaluation._runner import _include_attachments
+from langsmith.evaluation._runner import _get_target_args
 from langsmith.evaluation.evaluator import (
     _normalize_comparison_evaluator_func,
     _normalize_evaluator_func,
@@ -151,12 +151,14 @@ def _create_example(idx: int) -> Tuple[ls_schemas.Example, Dict[str, Any]]:
         outputs={"answer": idx + 1},
         dataset_id="00886375-eb2a-4038-9032-efff60309896",
         created_at=_created_at,
+        metadata={"meta": idx},
     ), {
         "id": _id,
         "dataset_id": "00886375-eb2a-4038-9032-efff60309896",
         "created_at": _created_at,
         "inputs": {"in": idx},
         "outputs": {"answer": idx + 1},
+        "metadata": {"meta": idx},
         "attachment_urls": None,
     }
 
@@ -419,6 +421,13 @@ def test_evaluate_results(
                 evaluators=[eval_],
                 client=client,
             )
+
+    def predict_with_meta(inputs: dict, metadata: dict) -> dict:
+        return metadata
+
+    results = client.evaluate(predict_with_meta, data=ds_examples[:1])
+    for r, ex in zip(results, ds_examples):
+        assert r["run"].outputs == ex.metadata
 
 
 def test_evaluate_raises_for_async():
@@ -726,11 +735,19 @@ def lc_predict(inputs):
     return nested_predict.invoke(inputs)
 
 
-async def async_just_inputs(inputs):
+async def async_inputs(inputs):
     return None
 
 
-async def async_just_inputs_with_attachments(inputs, attachments):
+async def async_inputs_attachments(inputs, attachments):
+    return None
+
+
+async def async_inputs_metadata(inputs, metadata):
+    return None
+
+
+async def async_inputs_attachments_metadata(inputs, attachments, metadata):
     return None
 
 
@@ -739,82 +756,68 @@ async def async_extra_args(inputs, attachments, foo="bar"):
 
 
 @pytest.mark.parametrize(
-    "target,expected,error_msg,is_async",
+    "target,expected",
     [
         # Valid cases
-        (lambda inputs: None, False, None, False),
-        (lambda inputs, attachments: None, True, None, False),
-        (async_just_inputs, False, None, True),
-        (async_just_inputs_with_attachments, True, None, True),
+        (lambda inputs: None, ["inputs"]),
+        (lambda inputs, attachments: None, ["inputs", "attachments"]),
+        (lambda inputs, metadata: None, ["inputs", "metadata"]),
+        (
+            lambda metadata, inputs, attachments: None,
+            ["metadata", "inputs", "attachments"],
+        ),
+        (async_inputs, ["inputs"]),
+        (async_inputs_attachments, ["inputs", "attachments"]),
+        (async_inputs_metadata, ["inputs", "metadata"]),
+        (async_inputs_attachments_metadata, ["inputs", "attachments", "metadata"]),
+        # Mixed positional and keyword
+        (lambda inputs, *, optional=None: None, ["inputs"]),
+        (lambda inputs, attachments, *, optional=None: None, ["inputs", "attachments"]),
+        (lambda inputs, *, attachments=None: None, ["inputs"]),
+        # Positional args with defaults
+        (
+            lambda inputs, metadata, attachments, foo="bar": None,
+            ["inputs", "metadata", "attachments"],
+        ),
+        (async_extra_args, ["inputs", "attachments"]),
         # Invalid parameter names
         (
             lambda x, y: None,
-            None,
-            re.escape(
-                "When passing 2 positional arguments, they must be named 'inputs' and "
-                "'attachments', respectively. Received: ['x', 'y']"
-            ),
-            False,
+            "When passing multiple positional arguments without default values",
         ),
         (
+            # should be 'inputs' not 'input'
             lambda input, attachment: None,
-            None,
-            re.escape(
-                "When passing 2 positional arguments, they must be named 'inputs' and "
-                "'attachments', respectively. Received: ['input', 'attachment']"
-            ),
-            False,
+            "When passing multiple positional arguments without default values",
         ),
         # Too many parameters
         (
-            lambda inputs, attachments, extra: None,
-            None,
+            lambda inputs, attachments, extra, extra2: None,
             re.escape(
-                "Target function must accept at most two arguments without "
-                "default values: (inputs, attachments)."
+                "Target function must accept at most three arguments without "
+                "default values: (inputs, attachments, metadata)."
             ),
-            False,
         ),
         # No positional parameters
         (
             lambda *, foo="bar": None,
-            None,
             re.escape(
                 "Target function must accept at least one positional argument (inputs)"
             ),
-            False,
         ),
-        # Mixed positional and keyword
-        (lambda inputs, *, optional=None: None, False, None, False),
-        (lambda inputs, attachments, *, optional=None: None, True, None, False),
         # Non-callable
-        ("not_a_function", False, None, False),
+        ("not_a_function", []),
         # Runnable
-        (lc_predict.invoke, False, None, False),
-        # Positional args with defaults
-        (lambda inputs, attachments, foo="bar": None, True, None, False),
-        (async_extra_args, True, None, True),
+        (lc_predict.invoke, ["inputs"]),
     ],
 )
-def test_include_attachments(target, expected, error_msg, is_async):
+def test__get_target_args(target, expected):
     """Test the _include_attachments function with various input cases."""
-    try:
-        from langchain_core.runnables import RunnableLambda
-    except ImportError:
-        if target == "runnable":
-            pytest.skip("langchain-core not installed")
-            return
-
-    if target == "runnable":
-        target = RunnableLambda(lambda x: x)
-        expected = False
-        error_msg = None
-
-    if error_msg is not None:
-        with pytest.raises(ValueError, match=error_msg):
-            _include_attachments(target)
+    if isinstance(expected, str):
+        with pytest.raises(ValueError, match=expected):
+            _get_target_args(target)
     else:
-        result = _include_attachments(target)
+        result = _get_target_args(target)
         assert result == expected
 
 
@@ -1008,18 +1011,13 @@ def test_passing_kwargs_is_working():
         assert list(reference_outputs.keys()) == ["answer"]
         return {"score": 1}
 
-    func_1 = _normalize_evaluator_func(
-        _valid_mixed_positional_and_keyword_with_reference_outputs
-    )
-
-    func_2 = _normalize_evaluator_func(
-        _async_valid_mixed_positional_and_keyword_with_reference_outputs
-    )
-
     res = evaluate(
         target,
         data=ds_examples,
-        evaluators=[func_1, func_2],
+        evaluators=[
+            _valid_mixed_positional_and_keyword_with_reference_outputs,
+            _async_valid_mixed_positional_and_keyword_with_reference_outputs,
+        ],
         client=client,
     )
     for r in res:
@@ -1028,9 +1026,8 @@ def test_passing_kwargs_is_working():
 
 
 @pytest.mark.parametrize("func,is_async", VALID_EVALUATOR_CASES)
-def test_normalize_evaluator_func_valid(func, is_async):
+async def test_normalize_evaluator_func_valid(func, is_async):
     """Test _normalize_evaluator_func succeeds."""
-    func = _normalize_evaluator_func(func)
     session = mock.Mock()
     ds_name = "my-dataset"
     ds_id = "00886375-eb2a-4038-9032-efff60309896"
@@ -1046,9 +1043,7 @@ def test_normalize_evaluator_func_valid(func, is_async):
     client._tenant_id = tenant_id  # type: ignore
 
     if is_async:
-        asyncio.run(
-            aevaluate(atarget, data=ds_examples, evaluators=[func], client=client)
-        )
+        await aevaluate(atarget, data=ds_examples, evaluators=[func], client=client)
     else:
         evaluate(target, data=ds_examples, evaluators=[func], client=client)
 
@@ -1261,7 +1256,7 @@ def test_invalid_evaluate_args() -> None:
         {"num_repetitions": 2},
         {"experiment": "foo"},
         {"upload_results": False},
-        {"summary_evaluators": [(lambda a, b: 2)]},
+        {"summary_evaluators": [lambda a, b: 2]},
         {"data": "data"},
     ]:
         with pytest.raises(

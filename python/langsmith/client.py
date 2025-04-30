@@ -33,25 +33,16 @@ import typing
 import uuid
 import warnings
 import weakref
+from collections.abc import AsyncIterable, Iterable, Iterator, Mapping, Sequence
 from inspect import signature
 from pathlib import Path
 from queue import PriorityQueue
 from typing import (
     TYPE_CHECKING,
     Any,
-    AsyncIterable,
     Callable,
-    DefaultDict,
-    Dict,
-    Iterable,
-    Iterator,
-    List,
     Literal,
-    Mapping,
     Optional,
-    Sequence,
-    Tuple,
-    Type,
     Union,
     cast,
 )
@@ -107,6 +98,7 @@ HAS_OTEL = False
 try:
     if ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED")):
         from opentelemetry import trace as otel_trace  # type: ignore[import]
+        from opentelemetry.trace import set_span_in_context  # type: ignore[import]
 
         from langsmith._internal.otel._otel_client import (
             get_otlp_tracer_provider,
@@ -162,7 +154,7 @@ logger = logging.getLogger(__name__)
 _urllib3_logger = logging.getLogger("urllib3.connectionpool")
 
 X_API_KEY = "x-api-key"
-EMPTY_SEQ: tuple[Dict, ...] = ()
+EMPTY_SEQ: tuple[dict, ...] = ()
 URLLIB3_SUPPORTS_BLOCKSIZE = "key_blocksize" in signature(PoolKey).parameters
 
 
@@ -171,7 +163,7 @@ def _parse_token_or_url(
     api_url: str,
     num_parts: int = 2,
     kind: str = "dataset",
-) -> Tuple[str, str]:
+) -> tuple[str, str]:
     """Parse a public dataset URL or share token."""
     try:
         if isinstance(url_or_token, uuid.UUID) or uuid.UUID(url_or_token):
@@ -321,7 +313,7 @@ def _get_tracing_sampling_rate(
     return sampling_rate
 
 
-def _get_write_api_urls(_write_api_urls: Optional[Dict[str, str]]) -> Dict[str, str]:
+def _get_write_api_urls(_write_api_urls: Optional[dict[str, str]]) -> dict[str, str]:
     _write_api_urls = _write_api_urls or json.loads(
         os.getenv("LANGSMITH_RUNS_ENDPOINTS", "{}")
     )
@@ -439,7 +431,7 @@ class Client:
         *,
         api_key: Optional[str] = None,
         retry_config: Optional[Retry] = None,
-        timeout_ms: Optional[Union[int, Tuple[int, int]]] = None,
+        timeout_ms: Optional[Union[int, tuple[int, int]]] = None,
         web_url: Optional[str] = None,
         session: Optional[requests.Session] = None,
         auto_batch_tracing: bool = True,
@@ -447,7 +439,7 @@ class Client:
         hide_inputs: Optional[Union[Callable[[dict], dict], bool]] = None,
         hide_outputs: Optional[Union[Callable[[dict], dict], bool]] = None,
         info: Optional[Union[dict, ls_schemas.LangSmithInfo]] = None,
-        api_urls: Optional[Dict[str, str]] = None,
+        api_urls: Optional[dict[str, str]] = None,
         otel_tracer_provider: Optional[TracerProvider] = None,
         tracing_sampling_rate: Optional[float] = None,
     ) -> None:
@@ -538,7 +530,7 @@ class Client:
         atexit.register(close_session, session_)
         self.compressed_traces: Optional[CompressedTraces] = None
         self._data_available_event: Optional[threading.Event] = None
-        self._futures: Optional[set[cf.Future]] = None
+        self._futures: Optional[weakref.WeakSet[cf.Future]] = None
         self.otel_exporter: Optional[OTELExporter] = None
 
         # Initialize auto batching
@@ -675,7 +667,7 @@ class Client:
         return ls_utils.get_host_url(self._web_url, self.api_url)
 
     @property
-    def _headers(self) -> Dict[str, str]:
+    def _headers(self) -> dict[str, str]:
         """Get the headers for the API request.
 
         Returns:
@@ -752,8 +744,8 @@ class Client:
         *,
         request_kwargs: Optional[Mapping] = None,
         stop_after_attempt: int = 1,
-        retry_on: Optional[Sequence[Type[BaseException]]] = None,
-        to_ignore: Optional[Sequence[Type[BaseException]]] = None,
+        retry_on: Optional[Sequence[type[BaseException]]] = None,
+        to_ignore: Optional[Sequence[type[BaseException]]] = None,
         handle_response: Optional[Callable[[requests.Response, int], Any]] = None,
         _context: str = "",
         **kwargs: Any,
@@ -803,7 +795,7 @@ class Client:
             ls_utils.FilterLangSmithRetry(),
             ls_utils.FilterPoolFullWarning(host=str(self._host)),
         ]
-        retry_on_: Tuple[Type[BaseException], ...] = (
+        retry_on_: tuple[type[BaseException], ...] = (
             *(retry_on or ()),
             *(
                 ls_utils.LangSmithConnectionError,
@@ -811,7 +803,7 @@ class Client:
                 ls_utils.LangSmithAPIError,  # 500
             ),
         )
-        to_ignore_: Tuple[Type[BaseException], ...] = (*(to_ignore or ()),)
+        to_ignore_: tuple[type[BaseException], ...] = (*(to_ignore or ()),)
         response = None
         for idx in range(stop_after_attempt):
             try:
@@ -1098,7 +1090,7 @@ class Client:
 
     def upload_csv(
         self,
-        csv_file: Union[str, Tuple[str, io.BytesIO]],
+        csv_file: Union[str, tuple[str, io.BytesIO]],
         input_keys: Sequence[str],
         output_keys: Sequence[str],
         *,
@@ -1292,7 +1284,7 @@ class Client:
     def create_run(
         self,
         name: str,
-        inputs: Dict[str, Any],
+        inputs: dict[str, Any],
         run_type: RUN_TYPE_T,
         *,
         project_name: Optional[str] = None,
@@ -1411,9 +1403,20 @@ class Client:
                     serialized_op.trace_id,
                     serialized_op.id,
                 )
-                self.tracing_queue.put(
-                    TracingQueueItem(run_create["dotted_order"], serialized_op)
-                )
+                if HAS_OTEL:
+                    self.tracing_queue.put(
+                        TracingQueueItem(
+                            run_create["dotted_order"],
+                            serialized_op,
+                            otel_context=set_span_in_context(
+                                otel_trace.get_current_span()
+                            ),
+                        )
+                    )
+                else:
+                    self.tracing_queue.put(
+                        TracingQueueItem(run_create["dotted_order"], serialized_op)
+                    )
             else:
                 # Neither Rust nor Python batch ingestion is configured,
                 # fall back to the non-batch approach.
@@ -1422,17 +1425,26 @@ class Client:
             self._create_run(run_create)
 
     def _create_run(self, run_create: dict):
+        errors = []
         for api_url, api_key in self._write_api_urls.items():
             headers = {**self._headers, X_API_KEY: api_key}
-            self.request_with_retries(
-                "POST",
-                f"{api_url}/runs",
-                request_kwargs={
-                    "data": _dumps_json(run_create),
-                    "headers": headers,
-                },
-                to_ignore=(ls_utils.LangSmithConflictError,),
-            )
+            try:
+                self.request_with_retries(
+                    "POST",
+                    f"{api_url}/runs",
+                    request_kwargs={
+                        "data": _dumps_json(run_create),
+                        "headers": headers,
+                    },
+                    to_ignore=(ls_utils.LangSmithConflictError,),
+                )
+            except Exception as e:
+                errors.append(e)
+        if errors:
+            if len(errors) > 1:
+                raise ls_utils.LangSmithExceptionGroup(exceptions=errors)
+            else:
+                raise errors[0]
 
     def _hide_run_inputs(self, inputs: dict):
         if self._hide_inputs is True:
@@ -1456,7 +1468,7 @@ class Client:
 
     def _batch_ingest_run_ops(
         self,
-        ops: List[SerializedRunOperation],
+        ops: list[SerializedRunOperation],
     ) -> None:
         ids_and_partial_body: dict[
             Literal["post", "patch"], list[tuple[str, bytes]]
@@ -1496,10 +1508,10 @@ class Client:
             "size_limit_bytes"
         ) or _SIZE_LIMIT_BYTES
 
-        body_chunks: DefaultDict[str, list] = collections.defaultdict(list)
-        context_ids: DefaultDict[str, list] = collections.defaultdict(list)
+        body_chunks: collections.defaultdict[str, list] = collections.defaultdict(list)
+        context_ids: collections.defaultdict[str, list] = collections.defaultdict(list)
         body_size = 0
-        for key in cast(List[Literal["post", "patch"]], ["post", "patch"]):
+        for key in cast(list[Literal["post", "patch"]], ["post", "patch"]):
             body_deque = collections.deque(ids_and_partial_body[key])
             while body_deque:
                 if (
@@ -1526,10 +1538,10 @@ class Client:
     def batch_ingest_runs(
         self,
         create: Optional[
-            Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict, Dict]]
+            Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict, dict]]
         ] = None,
         update: Optional[
-            Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict, Dict]]
+            Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict, dict]]
         ] = None,
         *,
         pre_sampled: bool = False,
@@ -1655,7 +1667,7 @@ class Client:
 
         # convert to serialized ops
         serialized_ops = cast(
-            List[SerializedRunOperation],
+            list[SerializedRunOperation],
             combine_serialized_queue_operations(
                 list(
                     itertools.chain(
@@ -1698,7 +1710,7 @@ class Client:
         self, ops: list[Union[SerializedRunOperation, SerializedFeedbackOperation]]
     ) -> None:
         parts: list[MultipartPartsAndContext] = []
-        opened_files_dict: Dict[str, io.BufferedReader] = {}
+        opened_files_dict: dict[str, io.BufferedReader] = {}
         for op in ops:
             if isinstance(op, SerializedRunOperation):
                 part, opened_files = (
@@ -1722,10 +1734,10 @@ class Client:
     def multipart_ingest(
         self,
         create: Optional[
-            Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict, Dict]]
+            Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict, dict]]
         ] = None,
         update: Optional[
-            Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict, Dict]]
+            Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict, dict]]
         ] = None,
         *,
         pre_sampled: bool = False,
@@ -1941,12 +1953,12 @@ class Client:
                     except Exception:
                         logger.warning(f"Failed to multipart ingest runs: {repr(e)}")
                     # do not retry by default
-                    return
+                    break
 
     def _send_compressed_multipart_req(
         self,
         data_stream: io.BytesIO,
-        compressed_traces_info: Optional[Tuple[int, int]],
+        compressed_traces_info: Optional[tuple[int, int]],
         *,
         attempts: int = 3,
     ):
@@ -2013,7 +2025,7 @@ class Client:
                             f"Failed to send compressed multipart ingest: {repr(e)}"
                         )
                     # Do not retry by default after unknown exceptions
-                    return
+                    break
 
     def update_run(
         self,
@@ -2022,11 +2034,11 @@ class Client:
         name: Optional[str] = None,
         end_time: Optional[datetime.datetime] = None,
         error: Optional[str] = None,
-        inputs: Optional[Dict] = None,
-        outputs: Optional[Dict] = None,
+        inputs: Optional[dict] = None,
+        outputs: Optional[dict] = None,
         events: Optional[Sequence[dict]] = None,
-        extra: Optional[Dict] = None,
-        tags: Optional[List[str]] = None,
+        extra: Optional[dict] = None,
+        tags: Optional[list[str]] = None,
         attachments: Optional[ls_schemas.Attachments] = None,
         dangerously_allow_filesystem: bool = False,
         **kwargs: Any,
@@ -2082,7 +2094,7 @@ class Client:
                 # Update the run
                 client.update_run(run["id"], **run)
         """
-        data: Dict[str, Any] = {
+        data: dict[str, Any] = {
             "id": _as_uuid(run_id, "run_id"),
             "name": name,
             "trace_id": kwargs.pop("trace_id", None),
@@ -2164,9 +2176,20 @@ class Client:
                     serialized_op.trace_id,
                     serialized_op.id,
                 )
-                self.tracing_queue.put(
-                    TracingQueueItem(data["dotted_order"], serialized_op)
-                )
+                if HAS_OTEL:
+                    self.tracing_queue.put(
+                        TracingQueueItem(
+                            data["dotted_order"],
+                            serialized_op,
+                            otel_context=set_span_in_context(
+                                otel_trace.get_current_span()
+                            ),
+                        )
+                    )
+                else:
+                    self.tracing_queue.put(
+                        TracingQueueItem(data["dotted_order"], serialized_op)
+                    )
         else:
             self._update_run(data)
 
@@ -2227,7 +2250,8 @@ class Client:
 
         # If we got a future, wait for it to complete
         if self._futures:
-            done, _ = cf.wait(self._futures)
+            futures = list(self._futures)
+            done, _ = cf.wait(futures)
             # Remove completed futures
             self._futures.difference_update(done)
 
@@ -2251,10 +2275,10 @@ class Client:
             LangSmithError: If a child run has no parent.
         """
         child_runs = self.list_runs(id=run.child_run_ids)
-        treemap: DefaultDict[uuid.UUID, List[ls_schemas.Run]] = collections.defaultdict(
-            list
+        treemap: collections.defaultdict[uuid.UUID, list[ls_schemas.Run]] = (
+            collections.defaultdict(list)
         )
-        runs: Dict[uuid.UUID, ls_schemas.Run] = {}
+        runs: dict[uuid.UUID, ls_schemas.Run] = {}
         for child_run in sorted(
             child_runs,
             key=lambda r: r.dotted_order,
@@ -2460,7 +2484,7 @@ class Client:
             "trace_id",
         ]
         select = select or default_select
-        body_query: Dict[str, Any] = {
+        body_query: dict[str, Any] = {
             "session": project_ids if project_ids else None,
             "run_type": run_type,
             "reference_example": (
@@ -2496,13 +2520,13 @@ class Client:
     def get_run_stats(
         self,
         *,
-        id: Optional[List[ID_TYPE]] = None,
+        id: Optional[list[ID_TYPE]] = None,
         trace: Optional[ID_TYPE] = None,
         parent_run: Optional[ID_TYPE] = None,
         run_type: Optional[str] = None,
-        project_names: Optional[List[str]] = None,
-        project_ids: Optional[List[ID_TYPE]] = None,
-        reference_example_ids: Optional[List[ID_TYPE]] = None,
+        project_names: Optional[list[str]] = None,
+        project_ids: Optional[list[ID_TYPE]] = None,
+        reference_example_ids: Optional[list[ID_TYPE]] = None,
         start_time: Optional[str] = None,
         end_time: Optional[str] = None,
         error: Optional[bool] = None,
@@ -2512,7 +2536,7 @@ class Client:
         tree_filter: Optional[str] = None,
         is_root: Optional[bool] = None,
         data_source_type: Optional[str] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Get aggregate statistics over queried runs.
 
         Takes in similar query parameters to `list_runs` and returns statistics
@@ -2720,7 +2744,7 @@ class Client:
         return ls_schemas.Run(**response.json(), _host_url=self._host_url)
 
     def list_shared_runs(
-        self, share_token: Union[ID_TYPE, str], run_ids: Optional[List[str]] = None
+        self, share_token: Union[ID_TYPE, str], run_ids: Optional[list[str]] = None
     ) -> Iterator[ls_schemas.Run]:
         """Get shared runs.
 
@@ -2860,8 +2884,8 @@ class Client:
         )
 
     def list_shared_examples(
-        self, share_token: str, *, example_ids: Optional[List[ID_TYPE]] = None
-    ) -> List[ls_schemas.Example]:
+        self, share_token: str, *, example_ids: Optional[list[ID_TYPE]] = None
+    ) -> list[ls_schemas.Example]:
         """Get shared examples.
 
         Args:
@@ -2890,7 +2914,7 @@ class Client:
         self,
         *,
         dataset_share_token: str,
-        project_ids: Optional[List[ID_TYPE]] = None,
+        project_ids: Optional[list[ID_TYPE]] = None,
         name: Optional[str] = None,
         name_contains: Optional[str] = None,
         limit: Optional[int] = None,
@@ -2946,7 +2970,7 @@ class Client:
         extra = project_extra
         if metadata:
             extra = {**(extra or {}), "metadata": metadata}
-        body: Dict[str, Any] = {
+        body: dict[str, Any] = {
             "name": project_name,
             "extra": extra,
             "description": description,
@@ -3000,7 +3024,7 @@ class Client:
         extra = project_extra
         if metadata:
             extra = {**(extra or {}), "metadata": metadata}
-        body: Dict[str, Any] = {
+        body: dict[str, Any] = {
             "name": name,
             "extra": extra,
             "description": description,
@@ -3063,7 +3087,7 @@ class Client:
             TracerSessionResult: The project.
         """
         path = "/sessions"
-        params: Dict[str, Any] = {"limit": 1}
+        params: dict[str, Any] = {"limit": 1}
         if project_id is not None:
             path += f"/{_as_uuid(project_id, 'project_id')}"
         elif project_name is not None:
@@ -3210,14 +3234,14 @@ class Client:
 
     def list_projects(
         self,
-        project_ids: Optional[List[ID_TYPE]] = None,
+        project_ids: Optional[list[ID_TYPE]] = None,
         name: Optional[str] = None,
         name_contains: Optional[str] = None,
         reference_dataset_id: Optional[ID_TYPE] = None,
         reference_dataset_name: Optional[str] = None,
         reference_free: Optional[bool] = None,
         limit: Optional[int] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: Optional[dict[str, Any]] = None,
     ) -> Iterator[ls_schemas.TracerSession]:
         """List projects from the LangSmith API.
 
@@ -3245,7 +3269,7 @@ class Client:
         Raises:
             ValueError: If both reference_dataset_id and reference_dataset_name are given.
         """
-        params: Dict[str, Any] = {
+        params: dict[str, Any] = {
             "limit": min(limit, 100) if limit is not None else 100
         }
         if project_ids is not None:
@@ -3312,9 +3336,9 @@ class Client:
         *,
         description: Optional[str] = None,
         data_type: ls_schemas.DataType = ls_schemas.DataType.kv,
-        inputs_schema: Optional[Dict[str, Any]] = None,
-        outputs_schema: Optional[Dict[str, Any]] = None,
-        transformations: Optional[List[ls_schemas.DatasetTransformation]] = None,
+        inputs_schema: Optional[dict[str, Any]] = None,
+        outputs_schema: Optional[dict[str, Any]] = None,
+        transformations: Optional[list[ls_schemas.DatasetTransformation]] = None,
         metadata: Optional[dict] = None,
     ) -> ls_schemas.Dataset:
         """Create a dataset in the LangSmith API.
@@ -3341,7 +3365,7 @@ class Client:
         Raises:
             requests.HTTPError: If the request to create the dataset fails.
         """
-        dataset: Dict[str, Any] = {
+        dataset: dict[str, Any] = {
             "name": dataset_name,
             "data_type": data_type.value,
             "transformations": transformations,
@@ -3412,7 +3436,7 @@ class Client:
             Dataset: The dataset.
         """
         path = "/datasets"
-        params: Dict[str, Any] = {"limit": 1}
+        params: dict[str, Any] = {"limit": 1}
         if dataset_id is not None:
             path += f"/{_as_uuid(dataset_id, 'dataset_id')}"
         elif dataset_name is not None:
@@ -3547,11 +3571,11 @@ class Client:
     def list_datasets(
         self,
         *,
-        dataset_ids: Optional[List[ID_TYPE]] = None,
+        dataset_ids: Optional[list[ID_TYPE]] = None,
         data_type: Optional[str] = None,
         dataset_name: Optional[str] = None,
         dataset_name_contains: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: Optional[dict[str, Any]] = None,
         limit: Optional[int] = None,
     ) -> Iterator[ls_schemas.Dataset]:
         """List the datasets on the LangSmith API.
@@ -3573,7 +3597,7 @@ class Client:
         Yields:
             The datasets.
         """
-        params: Dict[str, Any] = {
+        params: dict[str, Any] = {
             "limit": min(limit, 100) if limit is not None else 100
         }
         if dataset_ids is not None:
@@ -3885,7 +3909,7 @@ class Client:
     @ls_utils.xor_args(("dataset_id", "dataset_name"))
     def create_chat_example(
         self,
-        messages: List[Union[Mapping[str, Any], ls_schemas.BaseMessageLike]],
+        messages: list[Union[Mapping[str, Any], ls_schemas.BaseMessageLike]],
         generations: Optional[
             Union[Mapping[str, Any], ls_schemas.BaseMessageLike]
         ] = None,
@@ -3973,9 +3997,9 @@ class Client:
                     "Error converting LLM run inputs to prompt for run"
                     f" {run.id} with inputs {run.inputs}"
                 )
-            inputs: Dict[str, Any] = {"input": prompt}
+            inputs: dict[str, Any] = {"input": prompt}
             if not run.outputs:
-                outputs: Optional[Dict[str, Any]] = None
+                outputs: Optional[dict[str, Any]] = None
             else:
                 try:
                     generation = ls_utils.get_llm_generation_from_outputs(run.outputs)
@@ -4030,15 +4054,15 @@ class Client:
     def _prepare_multipart_data(
         self,
         examples: Union[
-            List[ls_schemas.ExampleCreate]
-            | List[ls_schemas.ExampleUpsertWithAttachments]
-            | List[ls_schemas.ExampleUpdate],
+            list[ls_schemas.ExampleCreate]
+            | list[ls_schemas.ExampleUpsertWithAttachments]
+            | list[ls_schemas.ExampleUpdate],
         ],
         include_dataset_id: bool = False,
         dangerously_allow_filesystem: bool = False,
-    ) -> tuple[Any, bytes, Dict[str, io.BufferedReader]]:
-        parts: List[MultipartPart] = []
-        opened_files_dict: Dict[str, io.BufferedReader] = {}
+    ) -> tuple[Any, bytes, dict[str, io.BufferedReader]]:
+        parts: list[MultipartPart] = []
+        opened_files_dict: dict[str, io.BufferedReader] = {}
         if include_dataset_id:
             if not isinstance(examples[0], ls_schemas.ExampleUpsertWithAttachments):
                 raise ValueError(
@@ -4213,7 +4237,7 @@ class Client:
         self,
         *,
         dataset_id: ID_TYPE,
-        updates: Optional[List[ls_schemas.ExampleUpdate]] = None,
+        updates: Optional[list[ls_schemas.ExampleUpdate]] = None,
         dangerously_allow_filesystem: bool = False,
     ) -> ls_schemas.UpsertExamplesResponse:
         """Update examples using multipart.
@@ -4232,7 +4256,7 @@ class Client:
         self,
         *,
         dataset_id: ID_TYPE,
-        updates: Optional[List[ls_schemas.ExampleUpdate]] = None,
+        updates: Optional[list[ls_schemas.ExampleUpdate]] = None,
         dangerously_allow_filesystem: bool = False,
     ) -> ls_schemas.UpsertExamplesResponse:
         """Update examples using multipart.
@@ -4282,7 +4306,7 @@ class Client:
         self,
         *,
         dataset_id: ID_TYPE,
-        uploads: Optional[List[ls_schemas.ExampleCreate]] = None,
+        uploads: Optional[list[ls_schemas.ExampleCreate]] = None,
         dangerously_allow_filesystem: bool = False,
     ) -> ls_schemas.UpsertExamplesResponse:
         """Upload examples using multipart.
@@ -4301,7 +4325,7 @@ class Client:
         self,
         *,
         dataset_id: ID_TYPE,
-        uploads: Optional[List[ls_schemas.ExampleCreate]] = None,
+        uploads: Optional[list[ls_schemas.ExampleCreate]] = None,
         dangerously_allow_filesystem: bool = False,
     ) -> ls_schemas.UpsertExamplesResponse:
         """Upload examples using multipart.
@@ -4351,7 +4375,7 @@ class Client:
     def upsert_examples_multipart(
         self,
         *,
-        upserts: Optional[List[ls_schemas.ExampleUpsertWithAttachments]] = None,
+        upserts: Optional[list[ls_schemas.ExampleUpsertWithAttachments]] = None,
         dangerously_allow_filesystem: bool = False,
     ) -> ls_schemas.UpsertExamplesResponse:
         """Upsert examples.
@@ -4576,11 +4600,11 @@ class Client:
         created_at: Optional[datetime.datetime] = None,
         outputs: Optional[Mapping[str, Any]] = None,
         metadata: Optional[Mapping[str, Any]] = None,
-        split: Optional[str | List[str]] = None,
+        split: Optional[str | list[str]] = None,
         example_id: Optional[ID_TYPE] = None,
         source_run_id: Optional[ID_TYPE] = None,
         use_source_run_io: bool = False,
-        use_source_run_attachments: Optional[List[str]] = None,
+        use_source_run_attachments: Optional[list[str]] = None,
         attachments: Optional[ls_schemas.Attachments] = None,
     ) -> ls_schemas.Example:
         """Create a dataset example in the LangSmith API.
@@ -4801,7 +4825,7 @@ class Client:
                     filter='and(not(has(metadata, \'{"foo": "bar"}\')), exists(metadata, "tenant_id"))',
                 )
         """
-        params: Dict[str, Any] = {
+        params: dict[str, Any] = {
             **kwargs,
             "offset": offset,
             "id": example_ids,
@@ -4883,7 +4907,7 @@ class Client:
         dataset_id: ID_TYPE,
         filter: Optional[str] = None,
         **kwargs: Any,
-    ) -> List[ls_schemas.ExampleSearch]:
+    ) -> list[ls_schemas.ExampleSearch]:
         r"""Retrieve the dataset examples whose inputs best match the current inputs.
 
         **Note**: Must have few-shot indexing enabled for the dataset. See
@@ -4977,14 +5001,14 @@ class Client:
         self,
         example_id: ID_TYPE,
         *,
-        inputs: Optional[Dict[str, Any]] = None,
+        inputs: Optional[dict[str, Any]] = None,
         outputs: Optional[Mapping[str, Any]] = None,
-        metadata: Optional[Dict] = None,
-        split: Optional[str | List[str]] = None,
+        metadata: Optional[dict] = None,
+        split: Optional[str | list[str]] = None,
         dataset_id: Optional[ID_TYPE] = None,
         attachments_operations: Optional[ls_schemas.AttachmentsOperations] = None,
         attachments: Optional[ls_schemas.Attachments] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Update a specific example.
 
         Args:
@@ -5068,7 +5092,7 @@ class Client:
         updates: Optional[Sequence[ls_schemas.ExampleUpdate | dict]] = None,
         dangerously_allow_filesystem: bool = False,
         **kwargs: Any,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Update multiple examples.
 
          Examples are expected to all be part of the same dataset.
@@ -5322,7 +5346,7 @@ class Client:
         dataset_id: Optional[ID_TYPE] = None,
         dataset_name: Optional[str] = None,
         as_of: Optional[Union[str, datetime.datetime]] = None,
-    ) -> List[str]:
+    ) -> list[str]:
         """Get the splits for a dataset.
 
         Args:
@@ -5359,7 +5383,7 @@ class Client:
         dataset_id: Optional[ID_TYPE] = None,
         dataset_name: Optional[str] = None,
         split_name: str,
-        example_ids: List[ID_TYPE],
+        example_ids: list[ID_TYPE],
         remove: bool = False,
     ) -> None:
         """Update the splits for a dataset.
@@ -5458,7 +5482,7 @@ class Client:
         ],
         *,
         fn_name: Optional[str] = None,
-    ) -> List[ls_evaluator.EvaluationResult]:
+    ) -> list[ls_evaluator.EvaluationResult]:
         from langsmith.evaluation import evaluator as ls_evaluator  # noqa: F811
 
         def _cast_result(
@@ -5495,7 +5519,7 @@ class Client:
         run: Union[ls_schemas.Run, ls_schemas.RunBase, str, uuid.UUID],
         evaluator: ls_evaluator.RunEvaluator,
         *,
-        source_info: Optional[Dict[str, Any]] = None,
+        source_info: Optional[dict[str, Any]] = None,
         reference_example: Optional[
             Union[ls_schemas.Example, str, dict, uuid.UUID]
         ] = None,
@@ -5540,11 +5564,11 @@ class Client:
             ls_evaluator.EvaluationResult, ls_evaluator.EvaluationResults, dict
         ],
         run: Optional[ls_schemas.Run] = None,
-        source_info: Optional[Dict[str, Any]] = None,
+        source_info: Optional[dict[str, Any]] = None,
         project_id: Optional[ID_TYPE] = None,
         *,
         _executor: Optional[cf.ThreadPoolExecutor] = None,
-    ) -> List[ls_evaluator.EvaluationResult]:
+    ) -> list[ls_evaluator.EvaluationResult]:
         results = self._select_eval_results(evaluator_response)
 
         def _submit_feedback(**kwargs):
@@ -5589,7 +5613,7 @@ class Client:
         run: Union[ls_schemas.Run, str, uuid.UUID],
         evaluator: ls_evaluator.RunEvaluator,
         *,
-        source_info: Optional[Dict[str, Any]] = None,
+        source_info: Optional[dict[str, Any]] = None,
         reference_example: Optional[
             Union[ls_schemas.Example, str, dict, uuid.UUID]
         ] = None,
@@ -5637,7 +5661,7 @@ class Client:
         value: Union[str, dict, None] = None,
         correction: Union[dict, None] = None,
         comment: Union[str, None] = None,
-        source_info: Optional[Dict[str, Any]] = None,
+        source_info: Optional[dict[str, Any]] = None,
         feedback_source_type: Union[
             ls_schemas.FeedbackSourceType, str
         ] = ls_schemas.FeedbackSourceType.API,
@@ -5648,7 +5672,7 @@ class Client:
         project_id: Optional[ID_TYPE] = None,
         comparative_experiment_id: Optional[ID_TYPE] = None,
         feedback_group_id: Optional[ID_TYPE] = None,
-        extra: Optional[Dict] = None,
+        extra: Optional[dict] = None,
         trace_id: Optional[ID_TYPE] = None,
         error: Optional[bool] = None,
         **kwargs: Any,
@@ -5847,7 +5871,7 @@ class Client:
         Returns:
             None
         """
-        feedback_update: Dict[str, Any] = {}
+        feedback_update: dict[str, Any] = {}
         if score is not None:
             feedback_update["score"] = _format_feedback_score(score)
         if value is not None:
@@ -6028,7 +6052,7 @@ class Client:
         Returns:
             FeedbackIngestToken: The pre-signed URL for uploading feedback data.
         """
-        body: Dict[str, Any] = {
+        body: dict[str, Any] = {
             "run_id": run_id,
             "feedback_key": feedback_key,
             "feedback_config": feedback_config,
@@ -6192,7 +6216,7 @@ class Client:
     def list_annotation_queues(
         self,
         *,
-        queue_ids: Optional[List[ID_TYPE]] = None,
+        queue_ids: Optional[list[ID_TYPE]] = None,
         name: Optional[str] = None,
         name_contains: Optional[str] = None,
         limit: Optional[int] = None,
@@ -6237,7 +6261,8 @@ class Client:
         name: str,
         description: Optional[str] = None,
         queue_id: Optional[ID_TYPE] = None,
-    ) -> ls_schemas.AnnotationQueue:
+        rubric_instructions: Optional[str] = None,
+    ) -> ls_schemas.AnnotationQueueWithDetails:
         """Create an annotation queue on the LangSmith API.
 
         Args:
@@ -6247,6 +6272,8 @@ class Client:
                 The description of the annotation queue.
             queue_id (Optional[Union[UUID, str]]):
                 The ID of the annotation queue.
+            rubric_instructions (Optional[str]):
+                The rubric instructions for the annotation queue.
 
         Returns:
             AnnotationQueue: The created annotation queue object.
@@ -6255,6 +6282,7 @@ class Client:
             "name": name,
             "description": description,
             "id": str(queue_id) if queue_id is not None else str(uuid.uuid4()),
+            "rubric_instructions": rubric_instructions,
         }
         response = self.request_with_retries(
             "POST",
@@ -6262,7 +6290,7 @@ class Client:
             json={k: v for k, v in body.items() if v is not None},
         )
         ls_utils.raise_for_status_with_text(response)
-        return ls_schemas.AnnotationQueue(
+        return ls_schemas.AnnotationQueueWithDetails(
             **response.json(),
         )
 
@@ -6275,11 +6303,22 @@ class Client:
         Returns:
             AnnotationQueue: The annotation queue object.
         """
-        # TODO: Replace when actual endpoint is added
-        return next(self.list_annotation_queues(queue_ids=[queue_id]))
+        base_url = f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}"
+        response = self.request_with_retries(
+            "GET",
+            f"{base_url}",
+            headers=self._headers,
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return ls_schemas.AnnotationQueueWithDetails(**response.json())
 
     def update_annotation_queue(
-        self, queue_id: ID_TYPE, *, name: str, description: Optional[str] = None
+        self,
+        queue_id: ID_TYPE,
+        *,
+        name: str,
+        description: Optional[str] = None,
+        rubric_instructions: Optional[str] = None,
     ) -> None:
         """Update an annotation queue with the specified queue_id.
 
@@ -6287,6 +6326,8 @@ class Client:
             queue_id (Union[UUID, str]): The ID of the annotation queue to update.
             name (str): The new name for the annotation queue.
             description (Optional[str]): The new description for the
+                annotation queue. Defaults to None.
+            rubric_instructions (Optional[str]): The new rubric instructions for the
                 annotation queue. Defaults to None.
 
         Returns:
@@ -6298,6 +6339,7 @@ class Client:
             json={
                 "name": name,
                 "description": description,
+                "rubric_instructions": rubric_instructions,
             },
         )
         ls_utils.raise_for_status_with_text(response)
@@ -6319,7 +6361,7 @@ class Client:
         ls_utils.raise_for_status_with_text(response)
 
     def add_runs_to_annotation_queue(
-        self, queue_id: ID_TYPE, *, run_ids: List[ID_TYPE]
+        self, queue_id: ID_TYPE, *, run_ids: list[ID_TYPE]
     ) -> None:
         """Add runs to an annotation queue with the specified queue ID.
 
@@ -6390,7 +6432,7 @@ class Client:
         reference_dataset: Optional[ID_TYPE] = None,
         description: Optional[str] = None,
         created_at: Optional[datetime.datetime] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: Optional[dict[str, Any]] = None,
         id: Optional[ID_TYPE] = None,
     ) -> ls_schemas.ComparativeExperiment:
         """Create a comparative experiment on the LangSmith API.
@@ -6418,7 +6460,7 @@ class Client:
             ).reference_dataset_id
         if not reference_dataset:
             raise ValueError("A reference dataset is required.")
-        body: Dict[str, Any] = {
+        body: dict[str, Any] = {
             "id": id or str(uuid.uuid4()),
             "name": name,
             "experiment_ids": experiments,
@@ -6449,13 +6491,13 @@ class Client:
         evaluation: Optional[Any] = None,
         concurrency_level: int = 5,
         project_name: Optional[str] = None,
-        project_metadata: Optional[Dict[str, Any]] = None,
+        project_metadata: Optional[dict[str, Any]] = None,
         dataset_version: Optional[Union[datetime.datetime, str]] = None,
         verbose: bool = False,
-        input_mapper: Optional[Callable[[Dict], Any]] = None,
+        input_mapper: Optional[Callable[[dict], Any]] = None,
         revision_id: Optional[str] = None,
         **kwargs: Any,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Asynchronously run the Chain or language model on a dataset.
 
         .. deprecated:: 0.1.0
@@ -6498,13 +6540,13 @@ class Client:
         evaluation: Optional[Any] = None,
         concurrency_level: int = 5,
         project_name: Optional[str] = None,
-        project_metadata: Optional[Dict[str, Any]] = None,
+        project_metadata: Optional[dict[str, Any]] = None,
         dataset_version: Optional[Union[datetime.datetime, str]] = None,
         verbose: bool = False,
-        input_mapper: Optional[Callable[[Dict], Any]] = None,
+        input_mapper: Optional[Callable[[dict], Any]] = None,
         revision_id: Optional[str] = None,
         **kwargs: Any,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Run the Chain or language model on a dataset.
 
         .. deprecated:: 0.1.0
@@ -6585,7 +6627,7 @@ class Client:
 
     def _like_or_unlike_prompt(
         self, prompt_identifier: str, like: bool
-    ) -> Dict[str, int]:
+    ) -> dict[str, int]:
         """Like or unlike a prompt.
 
         Args:
@@ -6641,7 +6683,7 @@ class Client:
         prompt = self.get_prompt(prompt_identifier)
         return True if prompt else False
 
-    def like_prompt(self, prompt_identifier: str) -> Dict[str, int]:
+    def like_prompt(self, prompt_identifier: str) -> dict[str, int]:
         """Like a prompt.
 
         Args:
@@ -6653,7 +6695,7 @@ class Client:
         """
         return self._like_or_unlike_prompt(prompt_identifier, like=True)
 
-    def unlike_prompt(self, prompt_identifier: str) -> Dict[str, int]:
+    def unlike_prompt(self, prompt_identifier: str) -> dict[str, int]:
         """Unlike a prompt.
 
         Args:
@@ -6771,7 +6813,7 @@ class Client:
         if not self._current_tenant_is_owner(owner=owner):
             raise self._owner_conflict_error("create a prompt", owner)
 
-        json: Dict[str, Union[str, bool, Sequence[str]]] = {
+        json: dict[str, Union[str, bool, Sequence[str]]] = {
             "repo_handle": prompt_name,
             "description": description or "",
             "readme": readme or "",
@@ -6845,7 +6887,7 @@ class Client:
         tags: Optional[Sequence[str]] = None,
         is_public: Optional[bool] = None,
         is_archived: Optional[bool] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Update a prompt's metadata.
 
         To update the content of a prompt, use push_prompt or create_commit instead.
@@ -6874,7 +6916,7 @@ class Client:
                 "https://smith.langchain.com/prompts"
             )
 
-        json: Dict[str, Union[str, bool, Sequence[str]]] = {}
+        json: dict[str, Union[str, bool, Sequence[str]]] = {}
 
         if description is not None:
             json["description"] = description
@@ -7194,7 +7236,7 @@ class Client:
     @overload
     def evaluate(
         self,
-        target: Union[Tuple[EXPERIMENT_T, EXPERIMENT_T]],
+        target: Union[tuple[EXPERIMENT_T, EXPERIMENT_T]],
         /,
         data: Optional[DATA_T] = None,
         evaluators: Optional[Sequence[COMPARATIVE_EVALUATOR_T]] = None,
@@ -7213,7 +7255,7 @@ class Client:
     def evaluate(
         self,
         target: Union[
-            TARGET_T, Runnable, EXPERIMENT_T, Tuple[EXPERIMENT_T, EXPERIMENT_T]
+            TARGET_T, Runnable, EXPERIMENT_T, tuple[EXPERIMENT_T, EXPERIMENT_T]
         ],
         /,
         data: Optional[DATA_T] = None,
@@ -7711,7 +7753,7 @@ class Client:
 
 def convert_prompt_to_openai_format(
     messages: Any,
-    model_kwargs: Optional[Dict[str, Any]] = None,
+    model_kwargs: Optional[dict[str, Any]] = None,
 ) -> dict:
     """Convert a prompt to OpenAI format.
 
@@ -7750,7 +7792,7 @@ def convert_prompt_to_openai_format(
 
 def convert_prompt_to_anthropic_format(
     messages: Any,
-    model_kwargs: Optional[Dict[str, Any]] = None,
+    model_kwargs: Optional[dict[str, Any]] = None,
 ) -> dict:
     """Convert a prompt to Anthropic format.
 
@@ -7811,7 +7853,7 @@ def _convert_stored_attachments_to_attachments_dict(
     return attachments_dict
 
 
-def _close_files(files: List[io.BufferedReader]) -> None:
+def _close_files(files: list[io.BufferedReader]) -> None:
     """Close all opened files used in multipart requests."""
     for file in files:
         try:

@@ -5,6 +5,7 @@ import time
 import pytest
 
 from langsmith import testing as t
+from langsmith import traceable
 
 pytestmark = pytest.mark.skipif(
     not os.getenv("LANGSMITH_TRACING"),
@@ -48,6 +49,27 @@ async def test_openai_says_hello():
     with t.trace_feedback():
         grade = 1 if "hello" in response else 0
         t.log_feedback(key="llm_judge", score=grade)
+
+    assert "hello" in response.lower()
+
+
+@pytest.mark.langsmith
+async def test_composite_evaluator():
+    # Traced code will be included in the test case
+    text = "Say hello!"
+    response = await my_app()
+    t.log_inputs({"text": text})
+    t.log_outputs({"response": response})
+    t.log_reference_outputs({"response": "hello!"})
+
+    @traceable
+    def my_composite_evaluator(response):
+        with t.trace_feedback():
+            grade = 1 if "hello" in response else 0
+            t.log_feedback(key="composite_judge", score=grade)
+            return grade
+
+    my_composite_evaluator(response)
 
     assert "hello" in response.lower()
 

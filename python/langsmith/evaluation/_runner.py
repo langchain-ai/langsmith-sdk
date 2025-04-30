@@ -16,21 +16,13 @@ import random
 import textwrap
 import threading
 import uuid
+from collections.abc import Awaitable, Generator, Iterable, Iterator, Sequence
 from contextvars import copy_context
 from typing import (
     TYPE_CHECKING,
     Any,
-    Awaitable,
     Callable,
-    DefaultDict,
-    Dict,
-    Generator,
-    Iterable,
-    Iterator,
-    List,
     Optional,
-    Sequence,
-    Tuple,
     TypeVar,
     Union,
     cast,
@@ -113,7 +105,7 @@ def evaluate(
 
 @overload
 def evaluate(
-    target: Union[Tuple[EXPERIMENT_T, EXPERIMENT_T]],
+    target: Union[tuple[EXPERIMENT_T, EXPERIMENT_T]],
     /,
     data: Optional[DATA_T] = None,
     evaluators: Optional[Sequence[COMPARATIVE_EVALUATOR_T]] = None,
@@ -132,7 +124,7 @@ def evaluate(
 
 
 def evaluate(
-    target: Union[TARGET_T, Runnable, EXPERIMENT_T, Tuple[EXPERIMENT_T, EXPERIMENT_T]],
+    target: Union[TARGET_T, Runnable, EXPERIMENT_T, tuple[EXPERIMENT_T, EXPERIMENT_T]],
     /,
     data: Optional[DATA_T] = None,
     evaluators: Optional[
@@ -552,7 +544,7 @@ class ExperimentResults:
 
     def __init__(self, experiment_manager: _ExperimentManager, blocking: bool = True):
         self._manager = experiment_manager
-        self._results: List[ExperimentResultRow] = []
+        self._results: list[ExperimentResultRow] = []
         self._queue: queue.Queue[ExperimentResultRow] = queue.Queue()
         self._processing_complete = threading.Event()
         if not blocking:
@@ -639,7 +631,7 @@ COMPARATIVE_EVALUATOR_T = Callable[
 
 
 def evaluate_comparative(
-    experiments: Tuple[EXPERIMENT_T, EXPERIMENT_T],
+    experiments: tuple[EXPERIMENT_T, EXPERIMENT_T],
     /,
     evaluators: Sequence[COMPARATIVE_EVALUATOR_T],
     experiment_prefix: Optional[str] = None,
@@ -866,7 +858,7 @@ def evaluate_comparative(
     )
     _print_comparative_experiment_start(
         cast(
-            Tuple[schemas.TracerSessionResult, schemas.TracerSessionResult],
+            tuple[schemas.TracerSessionResult, schemas.TracerSessionResult],
             tuple(projects),
         ),
         comparative_experiment,
@@ -899,7 +891,7 @@ def evaluate_comparative(
             example_ids=example_ids_batch,
         ):
             data[e.id] = e
-    runs_dict: Dict[uuid.UUID, List[schemas.Run]] = collections.defaultdict(list)
+    runs_dict: dict[uuid.UUID, list[schemas.Run]] = collections.defaultdict(list)
     for runs_list in runs:
         for run in runs_list:
             if run.reference_example_id in data:
@@ -985,7 +977,7 @@ class ComparativeExperimentResults:
     def __init__(
         self,
         results: dict,
-        examples: Optional[Dict[uuid.UUID, schemas.Example]] = None,
+        examples: Optional[dict[uuid.UUID, schemas.Example]] = None,
     ):
         self._results = results
         self._examples = examples
@@ -1006,7 +998,7 @@ class ComparativeExperimentResults:
 
 
 def _print_comparative_experiment_start(
-    experiments: Tuple[schemas.TracerSession, schemas.TracerSession],
+    experiments: tuple[schemas.TracerSession, schemas.TracerSession],
     comparative_experiment: schemas.ComparativeExperiment,
 ) -> None:
     url = experiments[0].url or experiments[1].url
@@ -1063,8 +1055,7 @@ def _evaluate(
         # If provided, we don't need to create a new experiment.
         runs=runs,
         # Create or resolve the experiment.
-        include_attachments=_include_attachments(target)
-        or _evaluators_include_attachments(evaluators) > 0,
+        include_attachments=_include_attachments(target, evaluators),
         upload_results=upload_results,
     ).start()
     cache_dir = ls_utils.get_cache_dir(None)
@@ -1113,7 +1104,7 @@ def _load_traces(
     project: Union[str, uuid.UUID, schemas.TracerSession],
     client: langsmith.Client,
     load_nested: bool = False,
-) -> List[schemas.Run]:
+) -> list[schemas.Run]:
     """Load nested traces for a given project."""
     is_root = None if load_nested else True
     if isinstance(project, schemas.TracerSession):
@@ -1125,7 +1116,9 @@ def _load_traces(
     if not load_nested:
         return list(runs)
 
-    treemap: DefaultDict[uuid.UUID, List[schemas.Run]] = collections.defaultdict(list)
+    treemap: collections.defaultdict[uuid.UUID, list[schemas.Run]] = (
+        collections.defaultdict(list)
+    )
     results = []
     all_runs = {}
     for run in runs:
@@ -1141,7 +1134,7 @@ def _load_traces(
 
 def _load_examples_map(
     client: langsmith.Client, project: schemas.TracerSession
-) -> Dict[uuid.UUID, schemas.Example]:
+) -> dict[uuid.UUID, schemas.Example]:
     return {
         e.id: e
         for e in client.list_examples(
@@ -1430,7 +1423,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
     def runs(self) -> Iterable[schemas.Run]:
         if self._runs is None:
             raise ValueError(
-                "Runs not provided in this experiment." " Please predict first."
+                "Runs not provided in this experiment. Please predict first."
             )
         self._runs, runs_iter = itertools.tee(self._runs)
         return runs_iter
@@ -1465,7 +1458,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             self._predict,
             target,
             max_concurrency=max_concurrency,
-            include_attachments=_include_attachments(target),
+            include_attachments=_target_include_attachments(target),
         )
         r1, r2 = itertools.tee(_experiment_results, 2)
         return _ExperimentManager(
@@ -1544,7 +1537,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                 evaluation_results=evaluation_results,
             )
 
-    def get_summary_scores(self) -> Dict[str, List[dict]]:
+    def get_summary_scores(self) -> dict[str, list[dict]]:
         """If summary_evaluators were applied, consume and return the results."""
         if self._summary_results is None:
             return {"results": []}
@@ -1846,7 +1839,7 @@ def _resolve_evaluators(
 
 def _wrap_summary_evaluators(
     evaluators: Sequence[SUMMARY_EVALUATOR_T],
-) -> List[SUMMARY_EVALUATOR_T]:
+) -> list[SUMMARY_EVALUATOR_T]:
     def _wrap(evaluator: SUMMARY_EVALUATOR_T) -> SUMMARY_EVALUATOR_T:
         eval_name = getattr(evaluator, "__name__", "BatchEvaluator")
         evaluator = _normalize_summary_evaluator(evaluator)
@@ -1907,15 +1900,10 @@ def _forward(
             client=client,
         )
         try:
-            args = (
-                (example.inputs, example.attachments)
-                if include_attachments
-                else (example.inputs,)
-            )
-            fn(
-                *args,
-                langsmith_extra=langsmith_extra,
-            )
+            arg_names = _get_target_args(fn)
+            args = [getattr(example, argn) for argn in arg_names]
+            fn(*args, langsmith_extra=langsmith_extra)
+            # Reset attachment readers if attachments were used.
             if include_attachments and example.attachments is not None:
                 for attachment in example.attachments:
                     reader = example.attachments[attachment]["reader"]
@@ -1987,31 +1975,41 @@ def _ensure_traceable(
     return fn
 
 
-def _evaluators_include_attachments(
-    evaluators: Optional[Sequence[Union[EVALUATOR_T, AEVALUATOR_T]]],
-) -> int:
+def _include_attachments(target: Any, evaluators: Optional[Sequence]) -> bool:
+    return _target_include_attachments(target) or bool(
+        _evaluators_include_attachments(evaluators)
+    )
+
+
+def _evaluators_include_attachments(evaluators: Optional[Sequence]) -> int:
     if evaluators is None:
         return 0
 
-    def evaluator_uses_attachments(evaluator: Any) -> bool:
-        if not callable(evaluator):
-            return False
-        sig = inspect.signature(evaluator)
-        params = list(sig.parameters.values())
-        positional_params = [
-            p for p in params if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
-        ]
-        return any(p.name == "attachments" for p in positional_params)
-
-    return sum(evaluator_uses_attachments(e) for e in evaluators)
+    return sum(_evaluator_uses_attachments(e) for e in evaluators)
 
 
-def _include_attachments(
-    target: Any,
-) -> bool:
-    """Whether the target function accepts attachments."""
-    if _is_langchain_runnable(target) or not callable(target):
+def _evaluator_uses_attachments(evaluator: Any) -> bool:
+    if not callable(evaluator):
         return False
+    sig = inspect.signature(evaluator)
+    params = list(sig.parameters.values())
+    positional_params = [
+        p for p in params if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+    ]
+    return any(p.name == "attachments" for p in positional_params)
+
+
+def _target_include_attachments(target: Any) -> bool:
+    """Whether the target function accepts attachments."""
+    return "attachments" in _get_target_args(target)
+
+
+def _get_target_args(target: Any) -> list[str]:
+    """Whether the target function accepts attachments."""
+    if not callable(target):
+        return []
+    if _is_langchain_runnable(target):
+        return ["inputs"]
     # Check function signature
     sig = inspect.signature(target)
     params = list(sig.parameters.values())
@@ -2024,28 +2022,34 @@ def _include_attachments(
         raise ValueError(
             "Target function must accept at least one positional argument (inputs)."
         )
-    elif len(positional_no_default) > 2:
+    elif len(positional_no_default) > 3:
         raise ValueError(
-            "Target function must accept at most two "
-            "arguments without default values: (inputs, attachments)."
+            "Target function must accept at most three "
+            "arguments without default values: (inputs, attachments, metadata)."
         )
-    elif len(positional_no_default) == 2:
-        if [p.name for p in positional_no_default] != ["inputs", "attachments"]:
-            raise ValueError(
-                "When passing 2 positional arguments, they must be named "
-                "'inputs' and 'attachments', respectively. Received: "
-                f"{[p.name for p in positional_no_default]}"
-            )
-        return True
+    elif len(positional_no_default) > 1 and {
+        p.name for p in positional_no_default
+    }.difference(["inputs", "attachments", "metadata"]):
+        raise ValueError(
+            "When passing multiple positional arguments without default values, they "
+            "must be named 'inputs', 'attachments', or 'metadata'. Received: "
+            f"{[p.name for p in positional_no_default]}"
+        )
     else:
-        return [p.name for p in positional_params[:2]] == ["inputs", "attachments"]
+        args = []
+        for p in positional_params[:3]:
+            if p.name in {"inputs", "attachments", "metadata"}:
+                args.append(p.name)
+            else:
+                break
+        return args or ["inputs"]
 
 
 def _resolve_experiment(
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]],
     runs: Optional[Iterable[schemas.Run]],
     client: langsmith.Client,
-) -> Tuple[
+) -> tuple[
     Optional[Union[schemas.TracerSession, str]], Optional[Iterable[schemas.Run]]
 ]:
     # TODO: Remove this, handle outside the manager

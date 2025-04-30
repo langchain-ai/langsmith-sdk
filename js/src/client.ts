@@ -41,6 +41,7 @@ import {
   AttachmentInfo,
   AttachmentData,
   DatasetVersion,
+  AnnotationQueueWithDetails,
 } from "./schemas.js";
 import {
   convertLangChainMessageToExample,
@@ -73,9 +74,9 @@ export interface ClientConfig {
   callerOptions?: AsyncCallerParams;
   timeout_ms?: number;
   webUrl?: string;
-  anonymizer?: (values: KVMap) => KVMap;
-  hideInputs?: boolean | ((inputs: KVMap) => KVMap);
-  hideOutputs?: boolean | ((outputs: KVMap) => KVMap);
+  anonymizer?: (values: KVMap) => KVMap | Promise<KVMap>;
+  hideInputs?: boolean | ((inputs: KVMap) => KVMap | Promise<KVMap>);
+  hideOutputs?: boolean | ((outputs: KVMap) => KVMap | Promise<KVMap>);
   autoBatchTracing?: boolean;
   batchSizeBytesLimit?: number;
   blockOnRootRunFinalization?: boolean;
@@ -87,6 +88,10 @@ export interface ClientConfig {
    */
   manualFlushMode?: boolean;
   tracingSamplingRate?: number;
+  /**
+   * Enable debug mode for the client. If set, all sent HTTP requests will be logged.
+   */
+  debug?: boolean;
 }
 
 /**
@@ -484,9 +489,9 @@ export class Client implements LangSmithTracingClientInterface {
 
   private _tenantId: string | null = null;
 
-  private hideInputs?: boolean | ((inputs: KVMap) => KVMap);
+  private hideInputs?: boolean | ((inputs: KVMap) => KVMap | Promise<KVMap>);
 
-  private hideOutputs?: boolean | ((outputs: KVMap) => KVMap);
+  private hideOutputs?: boolean | ((outputs: KVMap) => KVMap | Promise<KVMap>);
 
   private tracingSampleRate?: number;
 
@@ -518,6 +523,8 @@ export class Client implements LangSmithTracingClientInterface {
 
   private manualFlushMode = false;
 
+  debug = getEnvironmentVariable("LANGSMITH_DEBUG") === "true";
+
   constructor(config: ClientConfig = {}) {
     const defaultConfig = Client.getDefaultClientConfig();
 
@@ -532,17 +539,22 @@ export class Client implements LangSmithTracingClientInterface {
       this.webUrl = this.webUrl.slice(0, -1);
     }
     this.timeout_ms = config.timeout_ms ?? 90_000;
-    this.caller = new AsyncCaller(config.callerOptions ?? {});
+    this.caller = new AsyncCaller({
+      ...(config.callerOptions ?? {}),
+      debug: config.debug ?? this.debug,
+    });
     this.traceBatchConcurrency =
       config.traceBatchConcurrency ?? this.traceBatchConcurrency;
     if (this.traceBatchConcurrency < 1) {
       throw new Error("Trace batch concurrency must be positive.");
     }
+    this.debug = config.debug ?? this.debug;
     this.batchIngestCaller = new AsyncCaller({
       maxRetries: 2,
       maxConcurrency: this.traceBatchConcurrency,
       ...(config.callerOptions ?? {}),
       onFailedResponseHook: handle429,
+      debug: config.debug ?? this.debug,
     });
 
     this.hideInputs =
@@ -622,7 +634,7 @@ export class Client implements LangSmithTracingClientInterface {
     return headers;
   }
 
-  private processInputs(inputs: KVMap): KVMap {
+  private async processInputs(inputs: KVMap): Promise<KVMap> {
     if (this.hideInputs === false) {
       return inputs;
     }
@@ -635,7 +647,7 @@ export class Client implements LangSmithTracingClientInterface {
     return inputs;
   }
 
-  private processOutputs(outputs: KVMap): KVMap {
+  private async processOutputs(outputs: KVMap): Promise<KVMap> {
     if (this.hideOutputs === false) {
       return outputs;
     }
@@ -648,17 +660,21 @@ export class Client implements LangSmithTracingClientInterface {
     return outputs;
   }
 
-  private prepareRunCreateOrUpdateInputs(run: RunUpdate): RunUpdate;
-  private prepareRunCreateOrUpdateInputs(run: RunCreate): RunCreate;
-  private prepareRunCreateOrUpdateInputs(
+  private async prepareRunCreateOrUpdateInputs(
+    run: RunUpdate
+  ): Promise<RunUpdate>;
+  private async prepareRunCreateOrUpdateInputs(
+    run: RunCreate
+  ): Promise<RunCreate>;
+  private async prepareRunCreateOrUpdateInputs(
     run: RunCreate | RunUpdate
-  ): RunCreate | RunUpdate {
+  ): Promise<RunCreate | RunUpdate> {
     const runParams = { ...run };
     if (runParams.inputs !== undefined) {
-      runParams.inputs = this.processInputs(runParams.inputs);
+      runParams.inputs = await this.processInputs(runParams.inputs);
     }
     if (runParams.outputs !== undefined) {
-      runParams.outputs = this.processOutputs(runParams.outputs);
+      runParams.outputs = await this.processOutputs(runParams.outputs);
     }
     return runParams;
   }
@@ -669,12 +685,16 @@ export class Client implements LangSmithTracingClientInterface {
   ): Promise<Response> {
     const paramsString = queryParams?.toString() ?? "";
     const url = `${this.apiUrl}${path}?${paramsString}`;
-    const response = await this.caller.call(_getFetchImplementation(), url, {
-      method: "GET",
-      headers: this.headers,
-      signal: AbortSignal.timeout(this.timeout_ms),
-      ...this.fetchOptions,
-    });
+    const response = await this.caller.call(
+      _getFetchImplementation(this.debug),
+      url,
+      {
+        method: "GET",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
     await raiseForStatus(response, `Failed to fetch ${path}`);
     return response;
   }
@@ -699,12 +719,16 @@ export class Client implements LangSmithTracingClientInterface {
       queryParams.set("limit", String(limit));
 
       const url = `${this.apiUrl}${path}?${queryParams}`;
-      const response = await this.caller.call(_getFetchImplementation(), url, {
-        method: "GET",
-        headers: this.headers,
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
-      });
+      const response = await this.caller.call(
+        _getFetchImplementation(this.debug),
+        url,
+        {
+          method: "GET",
+          headers: this.headers,
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+        }
+      );
       await raiseForStatus(response, `Failed to fetch ${path}`);
       const items: T[] = transform
         ? transform(await response.json())
@@ -731,7 +755,7 @@ export class Client implements LangSmithTracingClientInterface {
     const bodyParams = body ? { ...body } : {};
     while (true) {
       const response = await this.caller.call(
-        _getFetchImplementation(),
+        _getFetchImplementation(this.debug),
         `${this.apiUrl}${path}`,
         {
           method: requestMethod,
@@ -893,14 +917,25 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   protected async _getServerInfo() {
-    const response = await _getFetchImplementation()(`${this.apiUrl}/info`, {
-      method: "GET",
-      headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(SERVER_INFO_REQUEST_TIMEOUT),
-      ...this.fetchOptions,
-    });
+    const response = await _getFetchImplementation(this.debug)(
+      `${this.apiUrl}/info`,
+      {
+        method: "GET",
+        headers: { Accept: "application/json" },
+        signal: AbortSignal.timeout(SERVER_INFO_REQUEST_TIMEOUT),
+        ...this.fetchOptions,
+      }
+    );
     await raiseForStatus(response, "get server info");
-    return response.json();
+    const json = await response.json();
+    if (this.debug) {
+      console.log(
+        "\n=== LangSmith Server Configuration ===\n" +
+          JSON.stringify(json, null, 2) +
+          "\n"
+      );
+    }
+    return json;
   }
 
   protected async _ensureServerInfo() {
@@ -950,7 +985,7 @@ export class Client implements LangSmithTracingClientInterface {
     const session_name = run.project_name;
     delete run.project_name;
 
-    const runCreate: RunCreate = this.prepareRunCreateOrUpdateInputs({
+    const runCreate: RunCreate = await this.prepareRunCreateOrUpdateInputs({
       session_name,
       ...run,
       start_time: run.start_time ?? Date.now(),
@@ -969,7 +1004,7 @@ export class Client implements LangSmithTracingClientInterface {
     const mergedRunCreateParam = mergeRuntimeEnvIntoRunCreate(runCreate);
 
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}/runs`,
       {
         method: "POST",
@@ -996,14 +1031,16 @@ export class Client implements LangSmithTracingClientInterface {
     if (runCreates === undefined && runUpdates === undefined) {
       return;
     }
-    let preparedCreateParams =
+    let preparedCreateParams = await Promise.all(
       runCreates?.map((create) =>
         this.prepareRunCreateOrUpdateInputs(create)
-      ) ?? [];
-    let preparedUpdateParams =
+      ) ?? []
+    );
+    let preparedUpdateParams = await Promise.all(
       runUpdates?.map((update) =>
         this.prepareRunCreateOrUpdateInputs(update)
-      ) ?? [];
+      ) ?? []
+    );
 
     if (preparedCreateParams.length > 0 && preparedUpdateParams.length > 0) {
       const createById = preparedCreateParams.reduce(
@@ -1063,7 +1100,7 @@ export class Client implements LangSmithTracingClientInterface {
       Accept: "application/json",
     };
     const response = await this.batchIngestCaller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}/runs/batch`,
       {
         method: "POST",
@@ -1095,7 +1132,7 @@ export class Client implements LangSmithTracingClientInterface {
     let preparedCreateParams = [];
 
     for (const create of runCreates ?? []) {
-      const preparedCreate = this.prepareRunCreateOrUpdateInputs(create);
+      const preparedCreate = await this.prepareRunCreateOrUpdateInputs(create);
       if (
         preparedCreate.id !== undefined &&
         preparedCreate.attachments !== undefined
@@ -1107,7 +1144,9 @@ export class Client implements LangSmithTracingClientInterface {
     }
     let preparedUpdateParams = [];
     for (const update of runUpdates ?? []) {
-      preparedUpdateParams.push(this.prepareRunCreateOrUpdateInputs(update));
+      preparedUpdateParams.push(
+        await this.prepareRunCreateOrUpdateInputs(update)
+      );
     }
 
     // require trace_id and dotted_order
@@ -1269,7 +1308,7 @@ export class Client implements LangSmithTracingClientInterface {
       const arrayBuffer = await body.arrayBuffer();
 
       const res = await this.batchIngestCaller.call(
-        _getFetchImplementation(),
+        _getFetchImplementation(this.debug),
         `${this.apiUrl}/runs/multipart`,
         {
           method: "POST",
@@ -1292,11 +1331,11 @@ export class Client implements LangSmithTracingClientInterface {
   public async updateRun(runId: string, run: RunUpdate): Promise<void> {
     assertUuid(runId);
     if (run.inputs) {
-      run.inputs = this.processInputs(run.inputs);
+      run.inputs = await this.processInputs(run.inputs);
     }
 
     if (run.outputs) {
-      run.outputs = this.processOutputs(run.outputs);
+      run.outputs = await this.processOutputs(run.outputs);
     }
     // TODO: Untangle types
     const data: UpdateRunParams = { ...run, id: runId };
@@ -1329,7 +1368,7 @@ export class Client implements LangSmithTracingClientInterface {
     }
     const headers = { ...this.headers, "Content-Type": "application/json" };
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}/runs/${runId}`,
       {
         method: "PATCH",
@@ -1686,7 +1725,7 @@ export class Client implements LangSmithTracingClientInterface {
     );
 
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}/runs/stats`,
       {
         method: "POST",
@@ -1711,7 +1750,7 @@ export class Client implements LangSmithTracingClientInterface {
     };
     assertUuid(runId);
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}/runs/${runId}/share`,
       {
         method: "PUT",
@@ -1731,7 +1770,7 @@ export class Client implements LangSmithTracingClientInterface {
   public async unshareRun(runId: string): Promise<void> {
     assertUuid(runId);
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}/runs/${runId}/share`,
       {
         method: "DELETE",
@@ -1746,7 +1785,7 @@ export class Client implements LangSmithTracingClientInterface {
   public async readRunSharedLink(runId: string): Promise<string | undefined> {
     assertUuid(runId);
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}/runs/${runId}/share`,
       {
         method: "GET",
@@ -1780,7 +1819,7 @@ export class Client implements LangSmithTracingClientInterface {
     }
     assertUuid(shareToken);
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}/public/${shareToken}/runs${queryParams}`,
       {
         method: "GET",
@@ -1806,7 +1845,7 @@ export class Client implements LangSmithTracingClientInterface {
     }
     assertUuid(datasetId);
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}/datasets/${datasetId}/share`,
       {
         method: "GET",
@@ -1838,7 +1877,7 @@ export class Client implements LangSmithTracingClientInterface {
     };
     assertUuid(datasetId);
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}/datasets/${datasetId}/share`,
       {
         method: "PUT",
@@ -1858,7 +1897,7 @@ export class Client implements LangSmithTracingClientInterface {
   public async unshareDataset(datasetId: string): Promise<void> {
     assertUuid(datasetId);
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}/datasets/${datasetId}/share`,
       {
         method: "DELETE",
@@ -1873,7 +1912,7 @@ export class Client implements LangSmithTracingClientInterface {
   public async readSharedDataset(shareToken: string): Promise<Dataset> {
     assertUuid(shareToken);
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}/public/${shareToken}/datasets`,
       {
         method: "GET",
@@ -1913,7 +1952,7 @@ export class Client implements LangSmithTracingClientInterface {
     });
 
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}/public/${shareToken}/examples?${urlParams.toString()}`,
       {
         method: "GET",
@@ -1964,7 +2003,7 @@ export class Client implements LangSmithTracingClientInterface {
       body["reference_dataset_id"] = referenceDatasetId;
     }
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       endpoint,
       {
         method: "POST",
@@ -2007,7 +2046,7 @@ export class Client implements LangSmithTracingClientInterface {
       end_time: endTime ? new Date(endTime).toISOString() : null,
     };
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       endpoint,
       {
         method: "PATCH",
@@ -2043,7 +2082,7 @@ export class Client implements LangSmithTracingClientInterface {
       throw new Error("Must provide projectName or projectId");
     }
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}${path}?${params}`,
       {
         method: "GET",
@@ -2228,7 +2267,7 @@ export class Client implements LangSmithTracingClientInterface {
     }
     assertUuid(projectId_);
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}/sessions/${projectId_}`,
       {
         method: "DELETE",
@@ -2273,13 +2312,17 @@ export class Client implements LangSmithTracingClientInterface {
       formData.append("name", name);
     }
 
-    const response = await this.caller.call(_getFetchImplementation(), url, {
-      method: "POST",
-      headers: this.headers,
-      body: formData,
-      signal: AbortSignal.timeout(this.timeout_ms),
-      ...this.fetchOptions,
-    });
+    const response = await this.caller.call(
+      _getFetchImplementation(this.debug),
+      url,
+      {
+        method: "POST",
+        headers: this.headers,
+        body: formData,
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
     await raiseForStatus(response, "upload CSV");
 
     const result = await response.json();
@@ -2317,7 +2360,7 @@ export class Client implements LangSmithTracingClientInterface {
       body.outputs_schema_definition = outputsSchema;
     }
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}/datasets`,
       {
         method: "POST",
@@ -2509,7 +2552,7 @@ export class Client implements LangSmithTracingClientInterface {
     assertUuid(_datasetId);
 
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}/datasets/${_datasetId}`,
       {
         method: "PATCH",
@@ -2554,7 +2597,7 @@ export class Client implements LangSmithTracingClientInterface {
     assertUuid(_datasetId);
 
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}/datasets/${_datasetId}/tags`,
       {
         method: "PUT",
@@ -2592,7 +2635,7 @@ export class Client implements LangSmithTracingClientInterface {
       throw new Error("Must provide datasetName or datasetId");
     }
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       this.apiUrl + path,
       {
         method: "DELETE",
@@ -2630,7 +2673,7 @@ export class Client implements LangSmithTracingClientInterface {
       tag: tag,
     };
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}/datasets/${datasetId_}/index`,
       {
         method: "POST",
@@ -2695,7 +2738,7 @@ export class Client implements LangSmithTracingClientInterface {
 
     assertUuid(datasetId);
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}/datasets/${datasetId}/search`,
       {
         method: "POST",
@@ -3046,7 +3089,7 @@ export class Client implements LangSmithTracingClientInterface {
     assertUuid(exampleId);
     const path = `/examples/${exampleId}`;
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       this.apiUrl + path,
       {
         method: "DELETE",
@@ -3162,7 +3205,7 @@ export class Client implements LangSmithTracingClientInterface {
     }
 
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${
         this.apiUrl
       }/datasets/${resolvedDatasetId}/version?${params.toString()}`,
@@ -3256,7 +3299,7 @@ export class Client implements LangSmithTracingClientInterface {
     };
 
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}/datasets/${datasetId_}/splits`,
       {
         method: "PUT",
@@ -3381,13 +3424,17 @@ export class Client implements LangSmithTracingClientInterface {
       session_id: projectId,
     };
     const url = `${this.apiUrl}/feedback`;
-    const response = await this.caller.call(_getFetchImplementation(), url, {
-      method: "POST",
-      headers: { ...this.headers, "Content-Type": "application/json" },
-      body: JSON.stringify(feedback),
-      signal: AbortSignal.timeout(this.timeout_ms),
-      ...this.fetchOptions,
-    });
+    const response = await this.caller.call(
+      _getFetchImplementation(this.debug),
+      url,
+      {
+        method: "POST",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify(feedback),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
     await raiseForStatus(response, "create feedback", true);
     return feedback as Feedback;
   }
@@ -3421,7 +3468,7 @@ export class Client implements LangSmithTracingClientInterface {
     }
     assertUuid(feedbackId);
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}/feedback/${feedbackId}`,
       {
         method: "PATCH",
@@ -3445,7 +3492,7 @@ export class Client implements LangSmithTracingClientInterface {
     assertUuid(feedbackId);
     const path = `/feedback/${feedbackId}`;
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       this.apiUrl + path,
       {
         method: "DELETE",
@@ -3533,7 +3580,7 @@ export class Client implements LangSmithTracingClientInterface {
     }
 
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}/feedback/tokens`,
       {
         method: "POST",
@@ -3593,7 +3640,7 @@ export class Client implements LangSmithTracingClientInterface {
     if (metadata) body.extra["metadata"] = metadata;
 
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}/datasets/comparative`,
       {
         method: "POST",
@@ -3755,16 +3802,18 @@ export class Client implements LangSmithTracingClientInterface {
     name: string;
     description?: string;
     queueId?: string;
-  }): Promise<AnnotationQueue> {
-    const { name, description, queueId } = options;
+    rubricInstructions?: string;
+  }): Promise<AnnotationQueueWithDetails> {
+    const { name, description, queueId, rubricInstructions } = options;
     const body = {
       name,
       description,
       id: queueId || uuid.v4(),
+      rubric_instructions: rubricInstructions,
     };
 
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}/annotation-queues`,
       {
         method: "POST",
@@ -3786,17 +3835,24 @@ export class Client implements LangSmithTracingClientInterface {
   /**
    * Read an annotation queue with the specified queue ID.
    * @param queueId - The ID of the annotation queue to read
-   * @returns The AnnotationQueue object
+   * @returns The AnnotationQueueWithDetails object
    */
-  public async readAnnotationQueue(queueId: string): Promise<AnnotationQueue> {
-    // TODO: Replace when actual endpoint is added
-    const queueIteratorResult = await this.listAnnotationQueues({
-      queueIds: [queueId],
-    }).next();
-    if (queueIteratorResult.done) {
-      throw new Error(`Annotation queue with ID ${queueId} not found`);
-    }
-    return queueIteratorResult.value;
+  public async readAnnotationQueue(
+    queueId: string
+  ): Promise<AnnotationQueueWithDetails> {
+    const response = await this.caller.call(
+      _getFetchImplementation(this.debug),
+      `${this.apiUrl}/annotation-queues/${assertUuid(queueId, "queueId")}`,
+      {
+        method: "GET",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+    await raiseForStatus(response, "read annotation queue");
+    const data = await response.json();
+    return data as AnnotationQueueWithDetails;
   }
 
   /**
@@ -3811,16 +3867,21 @@ export class Client implements LangSmithTracingClientInterface {
     options: {
       name: string;
       description?: string;
+      rubricInstructions?: string;
     }
   ): Promise<void> {
-    const { name, description } = options;
+    const { name, description, rubricInstructions } = options;
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}/annotation-queues/${assertUuid(queueId, "queueId")}`,
       {
         method: "PATCH",
         headers: { ...this.headers, "Content-Type": "application/json" },
-        body: JSON.stringify({ name, description }),
+        body: JSON.stringify({
+          name,
+          description,
+          rubric_instructions: rubricInstructions,
+        }),
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       }
@@ -3834,7 +3895,7 @@ export class Client implements LangSmithTracingClientInterface {
    */
   public async deleteAnnotationQueue(queueId: string): Promise<void> {
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}/annotation-queues/${assertUuid(queueId, "queueId")}`,
       {
         method: "DELETE",
@@ -3856,7 +3917,7 @@ export class Client implements LangSmithTracingClientInterface {
     runIds: string[]
   ): Promise<void> {
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}/annotation-queues/${assertUuid(queueId, "queueId")}/runs`,
       {
         method: "POST",
@@ -3884,7 +3945,7 @@ export class Client implements LangSmithTracingClientInterface {
   ): Promise<RunWithAnnotationQueueInfo> {
     const baseUrl = `/annotation-queues/${assertUuid(queueId, "queueId")}/run`;
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}${baseUrl}/${index}`,
       {
         method: "GET",
@@ -3908,7 +3969,7 @@ export class Client implements LangSmithTracingClientInterface {
     queueRunId: string
   ): Promise<void> {
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}/annotation-queues/${assertUuid(
         queueId,
         "queueId"
@@ -3931,7 +3992,7 @@ export class Client implements LangSmithTracingClientInterface {
     queueId: string
   ): Promise<{ size: number }> {
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}/annotation-queues/${assertUuid(queueId, "queueId")}/size`,
       {
         method: "GET",
@@ -3965,7 +4026,7 @@ export class Client implements LangSmithTracingClientInterface {
     promptOwnerAndName: string
   ): Promise<string | undefined> {
     const res = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}/commits/${promptOwnerAndName}/?limit=${1}&offset=${0}`,
       {
         method: "GET",
@@ -4002,7 +4063,7 @@ export class Client implements LangSmithTracingClientInterface {
   ): Promise<LikePromptResponse> {
     const [owner, promptName, _] = parsePromptIdentifier(promptIdentifier);
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}/likes/${owner}/${promptName}`,
       {
         method: "POST",
@@ -4107,7 +4168,7 @@ export class Client implements LangSmithTracingClientInterface {
   public async getPrompt(promptIdentifier: string): Promise<Prompt | null> {
     const [owner, promptName, _] = parsePromptIdentifier(promptIdentifier);
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}/repos/${owner}/${promptName}`,
       {
         method: "GET",
@@ -4163,7 +4224,7 @@ export class Client implements LangSmithTracingClientInterface {
     };
 
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}/repos/`,
       {
         method: "POST",
@@ -4203,7 +4264,7 @@ export class Client implements LangSmithTracingClientInterface {
     };
 
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}/commits/${owner}/${promptName}`,
       {
         method: "POST",
@@ -4319,7 +4380,7 @@ export class Client implements LangSmithTracingClientInterface {
 
     const datasetIdToUse = datasetId ?? updates[0]?.dataset_id;
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}/v1/platform/datasets/${datasetIdToUse}/examples`,
       {
         method: "PATCH",
@@ -4418,7 +4479,7 @@ export class Client implements LangSmithTracingClientInterface {
     }
 
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}/v1/platform/datasets/${datasetId}/examples`,
       {
         method: "POST",
@@ -4466,7 +4527,7 @@ export class Client implements LangSmithTracingClientInterface {
     }
 
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}/repos/${owner}/${promptName}`,
       {
         method: "PATCH",
@@ -4497,7 +4558,7 @@ export class Client implements LangSmithTracingClientInterface {
     }
 
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}/repos/${owner}/${promptName}`,
       {
         method: "DELETE",
@@ -4519,7 +4580,7 @@ export class Client implements LangSmithTracingClientInterface {
     const [owner, promptName, commitHash] =
       parsePromptIdentifier(promptIdentifier);
     const response = await this.caller.call(
-      _getFetchImplementation(),
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}/commits/${owner}/${promptName}/${commitHash}${
         options?.includeModel ? "?include_model=true" : ""
       }`,

@@ -77,3 +77,24 @@ api_docs_build:
 
 api_docs_clean:
 	git clean -fd ./docs/
+
+sync-version:
+	# Update version in __init__.py to match pyproject.toml
+	$(eval VERSION := $(shell grep '^version =' pyproject.toml | sed 's/version = "\(.*\)"/\1/'))
+	sed -i '' 's/__version__ = "[^"]*"/__version__ = "$(VERSION)"/' langsmith/__init__.py
+	echo "Synced version: $(VERSION)"
+
+check-version:
+	# Get version from pyproject.toml
+	$(eval VERSION := $(shell grep '^version =' pyproject.toml | sed 's/version = "\(.*\)"/\1/'))
+	# Get version from __init__.py
+	$(eval INIT_VERSION := $(shell grep '__version__ =' langsmith/__init__.py | sed 's/__version__ = "\(.*\)"/\1/'))
+	@echo "Checking version alignment..."
+	@echo "pyproject.toml version: $(VERSION)"
+	@echo "__init__.py version: $(INIT_VERSION)"
+	@if [ "$(VERSION)" = "$(INIT_VERSION)" ]; then \
+		echo "✅ Versions are aligned"; \
+	else \
+		echo "❌ Version mismatch! Please run 'make sync-version' to sync versions"; \
+		exit 1; \
+	fi

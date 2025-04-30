@@ -31,6 +31,8 @@ export interface AsyncCallerParams {
   maxRetries?: number;
 
   onFailedResponseHook?: ResponseCallback;
+
+  debug?: boolean;
 }
 
 export interface AsyncCallerCallOptions {
@@ -59,9 +61,12 @@ export class AsyncCaller {
 
   private onFailedResponseHook?: ResponseCallback;
 
+  private debug?: boolean;
+
   constructor(params: AsyncCallerParams) {
     this.maxConcurrency = params.maxConcurrency ?? Infinity;
     this.maxRetries = params.maxRetries ?? 6;
+    this.debug = params.debug;
 
     if ("default" in PQueueMod) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -153,7 +158,7 @@ export class AsyncCaller {
 
   fetch(...args: Parameters<typeof fetch>): ReturnType<typeof fetch> {
     return this.call(() =>
-      _getFetchImplementation()(...args).then(
+      _getFetchImplementation(this.debug)(...args).then(
         (res: Awaited<ReturnType<typeof fetch>>) =>
           res.ok ? res : Promise.reject(res)
       )

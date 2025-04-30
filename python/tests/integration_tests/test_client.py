@@ -3130,3 +3130,84 @@ def test_annotation_queue_runs(langchain_client: Client):
 
     # Clean up
     langchain_client.delete_annotation_queue(queue.id)
+
+
+def test_annotation_queue_with_rubric_instructions(langchain_client: Client):
+    """Test CRUD operations on annotation queue with rubric instructions."""
+    queue_name = f"test-queue-{str(uuid.uuid4())[:8]}"
+    project_name = f"test-project-{str(uuid.uuid4())[:8]}"
+    queue_id = uuid.uuid4()
+
+    try:
+        # 1. Create an annotation queue
+        queue = langchain_client.create_annotation_queue(
+            name=queue_name,
+            description="Initial description",
+            queue_id=queue_id,
+            rubric_instructions="This is a rubric instruction",
+        )
+        assert queue is not None
+        assert queue.name == queue_name
+
+        # 1a. Get the annotation queue
+        fetched_queue = langchain_client.read_annotation_queue(queue.id)
+        assert fetched_queue is not None
+        assert fetched_queue.name == queue_name
+        assert fetched_queue.rubric_instructions == "This is a rubric instruction"
+
+        # 1b. Update the annotation queue rubric instructions
+        new_instructions = "Updated rubric instructions"
+        langchain_client.update_annotation_queue(
+            queue.id,
+            name=queue_name,
+            rubric_instructions=new_instructions,
+        )
+        updated_queue = langchain_client.read_annotation_queue(queue.id)
+        assert updated_queue.rubric_instructions == new_instructions
+    finally:
+        # 6. Delete the annotation queue
+        langchain_client.delete_annotation_queue(queue_id)
+
+        # Clean up the project
+        if langchain_client.has_project(project_name=project_name):
+            langchain_client.delete_project(project_name=project_name)
+
+
+def test_annotation_queue_with_rubric_instructions_2(langchain_client: Client):
+    """Test CRUD operations on annotation queue with rubric instructions."""
+    queue_name = f"test-queue-{str(uuid.uuid4())[:8]}"
+    project_name = f"test-project-{str(uuid.uuid4())[:8]}"
+    queue_id = uuid.uuid4()
+
+    try:
+        # 1. Create an annotation queue without rubric instructions
+        queue = langchain_client.create_annotation_queue(
+            name=queue_name,
+            description="Initial description",
+            queue_id=queue_id,
+        )
+        assert queue is not None
+        assert queue.name == queue_name
+
+        # 1a. Get the annotation queue
+        fetched_queue = langchain_client.read_annotation_queue(queue.id)
+        assert fetched_queue is not None
+        assert fetched_queue.name == queue_name
+        assert fetched_queue.rubric_instructions is None
+
+        # 1b. Update the annotation queue rubric instructions
+        new_instructions = "Updated rubric instructions"
+        langchain_client.update_annotation_queue(
+            queue.id,
+            name=queue_name,
+            rubric_instructions=new_instructions,
+        )
+        updated_queue = langchain_client.read_annotation_queue(queue.id)
+        assert updated_queue.rubric_instructions == new_instructions
+    finally:
+        # 6. Delete the annotation queue
+        langchain_client.delete_annotation_queue(queue_id)
+
+        # Clean up the project
+        if langchain_client.has_project(project_name=project_name):
+            langchain_client.delete_project(project_name=project_name)

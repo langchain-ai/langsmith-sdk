@@ -16,6 +16,7 @@ async def test_indexed_datasets():
         name: str  # type: ignore[annotation-unchecked]
         age: int  # type: ignore[annotation-unchecked]
 
+    dataset = None
     async with AsyncClient() as client:
         # Create a new dataset
         try:
@@ -44,7 +45,8 @@ async def test_indexed_datasets():
             )
             assert examples[0].id == example.id
         finally:
-            await client.delete_dataset(dataset_id=dataset.id)
+            if dataset:
+                await client.delete_dataset(dataset_id=dataset.id)
 
 
 # Helper function to wait for a condition

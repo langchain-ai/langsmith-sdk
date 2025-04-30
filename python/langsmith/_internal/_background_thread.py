@@ -12,9 +12,7 @@ from multiprocessing import cpu_count
 from queue import Empty, Queue
 from typing import (
     TYPE_CHECKING,
-    List,
     Optional,
-    Tuple,
     Union,
     cast,
 )
@@ -35,6 +33,8 @@ from langsmith._internal._operations import (
 )
 
 if TYPE_CHECKING:
+    from opentelemetry.context.context import Context  # type: ignore[import]
+
     from langsmith.client import Client
 
 logger = logging.getLogger("langsmith.client")
@@ -54,16 +54,19 @@ class TracingQueueItem:
 
     priority: str
     item: Union[SerializedRunOperation, SerializedFeedbackOperation]
+    otel_context: Optional[Context]
 
-    __slots__ = ("priority", "item")
+    __slots__ = ("priority", "item", "otel_context")
 
     def __init__(
         self,
         priority: str,
         item: Union[SerializedRunOperation, SerializedFeedbackOperation],
+        otel_context: Optional[Context] = None,
     ) -> None:
         self.priority = priority
         self.item = item
+        self.otel_context = otel_context
 
     def __lt__(self, other: TracingQueueItem) -> bool:
         return (self.priority, self.item.__class__) < (
@@ -80,8 +83,8 @@ class TracingQueueItem:
 
 def _tracing_thread_drain_queue(
     tracing_queue: Queue, limit: int = 100, block: bool = True
-) -> List[TracingQueueItem]:
-    next_batch: List[TracingQueueItem] = []
+) -> list[TracingQueueItem]:
+    next_batch: list[TracingQueueItem] = []
     try:
         # wait 250ms for the first item, then
         # - drain the queue with a 50ms block timeout
@@ -101,7 +104,7 @@ def _tracing_thread_drain_queue(
 
 def _tracing_thread_drain_compressed_buffer(
     client: Client, size_limit: int = 100, size_limit_bytes: int | None = 20_971_520
-) -> Tuple[Optional[io.BytesIO], Optional[Tuple[int, int]]]:
+) -> tuple[Optional[io.BytesIO], Optional[tuple[int, int]]]:
     try:
         if client.compressed_traces is None:
             return None, None
@@ -153,7 +156,7 @@ def _tracing_thread_drain_compressed_buffer(
 def _tracing_thread_handle_batch(
     client: Client,
     tracing_queue: Queue,
-    batch: List[TracingQueueItem],
+    batch: list[TracingQueueItem],
     use_multipart: bool,
 ) -> None:
     try:
@@ -168,7 +171,7 @@ def _tracing_thread_handle_batch(
                 ops = [
                     op for op in ops if not isinstance(op, SerializedFeedbackOperation)
                 ]
-            client._batch_ingest_run_ops(cast(List[SerializedRunOperation], ops))
+            client._batch_ingest_run_ops(cast(list[SerializedRunOperation], ops))
 
     except Exception:
         logger.error(
@@ -188,16 +191,21 @@ def _tracing_thread_handle_batch(
 def _otel_tracing_thread_handle_batch(
     client: Client,
     tracing_queue: Queue,
-    batch: List[TracingQueueItem],
+    batch: list[TracingQueueItem],
 ) -> None:
     """Handle a batch of tracing queue items by exporting them to OTEL."""
     try:
         ops = combine_serialized_queue_operations([item.item for item in batch])
 
         run_ops = [op for op in ops if isinstance(op, SerializedRunOperation)]
+        otel_context_map = {
+            item.item.id: item.otel_context
+            for item in batch
+            if isinstance(item.item, SerializedRunOperation)
+        }
         if run_ops:
             if client.otel_exporter is not None:
-                client.otel_exporter.export_batch(run_ops)
+                client.otel_exporter.export_batch(run_ops, otel_context_map)
             else:
                 logger.error(
                     "LangSmith tracing error: Failed to submit OTEL trace data.\n"
@@ -271,7 +279,7 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
     scale_up_qsize_trigger: int = batch_ingest_config["scale_up_qsize_trigger"]
     use_multipart = batch_ingest_config.get("use_multipart_endpoint", False)
 
-    sub_threads: List[threading.Thread] = []
+    sub_threads: list[threading.Thread] = []
     # 1 for this func, 1 for getrefcount, 1 for _get_data_type_cached
     num_known_refs = 3
 
@@ -289,7 +297,7 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
                 "version of LangSmith. Falling back to regular multipart ingestion."
             )
         else:
-            client._futures = set()
+            client._futures = weakref.WeakSet()
             client.compressed_traces = CompressedTraces()
             client._data_available_event = threading.Event()
             threading.Thread(
@@ -304,15 +312,25 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
         if not client or (
             hasattr(client, "_manual_cleanup") and client._manual_cleanup
         ):
+            logger.debug("Client is being cleaned up, stopping tracing thread")
             return False
         if not threading.main_thread().is_alive():
             # main thread is dead. should not be active
+            logger.debug("Main thread is dead, stopping tracing thread")
             return False
 
         if hasattr(sys, "getrefcount"):
             # check if client refs count indicates we're the only remaining
             # reference to the client
-            return sys.getrefcount(client) > num_known_refs + len(sub_threads)
+            should_keep_thread = sys.getrefcount(client) > num_known_refs + len(
+                sub_threads
+            )
+            if not should_keep_thread:
+                logger.debug(
+                    "Client refs count indicates we're the only remaining reference "
+                    "to the client, stopping tracing thread",
+                )
+            return should_keep_thread
         else:
             # in PyPy, there is no sys.getrefcount attribute
             # for now, keep thread alive
@@ -351,7 +369,7 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
             _tracing_thread_handle_batch(
                 client, tracing_queue, next_batch, use_multipart
             )
-        logger.debug("Tracing control thread is shutting down")
+    logger.debug("Tracing control thread is shutting down")
 
 
 def tracing_control_thread_func_compress_parallel(
@@ -376,28 +394,31 @@ def tracing_control_thread_func_compress_parallel(
     batch_ingest_config = _ensure_ingest_config(client.info)
     size_limit: int = batch_ingest_config["size_limit"]
     size_limit_bytes = batch_ingest_config.get("size_limit_bytes", 20_971_520)
-    num_known_refs = 3
+    # One for this func, one for the parent thread, one for getrefcount,
+    # one for _get_data_type_cached
+    num_known_refs = 4
 
     def keep_thread_active() -> bool:
         # if `client.cleanup()` was called, stop thread
         if not client or (
             hasattr(client, "_manual_cleanup") and client._manual_cleanup
         ):
+            logger.debug("Client is being cleaned up, stopping compression thread")
             return False
         if not threading.main_thread().is_alive():
             # main thread is dead. should not be active
+            logger.debug("Main thread is dead, stopping compression thread")
             return False
         if hasattr(sys, "getrefcount"):
             # check if client refs count indicates we're the only remaining
             # reference to the client
-
-            # Count active threads
-            thread_pool = HTTP_REQUEST_THREAD_POOL._threads
-            active_count = sum(
-                1 for thread in thread_pool if thread is not None and thread.is_alive()
-            )
-
-            return sys.getrefcount(client) > num_known_refs + active_count
+            should_keep_thread = sys.getrefcount(client) > num_known_refs
+            if not should_keep_thread:
+                logger.debug(
+                    "Client refs count indicates we're the only remaining reference "
+                    "to the client, stopping compression thread",
+                )
+            return should_keep_thread
         else:
             # in PyPy, there is no sys.getrefcount attribute
             # for now, keep thread alive
@@ -540,4 +561,4 @@ def _tracing_sub_thread_func(
             _tracing_thread_handle_batch(
                 client, tracing_queue, next_batch, use_multipart
             )
-        logger.debug("Tracing control sub-thread is shutting down")
+    logger.debug("Tracing control sub-thread is shutting down")

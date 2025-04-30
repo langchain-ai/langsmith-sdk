@@ -1,10 +1,12 @@
 """OpenTelemetry exporter for LangSmith runs."""
 
+from __future__ import annotations
+
 import datetime
 import logging
 import uuid
 import warnings
-from typing import Any, List, Optional, Tuple
+from typing import Any, Optional
 
 from langsmith import utils as ls_utils
 from langsmith._internal import _orjson
@@ -16,6 +18,7 @@ HAS_OTEL = False
 try:
     if ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED")):
         from opentelemetry import trace  # type: ignore[import]
+        from opentelemetry.context.context import Context  # type: ignore[import]
         from opentelemetry.trace import (  # type: ignore[import]
             Span,
             set_span_in_context,
@@ -110,7 +113,11 @@ class OTELExporter:
         self._tracer = trace.get_tracer("langsmith", tracer_provider=tracer_provider)
         self._spans = {}
 
-    def export_batch(self, operations: List[SerializedRunOperation]) -> None:
+    def export_batch(
+        self,
+        operations: list[SerializedRunOperation],
+        otel_context_map: dict[uuid.UUID, Optional[Context]],
+    ) -> None:
         """Export a batch of serialized run operations to OTEL.
 
         Args:
@@ -124,7 +131,9 @@ class OTELExporter:
                 if not run_info:
                     continue
                 if op.operation == "post":
-                    span = self._create_span_for_run(op, run_info)
+                    span = self._create_span_for_run(
+                        op, run_info, otel_context_map.get(op.id)
+                    )
                     if span:
                         self._spans[op.id] = span
                 else:
@@ -155,7 +164,8 @@ class OTELExporter:
         self,
         op: SerializedRunOperation,
         run_info: dict,
-    ) -> Optional["Span"]:
+        otel_context: Optional[Context] = None,
+    ) -> Optional[Span]:
         """Create an OpenTelemetry span for a run operation.
 
         Args:
@@ -184,6 +194,7 @@ class OTELExporter:
             else:
                 span = self._tracer.start_span(
                     run_info.get("name"),
+                    context=otel_context,
                     start_time=start_time_utc_nano,
                 )
 
@@ -278,7 +289,7 @@ class OTELExporter:
         return None
 
     def _set_span_attributes(
-        self, span: "Span", run_info: dict, op: SerializedRunOperation
+        self, span: Span, run_info: dict, op: SerializedRunOperation
     ) -> None:
         """Set attributes on the span.
 
@@ -369,7 +380,7 @@ class OTELExporter:
         # Set inputs/outputs if available
         self._set_io_attributes(span, op)
 
-    def _set_gen_ai_system(self, span: "Span", run_info: dict) -> None:
+    def _set_gen_ai_system(self, span: Span, run_info: dict) -> None:
         """Set the gen_ai.system attribute on the span based on the model provider.
 
         Args:
@@ -415,7 +426,7 @@ class OTELExporter:
         span.set_attribute(GEN_AI_SYSTEM, system)
         setattr(span, "_gen_ai_system", system)
 
-    def _set_invocation_parameters(self, span: "Span", run_info: dict) -> None:
+    def _set_invocation_parameters(self, span: Span, run_info: dict) -> None:
         """Set invocation parameters on the span.
 
         Args:
@@ -455,7 +466,7 @@ class OTELExporter:
                 GEN_AI_REQUEST_PRESENCE_PENALTY, invocation_params["presence_penalty"]
             )
 
-    def _set_io_attributes(self, span: "Span", op: SerializedRunOperation) -> None:
+    def _set_io_attributes(self, span: Span, op: SerializedRunOperation) -> None:
         """Set input/output attributes on the span.
 
         Args:
@@ -593,7 +604,7 @@ class OTELExporter:
 
     def get_unified_run_tokens(
         self, outputs: Optional[dict]
-    ) -> Optional[Tuple[int, int]]:
+    ) -> Optional[tuple[int, int]]:
         if not outputs:
             return None
 
@@ -650,7 +661,7 @@ class OTELExporter:
 
     def _extract_unified_run_tokens(
         self, outputs: Optional[Any]
-    ) -> Optional[Tuple[int, int]]:
+    ) -> Optional[tuple[int, int]]:
         if not outputs or not isinstance(outputs, dict):
             return None
 

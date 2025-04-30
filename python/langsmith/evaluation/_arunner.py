@@ -8,18 +8,12 @@ import io
 import logging
 import pathlib
 import uuid
+from collections.abc import AsyncIterable, AsyncIterator, Awaitable, Iterable, Sequence
 from typing import (
     TYPE_CHECKING,
     Any,
-    AsyncIterable,
-    AsyncIterator,
-    Awaitable,
     Callable,
-    Dict,
-    Iterable,
-    List,
     Optional,
-    Sequence,
     TypeVar,
     Union,
     cast,
@@ -41,7 +35,7 @@ from langsmith.evaluation._runner import (
     _ExperimentManagerMixin,
     _extract_feedback_keys,
     _ForwardResults,
-    _include_attachments,
+    _get_target_args,
     _is_langchain_runnable,
     _load_examples_map,
     _load_experiment,
@@ -50,6 +44,7 @@ from langsmith.evaluation._runner import (
     _resolve_data,
     _resolve_evaluators,
     _resolve_experiment,
+    _target_include_attachments,
     _to_pandas,
     _wrap_summary_evaluators,
 )
@@ -470,6 +465,9 @@ async def _aevaluate(
         runs,
         client,
     )
+    num_include_attachments = int(
+        _target_include_attachments(target)
+    ) + _evaluators_include_attachments(evaluators)
     manager = await _AsyncExperimentManager(
         data,
         client=client,
@@ -478,14 +476,8 @@ async def _aevaluate(
         description=description,
         num_repetitions=num_repetitions,
         runs=runs,
-        include_attachments=_include_attachments(target)
-        or _evaluators_include_attachments(evaluators) > 0,
-        reuse_attachments=num_repetitions
-        * (
-            int(_include_attachments(target))
-            + _evaluators_include_attachments(evaluators)
-        )
-        > 1,
+        include_attachments=num_include_attachments > 0,
+        reuse_attachments=num_repetitions * num_include_attachments > 1,
         upload_results=upload_results,
     ).astart()
     cache_dir = ls_utils.get_cache_dir(None)
@@ -791,7 +783,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                 self.experiment_name,
                 self._metadata,
                 self.client,
-                _include_attachments(target),
+                _target_include_attachments(target),
             )
             example, run = pred["example"], pred["run"]
             result = await self._arun_evaluators(
@@ -848,7 +840,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         _experiment_results = self._apredict(
             target,
             max_concurrency=max_concurrency,
-            include_attachments=_include_attachments(target),
+            include_attachments=_target_include_attachments(target),
         )
         r1, r2 = aitertools.atee(_experiment_results, 2, lock=asyncio.Lock())
         return _AsyncExperimentManager(
@@ -910,7 +902,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                 evaluation_results=evaluation_results,
             )
 
-    async def aget_summary_scores(self) -> Dict[str, List[dict]]:
+    async def aget_summary_scores(self) -> dict[str, list[dict]]:
         if self._summary_results is None:
             return {"results": []}
         return {
@@ -1163,7 +1155,7 @@ class AsyncExperimentResults:
         experiment_manager: _AsyncExperimentManager,
     ):
         self._manager = experiment_manager
-        self._results: List[ExperimentResultRow] = []
+        self._results: list[ExperimentResultRow] = []
         self._lock = asyncio.Lock()
         self._task = asyncio.create_task(self._process_data(self._manager))
         self._processed_count = 0
@@ -1242,11 +1234,8 @@ async def _aforward(
 
     with rh.tracing_context(enabled=True):
         try:
-            args = (
-                (example.inputs, example.attachments)
-                if include_attachments
-                else (example.inputs,)
-            )
+            arg_names = _get_target_args(fn)
+            args = [getattr(example, argn) for argn in arg_names]
             await fn(
                 *args,
                 langsmith_extra=rh.LangSmithExtra(
@@ -1331,7 +1320,7 @@ async def async_chain_from_iterable(
 
 
 async def async_iter_from_list(
-    examples: List[schemas.Example],
+    examples: list[schemas.Example],
 ) -> AsyncIterable[schemas.Example]:
     """Convert a list of examples to an async iterable."""
     for example in examples:

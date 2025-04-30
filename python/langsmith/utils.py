@@ -15,20 +15,13 @@ import subprocess
 import sys
 import threading
 import traceback
+from collections.abc import Generator, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import (
     Any,
     Callable,
-    Dict,
-    Generator,
-    Iterable,
-    Iterator,
-    List,
     Literal,
-    Mapping,
     Optional,
-    Sequence,
-    Tuple,
     TypeVar,
     Union,
     cast,
@@ -81,6 +74,17 @@ class LangSmithConnectionError(LangSmithError):
     """Couldn't connect to the LangSmith API."""
 
 
+class LangSmithExceptionGroup(LangSmithError):
+    """Port of ExceptionGroup for Py < 3.11."""
+
+    def __init__(
+        self, *args: Any, exceptions: Sequence[Exception], **kwargs: Any
+    ) -> None:
+        """Initialize."""
+        super().__init__(*args, **kwargs)
+        self.exceptions = exceptions
+
+
 ## Warning classes
 
 
@@ -116,7 +120,7 @@ def test_tracking_is_disabled() -> bool:
     return get_env_var("TEST_TRACKING", default="") == "false"
 
 
-def xor_args(*arg_groups: Tuple[str, ...]) -> Callable:
+def xor_args(*arg_groups: tuple[str, ...]) -> Callable:
     """Validate specified keyword args are mutually exclusive."""
 
     def decorator(func: Callable) -> Callable:
@@ -209,14 +213,14 @@ def _get_message_fields(message: Mapping[str, Any]) -> Mapping[str, Any]:
         return message["data"]
 
 
-def _convert_message(message: Mapping[str, Any]) -> Dict[str, Any]:
+def _convert_message(message: Mapping[str, Any]) -> dict[str, Any]:
     """Extract message from a message object."""
     message_type = _get_message_type(message)
     message_data = _get_message_fields(message)
     return {"type": message_type, "data": message_data}
 
 
-def get_messages_from_inputs(inputs: Mapping[str, Any]) -> List[Dict[str, Any]]:
+def get_messages_from_inputs(inputs: Mapping[str, Any]) -> list[dict[str, Any]]:
     """Extract messages from the given inputs dictionary.
 
     Args:
@@ -236,7 +240,7 @@ def get_messages_from_inputs(inputs: Mapping[str, Any]) -> List[Dict[str, Any]]:
     raise ValueError(f"Could not find message(s) in run with inputs {inputs}.")
 
 
-def get_message_generation_from_outputs(outputs: Mapping[str, Any]) -> Dict[str, Any]:
+def get_message_generation_from_outputs(outputs: Mapping[str, Any]) -> dict[str, Any]:
     """Retrieve the message generation from the given outputs.
 
     Args:
@@ -304,7 +308,7 @@ def get_llm_generation_from_outputs(outputs: Mapping[str, Any]) -> str:
 
 
 @functools.lru_cache(maxsize=1)
-def get_docker_compose_command() -> List[str]:
+def get_docker_compose_command() -> list[str]:
     """Get the correct docker compose command for this system."""
     try:
         subprocess.check_call(
@@ -332,7 +336,7 @@ def get_docker_compose_command() -> List[str]:
 
 def convert_langchain_message(message: ls_schemas.BaseMessageLike) -> dict:
     """Convert a LangChain message to an example."""
-    converted: Dict[str, Any] = {
+    converted: dict[str, Any] = {
         "type": message.type,
         "data": {"content": message.content},
     }
@@ -365,7 +369,7 @@ def get_env_var(
     name: str,
     default: Optional[str] = None,
     *,
-    namespaces: Tuple = ("LANGSMITH", "LANGCHAIN"),
+    namespaces: tuple = ("LANGSMITH", "LANGCHAIN"),
 ) -> Optional[str]:
     """Retrieve an environment variable from a list of namespaces.
 
@@ -554,7 +558,7 @@ T = TypeVar("T")
 
 
 def _middle_copy(
-    val: T, memo: Dict[int, Any], max_depth: int = 4, _depth: int = 0
+    val: T, memo: dict[int, Any], max_depth: int = 4, _depth: int = 0
 ) -> T:
     cls = type(val)
 
@@ -592,7 +596,7 @@ def deepish_copy(val: T) -> T:
     Returns:
         The deep copied value.
     """
-    memo: Dict[int, Any] = {}
+    memo: dict[int, Any] = {}
     try:
         return copy.deepcopy(val, memo)
     except BaseException as e:
@@ -613,7 +617,7 @@ def is_version_greater_or_equal(current_version: str, target_version: str) -> bo
     return current >= target
 
 
-def parse_prompt_identifier(identifier: str) -> Tuple[str, str, str]:
+def parse_prompt_identifier(identifier: str) -> tuple[str, str, str]:
     """Parse a string in the format of owner/name:hash, name:hash, owner/name, or name.
 
     Args:

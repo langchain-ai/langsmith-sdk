@@ -95,9 +95,11 @@ test("distributed", () => {
     name: "parent_1",
     id: "00000000-0000-0000-0000-00000000000",
     start_time: Date.parse("2021-05-03T00:00:00.000Z"),
+    project_name: "test_project",
   });
 
   const serialized = parent.toHeaders();
+  expect(serialized.baggage).toContain("test_project");
 
   const child2 = RunTree.fromHeaders(serialized)?.createChild({
     name: "child_2",
@@ -108,6 +110,7 @@ test("distributed", () => {
   expect(JSON.parse(JSON.stringify(child2))).toMatchObject({
     name: "child_2",
     run_type: "chain",
+    session_name: "test_project",
     dotted_order:
       "20210503T000000000001Z00000000-0000-0000-0000-00000000000.20210503T000001000002Z00000000-0000-0000-0000-00000000001",
   });
