@@ -414,6 +414,7 @@ class Client:
         "_anonymizer",
         "_hide_inputs",
         "_hide_outputs",
+        "_hide_metadata",
         "_info",
         "_write_api_urls",
         "_settings",
@@ -438,6 +439,7 @@ class Client:
         anonymizer: Optional[Callable[[dict], dict]] = None,
         hide_inputs: Optional[Union[Callable[[dict], dict], bool]] = None,
         hide_outputs: Optional[Union[Callable[[dict], dict], bool]] = None,
+        hide_metadata: Optional[Union[Callable[[dict], dict], bool]] = None,
         info: Optional[Union[dict, ls_schemas.LangSmithInfo]] = None,
         api_urls: Optional[dict[str, str]] = None,
         otel_tracer_provider: Optional[TracerProvider] = None,
@@ -466,6 +468,9 @@ class Client:
             hide_outputs (Optional[Union[Callable[[dict], dict], bool]]): Whether to hide run outputs when tracing with this client.
                 If True, hides the entire outputs. If a function, applied to
                 all run outputs when creating runs.
+            hide_metadata (Optional[Union[Callable[[dict], dict], bool]]): Whether to hide run metadata when tracing with this client.
+                If True, hides the entire metadata. If a function, applied to
+                all run metadata when creating runs.
             info (Optional[ls_schemas.LangSmithInfo]): The information about the LangSmith API.
                 If not provided, it will be fetched from the API.
             api_urls (Optional[Dict[str, str]]): A dictionary of write API URLs and their corresponding API keys.
@@ -570,6 +575,11 @@ class Client:
             hide_outputs
             if hide_outputs is not None
             else ls_utils.get_env_var("HIDE_OUTPUTS") == "true"
+        )
+        self._hide_metadata = (
+            hide_metadata
+            if hide_metadata is not None
+            else ls_utils.get_env_var("HIDE_METADATA") == "true"
         )
 
         # To trigger this code, set the `LANGSMITH_USE_PYO3_CLIENT` env var to any value.
@@ -1212,6 +1222,13 @@ class Client:
             if copy:
                 run_create["outputs"] = ls_utils.deepish_copy(run_create["outputs"])
             run_create["outputs"] = self._hide_run_outputs(run_create["outputs"])
+        # Hide metadata in extra if present
+        if "extra" in run_create and isinstance(run_create["extra"], dict):
+            extra = run_create["extra"]
+            if "metadata" in extra and extra["metadata"] is not None:
+                if copy:
+                    extra["metadata"] = ls_utils.deepish_copy(extra["metadata"])
+                extra["metadata"] = self._hide_run_metadata(extra["metadata"])
         if not update and not run_create.get("start_time"):
             run_create["start_time"] = datetime.datetime.now(datetime.timezone.utc)
 
@@ -1465,6 +1482,13 @@ class Client:
         if self._hide_outputs is False:
             return outputs
         return self._hide_outputs(outputs)
+
+    def _hide_run_metadata(self, metadata: dict) -> dict:
+        if self._hide_metadata is True:
+            return {}
+        if self._hide_metadata is False:
+            return metadata
+        return self._hide_metadata(metadata)
 
     def _batch_ingest_run_ops(
         self,
