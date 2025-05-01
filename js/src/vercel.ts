@@ -388,6 +388,12 @@ export class AISDKExporter {
       relativeExecutionOrder: Record<string, number>;
     }
   > = {};
+  private seenSpanInfo: Record<
+    string,
+    { span: AISDKSpan; dotOrder: string; sent: boolean }
+  > = {};
+
+  private pendingSpans: AISDKSpan[] = [];
 
   private debug: boolean;
 
@@ -813,22 +819,43 @@ export class AISDKExporter {
     this.logDebug("exporting spans", spans);
 
     const typedSpans = (spans as AISDKSpan[])
+      .concat(this.pendingSpans)
       .slice()
       .sort((a, b) => sortByHr(a.startTime, b.startTime));
+
+    // This is really important, as OTEL seems to do weird things with threads.
+    // Don't use a while loop.
+    this.pendingSpans = [];
+
+    const skippedSpans: AISDKSpan[] = [];
+    const potentialChildRootRunIds: string[] = [];
 
     for (const span of typedSpans) {
       const { traceId, spanId } = span.spanContext();
       const parentId = getParentSpanId(span);
+      const parentRunId = parentId
+        ? uuid5(parentId, RUN_ID_NAMESPACE)
+        : undefined;
+
+      const runId = uuid5(spanId, RUN_ID_NAMESPACE);
+
+      const parentSpanInfo = parentRunId
+        ? this.seenSpanInfo[parentRunId]
+        : undefined;
+
+      // Export may be called in any order, so we need to queue any spans with missing parents
+      // for retry later in order to determine whether their parents are tool calls
+      // and should not be reparented below.
+      if (parentRunId !== undefined && parentSpanInfo === undefined) {
+        skippedSpans.push(span);
+        continue;
+      }
+
       this.traceByMap[traceId] ??= {
         childMap: {},
         nodeMap: {},
         relativeExecutionOrder: {},
       };
-
-      const runId = uuid5(spanId, RUN_ID_NAMESPACE);
-      const parentRunId = parentId
-        ? uuid5(parentId, RUN_ID_NAMESPACE)
-        : undefined;
 
       const traceMap = this.traceByMap[traceId];
       const run = this.getRunCreate(span);
@@ -836,108 +863,125 @@ export class AISDKExporter {
       traceMap.relativeExecutionOrder[parentRunId ?? ROOT] ??= -1;
       traceMap.relativeExecutionOrder[parentRunId ?? ROOT] += 1;
 
-      const parentSpan = parentId
-        ? typedSpans.find((i) => i.spanContext().spanId === parentId)
-        : undefined;
-
       traceMap.nodeMap[runId] ??= {
         id: runId,
         startTime: span.startTime,
         run,
         sent: false,
-        interop: this.parseInteropFromMetadata(span, parentSpan),
+        interop: this.parseInteropFromMetadata(span, parentSpanInfo?.span),
         executionOrder: traceMap.relativeExecutionOrder[parentRunId ?? ROOT],
       };
+
+      if (this.seenSpanInfo[runId] == null) {
+        this.seenSpanInfo[runId] = {
+          span,
+          dotOrder: joinDotOrder(
+            parentSpanInfo?.dotOrder,
+            getDotOrder(traceMap.nodeMap[runId])
+          ),
+          sent: false,
+        };
+      }
 
       if (this.debug) console.log(`[${span.name}] ${runId}`, run);
       traceMap.childMap[parentRunId ?? ROOT] ??= [];
       traceMap.childMap[parentRunId ?? ROOT].push(traceMap.nodeMap[runId]);
+      if (parentRunId != null) {
+        potentialChildRootRunIds.push(parentRunId);
+      }
     }
 
     const sampled: RunCreate[] = [];
     const actions: PostProcessAction[] = [];
 
     for (const traceId of Object.keys(this.traceByMap)) {
-      type QueueItem = { dotOrder: string; item: RunTask };
       const traceMap = this.traceByMap[traceId];
-      const queue: QueueItem[] =
-        traceMap.childMap[ROOT]?.map((item) => ({
-          item,
-          dotOrder: getDotOrder(item),
-        })) ?? [];
+      const queue: RunTask[] = Object.keys(traceMap.childMap)
+        .map((runId) => {
+          if (runId === ROOT || potentialChildRootRunIds.includes(runId)) {
+            return traceMap.childMap[runId];
+          }
+          return [];
+        })
+        .flat();
 
       const seen = new Set<string>();
       while (queue.length) {
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         const task = queue.shift()!;
-        if (seen.has(task.item.id)) continue;
+        if (seen.has(task.id)) continue;
 
-        if (!task.item.sent) {
-          if (task.item.run != null) {
-            if (task.item.interop?.type === "user") {
+        let taskDotOrder = this.seenSpanInfo[task.id].dotOrder;
+        if (!task.sent) {
+          if (task.run != null) {
+            if (task.interop?.type === "user") {
               actions.push({
                 type: "rename",
-                sourceRunId: task.item.id,
-                targetRunId: task.item.interop.userRunId,
+                sourceRunId: task.id,
+                targetRunId: task.interop.userRunId,
               });
             }
 
-            if (task.item.interop?.type === "traceable") {
+            if (task.interop?.type === "traceable") {
               actions.push({
                 type: "reparent",
-                runId: task.item.id,
-                parentDotOrder: task.item.interop.parentRunTree.dotted_order,
+                runId: task.id,
+                parentDotOrder: task.interop.parentRunTree.dotted_order,
               });
             }
 
-            let dotOrder = task.dotOrder;
             for (const action of actions) {
               if (action.type === "delete") {
-                dotOrder = removeDotOrder(dotOrder, action.runId);
+                taskDotOrder = removeDotOrder(taskDotOrder, action.runId);
               }
 
               if (action.type === "reparent") {
-                dotOrder = reparentDotOrder(
-                  dotOrder,
+                taskDotOrder = reparentDotOrder(
+                  taskDotOrder,
                   action.runId,
                   action.parentDotOrder
                 );
               }
 
               if (action.type === "rename") {
-                dotOrder = dotOrder.replace(
+                taskDotOrder = taskDotOrder.replace(
                   action.sourceRunId,
                   action.targetRunId
                 );
               }
             }
 
-            sampled.push({
-              ...task.item.run,
-              ...getMutableRunCreate(dotOrder),
-            });
+            this.seenSpanInfo[task.id].dotOrder = taskDotOrder;
+            if (!this.seenSpanInfo[task.id].sent) {
+              sampled.push({
+                ...task.run,
+                ...getMutableRunCreate(taskDotOrder),
+              });
+            }
+            this.seenSpanInfo[task.id].sent = true;
           } else {
-            actions.push({ type: "delete", runId: task.item.id });
+            actions.push({ type: "delete", runId: task.id });
           }
 
-          task.item.sent = true;
+          task.sent = true;
         }
 
-        const children = traceMap.childMap[task.item.id] ?? [];
-        queue.push(
-          ...children.map((item) => ({
-            item,
-            dotOrder: joinDotOrder(task.dotOrder, getDotOrder(item)),
-          }))
-        );
+        const children = traceMap.childMap[task.id] ?? [];
+        queue.push(...children);
       }
     }
 
     this.logDebug(`sampled runs to be sent to LangSmith`, sampled);
-    Promise.all(sampled.map((run) => this.client.createRun(run))).then(
-      () => resultCallback({ code: 0 }),
-      (error) => resultCallback({ code: 1, error })
-    );
+    Promise.all(sampled.map((run) => this.client.createRun(run)))
+      .then(() => {
+        // OTEL seems to do weird things with threads, so we need to queue any spans
+        // with missing parents for retry at the end after async operations.
+        this.pendingSpans = skippedSpans;
+      })
+      .then(
+        () => resultCallback({ code: 0 }),
+        (error) => resultCallback({ code: 1, error })
+      );
   }
 
   async shutdown(): Promise<void> {
@@ -954,11 +998,15 @@ export class AISDKExporter {
       );
     }
 
-    await this.client?.awaitPendingTraceBatches();
+    await this.forceFlush?.();
+    await this.client.awaitPendingTraceBatches();
   }
 
   async forceFlush?(): Promise<void> {
-    await this.client?.awaitPendingTraceBatches();
+    await new Promise((resolve) => {
+      this.export(this.pendingSpans, resolve);
+    });
+    await this.client.awaitPendingTraceBatches();
   }
 
   protected logDebug(...args: Parameters<typeof console.debug>): void {

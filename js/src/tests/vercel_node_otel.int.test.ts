@@ -5,6 +5,10 @@ import { generateText, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 
+import * as fs from "fs";
+import { fileURLToPath } from "url";
+import path from "path";
+
 import { AISDKExporter } from "../vercel.js";
 import { waitUntilRunFound } from "./utils.js";
 import { Client } from "../index.js";
@@ -43,6 +47,11 @@ test("nested generateText", async () => {
             description: "view tracking information for a specific order",
             parameters: z.object({ orderId: z.string() }),
             execute: async () => {
+              const pathname = path.join(
+                path.dirname(fileURLToPath(import.meta.url)),
+                "test_data",
+                "parrot-icon.png"
+              );
               await generateText({
                 model: openai("gpt-4.1-mini"),
                 experimental_telemetry: AISDKExporter.getSettings({
@@ -51,7 +60,16 @@ test("nested generateText", async () => {
                 messages: [
                   {
                     role: "user",
-                    content: `How are you feeling?`,
+                    content: [
+                      {
+                        type: "text",
+                        text: "What is this?",
+                      },
+                      {
+                        type: "image",
+                        image: Buffer.from(fs.readFileSync(pathname)),
+                      },
+                    ],
                   },
                 ],
               });
@@ -122,4 +140,12 @@ test("nested generateText", async () => {
   expect(
     storedRun.child_runs?.[0]?.child_runs?.[3]?.child_runs?.[1].name
   ).toEqual("How are you 2");
+  expect(
+    storedRun.child_runs?.[0]?.child_runs?.[3]?.child_runs?.[0].child_runs
+      ?.length
+  ).toEqual(1);
+  expect(
+    storedRun.child_runs?.[0]?.child_runs?.[3]?.child_runs?.[1].child_runs
+      ?.length
+  ).toEqual(1);
 });
