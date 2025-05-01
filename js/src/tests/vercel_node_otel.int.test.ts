@@ -45,7 +45,9 @@ test("nested generateText", async () => {
             execute: async () => {
               await generateText({
                 model: openai("gpt-4.1-mini"),
-                experimental_telemetry: AISDKExporter.getSettings({}),
+                experimental_telemetry: AISDKExporter.getSettings({
+                  runName: "How are you 1",
+                }),
                 messages: [
                   {
                     role: "user",
@@ -55,7 +57,9 @@ test("nested generateText", async () => {
               });
               await generateText({
                 model: openai("gpt-4.1-mini"),
-                experimental_telemetry: AISDKExporter.getSettings({}),
+                experimental_telemetry: AISDKExporter.getSettings({
+                  runName: "How are you 2",
+                }),
                 messages: [
                   {
                     role: "user",
@@ -103,6 +107,19 @@ test("nested generateText", async () => {
 
   await waitUntilRunFound(client, runId, true);
 
-  const storedRun = await client.readRun(runId);
+  const storedRun = await client.readRun(runId, { loadChildRuns: true });
   expect(storedRun.id).toEqual(runId);
+  // OpenAI call, listOrders, OpenAI call, viewTrackingInformation
+  expect(storedRun.child_runs?.[0]?.child_runs?.[3]?.name).toEqual(
+    "viewTrackingInformation"
+  );
+  expect(
+    storedRun.child_runs?.[0]?.child_runs?.[3]?.child_runs?.length
+  ).toEqual(2);
+  expect(
+    storedRun.child_runs?.[0]?.child_runs?.[3]?.child_runs?.[0].name
+  ).toEqual("How are you 1");
+  expect(
+    storedRun.child_runs?.[0]?.child_runs?.[3]?.child_runs?.[1].name
+  ).toEqual("How are you 2");
 });
