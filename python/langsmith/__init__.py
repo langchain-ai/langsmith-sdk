@@ -14,7 +14,6 @@ if TYPE_CHECKING:
         trace,
         traceable,
         tracing_context,
-        update_current_run,
     )
     from langsmith.run_trees import RunTree
     from langsmith.testing._internal import test, unit
@@ -92,10 +91,6 @@ def __getattr__(name: str) -> Any:
         from langsmith.run_helpers import get_tracing_context
 
         return get_tracing_context
-    elif name == "update_current_run":
-        from langsmith.run_helpers import update_current_run
-
-        return update_current_run
     elif name == "get_current_run_tree":
         from langsmith.run_helpers import get_current_run_tree
 
@@ -130,7 +125,6 @@ __all__ = [
     "tracing_context",
     "get_tracing_context",
     "get_current_run_tree",
-    "update_current_run",
     "ContextThreadPoolExecutor",
     "AsyncClient",
 ]
