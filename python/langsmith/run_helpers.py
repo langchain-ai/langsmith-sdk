@@ -50,6 +50,7 @@ if TYPE_CHECKING:
 
     from langchain_core.runnables import Runnable
 
+NOT_PROVIDED = cast(None, object())
 LOGGER = logging.getLogger(__name__)
 _PARENT_RUN_TREE = contextvars.ContextVar[Optional[run_trees.RunTree]](
     "_PARENT_RUN_TREE", default=None
@@ -78,6 +79,60 @@ _EXCLUDED_FRAME_FNAME = "langsmith/run_helpers.py"
 def get_current_run_tree() -> Optional[run_trees.RunTree]:
     """Get the current run tree."""
     return _PARENT_RUN_TREE.get()
+
+
+def update_current_run(
+    *,
+    inputs: Optional[dict[str, Any]] = NOT_PROVIDED,
+    outputs: Optional[dict[str, Any]] = NOT_PROVIDED,
+    metadata: Optional[dict[str, Any]] = NOT_PROVIDED,
+    tags: Optional[list[str]] = NOT_PROVIDED,
+    # Default is to override rather than upsert
+    omit_auto_outputs: Optional[bool] = NOT_PROVIDED,
+    omit_auto_inputs: Optional[bool] = NOT_PROVIDED,
+) -> None:
+    """Update the current run."""
+    run_tree = _PARENT_RUN_TREE.get()
+    if run_tree is None:
+        LOGGER.debug("update_current_run: no run tree found to update.")
+        return
+    if inputs is not NOT_PROVIDED:
+        if omit_auto_inputs in (True, NOT_PROVIDED):
+            if inputs is None:
+                run_tree.inputs = {}
+            else:
+                run_tree.inputs = inputs
+        else:
+            run_tree.add_inputs(inputs)
+        # This is used by LangChain core to determine whether to
+        # re-upload the inputs upon run completion
+        run_tree.extra["inputs_is_truthy"] = False
+    elif omit_auto_inputs is True:
+        run_tree.extra["inputs_is_truthy"] = False
+        run_tree.inputs = {}
+    if outputs is not NOT_PROVIDED:
+        if omit_auto_outputs is NOT_PROVIDED:
+            # Default to True if user is setting
+            omit_auto_outputs = True
+        if omit_auto_outputs in (True, NOT_PROVIDED):
+            if outputs is None:
+                run_tree.outputs = {}
+            else:
+                run_tree.outputs = outputs
+        else:
+            run_tree.add_outputs(outputs)
+    if omit_auto_outputs is not NOT_PROVIDED:
+        run_tree.extra["omit_auto_outputs"] = omit_auto_outputs
+    if metadata is not NOT_PROVIDED:
+        if metadata is None:
+            run_tree.metadata = {}
+        else:
+            run_tree.add_metadata(metadata)
+    if tags is not NOT_PROVIDED:
+        if tags is None:
+            run_tree.tags = []
+        else:
+            run_tree.add_tags(tags)
 
 
 def get_tracing_context(
