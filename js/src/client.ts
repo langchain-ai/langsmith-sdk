@@ -41,6 +41,7 @@ import {
   AttachmentInfo,
   AttachmentData,
   DatasetVersion,
+  AnnotationQueueWithDetails,
 } from "./schemas.js";
 import {
   convertLangChainMessageToExample,
@@ -76,7 +77,6 @@ export interface ClientConfig {
   anonymizer?: (values: KVMap) => KVMap | Promise<KVMap>;
   hideInputs?: boolean | ((inputs: KVMap) => KVMap | Promise<KVMap>);
   hideOutputs?: boolean | ((outputs: KVMap) => KVMap | Promise<KVMap>);
-  hideMetadata?: boolean | ((metadata: KVMap) => KVMap | Promise<KVMap>);
   autoBatchTracing?: boolean;
   batchSizeBytesLimit?: number;
   blockOnRootRunFinalization?: boolean;
@@ -493,10 +493,6 @@ export class Client implements LangSmithTracingClientInterface {
 
   private hideOutputs?: boolean | ((outputs: KVMap) => KVMap | Promise<KVMap>);
 
-  private hideMetadata?:
-    | boolean
-    | ((metadata: KVMap) => KVMap | Promise<KVMap>);
-
   private tracingSampleRate?: number;
 
   private filteredPostUuids = new Set();
@@ -565,8 +561,6 @@ export class Client implements LangSmithTracingClientInterface {
       config.hideInputs ?? config.anonymizer ?? defaultConfig.hideInputs;
     this.hideOutputs =
       config.hideOutputs ?? config.anonymizer ?? defaultConfig.hideOutputs;
-    this.hideMetadata =
-      config.hideMetadata ?? config.anonymizer ?? defaultConfig.hideMetadata;
 
     this.autoBatchTracing = config.autoBatchTracing ?? this.autoBatchTracing;
     this.blockOnRootRunFinalization =
@@ -582,7 +576,6 @@ export class Client implements LangSmithTracingClientInterface {
     webUrl?: string;
     hideInputs?: boolean;
     hideOutputs?: boolean;
-    hideMetadata?: boolean;
   } {
     const apiKey = getLangSmithEnvironmentVariable("API_KEY");
     const apiUrl =
@@ -592,15 +585,12 @@ export class Client implements LangSmithTracingClientInterface {
       getLangSmithEnvironmentVariable("HIDE_INPUTS") === "true";
     const hideOutputs =
       getLangSmithEnvironmentVariable("HIDE_OUTPUTS") === "true";
-    const hideMetadata =
-      getLangSmithEnvironmentVariable("HIDE_METADATA") === "true";
     return {
       apiUrl: apiUrl,
       apiKey: apiKey,
       webUrl: undefined,
       hideInputs: hideInputs,
       hideOutputs: hideOutputs,
-      hideMetadata: hideMetadata,
     };
   }
 
@@ -670,16 +660,6 @@ export class Client implements LangSmithTracingClientInterface {
     return outputs;
   }
 
-  private async processMetadata(metadata: KVMap): Promise<KVMap> {
-    if (this.hideMetadata === true) {
-      return {};
-    }
-    if (this.hideMetadata === false || this.hideMetadata === undefined) {
-      return metadata;
-    }
-    return await Promise.resolve(this.hideMetadata(metadata));
-  }
-
   private async prepareRunCreateOrUpdateInputs(
     run: RunUpdate
   ): Promise<RunUpdate>;
@@ -695,12 +675,6 @@ export class Client implements LangSmithTracingClientInterface {
     }
     if (runParams.outputs !== undefined) {
       runParams.outputs = await this.processOutputs(runParams.outputs);
-    }
-    if (runParams.extra?.metadata !== undefined) {
-      runParams.extra = { ...runParams.extra };
-      runParams.extra.metadata = await this.processMetadata(
-        runParams.extra.metadata
-      );
     }
     return runParams;
   }
@@ -3828,12 +3802,14 @@ export class Client implements LangSmithTracingClientInterface {
     name: string;
     description?: string;
     queueId?: string;
-  }): Promise<AnnotationQueue> {
-    const { name, description, queueId } = options;
+    rubricInstructions?: string;
+  }): Promise<AnnotationQueueWithDetails> {
+    const { name, description, queueId, rubricInstructions } = options;
     const body = {
       name,
       description,
       id: queueId || uuid.v4(),
+      rubric_instructions: rubricInstructions,
     };
 
     const response = await this.caller.call(
@@ -3859,17 +3835,24 @@ export class Client implements LangSmithTracingClientInterface {
   /**
    * Read an annotation queue with the specified queue ID.
    * @param queueId - The ID of the annotation queue to read
-   * @returns The AnnotationQueue object
+   * @returns The AnnotationQueueWithDetails object
    */
-  public async readAnnotationQueue(queueId: string): Promise<AnnotationQueue> {
-    // TODO: Replace when actual endpoint is added
-    const queueIteratorResult = await this.listAnnotationQueues({
-      queueIds: [queueId],
-    }).next();
-    if (queueIteratorResult.done) {
-      throw new Error(`Annotation queue with ID ${queueId} not found`);
-    }
-    return queueIteratorResult.value;
+  public async readAnnotationQueue(
+    queueId: string
+  ): Promise<AnnotationQueueWithDetails> {
+    const response = await this.caller.call(
+      _getFetchImplementation(this.debug),
+      `${this.apiUrl}/annotation-queues/${assertUuid(queueId, "queueId")}`,
+      {
+        method: "GET",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      }
+    );
+    await raiseForStatus(response, "read annotation queue");
+    const data = await response.json();
+    return data as AnnotationQueueWithDetails;
   }
 
   /**
@@ -3884,16 +3867,21 @@ export class Client implements LangSmithTracingClientInterface {
     options: {
       name: string;
       description?: string;
+      rubricInstructions?: string;
     }
   ): Promise<void> {
-    const { name, description } = options;
+    const { name, description, rubricInstructions } = options;
     const response = await this.caller.call(
       _getFetchImplementation(this.debug),
       `${this.apiUrl}/annotation-queues/${assertUuid(queueId, "queueId")}`,
       {
         method: "PATCH",
         headers: { ...this.headers, "Content-Type": "application/json" },
-        body: JSON.stringify({ name, description }),
+        body: JSON.stringify({
+          name,
+          description,
+          rubric_instructions: rubricInstructions,
+        }),
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       }
