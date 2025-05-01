@@ -1,6 +1,6 @@
 {
   "name": "langsmith",
-  "version": "0.3.23",
+  "version": "0.3.24",
   "description": "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform.",
   "packageManager": "yarn@1.22.19",
   "files": [
@@ -141,8 +141,10 @@
     "@langchain/langgraph": "^0.2.20",
     "@langchain/openai": "^0.3.11",
     "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/auto-instrumentations-node": "^0.58.0",
     "@opentelemetry/sdk-trace-base": "^2.0.0",
     "@opentelemetry/sdk-trace-node": "^2.0.0",
+    "@opentelemetry/sdk-node": "^0.200.0",
     "@tsconfig/recommended": "^1.0.2",
     "@types/jest": "^29.5.1",
     "@typescript-eslint/eslint-plugin": "^5.59.8",
