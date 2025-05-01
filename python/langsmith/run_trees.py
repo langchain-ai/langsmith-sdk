@@ -33,6 +33,9 @@ LANGSMITH_DOTTED_ORDER_BYTES = LANGSMITH_DOTTED_ORDER.encode("utf-8")
 LANGSMITH_METADATA = sys.intern(f"{LANGSMITH_PREFIX}metadata")
 LANGSMITH_TAGS = sys.intern(f"{LANGSMITH_PREFIX}tags")
 LANGSMITH_PROJECT = sys.intern(f"{LANGSMITH_PREFIX}project")
+OVERRIDE_INPUTS = sys.intern("__omit_auto_inputs")
+OVERRIDE_OUTPUTS = sys.intern("__omit_auto_outputs")
+NOT_PROVIDED = cast(None, object())
 _CLIENT: Optional[Client] = None
 _LOCK = threading.Lock()  # Keeping around for a while for backwards compat
 
@@ -191,6 +194,7 @@ class RunTree(ls_schemas.RunBase):
         if self.outputs is None:
             self.outputs = {}
         self.outputs.update(outputs)
+        self.extra[OVERRIDE_OUTPUTS] = True
 
     def add_inputs(self, inputs: dict[str, Any]) -> None:
         """Upsert the given outputs into the run.
