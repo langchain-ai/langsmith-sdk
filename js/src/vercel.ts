@@ -330,6 +330,14 @@ type InteropType =
   | { type: "user"; userRunId: string }
   | undefined;
 
+function getParentSpanId(span: AISDKSpan): string | undefined {
+  // Backcompat shim to support OTEL 1.x and 2.x
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (
+    (span as any).parentSpanId ?? span.parentSpanContext?.spanId ?? undefined
+  );
+}
+
 /**
  * OpenTelemetry trace exporter for Vercel AI SDK.
  *
@@ -438,8 +446,15 @@ export class AISDKExporter {
   };
 
   /** @internal */
-  protected parseInteropFromMetadata(span: AISDKSpan): InteropType {
+  protected parseInteropFromMetadata(
+    span: AISDKSpan,
+    parentSpan?: AISDKSpan
+  ): InteropType {
     if (!this.isRootRun(span)) return undefined;
+
+    if (parentSpan?.name === "ai.toolCall") {
+      return undefined;
+    }
 
     const userTraceId = this.getSpanAttributeKey(
       span,
@@ -803,12 +818,7 @@ export class AISDKExporter {
 
     for (const span of typedSpans) {
       const { traceId, spanId } = span.spanContext();
-      const parentId =
-        // Backcompat shim to support OTEL 1.x and 2.x
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (span as any).parentSpanId ??
-        span.parentSpanContext?.spanId ??
-        undefined;
+      const parentId = getParentSpanId(span);
       this.traceByMap[traceId] ??= {
         childMap: {},
         nodeMap: {},
@@ -826,12 +836,16 @@ export class AISDKExporter {
       traceMap.relativeExecutionOrder[parentRunId ?? ROOT] ??= -1;
       traceMap.relativeExecutionOrder[parentRunId ?? ROOT] += 1;
 
+      const parentSpan = parentId
+        ? typedSpans.find((i) => i.spanContext().spanId === parentId)
+        : undefined;
+
       traceMap.nodeMap[runId] ??= {
         id: runId,
         startTime: span.startTime,
         run,
         sent: false,
-        interop: this.parseInteropFromMetadata(span),
+        interop: this.parseInteropFromMetadata(span, parentSpan),
         executionOrder: traceMap.relativeExecutionOrder[parentRunId ?? ROOT],
       };
 
@@ -846,7 +860,6 @@ export class AISDKExporter {
     for (const traceId of Object.keys(this.traceByMap)) {
       type QueueItem = { dotOrder: string; item: RunTask };
       const traceMap = this.traceByMap[traceId];
-
       const queue: QueueItem[] =
         traceMap.childMap[ROOT]?.map((item) => ({
           item,
