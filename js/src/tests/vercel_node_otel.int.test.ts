@@ -42,7 +42,7 @@ test("nested generateText", async () => {
           viewTrackingInformation: tool({
             description: "view tracking information for a specific order",
             parameters: z.object({ orderId: z.string() }),
-            execute: async ({}) => {
+            execute: async () => {
               await generateText({
                 model: openai("gpt-4.1-mini"),
                 experimental_telemetry: AISDKExporter.getSettings({}),
