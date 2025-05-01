@@ -50,7 +50,6 @@ if TYPE_CHECKING:
 
     from langchain_core.runnables import Runnable
 
-NOT_PROVIDED = cast(None, object())
 LOGGER = logging.getLogger(__name__)
 _PARENT_RUN_TREE = contextvars.ContextVar[Optional[run_trees.RunTree]](
     "_PARENT_RUN_TREE", default=None
