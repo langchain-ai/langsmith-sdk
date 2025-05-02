@@ -5,6 +5,10 @@ import { generateText, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 
+import * as fs from "fs";
+import { fileURLToPath } from "url";
+import path from "path";
+
 import { AISDKExporter } from "../vercel.js";
 import { waitUntilRunFound } from "./utils.js";
 import { Client } from "../index.js";
@@ -25,7 +29,7 @@ test("nested generateText", async () => {
   const wrapper = traceable(
     async () => {
       return generateText({
-        model: openai("gpt-4.1-mini"),
+        model: openai("gpt-4.1-nano"),
         messages: [
           {
             role: "user",
@@ -43,15 +47,52 @@ test("nested generateText", async () => {
             description: "view tracking information for a specific order",
             parameters: z.object({ orderId: z.string() }),
             execute: async () => {
+              const pathname = path.join(
+                path.dirname(fileURLToPath(import.meta.url)),
+                "test_data",
+                "parrot-icon.png"
+              );
+              const buffer = fs.readFileSync(pathname);
               await generateText({
-                model: openai("gpt-4.1-mini"),
+                model: openai("gpt-4.1-nano"),
                 experimental_telemetry: AISDKExporter.getSettings({
                   runName: "How are you 1",
                 }),
                 messages: [
                   {
                     role: "user",
-                    content: `How are you feeling?`,
+                    content: [
+                      {
+                        type: "text",
+                        text: "What is this?",
+                      },
+                      // Node Buffer
+                      {
+                        type: "image",
+                        image: Buffer.from(buffer),
+                      },
+                      // ArrayBuffer
+                      {
+                        type: "image",
+                        image: buffer.buffer.slice(
+                          buffer.byteOffset,
+                          buffer.byteOffset + buffer.byteLength
+                        ),
+                      },
+                      {
+                        type: "image",
+                        image: new Uint8Array(buffer),
+                      },
+                      {
+                        type: "image",
+                        image: buffer.toString("base64"),
+                      },
+                      {
+                        type: "image",
+                        image:
+                          "https://png.pngtree.com/png-vector/20221025/ourmid/pngtree-navigation-bar-3d-search-url-png-image_6360655.png",
+                      },
+                    ],
                   },
                 ],
               });
@@ -122,4 +163,12 @@ test("nested generateText", async () => {
   expect(
     storedRun.child_runs?.[0]?.child_runs?.[3]?.child_runs?.[1].name
   ).toEqual("How are you 2");
+  expect(
+    storedRun.child_runs?.[0]?.child_runs?.[3]?.child_runs?.[0].child_runs
+      ?.length
+  ).toEqual(1);
+  expect(
+    storedRun.child_runs?.[0]?.child_runs?.[3]?.child_runs?.[1].child_runs
+      ?.length
+  ).toEqual(1);
 });
