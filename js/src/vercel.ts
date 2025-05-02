@@ -304,11 +304,20 @@ function convertToTimestamp([seconds, nanoseconds]: [
 }
 
 function sortByHr(
-  a: [seconds: number, nanoseconds: number],
-  b: [seconds: number, nanoseconds: number]
+  a: AISDKSpan,
+  b: AISDKSpan
 ): number {
-  if (a[0] !== b[0]) return Math.sign(a[0] - b[0]);
-  return Math.sign(a[1] - b[1]);
+  if (a.startTime[0] !== b.startTime[0]) {
+    return Math.sign(a.startTime[0] - b.startTime[0]);
+  } else if (a.startTime[1] !== b.startTime[1]) {
+    return Math.sign(a.startTime[1] - b.startTime[1]);
+  } else if (getParentSpanId(a) === b.spanContext().spanId) {
+    return -1;
+  } else if (getParentSpanId(b) === a.spanContext().spanId) {
+    return 1;
+  } else {
+    return 0;
+  }
 }
 
 const ROOT = "$";
@@ -853,7 +862,11 @@ export class AISDKExporter {
     const typedSpans = (spans as AISDKSpan[])
       .concat(this.pendingSpans)
       .slice()
-      .sort((a, b) => sortByHr(a.startTime, b.startTime));
+      // Parent spans should go before child spans in the final order,
+      // but may have the same exact start time as their children.
+      // They will end earlier, so break ties by end time.
+      // TODO: Figure out why this happens.
+      .sort((a, b) => sortByHr(a, b));
 
     // This is really important, as OTEL seems to do weird things with threads.
     // Don't use a while loop.
@@ -1030,13 +1043,12 @@ export class AISDKExporter {
       );
     }
 
-    await this.forceFlush?.();
-    await this.client.awaitPendingTraceBatches();
+    await this.forceFlush();
   }
 
-  async forceFlush?(): Promise<void> {
+  async forceFlush(): Promise<void> {
     await new Promise((resolve) => {
-      this.export(this.pendingSpans, resolve);
+      this.export([], resolve);
     });
     await this.client.awaitPendingTraceBatches();
   }

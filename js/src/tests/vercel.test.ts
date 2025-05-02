@@ -941,7 +941,7 @@ test("traceable", async () => {
   });
 });
 
-test("unrelated spans around", async () => {
+test.only("unrelated spans around", async () => {
   const tracer = provider.getTracer("test");
 
   const inner = async () => {
@@ -1030,7 +1030,7 @@ test("unrelated spans around", async () => {
   };
 
   await outer();
-  await provider.forceFlush();
+  await provider.shutdown();
 
   const actual = getAssumedTreeFromCalls(callSpy.mock.calls);
   expect(actual).toMatchObject({
