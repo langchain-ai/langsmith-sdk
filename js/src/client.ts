@@ -1694,7 +1694,7 @@ export class Client implements LangSmithTracingClientInterface {
     }
   }
 
-  public async *groupRuns(props: GroupRunsParams): AsyncIterable<Thread> {
+  public async *listGroupRuns(props: GroupRunsParams): AsyncIterable<Thread> {
     const {
       projectId,
       projectName,
