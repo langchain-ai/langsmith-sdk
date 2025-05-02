@@ -135,6 +135,7 @@ function convertCoreToSmith(
               // Typing is wrong here if a buffer is passed in
               uint8Array = new Uint8Array(imageUrl.data as Uint8Array);
             } else if (
+              imageUrl != null &&
               typeof imageUrl === "object" &&
               Object.keys(imageUrl).every((key) => !isNaN(Number(key)))
             ) {
