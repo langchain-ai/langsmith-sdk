@@ -29,7 +29,7 @@ test("nested generateText", async () => {
   const wrapper = traceable(
     async () => {
       return generateText({
-        model: openai("gpt-4.1-mini"),
+        model: openai("gpt-4.1-nano"),
         messages: [
           {
             role: "user",
@@ -52,8 +52,9 @@ test("nested generateText", async () => {
                 "test_data",
                 "parrot-icon.png"
               );
+              const buffer = fs.readFileSync(pathname);
               await generateText({
-                model: openai("gpt-4.1-mini"),
+                model: openai("gpt-4.1-nano"),
                 experimental_telemetry: AISDKExporter.getSettings({
                   runName: "How are you 1",
                 }),
@@ -65,9 +66,31 @@ test("nested generateText", async () => {
                         type: "text",
                         text: "What is this?",
                       },
+                      // Node Buffer
                       {
                         type: "image",
-                        image: Buffer.from(fs.readFileSync(pathname)),
+                        image: Buffer.from(buffer),
+                      },
+                      // ArrayBuffer
+                      {
+                        type: "image",
+                        image: buffer.buffer.slice(
+                          buffer.byteOffset,
+                          buffer.byteOffset + buffer.byteLength
+                        ),
+                      },
+                      {
+                        type: "image",
+                        image: new Uint8Array(buffer),
+                      },
+                      {
+                        type: "image",
+                        image: buffer.toString("base64"),
+                      },
+                      {
+                        type: "image",
+                        image:
+                          "https://png.pngtree.com/png-vector/20221025/ourmid/pngtree-navigation-bar-3d-search-url-png-image_6360655.png",
                       },
                     ],
                   },
