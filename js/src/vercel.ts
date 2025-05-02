@@ -128,6 +128,7 @@ function convertCoreToSmith(
           if (typeof imageUrl !== "string") {
             let uint8Array;
             if (
+              imageUrl != null &&
               typeof imageUrl === "object" &&
               "type" in imageUrl &&
               "data" in imageUrl
