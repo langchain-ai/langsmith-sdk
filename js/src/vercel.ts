@@ -124,9 +124,41 @@ function convertCoreToSmith(
         }
 
         if (part.type === "image") {
+          let imageUrl = part.image;
+          if (typeof imageUrl !== "string") {
+            let uint8Array;
+            if (
+              imageUrl != null &&
+              typeof imageUrl === "object" &&
+              "type" in imageUrl &&
+              "data" in imageUrl
+            ) {
+              // Typing is wrong here if a buffer is passed in
+              uint8Array = new Uint8Array(imageUrl.data as Uint8Array);
+            } else if (
+              imageUrl != null &&
+              typeof imageUrl === "object" &&
+              Object.keys(imageUrl).every((key) => !isNaN(Number(key)))
+            ) {
+              // ArrayBuffers get turned into objects with numeric keys for some reason
+              uint8Array = new Uint8Array(
+                Array.from({
+                  ...imageUrl,
+                  length: Object.keys(imageUrl).length,
+                })
+              );
+            }
+            if (uint8Array) {
+              let binary = "";
+              for (let i = 0; i < uint8Array.length; i++) {
+                binary += String.fromCharCode(uint8Array[i]);
+              }
+              imageUrl = btoa(binary);
+            }
+          }
           return {
             type: "image_url",
-            image_url: part.image,
+            image_url: imageUrl,
             ...part.experimental_providerMetadata,
           };
         }
