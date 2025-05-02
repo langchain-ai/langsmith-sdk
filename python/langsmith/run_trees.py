@@ -33,6 +33,8 @@ LANGSMITH_DOTTED_ORDER_BYTES = LANGSMITH_DOTTED_ORDER.encode("utf-8")
 LANGSMITH_METADATA = sys.intern(f"{LANGSMITH_PREFIX}metadata")
 LANGSMITH_TAGS = sys.intern(f"{LANGSMITH_PREFIX}tags")
 LANGSMITH_PROJECT = sys.intern(f"{LANGSMITH_PREFIX}project")
+OVERRIDE_OUTPUTS = sys.intern("__omit_auto_outputs")
+NOT_PROVIDED = cast(None, object())
 _CLIENT: Optional[Client] = None
 _LOCK = threading.Lock()  # Keeping around for a while for backwards compat
 
@@ -164,6 +166,51 @@ class RunTree(ls_schemas.RunBase):
         else:
             return super().__setattr__(name, value)
 
+    def set(
+        self,
+        *,
+        inputs: Optional[Mapping[str, Any]] = NOT_PROVIDED,
+        outputs: Optional[Mapping[str, Any]] = NOT_PROVIDED,
+        tags: Optional[Sequence[str]] = NOT_PROVIDED,
+        metadata: Optional[Mapping[str, Any]] = NOT_PROVIDED,
+    ) -> None:
+        """Set the inputs, outputs, tags, and metadata of the run.
+
+        If performed, this will override the default behavior of the
+        end() method to ignore new outputs (that would otherwise be added)
+        by the @traceable decorator.
+
+        If your LangChain or LangGraph versions are sufficiently up-to-date,
+        this will also override the default behavior LangChainTracer.
+
+        Args:
+            inputs: The inputs to set.
+            outputs: The outputs to set.
+            tags: The tags to set.
+            metadata: The metadata to set.
+
+        Returns:
+            None
+        """
+        if tags is not NOT_PROVIDED:
+            self.tags = list(tags)
+        if metadata is not NOT_PROVIDED:
+            self.extra.setdefault("metadata", {}).update(metadata or {})
+        if inputs is not NOT_PROVIDED:
+            # Used by LangChain core to determine whether to
+            # re-upload the inputs upon run completion
+            self.extra["inputs_is_truthy"] = False
+            if inputs is None:
+                self.inputs = {}
+            else:
+                self.inputs = dict(inputs)
+        if outputs is not NOT_PROVIDED:
+            self.extra[OVERRIDE_OUTPUTS] = True
+            if outputs is None:
+                self.outputs = {}
+            else:
+                self.outputs = dict(outputs)
+
     def add_tags(self, tags: Union[Sequence[str], str]) -> None:
         """Add tags to the run."""
         if isinstance(tags, str):
@@ -204,6 +251,9 @@ class RunTree(ls_schemas.RunBase):
         if self.inputs is None:
             self.inputs = {}
         self.inputs.update(inputs)
+        # Set to False so LangChain things it needs to
+        # re-upload inputs
+        self.extra["inputs_is_truthy"] = False
 
     def add_event(
         self,
@@ -252,11 +302,14 @@ class RunTree(ls_schemas.RunBase):
     ) -> None:
         """Set the end time of the run and all child runs."""
         self.end_time = end_time or datetime.now(timezone.utc)
-        if outputs is not None:
-            if not self.outputs:
-                self.outputs = outputs
-            else:
-                self.outputs.update(outputs)
+        # We've already 'set' the outputs, so ignore
+        # the ones that are automatically included
+        if not self.extra.get(OVERRIDE_OUTPUTS):
+            if outputs is not None:
+                if not self.outputs:
+                    self.outputs = outputs
+                else:
+                    self.outputs.update(outputs)
         if error is not None:
             self.error = error
         if events is not None:
