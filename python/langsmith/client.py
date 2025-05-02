@@ -2164,6 +2164,8 @@ class Client:
             data["events"] = events
         if data["extra"]:
             self._insert_runtime_env([data])
+            if metadata := data["extra"].get("metadata"):
+                data["extra"]["metadata"] = self._hide_run_metadata(metadata)
 
         if self._pyo3_client is not None:
             self._pyo3_client.update_run(data)
