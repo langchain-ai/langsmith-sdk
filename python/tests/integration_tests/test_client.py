@@ -395,7 +395,7 @@ def test_similar_examples(langchain_client: Client) -> None:
         dataset_id=dataset.id,
     )
 
-    langchain_client.sync_dataset_index(dataset_id=dataset.id)
+    langchain_client.sync_indexed_dataset(dataset_id=dataset.id)
     time.sleep(5)
 
     similar_list = langchain_client.similar_examples(

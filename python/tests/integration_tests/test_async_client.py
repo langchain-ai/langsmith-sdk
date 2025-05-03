@@ -51,7 +51,7 @@ async def test_indexed_datasets():
                 dataset_id=dataset.id,
             )
 
-            await client.sync_dataset_index(dataset_id=dataset.id)
+            await client.sync_indexed_dataset(dataset_id=dataset.id)
 
             async def check_similar_examples():
                 examples = await client.similar_examples(

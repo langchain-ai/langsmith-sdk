@@ -4921,7 +4921,7 @@ class Client:
         ls_utils.raise_for_status_with_text(resp)
 
     @warn_beta
-    def sync_dataset_index(
+    def sync_indexed_dataset(
         self,
         *,
         dataset_id: ID_TYPE,

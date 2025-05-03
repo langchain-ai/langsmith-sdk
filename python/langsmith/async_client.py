@@ -1109,7 +1109,7 @@ class AsyncClient:
         ls_utils.raise_for_status_with_text(resp)
 
     @ls_beta.warn_beta
-    async def sync_dataset_index(
+    async def sync_indexed_dataset(
         self,
         *,
         dataset_id: ls_client.ID_TYPE,
