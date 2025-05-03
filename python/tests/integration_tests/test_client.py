@@ -389,6 +389,20 @@ def test_similar_examples(langchain_client: Client) -> None:
     )
     assert len(similar_list) == 2
 
+    langchain_client.create_example(
+        inputs={"text": "howdy"},
+        outputs={"response": "howdy"},
+        dataset_id=dataset.id,
+    )
+
+    langchain_client.sync_dataset_index(dataset_id=dataset.id)
+    time.sleep(5)
+
+    similar_list = langchain_client.similar_examples(
+        {"text": "howdy"}, limit=5, dataset_id=dataset.id
+    )
+    assert len(similar_list) == 4
+
     langchain_client.delete_dataset(dataset_id=dataset.id)
 
 
