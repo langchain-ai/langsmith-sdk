@@ -4920,6 +4920,30 @@ class Client:
         )
         ls_utils.raise_for_status_with_text(resp)
 
+    @warn_beta
+    def sync_indexed_dataset(
+        self,
+        *,
+        dataset_id: ID_TYPE,
+        **kwargs: Any,
+    ) -> None:
+        """Sync dataset index. This already happens automatically every 5 minutes, but you can call this to force a sync.
+
+        Args:
+            dataset_id (Union[UUID, str]): The ID of the dataset to sync.
+
+        Returns:
+            None
+        """  # noqa: E501
+        dataset_id = _as_uuid(dataset_id, "dataset_id")
+        resp = self.request_with_retries(
+            "POST",
+            f"/datasets/{dataset_id}/index/sync",
+            headers=self._headers,
+            data=json.dumps({**kwargs}),
+        )
+        ls_utils.raise_for_status_with_text(resp)
+
     # NOTE: dataset_name arg explicitly not supported to avoid extra API calls.
     @warn_beta
     def similar_examples(
