@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from langsmith.utils import ContextThreadPoolExecutor
 
 # Avoid calling into importlib on every call to __version__
-__version__ = "0.3.37"
+__version__ = "0.3.42"
 version = __version__  # for backwards compatibility
 
 
@@ -91,7 +91,6 @@ def __getattr__(name: str) -> Any:
         from langsmith.run_helpers import get_tracing_context
 
         return get_tracing_context
-
     elif name == "get_current_run_tree":
         from langsmith.run_helpers import get_current_run_tree
 

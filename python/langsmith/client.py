@@ -414,6 +414,7 @@ class Client:
         "_anonymizer",
         "_hide_inputs",
         "_hide_outputs",
+        "_hide_metadata",
         "_info",
         "_write_api_urls",
         "_settings",
@@ -438,6 +439,7 @@ class Client:
         anonymizer: Optional[Callable[[dict], dict]] = None,
         hide_inputs: Optional[Union[Callable[[dict], dict], bool]] = None,
         hide_outputs: Optional[Union[Callable[[dict], dict], bool]] = None,
+        hide_metadata: Optional[Union[Callable[[dict], dict], bool]] = None,
         info: Optional[Union[dict, ls_schemas.LangSmithInfo]] = None,
         api_urls: Optional[dict[str, str]] = None,
         otel_tracer_provider: Optional[TracerProvider] = None,
@@ -466,6 +468,9 @@ class Client:
             hide_outputs (Optional[Union[Callable[[dict], dict], bool]]): Whether to hide run outputs when tracing with this client.
                 If True, hides the entire outputs. If a function, applied to
                 all run outputs when creating runs.
+            hide_metadata (Optional[Union[Callable[[dict], dict], bool]]): Whether to hide run metadata when tracing with this client.
+                If True, hides the entire metadata. If a function, applied to
+                all run metadata when creating runs.
             info (Optional[ls_schemas.LangSmithInfo]): The information about the LangSmith API.
                 If not provided, it will be fetched from the API.
             api_urls (Optional[Dict[str, str]]): A dictionary of write API URLs and their corresponding API keys.
@@ -530,7 +535,7 @@ class Client:
         atexit.register(close_session, session_)
         self.compressed_traces: Optional[CompressedTraces] = None
         self._data_available_event: Optional[threading.Event] = None
-        self._futures: Optional[set[cf.Future]] = None
+        self._futures: Optional[weakref.WeakSet[cf.Future]] = None
         self.otel_exporter: Optional[OTELExporter] = None
 
         # Initialize auto batching
@@ -570,6 +575,11 @@ class Client:
             hide_outputs
             if hide_outputs is not None
             else ls_utils.get_env_var("HIDE_OUTPUTS") == "true"
+        )
+        self._hide_metadata = (
+            hide_metadata
+            if hide_metadata is not None
+            else ls_utils.get_env_var("HIDE_METADATA") == "true"
         )
 
         # To trigger this code, set the `LANGSMITH_USE_PYO3_CLIENT` env var to any value.
@@ -1212,6 +1222,13 @@ class Client:
             if copy:
                 run_create["outputs"] = ls_utils.deepish_copy(run_create["outputs"])
             run_create["outputs"] = self._hide_run_outputs(run_create["outputs"])
+        # Hide metadata in extra if present
+        if "extra" in run_create and isinstance(run_create["extra"], dict):
+            extra = run_create["extra"]
+            if "metadata" in extra and extra["metadata"] is not None:
+                if copy:
+                    extra["metadata"] = ls_utils.deepish_copy(extra["metadata"])
+                extra["metadata"] = self._hide_run_metadata(extra["metadata"])
         if not update and not run_create.get("start_time"):
             run_create["start_time"] = datetime.datetime.now(datetime.timezone.utc)
 
@@ -1465,6 +1482,13 @@ class Client:
         if self._hide_outputs is False:
             return outputs
         return self._hide_outputs(outputs)
+
+    def _hide_run_metadata(self, metadata: dict) -> dict:
+        if self._hide_metadata is True:
+            return {}
+        if self._hide_metadata is False:
+            return metadata
+        return self._hide_metadata(metadata)
 
     def _batch_ingest_run_ops(
         self,
@@ -2140,6 +2164,8 @@ class Client:
             data["events"] = events
         if data["extra"]:
             self._insert_runtime_env([data])
+            if metadata := data["extra"].get("metadata"):
+                data["extra"]["metadata"] = self._hide_run_metadata(metadata)
 
         if self._pyo3_client is not None:
             self._pyo3_client.update_run(data)
@@ -2250,7 +2276,8 @@ class Client:
 
         # If we got a future, wait for it to complete
         if self._futures:
-            done, _ = cf.wait(self._futures)
+            futures = list(self._futures)
+            done, _ = cf.wait(futures)
             # Remove completed futures
             self._futures.difference_update(done)
 
@@ -4893,6 +4920,30 @@ class Client:
         )
         ls_utils.raise_for_status_with_text(resp)
 
+    @warn_beta
+    def sync_indexed_dataset(
+        self,
+        *,
+        dataset_id: ID_TYPE,
+        **kwargs: Any,
+    ) -> None:
+        """Sync dataset index. This already happens automatically every 5 minutes, but you can call this to force a sync.
+
+        Args:
+            dataset_id (Union[UUID, str]): The ID of the dataset to sync.
+
+        Returns:
+            None
+        """  # noqa: E501
+        dataset_id = _as_uuid(dataset_id, "dataset_id")
+        resp = self.request_with_retries(
+            "POST",
+            f"/datasets/{dataset_id}/index/sync",
+            headers=self._headers,
+            data=json.dumps({**kwargs}),
+        )
+        ls_utils.raise_for_status_with_text(resp)
+
     # NOTE: dataset_name arg explicitly not supported to avoid extra API calls.
     @warn_beta
     def similar_examples(
@@ -6258,7 +6309,8 @@ class Client:
         name: str,
         description: Optional[str] = None,
         queue_id: Optional[ID_TYPE] = None,
-    ) -> ls_schemas.AnnotationQueue:
+        rubric_instructions: Optional[str] = None,
+    ) -> ls_schemas.AnnotationQueueWithDetails:
         """Create an annotation queue on the LangSmith API.
 
         Args:
@@ -6268,6 +6320,8 @@ class Client:
                 The description of the annotation queue.
             queue_id (Optional[Union[UUID, str]]):
                 The ID of the annotation queue.
+            rubric_instructions (Optional[str]):
+                The rubric instructions for the annotation queue.
 
         Returns:
             AnnotationQueue: The created annotation queue object.
@@ -6276,6 +6330,7 @@ class Client:
             "name": name,
             "description": description,
             "id": str(queue_id) if queue_id is not None else str(uuid.uuid4()),
+            "rubric_instructions": rubric_instructions,
         }
         response = self.request_with_retries(
             "POST",
@@ -6283,7 +6338,7 @@ class Client:
             json={k: v for k, v in body.items() if v is not None},
         )
         ls_utils.raise_for_status_with_text(response)
-        return ls_schemas.AnnotationQueue(
+        return ls_schemas.AnnotationQueueWithDetails(
             **response.json(),
         )
 
@@ -6296,11 +6351,22 @@ class Client:
         Returns:
             AnnotationQueue: The annotation queue object.
         """
-        # TODO: Replace when actual endpoint is added
-        return next(self.list_annotation_queues(queue_ids=[queue_id]))
+        base_url = f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}"
+        response = self.request_with_retries(
+            "GET",
+            f"{base_url}",
+            headers=self._headers,
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return ls_schemas.AnnotationQueueWithDetails(**response.json())
 
     def update_annotation_queue(
-        self, queue_id: ID_TYPE, *, name: str, description: Optional[str] = None
+        self,
+        queue_id: ID_TYPE,
+        *,
+        name: str,
+        description: Optional[str] = None,
+        rubric_instructions: Optional[str] = None,
     ) -> None:
         """Update an annotation queue with the specified queue_id.
 
@@ -6308,6 +6374,8 @@ class Client:
             queue_id (Union[UUID, str]): The ID of the annotation queue to update.
             name (str): The new name for the annotation queue.
             description (Optional[str]): The new description for the
+                annotation queue. Defaults to None.
+            rubric_instructions (Optional[str]): The new rubric instructions for the
                 annotation queue. Defaults to None.
 
         Returns:
@@ -6319,6 +6387,7 @@ class Client:
             json={
                 "name": name,
                 "description": description,
+                "rubric_instructions": rubric_instructions,
             },
         )
         ls_utils.raise_for_status_with_text(response)

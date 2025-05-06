@@ -20,10 +20,9 @@ import { convertArrayToReadableStream, MockLanguageModelV1 } from "ai/test";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 
 const { client, callSpy } = mockClient();
-const provider = new NodeTracerProvider();
-provider.addSpanProcessor(
-  new BatchSpanProcessor(new AISDKExporter({ client }))
-);
+const provider = new NodeTracerProvider({
+  spanProcessors: [new BatchSpanProcessor(new AISDKExporter({ client }))],
+});
 provider.register();
 
 class ExecutionOrderSame {

@@ -18,7 +18,7 @@ import weakref
 from datetime import datetime, timezone
 from enum import Enum
 from io import BytesIO
-from typing import Dict, List, Literal, NamedTuple, Optional, Type, Union
+from typing import Callable, Dict, List, Literal, NamedTuple, Optional, Type, Union
 from unittest import mock
 from unittest.mock import MagicMock, patch
 
@@ -676,6 +676,82 @@ def test_create_run_with_filters(auto_batch_tracing: bool) -> None:
         [call.kwargs["data"].decode("utf-8") for call in request_calls]
     )
     assert all([exp in all_posted for exp in expected])
+
+
+@pytest.mark.parametrize(
+    "hide_metadata_config, expected_metadata_key_present",
+    [
+        (True, False),  # hide_metadata=True should remove metadata
+        (False, True),  # hide_metadata=False should keep metadata
+        (None, True),  # hide_metadata=None should keep metadata
+        (lambda metadata: {**metadata, "modified": True}, True),  # callable modifies
+    ],
+)
+def test_hide_metadata(
+    hide_metadata_config: Optional[Union[Callable[[dict], dict], bool]],
+    expected_metadata_key_present: bool,
+) -> None:
+    """Test the hide_metadata functionality in Client."""
+    session = mock.MagicMock(spec=requests.Session)
+    initial_metadata = {"initial_key": "initial_value"}
+
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        auto_batch_tracing=False,  # Easier to inspect single calls
+        session=session,
+        hide_metadata=hide_metadata_config,
+    )
+
+    run_id = uuid.uuid4()
+    client.create_run(
+        "my_run_metadata_test",
+        inputs={"in": "put"},
+        run_type="llm",
+        id=run_id,
+        extra={"metadata": initial_metadata},
+    )
+
+    post_call = None
+    for call in session.request.mock_calls:
+        if len(call.args) > 1 and call.args[0] == "POST" and "runs" in call.args[1]:
+            post_call = call
+            break
+
+    assert post_call is not None, "POST request to /runs not found"
+
+    payload_data = post_call.kwargs.get("data", b"{}")
+    if isinstance(payload_data, bytes):
+        payload_str = payload_data.decode("utf-8")
+    else:
+        payload_str = str(payload_data)
+
+    try:
+        payload = json.loads(payload_str)
+    except json.JSONDecodeError:
+        if isinstance(payload_data, dict):
+            payload = payload_data
+        else:
+            raise
+
+    payload_extra = payload.get("extra", {})
+
+    if expected_metadata_key_present:
+        assert (
+            "metadata" in payload_extra
+        ), f"Metadata key should be present in extra {payload_extra}"
+        if callable(hide_metadata_config):
+            # Check if the callable modified the metadata as expected
+            assert payload_extra["metadata"].get("modified") is True
+        else:
+            assert all(
+                k in payload_extra["metadata"] and v == payload_extra["metadata"][k]
+                for k, v in initial_metadata.items()
+            )
+    else:
+        assert all(
+            k not in payload_extra["metadata"] for k in initial_metadata
+        ), f"Metadata key should NOT be present in extra {payload_extra}"
 
 
 @pytest.mark.flaky(retries=3)
