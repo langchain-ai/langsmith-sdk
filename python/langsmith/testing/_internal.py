@@ -953,6 +953,7 @@ async def _arun_test(
             project_name=test_case.test_suite.name,
             exceptions_to_handle=(SkipException,),
             _end_on_exit=False,
+            metadata={"test_name": getattr(func, "__name__", None)}
         ) as run_tree:
             try:
                 result = await func(*test_args, **test_kwargs)
