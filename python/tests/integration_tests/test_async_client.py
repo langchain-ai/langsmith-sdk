@@ -44,6 +44,27 @@ async def test_indexed_datasets():
                 {"name": "Alice", "age": 30}, dataset_id=dataset.id, limit=1
             )
             assert examples[0].id == example.id
+
+            example2 = await client.create_example(
+                inputs={"name": "Bobby", "age": 30},
+                outputs={"hi": "there"},
+                dataset_id=dataset.id,
+            )
+
+            await client.sync_indexed_dataset(dataset_id=dataset.id)
+
+            async def check_similar_examples():
+                examples = await client.similar_examples(
+                    {"name": "Bobby", "age": 30}, dataset_id=dataset.id, limit=2
+                )
+                return len(examples) == 2
+
+            await wait_for(check_similar_examples, timeout=20)
+            examples = await client.similar_examples(
+                {"name": "Bobby", "age": 30}, dataset_id=dataset.id, limit=2
+            )
+            assert examples[0].id == example2.id
+            assert examples[1].id == example.id
         finally:
             if dataset:
                 await client.delete_dataset(dataset_id=dataset.id)

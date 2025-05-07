@@ -1109,6 +1109,32 @@ class AsyncClient:
         ls_utils.raise_for_status_with_text(resp)
 
     @ls_beta.warn_beta
+    async def sync_indexed_dataset(
+        self,
+        *,
+        dataset_id: ls_client.ID_TYPE,
+        **kwargs: Any,
+    ) -> None:
+        """Sync dataset index. This already happens automatically every 5 minutes, but you can call this to force a sync.
+
+        Args:
+            dataset_id (UUID): The ID of the dataset to sync.
+
+        Returns:
+            None
+
+        Raises:
+            requests.HTTPError
+        """  # noqa: E501
+        dataset_id = ls_client._as_uuid(dataset_id, "dataset_id")
+        resp = await self._arequest_with_retries(
+            "POST",
+            f"/datasets/{dataset_id}/index/sync",
+            content=ls_client._dumps_json({**kwargs}),
+        )
+        ls_utils.raise_for_status_with_text(resp)
+
+    @ls_beta.warn_beta
     async def similar_examples(
         self,
         inputs: dict,

@@ -124,9 +124,41 @@ function convertCoreToSmith(
         }
 
         if (part.type === "image") {
+          let imageUrl = part.image;
+          if (typeof imageUrl !== "string") {
+            let uint8Array;
+            if (
+              imageUrl != null &&
+              typeof imageUrl === "object" &&
+              "type" in imageUrl &&
+              "data" in imageUrl
+            ) {
+              // Typing is wrong here if a buffer is passed in
+              uint8Array = new Uint8Array(imageUrl.data as Uint8Array);
+            } else if (
+              imageUrl != null &&
+              typeof imageUrl === "object" &&
+              Object.keys(imageUrl).every((key) => !isNaN(Number(key)))
+            ) {
+              // ArrayBuffers get turned into objects with numeric keys for some reason
+              uint8Array = new Uint8Array(
+                Array.from({
+                  ...imageUrl,
+                  length: Object.keys(imageUrl).length,
+                })
+              );
+            }
+            if (uint8Array) {
+              let binary = "";
+              for (let i = 0; i < uint8Array.length; i++) {
+                binary += String.fromCharCode(uint8Array[i]);
+              }
+              imageUrl = btoa(binary);
+            }
+          }
           return {
             type: "image_url",
-            image_url: part.image,
+            image_url: imageUrl,
             ...part.experimental_providerMetadata,
           };
         }
@@ -330,6 +362,14 @@ type InteropType =
   | { type: "user"; userRunId: string }
   | undefined;
 
+function getParentSpanId(span: AISDKSpan): string | undefined {
+  // Backcompat shim to support OTEL 1.x and 2.x
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (
+    (span as any).parentSpanId ?? span.parentSpanContext?.spanId ?? undefined
+  );
+}
+
 /**
  * OpenTelemetry trace exporter for Vercel AI SDK.
  *
@@ -438,8 +478,15 @@ export class AISDKExporter {
   };
 
   /** @internal */
-  protected parseInteropFromMetadata(span: AISDKSpan): InteropType {
+  protected parseInteropFromMetadata(
+    span: AISDKSpan,
+    parentSpan?: AISDKSpan
+  ): InteropType {
     if (!this.isRootRun(span)) return undefined;
+
+    if (parentSpan?.name === "ai.toolCall") {
+      return undefined;
+    }
 
     const userTraceId = this.getSpanAttributeKey(
       span,
@@ -803,7 +850,7 @@ export class AISDKExporter {
 
     for (const span of typedSpans) {
       const { traceId, spanId } = span.spanContext();
-      const parentId = span.parentSpanId ?? undefined;
+      const parentId = getParentSpanId(span);
       this.traceByMap[traceId] ??= {
         childMap: {},
         nodeMap: {},
@@ -821,12 +868,16 @@ export class AISDKExporter {
       traceMap.relativeExecutionOrder[parentRunId ?? ROOT] ??= -1;
       traceMap.relativeExecutionOrder[parentRunId ?? ROOT] += 1;
 
+      const parentSpan = parentId
+        ? typedSpans.find((i) => i.spanContext().spanId === parentId)
+        : undefined;
+
       traceMap.nodeMap[runId] ??= {
         id: runId,
         startTime: span.startTime,
         run,
         sent: false,
-        interop: this.parseInteropFromMetadata(span),
+        interop: this.parseInteropFromMetadata(span, parentSpan),
         executionOrder: traceMap.relativeExecutionOrder[parentRunId ?? ROOT],
       };
 
@@ -841,7 +892,6 @@ export class AISDKExporter {
     for (const traceId of Object.keys(this.traceByMap)) {
       type QueueItem = { dotOrder: string; item: RunTask };
       const traceMap = this.traceByMap[traceId];
-
       const queue: QueueItem[] =
         traceMap.childMap[ROOT]?.map((item) => ({
           item,
