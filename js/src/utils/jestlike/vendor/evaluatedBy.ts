@@ -1,4 +1,4 @@
-import { getCurrentRunTree, ROOT, traceable } from "../../../traceable.js";
+import { ROOT, traceable } from "../../../traceable.js";
 import {
   testWrapperAsyncLocalStorageInstance,
   _logTestFeedback,
