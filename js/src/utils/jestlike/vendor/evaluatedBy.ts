@@ -49,9 +49,7 @@ export function wrapEvaluator<
     }
     const evalRunId = config?.runId ?? config?.id ?? v4();
     let evalResult: O;
-    let currentRunTree;
     if (trackingEnabled(context)) {
-      currentRunTree = getCurrentRunTree();
       const wrappedEvaluator = traceable(
         async (_runTree: RunTree, params: I) => {
           return evaluator(params);
@@ -84,7 +82,7 @@ export function wrapEvaluator<
           exampleId: context?.currentExample?.id,
           feedback: result,
           context,
-          runTree: currentRunTree,
+          runTree: context.testRootRunTree,
           client: context.client,
           sourceRunId: evalRunId,
         });
