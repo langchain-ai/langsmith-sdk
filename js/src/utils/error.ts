@@ -54,9 +54,12 @@ export function printErrorStackTrace(e: unknown) {
  * @see https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/409
  */
 export class LangSmithConflictError extends Error {
+  status: number;
+
   constructor(message: string) {
     super(message);
     this.name = "LangSmithConflictError";
+    this.status = 409;
   }
 }
 
@@ -89,5 +92,7 @@ export async function raiseForStatus(
     throw new LangSmithConflictError(fullMessage);
   }
 
-  throw new Error(fullMessage);
+  const err = new Error(fullMessage);
+  (err as any).status = response.status;
+  throw err;
 }

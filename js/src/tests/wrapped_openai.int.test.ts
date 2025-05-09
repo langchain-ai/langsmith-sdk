@@ -40,14 +40,14 @@ test.concurrent("chat.completions", async () => {
     messages: [{ role: "user", content: `Say 'foo'` }],
     temperature: 0,
     seed: 42,
-    model: "gpt-3.5-turbo",
+    model: "gpt-4.1-nano",
   });
 
   const patched = await patchedClient.chat.completions.create({
     messages: [{ role: "user", content: `Say 'foo'` }],
     temperature: 0,
     seed: 42,
-    model: "gpt-3.5-turbo",
+    model: "gpt-4.1-nano",
   });
 
   expect(patched.choices).toEqual(original.choices);
@@ -57,7 +57,7 @@ test.concurrent("chat.completions", async () => {
       messages: [{ role: "user", content: `Say 'foo'` }],
       temperature: 0,
       seed: 42,
-      model: "gpt-3.5-turbo",
+      model: "gpt-4.1-nano",
     })
     .asResponse();
 
@@ -68,7 +68,7 @@ test.concurrent("chat.completions", async () => {
     messages: [{ role: "user", content: `Say 'foo'` }],
     temperature: 0,
     seed: 42,
-    model: "gpt-3.5-turbo",
+    model: "gpt-4.1-nano",
     stream: true,
   });
 
@@ -81,7 +81,7 @@ test.concurrent("chat.completions", async () => {
     messages: [{ role: "user", content: `Say 'foo'` }],
     temperature: 0,
     seed: 42,
-    model: "gpt-3.5-turbo",
+    model: "gpt-4.1-nano",
     stream: true,
   });
 
@@ -124,7 +124,7 @@ test.concurrent("chat.completions", async () => {
     messages: [{ role: "user", content: `Say 'hello world hello again'` }],
     temperature: 0,
     seed: 42,
-    model: "gpt-3.5-turbo",
+    model: "gpt-4.1-nano",
     stream: true,
   });
 
@@ -145,7 +145,7 @@ test.concurrent("chat.completions", async () => {
       messages: [{ role: "user", content: `Say 'foo'` }],
       temperature: 0,
       seed: 42,
-      model: "gpt-3.5-turbo",
+      model: "gpt-4.1-nano",
       stream: true,
     },
     {
@@ -239,7 +239,7 @@ test.concurrent("chat completions with tool calling", async () => {
     messages: [{ role: "user", content: `What is the current weather in SF?` }],
     temperature: 0,
     seed: 42,
-    model: "gpt-3.5-turbo",
+    model: "gpt-4.1-nano",
     tools: toolDefinition,
     tool_choice: {
       type: "function",
@@ -251,7 +251,7 @@ test.concurrent("chat completions with tool calling", async () => {
     messages: [{ role: "user", content: `What is the current weather in SF?` }],
     temperature: 0,
     seed: 42,
-    model: "gpt-3.5-turbo",
+    model: "gpt-4.1-nano",
     tools: toolDefinition,
     tool_choice: {
       type: "function",
@@ -268,7 +268,7 @@ test.concurrent("chat completions with tool calling", async () => {
     messages: [{ role: "user", content: `What is the current weather in SF?` }],
     temperature: 0,
     seed: 42,
-    model: "gpt-3.5-turbo",
+    model: "gpt-4.1-nano",
     tools: toolDefinition,
     tool_choice: {
       type: "function",
@@ -286,7 +286,7 @@ test.concurrent("chat completions with tool calling", async () => {
     messages: [{ role: "user", content: `What is the current weather in SF?` }],
     temperature: 0,
     seed: 42,
-    model: "gpt-3.5-turbo",
+    model: "gpt-4.1-nano",
     tools: toolDefinition,
     tool_choice: {
       type: "function",
@@ -339,7 +339,7 @@ test.concurrent("chat completions with tool calling", async () => {
       ],
       temperature: 0,
       seed: 42,
-      model: "gpt-3.5-turbo",
+      model: "gpt-4.1-nano",
       tools: toolDefinition,
       tool_choice: {
         type: "function",
@@ -373,7 +373,7 @@ test.concurrent("chat completions with tool calling", async () => {
     const body = parseRequestBody((call[2] as any).body);
     expect(body.extra.metadata).toEqual({
       thing1: "thing2",
-      ls_model_name: "gpt-3.5-turbo",
+      ls_model_name: "gpt-4.1-nano",
       ls_model_type: "chat",
       ls_provider: "openai",
       ls_temperature: 0,
@@ -492,7 +492,7 @@ test.skip("with initialization time config", async () => {
     messages: [{ role: "user", content: `What is the current weather in SF?` }],
     temperature: 0,
     seed: 42,
-    model: "gpt-3.5-turbo",
+    model: "gpt-4.1-nano",
     stream: true,
   });
 
@@ -514,7 +514,7 @@ test.skip("no tracing with env var unset", async () => {
     messages: [{ role: "user", content: `Say 'bazqux'` }],
     temperature: 0,
     seed: 42,
-    model: "gpt-3.5-turbo",
+    model: "gpt-4.1-nano",
   });
   expect(patched).toBeDefined();
   console.log(patched);
@@ -539,7 +539,7 @@ test("chat.concurrent extra name", async () => {
       messages: [{ role: "user", content: `Say 'red'` }],
       temperature: 0,
       seed: 42,
-      model: "gpt-3.5-turbo",
+      model: "gpt-4.1-nano",
     },
     { langsmithExtra: { name: "red", metadata: { customKey: "red" } } }
   );
@@ -549,7 +549,7 @@ test("chat.concurrent extra name", async () => {
       messages: [{ role: "user", content: `Say 'green'` }],
       temperature: 0,
       seed: 42,
-      model: "gpt-3.5-turbo",
+      model: "gpt-4.1-nano",
       stream: true,
     },
     { langsmithExtra: { name: "green", metadata: { customKey: "green" } } }
