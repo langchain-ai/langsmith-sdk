@@ -218,7 +218,7 @@ test("nested generateText with images", async () => {
         }),
         maxSteps: 10,
       });
-      return res.text
+      return res.text;
     },
     { name: "AI SDK Agent Wrapper", id: runId }
   );

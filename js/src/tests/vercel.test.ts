@@ -30,7 +30,7 @@ const flush = async () => {
   // OTEL is weird and doesn't flush things properly all the time when you forceFlush
   await new Promise((resolve) => setTimeout(resolve, 100));
   await provider.forceFlush();
-}
+};
 
 class ExecutionOrderSame {
   $$typeof = Symbol.for("jest.asymmetricMatcher");

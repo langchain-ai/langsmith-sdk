@@ -303,10 +303,7 @@ function convertToTimestamp([seconds, nanoseconds]: [
   return Number(String(seconds) + ms);
 }
 
-function sortByHr(
-  a: AISDKSpan,
-  b: AISDKSpan
-): number {
+function sortByHr(a: AISDKSpan, b: AISDKSpan): number {
   if (a.startTime[0] !== b.startTime[0]) {
     return Math.sign(a.startTime[0] - b.startTime[0]);
   } else if (a.startTime[1] !== b.startTime[1]) {
@@ -852,7 +849,7 @@ export class AISDKExporter {
         return false;
     }
   }
-  
+
   _export(
     spans: unknown[],
     resultCallback: (result: { code: 0 | 1; error?: Error }) => void
