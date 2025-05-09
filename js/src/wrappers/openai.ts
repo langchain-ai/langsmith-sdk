@@ -242,7 +242,7 @@ function processChatCompletion(outputs: Readonly<KVMap>): KVMap {
  * const patchedStream = await patchedClient.chat.completions.create(
  *   {
  *     messages: [{ role: "user", content: `Say 'foo'` }],
- *     model: "gpt-3.5-turbo",
+ *     model: "gpt-4.1-mini",
  *     stream: true,
  *   },
  *   {
