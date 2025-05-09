@@ -99,7 +99,7 @@ test("nested generateText", async () => {
         maxSteps: 10,
       });
     },
-    { name: "AI SDK Agent Wrapper", id: runId }
+    { name: "AI SDK Agent Wrapper", id: runId, project_name: "lsjs-test" }
   );
 
   await wrapper();

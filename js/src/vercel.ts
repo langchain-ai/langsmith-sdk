@@ -428,17 +428,24 @@ export class AISDKExporter {
   > = {};
   private seenSpanInfo: Record<
     string,
-    { span: AISDKSpan; dotOrder: string; sent: boolean }
+    { span: AISDKSpan; dotOrder: string; sent: boolean; projectName?: string }
   > = {};
 
   private pendingSpans: AISDKSpan[] = [];
 
   private debug: boolean;
 
-  constructor(args?: { client?: Client; debug?: boolean }) {
+  private projectName?: string;
+
+  constructor(args?: {
+    client?: Client;
+    debug?: boolean;
+    projectName?: string;
+  }) {
     this.client = args?.client ?? new Client();
     this.debug =
       args?.debug ?? getEnvironmentVariable("OTEL_LOG_LEVEL") === "DEBUG";
+    this.projectName = args?.projectName;
 
     this.logDebug("creating exporter", { tracingEnabled: isTracingEnabled() });
   }
@@ -532,7 +539,10 @@ export class AISDKExporter {
   }
 
   /** @internal */
-  protected getRunCreate(span: AISDKSpan): RunCreate | undefined {
+  protected getRunCreate(
+    span: AISDKSpan,
+    projectName?: string
+  ): RunCreate | undefined {
     const asRunCreate = (rawConfig: RunCreate) => {
       const aiMetadata = Object.keys(span.attributes)
         .filter(
@@ -580,6 +590,8 @@ export class AISDKExporter {
           },
         },
         session_name:
+          projectName ??
+          this.projectName ??
           getLangSmithEnvironmentVariable("PROJECT") ??
           getLangSmithEnvironmentVariable("SESSION"),
         start_time: Math.min(parsedStart, parsedEnd),
@@ -914,17 +926,24 @@ export class AISDKExporter {
       };
 
       const traceMap = this.traceByMap[traceId];
-      const run = this.getRunCreate(span);
 
       traceMap.relativeExecutionOrder[parentRunId ?? ROOT] ??= -1;
       traceMap.relativeExecutionOrder[parentRunId ?? ROOT] += 1;
+
+      const interop = this.parseInteropFromMetadata(span, parentSpanInfo?.span);
+
+      const projectName =
+        (interop?.type === "traceable"
+          ? interop.parentRunTree.project_name
+          : undefined) ?? parentSpanInfo?.projectName;
+      const run = this.getRunCreate(span, projectName);
 
       traceMap.nodeMap[runId] ??= {
         id: runId,
         startTime: span.startTime,
         run,
         sent: false,
-        interop: this.parseInteropFromMetadata(span, parentSpanInfo?.span),
+        interop,
         executionOrder: traceMap.relativeExecutionOrder[parentRunId ?? ROOT],
       };
 
@@ -935,6 +954,7 @@ export class AISDKExporter {
             parentSpanInfo?.dotOrder,
             getDotOrder(traceMap.nodeMap[runId])
           ),
+          projectName,
           sent: false,
         };
       }
