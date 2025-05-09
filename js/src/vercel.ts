@@ -852,8 +852,8 @@ export class AISDKExporter {
         return false;
     }
   }
-
-  export(
+  
+  _export(
     spans: unknown[],
     resultCallback: (result: { code: 0 | 1; error?: Error }) => void
   ): void {
@@ -1029,6 +1029,20 @@ export class AISDKExporter {
       );
   }
 
+  export(
+    spans: unknown[],
+    resultCallback: (result: { code: 0 | 1; error?: Error }) => void
+  ): void {
+    this._export(spans, (result) => {
+      if (result.code === 0) {
+        // Flush pending spans to rule out any trace order shenanigans
+        this._export([], resultCallback);
+      } else {
+        resultCallback(result);
+      }
+    });
+  }
+
   async shutdown(): Promise<void> {
     // find nodes which are incomplete
     const incompleteNodes = Object.values(this.traceByMap).flatMap((trace) =>
@@ -1048,7 +1062,7 @@ export class AISDKExporter {
 
   async forceFlush(): Promise<void> {
     await new Promise((resolve) => {
-      this.export([], resolve);
+      this._export([], resolve);
     });
     await this.client.awaitPendingTraceBatches();
   }
