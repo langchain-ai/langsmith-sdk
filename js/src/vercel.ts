@@ -874,16 +874,30 @@ export class AISDKExporter {
 
     for (const span of typedSpans) {
       const { traceId, spanId } = span.spanContext();
-      const parentId = getParentSpanId(span);
-      const parentRunId = parentId
-        ? uuid5(parentId, RUN_ID_NAMESPACE)
-        : undefined;
-
       const runId = uuid5(spanId, RUN_ID_NAMESPACE);
 
-      const parentSpanInfo = parentRunId
+      let parentId = getParentSpanId(span);
+      let parentRunId = parentId
+        ? uuid5(parentId, RUN_ID_NAMESPACE)
+        : undefined;
+      let parentSpanInfo = parentRunId
         ? this.seenSpanInfo[parentRunId]
         : undefined;
+
+      // Unrelated, untraced spans should behave as passthroughs from LangSmith's perspective.
+      while (
+        parentSpanInfo != null &&
+        this.getRunCreate(parentSpanInfo.span) == null
+      ) {
+        parentId = getParentSpanId(parentSpanInfo.span);
+        if (parentId == null) {
+          break;
+        }
+        parentRunId = parentId ? uuid5(parentId, RUN_ID_NAMESPACE) : undefined;
+        parentSpanInfo = parentRunId
+          ? this.seenSpanInfo[parentRunId]
+          : undefined;
+      }
 
       // Export may be called in any order, so we need to queue any spans with missing parents
       // for retry later in order to determine whether their parents are tool calls
@@ -1032,7 +1046,7 @@ export class AISDKExporter {
   ): void {
     this._export(spans, (result) => {
       if (result.code === 0) {
-        // Flush pending spans to rule out any trace order shenanigans
+        // Empty export to try flushing pending spans to rule out any trace order shenanigans
         this._export([], resultCallback);
       } else {
         resultCallback(result);
@@ -1059,7 +1073,7 @@ export class AISDKExporter {
 
   async forceFlush(): Promise<void> {
     await new Promise((resolve) => {
-      this._export([], resolve);
+      this.export([], resolve);
     });
     await this.client.awaitPendingTraceBatches();
   }
