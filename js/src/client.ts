@@ -917,7 +917,8 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   protected async _getServerInfo() {
-    const response = await _getFetchImplementation(this.debug)(
+    const response = await this.caller.call(
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}/info`,
       {
         method: "GET",
@@ -944,9 +945,9 @@ export class Client implements LangSmithTracingClientInterface {
         if (this._serverInfo === undefined) {
           try {
             this._serverInfo = await this._getServerInfo();
-          } catch (e) {
+          } catch (e: any) {
             console.warn(
-              `[WARNING]: LangSmith failed to fetch info on supported operations. Falling back to batch operations and default limits.`
+              `[WARNING]: LangSmith failed to fetch info on supported operations with status code ${e.status}. Falling back to batch operations and default limits.`
             );
           }
         }
