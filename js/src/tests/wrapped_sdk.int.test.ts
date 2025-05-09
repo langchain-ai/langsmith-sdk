@@ -18,14 +18,14 @@ test.concurrent("chat.completions", async () => {
     messages: [{ role: "user", content: `Say 'foo'` }],
     temperature: 0,
     seed: 42,
-    model: "gpt-3.5-turbo",
+    model: "gpt-4.1-nano",
   });
 
   const patched = await patchedClient.chat.completions.create({
     messages: [{ role: "user", content: `Say 'foo'` }],
     temperature: 0,
     seed: 42,
-    model: "gpt-3.5-turbo",
+    model: "gpt-4.1-nano",
   });
 
   expect(patched.choices).toEqual(original.choices);
@@ -35,7 +35,7 @@ test.concurrent("chat.completions", async () => {
     messages: [{ role: "user", content: `Say 'foo'` }],
     temperature: 0,
     seed: 42,
-    model: "gpt-3.5-turbo",
+    model: "gpt-4.1-nano",
     stream: true,
   });
 
@@ -48,7 +48,7 @@ test.concurrent("chat.completions", async () => {
     messages: [{ role: "user", content: `Say 'foo'` }],
     temperature: 0,
     seed: 42,
-    model: "gpt-3.5-turbo",
+    model: "gpt-4.1-nano",
     stream: true,
   });
 
