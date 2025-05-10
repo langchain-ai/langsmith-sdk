@@ -303,12 +303,18 @@ function convertToTimestamp([seconds, nanoseconds]: [
   return Number(String(seconds) + ms);
 }
 
-function sortByHr(
-  a: [seconds: number, nanoseconds: number],
-  b: [seconds: number, nanoseconds: number]
-): number {
-  if (a[0] !== b[0]) return Math.sign(a[0] - b[0]);
-  return Math.sign(a[1] - b[1]);
+function sortByHr(a: AISDKSpan, b: AISDKSpan): number {
+  if (a.startTime[0] !== b.startTime[0]) {
+    return Math.sign(a.startTime[0] - b.startTime[0]);
+  } else if (a.startTime[1] !== b.startTime[1]) {
+    return Math.sign(a.startTime[1] - b.startTime[1]);
+  } else if (getParentSpanId(a) === b.spanContext().spanId) {
+    return -1;
+  } else if (getParentSpanId(b) === a.spanContext().spanId) {
+    return 1;
+  } else {
+    return 0;
+  }
 }
 
 const ROOT = "$";
@@ -420,13 +426,26 @@ export class AISDKExporter {
       relativeExecutionOrder: Record<string, number>;
     }
   > = {};
+  private seenSpanInfo: Record<
+    string,
+    { span: AISDKSpan; dotOrder: string; sent: boolean; projectName?: string }
+  > = {};
+
+  private pendingSpans: Record<string, AISDKSpan> = {};
 
   private debug: boolean;
 
-  constructor(args?: { client?: Client; debug?: boolean }) {
+  private projectName?: string;
+
+  constructor(args?: {
+    client?: Client;
+    debug?: boolean;
+    projectName?: string;
+  }) {
     this.client = args?.client ?? new Client();
     this.debug =
       args?.debug ?? getEnvironmentVariable("OTEL_LOG_LEVEL") === "DEBUG";
+    this.projectName = args?.projectName;
 
     this.logDebug("creating exporter", { tracingEnabled: isTracingEnabled() });
   }
@@ -520,7 +539,10 @@ export class AISDKExporter {
   }
 
   /** @internal */
-  protected getRunCreate(span: AISDKSpan): RunCreate | undefined {
+  protected getRunCreate(
+    span: AISDKSpan,
+    projectName?: string
+  ): RunCreate | undefined {
     const asRunCreate = (rawConfig: RunCreate) => {
       const aiMetadata = Object.keys(span.attributes)
         .filter(
@@ -568,6 +590,8 @@ export class AISDKExporter {
           },
         },
         session_name:
+          projectName ??
+          this.projectName ??
           getLangSmithEnvironmentVariable("PROJECT") ??
           getLangSmithEnvironmentVariable("SESSION"),
         start_time: Math.min(parsedStart, parsedEnd),
@@ -838,48 +862,96 @@ export class AISDKExporter {
     }
   }
 
-  export(
+  _export(
     spans: unknown[],
     resultCallback: (result: { code: 0 | 1; error?: Error }) => void
   ): void {
     this.logDebug("exporting spans", spans);
 
     const typedSpans = (spans as AISDKSpan[])
+      .concat(Object.values(this.pendingSpans))
       .slice()
-      .sort((a, b) => sortByHr(a.startTime, b.startTime));
-
+      // Parent spans should go before child spans in the final order,
+      // but may have the same exact start time as their children.
+      // They will end earlier, so break ties by end time.
+      // TODO: Figure out why this happens.
+      .sort((a, b) => sortByHr(a, b));
     for (const span of typedSpans) {
       const { traceId, spanId } = span.spanContext();
-      const parentId = getParentSpanId(span);
+      const runId = uuid5(spanId, RUN_ID_NAMESPACE);
+
+      let parentId = getParentSpanId(span);
+      let parentRunId = parentId
+        ? uuid5(parentId, RUN_ID_NAMESPACE)
+        : undefined;
+      let parentSpanInfo = parentRunId
+        ? this.seenSpanInfo[parentRunId]
+        : undefined;
+
+      // Unrelated, untraced spans should behave as passthroughs from LangSmith's perspective.
+      while (
+        parentSpanInfo != null &&
+        this.getRunCreate(parentSpanInfo.span) == null
+      ) {
+        parentId = getParentSpanId(parentSpanInfo.span);
+        if (parentId == null) {
+          break;
+        }
+        parentRunId = parentId ? uuid5(parentId, RUN_ID_NAMESPACE) : undefined;
+        parentSpanInfo = parentRunId
+          ? this.seenSpanInfo[parentRunId]
+          : undefined;
+      }
+
+      // Export may be called in any order, so we need to queue any spans with missing parents
+      // for retry later in order to determine whether their parents are tool calls
+      // and should not be reparented below.
+      if (parentRunId !== undefined && parentSpanInfo === undefined) {
+        this.pendingSpans[spanId] = span;
+        continue;
+      } else {
+        delete this.pendingSpans[spanId];
+      }
+
       this.traceByMap[traceId] ??= {
         childMap: {},
         nodeMap: {},
         relativeExecutionOrder: {},
       };
 
-      const runId = uuid5(spanId, RUN_ID_NAMESPACE);
-      const parentRunId = parentId
-        ? uuid5(parentId, RUN_ID_NAMESPACE)
-        : undefined;
-
       const traceMap = this.traceByMap[traceId];
-      const run = this.getRunCreate(span);
 
       traceMap.relativeExecutionOrder[parentRunId ?? ROOT] ??= -1;
       traceMap.relativeExecutionOrder[parentRunId ?? ROOT] += 1;
 
-      const parentSpan = parentId
-        ? typedSpans.find((i) => i.spanContext().spanId === parentId)
-        : undefined;
+      const interop = this.parseInteropFromMetadata(span, parentSpanInfo?.span);
+
+      const projectName =
+        (interop?.type === "traceable"
+          ? interop.parentRunTree.project_name
+          : undefined) ?? parentSpanInfo?.projectName;
+      const run = this.getRunCreate(span, projectName);
 
       traceMap.nodeMap[runId] ??= {
         id: runId,
         startTime: span.startTime,
         run,
         sent: false,
-        interop: this.parseInteropFromMetadata(span, parentSpan),
+        interop,
         executionOrder: traceMap.relativeExecutionOrder[parentRunId ?? ROOT],
       };
+
+      if (this.seenSpanInfo[runId] == null) {
+        this.seenSpanInfo[runId] = {
+          span,
+          dotOrder: joinDotOrder(
+            parentSpanInfo?.dotOrder,
+            getDotOrder(traceMap.nodeMap[runId])
+          ),
+          projectName,
+          sent: false,
+        };
+      }
 
       if (this.debug) console.log(`[${span.name}] ${runId}`, run);
       traceMap.childMap[parentRunId ?? ROOT] ??= [];
@@ -890,78 +962,79 @@ export class AISDKExporter {
     const actions: PostProcessAction[] = [];
 
     for (const traceId of Object.keys(this.traceByMap)) {
-      type QueueItem = { dotOrder: string; item: RunTask };
       const traceMap = this.traceByMap[traceId];
-      const queue: QueueItem[] =
-        traceMap.childMap[ROOT]?.map((item) => ({
-          item,
-          dotOrder: getDotOrder(item),
-        })) ?? [];
+      const queue: RunTask[] = Object.keys(traceMap.childMap)
+        .map((runId) => {
+          if (runId === ROOT) {
+            return traceMap.childMap[runId];
+          }
+          return [];
+        })
+        .flat();
 
       const seen = new Set<string>();
       while (queue.length) {
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         const task = queue.shift()!;
-        if (seen.has(task.item.id)) continue;
+        if (seen.has(task.id)) continue;
 
-        if (!task.item.sent) {
-          if (task.item.run != null) {
-            if (task.item.interop?.type === "user") {
+        let taskDotOrder = this.seenSpanInfo[task.id].dotOrder;
+        if (!task.sent) {
+          if (task.run != null) {
+            if (task.interop?.type === "user") {
               actions.push({
                 type: "rename",
-                sourceRunId: task.item.id,
-                targetRunId: task.item.interop.userRunId,
+                sourceRunId: task.id,
+                targetRunId: task.interop.userRunId,
               });
             }
 
-            if (task.item.interop?.type === "traceable") {
+            if (task.interop?.type === "traceable") {
               actions.push({
                 type: "reparent",
-                runId: task.item.id,
-                parentDotOrder: task.item.interop.parentRunTree.dotted_order,
+                runId: task.id,
+                parentDotOrder: task.interop.parentRunTree.dotted_order,
               });
             }
 
-            let dotOrder = task.dotOrder;
             for (const action of actions) {
               if (action.type === "delete") {
-                dotOrder = removeDotOrder(dotOrder, action.runId);
+                taskDotOrder = removeDotOrder(taskDotOrder, action.runId);
               }
 
               if (action.type === "reparent") {
-                dotOrder = reparentDotOrder(
-                  dotOrder,
+                taskDotOrder = reparentDotOrder(
+                  taskDotOrder,
                   action.runId,
                   action.parentDotOrder
                 );
               }
 
               if (action.type === "rename") {
-                dotOrder = dotOrder.replace(
+                taskDotOrder = taskDotOrder.replace(
                   action.sourceRunId,
                   action.targetRunId
                 );
               }
             }
 
-            sampled.push({
-              ...task.item.run,
-              ...getMutableRunCreate(dotOrder),
-            });
+            this.seenSpanInfo[task.id].dotOrder = taskDotOrder;
+            if (!this.seenSpanInfo[task.id].sent) {
+              sampled.push({
+                ...task.run,
+                ...getMutableRunCreate(taskDotOrder),
+              });
+            }
+            this.seenSpanInfo[task.id].sent = true;
           } else {
-            actions.push({ type: "delete", runId: task.item.id });
+            actions.push({ type: "delete", runId: task.id });
           }
 
-          task.item.sent = true;
+          task.sent = true;
         }
 
-        const children = traceMap.childMap[task.item.id] ?? [];
-        queue.push(
-          ...children.map((item) => ({
-            item,
-            dotOrder: joinDotOrder(task.dotOrder, getDotOrder(item)),
-          }))
-        );
+        const children = traceMap.childMap[task.id] ?? [];
+        queue.push(...children);
       }
     }
 
@@ -970,6 +1043,20 @@ export class AISDKExporter {
       () => resultCallback({ code: 0 }),
       (error) => resultCallback({ code: 1, error })
     );
+  }
+
+  export(
+    spans: unknown[],
+    resultCallback: (result: { code: 0 | 1; error?: Error }) => void
+  ): void {
+    this._export(spans, (result) => {
+      if (result.code === 0) {
+        // Empty export to try flushing pending spans to rule out any trace order shenanigans
+        this._export([], resultCallback);
+      } else {
+        resultCallback(result);
+      }
+    });
   }
 
   async shutdown(): Promise<void> {
@@ -986,11 +1073,14 @@ export class AISDKExporter {
       );
     }
 
-    await this.client?.awaitPendingTraceBatches();
+    await this.forceFlush();
   }
 
-  async forceFlush?(): Promise<void> {
-    await this.client?.awaitPendingTraceBatches();
+  async forceFlush(): Promise<void> {
+    await new Promise((resolve) => {
+      this.export([], resolve);
+    });
+    await this.client.awaitPendingTraceBatches();
   }
 
   protected logDebug(...args: Parameters<typeof console.debug>): void {
