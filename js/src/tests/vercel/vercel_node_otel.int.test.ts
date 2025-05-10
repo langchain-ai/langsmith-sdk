@@ -162,6 +162,7 @@ test.skip("nested generateText with images", async () => {
             execute: async () => {
               const pathname = path.join(
                 path.dirname(fileURLToPath(import.meta.url)),
+                "..",
                 "test_data",
                 "parrot-icon.png"
               );

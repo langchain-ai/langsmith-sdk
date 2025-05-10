@@ -882,7 +882,6 @@ export class AISDKExporter {
     this.pendingSpans = [];
 
     const skippedSpans: AISDKSpan[] = [];
-    const potentialChildRootRunIds: string[] = [];
 
     for (const span of typedSpans) {
       const { traceId, spanId } = span.spanContext();
@@ -962,9 +961,6 @@ export class AISDKExporter {
       if (this.debug) console.log(`[${span.name}] ${runId}`, run);
       traceMap.childMap[parentRunId ?? ROOT] ??= [];
       traceMap.childMap[parentRunId ?? ROOT].push(traceMap.nodeMap[runId]);
-      if (parentRunId != null) {
-        potentialChildRootRunIds.push(parentRunId);
-      }
     }
 
     const sampled: RunCreate[] = [];
@@ -974,7 +970,7 @@ export class AISDKExporter {
       const traceMap = this.traceByMap[traceId];
       const queue: RunTask[] = Object.keys(traceMap.childMap)
         .map((runId) => {
-          if (runId === ROOT || potentialChildRootRunIds.includes(runId)) {
+          if (runId === ROOT) {
             return traceMap.childMap[runId];
           }
           return [];
