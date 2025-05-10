@@ -9,10 +9,10 @@ import * as fs from "fs";
 import { fileURLToPath } from "url";
 import path from "path";
 
-import { AISDKExporter } from "../vercel.js";
-import { waitUntilRunFound } from "./utils.js";
-import { Client } from "../index.js";
-import { traceable } from "../traceable.js";
+import { AISDKExporter } from "../../vercel.js";
+import { waitUntilRunFound } from "../utils.js";
+import { Client } from "../../index.js";
+import { traceable } from "../../traceable.js";
 
 const client = new Client();
 

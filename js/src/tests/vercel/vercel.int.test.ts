@@ -12,10 +12,10 @@ import { openai } from "@ai-sdk/openai";
 
 import { v4 as uuid } from "uuid";
 import { z } from "zod";
-import { AISDKExporter } from "../vercel.js";
-import { Client } from "../index.js";
-import { traceable } from "../traceable.js";
-import { waitUntilRunFound, toArray } from "./utils.js";
+import { AISDKExporter } from "../../vercel.js";
+import { Client } from "../../index.js";
+import { traceable } from "../../traceable.js";
+import { waitUntilRunFound, toArray } from "../utils.js";
 
 const client = new Client();
 // Not using @opentelemetry/sdk-node because we need to force flush

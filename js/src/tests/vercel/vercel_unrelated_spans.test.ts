@@ -1,14 +1,15 @@
+// Split out because .shutdown() seems to be the only reliable way to flush spans
 import { context, trace } from "@opentelemetry/api";
 import { v4 as uuidv4 } from "uuid";
 import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
 import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base";
 import { generateText, tool } from "ai";
-import { MockLanguageModelV1 } from "ai/test";
 
 import { z } from "zod";
-import { AISDKExporter } from "../vercel.js";
-import { mockClient } from "./utils/mock_client.js";
-import { getAssumedTreeFromCalls } from "./utils/tree.js";
+import { AISDKExporter } from "../../vercel.js";
+import { mockClient } from "../utils/mock_client.js";
+import { getAssumedTreeFromCalls } from "../utils/tree.js";
+import { MockMultiStepLanguageModelV1 } from "./utils.js";
 
 const { client, callSpy } = mockClient();
 const exporter = new AISDKExporter({ client });
@@ -16,27 +17,6 @@ const provider = new NodeTracerProvider({
   spanProcessors: [new BatchSpanProcessor(exporter)],
 });
 provider.register();
-
-class MockMultiStepLanguageModelV1 extends MockLanguageModelV1 {
-  generateStep = -1;
-  streamStep = -1;
-
-  constructor(...args: ConstructorParameters<typeof MockLanguageModelV1>) {
-    super(...args);
-
-    const oldDoGenerate = this.doGenerate;
-    this.doGenerate = async (...args) => {
-      this.generateStep += 1;
-      return await oldDoGenerate(...args);
-    };
-
-    const oldDoStream = this.doStream;
-    this.doStream = async (...args) => {
-      this.streamStep += 1;
-      return await oldDoStream(...args);
-    };
-  }
-}
 
 test("unrelated spans around", async () => {
   const tracer = provider.getTracer("test");
