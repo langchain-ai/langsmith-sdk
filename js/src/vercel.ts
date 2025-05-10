@@ -431,7 +431,7 @@ export class AISDKExporter {
     { span: AISDKSpan; dotOrder: string; sent: boolean; projectName?: string }
   > = {};
 
-  private pendingSpans: AISDKSpan[] = [];
+  private pendingSpans: Record<string, AISDKSpan> = {};
 
   private debug: boolean;
 
@@ -869,20 +869,13 @@ export class AISDKExporter {
     this.logDebug("exporting spans", spans);
 
     const typedSpans = (spans as AISDKSpan[])
-      .concat(this.pendingSpans)
+      .concat(Object.values(this.pendingSpans))
       .slice()
       // Parent spans should go before child spans in the final order,
       // but may have the same exact start time as their children.
       // They will end earlier, so break ties by end time.
       // TODO: Figure out why this happens.
       .sort((a, b) => sortByHr(a, b));
-
-    // This is really important, as OTEL seems to do weird things with threads.
-    // Don't use a while loop.
-    this.pendingSpans = [];
-
-    const skippedSpans: AISDKSpan[] = [];
-
     for (const span of typedSpans) {
       const { traceId, spanId } = span.spanContext();
       const runId = uuid5(spanId, RUN_ID_NAMESPACE);
@@ -914,8 +907,10 @@ export class AISDKExporter {
       // for retry later in order to determine whether their parents are tool calls
       // and should not be reparented below.
       if (parentRunId !== undefined && parentSpanInfo === undefined) {
-        skippedSpans.push(span);
+        this.pendingSpans[spanId] = span;
         continue;
+      } else {
+        delete this.pendingSpans[spanId];
       }
 
       this.traceByMap[traceId] ??= {
@@ -1044,16 +1039,10 @@ export class AISDKExporter {
     }
 
     this.logDebug(`sampled runs to be sent to LangSmith`, sampled);
-    Promise.all(sampled.map((run) => this.client.createRun(run)))
-      .then(() => {
-        // OTEL seems to do weird things with threads, so we need to queue any spans
-        // with missing parents for retry at the end after async operations.
-        this.pendingSpans = skippedSpans;
-      })
-      .then(
-        () => resultCallback({ code: 0 }),
-        (error) => resultCallback({ code: 1, error })
-      );
+    Promise.all(sampled.map((run) => this.client.createRun(run))).then(
+      () => resultCallback({ code: 0 }),
+      (error) => resultCallback({ code: 1, error })
+    );
   }
 
   export(
