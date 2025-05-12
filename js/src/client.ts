@@ -1334,6 +1334,7 @@ export class Client implements LangSmithTracingClientInterface {
             "Content-Type": `multipart/form-data; boundary=${boundary}`,
           },
           body: stream,
+          duplex: "half",
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
         }
