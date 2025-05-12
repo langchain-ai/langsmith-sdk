@@ -64,7 +64,10 @@ import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
 import { parsePromptIdentifier } from "./utils/prompts.js";
 import { raiseForStatus } from "./utils/error.js";
-import { _getFetchImplementation } from "./singletons/fetch.js";
+import {
+  _globalFetchImplementationIsNodeFetch,
+  _getFetchImplementation,
+} from "./singletons/fetch.js";
 
 import { serialize as serializePayloadForTracing } from "./utils/fast-safe-stringify/index.js";
 
@@ -1358,54 +1361,91 @@ export class Client implements LangSmithTracingClientInterface {
     );
   }
 
+  private async _createNodeFetchBody(parts: MultipartPart[], boundary: string) {
+    // Create multipart form data manually using Blobs
+    const chunks: Blob[] = [];
+
+    for (const part of parts) {
+      // Add field boundary
+      chunks.push(new Blob([`--${boundary}\r\n`]));
+      chunks.push(
+        new Blob([
+          `Content-Disposition: form-data; name="${part.name}"\r\n`,
+          `Content-Type: ${part.payload.type}\r\n\r\n`,
+        ])
+      );
+      chunks.push(part.payload);
+      chunks.push(new Blob(["\r\n"]));
+    }
+
+    // Add final boundary
+    chunks.push(new Blob([`--${boundary}--\r\n`]));
+
+    // Combine all chunks into a single Blob
+    const body = new Blob(chunks);
+
+    // Convert Blob to ArrayBuffer for compatibility
+    const arrayBuffer = await body.arrayBuffer();
+    return arrayBuffer;
+  }
+
+  private async _createMultipartStream(
+    parts: MultipartPart[],
+    boundary: string
+  ) {
+    // Create a ReadableStream for streaming the multipart data
+    // Only do special handling if we're using node-fetch
+    const stream = new ReadableStream({
+      async start(controller) {
+        // Helper function to write a chunk to the stream
+        const writeChunk = async (chunk: string | Blob) => {
+          if (typeof chunk === "string") {
+            controller.enqueue(new TextEncoder().encode(chunk));
+          } else {
+            controller.enqueue(chunk);
+          }
+        };
+
+        // Write each part to the stream
+        for (const part of parts) {
+          // Write boundary and headers
+          await writeChunk(`--${boundary}\r\n`);
+          await writeChunk(
+            `Content-Disposition: form-data; name="${part.name}"\r\n`
+          );
+          await writeChunk(`Content-Type: ${part.payload.type}\r\n\r\n`);
+
+          // Write the payload
+          const payloadStream = part.payload.stream();
+          const reader = payloadStream.getReader();
+
+          try {
+            let result;
+            while (!(result = await reader.read()).done) {
+              controller.enqueue(result.value);
+            }
+          } finally {
+            reader.releaseLock();
+          }
+
+          await writeChunk("\r\n");
+        }
+
+        // Write final boundary
+        await writeChunk(`--${boundary}--\r\n`);
+        controller.close();
+      },
+    });
+    return stream;
+  }
   private async _sendMultipartRequest(parts: MultipartPart[], context: string) {
     try {
       // Create multipart form data boundary
       const boundary =
         "----LangSmithFormBoundary" + Math.random().toString(36).slice(2);
-
-      // Create a ReadableStream for streaming the multipart data
-      const stream = new ReadableStream({
-        async start(controller) {
-          // Helper function to write a chunk to the stream
-          const writeChunk = (chunk: string | Blob) => {
-            if (typeof chunk === "string") {
-              controller.enqueue(new TextEncoder().encode(chunk));
-            } else {
-              controller.enqueue(chunk);
-            }
-          };
-
-          // Write each part to the stream
-          for (const part of parts) {
-            // Write boundary and headers
-            writeChunk(`--${boundary}\r\n`);
-            writeChunk(
-              `Content-Disposition: form-data; name="${part.name}"\r\n`
-            );
-            writeChunk(`Content-Type: ${part.payload.type}\r\n\r\n`);
-
-            // Write the payload
-            const payloadStream = part.payload.stream();
-            const reader = payloadStream.getReader();
-
-            try {
-              let result;
-              while (!(result = await reader.read()).done) {
-                controller.enqueue(result.value);
-              }
-            } finally {
-              reader.releaseLock();
-            }
-
-            writeChunk("\r\n");
-          }
-
-          // Write final boundary
-          writeChunk(`--${boundary}--\r\n`);
-          controller.close();
-        },
-      });
+      const body = await (_globalFetchImplementationIsNodeFetch()
+        ? this._createNodeFetchBody(parts, boundary)
+        : this._createMultipartStream(parts, boundary));
 
       const res = await this.batchIngestCaller.call(
         _getFetchImplementation(this.debug),
@@ -1416,7 +1456,7 @@ export class Client implements LangSmithTracingClientInterface {
             ...this.headers,
             "Content-Type": `multipart/form-data; boundary=${boundary}`,
           },
-          body: stream,
+          body,
           duplex: "half",
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
@@ -2137,7 +2177,11 @@ export class Client implements LangSmithTracingClientInterface {
         throw new Error(
           `Failed to list shared examples.\nStatus: ${
             response.status
-          }\nMessage: ${result.detail.join("\n")}`
+          }\nMessage: ${
+            Array.isArray(result.detail)
+              ? result.detail.join("\n")
+              : "Unspecified error"
+          }`
         );
       }
       throw new Error(

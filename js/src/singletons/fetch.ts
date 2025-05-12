@@ -20,6 +20,19 @@ export const overrideFetchImplementation = (fetch: (...args: any[]) => any) => {
   (globalThis as any)[LANGSMITH_FETCH_IMPLEMENTATION_KEY] = fetch;
 };
 
+export const _globalFetchImplementationIsNodeFetch = () => {
+  const fetchImpl = (globalThis as any)[LANGSMITH_FETCH_IMPLEMENTATION_KEY];
+  if (!fetchImpl) return false;
+
+  // Check if the implementation has node-fetch specific properties
+  return (
+    typeof fetchImpl === "function" &&
+    "Headers" in fetchImpl &&
+    "Request" in fetchImpl &&
+    "Response" in fetchImpl
+  );
+};
+
 /**
  * @internal
  */

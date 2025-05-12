@@ -12,7 +12,10 @@ import {
   waitUntilRunFound,
 } from "./utils.js";
 import { traceable } from "../traceable.js";
-import { overrideFetchImplementation } from "../singletons/fetch.js";
+import {
+  _globalFetchImplementationIsNodeFetch,
+  overrideFetchImplementation,
+} from "../singletons/fetch.js";
 
 test.concurrent(
   "Test persist update run",
