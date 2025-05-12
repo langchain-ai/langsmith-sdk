@@ -349,7 +349,7 @@ test.concurrent("Test traceable wrapper with aggregator", async () => {
 
   for await (const chunk of await iterableTraceable({
     messages: [{ content: "Hello there", role: "user" }],
-    model: "gpt-3.5-turbo",
+    model: "gpt-4.1-nano",
     stream: true,
   })) {
     chunks.push(chunk);

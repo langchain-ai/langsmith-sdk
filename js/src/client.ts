@@ -128,6 +128,11 @@ interface ListRunsParams {
   parentRunId?: string;
 
   /**
+   * The order by run start date
+   */
+  order?: "asc" | "desc";
+
+  /**
    * The ID of the reference example to filter by.
    */
   referenceExampleId?: string;
@@ -199,6 +204,64 @@ interface ListRunsParams {
    * The values to include in the response.
    */
   select?: string[];
+}
+
+interface GroupRunsParams {
+  /**
+   * The ID or IDs of the project(s) to filter by.
+   */
+  projectId?: string;
+
+  /**
+   * The ID or IDs of the project(s) to filter by.
+   */
+  projectName?: string;
+
+  /**
+   * @example "conversation"
+   */
+  groupBy: string;
+
+  /**
+   * The filter string to apply.
+   *
+   * Run Filtering:
+   * Listing runs with query params is useful for simple queries, but doesn't support many common needs, such as filtering by metadata, tags, or other fields.
+   * LangSmith supports a filter query language to permit more complex filtering operations when fetching runs. This guide will provide a high level overview of the grammar as well as a few examples of when it can be useful.
+   * If you'd prefer a more visual guide, you can get a taste of the language by viewing the table of runs on any of your projects' pages. We provide some recommended filters to get you started that you can copy and use the SDK.
+   *
+   * Grammar:
+   * The filtering grammar is based on common comparators on fields in the run object. Supported comparators include:
+   * - gte (greater than or equal to)
+   * - gt (greater than)
+   * - lte (less than or equal to)
+   * - lt (less than)
+   * - eq (equal to)
+   * - neq (not equal to)
+   * - has (check if run contains a tag or metadata json blob)
+   * - search (search for a substring in a string field)
+   */
+  filter?: string;
+
+  /**
+   * The start time to filter by.
+   */
+  startTime?: Date;
+
+  /**
+   * The end time to filter by.
+   */
+  endTime?: Date;
+
+  /**
+   * The maximum number of runs to retrieve.
+   */
+  limit?: number;
+
+  /**
+   * The maximum number of runs to retrieve.
+   */
+  offset?: number;
 }
 
 interface UploadCSVParams {
@@ -312,6 +375,22 @@ type AutoBatchQueueItem = {
 type MultipartPart = {
   name: string;
   payload: Blob;
+};
+
+type Thread = {
+  filter: string;
+  count: number;
+  total_tokens: number;
+  total_cost: number | null;
+  min_start_time: string;
+  max_start_time: string;
+  latency_p50: number;
+  latency_p99: number;
+  feedback_stats: any | null;
+  group_key: string;
+  first_inputs: string;
+  last_outputs: string;
+  last_error: string | null;
 };
 
 export function mergeRuntimeEnvIntoRunCreate(run: RunCreate) {
@@ -917,7 +996,8 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   protected async _getServerInfo() {
-    const response = await _getFetchImplementation(this.debug)(
+    const response = await this.caller.call(
+      _getFetchImplementation(this.debug),
       `${this.apiUrl}/info`,
       {
         method: "GET",
@@ -944,9 +1024,9 @@ export class Client implements LangSmithTracingClientInterface {
         if (this._serverInfo === undefined) {
           try {
             this._serverInfo = await this._getServerInfo();
-          } catch (e) {
+          } catch (e: any) {
             console.warn(
-              `[WARNING]: LangSmith failed to fetch info on supported operations. Falling back to batch operations and default limits.`
+              `[WARNING]: LangSmith failed to fetch info on supported operations with status code ${e.status}. Falling back to batch operations and default limits.`
             );
           }
         }
@@ -1586,6 +1666,7 @@ export class Client implements LangSmithTracingClientInterface {
       treeFilter,
       limit,
       select,
+      order,
     } = props;
     let projectIds: string[] = [];
     if (projectId) {
@@ -1649,6 +1730,7 @@ export class Client implements LangSmithTracingClientInterface {
       trace: traceId,
       select: select ? select : default_select,
       is_root: isRoot,
+      order,
     };
 
     let runsYielded = 0;
@@ -1669,6 +1751,73 @@ export class Client implements LangSmithTracingClientInterface {
         yield* runs;
       } else {
         yield* runs;
+      }
+    }
+  }
+
+  public async *listGroupRuns(props: GroupRunsParams): AsyncIterable<Thread> {
+    const {
+      projectId,
+      projectName,
+      groupBy,
+      filter,
+      startTime,
+      endTime,
+      limit,
+      offset,
+    } = props;
+
+    const sessionId = projectId || (await this.readProject({ projectName })).id;
+
+    const baseBody = {
+      session_id: sessionId,
+      group_by: groupBy,
+      filter,
+      start_time: startTime ? startTime.toISOString() : null,
+      end_time: endTime ? endTime.toISOString() : null,
+      limit: Number(limit) || 100,
+    };
+
+    let currentOffset = Number(offset) || 0;
+
+    const path = "/runs/group";
+    const url = `${this.apiUrl}${path}`;
+
+    while (true) {
+      const currentBody = {
+        ...baseBody,
+        offset: currentOffset,
+      };
+
+      // Remove undefined values from the payload
+      const filteredPayload = Object.fromEntries(
+        Object.entries(currentBody).filter(([_, value]) => value !== undefined)
+      );
+
+      const response = await this.caller.call(_getFetchImplementation(), url, {
+        method: "POST",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        body: JSON.stringify(filteredPayload),
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      });
+
+      await raiseForStatus(response, `Failed to fetch ${path}`);
+
+      const items: { groups: Thread[]; total: number } = await response.json();
+      const { groups, total } = items;
+
+      if (groups.length === 0) {
+        break;
+      }
+
+      for (const thread of groups) {
+        yield thread;
+      }
+      currentOffset += groups.length;
+
+      if (currentOffset >= total) {
+        break;
       }
     }
   }
