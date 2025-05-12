@@ -1281,7 +1281,8 @@ export class Client implements LangSmithTracingClientInterface {
   private async _sendMultipartRequest(parts: MultipartPart[], context: string) {
     try {
       // Create multipart form data boundary
-      const boundary = "----LangSmithFormBoundary" + Math.random().toString(36).slice(2);
+      const boundary =
+        "----LangSmithFormBoundary" + Math.random().toString(36).slice(2);
 
       // Create a ReadableStream for streaming the multipart data
       const stream = new ReadableStream({
@@ -1299,13 +1300,15 @@ export class Client implements LangSmithTracingClientInterface {
           for (const part of parts) {
             // Write boundary and headers
             writeChunk(`--${boundary}\r\n`);
-            writeChunk(`Content-Disposition: form-data; name="${part.name}"\r\n`);
+            writeChunk(
+              `Content-Disposition: form-data; name="${part.name}"\r\n`
+            );
             writeChunk(`Content-Type: ${part.payload.type}\r\n\r\n`);
-            
+
             // Write the payload
             const payloadStream = part.payload.stream();
             const reader = payloadStream.getReader();
-            
+
             try {
               let result;
               while (!(result = await reader.read()).done) {
@@ -1314,14 +1317,14 @@ export class Client implements LangSmithTracingClientInterface {
             } finally {
               reader.releaseLock();
             }
-            
+
             writeChunk("\r\n");
           }
 
           // Write final boundary
           writeChunk(`--${boundary}--\r\n`);
           controller.close();
-        }
+        },
       });
 
       const res = await this.batchIngestCaller.call(
