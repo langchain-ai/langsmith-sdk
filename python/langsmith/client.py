@@ -2481,7 +2481,6 @@ class Client:
             )
         default_select = [
             "app_path",
-            "child_run_ids",
             "completion_cost",
             "completion_tokens",
             "dotted_order",

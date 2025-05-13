@@ -1664,7 +1664,6 @@ export class Client implements LangSmithTracingClientInterface {
     }
     const default_select = [
       "app_path",
-      "child_run_ids",
       "completion_cost",
       "completion_tokens",
       "dotted_order",
@@ -4814,8 +4813,8 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   /**
-   * Clone a public dataset to your own langsmith tenant. 
-   * This operation is idempotent. If you already have a dataset with the given name, 
+   * Clone a public dataset to your own langsmith tenant.
+   * This operation is idempotent. If you already have a dataset with the given name,
    * this function will do nothing.
 
    * @param {string} tokenOrUrl The token of the public dataset to clone.
