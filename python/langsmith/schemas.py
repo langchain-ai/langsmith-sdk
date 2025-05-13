@@ -20,6 +20,8 @@ from typing_extensions import NotRequired, TypedDict
 try:
     from pydantic.v1 import (
         BaseModel,
+        ConfigDict,
+        Extra,
         Field,  # type: ignore[import]
         PrivateAttr,
         StrictBool,
@@ -29,6 +31,8 @@ try:
 except ImportError:
     from pydantic import (  # type: ignore[assignment]
         BaseModel,
+        ConfigDict,
+        Extra,
         Field,
         PrivateAttr,
         StrictBool,
@@ -118,7 +122,7 @@ class ExampleCreate(BaseModel):
 
     id: Optional[UUID]
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    inputs: Optional[dict[str, Any]] = Field(default=None)
+    inputs: dict[str, Any]
     outputs: Optional[dict[str, Any]] = Field(default=None)
     metadata: Optional[dict[str, Any]] = Field(default=None)
     split: Optional[Union[str, list[str]]] = None
@@ -127,9 +131,16 @@ class ExampleCreate(BaseModel):
     use_source_run_attachments: Optional[list[str]] = None
     source_run_id: Optional[UUID] = None
 
+    model_config = ConfigDict(extra=Extra.forbid)
+
     def __init__(self, **data):
         """Initialize from dict."""
         super().__init__(**data)
+
+    class Config:
+        """Config."""
+
+        extra = "forbid"
 
 
 ExampleUploadWithAttachments = ExampleCreate
