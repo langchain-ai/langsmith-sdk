@@ -36,7 +36,7 @@ LANGSMITH_PROJECT = sys.intern(f"{LANGSMITH_PREFIX}project")
 OVERRIDE_OUTPUTS = sys.intern("__omit_auto_outputs")
 NOT_PROVIDED = cast(None, object())
 _CLIENT: Optional[Client] = None
-_LOCK = threading.Lock()  # Keeping around for a while for backwards compat
+_LOCK = threading.Lock()  # Note: Do not delete.
 
 
 # Note, this is called directly by langchain. Do not remove.
@@ -45,8 +45,9 @@ _LOCK = threading.Lock()  # Keeping around for a while for backwards compat
 def get_cached_client(**init_kwargs: Any) -> Client:
     global _CLIENT
     if _CLIENT is None:
-        if _CLIENT is None:
-            _CLIENT = Client(**init_kwargs)
+        with _LOCK:
+            if _CLIENT is None:
+                _CLIENT = Client(**init_kwargs)
     return _CLIENT
 
 
