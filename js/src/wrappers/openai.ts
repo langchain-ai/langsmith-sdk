@@ -43,7 +43,7 @@ type PatchedOpenAIClient<T extends OpenAIType> = T & {
         (
           arg: OpenAI.ChatCompletionCreateParamsNonStreaming,
           arg2?: OpenAI.RequestOptions & { langsmithExtra?: ExtraRunTreeConfig }
-        ): APIPromise<OpenAI.ChatCompletionChunk>;
+        ): APIPromise<OpenAI.ChatCompletion>;
       };
     };
   };
