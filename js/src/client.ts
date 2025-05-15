@@ -1439,6 +1439,7 @@ export class Client implements LangSmithTracingClientInterface {
     });
     return stream;
   }
+
   private async _sendMultipartRequest(parts: MultipartPart[], context: string) {
     try {
       // Create multipart form data boundary
