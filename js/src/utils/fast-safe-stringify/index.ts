@@ -20,18 +20,24 @@ function encodeString(str: string): Uint8Array {
 }
 
 // Regular stringify
-export function serialize(obj, replacer?, spacer?, options?) {
+export function serialize(obj, errorContext?, replacer?, spacer?, options?) {
   try {
     const str = JSON.stringify(obj, replacer, spacer);
     return encodeString(str);
   } catch (e: any) {
     // Fall back to more complex stringify if circular reference
     if (!e.message?.includes("Converting circular structure to JSON")) {
-      console.warn("[WARNING]: LangSmith received unserializable value.");
+      console.warn(
+        `[WARNING]: LangSmith received unserializable value.${
+          errorContext ? `\nContext: ${errorContext}` : ""
+        }`
+      );
       return encodeString("[Unserializable]");
     }
     console.warn(
-      "[WARNING]: LangSmith received circular JSON. This will decrease tracer performance."
+      `[WARNING]: LangSmith received circular JSON. This will decrease tracer performance. ${
+        errorContext ? `\nContext: ${errorContext}` : ""
+      }`
     );
     if (typeof options === "undefined") {
       options = defaultOptions();
