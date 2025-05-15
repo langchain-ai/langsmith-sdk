@@ -64,7 +64,7 @@ async function waitUntilRunFound(
   );
 }
 
-test.concurrent("Test traceable wrapper with error thrown", async () => {
+test("Test traceable wrapper with error thrown", async () => {
   const langsmithClient = new Client({
     callerOptions: { maxRetries: 0 },
   });
@@ -103,7 +103,7 @@ test.concurrent("Test traceable wrapper with error thrown", async () => {
   expect(storedRun.error).toEqual("Error: I am bad");
 });
 
-test.concurrent("Test traceable wrapper with async error thrown", async () => {
+test("Test traceable wrapper with async error thrown", async () => {
   const langsmithClient = new Client({
     callerOptions: { maxRetries: 0 },
   });
@@ -144,138 +144,134 @@ test.concurrent("Test traceable wrapper with async error thrown", async () => {
   expect(storedRun.error).toEqual("Error: I am bad");
 });
 
-test.concurrent(
-  "Test traceable wrapper",
-  async () => {
-    const langsmithClient = new Client({
-      callerOptions: { maxRetries: 0 },
-    });
-    const runId = uuidv4();
-    const projectName = "__test_traceable_wrapper";
-    let collectedRun: BaseRun | null = null;
-    const _getRun = (r: RunTree): void => {
-      collectedRun = r;
-    };
-    const addValueTraceable = traceable(
-      (a: string, b: number) => {
-        return a + b;
-      },
-      {
-        name: "add_value",
-        project_name: projectName,
-        client: langsmithClient,
-        id: runId,
-        on_end: _getRun,
-        tracingEnabled: true,
-      }
-    );
-
-    expect(await addValueTraceable("testing", 9)).toBe("testing9");
-    expect(isTraceableFunction(addValueTraceable)).toBe(true);
-
-    expect(collectedRun).not.toBeNull();
-    expect(collectedRun!.outputs).toEqual({ outputs: "testing9" });
-    await waitUntilRunFound(langsmithClient, runId, true);
-    const storedRun = await langsmithClient.readRun(runId);
-    expect(storedRun.id).toEqual(runId);
-
-    const runId2 = uuidv4();
-    const nestedAddValueTraceable = traceable(
-      (a: string, b: number) => {
-        return a + b;
-      },
-      {
-        name: "nested_add_value",
-        project_name: projectName,
-        client: langsmithClient,
-      }
-    );
-    const entryTraceable = traceable(
-      async (complex: { value: string }) => {
-        const result = await nestedAddValueTraceable(complex.value, 1);
-        const result2 = await nestedAddValueTraceable(result, 2);
-        await nestedAddValueTraceable(
-          new RunTree({
-            name: "root_nested_add_value",
-            project_name: projectName,
-            client: langsmithClient,
-          }),
-          result,
-          2
-        );
-        return nestedAddValueTraceable(result2, 3);
-      },
-      {
-        name: "run_with_nesting",
-        project_name: projectName,
-        client: langsmithClient,
-        id: runId2,
-      }
-    );
-
-    expect(await entryTraceable({ value: "testing" })).toBe("testing123");
-    expect(isTraceableFunction(entryTraceable)).toBe(true);
-
-    await waitUntilRunFound(langsmithClient, runId2, true);
-    const storedRun2 = await langsmithClient.readRun(runId2);
-    expect(storedRun2.id).toEqual(runId2);
-
-    const runId3 = uuidv4();
-
-    const llm = new FakeStreamingLLM({ sleep: 0 });
-    collectedRun = null;
-
-    const iterableTraceable = traceable(llm.stream.bind(llm), {
-      name: "iterable_traceable",
+test("Test traceable wrapper", async () => {
+  const langsmithClient = new Client({
+    callerOptions: { maxRetries: 0 },
+  });
+  const runId = uuidv4();
+  const projectName = "__test_traceable_wrapper";
+  let collectedRun: BaseRun | null = null;
+  const _getRun = (r: RunTree): void => {
+    collectedRun = r;
+  };
+  const addValueTraceable = traceable(
+    (a: string, b: number) => {
+      return a + b;
+    },
+    {
+      name: "add_value",
       project_name: projectName,
       client: langsmithClient,
-      id: runId3,
-      on_end: (r: RunTree): void => {
-        collectedRun = r;
-      },
+      id: runId,
+      on_end: _getRun,
       tracingEnabled: true,
-    });
-    expect(isTraceableFunction(iterableTraceable)).toBe(true);
-
-    const chunks = [];
-
-    for await (const chunk of await iterableTraceable("Hello there")) {
-      chunks.push(chunk);
     }
-    expect(chunks.join("")).toBe("Hello there");
-    expect(collectedRun).not.toBeNull();
-    expect(collectedRun!.outputs).not.toBeNull();
-    await waitUntilRunFound(langsmithClient, runId3, true);
-    const storedRun3 = await langsmithClient.readRun(runId3);
-    expect(storedRun3.id).toEqual(runId3);
+  );
 
-    await deleteProject(langsmithClient, projectName);
+  expect(await addValueTraceable("testing", 9)).toBe("testing9");
+  expect(isTraceableFunction(addValueTraceable)).toBe(true);
 
-    async function overload(a: string, b: number): Promise<string>;
-    async function overload(config: { a: string; b: number }): Promise<string>;
-    async function overload(
-      ...args: [a: string, b: number] | [config: { a: string; b: number }]
-    ): Promise<string> {
-      if (args.length === 1) {
-        return args[0].a + args[0].b;
-      }
-      return args[0] + args[1];
-    }
+  expect(collectedRun).not.toBeNull();
+  expect(collectedRun!.outputs).toEqual({ outputs: "testing9" });
+  await waitUntilRunFound(langsmithClient, runId, true);
+  const storedRun = await langsmithClient.readRun(runId);
+  expect(storedRun.id).toEqual(runId);
 
-    const wrappedOverload = traceable(overload, {
-      name: "wrapped_overload",
+  const runId2 = uuidv4();
+  const nestedAddValueTraceable = traceable(
+    (a: string, b: number) => {
+      return a + b;
+    },
+    {
+      name: "nested_add_value",
       project_name: projectName,
       client: langsmithClient,
-    });
+    }
+  );
+  const entryTraceable = traceable(
+    async (complex: { value: string }) => {
+      const result = await nestedAddValueTraceable(complex.value, 1);
+      const result2 = await nestedAddValueTraceable(result, 2);
+      await nestedAddValueTraceable(
+        new RunTree({
+          name: "root_nested_add_value",
+          project_name: projectName,
+          client: langsmithClient,
+        }),
+        result,
+        2
+      );
+      return nestedAddValueTraceable(result2, 3);
+    },
+    {
+      name: "run_with_nesting",
+      project_name: projectName,
+      client: langsmithClient,
+      id: runId2,
+    }
+  );
 
-    expect(await wrappedOverload("testing", 123)).toBe("testing123");
-    expect(await wrappedOverload({ a: "testing", b: 456 })).toBe("testing456");
-    expect(isTraceableFunction(wrappedOverload)).toBe(true);
-  },
-  180_000
-);
+  expect(await entryTraceable({ value: "testing" })).toBe("testing123");
+  expect(isTraceableFunction(entryTraceable)).toBe(true);
 
-test.concurrent("Test get run tree method", async () => {
+  await waitUntilRunFound(langsmithClient, runId2, true);
+  const storedRun2 = await langsmithClient.readRun(runId2);
+  expect(storedRun2.id).toEqual(runId2);
+
+  const runId3 = uuidv4();
+
+  const llm = new FakeStreamingLLM({ sleep: 0 });
+  collectedRun = null;
+
+  const iterableTraceable = traceable(llm.stream.bind(llm), {
+    name: "iterable_traceable",
+    project_name: projectName,
+    client: langsmithClient,
+    id: runId3,
+    on_end: (r: RunTree): void => {
+      collectedRun = r;
+    },
+    tracingEnabled: true,
+  });
+  expect(isTraceableFunction(iterableTraceable)).toBe(true);
+
+  const chunks = [];
+
+  for await (const chunk of await iterableTraceable("Hello there")) {
+    chunks.push(chunk);
+  }
+  expect(chunks.join("")).toBe("Hello there");
+  expect(collectedRun).not.toBeNull();
+  expect(collectedRun!.outputs).not.toBeNull();
+  await waitUntilRunFound(langsmithClient, runId3, true);
+  const storedRun3 = await langsmithClient.readRun(runId3);
+  expect(storedRun3.id).toEqual(runId3);
+
+  await deleteProject(langsmithClient, projectName);
+
+  async function overload(a: string, b: number): Promise<string>;
+  async function overload(config: { a: string; b: number }): Promise<string>;
+  async function overload(
+    ...args: [a: string, b: number] | [config: { a: string; b: number }]
+  ): Promise<string> {
+    if (args.length === 1) {
+      return args[0].a + args[0].b;
+    }
+    return args[0] + args[1];
+  }
+
+  const wrappedOverload = traceable(overload, {
+    name: "wrapped_overload",
+    project_name: projectName,
+    client: langsmithClient,
+  });
+
+  expect(await wrappedOverload("testing", 123)).toBe("testing123");
+  expect(await wrappedOverload({ a: "testing", b: 456 })).toBe("testing456");
+  expect(isTraceableFunction(wrappedOverload)).toBe(true);
+}, 180_000);
+
+test("Test get run tree method", async () => {
   const langsmithClient = new Client({
     callerOptions: { maxRetries: 0 },
   });
@@ -313,7 +309,7 @@ test.concurrent("Test get run tree method", async () => {
   expect(await addValueTraceable("testing", 9)).toBe("testing9");
 });
 
-test.concurrent("Test traceable wrapper with aggregator", async () => {
+test("Test traceable wrapper with aggregator", async () => {
   const langsmithClient = new Client({
     callerOptions: { maxRetries: 0 },
   });
@@ -365,7 +361,7 @@ test.concurrent("Test traceable wrapper with aggregator", async () => {
   expect(storedRun3.id).toEqual(runId);
 });
 
-test.concurrent("Test async generator success", async () => {
+test("Test async generator success", async () => {
   const langsmithClient = new Client({
     callerOptions: { maxRetries: 0 },
   });
@@ -409,7 +405,7 @@ test.concurrent("Test async generator success", async () => {
   expect(storedRun3.error).toBeFalsy();
 });
 
-test.concurrent("Test async generator throws error", async () => {
+test("Test async generator throws error", async () => {
   const langsmithClient = new Client({
     callerOptions: { maxRetries: 0 },
   });
@@ -461,7 +457,7 @@ test.concurrent("Test async generator throws error", async () => {
   expect(storedRun3.error).toEqual("Error: I am bad");
 });
 
-test.concurrent("Test async generator break finishes run", async () => {
+test("Test async generator break finishes run", async () => {
   const langsmithClient = new Client({
     callerOptions: { maxRetries: 0 },
   });
@@ -506,7 +502,7 @@ test.concurrent("Test async generator break finishes run", async () => {
   expect(storedRun3.error).toEqual("Cancelled");
 });
 
-test.concurrent("Test async generator success", async () => {
+test("Test async generator success", async () => {
   const langsmithClient = new Client({
     callerOptions: { maxRetries: 0 },
   });
@@ -554,7 +550,7 @@ test.concurrent("Test async generator success", async () => {
   expect(storedRun3.error).toBeFalsy();
 });
 
-test.concurrent("Test promise for async generator success", async () => {
+test("Test promise for async generator success", async () => {
   const langsmithClient = new Client({
     callerOptions: { maxRetries: 0 },
   });
@@ -608,171 +604,161 @@ test.concurrent("Test promise for async generator success", async () => {
   expect(storedRun3.error).toEqual("Error: I am bad");
 });
 
-test.concurrent(
-  "Test promise for async generator break finishes run",
-  async () => {
-    const langsmithClient = new Client({
-      callerOptions: { maxRetries: 0 },
-    });
-    const runId = uuidv4();
-    const projectName = "__test_traceable_wrapper_aggregator";
-    let collectedRun: BaseRun | null = null;
+test("Test promise for async generator break finishes run", async () => {
+  const langsmithClient = new Client({
+    callerOptions: { maxRetries: 0 },
+  });
+  const runId = uuidv4();
+  const projectName = "__test_traceable_wrapper_aggregator";
+  let collectedRun: BaseRun | null = null;
 
-    const _getRun = (r: RunTree): void => {
-      collectedRun = r;
-    };
+  const _getRun = (r: RunTree): void => {
+    collectedRun = r;
+  };
 
-    async function giveMeGiveMeNumbers() {
-      async function* giveMeNumbers() {
-        for (let i = 0; i < 5; i++) {
-          yield i;
-        }
+  async function giveMeGiveMeNumbers() {
+    async function* giveMeNumbers() {
+      for (let i = 0; i < 5; i++) {
+        yield i;
       }
-      return giveMeNumbers();
     }
+    return giveMeNumbers();
+  }
 
-    const iterableTraceable = traceable(giveMeGiveMeNumbers, {
-      name: "i_traceable",
+  const iterableTraceable = traceable(giveMeGiveMeNumbers, {
+    name: "i_traceable",
+    project_name: projectName,
+    client: langsmithClient,
+    id: runId,
+    aggregator: (chunks) => {
+      return chunks.join(" ");
+    },
+    on_end: _getRun,
+    tracingEnabled: true,
+  });
+  expect(isTraceableFunction(iterableTraceable)).toBe(true);
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  for await (const _ of await iterableTraceable()) {
+    break;
+  }
+  expect(collectedRun).not.toBeNull();
+  expect(collectedRun!.outputs).toEqual({ outputs: "0" });
+  expect(collectedRun!.id).toEqual(runId);
+  await waitUntilRunFound(langsmithClient, runId);
+  const storedRun3 = await langsmithClient.readRun(runId);
+  expect(storedRun3.id).toEqual(runId);
+  expect(storedRun3.status).toEqual("error");
+});
+
+test("Test upload attachments and process inputs.", async () => {
+  const langsmithClient = new Client({
+    callerOptions: { maxRetries: 0 },
+  });
+  const runId = uuidv4();
+  const projectName = "__test_traceable_wrapper_attachments_and_inputs";
+
+  const testAttachment1 = new Uint8Array([1, 2, 3, 4]);
+  const testAttachment2 = new Uint8Array([5, 6, 7, 8]);
+  const testAttachment3 = new ArrayBuffer(4);
+  new Uint8Array(testAttachment3).set([13, 14, 15, 16]);
+
+  const traceableWithAttachmentsAndInputs = traceable(
+    (
+      val: number,
+      text: string,
+      extra: string,
+      attachment: Uint8Array,
+      attachment2: ArrayBuffer
+    ) =>
+      `Processed: ${val}, ${text}, ${extra}, ${attachment.length}, ${attachment2.byteLength}`,
+    {
+      name: "attachment_and_input_test",
       project_name: projectName,
       client: langsmithClient,
       id: runId,
-      aggregator: (chunks) => {
-        return chunks.join(" ");
-      },
-      on_end: _getRun,
-      tracingEnabled: true,
-    });
-    expect(isTraceableFunction(iterableTraceable)).toBe(true);
-
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    for await (const _ of await iterableTraceable()) {
-      break;
-    }
-    expect(collectedRun).not.toBeNull();
-    expect(collectedRun!.outputs).toEqual({ outputs: "0" });
-    expect(collectedRun!.id).toEqual(runId);
-    await waitUntilRunFound(langsmithClient, runId);
-    const storedRun3 = await langsmithClient.readRun(runId);
-    expect(storedRun3.id).toEqual(runId);
-    expect(storedRun3.status).toEqual("error");
-  }
-);
-
-test.concurrent(
-  "Test upload attachments and process inputs.",
-  async () => {
-    const langsmithClient = new Client({
-      callerOptions: { maxRetries: 0 },
-    });
-    const runId = uuidv4();
-    const projectName = "__test_traceable_wrapper_attachments_and_inputs";
-
-    const testAttachment1 = new Uint8Array([1, 2, 3, 4]);
-    const testAttachment2 = new Uint8Array([5, 6, 7, 8]);
-    const testAttachment3 = new ArrayBuffer(4);
-    new Uint8Array(testAttachment3).set([13, 14, 15, 16]);
-
-    const traceableWithAttachmentsAndInputs = traceable(
-      (
+      extractAttachments: (
         val: number,
         text: string,
         extra: string,
         attachment: Uint8Array,
         attachment2: ArrayBuffer
-      ) =>
-        `Processed: ${val}, ${text}, ${extra}, ${attachment.length}, ${attachment2.byteLength}`,
-      {
-        name: "attachment_and_input_test",
-        project_name: projectName,
-        client: langsmithClient,
-        id: runId,
-        extractAttachments: (
-          val: number,
-          text: string,
-          extra: string,
-          attachment: Uint8Array,
-          attachment2: ArrayBuffer
-        ) => [
-          {
-            test1bin: ["application/octet-stream", testAttachment1],
-            test2bin: ["application/octet-stream", testAttachment2],
-            inputbin: ["application/octet-stream", attachment],
-            input2bin: [
-              "application/octet-stream",
-              new Uint8Array(attachment2),
-            ],
-          },
-          { val, text, extra },
-        ],
-        processInputs: (inputs) => {
-          expect(inputs).not.toHaveProperty("attachment");
-          expect(inputs).not.toHaveProperty("attachment2");
-          return {
-            ...inputs,
-            processed_val: (inputs.val as number) * 2,
-            processed_text: (inputs.text as string).toUpperCase(),
-          };
+      ) => [
+        {
+          test1bin: ["application/octet-stream", testAttachment1],
+          test2bin: ["application/octet-stream", testAttachment2],
+          inputbin: ["application/octet-stream", attachment],
+          input2bin: ["application/octet-stream", new Uint8Array(attachment2)],
         },
-        tracingEnabled: true,
-      }
-    );
+        { val, text, extra },
+      ],
+      processInputs: (inputs) => {
+        expect(inputs).not.toHaveProperty("attachment");
+        expect(inputs).not.toHaveProperty("attachment2");
+        return {
+          ...inputs,
+          processed_val: (inputs.val as number) * 2,
+          processed_text: (inputs.text as string).toUpperCase(),
+        };
+      },
+      tracingEnabled: true,
+    }
+  );
 
-    const multipartIngestRunsSpy = jest.spyOn(
-      langsmithClient,
-      "multipartIngestRuns"
-    );
+  const multipartIngestRunsSpy = jest.spyOn(
+    langsmithClient,
+    "multipartIngestRuns"
+  );
 
-    await traceableWithAttachmentsAndInputs(
-      42,
-      "test input",
-      "extra data",
-      new Uint8Array([9, 10, 11, 12]),
-      testAttachment3
-    );
+  await traceableWithAttachmentsAndInputs(
+    42,
+    "test input",
+    "extra data",
+    new Uint8Array([9, 10, 11, 12]),
+    testAttachment3
+  );
 
-    await langsmithClient.awaitPendingTraceBatches();
+  await langsmithClient.awaitPendingTraceBatches();
 
-    expect(multipartIngestRunsSpy).toHaveBeenCalled();
-    const callArgs = multipartIngestRunsSpy.mock.calls[0][0];
+  expect(multipartIngestRunsSpy).toHaveBeenCalled();
+  const callArgs = multipartIngestRunsSpy.mock.calls[0][0];
 
-    expect(callArgs.runCreates).toBeDefined();
-    expect(callArgs.runCreates?.length).toBe(1);
+  expect(callArgs.runCreates).toBeDefined();
+  expect(callArgs.runCreates?.length).toBe(1);
 
-    const runCreate = callArgs.runCreates?.[0];
-    expect(runCreate?.id).toBe(runId);
-    expect(runCreate?.attachments).toBeDefined();
-    expect(runCreate?.attachments?.["test1bin"]).toEqual([
-      "application/octet-stream",
-      testAttachment1,
-    ]);
-    expect(runCreate?.attachments?.["test2bin"]).toEqual([
-      "application/octet-stream",
-      testAttachment2,
-    ]);
-    expect(runCreate?.attachments?.["inputbin"]).toEqual([
-      "application/octet-stream",
-      new Uint8Array([9, 10, 11, 12]),
-    ]);
-    expect(runCreate?.attachments?.["input2bin"]).toEqual([
-      "application/octet-stream",
-      new Uint8Array([13, 14, 15, 16]),
-    ]);
+  const runCreate = callArgs.runCreates?.[0];
+  expect(runCreate?.id).toBe(runId);
+  expect(runCreate?.attachments).toBeDefined();
+  expect(runCreate?.attachments?.["test1bin"]).toEqual([
+    "application/octet-stream",
+    testAttachment1,
+  ]);
+  expect(runCreate?.attachments?.["test2bin"]).toEqual([
+    "application/octet-stream",
+    testAttachment2,
+  ]);
+  expect(runCreate?.attachments?.["inputbin"]).toEqual([
+    "application/octet-stream",
+    new Uint8Array([9, 10, 11, 12]),
+  ]);
+  expect(runCreate?.attachments?.["input2bin"]).toEqual([
+    "application/octet-stream",
+    new Uint8Array([13, 14, 15, 16]),
+  ]);
 
-    await waitUntilRunFound(langsmithClient, runId);
-    const storedRun = await langsmithClient.readRun(runId);
-    expect(storedRun.id).toEqual(runId);
-    expect(storedRun.inputs).toEqual({
-      val: 42,
-      text: "test input",
-      extra: "extra data",
-      processed_val: 84,
-      processed_text: "TEST INPUT",
-    });
-    expect(storedRun.outputs).toEqual({
-      outputs: "Processed: 42, test input, extra data, 4, 4",
-    });
+  await waitUntilRunFound(langsmithClient, runId);
+  const storedRun = await langsmithClient.readRun(runId);
+  expect(storedRun.id).toEqual(runId);
+  expect(storedRun.inputs).toEqual({
+    val: 42,
+    text: "test input",
+    extra: "extra data",
+    processed_val: 84,
+    processed_text: "TEST INPUT",
+  });
+  expect(storedRun.outputs).toEqual({
+    outputs: "Processed: 42, test input, extra data, 4, 4",
+  });
 
-    multipartIngestRunsSpy.mockRestore();
-  },
-  60000
-);
+  multipartIngestRunsSpy.mockRestore();
+}, 60000);
