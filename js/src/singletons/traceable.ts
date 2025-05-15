@@ -47,13 +47,15 @@ export const AsyncLocalStorageProviderSingleton =
  */
 export function getCurrentRunTree(): RunTree;
 
-export function getCurrentRunTree(throwIfMissing: true): RunTree;
+export function getCurrentRunTree(permitAbsentRunTree: false): RunTree;
 
-export function getCurrentRunTree(throwIfMissing: boolean): RunTree | undefined;
+export function getCurrentRunTree(
+  permitAbsentRunTree: boolean
+): RunTree | undefined;
 
-export function getCurrentRunTree(throwIfMissing = true) {
+export function getCurrentRunTree(permitAbsentRunTree = false) {
   const runTree = AsyncLocalStorageProviderSingleton.getInstance().getStore();
-  if (throwIfMissing && !isRunTree(runTree)) {
+  if (!permitAbsentRunTree && !isRunTree(runTree)) {
     throw new Error(
       "Could not get the current run tree.\n\nPlease make sure you are calling this method within a traceable function and that tracing is enabled."
     );
