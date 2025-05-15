@@ -38,4 +38,8 @@ export type SimpleEvaluationResult = {
   key: EvaluationResult["key"];
   score: NonNullable<EvaluationResult["score"]>;
   comment?: EvaluationResult["comment"];
+} | {
+  key: EvaluationResult["key"];
+  comment?: EvaluationResult["comment"];
+  value: NonNullable<EvaluationResult["value"]>;
 };
