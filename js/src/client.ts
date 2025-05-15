@@ -1393,6 +1393,7 @@ export class Client implements LangSmithTracingClientInterface {
     parts: MultipartPart[],
     boundary: string
   ) {
+    const encoder = new TextEncoder();
     // Create a ReadableStream for streaming the multipart data
     // Only do special handling if we're using node-fetch
     const stream = new ReadableStream({
@@ -1400,7 +1401,7 @@ export class Client implements LangSmithTracingClientInterface {
         // Helper function to write a chunk to the stream
         const writeChunk = async (chunk: string | Blob) => {
           if (typeof chunk === "string") {
-            controller.enqueue(new TextEncoder().encode(chunk));
+            controller.enqueue(encoder.encode(chunk));
           } else {
             controller.enqueue(chunk);
           }
