@@ -333,7 +333,7 @@ const convertSerializableArg = (arg: unknown): unknown => {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function traceable<Func extends (...args: any[]) => any>(
   wrappedFunc: Func,
-  config?: Partial<RunTreeConfig> & {
+  config?: Partial<Omit<RunTreeConfig, "inputs" | "outputs">> & {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     aggregator?: (args: any[]) => any;
     argsConfigPath?: [number] | [number, string];
