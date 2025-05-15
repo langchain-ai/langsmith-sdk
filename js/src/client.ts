@@ -505,7 +505,10 @@ export class AutoBatchQueue {
       // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/Promise
       itemPromiseResolve = resolve;
     });
-    const size = serializePayloadForTracing(item.item).length;
+    const size = serializePayloadForTracing(
+      item.item,
+      `Serializing run with id: ${item.item.id}`
+    ).length;
     this.items.push({
       action: item.action,
       payload: item.item,
@@ -1092,7 +1095,10 @@ export class Client implements LangSmithTracingClientInterface {
       {
         method: "POST",
         headers,
-        body: serializePayloadForTracing(mergedRunCreateParam),
+        body: serializePayloadForTracing(
+          mergedRunCreateParam,
+          `Creating run with id: ${mergedRunCreateParam.id}`
+        ),
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       }
@@ -1172,7 +1178,16 @@ export class Client implements LangSmithTracingClientInterface {
       }
     }
     if (batchChunks.post.length > 0 || batchChunks.patch.length > 0) {
-      await this._postBatchIngestRuns(serializePayloadForTracing(batchChunks));
+      const runIds = batchChunks.post
+        .map((item) => item.id)
+        .concat(batchChunks.patch.map((item) => item.id))
+        .join(",");
+      await this._postBatchIngestRuns(
+        serializePayloadForTracing(
+          batchChunks,
+          `Ingesting runs with ids: ${runIds}`
+        )
+      );
     }
   }
 
@@ -1298,7 +1313,10 @@ export class Client implements LangSmithTracingClientInterface {
           originalPayload;
         const fields = { inputs, outputs, events };
         // encode the main run payload
-        const stringifiedPayload = serializePayloadForTracing(payload);
+        const stringifiedPayload = serializePayloadForTracing(
+          payload,
+          `Serializing for multipart ingestion of run with id: ${payload.id}`
+        );
         accumulatedParts.push({
           name: `${method}.${payload.id}`,
           payload: new Blob([stringifiedPayload], {
@@ -1310,7 +1328,10 @@ export class Client implements LangSmithTracingClientInterface {
           if (value === undefined) {
             continue;
           }
-          const stringifiedValue = serializePayloadForTracing(value);
+          const stringifiedValue = serializePayloadForTracing(
+            value,
+            `Serializing ${key} for multipart ingestion of run with id: ${payload.id}`
+          );
           accumulatedParts.push({
             name: `${method}.${payload.id}.${key}`,
             payload: new Blob([stringifiedValue], {
@@ -1516,7 +1537,10 @@ export class Client implements LangSmithTracingClientInterface {
       {
         method: "PATCH",
         headers,
-        body: serializePayloadForTracing(run),
+        body: serializePayloadForTracing(
+          run,
+          `Serializing payload to update run with id: ${runId}`
+        ),
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       }
@@ -4534,7 +4558,10 @@ export class Client implements LangSmithTracingClientInterface {
       };
 
       // Add main example data
-      const stringifiedExample = serializePayloadForTracing(exampleBody);
+      const stringifiedExample = serializePayloadForTracing(
+        exampleBody,
+        `Serializing body for example with id: ${exampleId}`
+      );
       const exampleBlob = new Blob([stringifiedExample], {
         type: "application/json",
       });
@@ -4542,7 +4569,10 @@ export class Client implements LangSmithTracingClientInterface {
 
       // Add inputs if present
       if (example.inputs) {
-        const stringifiedInputs = serializePayloadForTracing(example.inputs);
+        const stringifiedInputs = serializePayloadForTracing(
+          example.inputs,
+          `Serializing inputs for example with id: ${exampleId}`
+        );
         const inputsBlob = new Blob([stringifiedInputs], {
           type: "application/json",
         });
@@ -4551,7 +4581,10 @@ export class Client implements LangSmithTracingClientInterface {
 
       // Add outputs if present
       if (example.outputs) {
-        const stringifiedOutputs = serializePayloadForTracing(example.outputs);
+        const stringifiedOutputs = serializePayloadForTracing(
+          example.outputs,
+          `Serializing outputs whle updating example with id: ${exampleId}`
+        );
         const outputsBlob = new Blob([stringifiedOutputs], {
           type: "application/json",
         });
@@ -4579,7 +4612,8 @@ export class Client implements LangSmithTracingClientInterface {
 
       if (example.attachments_operations) {
         const stringifiedAttachmentsOperations = serializePayloadForTracing(
-          example.attachments_operations
+          example.attachments_operations,
+          `Serializing attachments while updating example with id: ${exampleId}`
         );
         const attachmentsOperationsBlob = new Blob(
           [stringifiedAttachmentsOperations],
@@ -4650,7 +4684,10 @@ export class Client implements LangSmithTracingClientInterface {
       };
 
       // Add main example data
-      const stringifiedExample = serializePayloadForTracing(exampleBody);
+      const stringifiedExample = serializePayloadForTracing(
+        exampleBody,
+        `Serializing body for uploaded example with id: ${exampleId}`
+      );
       const exampleBlob = new Blob([stringifiedExample], {
         type: "application/json",
       });
@@ -4658,7 +4695,10 @@ export class Client implements LangSmithTracingClientInterface {
 
       // Add inputs if present
       if (example.inputs) {
-        const stringifiedInputs = serializePayloadForTracing(example.inputs);
+        const stringifiedInputs = serializePayloadForTracing(
+          example.inputs,
+          `Serializing inputs for uploaded example with id: ${exampleId}`
+        );
         const inputsBlob = new Blob([stringifiedInputs], {
           type: "application/json",
         });
@@ -4667,7 +4707,10 @@ export class Client implements LangSmithTracingClientInterface {
 
       // Add outputs if present
       if (example.outputs) {
-        const stringifiedOutputs = serializePayloadForTracing(example.outputs);
+        const stringifiedOutputs = serializePayloadForTracing(
+          example.outputs,
+          `Serializing outputs for uploaded example with id: ${exampleId}`
+        );
         const outputsBlob = new Blob([stringifiedOutputs], {
           type: "application/json",
         });
