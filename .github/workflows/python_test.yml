@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
 
 env:
-  POETRY_VERSION: "1.4.2"
+  POETRY_VERSION: "1.8.1"
 
 jobs:
   build_and_test:
@@ -31,14 +31,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install poetry ${{ inputs.poetry-version }}
-        run: pipx install poetry==${{ inputs.poetry-verision }}
+      - name: Install poetry ${{ env.POETRY_VERSION }}
+        run: pipx install poetry==${{ env.POETRY_VERSION }}
 
       - uses: actions/setup-python@v5
-        name: Setup python ${{ inputs.python-version }}
+        name: Setup python ${{ matrix.python-version }}
         id: setup-python
         with:
-          python-version: ${{ inputs.python-version }}
+          python-version: ${{ matrix.python-version }}
           cache: 'poetry'
 
       - name: Install dependencies
