@@ -64,7 +64,10 @@ import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
 import { parsePromptIdentifier } from "./utils/prompts.js";
 import { raiseForStatus } from "./utils/error.js";
-import { _getFetchImplementation } from "./singletons/fetch.js";
+import {
+  _globalFetchImplementationIsNodeFetch,
+  _getFetchImplementation,
+} from "./singletons/fetch.js";
 
 import { serialize as serializePayloadForTracing } from "./utils/fast-safe-stringify/index.js";
 
@@ -502,7 +505,10 @@ export class AutoBatchQueue {
       // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/Promise
       itemPromiseResolve = resolve;
     });
-    const size = serializePayloadForTracing(item.item).length;
+    const size = serializePayloadForTracing(
+      item.item,
+      `Serializing run with id: ${item.item.id}`
+    ).length;
     this.items.push({
       action: item.action,
       payload: item.item,
@@ -1089,7 +1095,10 @@ export class Client implements LangSmithTracingClientInterface {
       {
         method: "POST",
         headers,
-        body: serializePayloadForTracing(mergedRunCreateParam),
+        body: serializePayloadForTracing(
+          mergedRunCreateParam,
+          `Creating run with id: ${mergedRunCreateParam.id}`
+        ),
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       }
@@ -1169,7 +1178,16 @@ export class Client implements LangSmithTracingClientInterface {
       }
     }
     if (batchChunks.post.length > 0 || batchChunks.patch.length > 0) {
-      await this._postBatchIngestRuns(serializePayloadForTracing(batchChunks));
+      const runIds = batchChunks.post
+        .map((item) => item.id)
+        .concat(batchChunks.patch.map((item) => item.id))
+        .join(",");
+      await this._postBatchIngestRuns(
+        serializePayloadForTracing(
+          batchChunks,
+          `Ingesting runs with ids: ${runIds}`
+        )
+      );
     }
   }
 
@@ -1295,7 +1313,10 @@ export class Client implements LangSmithTracingClientInterface {
           originalPayload;
         const fields = { inputs, outputs, events };
         // encode the main run payload
-        const stringifiedPayload = serializePayloadForTracing(payload);
+        const stringifiedPayload = serializePayloadForTracing(
+          payload,
+          `Serializing for multipart ingestion of run with id: ${payload.id}`
+        );
         accumulatedParts.push({
           name: `${method}.${payload.id}`,
           payload: new Blob([stringifiedPayload], {
@@ -1307,7 +1328,10 @@ export class Client implements LangSmithTracingClientInterface {
           if (value === undefined) {
             continue;
           }
-          const stringifiedValue = serializePayloadForTracing(value);
+          const stringifiedValue = serializePayloadForTracing(
+            value,
+            `Serializing ${key} for multipart ingestion of run with id: ${payload.id}`
+          );
           accumulatedParts.push({
             name: `${method}.${payload.id}.${key}`,
             payload: new Blob([stringifiedValue], {
@@ -1358,34 +1382,93 @@ export class Client implements LangSmithTracingClientInterface {
     );
   }
 
+  private async _createNodeFetchBody(parts: MultipartPart[], boundary: string) {
+    // Create multipart form data manually using Blobs
+    const chunks: Blob[] = [];
+
+    for (const part of parts) {
+      // Add field boundary
+      chunks.push(new Blob([`--${boundary}\r\n`]));
+      chunks.push(
+        new Blob([
+          `Content-Disposition: form-data; name="${part.name}"\r\n`,
+          `Content-Type: ${part.payload.type}\r\n\r\n`,
+        ])
+      );
+      chunks.push(part.payload);
+      chunks.push(new Blob(["\r\n"]));
+    }
+
+    // Add final boundary
+    chunks.push(new Blob([`--${boundary}--\r\n`]));
+
+    // Combine all chunks into a single Blob
+    const body = new Blob(chunks);
+
+    // Convert Blob to ArrayBuffer for compatibility
+    const arrayBuffer = await body.arrayBuffer();
+    return arrayBuffer;
+  }
+
+  private async _createMultipartStream(
+    parts: MultipartPart[],
+    boundary: string
+  ) {
+    const encoder = new TextEncoder();
+    // Create a ReadableStream for streaming the multipart data
+    // Only do special handling if we're using node-fetch
+    const stream = new ReadableStream({
+      async start(controller) {
+        // Helper function to write a chunk to the stream
+        const writeChunk = async (chunk: string | Blob) => {
+          if (typeof chunk === "string") {
+            controller.enqueue(encoder.encode(chunk));
+          } else {
+            controller.enqueue(chunk);
+          }
+        };
+
+        // Write each part to the stream
+        for (const part of parts) {
+          // Write boundary and headers
+          await writeChunk(`--${boundary}\r\n`);
+          await writeChunk(
+            `Content-Disposition: form-data; name="${part.name}"\r\n`
+          );
+          await writeChunk(`Content-Type: ${part.payload.type}\r\n\r\n`);
+
+          // Write the payload
+          const payloadStream = part.payload.stream();
+          const reader = payloadStream.getReader();
+
+          try {
+            let result;
+            while (!(result = await reader.read()).done) {
+              controller.enqueue(result.value);
+            }
+          } finally {
+            reader.releaseLock();
+          }
+
+          await writeChunk("\r\n");
+        }
+
+        // Write final boundary
+        await writeChunk(`--${boundary}--\r\n`);
+        controller.close();
+      },
+    });
+    return stream;
+  }
+
   private async _sendMultipartRequest(parts: MultipartPart[], context: string) {
     try {
-      // Create multipart form data manually using Blobs
+      // Create multipart form data boundary
       const boundary =
         "----LangSmithFormBoundary" + Math.random().toString(36).slice(2);
-      const chunks: Blob[] = [];
-
-      for (const part of parts) {
-        // Add field boundary
-        chunks.push(new Blob([`--${boundary}\r\n`]));
-        chunks.push(
-          new Blob([
-            `Content-Disposition: form-data; name="${part.name}"\r\n`,
-            `Content-Type: ${part.payload.type}\r\n\r\n`,
-          ])
-        );
-        chunks.push(part.payload);
-        chunks.push(new Blob(["\r\n"]));
-      }
-
-      // Add final boundary
-      chunks.push(new Blob([`--${boundary}--\r\n`]));
-
-      // Combine all chunks into a single Blob
-      const body = new Blob(chunks);
-
-      // Convert Blob to ArrayBuffer for compatibility
-      const arrayBuffer = await body.arrayBuffer();
+      const body = await (_globalFetchImplementationIsNodeFetch()
+        ? this._createNodeFetchBody(parts, boundary)
+        : this._createMultipartStream(parts, boundary));
 
       const res = await this.batchIngestCaller.call(
         _getFetchImplementation(this.debug),
@@ -1396,7 +1479,8 @@ export class Client implements LangSmithTracingClientInterface {
             ...this.headers,
             "Content-Type": `multipart/form-data; boundary=${boundary}`,
           },
-          body: arrayBuffer,
+          body,
+          duplex: "half",
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
         }
@@ -1453,7 +1537,10 @@ export class Client implements LangSmithTracingClientInterface {
       {
         method: "PATCH",
         headers,
-        body: serializePayloadForTracing(run),
+        body: serializePayloadForTracing(
+          run,
+          `Serializing payload to update run with id: ${runId}`
+        ),
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       }
@@ -2116,7 +2203,11 @@ export class Client implements LangSmithTracingClientInterface {
         throw new Error(
           `Failed to list shared examples.\nStatus: ${
             response.status
-          }\nMessage: ${result.detail.join("\n")}`
+          }\nMessage: ${
+            Array.isArray(result.detail)
+              ? result.detail.join("\n")
+              : "Unspecified error"
+          }`
         );
       }
       throw new Error(
@@ -4467,7 +4558,10 @@ export class Client implements LangSmithTracingClientInterface {
       };
 
       // Add main example data
-      const stringifiedExample = serializePayloadForTracing(exampleBody);
+      const stringifiedExample = serializePayloadForTracing(
+        exampleBody,
+        `Serializing body for example with id: ${exampleId}`
+      );
       const exampleBlob = new Blob([stringifiedExample], {
         type: "application/json",
       });
@@ -4475,7 +4569,10 @@ export class Client implements LangSmithTracingClientInterface {
 
       // Add inputs if present
       if (example.inputs) {
-        const stringifiedInputs = serializePayloadForTracing(example.inputs);
+        const stringifiedInputs = serializePayloadForTracing(
+          example.inputs,
+          `Serializing inputs for example with id: ${exampleId}`
+        );
         const inputsBlob = new Blob([stringifiedInputs], {
           type: "application/json",
         });
@@ -4484,7 +4581,10 @@ export class Client implements LangSmithTracingClientInterface {
 
       // Add outputs if present
       if (example.outputs) {
-        const stringifiedOutputs = serializePayloadForTracing(example.outputs);
+        const stringifiedOutputs = serializePayloadForTracing(
+          example.outputs,
+          `Serializing outputs whle updating example with id: ${exampleId}`
+        );
         const outputsBlob = new Blob([stringifiedOutputs], {
           type: "application/json",
         });
@@ -4512,7 +4612,8 @@ export class Client implements LangSmithTracingClientInterface {
 
       if (example.attachments_operations) {
         const stringifiedAttachmentsOperations = serializePayloadForTracing(
-          example.attachments_operations
+          example.attachments_operations,
+          `Serializing attachments while updating example with id: ${exampleId}`
         );
         const attachmentsOperationsBlob = new Blob(
           [stringifiedAttachmentsOperations],
@@ -4583,7 +4684,10 @@ export class Client implements LangSmithTracingClientInterface {
       };
 
       // Add main example data
-      const stringifiedExample = serializePayloadForTracing(exampleBody);
+      const stringifiedExample = serializePayloadForTracing(
+        exampleBody,
+        `Serializing body for uploaded example with id: ${exampleId}`
+      );
       const exampleBlob = new Blob([stringifiedExample], {
         type: "application/json",
       });
@@ -4591,7 +4695,10 @@ export class Client implements LangSmithTracingClientInterface {
 
       // Add inputs if present
       if (example.inputs) {
-        const stringifiedInputs = serializePayloadForTracing(example.inputs);
+        const stringifiedInputs = serializePayloadForTracing(
+          example.inputs,
+          `Serializing inputs for uploaded example with id: ${exampleId}`
+        );
         const inputsBlob = new Blob([stringifiedInputs], {
           type: "application/json",
         });
@@ -4600,7 +4707,10 @@ export class Client implements LangSmithTracingClientInterface {
 
       // Add outputs if present
       if (example.outputs) {
-        const stringifiedOutputs = serializePayloadForTracing(example.outputs);
+        const stringifiedOutputs = serializePayloadForTracing(
+          example.outputs,
+          `Serializing outputs for uploaded example with id: ${exampleId}`
+        );
         const outputsBlob = new Blob([stringifiedOutputs], {
           type: "application/json",
         });
