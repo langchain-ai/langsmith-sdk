@@ -20,12 +20,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: SHA=$(git rev-parse HEAD) && echo "SHA=$SHA" >> $GITHUB_ENV
-      - name: Set up Python 3.11 + Poetry ${{ env.POETRY_VERSION }}
-        uses: "./.github/actions/poetry_setup"
+      - name: Install poetry ${{ env.POETRY_VERSION }}
+        run: pipx install poetry==${{ env.POETRY_VERSION }}
+
+      - uses: actions/setup-python@v5
+        name: Setup python 3.11
+        id: setup-python
         with:
-          python-version: "3.11"
-          poetry-version: ${{ env.POETRY_VERSION }}
-          cache-key: py-benchi
+          python-version: 3.11
+          cache: 'poetry'
+          cache-dependency-path: 'python/poetry.lock'
       - name: Install dependencies
         run: poetry install --with dev
       - name: Run benchmarks
