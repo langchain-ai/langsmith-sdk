@@ -30,12 +30,17 @@ jobs:
         working-directory: python
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Python ${{ matrix.python-version }} + Poetry ${{ env.POETRY_VERSION }}
-        uses: "./.github/actions/poetry_setup"
+
+      - name: Install poetry ${{ inputs.poetry-version }}
+        run: pipx install poetry==${{ inputs.poetry-verision }}
+
+      - uses: actions/setup-python@v5
+        name: Setup python ${{ inputs.python-version }}
+        id: setup-python
         with:
-          python-version: ${{ matrix.python-version }}
-          poetry-version: ${{ env.POETRY_VERSION }}
-          cache-key: build-and-test
+          python-version: ${{ inputs.python-version }}
+          cache: 'poetry'
+
       - name: Install dependencies
         run: |
           poetry install --with dev,lint
