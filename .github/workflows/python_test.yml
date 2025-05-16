@@ -4,14 +4,16 @@ on:
   push:
     branches: [main]
     paths:
+      - ".github/**"
       - "python/**"
   pull_request:
     paths:
+      - ".github/**"
       - "python/**"
   workflow_dispatch:
 
 env:
-  POETRY_VERSION: "1.4.2"
+  POETRY_VERSION: "1.8.1"
 
 jobs:
   build_and_test:
@@ -27,13 +29,19 @@ jobs:
       run:
         working-directory: python
     steps:
-      - uses: actions/checkout@v3
-      - name: Set up Python ${{ matrix.python-version }} + Poetry ${{ env.POETRY_VERSION }}
-        uses: "./.github/actions/poetry_setup"
+      - uses: actions/checkout@v4
+
+      - name: Install poetry ${{ env.POETRY_VERSION }}
+        run: pipx install poetry==${{ env.POETRY_VERSION }}
+
+      - uses: actions/setup-python@v5
+        name: Setup python ${{ matrix.python-version }}
+        id: setup-python
         with:
           python-version: ${{ matrix.python-version }}
-          poetry-version: ${{ env.POETRY_VERSION }}
-          cache-key: build-and-test
+          cache: 'poetry'
+          cache-dependency-path: "python/poetry.lock"
+
       - name: Install dependencies
         run: |
           poetry install --with dev,lint

@@ -21,14 +21,21 @@ jobs:
         uses: Ana06/get-changed-files@v2.3.0
         with:
           format: json
-      - name: Set up Python 3.11 + Poetry ${{ env.POETRY_VERSION }}
-        uses: "./.github/actions/poetry_setup"
+
+      - name: Install poetry ${{ env.POETRY_VERSION }}
+        run: pipx install poetry==${{ env.POETRY_VERSION }}
+
+      - uses: actions/setup-python@v5
+        name: Setup python 3.11
+        id: setup-python
         with:
-          python-version: "3.11"
-          poetry-version: ${{ env.POETRY_VERSION }}
-          cache-key: py-bench
+          python-version: 3.11
+          cache: 'poetry'
+          cache-dependency-path: 'python/poetry.lock'
+
       - name: Install dependencies
         run: poetry install --with dev
+
       - name: Download baseline
         uses: actions/cache/restore@v4
         with:

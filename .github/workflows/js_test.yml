@@ -7,9 +7,11 @@ on:
   push:
     branches: ["main"]
     paths:
+      - ".github/**"
       - "js/**"
   pull_request:
     paths:
+      - ".github/**"
       - "js/**"
   workflow_dispatch:
     inputs:
@@ -26,7 +28,7 @@ jobs:
       run:
         working-directory: "js"
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Use Node.js 18.x
         uses: actions/setup-node@v3
         with:
@@ -45,7 +47,7 @@ jobs:
       run:
         working-directory: "js"
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Use Node.js 18.x
         uses: actions/setup-node@v3
         with:
@@ -64,7 +66,7 @@ jobs:
       run:
         working-directory: "js"
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Use Node.js 18.x
         uses: actions/setup-node@v3
         with:
@@ -93,7 +95,7 @@ jobs:
       run:
         working-directory: "js"
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Use Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v3
         with:
