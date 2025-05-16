@@ -7,9 +7,11 @@ on:
   push:
     branches: ["main"]
     paths:
+      - ".github/**"
       - "js/**"
   pull_request:
     paths:
+      - ".github/**"
       - "js/**"
   workflow_dispatch:
     inputs:
