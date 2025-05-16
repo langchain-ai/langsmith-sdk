@@ -405,7 +405,7 @@ class RunBase(BaseModel):
         """Latency in seconds."""
         if self.end_time is None:
             return None
-        return (self.start_time - self.end_time).total_seconds()
+        return (self.end_time - self.start_time).total_seconds()
 
     def __repr__(self):
         """Return a string representation of the RunBase object."""
