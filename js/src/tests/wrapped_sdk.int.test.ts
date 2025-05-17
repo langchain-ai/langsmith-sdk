@@ -3,7 +3,7 @@ import { OpenAI } from "openai";
 import { wrapSDK } from "../wrappers/index.js";
 import { Client } from "../client.js";
 
-test.concurrent("chat.completions", async () => {
+test("chat.completions", async () => {
   const client = new Client({ autoBatchTracing: false });
   const callSpy = jest
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
