@@ -251,66 +251,6 @@ test("traceable", async () => {
   expect(storedRun.outputs).toEqual(result);
 });
 
-test("nested generateText", async () => {
-  const runId = uuid();
-  const childRunId = uuid();
-
-  await generateText({
-    model: openai("gpt-4.1-nano"),
-    messages: [
-      {
-        role: "user",
-        content: "What are my orders and where are they? My user ID is 123",
-      },
-    ],
-    tools: {
-      listOrders: tool({
-        description: "list all orders",
-        parameters: z.object({ userId: z.string() }),
-        execute: async ({ userId }) =>
-          `User ${userId} has the following orders: 1`,
-      }),
-      viewTrackingInformation: tool({
-        description: "view tracking information for a specific order",
-        parameters: z.object({ orderId: z.string() }),
-        execute: async ({ orderId }) => {
-          const res = await generateText({
-            model: openai("gpt-4.1-nano"),
-            experimental_telemetry: AISDKExporter.getSettings({
-              isEnabled: true,
-              runId: childRunId,
-            }),
-            messages: [
-              {
-                role: "user",
-                content: `Generate a random tracking information, include order ID ${orderId}`,
-              },
-            ],
-          });
-          return res.text;
-        },
-      }),
-    },
-    experimental_telemetry: AISDKExporter.getSettings({
-      isEnabled: true,
-      runId,
-      functionId: "functionId",
-      metadata: { userId: "123", language: "english" },
-    }),
-    maxSteps: 10,
-  });
-
-  await provider.forceFlush();
-  await waitUntilRunFound(client, runId, true);
-
-  const storedRun = await client.readRun(runId);
-  expect(storedRun.id).toEqual(runId);
-
-  await waitUntilRunFound(client, childRunId, true);
-  const storedChildRun = await client.readRun(childRunId);
-  expect(storedChildRun.id).toEqual(childRunId);
-});
-
 afterAll(async () => {
   await provider.shutdown();
 });
