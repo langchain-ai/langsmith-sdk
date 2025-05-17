@@ -7,6 +7,9 @@ inputs:
   langchain-api-key-beta:
     description: "Langchain"
     required: true
+  openai-api-key:
+    description: "OpenAI API key"
+    required: false
 runs:
   using: "composite"
   steps:
