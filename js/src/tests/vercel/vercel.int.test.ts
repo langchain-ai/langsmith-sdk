@@ -29,7 +29,7 @@ test("generateText", async () => {
   const runId = uuid();
 
   await generateText({
-    model: openai("gpt-4o-mini"),
+    model: openai("gpt-4.1-nano"),
     messages: [
       {
         role: "user",
@@ -69,7 +69,7 @@ test("generateText", async () => {
 test("generateText with image", async () => {
   const runId = uuid();
   await generateText({
-    model: openai("gpt-4o-mini"),
+    model: openai("gpt-4.1-nano"),
     messages: [
       {
         role: "user",
@@ -104,7 +104,7 @@ test("generateText with image", async () => {
 test("streamText", async () => {
   const runId = uuid();
   const result = await streamText({
-    model: openai("gpt-4o-mini"),
+    model: openai("gpt-4.1-nano"),
     messages: [
       {
         role: "user",
@@ -145,7 +145,7 @@ test("streamText", async () => {
 test("generateObject", async () => {
   const runId = uuid();
   await generateObject({
-    model: openai("gpt-4o-mini", { structuredOutputs: true }),
+    model: openai("gpt-4.1-nano", { structuredOutputs: true }),
     schema: z.object({
       weather: z.object({
         city: z.string(),
@@ -171,7 +171,7 @@ test("generateObject", async () => {
 test("streamObject", async () => {
   const runId = uuid();
   const result = await streamObject({
-    model: openai("gpt-4o-mini", { structuredOutputs: true }),
+    model: openai("gpt-4.1-nano", { structuredOutputs: true }),
     schema: z.object({
       weather: z.object({
         city: z.string(),
@@ -204,7 +204,7 @@ test("traceable", async () => {
   const wrappedText = traceable(
     async (content: string) => {
       const { text } = await generateText({
-        model: openai("gpt-4o-mini"),
+        model: openai("gpt-4.1-nano"),
         messages: [{ role: "user", content }],
         tools: {
           listOrders: tool({
@@ -256,7 +256,7 @@ test("nested generateText", async () => {
   const childRunId = uuid();
 
   await generateText({
-    model: openai("gpt-4o-mini"),
+    model: openai("gpt-4.1-nano"),
     messages: [
       {
         role: "user",
@@ -273,9 +273,9 @@ test("nested generateText", async () => {
       viewTrackingInformation: tool({
         description: "view tracking information for a specific order",
         parameters: z.object({ orderId: z.string() }),
-        execute: async ({ orderId }) =>
-          await generateText({
-            model: openai("gpt-4o-mini"),
+        execute: async ({ orderId }) => {
+          const res = await generateText({
+            model: openai("gpt-4.1-nano"),
             experimental_telemetry: AISDKExporter.getSettings({
               isEnabled: true,
               runId: childRunId,
@@ -286,7 +286,9 @@ test("nested generateText", async () => {
                 content: `Generate a random tracking information, include order ID ${orderId}`,
               },
             ],
-          }),
+          });
+          return res.text;
+        },
       }),
     },
     experimental_telemetry: AISDKExporter.getSettings({

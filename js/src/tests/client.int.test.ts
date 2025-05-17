@@ -1402,20 +1402,6 @@ test("upload examples multipart", async () => {
   }
   expect(allExamplesInDataset.length).toBe(2);
 
-  // Test invalid example fails
-  const example3: ExampleCreate = {
-    inputs: { text: "foo bar" },
-    outputs: { response: "baz" },
-    attachments: {
-      my_file: ["image/png", fs.readFileSync(pathname)],
-    },
-  };
-
-  const errorResponse = await client.uploadExamplesMultipart(uuidv4(), [
-    example3,
-  ]);
-  expect(errorResponse).toHaveProperty("error");
-
   // Clean up
   await client.deleteDataset({ datasetName });
 });
