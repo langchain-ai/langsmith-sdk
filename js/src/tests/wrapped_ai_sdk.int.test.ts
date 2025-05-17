@@ -11,7 +11,7 @@ import { wrapAISDKModel } from "../wrappers/vercel.js";
 
 const DEBUG = false;
 test("AI SDK generateText", async () => {
-  const modelWithTracing = wrapAISDKModel(openai("gpt-4o-mini"));
+  const modelWithTracing = wrapAISDKModel(openai("gpt-4.1-nano"));
   const { text } = await generateText({
     model: modelWithTracing,
     prompt: "Write a vegetarian lasagna recipe for 4 people.",
@@ -20,7 +20,7 @@ test("AI SDK generateText", async () => {
 });
 
 test("AI SDK generateText with a tool", async () => {
-  const modelWithTracing = wrapAISDKModel(openai("gpt-4o-mini"));
+  const modelWithTracing = wrapAISDKModel(openai("gpt-4.1-nano"));
   const { text } = await generateText({
     model: modelWithTracing,
     prompt:
@@ -41,7 +41,7 @@ test("AI SDK generateText with a tool", async () => {
 });
 
 test("AI SDK generateObject", async () => {
-  const modelWithTracing = wrapAISDKModel(openai("gpt-4o-mini"));
+  const modelWithTracing = wrapAISDKModel(openai("gpt-4.1-nano"));
   const { object } = await generateObject({
     model: modelWithTracing,
     prompt: "Write a vegetarian lasagna recipe for 4 people.",
@@ -53,7 +53,7 @@ test("AI SDK generateObject", async () => {
 });
 
 test("AI SDK streamText", async () => {
-  const modelWithTracing = wrapAISDKModel(openai("gpt-4o-mini"));
+  const modelWithTracing = wrapAISDKModel(openai("gpt-4.1-nano"));
   const { textStream } = await streamText({
     model: modelWithTracing,
     prompt: "Write a vegetarian lasagna recipe for 4 people.",
@@ -64,7 +64,7 @@ test("AI SDK streamText", async () => {
 });
 
 test("AI SDK streamObject", async () => {
-  const modelWithTracing = wrapAISDKModel(openai("gpt-4o-mini"));
+  const modelWithTracing = wrapAISDKModel(openai("gpt-4.1-nano"));
   const { partialObjectStream } = await streamObject({
     model: modelWithTracing,
     prompt: "Write a vegetarian lasagna recipe for 4 people.",

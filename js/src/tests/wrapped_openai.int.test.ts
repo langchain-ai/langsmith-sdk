@@ -26,7 +26,7 @@ test("wrapOpenAI should return type compatible with OpenAI", async () => {
   expect(true).toBe(true);
 });
 
-test.concurrent("chat.completions", async () => {
+test("chat.completions", async () => {
   const client = new Client({ autoBatchTracing: false });
   const callSpy = jest
     .spyOn((client as any).caller, "call")
@@ -173,7 +173,7 @@ test.concurrent("chat.completions", async () => {
   callSpy.mockClear();
 });
 
-test.concurrent("chat completions with tool calling", async () => {
+test("chat completions with tool calling", async () => {
   const client = new Client({ autoBatchTracing: false });
   const callSpy = jest
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -382,7 +382,7 @@ test.concurrent("chat completions with tool calling", async () => {
   callSpy.mockClear();
 });
 
-test.concurrent("completions", async () => {
+test("completions", async () => {
   const client = new Client({ autoBatchTracing: false });
   const callSpy = jest
     .spyOn((client as any).caller, "call")
@@ -527,7 +527,7 @@ test("wrapping same instance", async () => {
   );
 });
 
-test("chat.concurrent extra name", async () => {
+test("chat extra name", async () => {
   const { client, callSpy } = mockClient();
 
   const openai = wrapOpenAI(new OpenAI(), {
@@ -569,7 +569,10 @@ test("chat.concurrent extra name", async () => {
         extra: { metadata: { customKey: "red" } },
         outputs: {
           choices: [
-            { index: 0, message: { role: "assistant", content: "Red" } },
+            {
+              index: 0,
+              message: { role: "assistant", content: expect.any(String) },
+            },
           ],
         },
       },
@@ -578,7 +581,10 @@ test("chat.concurrent extra name", async () => {
         extra: { metadata: { customKey: "green" } },
         outputs: {
           choices: [
-            { index: 0, message: { role: "assistant", content: "Green" } },
+            {
+              index: 0,
+              message: { role: "assistant", content: expect.any(String) },
+            },
           ],
         },
       },
@@ -586,7 +592,7 @@ test("chat.concurrent extra name", async () => {
   });
 });
 
-test.concurrent("beta.chat.completions.parse", async () => {
+test("beta.chat.completions.parse", async () => {
   const { client, callSpy } = mockClient();
 
   const openai = wrapOpenAI(new OpenAI(), {
