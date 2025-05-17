@@ -2081,7 +2081,7 @@ class Client:
             tags (Optional[List[str]]): The tags for the run.
             attachments (Optional[Dict[str, Attachment]]): A dictionary of attachments to add to the run. The keys are the attachment names,
                 and the values are Attachment objects containing the data and mime type.
-            **kwargs (Any): Kwargs are ignored.
+            **kwargs (Any): Additional keyword args.
 
         Returns:
             None
@@ -2121,13 +2121,9 @@ class Client:
         data: dict[str, Any] = {
             "id": _as_uuid(run_id, "run_id"),
             "name": name,
-            "trace_id": kwargs.pop("trace_id", None),
-            "parent_run_id": kwargs.pop("parent_run_id", None),
-            "dotted_order": kwargs.pop("dotted_order", None),
             "tags": tags,
             "extra": extra,
-            "session_id": kwargs.pop("session_id", None),
-            "session_name": kwargs.pop("session_name", None),
+            **kwargs,
         }
         if attachments:
             for _, attachment in attachments.items():
