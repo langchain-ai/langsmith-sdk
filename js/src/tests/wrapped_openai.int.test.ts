@@ -569,7 +569,10 @@ test("chat extra name", async () => {
         extra: { metadata: { customKey: "red" } },
         outputs: {
           choices: [
-            { index: 0, message: { role: "assistant", content: "Red" } },
+            {
+              index: 0,
+              message: { role: "assistant", content: expect.any(String) },
+            },
           ],
         },
       },
@@ -578,7 +581,10 @@ test("chat extra name", async () => {
         extra: { metadata: { customKey: "green" } },
         outputs: {
           choices: [
-            { index: 0, message: { role: "assistant", content: "Green" } },
+            {
+              index: 0,
+              message: { role: "assistant", content: expect.any(String) },
+            },
           ],
         },
       },

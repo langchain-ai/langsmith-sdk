@@ -61,7 +61,7 @@ test("Test persist update run", async () => {
 test("Test persist update runs above the batch size limit", async () => {
   const langchainClient = new Client({
     autoBatchTracing: true,
-    callerOptions: { maxRetries: 2 },
+    callerOptions: { maxRetries: 6 },
     batchSizeBytesLimit: 1,
     timeout_ms: 30_000,
   });
@@ -108,7 +108,7 @@ test("Test persist update runs above the batch size limit", async () => {
 test("Test persist update run with delay", async () => {
   const langchainClient = new Client({
     autoBatchTracing: true,
-    callerOptions: { maxRetries: 2 },
+    callerOptions: { maxRetries: 6 },
     timeout_ms: 30_000,
   });
   const projectName =
@@ -149,7 +149,7 @@ test("Test persist update run with delay", async () => {
 test("Test persist update run tree", async () => {
   const langchainClient = new Client({
     autoBatchTracing: true,
-    callerOptions: { maxRetries: 2 },
+    callerOptions: { maxRetries: 6 },
     timeout_ms: 30_000,
   });
   const projectName =
@@ -182,7 +182,7 @@ test("Test persist update run tree", async () => {
 test("Test persist run with attachment", async () => {
   const langchainClient = new Client({
     autoBatchTracing: true,
-    callerOptions: { maxRetries: 2 },
+    callerOptions: { maxRetries: 6 },
     timeout_ms: 30_000,
   });
   const projectName = "__test_create_attachment" + uuidv4().substring(0, 4);
@@ -231,6 +231,7 @@ test("Test persist run with attachment", async () => {
 test.skip("very large runs", async () => {
   const langchainClient = new Client({
     autoBatchTracing: true,
+    callerOptions: { maxRetries: 6 },
     timeout_ms: 120_000,
   });
 
@@ -273,6 +274,7 @@ test("multipart should work with overridden node-fetch", async () => {
 
   const langchainClient = new Client({
     autoBatchTracing: true,
+    callerOptions: { maxRetries: 6 },
     timeout_ms: 120_000,
   });
 
