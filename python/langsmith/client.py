@@ -7128,8 +7128,14 @@ class Client:
             prompt_identifier, include_model=include_model
         )
         with suppress_langchain_beta_warning():
-            prompt = loads(json.dumps(prompt_object.manifest))
-
+            manifest_to_dump = prompt_object.manifest
+            # fix: UserWarning: WARNING! extra_headers is not default parameter
+            try:
+                manifest_to_dump["kwargs"]["last"]["kwargs"]["bound"]["kwargs"]["model_kwargs"] = manifest_to_dump["kwargs"]["last"]["kwargs"]["bound"]["kwargs"]["extra_headers"]
+                del manifest_to_dump["kwargs"]["last"]["kwargs"]["bound"]["kwargs"]["extra_headers"]
+            except:
+                pass
+            prompt = loads(json.dumps(manifest_to_dump))
         if (
             isinstance(prompt, BasePromptTemplate)
             or isinstance(prompt, RunnableSequence)
