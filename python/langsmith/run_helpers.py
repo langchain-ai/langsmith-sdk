@@ -283,6 +283,15 @@ def _default_process_usage(
     )
 
 
+def _validate_usage_processor(func: Callable) -> bool:
+    sig = inspect.signature(func)
+    if not any(
+        param.kind == inspect.Parameter.VAR_KEYWORD for param in sig.parameters.values()
+    ):
+        raise ValueError("Usage processor must accept arbitrary **kwargs")
+    return func
+
+
 @overload
 def traceable(
     func: Callable[P, R],
@@ -498,6 +507,8 @@ def traceable(
     )
     outputs_processor = kwargs.pop("process_outputs", None)
     usage_processor = kwargs.pop("process_usage", None)
+    if usage_processor is not None:
+        _validate_usage_processor(usage_processor)
     _on_run_end = functools.partial(
         _handle_container_end,
         outputs_processor=outputs_processor,
