@@ -289,7 +289,7 @@ def _validate_usage_extractor(func: Callable) -> bool:
         param.kind == inspect.Parameter.VAR_KEYWORD for param in sig.parameters.values()
     ):
         raise ValueError("Usage processor must accept arbitrary **kwargs")
-    return func
+    return True
 
 
 @overload
