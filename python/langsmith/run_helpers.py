@@ -1304,7 +1304,11 @@ def _container_end(
         error_ = f"{repr(error)}\n\n{stacktrace}"
     if usage_processor is None:
         usage_processor = _default_process_usage
-    usage = usage_processor(run_tree=run_tree, outputs=dict_outputs)
+    try: 
+        usage = usage_processor(run_tree=run_tree, outputs=dict_outputs)
+    except Exception as e:
+        LOGGER.error(f"Failed to process usage metadata: {e}")
+        usage = None
     if usage is not None:
         run_tree.metadata["usage_metadata"] = usage
         # Modify run outputs to include usage metadata for backwards compatibility
