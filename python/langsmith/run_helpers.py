@@ -1304,7 +1304,7 @@ def _container_end(
         error_ = f"{repr(error)}\n\n{stacktrace}"
     if usage_processor is None:
         usage_processor = _default_process_usage
-    usage = usage_processor(run_tree=run_tree, outputs=outputs)
+    usage = usage_processor(run_tree=run_tree, outputs=outputs_)
     if usage is not None:
         run_tree.metadata["usage_metadata"] = usage
         # Modify run outputs to include usage metadata for backwards compatibility
