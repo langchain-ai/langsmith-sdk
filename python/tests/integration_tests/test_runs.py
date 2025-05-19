@@ -585,7 +585,7 @@ def test_usage_metadata(langchain_client: Client):
 
     run_meta = uuid.uuid4().hex
 
-    def _mock_process_usage(**kwargs) -> dict:
+    def _mock_extract_usage(**kwargs) -> dict:
         return {
             "prompt_tokens": 100,
             "completion_tokens": 200,
@@ -601,7 +601,7 @@ def test_usage_metadata(langchain_client: Client):
             "ls_model_name": "gpt-4.1-mini",
             "test_run": run_meta,
         },
-        process_usage=_mock_process_usage,
+        extract_usage=_mock_extract_usage,
     )
     def my_func2(inputs: str):
         return {
@@ -632,6 +632,8 @@ def test_usage_metadata(langchain_client: Client):
         "total_tokens": 300,
     }
 
+    run_meta = uuid.uuid4().hex
+
     @traceable(
         client=langchain_client,
         run_type="llm",
@@ -641,7 +643,7 @@ def test_usage_metadata(langchain_client: Client):
             "ls_model_name": "gpt-4.1-mini",
             "test_run": run_meta,
         },
-        process_usage=_mock_process_usage,
+        extract_usage=_mock_extract_usage,
     )
     def my_func3(inputs: str):
         for i in inputs:
@@ -725,7 +727,7 @@ async def test_usage_metadata_async(langchain_client: Client):
 
     run_meta = uuid.uuid4().hex
 
-    def _mock_process_usage(**kwargs) -> dict:
+    def _mock_extract_usage(**kwargs) -> dict:
         return {
             "prompt_tokens": 100,
             "completion_tokens": 200,
@@ -741,7 +743,7 @@ async def test_usage_metadata_async(langchain_client: Client):
             "ls_model_name": "gpt-4.1-mini",
             "test_run": run_meta,
         },
-        process_usage=_mock_process_usage,
+        extract_usage=_mock_extract_usage,
     )
     async def my_func2(inputs: str):
         return {
@@ -772,6 +774,8 @@ async def test_usage_metadata_async(langchain_client: Client):
         "total_tokens": 300,
     }
 
+    run_meta = uuid.uuid4().hex
+
     @traceable(
         client=langchain_client,
         run_type="llm",
@@ -781,7 +785,7 @@ async def test_usage_metadata_async(langchain_client: Client):
             "ls_model_name": "gpt-4.1-mini",
             "test_run": run_meta,
         },
-        process_usage=_mock_process_usage,
+        extract_usage=_mock_extract_usage,
     )
     async def my_func3(inputs: str):
         for i in inputs:
