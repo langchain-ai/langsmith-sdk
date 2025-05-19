@@ -676,6 +676,45 @@ def test_usage_metadata(langchain_client: Client):
         "total_tokens": 300,
     }
 
+    run_meta = uuid.uuid4().hex
+
+    def _error_extract_usage(**kwargs) -> dict:
+        raise ValueError("Totally expected mock error")
+
+    @traceable(
+        client=langchain_client,
+        run_type="llm",
+        project_name=project_name,
+        metadata={
+            "ls_provider": "openai",
+            "ls_model_name": "gpt-4.1-mini",
+            "test_run": run_meta,
+        },
+        extract_usage=_error_extract_usage,
+    )
+    def my_func4(inputs: str):
+        for i in inputs:
+            yield {
+                "messages": [
+                    {
+                        "role": "assistant",
+                        "content": i,
+                    }
+                ],
+            }
+
+    for i in my_func4("foo"):
+        pass
+    _filter = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{run_meta}"))'
+    poll_runs_until_count(
+        langchain_client, project_name, 1, max_retries=20, filter_=_filter
+    )
+    runs = list(langchain_client.list_runs(project_name=project_name, filter=_filter))
+    assert len(runs) == 1
+    run = runs[0]
+    assert run.extra["metadata"].get("usage_metadata") is None
+    assert run.outputs.get("usage_metadata") is None
+
 
 async def test_usage_metadata_async(langchain_client: Client):
     project_name = "__My Tracer Project - test_async_usage_metadata"
@@ -817,3 +856,42 @@ async def test_usage_metadata_async(langchain_client: Client):
         "completion_tokens": 200,
         "total_tokens": 300,
     }
+
+    run_meta = uuid.uuid4().hex
+
+    def _error_extract_usage(**kwargs) -> dict:
+        raise ValueError("Totally expected mock error")
+
+    @traceable(
+        client=langchain_client,
+        run_type="llm",
+        project_name=project_name,
+        metadata={
+            "ls_provider": "openai",
+            "ls_model_name": "gpt-4.1-mini",
+            "test_run": run_meta,
+        },
+        extract_usage=_error_extract_usage,
+    )
+    async def my_func4(inputs: str):
+        for i in inputs:
+            yield {
+                "messages": [
+                    {
+                        "role": "assistant",
+                        "content": i,
+                    }
+                ],
+            }
+
+    async for i in my_func4("foo"):
+        pass
+    _filter = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{run_meta}"))'
+    poll_runs_until_count(
+        langchain_client, project_name, 1, max_retries=20, filter_=_filter
+    )
+    runs = list(langchain_client.list_runs(project_name=project_name, filter=_filter))
+    assert len(runs) == 1
+    run = runs[0]
+    assert run.extra["metadata"].get("usage_metadata") is None
+    assert run.outputs.get("usage_metadata") is None
