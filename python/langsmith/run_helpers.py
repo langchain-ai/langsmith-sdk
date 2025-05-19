@@ -1282,7 +1282,7 @@ def _container_end(
         # Tracing not enabled
         return
     if isinstance(outputs, dict):
-        outputs_ = outputs
+        dict_outputs = outputs
     elif (
         outputs is not None
         and hasattr(outputs, "model_dump")
@@ -1290,27 +1290,27 @@ def _container_end(
         and not isinstance(outputs, type)
     ):
         try:
-            outputs_ = outputs.model_dump(exclude_none=True, mode="json")
+            dict_outputs = outputs.model_dump(exclude_none=True, mode="json")
         except Exception as e:
             LOGGER.debug(
                 f"Failed to use model_dump to serialize {type(outputs)} to JSON: {e}"
             )
-            outputs_ = {"output": outputs}
+            dict_outputs = {"output": outputs}
     else:
-        outputs_ = {"output": outputs}
+        dict_outputs = {"output": outputs}
     error_ = None
     if error:
         stacktrace = utils._format_exc()
         error_ = f"{repr(error)}\n\n{stacktrace}"
     if usage_processor is None:
         usage_processor = _default_process_usage
-    usage = usage_processor(run_tree=run_tree, outputs=outputs_)
+    usage = usage_processor(run_tree=run_tree, outputs=dict_outputs)
     if usage is not None:
         run_tree.metadata["usage_metadata"] = usage
         # Modify run outputs to include usage metadata for backwards compatibility
         # TODO: Remove this once all possible backends have been updated
-        outputs_["usage_metadata"] = usage
-    run_tree.end(outputs=outputs_, error=error_)
+        dict_outputs["usage_metadata"] = usage
+    run_tree.end(outputs=dict_outputs, error=error_)
     if utils.tracing_is_enabled() is True:
         run_tree.patch()
     on_end = container.get("on_end")
