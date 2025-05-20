@@ -173,6 +173,7 @@ class RunTree(ls_schemas.RunBase):
         outputs: Optional[Mapping[str, Any]] = NOT_PROVIDED,
         tags: Optional[Sequence[str]] = NOT_PROVIDED,
         metadata: Optional[Mapping[str, Any]] = NOT_PROVIDED,
+        usage: Optional[ls_schemas.UsageMetadataDict] = NOT_PROVIDED,
     ) -> None:
         """Set the inputs, outputs, tags, and metadata of the run.
 
@@ -210,6 +211,10 @@ class RunTree(ls_schemas.RunBase):
                 self.outputs = {}
             else:
                 self.outputs = dict(outputs)
+        if usage is not NOT_PROVIDED:
+            self.extra.setdefault("metadata", {}).setdefault(
+                "usage_metadata", {}
+            ).update(usage or {})
 
     def add_tags(self, tags: Union[Sequence[str], str]) -> None:
         """Add tags to the run."""
