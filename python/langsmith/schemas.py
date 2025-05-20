@@ -522,6 +522,31 @@ class RunLikeDict(TypedDict, total=False):
     attachments: Attachments
 
 
+class UsageMetadataDict(TypedDict, total=False):
+    """Usage metadata dictionary."""
+
+    prompt_tokens: int
+    """The number of tokens used for the prompt."""
+    completion_tokens: int
+    """The number of tokens generated as output."""
+    total_tokens: int
+    """The total number of tokens used."""
+    input_token_details: dict[str, Any]
+    """The details of the input tokens."""
+    output_token_details: dict[str, Any]
+    """The details of the output tokens."""
+    input_cost: Decimal
+    """The cost of the input tokens."""
+    output_cost: Decimal
+    """The cost of the output tokens."""
+    total_cost: Decimal
+    """The total cost of the tokens."""
+    input_cost_details: dict[str, Any]
+    """The cost details of the input tokens."""
+    output_cost_details: dict[str, Any]
+    """The cost details of the output tokens."""
+
+
 class RunWithAnnotationQueueInfo(RunBase):
     """Run schema with annotation queue info."""
 

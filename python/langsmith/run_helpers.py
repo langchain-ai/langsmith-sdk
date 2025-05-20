@@ -274,7 +274,7 @@ def _default_extract_usage(
     run_tree: run_trees.RunTree,
     outputs: Optional[dict] = None,
     **kwargs: Any,
-) -> Union[dict, None]:
+) -> Optional[schemas.UsageMetadataDict]:
     usage_metadata_from_metadata = (run_tree.metadata or {}).get("usage_metadata", None)
     return (
         outputs.get("usage_metadata", usage_metadata_from_metadata)
@@ -311,7 +311,7 @@ def traceable(
     process_inputs: Optional[Callable[[dict], dict]] = None,
     process_outputs: Optional[Callable[..., dict]] = None,
     process_chunk: Optional[Callable] = None,
-    extract_usage: Optional[Callable] = None,
+    extract_usage: Optional[Callable[..., Optional[schemas.UsageMetadataDict]]] = None,
     _invocation_params_fn: Optional[Callable[[dict], dict]] = None,
     dangerously_allow_filesystem: bool = False,
 ) -> Callable[[Callable[P, R]], SupportsLangsmithExtra[P, R]]: ...
