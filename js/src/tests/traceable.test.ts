@@ -1581,11 +1581,6 @@ test("traceable with usage metadata with extract_usage", async () => {
         content: "oof",
       },
     ],
-    usage_metadata: {
-      prompt_tokens: 100,
-      completion_tokens: 200,
-      total_tokens: 300,
-    },
   });
 
   expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({

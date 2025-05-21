@@ -1326,6 +1326,7 @@ def _container_end(
         run_tree.metadata["usage_metadata"] = usage
         # Modify run outputs to include usage metadata for backwards compatibility
         # TODO: Remove this once all possible backends have been updated
+        dict_outputs = dict_outputs.copy()
         dict_outputs["usage_metadata"] = usage
     run_tree.end(outputs=dict_outputs, error=error_)
     if utils.tracing_is_enabled() is True:

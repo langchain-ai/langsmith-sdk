@@ -564,7 +564,7 @@ def test_usage_metadata(langchain_client: Client):
             },
         }
 
-    my_func("foo")
+    assert my_func("foo").get("usage_metadata") is None
     _filter = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{run_meta}"))'
     poll_runs_until_count(
         langchain_client, project_name, 1, max_retries=20, filter_=_filter
@@ -613,7 +613,8 @@ def test_usage_metadata(langchain_client: Client):
             ],
         }
 
-    my_func2("foo")
+    assert my_func2("foo").get("usage_metadata") is None
+
     _filter = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{run_meta}"))'
     poll_runs_until_count(
         langchain_client, project_name, 1, max_retries=20, filter_=_filter
@@ -745,7 +746,8 @@ async def test_usage_metadata_async(langchain_client: Client):
             },
         }
 
-    await my_func("foo")
+    res = await my_func("foo")
+    assert res.get("usage_metadata") is None
     _filter = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{run_meta}"))'
     poll_runs_until_count(
         langchain_client, project_name, 1, max_retries=20, filter_=_filter
@@ -794,7 +796,8 @@ async def test_usage_metadata_async(langchain_client: Client):
             ],
         }
 
-    await my_func2("foo")
+    res = await my_func2("foo")
+    assert res.get("usage_metadata") is None
     _filter = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{run_meta}"))'
     poll_runs_until_count(
         langchain_client, project_name, 1, max_retries=20, filter_=_filter

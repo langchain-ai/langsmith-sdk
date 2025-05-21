@@ -79,7 +79,7 @@ function handleRunOutputs(params: {
   let outputs: KVMap;
 
   if (isKVMap(rawOutputs)) {
-    outputs = rawOutputs;
+    outputs = { ...rawOutputs };
   } else {
     outputs = { outputs: rawOutputs };
   }
