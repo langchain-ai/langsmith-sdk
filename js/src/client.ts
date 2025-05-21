@@ -1602,7 +1602,11 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   private async _loadChildRuns(run: Run): Promise<Run> {
-    const childRuns = await toArray(this.listRuns({ id: run.child_run_ids }));
+    const childRuns = await toArray(this.listRuns({
+      isRoot: false,
+      projectId: run.session_id,
+      traceId: run.trace_id
+    }));
     const treemap: { [key: string]: Run[] } = {};
     const runs: { [key: string]: Run } = {};
     // TODO: make dotted order required when the migration finishes
@@ -1616,11 +1620,13 @@ export class Client implements LangSmithTracingClientInterface {
       ) {
         throw new Error(`Child run ${childRun.id} has no parent`);
       }
-      if (!(childRun.parent_run_id in treemap)) {
-        treemap[childRun.parent_run_id] = [];
+      if (childRun.dotted_order?.startsWith(run.dotted_order ?? "") && childRun.id !== run.id) {
+        if (!(childRun.parent_run_id in treemap)) {
+          treemap[childRun.parent_run_id] = [];
+        }
+        treemap[childRun.parent_run_id].push(childRun);
+        runs[childRun.id] = childRun;
       }
-      treemap[childRun.parent_run_id].push(childRun);
-      runs[childRun.id] = childRun;
     }
     run.child_runs = treemap[run.id] || [];
     for (const runId in treemap) {
