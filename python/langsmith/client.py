@@ -2300,7 +2300,9 @@ class Client:
         Raises:
             LangSmithError: If a child run has no parent.
         """
-        child_runs = self.list_runs(id=run.child_run_ids)
+        child_runs = self.list_runs(
+            is_root=False, session_id=run.session_id, trace_id=run.trace_id
+        )
         treemap: collections.defaultdict[uuid.UUID, list[ls_schemas.Run]] = (
             collections.defaultdict(list)
         )
@@ -2311,8 +2313,14 @@ class Client:
         ):
             if child_run.parent_run_id is None:
                 raise ls_utils.LangSmithError(f"Child run {child_run.id} has no parent")
-            treemap[child_run.parent_run_id].append(child_run)
-            runs[child_run.id] = child_run
+
+            # Only track downstream children
+            if (
+                child_run.dotted_order.startswith(run.dotted_order)
+                and child_run.id != run.id
+            ):
+                treemap[child_run.parent_run_id].append(child_run)
+                runs[child_run.id] = child_run
         run.child_runs = treemap.pop(run.id, [])
         for run_id, children in treemap.items():
             runs[run_id].child_runs = children
@@ -2353,7 +2361,8 @@ class Client:
         run = ls_schemas.Run(
             attachments=attachments, **response.json(), _host_url=self._host_url
         )
-        if load_child_runs and run.child_run_ids:
+
+        if load_child_runs:
             run = self._load_child_runs(run)
         return run
 
