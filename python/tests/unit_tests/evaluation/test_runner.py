@@ -1173,7 +1173,7 @@ def test__normalize_comparison_evaluator(evaluator: Callable) -> None:
     example = ls_schemas.Example(
         id=uuid.uuid4(), inputs={"in": "b"}, outputs={"answer": "f" * 4}
     )
-    normalized = _normalize_comparison_evaluator_func(evaluator)
+    (normalized, _) = _normalize_comparison_evaluator_func(evaluator)
     assert normalized(runs, example) == [2, 3]
 
 
@@ -1215,7 +1215,7 @@ async def test__normalize_comparison_evaluator_async(evaluator: Callable) -> Non
     example = ls_schemas.Example(
         id=uuid.uuid4(), inputs={"in": "b"}, outputs={"answer": "f" * 4}
     )
-    normalized = _normalize_comparison_evaluator_func(evaluator)
+    (normalized, _) = _normalize_comparison_evaluator_func(evaluator)
     assert await normalized(runs, example) == [2, 3]
 
 
