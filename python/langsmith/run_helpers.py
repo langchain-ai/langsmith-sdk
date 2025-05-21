@@ -236,7 +236,7 @@ P = ParamSpec("P")
 
 @runtime_checkable
 class SupportsLangsmithExtra(Protocol, Generic[P, R]):
-    """Implementations of this Protoc accept an optional langsmith_extra parameter.
+    """Implementations of this Protocol accept an optional langsmith_extra parameter.
 
     Args:
         *args: Variable length arguments.

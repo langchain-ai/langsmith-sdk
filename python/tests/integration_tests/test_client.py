@@ -24,6 +24,7 @@ from requests_toolbelt import MultipartEncoder, MultipartEncoderMonitor
 from langsmith._internal._serde import dumps_json
 from langsmith.client import ID_TYPE, Client, _close_files
 from langsmith.evaluation import aevaluate, evaluate
+from langsmith.run_helpers import traceable
 from langsmith.schemas import (
     AttachmentsOperations,
     Dataset,
@@ -3203,5 +3204,40 @@ def test_annotation_queue_with_rubric_instructions_2(langchain_client: Client):
         langchain_client.delete_annotation_queue(queue_id)
 
         # Clean up the project
+        if langchain_client.has_project(project_name=project_name):
+            langchain_client.delete_project(project_name=project_name)
+
+
+def test_list_runs_with_child_runs(langchain_client: Client):
+    """Test listing runs with child runs."""
+    project_name = f"test-project-{str(uuid.uuid4())[:8]}"
+    if langchain_client.has_project(project_name=project_name):
+        langchain_client.delete_project(project_name=project_name)
+    try:
+        parent_run_id = uuid.uuid4()
+        child_run_id = uuid.uuid4()
+
+        @traceable(client=langchain_client, project_name=project_name)
+        def parent():
+            @traceable(client=langchain_client, project_name=project_name)
+            def child():
+                return "From child"
+
+            return child(langsmith_extra={"run_id": child_run_id}) + "|From parent"
+
+        result = parent(langsmith_extra={"run_id": parent_run_id})
+        assert result == "From child|From parent"
+        wait_for(
+            lambda: _get_run(parent_run_id, langchain_client=langchain_client),
+            max_sleep_time=10,
+        )
+        no_child_run = langchain_client.read_run(parent_run_id)
+        assert no_child_run.id == parent_run_id
+        assert no_child_run.child_runs is None
+        run = langchain_client.read_run(parent_run_id, load_child_runs=True)
+        assert run.child_runs is not None
+        assert run.child_runs[0].id == child_run_id
+        assert run.child_runs[0].outputs == {"output": "From child"}
+    finally:
         if langchain_client.has_project(project_name=project_name):
             langchain_client.delete_project(project_name=project_name)

@@ -29,6 +29,7 @@ import { ChatOpenAI } from "@langchain/openai";
 import { RunnableSequence } from "@langchain/core/runnables";
 import { load } from "langchain/load";
 import { _getFetchImplementation } from "../singletons/fetch.js";
+import { traceable } from "../traceable.js";
 
 type CheckOutputsType = boolean | ((run: Run) => boolean);
 async function waitUntilRunFound(
@@ -2112,4 +2113,50 @@ test("create example errors", async () => {
 
   // Clean up
   await client.deleteDataset({ datasetName });
+});
+
+test("fetch child runs", async () => {
+  const client = new Client({ callerOptions: { maxRetries: 6 } });
+  const projectName = `__test_fetch_child_runs_${uuidv4().slice(0, 4)}`;
+  await deleteProject(client, projectName);
+  try {
+    const parentRunId = uuidv4();
+    const childRunId = uuidv4();
+    const parent = traceable(
+      async () => {
+        const child = traceable(
+          async () => {
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            return "From child";
+          },
+          {
+            client,
+            id: childRunId,
+          }
+        );
+        const result = await child();
+        return result + "|From parent";
+      },
+      {
+        client,
+        id: parentRunId,
+      }
+    );
+    const result = await parent();
+    expect(result).toEqual("From child|From parent");
+
+    await client.awaitPendingTraceBatches();
+    await waitUntilRunFound(client, parentRunId);
+
+    const noChildRun = await client.readRun(parentRunId);
+    expect(noChildRun.id).toEqual(parentRunId);
+    expect(noChildRun.child_runs?.length).toBeUndefined();
+
+    const run = await client.readRun(parentRunId, { loadChildRuns: true });
+    expect(run.child_runs?.length).toEqual(1);
+    expect(run.child_runs?.[0].id).toEqual(childRunId);
+    expect(run.child_runs?.[0].outputs?.outputs).toEqual("From child");
+  } finally {
+    await deleteProject(client, projectName);
+  }
 });
