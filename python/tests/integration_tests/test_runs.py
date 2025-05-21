@@ -10,7 +10,7 @@ import pytest  # type: ignore
 
 from langsmith import utils as ls_utils
 from langsmith.client import Client
-from langsmith.run_helpers import trace, traceable
+from langsmith.run_helpers import get_current_run_tree, trace, traceable
 from langsmith.run_trees import RunTree
 from langsmith.schemas import Attachment
 
@@ -564,7 +564,11 @@ def test_usage_metadata(langchain_client: Client):
             },
         }
 
-    assert my_func("foo").get("usage_metadata") is None
+    assert my_func("foo").get("usage_metadata") == {
+        "prompt_tokens": 10,
+        "completion_tokens": 20,
+        "total_tokens": 30,
+    }
     _filter = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{run_meta}"))'
     poll_runs_until_count(
         langchain_client, project_name, 1, max_retries=20, filter_=_filter
@@ -585,13 +589,6 @@ def test_usage_metadata(langchain_client: Client):
 
     run_meta = uuid.uuid4().hex
 
-    def _mock_extract_usage(**kwargs) -> dict:
-        return {
-            "prompt_tokens": 100,
-            "completion_tokens": 200,
-            "total_tokens": 300,
-        }
-
     @traceable(
         client=langchain_client,
         run_type="llm",
@@ -601,9 +598,16 @@ def test_usage_metadata(langchain_client: Client):
             "ls_model_name": "gpt-4.1-mini",
             "test_run": run_meta,
         },
-        extract_usage=_mock_extract_usage,
     )
     def my_func2(inputs: str):
+        run_tree = get_current_run_tree()
+        run_tree.set(
+            usage={
+                "prompt_tokens": 100,
+                "completion_tokens": 200,
+                "total_tokens": 300,
+            }
+        )
         return {
             "messages": [
                 {
@@ -644,7 +648,6 @@ def test_usage_metadata(langchain_client: Client):
             "ls_model_name": "gpt-4.1-mini",
             "test_run": run_meta,
         },
-        extract_usage=_mock_extract_usage,
     )
     def my_func3(inputs: str):
         for i in inputs:
@@ -656,6 +659,14 @@ def test_usage_metadata(langchain_client: Client):
                     }
                 ],
             }
+        run_tree = get_current_run_tree()
+        run_tree.set(
+            usage={
+                "prompt_tokens": 100,
+                "completion_tokens": 200,
+                "total_tokens": 300,
+            }
+        )
 
     for i in my_func3("foo"):
         pass
@@ -747,7 +758,11 @@ async def test_usage_metadata_async(langchain_client: Client):
         }
 
     res = await my_func("foo")
-    assert res.get("usage_metadata") is None
+    assert res.get("usage_metadata") == {
+        "prompt_tokens": 10,
+        "completion_tokens": 20,
+        "total_tokens": 30,
+    }
     _filter = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{run_meta}"))'
     poll_runs_until_count(
         langchain_client, project_name, 1, max_retries=20, filter_=_filter
@@ -768,13 +783,6 @@ async def test_usage_metadata_async(langchain_client: Client):
 
     run_meta = uuid.uuid4().hex
 
-    def _mock_extract_usage(**kwargs) -> dict:
-        return {
-            "prompt_tokens": 100,
-            "completion_tokens": 200,
-            "total_tokens": 300,
-        }
-
     @traceable(
         client=langchain_client,
         run_type="llm",
@@ -784,9 +792,16 @@ async def test_usage_metadata_async(langchain_client: Client):
             "ls_model_name": "gpt-4.1-mini",
             "test_run": run_meta,
         },
-        extract_usage=_mock_extract_usage,
     )
     async def my_func2(inputs: str):
+        run_tree = get_current_run_tree()
+        run_tree.set(
+            usage={
+                "prompt_tokens": 100,
+                "completion_tokens": 200,
+                "total_tokens": 300,
+            }
+        )
         return {
             "messages": [
                 {
@@ -827,7 +842,6 @@ async def test_usage_metadata_async(langchain_client: Client):
             "ls_model_name": "gpt-4.1-mini",
             "test_run": run_meta,
         },
-        extract_usage=_mock_extract_usage,
     )
     async def my_func3(inputs: str):
         for i in inputs:
@@ -839,6 +853,14 @@ async def test_usage_metadata_async(langchain_client: Client):
                     }
                 ],
             }
+        run_tree = get_current_run_tree()
+        run_tree.set(
+            usage={
+                "prompt_tokens": 100,
+                "completion_tokens": 200,
+                "total_tokens": 300,
+            }
+        )
 
     async for i in my_func3("foo"):
         pass

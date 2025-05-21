@@ -5,7 +5,10 @@ import { ROOT, traceable, withRunTree } from "../traceable.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 import { mockClient } from "./utils/mock_client.js";
 import { Client, overrideFetchImplementation } from "../index.js";
-import { AsyncLocalStorageProviderSingleton } from "../singletons/traceable.js";
+import {
+  AsyncLocalStorageProviderSingleton,
+  getCurrentRunTree,
+} from "../singletons/traceable.js";
 import { KVMap } from "../schemas.js";
 
 test("basic traceable implementation", async () => {
@@ -1546,16 +1549,14 @@ test("traceable with usage metadata", async () => {
 test("traceable with usage metadata with extract_usage", async () => {
   const { client, callSpy } = mockClient();
 
-  const extractUsage = (_runData: { runTree: RunTree; outputs: KVMap }) => {
-    return {
-      prompt_tokens: 100,
-      completion_tokens: 200,
-      total_tokens: 300,
-    };
-  };
-
   const func = traceable(
     async function func(inputs: string) {
+      const runTree = getCurrentRunTree();
+      runTree.metadata.usage_metadata = {
+        prompt_tokens: 100,
+        completion_tokens: 200,
+        total_tokens: 300,
+      };
       return {
         messages: [
           {
@@ -1568,7 +1569,6 @@ test("traceable with usage metadata with extract_usage", async () => {
     {
       client,
       tracingEnabled: true,
-      extractUsage,
     }
   );
 
@@ -1619,14 +1619,6 @@ test("traceable with usage metadata with extract_usage", async () => {
 test("traceable with usage metadata with streaming", async () => {
   const { client, callSpy } = mockClient();
 
-  const extractUsage = (_runData: { runTree: RunTree; outputs: KVMap }) => {
-    return {
-      prompt_tokens: 100,
-      completion_tokens: 200,
-      total_tokens: 300,
-    };
-  };
-
   const func = traceable(
     async function* func(inputs: string) {
       for (const char of inputs) {
@@ -1639,11 +1631,16 @@ test("traceable with usage metadata with streaming", async () => {
           ],
         };
       }
+      const runTree = getCurrentRunTree();
+      runTree.metadata.usage_metadata = {
+        prompt_tokens: 100,
+        completion_tokens: 200,
+        total_tokens: 300,
+      };
     },
     {
       client,
       tracingEnabled: true,
-      extractUsage,
     }
   );
 
