@@ -1554,7 +1554,7 @@ export class Client implements LangSmithTracingClientInterface {
   ): Promise<Run> {
     assertUuid(runId);
     let run = await this._get<Run>(`/runs/${runId}`);
-    if (loadChildRuns && run.child_run_ids) {
+    if (loadChildRuns) {
       run = await this._loadChildRuns(run);
     }
     return run;
