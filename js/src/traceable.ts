@@ -11,7 +11,7 @@ import {
   Attachments,
   InvocationParamsSchema,
   KVMap,
-  UsageMetadata,
+  ExtractedUsageMetadata,
 } from "./schemas.js";
 import { isTracingEnabled } from "./env.js";
 import {
@@ -73,7 +73,7 @@ function handleRunOutputs(params: {
   extractUsageFn: (runData: {
     runTree: RunTree;
     outputs: KVMap;
-  }) => Partial<UsageMetadata> | undefined;
+  }) => ExtractedUsageMetadata | undefined;
 }) {
   const { runTree, rawOutputs, processOutputsFn, extractUsageFn } = params;
   let outputs: KVMap;
@@ -93,7 +93,7 @@ function handleRunOutputs(params: {
     );
   }
   if (runTree !== undefined) {
-    let usageMetadata: Partial<UsageMetadata> | undefined;
+    let usageMetadata: ExtractedUsageMetadata | undefined;
     try {
       usageMetadata = extractUsageFn({ runTree, outputs });
     } catch (e) {
@@ -347,7 +347,7 @@ const convertSerializableArg = (arg: unknown): unknown => {
 const _defaultExtractUsage = (runData: {
   runTree: RunTree;
   outputs: KVMap;
-}): Partial<UsageMetadata> | undefined => {
+}): ExtractedUsageMetadata | undefined => {
   const usageMetadataFromMetadata = (runData.runTree.extra.metadata ?? {})
     .usage_metadata;
   return runData.outputs.usage_metadata ?? usageMetadataFromMetadata;
@@ -428,7 +428,7 @@ export function traceable<Func extends (...args: any[]) => any>(
     extractUsage?: (runData: {
       runTree: RunTree;
       outputs: KVMap;
-    }) => Partial<UsageMetadata> | undefined;
+    }) => ExtractedUsageMetadata | undefined;
   }
 ) {
   type Inputs = Parameters<Func>;

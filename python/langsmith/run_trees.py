@@ -173,7 +173,7 @@ class RunTree(ls_schemas.RunBase):
         outputs: Optional[Mapping[str, Any]] = NOT_PROVIDED,
         tags: Optional[Sequence[str]] = NOT_PROVIDED,
         metadata: Optional[Mapping[str, Any]] = NOT_PROVIDED,
-        usage: Optional[ls_schemas.UsageMetadataDict] = NOT_PROVIDED,
+        usage: Optional[ls_schemas.ExtractedUsageMetadata] = NOT_PROVIDED,
     ) -> None:
         """Set the inputs, outputs, tags, and metadata of the run.
 

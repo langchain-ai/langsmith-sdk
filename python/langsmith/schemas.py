@@ -1111,7 +1111,7 @@ class UsageMetadata(TypedDict):
     """
 
 
-class UsageMetadataDict(TypedDict, total=False):
+class ExtractedUsageMetadata(TypedDict, total=False):
     """Usage metadata dictionary.
 
     Unlike UsageMetadata above, this does not require the presence of all keys.
