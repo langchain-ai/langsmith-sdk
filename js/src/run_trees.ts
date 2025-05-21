@@ -239,6 +239,20 @@ export class RunTree implements BaseRun {
     }
   }
 
+  set metadata(metadata: KVMap) {
+    this.extra = {
+      ...this.extra,
+      metadata: {
+        ...this.extra?.metadata,
+        ...metadata,
+      },
+    };
+  }
+
+  get metadata() {
+    return this.extra?.metadata;
+  }
+
   private static getDefaultConfig(): object {
     return {
       id: uuid.v4(),
