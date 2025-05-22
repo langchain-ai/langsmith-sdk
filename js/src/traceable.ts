@@ -70,12 +70,8 @@ function handleRunOutputs(params: {
   runTree?: RunTree;
   rawOutputs: unknown;
   processOutputsFn: (outputs: Readonly<KVMap>) => KVMap;
-  extractUsageFn: (runData: {
-    runTree: RunTree;
-    outputs: KVMap;
-  }) => ExtractedUsageMetadata | undefined;
 }) {
-  const { runTree, rawOutputs, processOutputsFn, extractUsageFn } = params;
+  const { runTree, rawOutputs, processOutputsFn } = params;
   let outputs: KVMap;
 
   if (isKVMap(rawOutputs)) {
@@ -95,7 +91,7 @@ function handleRunOutputs(params: {
   if (runTree !== undefined) {
     let usageMetadata: ExtractedUsageMetadata | undefined;
     try {
-      usageMetadata = extractUsageFn({ runTree, outputs });
+      usageMetadata = _extractUsage({ runTree, outputs });
     } catch (e) {
       console.error("Error occurred while extracting usage metadata:", e);
     }
@@ -344,7 +340,7 @@ const convertSerializableArg = (arg: unknown): unknown => {
   return arg;
 };
 
-const _defaultExtractUsage = (runData: {
+const _extractUsage = (runData: {
   runTree: RunTree;
   outputs: KVMap;
 }): ExtractedUsageMetadata | undefined => {
@@ -416,19 +412,6 @@ export function traceable<Func extends (...args: any[]) => any>(
      * @returns Transformed key-value map
      */
     processOutputs?: (outputs: Readonly<KVMap>) => KVMap;
-
-    /**
-     * Extract usage metadata such as token usage and cost from the outputs.
-     * This function should NOT mutate the outputs.
-     * `extractUsage` is not inherited by nested traceable functions.
-     *
-     * @param runData Object containing the run tree and outputs
-     * @returns Transformed usage metadata
-     */
-    extractUsage?: (runData: {
-      runTree: RunTree;
-      outputs: KVMap;
-    }) => ExtractedUsageMetadata | undefined;
   }
 ) {
   type Inputs = Parameters<Func>;
@@ -439,13 +422,11 @@ export function traceable<Func extends (...args: any[]) => any>(
     processInputs,
     processOutputs,
     extractAttachments,
-    extractUsage,
     ...runTreeConfig
   } = config ?? {};
 
   const processInputsFn = processInputs ?? ((x) => x);
   const processOutputsFn = processOutputs ?? ((x) => x);
-  const extractUsageFn = extractUsage ?? _defaultExtractUsage;
   const extractAttachmentsFn =
     extractAttachments ?? ((...x) => [undefined, runInputsToMap(x)]);
 
@@ -627,7 +608,6 @@ export function traceable<Func extends (...args: any[]) => any>(
                   runTree: currentRunTree,
                   rawOutputs: await handleChunks(chunks),
                   processOutputsFn,
-                  extractUsageFn,
                 });
                 await currentRunTree?.end(processedOutputs);
                 await handleEnd();
@@ -651,7 +631,6 @@ export function traceable<Func extends (...args: any[]) => any>(
               runTree: currentRunTree,
               rawOutputs: await handleChunks(chunks),
               processOutputsFn,
-              extractUsageFn,
             });
             await currentRunTree?.end(processedOutputs);
             await handleEnd();
@@ -696,7 +675,6 @@ export function traceable<Func extends (...args: any[]) => any>(
             runTree: currentRunTree,
             rawOutputs: await handleChunks(chunks),
             processOutputsFn,
-            extractUsageFn,
           });
           await currentRunTree?.end(processedOutputs);
           await handleEnd();
@@ -822,7 +800,6 @@ export function traceable<Func extends (...args: any[]) => any>(
                       }, [])
                     ),
                     processOutputsFn,
-                    extractUsageFn,
                   });
                   await currentRunTree?.end(processedOutputs);
                   await handleEnd();
@@ -843,7 +820,6 @@ export function traceable<Func extends (...args: any[]) => any>(
                   runTree: currentRunTree,
                   rawOutputs: rawOutput,
                   processOutputsFn,
-                  extractUsageFn,
                 });
                 await currentRunTree?.end(processedOutputs);
                 await handleEnd();
