@@ -1109,6 +1109,45 @@ class UsageMetadata(TypedDict):
 
     Does *not* need to sum to full output token count. Does *not* need to have all keys.
     """
+    input_cost: NotRequired[Decimal]
+    """The cost of the input tokens."""
+    output_cost: NotRequired[Decimal]
+    """The cost of the output tokens."""
+    total_cost: NotRequired[Decimal]
+    """The total cost of the tokens."""
+    input_cost_details: NotRequired[dict[str, Any]]
+    """The cost details of the input tokens."""
+    output_cost_details: NotRequired[dict[str, Any]]
+    """The cost details of the output tokens."""
+
+
+class ExtractedUsageMetadata(TypedDict, total=False):
+    """Usage metadata dictionary extracted from a run.
+
+    Should be the same as UsageMetadata, but does not require all
+    keys to be present.
+    """
+
+    prompt_tokens: int
+    """The number of tokens used for the prompt."""
+    completion_tokens: int
+    """The number of tokens generated as output."""
+    total_tokens: int
+    """The total number of tokens used."""
+    input_token_details: dict[str, Any]
+    """The details of the input tokens."""
+    output_token_details: dict[str, Any]
+    """The details of the output tokens."""
+    input_cost: Decimal
+    """The cost of the input tokens."""
+    output_cost: Decimal
+    """The cost of the output tokens."""
+    total_cost: Decimal
+    """The total cost of the tokens."""
+    input_cost_details: dict[str, Any]
+    """The cost details of the input tokens."""
+    output_cost_details: dict[str, Any]
+    """The cost details of the output tokens."""
 
 
 class UpsertExamplesResponse(TypedDict):

@@ -657,4 +657,31 @@ export type UsageMetadata = {
    * Does *not* need to sum to full output token count. Does *not* need to have all keys.
    */
   output_token_details?: OutputTokenDetails;
+
+  /**
+   * The cost of the input tokens.
+   */
+  input_cost?: number;
+
+  /**
+   * The cost of the output tokens.
+   */
+  output_cost?: number;
+
+  /**
+   * The total cost of the tokens.
+   */
+  total_cost?: number;
+
+  /**
+   * The cost details of the input tokens.
+   */
+  input_cost_details?: Record<string, unknown>;
+
+  /**
+   * The cost details of the output tokens.
+   */
+  output_cost_details?: Record<string, unknown>;
 };
+
+export type ExtractedUsageMetadata = Partial<UsageMetadata>;
