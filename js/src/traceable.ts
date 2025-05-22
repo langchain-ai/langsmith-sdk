@@ -65,6 +65,15 @@ const handleRunInputs = (
   }
 };
 
+const _extractUsage = (runData: {
+  runTree: RunTree;
+  outputs: KVMap;
+}): ExtractedUsageMetadata | undefined => {
+  const usageMetadataFromMetadata = (runData.runTree.extra.metadata ?? {})
+    .usage_metadata;
+  return runData.outputs.usage_metadata ?? usageMetadataFromMetadata;
+};
+
 // Note: This mutates the run tree
 function handleRunOutputs(params: {
   runTree?: RunTree;
@@ -338,15 +347,6 @@ const convertSerializableArg = (arg: unknown): unknown => {
   }
 
   return arg;
-};
-
-const _extractUsage = (runData: {
-  runTree: RunTree;
-  outputs: KVMap;
-}): ExtractedUsageMetadata | undefined => {
-  const usageMetadataFromMetadata = (runData.runTree.extra.metadata ?? {})
-    .usage_metadata;
-  return runData.outputs.usage_metadata ?? usageMetadataFromMetadata;
 };
 
 /**
