@@ -269,7 +269,7 @@ class SupportsLangsmithExtra(Protocol, Generic[P, R]):
         ...
 
 
-def _default_extract_usage(
+def _extract_usage(
     *,
     run_tree: run_trees.RunTree,
     outputs: Optional[dict] = None,
@@ -281,15 +281,6 @@ def _default_extract_usage(
         if outputs
         else usage_metadata_from_metadata
     )
-
-
-def _validate_usage_extractor(func: Callable) -> bool:
-    sig = inspect.signature(func)
-    if not any(
-        param.kind == inspect.Parameter.VAR_KEYWORD for param in sig.parameters.values()
-    ):
-        raise ValueError("Usage processor must accept arbitrary **kwargs")
-    return True
 
 
 @overload
@@ -311,9 +302,6 @@ def traceable(
     process_inputs: Optional[Callable[[dict], dict]] = None,
     process_outputs: Optional[Callable[..., dict]] = None,
     process_chunk: Optional[Callable] = None,
-    extract_usage: Optional[
-        Callable[..., Optional[schemas.ExtractedUsageMetadata]]
-    ] = None,
     _invocation_params_fn: Optional[Callable[[dict], dict]] = None,
     dangerously_allow_filesystem: bool = False,
 ) -> Callable[[Callable[P, R]], SupportsLangsmithExtra[P, R]]: ...
@@ -344,7 +332,6 @@ def traceable(
             Defaults to None.
         process_outputs: Custom serialization / processing function for outputs.
             Defaults to None.
-        extract_usage: Optional function that extracts usage/cost from the traced function's outputs.
         dangerously_allow_filesystem: Whether to allow filesystem access for attachments.
             Defaults to False.
 
@@ -508,13 +495,9 @@ def traceable(
         dangerously_allow_filesystem=kwargs.pop("dangerously_allow_filesystem", False),
     )
     outputs_processor = kwargs.pop("process_outputs", None)
-    usage_extractor = kwargs.pop("extract_usage", None)
-    if usage_extractor is not None:
-        _validate_usage_extractor(usage_extractor)
     _on_run_end = functools.partial(
         _handle_container_end,
         outputs_processor=outputs_processor,
-        usage_extractor=usage_extractor,
     )
 
     if kwargs:
@@ -744,14 +727,10 @@ def traceable(
                 raise
 
             if hasattr(stream, "__iter__"):
-                return _TracedStream(
-                    stream, trace_container, reduce_fn, usage_extractor
-                )
+                return _TracedStream(stream, trace_container, reduce_fn)
             elif hasattr(stream, "__aiter__"):
                 # sync function -> async iterable (unexpected)
-                return _TracedAsyncStream(
-                    stream, trace_container, reduce_fn, usage_extractor
-                )
+                return _TracedAsyncStream(stream, trace_container, reduce_fn)
 
             # If it's not iterable, end the trace immediately
             _on_run_end(trace_container, outputs=stream)
@@ -781,14 +760,10 @@ def traceable(
                 raise
 
             if hasattr(stream, "__aiter__"):
-                return _TracedAsyncStream(
-                    stream, trace_container, reduce_fn, usage_extractor
-                )
+                return _TracedAsyncStream(stream, trace_container, reduce_fn)
             elif hasattr(stream, "__iter__"):
                 # Async function -> sync iterable
-                return _TracedStream(
-                    stream, trace_container, reduce_fn, usage_extractor
-                )
+                return _TracedStream(stream, trace_container, reduce_fn)
 
             # If it's not iterable, end the trace immediately
             await aitertools.aio_to_thread(_on_run_end, trace_container, outputs=stream)
@@ -1287,7 +1262,6 @@ def _container_end(
     container: _TraceableContainer,
     outputs: Optional[Any] = None,
     error: Optional[BaseException] = None,
-    usage_extractor: Optional[Callable] = None,
 ) -> None:
     """End the run."""
     run_tree = container.get("new_run")
@@ -1315,10 +1289,8 @@ def _container_end(
     if error:
         stacktrace = utils._format_exc()
         error_ = f"{repr(error)}\n\n{stacktrace}"
-    if usage_extractor is None:
-        usage_extractor = _default_extract_usage
     try:
-        usage = usage_extractor(run_tree=run_tree, outputs=dict_outputs)
+        usage = _extract_usage(run_tree=run_tree, outputs=dict_outputs)
     except Exception as e:
         LOGGER.error(f"Failed to process usage metadata: {e}")
         usage = None
@@ -1534,15 +1506,12 @@ def _handle_container_end(
     outputs: Optional[Any] = None,
     error: Optional[BaseException] = None,
     outputs_processor: Optional[Callable[..., dict]] = None,
-    usage_extractor: Optional[Callable[..., dict]] = None,
 ) -> None:
     """Handle the end of run."""
     try:
         if outputs_processor is not None:
             outputs = outputs_processor(outputs)
-        _container_end(
-            container, outputs=outputs, error=error, usage_extractor=usage_extractor
-        )
+        _container_end(container, outputs=outputs, error=error)
     except BaseException as e:
         LOGGER.warning(f"Unable to process trace outputs: {repr(e)}")
 
@@ -1720,7 +1689,6 @@ class _TracedStreamBase(Generic[T]):
         stream: Union[Iterator[T], AsyncIterator[T]],
         trace_container: _TraceableContainer,
         reduce_fn: Optional[Callable] = None,
-        usage_extractor: Optional[Callable] = None,
     ):
         self.__ls_stream__ = stream
         self.__ls_trace_container__ = trace_container
@@ -1732,7 +1700,6 @@ class _TracedStreamBase(Generic[T]):
             if trace_container["new_run"]
             else False
         )
-        self.__ls_usage_extractor__ = usage_extractor
 
     def __getattr__(self, name: str):
         return getattr(self.__ls_stream__, name)
@@ -1769,7 +1736,6 @@ class _TracedStreamBase(Generic[T]):
                 self.__ls_trace_container__,
                 outputs=reduced_output,
                 error=error,
-                usage_extractor=self.__ls_usage_extractor__,
             )
         finally:
             self.__ls_completed__ = True
@@ -1784,13 +1750,11 @@ class _TracedStream(_TracedStreamBase, Generic[T]):
         trace_container: _TraceableContainer,
         reduce_fn: Optional[Callable] = None,
         process_chunk: Optional[Callable] = None,
-        usage_extractor: Optional[Callable] = None,
     ):
         super().__init__(
             stream=stream,
             trace_container=trace_container,
             reduce_fn=reduce_fn,
-            usage_extractor=usage_extractor,
         )
         self.__ls_stream__ = stream
         self.__ls__gen__ = _process_iterator(
@@ -1837,13 +1801,11 @@ class _TracedAsyncStream(_TracedStreamBase, Generic[T]):
         trace_container: _TraceableContainer,
         reduce_fn: Optional[Callable] = None,
         process_chunk: Optional[Callable] = None,
-        usage_extractor: Optional[Callable] = None,
     ):
         super().__init__(
             stream=stream,
             trace_container=trace_container,
             reduce_fn=reduce_fn,
-            usage_extractor=usage_extractor,
         )
         self.__ls_stream__ = stream
         self.__ls_gen = _process_async_iterator(
