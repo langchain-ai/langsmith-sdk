@@ -48,9 +48,7 @@ runs:
         OPENAI_API_KEY: ${{ inputs.openai-api-key }}
         ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
         LANGSMITH_TEST_CACHE: tests/cassettes
-      run: |
-        uv pip list
-        make integration_tests_fast
+      run: make integration_tests_fast
       shell: bash
       working-directory: python
 
@@ -63,9 +61,7 @@ runs:
         OPENAI_API_KEY: ${{ inputs.openai-api-key }}
         ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
         LANGSMITH_TEST_CACHE: tests/cassettes
-      run: |
-        uv pip list
-        make doctest
+      run: make doctest
       shell: bash
       working-directory: python
 
