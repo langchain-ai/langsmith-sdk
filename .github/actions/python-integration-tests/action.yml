@@ -30,11 +30,11 @@ runs:
       uses: astral-sh/setup-uv@v6
       with:
         python-version: ${{ inputs.python-version }}
-      working-directory: python
+        working-directory: python
 
     - name: Install dependencies
       run: |
-        uv sync --group dev
+        uv sync --group dev --package langsmith
         uv pip install -U langchain langchain-openai langchain-anthropic tiktoken rapidfuzz vcrpy numpy
       shell: bash
       working-directory: python
