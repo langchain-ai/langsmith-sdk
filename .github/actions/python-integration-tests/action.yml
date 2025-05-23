@@ -51,7 +51,7 @@ runs:
       run: |
         uv pip list
         make integration_tests_fast
-      # shell: bash
+      shell: bash
       working-directory: python
 
     - name: Run doctest
@@ -66,7 +66,7 @@ runs:
       run: |
         uv pip list
         make doctest
-      # shell: bash
+      shell: bash
       working-directory: python
 
     - name: Run Evaluation
@@ -79,5 +79,5 @@ runs:
           ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
           LANGSMITH_TEST_CACHE: tests/cassettes
       run: make evals
-      # shell: bash
+      shell: bash
       working-directory: python
