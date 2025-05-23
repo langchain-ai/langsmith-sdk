@@ -35,8 +35,8 @@ runs:
     - name: Install dependencies
       run: |
         uv sync --group dev
-        uv run pip install -U langchain langchain-openai langchain-anthropic tiktoken rapidfuzz vcrpy numpy
-      shell: bash
+        uv pip install -U langchain langchain-openai langchain-anthropic tiktoken rapidfuzz vcrpy numpy
+      # shell: bash
       working-directory: python
 
     - name: Run integration tests
@@ -48,8 +48,10 @@ runs:
         OPENAI_API_KEY: ${{ inputs.openai-api-key }}
         ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
         LANGSMITH_TEST_CACHE: tests/cassettes
-      run: make integration_tests_fast
-      shell: bash
+      run: |
+        uv pip list
+        make integration_tests_fast
+      # shell: bash
       working-directory: python
 
     - name: Run doctest
@@ -61,8 +63,10 @@ runs:
         OPENAI_API_KEY: ${{ inputs.openai-api-key }}
         ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
         LANGSMITH_TEST_CACHE: tests/cassettes
-      run: make doctest
-      shell: bash
+      run: |
+        uv pip list
+        make doctest
+      # shell: bash
       working-directory: python
 
     - name: Run Evaluation
@@ -75,5 +79,5 @@ runs:
           ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
           LANGSMITH_TEST_CACHE: tests/cassettes
       run: make evals
-      shell: bash
+      # shell: bash
       working-directory: python

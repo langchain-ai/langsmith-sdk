@@ -37,7 +37,7 @@ jobs:
       - name: Install dependencies
         run: |
           uv sync --group dev --group lint
-          uv run pip install -U langchain langchain-core langchain_anthropic langchain_openai
+          uv pip install -U langchain langchain-core langchain_anthropic langchain_openai
       - name: Build ${{ matrix.python-version }}
         run: uv build
       - name: Check version alignment
