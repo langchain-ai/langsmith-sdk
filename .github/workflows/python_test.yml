@@ -12,9 +12,6 @@ on:
       - "python/**"
   workflow_dispatch:
 
-env:
-  POETRY_VERSION: "1.8.1"
-
 jobs:
   build_and_test:
     runs-on: ubuntu-22.04
@@ -31,23 +28,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install poetry ${{ env.POETRY_VERSION }}
-        run: pipx install poetry==${{ env.POETRY_VERSION }}
-
-      - uses: actions/setup-python@v5
-        name: Setup python ${{ matrix.python-version }}
-        id: setup-python
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
         with:
           python-version: ${{ matrix.python-version }}
-          cache: 'poetry'
-          cache-dependency-path: "python/poetry.lock"
+          enable-cache: true
 
       - name: Install dependencies
         run: |
-          poetry install --with dev,lint
-          poetry run pip install -U langchain langchain-core langchain_anthropic langchain_openai
+          uv sync --group dev --group lint
+          uv run pip install -U langchain langchain-core langchain_anthropic langchain_openai
       - name: Build ${{ matrix.python-version }}
-        run: poetry build
+        run: uv build
       - name: Check version alignment
         run: make check-version
       - name: Lint ${{ matrix.python-version }}
