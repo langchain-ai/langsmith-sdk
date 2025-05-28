@@ -5832,7 +5832,9 @@ class Client:
                     key="correctness",
                     score=0,
                     run_id=foo_run_id,
-                    trace_id=trace_id,  # trace_id is optional but recommended so feedback ingestion is batched and backgrounded
+                    # trace_id= is optional but recommended to enable batched and backgrounded 
+                    # feedback ingestion.
+                    trace_id=trace_id,
                 )
 
         """
