@@ -1010,9 +1010,9 @@ def test_multipart_ingest_create_with_attachments(
         assert not caplog.records
         wait_for(lambda: _get_run(str(trace_a_id), langchain_client))
         created_run = langchain_client.read_run(run_id=str(trace_a_id))
-        assert sorted(created_run.attachments.keys()) == sorted(
-            ["foo", "bar"]
-        ), f"See failed run at {created_run.url}"
+        assert sorted(created_run.attachments.keys()) == sorted(["foo", "bar"]), (
+            f"See failed run at {created_run.url}"
+        )
         assert created_run.attachments["foo"]["reader"].read() == b"bar"
         assert (
             created_run.attachments["bar"]["reader"].read()
@@ -3089,6 +3089,9 @@ def test_annotation_queue_runs(langchain_client: Client):
             project_name=project_name,
             start_time=datetime.datetime.now(datetime.timezone.utc),
             id=run_ids[i],
+            extra={
+                "test_metadata": {"foo": f"bar_{i}"}
+            },  # Add extra data to test include_extra
         )
 
     def _get_run(run_id: ID_TYPE) -> bool:
@@ -3104,11 +3107,20 @@ def test_annotation_queue_runs(langchain_client: Client):
     # Add runs to queue
     langchain_client.add_runs_to_annotation_queue(queue_id=queue.id, run_ids=run_ids)
 
-    # Test getting run at index
+    # Test getting run at index without extra data
     run_info = langchain_client.get_run_from_annotation_queue(
-        queue_id=queue.id, index=0
+        queue_id=queue.id, index=0, include_extra=False
     )
     assert run_info.id in run_ids
+    assert not hasattr(run_info, "extra") or run_info.extra is None
+
+    # Test getting run at index with extra data
+    run_info_with_extra = langchain_client.get_run_from_annotation_queue(
+        queue_id=queue.id, index=0, include_extra=True
+    )
+    assert run_info_with_extra.id in run_ids
+    assert run_info_with_extra.extra is not None
+    assert run_info_with_extra.extra.get("test_metadata") == {"foo": "bar_0"}
 
     # Test deleting a run from queue
     langchain_client.delete_run_from_annotation_queue(

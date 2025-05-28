@@ -6456,13 +6456,14 @@ class Client:
         ls_utils.raise_for_status_with_text(response)
 
     def get_run_from_annotation_queue(
-        self, queue_id: ID_TYPE, *, index: int
+        self, queue_id: ID_TYPE, *, index: int, include_extra: bool = False
     ) -> ls_schemas.RunWithAnnotationQueueInfo:
         """Get a run from an annotation queue at the specified index.
 
         Args:
             queue_id (Union[UUID, str]): The ID of the annotation queue.
             index (int): The index of the run to retrieve.
+            include_extra (bool): Whether to include the extra metadata of the run.
 
         Returns:
             RunWithAnnotationQueueInfo: The run at the specified index.
@@ -6475,6 +6476,7 @@ class Client:
         response = self.request_with_retries(
             "GET",
             f"{base_url}/{index}",
+            params={"include_extra": include_extra},
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
