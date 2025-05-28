@@ -5734,7 +5734,7 @@ class Client:
         error: Optional[bool] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
-        """Create a feedback in the LangSmith API.
+        """Create feedback for a run.
 
         **NOTE**: To enable feedback to be batch uploaded in the background you must
         specify trace_id. *We highly encourage this for latency-sensitive environments.*
