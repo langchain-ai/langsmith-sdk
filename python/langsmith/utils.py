@@ -748,6 +748,28 @@ def get_api_key(api_key: Optional[str]) -> Optional[str]:
     return api_key_.strip().strip('"').strip("'")
 
 
+def _parse_run_projects(env_val: str | None) -> tuple[str, ...]:
+    if not env_val:
+        return ()
+    return tuple(p.strip() for p in env_val.split(",") if p.strip())
+
+
+_RUN_PROJECTS: tuple[str, ...] = _parse_run_projects(
+    os.getenv("LANGSMITH_RUN_PROJECTS")
+)
+_PROJECT_ENV = os.getenv("LANGSMITH_PROJECT") or os.getenv("LANGCHAIN_PROJECT")
+
+if _RUN_PROJECTS and _PROJECT_ENV:
+    raise LangSmithUserError(
+        "Set only one of LANGSMITH_PROJECT or LANGSMITH_RUN_PROJECTS"
+    )
+
+
+def get_run_projects() -> tuple[str, ...]:
+    """Get the run projects from the environment."""
+    return _RUN_PROJECTS
+
+
 def _is_localhost(url: str) -> bool:
     """Check if the URL is localhost.
 
