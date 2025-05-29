@@ -6020,6 +6020,76 @@ class Client:
         )
         ls_utils.raise_for_status_with_text(response)
 
+    def create_feedbacks(
+        self,
+        feedbacks: Sequence[ls_schemas.FeedbackCreate],
+        *,
+        stop_after_attempt: int = 10,
+    ) -> list[ls_schemas.Feedback]:
+        """Ingest a batch of feedback objects.
+
+        The method accepts a collection
+        of :class:`ls_schemas.FeedbackCreate` and background buffers them
+
+        Parameters:
+        ----------
+        feedbacks
+            Collection of feedback objects to ingest.
+        stop_after_attempt
+            Max retries for the network request when *not* using background
+            multipart ingestion.
+
+        Returns:
+        -------
+        list[ls_schemas.Feedback]
+            Hydrated feedback objects (identical to the inputs; the backend
+            returns *202 Accepted* with no body).
+        """
+        if not feedbacks:
+            raise ValueError("`feedbacks` must contain at least one item")
+
+        # ------------------------------------------------------------------ #
+        # Fast-path: background multipart buffering (identical to create_feedback)
+        # ------------------------------------------------------------------ #
+        use_multipart = (self.info.batch_ingest_config or {}).get(
+            "use_multipart_endpoint", False
+        )
+        can_buffer = (
+            use_multipart
+            and self.info.version
+            and ls_utils.is_version_greater_or_equal(self.info.version, "0.8.10")
+            and (self.tracing_queue is not None)
+            and self.otel_exporter is None
+            and all(f.trace_id is not None for f in feedbacks)
+        )
+
+        if can_buffer:
+            for fb in feedbacks:
+                serialized_op = serialize_feedback_dict(fb)
+
+                if self.tracing_queue is not None:
+                    # TODO(angus): Add compression support
+                    self.tracing_queue.put(TracingQueueItem(str(fb.id), serialized_op))
+
+            return [ls_schemas.Feedback(**fb.dict()) for fb in feedbacks]
+
+        payload: bytes = _dumps_json([fb.dict(exclude_none=True) for fb in feedbacks])
+
+        headers = {"Content-Type": "application/json"}
+
+        self.request_with_retries(
+            "POST",
+            "/feedback/batch",
+            request_kwargs={
+                "data": payload,
+                "headers": {**self._headers, **headers},
+            },
+            stop_after_attempt=stop_after_attempt,
+            retry_on=(ls_utils.LangSmithNotFoundError,),
+        )
+
+        return [ls_schemas.Feedback(**fb.dict()) for fb in feedbacks]
+
     def create_feedback_from_token(
         self,
         token_or_url: Union[str, uuid.UUID],
