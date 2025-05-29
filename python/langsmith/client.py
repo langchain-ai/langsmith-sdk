@@ -92,6 +92,7 @@ from langsmith._internal._operations import (
     serialized_run_operation_to_multipart_parts_and_context,
 )
 from langsmith._internal._serde import dumps_json as _dumps_json
+from langsmith.run_trees import _parse_dotted_order
 from langsmith.schemas import AttachmentInfo
 
 HAS_OTEL = False
@@ -424,6 +425,8 @@ class Client:
         "_data_available_event",
         "_futures",
         "otel_exporter",
+        "_run_projects",
+        "_fanout_map",
     ]
 
     def __init__(
@@ -537,6 +540,8 @@ class Client:
         self._data_available_event: Optional[threading.Event] = None
         self._futures: Optional[weakref.WeakSet[cf.Future]] = None
         self.otel_exporter: Optional[OTELExporter] = None
+        self._run_projects: tuple[str, ...] = ls_utils.get_run_projects()
+        self._fanout_map: dict[uuid.UUID, dict[str, uuid.UUID]] = {}
 
         # Initialize auto batching
         if auto_batch_tracing:
@@ -1391,55 +1396,75 @@ class Client:
                     raise ValueError(
                         "Run compression is enabled but threading event is not configured"
                     )
-                serialized_op = serialize_run_dict("post", run_create)
-                multipart_form, opened_files = (
-                    serialized_run_operation_to_multipart_parts_and_context(
-                        serialized_op
-                    )
-                )
-                logger.log(
-                    5,
-                    "Adding compressed multipart to queue with context: %s",
-                    multipart_form.context,
-                )
-                with self.compressed_traces.lock:
-                    compress_multipart_parts_and_context(
-                        multipart_form,
-                        self.compressed_traces,
-                        _BOUNDARY,
-                    )
-                    self.compressed_traces.trace_count += 1
-                    self._data_available_event.set()
-
-                _close_files(list(opened_files.values()))
-            elif self.tracing_queue is not None:
-                serialized_op = serialize_run_dict("post", run_create)
-                logger.log(
-                    5,
-                    "Adding to tracing queue: trace_id=%s, run_id=%s",
-                    serialized_op.trace_id,
-                    serialized_op.id,
-                )
-                if HAS_OTEL:
-                    self.tracing_queue.put(
-                        TracingQueueItem(
-                            run_create["dotted_order"],
-                            serialized_op,
-                            otel_context=set_span_in_context(
-                                otel_trace.get_current_span()
-                            ),
+                run_payloads = self._create_run_fanout(run_create, project_name)
+                for run in run_payloads:
+                    serialized_op = serialize_run_dict("post", run)
+                    multipart_form, opened_files = (
+                        serialized_run_operation_to_multipart_parts_and_context(
+                            serialized_op
                         )
                     )
-                else:
-                    self.tracing_queue.put(
-                        TracingQueueItem(run_create["dotted_order"], serialized_op)
+                    logger.log(
+                        5,
+                        "Adding compressed multipart to queue with context: %s",
+                        multipart_form.context,
                     )
+                    with self.compressed_traces.lock:
+                        compress_multipart_parts_and_context(
+                            multipart_form,
+                            self.compressed_traces,
+                            _BOUNDARY,
+                        )
+                        self.compressed_traces.trace_count += 1
+                        self._data_available_event.set()
+
+                    _close_files(list(opened_files.values()))
+            elif self.tracing_queue is not None:
+                run_payloads = self._create_run_fanout(run_create, project_name)
+                for run in run_payloads:
+                    serialized_op = serialize_run_dict("post", run)
+                    logger.log(
+                        5,
+                        "Adding to tracing queue: trace_id=%s, run_id=%s",
+                        serialized_op.trace_id,
+                        serialized_op.id,
+                    )
+                    if HAS_OTEL:
+                        self.tracing_queue.put(
+                            TracingQueueItem(
+                                run["dotted_order"],
+                                serialized_op,
+                                otel_context=set_span_in_context(
+                                    otel_trace.get_current_span()
+                                ),
+                            )
+                        )
+                    else:
+                        self.tracing_queue.put(
+                            TracingQueueItem(run["dotted_order"], serialized_op)
+                        )
             else:
                 # Neither Rust nor Python batch ingestion is configured,
                 # fall back to the non-batch approach.
-                self._create_run(run_create)
+                run_payloads = self._create_run_fanout(run_create, project_name)
+                for run in run_payloads:
+                    self._create_run(run)
         else:
             self._create_run(run_create)
+
+    def _create_run_fanout(self, run_create: dict, project_name: str):
+        """Create a run for each project if multiple projects are configured."""
+        fan_targets = (
+            self._run_projects or (project_name and (project_name,)) or ("default",)
+        )
+        run_payloads: list[dict] = []
+        for proj in fan_targets:
+            if proj != project_name:
+                run_dup = self._remap_ids(run_create, proj)
+                run_payloads.append(run_dup)
+            else:
+                run_payloads.append(run_create)
+        return run_payloads
 
     def _create_run(self, run_create: dict):
         errors = []
@@ -2170,54 +2195,58 @@ class Client:
         if self._pyo3_client is not None:
             self._pyo3_client.update_run(data)
         elif use_multipart:
-            serialized_op = serialize_run_dict(operation="patch", payload=data)
-            if self.compressed_traces is not None:
-                multipart_form, opened_files = (
-                    serialized_run_operation_to_multipart_parts_and_context(
-                        serialized_op
-                    )
-                )
-                logger.log(
-                    5,
-                    "Adding compressed multipart to queue with context: %s",
-                    multipart_form.context,
-                )
-                with self.compressed_traces.lock:
-                    if self._data_available_event is None:
-                        raise ValueError(
-                            "Run compression is enabled but threading event is not configured"
-                        )
-                    compress_multipart_parts_and_context(
-                        multipart_form,
-                        self.compressed_traces,
-                        _BOUNDARY,
-                    )
-                    self.compressed_traces.trace_count += 1
-                    self._data_available_event.set()
-                _close_files(list(opened_files.values()))
-            elif self.tracing_queue is not None:
-                logger.log(
-                    5,
-                    "Adding to tracing queue: trace_id=%s, run_id=%s",
-                    serialized_op.trace_id,
-                    serialized_op.id,
-                )
-                if HAS_OTEL:
-                    self.tracing_queue.put(
-                        TracingQueueItem(
-                            data["dotted_order"],
-                            serialized_op,
-                            otel_context=set_span_in_context(
-                                otel_trace.get_current_span()
-                            ),
+            run_payloads = self._create_run_fanout(data, data["session_name"])
+            for run in run_payloads:
+                serialized_op = serialize_run_dict(operation="patch", payload=run)
+                if self.compressed_traces is not None:
+                    multipart_form, opened_files = (
+                        serialized_run_operation_to_multipart_parts_and_context(
+                            serialized_op
                         )
                     )
-                else:
-                    self.tracing_queue.put(
-                        TracingQueueItem(data["dotted_order"], serialized_op)
+                    logger.log(
+                        5,
+                        "Adding compressed multipart to queue with context: %s",
+                        multipart_form.context,
                     )
+                    with self.compressed_traces.lock:
+                        if self._data_available_event is None:
+                            raise ValueError(
+                                "Run compression is enabled but threading event is not configured"
+                            )
+                        compress_multipart_parts_and_context(
+                            multipart_form,
+                            self.compressed_traces,
+                            _BOUNDARY,
+                        )
+                        self.compressed_traces.trace_count += 1
+                        self._data_available_event.set()
+                    _close_files(list(opened_files.values()))
+                elif self.tracing_queue is not None:
+                    logger.log(
+                        5,
+                        "Adding to tracing queue: trace_id=%s, run_id=%s",
+                        serialized_op.trace_id,
+                        serialized_op.id,
+                    )
+                    if HAS_OTEL:
+                        self.tracing_queue.put(
+                            TracingQueueItem(
+                                run["dotted_order"],
+                                serialized_op,
+                                otel_context=set_span_in_context(
+                                    otel_trace.get_current_span()
+                                ),
+                            )
+                        )
+                    else:
+                        self.tracing_queue.put(
+                            TracingQueueItem(run["dotted_order"], serialized_op)
+                        )
         else:
-            self._update_run(data)
+            run_payloads = self._create_run_fanout(data, data["session_name"])
+            for run in run_payloads:
+                self._update_run(run)
 
     def _update_run(self, run_update: dict) -> None:
         for api_url, api_key in self._write_api_urls.items():
@@ -2287,6 +2316,58 @@ class Client:
             self.flush_compressed_traces()
         elif self.tracing_queue is not None:
             self.tracing_queue.join()
+
+    def _remap_ids(
+        self,
+        run_dict: dict,
+        project_name: str,
+    ) -> dict:
+        """Return a deepish copy of run_dict with ids/dotted_order rewritten deterministically for a given project."""
+        old_id: uuid.UUID = run_dict["id"]
+        new_id = uuid.uuid5(uuid.NAMESPACE_DNS, f"{old_id}:{project_name}")
+        self._fanout_map.setdefault(old_id, {})[project_name] = new_id
+
+        # trace id
+        old_trace = run_dict.get("trace_id")
+        if old_trace:
+            new_trace = uuid.uuid5(uuid.NAMESPACE_DNS, f"{old_trace}:{project_name}")
+            self._fanout_map.setdefault(old_trace, {})[project_name] = new_trace
+        else:
+            new_trace = None
+        # parent id
+        parent = run_dict.get("parent_run_id")
+        if parent:
+            new_parent = self._fanout_map.get(parent, {}).get(
+                project_name
+            ) or uuid.uuid5(uuid.NAMESPACE_DNS, f"{parent}:{project_name}")
+            self._fanout_map.setdefault(parent, {})[project_name] = new_parent
+        else:
+            new_parent = None
+
+        # dotted order
+        if run_dict.get("dotted_order"):
+            segs = _parse_dotted_order(run_dict["dotted_order"])
+            rebuilt: list[str] = []
+            for ts, seg_id in segs[:-1]:
+                repl = self._fanout_map.get(seg_id, {}).get(project_name) or seg_id
+                rebuilt.append(ts.strftime("%Y%m%dT%H%M%S%fZ") + str(repl))
+            ts_last, _ = segs[-1]
+            rebuilt.append(ts_last.strftime("%Y%m%dT%H%M%S%fZ") + str(new_id))
+            dotted = ".".join(rebuilt)
+        else:
+            dotted = None
+
+        dup = ls_utils.deepish_copy(run_dict)
+        dup.update(
+            {
+                "id": new_id,
+                "trace_id": new_trace,
+                "parent_run_id": new_parent,
+                "dotted_order": dotted,
+                "session_name": project_name,
+            }
+        )
+        return dup
 
     def _load_child_runs(self, run: ls_schemas.Run) -> ls_schemas.Run:
         """Load child runs for a given run.
