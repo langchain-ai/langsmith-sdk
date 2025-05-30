@@ -539,7 +539,9 @@ class Client:
         self._data_available_event: Optional[threading.Event] = None
         self._futures: Optional[weakref.WeakSet[cf.Future]] = None
         self.otel_exporter: Optional[OTELExporter] = None
-        self._run_projects: tuple[str, ...] = ls_utils.get_run_projects()
+        self._run_projects: tuple[str, ...] = ls_utils.parse_run_projects(
+            ls_utils.get_env_var("RUN_PROJECTS")
+        )
         self._fanout_map: dict[uuid.UUID, dict[str, uuid.UUID]] = {}
 
         # Initialize auto batching
@@ -1449,7 +1451,9 @@ class Client:
                 for run in run_payloads:
                     self._create_run(run)
         else:
-            self._create_run(run_create)
+            run_payloads = self._create_run_fanout(run_create, project_name)
+            for run in run_payloads:
+                self._create_run(run)
 
     def _create_run_fanout(self, run_create: dict, project_name: str):
         """Create a run for each project if multiple projects are configured."""
