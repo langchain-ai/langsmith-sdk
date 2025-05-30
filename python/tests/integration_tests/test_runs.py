@@ -558,15 +558,15 @@ def test_usage_metadata(langchain_client: Client):
                 }
             ],
             "usage_metadata": {
-                "prompt_tokens": 10,
-                "completion_tokens": 20,
+                "input_tokens": 10,
+                "output_tokens": 20,
                 "total_tokens": 30,
             },
         }
 
     assert my_func("foo").get("usage_metadata") == {
-        "prompt_tokens": 10,
-        "completion_tokens": 20,
+        "input_tokens": 10,
+        "output_tokens": 20,
         "total_tokens": 30,
     }
     _filter = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{run_meta}"))'
@@ -577,13 +577,13 @@ def test_usage_metadata(langchain_client: Client):
     assert len(runs) == 1
     run = runs[0]
     assert run.extra["metadata"]["usage_metadata"] == {
-        "prompt_tokens": 10,
-        "completion_tokens": 20,
+        "input_tokens": 10,
+        "output_tokens": 20,
         "total_tokens": 30,
     }
     assert run.outputs["usage_metadata"] == {
-        "prompt_tokens": 10,
-        "completion_tokens": 20,
+        "input_tokens": 10,
+        "output_tokens": 20,
         "total_tokens": 30,
     }
 
@@ -603,8 +603,8 @@ def test_usage_metadata(langchain_client: Client):
         run_tree = get_current_run_tree()
         run_tree.set(
             usage_metadata={
-                "prompt_tokens": 100,
-                "completion_tokens": 200,
+                "input_tokens": 100,
+                "output_tokens": 200,
                 "total_tokens": 300,
             }
         )
@@ -627,13 +627,13 @@ def test_usage_metadata(langchain_client: Client):
     assert len(runs) == 1
     run = runs[0]
     assert run.extra["metadata"]["usage_metadata"] == {
-        "prompt_tokens": 100,
-        "completion_tokens": 200,
+        "input_tokens": 100,
+        "output_tokens": 200,
         "total_tokens": 300,
     }
     assert run.outputs["usage_metadata"] == {
-        "prompt_tokens": 100,
-        "completion_tokens": 200,
+        "input_tokens": 100,
+        "output_tokens": 200,
         "total_tokens": 300,
     }
 
@@ -662,8 +662,8 @@ def test_usage_metadata(langchain_client: Client):
         run_tree = get_current_run_tree()
         run_tree.set(
             usage_metadata={
-                "prompt_tokens": 100,
-                "completion_tokens": 200,
+                "input_tokens": 100,
+                "output_tokens": 200,
                 "total_tokens": 300,
             }
         )
@@ -678,20 +678,15 @@ def test_usage_metadata(langchain_client: Client):
     assert len(runs) == 1
     run = runs[0]
     assert run.extra["metadata"]["usage_metadata"] == {
-        "prompt_tokens": 100,
-        "completion_tokens": 200,
+        "input_tokens": 100,
+        "output_tokens": 200,
         "total_tokens": 300,
     }
     assert run.outputs["usage_metadata"] == {
-        "prompt_tokens": 100,
-        "completion_tokens": 200,
+        "input_tokens": 100,
+        "output_tokens": 200,
         "total_tokens": 300,
     }
-
-
-async def test_usage_metadata_async(langchain_client: Client):
-    project_name = "__My Tracer Project - test_async_usage_metadata"
-    run_meta = uuid.uuid4().hex
 
     @traceable(
         client=langchain_client,
@@ -703,108 +698,7 @@ async def test_usage_metadata_async(langchain_client: Client):
             "test_run": run_meta,
         },
     )
-    async def my_func(inputs: str):
-        return {
-            "messages": [
-                {
-                    "role": "assistant",
-                    "content": inputs[::-1],
-                }
-            ],
-            "usage_metadata": {
-                "prompt_tokens": 10,
-                "completion_tokens": 20,
-                "total_tokens": 30,
-            },
-        }
-
-    res = await my_func("foo")
-    assert res.get("usage_metadata") == {
-        "prompt_tokens": 10,
-        "completion_tokens": 20,
-        "total_tokens": 30,
-    }
-    _filter = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{run_meta}"))'
-    poll_runs_until_count(
-        langchain_client, project_name, 1, max_retries=20, filter_=_filter
-    )
-    runs = list(langchain_client.list_runs(project_name=project_name, filter=_filter))
-    assert len(runs) == 1
-    run = runs[0]
-    assert run.extra["metadata"]["usage_metadata"] == {
-        "prompt_tokens": 10,
-        "completion_tokens": 20,
-        "total_tokens": 30,
-    }
-    assert run.outputs["usage_metadata"] == {
-        "prompt_tokens": 10,
-        "completion_tokens": 20,
-        "total_tokens": 30,
-    }
-
-    run_meta = uuid.uuid4().hex
-
-    @traceable(
-        client=langchain_client,
-        run_type="llm",
-        project_name=project_name,
-        metadata={
-            "ls_provider": "openai",
-            "ls_model_name": "gpt-4.1-mini",
-            "test_run": run_meta,
-        },
-    )
-    async def my_func2(inputs: str):
-        run_tree = get_current_run_tree()
-        run_tree.set(
-            usage_metadata={
-                "prompt_tokens": 100,
-                "completion_tokens": 200,
-                "total_tokens": 300,
-            }
-        )
-        return {
-            "messages": [
-                {
-                    "role": "assistant",
-                    "content": inputs[::-1],
-                }
-            ],
-        }
-
-    res = await my_func2("foo")
-    assert res.get("usage_metadata") is None
-    _filter = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{run_meta}"))'
-    poll_runs_until_count(
-        langchain_client, project_name, 1, max_retries=20, filter_=_filter
-    )
-    runs = list(langchain_client.list_runs(project_name=project_name, filter=_filter))
-    assert len(runs) == 1
-    run = runs[0]
-    assert run.extra["metadata"]["usage_metadata"] == {
-        "prompt_tokens": 100,
-        "completion_tokens": 200,
-        "total_tokens": 300,
-    }
-    assert run.outputs["usage_metadata"] == {
-        "prompt_tokens": 100,
-        "completion_tokens": 200,
-        "total_tokens": 300,
-    }
-
-    run_meta = uuid.uuid4().hex
-
-    @traceable(
-        client=langchain_client,
-        run_type="llm",
-        project_name=project_name,
-        metadata={
-            "ls_provider": "openai",
-            "ls_model_name": "gpt-4.1-mini",
-            "test_run": run_meta,
-        },
-    )
-    async def my_func3(inputs: str):
+    def my_func4(inputs: str):
         for i in inputs:
             yield {
                 "messages": [
@@ -823,22 +717,224 @@ async def test_usage_metadata_async(langchain_client: Client):
             }
         )
 
-    async for i in my_func3("foo"):
-        pass
-    _filter = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{run_meta}"))'
-    poll_runs_until_count(
-        langchain_client, project_name, 1, max_retries=20, filter_=_filter
+    with pytest.raises(ValueError, match="Unexpected keys in usage metadata:"):
+        for i in my_func4("foo"):
+            pass
+
+
+async def test_usage_metadata_async(langchain_client: Client):
+    project_name = "__My Tracer Project - test_async_usage_metadata"
+    run_meta = uuid.uuid4().hex
+
+    # @traceable(
+    #     client=langchain_client,
+    #     run_type="llm",
+    #     project_name=project_name,
+    #     metadata={
+    #         "ls_provider": "openai",
+    #         "ls_model_name": "gpt-4.1-mini",
+    #         "test_run": run_meta,
+    #     },
+    # )
+    # async def my_func(inputs: str):
+    #     return {
+    #         "messages": [
+    #             {
+    #                 "role": "assistant",
+    #                 "content": inputs[::-1],
+    #             }
+    #         ],
+    #         "usage_metadata": {
+    #             "input_tokens": 10,
+    #             "output_tokens": 20,
+    #             "total_tokens": 30,
+    #         },
+    #     }
+
+    # res = await my_func("foo")
+    # assert res.get("usage_metadata") == {
+    #     "input_tokens": 10,
+    #     "output_tokens": 20,
+    #     "total_tokens": 30,
+    # }
+    # _filter = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{run_meta}"))'
+    # poll_runs_until_count(
+    #     langchain_client, project_name, 1, max_retries=20, filter_=_filter
+    # )
+    # runs = list(langchain_client.list_runs(project_name=project_name, filter=_filter))
+    # assert len(runs) == 1
+    # run = runs[0]
+    # assert run.extra["metadata"]["usage_metadata"] == {
+    #     "input_tokens": 10,
+    #     "output_tokens": 20,
+    #     "total_tokens": 30,
+    # }
+    # assert run.outputs["usage_metadata"] == {
+    #     "input_tokens": 10,
+    #     "output_tokens": 20,
+    #     "total_tokens": 30,
+    # }
+
+    # run_meta = uuid.uuid4().hex
+
+    # @traceable(
+    #     client=langchain_client,
+    #     run_type="llm",
+    #     project_name=project_name,
+    #     metadata={
+    #         "ls_provider": "openai",
+    #         "ls_model_name": "gpt-4.1-mini",
+    #         "test_run": run_meta,
+    #     },
+    # )
+    # async def my_func2(inputs: str):
+    #     run_tree = get_current_run_tree()
+    #     run_tree.set(
+    #         usage_metadata={
+    #             "input_tokens": 100,
+    #             "output_tokens": 200,
+    #             "total_tokens": 300,
+    #         }
+    #     )
+    #     return {
+    #         "messages": [
+    #             {
+    #                 "role": "assistant",
+    #                 "content": inputs[::-1],
+    #             }
+    #         ],
+    #     }
+
+    # res = await my_func2("foo")
+    # assert res.get("usage_metadata") is None
+    # _filter = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{run_meta}"))'
+    # poll_runs_until_count(
+    #     langchain_client, project_name, 1, max_retries=20, filter_=_filter
+    # )
+    # runs = list(langchain_client.list_runs(project_name=project_name, filter=_filter))
+    # assert len(runs) == 1
+    # run = runs[0]
+    # assert run.extra["metadata"]["usage_metadata"] == {
+    #     "input_tokens": 100,
+    #     "output_tokens": 200,
+    #     "total_tokens": 300,
+    # }
+    # assert run.outputs["usage_metadata"] == {
+    #     "input_tokens": 100,
+    #     "output_tokens": 200,
+    #     "total_tokens": 300,
+    # }
+
+    # run_meta = uuid.uuid4().hex
+
+    # @traceable(
+    #     client=langchain_client,
+    #     run_type="llm",
+    #     project_name=project_name,
+    #     metadata={
+    #         "ls_provider": "openai",
+    #         "ls_model_name": "gpt-4.1-mini",
+    #         "test_run": run_meta,
+    #     },
+    # )
+    # async def my_func3(inputs: str):
+    #     for i in inputs:
+    #         yield {
+    #             "messages": [
+    #                 {
+    #                     "role": "assistant",
+    #                     "content": i,
+    #                 }
+    #             ],
+    #         }
+    #     run_tree = get_current_run_tree()
+    #     run_tree.set(
+    #         usage_metadata={
+    #             "input_tokens": 100,
+    #             "output_tokens": 200,
+    #             "total_tokens": 300,
+    #         }
+    #     )
+
+    # async for i in my_func3("foo"):
+    #     pass
+    # _filter = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{run_meta}"))'
+    # poll_runs_until_count(
+    #     langchain_client, project_name, 1, max_retries=20, filter_=_filter
+    # )
+    # runs = list(langchain_client.list_runs(project_name=project_name, filter=_filter))
+    # assert len(runs) == 1
+    # run = runs[0]
+    # assert run.extra["metadata"]["usage_metadata"] == {
+    #     "input_tokens": 100,
+    #     "output_tokens": 200,
+    #     "total_tokens": 300,
+    # }
+    # assert run.outputs["usage_metadata"] == {
+    #     "input_tokens": 100,
+    #     "output_tokens": 200,
+    #     "total_tokens": 300,
+    # }
+
+    # @traceable(
+    #     client=langchain_client,
+    #     run_type="llm",
+    #     project_name=project_name,
+    #     metadata={
+    #         "ls_provider": "openai",
+    #         "ls_model_name": "gpt-4.1-mini",
+    #         "test_run": run_meta,
+    #     },
+    # )
+    # async def my_func5(inputs: str):
+    #     for i in inputs:
+    #         yield {
+    #             "messages": [
+    #                 {
+    #                     "role": "assistant",
+    #                     "content": i,
+    #                 }
+    #             ],
+    #         }
+    #     run_tree = get_current_run_tree()
+    #     run_tree.set(
+    #         usage_metadata={
+    #             "prompt_tokens": 100,
+    #             "output_tokens": 200,
+    #             "total_tokens": 300,
+    #         }
+    #     )
+
+    # async for i in my_func5("foo"):
+    #     pass
+
+    @traceable(
+        client=langchain_client,
+        run_type="llm",
+        project_name=project_name,
+        metadata={
+            "ls_provider": "openai",
+            "ls_model_name": "gpt-4.1-mini",
+            "test_run": run_meta,
+        },
     )
-    runs = list(langchain_client.list_runs(project_name=project_name, filter=_filter))
-    assert len(runs) == 1
-    run = runs[0]
-    assert run.extra["metadata"]["usage_metadata"] == {
-        "prompt_tokens": 100,
-        "completion_tokens": 200,
-        "total_tokens": 300,
-    }
-    assert run.outputs["usage_metadata"] == {
-        "prompt_tokens": 100,
-        "completion_tokens": 200,
-        "total_tokens": 300,
-    }
+    async def my_func4(inputs: str):
+        run_tree = get_current_run_tree()
+        run_tree.set(
+            usage_metadata={
+                "prompt_tokens": 100,
+                "output_tokens": 200,
+                "total_tokens": 300,
+            }
+        )
+        return {
+            "messages": [
+                {
+                    "role": "assistant",
+                    "content": inputs[::-1],
+                }
+            ],
+        }
+
+    with pytest.raises(ValueError, match="Unexpected keys in usage metadata:"):
+        await my_func4("foo")

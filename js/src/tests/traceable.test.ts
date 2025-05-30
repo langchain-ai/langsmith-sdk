@@ -1485,8 +1485,8 @@ test("traceable with usage metadata", async () => {
           },
         ],
         usage_metadata: {
-          prompt_tokens: 10,
-          completion_tokens: 20,
+          input_tokens: 10,
+          output_tokens: 20,
           total_tokens: 30,
         },
       };
@@ -1507,8 +1507,8 @@ test("traceable with usage metadata", async () => {
       },
     ],
     usage_metadata: {
-      prompt_tokens: 10,
-      completion_tokens: 20,
+      input_tokens: 10,
+      output_tokens: 20,
       total_tokens: 30,
     },
   });
@@ -1521,8 +1521,8 @@ test("traceable with usage metadata", async () => {
         extra: {
           metadata: {
             usage_metadata: {
-              prompt_tokens: 10,
-              completion_tokens: 20,
+              input_tokens: 10,
+              output_tokens: 20,
               total_tokens: 30,
             },
           },
@@ -1536,8 +1536,8 @@ test("traceable with usage metadata", async () => {
             },
           ],
           usage_metadata: {
-            prompt_tokens: 10,
-            completion_tokens: 20,
+            input_tokens: 10,
+            output_tokens: 20,
             total_tokens: 30,
           },
         },
@@ -1553,8 +1553,8 @@ test("traceable with usage metadata with extract_usage", async () => {
     async function func(inputs: string) {
       const runTree = getCurrentRunTree();
       runTree.metadata.usage_metadata = {
-        prompt_tokens: 100,
-        completion_tokens: 200,
+        input_tokens: 100,
+        output_tokens: 200,
         total_tokens: 300,
       };
       return {
@@ -1591,8 +1591,8 @@ test("traceable with usage metadata with extract_usage", async () => {
         extra: {
           metadata: {
             usage_metadata: {
-              prompt_tokens: 100,
-              completion_tokens: 200,
+              input_tokens: 100,
+              output_tokens: 200,
               total_tokens: 300,
             },
           },
@@ -1606,8 +1606,8 @@ test("traceable with usage metadata with extract_usage", async () => {
             },
           ],
           usage_metadata: {
-            prompt_tokens: 100,
-            completion_tokens: 200,
+            input_tokens: 100,
+            output_tokens: 200,
             total_tokens: 300,
           },
         },
@@ -1633,8 +1633,8 @@ test("traceable with usage metadata with streaming", async () => {
       }
       const runTree = getCurrentRunTree();
       runTree.metadata.usage_metadata = {
-        prompt_tokens: 100,
-        completion_tokens: 200,
+        input_tokens: 100,
+        output_tokens: 200,
         total_tokens: 300,
       };
     },
@@ -1657,8 +1657,8 @@ test("traceable with usage metadata with streaming", async () => {
         extra: {
           metadata: {
             usage_metadata: {
-              prompt_tokens: 100,
-              completion_tokens: 200,
+              input_tokens: 100,
+              output_tokens: 200,
               total_tokens: 300,
             },
           },
@@ -1666,8 +1666,8 @@ test("traceable with usage metadata with streaming", async () => {
         inputs: { input: "foo" },
         outputs: {
           usage_metadata: {
-            prompt_tokens: 100,
-            completion_tokens: 200,
+            input_tokens: 100,
+            output_tokens: 200,
             total_tokens: 300,
           },
         },

@@ -74,6 +74,32 @@ const _extractUsage = (runData: {
   return runData.outputs.usage_metadata ?? usageMetadataFromMetadata;
 };
 
+function validateExtractedUsageMetadata(
+  data: Record<string, any>
+): ExtractedUsageMetadata {
+  const allowedKeys = new Set([
+    "input_tokens",
+    "output_tokens",
+    "total_tokens",
+    "input_token_details",
+    "output_token_details",
+    "input_cost",
+    "output_cost",
+    "total_cost",
+    "input_cost_details",
+    "output_cost_details",
+  ]);
+
+  const extraKeys = Object.keys(data).filter((key) => !allowedKeys.has(key));
+  if (extraKeys.length > 0) {
+    throw new Error(
+      `Unexpected keys in usage metadata: ${extraKeys.join(", ")}`
+    );
+  }
+
+  return data as ExtractedUsageMetadata;
+}
+
 // Note: This mutates the run tree
 function handleRunOutputs(params: {
   runTree?: RunTree;
@@ -107,7 +133,7 @@ function handleRunOutputs(params: {
     if (usageMetadata !== undefined) {
       runTree.extra.metadata = {
         ...runTree.extra.metadata,
-        usage_metadata: usageMetadata,
+        usage_metadata: validateExtractedUsageMetadata(usageMetadata),
       };
       outputs.usage_metadata = usageMetadata;
     }

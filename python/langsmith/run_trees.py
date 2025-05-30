@@ -50,6 +50,27 @@ def get_cached_client(**init_kwargs: Any) -> Client:
     return _CLIENT
 
 
+def validate_extracted_usage_metadata(data: dict) -> ls_schemas.ExtractedUsageMetadata:
+    """Validate that the dict only contains allowed keys."""
+    allowed_keys = {
+        "input_tokens",
+        "output_tokens",
+        "total_tokens",
+        "input_token_details",
+        "output_token_details",
+        "input_cost",
+        "output_cost",
+        "total_cost",
+        "input_cost_details",
+        "output_cost_details",
+    }
+
+    extra_keys = set(data.keys()) - allowed_keys
+    if extra_keys:
+        raise ValueError(f"Unexpected keys in usage metadata: {extra_keys}")
+    return data  # type: ignore
+
+
 class RunTree(ls_schemas.RunBase):
     """Run Schema with back-references for posting runs."""
 
@@ -213,7 +234,9 @@ class RunTree(ls_schemas.RunBase):
             else:
                 self.outputs = dict(outputs)
         if usage_metadata is not NOT_PROVIDED:
-            self.extra.setdefault("metadata", {})["usage_metadata"] = usage_metadata
+            self.extra.setdefault("metadata", {})["usage_metadata"] = (
+                validate_extracted_usage_metadata(usage_metadata)
+            )
 
     def add_tags(self, tags: Union[Sequence[str], str]) -> None:
         """Add tags to the run."""

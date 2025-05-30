@@ -1128,9 +1128,9 @@ class ExtractedUsageMetadata(TypedDict, total=False):
     keys to be present.
     """
 
-    prompt_tokens: int
+    input_tokens: int
     """The number of tokens used for the prompt."""
-    completion_tokens: int
+    output_tokens: int
     """The number of tokens generated as output."""
     total_tokens: int
     """The total number of tokens used."""
