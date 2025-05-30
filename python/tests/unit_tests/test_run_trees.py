@@ -9,6 +9,7 @@ import pytest
 from langsmith import run_trees
 from langsmith.client import Client
 from langsmith.run_trees import RunTree
+from langsmith.utils import parse_dotted_order
 
 
 def test_run_tree_accepts_tpe() -> None:
@@ -94,7 +95,7 @@ def test_json_serializable():
     ],
 )
 def test_parse_dotted_order(inputs, expected):
-    assert run_trees._parse_dotted_order(inputs) == expected
+    assert parse_dotted_order(inputs) == expected
 
 
 def test_run_tree_events_not_null():

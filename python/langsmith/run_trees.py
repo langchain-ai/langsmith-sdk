@@ -547,7 +547,7 @@ class RunTree(ls_schemas.RunBase):
             langsmith_trace = langsmith_trace_bytes.decode("utf-8")
 
         parent_dotted_order = langsmith_trace.strip()
-        parsed_dotted_order = _parse_dotted_order(parent_dotted_order)
+        parsed_dotted_order = utils.parse_dotted_order(parent_dotted_order)
         trace_id = parsed_dotted_order[0][1]
         init_args["trace_id"] = trace_id
         init_args["id"] = parsed_dotted_order[-1][1]
@@ -662,15 +662,6 @@ class _Baggage:
                 f"{LANGSMITH_PREFIX}project={urllib.parse.quote(self.project_name)}"
             )
         return ",".join(items)
-
-
-def _parse_dotted_order(dotted_order: str) -> list[tuple[datetime, UUID]]:
-    """Parse the dotted order string."""
-    parts = dotted_order.split(".")
-    return [
-        (datetime.strptime(part[:-36], "%Y%m%dT%H%M%S%fZ"), UUID(part[-36:]))
-        for part in parts
-    ]
 
 
 def _create_current_dotted_order(
