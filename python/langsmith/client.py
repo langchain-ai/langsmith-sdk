@@ -6048,9 +6048,6 @@ class Client:
         if not feedbacks:
             raise ValueError("`feedbacks` must contain at least one item")
 
-        # ------------------------------------------------------------------ #
-        # Fast-path: background multipart buffering (identical to create_feedback)
-        # ------------------------------------------------------------------ #
         use_multipart = (self.info.batch_ingest_config or {}).get(
             "use_multipart_endpoint", False
         )
@@ -6067,8 +6064,22 @@ class Client:
             for fb in feedbacks:
                 serialized_op = serialize_feedback_dict(fb)
 
-                if self.tracing_queue is not None:
-                    # TODO(angus): Add compression support
+                if self.compressed_traces is not None:
+                    multipart_form = (
+                        serialized_feedback_operation_to_multipart_parts_and_context(
+                            serialized_op
+                        )
+                    )
+                    with self.compressed_traces.lock:
+                        compress_multipart_parts_and_context(
+                            multipart_form,
+                            self.compressed_traces,
+                            _BOUNDARY,
+                        )
+                        self.compressed_traces.trace_count += 1
+                        if self._data_available_event:
+                            self._data_available_event.set()
+                elif self.tracing_queue is not None:
                     self.tracing_queue.put(TracingQueueItem(str(fb.id), serialized_op))
 
             return [ls_schemas.Feedback(**fb.dict()) for fb in feedbacks]
