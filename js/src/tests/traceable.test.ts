@@ -5,7 +5,10 @@ import { ROOT, traceable, withRunTree } from "../traceable.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 import { mockClient } from "./utils/mock_client.js";
 import { Client, overrideFetchImplementation } from "../index.js";
-import { AsyncLocalStorageProviderSingleton } from "../singletons/traceable.js";
+import {
+  AsyncLocalStorageProviderSingleton,
+  getCurrentRunTree,
+} from "../singletons/traceable.js";
 import { KVMap } from "../schemas.js";
 
 test("basic traceable implementation", async () => {
@@ -1462,6 +1465,210 @@ test("traceable with complex outputs", async () => {
           nested: {
             key: "value",
             nestedOutput: "Nested Output for test",
+          },
+        },
+      },
+    },
+  });
+});
+
+test("traceable with usage metadata", async () => {
+  const { client, callSpy } = mockClient();
+
+  const func = traceable(
+    async function func(inputs: string) {
+      return {
+        messages: [
+          {
+            role: "assistant",
+            content: inputs.split("").reverse().join(""),
+          },
+        ],
+        usage_metadata: {
+          input_tokens: 10,
+          output_tokens: 20,
+          total_tokens: 30,
+        },
+      };
+    },
+    {
+      client,
+      tracingEnabled: true,
+    }
+  );
+
+  const result = await func("foo");
+
+  expect(result).toEqual({
+    messages: [
+      {
+        role: "assistant",
+        content: "oof",
+      },
+    ],
+    usage_metadata: {
+      input_tokens: 10,
+      output_tokens: 20,
+      total_tokens: 30,
+    },
+  });
+
+  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+    nodes: ["func:0"],
+    edges: [],
+    data: {
+      "func:0": {
+        extra: {
+          metadata: {
+            usage_metadata: {
+              input_tokens: 10,
+              output_tokens: 20,
+              total_tokens: 30,
+            },
+          },
+        },
+        inputs: { input: "foo" },
+        outputs: {
+          messages: [
+            {
+              role: "assistant",
+              content: "oof",
+            },
+          ],
+          usage_metadata: {
+            input_tokens: 10,
+            output_tokens: 20,
+            total_tokens: 30,
+          },
+        },
+      },
+    },
+  });
+});
+
+test("traceable with usage metadata with extract_usage", async () => {
+  const { client, callSpy } = mockClient();
+
+  const func = traceable(
+    async function func(inputs: string) {
+      const runTree = getCurrentRunTree();
+      runTree.metadata.usage_metadata = {
+        input_tokens: 100,
+        output_tokens: 200,
+        total_tokens: 300,
+      };
+      return {
+        messages: [
+          {
+            role: "assistant",
+            content: inputs.split("").reverse().join(""),
+          },
+        ],
+      };
+    },
+    {
+      client,
+      tracingEnabled: true,
+    }
+  );
+
+  const result = await func("foo");
+
+  expect(result).toEqual({
+    messages: [
+      {
+        role: "assistant",
+        content: "oof",
+      },
+    ],
+  });
+
+  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+    nodes: ["func:0"],
+    edges: [],
+    data: {
+      "func:0": {
+        extra: {
+          metadata: {
+            usage_metadata: {
+              input_tokens: 100,
+              output_tokens: 200,
+              total_tokens: 300,
+            },
+          },
+        },
+        inputs: { input: "foo" },
+        outputs: {
+          messages: [
+            {
+              role: "assistant",
+              content: "oof",
+            },
+          ],
+          usage_metadata: {
+            input_tokens: 100,
+            output_tokens: 200,
+            total_tokens: 300,
+          },
+        },
+      },
+    },
+  });
+});
+
+test("traceable with usage metadata with streaming", async () => {
+  const { client, callSpy } = mockClient();
+
+  const func = traceable(
+    async function* func(inputs: string) {
+      for (const char of inputs) {
+        yield {
+          messages: [
+            {
+              role: "assistant",
+              content: char,
+            },
+          ],
+        };
+      }
+      const runTree = getCurrentRunTree();
+      runTree.metadata.usage_metadata = {
+        input_tokens: 100,
+        output_tokens: 200,
+        total_tokens: 300,
+      };
+    },
+    {
+      client,
+      tracingEnabled: true,
+    }
+  );
+
+  const results: KVMap[] = [];
+  for await (const chunk of func("foo")) {
+    results.push(chunk);
+  }
+
+  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+    nodes: ["func:0"],
+    edges: [],
+    data: {
+      "func:0": {
+        extra: {
+          metadata: {
+            usage_metadata: {
+              input_tokens: 100,
+              output_tokens: 200,
+              total_tokens: 300,
+            },
+          },
+        },
+        inputs: { input: "foo" },
+        outputs: {
+          usage_metadata: {
+            input_tokens: 100,
+            output_tokens: 200,
+            total_tokens: 300,
           },
         },
       },

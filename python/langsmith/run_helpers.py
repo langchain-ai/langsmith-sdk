@@ -269,6 +269,20 @@ class SupportsLangsmithExtra(Protocol, Generic[P, R]):
         ...
 
 
+def _extract_usage(
+    *,
+    run_tree: run_trees.RunTree,
+    outputs: Optional[dict] = None,
+    **kwargs: Any,
+) -> Optional[schemas.ExtractedUsageMetadata]:
+    usage_metadata_from_metadata = (run_tree.metadata or {}).get("usage_metadata", None)
+    return (
+        outputs.get("usage_metadata", usage_metadata_from_metadata)
+        if outputs
+        else usage_metadata_from_metadata
+    )
+
+
 @overload
 def traceable(
     func: Callable[P, R],
@@ -482,7 +496,8 @@ def traceable(
     )
     outputs_processor = kwargs.pop("process_outputs", None)
     _on_run_end = functools.partial(
-        _handle_container_end, outputs_processor=outputs_processor
+        _handle_container_end,
+        outputs_processor=outputs_processor,
     )
 
     if kwargs:
@@ -1254,7 +1269,7 @@ def _container_end(
         # Tracing not enabled
         return
     if isinstance(outputs, dict):
-        outputs_ = outputs
+        dict_outputs = outputs
     elif (
         outputs is not None
         and hasattr(outputs, "model_dump")
@@ -1262,19 +1277,30 @@ def _container_end(
         and not isinstance(outputs, type)
     ):
         try:
-            outputs_ = outputs.model_dump(exclude_none=True, mode="json")
+            dict_outputs = outputs.model_dump(exclude_none=True, mode="json")
         except Exception as e:
             LOGGER.debug(
                 f"Failed to use model_dump to serialize {type(outputs)} to JSON: {e}"
             )
-            outputs_ = {"output": outputs}
+            dict_outputs = {"output": outputs}
     else:
-        outputs_ = {"output": outputs}
+        dict_outputs = {"output": outputs}
     error_ = None
     if error:
         stacktrace = utils._format_exc()
         error_ = f"{repr(error)}\n\n{stacktrace}"
-    run_tree.end(outputs=outputs_, error=error_)
+    try:
+        usage = _extract_usage(run_tree=run_tree, outputs=dict_outputs)
+    except Exception as e:
+        LOGGER.error(f"Failed to process usage metadata: {e}")
+        usage = None
+    if usage is not None:
+        run_tree.metadata["usage_metadata"] = usage
+        # Modify run outputs to include usage metadata for backwards compatibility
+        # TODO: Remove this once all possible backends have been updated
+        dict_outputs = dict_outputs.copy()
+        dict_outputs["usage_metadata"] = usage
+    run_tree.end(outputs=dict_outputs, error=error_)
     if utils.tracing_is_enabled() is True:
         run_tree.patch()
     on_end = container.get("on_end")
@@ -1707,7 +1733,9 @@ class _TracedStreamBase(Generic[T]):
             else:
                 reduced_output = self.__ls_accumulated_output__
             _container_end(
-                self.__ls_trace_container__, outputs=reduced_output, error=error
+                self.__ls_trace_container__,
+                outputs=reduced_output,
+                error=error,
             )
         finally:
             self.__ls_completed__ = True
@@ -1724,7 +1752,9 @@ class _TracedStream(_TracedStreamBase, Generic[T]):
         process_chunk: Optional[Callable] = None,
     ):
         super().__init__(
-            stream=stream, trace_container=trace_container, reduce_fn=reduce_fn
+            stream=stream,
+            trace_container=trace_container,
+            reduce_fn=reduce_fn,
         )
         self.__ls_stream__ = stream
         self.__ls__gen__ = _process_iterator(
@@ -1773,7 +1803,9 @@ class _TracedAsyncStream(_TracedStreamBase, Generic[T]):
         process_chunk: Optional[Callable] = None,
     ):
         super().__init__(
-            stream=stream, trace_container=trace_container, reduce_fn=reduce_fn
+            stream=stream,
+            trace_container=trace_container,
+            reduce_fn=reduce_fn,
         )
         self.__ls_stream__ = stream
         self.__ls_gen = _process_async_iterator(
