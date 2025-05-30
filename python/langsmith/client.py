@@ -92,7 +92,6 @@ from langsmith._internal._operations import (
     serialized_run_operation_to_multipart_parts_and_context,
 )
 from langsmith._internal._serde import dumps_json as _dumps_json
-from langsmith.run_trees import _parse_dotted_order
 from langsmith.schemas import AttachmentInfo
 
 HAS_OTEL = False
@@ -2346,7 +2345,7 @@ class Client:
 
         # dotted order
         if run_dict.get("dotted_order"):
-            segs = _parse_dotted_order(run_dict["dotted_order"])
+            segs = ls_utils.parse_dotted_order(run_dict["dotted_order"])
             rebuilt: list[str] = []
             for ts, seg_id in segs[:-1]:
                 repl = self._fanout_map.get(seg_id, {}).get(project_name) or seg_id
