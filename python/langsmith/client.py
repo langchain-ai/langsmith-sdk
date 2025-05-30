@@ -1397,7 +1397,7 @@ class Client:
                     raise ValueError(
                         "Run compression is enabled but threading event is not configured"
                     )
-                run_payloads = self._create_run_fanout(run_create, project_name)
+                run_payloads = self._create_run_fanout(run_create)
                 for run in run_payloads:
                     serialized_op = serialize_run_dict("post", run)
                     multipart_form, opened_files = (
@@ -1421,7 +1421,7 @@ class Client:
 
                     _close_files(list(opened_files.values()))
             elif self.tracing_queue is not None:
-                run_payloads = self._create_run_fanout(run_create, project_name)
+                run_payloads = self._create_run_fanout(run_create)
                 for run in run_payloads:
                     serialized_op = serialize_run_dict("post", run)
                     logger.log(
@@ -1447,22 +1447,22 @@ class Client:
             else:
                 # Neither Rust nor Python batch ingestion is configured,
                 # fall back to the non-batch approach.
-                run_payloads = self._create_run_fanout(run_create, project_name)
+                run_payloads = self._create_run_fanout(run_create)
                 for run in run_payloads:
                     self._create_run(run)
         else:
-            run_payloads = self._create_run_fanout(run_create, project_name)
+            run_payloads = self._create_run_fanout(run_create)
             for run in run_payloads:
                 self._create_run(run)
 
-    def _create_run_fanout(self, run_create: dict, project_name: str):
+    def _create_run_fanout(self, run_create: dict):
         """Create a run for each project if multiple projects are configured."""
-        fan_targets = (
-            self._run_projects or (project_name and (project_name,)) or ("default",)
-        )
+        if not self._run_projects:
+            return [run_create]
+
         run_payloads: list[dict] = []
-        for proj in fan_targets:
-            if proj != project_name:
+        for proj in self._run_projects:
+            if run_create.get("session_name") != proj:
                 run_dup = self._remap_ids(run_create, proj)
                 run_payloads.append(run_dup)
             else:
@@ -2198,7 +2198,7 @@ class Client:
         if self._pyo3_client is not None:
             self._pyo3_client.update_run(data)
         elif use_multipart:
-            run_payloads = self._create_run_fanout(data, data["session_name"])
+            run_payloads = self._create_run_fanout(data)
             for run in run_payloads:
                 serialized_op = serialize_run_dict(operation="patch", payload=run)
                 if self.compressed_traces is not None:
@@ -2247,7 +2247,7 @@ class Client:
                             TracingQueueItem(run["dotted_order"], serialized_op)
                         )
         else:
-            run_payloads = self._create_run_fanout(data, data["session_name"])
+            run_payloads = self._create_run_fanout(data)
             for run in run_payloads:
                 self._update_run(run)
 
