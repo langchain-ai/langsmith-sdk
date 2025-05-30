@@ -2627,3 +2627,60 @@ def test__construct_url():
         for prefix in ("", "/", "https://foobar.com/api/"):
             actual = _construct_url(api_url + suffix, prefix + pathname)
             assert actual == expected
+
+
+@pytest.mark.parametrize("auto_batch_tracing", [True, False])
+def test_hybrid_otel_and_langsmith_tracing(auto_batch_tracing: bool) -> None:
+    """Test that hybrid OTEL and LangSmith tracing works correctly."""
+    from unittest.mock import patch
+    
+    session = mock.MagicMock(spec=requests.Session)
+    
+    with patch.dict("os.environ", {"HYBRID_OTEL_AND_LS_TRACING": "true"}):
+        client = Client(
+            api_url="http://localhost:1984",
+            api_key="123",
+            session=session,
+            auto_batch_tracing=auto_batch_tracing,
+        )
+        
+        # Mock OTEL exporter
+        class MockOTELExporter:
+            def __init__(self):
+                self.exported_batches = []
+            def export_batch(self, run_ops, otel_context_map):
+                self.exported_batches.append(run_ops)
+        
+        client.otel_exporter = MockOTELExporter()
+        
+        # Create runs
+        run_ids = []
+        for i in range(3):
+            run_id = uuid.uuid4()
+            trace_id = uuid.uuid4()
+            run_ids.append(run_id)
+            client.create_run(
+                name=f"hybrid_test_run_{i}",
+                inputs={"input": f"test_{i}"},
+                run_type="llm",
+                id=run_id,
+                trace_id=trace_id,
+                dotted_order=f"20231201T120000000000Z{trace_id}.{run_id}",
+            )
+        
+        if auto_batch_tracing and client.tracing_queue:
+            client.tracing_queue.join()
+        
+        if auto_batch_tracing:
+            # With hybrid mode enabled, both should be called
+            assert len(client.otel_exporter.exported_batches) > 0
+            session.request.assert_called()
+            
+            # Verify all runs were exported to OTEL
+            all_exported_run_ids = []
+            for batch in client.otel_exporter.exported_batches:
+                all_exported_run_ids.extend([run.id for run in batch])
+            assert set(all_exported_run_ids) == set(run_ids)
+        else:
+            # Non-batched mode should still work normally
+            assert session.request.call_count == len(run_ids)
