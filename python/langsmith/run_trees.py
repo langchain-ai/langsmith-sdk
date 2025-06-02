@@ -50,6 +50,29 @@ def get_cached_client(**init_kwargs: Any) -> Client:
     return _CLIENT
 
 
+def validate_extracted_usage_metadata(
+    data: ls_schemas.ExtractedUsageMetadata,
+) -> ls_schemas.ExtractedUsageMetadata:
+    """Validate that the dict only contains allowed keys."""
+    allowed_keys = {
+        "input_tokens",
+        "output_tokens",
+        "total_tokens",
+        "input_token_details",
+        "output_token_details",
+        "input_cost",
+        "output_cost",
+        "total_cost",
+        "input_cost_details",
+        "output_cost_details",
+    }
+
+    extra_keys = set(data.keys()) - allowed_keys
+    if extra_keys:
+        raise ValueError(f"Unexpected keys in usage metadata: {extra_keys}")
+    return data  # type: ignore
+
+
 class RunTree(ls_schemas.RunBase):
     """Run Schema with back-references for posting runs."""
 
@@ -173,6 +196,7 @@ class RunTree(ls_schemas.RunBase):
         outputs: Optional[Mapping[str, Any]] = NOT_PROVIDED,
         tags: Optional[Sequence[str]] = NOT_PROVIDED,
         metadata: Optional[Mapping[str, Any]] = NOT_PROVIDED,
+        usage_metadata: Optional[ls_schemas.ExtractedUsageMetadata] = NOT_PROVIDED,
     ) -> None:
         """Set the inputs, outputs, tags, and metadata of the run.
 
@@ -188,6 +212,7 @@ class RunTree(ls_schemas.RunBase):
             outputs: The outputs to set.
             tags: The tags to set.
             metadata: The metadata to set.
+            usage_metadata: Usage information to set.
 
         Returns:
             None
@@ -210,6 +235,10 @@ class RunTree(ls_schemas.RunBase):
                 self.outputs = {}
             else:
                 self.outputs = dict(outputs)
+        if usage_metadata is not NOT_PROVIDED:
+            self.extra.setdefault("metadata", {})["usage_metadata"] = (
+                validate_extracted_usage_metadata(usage_metadata)
+            )
 
     def add_tags(self, tags: Union[Sequence[str], str]) -> None:
         """Add tags to the run."""

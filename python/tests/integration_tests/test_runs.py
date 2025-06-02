@@ -3,6 +3,7 @@ import time
 import uuid
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
+from decimal import Decimal
 from pathlib import Path
 from typing import AsyncGenerator, Generator, Optional, Sequence
 
@@ -10,7 +11,7 @@ import pytest  # type: ignore
 
 from langsmith import utils as ls_utils
 from langsmith.client import Client
-from langsmith.run_helpers import trace, traceable
+from langsmith.run_helpers import get_current_run_tree, trace, traceable
 from langsmith.run_trees import RunTree
 from langsmith.schemas import Attachment
 
@@ -533,3 +534,193 @@ def test_trace_file_path(langchain_client: Client) -> None:
         run.attachments["bar"]["reader"].read()
         == (Path(__file__).parent / "test_data/parrot-icon.png").read_bytes()
     )
+
+
+def test_usage_metadata(langchain_client: Client):
+    project_name = "__My Tracer Project - test_usage_metadata"
+    usage_metadata = {
+        "input_tokens": 10,
+        "output_tokens": 20,
+        "total_tokens": 30,
+        "input_cost": 1e-6,
+        "output_cost": 2e-6,
+        "total_cost": 3e-6,
+        "input_token_details": {"audio": 1, "foo": 2},
+        "output_token_details": {"reasoning": 3, "foo": 4},
+        "input_cost_details": {"audio": 1e-7, "foo": 2e-7},
+        "output_cost_details": {"reasoning": 3e-7, "foo": 4e-7},
+    }
+    run_meta = uuid.uuid4().hex
+    configured_traceable = traceable(
+        client=langchain_client,
+        run_type="llm",
+        project_name=project_name,
+        metadata={
+            "ls_provider": "openai",
+            "ls_model_name": "gpt-4.1-mini",
+            "test_run": run_meta,
+        },
+    )
+
+    @configured_traceable
+    def my_func(inputs: str):
+        return {
+            "messages": [{"role": "assistant", "content": inputs[::-1]}],
+            "usage_metadata": usage_metadata,
+        }
+
+    @configured_traceable
+    def my_func2(inputs: str):
+        run_tree = get_current_run_tree()
+        run_tree.set(usage_metadata=usage_metadata)
+        return {"messages": [{"role": "assistant", "content": inputs[::-1]}]}
+
+    @configured_traceable
+    def _my_func3(inputs: str):
+        for i in inputs:
+            yield {"messages": [{"role": "assistant", "content": i}]}
+        run_tree = get_current_run_tree()
+        run_tree.set(usage_metadata=usage_metadata)
+
+    def my_func3(inputs: str):
+        for chunk in _my_func3(inputs):
+            pass
+
+    funcs = [my_func, my_func2, my_func3]
+    for func in funcs:
+        func("foo")
+    _filter = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{run_meta}"))'
+    poll_runs_until_count(
+        langchain_client, project_name, len(funcs), max_retries=20, filter_=_filter
+    )
+    runs = list(langchain_client.list_runs(project_name=project_name, filter=_filter))
+    for run in runs:
+        assert run.input_tokens == 10
+        assert run.output_tokens == 20
+        assert run.total_tokens == 30
+        assert run.input_cost == Decimal("1e-6")
+        assert run.output_cost == Decimal("2e-6")
+        assert run.total_cost == Decimal("3e-6")
+        assert run.input_token_details == {"audio": 1, "foo": 2}
+        assert run.output_token_details == {"reasoning": 3, "foo": 4}
+        assert run.input_cost_details == {
+            "audio": Decimal("1e-7"),
+            "foo": Decimal("2e-7"),
+        }
+        assert run.output_cost_details == {
+            "reasoning": Decimal("3e-7"),
+            "foo": Decimal("4e-7"),
+        }
+
+    @configured_traceable
+    def my_func4(inputs: str):
+        for i in inputs:
+            yield {"messages": [{"role": "assistant", "content": i}]}
+        run_tree = get_current_run_tree()
+        run_tree.set(
+            usage_metadata={
+                "prompt_tokens": 100,
+                "completion_tokens": 200,
+                "total_tokens": 300,
+            }
+        )
+
+    with pytest.raises(ValueError, match="Unexpected keys in usage metadata:"):
+        for _ in my_func4("foo"):
+            pass
+
+
+async def test_usage_metadata_async(langchain_client: Client):
+    project_name = "__My Tracer Project - test_async_usage_metadata"
+    usage_metadata = {
+        "input_tokens": 10,
+        "output_tokens": 20,
+        "total_tokens": 30,
+        "input_cost": 1e-6,
+        "output_cost": 2e-6,
+        "total_cost": 3e-6,
+        "input_token_details": {"audio": 1, "foo": 2},
+        "output_token_details": {"reasoning": 3, "foo": 4},
+        "input_cost_details": {"audio": 1e-7, "foo": 2e-7},
+        "output_cost_details": {"reasoning": 3e-7, "foo": 4e-7},
+    }
+    run_meta = uuid.uuid4().hex
+    configured_traceable = traceable(
+        client=langchain_client,
+        run_type="llm",
+        project_name=project_name,
+        metadata={
+            "ls_provider": "openai",
+            "ls_model_name": "gpt-4.1-mini",
+            "test_run": run_meta,
+        },
+    )
+
+    @configured_traceable
+    async def my_func(inputs: str):
+        return {
+            "messages": [{"role": "assistant", "content": inputs[::-1]}],
+            "usage_metadata": usage_metadata,
+        }
+
+    @configured_traceable
+    async def my_func2(inputs: str):
+        run_tree = get_current_run_tree()
+        run_tree.set(usage_metadata=usage_metadata)
+        return {"messages": [{"role": "assistant", "content": inputs[::-1]}]}
+
+    @configured_traceable
+    async def _my_func3(inputs: str):
+        for i in inputs:
+            yield {"messages": [{"role": "assistant", "content": i}]}
+        run_tree = get_current_run_tree()
+        run_tree.set(usage_metadata=usage_metadata)
+
+    async def my_func3(inputs: str):
+        async for chunk in _my_func3(inputs):
+            pass
+
+    funcs = [my_func, my_func2, my_func3]
+    for func in funcs:
+        await func("foo")
+
+    _filter = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{run_meta}"))'
+    poll_runs_until_count(
+        langchain_client, project_name, len(funcs), max_retries=20, filter_=_filter
+    )
+    runs = list(langchain_client.list_runs(project_name=project_name, filter=_filter))
+
+    for run in runs:
+        assert run.input_tokens == 10
+        assert run.output_tokens == 20
+        assert run.total_tokens == 30
+        assert run.input_cost == Decimal("1e-6")
+        assert run.output_cost == Decimal("2e-6")
+        assert run.total_cost == Decimal("3e-6")
+        assert run.input_token_details == {"audio": 1, "foo": 2}
+        assert run.output_token_details == {"reasoning": 3, "foo": 4}
+        assert run.input_cost_details == {
+            "audio": Decimal("1e-7"),
+            "foo": Decimal("2e-7"),
+        }
+        assert run.output_cost_details == {
+            "reasoning": Decimal("3e-7"),
+            "foo": Decimal("4e-7"),
+        }
+
+    @configured_traceable
+    async def my_func4(inputs: str):
+        for i in inputs:
+            yield {"messages": [{"role": "assistant", "content": i}]}
+        run_tree = get_current_run_tree()
+        run_tree.set(
+            usage_metadata={
+                "prompt_tokens": 100,
+                "completion_tokens": 200,
+                "total_tokens": 300,
+            }
+        )
+
+    with pytest.raises(ValueError, match="Unexpected keys in usage metadata:"):
+        async for _ in my_func4("foo"):
+            pass
