@@ -275,12 +275,8 @@ def _extract_usage(
     outputs: Optional[dict] = None,
     **kwargs: Any,
 ) -> Optional[schemas.ExtractedUsageMetadata]:
-    usage_metadata_from_metadata = (run_tree.metadata or {}).get("usage_metadata", None)
-    return (
-        outputs.get("usage_metadata", usage_metadata_from_metadata)
-        if outputs
-        else usage_metadata_from_metadata
-    )
+    from_metadata = (run_tree.metadata or {}).get("usage_metadata")
+    return (outputs or {}).get("usage_metadata") or from_metadata
 
 
 @overload
@@ -1289,17 +1285,8 @@ def _container_end(
     if error:
         stacktrace = utils._format_exc()
         error_ = f"{repr(error)}\n\n{stacktrace}"
-    try:
-        usage = _extract_usage(run_tree=run_tree, outputs=dict_outputs)
-    except Exception as e:
-        LOGGER.error(f"Failed to process usage metadata: {e}")
-        usage = None
-    if usage is not None:
+    if (usage := _extract_usage(run_tree=run_tree, outputs=dict_outputs)) is not None:
         run_tree.metadata["usage_metadata"] = usage
-        # Modify run outputs to include usage metadata for backwards compatibility
-        # TODO: Remove this once all possible backends have been updated
-        dict_outputs = dict_outputs.copy()
-        dict_outputs["usage_metadata"] = usage
     run_tree.end(outputs=dict_outputs, error=error_)
     if utils.tracing_is_enabled() is True:
         run_tree.patch()

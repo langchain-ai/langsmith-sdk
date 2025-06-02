@@ -50,7 +50,9 @@ def get_cached_client(**init_kwargs: Any) -> Client:
     return _CLIENT
 
 
-def validate_extracted_usage_metadata(data: ls_schemas.ExtractedUsageMetadata) -> ls_schemas.ExtractedUsageMetadata:
+def validate_extracted_usage_metadata(
+    data: ls_schemas.ExtractedUsageMetadata,
+) -> ls_schemas.ExtractedUsageMetadata:
     """Validate that the dict only contains allowed keys."""
     allowed_keys = {
         "input_tokens",
