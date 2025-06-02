@@ -59,7 +59,7 @@ class TestHybridTracing:
     def test_hybrid_tracing_enabled_both_exports_succeed(
         self, client_with_otel, mock_session
     ):
-        """Test that both OTEL and LangSmith exports are called when hybrid 
+        """Test that both OTEL and LangSmith exports are called when hybrid
         mode is enabled."""
         client = client_with_otel
 
@@ -196,7 +196,6 @@ class TestHybridTracing:
                 dotted_order=f"20231201T120000000000Z{trace_id}.{run_id}",
             )
 
-
     @patch.dict(os.environ, {"OTEL_ENABLED": "true"})
     def test_hybrid_tracing_no_otel_exporter(self, mock_session):
         """Test hybrid mode when no OTEL exporter is configured."""
@@ -228,9 +227,9 @@ class TestHybridTracing:
 
     @patch.dict(os.environ, {"OTEL_ENABLED": "true"})
     def test_hybrid_tracing_queue_task_done_called_once(self, mock_session):
-        """Test that queue.task_done() is called exactly once per item in 
+        """Test that queue.task_done() is called exactly once per item in
         hybrid mode."""
-        # We need auto_batch_tracing=True to have a tracing queue, 
+        # We need auto_batch_tracing=True to have a tracing queue,
         # but we'll control it carefully
         client = Client(
             api_url="http://localhost:1984",
@@ -342,9 +341,9 @@ class TestHybridTracing:
 
     @patch.dict(os.environ, {})  # No environment variable set
     def test_langsmith_only_mode_default(self, mock_session):
-        """Test that LangSmith-only mode is used when no environment 
+        """Test that LangSmith-only mode is used when no environment
         variables are set."""
-        # When auto_batch_tracing=False and no OTEL_ENABLED, 
+        # When auto_batch_tracing=False and no OTEL_ENABLED,
         # runs are sent directly to LangSmith
         client = Client(
             api_url="http://localhost:1984",
@@ -367,16 +366,14 @@ class TestHybridTracing:
                 dotted_order=f"20231201T120000000000Z{trace_id}.{run_id}",
             )
 
-        # With auto_batch_tracing=False, runs are sent directly to 
+        # With auto_batch_tracing=False, runs are sent directly to
         # LangSmith synchronously
         # Verify LangSmith was called for the runs
         mock_session.request.assert_called()
 
         # Check that POST calls were made to LangSmith for runs
         post_calls = [
-            call 
-            for call in mock_session.request.call_args_list 
-            if call[0][0] == "POST"
+            call for call in mock_session.request.call_args_list if call[0][0] == "POST"
         ]
         assert len(post_calls) > 0, "Expected POST calls to LangSmith"
 
@@ -394,14 +391,14 @@ class TestHybridTracingIntegration:
             auto_batch_tracing=False,  # Disable background processing
         )
         client.otel_exporter = MockOTELExporter()
-        
+
         # Create several runs
         run_ids = []
         for i in range(5):
             run_id = uuid.uuid4()
             trace_id = uuid.uuid4()
             run_ids.append(run_id)
-            
+
             client.create_run(
                 name=f"test_run_{i}",
                 inputs={"input": f"test_{i}"},
@@ -410,14 +407,14 @@ class TestHybridTracingIntegration:
                 trace_id=trace_id,
                 dotted_order=f"20231201T120000000000Z{trace_id}.{run_id}",
             )
-        
+
         # Since auto_batch_tracing=False, runs are sent directly to LangSmith
         # Verify LangSmith was called
         mock_session.request.assert_called()
-        
-        # For OTEL export in hybrid mode, we would need to manually trigger 
-        # processing but since auto_batch_tracing=False, the OTEL exporter 
-        # wouldn't be used. This test verifies that the hybrid mode logic 
+
+        # For OTEL export in hybrid mode, we would need to manually trigger
+        # processing but since auto_batch_tracing=False, the OTEL exporter
+        # wouldn't be used. This test verifies that the hybrid mode logic
         # works when enabled
 
     def test_hybrid_tracing_graceful_cleanup(self, mock_session):
@@ -430,7 +427,7 @@ class TestHybridTracingIntegration:
                 auto_batch_tracing=False,  # Disable background processing
             )
             client.otel_exporter = MockOTELExporter()
-            
+
             # Create some runs
             for i in range(3):
                 run_id = uuid.uuid4()
@@ -443,6 +440,5 @@ class TestHybridTracingIntegration:
                     trace_id=trace_id,
                     dotted_order=f"20231201T120000000000Z{trace_id}.{run_id}",
                 )
-            
 
             mock_session.request.assert_called()

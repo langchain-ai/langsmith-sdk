@@ -253,7 +253,7 @@ def _hybrid_tracing_thread_handle_batch(
     except Exception:
         langsmith_success = False
 
-    # Mark task_done once per item only, avoid double counting when 
+    # Mark task_done once per item only, avoid double counting
     if mark_task_done:
         for _ in batch:
             tracing_queue.task_done()
@@ -612,7 +612,7 @@ def _tracing_sub_thread_func(
         if next_batch := _tracing_thread_drain_queue(tracing_queue, limit=size_limit):
             seen_successive_empty_queues = 0
 
-            # Clean logic: OTEL_ENABLED enables hybrid mode, 
+            # Clean logic: OTEL_ENABLED enables hybrid mode,
             # OTEL_ONLY disables LangSmith
             if ls_utils.is_truish(
                 ls_utils.get_env_var("OTEL_ENABLED")
