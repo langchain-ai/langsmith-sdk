@@ -233,7 +233,7 @@ def _hybrid_tracing_thread_handle_batch(
     mark_task_done: bool = True,
 ) -> None:
     """Handle a batch for both OTEL and LangSmith by reusing existing functions."""
-    # Export to OTEL (don't mark task_done)
+    # Export to OTEL
     otel_success = False
     try:
         _otel_tracing_thread_handle_batch(
@@ -243,7 +243,7 @@ def _hybrid_tracing_thread_handle_batch(
     except Exception:
         otel_success = False
 
-    # Export to LangSmith (don't mark task_done)
+    # Export to LangSmith
     langsmith_success = False
     try:
         _tracing_thread_handle_batch(
@@ -253,7 +253,7 @@ def _hybrid_tracing_thread_handle_batch(
     except Exception:
         langsmith_success = False
 
-    # Mark task_done once per item only if requested
+    # Mark task_done once per item only, avoid double counting when 
     if mark_task_done:
         for _ in batch:
             tracing_queue.task_done()
