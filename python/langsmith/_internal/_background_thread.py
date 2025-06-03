@@ -253,13 +253,13 @@ def _hybrid_tracing_thread_handle_batch(
     mark_task_done: bool = True,
 ) -> None:
     """Handle a batch for both OTEL and LangSmith by reusing existing functions."""
-
     # Check if we're using LangSmith's internal OTLP provider vs user's provider
     using_internal_otlp_provider = _is_using_internal_otlp_provider(client)
 
     if using_internal_otlp_provider:
         logger.debug(
-            "Using internal LangSmith OTLP provider, only sending to OTEL to avoid duplicate sending"
+            "Using internal LangSmith OTLP provider, only sending to OTEL "
+            "to avoid duplicate sending"
         )
         _otel_tracing_thread_handle_batch(
             client, tracing_queue, batch, mark_task_done=False
@@ -294,25 +294,25 @@ def _hybrid_tracing_thread_handle_batch(
                     raise
 
 
-def _is_using_internal_otlp_provider(client: "Client") -> bool:
+def _is_using_internal_otlp_provider(client: Client) -> bool:
     """Check if client is using LangSmith's internal OTLP provider.
-
-    Returns True if using LangSmith's internal provider, False if user provided their own.
+    
+    Returns True if using LangSmith's internal provider, False if user 
+    provided their own.
     """
     if not hasattr(client, "otel_exporter") or client.otel_exporter is None:
         return False
 
     try:
         # Use OpenTelemetry's standard API to get the global TracerProvider
-        import os
         from langsmith import utils as ls_utils
-
+        
         # Check if OTEL is available
         if not ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED")):
             return False
-
+            
         from opentelemetry import trace
-
+        
         # Get the global TracerProvider and check its resource attributes
         tracer_provider = trace.get_tracer_provider()
         if hasattr(tracer_provider, "resource") and hasattr(
@@ -322,10 +322,11 @@ def _is_using_internal_otlp_provider(client: "Client") -> bool:
                 "langsmith.internal_provider", False
             )
             logger.debug(
-                f"TracerProvider resource check: langsmith.internal_provider={is_internal}"
+                f"TracerProvider resource check: "
+                f"langsmith.internal_provider={is_internal}"
             )
             return is_internal
-
+        
         return False
     except Exception as e:
         logger.debug(

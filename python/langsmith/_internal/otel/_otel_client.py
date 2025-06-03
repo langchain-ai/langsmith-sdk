@@ -66,7 +66,8 @@ def get_otlp_tracer_provider() -> "TracerProvider":
     resource = Resource(
         attributes={
             SERVICE_NAME: service_name,
-            "langsmith.internal_provider": True,  # Marker to identify LangSmith's internal provider
+            # Marker to identify LangSmith's internal provider
+            "langsmith.internal_provider": True,
         }
     )
 
