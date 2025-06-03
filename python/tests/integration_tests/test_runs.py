@@ -10,7 +10,7 @@ import pytest  # type: ignore
 
 from langsmith import utils as ls_utils
 from langsmith.client import Client
-from langsmith.run_helpers import trace, traceable
+from langsmith.run_helpers import trace, traceable, tracing_context
 from langsmith.run_trees import RunTree
 from langsmith.schemas import Attachment
 
@@ -533,3 +533,60 @@ def test_trace_file_path(langchain_client: Client) -> None:
         run.attachments["bar"]["reader"].read()
         == (Path(__file__).parent / "test_data/parrot-icon.png").read_bytes()
     )
+
+
+async def test_trace_to_multiple_projects(langchain_client: Client):
+    """Test tracing runs to multiple projects."""
+    project_names = [
+        "__My Tracer Project - test_trace_to_multiple_projects1",
+        "__My Tracer Project - test_trace_to_multiple_projects2",
+    ]
+    run_meta = uuid.uuid4().hex
+
+    @traceable(run_type="chain")
+    async def my_chain(text: str):
+        result = await my_llm(text)
+        return result
+
+    @traceable(run_type="llm")
+    async def my_llm(text: str):
+        return f"LLM response: {text}"
+
+    with tracing_context(
+        project_names=tuple(project_names), metadata={"test_run": run_meta}
+    ):
+        result = await my_chain("test_input")
+
+    assert result == "LLM response: test_input"
+
+    filter_ = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{run_meta}"))'
+
+    runs1 = poll_runs_until_count(
+        langchain_client, project_names[0], 2, filter_=filter_
+    )
+    assert len(runs1) == 2
+    runs1_dict = {run.name: run for run in runs1}
+    assert runs1_dict["my_chain"].parent_run_id is None
+    assert runs1_dict["my_chain"].run_type == "chain"
+    assert runs1_dict["my_llm"].parent_run_id == runs1_dict["my_chain"].id
+    assert runs1_dict["my_llm"].run_type == "llm"
+    assert runs1_dict["my_llm"].inputs == {"text": "test_input"}
+
+    runs2 = poll_runs_until_count(
+        langchain_client, project_names[1], 2, filter_=filter_
+    )
+    assert len(runs2) == 2
+    runs2_dict = {run.name: run for run in runs2}
+    assert runs2_dict["my_chain"].parent_run_id is None
+    assert runs2_dict["my_chain"].run_type == "chain"
+    assert runs2_dict["my_llm"].parent_run_id == runs2_dict["my_chain"].id
+    assert runs2_dict["my_llm"].run_type == "llm"
+    assert runs2_dict["my_llm"].inputs == {"text": "test_input"}
+
+    assert runs1_dict["my_chain"].id != runs2_dict["my_chain"].id
+    assert runs1_dict["my_llm"].id != runs2_dict["my_llm"].id
+
+    assert runs1_dict["my_llm"].parent_run_id == runs1_dict["my_chain"].id
+    assert runs2_dict["my_llm"].parent_run_id == runs2_dict["my_chain"].id
+
+    assert runs1_dict["my_chain"].trace_id != runs2_dict["my_chain"].trace_id
