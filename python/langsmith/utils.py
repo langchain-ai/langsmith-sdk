@@ -17,7 +17,6 @@ import threading
 import traceback
 from collections.abc import Generator, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
-from datetime import datetime
 from typing import (
     Any,
     Callable,
@@ -28,7 +27,6 @@ from typing import (
     cast,
 )
 from urllib import parse as urllib_parse
-from uuid import UUID
 
 import httpx
 import requests
@@ -748,13 +746,6 @@ def get_api_key(api_key: Optional[str]) -> Optional[str]:
     if api_key_ is None or not api_key_.strip():
         return None
     return api_key_.strip().strip('"').strip("'")
-
-
-def parse_run_projects(env_val: Optional[str]) -> tuple[str, ...]:
-    """Parse the run projects from the environment."""
-    if not env_val:
-        return ()
-    return tuple(p.strip() for p in env_val.split(",") if p.strip())
 
 
 def _is_localhost(url: str) -> bool:
