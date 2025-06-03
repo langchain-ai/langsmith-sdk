@@ -2644,25 +2644,28 @@ def test__convert_stored_attachments_to_attachments_dict(mock_get: mock.Mock):
         "attachment_urls": {
             "attachment.test_file": {
                 "presigned_url": "https://foobar.com/bucket/file.txt?signature=xyz",
-                "mime_type": "text/plain"
+                "mime_type": "text/plain",
             }
         }
     }
-    
+
     result = _convert_stored_attachments_to_attachments_dict(
-        data_with_complete_url, 
-        attachments_key="attachment_urls",
-        api_url=None
+        data_with_complete_url, attachments_key="attachment_urls", api_url=None
     )
-    
+
     assert "test_file" in result
-    assert result["test_file"]["presigned_url"] == "https://foobar.com/bucket/file.txt?signature=xyz"
+    assert (
+        result["test_file"]["presigned_url"]
+        == "https://foobar.com/bucket/file.txt?signature=xyz"
+    )
     assert result["test_file"]["mime_type"] == "text/plain"
     assert result["test_file"]["reader"].read() == b"test attachment data"
-    
+
     # Verify requests.get was called with the complete URL as-is
-    mock_get.assert_called_with("https://foobar.com/bucket/file.txt?signature=xyz", stream=True)
-    
+    mock_get.assert_called_with(
+        "https://foobar.com/bucket/file.txt?signature=xyz", stream=True
+    )
+
     # Reset mock for next test case
     mock_get.reset_mock()
     mock_response.content = b"test attachment data 2"
@@ -2672,25 +2675,29 @@ def test__convert_stored_attachments_to_attachments_dict(mock_get: mock.Mock):
         "attachment_urls": {
             "attachment.test_file2": {
                 "presigned_url": "/api/public/download?jwt=abc123",
-                "mime_type": "image/png"
+                "mime_type": "image/png",
             }
         }
     }
-    
+
     result = _convert_stored_attachments_to_attachments_dict(
         data_with_relative_url,
-        attachments_key="attachment_urls", 
-        api_url="https://api.langsmith.com"
+        attachments_key="attachment_urls",
+        api_url="https://api.langsmith.com",
     )
-    
+
     assert "test_file2" in result
-    assert result["test_file2"]["presigned_url"] == "/api/public/download?jwt=abc123"  # Original preserved
+    assert (
+        result["test_file2"]["presigned_url"] == "/api/public/download?jwt=abc123"
+    )  # Original preserved
     assert result["test_file2"]["mime_type"] == "image/png"
     assert result["test_file2"]["reader"].read() == b"test attachment data 2"
-    
+
     # Verify requests.get was called with the constructed full URL
-    mock_get.assert_called_with("https://api.langsmith.com/api/public/download?jwt=abc123", stream=True)
-    
+    mock_get.assert_called_with(
+        "https://api.langsmith.com/api/public/download?jwt=abc123", stream=True
+    )
+
     # Reset mock for edge case test
     mock_get.reset_mock()
 
@@ -2699,27 +2706,29 @@ def test__convert_stored_attachments_to_attachments_dict(mock_get: mock.Mock):
         "attachment_urls": {
             "attachment.test_file3": {
                 "presigned_url": "https://example.foobar.com/file.jpg?token=456",
-                "mime_type": "image/jpeg"
+                "mime_type": "image/jpeg",
             }
         }
     }
-    
+
     result = _convert_stored_attachments_to_attachments_dict(
         data_with_complete_url_edge_case,
         attachments_key="attachment_urls",
-        api_url="https://api.langsmith.com"
+        api_url="https://api.langsmith.com",
     )
-    
+
     assert "test_file3" in result
     # Verify requests.get was called with the complete URL unchanged
-    mock_get.assert_called_with("https://example.foobar.com/file.jpg?token=456", stream=True)
+    mock_get.assert_called_with(
+        "https://example.foobar.com/file.jpg?token=456", stream=True
+    )
 
     # Test case 4: No attachments key present
     data_no_attachments = {}
     result = _convert_stored_attachments_to_attachments_dict(
         data_no_attachments,
         attachments_key="attachment_urls",
-        api_url="https://api.langsmith.com"
+        api_url="https://api.langsmith.com",
     )
     assert result == {}
 
@@ -2728,7 +2737,7 @@ def test__convert_stored_attachments_to_attachments_dict(mock_get: mock.Mock):
     result = _convert_stored_attachments_to_attachments_dict(
         data_empty_attachments,
         attachments_key="attachment_urls",
-        api_url="https://api.langsmith.com"
+        api_url="https://api.langsmith.com",
     )
     assert result == {}
 
@@ -2737,23 +2746,25 @@ def test__convert_stored_attachments_to_attachments_dict(mock_get: mock.Mock):
         "attachment_urls": {
             "attachment.valid_file": {
                 "presigned_url": "/download/valid",
-                "mime_type": "text/plain"
+                "mime_type": "text/plain",
             },
             "invalid_file": {
-                "presigned_url": "/download/invalid", 
-                "mime_type": "text/plain"
-            }
+                "presigned_url": "/download/invalid",
+                "mime_type": "text/plain",
+            },
         }
     }
-    
+
     mock_get.reset_mock()
     result = _convert_stored_attachments_to_attachments_dict(
         data_mixed_keys,
         attachments_key="attachment_urls",
-        api_url="https://api.langsmith.com"
+        api_url="https://api.langsmith.com",
     )
-    
+
     assert "valid_file" in result
     assert "invalid_file" not in result
     # Only valid attachment should trigger a request
-    mock_get.assert_called_once_with("https://api.langsmith.com/download/valid", stream=True)
+    mock_get.assert_called_once_with(
+        "https://api.langsmith.com/download/valid", stream=True
+    )
