@@ -11,7 +11,12 @@ import pytest  # type: ignore
 
 from langsmith import utils as ls_utils
 from langsmith.client import Client
-from langsmith.run_helpers import get_current_run_tree, trace, traceable, tracing_context
+from langsmith.run_helpers import (
+    get_current_run_tree,
+    trace,
+    traceable,
+    tracing_context,
+)
 from langsmith.run_trees import RunTree
 from langsmith.schemas import Attachment
 
