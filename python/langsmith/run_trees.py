@@ -382,6 +382,7 @@ class RunTree(ls_schemas.RunBase):
             extra=extra or {},
             parent_run=self,
             project_name=self.session_name,
+            fanout_project_names=self.fanout_project_names,
             ls_client=self.ls_client,
             tags=tags,
             attachments=attachments or {},  # type: ignore
