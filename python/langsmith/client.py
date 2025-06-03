@@ -4757,7 +4757,7 @@ class Client:
 
         example = response.json()
         attachments = _convert_stored_attachments_to_attachments_dict(
-            example, attachments_key="attachment_urls", api_url=self._api_url
+            example, attachments_key="attachment_urls", api_url=self.api_url
         )
 
         return ls_schemas.Example(
@@ -4884,7 +4884,7 @@ class Client:
             self._get_paginated_list("/examples", params=params)
         ):
             attachments = _convert_stored_attachments_to_attachments_dict(
-                example, attachments_key="attachment_urls", api_url=self._api_url
+                example, attachments_key="attachment_urls", api_url=self.api_url
             )
 
             yield ls_schemas.Example(
