@@ -8,7 +8,7 @@ import sys
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from typing import Any, Optional, Union, cast
-from uuid import UUID, uuid4, uuid5, NAMESPACE_DNS
+from uuid import NAMESPACE_DNS, UUID, uuid4, uuid5
 
 try:
     from pydantic.v1 import Field, root_validator  # type: ignore[import]
@@ -404,7 +404,7 @@ class RunTree(ls_schemas.RunBase):
         return self_dict
 
     def _remap_for_project(self, project_name: str) -> dict:
-        """Return a deep copy of the run dict with ids/dotted_order rewritten for a given project."""
+        """Rewrites ids/dotted_order for a given project."""
         run_dict = self._get_dicts_safe()
         old_id = run_dict["id"]
         new_id = uuid5(NAMESPACE_DNS, f"{old_id}:{project_name}")
@@ -446,7 +446,6 @@ class RunTree(ls_schemas.RunBase):
 
     def post(self, exclude_child_runs: bool = True) -> None:
         """Post the run tree to the API asynchronously."""
-
         if self.fanout_project_names:
             for project in self.fanout_project_names:
                 # Avoid double posting for the current project
