@@ -833,12 +833,3 @@ def is_truish(val: Any) -> bool:
     if isinstance(val, str):
         return val.lower() == "true" or val == "1"
     return bool(val)
-
-
-def parse_dotted_order(dotted_order: str) -> list[tuple[datetime, UUID]]:
-    """Parse the dotted order string."""
-    parts = dotted_order.split(".")
-    return [
-        (datetime.strptime(part[:-36], "%Y%m%dT%H%M%S%fZ"), UUID(part[-36:]))
-        for part in parts
-    ]
