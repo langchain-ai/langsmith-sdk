@@ -264,12 +264,7 @@ class DynamicRunEvaluator(RunEvaluator):
                     f" 'key' and optional 'score'; got empty result: {result}"
                 )
             if (
-                sum(
-                    [
-                        1 if k in result else 0
-                        for k in ["comment", "justification", "reasoning", "reason"]
-                    ]
-                )
+                len(set(result) & {"comment", "justification", "reasoning", "reason"})
                 > 1
             ):
                 raise ValueError(
@@ -277,20 +272,19 @@ class DynamicRunEvaluator(RunEvaluator):
                     "'reason'"
                 )
             if "key" not in result and allow_no_key:
-                non_accepted_keys = list(
-                    filter(
-                        lambda k: k
-                        not in (
-                            "score",
-                            "value",
-                            "comment",
-                            "justification",
-                            "reasoning",
-                            "reason",
-                        ),
-                        result.keys(),
-                    )
-                )
+                non_accepted_keys = [
+                    k
+                    for k in result.keys()
+                    if k
+                    not in {
+                        "score",
+                        "value",
+                        "comment",
+                        "justification",
+                        "reasoning",
+                        "reason",
+                    }
+                ]
                 if len(non_accepted_keys) > 1:
                     raise ValueError(
                         "The only accepted keys are 'key', 'score', 'value', 'comment',"

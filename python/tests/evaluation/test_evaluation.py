@@ -550,7 +550,7 @@ Actual: {outputs["equation"]}
     assert (finish_time - start) <= 8.5
 
 
-def test_evaluate_with_new_accepted():
+def test_evaluate_with_different_return_formats():
     client = Client(api_key="REDACTED")
     _ = client.clone_public_dataset(
         "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/d"
