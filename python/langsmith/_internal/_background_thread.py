@@ -34,7 +34,7 @@ from langsmith._internal._operations import (
 
 if TYPE_CHECKING:
     from opentelemetry.context.context import Context  # type: ignore[import]
-
+    from opentelemetry import trace  # type: ignore[import]
     from langsmith.client import Client
 
 logger = logging.getLogger("langsmith.client")
@@ -296,8 +296,8 @@ def _hybrid_tracing_thread_handle_batch(
 
 def _is_using_internal_otlp_provider(client: Client) -> bool:
     """Check if client is using LangSmith's internal OTLP provider.
-    
-    Returns True if using LangSmith's internal provider, False if user 
+
+    Returns True if using LangSmith's internal provider, False if user
     provided their own.
     """
     if not hasattr(client, "otel_exporter") or client.otel_exporter is None:
@@ -305,14 +305,10 @@ def _is_using_internal_otlp_provider(client: Client) -> bool:
 
     try:
         # Use OpenTelemetry's standard API to get the global TracerProvider
-        from langsmith import utils as ls_utils
-        
         # Check if OTEL is available
         if not ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED")):
             return False
-            
-        from opentelemetry import trace
-        
+
         # Get the global TracerProvider and check its resource attributes
         tracer_provider = trace.get_tracer_provider()
         if hasattr(tracer_provider, "resource") and hasattr(
@@ -326,7 +322,7 @@ def _is_using_internal_otlp_provider(client: Client) -> bool:
                 f"langsmith.internal_provider={is_internal}"
             )
             return is_internal
-        
+
         return False
     except Exception as e:
         logger.debug(
