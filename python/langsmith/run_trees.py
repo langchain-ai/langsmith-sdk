@@ -6,6 +6,7 @@ import json
 import logging
 import sys
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Optional, Union, cast
 from uuid import UUID, uuid4
@@ -13,10 +14,7 @@ from uuid import UUID, uuid4
 try:
     from pydantic.v1 import Field, root_validator  # type: ignore[import]
 except ImportError:
-    from pydantic import (  # type: ignore[assignment, no-redef]
-        Field,
-        root_validator,
-    )
+    pass
 
 import threading
 import urllib.parse
@@ -73,99 +71,160 @@ def validate_extracted_usage_metadata(
     return data  # type: ignore
 
 
+@dataclass
 class RunTree(ls_schemas.RunBase):
     """Run Schema with back-references for posting runs."""
 
-    name: str
-    id: UUID = Field(default_factory=uuid4)
-    run_type: str = Field(default="chain")
-    start_time: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    name: str = "Unnamed"
+    id: UUID = field(default_factory=uuid4)
+    run_type: str = "chain"
+    start_time: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     # Note: no longer set.
-    parent_run: Optional[RunTree] = Field(default=None, exclude=True)
-    parent_dotted_order: Optional[str] = Field(default=None, exclude=True)
-    child_runs: list[RunTree] = Field(
-        default_factory=list,
-        exclude={"__all__": {"parent_run_id"}},
+    parent_run: Optional[RunTree] = field(default=None, init=False)
+    parent_dotted_order: Optional[str] = field(default=None, init=False)
+    child_runs: list[RunTree] = field(default_factory=list, init=False)
+    session_name: str = field(
+        default_factory=lambda: utils.get_tracer_project() or "default"
     )
-    session_name: str = Field(
-        default_factory=lambda: utils.get_tracer_project() or "default",
-        alias="project_name",
-    )
-    session_id: Optional[UUID] = Field(default=None, alias="project_id")
-    extra: dict = Field(default_factory=dict)
-    tags: Optional[list[str]] = Field(default_factory=list)
-    events: list[dict] = Field(default_factory=list)
+    session_id: Optional[UUID] = None
+    extra: dict = field(default_factory=dict)
+    tags: Optional[list[str]] = field(default_factory=list)
+    events: list[dict] = field(default_factory=list)
     """List of events associated with the run, like
     start and end events."""
-    ls_client: Optional[Any] = Field(default=None, exclude=True)
-    dotted_order: str = Field(
-        default="", description="The order of the run in the tree."
-    )
-    trace_id: UUID = Field(default="", description="The trace id of the run.")  # type: ignore
-    dangerously_allow_filesystem: Optional[bool] = Field(
-        default=False, description="Whether to allow filesystem access for attachments."
-    )
+    ls_client: Optional[Any] = field(default=None, init=False)
+    dotted_order: str = ""
+    trace_id: UUID = field(default_factory=uuid4)  # type: ignore
+    dangerously_allow_filesystem: Optional[bool] = False
 
-    class Config:
-        """Pydantic model configuration."""
+    def __init__(self, **kwargs):
+        """Initialize RunTree with backwards compatibility for 'client' parameter."""
+        # Handle backwards compatibility for 'client' parameter
+        if "client" in kwargs:
+            kwargs["ls_client"] = kwargs.pop("client")
+        if "_client" in kwargs:
+            kwargs["ls_client"] = kwargs.pop("_client")
+        if "project_name" in kwargs:
+            kwargs["session_name"] = kwargs.pop("project_name")
+        if "project_id" in kwargs:
+            kwargs["session_id"] = kwargs.pop("project_id")
 
-        arbitrary_types_allowed = True
-        allow_population_by_field_name = True
-        extra = "ignore"
+        # Extract parent_run if provided
+        parent_run = kwargs.pop("parent_run", None)
 
-    @root_validator(pre=True)
-    def infer_defaults(cls, values: dict) -> dict:
-        """Assign name to the run."""
-        if values.get("name") is None and values.get("serialized") is not None:
-            if "name" in values["serialized"]:
-                values["name"] = values["serialized"]["name"]
-            elif "id" in values["serialized"]:
-                values["name"] = values["serialized"]["id"][-1]
-        if values.get("name") is None:
-            values["name"] = "Unnamed"
-        if "client" in values:  # Handle user-constructed clients
-            values["ls_client"] = values.pop("client")
-        elif "_client" in values:
-            values["ls_client"] = values.pop("_client")
-        if not values.get("ls_client"):
-            values["ls_client"] = None
-        parent_run = values.pop("parent_run", None)
-        if parent_run is not None:
-            values["parent_run_id"] = parent_run.id
-            values["parent_dotted_order"] = parent_run.dotted_order
-        if "id" not in values:
-            values["id"] = uuid4()
-        if "trace_id" not in values:
-            if parent_run is not None:
-                values["trace_id"] = parent_run.trace_id
-            else:
-                values["trace_id"] = values["id"]
-        cast(dict, values.setdefault("extra", {}))
-        if values.get("events") is None:
-            values["events"] = []
-        if values.get("tags") is None:
-            values["tags"] = []
-        if values.get("outputs") is None:
-            values["outputs"] = {}
-        if values.get("attachments") is None:
-            values["attachments"] = {}
-        return values
+        # Set defaults for required fields if not provided
+        if "name" not in kwargs:
+            kwargs["name"] = "Unnamed"
+        if "id" not in kwargs:
+            kwargs["id"] = uuid4()
+        if "run_type" not in kwargs:
+            kwargs["run_type"] = "chain"
+        if "start_time" not in kwargs:
+            kwargs["start_time"] = datetime.now(timezone.utc)
+        if "extra" not in kwargs:
+            kwargs["extra"] = {}
+        if "tags" not in kwargs:
+            kwargs["tags"] = []
+        if "events" not in kwargs or kwargs["events"] is None:
+            kwargs["events"] = []
+        if "session_name" not in kwargs:
+            kwargs["session_name"] = utils.get_tracer_project() or "default"
+        if "trace_id" not in kwargs:
+            kwargs["trace_id"] = kwargs.get("id", uuid4())
+        if "dangerously_allow_filesystem" not in kwargs:
+            kwargs["dangerously_allow_filesystem"] = False
+        if "inputs" not in kwargs:
+            kwargs["inputs"] = {}
+        if "outputs" not in kwargs:
+            kwargs["outputs"] = {}
+        if "attachments" not in kwargs:
+            kwargs["attachments"] = {}
 
-    @root_validator(pre=False)
-    def ensure_dotted_order(cls, values: dict) -> dict:
-        """Ensure the dotted order of the run."""
-        current_dotted_order = values.get("dotted_order")
-        if current_dotted_order and current_dotted_order.strip():
-            return values
-        current_dotted_order = _create_current_dotted_order(
-            values["start_time"], values["id"]
+        # Handle name inference from serialized
+        if (
+            "serialized" in kwargs
+            and kwargs["serialized"] is not None
+            and kwargs["name"] == "Unnamed"
+        ):
+            serialized = kwargs["serialized"]
+            if "name" in serialized:
+                kwargs["name"] = serialized["name"]
+            elif "id" in serialized:
+                kwargs["name"] = serialized["id"][-1]
+
+        # Extract fields that are not part of the parent class
+        ls_client = kwargs.pop("ls_client", None)
+        session_name = kwargs.pop(
+            "session_name", utils.get_tracer_project() or "default"
         )
-        parent_dotted_order = values.get("parent_dotted_order")
-        if parent_dotted_order is not None:
-            values["dotted_order"] = parent_dotted_order + "." + current_dotted_order
+        session_id = kwargs.pop("session_id", None)
+
+        # Extract RunTree-specific fields for later assignment
+        trace_id = kwargs.pop("trace_id", kwargs.get("id", uuid4()))
+        dotted_order = kwargs.pop("dotted_order", "")
+        dangerously_allow_filesystem = kwargs.pop("dangerously_allow_filesystem", False)
+
+        # Remove any unknown kwargs that aren't part of RunBase
+        runbase_fields = {
+            "id",
+            "name",
+            "start_time",
+            "run_type",
+            "end_time",
+            "extra",
+            "error",
+            "serialized",
+            "events",
+            "inputs",
+            "outputs",
+            "reference_example_id",
+            "parent_run_id",
+            "tags",
+            "attachments",
+        }
+        filtered_kwargs = {k: v for k, v in kwargs.items() if k in runbase_fields}
+
+        # Call parent constructors with only RunBase fields
+        super().__init__(**filtered_kwargs)
+
+        # Set RunTree-specific fields
+        self.session_name = session_name
+        self.session_id = session_id
+        self.trace_id = trace_id
+        self.dotted_order = dotted_order
+        self.dangerously_allow_filesystem = dangerously_allow_filesystem
+
+        # Initialize fields not in the dataclass
+        self.parent_run = None
+        self.parent_dotted_order = None
+        self.child_runs = []
+        self.ls_client = ls_client
+
+        # Set parent run if provided
+        if parent_run is not None:
+            self.set_parent_run(parent_run)
+
+        # Handle dotted order
+        self._ensure_dotted_order()
+
+    def _ensure_dotted_order(self) -> None:
+        """Ensure the dotted order of the run."""
+        if self.dotted_order and self.dotted_order.strip():
+            return
+        current_dotted_order = _create_current_dotted_order(self.start_time, self.id)
+        if self.parent_dotted_order is not None:
+            self.dotted_order = self.parent_dotted_order + "." + current_dotted_order
         else:
-            values["dotted_order"] = current_dotted_order
-        return values
+            self.dotted_order = current_dotted_order
+
+    def set_parent_run(self, parent_run: Optional[RunTree]) -> None:
+        """Set the parent run and update related fields."""
+        self.parent_run = parent_run
+        if parent_run is not None:
+            self.parent_run_id = parent_run.id
+            self.parent_dotted_order = parent_run.dotted_order
+            self.trace_id = parent_run.trace_id
+            self._ensure_dotted_order()
 
     @property
     def client(self) -> Client:
@@ -368,28 +427,29 @@ class RunTree(ls_schemas.RunBase):
         run = RunTree(
             name=name,
             id=_ensure_uuid(run_id),
+            run_type=run_type,
+            start_time=start_time or datetime.now(timezone.utc),
+            end_time=end_time,
+            extra=extra or {},
+            session_name=self.session_name,
+            dangerously_allow_filesystem=self.dangerously_allow_filesystem,
             serialized=serialized_,
             inputs=inputs or {},
             outputs=outputs or {},
             error=error,
-            run_type=run_type,
             reference_example_id=reference_example_id,
-            start_time=start_time or datetime.now(timezone.utc),
-            end_time=end_time,
-            extra=extra or {},
-            parent_run=self,
-            project_name=self.session_name,
-            ls_client=self.ls_client,
             tags=tags,
             attachments=attachments or {},  # type: ignore
-            dangerously_allow_filesystem=self.dangerously_allow_filesystem,
         )
+        # Set the parent after initialization
+        run.set_parent_run(self)
+        run.ls_client = self.ls_client
         self.child_runs.append(run)
         return run
 
     def _get_dicts_safe(self):
         # Things like generators cannot be copied
-        self_dict = self.dict(
+        self_dict = self.model_dump(
             exclude={"child_runs", "inputs", "outputs"}, exclude_none=True
         )
         if self.inputs is not None:
@@ -619,6 +679,22 @@ class RunTree(ls_schemas.RunBase):
         )
         headers["baggage"] = baggage.to_header()
         return headers
+
+    def dict(self, **kwargs):
+        """Backwards compatibility method for Pydantic's dict() method."""
+        # Always exclude certain fields by default
+        exclude = kwargs.get("exclude", set()) or set()
+        if isinstance(exclude, (list, tuple)):
+            exclude = set(exclude)
+        exclude.update({"parent_run", "ls_client"})
+        kwargs["exclude"] = exclude
+        return self.model_dump(**kwargs)
+
+    def json(self, **kwargs):
+        """Backwards compatibility method for Pydantic's json() method."""
+        import json
+
+        return json.dumps(self.dict(**kwargs), default=str)
 
     def __repr__(self):
         """Return a string representation of the RunTree object."""

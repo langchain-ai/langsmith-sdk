@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from enum import Enum
@@ -329,7 +330,8 @@ def _default_extra():
     return {"metadata": {}}
 
 
-class RunBase(BaseModel):
+@dataclass
+class RunBase:
     """Base Run schema.
 
     A Run is a span representing a single unit of work or operation within your LLM app.
@@ -354,7 +356,7 @@ class RunBase(BaseModel):
     end_time: Optional[datetime] = None
     """End time of the run, if applicable."""
 
-    extra: Optional[dict] = Field(default_factory=_default_extra)
+    extra: Optional[dict] = field(default_factory=_default_extra)
     """Additional metadata or settings related to the run."""
 
     error: Optional[str] = None
@@ -367,7 +369,7 @@ class RunBase(BaseModel):
     """List of events associated with the run, like
     start and end events."""
 
-    inputs: dict = Field(default_factory=dict)
+    inputs: dict = field(default_factory=dict)
     """Inputs used for the run."""
 
     outputs: Optional[dict] = None
@@ -382,7 +384,7 @@ class RunBase(BaseModel):
     tags: Optional[list[str]] = None
     """Tags for categorizing or annotating the run."""
 
-    attachments: Union[Attachments, dict[str, AttachmentInfo]] = Field(
+    attachments: Union[Attachments, dict[str, AttachmentInfo]] = field(
         default_factory=dict
     )
     """Attachments associated with the run.
@@ -400,16 +402,96 @@ class RunBase(BaseModel):
         """Retrieve the revision ID (if any)."""
         return self.metadata.get("revision_id")
 
+    def dict(self, **kwargs):
+        """Backwards compatibility method for Pydantic's dict() method."""
+        return self.model_dump(**kwargs)
+
     def __repr__(self):
         """Return a string representation of the RunBase object."""
         return f"{self.__class__}(id={self.id}, name='{self.name}', run_type='{self.run_type}')"
 
-    class Config:
-        """Configuration class for the schema."""
+    def model_dump(
+        self,
+        include: Optional[set[str]] = None,
+        exclude: Optional[set[str]] = None,
+        by_alias: bool = False,
+        exclude_unset: bool = False,
+        exclude_defaults: bool = False,
+        exclude_none: bool = False,
+        round_trip: bool = False,
+        warnings: bool = True,
+    ) -> dict[str, Any]:
+        """Convert the instance to a dictionary, similar to Pydantic's model_dump."""
+        result = {}
+        for field_name in self.__dataclass_fields__:
+            if include and field_name not in include:
+                continue
+            if exclude and field_name in exclude:
+                continue
 
-        arbitrary_types_allowed = True
+            value = getattr(self, field_name)
+
+            if exclude_none and value is None:
+                continue
+            if (
+                exclude_defaults
+                and value == self.__dataclass_fields__[field_name].default
+            ):
+                continue
+            if exclude_unset and not hasattr(self, field_name):
+                continue
+
+            # Handle nested objects that might have model_dump
+            if hasattr(value, "model_dump"):
+                value = value.model_dump(
+                    include=include,
+                    exclude=exclude,
+                    by_alias=by_alias,
+                    exclude_unset=exclude_unset,
+                    exclude_defaults=exclude_defaults,
+                    exclude_none=exclude_none,
+                    round_trip=round_trip,
+                    warnings=warnings,
+                )
+            elif isinstance(value, list) and value and hasattr(value[0], "model_dump"):
+                value = [
+                    item.model_dump(
+                        include=include,
+                        exclude=exclude,
+                        by_alias=by_alias,
+                        exclude_unset=exclude_unset,
+                        exclude_defaults=exclude_defaults,
+                        exclude_none=exclude_none,
+                        round_trip=round_trip,
+                        warnings=warnings,
+                    )
+                    if hasattr(item, "model_dump")
+                    else item
+                    for item in value
+                ]
+            elif isinstance(value, dict):
+                value = {
+                    k: v.model_dump(
+                        include=include,
+                        exclude=exclude,
+                        by_alias=by_alias,
+                        exclude_unset=exclude_unset,
+                        exclude_defaults=exclude_defaults,
+                        exclude_none=exclude_none,
+                        round_trip=round_trip,
+                        warnings=warnings,
+                    )
+                    if hasattr(v, "model_dump")
+                    else v
+                    for k, v in value.items()
+                }
+
+            result[field_name] = value
+
+        return result
 
 
+@dataclass
 class Run(RunBase):
     """Run schema when loading from the DB."""
 
@@ -464,9 +546,9 @@ class Run(RunBase):
     """
     parent_run_ids: Optional[list[UUID]] = None
     """List of parent run IDs."""
-    trace_id: UUID
+    trace_id: UUID = None  # type: ignore
     """Unique ID assigned to every run within this nested trace."""
-    dotted_order: str = Field(default="")
+    dotted_order: str = ""
     """Dotted order for the run.
 
     This is a string composed of {time}{run-uuid}.* so that a trace can be
@@ -480,17 +562,25 @@ class Run(RunBase):
     """  # noqa: E501
     in_dataset: Optional[bool] = None
     """Whether this run is in a dataset."""
-    _host_url: Optional[str] = PrivateAttr(default=None)
+    _host_url: Optional[str] = field(default=None, init=False)
 
-    def __init__(self, _host_url: Optional[str] = None, **kwargs: Any) -> None:
-        """Initialize a Run object."""
-        if not kwargs.get("trace_id"):
-            kwargs = {"trace_id": kwargs.get("id"), **kwargs}
-        inputs = kwargs.pop("inputs", None) or {}
-        super().__init__(**kwargs, inputs=inputs)
-        self._host_url = _host_url
+    def __post_init__(self) -> None:
+        """Post-initialization setup for the Run object."""
+        # Handle the case where trace_id might not be set
+        if self.trace_id is None:
+            self.trace_id = self.id
+
+        # Handle inputs
+        if not hasattr(self, "inputs") or self.inputs is None:
+            self.inputs = {}
+
+        # Handle dotted order initialization
         if not self.dotted_order.strip() and not self.parent_run_id:
             self.dotted_order = f"{self.start_time.isoformat()}{self.id}"
+
+    def set_host_url(self, host_url: Optional[str]) -> None:
+        """Set the host URL for this run."""
+        self._host_url = host_url
 
     @property
     def url(self) -> Optional[str]:
@@ -581,6 +671,7 @@ class RunLikeDict(TypedDict, total=False):
     attachments: Attachments
 
 
+@dataclass
 class RunWithAnnotationQueueInfo(RunBase):
     """Run schema with annotation queue info."""
 
@@ -885,7 +976,7 @@ class LangSmithInfo(BaseModel):
     instance_flags: Optional[dict[str, Any]] = None
 
 
-Example.update_forward_refs()
+# Example.update_forward_refs()  # Commented out due to recursion with dataclass conversion
 
 
 class LangSmithSettings(BaseModel):
