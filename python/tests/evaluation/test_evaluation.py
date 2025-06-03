@@ -548,3 +548,58 @@ Actual: {outputs["equation"]}
 
     finish_time = time.time()
     assert (finish_time - start) <= 8.5
+
+
+def test_evaluate_with_new_accepted():
+    client = Client(api_key="REDACTED")
+    _ = client.clone_public_dataset(
+        "https://smith.langchain.com/public/419dcab2-1d66-4b94-8901-0357ead390df/d"
+    )
+    dataset_name = "Evaluate Examples"
+
+    def eval_1(inputs: dict) -> dict:
+        return {"score": 0.5}
+
+    def eval_2(inputs: dict) -> dict:
+        return {"foo": 1}
+
+    def eval_3(inputs: dict) -> dict:
+        return {"bar": "foo"}
+
+    def eval_4(inputs: dict) -> dict:
+        return {"baz": "bar", "reason": "a good reason"}
+
+    def eval_5(inputs: dict) -> dict:
+        return {"qux": "baz", "reasoning": "a great reason"}
+
+    def eval_6(inputs: dict) -> dict:
+        return {"abc": 1, "justification": "an ok reason"}
+
+    def eval_7(inputs: dict) -> dict:
+        return {"cba": False, "comment": "a bad reason"}
+
+    results = client.evaluate(
+        lambda x: x,
+        data=dataset_name,
+        evaluators=[eval_1, eval_2, eval_3, eval_4, eval_5, eval_6, eval_7],
+    )
+
+    for r in results:
+        assert r["evaluation_results"]["results"][0].key == "eval_1"
+        assert r["evaluation_results"]["results"][0].score == 0.5
+        assert r["evaluation_results"]["results"][1].key == "foo"
+        assert r["evaluation_results"]["results"][1].score == 1
+        assert r["evaluation_results"]["results"][2].key == "bar"
+        assert r["evaluation_results"]["results"][2].value == "foo"
+        assert r["evaluation_results"]["results"][3].key == "baz"
+        assert r["evaluation_results"]["results"][3].value == "bar"
+        assert r["evaluation_results"]["results"][3].comment == "a good reason"
+        assert r["evaluation_results"]["results"][4].key == "qux"
+        assert r["evaluation_results"]["results"][4].value == "baz"
+        assert r["evaluation_results"]["results"][4].comment == "a great reason"
+        assert r["evaluation_results"]["results"][5].key == "abc"
+        assert r["evaluation_results"]["results"][5].score == 1
+        assert r["evaluation_results"]["results"][5].comment == "an ok reason"
+        assert r["evaluation_results"]["results"][6].key == "cba"
+        assert r["evaluation_results"]["results"][6].score == 0
+        assert r["evaluation_results"]["results"][6].comment == "a bad reason"

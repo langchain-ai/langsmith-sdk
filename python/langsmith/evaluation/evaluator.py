@@ -263,13 +263,69 @@ class DynamicRunEvaluator(RunEvaluator):
                     "Expected an EvaluationResult object, or dict with a metric"
                     f" 'key' and optional 'score'; got empty result: {result}"
                 )
+            if (
+                sum(
+                    [
+                        1 if k in result else 0
+                        for k in ["comment", "justification", "reasoning", "reason"]
+                    ]
+                )
+                > 1
+            ):
+                raise ValueError(
+                    "Can only upload one of 'comment', 'justification', 'reasoning', "
+                    "'reason'"
+                )
             if "key" not in result and allow_no_key:
-                result["key"] = self._name
-            if all(k not in result for k in ("score", "value", "comment")):
+                non_accepted_keys = list(
+                    filter(
+                        lambda k: k
+                        not in (
+                            "score",
+                            "value",
+                            "comment",
+                            "justification",
+                            "reasoning",
+                            "reason",
+                        ),
+                        result.keys(),
+                    )
+                )
+                if len(non_accepted_keys) > 1:
+                    raise ValueError(
+                        "The only accepted keys are 'key', 'score', 'value', 'comment',"
+                        " 'justification', 'reasoning', 'reason', and optionally the "
+                        f"name of your feedback key. Received: {result.keys()}"
+                    )
+                if len(non_accepted_keys) == 1:
+                    non_accepted_key = non_accepted_keys[0]
+                    result["key"] = non_accepted_key
+                    if isinstance(result[non_accepted_key], (bool, int, float)):
+                        result["score"] = result[non_accepted_key]
+                    else:
+                        result["value"] = result[non_accepted_key]
+                    del result[non_accepted_key]
+                else:
+                    result["key"] = self._name
+            if all(
+                k not in result
+                for k in (
+                    "score",
+                    "value",
+                    "comment",
+                    "justification",
+                    "reasoning",
+                    "reason",
+                )
+            ):
                 raise ValueError(
                     "Expected an EvaluationResult object, or dict with a metric"
                     f" 'key' and optional 'score' or categorical 'value'; got {result}"
                 )
+            for k in ["justification", "reasoning", "reason"]:
+                if k in result:
+                    result["comment"] = result[k]
+                    del result[k]
             return EvaluationResult(**{"source_run_id": source_run_id, **result})
         except ValidationError as e:
             raise ValueError(
