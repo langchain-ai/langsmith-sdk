@@ -4757,7 +4757,7 @@ class Client:
 
         example = response.json()
         attachments = _convert_stored_attachments_to_attachments_dict(
-            example, attachments_key="attachment_urls"
+            example, attachments_key="attachment_urls", api_url=self.api_url
         )
 
         return ls_schemas.Example(
@@ -4884,7 +4884,7 @@ class Client:
             self._get_paginated_list("/examples", params=params)
         ):
             attachments = _convert_stored_attachments_to_attachments_dict(
-                example, attachments_key="attachment_urls"
+                example, attachments_key="attachment_urls", api_url=self.api_url
             )
 
             yield ls_schemas.Example(
@@ -7944,7 +7944,7 @@ def convert_prompt_to_anthropic_format(
 
 
 def _convert_stored_attachments_to_attachments_dict(
-    data: dict, *, attachments_key: str
+    data: dict, *, attachments_key: str, api_url: Optional[str] = None
 ) -> dict[str, AttachmentInfo]:
     """Convert attachments from the backend database format to the user facing format."""
     attachments_dict = {}
@@ -7952,7 +7952,11 @@ def _convert_stored_attachments_to_attachments_dict(
         for key, value in data[attachments_key].items():
             if not key.startswith("attachment."):
                 continue
-            response = requests.get(value["presigned_url"], stream=True)
+            if api_url is not None:
+                full_url = _construct_url(api_url, value["presigned_url"])
+            else:
+                full_url = value["presigned_url"]
+            response = requests.get(full_url, stream=True)
             response.raise_for_status()
             reader = io.BytesIO(response.content)
             attachments_dict[key.removeprefix("attachment.")] = AttachmentInfo(
