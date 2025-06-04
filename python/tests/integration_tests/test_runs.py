@@ -793,3 +793,60 @@ async def test_usage_metadata_async(langchain_client: Client):
     with pytest.raises(ValueError, match="Unexpected keys in usage metadata:"):
         async for _ in my_func4("foo"):
             pass
+
+
+async def test_langchain_trace_to_multiple_projects(langchain_client: Client):
+    """Test tracing LangChain components to multiple projects."""
+    try:
+        from langchain.schema.runnable import RunnableLambda
+    except ImportError:
+        pytest.skip("Skipping test that requires langchain")
+
+    project_names = [
+        "__My Tracer Project - test_langchain_trace_to_multiple_projects_1",
+        "__My Tracer Project - test_langchain_trace_to_multiple_projects_2",
+    ]
+    run_meta = uuid.uuid4().hex
+    reference_example_id = uuid.uuid4()
+
+    def echo_input(x: str) -> str:
+        return f"Echo: {x}"
+
+    runnable = RunnableLambda(echo_input)
+
+    with tracing_context(
+        replicas=[
+            (project_names[0], {"reference_example_id": reference_example_id}),
+            (project_names[1], None),
+        ],
+        metadata={"test_run": run_meta},
+    ):
+        result = runnable.invoke("hello")
+
+    assert result == "Echo: hello"
+
+    filter_ = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{run_meta}"))'
+
+    runs1 = poll_runs_until_count(
+        langchain_client, project_names[0], 1, filter_=filter_
+    )
+    assert len(runs1) == 1
+    run1 = runs1[0]
+    assert run1.name == "echo_input"
+    assert run1.reference_example_id == reference_example_id
+    assert run1.inputs == {"x": "hello"}
+    assert run1.outputs == {"output": "Echo: hello"}
+
+    runs2 = poll_runs_until_count(
+        langchain_client, project_names[1], 1, filter_=filter_
+    )
+    assert len(runs2) == 1
+    run2 = runs2[0]
+    assert run2.name == "echo_input"
+    assert run2.reference_example_id is None
+    assert run2.inputs == {"x": "hello"}
+    assert run2.outputs == {"output": "Echo: hello"}
+
+    # Verify IDs are different between projects
+    assert run1.id != run2.id
+    assert run1.trace_id != run2.trace_id
