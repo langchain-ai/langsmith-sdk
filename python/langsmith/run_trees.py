@@ -521,7 +521,6 @@ class RunTree(ls_schemas.RunBase):
                     run_dict = self._get_dicts_safe()
                 else:
                     run_dict = self._remap_for_project(project_name, updates)
-                run_dict["attachments"] = attachments
                 self.client.update_run(
                     name=run_dict["name"],
                     run_id=run_dict["id"],
