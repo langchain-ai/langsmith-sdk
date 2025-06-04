@@ -39,12 +39,13 @@ NOT_PROVIDED = cast(None, object())
 _CLIENT: Optional[Client] = None
 _LOCK = threading.Lock()  # Keeping around for a while for backwards compat
 
-# Note, this is called directly by langchain. Do not remove.
-
 # Context variables
 _REPLICAS = contextvars.ContextVar[Optional[Sequence[tuple[str, Optional[dict]]]]](
     "_REPLICAS", default=None
 )
+
+
+# Note, this is called directly by langchain. Do not remove.
 
 
 def get_cached_client(**init_kwargs: Any) -> Client:
