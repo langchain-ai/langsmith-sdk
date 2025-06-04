@@ -109,8 +109,8 @@ class RunTree(ls_schemas.RunBase):
         default=False, description="Whether to allow filesystem access for attachments."
     )
     replicas: Optional[Sequence[tuple[str, Optional[dict]]]] = Field(
+        default=None,
         description="Projects to replicate this run to with optional updates.",
-        default_factory=lambda: _REPLICAS.get(),
     )
 
     class Config:
