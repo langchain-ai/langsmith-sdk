@@ -481,7 +481,7 @@ class RunTree(ls_schemas.RunBase):
             for child_run in self.child_runs:
                 child_run.post(exclude_child_runs=False)
 
-    def patch(self) -> None:
+    def patch(self, *, exclude_inputs: bool = False) -> None:
         """Patch the run tree to the API in a background thread."""
         if not self.end_time:
             self.end()
@@ -518,7 +518,7 @@ class RunTree(ls_schemas.RunBase):
                 self.client.update_run(
                     name=run_dict["name"],
                     run_id=run_dict["id"],
-                    inputs=run_dict["inputs"],
+                    inputs=None if exclude_inputs else run_dict["inputs"],
                     outputs=run_dict["outputs"],
                     error=run_dict.get("error"),
                     parent_run_id=run_dict.get("parent_run_id"),
@@ -536,7 +536,7 @@ class RunTree(ls_schemas.RunBase):
             self.client.update_run(
                 name=self.name,
                 run_id=self.id,
-                inputs=self.inputs.copy() if self.inputs else None,
+                inputs=None if exclude_inputs else self.inputs.copy(),
                 outputs=self.outputs.copy() if self.outputs else None,
                 error=self.error,
                 parent_run_id=self.parent_run_id,
