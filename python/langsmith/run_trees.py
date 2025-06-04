@@ -484,7 +484,7 @@ class RunTree(ls_schemas.RunBase):
             for child_run in self.child_runs:
                 child_run.post(exclude_child_runs=False)
 
-    def patch(self, exclude_inputs: bool = False) -> None:
+    def patch(self, *, exclude_inputs: bool = False) -> None:
         """Patch the run tree to the API in a background thread.
 
         Args:
