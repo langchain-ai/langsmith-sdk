@@ -973,6 +973,7 @@ class trace:
                 run_type=self.run_type,
                 extra=extra_outer,
                 project_name=project_name_ or "default",
+                replicas=run_trees._REPLICAS.get(),
                 inputs=self.inputs or {},
                 tags=tags_,
                 client=client_,  # type: ignore
@@ -1466,6 +1467,7 @@ def _setup_run(
                 reference_example_id, accept_null=True
             ),
             project_name=selected_project,  # type: ignore[arg-type]
+            replicas=run_trees._REPLICAS.get(),
             extra=extra_inner,
             tags=tags_,
             client=client_,  # type: ignore
