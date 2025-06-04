@@ -540,9 +540,11 @@ class RunTree(ls_schemas.RunBase):
             self.client.update_run(
                 name=self.name,
                 run_id=self.id,
-                inputs=None
-                if exclude_inputs
-                else (self.inputs.copy() if self.inputs else None),
+                inputs=(
+                    None
+                    if exclude_inputs
+                    else (self.inputs.copy() if self.inputs else None)
+                ),
                 outputs=self.outputs.copy() if self.outputs else None,
                 error=self.error,
                 parent_run_id=self.parent_run_id,

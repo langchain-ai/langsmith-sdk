@@ -795,6 +795,8 @@ async def test_usage_metadata_async(langchain_client: Client):
             pass
 
 
+# TODO: Don't skip this test after langchain-ai/langchain#31493 is merged
+@pytest.mark.skip(reason="Skipping test that requires langchain to be updated")
 async def test_langchain_trace_to_multiple_projects(langchain_client: Client):
     """Test tracing LangChain components to multiple projects."""
     try:
