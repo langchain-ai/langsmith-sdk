@@ -18,6 +18,7 @@ except ImportError:
         root_validator,
     )
 
+import contextvars
 import threading
 import urllib.parse
 
@@ -38,8 +39,10 @@ NOT_PROVIDED = cast(None, object())
 _CLIENT: Optional[Client] = None
 _LOCK = threading.Lock()  # Keeping around for a while for backwards compat
 
-
-# Note, this is called directly by langchain. Do not remove.
+# Context variables
+_REPLICAS = contextvars.ContextVar[Optional[Sequence[tuple[str, Optional[dict]]]]](
+    "_REPLICAS", default=None
+)
 
 
 def get_cached_client(**init_kwargs: Any) -> Client:
@@ -105,8 +108,9 @@ class RunTree(ls_schemas.RunBase):
     dangerously_allow_filesystem: Optional[bool] = Field(
         default=False, description="Whether to allow filesystem access for attachments."
     )
-    fanout_project_names: Optional[tuple[str, ...]] = Field(
-        default=None, description="Projects to fan out this run to."
+    replicas: Optional[Sequence[tuple[str, Optional[dict]]]] = Field(
+        default=None,
+        description="Projects to replicate this run to with optional updates.",
     )
 
     class Config:
@@ -152,6 +156,9 @@ class RunTree(ls_schemas.RunBase):
             values["outputs"] = {}
         if values.get("attachments") is None:
             values["attachments"] = {}
+        # Get replicas from context if not provided
+        if values.get("replicas") is None:
+            values["replicas"] = _REPLICAS.get()
         return values
 
     @root_validator(pre=False)
@@ -382,7 +389,7 @@ class RunTree(ls_schemas.RunBase):
             extra=extra or {},
             parent_run=self,
             project_name=self.session_name,
-            fanout_project_names=self.fanout_project_names,
+            replicas=self.replicas,
             ls_client=self.ls_client,
             tags=tags,
             attachments=attachments or {},  # type: ignore
@@ -404,8 +411,10 @@ class RunTree(ls_schemas.RunBase):
             self_dict["outputs"] = self.outputs.copy()
         return self_dict
 
-    def _remap_for_project(self, project_name: str) -> dict:
-        """Rewrites ids/dotted_order for a given project."""
+    def _remap_for_project(
+        self, project_name: str, updates: Optional[dict] = None
+    ) -> dict:
+        """Rewrites ids/dotted_order for a given project with optional updates."""
         run_dict = self._get_dicts_safe()
         old_id = run_dict["id"]
         new_id = uuid5(NAMESPACE_DNS, f"{old_id}:{project_name}")
@@ -443,17 +452,19 @@ class RunTree(ls_schemas.RunBase):
                 "session_name": project_name,
             }
         )
+        if updates:
+            dup.update(updates)
         return dup
 
     def post(self, exclude_child_runs: bool = True) -> None:
         """Post the run tree to the API asynchronously."""
-        if self.fanout_project_names:
-            for project in self.fanout_project_names:
+        if self.replicas:
+            for project_name, updates in self.replicas:
                 # Avoid double posting for the current project
-                if project == self.session_name:
+                if project_name == self.session_name:
                     run_dict = self._get_dicts_safe()
                 else:
-                    run_dict = self._remap_for_project(project)
+                    run_dict = self._remap_for_project(project_name, updates)
                 self.client.create_run(**run_dict)
         else:
             kwargs = self._get_dicts_safe()
@@ -498,12 +509,12 @@ class RunTree(ls_schemas.RunBase):
         except Exception as e:
             logger.warning(f"Error filtering attachments to upload: {e}")
         # Fanout logic for patch
-        if self.fanout_project_names:
-            for project in self.fanout_project_names:
-                if project == self.session_name:
+        if self.replicas:
+            for project_name, updates in self.replicas:
+                if project_name == self.session_name:
                     run_dict = self._get_dicts_safe()
                 else:
-                    run_dict = self._remap_for_project(project)
+                    run_dict = self._remap_for_project(project_name, updates)
                 run_dict["attachments"] = attachments
                 self.client.update_run(
                     name=run_dict["name"],
