@@ -542,12 +542,13 @@ def test_trace_file_path(langchain_client: Client) -> None:
 
 
 async def test_trace_to_multiple_projects(langchain_client: Client):
-    """Test tracing runs to multiple projects."""
+    """Test tracing to multiple projects."""
     project_names = [
-        "__My Tracer Project - test_trace_to_multiple_projects1",
-        "__My Tracer Project - test_trace_to_multiple_projects2",
+        "__My Tracer Project - test_trace_to_multiple_projects_1",
+        "__My Tracer Project - test_trace_to_multiple_projects_2",
     ]
     run_meta = uuid.uuid4().hex
+    reference_example_id = uuid.uuid4()
 
     @traceable(run_type="chain")
     async def my_chain(text: str):
@@ -559,7 +560,11 @@ async def test_trace_to_multiple_projects(langchain_client: Client):
         return f"LLM response: {text}"
 
     with tracing_context(
-        project_names=tuple(project_names), metadata={"test_run": run_meta}
+        replicas=[
+            (project_names[0], {"reference_example_id": reference_example_id}),
+            (project_names[1], None),
+        ],
+        metadata={"test_run": run_meta},
     ):
         result = await my_chain("test_input")
 
@@ -577,6 +582,7 @@ async def test_trace_to_multiple_projects(langchain_client: Client):
     assert runs1_dict["my_llm"].parent_run_id == runs1_dict["my_chain"].id
     assert runs1_dict["my_llm"].run_type == "llm"
     assert runs1_dict["my_llm"].inputs == {"text": "test_input"}
+    assert runs1_dict["my_chain"].reference_example_id == reference_example_id
 
     runs2 = poll_runs_until_count(
         langchain_client, project_names[1], 2, filter_=filter_
@@ -588,6 +594,7 @@ async def test_trace_to_multiple_projects(langchain_client: Client):
     assert runs2_dict["my_llm"].parent_run_id == runs2_dict["my_chain"].id
     assert runs2_dict["my_llm"].run_type == "llm"
     assert runs2_dict["my_llm"].inputs == {"text": "test_input"}
+    assert runs2_dict["my_chain"].reference_example_id is None
 
     assert runs1_dict["my_chain"].id != runs2_dict["my_chain"].id
     assert runs1_dict["my_llm"].id != runs2_dict["my_llm"].id

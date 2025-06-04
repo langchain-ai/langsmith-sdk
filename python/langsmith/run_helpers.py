@@ -55,9 +55,6 @@ _PARENT_RUN_TREE = contextvars.ContextVar[Optional[run_trees.RunTree]](
     "_PARENT_RUN_TREE", default=None
 )
 _PROJECT_NAME = contextvars.ContextVar[Optional[str]]("_PROJECT_NAME", default=None)
-_PROJECT_NAMES = contextvars.ContextVar[Optional[tuple[str, ...]]](
-    "_PROJECT_NAMES", default=None
-)
 _TAGS = contextvars.ContextVar[Optional[list[str]]]("_TAGS", default=None)
 _METADATA = contextvars.ContextVar[Optional[dict[str, Any]]]("_METADATA", default=None)
 
@@ -69,11 +66,11 @@ _CLIENT = contextvars.ContextVar[Optional[ls_client.Client]]("_CLIENT", default=
 _CONTEXT_KEYS: dict[str, contextvars.ContextVar] = {
     "parent": _PARENT_RUN_TREE,
     "project_name": _PROJECT_NAME,
-    "project_names": _PROJECT_NAMES,
     "tags": _TAGS,
     "metadata": _METADATA,
     "enabled": _TRACING_ENABLED,
     "client": _CLIENT,
+    "replicas": run_trees._REPLICAS,
 }
 
 _EXCLUDED_FRAME_FNAME = "langsmith/run_helpers.py"
@@ -92,7 +89,6 @@ def get_tracing_context(
         return {
             "parent": _PARENT_RUN_TREE.get(),
             "project_name": _PROJECT_NAME.get(),
-            "project_names": _PROJECT_NAMES.get(),
             "tags": _TAGS.get(),
             "metadata": _METADATA.get(),
             "enabled": _TRACING_ENABLED.get(),
@@ -105,19 +101,18 @@ def get_tracing_context(
 def tracing_context(
     *,
     project_name: Optional[str] = None,
-    project_names: Optional[tuple[str, ...]] = None,
     tags: Optional[list[str]] = None,
     metadata: Optional[dict[str, Any]] = None,
     parent: Optional[Union[run_trees.RunTree, Mapping, str, Literal[False]]] = None,
     enabled: Optional[Union[bool, Literal["local"]]] = None,
     client: Optional[ls_client.Client] = None,
+    replicas: Optional[Sequence[tuple[str, Optional[dict]]]] = None,
     **kwargs: Any,
 ) -> Generator[None, None, None]:
     """Set the tracing context for a block of code.
 
     Args:
         project_name: The name of the project to log the run to. Defaults to None.
-        project_names: A tuple of project names to log the run to. Defaults to None.
         tags: The tags to add to the run. Defaults to None.
         metadata: The metadata to add to the run. Defaults to None.
         parent: The parent run to use for the context. Can be a Run/RunTree object,
@@ -126,8 +121,8 @@ def tracing_context(
         client: The client to use for logging the run to LangSmith. Defaults to None,
         enabled: Whether tracing is enabled. Defaults to None, meaning it will use the
             current context value or environment variables.
-
-
+        replicas: A sequence of tuples containing project names and optional updates for each replica.
+            Example: [("my_experiment", {"reference_example_id": None}), ("my_project", None)]
     """
     if kwargs:
         # warn
@@ -149,11 +144,11 @@ def tracing_context(
         {
             "parent": parent_run,
             "project_name": project_name,
-            "project_names": project_names,
             "tags": tags,
             "metadata": metadata,
             "enabled": enabled,
             "client": client,
+            "replicas": replicas,
         }
     )
     try:
@@ -957,7 +952,6 @@ class trace:
         extra_outer["metadata"] = metadata
 
         project_name_ = _get_project_name(self.project_name)
-        fanout_project_names = _PROJECT_NAMES.get()
 
         if parent_run_ is not None and enabled:
             self.new_run = parent_run_.create_child(
@@ -979,7 +973,6 @@ class trace:
                 run_type=self.run_type,
                 extra=extra_outer,
                 project_name=project_name_ or "default",
-                fanout_project_names=fanout_project_names,
                 inputs=self.inputs or {},
                 tags=tags_,
                 client=client_,  # type: ignore
@@ -1386,7 +1379,6 @@ def _setup_run(
         "dangerously_allow_filesystem", False
     )
     outer_project = _PROJECT_NAME.get()
-    fanout_project_names = _PROJECT_NAMES.get()
     langsmith_extra = langsmith_extra or LangSmithExtra()
     name = langsmith_extra.get("name") or container_input.get("name")
     client_ = langsmith_extra.get("client", client) or _CLIENT.get()
@@ -1474,7 +1466,6 @@ def _setup_run(
                 reference_example_id, accept_null=True
             ),
             project_name=selected_project,  # type: ignore[arg-type]
-            fanout_project_names=fanout_project_names,
             extra=extra_inner,
             tags=tags_,
             client=client_,  # type: ignore
