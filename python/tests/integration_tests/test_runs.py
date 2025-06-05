@@ -11,7 +11,12 @@ import pytest  # type: ignore
 
 from langsmith import utils as ls_utils
 from langsmith.client import Client
-from langsmith.run_helpers import get_current_run_tree, trace, traceable
+from langsmith.run_helpers import (
+    get_current_run_tree,
+    trace,
+    traceable,
+    tracing_context,
+)
 from langsmith.run_trees import RunTree
 from langsmith.schemas import Attachment
 
@@ -536,6 +541,71 @@ def test_trace_file_path(langchain_client: Client) -> None:
     )
 
 
+@pytest.mark.skip()
+async def test_trace_to_multiple_projects(langchain_client: Client):
+    """Test tracing to multiple projects."""
+    project_names = [
+        "__My Tracer Project - test_trace_to_multiple_projects_1",
+        "__My Tracer Project - test_trace_to_multiple_projects_2",
+    ]
+    run_meta = uuid.uuid4().hex
+    reference_example_id = uuid.uuid4()
+
+    @traceable(run_type="chain")
+    async def my_chain(text: str):
+        result = await my_llm(text)
+        return result
+
+    @traceable(run_type="llm")
+    async def my_llm(text: str):
+        return f"LLM response: {text}"
+
+    with tracing_context(
+        replicas=[
+            (project_names[0], {"reference_example_id": reference_example_id}),
+            (project_names[1], None),
+        ],
+        metadata={"test_run": run_meta},
+    ):
+        result = await my_chain("test_input")
+
+    assert result == "LLM response: test_input"
+
+    filter_ = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{run_meta}"))'
+
+    runs1 = poll_runs_until_count(
+        langchain_client, project_names[0], 2, filter_=filter_
+    )
+    assert len(runs1) == 2
+    runs1_dict = {run.name: run for run in runs1}
+    assert runs1_dict["my_chain"].parent_run_id is None
+    assert runs1_dict["my_chain"].run_type == "chain"
+    assert runs1_dict["my_llm"].parent_run_id == runs1_dict["my_chain"].id
+    assert runs1_dict["my_llm"].run_type == "llm"
+    assert runs1_dict["my_llm"].inputs == {"text": "test_input"}
+    assert runs1_dict["my_chain"].reference_example_id == reference_example_id
+
+    runs2 = poll_runs_until_count(
+        langchain_client, project_names[1], 2, filter_=filter_
+    )
+    assert len(runs2) == 2
+    runs2_dict = {run.name: run for run in runs2}
+    assert runs2_dict["my_chain"].parent_run_id is None
+    assert runs2_dict["my_chain"].run_type == "chain"
+    assert runs2_dict["my_llm"].parent_run_id == runs2_dict["my_chain"].id
+    assert runs2_dict["my_llm"].run_type == "llm"
+    assert runs2_dict["my_llm"].inputs == {"text": "test_input"}
+    assert runs2_dict["my_chain"].reference_example_id is None
+
+    assert runs1_dict["my_chain"].id != runs2_dict["my_chain"].id
+    assert runs1_dict["my_llm"].id != runs2_dict["my_llm"].id
+
+    assert runs1_dict["my_llm"].parent_run_id == runs1_dict["my_chain"].id
+    assert runs2_dict["my_llm"].parent_run_id == runs2_dict["my_chain"].id
+
+    assert runs1_dict["my_chain"].trace_id != runs2_dict["my_chain"].trace_id
+
+
 def test_usage_metadata(langchain_client: Client):
     project_name = "__My Tracer Project - test_usage_metadata"
     usage_metadata = {
@@ -724,3 +794,62 @@ async def test_usage_metadata_async(langchain_client: Client):
     with pytest.raises(ValueError, match="Unexpected keys in usage metadata:"):
         async for _ in my_func4("foo"):
             pass
+
+
+# TODO: Don't skip this test after langchain-ai/langchain#31493 is merged
+@pytest.mark.skip(reason="Skipping test that requires langchain to be updated")
+async def test_langchain_trace_to_multiple_projects(langchain_client: Client):
+    """Test tracing LangChain components to multiple projects."""
+    try:
+        from langchain.schema.runnable import RunnableLambda
+    except ImportError:
+        pytest.skip("Skipping test that requires langchain")
+
+    project_names = [
+        "__My Tracer Project - test_langchain_trace_to_multiple_projects_1",
+        "__My Tracer Project - test_langchain_trace_to_multiple_projects_2",
+    ]
+    run_meta = uuid.uuid4().hex
+    reference_example_id = uuid.uuid4()
+
+    def echo_input(x: str) -> str:
+        return f"Echo: {x}"
+
+    runnable = RunnableLambda(echo_input)
+
+    with tracing_context(
+        replicas=[
+            (project_names[0], {"reference_example_id": reference_example_id}),
+            (project_names[1], None),
+        ],
+        metadata={"test_run": run_meta},
+    ):
+        result = runnable.invoke("hello")
+
+    assert result == "Echo: hello"
+
+    filter_ = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{run_meta}"))'
+
+    runs1 = poll_runs_until_count(
+        langchain_client, project_names[0], 1, filter_=filter_
+    )
+    assert len(runs1) == 1
+    run1 = runs1[0]
+    assert run1.name == "echo_input"
+    assert run1.reference_example_id == reference_example_id
+    assert run1.inputs == {"x": "hello"}
+    assert run1.outputs == {"output": "Echo: hello"}
+
+    runs2 = poll_runs_until_count(
+        langchain_client, project_names[1], 1, filter_=filter_
+    )
+    assert len(runs2) == 1
+    run2 = runs2[0]
+    assert run2.name == "echo_input"
+    assert run2.reference_example_id is None
+    assert run2.inputs == {"x": "hello"}
+    assert run2.outputs == {"output": "Echo: hello"}
+
+    # Verify IDs are different between projects
+    assert run1.id != run2.id
+    assert run1.trace_id != run2.trace_id

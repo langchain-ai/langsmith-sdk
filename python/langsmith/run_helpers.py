@@ -70,6 +70,7 @@ _CONTEXT_KEYS: dict[str, contextvars.ContextVar] = {
     "metadata": _METADATA,
     "enabled": _TRACING_ENABLED,
     "client": _CLIENT,
+    "replicas": run_trees._REPLICAS,
 }
 
 _EXCLUDED_FRAME_FNAME = "langsmith/run_helpers.py"
@@ -105,6 +106,7 @@ def tracing_context(
     parent: Optional[Union[run_trees.RunTree, Mapping, str, Literal[False]]] = None,
     enabled: Optional[Union[bool, Literal["local"]]] = None,
     client: Optional[ls_client.Client] = None,
+    replicas: Optional[Sequence[tuple[str, Optional[dict]]]] = None,
     **kwargs: Any,
 ) -> Generator[None, None, None]:
     """Set the tracing context for a block of code.
@@ -119,8 +121,8 @@ def tracing_context(
         client: The client to use for logging the run to LangSmith. Defaults to None,
         enabled: Whether tracing is enabled. Defaults to None, meaning it will use the
             current context value or environment variables.
-
-
+        replicas: A sequence of tuples containing project names and optional updates for each replica.
+            Example: [("my_experiment", {"reference_example_id": None}), ("my_project", None)]
     """
     if kwargs:
         # warn
@@ -146,6 +148,7 @@ def tracing_context(
             "metadata": metadata,
             "enabled": enabled,
             "client": client,
+            "replicas": replicas,
         }
     )
     try:
@@ -970,6 +973,7 @@ class trace:
                 run_type=self.run_type,
                 extra=extra_outer,
                 project_name=project_name_ or "default",
+                replicas=run_trees._REPLICAS.get(),
                 inputs=self.inputs or {},
                 tags=tags_,
                 client=client_,  # type: ignore
@@ -1463,6 +1467,7 @@ def _setup_run(
                 reference_example_id, accept_null=True
             ),
             project_name=selected_project,  # type: ignore[arg-type]
+            replicas=run_trees._REPLICAS.get(),
             extra=extra_inner,
             tags=tags_,
             client=client_,  # type: ignore
