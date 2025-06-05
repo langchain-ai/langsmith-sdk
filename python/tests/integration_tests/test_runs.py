@@ -541,7 +541,6 @@ def test_trace_file_path(langchain_client: Client) -> None:
     )
 
 
-@pytest.mark.skip()
 async def test_trace_to_multiple_projects(langchain_client: Client):
     """Test tracing to multiple projects."""
     project_names = [
