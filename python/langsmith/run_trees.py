@@ -8,7 +8,7 @@ import sys
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from typing import Any, Optional, Union, cast
-from uuid import UUID, uuid4
+from uuid import NAMESPACE_DNS, UUID, uuid4, uuid5
 
 try:
     from pydantic.v1 import Field, root_validator  # type: ignore[import]
@@ -18,6 +18,7 @@ except ImportError:
         root_validator,
     )
 
+import contextvars
 import threading
 import urllib.parse
 
@@ -37,6 +38,11 @@ OVERRIDE_OUTPUTS = sys.intern("__omit_auto_outputs")
 NOT_PROVIDED = cast(None, object())
 _CLIENT: Optional[Client] = None
 _LOCK = threading.Lock()  # Keeping around for a while for backwards compat
+
+# Context variables
+_REPLICAS = contextvars.ContextVar[Optional[Sequence[tuple[str, Optional[dict]]]]](
+    "_REPLICAS", default=None
+)
 
 
 # Note, this is called directly by langchain. Do not remove.
@@ -105,6 +111,10 @@ class RunTree(ls_schemas.RunBase):
     dangerously_allow_filesystem: Optional[bool] = Field(
         default=False, description="Whether to allow filesystem access for attachments."
     )
+    replicas: Optional[Sequence[tuple[str, Optional[dict]]]] = Field(
+        default=None,
+        description="Projects to replicate this run to with optional updates.",
+    )
 
     class Config:
         """Pydantic model configuration."""
@@ -149,6 +159,8 @@ class RunTree(ls_schemas.RunBase):
             values["outputs"] = {}
         if values.get("attachments") is None:
             values["attachments"] = {}
+        if values.get("replicas") is None:
+            values["replicas"] = _REPLICAS.get()
         return values
 
     @root_validator(pre=False)
@@ -379,6 +391,7 @@ class RunTree(ls_schemas.RunBase):
             extra=extra or {},
             parent_run=self,
             project_name=self.session_name,
+            replicas=self.replicas,
             ls_client=self.ls_client,
             tags=tags,
             attachments=attachments or {},  # type: ignore
@@ -400,12 +413,66 @@ class RunTree(ls_schemas.RunBase):
             self_dict["outputs"] = self.outputs.copy()
         return self_dict
 
+    def _remap_for_project(
+        self, project_name: str, updates: Optional[dict] = None
+    ) -> dict:
+        """Rewrites ids/dotted_order for a given project with optional updates."""
+        run_dict = self._get_dicts_safe()
+        old_id = run_dict["id"]
+        new_id = uuid5(NAMESPACE_DNS, f"{old_id}:{project_name}")
+        # trace id
+        old_trace = run_dict.get("trace_id")
+        if old_trace:
+            new_trace = uuid5(NAMESPACE_DNS, f"{old_trace}:{project_name}")
+        else:
+            new_trace = None
+        # parent id
+        parent = run_dict.get("parent_run_id")
+        if parent:
+            new_parent = uuid5(NAMESPACE_DNS, f"{parent}:{project_name}")
+        else:
+            new_parent = None
+        # dotted order
+        if run_dict.get("dotted_order"):
+            segs = _parse_dotted_order(run_dict["dotted_order"])
+            rebuilt = []
+            for ts, seg_id in segs[:-1]:
+                repl = uuid5(NAMESPACE_DNS, f"{seg_id}:{project_name}")
+                rebuilt.append(ts.strftime("%Y%m%dT%H%M%S%fZ") + str(repl))
+            ts_last, _ = segs[-1]
+            rebuilt.append(ts_last.strftime("%Y%m%dT%H%M%S%fZ") + str(new_id))
+            dotted = ".".join(rebuilt)
+        else:
+            dotted = None
+        dup = utils.deepish_copy(run_dict)
+        dup.update(
+            {
+                "id": new_id,
+                "trace_id": new_trace,
+                "parent_run_id": new_parent,
+                "dotted_order": dotted,
+                "session_name": project_name,
+            }
+        )
+        if updates:
+            dup.update(updates)
+        return dup
+
     def post(self, exclude_child_runs: bool = True) -> None:
         """Post the run tree to the API asynchronously."""
-        kwargs = self._get_dicts_safe()
-        self.client.create_run(**kwargs)
-        if attachments := kwargs.get("attachments"):
-            keys = [str(name) for name in attachments]
+        if self.replicas:
+            for project_name, updates in self.replicas:
+                # Avoid double posting for the current project
+                if project_name == self.session_name:
+                    run_dict = self._get_dicts_safe()
+                else:
+                    run_dict = self._remap_for_project(project_name, updates)
+                self.client.create_run(**run_dict)
+        else:
+            kwargs = self._get_dicts_safe()
+            self.client.create_run(**kwargs)
+        if self.attachments:
+            keys = [str(name) for name in self.attachments]
             self.events.append(
                 {
                     "name": "uploaded_attachment",
@@ -417,8 +484,12 @@ class RunTree(ls_schemas.RunBase):
             for child_run in self.child_runs:
                 child_run.post(exclude_child_runs=False)
 
-    def patch(self) -> None:
-        """Patch the run tree to the API in a background thread."""
+    def patch(self, *, exclude_inputs: bool = False) -> None:
+        """Patch the run tree to the API in a background thread.
+
+        Args:
+            exclude_inputs: whether to exclude inputs from the patch request.
+        """
         if not self.end_time:
             self.end()
         attachments = {
@@ -443,23 +514,52 @@ class RunTree(ls_schemas.RunBase):
                     }
         except Exception as e:
             logger.warning(f"Error filtering attachments to upload: {e}")
-        self.client.update_run(
-            name=self.name,
-            run_id=self.id,
-            inputs=self.inputs.copy() if self.inputs else None,
-            outputs=self.outputs.copy() if self.outputs else None,
-            error=self.error,
-            parent_run_id=self.parent_run_id,
-            session_name=self.session_name,
-            reference_example_id=self.reference_example_id,
-            end_time=self.end_time,
-            dotted_order=self.dotted_order,
-            trace_id=self.trace_id,
-            events=self.events,
-            tags=self.tags,
-            extra=self.extra,
-            attachments=attachments,
-        )
+        # Fanout logic for patch
+        if self.replicas:
+            for project_name, updates in self.replicas:
+                if project_name == self.session_name:
+                    run_dict = self._get_dicts_safe()
+                else:
+                    run_dict = self._remap_for_project(project_name, updates)
+                self.client.update_run(
+                    name=run_dict["name"],
+                    run_id=run_dict["id"],
+                    inputs=None if exclude_inputs else run_dict["inputs"],
+                    outputs=run_dict["outputs"],
+                    error=run_dict.get("error"),
+                    parent_run_id=run_dict.get("parent_run_id"),
+                    session_name=run_dict.get("session_name"),
+                    reference_example_id=run_dict.get("reference_example_id"),
+                    end_time=run_dict.get("end_time"),
+                    dotted_order=run_dict.get("dotted_order"),
+                    trace_id=run_dict.get("trace_id"),
+                    events=run_dict.get("events"),
+                    tags=run_dict.get("tags"),
+                    extra=run_dict.get("extra"),
+                    attachments=attachments,
+                )
+        else:
+            self.client.update_run(
+                name=self.name,
+                run_id=self.id,
+                inputs=(
+                    None
+                    if exclude_inputs
+                    else (self.inputs.copy() if self.inputs else None)
+                ),
+                outputs=self.outputs.copy() if self.outputs else None,
+                error=self.error,
+                parent_run_id=self.parent_run_id,
+                session_name=self.session_name,
+                reference_example_id=self.reference_example_id,
+                end_time=self.end_time,
+                dotted_order=self.dotted_order,
+                trace_id=self.trace_id,
+                events=self.events,
+                tags=self.tags,
+                extra=self.extra,
+                attachments=attachments,
+            )
 
     def wait(self) -> None:
         """Wait for all _futures to complete."""
