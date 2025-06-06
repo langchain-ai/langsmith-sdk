@@ -34,7 +34,7 @@ from langsmith._internal._operations import (
 
 if TYPE_CHECKING:
     from opentelemetry.context.context import Context  # type: ignore[import]
-    from opentelemetry import trace  # type: ignore[import]
+    
     from langsmith.client import Client
 
 logger = logging.getLogger("langsmith.client")
@@ -321,6 +321,7 @@ def _is_using_internal_otlp_provider(client: Client) -> bool:
 
         # Get the global TracerProvider and check its resource attributes
         from opentelemetry import trace  # type: ignore[import]
+
         tracer_provider = trace.get_tracer_provider()
         if hasattr(tracer_provider, "resource") and hasattr(
             tracer_provider.resource, "attributes"
@@ -386,20 +387,21 @@ def get_tracing_mode() -> tuple[bool, bool]:
     
     Returns:
         tuple[bool, bool]:
-            - hybrid_otel_and_langsmith: True if both OTEL and LangSmith tracing are enabled, 
-              which is default behavior if OTEL_ENABLED is set to true and OTEL_ONLY is not set to true
+            - hybrid_otel_and_langsmith: True if both OTEL and LangSmith tracing 
+              are enabled, which is default behavior if OTEL_ENABLED is set to 
+              true and OTEL_ONLY is not set to true
             - is_otel_only: True if only OTEL tracing is enabled
     """
     otel_enabled = ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED"))
     otel_only = ls_utils.is_truish(ls_utils.get_env_var("OTEL_ONLY"))
-    
+
     # If OTEL is not enabled, neither mode should be active
     if not otel_enabled:
         return False, False
-    
+
     hybrid_otel_and_langsmith = not otel_only
     is_otel_only = otel_only
-    
+
     return hybrid_otel_and_langsmith, is_otel_only
 
 
@@ -487,7 +489,7 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
             )
             sub_threads.append(new_thread)
             new_thread.start()
-        
+
         hybrid_otel_and_langsmith, is_otel_only = get_tracing_mode()
         if next_batch := _tracing_thread_drain_queue(tracing_queue, limit=size_limit):
             if hybrid_otel_and_langsmith:
