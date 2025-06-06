@@ -34,7 +34,7 @@ from langsmith._internal._operations import (
 
 if TYPE_CHECKING:
     from opentelemetry.context.context import Context  # type: ignore[import]
-    
+
     from langsmith.client import Client
 
 logger = logging.getLogger("langsmith.client")
@@ -384,11 +384,11 @@ def _ensure_ingest_config(
 
 def get_tracing_mode() -> tuple[bool, bool]:
     """Get the current tracing mode configuration.
-    
+
     Returns:
         tuple[bool, bool]:
-            - hybrid_otel_and_langsmith: True if both OTEL and LangSmith tracing 
-              are enabled, which is default behavior if OTEL_ENABLED is set to 
+            - hybrid_otel_and_langsmith: True if both OTEL and LangSmith tracing
+              are enabled, which is default behavior if OTEL_ENABLED is set to
               true and OTEL_ONLY is not set to true
             - is_otel_only: True if only OTEL tracing is enabled
     """
