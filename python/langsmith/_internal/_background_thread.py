@@ -268,15 +268,25 @@ def _hybrid_tracing_thread_handle_batch(
         logger.debug(
             "Using user-provided TracerProvider, sending to both OTEL and LangSmith"
         )
-        # Export to OTEL
-        _otel_tracing_thread_handle_batch(
-            client, tracing_queue, batch, mark_task_done=False
-        )
-
-        # Export to LangSmith
-        _tracing_thread_handle_batch(
-            client, tracing_queue, batch, use_multipart, mark_task_done=False
-        )
+        # Export to both OTEL and LangSmith in parallel
+        with cf.ThreadPoolExecutor(max_workers=2) as executor:
+            otel_future = executor.submit(
+                _otel_tracing_thread_handle_batch,
+                client,
+                tracing_queue,
+                batch,
+                mark_task_done=False,
+            )
+            langsmith_future = executor.submit(
+                _tracing_thread_handle_batch,
+                client,
+                tracing_queue,
+                batch,
+                use_multipart,
+                mark_task_done=False,
+            )
+            # Wait for both operations to complete
+            cf.wait([otel_future, langsmith_future])
 
     # Mark task_done once per item only, avoid double counting
     if mark_task_done:
@@ -310,6 +320,7 @@ def _is_using_internal_otlp_provider(client: Client) -> bool:
             return False
 
         # Get the global TracerProvider and check its resource attributes
+        from opentelemetry import trace  # type: ignore[import]
         tracer_provider = trace.get_tracer_provider()
         if hasattr(tracer_provider, "resource") and hasattr(
             tracer_provider.resource, "attributes"
@@ -368,6 +379,28 @@ def _ensure_ingest_config(
         return info.batch_ingest_config
     except BaseException:
         return default_config
+
+
+def get_tracing_mode() -> tuple[bool, bool]:
+    """Get the current tracing mode configuration.
+    
+    Returns:
+        tuple[bool, bool]:
+            - hybrid_otel_and_langsmith: True if both OTEL and LangSmith tracing are enabled, 
+              which is default behavior if OTEL_ENABLED is set to true and OTEL_ONLY is not set to true
+            - is_otel_only: True if only OTEL tracing is enabled
+    """
+    otel_enabled = ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED"))
+    otel_only = ls_utils.is_truish(ls_utils.get_env_var("OTEL_ONLY"))
+    
+    # If OTEL is not enabled, neither mode should be active
+    if not otel_enabled:
+        return False, False
+    
+    hybrid_otel_and_langsmith = not otel_only
+    is_otel_only = otel_only
+    
+    return hybrid_otel_and_langsmith, is_otel_only
 
 
 def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
@@ -454,56 +487,44 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
             )
             sub_threads.append(new_thread)
             new_thread.start()
-        if ls_utils.is_truish(
-            ls_utils.get_env_var("OTEL_ENABLED")
-        ) and not ls_utils.is_truish(ls_utils.get_env_var("OTEL_ONLY")):
-            # OTEL_ENABLED=true enables hybrid mode by default
-            if next_batch := _tracing_thread_drain_queue(
-                tracing_queue, limit=size_limit
-            ):
+        
+        hybrid_otel_and_langsmith, is_otel_only = get_tracing_mode()
+        if next_batch := _tracing_thread_drain_queue(tracing_queue, limit=size_limit):
+            if hybrid_otel_and_langsmith:
+                # Hybrid mode: both OTEL and LangSmith
                 _hybrid_tracing_thread_handle_batch(
                     client, tracing_queue, next_batch, use_multipart
                 )
-        else:
-            # Either OTEL-only mode (OTEL_ONLY=true) or LangSmith-only mode
-            if next_batch := _tracing_thread_drain_queue(
-                tracing_queue, limit=size_limit
-            ):
-                if client.otel_exporter is not None:
-                    # OTEL-only mode: OTEL_ENABLED=true + OTEL_ONLY=true
-                    _otel_tracing_thread_handle_batch(client, tracing_queue, next_batch)
-                else:
-                    # LangSmith-only mode: OTEL_ENABLED not set
-                    _tracing_thread_handle_batch(
-                        client, tracing_queue, next_batch, use_multipart
-                    )
-
-    # drain the queue on exit - apply same logic
-    if ls_utils.is_truish(
-        ls_utils.get_env_var("OTEL_ENABLED")
-    ) and not ls_utils.is_truish(ls_utils.get_env_var("OTEL_ONLY")):
-        # Hybrid mode cleanup
-        logger.debug("Hybrid mode cleanup")
-        while next_batch := _tracing_thread_drain_queue(
-            tracing_queue, limit=size_limit, block=False
-        ):
-            _hybrid_tracing_thread_handle_batch(
-                client, tracing_queue, next_batch, use_multipart
-            )
-    else:
-        # OTEL-only or LangSmith-only cleanup
-        logger.debug("OTEL-only or LangSmith-only cleanup")
-        while next_batch := _tracing_thread_drain_queue(
-            tracing_queue, limit=size_limit, block=False
-        ):
-            if client.otel_exporter is not None:
-                # OTEL-only cleanup
+            elif is_otel_only:
+                # OTEL-only mode
                 _otel_tracing_thread_handle_batch(client, tracing_queue, next_batch)
             else:
-                # LangSmith-only cleanup
+                # LangSmith-only mode
                 _tracing_thread_handle_batch(
                     client, tracing_queue, next_batch, use_multipart
                 )
+
+    # drain the queue on exit - apply same logic
+    hybrid_otel_and_langsmith, is_otel_only = get_tracing_mode()
+    while next_batch := _tracing_thread_drain_queue(
+        tracing_queue, limit=size_limit, block=False
+    ):
+        if hybrid_otel_and_langsmith:
+            # Hybrid mode cleanup
+            logger.debug("Hybrid mode cleanup")
+            _hybrid_tracing_thread_handle_batch(
+                client, tracing_queue, next_batch, use_multipart
+            )
+        elif is_otel_only:
+            # OTEL-only cleanup
+            logger.debug("OTEL-only cleanup")
+            _otel_tracing_thread_handle_batch(client, tracing_queue, next_batch)
+        else:
+            # LangSmith-only cleanup
+            logger.debug("LangSmith-only cleanup")
+            _tracing_thread_handle_batch(
+                client, tracing_queue, next_batch, use_multipart
+            )
     logger.debug("Tracing control thread is shutting down")
 
 
@@ -678,20 +699,17 @@ def _tracing_sub_thread_func(
         if next_batch := _tracing_thread_drain_queue(tracing_queue, limit=size_limit):
             seen_successive_empty_queues = 0
 
-            # Clean logic: OTEL_ENABLED enables hybrid mode,
-            # OTEL_ONLY disables LangSmith
-            if ls_utils.is_truish(
-                ls_utils.get_env_var("OTEL_ENABLED")
-            ) and not ls_utils.is_truish(ls_utils.get_env_var("OTEL_ONLY")):
+            hybrid_otel_and_langsmith, is_otel_only = get_tracing_mode()
+            if hybrid_otel_and_langsmith:
                 # Hybrid mode: both OTEL and LangSmith
                 _hybrid_tracing_thread_handle_batch(
                     client, tracing_queue, next_batch, use_multipart
                 )
-            elif client.otel_exporter is not None:
-                # OTEL-only mode: OTEL_ENABLED=true + OTEL_ONLY=true
+            elif is_otel_only:
+                # OTEL-only mode
                 _otel_tracing_thread_handle_batch(client, tracing_queue, next_batch)
             else:
-                # LangSmith-only mode: OTEL_ENABLED not set
+                # LangSmith-only mode
                 _tracing_thread_handle_batch(
                     client, tracing_queue, next_batch, use_multipart
                 )
@@ -699,29 +717,23 @@ def _tracing_sub_thread_func(
             seen_successive_empty_queues += 1
 
     # drain the queue on exit - apply same logic
-    if ls_utils.is_truish(
-        ls_utils.get_env_var("OTEL_ENABLED")
-    ) and not ls_utils.is_truish(ls_utils.get_env_var("OTEL_ONLY")):
-        # Hybrid mode cleanup
-        while next_batch := _tracing_thread_drain_queue(
-            tracing_queue, limit=size_limit, block=False
-        ):
+    hybrid_otel_and_langsmith, is_otel_only = get_tracing_mode()
+    while next_batch := _tracing_thread_drain_queue(
+        tracing_queue, limit=size_limit, block=False
+    ):
+        if hybrid_otel_and_langsmith:
+            # Hybrid mode cleanup
             _hybrid_tracing_thread_handle_batch(
                 client, tracing_queue, next_batch, use_multipart
             )
-    else:
-        # OTEL-only or LangSmith-only cleanup
-        # Only process if no sub-threads are running to avoid double processing
-        logger.debug("OTEL-only or LangSmith-only cleanup")
-        while next_batch := _tracing_thread_drain_queue(
-            tracing_queue, limit=size_limit, block=False
-        ):
-            if client.otel_exporter is not None:
-                # OTEL-only cleanup
-                _otel_tracing_thread_handle_batch(client, tracing_queue, next_batch)
-            else:
-                # LangSmith-only cleanup
-                _tracing_thread_handle_batch(
-                    client, tracing_queue, next_batch, use_multipart
-                )
+        elif is_otel_only:
+            # OTEL-only cleanup
+            logger.debug("OTEL-only cleanup")
+            _otel_tracing_thread_handle_batch(client, tracing_queue, next_batch)
+        else:
+            # LangSmith-only cleanup
+            logger.debug("LangSmith-only cleanup")
+            _tracing_thread_handle_batch(
+                client, tracing_queue, next_batch, use_multipart
+            )
     logger.debug("Tracing control sub-thread is shutting down")
