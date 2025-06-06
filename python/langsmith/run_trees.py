@@ -217,7 +217,7 @@ class RunTree(ls_schemas.RunBase):
         by the @traceable decorator.
 
         If your LangChain or LangGraph versions are sufficiently up-to-date,
-        this will also override the default behavior LangChainTracer.
+        this will also override the default behavior of LangChainTracer.
 
         Args:
             inputs: The inputs to set.

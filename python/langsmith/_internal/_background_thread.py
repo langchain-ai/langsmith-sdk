@@ -48,8 +48,8 @@ class TracingQueueItem:
 
     Attributes:
         priority (str): The priority of the item.
-        action (str): The action associated with the item.
         item (Any): The item itself.
+        otel_context (Optional[Context]): The OTEL context of the item.
     """
 
     priority: str
@@ -158,6 +158,7 @@ def _tracing_thread_handle_batch(
     tracing_queue: Queue,
     batch: list[TracingQueueItem],
     use_multipart: bool,
+    mark_task_done: bool = True,
 ) -> None:
     try:
         ops = combine_serialized_queue_operations([item.item for item in batch])
@@ -180,23 +181,31 @@ def _tracing_thread_handle_batch(
             "Error details:",
             exc_info=True,
         )
-        # exceptions are logged elsewhere, but we need to make sure the
-        # background thread continues to run
-        pass
     finally:
-        for _ in batch:
-            tracing_queue.task_done()
+        if mark_task_done:
+            for _ in batch:
+                try:
+                    tracing_queue.task_done()
+                except ValueError as e:
+                    if "task_done() called too many times" in str(e):
+                        # This can happen during shutdown when multiple threads
+                        # process the same queue items. It's harmless.
+                        logger.debug(
+                            f"Ignoring harmless task_done error during shutdown: {e}"
+                        )
+                    else:
+                        raise
 
 
 def _otel_tracing_thread_handle_batch(
     client: Client,
     tracing_queue: Queue,
     batch: list[TracingQueueItem],
+    mark_task_done: bool = True,
 ) -> None:
     """Handle a batch of tracing queue items by exporting them to OTEL."""
     try:
         ops = combine_serialized_queue_operations([item.item for item in batch])
-
         run_ops = [op for op in ops if isinstance(op, SerializedRunOperation)]
         otel_context_map = {
             item.item.id: item.otel_context
@@ -220,12 +229,118 @@ def _otel_tracing_thread_handle_batch(
             "Error details:",
             exc_info=True,
         )
-        # Exceptions are logged elsewhere, but we need to make sure the
-        # background thread continues to run
     finally:
-        # Mark all items in the batch as done
+        if mark_task_done:
+            for _ in batch:
+                try:
+                    tracing_queue.task_done()
+                except ValueError as e:
+                    if "task_done() called too many times" in str(e):
+                        # This can happen during shutdown when multiple threads
+                        # process the same queue items. It's harmless.
+                        logger.debug(
+                            f"Ignoring harmless task_done error during shutdown: {e}"
+                        )
+                    else:
+                        raise
+
+
+def _hybrid_tracing_thread_handle_batch(
+    client: Client,
+    tracing_queue: Queue,
+    batch: list[TracingQueueItem],
+    use_multipart: bool,
+    mark_task_done: bool = True,
+) -> None:
+    """Handle a batch for both OTEL and LangSmith by reusing existing functions."""
+    # Check if we're using LangSmith's internal OTLP provider vs user's provider
+    using_internal_otlp_provider = _is_using_internal_otlp_provider(client)
+
+    if using_internal_otlp_provider:
+        logger.debug(
+            "Using internal LangSmith OTLP provider, only sending to OTEL "
+            "to avoid duplicate sending"
+        )
+        _otel_tracing_thread_handle_batch(
+            client, tracing_queue, batch, mark_task_done=False
+        )
+    else:
+        logger.debug(
+            "Using user-provided TracerProvider, sending to both OTEL and LangSmith"
+        )
+        # Export to both OTEL and LangSmith in parallel
+        with cf.ThreadPoolExecutor(max_workers=2) as executor:
+            otel_future = executor.submit(
+                _otel_tracing_thread_handle_batch,
+                client,
+                tracing_queue,
+                batch,
+                mark_task_done=False,
+            )
+            langsmith_future = executor.submit(
+                _tracing_thread_handle_batch,
+                client,
+                tracing_queue,
+                batch,
+                use_multipart,
+                mark_task_done=False,
+            )
+            # Wait for both operations to complete
+            cf.wait([otel_future, langsmith_future])
+
+    # Mark task_done once per item only, avoid double counting
+    if mark_task_done:
         for _ in batch:
-            tracing_queue.task_done()
+            try:
+                tracing_queue.task_done()
+            except ValueError as e:
+                if "task_done() called too many times" in str(e):
+                    # This can happen during shutdown when multiple threads
+                    # process the same queue items. It's harmless.
+                    logger.debug(
+                        f"Ignoring harmless task_done error during shutdown: {e}"
+                    )
+                else:
+                    raise
+
+
+def _is_using_internal_otlp_provider(client: Client) -> bool:
+    """Check if client is using LangSmith's internal OTLP provider.
+
+    Returns True if using LangSmith's internal provider, False if user
+    provided their own.
+    """
+    if not hasattr(client, "otel_exporter") or client.otel_exporter is None:
+        return False
+
+    try:
+        # Use OpenTelemetry's standard API to get the global TracerProvider
+        # Check if OTEL is available
+        if not ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED")):
+            return False
+
+        # Get the global TracerProvider and check its resource attributes
+        from opentelemetry import trace  # type: ignore[import]
+
+        tracer_provider = trace.get_tracer_provider()
+        if hasattr(tracer_provider, "resource") and hasattr(
+            tracer_provider.resource, "attributes"
+        ):
+            is_internal = tracer_provider.resource.attributes.get(
+                "langsmith.internal_provider", False
+            )
+            logger.debug(
+                f"TracerProvider resource check: "
+                f"langsmith.internal_provider={is_internal}"
+            )
+            return is_internal
+
+        return False
+    except Exception as e:
+        logger.debug(
+            f"Could not determine TracerProvider type: {e}, assuming user-provided"
+        )
+        return False
 
 
 def get_size_limit_from_env() -> Optional[int]:
@@ -265,6 +380,29 @@ def _ensure_ingest_config(
         return info.batch_ingest_config
     except BaseException:
         return default_config
+
+
+def get_tracing_mode() -> tuple[bool, bool]:
+    """Get the current tracing mode configuration.
+
+    Returns:
+        tuple[bool, bool]:
+            - hybrid_otel_and_langsmith: True if both OTEL and LangSmith tracing
+              are enabled, which is default behavior if OTEL_ENABLED is set to
+              true and OTEL_ONLY is not set to true
+            - is_otel_only: True if only OTEL tracing is enabled
+    """
+    otel_enabled = ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED"))
+    otel_only = ls_utils.is_truish(ls_utils.get_env_var("OTEL_ONLY"))
+
+    # If OTEL is not enabled, neither mode should be active
+    if not otel_enabled:
+        return False, False
+
+    hybrid_otel_and_langsmith = not otel_only
+    is_otel_only = otel_only
+
+    return hybrid_otel_and_langsmith, is_otel_only
 
 
 def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
@@ -351,21 +489,41 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
             )
             sub_threads.append(new_thread)
             new_thread.start()
+
+        hybrid_otel_and_langsmith, is_otel_only = get_tracing_mode()
         if next_batch := _tracing_thread_drain_queue(tracing_queue, limit=size_limit):
-            if client.otel_exporter is not None:
+            if hybrid_otel_and_langsmith:
+                # Hybrid mode: both OTEL and LangSmith
+                _hybrid_tracing_thread_handle_batch(
+                    client, tracing_queue, next_batch, use_multipart
+                )
+            elif is_otel_only:
+                # OTEL-only mode
                 _otel_tracing_thread_handle_batch(client, tracing_queue, next_batch)
             else:
+                # LangSmith-only mode
                 _tracing_thread_handle_batch(
                     client, tracing_queue, next_batch, use_multipart
                 )
 
-    # drain the queue on exit
+    # drain the queue on exit - apply same logic
+    hybrid_otel_and_langsmith, is_otel_only = get_tracing_mode()
     while next_batch := _tracing_thread_drain_queue(
         tracing_queue, limit=size_limit, block=False
     ):
-        if client.otel_exporter is not None:
+        if hybrid_otel_and_langsmith:
+            # Hybrid mode cleanup
+            logger.debug("Hybrid mode cleanup")
+            _hybrid_tracing_thread_handle_batch(
+                client, tracing_queue, next_batch, use_multipart
+            )
+        elif is_otel_only:
+            # OTEL-only cleanup
+            logger.debug("OTEL-only cleanup")
             _otel_tracing_thread_handle_batch(client, tracing_queue, next_batch)
         else:
+            # LangSmith-only cleanup
+            logger.debug("LangSmith-only cleanup")
             _tracing_thread_handle_batch(
                 client, tracing_queue, next_batch, use_multipart
             )
@@ -378,7 +536,7 @@ def tracing_control_thread_func_compress_parallel(
     client = client_ref()
     if client is None:
         return
-
+    logger.debug("Tracing control thread func compress parallel called")
     if (
         client.compressed_traces is None
         or client._data_available_event is None
@@ -542,22 +700,41 @@ def _tracing_sub_thread_func(
     ):
         if next_batch := _tracing_thread_drain_queue(tracing_queue, limit=size_limit):
             seen_successive_empty_queues = 0
-            if client.otel_exporter is not None:
+
+            hybrid_otel_and_langsmith, is_otel_only = get_tracing_mode()
+            if hybrid_otel_and_langsmith:
+                # Hybrid mode: both OTEL and LangSmith
+                _hybrid_tracing_thread_handle_batch(
+                    client, tracing_queue, next_batch, use_multipart
+                )
+            elif is_otel_only:
+                # OTEL-only mode
                 _otel_tracing_thread_handle_batch(client, tracing_queue, next_batch)
             else:
+                # LangSmith-only mode
                 _tracing_thread_handle_batch(
                     client, tracing_queue, next_batch, use_multipart
                 )
         else:
             seen_successive_empty_queues += 1
 
-    # drain the queue on exit
+    # drain the queue on exit - apply same logic
+    hybrid_otel_and_langsmith, is_otel_only = get_tracing_mode()
     while next_batch := _tracing_thread_drain_queue(
         tracing_queue, limit=size_limit, block=False
     ):
-        if client.otel_exporter is not None:
+        if hybrid_otel_and_langsmith:
+            # Hybrid mode cleanup
+            _hybrid_tracing_thread_handle_batch(
+                client, tracing_queue, next_batch, use_multipart
+            )
+        elif is_otel_only:
+            # OTEL-only cleanup
+            logger.debug("OTEL-only cleanup")
             _otel_tracing_thread_handle_batch(client, tracing_queue, next_batch)
         else:
+            # LangSmith-only cleanup
+            logger.debug("LangSmith-only cleanup")
             _tracing_thread_handle_batch(
                 client, tracing_queue, next_batch, use_multipart
             )

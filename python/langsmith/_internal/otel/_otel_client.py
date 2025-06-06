@@ -63,7 +63,13 @@ def get_otlp_tracer_provider() -> "TracerProvider":
         os.environ["OTEL_EXPORTER_OTLP_HEADERS"] = headers
 
     service_name = os.environ.get("OTEL_SERVICE_NAME", "langsmith")
-    resource = Resource(attributes={SERVICE_NAME: service_name})
+    resource = Resource(
+        attributes={
+            SERVICE_NAME: service_name,
+            # Marker to identify LangSmith's internal provider
+            "langsmith.internal_provider": True,
+        }
+    )
 
     tracer_provider = TracerProvider(resource=resource)
 
