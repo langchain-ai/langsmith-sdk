@@ -159,9 +159,26 @@ def _tracing_thread_handle_batch(
     batch: list[TracingQueueItem],
     use_multipart: bool,
     mark_task_done: bool = True,
+    ops: Optional[
+        list[Union[SerializedRunOperation, SerializedFeedbackOperation]]
+    ] = None,
 ) -> None:
+    """Handle a batch of tracing queue items by sending them to LangSmith.
+
+    Args:
+        client: The LangSmith client to use for sending data.
+        tracing_queue: The queue containing tracing items (used for task_done calls).
+        batch: List of tracing queue items to process.
+        use_multipart: Whether to use multipart endpoint for sending data.
+        mark_task_done: Whether to mark queue tasks as done after processing.
+            Set to False when called from parallel execution to avoid double counting.
+        ops: Pre-combined serialized operations to use instead of combining from batch.
+            If None, operations will be combined from the batch items.
+    """
     try:
-        ops = combine_serialized_queue_operations([item.item for item in batch])
+        if ops is None:
+            ops = combine_serialized_queue_operations([item.item for item in batch])
+
         if use_multipart:
             client._multipart_ingest_ops(ops)
         else:
@@ -202,10 +219,25 @@ def _otel_tracing_thread_handle_batch(
     tracing_queue: Queue,
     batch: list[TracingQueueItem],
     mark_task_done: bool = True,
+    ops: Optional[
+        list[Union[SerializedRunOperation, SerializedFeedbackOperation]]
+    ] = None,
 ) -> None:
-    """Handle a batch of tracing queue items by exporting them to OTEL."""
+    """Handle a batch of tracing queue items by exporting them to OTEL.
+
+    Args:
+        client: The LangSmith client containing the OTEL exporter.
+        tracing_queue: The queue containing tracing items (used for task_done calls).
+        batch: List of tracing queue items to process.
+        mark_task_done: Whether to mark queue tasks as done after processing.
+            Set to False when called from parallel execution to avoid double counting.
+        ops: Pre-combined serialized operations to use instead of combining from batch.
+            If None, operations will be combined from the batch items.
+    """
     try:
-        ops = combine_serialized_queue_operations([item.item for item in batch])
+        if ops is None:
+            ops = combine_serialized_queue_operations([item.item for item in batch])
+
         run_ops = [op for op in ops if isinstance(op, SerializedRunOperation)]
         otel_context_map = {
             item.item.id: item.otel_context
@@ -268,6 +300,9 @@ def _hybrid_tracing_thread_handle_batch(
         logger.debug(
             "Using user-provided TracerProvider, sending to both OTEL and LangSmith"
         )
+        # Combine operations once to avoid inconsistencies
+        ops = combine_serialized_queue_operations([item.item for item in batch])
+
         # Export to both OTEL and LangSmith in parallel
         with cf.ThreadPoolExecutor(max_workers=2) as executor:
             otel_future = executor.submit(
@@ -275,7 +310,8 @@ def _hybrid_tracing_thread_handle_batch(
                 client,
                 tracing_queue,
                 batch,
-                mark_task_done=False,
+                False,  # mark_task_done=False
+                ops,  # Pass pre-combined ops
             )
             langsmith_future = executor.submit(
                 _tracing_thread_handle_batch,
@@ -283,7 +319,8 @@ def _hybrid_tracing_thread_handle_batch(
                 tracing_queue,
                 batch,
                 use_multipart,
-                mark_task_done=False,
+                False,  # mark_task_done=False
+                ops,  # Pass pre-combined ops
             )
             # Wait for both operations to complete
             cf.wait([otel_future, langsmith_future])
