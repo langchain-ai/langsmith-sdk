@@ -283,6 +283,7 @@ def _hybrid_tracing_thread_handle_batch(
     tracing_queue: Queue,
     batch: list[TracingQueueItem],
     use_multipart: bool,
+    mark_task_done: bool = True,
 ) -> None:
     """Handle a batch of tracing queue items by sending to both both LangSmith and OTEL.
 
@@ -291,6 +292,8 @@ def _hybrid_tracing_thread_handle_batch(
         tracing_queue: The queue containing tracing items (used for task_done calls).
         batch: List of tracing queue items to process.
         use_multipart: Whether to use multipart endpoint for LangSmith.
+        mark_task_done: Whether to mark queue tasks as done after processing.
+            Set to False primarily for testing when items weren't actually queued.
     """
     # Combine operations once to avoid race conditions
     ops = combine_serialized_queue_operations([item.item for item in batch])
@@ -324,17 +327,20 @@ def _hybrid_tracing_thread_handle_batch(
         future_langsmith.result()
         future_otel.result()
 
-    # Mark all tasks as done once
-    for _ in batch:
-        try:
-            tracing_queue.task_done()
-        except ValueError as e:
-            if "task_done() called too many times" in str(e):
-                # This can happen during shutdown when multiple threads
-                # process the same queue items. It's harmless.
-                logger.debug(f"Ignoring harmless task_done error during shutdown: {e}")
-            else:
-                raise
+    # Mark all tasks as done once, only if requested
+    if mark_task_done:
+        for _ in batch:
+            try:
+                tracing_queue.task_done()
+            except ValueError as e:
+                if "task_done() called too many times" in str(e):
+                    # This can happen during shutdown when multiple threads
+                    # process the same queue items. It's harmless.
+                    logger.debug(
+                        f"Ignoring harmless task_done error during shutdown: {e}"
+                    )
+                else:
+                    raise
 
 
 def _is_using_internal_otlp_provider(client: Client) -> bool:
