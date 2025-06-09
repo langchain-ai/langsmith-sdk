@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import concurrent.futures as cf
+import copy
 import functools
 import io
 import logging
@@ -16,7 +17,6 @@ from typing import (
     Union,
     cast,
 )
-import copy
 
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
@@ -288,8 +288,10 @@ def _hybrid_tracing_thread_handle_batch(
     """Handle a batch for both OTEL and LangSmith using parallel execution.
 
     This function processes tracing queue items for both OTEL and LangSmith exports
-    in parallel for optimal I/O performance. It calls combine_serialized_queue_operations
-    only once to avoid data corruption, then passes a deepcopy of the pre-combined operations to both
+    in parallel for optimal I/O performance.
+    It calls combine_serialized_queue_operations
+    only once to avoid data corruption,
+    then passes a deepcopy of the pre-combined operations to both
     parallel export functions to avoid shared mutation issues.
 
     Args:
@@ -312,7 +314,7 @@ def _hybrid_tracing_thread_handle_batch(
         )
     else:
         logger.debug(
-            "Using user-provided TracerProvider, sending to both OTEL and LangSmith in parallel"
+            "Using user-provided TracerProvider, sending to both OTEL and LangSmith"
         )
         # Combine operations once to prevent data corruption from multiple calls
         ops = combine_serialized_queue_operations([item.item for item in batch])
