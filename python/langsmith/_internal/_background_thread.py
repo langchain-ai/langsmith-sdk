@@ -285,22 +285,7 @@ def _hybrid_tracing_thread_handle_batch(
     use_multipart: bool,
     mark_task_done: bool = True,
 ) -> None:
-    """Handle a batch for both OTEL and LangSmith using parallel execution.
-
-    This function processes tracing queue items for both OTEL and LangSmith exports
-    in parallel for optimal I/O performance.
-    It calls combine_serialized_queue_operations
-    only once to avoid data corruption,
-    then passes a deepcopy of the pre-combined operations to both
-    parallel export functions to avoid shared mutation issues.
-
-    Args:
-        client: The LangSmith client to use for sending data.
-        tracing_queue: The queue containing tracing items (used for task_done calls).
-        batch: List of tracing queue items to process.
-        use_multipart: Whether to use multipart endpoint for sending data.
-        mark_task_done: Whether to mark queue tasks as done after processing.
-    """
+    """Handle a batch for both OTEL and LangSmith by reusing existing functions."""
     # Check if we're using LangSmith's internal OTLP provider vs user's provider
     using_internal_otlp_provider = _is_using_internal_otlp_provider(client)
 
@@ -310,28 +295,25 @@ def _hybrid_tracing_thread_handle_batch(
             "to avoid duplicate sending"
         )
         _otel_tracing_thread_handle_batch(
-            client, tracing_queue, batch, mark_task_done=mark_task_done
+            client, tracing_queue, batch, mark_task_done=False
         )
     else:
         logger.debug(
             "Using user-provided TracerProvider, sending to both OTEL and LangSmith"
         )
-        # Combine operations once to prevent data corruption from multiple calls
-        ops = combine_serialized_queue_operations([item.item for item in batch])
-
-        # Deepcopy ops for each thread to avoid shared mutation
-        ops_for_otel = copy.deepcopy(ops)
-        ops_for_langsmith = copy.deepcopy(ops)
-
-        # Export to both OTEL and LangSmith in parallel for better I/O performance
+        # Combine operations once to avoid inconsistencies
+        raw_ops = [item.item for item in batch]
+        # Export to both OTEL and LangSmith in parallel
         with cf.ThreadPoolExecutor(max_workers=2) as executor:
             otel_future = executor.submit(
                 _otel_tracing_thread_handle_batch,
                 client,
                 tracing_queue,
                 batch,
-                False,  # mark_task_done=False to avoid double counting
-                ops_for_otel,  # Pass deepcopy of pre-combined operations
+                False,  # mark_task_done=False
+                combine_serialized_queue_operations(
+                    copy.deepcopy(raw_ops)
+                ),  # Pass pre-combined ops
             )
             langsmith_future = executor.submit(
                 _tracing_thread_handle_batch,
@@ -339,27 +321,28 @@ def _hybrid_tracing_thread_handle_batch(
                 tracing_queue,
                 batch,
                 use_multipart,
-                False,  # mark_task_done=False to avoid double counting
-                ops_for_langsmith,  # Pass deepcopy of pre-combined operations
+                False,  # mark_task_done=False
+                combine_serialized_queue_operations(
+                    copy.deepcopy(raw_ops)
+                ),  # Pass pre-combined ops
             )
-
             # Wait for both operations to complete
             cf.wait([otel_future, langsmith_future])
 
-        # Mark tasks as done once, after both exports complete
-        if mark_task_done:
-            for _ in batch:
-                try:
-                    tracing_queue.task_done()
-                except ValueError as e:
-                    if "task_done() called too many times" in str(e):
-                        # This can happen during shutdown when multiple threads
-                        # process the same queue items. It's harmless.
-                        logger.debug(
-                            f"Ignoring harmless task_done error during shutdown: {e}"
-                        )
-                    else:
-                        raise
+    # Mark task_done once per item only, avoid double counting
+    if mark_task_done:
+        for _ in batch:
+            try:
+                tracing_queue.task_done()
+            except ValueError as e:
+                if "task_done() called too many times" in str(e):
+                    # This can happen during shutdown when multiple threads
+                    # process the same queue items. It's harmless.
+                    logger.debug(
+                        f"Ignoring harmless task_done error during shutdown: {e}"
+                    )
+                else:
+                    raise
 
 
 def _is_using_internal_otlp_provider(client: Client) -> bool:
