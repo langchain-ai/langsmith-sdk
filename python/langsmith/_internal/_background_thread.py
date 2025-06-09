@@ -284,7 +284,7 @@ def _hybrid_tracing_thread_handle_batch(
     batch: list[TracingQueueItem],
     use_multipart: bool,
 ) -> None:
-    """Handle a batch of tracing queue items by sending to both LangSmith and OTEL in parallel.
+    """Handle a batch of tracing queue items by sending to both both LangSmith and OTEL.
 
     Args:
         client: The LangSmith client to use for sending data.
