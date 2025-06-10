@@ -1614,7 +1614,11 @@ def _process_iterator(
                 traced_item = process_chunk(item)
             else:
                 traced_item = item
-            if is_llm_run and run_container["new_run"]:
+            if (
+                is_llm_run
+                and run_container["new_run"]
+                and not run_container.get("_token_event_logged")
+            ):
                 run_container["new_run"].add_event(
                     {
                         "name": "new_token",
@@ -1624,6 +1628,7 @@ def _process_iterator(
                         "kwargs": {"token": traced_item},
                     }
                 )
+                run_container["_token_event_logged"] = True
             results.append(traced_item)
             yield item
     except StopIteration as e:
@@ -1654,7 +1659,11 @@ async def _process_async_iterator(
                 traced_item = process_chunk(item)
             else:
                 traced_item = item
-            if is_llm_run and run_container["new_run"]:
+            if (
+                is_llm_run
+                and run_container["new_run"]
+                and not run_container.get("_token_event_logged")
+            ):
                 run_container["new_run"].add_event(
                     {
                         "name": "new_token",
@@ -1664,6 +1673,7 @@ async def _process_async_iterator(
                         "kwargs": {"token": traced_item},
                     }
                 )
+                run_container["_token_event_logged"] = True
             results.append(traced_item)
             yield item
     except StopAsyncIteration:
