@@ -534,12 +534,11 @@ def traceable(
                 if func_accepts_parent_run:
                     kwargs["run_tree"] = run_container["new_run"]
 
-                # Set OpenTelemetry context if available and enabled
                 otel_context_manager = _maybe_create_otel_context(
                     run_container["new_run"]
                 )
                 if otel_context_manager:
-                    # Need to apply OTEL context to the async execution as well
+
                     async def run_with_otel_context():
                         with otel_context_manager:
                             return await func(*args, **kwargs)
@@ -667,12 +666,11 @@ def traceable(
                 if func_accepts_parent_run:
                     kwargs["run_tree"] = run_container["new_run"]
 
-                # Set OpenTelemetry context if available and enabled
                 otel_context_manager = _maybe_create_otel_context(
                     run_container["new_run"]
                 )
                 if otel_context_manager:
-                    # Need to apply OTEL context to the copied context as well
+
                     def run_with_otel_context():
                         with otel_context_manager:
                             return func(*args, **kwargs)
@@ -714,12 +712,11 @@ def traceable(
                 if func_accepts_parent_run:
                     kwargs["run_tree"] = run_container["new_run"]
 
-                # Set OpenTelemetry context if available and enabled
                 otel_context_manager = _maybe_create_otel_context(
                     run_container["new_run"]
                 )
                 if otel_context_manager:
-                    # Need to apply OTEL context to the copied context as well
+
                     def run_with_otel_context():
                         with otel_context_manager:
                             return func(*args, **kwargs)
@@ -1949,11 +1946,9 @@ def _maybe_create_otel_context(run_tree: Optional[run_trees.RunTree]):
     except ImportError:
         return None
 
-    # Create deterministic OpenTelemetry trace and span IDs from LangSmith UUIDs
     trace_id = get_otel_trace_id_from_uuid(run_tree.trace_id)
     span_id = get_otel_span_id_from_uuid(run_tree.id)
 
-    # Create SpanContext with deterministic IDs
     span_context = SpanContext(
         trace_id=trace_id,
         span_id=span_id,
@@ -1962,6 +1957,5 @@ def _maybe_create_otel_context(run_tree: Optional[run_trees.RunTree]):
         trace_state=TraceState(),
     )
 
-    # Create NonRecordingSpan and return use_span context manager
     non_recording_span = NonRecordingSpan(span_context)
     return use_span(non_recording_span)

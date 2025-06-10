@@ -442,3 +442,75 @@ class TestHybridTracingIntegration:
                 )
 
             mock_session.request.assert_called()
+
+    @patch.dict(
+        os.environ, {"LANGSMITH_OTEL_ENABLED": "true", "LANGSMITH_TRACING": "true"}
+    )
+    def test_otel_context_propagation_with_traceable(self):
+        """Test that OpenTelemetry context is properly set using NonRecordingSpan."""
+        pytest.importorskip("opentelemetry")
+
+        from langsmith import utils
+
+        utils.get_env_var.cache_clear()
+
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.trace import (
+            NonRecordingSpan,
+            SpanContext,
+            TraceState,
+            get_current_span,
+            set_tracer_provider,
+            use_span,
+        )
+
+        from langsmith import traceable
+
+        tracer_provider = TracerProvider()
+        set_tracer_provider(tracer_provider)
+
+        test_trace_id = 12345678901234567890123456789012345
+        test_span_id = 1234567890123456
+
+        span_context = SpanContext(
+            trace_id=test_trace_id,
+            span_id=test_span_id,
+            is_remote=False,
+            trace_state=TraceState(),
+        )
+        non_recording_span = NonRecordingSpan(span_context)
+
+        captured_span_contexts = []
+
+        def inner_function():
+            current_span = get_current_span()
+            if current_span:
+                captured_span_contexts.append(current_span.get_span_context())
+
+        with use_span(non_recording_span):
+            inner_function()
+
+        assert len(captured_span_contexts) == 1
+        assert captured_span_contexts[0].trace_id == test_trace_id
+        assert captured_span_contexts[0].span_id == test_span_id
+
+        captured_traceable_contexts = []
+
+        @traceable
+        def test_tool():
+            """Test tool that captures the current OpenTelemetry span context."""
+            current_span = get_current_span()
+            if current_span:
+                span_context = current_span.get_span_context()
+                captured_traceable_contexts.append(span_context)
+            return "tool_result"
+
+        result = test_tool()
+
+        assert result == "tool_result"
+
+        assert len(captured_traceable_contexts) >= 1
+
+        span_context = captured_traceable_contexts[0]
+        assert span_context.trace_id > 0
+        assert span_context.span_id > 0
