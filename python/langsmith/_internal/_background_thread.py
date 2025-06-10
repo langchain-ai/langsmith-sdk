@@ -302,45 +302,58 @@ def _hybrid_tracing_thread_handle_batch(
     langsmith_ops = copy.deepcopy(ops)
     otel_ops = copy.deepcopy(ops)
 
-    # Use ThreadPoolExecutor for parallel execution
-    with cf.ThreadPoolExecutor(max_workers=2) as executor:
-        # Submit both tasks
-        future_langsmith = executor.submit(
-            _tracing_thread_handle_batch,
-            client,
-            tracing_queue,
-            batch,
-            use_multipart,
-            False,  # Don't mark tasks done - we'll do it once at the end
-            langsmith_ops,
-        )
-        future_otel = executor.submit(
-            _otel_tracing_thread_handle_batch,
-            client,
-            tracing_queue,
-            batch,
-            False,  # Don't mark tasks done - we'll do it once at the end
-            otel_ops,
-        )
+    try:
+        # Use ThreadPoolExecutor for parallel execution
+        with cf.ThreadPoolExecutor(max_workers=2) as executor:
+            # Submit both tasks
+            future_langsmith = executor.submit(
+                _tracing_thread_handle_batch,
+                client,
+                tracing_queue,
+                batch,
+                use_multipart,
+                False,  # Don't mark tasks done - we'll do it once at the end
+                langsmith_ops,
+            )
+            future_otel = executor.submit(
+                _otel_tracing_thread_handle_batch,
+                client,
+                tracing_queue,
+                batch,
+                False,  # Don't mark tasks done - we'll do it once at the end
+                otel_ops,
+            )
 
-        # Wait for both to complete
-        future_langsmith.result()
-        future_otel.result()
+            # Wait for both to complete
+            future_langsmith.result()
+            future_otel.result()
+    except RuntimeError as e:
+        if "cannot schedule new futures after interpreter shutdown" in str(e):
+            # During interpreter shutdown, ThreadPoolExecutor is blocked,
+            # fall back to sequential processing
+            logger.debug(
+                "Interpreter shutting down, falling back to sequential processing"
+            )
+            _tracing_thread_handle_batch(
+                client, tracing_queue, batch, use_multipart, False, langsmith_ops
+            )
+            _otel_tracing_thread_handle_batch(
+                client, tracing_queue, batch, False, otel_ops
+            )
+        else:
+            raise
 
-    # Mark all tasks as done once, only if requested
-    if mark_task_done:
-        for _ in batch:
-            try:
-                tracing_queue.task_done()
-            except ValueError as e:
-                if "task_done() called too many times" in str(e):
-                    # This can happen during shutdown when multiple threads
-                    # process the same queue items. It's harmless.
-                    logger.debug(
-                        f"Ignoring harmless task_done error during shutdown: {e}"
-                    )
-                else:
-                    raise
+    # Mark all tasks as done once
+    for _ in batch:
+        try:
+            tracing_queue.task_done()
+        except ValueError as e:
+            if "task_done() called too many times" in str(e):
+                # This can happen during shutdown when multiple threads
+                # process the same queue items. It's harmless.
+                logger.debug(f"Ignoring harmless task_done error during shutdown: {e}")
+            else:
+                raise
 
 
 def _is_using_internal_otlp_provider(client: Client) -> bool:
