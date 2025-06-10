@@ -200,7 +200,7 @@ def _tracing_thread_handle_batch(
             exc_info=True,
         )
     finally:
-        if mark_task_done:
+        if mark_task_done and tracing_queue is not None:
             for _ in batch:
                 try:
                     tracing_queue.task_done()
@@ -263,7 +263,7 @@ def _otel_tracing_thread_handle_batch(
             exc_info=True,
         )
     finally:
-        if mark_task_done:
+        if mark_task_done and tracing_queue is not None:
             for _ in batch:
                 try:
                     tracing_queue.task_done()
@@ -343,17 +343,20 @@ def _hybrid_tracing_thread_handle_batch(
         else:
             raise
 
-    # Mark all tasks as done once
-    for _ in batch:
-        try:
-            tracing_queue.task_done()
-        except ValueError as e:
-            if "task_done() called too many times" in str(e):
-                # This can happen during shutdown when multiple threads
-                # process the same queue items. It's harmless.
-                logger.debug(f"Ignoring harmless task_done error during shutdown: {e}")
-            else:
-                raise
+    # Mark all tasks as done once, only if requested
+    if mark_task_done and tracing_queue is not None:
+        for _ in batch:
+            try:
+                tracing_queue.task_done()
+            except ValueError as e:
+                if "task_done() called too many times" in str(e):
+                    # This can happen during shutdown when multiple threads
+                    # process the same queue items. It's harmless.
+                    logger.debug(
+                        f"Ignoring harmless task_done error during shutdown: {e}"
+                    )
+                else:
+                    raise
 
 
 def _is_using_internal_otlp_provider(client: Client) -> bool:
