@@ -533,17 +533,39 @@ def traceable(
                 accepts_context = aitertools.asyncio_accepts_context()
                 if func_accepts_parent_run:
                     kwargs["run_tree"] = run_container["new_run"]
-                fr_coro = func(*args, **kwargs)
-                if accepts_context:
-                    function_result = await asyncio.create_task(  # type: ignore[call-arg]
-                        fr_coro, context=run_container["context"]
-                    )
+
+                # Set OpenTelemetry context if available and enabled
+                otel_context_manager = _maybe_create_otel_context(
+                    run_container["new_run"]
+                )
+                if otel_context_manager:
+                    # Need to apply OTEL context to the async execution as well
+                    async def run_with_otel_context():
+                        with otel_context_manager:
+                            return await func(*args, **kwargs)
+
+                    if accepts_context:
+                        function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                            run_with_otel_context(), context=run_container["context"]
+                        )
+                    else:
+                        # Python < 3.11
+                        with tracing_context(
+                            **get_tracing_context(run_container["context"])
+                        ):
+                            function_result = await run_with_otel_context()
                 else:
-                    # Python < 3.11
-                    with tracing_context(
-                        **get_tracing_context(run_container["context"])
-                    ):
-                        function_result = await fr_coro
+                    fr_coro = func(*args, **kwargs)
+                    if accepts_context:
+                        function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                            fr_coro, context=run_container["context"]
+                        )
+                    else:
+                        # Python < 3.11
+                        with tracing_context(
+                            **get_tracing_context(run_container["context"])
+                        ):
+                            function_result = await fr_coro
             except BaseException as e:
                 # shield from cancellation, given we're catching all exceptions
                 _cleanup_traceback(e)
@@ -644,7 +666,24 @@ def traceable(
             try:
                 if func_accepts_parent_run:
                     kwargs["run_tree"] = run_container["new_run"]
-                function_result = run_container["context"].run(func, *args, **kwargs)
+
+                # Set OpenTelemetry context if available and enabled
+                otel_context_manager = _maybe_create_otel_context(
+                    run_container["new_run"]
+                )
+                if otel_context_manager:
+                    # Need to apply OTEL context to the copied context as well
+                    def run_with_otel_context():
+                        with otel_context_manager:
+                            return func(*args, **kwargs)
+
+                    function_result = run_container["context"].run(
+                        run_with_otel_context
+                    )
+                else:
+                    function_result = run_container["context"].run(
+                        func, *args, **kwargs
+                    )
             except BaseException as e:
                 _cleanup_traceback(e)
                 _on_run_end(run_container, error=e)
@@ -674,7 +713,24 @@ def traceable(
             try:
                 if func_accepts_parent_run:
                     kwargs["run_tree"] = run_container["new_run"]
-                generator_result = run_container["context"].run(func, *args, **kwargs)
+
+                # Set OpenTelemetry context if available and enabled
+                otel_context_manager = _maybe_create_otel_context(
+                    run_container["new_run"]
+                )
+                if otel_context_manager:
+                    # Need to apply OTEL context to the copied context as well
+                    def run_with_otel_context():
+                        with otel_context_manager:
+                            return func(*args, **kwargs)
+
+                    generator_result = run_container["context"].run(
+                        run_with_otel_context
+                    )
+                else:
+                    generator_result = run_container["context"].run(
+                        func, *args, **kwargs
+                    )
 
                 function_return = yield from _process_iterator(
                     generator_result,
@@ -1863,3 +1919,49 @@ def _cleanup_traceback(e: BaseException):
         ):
             tb_ = tb_.tb_next
         e.__traceback__ = tb_
+
+
+def _maybe_create_otel_context(run_tree: Optional[run_trees.RunTree]):
+    """Create OpenTelemetry context manager if OTEL is enabled and available.
+
+    Args:
+        run_tree: The current run tree.
+
+    Returns:
+        Context manager for use_span or None if not available.
+    """
+    if not run_tree or not utils.is_truish(utils.get_env_var("OTEL_ENABLED")):
+        return None
+
+    try:
+        from opentelemetry.trace import (
+            NonRecordingSpan,
+            SpanContext,
+            TraceFlags,
+            TraceState,
+            use_span,
+        )
+
+        from langsmith._internal._otel_utils import (
+            get_otel_span_id_from_uuid,
+            get_otel_trace_id_from_uuid,
+        )
+    except ImportError:
+        return None
+
+    # Create deterministic OpenTelemetry trace and span IDs from LangSmith UUIDs
+    trace_id = get_otel_trace_id_from_uuid(run_tree.trace_id)
+    span_id = get_otel_span_id_from_uuid(run_tree.id)
+
+    # Create SpanContext with deterministic IDs
+    span_context = SpanContext(
+        trace_id=trace_id,
+        span_id=span_id,
+        is_remote=False,
+        trace_flags=TraceFlags(TraceFlags.SAMPLED),
+        trace_state=TraceState(),
+    )
+
+    # Create NonRecordingSpan and return use_span context manager
+    non_recording_span = NonRecordingSpan(span_context)
+    return use_span(non_recording_span)
