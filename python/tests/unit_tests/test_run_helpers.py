@@ -542,8 +542,8 @@ def test_traceable_parent_from_runnable_config() -> None:
                 assert body["post"]
                 posts.extend(body["post"])
         assert len(posts) == 2
-        parent = next(p for p in posts if p["parent_run_id"] is None)
-        child = next(p for p in posts if p["parent_run_id"] is not None)
+        parent = next(p for p in posts if p.get("parent_run_id") is None)
+        child = next(p for p in posts if p.get("parent_run_id") is not None)
         assert child["parent_run_id"] == parent["id"]
 
 
@@ -581,8 +581,8 @@ def test_traceable_parent_from_runnable_config_accepts_config() -> None:
                 assert body["post"]
                 posts.extend(body["post"])
         assert len(posts) == 2
-        parent = next(p for p in posts if p["parent_run_id"] is None)
-        child = next(p for p in posts if p["parent_run_id"] is not None)
+        parent = next(p for p in posts if p.get("parent_run_id") is None)
+        child = next(p for p in posts if p.get("parent_run_id") is not None)
         assert child["parent_run_id"] == parent["id"]
 
 
