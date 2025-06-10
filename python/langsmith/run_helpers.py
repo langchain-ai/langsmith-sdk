@@ -1931,7 +1931,7 @@ def _maybe_create_otel_context(run_tree: Optional[run_trees.RunTree]):
         return None
 
     try:
-        from opentelemetry.trace import (
+        from opentelemetry.trace import (  # type: ignore[import]
             NonRecordingSpan,
             SpanContext,
             TraceFlags,
