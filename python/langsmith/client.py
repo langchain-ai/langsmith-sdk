@@ -2296,7 +2296,9 @@ class Client:
         Raises:
             LangSmithError: If a child run has no parent.
         """
-        child_runs = self.list_runs(id=run.child_run_ids)
+        child_runs = self.list_runs(
+            is_root=False, session_id=run.session_id, trace_id=run.trace_id
+        )
         treemap: collections.defaultdict[uuid.UUID, list[ls_schemas.Run]] = (
             collections.defaultdict(list)
         )
@@ -2307,8 +2309,14 @@ class Client:
         ):
             if child_run.parent_run_id is None:
                 raise ls_utils.LangSmithError(f"Child run {child_run.id} has no parent")
-            treemap[child_run.parent_run_id].append(child_run)
-            runs[child_run.id] = child_run
+
+            # Only track downstream children
+            if (
+                child_run.dotted_order.startswith(run.dotted_order)
+                and child_run.id != run.id
+            ):
+                treemap[child_run.parent_run_id].append(child_run)
+                runs[child_run.id] = child_run
         run.child_runs = treemap.pop(run.id, [])
         for run_id, children in treemap.items():
             runs[run_id].child_runs = children
@@ -2349,7 +2357,8 @@ class Client:
         run = ls_schemas.Run(
             attachments=attachments, **response.json(), _host_url=self._host_url
         )
-        if load_child_runs and run.child_run_ids:
+
+        if load_child_runs:
             run = self._load_child_runs(run)
         return run
 
@@ -2477,7 +2486,6 @@ class Client:
             )
         default_select = [
             "app_path",
-            "child_run_ids",
             "completion_cost",
             "completion_tokens",
             "dotted_order",
@@ -4745,7 +4753,7 @@ class Client:
 
         example = response.json()
         attachments = _convert_stored_attachments_to_attachments_dict(
-            example, attachments_key="attachment_urls"
+            example, attachments_key="attachment_urls", api_url=self.api_url
         )
 
         return ls_schemas.Example(
@@ -4872,7 +4880,7 @@ class Client:
             self._get_paginated_list("/examples", params=params)
         ):
             attachments = _convert_stored_attachments_to_attachments_dict(
-                example, attachments_key="attachment_urls"
+                example, attachments_key="attachment_urls", api_url=self.api_url
             )
 
             yield ls_schemas.Example(
@@ -5698,11 +5706,13 @@ class Client:
 
     def create_feedback(
         self,
-        run_id: Optional[ID_TYPE],
-        key: str,
+        # TODO: make run_id a kwarg and drop default value for 'key' in breaking release.
+        run_id: Optional[ID_TYPE] = None,
+        key: str = "unnamed",
         *,
         score: Union[float, int, bool, None] = None,
         value: Union[str, dict, None] = None,
+        trace_id: Optional[ID_TYPE] = None,
         correction: Union[dict, None] = None,
         comment: Union[str, None] = None,
         source_info: Optional[dict[str, Any]] = None,
@@ -5717,22 +5727,29 @@ class Client:
         comparative_experiment_id: Optional[ID_TYPE] = None,
         feedback_group_id: Optional[ID_TYPE] = None,
         extra: Optional[dict] = None,
-        trace_id: Optional[ID_TYPE] = None,
         error: Optional[bool] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
-        """Create a feedback in the LangSmith API.
+        """Create feedback for a run.
+
+        **NOTE**: To enable feedback to be batch uploaded in the background you must
+        specify trace_id. *We highly encourage this for latency-sensitive environments.*
 
         Args:
-            run_id (Optional[Union[UUID, str]]):
-                The ID of the run to provide feedback for. Either the run_id OR
-                the project_id must be provided.
             key (str):
-                The name of the metric or 'aspect' this feedback is about.
+                The name of the feedback metric.
             score (Optional[Union[float, int, bool]]):
                 The score to rate this run on the metric or aspect.
             value (Optional[Union[float, int, bool, str, dict]]):
                 The display value or non-numeric value for this feedback.
+            run_id (Optional[Union[UUID, str]]):
+                The ID of the run to provide feedback for. At least one of run_id,
+                trace_id, or project_id must be specified.
+            trace_id (Optional[Union[UUID, str]]):
+                The ID of the trace (i.e. root parent run) of the run to provide
+                feedback for (specified by run_id). If run_id and trace_id are the
+                same, only trace_id needs to be specified. **NOTE**: trace_id is
+                required feedback ingestion to be batched and backgrounded.
             correction (Optional[dict]):
                 The proper ground truth for this run.
             comment (Optional[str]):
@@ -5742,7 +5759,7 @@ class Client:
                 Information about the source of this feedback.
             feedback_source_type (Union[FeedbackSourceType, str]):
                 The type of feedback source, such as model (for model-generated feedback)
-                    or API.
+                or API.
             source_run_id (Optional[Union[UUID, str]]):
                 The ID of the run that generated this feedback, if a "model" type.
             feedback_id (Optional[Union[UUID, str]]):
@@ -5755,8 +5772,9 @@ class Client:
             stop_after_attempt (int, default=10):
                 The number of times to retry the request before giving up.
             project_id (Optional[Union[UUID, str]]):
-                The ID of the project_id to provide feedback on. One - and only one - of
-                this and run_id must be provided.
+                The ID of the project (or experiment) to provide feedback on. This is
+                used for creating summary metrics for experiments. Cannot specify
+                run_id or trace_id if project_id is specified, and vice versa.
             comparative_experiment_id (Optional[Union[UUID, str]]):
                 If this feedback was logged as a part of a comparative experiment, this
                 associates the feedback with that experiment.
@@ -5765,18 +5783,64 @@ class Client:
                 this is used to group feedback together.
             extra (Optional[Dict]):
                 Metadata for the feedback.
-            trace_id (Optional[Union[UUID, str]]):
-                The trace ID of the run to provide feedback for. Enables batch ingestion.
             **kwargs (Any):
                 Additional keyword arguments.
 
         Returns:
             Feedback: The created feedback object.
+
+        Example:
+            .. code-block:: python
+
+                from langsmith import trace, traceable, Client
+
+
+                @traceable
+                def foo(x):
+                    return {"y": x * 2}
+
+
+                @traceable
+                def bar(y):
+                    return {"z": y - 1}
+
+
+                client = Client()
+
+                inputs = {"x": 1}
+                with trace(name="foobar", inputs=inputs) as root_run:
+                    result = foo(**inputs)
+                    result = bar(**result)
+                    root_run.outputs = result
+                    trace_id = root_run.id
+                    child_runs = root_run.child_runs
+
+                # Provide feedback for a trace (a.k.a. a root run)
+                client.create_feedback(
+                    key="user_feedback",
+                    score=1,
+                    trace_id=trace_id,
+                )
+
+                # Provide feedback for a child run
+                foo_run_id = [run for run in child_runs if run.name == "foo"][0].id
+                client.create_feedback(
+                    key="correctness",
+                    score=0,
+                    run_id=foo_run_id,
+                    # trace_id= is optional but recommended to enable batched and backgrounded
+                    # feedback ingestion.
+                    trace_id=trace_id,
+                )
+
         """
+        run_id = run_id or trace_id
         if run_id is None and project_id is None:
-            raise ValueError("One of run_id and project_id must be provided")
+            raise ValueError("One of run_id, trace_id, or project_id  must be provided")
         if run_id is not None and project_id is not None:
-            raise ValueError("Only one of run_id and project_id must be provided")
+            raise ValueError(
+                "project_id cannot be provided if run_id or trace_id is provided"
+            )
         if kwargs:
             warnings.warn(
                 "The following arguments are no longer used in the create_feedback"
@@ -7876,7 +7940,7 @@ def convert_prompt_to_anthropic_format(
 
 
 def _convert_stored_attachments_to_attachments_dict(
-    data: dict, *, attachments_key: str
+    data: dict, *, attachments_key: str, api_url: Optional[str] = None
 ) -> dict[str, AttachmentInfo]:
     """Convert attachments from the backend database format to the user facing format."""
     attachments_dict = {}
@@ -7884,7 +7948,11 @@ def _convert_stored_attachments_to_attachments_dict(
         for key, value in data[attachments_key].items():
             if not key.startswith("attachment."):
                 continue
-            response = requests.get(value["presigned_url"], stream=True)
+            if api_url is not None:
+                full_url = _construct_url(api_url, value["presigned_url"])
+            else:
+                full_url = value["presigned_url"]
+            response = requests.get(full_url, stream=True)
             response.raise_for_status()
             reader = io.BytesIO(response.content)
             attachments_dict[key.removeprefix("attachment.")] = AttachmentInfo(

@@ -70,6 +70,7 @@ _CONTEXT_KEYS: dict[str, contextvars.ContextVar] = {
     "metadata": _METADATA,
     "enabled": _TRACING_ENABLED,
     "client": _CLIENT,
+    "replicas": run_trees._REPLICAS,
 }
 
 _EXCLUDED_FRAME_FNAME = "langsmith/run_helpers.py"
@@ -105,6 +106,7 @@ def tracing_context(
     parent: Optional[Union[run_trees.RunTree, Mapping, str, Literal[False]]] = None,
     enabled: Optional[Union[bool, Literal["local"]]] = None,
     client: Optional[ls_client.Client] = None,
+    replicas: Optional[Sequence[tuple[str, Optional[dict]]]] = None,
     **kwargs: Any,
 ) -> Generator[None, None, None]:
     """Set the tracing context for a block of code.
@@ -119,8 +121,8 @@ def tracing_context(
         client: The client to use for logging the run to LangSmith. Defaults to None,
         enabled: Whether tracing is enabled. Defaults to None, meaning it will use the
             current context value or environment variables.
-
-
+        replicas: A sequence of tuples containing project names and optional updates for each replica.
+            Example: [("my_experiment", {"reference_example_id": None}), ("my_project", None)]
     """
     if kwargs:
         # warn
@@ -146,6 +148,7 @@ def tracing_context(
             "metadata": metadata,
             "enabled": enabled,
             "client": client,
+            "replicas": replicas,
         }
     )
     try:
@@ -236,7 +239,7 @@ P = ParamSpec("P")
 
 @runtime_checkable
 class SupportsLangsmithExtra(Protocol, Generic[P, R]):
-    """Implementations of this Protoc accept an optional langsmith_extra parameter.
+    """Implementations of this Protocol accept an optional langsmith_extra parameter.
 
     Args:
         *args: Variable length arguments.
@@ -267,6 +270,16 @@ class SupportsLangsmithExtra(Protocol, Generic[P, R]):
 
         """
         ...
+
+
+def _extract_usage(
+    *,
+    run_tree: run_trees.RunTree,
+    outputs: Optional[dict] = None,
+    **kwargs: Any,
+) -> Optional[schemas.ExtractedUsageMetadata]:
+    from_metadata = (run_tree.metadata or {}).get("usage_metadata")
+    return (outputs or {}).get("usage_metadata") or from_metadata
 
 
 @overload
@@ -482,7 +495,8 @@ def traceable(
     )
     outputs_processor = kwargs.pop("process_outputs", None)
     _on_run_end = functools.partial(
-        _handle_container_end, outputs_processor=outputs_processor
+        _handle_container_end,
+        outputs_processor=outputs_processor,
     )
 
     if kwargs:
@@ -959,6 +973,7 @@ class trace:
                 run_type=self.run_type,
                 extra=extra_outer,
                 project_name=project_name_ or "default",
+                replicas=run_trees._REPLICAS.get(),
                 inputs=self.inputs or {},
                 tags=tags_,
                 client=client_,  # type: ignore
@@ -1254,7 +1269,7 @@ def _container_end(
         # Tracing not enabled
         return
     if isinstance(outputs, dict):
-        outputs_ = outputs
+        dict_outputs = outputs
     elif (
         outputs is not None
         and hasattr(outputs, "model_dump")
@@ -1262,19 +1277,21 @@ def _container_end(
         and not isinstance(outputs, type)
     ):
         try:
-            outputs_ = outputs.model_dump(exclude_none=True, mode="json")
+            dict_outputs = outputs.model_dump(exclude_none=True, mode="json")
         except Exception as e:
             LOGGER.debug(
                 f"Failed to use model_dump to serialize {type(outputs)} to JSON: {e}"
             )
-            outputs_ = {"output": outputs}
+            dict_outputs = {"output": outputs}
     else:
-        outputs_ = {"output": outputs}
+        dict_outputs = {"output": outputs}
     error_ = None
     if error:
         stacktrace = utils._format_exc()
         error_ = f"{repr(error)}\n\n{stacktrace}"
-    run_tree.end(outputs=outputs_, error=error_)
+    if (usage := _extract_usage(run_tree=run_tree, outputs=dict_outputs)) is not None:
+        run_tree.metadata["usage_metadata"] = usage
+    run_tree.end(outputs=dict_outputs, error=error_)
     if utils.tracing_is_enabled() is True:
         run_tree.patch()
     on_end = container.get("on_end")
@@ -1450,6 +1467,7 @@ def _setup_run(
                 reference_example_id, accept_null=True
             ),
             project_name=selected_project,  # type: ignore[arg-type]
+            replicas=run_trees._REPLICAS.get(),
             extra=extra_inner,
             tags=tags_,
             client=client_,  # type: ignore
@@ -1707,7 +1725,9 @@ class _TracedStreamBase(Generic[T]):
             else:
                 reduced_output = self.__ls_accumulated_output__
             _container_end(
-                self.__ls_trace_container__, outputs=reduced_output, error=error
+                self.__ls_trace_container__,
+                outputs=reduced_output,
+                error=error,
             )
         finally:
             self.__ls_completed__ = True
@@ -1724,7 +1744,9 @@ class _TracedStream(_TracedStreamBase, Generic[T]):
         process_chunk: Optional[Callable] = None,
     ):
         super().__init__(
-            stream=stream, trace_container=trace_container, reduce_fn=reduce_fn
+            stream=stream,
+            trace_container=trace_container,
+            reduce_fn=reduce_fn,
         )
         self.__ls_stream__ = stream
         self.__ls__gen__ = _process_iterator(
@@ -1773,7 +1795,9 @@ class _TracedAsyncStream(_TracedStreamBase, Generic[T]):
         process_chunk: Optional[Callable] = None,
     ):
         super().__init__(
-            stream=stream, trace_container=trace_container, reduce_fn=reduce_fn
+            stream=stream,
+            trace_container=trace_container,
+            reduce_fn=reduce_fn,
         )
         self.__ls_stream__ = stream
         self.__ls_gen = _process_async_iterator(
