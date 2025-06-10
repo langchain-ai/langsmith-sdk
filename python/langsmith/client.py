@@ -4206,8 +4206,16 @@ class Client:
                         mime_type, attachment_data = attachment
                     if isinstance(attachment_data, Path):
                         if dangerously_allow_filesystem:
-                            file_size = os.path.getsize(attachment_data)
-                            file = open(attachment_data, "rb")
+                            try:
+                                file_size = os.path.getsize(attachment_data)
+                                file = open(attachment_data, "rb")
+                            except FileNotFoundError:
+                                logger.warning(
+                                    "Attachment file not found for example %s: %s",
+                                    example_id,
+                                    attachment_data,
+                                )
+                                continue
                             opened_files_dict[
                                 str(attachment_data) + str(uuid.uuid4())
                             ] = file
