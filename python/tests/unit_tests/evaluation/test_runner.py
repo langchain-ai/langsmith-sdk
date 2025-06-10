@@ -612,7 +612,9 @@ async def test_aevaluate_results(
             deltas.append((now - last))
             last = now
         total = now - start  # type: ignore
-        assert 3.2 > total > 1.5
+        # Allow for more variability in how long the async processing takes
+        # to accommodate different CI environments.
+        assert total == pytest.approx(3, abs=0.5)
 
         # Essentially we want to check that most calls were very fast.
         assert len(deltas) == SPLIT_SIZE * NUM_REPETITIONS
