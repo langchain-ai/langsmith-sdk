@@ -1239,6 +1239,7 @@ class _TraceableContainer(TypedDict, total=False):
     outer_tags: Optional[list[str]]
     on_end: Optional[Callable[[run_trees.RunTree], Any]]
     context: contextvars.Context
+    _token_event_logged: Optional[bool]
 
 
 class _ContainerInput(TypedDict, total=False):
@@ -1411,6 +1412,7 @@ def _setup_run(
             outer_tags=None,
             on_end=langsmith_extra.get("on_end"),
             context=copy_context(),
+            _token_event_logged=False,
         )
     id_ = id_ or str(uuid.uuid4())
     signature = inspect.signature(func)
@@ -1487,6 +1489,7 @@ def _setup_run(
         outer_tags=outer_tags,
         on_end=langsmith_extra.get("on_end"),
         context=context,
+        _token_event_logged=False,
     )
     context.run(_PROJECT_NAME.set, response_container["project_name"])
     context.run(_PARENT_RUN_TREE.set, response_container["new_run"])

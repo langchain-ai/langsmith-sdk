@@ -1874,7 +1874,7 @@ def test_first_token_event_only(mock_client: Client) -> None:
 
     with tracing_context(enabled=True):
 
-        @traceable(client=mock_client)
+        @traceable(client=mock_client, run_type="llm")
         def token_stream() -> Generator[str, None, None]:
             for t in ["a", "b", "c"]:
                 yield t
