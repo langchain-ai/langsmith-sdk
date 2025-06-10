@@ -22,6 +22,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
+    Literal,
     Optional,
     TypeVar,
     Union,
@@ -140,6 +141,7 @@ def evaluate(
     blocking: bool = True,
     experiment: Optional[EXPERIMENT_T] = None,
     upload_results: bool = True,
+    error_handling: Literal["log", "ignore"] = "log",
     **kwargs: Any,
 ) -> Union[ExperimentResults, ComparativeExperimentResults]:
     r"""Evaluate a target system on a given dataset.
@@ -429,6 +431,7 @@ def evaluate(
             blocking=blocking,
             experiment=experiment,
             upload_results=upload_results,
+            error_handling=error_handling,
         )
 
 
@@ -1035,15 +1038,12 @@ def _evaluate(
     blocking: bool = True,
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
     upload_results: bool = True,
+    error_handling: Literal["log", "ignore"] = "log",
 ) -> ExperimentResults:
     # Initialize the experiment manager.
     client = client or rt.get_cached_client()
     runs = None if _is_callable(target) else cast(Iterable[schemas.Run], target)
-    experiment_, runs = _resolve_experiment(
-        experiment,
-        runs,
-        client,
-    )
+    experiment_, runs = _resolve_experiment(experiment, runs, client)
 
     manager = _ExperimentManager(
         data,
@@ -1057,11 +1057,12 @@ def _evaluate(
         # Create or resolve the experiment.
         include_attachments=_include_attachments(target, evaluators),
         upload_results=upload_results,
+        error_handling=error_handling,
     ).start()
-    cache_dir = ls_utils.get_cache_dir(None)
-    cache_path = (
-        pathlib.Path(cache_dir) / f"{manager.dataset_id}.yaml" if cache_dir else None
-    )
+    if cache_dir := ls_utils.get_cache_dir(None):
+        cache_path = pathlib.Path(cache_dir) / f"{manager.dataset_id}.yaml"
+    else:
+        cache_path = None
     with ls_utils.with_optional_cache(cache_path, ignore_hosts=[client.api_url]):
         if _is_callable(target):
             # Add predictions to the experiment.
@@ -1310,6 +1311,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         reuse_attachments: bool = False,
         upload_results: bool = True,
         attachment_raw_data_dict: Optional[dict] = None,
+        error_handling: Literal["log", "ignore"] = "log",
     ):
         super().__init__(
             experiment=experiment,
@@ -1327,6 +1329,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         self._reuse_attachments = reuse_attachments
         self._upload_results = upload_results
         self._attachment_raw_data_dict = attachment_raw_data_dict
+        self._error_handling = error_handling
 
     def _reset_example_attachment_readers(
         self, example: schemas.Example
@@ -1444,6 +1447,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             reuse_attachments=self._reuse_attachments,
             upload_results=self._upload_results,
             attachment_raw_data_dict=self._attachment_raw_data_dict,
+            error_handling=self._error_handling,
         )
 
     def with_predictions(
@@ -1470,6 +1474,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             upload_results=self._upload_results,
             # TODO: Can't do multiple prediction rounds rn.
             include_attachments=self._include_attachments,
+            error_handling=self._error_handling,
         )
 
     def with_evaluators(
@@ -1502,6 +1507,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             summary_results=self._summary_results,
             include_attachments=self._include_attachments,
             upload_results=self._upload_results,
+            error_handling=self._error_handling,
         )
 
     def with_summary_evaluators(
@@ -1524,6 +1530,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             summary_results=aggregate_feedback_gen,
             include_attachments=self._include_attachments,
             upload_results=self._upload_results,
+            error_handling=self._error_handling,
         )
 
     def get_results(self) -> Iterable[ExperimentResultRow]:
@@ -1572,6 +1579,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                     self.client,
                     self._upload_results,
                     include_attachments,
+                    self._error_handling,
                 )
 
         else:
@@ -1586,6 +1594,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         self.client,
                         self._upload_results,
                         include_attachments,
+                        self._error_handling,
                     )
                     for example in self.examples
                 ]
@@ -1879,12 +1888,16 @@ def _forward(
     client: langsmith.Client,
     upload_results: bool,
     include_attachments: bool = False,
+    error_handling: Literal["log", "ignore"] = "log",
 ) -> _ForwardResults:
     run: Optional[schemas.RunBase] = None
 
     def _get_run(r: rt.RunTree) -> None:
         nonlocal run
         run = r
+
+    def _set_reference_example_id(r: rt.RunTree) -> None:
+        r.reference_example_id = example.id
 
     with rh.tracing_context(enabled="local" if not upload_results else True):
         example_version = (
@@ -1893,12 +1906,19 @@ def _forward(
             else example.created_at.isoformat()
         )
         langsmith_extra = rh.LangSmithExtra(
-            reference_example_id=example.id,
             on_end=_get_run,
             project_name=experiment_name,
             metadata={**metadata, "example_version": example_version},
             client=client,
         )
+        if error_handling == "log":
+            langsmith_extra["reference_example_id"] = example.id
+        elif error_handling == "ignore":
+            # Only set the reference_example_id if the run succeeds.
+            langsmith_extra["_on_success"] = _set_reference_example_id
+        else:
+            raise ValueError(f"Unrecognized error_handling value: {error_handling=}")
+
         try:
             arg_names = _get_target_args(fn)
             args = [getattr(example, argn) for argn in arg_names]
