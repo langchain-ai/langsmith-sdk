@@ -1,8 +1,12 @@
+import logging
+import uuid
+
 from langsmith._internal import _orjson
 from langsmith._internal._operations import (
     SerializedFeedbackOperation,
     SerializedRunOperation,
     combine_serialized_queue_operations,
+    serialized_run_operation_to_multipart_parts_and_context,
 )
 
 
@@ -109,3 +113,31 @@ def test_combine_serialized_queue_operations():
         serialized_run_operations[2],
         serialized_run_operations[4],
     ]
+
+
+def test_serialized_run_operation_missing_file(tmp_path, caplog) -> None:
+    caplog.set_level(logging.WARNING)
+    op = SerializedRunOperation(
+        operation="post",
+        id=uuid.uuid4(),
+        trace_id=uuid.uuid4(),
+        _none=_orjson.dumps({"foo": 1}),
+        inputs=None,
+        outputs=None,
+        events=None,
+        attachments={
+            "missing": ("text/plain", tmp_path / "does-not-exist.txt"),
+            "ok": ("text/plain", b"data"),
+        },
+    )
+
+    with caplog.at_level(logging.WARNING):
+        parts_and_context, opened = (
+            serialized_run_operation_to_multipart_parts_and_context(op)
+        )
+
+    assert "Attachment file not found" in caplog.text
+    part_names = [p[0] for p in parts_and_context.parts]
+    assert f"attachment.{op.id}.ok" in part_names
+    assert f"attachment.{op.id}.missing" not in part_names
+    assert not opened
