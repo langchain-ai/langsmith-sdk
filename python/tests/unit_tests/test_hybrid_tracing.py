@@ -13,6 +13,19 @@ from langsmith._internal._background_thread import (
     _hybrid_tracing_thread_handle_batch,
 )
 from langsmith._internal._operations import serialize_run_dict
+from langsmith._internal._utils import get_env_var
+
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.trace import (
+    NonRecordingSpan,
+    SpanContext,
+    TraceState,
+    get_current_span,
+    set_tracer_provider,
+    use_span,
+)
+
+from langsmith import traceable
 
 
 class MockOTELExporter:
@@ -448,23 +461,7 @@ class TestHybridTracingIntegration:
     )
     def test_otel_context_propagation_with_traceable(self):
         """Test that OpenTelemetry context is properly set using NonRecordingSpan."""
-        pytest.importorskip("opentelemetry")
-
-        from langsmith import utils
-
-        utils.get_env_var.cache_clear()
-
-        from opentelemetry.sdk.trace import TracerProvider
-        from opentelemetry.trace import (
-            NonRecordingSpan,
-            SpanContext,
-            TraceState,
-            get_current_span,
-            set_tracer_provider,
-            use_span,
-        )
-
-        from langsmith import traceable
+        get_env_var.cache_clear()
 
         tracer_provider = TracerProvider()
         set_tracer_provider(tracer_provider)
