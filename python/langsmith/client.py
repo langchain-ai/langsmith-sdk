@@ -1297,7 +1297,7 @@ class Client:
                 "POST",
                 f"/examples/upload/{dataset_id_str}",
                 data=data,
-                files={"file": csv_file},
+                files={"file": (filename, file_obj)},
             )
         else:
             raise ValueError(
