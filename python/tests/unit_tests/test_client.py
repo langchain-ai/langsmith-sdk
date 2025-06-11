@@ -186,6 +186,32 @@ def test_headers(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @mock.patch("langsmith.client.requests.Session")
+def test_cached_header_and_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_env_cache()
+    monkeypatch.delenv("LANGCHAIN_API_KEY", raising=False)
+    with patch.dict("os.environ", {}, clear=True):
+        client = Client(
+            api_url="http://localhost:1984",
+            api_key="123",
+            timeout_ms=(2000, 4000),
+            auto_batch_tracing=False,
+        )
+        assert client._timeout == (2.0, 4.0)
+        assert client._headers["x-api-key"] == "123"
+        # Changing API key should update headers
+        client.api_key = "abc"
+        assert client._headers["x-api-key"] == "abc"
+
+        mock_response = MagicMock()
+        client.session.request.return_value = mock_response
+        with patch("langsmith.client.ls_utils.raise_for_status_with_text"):
+            client.request_with_retries("GET", "/test")
+        args, kwargs = client.session.request.call_args
+        assert kwargs["timeout"] == client._timeout
+        assert kwargs["headers"]["x-api-key"] == "abc"
+
+
+@mock.patch("langsmith.client.requests.Session")
 def test_upload_csv(mock_session_cls: mock.Mock) -> None:
     _clear_env_cache()
     dataset_id = str(uuid.uuid4())
