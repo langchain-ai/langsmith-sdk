@@ -1226,6 +1226,7 @@ async def _aforward(
     metadata: dict,
     client: langsmith.Client,
     include_attachments: bool = False,
+    error_handling: Literal["log", "ignore"] = "log",
 ) -> _ForwardResults:
     run: Optional[schemas.RunBase] = None
 
@@ -1233,27 +1234,31 @@ async def _aforward(
         nonlocal run
         run = r
 
+    def _set_reference_example_id(r: rt.RunTree) -> None:
+        r.reference_example_id = example.id
+
+    langsmith_extra = rh.LangSmithExtra(
+        reference_example_id=example.id,
+        on_end=_get_run,
+        project_name=experiment_name,
+        metadata={
+            **metadata,
+            "example_version": (example.modified_at or example.created_at).isoformat(),
+        },
+        client=client,
+    )
+    if error_handling == "log":
+        langsmith_extra["reference_example_id"] = example.id
+    elif error_handling == "ignore":
+        langsmith_extra["_on_success"] = _set_reference_example_id
+    else:
+        raise ValueError(f"Unrecognized error_handling value: {error_handling=}")
+
     with rh.tracing_context(enabled=True):
         try:
             arg_names = _get_target_args(fn)
             args = [getattr(example, argn) for argn in arg_names]
-            await fn(
-                *args,
-                langsmith_extra=rh.LangSmithExtra(
-                    reference_example_id=example.id,
-                    on_end=_get_run,
-                    project_name=experiment_name,
-                    metadata={
-                        **metadata,
-                        "example_version": (
-                            example.modified_at.isoformat()
-                            if example.modified_at
-                            else example.created_at.isoformat()
-                        ),
-                    },
-                    client=client,
-                ),
-            )
+            await fn(*args, langsmith_extra=langsmith_extra)
         except Exception as e:
             logger.error(
                 f"Error running target function: {e}", exc_info=True, stacklevel=1

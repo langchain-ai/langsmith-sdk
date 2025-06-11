@@ -1884,26 +1884,22 @@ def _forward(
     def _set_reference_example_id(r: rt.RunTree) -> None:
         r.reference_example_id = example.id
 
-    with rh.tracing_context(enabled="local" if not upload_results else True):
-        example_version = (
-            example.modified_at.isoformat()
-            if example.modified_at
-            else example.created_at.isoformat()
-        )
-        langsmith_extra = rh.LangSmithExtra(
-            on_end=_get_run,
-            project_name=experiment_name,
-            metadata={**metadata, "example_version": example_version},
-            client=client,
-        )
-        if error_handling == "log":
-            langsmith_extra["reference_example_id"] = example.id
-        elif error_handling == "ignore":
-            # Only set the reference_example_id if the run succeeds.
-            langsmith_extra["_on_success"] = _set_reference_example_id
-        else:
-            raise ValueError(f"Unrecognized error_handling value: {error_handling=}")
+    example_version = (example.modified_at or example.created_at).isoformat()
+    langsmith_extra = rh.LangSmithExtra(
+        on_end=_get_run,
+        project_name=experiment_name,
+        metadata={**metadata, "example_version": example_version},
+        client=client,
+    )
+    if error_handling == "log":
+        langsmith_extra["reference_example_id"] = example.id
+    elif error_handling == "ignore":
+        # Only set the reference_example_id if the run succeeds.
+        langsmith_extra["_on_success"] = _set_reference_example_id
+    else:
+        raise ValueError(f"Unrecognized error_handling value: {error_handling=}")
 
+    with rh.tracing_context(enabled="local" if not upload_results else True):
         try:
             arg_names = _get_target_args(fn)
             args = [getattr(example, argn) for argn in arg_names]
