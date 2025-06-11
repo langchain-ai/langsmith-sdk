@@ -241,6 +241,160 @@ def test_upload_csv(mock_session_cls: mock.Mock) -> None:
     assert dataset.description == "Test dataset"
 
 
+@mock.patch("langsmith.client.requests.Session")
+def test_upload_csv_to_dataset(mock_session_cls: mock.Mock) -> None:
+    _clear_env_cache()
+    dataset_id = str(uuid.uuid4())
+    example_1 = ls_schemas.Example(
+        id=str(uuid.uuid4()),
+        created_at=_CREATED_AT,
+        inputs={"input": "1"},
+        outputs={"output": "2"},
+        dataset_id=dataset_id,
+    )
+    example_2 = ls_schemas.Example(
+        id=str(uuid.uuid4()),
+        created_at=_CREATED_AT,
+        inputs={"input": "3"},
+        outputs={"output": "4"},
+        dataset_id=dataset_id,
+    )
+    mock_response = mock.Mock()
+    mock_response.json.return_value = [
+        {
+            "id": example_1.id,
+            "created_at": _CREATED_AT.isoformat(),
+            "inputs": {"input": "1"},
+            "outputs": {"output": "2"},
+            "dataset_id": dataset_id,
+        },
+        {
+            "id": example_2.id,
+            "created_at": _CREATED_AT.isoformat(),
+            "inputs": {"input": "3"},
+            "outputs": {"output": "4"},
+            "dataset_id": dataset_id,
+        },
+    ]
+    mock_session = mock.Mock()
+    mock_session.request.return_value = mock_response
+    mock_session_cls.return_value = mock_session
+
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+    )
+    client._tenant_id = uuid.uuid4()
+    csv_file = ("test.csv", BytesIO(b"input,output\n1,2\n3,4\n"))
+
+    result = client.upload_csv_to_dataset(
+        dataset_id=dataset_id,
+        csv_file=csv_file,
+        input_keys=["input"],
+        output_keys=["output"],
+    )
+
+    assert isinstance(result, dict)
+    assert result["count"] == 2
+    assert len(result["example_ids"]) == 2
+    assert result["example_ids"][0] == str(example_1.id)
+    assert result["example_ids"][1] == str(example_2.id)
+
+    # Verify the request was made correctly
+    mock_session.request.assert_called_once()
+    call_args = mock_session.request.call_args
+    assert call_args[0][0] == "POST"
+    assert call_args[0][1].endswith(f"/examples/upload/{dataset_id}")
+    assert call_args[1]["data"]["input_keys"] == ["input"]
+    assert call_args[1]["data"]["output_keys"] == ["output"]
+    assert "file" in call_args[1]["files"]
+
+
+@mock.patch("langsmith.client.requests.Session")
+def test_upload_csv_to_dataset_with_file_path(mock_session_cls: mock.Mock, tmp_path) -> None:
+    """Test upload_csv_to_dataset with file path."""
+    _clear_env_cache()
+    dataset_id = str(uuid.uuid4())
+    example_1 = {
+        "id": str(uuid.uuid4()),
+        "created_at": _CREATED_AT.isoformat(),
+        "inputs": {"question": "What is 2+2?"},
+        "outputs": {"answer": "4"},
+        "dataset_id": dataset_id,
+    }
+    
+    mock_response = mock.Mock()
+    mock_response.json.return_value = [example_1]
+    mock_session = mock.Mock()
+    mock_session.request.return_value = mock_response
+    mock_session_cls.return_value = mock_session
+
+    # Create a temporary CSV file
+    csv_file = tmp_path / "test.csv"
+    csv_file.write_text("question,answer\nWhat is 2+2?,4\n")
+
+    client = Client(api_url="http://localhost:1984", api_key="123")
+    client._tenant_id = uuid.uuid4()
+
+    result = client.upload_csv_to_dataset(
+        dataset_id=dataset_id,
+        csv_file=str(csv_file),
+        input_keys=["question"],
+        output_keys=["answer"],
+    )
+
+    assert isinstance(result, dict)
+    assert result["count"] == 1
+    assert len(result["example_ids"]) == 1
+    assert result["example_ids"][0] == str(example_1["id"])
+
+
+def test_upload_csv_to_dataset_input_validation() -> None:
+    """Test upload_csv_to_dataset input validation."""
+    client = Client(api_url="http://localhost:1984", api_key="123")
+    dataset_id = str(uuid.uuid4())
+
+    # Test empty csv_file path
+    with pytest.raises(ValueError, match="csv_file path cannot be empty"):
+        client.upload_csv_to_dataset(
+            dataset_id=dataset_id,
+            csv_file="",
+            input_keys=["input"],
+        )
+
+    # Test invalid csv_file type
+    with pytest.raises(ValueError, match="csv_file must be a string"):
+        client.upload_csv_to_dataset(
+            dataset_id=dataset_id,
+            csv_file=123,  # type: ignore
+            input_keys=["input"],
+        )
+
+    # Test invalid tuple length
+    with pytest.raises(ValueError, match="csv_file tuple must contain exactly 2 elements"):
+        client.upload_csv_to_dataset(
+            dataset_id=dataset_id,
+            csv_file=("filename",),  # type: ignore
+            input_keys=["input"],
+        )
+
+    # Test empty filename in tuple
+    with pytest.raises(ValueError, match="filename cannot be empty"):
+        client.upload_csv_to_dataset(
+            dataset_id=dataset_id,
+            csv_file=("", BytesIO(b"data")),
+            input_keys=["input"],
+        )
+
+    # Test invalid file object in tuple
+    with pytest.raises(ValueError, match="second element of csv_file tuple must be a file-like object"):
+        client.upload_csv_to_dataset(
+            dataset_id=dataset_id,
+            csv_file=("filename", "not a file"),  # type: ignore
+            input_keys=["input"],
+        )
+
+
 def test_async_methods() -> None:
     """For every method defined on the Client, if there is a
 

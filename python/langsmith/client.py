@@ -1190,6 +1190,131 @@ class Client:
             _tenant_id=self._get_optional_tenant_id(),
         )
 
+    def upload_csv_to_dataset(
+        self,
+        dataset_id: Union[str, uuid.UUID],
+        csv_file: Union[str, tuple[str, io.BytesIO]],
+        input_keys: Sequence[str],
+        output_keys: Optional[Sequence[str]] = None,
+    ) -> ls_schemas.UpsertExamplesResponse:
+        """Upload CSV examples to an existing dataset.
+
+        Args:
+            dataset_id (Union[str, uuid.UUID]): The ID of the existing dataset.
+            csv_file (Union[str, Tuple[str, io.BytesIO]]): The CSV file to upload.
+                If a string, it should be the path. If a tuple, it should be a
+                tuple containing the filename and a BytesIO object.
+            input_keys (Sequence[str]): The input keys. Make sure they match the
+                input keys in the dataset by downloading the dataset and inspecting
+                the dataset column names.
+            output_keys (Optional[Sequence[str]]): The output keys. Defaults to
+                empty list. Make sure they match the output keys in the dataset by
+                downloading the dataset and inspecting the dataset column names.
+
+        Returns:
+            ls_schemas.UpsertExamplesResponse: Upload result with count and example IDs.
+
+        Raises:
+            ValueError: If the csv_file is not a string or tuple.
+            LangSmithError: If the dataset does not exist or the request fails.
+
+        Examples:
+
+            .. code-block:: python
+
+                from langsmith import Client
+
+                client = Client()
+
+                # Upload to existing dataset
+                csv_file = "path/to/your/examples.csv"
+                # Replace with your input column names, must match dataset columns
+                input_keys = ["input", "context"]
+                # Replace with your output column names, must match dataset columns
+                output_keys = ["expected_output"]
+
+                result = client.upload_csv_to_dataset(
+                    dataset_id="your-dataset-id",
+                    csv_file=csv_file,
+                    input_keys=input_keys,
+                    output_keys=output_keys,
+                )
+
+                print(f"Created {result['count']} examples")
+        """
+        if output_keys is None:
+            output_keys = []
+
+        # Validate dataset_id
+        dataset_id_str = str(_as_uuid(dataset_id, "dataset_id"))
+        
+        data = {
+            "input_keys": list(input_keys),
+            "output_keys": list(output_keys),
+        }
+        
+        if isinstance(csv_file, str):
+            if not csv_file:
+                raise ValueError("csv_file path cannot be empty")
+            try:
+                with open(csv_file, "rb") as f:
+                    file_ = {"file": f}
+                    response = self.request_with_retries(
+                        "POST",
+                        f"/examples/upload/{dataset_id_str}",
+                        data=data,
+                        files=file_,
+                    )
+            except FileNotFoundError:
+                raise ValueError(f"CSV file not found: {csv_file}")
+            except PermissionError:
+                raise ValueError(f"Permission denied reading CSV file: {csv_file}")
+        elif isinstance(csv_file, tuple):
+            if len(csv_file) != 2:
+                raise ValueError(
+                    "csv_file tuple must contain exactly 2 elements: (filename, BytesIO)"
+                )
+            filename, file_obj = csv_file
+            if not filename:
+                raise ValueError("filename cannot be empty")
+            if not hasattr(file_obj, 'read'):
+                raise ValueError(
+                    "second element of csv_file tuple must be a file-like object"
+                )
+            response = self.request_with_retries(
+                "POST",
+                f"/examples/upload/{dataset_id_str}",
+                data=data,
+                files={"file": csv_file},
+            )
+        else:
+            raise ValueError(
+                "csv_file must be a string (file path) or tuple (filename, BytesIO)"
+            )
+        
+        ls_utils.raise_for_status_with_text(response)
+        result = response.json()
+        
+        # Handle potential error responses
+        if isinstance(result, dict) and "error" in result:
+            raise ls_utils.LangSmithError(f"Failed to upload CSV: {result['error']}")
+        
+        # Backend returns list of examples, but we'll convert to lightweight response
+        if not isinstance(result, list):
+            raise ls_utils.LangSmithError(
+                f"Unexpected response format: expected list, got {type(result)}"
+            )
+        
+        # Return lightweight response with count and IDs only
+        example_ids = [
+            str(item.get("id", "")) for item in result if isinstance(item, dict)
+        ]
+        
+        return ls_schemas.UpsertExamplesResponse(
+            count=len(result),
+            example_ids=example_ids
+        )
+
     def _run_transform(
         self,
         run: Union[ls_schemas.Run, dict, ls_schemas.RunLikeDict],
