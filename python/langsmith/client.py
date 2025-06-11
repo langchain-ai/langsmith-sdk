@@ -1259,12 +1259,12 @@ class Client:
 
         # Validate dataset_id
         dataset_id_str = str(_as_uuid(dataset_id, "dataset_id"))
-        
+
         data = {
             "input_keys": list(input_keys),
             "output_keys": list(output_keys),
         }
-        
+
         if isinstance(csv_file, str):
             if not csv_file:
                 raise ValueError("csv_file path cannot be empty")
@@ -1289,7 +1289,7 @@ class Client:
             filename, file_obj = csv_file
             if not filename:
                 raise ValueError("filename cannot be empty")
-            if not hasattr(file_obj, 'read'):
+            if not hasattr(file_obj, "read"):
                 raise ValueError(
                     "second element of csv_file tuple must be a file-like object"
                 )
@@ -1303,28 +1303,27 @@ class Client:
             raise ValueError(
                 "csv_file must be a string (file path) or tuple (filename, BytesIO)"
             )
-        
+
         ls_utils.raise_for_status_with_text(response)
         result = response.json()
-        
+
         # Handle potential error responses
         if isinstance(result, dict) and "error" in result:
             raise ls_utils.LangSmithError(f"Failed to upload CSV: {result['error']}")
-        
+
         # Backend returns list of examples, but we'll convert to lightweight response
         if not isinstance(result, list):
             raise ls_utils.LangSmithError(
                 f"Unexpected response format: expected list, got {type(result)}"
             )
-        
+
         # Return lightweight response with count and IDs only
         example_ids = [
             str(item.get("id", "")) for item in result if isinstance(item, dict)
         ]
-        
+
         return ls_schemas.UpsertExamplesResponse(
-            count=len(result),
-            example_ids=example_ids
+            count=len(result), example_ids=example_ids
         )
 
     def _run_transform(

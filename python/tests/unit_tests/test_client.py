@@ -337,7 +337,9 @@ def test_upload_csv_to_dataset(mock_session_cls: mock.Mock) -> None:
 
 
 @mock.patch("langsmith.client.requests.Session")
-def test_upload_csv_to_dataset_with_file_path(mock_session_cls: mock.Mock, tmp_path) -> None:
+def test_upload_csv_to_dataset_with_file_path(
+    mock_session_cls: mock.Mock, tmp_path
+) -> None:
     """Test upload_csv_to_dataset with file path."""
     _clear_env_cache()
     dataset_id = str(uuid.uuid4())
@@ -348,7 +350,7 @@ def test_upload_csv_to_dataset_with_file_path(mock_session_cls: mock.Mock, tmp_p
         "outputs": {"answer": "4"},
         "dataset_id": dataset_id,
     }
-    
+
     mock_response = mock.Mock()
     mock_response.json.return_value = [example_1]
     mock_session = mock.Mock()
@@ -397,7 +399,9 @@ def test_upload_csv_to_dataset_input_validation() -> None:
         )
 
     # Test invalid tuple length
-    with pytest.raises(ValueError, match="csv_file tuple must contain exactly 2 elements"):
+    with pytest.raises(
+        ValueError, match="csv_file tuple must contain exactly 2 elements"
+    ):
         client.upload_csv_to_dataset(
             dataset_id=dataset_id,
             csv_file=("filename",),  # type: ignore
@@ -413,7 +417,9 @@ def test_upload_csv_to_dataset_input_validation() -> None:
         )
 
     # Test invalid file object in tuple
-    with pytest.raises(ValueError, match="second element of csv_file tuple must be a file-like object"):
+    with pytest.raises(
+        ValueError, match="second element of csv_file tuple must be a file-like object"
+    ):
         client.upload_csv_to_dataset(
             dataset_id=dataset_id,
             csv_file=("filename", "not a file"),  # type: ignore

@@ -54,13 +54,11 @@ evals:
 
 lint:
 	poetry run ruff check .
-	poetry run mypy langsmith 
-	poetry run black . --check
+	poetry run mypy langsmith
 
 format:
 	poetry run ruff format .
 	poetry run ruff check . --fix
-	poetry run black .
 
 build:
 	poetry build
