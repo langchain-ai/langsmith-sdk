@@ -273,8 +273,14 @@ def serialized_run_operation_to_multipart_parts_and_context(
                     )
                 )
             else:
-                file_size = os.path.getsize(data_or_path)
-                file = open(data_or_path, "rb")
+                try:
+                    file_size = os.path.getsize(data_or_path)
+                    file = open(data_or_path, "rb")
+                except FileNotFoundError:
+                    logger.warning(
+                        "Attachment file not found for run %s: %s", op.id, data_or_path
+                    )
+                    continue
                 opened_files_dict[str(data_or_path) + str(uuid.uuid4())] = file
                 acc_parts.append(
                     (

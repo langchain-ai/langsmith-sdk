@@ -186,6 +186,32 @@ def test_headers(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @mock.patch("langsmith.client.requests.Session")
+def test_cached_header_and_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_env_cache()
+    monkeypatch.delenv("LANGCHAIN_API_KEY", raising=False)
+    with patch.dict("os.environ", {}, clear=True):
+        client = Client(
+            api_url="http://localhost:1984",
+            api_key="123",
+            timeout_ms=(2000, 4000),
+            auto_batch_tracing=False,
+        )
+        assert client._timeout == (2.0, 4.0)
+        assert client._headers["x-api-key"] == "123"
+        # Changing API key should update headers
+        client.api_key = "abc"
+        assert client._headers["x-api-key"] == "abc"
+
+        mock_response = MagicMock()
+        client.session.request.return_value = mock_response
+        with patch("langsmith.client.ls_utils.raise_for_status_with_text"):
+            client.request_with_retries("GET", "/test")
+        args, kwargs = client.session.request.call_args
+        assert kwargs["timeout"] == client._timeout
+        assert kwargs["headers"]["x-api-key"] == "abc"
+
+
+@mock.patch("langsmith.client.requests.Session")
 def test_upload_csv(mock_session_cls: mock.Mock) -> None:
     _clear_env_cache()
     dataset_id = str(uuid.uuid4())
@@ -662,6 +688,67 @@ def test_upsert_examples_multipart(mock_session_cls: mock.Mock) -> None:
             value = json.loads(part.value)
             assert value == expected_parts[name]
             assert part.headers["Content-Type"] == "application/json"
+
+
+@mock.patch("langsmith.client.requests.Session")
+def test_upsert_examples_multipart_missing_file(
+    mock_session_cls: mock.Mock, tmp_path, caplog
+) -> None:
+    """Attachment file paths that do not exist are skipped."""
+    caplog.set_level(logging.WARNING)
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"result": "ok"}
+    mock_session.request.return_value = mock_response
+    mock_session_cls.return_value = mock_session
+
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        info={"instance_flags": {"examples_multipart_enabled": True}},
+    )
+
+    example_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+
+    missing_path = tmp_path / "no-file.txt"
+    example = ls_schemas.ExampleUpsertWithAttachments(
+        id=example_id,
+        dataset_id=dataset_id,
+        created_at=_CREATED_AT,
+        inputs={"input": "test"},
+        outputs={"output": "out"},
+        attachments={
+            "missing": ("text/plain", missing_path),
+            "good": ("text/plain", b"data"),
+        },
+    )
+
+    with caplog.at_level(logging.WARNING):
+        client.upsert_examples_multipart(
+            upserts=[example], dangerously_allow_filesystem=True
+        )
+
+    call_args = mock_session.request.call_args
+    request_data = call_args[1]["data"]
+    content_type = call_args[1]["headers"]["Content-Type"]
+    boundary = parse_options_header(content_type)[1]["boundary"]
+
+    parser = MultipartParser(
+        io.BytesIO(
+            request_data
+            if isinstance(request_data, bytes)
+            else request_data.to_string()
+        ),
+        boundary,
+    )
+    parts = list(parser.parts())
+    part_names = [p.name for p in parts]
+
+    assert f"{example_id}.attachment.good" in part_names
+    assert f"{example_id}.attachment.missing" not in part_names
+    assert "Attachment file not found" in caplog.text
 
 
 class CallTracker:
