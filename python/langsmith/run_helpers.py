@@ -1418,6 +1418,7 @@ def _setup_run(
             outer_project=outer_project,
             outer_metadata=None,
             outer_tags=None,
+            _on_success=langsmith_extra.get("_on_success"),
             on_end=langsmith_extra.get("on_end"),
             context=copy_context(),
         )

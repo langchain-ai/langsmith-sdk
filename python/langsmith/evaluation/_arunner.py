@@ -789,6 +789,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                 self._metadata,
                 self.client,
                 _target_include_attachments(target),
+                self._error_handling,
             )
             example, run = pred["example"], pred["run"]
             result = await self._arun_evaluators(
@@ -916,6 +917,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
                     self._metadata,
                     self.client,
                     include_attachments,
+                    self._error_handling,
                 )
 
         async for result in aitertools.aiter_with_concurrency(
@@ -1238,7 +1240,6 @@ async def _aforward(
         r.reference_example_id = example.id
 
     langsmith_extra = rh.LangSmithExtra(
-        reference_example_id=example.id,
         on_end=_get_run,
         project_name=experiment_name,
         metadata={
