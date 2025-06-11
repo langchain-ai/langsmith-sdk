@@ -184,6 +184,9 @@ def evaluate(
         randomize_order (bool): Whether to randomize the order of the outputs for each
             evaluation. Default is False. Should only be specified when target is a
             two-tuple of existing experiments.
+        error_handling (str, default="log"): How to handle individual run errors. 'log'
+            will trace the runs with the error message as part of the experiment,
+            'ignore' will not count the run as part of the experiment at all.
 
     Returns:
         ExperimentResults: If target is a function, Runnable, or existing experiment.
@@ -1436,19 +1439,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         project = self._get_project(first_example) if self._upload_results else None
         self._print_experiment_start(project, first_example)
         self._metadata["num_repetitions"] = self._num_repetitions
-        return self.__class__(
-            self.examples,
-            experiment=project,
-            metadata=self._metadata,
-            client=self.client,
-            runs=self._runs,
-            evaluation_results=self._evaluation_results,
-            include_attachments=self._include_attachments,
-            reuse_attachments=self._reuse_attachments,
-            upload_results=self._upload_results,
-            attachment_raw_data_dict=self._attachment_raw_data_dict,
-            error_handling=self._error_handling,
-        )
+        return self._copy(self.examples, experiment=project)
 
     def with_predictions(
         self,
@@ -1465,16 +1456,9 @@ class _ExperimentManager(_ExperimentManagerMixin):
             include_attachments=_target_include_attachments(target),
         )
         r1, r2 = itertools.tee(_experiment_results, 2)
-        return _ExperimentManager(
+        return self._copy(
             (pred["example"] for pred in r1),
-            experiment=self._experiment,
-            metadata=self._metadata,
-            client=self.client,
             runs=(pred["run"] for pred in r2),
-            upload_results=self._upload_results,
-            # TODO: Can't do multiple prediction rounds rn.
-            include_attachments=self._include_attachments,
-            error_handling=self._error_handling,
         )
 
     def with_evaluators(
@@ -1497,17 +1481,10 @@ class _ExperimentManager(_ExperimentManagerMixin):
         # Split the generator into three so the manager
         # can consume each value individually.
         r1, r2, r3 = itertools.tee(experiment_results, 3)
-        return _ExperimentManager(
+        return self._copy(
             (result["example"] for result in r1),
-            experiment=self._experiment,
-            metadata=self._metadata,
-            client=self.client,
             runs=(result["run"] for result in r2),
             evaluation_results=(result["evaluation_results"] for result in r3),
-            summary_results=self._summary_results,
-            include_attachments=self._include_attachments,
-            upload_results=self._upload_results,
-            error_handling=self._error_handling,
         )
 
     def with_summary_evaluators(
@@ -1520,18 +1497,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         aggregate_feedback_gen = context.run(
             self._apply_summary_evaluators, wrapped_evaluators
         )
-        return _ExperimentManager(
-            self.examples,
-            experiment=self._experiment,
-            metadata=self._metadata,
-            client=self.client,
-            runs=self.runs,
-            evaluation_results=self._evaluation_results,
-            summary_results=aggregate_feedback_gen,
-            include_attachments=self._include_attachments,
-            upload_results=self._upload_results,
-            error_handling=self._error_handling,
-        )
+        return self._copy(self.examples, summary_results=aggregate_feedback_gen)
 
     def get_results(self) -> Iterable[ExperimentResultRow]:
         """Return the traces, evaluation results, and associated examples."""
@@ -1830,6 +1796,25 @@ class _ExperimentManager(_ExperimentManagerMixin):
                 **project_metadata,
             },
         )
+
+    def _copy(self, *args: Any, **kwargs: Any) -> _ExperimentManager:
+        default_args = (self._data,)
+        default_kwargs = {
+            "experiment": self._experiment,
+            "metadata": self._metadata,
+            "runs": self._runs,
+            "client": self.client,
+            "evaluation_results": self._evaluation_results,
+            "summary_results": self._summary_results,
+            "include_attachments": self._include_attachments,
+            "reuse_attachments": self._reuse_attachments,
+            "upload_results": self._upload_results,
+            "attachment_raw_data_dict": self._attachment_raw_data_dict,
+            "error_handling": self._error_handling,
+        }
+        full_args = list(args) + list(default_args[len(args) :])
+        full_kwargs = {**default_kwargs, **kwargs}
+        return self.__class__(*full_args, **full_kwargs)
 
 
 def _resolve_evaluators(

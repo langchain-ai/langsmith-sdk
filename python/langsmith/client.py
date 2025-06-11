@@ -7656,6 +7656,7 @@ class Client:
         blocking: bool = True,
         experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
         upload_results: bool = True,
+        error_handling: Literal["log", "ignore"] = "log",
         **kwargs: Any,
     ) -> AsyncExperimentResults:
         r"""Evaluate an async target system on a given dataset.
@@ -7689,6 +7690,9 @@ class Client:
                 usage only.
             upload_results (bool, default=True): Whether to upload the results to LangSmith.
                 Defaults to True.
+            error_handling (str, default="log"): How to handle individual run errors. 'log'
+                will trace the runs with the error message as part of the experiment,
+                'ignore' will not count the run as part of the experiment at all.
             **kwargs (Any): Additional keyword arguments to pass to the evaluator.
 
         Returns:
@@ -7870,6 +7874,7 @@ class Client:
             blocking=blocking,
             experiment=experiment,
             upload_results=upload_results,
+            error_handling=error_handling,
             **kwargs,
         )
 
