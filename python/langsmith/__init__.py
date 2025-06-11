@@ -20,7 +20,8 @@ if TYPE_CHECKING:
     from langsmith.utils import ContextThreadPoolExecutor
 
 # Avoid calling into importlib on every call to __version__
-__version__ = "0.3.45"
+
+__version__ = "0.4.1"
 version = __version__  # for backwards compatibility
 
 
