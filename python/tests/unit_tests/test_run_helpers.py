@@ -1865,6 +1865,27 @@ def test_traceable_iterator_process_chunk(mock_client: Client) -> None:
     assert body["post"][0]["outputs"]["output"] == list(range(6))
 
 
+def test_first_token_event_only(mock_client: Client) -> None:
+    collected_run: Optional[RunTree] = None
+
+    def on_end(run: RunTree) -> None:
+        nonlocal collected_run
+        collected_run = run
+
+    with tracing_context(enabled=True):
+
+        @traceable(client=mock_client, run_type="llm")
+        def token_stream() -> Generator[str, None, None]:
+            for t in ["a", "b", "c"]:
+                yield t
+
+        list(token_stream(langsmith_extra={"on_end": on_end}))
+
+    assert collected_run is not None
+    events = [ev for ev in collected_run.events if ev.get("name") == "new_token"]
+    assert len(events) == 1
+
+
 async def test_traceable_async_iterator_process_chunk(mock_client: Client) -> None:
     with tracing_context(enabled=True):
 
