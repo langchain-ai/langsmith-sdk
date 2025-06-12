@@ -1,4 +1,6 @@
 import * as uuid from "uuid";
+import { Client } from "./client.js";
+import { isTracingEnabled } from "./env.js";
 import {
   Attachments,
   BaseRun,
@@ -6,16 +8,14 @@ import {
   RunCreate,
   RunUpdate,
 } from "./schemas.js";
+import { _LC_CONTEXT_VARIABLES_KEY } from "./singletons/constants.js";
 import {
   RuntimeEnvironment,
   getEnvironmentVariable,
   getLangSmithEnvironmentVariable,
   getRuntimeEnvironment,
 } from "./utils/env.js";
-import { Client } from "./client.js";
-import { isTracingEnabled } from "./env.js";
 import { warnOnce } from "./utils/warn.js";
-import { _LC_CONTEXT_VARIABLES_KEY } from "./singletons/constants.js";
 
 function stripNonAlphanumeric(input: string) {
   return input.replace(/[-:.]/g, "");
@@ -63,6 +63,7 @@ export interface RunTreeConfig {
   trace_id?: string;
   dotted_order?: string;
   attachments?: Attachments;
+  replicas?: Array<[string, Record<string, any> | null]>;
 }
 
 export interface RunnableConfigLike {
@@ -197,6 +198,7 @@ export class RunTree implements BaseRun {
    * Each entry is a tuple of [mime_type, bytes]
    */
   attachments?: Attachments;
+  replicas?: Array<[string, Record<string, any> | null]>;
 
   constructor(originalConfig: RunTreeConfig | RunTree) {
     // If you pass in a run tree directly, return a shallow clone
@@ -236,6 +238,11 @@ export class RunTree implements BaseRun {
       } else {
         this.dotted_order = currentDottedOrder;
       }
+    }
+
+    // Handle replicas - inherit from parent if not explicitly set
+    if (this.replicas === undefined && this.parent_run?.replicas) {
+      this.replicas = this.parent_run.replicas;
     }
   }
 
@@ -291,6 +298,7 @@ export class RunTree implements BaseRun {
       tracingEnabled: this.tracingEnabled,
       execution_order: child_execution_order,
       child_execution_order: child_execution_order,
+      replicas: this.replicas,
     });
 
     // Copy context vars over into the new run tree.
@@ -417,8 +425,38 @@ export class RunTree implements BaseRun {
   async postRun(excludeChildRuns = true): Promise<void> {
     try {
       const runtimeEnv = getRuntimeEnvironment();
-      const runCreate = await this._convertToCreate(this, runtimeEnv, true);
-      await this.client.createRun(runCreate);
+      
+      if (this.replicas && this.replicas.length > 0) {
+        // Handle replicas
+        for (const [projectName, updates] of this.replicas) {
+          let runCreate: RunCreate;
+          if (projectName === this.project_name) {
+            // Current project - use original data
+            runCreate = await this._convertToCreate(this, runtimeEnv, true);
+          } else {
+            // Different project - remap the data
+            runCreate = this._remapForProject(projectName, updates || undefined);
+            // Ensure runtime environment is included
+            if (runtimeEnv) {
+              const runExtra = runCreate.extra ?? {};
+              if (!runExtra.runtime) {
+                runExtra.runtime = {};
+              }
+              for (const [k, v] of Object.entries(runtimeEnv)) {
+                if (!runExtra.runtime[k]) {
+                  runExtra.runtime[k] = v;
+                }
+              }
+              runCreate.extra = runExtra;
+            }
+          }
+          await this.client.createRun(runCreate);
+        }
+      } else {
+        // No replicas - original behavior
+        const runCreate = await this._convertToCreate(this, runtimeEnv, true);
+        await this.client.createRun(runCreate);
+      }
 
       if (!excludeChildRuns) {
         warnOnce(
@@ -435,23 +473,74 @@ export class RunTree implements BaseRun {
 
   async patchRun(): Promise<void> {
     try {
-      const runUpdate: RunUpdate = {
-        end_time: this.end_time,
-        error: this.error,
-        inputs: this.inputs,
-        outputs: this.outputs,
-        parent_run_id: this.parent_run?.id,
-        reference_example_id: this.reference_example_id,
-        extra: this.extra,
-        events: this.events,
-        dotted_order: this.dotted_order,
-        trace_id: this.trace_id,
-        tags: this.tags,
-        attachments: this.attachments,
-        session_name: this.project_name,
-      };
+      if (this.replicas && this.replicas.length > 0) {
+        // Handle replicas
+        for (const [projectName, updates] of this.replicas) {
+          let runUpdate: RunUpdate;
+          if (projectName === this.project_name) {
+            // Current project - use original data
+            runUpdate = {
+              end_time: this.end_time,
+              error: this.error,
+              inputs: this.inputs,
+              outputs: this.outputs,
+              parent_run_id: this.parent_run?.id,
+              reference_example_id: this.reference_example_id,
+              extra: this.extra,
+              events: this.events,
+              dotted_order: this.dotted_order,
+              trace_id: this.trace_id,
+              tags: this.tags,
+              attachments: this.attachments,
+              session_name: this.project_name,
+            };
+            await this.client.updateRun(this.id, runUpdate);
+          } else {
+            // Different project - remap the data
+            const remappedRun = this._remapForProject(projectName, updates || undefined);
+            runUpdate = {
+              end_time: this.end_time,
+              error: this.error,
+              inputs: this.inputs,
+              outputs: this.outputs,
+              parent_run_id: remappedRun.parent_run_id,
+              reference_example_id: this.reference_example_id,
+              extra: this.extra,
+              events: this.events,
+              dotted_order: remappedRun.dotted_order,
+              trace_id: remappedRun.trace_id,
+              tags: this.tags,
+              attachments: this.attachments,
+              session_name: projectName,
+              // Apply updates if provided
+              ...(updates || {})
+            };
+            const runId = remappedRun.id;
+            if (runId) {
+              await this.client.updateRun(runId, runUpdate);
+            }
+          }
+        }
+      } else {
+        // No replicas - original behavior
+        const runUpdate: RunUpdate = {
+          end_time: this.end_time,
+          error: this.error,
+          inputs: this.inputs,
+          outputs: this.outputs,
+          parent_run_id: this.parent_run?.id,
+          reference_example_id: this.reference_example_id,
+          extra: this.extra,
+          events: this.events,
+          dotted_order: this.dotted_order,
+          trace_id: this.trace_id,
+          tags: this.tags,
+          attachments: this.attachments,
+          session_name: this.project_name,
+        };
 
-      await this.client.updateRun(this.id, runUpdate);
+        await this.client.updateRun(this.id, runUpdate);
+      }
     } catch (error) {
       console.error(`Error in patchRun for run ${this.id}`, error);
     }
@@ -605,6 +694,67 @@ export class RunTree implements BaseRun {
     }
 
     return result;
+  }
+
+  private _parseDottedOrder(dottedOrder: string): Array<{ time: Date; uuid: string }> {
+    const parts = dottedOrder.split(".");
+    return parts.map(part => {
+      const uuidPart = part.slice(-36); // Last 36 characters are the UUID
+      const timePart = part.slice(0, -36); // Everything before UUID
+      return {
+        time: new Date(timePart),
+        uuid: uuidPart
+      };
+    });
+  }
+
+  private _generateUuidV5(name: string, namespace: string): string {
+    // Use a fixed namespace for consistency with Python's NAMESPACE_DNS
+    const DNS_NAMESPACE = '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
+    return uuid.v5(`${name}:${namespace}`, DNS_NAMESPACE);
+  }
+
+  private _remapForProject(projectName: string, updates?: Record<string, any>): RunCreate {
+    const runData = this._convertToCreate(this, undefined, true);
+    
+    const oldId = runData.id || this.id;
+    const newId = this._generateUuidV5(`${oldId}:${projectName}`, 'langsmith');
+    
+    // Update trace_id
+    let newTraceId: string | undefined;
+    if (runData.trace_id) {
+      newTraceId = this._generateUuidV5(`${runData.trace_id}:${projectName}`, 'langsmith');
+    }
+    
+    // Update parent_run_id
+    let newParentId: string | undefined;
+    if (runData.parent_run_id) {
+      newParentId = this._generateUuidV5(`${runData.parent_run_id}:${projectName}`, 'langsmith');
+    }
+    
+    // Update dotted_order
+    let newDottedOrder: string | undefined;
+    if (runData.dotted_order) {
+      const segments = this._parseDottedOrder(runData.dotted_order);
+      const rebuiltSegments = segments.map((segment, index) => {
+        const segmentId = index === segments.length - 1 ? newId : 
+          this._generateUuidV5(`${segment.uuid}:${projectName}`, 'langsmith');
+        return segment.time.toISOString().replace(/[-:]/g, '').replace('.', '').slice(0, -1) + 'Z' + segmentId;
+      });
+      newDottedOrder = rebuiltSegments.join('.');
+    }
+    
+    const remappedRun: RunCreate = {
+      ...runData,
+      id: newId, // Ensure ID is always set
+      trace_id: newTraceId,
+      parent_run_id: newParentId,
+      dotted_order: newDottedOrder,
+      session_name: projectName,
+      ...updates // Apply any additional updates
+    };
+    
+    return remappedRun;
   }
 }
 
