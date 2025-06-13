@@ -410,6 +410,7 @@ export class RunTree implements BaseRun {
       dotted_order: run.dotted_order,
       tags: run.tags,
       attachments: run.attachments,
+      events: run.events,
     };
     return persistedRun;
   }
