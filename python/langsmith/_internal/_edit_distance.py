@@ -43,7 +43,7 @@ class EditDistance:
             )
         except ImportError:
             raise ImportError(
-                "This operation requires the rapidfuzz library to use."
+                "This operation requires the rapidfuzz library to use. "
                 "Please install it with `pip install -U rapidfuzz`."
             )
 
