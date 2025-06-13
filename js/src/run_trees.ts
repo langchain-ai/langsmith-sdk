@@ -368,9 +368,9 @@ export class RunTree implements BaseRun {
     runtimeEnv: RuntimeEnvironment | undefined,
     excludeChildRuns = true
   ): RunCreate {
+    const runExtra = run.extra ?? {};
     // Avoid overwriting the runtime environment if it's already set
-    if (run.extra?.runtime?.library === undefined) {
-      const runExtra = run.extra ?? {};
+    if (runExtra?.runtime?.library === undefined) {
       if (!runExtra.runtime) {
         runExtra.runtime = {};
       }
