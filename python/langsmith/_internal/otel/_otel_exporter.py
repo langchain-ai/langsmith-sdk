@@ -13,6 +13,10 @@ from langsmith._internal import _orjson
 from langsmith._internal._operations import (
     SerializedRunOperation,
 )
+from langsmith._internal._otel_utils import (
+    get_otel_span_id_from_uuid,
+    get_otel_trace_id_from_uuid,
+)
 
 HAS_OTEL = False
 try:
@@ -20,7 +24,11 @@ try:
         from opentelemetry import trace  # type: ignore[import]
         from opentelemetry.context.context import Context  # type: ignore[import]
         from opentelemetry.trace import (  # type: ignore[import]
+            NonRecordingSpan,
             Span,
+            SpanContext,
+            TraceFlags,
+            TraceState,
             set_span_in_context,
         )
 
@@ -183,18 +191,41 @@ class OTELExporter:
             end_time = run_info.get("end_time")
             end_time_utc_nano = self._as_utc_nano(end_time)
 
-            # Start the span
+            # Create deterministic trace and span IDs to match user OpenTelemetry spans
+            trace_id_int = get_otel_trace_id_from_uuid(op.trace_id)
+            span_id_int = get_otel_span_id_from_uuid(op.id)
+
+            # Create SpanContext with deterministic IDs
+            span_context = SpanContext(
+                trace_id=trace_id_int,
+                span_id=span_id_int,
+                is_remote=False,
+                trace_flags=TraceFlags(TraceFlags.SAMPLED),
+                trace_state=TraceState(),
+            )
+
+            # Create NonRecordingSpan for context setting
+            non_recording_span = NonRecordingSpan(span_context)
+            deterministic_context = set_span_in_context(non_recording_span)
+
+            # Start the span with appropriate context
             parent_run_id = run_info.get("parent_run_id")
             if parent_run_id is not None and uuid.UUID(parent_run_id) in self._spans:
+                # Use the parent span context
                 span = self._tracer.start_span(
                     run_info.get("name"),
                     context=set_span_in_context(self._spans[uuid.UUID(parent_run_id)]),
                     start_time=start_time_utc_nano,
                 )
             else:
+                # For root spans, check if there's an existing OpenTelemetry context
+                # If so, inherit from it; otherwise use our deterministic context
+                current_context = (
+                    otel_context if otel_context else deterministic_context
+                )
                 span = self._tracer.start_span(
                     run_info.get("name"),
-                    context=otel_context,
+                    context=current_context,
                     start_time=start_time_utc_nano,
                 )
 
