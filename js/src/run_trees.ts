@@ -369,13 +369,16 @@ export class RunTree implements BaseRun {
     excludeChildRuns = true
   ): RunCreate {
     const runExtra = run.extra ?? {};
-    if (!runExtra.runtime) {
-      runExtra.runtime = {};
-    }
-    if (runtimeEnv) {
-      for (const [k, v] of Object.entries(runtimeEnv)) {
-        if (!runExtra.runtime[k]) {
-          runExtra.runtime[k] = v;
+    // Avoid overwriting the runtime environment if it's already set
+    if (runExtra?.runtime?.library === undefined) {
+      if (!runExtra.runtime) {
+        runExtra.runtime = {};
+      }
+      if (runtimeEnv) {
+        for (const [k, v] of Object.entries(runtimeEnv)) {
+          if (!runExtra.runtime[k]) {
+            runExtra.runtime[k] = v;
+          }
         }
       }
     }
