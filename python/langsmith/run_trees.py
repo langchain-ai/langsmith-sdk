@@ -419,6 +419,9 @@ class RunTree(ls_schemas.RunBase):
     ) -> dict:
         """Rewrites ids/dotted_order for a given project with optional updates."""
         run_dict = self._get_dicts_safe()
+        if project_name == self.session_name:
+            return run_dict
+
         old_id = run_dict["id"]
         new_id = uuid5(NAMESPACE_DNS, f"{old_id}:{project_name}")
         # trace id
