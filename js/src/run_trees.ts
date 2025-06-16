@@ -1,10 +1,5 @@
 import * as uuid from "uuid";
-import {
-  Attachments,
-  BaseRun,
-  KVMap,
-  RunCreate,
-} from "./schemas.js";
+import { Attachments, BaseRun, KVMap, RunCreate } from "./schemas.js";
 import {
   RuntimeEnvironment,
   getEnvironmentVariable,
@@ -430,13 +425,12 @@ export class RunTree implements BaseRun {
 
   private _remapForProject(
     projectName: string,
-    updates?: KVMap,
     runtimeEnv?: RuntimeEnvironment,
     excludeChildRuns = true
   ): RunCreate & { id: string } {
     const baseRun = this._convertToCreate(this, runtimeEnv, excludeChildRuns);
     if (projectName === this.project_name) {
-      return { ...baseRun, ...updates };
+      return baseRun;
     }
 
     // Create a deterministic UUID mapping for this project
@@ -498,10 +492,9 @@ export class RunTree implements BaseRun {
     try {
       const runtimeEnv = getRuntimeEnvironment();
       if (this.replicas && this.replicas.length > 0) {
-        for (const [projectName, updates] of this.replicas) {
+        for (const [projectName] of this.replicas) {
           const runCreate = this._remapForProject(
             projectName,
-            updates,
             runtimeEnv,
             true
           );
