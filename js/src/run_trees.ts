@@ -63,6 +63,7 @@ export interface RunTreeConfig {
   trace_id?: string;
   dotted_order?: string;
   attachments?: Attachments;
+  replicas?: [string, KVMap | undefined][];
 }
 
 export interface RunnableConfigLike {
@@ -116,14 +117,17 @@ class Baggage {
   metadata: KVMap | undefined;
   tags: string[] | undefined;
   project_name: string | undefined;
+  replicas: [string, KVMap | undefined][] | undefined;
   constructor(
     metadata: KVMap | undefined,
     tags: string[] | undefined,
-    project_name: string | undefined
+    project_name: string | undefined,
+    replicas: [string, KVMap | undefined][] | undefined
   ) {
     this.metadata = metadata;
     this.tags = tags;
     this.project_name = project_name;
+    this.replicas = replicas;
   }
 
   static fromHeader(value: string) {
@@ -131,6 +135,7 @@ class Baggage {
     let metadata: KVMap = {};
     let tags: string[] = [];
     let project_name: string | undefined;
+    let replicas: [string, KVMap | undefined][] | undefined;
     for (const item of items) {
       const [key, uriValue] = item.split("=");
       const value = decodeURIComponent(uriValue);
@@ -140,10 +145,12 @@ class Baggage {
         tags = value.split(",");
       } else if (key === "langsmith-project") {
         project_name = value;
+      } else if (key === "langsmith-replicas") {
+        replicas = JSON.parse(value);
       }
     }
 
-    return new Baggage(metadata, tags, project_name);
+    return new Baggage(metadata, tags, project_name, replicas);
   }
 
   toHeader(): string {
@@ -197,6 +204,10 @@ export class RunTree implements BaseRun {
    * Each entry is a tuple of [mime_type, bytes]
    */
   attachments?: Attachments;
+  /**
+   * Projects to replicate this run to with optional updates.
+   */
+  replicas?: [string, KVMap | undefined][];
 
   constructor(originalConfig: RunTreeConfig | RunTree) {
     // If you pass in a run tree directly, return a shallow clone
@@ -287,6 +298,7 @@ export class RunTree implements BaseRun {
       ...config,
       parent_run: this,
       project_name: this.project_name,
+      replicas: this.replicas,
       client: this.client,
       tracingEnabled: this.tracingEnabled,
       execution_order: child_execution_order,
@@ -367,7 +379,7 @@ export class RunTree implements BaseRun {
     run: RunTree,
     runtimeEnv: RuntimeEnvironment | undefined,
     excludeChildRuns = true
-  ): RunCreate {
+  ): RunCreate & { id: string } {
     const runExtra = run.extra ?? {};
     // Avoid overwriting the runtime environment if it's already set
     if (runExtra?.runtime?.library === undefined) {
@@ -383,7 +395,7 @@ export class RunTree implements BaseRun {
       }
     }
 
-    let child_runs: RunCreate[];
+    let child_runs: (RunCreate & { id: string })[];
     let parent_run_id: string | undefined;
     if (!excludeChildRuns) {
       child_runs = run.child_runs.map((child_run) =>
@@ -394,7 +406,7 @@ export class RunTree implements BaseRun {
       parent_run_id = run.parent_run?.id;
       child_runs = [];
     }
-    const persistedRun: RunCreate = {
+    return {
       id: run.id,
       name: run.name,
       start_time: run.start_time,
@@ -415,14 +427,95 @@ export class RunTree implements BaseRun {
       attachments: run.attachments,
       events: run.events,
     };
-    return persistedRun;
+  }
+
+  private _remapForProject(
+    projectName: string,
+    updates?: KVMap,
+    runtimeEnv?: RuntimeEnvironment,
+    excludeChildRuns = true
+  ): RunCreate & { id: string } {
+    const baseRun = this._convertToCreate(this, runtimeEnv, excludeChildRuns);
+    if (projectName === this.project_name) {
+      return { ...baseRun, ...updates };
+    }
+
+    // Create a deterministic UUID mapping for this project
+    const createRemappedId = (originalId: string): string => {
+      return uuid.v5(`${originalId}:${projectName}`, uuid.v5.DNS);
+    };
+
+    // Remap the current run's ID
+    const newId = createRemappedId(baseRun.id);
+
+    const newTraceId = baseRun.trace_id
+      ? createRemappedId(baseRun.trace_id)
+      : undefined;
+
+    const newParentRunId = baseRun.parent_run_id
+      ? createRemappedId(baseRun.parent_run_id)
+      : undefined;
+
+    let newDottedOrder: string | undefined;
+    if (baseRun.dotted_order) {
+      const segments = _parseDottedOrder(baseRun.dotted_order);
+      const rebuilt: string[] = [];
+
+      // Process all segments except the last one
+      for (let i = 0; i < segments.length - 1; i++) {
+        const [timestamp, segmentId] = segments[i];
+        const remappedId = createRemappedId(segmentId);
+        rebuilt.push(
+          timestamp.toISOString().replace(/[-:]/g, "").replace(".", "") +
+            remappedId
+        );
+      }
+
+      // Process the last segment with the new run ID
+      const [lastTimestamp] = segments[segments.length - 1];
+      rebuilt.push(
+        lastTimestamp.toISOString().replace(/[-:]/g, "").replace(".", "") +
+          newId
+      );
+
+      newDottedOrder = rebuilt.join(".");
+    } else {
+      newDottedOrder = undefined;
+    }
+
+    const remappedRun = {
+      ...baseRun,
+      id: newId,
+      trace_id: newTraceId,
+      parent_run_id: newParentRunId,
+      dotted_order: newDottedOrder,
+      session_name: projectName,
+    };
+
+    return remappedRun;
   }
 
   async postRun(excludeChildRuns = true): Promise<void> {
     try {
       const runtimeEnv = getRuntimeEnvironment();
-      const runCreate = await this._convertToCreate(this, runtimeEnv, true);
-      await this.client.createRun(runCreate);
+      if (this.replicas && this.replicas.length > 0) {
+        for (const [projectName, updates] of this.replicas) {
+          const runCreate = this._remapForProject(
+            projectName,
+            updates,
+            runtimeEnv,
+            true
+          );
+          await this.client.createRun(runCreate);
+        }
+      } else {
+        const runCreate = this._convertToCreate(
+          this,
+          runtimeEnv,
+          excludeChildRuns
+        );
+        await this.client.createRun(runCreate);
+      }
 
       if (!excludeChildRuns) {
         warnOnce(
@@ -438,26 +531,47 @@ export class RunTree implements BaseRun {
   }
 
   async patchRun(): Promise<void> {
-    try {
-      const runUpdate: RunUpdate = {
-        end_time: this.end_time,
-        error: this.error,
-        inputs: this.inputs,
-        outputs: this.outputs,
-        parent_run_id: this.parent_run?.id,
-        reference_example_id: this.reference_example_id,
-        extra: this.extra,
-        events: this.events,
-        dotted_order: this.dotted_order,
-        trace_id: this.trace_id,
-        tags: this.tags,
-        attachments: this.attachments,
-        session_name: this.project_name,
-      };
-
-      await this.client.updateRun(this.id, runUpdate);
-    } catch (error) {
-      console.error(`Error in patchRun for run ${this.id}`, error);
+    if (this.replicas && this.replicas.length > 0) {
+      for (const [projectName, updates] of this.replicas) {
+        const runData = this._remapForProject(projectName);
+        await this.client.updateRun(runData.id, {
+          inputs: runData.inputs,
+          outputs: runData.outputs,
+          error: runData.error,
+          parent_run_id: runData.parent_run_id,
+          session_name: runData.session_name,
+          reference_example_id: runData.reference_example_id,
+          end_time: runData.end_time,
+          dotted_order: runData.dotted_order,
+          trace_id: runData.trace_id,
+          events: runData.events,
+          tags: runData.tags,
+          extra: runData.extra,
+          attachments: this.attachments,
+          ...updates,
+        });
+      }
+    } else {
+      try {
+        const runUpdate = {
+          end_time: this.end_time,
+          error: this.error,
+          inputs: this.inputs,
+          outputs: this.outputs,
+          parent_run_id: this.parent_run?.id,
+          reference_example_id: this.reference_example_id,
+          extra: this.extra,
+          events: this.events,
+          dotted_order: this.dotted_order,
+          trace_id: this.trace_id,
+          tags: this.tags,
+          attachments: this.attachments,
+          session_name: this.project_name,
+        };
+        await this.client.updateRun(this.id, runUpdate);
+      } catch (error) {
+        console.error(`Error in patchRun for run ${this.id}`, error);
+      }
     }
   }
 
@@ -587,6 +701,7 @@ export class RunTree implements BaseRun {
       config.metadata = baggage.metadata;
       config.tags = baggage.tags;
       config.project_name = baggage.project_name;
+      config.replicas = baggage.replicas;
     }
 
     return new RunTree(config);
@@ -598,7 +713,8 @@ export class RunTree implements BaseRun {
       baggage: new Baggage(
         this.extra?.metadata,
         this.tags,
-        this.project_name
+        this.project_name,
+        this.replicas
       ).toHeader(),
     };
 
@@ -666,4 +782,34 @@ export function isRunnableConfigLike(x?: unknown): x is RunnableConfigLike {
       // Or it's an array with a LangChainTracerLike object within it
       containsLangChainTracerLike((x as RunnableConfigLike).callbacks))
   );
+}
+
+function _parseDottedOrder(dottedOrder: string): [Date, string][] {
+  const parts = dottedOrder.split(".");
+  return parts.map((part) => {
+    const timestampStr = part.slice(0, -36);
+    const uuidStr = part.slice(-36);
+
+    // Parse timestamp: "%Y%m%dT%H%M%S%fZ" format
+    // Example: "20231215T143045123456Z"
+    const year = parseInt(timestampStr.slice(0, 4));
+    const month = parseInt(timestampStr.slice(4, 6)) - 1; // JS months are 0-indexed
+    const day = parseInt(timestampStr.slice(6, 8));
+    const hour = parseInt(timestampStr.slice(9, 11));
+    const minute = parseInt(timestampStr.slice(11, 13));
+    const second = parseInt(timestampStr.slice(13, 15));
+    const microsecond = parseInt(timestampStr.slice(15, 21));
+
+    const timestamp = new Date(
+      year,
+      month,
+      day,
+      hour,
+      minute,
+      second,
+      microsecond / 1000
+    );
+
+    return [timestamp, uuidStr] as [Date, string];
+  });
 }
