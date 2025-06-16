@@ -1,8 +1,12 @@
-import { getLangSmithEnvironmentVariable } from "./env.js";
+import {
+  getEnvironmentVariable,
+  getLangSmithEnvironmentVariable,
+} from "./env.js";
 
 export const getProjectName = () => {
   return (
     getLangSmithEnvironmentVariable("PROJECT") ??
-    getLangSmithEnvironmentVariable("SESSION")
+    getEnvironmentVariable("LANGCHAIN_SESSION") ?? // TODO: Deprecate
+    "default"
   );
 };

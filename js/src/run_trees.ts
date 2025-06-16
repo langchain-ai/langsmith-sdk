@@ -1,15 +1,15 @@
 import * as uuid from "uuid";
+import { Client } from "./client.js";
+import { isTracingEnabled } from "./env.js";
 import { Attachments, BaseRun, KVMap, RunCreate } from "./schemas.js";
+import { _LC_CONTEXT_VARIABLES_KEY } from "./singletons/constants.js";
 import {
   RuntimeEnvironment,
   getEnvironmentVariable,
-  getLangSmithEnvironmentVariable,
   getRuntimeEnvironment,
 } from "./utils/env.js";
-import { Client } from "./client.js";
-import { isTracingEnabled } from "./env.js";
+import { getProjectName } from "./utils/project.js";
 import { warnOnce } from "./utils/warn.js";
-import { _LC_CONTEXT_VARIABLES_KEY } from "./singletons/constants.js";
 
 function stripNonAlphanumeric(input: string) {
   return input.replace(/[-:.]/g, "");
@@ -262,10 +262,7 @@ export class RunTree implements BaseRun {
     return {
       id: uuid.v4(),
       run_type: "chain",
-      project_name:
-        getLangSmithEnvironmentVariable("PROJECT") ??
-        getEnvironmentVariable("LANGCHAIN_SESSION") ?? // TODO: Deprecate
-        "default",
+      project_name: getProjectName(),
       child_runs: [],
       api_url:
         getEnvironmentVariable("LANGCHAIN_ENDPOINT") ?? "http://localhost:1984",
