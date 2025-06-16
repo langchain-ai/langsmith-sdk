@@ -463,11 +463,7 @@ class RunTree(ls_schemas.RunBase):
         """Post the run tree to the API asynchronously."""
         if self.replicas:
             for project_name, updates in self.replicas:
-                # Avoid double posting for the current project
-                if project_name == self.session_name:
-                    run_dict = self._get_dicts_safe()
-                else:
-                    run_dict = self._remap_for_project(project_name, updates)
+                run_dict = self._remap_for_project(project_name)
                 self.client.create_run(**run_dict)
         else:
             kwargs = self._get_dicts_safe()
@@ -518,10 +514,7 @@ class RunTree(ls_schemas.RunBase):
         # Fanout logic for patch
         if self.replicas:
             for project_name, updates in self.replicas:
-                if project_name == self.session_name:
-                    run_dict = self._get_dicts_safe()
-                else:
-                    run_dict = self._remap_for_project(project_name, updates)
+                run_dict = self._remap_for_project(project_name, updates)
                 self.client.update_run(
                     name=run_dict["name"],
                     run_id=run_dict["id"],
