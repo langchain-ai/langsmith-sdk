@@ -6,6 +6,7 @@ import { _LC_CONTEXT_VARIABLES_KEY } from "./singletons/constants.js";
 import {
   RuntimeEnvironment,
   getEnvironmentVariable,
+  getLangSmithEnvironmentVariable,
   getRuntimeEnvironment,
 } from "./utils/env.js";
 import { getProjectName } from "./utils/project.js";
@@ -258,11 +259,14 @@ export class RunTree implements BaseRun {
     return this.extra?.metadata;
   }
 
-  private static getDefaultConfig(): object {
+  static getDefaultConfig(): object {
     return {
       id: uuid.v4(),
       run_type: "chain",
-      project_name: getProjectName(),
+      project_name:
+        getLangSmithEnvironmentVariable("PROJECT") ??
+        getEnvironmentVariable("LANGCHAIN_SESSION") ?? // TODO: Deprecate
+        "default",
       child_runs: [],
       api_url:
         getEnvironmentVariable("LANGCHAIN_ENDPOINT") ?? "http://localhost:1984",
