@@ -1975,6 +1975,11 @@ def _is_otel_available() -> bool:
     """Cache for otel import check."""
     global _OTEL_AVAILABLE
     if _OTEL_AVAILABLE is None:
+        # Check environment variable first
+        if not utils.is_truish(utils.get_env_var("OTEL_ENABLED")):
+            _OTEL_AVAILABLE = False
+            return False
+
         try:
             import opentelemetry.trace  # noqa: F401
 
@@ -1993,9 +1998,7 @@ def _maybe_create_otel_context(run_tree: Optional[run_trees.RunTree]):
     Returns:
         Context manager for use_span or None if not available.
     """
-    if not _is_otel_available():
-        return None
-    if not run_tree or not utils.is_truish(utils.get_env_var("OTEL_ENABLED")):
+    if not run_tree or not _is_otel_available():
         return None
 
     from opentelemetry.trace import (  # type: ignore[import]
