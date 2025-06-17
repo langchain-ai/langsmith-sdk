@@ -101,10 +101,22 @@ if HAVE_AGENTS:
             },
         }
         if span_data.usage:
+            # Extract token usage data, supporting both OpenAI direct and LiteLLM formats
+            # OpenAI format: {"prompt_tokens": N, "completion_tokens": N, "total_tokens": N}
+            # LiteLLM format: {"input_tokens": N, "output_tokens": N}
+            usage = span_data.usage
+            
+            input_tokens = usage.get("input_tokens") or usage.get("prompt_tokens") or 0
+            output_tokens = usage.get("output_tokens") or usage.get("completion_tokens") or 0
+            
+            total_tokens = usage.get("total_tokens")
+            if total_tokens is None:
+                total_tokens = input_tokens + output_tokens
+            
             data["outputs"]["usage_metadata"] = {
-                "total_tokens": span_data.usage.get("total_tokens"),
-                "input_tokens": span_data.usage.get("prompt_tokens"),
-                "output_tokens": span_data.usage.get("completion_tokens"),
+                "total_tokens": total_tokens,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
             }
         return data
 
