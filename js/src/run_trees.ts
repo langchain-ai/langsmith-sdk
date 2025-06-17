@@ -8,7 +8,7 @@ import {
   getEnvironmentVariable,
   getRuntimeEnvironment,
 } from "./utils/env.js";
-import { getProjectName } from "./utils/project.js";
+import { getDefaultProjectName } from "./utils/project.js";
 import { warnOnce } from "./utils/warn.js";
 
 function stripNonAlphanumeric(input: string) {
@@ -262,7 +262,7 @@ export class RunTree implements BaseRun {
     return {
       id: uuid.v4(),
       run_type: "chain",
-      project_name: getProjectName(),
+      project_name: getDefaultProjectName(),
       child_runs: [],
       api_url:
         getEnvironmentVariable("LANGCHAIN_ENDPOINT") ?? "http://localhost:1984",

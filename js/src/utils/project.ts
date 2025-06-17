@@ -3,7 +3,7 @@ import {
   getLangSmithEnvironmentVariable,
 } from "./env.js";
 
-export const getProjectName = () => {
+export const getDefaultProjectName = () => {
   return (
     getLangSmithEnvironmentVariable("PROJECT") ??
     getEnvironmentVariable("LANGCHAIN_SESSION") ?? // TODO: Deprecate
