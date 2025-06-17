@@ -34,6 +34,7 @@ LANGSMITH_DOTTED_ORDER_BYTES = LANGSMITH_DOTTED_ORDER.encode("utf-8")
 LANGSMITH_METADATA = sys.intern(f"{LANGSMITH_PREFIX}metadata")
 LANGSMITH_TAGS = sys.intern(f"{LANGSMITH_PREFIX}tags")
 LANGSMITH_PROJECT = sys.intern(f"{LANGSMITH_PREFIX}project")
+LANGSMITH_REPLICAS = sys.intern(f"{LANGSMITH_PREFIX}replicas")
 OVERRIDE_OUTPUTS = sys.intern("__omit_auto_outputs")
 NOT_PROVIDED = cast(None, object())
 _CLIENT: Optional[Client] = None
@@ -703,8 +704,10 @@ class RunTree(ls_schemas.RunBase):
             init_args["extra"]["metadata"] = metadata
             tags = sorted(set(baggage.tags + init_args.get("tags", [])))
             init_args["tags"] = tags
-            if baggage.project_name:
-                init_args["project_name"] = baggage.project_name
+        if baggage.project_name:
+            init_args["project_name"] = baggage.project_name
+        if baggage.replicas:
+            init_args["replicas"] = baggage.replicas
 
         return RunTree(**init_args)
 
@@ -737,11 +740,13 @@ class _Baggage:
         metadata: Optional[dict[str, str]] = None,
         tags: Optional[list[str]] = None,
         project_name: Optional[str] = None,
+        replicas: Optional[Sequence[tuple[str, Optional[dict]]]] = None,
     ):
         """Initialize the Baggage object."""
         self.metadata = metadata or {}
         self.tags = tags or []
         self.project_name = project_name
+        self.replicas = replicas or []
 
     @classmethod
     def from_header(cls, header_value: Optional[str]) -> _Baggage:
@@ -751,6 +756,7 @@ class _Baggage:
         metadata = {}
         tags = []
         project_name = None
+        replicas = []
         try:
             for item in header_value.split(","):
                 key, value = item.split("=", 1)
@@ -760,10 +766,15 @@ class _Baggage:
                     tags = urllib.parse.unquote(value).split(",")
                 elif key == LANGSMITH_PROJECT:
                     project_name = urllib.parse.unquote(value)
+                elif key == LANGSMITH_REPLICAS:
+                    replicas_data = json.loads(urllib.parse.unquote(value))
+                    replicas = [(str(proj), updates) for proj, updates in replicas_data]
         except Exception as e:
             logger.warning(f"Error parsing baggage header: {e}")
 
-        return cls(metadata=metadata, tags=tags, project_name=project_name)
+        return cls(
+            metadata=metadata, tags=tags, project_name=project_name, replicas=replicas
+        )
 
     @classmethod
     def from_headers(cls, headers: Mapping[Union[str, bytes], Any]) -> _Baggage:
@@ -790,6 +801,11 @@ class _Baggage:
         if self.project_name:
             items.append(
                 f"{LANGSMITH_PREFIX}project={urllib.parse.quote(self.project_name)}"
+            )
+        if self.replicas:
+            serialized_replicas = _dumps_json(self.replicas)
+            items.append(
+                f"{LANGSMITH_PREFIX}replicas={urllib.parse.quote(serialized_replicas)}"
             )
         return ",".join(items)
 
