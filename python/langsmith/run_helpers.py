@@ -601,10 +601,6 @@ def traceable(
                     # called mid-generation. Need to explicitly accept run_tree to get
                     # around this.
 
-                otel_context_manager = _maybe_create_otel_context(
-                    run_container["new_run"]
-                )
-
                 async_gen_result = func(*args, **kwargs)
                 # Can't iterate through if it's a coroutine
                 accepts_context = aitertools.asyncio_accepts_context()
@@ -631,7 +627,6 @@ def traceable(
                     accepts_context=accepts_context,
                     results=results,
                     process_chunk=container_input.get("process_chunk"),
-                    otel_context_manager=otel_context_manager,
                 ):
                     yield item
             except BaseException as e:
@@ -722,17 +717,12 @@ def traceable(
 
                 generator_result = run_container["context"].run(func, *args, **kwargs)
 
-                otel_context_manager = _maybe_create_otel_context(
-                    run_container["new_run"]
-                )
-
                 function_return = yield from _process_iterator(
                     generator_result,
                     run_container,
                     is_llm_run=run_type == "llm",
                     results=results,
                     process_chunk=container_input.get("process_chunk"),
-                    otel_context_manager=otel_context_manager,
                 )
 
                 if function_return is not None:
@@ -1660,25 +1650,10 @@ def _process_iterator(
     # Results is mutated
     results: list[Any],
     process_chunk: Optional[Callable],
-    otel_context_manager: Optional[Any] = None,
 ) -> Generator[T, None, Any]:
     try:
         while True:
-            if otel_context_manager:
-                # Create a fresh context manager for each iteration
-                def next_with_otel_context():
-                    # Get the run_tree from run_container to create a fresh context
-                    run_tree = run_container.get("new_run")
-                    if run_tree:
-                        fresh_otel_context = _maybe_create_otel_context(run_tree)
-                        if fresh_otel_context:
-                            with fresh_otel_context:
-                                return next(generator)
-                    return next(generator)
-
-                item: T = run_container["context"].run(next_with_otel_context)  # type: ignore[arg-type]
-            else:
-                item = run_container["context"].run(next, generator)  # type: ignore[arg-type]
+            item = run_container["context"].run(next, generator)  # type: ignore[arg-type]
             if process_chunk:
                 traced_item = process_chunk(item)
             else:
@@ -1712,45 +1687,18 @@ async def _process_async_iterator(
     accepts_context: bool,
     results: list[Any],
     process_chunk: Optional[Callable],
-    otel_context_manager: Optional[Any] = None,
 ) -> AsyncGenerator[T, None]:
     try:
         while True:
-            if otel_context_manager:
-                # Create a fresh context manager for each iteration
-                async def anext_with_otel_context():
-                    # Get the run_tree from run_container to create a fresh context
-                    run_tree = run_container.get("new_run")
-                    if run_tree:
-                        fresh_otel_context = _maybe_create_otel_context(run_tree)
-                        if fresh_otel_context:
-                            with fresh_otel_context:
-                                return await aitertools.py_anext(generator)
-                    return await aitertools.py_anext(generator)
-
-                if accepts_context:
-                    item = await asyncio.create_task(  # type: ignore[call-arg, var-annotated]
-                        anext_with_otel_context(),
-                        context=run_container["context"],
-                    )
-                else:
-                    # Python < 3.11
-                    with tracing_context(
-                        **get_tracing_context(run_container["context"])
-                    ):
-                        item = await anext_with_otel_context()
+            if accepts_context:
+                item = await asyncio.create_task(  # type: ignore[call-arg, var-annotated]
+                    aitertools.py_anext(generator),  # type: ignore[arg-type]
+                    context=run_container["context"],
+                )
             else:
-                if accepts_context:
-                    item = await asyncio.create_task(  # type: ignore[call-arg, var-annotated]
-                        aitertools.py_anext(generator),  # type: ignore[arg-type]
-                        context=run_container["context"],
-                    )
-                else:
-                    # Python < 3.11
-                    with tracing_context(
-                        **get_tracing_context(run_container["context"])
-                    ):
-                        item = await aitertools.py_anext(generator)
+                # Python < 3.11
+                with tracing_context(**get_tracing_context(run_container["context"])):
+                    item = await aitertools.py_anext(generator)
             if process_chunk:
                 traced_item = process_chunk(item)
             else:
@@ -1993,10 +1941,9 @@ def _maybe_create_otel_context(run_tree: Optional[run_trees.RunTree]):
     Returns:
         Context manager for use_span or None if not available.
     """
-    return None
-    if not _is_otel_available():
-        return None
     if not run_tree or not utils.is_truish(utils.get_env_var("OTEL_ENABLED")):
+        return None
+    if not _is_otel_available():
         return None
 
     from opentelemetry.trace import (  # type: ignore[import]
