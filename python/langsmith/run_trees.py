@@ -756,7 +756,7 @@ class _Baggage:
         metadata = {}
         tags = []
         project_name = None
-        replicas = []
+        replicas = None
         try:
             for item in header_value.split(","):
                 key, value = item.split("=", 1)
