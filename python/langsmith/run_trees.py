@@ -47,14 +47,19 @@ _REPLICAS = contextvars.ContextVar[Optional[Sequence[tuple[str, Optional[dict]]]
 
 
 # Note, this is called directly by langchain. Do not remove.
-
-
 def get_cached_client(**init_kwargs: Any) -> Client:
     global _CLIENT
     if _CLIENT is None:
         with _LOCK:
             if _CLIENT is None:
                 _CLIENT = Client(**init_kwargs)
+    return _CLIENT
+
+
+def set_global_client(**init_kwargs: Any) -> Client:
+    global _CLIENT
+    with _LOCK:
+        _CLIENT = Client(**init_kwargs)
     return _CLIENT
 
 
