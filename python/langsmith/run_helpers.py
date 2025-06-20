@@ -231,8 +231,10 @@ class LangSmithExtra(TypedDict, total=False):
     """Optional ID for the run."""
     client: Optional[ls_client.Client]
     """Optional LangSmith client."""
+    # Optional callback function to be called if the run succeeds and before it is sent.
+    _on_success: Optional[Callable[[run_trees.RunTree], None]]
     on_end: Optional[Callable[[run_trees.RunTree], Any]]
-    """Optional callback function to be called when the run ends."""
+    """Optional callback function to be called after the run ends and is sent."""
 
 
 R = TypeVar("R", covariant=True)
@@ -1288,6 +1290,7 @@ class _TraceableContainer(TypedDict, total=False):
     outer_project: Optional[str]
     outer_metadata: Optional[dict[str, Any]]
     outer_tags: Optional[list[str]]
+    _on_success: Optional[Callable[[run_trees.RunTree], Any]]
     on_end: Optional[Callable[[run_trees.RunTree], Any]]
     context: contextvars.Context
     _token_event_logged: Optional[bool]
@@ -1337,21 +1340,27 @@ def _container_end(
             dict_outputs = {"output": outputs}
     else:
         dict_outputs = {"output": outputs}
-    error_ = None
-    if error:
-        stacktrace = utils._format_exc()
-        error_ = f"{repr(error)}\n\n{stacktrace}"
     if (usage := _extract_usage(run_tree=run_tree, outputs=dict_outputs)) is not None:
         run_tree.metadata["usage_metadata"] = usage
-    run_tree.end(outputs=dict_outputs, error=error_)
+    if error:
+        stacktrace = utils._format_exc()
+        error_repr = f"{repr(error)}\n\n{stacktrace}"
+    else:
+        error_repr = None
+        if (_on_success := container.get("_on_success")) and callable(_on_success):
+            try:
+                _on_success(run_tree)
+            except BaseException as e:
+                warnings.warn(f"Failed to run _on_success function: {e}")
+
+    run_tree.end(outputs=dict_outputs, error=error_repr)
     if utils.tracing_is_enabled() is True:
         run_tree.patch()
-    on_end = container.get("on_end")
-    if on_end is not None and callable(on_end):
+    if (on_end := container.get("on_end")) and callable(on_end):
         try:
             on_end(run_tree)
         except BaseException as e:
-            LOGGER.warning(f"Failed to run on_end function: {e}")
+            warnings.warn(f"Failed to run on_end function: {e}")
 
 
 def _collect_extra(extra_outer: dict, langsmith_extra: LangSmithExtra) -> dict:
@@ -1461,6 +1470,7 @@ def _setup_run(
             outer_project=outer_project,
             outer_metadata=None,
             outer_tags=None,
+            _on_success=langsmith_extra.get("_on_success"),
             on_end=langsmith_extra.get("on_end"),
             context=copy_context(),
             _token_event_logged=False,
@@ -1539,6 +1549,7 @@ def _setup_run(
         outer_metadata=outer_metadata,
         outer_tags=outer_tags,
         on_end=langsmith_extra.get("on_end"),
+        _on_success=langsmith_extra.get("_on_success"),
         context=context,
         _token_event_logged=False,
     )
