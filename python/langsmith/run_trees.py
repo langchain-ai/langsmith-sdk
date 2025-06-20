@@ -34,6 +34,7 @@ LANGSMITH_DOTTED_ORDER_BYTES = LANGSMITH_DOTTED_ORDER.encode("utf-8")
 LANGSMITH_METADATA = sys.intern(f"{LANGSMITH_PREFIX}metadata")
 LANGSMITH_TAGS = sys.intern(f"{LANGSMITH_PREFIX}tags")
 LANGSMITH_PROJECT = sys.intern(f"{LANGSMITH_PREFIX}project")
+LANGSMITH_REPLICAS = sys.intern(f"{LANGSMITH_PREFIX}replicas")
 OVERRIDE_OUTPUTS = sys.intern("__omit_auto_outputs")
 NOT_PROVIDED = cast(None, object())
 _CLIENT: Optional[Client] = None
@@ -419,6 +420,9 @@ class RunTree(ls_schemas.RunBase):
     ) -> dict:
         """Rewrites ids/dotted_order for a given project with optional updates."""
         run_dict = self._get_dicts_safe()
+        if project_name == self.session_name:
+            return run_dict
+
         old_id = run_dict["id"]
         new_id = uuid5(NAMESPACE_DNS, f"{old_id}:{project_name}")
         # trace id
@@ -463,11 +467,7 @@ class RunTree(ls_schemas.RunBase):
         """Post the run tree to the API asynchronously."""
         if self.replicas:
             for project_name, updates in self.replicas:
-                # Avoid double posting for the current project
-                if project_name == self.session_name:
-                    run_dict = self._get_dicts_safe()
-                else:
-                    run_dict = self._remap_for_project(project_name, updates)
+                run_dict = self._remap_for_project(project_name)
                 self.client.create_run(**run_dict)
         else:
             kwargs = self._get_dicts_safe()
@@ -518,10 +518,7 @@ class RunTree(ls_schemas.RunBase):
         # Fanout logic for patch
         if self.replicas:
             for project_name, updates in self.replicas:
-                if project_name == self.session_name:
-                    run_dict = self._get_dicts_safe()
-                else:
-                    run_dict = self._remap_for_project(project_name, updates)
+                run_dict = self._remap_for_project(project_name, updates)
                 self.client.update_run(
                     name=run_dict["name"],
                     run_id=run_dict["id"],
@@ -703,8 +700,10 @@ class RunTree(ls_schemas.RunBase):
             init_args["extra"]["metadata"] = metadata
             tags = sorted(set(baggage.tags + init_args.get("tags", [])))
             init_args["tags"] = tags
-            if baggage.project_name:
-                init_args["project_name"] = baggage.project_name
+        if baggage.project_name:
+            init_args["project_name"] = baggage.project_name
+        if baggage.replicas:
+            init_args["replicas"] = baggage.replicas
 
         return RunTree(**init_args)
 
@@ -737,11 +736,13 @@ class _Baggage:
         metadata: Optional[dict[str, str]] = None,
         tags: Optional[list[str]] = None,
         project_name: Optional[str] = None,
+        replicas: Optional[Sequence[tuple[str, Optional[dict]]]] = None,
     ):
         """Initialize the Baggage object."""
         self.metadata = metadata or {}
         self.tags = tags or []
         self.project_name = project_name
+        self.replicas = replicas or []
 
     @classmethod
     def from_header(cls, header_value: Optional[str]) -> _Baggage:
@@ -751,6 +752,7 @@ class _Baggage:
         metadata = {}
         tags = []
         project_name = None
+        replicas = None
         try:
             for item in header_value.split(","):
                 key, value = item.split("=", 1)
@@ -760,10 +762,15 @@ class _Baggage:
                     tags = urllib.parse.unquote(value).split(",")
                 elif key == LANGSMITH_PROJECT:
                     project_name = urllib.parse.unquote(value)
+                elif key == LANGSMITH_REPLICAS:
+                    replicas_data = json.loads(urllib.parse.unquote(value))
+                    replicas = [(str(proj), updates) for proj, updates in replicas_data]
         except Exception as e:
             logger.warning(f"Error parsing baggage header: {e}")
 
-        return cls(metadata=metadata, tags=tags, project_name=project_name)
+        return cls(
+            metadata=metadata, tags=tags, project_name=project_name, replicas=replicas
+        )
 
     @classmethod
     def from_headers(cls, headers: Mapping[Union[str, bytes], Any]) -> _Baggage:
@@ -790,6 +797,11 @@ class _Baggage:
         if self.project_name:
             items.append(
                 f"{LANGSMITH_PREFIX}project={urllib.parse.quote(self.project_name)}"
+            )
+        if self.replicas:
+            serialized_replicas = _dumps_json(self.replicas)
+            items.append(
+                f"{LANGSMITH_PREFIX}replicas={urllib.parse.quote(serialized_replicas)}"
             )
         return ",".join(items)
 
