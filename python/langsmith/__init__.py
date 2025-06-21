@@ -15,7 +15,7 @@ if TYPE_CHECKING:
         traceable,
         tracing_context,
     )
-    from langsmith.run_trees import RunTree
+    from langsmith.run_trees import RunTree, set_global_client
     from langsmith.testing._internal import test, unit
     from langsmith.utils import ContextThreadPoolExecutor
 
@@ -105,6 +105,10 @@ def __getattr__(name: str) -> Any:
         from langsmith.utils import ContextThreadPoolExecutor
 
         return ContextThreadPoolExecutor
+    elif name == "set_global_client":
+        from langsmith.run_trees import set_global_client
+
+        return set_global_client
 
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
@@ -128,4 +132,5 @@ __all__ = [
     "get_current_run_tree",
     "ContextThreadPoolExecutor",
     "AsyncClient",
+    "set_global_client",
 ]
