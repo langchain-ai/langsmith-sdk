@@ -13,6 +13,7 @@ import { RunTree } from "../run_trees.js";
 import { BaseRun } from "../schemas.js";
 import { expect } from "@jest/globals";
 import { jest } from "@jest/globals";
+import { toArray, waitUntil } from "./utils.js";
 
 async function deleteProject(langsmithClient: Client, projectName: string) {
   try {
@@ -21,21 +22,6 @@ async function deleteProject(langsmithClient: Client, projectName: string) {
   } catch (e) {
     // Pass
   }
-}
-
-async function waitUntil(
-  condition: () => Promise<boolean>,
-  timeout: number,
-  interval: number
-): Promise<void> {
-  const start = Date.now();
-  while (Date.now() - start < timeout) {
-    if (await condition()) {
-      return;
-    }
-    await new Promise((resolve) => setTimeout(resolve, interval));
-  }
-  throw new Error("Timeout");
 }
 
 async function waitUntilRunFound(
@@ -762,3 +748,161 @@ test("Test upload attachments and process inputs.", async () => {
 
   multipartIngestRunsSpy.mockRestore();
 }, 60000);
+
+test.only("Test trace to multiple projects with replicas", async () => {
+  const client = new Client({ callerOptions: { maxRetries: 6 } });
+  const datasetName = `__test_trace_to_multiple_projects${uuidv4().slice(
+    0,
+    4
+  )}`;
+
+  // Clean up existing dataset if it exists
+  if (await client.hasDataset({ datasetName })) {
+    await client.deleteDataset({ datasetName });
+  }
+
+  // Create actual dataset
+  const dataset = await client.createDataset(datasetName, {
+    description: "Test dataset for multipart example upload",
+    dataType: "kv",
+  });
+
+  // Create test examples
+  const exampleId = uuidv4();
+  const example1 = {
+    id: exampleId,
+    inputs: { text: "hello world" },
+  };
+
+  // Test creating examples
+  const createdExamples = await client.uploadExamplesMultipart(dataset.id, [
+    example1,
+  ]);
+
+  const projectNames = [
+    "__My Tracer Project - test_trace_to_multiple_projects_1",
+    "__My Tracer Project - test_trace_to_multiple_projects_2",
+  ];
+  const runMeta = uuidv4().replace(/-/g, "");
+  const referenceExampleId = createdExamples.example_ids[0];
+  const langchainClient = new Client({ timeout_ms: 30_000 });
+
+  const myLlm = traceable(
+    async (text: string): Promise<string> => {
+      const result = `LLM response: ${text}`;
+      return result;
+    },
+    {
+      name: "my_llm",
+      run_type: "llm",
+      client: langchainClient,
+      metadata: { test_run: runMeta },
+    }
+  );
+
+  const myChain = traceable(
+    async (text: string): Promise<string> => {
+      const result = await myLlm(text);
+      return result;
+    },
+    {
+      name: "my_chain",
+      run_type: "chain",
+      replicas: [
+        [projectNames[0], { reference_example_id: referenceExampleId }],
+        [projectNames[1], undefined],
+      ],
+      metadata: { test_run: runMeta },
+      client: langchainClient,
+    }
+  );
+
+  // Execute with replicas
+  const result = await myChain("test_input");
+
+  expect(result).toBe("LLM response: test_input");
+
+  const filter = `and(eq(metadata_key, "test_run"), eq(metadata_value, "${runMeta}"))`;
+
+  // Poll for runs in first project
+  await waitUntil(
+    async () => {
+      const runs = await toArray(
+        langchainClient.listRuns({
+          projectName: projectNames[0],
+          filter,
+        })
+      );
+      return runs.length === 2;
+    },
+    30_000,
+    5000,
+    "Waiting for runs in project 1"
+  );
+
+  const runs1 = await toArray(
+    langchainClient.listRuns({
+      projectName: projectNames[0],
+      filter,
+    })
+  );
+  expect(runs1).toHaveLength(2);
+
+  const runs1Dict = Object.fromEntries(runs1.map((run) => [run.name, run]));
+  expect(runs1Dict.my_chain.parent_run_id).toBeNull();
+  expect(runs1Dict.my_chain.run_type).toBe("chain");
+  expect(runs1Dict.my_llm.parent_run_id).toBe(runs1Dict.my_chain.id);
+  expect(runs1Dict.my_llm.run_type).toBe("llm");
+  expect(runs1Dict.my_llm.inputs).toEqual({ input: "test_input" });
+  expect(runs1Dict.my_chain.reference_example_id).toBe(referenceExampleId);
+
+  // Poll for runs in second project
+  await waitUntil(
+    async () => {
+      const runs = await toArray(
+        langchainClient.listRuns({
+          projectName: projectNames[1],
+          filter,
+        })
+      );
+      return runs.length === 2;
+    },
+    30_000,
+    5000,
+    "Waiting for runs in project 2"
+  );
+
+  const runs2 = await toArray(
+    langchainClient.listRuns({
+      projectName: projectNames[1],
+      filter,
+    })
+  );
+  expect(runs2).toHaveLength(2);
+
+  const runs2Dict = Object.fromEntries(runs2.map((run) => [run.name, run]));
+  expect(runs2Dict.my_chain.parent_run_id).toBeNull();
+  expect(runs2Dict.my_chain.run_type).toBe("chain");
+  expect(runs2Dict.my_llm.parent_run_id).toBe(runs2Dict.my_chain.id);
+  expect(runs2Dict.my_llm.run_type).toBe("llm");
+  expect(runs2Dict.my_llm.inputs).toEqual({ input: "test_input" });
+  expect(runs2Dict.my_chain.reference_example_id).toBeNull();
+
+  // Verify different IDs across projects
+  expect(runs1Dict.my_chain.id).not.toBe(runs2Dict.my_chain.id);
+  expect(runs1Dict.my_llm.id).not.toBe(runs2Dict.my_llm.id);
+
+  // Verify proper parent-child relationships within each project
+  expect(runs1Dict.my_llm.parent_run_id).toBe(runs1Dict.my_chain.id);
+  expect(runs2Dict.my_llm.parent_run_id).toBe(runs2Dict.my_chain.id);
+
+  // Verify different trace IDs across projects
+  expect(runs1Dict.my_chain.trace_id).not.toBe(runs2Dict.my_chain.trace_id);
+
+  // Cleanup
+  await Promise.all(
+    projectNames.map((name) =>
+      langchainClient.deleteProject({ projectName: name }).catch(() => {})
+    )
+  );
+}, 180_000);

@@ -75,6 +75,8 @@ _CONTEXT_KEYS: dict[str, contextvars.ContextVar] = {
 
 _EXCLUDED_FRAME_FNAME = "langsmith/run_helpers.py"
 
+_OTEL_AVAILABLE: Optional[bool] = None
+
 
 def get_current_run_tree() -> Optional[run_trees.RunTree]:
     """Get the current run tree."""
@@ -535,17 +537,38 @@ def traceable(
                 accepts_context = aitertools.asyncio_accepts_context()
                 if func_accepts_parent_run:
                     kwargs["run_tree"] = run_container["new_run"]
-                fr_coro = func(*args, **kwargs)
-                if accepts_context:
-                    function_result = await asyncio.create_task(  # type: ignore[call-arg]
-                        fr_coro, context=run_container["context"]
-                    )
+
+                otel_context_manager = _maybe_create_otel_context(
+                    run_container["new_run"]
+                )
+                if otel_context_manager:
+
+                    async def run_with_otel_context():
+                        with otel_context_manager:
+                            return await func(*args, **kwargs)
+
+                    if accepts_context:
+                        function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                            run_with_otel_context(), context=run_container["context"]
+                        )
+                    else:
+                        # Python < 3.11
+                        with tracing_context(
+                            **get_tracing_context(run_container["context"])
+                        ):
+                            function_result = await run_with_otel_context()
                 else:
-                    # Python < 3.11
-                    with tracing_context(
-                        **get_tracing_context(run_container["context"])
-                    ):
-                        function_result = await fr_coro
+                    fr_coro = func(*args, **kwargs)
+                    if accepts_context:
+                        function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                            fr_coro, context=run_container["context"]
+                        )
+                    else:
+                        # Python < 3.11
+                        with tracing_context(
+                            **get_tracing_context(run_container["context"])
+                        ):
+                            function_result = await fr_coro
             except BaseException as e:
                 # shield from cancellation, given we're catching all exceptions
                 _cleanup_traceback(e)
@@ -579,6 +602,11 @@ def traceable(
                     # TODO: Nesting is ambiguous if a nested traceable function is only
                     # called mid-generation. Need to explicitly accept run_tree to get
                     # around this.
+
+                otel_context_manager = _maybe_create_otel_context(
+                    run_container["new_run"]
+                )
+
                 async_gen_result = func(*args, **kwargs)
                 # Can't iterate through if it's a coroutine
                 accepts_context = aitertools.asyncio_accepts_context()
@@ -605,6 +633,7 @@ def traceable(
                     accepts_context=accepts_context,
                     results=results,
                     process_chunk=container_input.get("process_chunk"),
+                    otel_context_manager=otel_context_manager,
                 ):
                     yield item
             except BaseException as e:
@@ -646,7 +675,23 @@ def traceable(
             try:
                 if func_accepts_parent_run:
                     kwargs["run_tree"] = run_container["new_run"]
-                function_result = run_container["context"].run(func, *args, **kwargs)
+
+                otel_context_manager = _maybe_create_otel_context(
+                    run_container["new_run"]
+                )
+                if otel_context_manager:
+
+                    def run_with_otel_context():
+                        with otel_context_manager:
+                            return func(*args, **kwargs)
+
+                    function_result = run_container["context"].run(
+                        run_with_otel_context
+                    )
+                else:
+                    function_result = run_container["context"].run(
+                        func, *args, **kwargs
+                    )
             except BaseException as e:
                 _cleanup_traceback(e)
                 _on_run_end(run_container, error=e)
@@ -676,7 +721,12 @@ def traceable(
             try:
                 if func_accepts_parent_run:
                     kwargs["run_tree"] = run_container["new_run"]
+
                 generator_result = run_container["context"].run(func, *args, **kwargs)
+
+                otel_context_manager = _maybe_create_otel_context(
+                    run_container["new_run"]
+                )
 
                 function_return = yield from _process_iterator(
                     generator_result,
@@ -684,6 +734,7 @@ def traceable(
                     is_llm_run=run_type == "llm",
                     results=results,
                     process_chunk=container_input.get("process_chunk"),
+                    otel_context_manager=otel_context_manager,
                 )
 
                 if function_return is not None:
@@ -1242,6 +1293,7 @@ class _TraceableContainer(TypedDict, total=False):
     _on_success: Optional[Callable[[run_trees.RunTree], Any]]
     on_end: Optional[Callable[[run_trees.RunTree], Any]]
     context: contextvars.Context
+    _token_event_logged: Optional[bool]
 
 
 class _ContainerInput(TypedDict, total=False):
@@ -1421,6 +1473,7 @@ def _setup_run(
             _on_success=langsmith_extra.get("_on_success"),
             on_end=langsmith_extra.get("on_end"),
             context=copy_context(),
+            _token_event_logged=False,
         )
     id_ = id_ or str(uuid.uuid4())
     signature = inspect.signature(func)
@@ -1498,6 +1551,7 @@ def _setup_run(
         on_end=langsmith_extra.get("on_end"),
         _on_success=langsmith_extra.get("_on_success"),
         context=context,
+        _token_event_logged=False,
     )
     context.run(_PROJECT_NAME.set, response_container["project_name"])
     context.run(_PARENT_RUN_TREE.set, response_container["new_run"])
@@ -1617,15 +1671,34 @@ def _process_iterator(
     # Results is mutated
     results: list[Any],
     process_chunk: Optional[Callable],
+    otel_context_manager: Optional[Any] = None,
 ) -> Generator[T, None, Any]:
     try:
         while True:
-            item: T = run_container["context"].run(next, generator)  # type: ignore[arg-type]
+            if otel_context_manager:
+                # Create a fresh context manager for each iteration
+                def next_with_otel_context():
+                    # Get the run_tree from run_container to create a fresh context
+                    run_tree = run_container.get("new_run")
+                    if run_tree:
+                        fresh_otel_context = _maybe_create_otel_context(run_tree)
+                        if fresh_otel_context:
+                            with fresh_otel_context:
+                                return next(generator)
+                    return next(generator)
+
+                item: T = run_container["context"].run(next_with_otel_context)  # type: ignore[arg-type]
+            else:
+                item = run_container["context"].run(next, generator)  # type: ignore[arg-type]
             if process_chunk:
                 traced_item = process_chunk(item)
             else:
                 traced_item = item
-            if is_llm_run and run_container["new_run"]:
+            if (
+                is_llm_run
+                and run_container["new_run"]
+                and not run_container.get("_token_event_logged")
+            ):
                 run_container["new_run"].add_event(
                     {
                         "name": "new_token",
@@ -1635,6 +1708,7 @@ def _process_iterator(
                         "kwargs": {"token": traced_item},
                     }
                 )
+                run_container["_token_event_logged"] = True
             results.append(traced_item)
             yield item
     except StopIteration as e:
@@ -1649,23 +1723,54 @@ async def _process_async_iterator(
     accepts_context: bool,
     results: list[Any],
     process_chunk: Optional[Callable],
+    otel_context_manager: Optional[Any] = None,
 ) -> AsyncGenerator[T, None]:
     try:
         while True:
-            if accepts_context:
-                item = await asyncio.create_task(  # type: ignore[call-arg, var-annotated]
-                    aitertools.py_anext(generator),  # type: ignore[arg-type]
-                    context=run_container["context"],
-                )
+            if otel_context_manager:
+                # Create a fresh context manager for each iteration
+                async def anext_with_otel_context():
+                    # Get the run_tree from run_container to create a fresh context
+                    run_tree = run_container.get("new_run")
+                    if run_tree:
+                        fresh_otel_context = _maybe_create_otel_context(run_tree)
+                        if fresh_otel_context:
+                            with fresh_otel_context:
+                                return await aitertools.py_anext(generator)
+                    return await aitertools.py_anext(generator)
+
+                if accepts_context:
+                    item = await asyncio.create_task(  # type: ignore[call-arg, var-annotated]
+                        anext_with_otel_context(),
+                        context=run_container["context"],
+                    )
+                else:
+                    # Python < 3.11
+                    with tracing_context(
+                        **get_tracing_context(run_container["context"])
+                    ):
+                        item = await anext_with_otel_context()
             else:
-                # Python < 3.11
-                with tracing_context(**get_tracing_context(run_container["context"])):
-                    item = await aitertools.py_anext(generator)
+                if accepts_context:
+                    item = await asyncio.create_task(  # type: ignore[call-arg, var-annotated]
+                        aitertools.py_anext(generator),  # type: ignore[arg-type]
+                        context=run_container["context"],
+                    )
+                else:
+                    # Python < 3.11
+                    with tracing_context(
+                        **get_tracing_context(run_container["context"])
+                    ):
+                        item = await aitertools.py_anext(generator)
             if process_chunk:
                 traced_item = process_chunk(item)
             else:
                 traced_item = item
-            if is_llm_run and run_container["new_run"]:
+            if (
+                is_llm_run
+                and run_container["new_run"]
+                and not run_container.get("_token_event_logged")
+            ):
                 run_container["new_run"].add_event(
                     {
                         "name": "new_token",
@@ -1675,6 +1780,7 @@ async def _process_async_iterator(
                         "kwargs": {"token": traced_item},
                     }
                 )
+                run_container["_token_event_logged"] = True
             results.append(traced_item)
             yield item
     except StopAsyncIteration:
@@ -1874,3 +1980,58 @@ def _cleanup_traceback(e: BaseException):
         ):
             tb_ = tb_.tb_next
         e.__traceback__ = tb_
+
+
+def _is_otel_available() -> bool:
+    """Cache for otel import check."""
+    global _OTEL_AVAILABLE
+    if _OTEL_AVAILABLE is None:
+        try:
+            import opentelemetry.trace  # noqa: F401
+
+            _OTEL_AVAILABLE = True
+        except ImportError:
+            _OTEL_AVAILABLE = False
+    return _OTEL_AVAILABLE
+
+
+def _maybe_create_otel_context(run_tree: Optional[run_trees.RunTree]):
+    """Create OpenTelemetry context manager if OTEL is enabled and available.
+
+    Args:
+        run_tree: The current run tree.
+
+    Returns:
+        Context manager for use_span or None if not available.
+    """
+    if not run_tree or not utils.is_truish(utils.get_env_var("OTEL_ENABLED")):
+        return None
+    if not _is_otel_available():
+        return None
+
+    from opentelemetry.trace import (  # type: ignore[import]
+        NonRecordingSpan,
+        SpanContext,
+        TraceFlags,
+        TraceState,
+        use_span,
+    )
+
+    from langsmith._internal._otel_utils import (
+        get_otel_span_id_from_uuid,
+        get_otel_trace_id_from_uuid,
+    )
+
+    trace_id = get_otel_trace_id_from_uuid(run_tree.trace_id)
+    span_id = get_otel_span_id_from_uuid(run_tree.id)
+
+    span_context = SpanContext(
+        trace_id=trace_id,
+        span_id=span_id,
+        is_remote=False,
+        trace_flags=TraceFlags(TraceFlags.SAMPLED),
+        trace_state=TraceState(),
+    )
+
+    non_recording_span = NonRecordingSpan(span_context)
+    return use_span(non_recording_span)
