@@ -8,7 +8,7 @@ import * as uuid from "uuid";
  */
 export function getOtelTraceIdFromUuid(uuidStr: string): string {
   // Remove hyphens from UUID and take first 32 characters (16 bytes)
-  const cleanUuid = uuidStr.replace(/-/g, '');
+  const cleanUuid = uuidStr.replace(/-/g, "");
   // For trace ID, use the full UUID (32 hex chars = 16 bytes)
   return cleanUuid;
 }
@@ -16,12 +16,12 @@ export function getOtelTraceIdFromUuid(uuidStr: string): string {
 /**
  * Convert a UUID to an OpenTelemetry span ID (8 bytes as hex string).
  * This function creates a deterministic span ID from a UUID.
- * @param uuidStr - The UUID string to convert  
+ * @param uuidStr - The UUID string to convert
  * @returns A 16-character hex string representing the span ID
  */
 export function getOtelSpanIdFromUuid(uuidStr: string): string {
   // Remove hyphens from UUID and take first 16 characters (8 bytes)
-  const cleanUuid = uuidStr.replace(/-/g, '');
+  const cleanUuid = uuidStr.replace(/-/g, "");
   // For span ID, use first 16 hex chars (8 bytes)
   return cleanUuid.substring(0, 16);
 }
@@ -32,16 +32,16 @@ export function getOtelSpanIdFromUuid(uuidStr: string): string {
  * @returns BigInt representation of the trace ID
  */
 export function hexTraceIdToBigInt(hexTraceId: string): bigint {
-  return BigInt('0x' + hexTraceId);
+  return BigInt("0x" + hexTraceId);
 }
 
 /**
  * Convert hex string span ID to integer.
- * @param hexSpanId - 16-character hex string  
+ * @param hexSpanId - 16-character hex string
  * @returns BigInt representation of the span ID
  */
 export function hexSpanIdToBigInt(hexSpanId: string): bigint {
-  return BigInt('0x' + hexSpanId);
+  return BigInt("0x" + hexSpanId);
 }
 
 /**

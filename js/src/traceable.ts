@@ -29,10 +29,68 @@ import {
   isGenerator,
   isPromiseMethod,
 } from "./utils/asserts.js";
+import { getEnvironmentVariable } from "./utils/env.js";
+import {
+  getOtelTraceIdFromUuid,
+  getOtelSpanIdFromUuid,
+} from "./_internal/otel/utils.js";
 
 AsyncLocalStorageProviderSingleton.initializeGlobalInstance(
   new AsyncLocalStorage<RunTree | undefined>()
 );
+
+/**
+ * Create OpenTelemetry context manager from RunTree if OTEL is enabled.
+ * This mirrors Python's _maybe_create_otel_context() function.
+ */
+function maybeCreateOtelContext(
+  runTree?: RunTree
+): ((fn: () => any) => any) | null {
+  if (!runTree || getEnvironmentVariable("OTEL_ENABLED") !== "true") {
+    return null;
+  }
+
+  try {
+    // Conditional imports like Python - these will throw if packages not installed
+    const {
+      trace,
+      SpanContext,
+      NonRecordingSpan,
+      TraceFlags,
+      TraceState,
+      context,
+    } = require("@opentelemetry/api");
+
+    // Convert LangSmith UUIDs to OTEL IDs
+    const traceId = getOtelTraceIdFromUuid(runTree.trace_id || runTree.id);
+    const spanId = getOtelSpanIdFromUuid(runTree.id);
+
+    // Create span context with converted IDs
+    const spanContext = new SpanContext({
+      traceId: parseInt(traceId.substring(0, 16), 16),
+      spanId: parseInt(spanId, 16),
+      isRemote: false,
+      traceFlags: TraceFlags.SAMPLED,
+      traceState: new TraceState(),
+    });
+
+    // Create non-recording span for context propagation only
+    const nonRecordingSpan = new NonRecordingSpan(spanContext);
+
+    // Return context wrapper function like Python's use_span
+    return (fn: () => any) => {
+      const activeContext = context.active();
+      const spanContext = trace.setSpanInContext(
+        activeContext,
+        nonRecordingSpan
+      );
+      return context.with(spanContext, fn);
+    };
+  } catch (error) {
+    // Silent failure if OTEL setup is incomplete
+    return null;
+  }
+}
 
 const runInputsToMap = (rawInputs: unknown[]) => {
   const firstInput = rawInputs[0];
@@ -558,7 +616,7 @@ export function traceable<Func extends (...args: any[]) => any>(
           extractAttachmentsFn
         );
 
-        return [currentRunTree, [currentRunTree, ...restArgs] as Inputs];
+        return [currentRunTree, restArgs as Inputs];
       }
 
       // Node.JS uses AsyncLocalStorage (ALS) and AsyncResource
@@ -598,7 +656,10 @@ export function traceable<Func extends (...args: any[]) => any>(
       return [currentRunTree, processedArgs as Inputs];
     })();
 
-    return asyncLocalStorage.run(currentRunTree, () => {
+    // Create OTEL context manager if available
+    const otelContextManager = maybeCreateOtelContext(currentRunTree);
+
+    const runWithContext = () => {
       const postRunPromise = currentRunTree?.postRun();
 
       async function handleChunks(chunks: unknown[]) {
@@ -875,7 +936,16 @@ export function traceable<Func extends (...args: any[]) => any>(
           return Reflect.get(target, prop, receiver);
         },
       });
-    });
+    };
+
+    // Wrap with OTEL context if available, similar to Python's implementation
+    if (otelContextManager) {
+      return asyncLocalStorage.run(currentRunTree, () =>
+        otelContextManager(runWithContext)
+      );
+    } else {
+      return asyncLocalStorage.run(currentRunTree, runWithContext);
+    }
   };
 
   Object.defineProperty(traceableFunc, "langsmith:traceable", {

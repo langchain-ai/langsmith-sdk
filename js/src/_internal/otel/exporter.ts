@@ -22,8 +22,10 @@ export const GEN_AI_USAGE_TOTAL_TOKENS = "gen_ai.usage.total_tokens";
 export const GEN_AI_REQUEST_MAX_TOKENS = "gen_ai.request.max_tokens";
 export const GEN_AI_REQUEST_TEMPERATURE = "gen_ai.request.temperature";
 export const GEN_AI_REQUEST_TOP_P = "gen_ai.request.top_p";
-export const GEN_AI_REQUEST_FREQUENCY_PENALTY = "gen_ai.request.frequency_penalty";
-export const GEN_AI_REQUEST_PRESENCE_PENALTY = "gen_ai.request.presence_penalty";
+export const GEN_AI_REQUEST_FREQUENCY_PENALTY =
+  "gen_ai.request.frequency_penalty";
+export const GEN_AI_REQUEST_PRESENCE_PENALTY =
+  "gen_ai.request.presence_penalty";
 export const GEN_AI_RESPONSE_FINISH_REASONS = "gen_ai.response.finish_reasons";
 export const GENAI_PROMPT = "gen_ai.prompt";
 export const GENAI_COMPLETION = "gen_ai.completion";
@@ -35,9 +37,12 @@ export const GEN_AI_SERIALIZED_SIGNATURE = "gen_ai.serialized.signature";
 export const GEN_AI_SERIALIZED_DOC = "gen_ai.serialized.doc";
 export const GEN_AI_RESPONSE_ID = "gen_ai.response.id";
 export const GEN_AI_RESPONSE_SERVICE_TIER = "gen_ai.response.service_tier";
-export const GEN_AI_RESPONSE_SYSTEM_FINGERPRINT = "gen_ai.response.system_fingerprint";
-export const GEN_AI_USAGE_INPUT_TOKEN_DETAILS = "gen_ai.usage.input_token_details";
-export const GEN_AI_USAGE_OUTPUT_TOKEN_DETAILS = "gen_ai.usage.output_token_details";
+export const GEN_AI_RESPONSE_SYSTEM_FINGERPRINT =
+  "gen_ai.response.system_fingerprint";
+export const GEN_AI_USAGE_INPUT_TOKEN_DETAILS =
+  "gen_ai.usage.input_token_details";
+export const GEN_AI_USAGE_OUTPUT_TOKEN_DETAILS =
+  "gen_ai.usage.output_token_details";
 
 // LangSmith custom attributes
 export const LANGSMITH_RUN_ID = "langsmith.span.id";
@@ -105,7 +110,7 @@ export class OTELExporter {
     if (!HAS_OTEL) {
       console.warn(
         "OTEL_ENABLED is set but OpenTelemetry packages are not installed. " +
-        "Install the required OpenTelemetry packages."
+          "Install the required OpenTelemetry packages."
       );
       return;
     }
@@ -129,7 +134,7 @@ export class OTELExporter {
         if (!runInfo) {
           continue;
         }
-        
+
         if (op.operation === "post") {
           const span = this.createSpanForRun(
             op,
@@ -172,7 +177,7 @@ export class OTELExporter {
 
       // Create deterministic trace and span IDs would require hex conversion utilities
       // For now, using the run structure as-is
-      
+
       const spanOptions: any = {
         startTime: startTime ? new Date(startTime) : undefined,
       };
@@ -221,7 +226,7 @@ export class OTELExporter {
 
       // Update attributes
       this.setSpanAttributes(span, runInfo, op);
-      
+
       // Update status based on error
       if (runInfo.error) {
         span.setStatus({ code: 2 }); // ERROR status
@@ -346,7 +351,10 @@ export class OTELExporter {
         span.setAttribute(GEN_AI_SERIALIZED_NAME, String(serialized.name));
       }
       if (serialized.signature) {
-        span.setAttribute(GEN_AI_SERIALIZED_SIGNATURE, String(serialized.signature));
+        span.setAttribute(
+          GEN_AI_SERIALIZED_SIGNATURE,
+          String(serialized.signature)
+        );
       }
       if (serialized.doc) {
         span.setAttribute(GEN_AI_SERIALIZED_DOC, String(serialized.doc));
@@ -369,9 +377,15 @@ export class OTELExporter {
         system = "anthropic";
       } else if (modelLower.includes("bedrock")) {
         system = "aws.bedrock";
-      } else if (modelLower.includes("azure") && modelLower.includes("openai")) {
+      } else if (
+        modelLower.includes("azure") &&
+        modelLower.includes("openai")
+      ) {
         system = "az.ai.openai";
-      } else if (modelLower.includes("azure") && modelLower.includes("inference")) {
+      } else if (
+        modelLower.includes("azure") &&
+        modelLower.includes("inference")
+      ) {
         system = "az.ai.inference";
       } else if (modelLower.includes("cohere")) {
         system = "cohere";
@@ -387,7 +401,10 @@ export class OTELExporter {
         system = "mistral_ai";
       } else if (modelLower.includes("gpt") || modelLower.includes("openai")) {
         system = "openai";
-      } else if (modelLower.includes("perplexity") || modelLower.includes("sonar")) {
+      } else if (
+        modelLower.includes("perplexity") ||
+        modelLower.includes("sonar")
+      ) {
         system = "perplexity";
       } else if (modelLower.includes("vertex")) {
         system = "vertex_ai";
@@ -412,7 +429,10 @@ export class OTELExporter {
     }
 
     if (invocationParams.temperature !== undefined) {
-      span.setAttribute(GEN_AI_REQUEST_TEMPERATURE, invocationParams.temperature);
+      span.setAttribute(
+        GEN_AI_REQUEST_TEMPERATURE,
+        invocationParams.temperature
+      );
     }
 
     if (invocationParams.top_p !== undefined) {
@@ -420,11 +440,17 @@ export class OTELExporter {
     }
 
     if (invocationParams.frequency_penalty !== undefined) {
-      span.setAttribute(GEN_AI_REQUEST_FREQUENCY_PENALTY, invocationParams.frequency_penalty);
+      span.setAttribute(
+        GEN_AI_REQUEST_FREQUENCY_PENALTY,
+        invocationParams.frequency_penalty
+      );
     }
 
     if (invocationParams.presence_penalty !== undefined) {
-      span.setAttribute(GEN_AI_REQUEST_PRESENCE_PENALTY, invocationParams.presence_penalty);
+      span.setAttribute(
+        GEN_AI_REQUEST_PRESENCE_PENALTY,
+        invocationParams.presence_penalty
+      );
     }
   }
 
@@ -443,13 +469,22 @@ export class OTELExporter {
             span.setAttribute(LANGSMITH_REQUEST_STREAMING, inputs.stream);
           }
           if (inputs.extra_headers) {
-            span.setAttribute(LANGSMITH_REQUEST_HEADERS, JSON.stringify(inputs.extra_headers));
+            span.setAttribute(
+              LANGSMITH_REQUEST_HEADERS,
+              JSON.stringify(inputs.extra_headers)
+            );
           }
           if (inputs.extra_query) {
-            span.setAttribute(GEN_AI_REQUEST_EXTRA_QUERY, JSON.stringify(inputs.extra_query));
+            span.setAttribute(
+              GEN_AI_REQUEST_EXTRA_QUERY,
+              JSON.stringify(inputs.extra_query)
+            );
           }
           if (inputs.extra_body) {
-            span.setAttribute(GEN_AI_REQUEST_EXTRA_BODY, JSON.stringify(inputs.extra_body));
+            span.setAttribute(
+              GEN_AI_REQUEST_EXTRA_BODY,
+              JSON.stringify(inputs.extra_body)
+            );
           }
         }
 
@@ -468,38 +503,53 @@ export class OTELExporter {
         if (tokenUsage) {
           span.setAttribute(GEN_AI_USAGE_INPUT_TOKENS, tokenUsage[0]);
           span.setAttribute(GEN_AI_USAGE_OUTPUT_TOKENS, tokenUsage[1]);
-          span.setAttribute(GEN_AI_USAGE_TOTAL_TOKENS, tokenUsage[0] + tokenUsage[1]);
+          span.setAttribute(
+            GEN_AI_USAGE_TOTAL_TOKENS,
+            tokenUsage[0] + tokenUsage[1]
+          );
         }
 
         if (outputs && typeof outputs === "object") {
           if (outputs.model) {
             span.setAttribute(GEN_AI_RESPONSE_MODEL, String(outputs.model));
           }
-          
+
           // Extract additional response attributes
           if (outputs.id) {
             span.setAttribute(GEN_AI_RESPONSE_ID, outputs.id);
           }
-          
+
           if (outputs.choices && Array.isArray(outputs.choices)) {
             const finishReasons = outputs.choices
               .map((choice: any) => choice.finish_reason)
               .filter((reason: any) => reason)
               .map(String);
             if (finishReasons.length > 0) {
-              span.setAttribute(GEN_AI_RESPONSE_FINISH_REASONS, finishReasons.join(", "));
+              span.setAttribute(
+                GEN_AI_RESPONSE_FINISH_REASONS,
+                finishReasons.join(", ")
+              );
             }
           }
-          
+
           if (outputs.service_tier) {
-            span.setAttribute(GEN_AI_RESPONSE_SERVICE_TIER, outputs.service_tier);
+            span.setAttribute(
+              GEN_AI_RESPONSE_SERVICE_TIER,
+              outputs.service_tier
+            );
           }
-          
+
           if (outputs.system_fingerprint) {
-            span.setAttribute(GEN_AI_RESPONSE_SYSTEM_FINGERPRINT, outputs.system_fingerprint);
+            span.setAttribute(
+              GEN_AI_RESPONSE_SYSTEM_FINGERPRINT,
+              outputs.system_fingerprint
+            );
           }
-          
-          if (outputs.usage_metadata && typeof outputs.usage_metadata === "object") {
+
+          if (
+            outputs.usage_metadata &&
+            typeof outputs.usage_metadata === "object"
+          ) {
             const usageMetadata = outputs.usage_metadata;
             if (usageMetadata.input_token_details) {
               span.setAttribute(
@@ -552,7 +602,9 @@ export class OTELExporter {
         haystack.kwargs &&
         typeof haystack.kwargs === "object"
       ) {
-        tokenUsage = this.extractUnifiedRunTokens(haystack.kwargs.usage_metadata);
+        tokenUsage = this.extractUnifiedRunTokens(
+          haystack.kwargs.usage_metadata
+        );
         if (tokenUsage) {
           return tokenUsage;
         }
@@ -564,9 +616,9 @@ export class OTELExporter {
     if (!Array.isArray(generations)) {
       return null;
     }
-    
-    const flatGenerations = Array.isArray(generations[0]) 
-      ? generations.flat() 
+
+    const flatGenerations = Array.isArray(generations[0])
+      ? generations.flat()
       : generations;
 
     for (const generation of flatGenerations) {
@@ -577,13 +629,15 @@ export class OTELExporter {
         generation.message.kwargs &&
         typeof generation.message.kwargs === "object"
       ) {
-        tokenUsage = this.extractUnifiedRunTokens(generation.message.kwargs.usage_metadata);
+        tokenUsage = this.extractUnifiedRunTokens(
+          generation.message.kwargs.usage_metadata
+        );
         if (tokenUsage) {
           return tokenUsage;
         }
       }
     }
-    
+
     return null;
   }
 

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { jest } from "@jest/globals";
-import { 
+import {
   OTELExporter,
   getOtelTraceIdFromUuid,
   getOtelSpanIdFromUuid,
@@ -56,7 +56,7 @@ describe("OTEL Exporter", () => {
     const operation: SerializedRunOperation = {
       operation: "post",
       id: "run-123",
-      trace_id: "trace-456", 
+      trace_id: "trace-456",
       _none: JSON.stringify({
         name: "test-run",
         run_type: "llm",
@@ -66,8 +66,14 @@ describe("OTEL Exporter", () => {
 
     exporter.exportBatch([operation], new Map());
 
-    expect(mockSpan.setAttribute).toHaveBeenCalledWith("langsmith.span.id", "run-123");
-    expect(mockSpan.setAttribute).toHaveBeenCalledWith("gen_ai.operation.name", "chat");
+    expect(mockSpan.setAttribute).toHaveBeenCalledWith(
+      "langsmith.span.id",
+      "run-123"
+    );
+    expect(mockSpan.setAttribute).toHaveBeenCalledWith(
+      "gen_ai.operation.name",
+      "chat"
+    );
   });
 
   it("detects model systems", () => {
@@ -76,22 +82,25 @@ describe("OTEL Exporter", () => {
 
     const operation: SerializedRunOperation = {
       operation: "post",
-      id: "run-123", 
+      id: "run-123",
       trace_id: "trace-456",
       _none: JSON.stringify({
         name: "test-run",
         run_type: "llm",
         extra: {
           metadata: {
-            invocation_params: { model: "gpt-4" }
-          }
-        }
+            invocation_params: { model: "gpt-4" },
+          },
+        },
       }),
     };
 
     exporter.exportBatch([operation], new Map());
 
-    expect(mockSpan.setAttribute).toHaveBeenCalledWith("gen_ai.system", "openai");
+    expect(mockSpan.setAttribute).toHaveBeenCalledWith(
+      "gen_ai.system",
+      "openai"
+    );
   });
 
   it("extracts token usage", () => {
@@ -101,19 +110,68 @@ describe("OTEL Exporter", () => {
     const operation: SerializedRunOperation = {
       operation: "post",
       id: "run-123",
-      trace_id: "trace-456", 
+      trace_id: "trace-456",
       _none: JSON.stringify({ name: "test", run_type: "llm" }),
       outputs: JSON.stringify({
         usage_metadata: {
           input_tokens: 100,
           output_tokens: 50,
-        }
+        },
       }),
     };
 
     exporter.exportBatch([operation], new Map());
 
-    expect(mockSpan.setAttribute).toHaveBeenCalledWith("gen_ai.usage.input_tokens", 100);
-    expect(mockSpan.setAttribute).toHaveBeenCalledWith("gen_ai.usage.output_tokens", 50);
+    expect(mockSpan.setAttribute).toHaveBeenCalledWith(
+      "gen_ai.usage.input_tokens",
+      100
+    );
+    expect(mockSpan.setAttribute).toHaveBeenCalledWith(
+      "gen_ai.usage.output_tokens",
+      50
+    );
+  });
+});
+
+describe("Traceable OTEL Integration", () => {
+  it("integrates with traceable functions", async () => {
+    // Mock require for @opentelemetry/api
+    const mockContext = { with: jest.fn((ctx, fn) => fn()) };
+    const originalRequire = require;
+    (global as any).require = jest.fn((module) => {
+      if (module === "@opentelemetry/api") {
+        return {
+          trace: { setSpanInContext: jest.fn(() => "mock-context") },
+          SpanContext: jest.fn(),
+          NonRecordingSpan: jest.fn(),
+          TraceFlags: { SAMPLED: 1 },
+          TraceState: jest.fn(),
+          context: mockContext,
+        };
+      }
+      return originalRequire(module);
+    });
+
+    // Set environment to enable OTEL
+    process.env.OTEL_ENABLED = "true";
+
+    try {
+      const { traceable } = await import("../traceable.js");
+
+      const testFunction = traceable(
+        async (input: string) => {
+          return `processed: ${input}`;
+        },
+        { name: "test-function" }
+      );
+
+      const result = await testFunction("hello");
+
+      expect(result).toBe("processed: hello");
+      expect(mockContext.with).toHaveBeenCalled();
+    } finally {
+      delete process.env.OTEL_ENABLED;
+      (global as any).require = originalRequire;
+    }
   });
 });
