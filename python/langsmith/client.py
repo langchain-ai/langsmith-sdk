@@ -2077,6 +2077,7 @@ class Client:
         tags: Optional[list[str]] = None,
         attachments: Optional[ls_schemas.Attachments] = None,
         dangerously_allow_filesystem: bool = False,
+        reference_example_id: str | uuid.UUID | None = None,
         **kwargs: Any,
     ) -> None:
         """Update a run in the LangSmith API.
@@ -2093,6 +2094,9 @@ class Client:
             tags (Optional[List[str]]): The tags for the run.
             attachments (Optional[Dict[str, Attachment]]): A dictionary of attachments to add to the run. The keys are the attachment names,
                 and the values are Attachment objects containing the data and mime type.
+            reference_example_id (Optional[Union[str, uuid.UUID]]): ID of the example
+                that was the source of the run inputs. Used for runs that were part of
+                an experiment.
             **kwargs (Any): Kwargs are ignored.
 
         Returns:
@@ -2178,6 +2182,8 @@ class Client:
             self._insert_runtime_env([data])
             if metadata := data["extra"].get("metadata"):
                 data["extra"]["metadata"] = self._hide_run_metadata(metadata)
+        if reference_example_id is not None:
+            data["reference_example_id"] = reference_example_id
 
         if self._pyo3_client is not None:
             self._pyo3_client.update_run(data)
@@ -7409,6 +7415,7 @@ class Client:
         blocking: bool = True,
         experiment: Optional[EXPERIMENT_T] = None,
         upload_results: bool = True,
+        error_handling: Literal["log", "ignore"] = "log",
         **kwargs: Any,
     ) -> Union[ExperimentResults, ComparativeExperimentResults]:
         r"""Evaluate a target system on a given dataset.
@@ -7445,6 +7452,9 @@ class Client:
                 two-tuple fo experiments.
             upload_results (bool, default=True): Whether to upload the results to LangSmith.
                 Defaults to True.
+            error_handling (str, default="log"): How to handle individual run errors. 'log'
+                will trace the runs with the error message as part of the experiment,
+                'ignore' will not count the run as part of the experiment at all.
             **kwargs (Any): Additional keyword arguments to pass to the evaluator.
 
         Returns:
@@ -7644,6 +7654,7 @@ class Client:
             blocking=blocking,
             experiment=experiment,
             upload_results=upload_results,
+            error_handling=error_handling,
             **kwargs,
         )
 
@@ -7671,6 +7682,7 @@ class Client:
         blocking: bool = True,
         experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
         upload_results: bool = True,
+        error_handling: Literal["log", "ignore"] = "log",
         **kwargs: Any,
     ) -> AsyncExperimentResults:
         r"""Evaluate an async target system on a given dataset.
@@ -7704,6 +7716,9 @@ class Client:
                 usage only.
             upload_results (bool, default=True): Whether to upload the results to LangSmith.
                 Defaults to True.
+            error_handling (str, default="log"): How to handle individual run errors. 'log'
+                will trace the runs with the error message as part of the experiment,
+                'ignore' will not count the run as part of the experiment at all.
             **kwargs (Any): Additional keyword arguments to pass to the evaluator.
 
         Returns:
@@ -7885,6 +7900,7 @@ class Client:
             blocking=blocking,
             experiment=experiment,
             upload_results=upload_results,
+            error_handling=error_handling,
             **kwargs,
         )
 
