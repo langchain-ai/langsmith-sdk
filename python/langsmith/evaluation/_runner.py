@@ -22,6 +22,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
+    Literal,
     Optional,
     TypeVar,
     Union,
@@ -140,6 +141,7 @@ def evaluate(
     blocking: bool = True,
     experiment: Optional[EXPERIMENT_T] = None,
     upload_results: bool = True,
+    error_handling: Literal["log", "ignore"] = "log",
     **kwargs: Any,
 ) -> Union[ExperimentResults, ComparativeExperimentResults]:
     r"""Evaluate a target system on a given dataset.
@@ -182,6 +184,9 @@ def evaluate(
         randomize_order (bool): Whether to randomize the order of the outputs for each
             evaluation. Default is False. Should only be specified when target is a
             two-tuple of existing experiments.
+        error_handling (str, default="log"): How to handle individual run errors. 'log'
+            will trace the runs with the error message as part of the experiment,
+            'ignore' will not count the run as part of the experiment at all.
 
     Returns:
         ExperimentResults: If target is a function, Runnable, or existing experiment.
@@ -429,6 +434,7 @@ def evaluate(
             blocking=blocking,
             experiment=experiment,
             upload_results=upload_results,
+            error_handling=error_handling,
         )
 
 
@@ -1035,15 +1041,12 @@ def _evaluate(
     blocking: bool = True,
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
     upload_results: bool = True,
+    error_handling: Literal["log", "ignore"] = "log",
 ) -> ExperimentResults:
     # Initialize the experiment manager.
     client = client or rt.get_cached_client()
     runs = None if _is_callable(target) else cast(Iterable[schemas.Run], target)
-    experiment_, runs = _resolve_experiment(
-        experiment,
-        runs,
-        client,
-    )
+    experiment_, runs = _resolve_experiment(experiment, runs, client)
 
     manager = _ExperimentManager(
         data,
@@ -1057,11 +1060,12 @@ def _evaluate(
         # Create or resolve the experiment.
         include_attachments=_include_attachments(target, evaluators),
         upload_results=upload_results,
+        error_handling=error_handling,
     ).start()
-    cache_dir = ls_utils.get_cache_dir(None)
-    cache_path = (
-        pathlib.Path(cache_dir) / f"{manager.dataset_id}.yaml" if cache_dir else None
-    )
+    if cache_dir := ls_utils.get_cache_dir(None):
+        cache_path = pathlib.Path(cache_dir) / f"{manager.dataset_id}.yaml"
+    else:
+        cache_path = None
     with ls_utils.with_optional_cache(cache_path, ignore_hosts=[client.api_url]):
         if _is_callable(target):
             # Add predictions to the experiment.
@@ -1310,6 +1314,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         reuse_attachments: bool = False,
         upload_results: bool = True,
         attachment_raw_data_dict: Optional[dict] = None,
+        error_handling: Literal["log", "ignore"] = "log",
     ):
         super().__init__(
             experiment=experiment,
@@ -1327,6 +1332,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         self._reuse_attachments = reuse_attachments
         self._upload_results = upload_results
         self._attachment_raw_data_dict = attachment_raw_data_dict
+        self._error_handling = error_handling
 
     def _reset_example_attachment_readers(
         self, example: schemas.Example
@@ -1433,18 +1439,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         project = self._get_project(first_example) if self._upload_results else None
         self._print_experiment_start(project, first_example)
         self._metadata["num_repetitions"] = self._num_repetitions
-        return self.__class__(
-            self.examples,
-            experiment=project,
-            metadata=self._metadata,
-            client=self.client,
-            runs=self._runs,
-            evaluation_results=self._evaluation_results,
-            include_attachments=self._include_attachments,
-            reuse_attachments=self._reuse_attachments,
-            upload_results=self._upload_results,
-            attachment_raw_data_dict=self._attachment_raw_data_dict,
-        )
+        return self._copy(self.examples, experiment=project)
 
     def with_predictions(
         self,
@@ -1461,15 +1456,8 @@ class _ExperimentManager(_ExperimentManagerMixin):
             include_attachments=_target_include_attachments(target),
         )
         r1, r2 = itertools.tee(_experiment_results, 2)
-        return _ExperimentManager(
-            (pred["example"] for pred in r1),
-            experiment=self._experiment,
-            metadata=self._metadata,
-            client=self.client,
-            runs=(pred["run"] for pred in r2),
-            upload_results=self._upload_results,
-            # TODO: Can't do multiple prediction rounds rn.
-            include_attachments=self._include_attachments,
+        return self._copy(
+            (pred["example"] for pred in r1), runs=(pred["run"] for pred in r2)
         )
 
     def with_evaluators(
@@ -1492,16 +1480,10 @@ class _ExperimentManager(_ExperimentManagerMixin):
         # Split the generator into three so the manager
         # can consume each value individually.
         r1, r2, r3 = itertools.tee(experiment_results, 3)
-        return _ExperimentManager(
+        return self._copy(
             (result["example"] for result in r1),
-            experiment=self._experiment,
-            metadata=self._metadata,
-            client=self.client,
             runs=(result["run"] for result in r2),
             evaluation_results=(result["evaluation_results"] for result in r3),
-            summary_results=self._summary_results,
-            include_attachments=self._include_attachments,
-            upload_results=self._upload_results,
         )
 
     def with_summary_evaluators(
@@ -1514,16 +1496,8 @@ class _ExperimentManager(_ExperimentManagerMixin):
         aggregate_feedback_gen = context.run(
             self._apply_summary_evaluators, wrapped_evaluators
         )
-        return _ExperimentManager(
-            self.examples,
-            experiment=self._experiment,
-            metadata=self._metadata,
-            client=self.client,
-            runs=self.runs,
-            evaluation_results=self._evaluation_results,
-            summary_results=aggregate_feedback_gen,
-            include_attachments=self._include_attachments,
-            upload_results=self._upload_results,
+        return self._copy(
+            self.examples, runs=self.runs, summary_results=aggregate_feedback_gen
         )
 
     def get_results(self) -> Iterable[ExperimentResultRow]:
@@ -1572,6 +1546,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                     self.client,
                     self._upload_results,
                     include_attachments,
+                    self._error_handling,
                 )
 
         else:
@@ -1586,6 +1561,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         self.client,
                         self._upload_results,
                         include_attachments,
+                        self._error_handling,
                     )
                     for example in self.examples
                 ]
@@ -1822,6 +1798,25 @@ class _ExperimentManager(_ExperimentManagerMixin):
             },
         )
 
+    def _copy(self, *args: Any, **kwargs: Any) -> _ExperimentManager:
+        default_args = (self._data,)
+        default_kwargs = {
+            "experiment": self._experiment,
+            "metadata": self._metadata,
+            "runs": self._runs,
+            "client": self.client,
+            "evaluation_results": self._evaluation_results,
+            "summary_results": self._summary_results,
+            "include_attachments": self._include_attachments,
+            "reuse_attachments": self._reuse_attachments,
+            "upload_results": self._upload_results,
+            "attachment_raw_data_dict": self._attachment_raw_data_dict,
+            "error_handling": self._error_handling,
+        }
+        full_args = list(args) + list(default_args[len(args) :])
+        full_kwargs = {**default_kwargs, **kwargs}
+        return self.__class__(*full_args, **full_kwargs)
+
 
 def _resolve_evaluators(
     evaluators: Sequence[Union[EVALUATOR_T, RunEvaluator, AEVALUATOR_T]],
@@ -1879,6 +1874,7 @@ def _forward(
     client: langsmith.Client,
     upload_results: bool,
     include_attachments: bool = False,
+    error_handling: Literal["log", "ignore"] = "log",
 ) -> _ForwardResults:
     run: Optional[schemas.RunBase] = None
 
@@ -1886,19 +1882,25 @@ def _forward(
         nonlocal run
         run = r
 
+    def _set_reference_example_id(r: rt.RunTree) -> None:
+        r.reference_example_id = example.id
+
+    example_version = (example.modified_at or example.created_at).isoformat()
+    langsmith_extra = rh.LangSmithExtra(
+        on_end=_get_run,
+        project_name=experiment_name,
+        metadata={**metadata, "example_version": example_version},
+        client=client,
+    )
+    if error_handling == "log":
+        langsmith_extra["reference_example_id"] = example.id
+    elif error_handling == "ignore":
+        # Only set the reference_example_id if the run succeeds.
+        langsmith_extra["_on_success"] = _set_reference_example_id
+    else:
+        raise ValueError(f"Unrecognized error_handling value: {error_handling=}")
+
     with rh.tracing_context(enabled="local" if not upload_results else True):
-        example_version = (
-            example.modified_at.isoformat()
-            if example.modified_at
-            else example.created_at.isoformat()
-        )
-        langsmith_extra = rh.LangSmithExtra(
-            reference_example_id=example.id,
-            on_end=_get_run,
-            project_name=experiment_name,
-            metadata={**metadata, "example_version": example_version},
-            client=client,
-        )
         try:
             arg_names = _get_target_args(fn)
             args = [getattr(example, argn) for argn in arg_names]
