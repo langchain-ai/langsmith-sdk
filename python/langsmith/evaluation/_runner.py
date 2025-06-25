@@ -1457,8 +1457,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         )
         r1, r2 = itertools.tee(_experiment_results, 2)
         return self._copy(
-            (pred["example"] for pred in r1),
-            runs=(pred["run"] for pred in r2),
+            (pred["example"] for pred in r1), runs=(pred["run"] for pred in r2)
         )
 
     def with_evaluators(
@@ -1497,7 +1496,9 @@ class _ExperimentManager(_ExperimentManagerMixin):
         aggregate_feedback_gen = context.run(
             self._apply_summary_evaluators, wrapped_evaluators
         )
-        return self._copy(self.examples, summary_results=aggregate_feedback_gen)
+        return self._copy(
+            self.examples, runs=self.runs, summary_results=aggregate_feedback_gen
+        )
 
     def get_results(self) -> Iterable[ExperimentResultRow]:
         """Return the traces, evaluation results, and associated examples."""
