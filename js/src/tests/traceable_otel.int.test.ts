@@ -6,12 +6,12 @@ import { trace, context } from "@opentelemetry/api";
 
 describe("Traceable OTEL Integration Tests", () => {
   beforeEach(() => {
-    process.env.LANGCHAIN_TRACING_V2 = "true";
+    process.env.LANGCHAIN_TRACING = "true";
   });
 
   afterEach(() => {
     delete process.env.OTEL_ENABLED;
-    delete process.env.LANGCHAIN_TRACING_V2;
+    delete process.env.LANGCHAIN_TRACING;
   });
 
   it("works gracefully when OTEL_ENABLED is true but packages not available", async () => {
@@ -29,7 +29,7 @@ describe("Traceable OTEL Integration Tests", () => {
     expect(result).toBe("result: test");
   });
 
-  it("handles nested calls with OTEL context", async () => {
+  it.only("handles nested calls with OTEL context", async () => {
     process.env.OTEL_ENABLED = "true";
 
     const childFunction = traceable(

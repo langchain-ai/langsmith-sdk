@@ -29,7 +29,7 @@ function parseHeadersString(headersStr: string): Record<string, string> {
   return headers;
 }
 
-export function getOtlpTracerProvider(): OTELTracerProvider {
+export function getOTLPTracerProvider(): OTELTracerProvider {
   if (!HAS_OTEL) {
     throw new Error(
       "OpenTelemetry packages are required to use this function. " +

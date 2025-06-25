@@ -1,4 +1,12 @@
 import * as uuid from "uuid";
+import {
+  context as otel_context,
+  trace as otel_trace,
+  type Context as OTELContext,
+  type TracerProvider as OTELTracerProvider,
+} from "@opentelemetry/api";
+import { LangSmithToOTELTranslator, SerializedRunOperation } from "./_internal/otel/translator.js";
+import { getOTLPTracerProvider } from "./_internal/otel/client.js";
 
 import { AsyncCaller, AsyncCallerParams } from "./utils/async_caller.js";
 import {
@@ -95,6 +103,11 @@ export interface ClientConfig {
    * Enable debug mode for the client. If set, all sent HTTP requests will be logged.
    */
   debug?: boolean;
+  /**
+   * Optional tracer provider for OpenTelemetry integration.
+   * If not provided, a LangSmith-specific tracer provider will be used.
+   */
+  otelTracerProvider?: OTELTracerProvider;
 }
 
 /**
@@ -373,6 +386,7 @@ export type CreateProjectParams = {
 type AutoBatchQueueItem = {
   action: "create" | "update";
   item: RunCreate | RunUpdate;
+  otelContext?: OTELContext;
 };
 
 type MultipartPart = {
@@ -608,6 +622,8 @@ export class Client implements LangSmithTracingClientInterface {
 
   private manualFlushMode = false;
 
+  private langSmithToOTELTranslator?: LangSmithToOTELTranslator;
+
   debug = getEnvironmentVariable("LANGSMITH_DEBUG") === "true";
 
   constructor(config: ClientConfig = {}) {
@@ -653,6 +669,17 @@ export class Client implements LangSmithTracingClientInterface {
     this.batchSizeBytesLimit = config.batchSizeBytesLimit;
     this.fetchOptions = config.fetchOptions || {};
     this.manualFlushMode = config.manualFlushMode ?? this.manualFlushMode;
+    if (getEnvironmentVariable("OTEL_ENABLED") === "true") {
+      const existingTracerProvider = otel_trace.getTracerProvider();
+      const langSmithTracerProvider = getOTLPTracerProvider();
+      // If user has set global tracer before, this fails and returns false
+      const globalSuccessfullyOverridden = otel_trace.setGlobalTracerProvider(langSmithTracerProvider);
+      this.langSmithToOTELTranslator = new LangSmithToOTELTranslator(
+        globalSuccessfullyOverridden
+          ? langSmithTracerProvider
+          : existingTracerProvider
+      );
+    }
   }
 
   public static getDefaultClientConfig(): {
@@ -976,8 +1003,44 @@ export class Client implements LangSmithTracingClientInterface {
       done();
     }
   }
+  
+  _sendBatchToOTELTranslator(batch: AutoBatchQueueItem[]) {
+    if (this.langSmithToOTELTranslator !== undefined) {
+      const otelContextMap = new Map<string, OTELContext>();
+      const operations: SerializedRunOperation[] = [];
+      for (const item of batch) {
+        if (item.item.id && item.otelContext) {
+          otelContextMap.set(item.item.id, item.otelContext);
+          if (item.action === "create") {
+            operations.push({
+              operation: "post",
+              id: item.item.id,
+              trace_id: item.item.trace_id ?? item.item.id,
+              run: item.item as RunCreate,
+            });
+          } else {
+            operations.push({
+              operation: "patch",
+              id: item.item.id,
+              trace_id: item.item.trace_id ?? item.item.id,
+              run: item.item as RunUpdate,
+            });
+          }
+        }
+      }
+      try {
+        this.langSmithToOTELTranslator.exportBatch(operations, otelContextMap);
+      } catch (e) {
+        console.error("Error exporting batch to OTEL:", e);
+      }
+    }
+  }
 
   private async processRunOperation(item: AutoBatchQueueItem) {
+    const otelContext = this._cloneCurrentOTELContext();
+    if (otelContext) {
+      item.otelContext = otelContext;
+    }
     clearTimeout(this.autoBatchTimeout);
     this.autoBatchTimeout = undefined;
     if (item.action === "create") {
@@ -1063,6 +1126,16 @@ export class Client implements LangSmithTracingClientInterface {
     await this.drainAutoBatchQueue(sizeLimitBytes);
   }
 
+  private _cloneCurrentOTELContext() {
+    if (this.langSmithToOTELTranslator !== undefined) {
+      const currentSpan = otel_trace.getActiveSpan();
+      if (currentSpan) {
+        return otel_trace.setSpan(otel_context.active(), currentSpan);
+      }
+    }
+    return undefined;
+  }
+  
   public async createRun(run: CreateRunParams): Promise<void> {
     if (!this._filterForSampling([run]).length) {
       return;

@@ -22,12 +22,12 @@ describe("Traceable OTEL Integration", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     // Enable tracing so RunTrees are created
-    process.env.LANGCHAIN_TRACING_V2 = "true";
+    process.env.LANGCHAIN_TRACING = "true";
   });
 
   afterEach(() => {
     delete process.env.OTEL_ENABLED;
-    delete process.env.LANGCHAIN_TRACING_V2;
+    delete process.env.LANGCHAIN_TRACING;
   });
 
   it("does not create OTEL context when OTEL_ENABLED is false", async () => {

@@ -11,7 +11,7 @@ import {
   SpanStatusCode as OTELSpanStatusCode,
 } from "@opentelemetry/api";
 import { __version__ } from "../../index.js";
-import type { KVMap, Run } from "../../schemas.js";
+import type { Attachments, KVMap, RunCreate, RunUpdate } from "../../schemas.js";
 import { getOtelTraceIdFromUuid, getOtelSpanIdFromUuid } from "./utils.js";
 
 // OpenTelemetry GenAI semantic convention attribute names
@@ -80,17 +80,16 @@ function getOperationName(runType: string): string {
   return WELL_KNOWN_OPERATION_NAMES[runType] || runType;
 }
 
-export interface SerializedRunOperation {
-  operation: "post" | "patch";
+export type SerializedRunOperation<T extends "post" | "patch" = "post" | "patch"> = {
+  operation: T;
   id: string;
   trace_id: string;
-  // this is the whole object, minus the other fields which
-  // are popped (inputs/outputs/events/attachments)
-  _none: string;
+  run: T extends "post" ? RunCreate : RunUpdate;
   inputs?: string;
   outputs?: string;
   events?: string;
-}
+  attachments?: Attachments;
+};
 
 export interface OTELTracer {
   startSpan(name: string, options?: OTELSpanOptions, context?: any): OTELSpan;
@@ -115,22 +114,21 @@ export class LangSmithToOTELTranslator {
 
     for (const op of operations) {
       try {
-        const runInfo = this.deserializeRunInfo(op);
-        if (!runInfo) {
+        if (!op.run) {
           continue;
         }
 
         if (op.operation === "post") {
           const span = this.createSpanForRun(
             op,
-            runInfo,
+            op.run as RunCreate,
             otelContextMap.get(op.id)
           );
           if (span) {
             this.spans.set(op.id, span);
           }
         } else {
-          this.updateSpanForRun(op, runInfo);
+          this.updateSpanForRun(op, op.run);
         }
       } catch (e) {
         console.error(`Error processing operation ${op.id}:`, e);
@@ -138,18 +136,9 @@ export class LangSmithToOTELTranslator {
     }
   }
 
-  private deserializeRunInfo(op: SerializedRunOperation): Run | undefined {
-    try {
-      return JSON.parse(op._none) as Run;
-    } catch (e) {
-      console.error(`Failed to deserialize run info for ${op.id}:`, e);
-      return;
-    }
-  }
-
   private createSpanForRun(
     op: SerializedRunOperation,
-    runInfo: Run,
+    runInfo: RunCreate,
     otelContext?: OTELContext
   ): OTELSpan | undefined {
     if (!this.tracer) {
@@ -220,7 +209,7 @@ export class LangSmithToOTELTranslator {
 
   private finishSpanSetup(
     span: OTELSpan,
-    runInfo: Run,
+    runInfo: RunCreate | RunUpdate,
     op: SerializedRunOperation,
     endTimeNano?: number
   ): OTELSpan {
@@ -243,7 +232,7 @@ export class LangSmithToOTELTranslator {
     return span;
   }
 
-  private updateSpanForRun(op: SerializedRunOperation, runInfo: Run): void {
+  private updateSpanForRun(op: SerializedRunOperation, runInfo: RunUpdate): void {
     try {
       const span = this.spans.get(op.id);
       if (!span) {
@@ -275,7 +264,7 @@ export class LangSmithToOTELTranslator {
     }
   }
 
-  private extractModelName(runInfo: Run): string | null {
+  private extractModelName(runInfo: RunCreate | RunUpdate) {
     // Try to get model name from metadata
     if (runInfo.extra?.metadata) {
       const metadata = runInfo.extra.metadata;
@@ -296,12 +285,12 @@ export class LangSmithToOTELTranslator {
       }
     }
 
-    return null;
+    return;
   }
 
   private setSpanAttributes(
     span: OTELSpan,
-    runInfo: Run,
+    runInfo: RunCreate | RunUpdate,
     op: SerializedRunOperation
   ): void {
     // Set LangSmith-specific attributes
@@ -316,21 +305,21 @@ export class LangSmithToOTELTranslator {
       span.setAttribute(LANGSMITH_PARENT_RUN_ID, runInfo.parent_run_id);
     }
 
-    if (runInfo.run_type) {
+    if ("run_type" in runInfo && runInfo.run_type) {
       span.setAttribute(LANGSMITH_RUN_TYPE, runInfo.run_type);
+      // Set GenAI attributes according to OTEL semantic conventions
+      const operationName = getOperationName(runInfo.run_type || "chain");
+      span.setAttribute(GEN_AI_OPERATION_NAME, operationName);
     }
 
-    if (runInfo.name) {
+    if ("name" in runInfo && runInfo.name) {
       span.setAttribute(LANGSMITH_NAME, runInfo.name);
     }
 
-    if (runInfo.session_id) {
+    if ("session_id" in runInfo && runInfo.session_id) {
       span.setAttribute(LANGSMITH_SESSION_ID, runInfo.session_id);
     }
 
-    // Set GenAI attributes according to OTEL semantic conventions
-    const operationName = getOperationName(runInfo.run_type || "chain");
-    span.setAttribute(GEN_AI_OPERATION_NAME, operationName);
 
     // Set gen_ai.system
     this.setGenAiSystem(span, runInfo);
@@ -342,15 +331,15 @@ export class LangSmithToOTELTranslator {
     }
 
     // Set token usage information
-    if (runInfo.prompt_tokens !== undefined) {
+    if ("prompt_tokens" in runInfo && typeof runInfo.prompt_tokens === "number") {
       span.setAttribute(GEN_AI_USAGE_INPUT_TOKENS, runInfo.prompt_tokens);
     }
 
-    if (runInfo.completion_tokens !== undefined) {
+    if ("completion_tokens" in runInfo && typeof runInfo.completion_tokens === "number") {
       span.setAttribute(GEN_AI_USAGE_OUTPUT_TOKENS, runInfo.completion_tokens);
     }
 
-    if (runInfo.total_tokens !== undefined) {
+    if ("total_tokens" in runInfo && typeof runInfo.total_tokens === "number") {
       span.setAttribute(GEN_AI_USAGE_TOTAL_TOKENS, runInfo.total_tokens);
     }
 
@@ -373,7 +362,7 @@ export class LangSmithToOTELTranslator {
     }
 
     // Support additional serialized attributes, if present
-    if (runInfo.serialized && typeof runInfo.serialized === "object") {
+    if ("serialized" in runInfo && typeof runInfo.serialized === "object") {
       const serialized = runInfo.serialized as KVMap;
       if (serialized.name) {
         span.setAttribute(GEN_AI_SERIALIZED_NAME, String(serialized.name));
@@ -393,7 +382,7 @@ export class LangSmithToOTELTranslator {
     this.setIOAttributes(span, op);
   }
 
-  private setGenAiSystem(span: OTELSpan, runInfo: Run): void {
+  private setGenAiSystem(span: OTELSpan, runInfo: RunCreate | RunUpdate): void {
     // Default to "langchain" if we can't determine the system
     let system = "langchain";
 
@@ -444,7 +433,7 @@ export class LangSmithToOTELTranslator {
     span.setAttribute(GEN_AI_SYSTEM, system);
   }
 
-  private setInvocationParameters(span: OTELSpan, runInfo: Run): void {
+  private setInvocationParameters(span: OTELSpan, runInfo: RunCreate | RunUpdate): void {
     if (!runInfo.extra?.metadata?.invocation_params) {
       return;
     }
