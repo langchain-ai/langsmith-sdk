@@ -1,3 +1,3 @@
 export * from "./client.js";
-export * from "./exporter.js";
+export * from "./translator.js";
 export * from "./utils.js";

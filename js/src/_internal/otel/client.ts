@@ -1,19 +1,35 @@
+import { type TracerProvider as OTELTracerProvider } from "@opentelemetry/api";
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
+import {
+  BatchSpanProcessor,
+  BasicTracerProvider,
+} from "@opentelemetry/sdk-trace-base";
+
 import {
   getEnvironmentVariable,
   setEnvironmentVariable,
 } from "../../utils/env.js";
 
-export interface TracerProvider {
-  addSpanProcessor(processor: any): void;
-}
-
-export interface OTLPExporter {
-  export(spans: any[], resultCallback: (result: any) => void): void;
-}
-
 const HAS_OTEL = getEnvironmentVariable("OTEL_ENABLED") === "true";
 
-export function getOtlpTracerProvider(): TracerProvider {
+/**
+ * Convert headers string in format "name=value,name2=value2" to object
+ */
+function parseHeadersString(headersStr: string): Record<string, string> {
+  const headers: Record<string, string> = {};
+  if (!headersStr) return headers;
+
+  headersStr.split(",").forEach((pair) => {
+    const [name, ...valueParts] = pair.split("=");
+    if (name && valueParts.length > 0) {
+      headers[name.trim()] = valueParts.join("=").trim();
+    }
+  });
+
+  return headers;
+}
+
+export function getOtlpTracerProvider(): OTELTracerProvider {
   if (!HAS_OTEL) {
     throw new Error(
       "OpenTelemetry packages are required to use this function. " +
@@ -54,14 +70,16 @@ export function getOtlpTracerProvider(): TracerProvider {
     setEnvironmentVariable("OTEL_EXPORTER_OTLP_HEADERS", headers);
   }
 
-  // Note: We can't directly use OpenTelemetry imports here due to the conditional import requirement
-  // The actual implementation would need to be handled by the consumer
-  // This is a placeholder that maintains the API contract
+  const headersStr = getEnvironmentVariable("OTEL_EXPORTER_OTLP_HEADERS") || "";
+  const headersObj = parseHeadersString(headersStr);
 
-  return {
-    addSpanProcessor: (_processor: any) => {
-      // Implementation would depend on actual OpenTelemetry imports
-      throw new Error("OpenTelemetry TracerProvider not properly initialized");
-    },
-  };
+  const langsmithSpanExporter = new OTLPTraceExporter({
+    url: getEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT"),
+    headers: headersObj,
+  });
+  const spanProcessor = new BatchSpanProcessor(langsmithSpanExporter);
+
+  return new BasicTracerProvider({
+    spanProcessors: [spanProcessor],
+  });
 }

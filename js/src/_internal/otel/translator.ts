@@ -1,15 +1,18 @@
-import { getEnvironmentVariable } from "../../utils/env.js";
-import type { KVMap, Run, RunCreate, RunUpdate } from "../../schemas.js";
-
-let HAS_OTEL = false;
-
-try {
-  if (getEnvironmentVariable("OTEL_ENABLED") === "true") {
-    HAS_OTEL = true;
-  }
-} catch {
-  // Ignore import errors
-}
+import {
+  SpanOptions as OTELSpanOptions,
+  trace,
+  context,
+  SpanContext as OTELSpanContext,
+  TraceFlags as OTELTraceFlags,
+  createTraceState,
+  Context as OTELContext,
+  Span as OTELSpan,
+  type TracerProvider as OTELTracerProvider,
+  SpanStatusCode as OTELSpanStatusCode,
+} from "@opentelemetry/api";
+import { __version__ } from "../../index.js";
+import type { KVMap, Run } from "../../schemas.js";
+import { getOtelTraceIdFromUuid, getOtelSpanIdFromUuid } from "./utils.js";
 
 // OpenTelemetry GenAI semantic convention attribute names
 export const GEN_AI_OPERATION_NAME = "gen_ai.operation.name";
@@ -81,48 +84,30 @@ export interface SerializedRunOperation {
   operation: "post" | "patch";
   id: string;
   trace_id: string;
-  _none: string; // JSON string in JS
+  // this is the whole object, minus the other fields which
+  // are popped (inputs/outputs/events/attachments)
+  _none: string;
   inputs?: string;
   outputs?: string;
   events?: string;
 }
 
-export interface OTELSpan {
-  setAttribute(key: string, value: string | number | boolean): void;
-  setStatus(status: any): void;
-  recordException(exception: Error): void;
-  end(endTime?: number): void;
-}
-
 export interface OTELTracer {
-  startSpan(name: string, options?: any): OTELSpan;
+  startSpan(name: string, options?: OTELSpanOptions, context?: any): OTELSpan;
 }
 
-export interface OTELContext {
-  // Context interface placeholder
-}
+export class LangSmithToOTELTranslator {
+  private tracer?: OTELTracer;
 
-export class OTELExporter {
-  private tracer: OTELTracer | null = null;
   private spans: Map<string, OTELSpan> = new Map();
 
-  constructor(tracerProvider?: any) {
-    if (!HAS_OTEL) {
-      console.warn(
-        "OTEL_ENABLED is set but OpenTelemetry packages are not installed. " +
-          "Install the required OpenTelemetry packages."
-      );
-      return;
-    }
-
-    // Note: Actual implementation would require OpenTelemetry imports
-    // This is a placeholder structure
-    this.tracer = tracerProvider?.getTracer?.("langsmith") || null;
+  constructor(tracerProvider?: OTELTracerProvider) {
+    this.tracer = (tracerProvider ?? trace).getTracer("langsmith", __version__);
   }
 
   exportBatch(
     operations: SerializedRunOperation[],
-    otelContextMap: Map<string, OTELContext | null>
+    otelContextMap: Map<string, OTELContext>
   ): void {
     if (!this.tracer) {
       return;
@@ -139,7 +124,7 @@ export class OTELExporter {
           const span = this.createSpanForRun(
             op,
             runInfo,
-            otelContextMap.get(op.id) || null
+            otelContextMap.get(op.id)
           );
           if (span) {
             this.spans.set(op.id, span);
@@ -153,67 +138,109 @@ export class OTELExporter {
     }
   }
 
-  private deserializeRunInfo(op: SerializedRunOperation): Run | null {
+  private deserializeRunInfo(op: SerializedRunOperation): Run | undefined {
     try {
       return JSON.parse(op._none) as Run;
     } catch (e) {
       console.error(`Failed to deserialize run info for ${op.id}:`, e);
-      return null;
+      return;
     }
   }
 
   private createSpanForRun(
     op: SerializedRunOperation,
     runInfo: Run,
-    otelContext: OTELContext | null = null
-  ): OTELSpan | null {
+    otelContext?: OTELContext
+  ): OTELSpan | undefined {
     if (!this.tracer) {
-      return null;
+      return;
     }
 
     try {
       const startTime = runInfo.start_time;
       const endTime = runInfo.end_time;
 
-      // Create deterministic trace and span IDs would require hex conversion utilities
-      // For now, using the run structure as-is
+      // Convert epoch timestamps to nanoseconds for OTEL compatibility
+      const startTimeNano = startTime ? this.epochToNano(startTime) : undefined;
+      const endTimeNano = endTime ? this.epochToNano(endTime) : undefined;
 
-      const spanOptions: any = {
-        startTime: startTime ? new Date(startTime) : undefined,
+      // Create deterministic trace and span IDs from UUIDs
+      const traceIdHex = getOtelTraceIdFromUuid(op.trace_id);
+      const spanIdHex = getOtelSpanIdFromUuid(op.id);
+
+      // Create SpanContext with deterministic IDs
+      const spanContext: OTELSpanContext = {
+        traceId: traceIdHex,
+        spanId: spanIdHex,
+        isRemote: false,
+        traceFlags: OTELTraceFlags.SAMPLED,
+        traceState: createTraceState(),
       };
 
-      // Handle parent context
+      const deterministicContext = trace.setSpanContext(
+        context.active(),
+        spanContext
+      );
+
+      // Handle parent context like Python
       const parentRunId = runInfo.parent_run_id;
+
       if (parentRunId && this.spans.has(parentRunId)) {
-        // Set parent context - actual implementation would require OTEL context handling
-        spanOptions.parent = this.spans.get(parentRunId);
-      } else if (otelContext) {
-        spanOptions.parent = otelContext;
-      }
-
-      const span = this.tracer.startSpan(runInfo.name, spanOptions);
-
-      // Set all attributes
-      this.setSpanAttributes(span, runInfo, op);
-
-      // Set status based on error
-      if (runInfo.error) {
-        span.setStatus({ code: 2 }); // ERROR status
-        span.recordException(new Error(runInfo.error));
+        // Use the parent span context
+        const parentSpan = this.spans.get(parentRunId)!;
+        const parentContext = trace.setSpan(context.active(), parentSpan);
+        const spanOptions: OTELSpanOptions = {
+          startTime: startTimeNano,
+        };
+        const span = this.tracer.startSpan(
+          runInfo.name,
+          spanOptions,
+          parentContext
+        );
+        return this.finishSpanSetup(span, runInfo, op, endTimeNano);
       } else {
-        span.setStatus({ code: 1 }); // OK status
+        // For root spans, check if there's an existing OpenTelemetry context
+        // If so, inherit from it; otherwise use our deterministic context
+        const currentContext = otelContext ?? deterministicContext;
+        const spanOptions: OTELSpanOptions = {
+          startTime: startTimeNano,
+        };
+        const span = this.tracer.startSpan(
+          runInfo.name,
+          spanOptions,
+          currentContext
+        );
+        return this.finishSpanSetup(span, runInfo, op, endTimeNano);
       }
-
-      // End the span if end_time is present
-      if (endTime) {
-        span.end(endTime);
-      }
-
-      return span;
     } catch (e) {
       console.error(`Failed to create span for run ${op.id}:`, e);
-      return null;
+      return undefined;
     }
+  }
+
+  private finishSpanSetup(
+    span: OTELSpan,
+    runInfo: Run,
+    op: SerializedRunOperation,
+    endTimeNano?: number
+  ): OTELSpan {
+    // Set all attributes
+    this.setSpanAttributes(span, runInfo, op);
+
+    // Set status based on error
+    if (runInfo.error) {
+      span.setStatus({ code: OTELSpanStatusCode.ERROR }); // ERROR status
+      span.recordException(new Error(runInfo.error));
+    } else {
+      span.setStatus({ code: OTELSpanStatusCode.OK }); // OK status
+    }
+
+    // End the span if end_time is present
+    if (endTimeNano) {
+      span.end(endTimeNano);
+    }
+
+    return span;
   }
 
   private updateSpanForRun(op: SerializedRunOperation, runInfo: Run): void {
@@ -229,16 +256,17 @@ export class OTELExporter {
 
       // Update status based on error
       if (runInfo.error) {
-        span.setStatus({ code: 2 }); // ERROR status
+        span.setStatus({ code: OTELSpanStatusCode.ERROR }); // ERROR status
         span.recordException(new Error(runInfo.error));
       } else {
-        span.setStatus({ code: 1 }); // OK status
+        span.setStatus({ code: OTELSpanStatusCode.OK }); // OK status
       }
 
       // End the span if end_time is present
       const endTime = runInfo.end_time;
       if (endTime) {
-        span.end(endTime);
+        const endTimeNano = this.epochToNano(endTime);
+        span.end(endTimeNano);
         // Remove the span from our dictionary
         this.spans.delete(op.id);
       }
@@ -654,5 +682,11 @@ export class OTELExporter {
     }
 
     return [outputs.input_tokens, outputs.output_tokens];
+  }
+
+  private epochToNano(epochTime: number): number {
+    // LangSmith epoch times are in milliseconds
+    // Convert to nanoseconds for OTEL compatibility
+    return Math.floor(epochTime * 1_000_000);
   }
 }

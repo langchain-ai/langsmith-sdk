@@ -1,11 +1,36 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable no-process-env */
+import { jest } from "@jest/globals";
+
+// Mock the @opentelemetry/api module at the top level
+const mockTrace = {
+  setSpan: jest.fn((context, span) => context),
+};
+const mockContext = {
+  active: jest.fn(() => ({})),
+  with: jest.fn((ctx, fn) => fn()),
+};
+
+jest.mock("@opentelemetry/api", () => ({
+  trace: mockTrace,
+  SpanContext: jest.fn(),
+  TraceFlags: { SAMPLED: 1 },
+  context: mockContext,
+}));
 
 describe("Traceable OTEL Integration", () => {
-  afterEach(() => {
-    delete process.env.OTEL_ENABLED;
+  beforeEach(() => {
+    jest.clearAllMocks();
+    // Enable tracing so RunTrees are created
+    process.env.LANGCHAIN_TRACING_V2 = "true";
   });
 
-  it("works correctly when OTEL_ENABLED is false", async () => {
+  afterEach(() => {
+    delete process.env.OTEL_ENABLED;
+    delete process.env.LANGCHAIN_TRACING_V2;
+  });
+
+  it("does not create OTEL context when OTEL_ENABLED is false", async () => {
     process.env.OTEL_ENABLED = "false";
 
     const { traceable } = await import("../traceable.js");
@@ -20,9 +45,12 @@ describe("Traceable OTEL Integration", () => {
     const result = await testFunction("test");
 
     expect(result).toBe("result: test");
+    // Should not create OTEL context when disabled
+    expect(mockTrace.setSpan).not.toHaveBeenCalled();
+    expect(mockContext.with).not.toHaveBeenCalled();
   });
 
-  it("works correctly when OTEL_ENABLED is undefined", async () => {
+  it("does not create OTEL context when OTEL_ENABLED is undefined", async () => {
     // OTEL_ENABLED not set
 
     const { traceable } = await import("../traceable.js");
@@ -37,9 +65,12 @@ describe("Traceable OTEL Integration", () => {
     const result = await testFunction("test");
 
     expect(result).toBe("result: test");
+    // Should not create OTEL context when undefined
+    expect(mockTrace.setSpan).not.toHaveBeenCalled();
+    expect(mockContext.with).not.toHaveBeenCalled();
   });
 
-  it("works correctly when OTEL_ENABLED is true", async () => {
+  it("creates OTEL context when OTEL_ENABLED is true", async () => {
     process.env.OTEL_ENABLED = "true";
 
     const { traceable } = await import("../traceable.js");
@@ -54,9 +85,13 @@ describe("Traceable OTEL Integration", () => {
     const result = await testFunction("test");
 
     expect(result).toBe("result: test");
+    // Should create OTEL context when enabled
+    expect(mockContext.active).toHaveBeenCalled();
+    expect(mockTrace.setSpan).toHaveBeenCalled();
+    expect(mockContext.with).toHaveBeenCalled();
   });
 
-  it("handles async traceable functions correctly", async () => {
+  it("creates OTEL context for async traceable functions", async () => {
     process.env.OTEL_ENABLED = "true";
 
     const { traceable } = await import("../traceable.js");
@@ -71,9 +106,12 @@ describe("Traceable OTEL Integration", () => {
     const result = await asyncFunction("test");
 
     expect(result).toBe("async result: test");
+    expect(mockContext.active).toHaveBeenCalled();
+    expect(mockTrace.setSpan).toHaveBeenCalled();
+    expect(mockContext.with).toHaveBeenCalled();
   });
 
-  it("handles nested traceable calls correctly", async () => {
+  it("propagates OTEL context through nested traceable calls", async () => {
     process.env.OTEL_ENABLED = "true";
 
     const { traceable } = await import("../traceable.js");
@@ -96,6 +134,9 @@ describe("Traceable OTEL Integration", () => {
     const result = await parentFunction("test");
 
     expect(result).toBe("parent: child: test");
+    // Should be called twice - once for parent, once for child
+    expect(mockContext.with).toHaveBeenCalledTimes(2);
+    expect(mockTrace.setSpan).toHaveBeenCalledTimes(2);
   });
 
   it("handles OTEL package import failures gracefully", async () => {
@@ -132,7 +173,7 @@ describe("Traceable OTEL Integration", () => {
     expect(result).toBe("result: test");
   });
 
-  it("works correctly with RunTree UUIDs", async () => {
+  it("creates deterministic span IDs from RunTree UUIDs", async () => {
     process.env.OTEL_ENABLED = "true";
 
     const { RunTree } = await import("../run_trees.js");
@@ -156,6 +197,16 @@ describe("Traceable OTEL Integration", () => {
     const result = await testFunction(runTree, "test");
 
     expect(result).toBe("result: test");
+    // Should create OTEL context with the RunTree
+    expect(mockContext.active).toHaveBeenCalled();
+    expect(mockTrace.setSpan).toHaveBeenCalled();
+    expect(mockContext.with).toHaveBeenCalled();
+
+    // Verify that setSpan was called with a span object that has the expected span context
+    const setSpanCall = mockTrace.setSpan.mock.calls[0];
+    expect(setSpanCall).toBeDefined();
+    expect(setSpanCall[1]).toBeDefined(); // The span object
+    expect(typeof (setSpanCall[1] as any).spanContext).toBe("function");
   });
 
   it("works with generator functions", async () => {

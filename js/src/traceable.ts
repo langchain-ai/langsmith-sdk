@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { trace, SpanContext, TraceFlags, context } from "@opentelemetry/api";
 
 import {
   RunTree,
@@ -41,54 +42,35 @@ AsyncLocalStorageProviderSingleton.initializeGlobalInstance(
 
 /**
  * Create OpenTelemetry context manager from RunTree if OTEL is enabled.
- * This mirrors Python's _maybe_create_otel_context() function.
  */
-function maybeCreateOtelContext(
+function maybeCreateOtelContext<T>(
   runTree?: RunTree
-): ((fn: () => any) => any) | null {
+): ((fn: (...args: any[]) => T) => T) | undefined {
   if (!runTree || getEnvironmentVariable("OTEL_ENABLED") !== "true") {
-    return null;
+    return;
   }
 
   try {
-    // Conditional imports like Python - these will throw if packages not installed
-    const {
-      trace,
-      SpanContext,
-      NonRecordingSpan,
-      TraceFlags,
-      TraceState,
-      context,
-    } = require("@opentelemetry/api");
-
     // Convert LangSmith UUIDs to OTEL IDs
-    const traceId = getOtelTraceIdFromUuid(runTree.trace_id || runTree.id);
+    const traceId = getOtelTraceIdFromUuid(runTree.trace_id);
     const spanId = getOtelSpanIdFromUuid(runTree.id);
 
     // Create span context with converted IDs
-    const spanContext = new SpanContext({
-      traceId: parseInt(traceId.substring(0, 16), 16),
-      spanId: parseInt(spanId, 16),
+    const spanContext: SpanContext = {
+      traceId,
+      spanId,
       isRemote: false,
       traceFlags: TraceFlags.SAMPLED,
-      traceState: new TraceState(),
-    });
-
-    // Create non-recording span for context propagation only
-    const nonRecordingSpan = new NonRecordingSpan(spanContext);
+    };
 
     // Return context wrapper function like Python's use_span
-    return (fn: () => any) => {
-      const activeContext = context.active();
-      const spanContext = trace.setSpanInContext(
-        activeContext,
-        nonRecordingSpan
-      );
-      return context.with(spanContext, fn);
+    return (fn: (...args: any[]) => T) => {
+      const newContext = trace.setSpanContext(context.active(), spanContext);
+      return context.with(newContext, fn);
     };
   } catch (error) {
     // Silent failure if OTEL setup is incomplete
-    return null;
+    return;
   }
 }
 
@@ -656,7 +638,6 @@ export function traceable<Func extends (...args: any[]) => any>(
       return [currentRunTree, processedArgs as Inputs];
     })();
 
-    // Create OTEL context manager if available
     const otelContextManager = maybeCreateOtelContext(currentRunTree);
 
     const runWithContext = () => {
@@ -681,14 +662,17 @@ export function traceable<Func extends (...args: any[]) => any>(
         const reader = stream.getReader();
         let finished = false;
         const chunks: unknown[] = [];
+        const capturedOtelContext = context.active();
 
         const tappedStream = new ReadableStream({
           async start(controller) {
             // eslint-disable-next-line no-constant-condition
             while (true) {
               const result = await (snapshot
-                ? snapshot(() => reader.read())
-                : reader.read());
+                ? snapshot(() =>
+                    context.with(capturedOtelContext, () => reader.read())
+                  )
+                : context.with(capturedOtelContext, () => reader.read()));
               if (result.done) {
                 finished = true;
                 const processedOutputs = handleRunOutputs({
@@ -734,11 +718,14 @@ export function traceable<Func extends (...args: any[]) => any>(
       ) {
         let finished = false;
         const chunks: unknown[] = [];
+        const capturedOtelContext = context.active();
         try {
           while (true) {
             const { value, done } = await (snapshot
-              ? snapshot(() => iterator.next())
-              : iterator.next());
+              ? snapshot(() =>
+                  context.with(capturedOtelContext, () => iterator.next())
+                )
+              : context.with(capturedOtelContext, () => iterator.next()));
             if (done) {
               finished = true;
               break;

@@ -172,7 +172,10 @@
     "zod": "^3.23.8"
   },
   "peerDependencies": {
-    "openai": "*"
+    "openai": "*",
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/exporter-trace-otlp-proto": "^0.202.0",
+    "@opentelemetry/sdk-trace-base": "^2.0.1"
   },
   "peerDependenciesMeta": {
     "openai": {

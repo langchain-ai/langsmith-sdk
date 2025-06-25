@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable no-process-env */
 import { jest } from "@jest/globals";
 import {
-  OTELExporter,
+  LangSmithToOTELTranslator,
   getOtelTraceIdFromUuid,
   getOtelSpanIdFromUuid,
   validateAndNormalizeUuid,
@@ -48,8 +49,9 @@ describe("OTEL Exporter", () => {
   });
 
   it("creates span for run", () => {
-    // Create exporter with direct tracer injection to bypass HAS_OTEL check
-    const exporter = new OTELExporter({ getTracer: () => mockTracer });
+    const exporter = new LangSmithToOTELTranslator({
+      getTracer: () => mockTracer,
+    });
     // Manually set the tracer since HAS_OTEL might be false
     (exporter as any).tracer = mockTracer;
 
@@ -77,7 +79,9 @@ describe("OTEL Exporter", () => {
   });
 
   it("detects model systems", () => {
-    const exporter = new OTELExporter({ getTracer: () => mockTracer });
+    const exporter = new LangSmithToOTELTranslator({
+      getTracer: () => mockTracer,
+    });
     (exporter as any).tracer = mockTracer;
 
     const operation: SerializedRunOperation = {
@@ -104,7 +108,9 @@ describe("OTEL Exporter", () => {
   });
 
   it("extracts token usage", () => {
-    const exporter = new OTELExporter({ getTracer: () => mockTracer });
+    const exporter = new LangSmithToOTELTranslator({
+      getTracer: () => mockTracer,
+    });
     (exporter as any).tracer = mockTracer;
 
     const operation: SerializedRunOperation = {
