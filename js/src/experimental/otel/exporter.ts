@@ -70,8 +70,13 @@ export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
         )
       ) {
         span.attributes[constants.LANGSMITH_RUN_TYPE] = "tool";
+        if (span.attributes["ai.toolCall.name"]) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (span as any).name = span.attributes["ai.toolCall.name"];
+        }
       }
     }
+    console.log("exporting spans", spans);
     super.export(spans, resultCallback);
   }
 }

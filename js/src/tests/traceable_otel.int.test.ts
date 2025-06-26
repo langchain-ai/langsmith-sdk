@@ -3,10 +3,15 @@
 import { generateText, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
+import { v4 as uuidv4 } from "uuid";
+import { trace } from "@opentelemetry/api";
 
+import { Client } from "../client.js";
 import { traceable } from "../traceable.js";
 import { __version__ } from "../index.js";
-import "../otel/setup.js";
+import { toArray, waitUntilRunFoundByMetaField } from "./utils.js";
+import { getLangSmithEnvironmentVariable } from "../utils/env.js";
+import "../experimental/otel/setup.js";
 
 describe("Traceable OTEL Integration Tests", () => {
   beforeEach(() => {
@@ -18,29 +23,17 @@ describe("Traceable OTEL Integration Tests", () => {
     delete process.env.LANGCHAIN_TRACING;
   });
 
-  it("works gracefully when OTEL_ENABLED is true but packages not available", async () => {
-    process.env.OTEL_ENABLED = "true";
-
-    const testFunction = traceable(
-      (input: string) => {
-        return `result: ${input}`;
-      },
-      { name: "test-function" }
-    );
-
-    // Should work even if OTEL packages aren't installed
-    const result = await testFunction("test");
-    expect(result).toBe("result: test");
-  });
-
   it("handles nested calls with OTEL context", async () => {
     process.env.OTEL_ENABLED = "true";
+
+    const meta = uuidv4();
+    const client = new Client();
 
     const childFunction = traceable(
       async (input: string) => {
         return { content: `child: ${input}`, role: "assistant" };
       },
-      { name: "child-function", run_type: "llm" }
+      { name: "child-function", run_type: "llm", client }
     );
 
     const parentFunction = traceable(
@@ -48,16 +41,41 @@ describe("Traceable OTEL Integration Tests", () => {
         const childResult = await childFunction(input);
         return `parent: ${childResult.content}`;
       },
-      { name: "parent-function" }
+      { name: "parent-function", metadata: { hackyKey: meta } }
     );
 
     const result = await parentFunction("test");
-    await new Promise((resolve) => setTimeout(resolve, 5000));
     expect(result).toBe("parent: child: test");
+
+    await client.awaitPendingTraceBatches();
+
+    const projectName = getLangSmithEnvironmentVariable("PROJECT") ?? "default";
+    await waitUntilRunFoundByMetaField(
+      client,
+      projectName,
+      "hackyKey",
+      meta,
+      true
+    );
+    const storedRun = await toArray(
+      client.listRuns({
+        projectName,
+        filter: `and(eq(metadata_key, "hackyKey"), eq(metadata_value, "${meta}"))`,
+      })
+    );
+    expect(storedRun.length).toBe(1);
+    const runWithChildren = await client.readRun(storedRun[0].id, {
+      loadChildRuns: true,
+    });
+    expect(runWithChildren.child_runs?.length).toBe(1);
+    expect(runWithChildren.child_runs?.[0].name).toBe("child-function");
   });
 
   it.only("works with AI SDK", async () => {
     process.env.OTEL_ENABLED = "true";
+
+    const meta = uuidv4();
+    const client = new Client();
     const wrappedText = traceable(
       async (content: string) => {
         const { text } = await generateText({
@@ -91,27 +109,43 @@ describe("Traceable OTEL Integration Tests", () => {
           maxSteps: 10,
         });
 
-        // const foo = traceable(
-        //   async () => {
-        //     return "bar";
-        //   },
-        //   { name: "foo" }
-        // );
-
-        // await foo();
-
         return { text };
       },
-      { name: "parentTraceable" }
+      { name: "parentTraceable", metadata: { hackyKey: meta }, client }
     );
 
-    const result = await wrappedText(
+    await wrappedText(
       "What are my orders and where are they? My user ID is 123. Use available tools."
     );
-    console.log(result);
-    await new Promise((resolve) => setTimeout(resolve, 5000));
-    // await waitUntilRunFound(client, runId, true);
-    // const storedRun = await client.readRun(runId);
-    // expect(storedRun.outputs).toEqual(result);
+    await client.awaitPendingTraceBatches();
+    const projectName = getLangSmithEnvironmentVariable("PROJECT") ?? "default";
+    await waitUntilRunFoundByMetaField(
+      client,
+      projectName,
+      "hackyKey",
+      meta,
+      true
+    );
+    const storedRun = await toArray(
+      client.listRuns({
+        projectName,
+        filter: `and(eq(metadata_key, "hackyKey"), eq(metadata_value, "${meta}"))`,
+      })
+    );
+    expect(storedRun.length).toBe(1);
+    const runWithChildren = await client.readRun(storedRun[0].id, {
+      loadChildRuns: true,
+    });
+    expect(runWithChildren.child_runs?.length).toBe(1);
+    expect(runWithChildren.child_runs?.[0].name).toBe("ai.generateText");
+    expect(runWithChildren.child_runs?.[0].child_runs?.[0].name).toBe(
+      "ai.generateText.doGenerate"
+    );
+    const listToolRuns = runWithChildren.child_runs?.[0].child_runs?.filter(
+      (run) => run.name === "listOrders"
+    );
+    expect(listToolRuns?.length).toBeGreaterThan(0);
+    expect(listToolRuns?.[0].name).toBe("listOrders");
+    expect(listToolRuns?.[0].child_runs?.[0].name).toBe("getOrderNumber");
   });
 });

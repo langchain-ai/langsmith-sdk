@@ -41,6 +41,10 @@ export const LANGSMITH_TAGS = "langsmith.span.tags";
 export const LANGSMITH_RUNTIME = "langsmith.span.runtime";
 export const LANGSMITH_REQUEST_STREAMING = "langsmith.request.streaming";
 export const LANGSMITH_REQUEST_HEADERS = "langsmith.request.headers";
+export const LANGSMITH_RUN_ID = "langsmith.span.id";
+export const LANGSMITH_TRACE_ID = "langsmith.trace.id";
+export const LANGSMITH_DOTTED_ORDER = "langsmith.span.dotted_order";
+export const LANGSMITH_PARENT_RUN_ID = "langsmith.span.parent_id";
 
 // GenAI event names
 export const GEN_AI_SYSTEM_MESSAGE = "gen_ai.system.message";

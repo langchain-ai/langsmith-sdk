@@ -6,7 +6,6 @@ import {
   trace as otel_trace,
   context as otel_context,
 } from "@opentelemetry/api";
-import { type TracerProvider as OTELTracerProvider } from "@opentelemetry/api";
 import {
   BatchSpanProcessor,
   BasicTracerProvider,
@@ -20,7 +19,7 @@ import {
 import { LangSmithOTLPTraceExporter } from "./exporter.js";
 
 import {
-  setDefaultOTLPTracerProviderGetter,
+  setDefaultOTLPTracerComponents,
   setOTELInstances,
 } from "../../singletons/otel.js";
 
@@ -52,7 +51,7 @@ function parseHeadersString(headersStr: string): Record<string, string> {
   return headers;
 }
 
-function getDefaultOTLPTracerProvider(): OTELTracerProvider {
+function getDefaultOTLPTracerComponents() {
   // Set LangSmith-specific defaults if not already set in environment
   if (!getEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT")) {
     const lsEndpoint =
@@ -94,9 +93,13 @@ function getDefaultOTLPTracerProvider(): OTELTracerProvider {
   });
   const spanProcessor = new BatchSpanProcessor(langsmithSpanExporter);
 
-  return new BasicTracerProvider({
-    spanProcessors: [spanProcessor],
-  });
+  return {
+    tracerProvider: new BasicTracerProvider({
+      spanProcessors: [spanProcessor],
+    }),
+    spanProcessor,
+    langsmithSpanExporter,
+  };
 }
 
-setDefaultOTLPTracerProviderGetter(getDefaultOTLPTracerProvider);
+setDefaultOTLPTracerComponents(getDefaultOTLPTracerComponents());

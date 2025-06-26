@@ -105,9 +105,6 @@ const OTEL_GET_DEFAULT_OTLP_TRACER_PROVIDER_KEY = Symbol.for(
 
 const mockOTELTrace = new MockOTELTrace();
 const mockOTELContext = new MockOTELContext();
-const mockGetDefaultOTLPTracerProvider = () => {
-  return undefined;
-};
 
 class OTELProvider {
   getTraceInstance(): OTELTraceInterface {
@@ -133,16 +130,20 @@ class OTELProvider {
     }
   }
 
-  setDefaultOTLPTracerProviderGetter(getter: () => any) {
+  setDefaultOTLPTracerComponents(components: {
+    tracerProvider: any;
+    spanProcessor: any;
+    langsmithSpanExporter: any;
+  }) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any)[OTEL_GET_DEFAULT_OTLP_TRACER_PROVIDER_KEY] = getter;
+    (globalThis as any)[OTEL_GET_DEFAULT_OTLP_TRACER_PROVIDER_KEY] = components;
   }
 
-  getDefaultOTLPTracerProvider() {
+  getDefaultOTLPTracerComponents() {
     return (
       (globalThis as any)[OTEL_GET_DEFAULT_OTLP_TRACER_PROVIDER_KEY] ??
-      mockGetDefaultOTLPTracerProvider
-    )();
+      undefined
+    );
   }
 }
 
@@ -176,14 +177,20 @@ export function setOTELInstances(otel: OTELInterface): void {
  * Set a getter function for the default OTLP tracer provider.
  * This allows lazy initialization of the tracer provider.
  */
-export function setDefaultOTLPTracerProviderGetter(getter: () => any): void {
-  OTELProviderSingleton.setDefaultOTLPTracerProviderGetter(getter);
+export function setDefaultOTLPTracerComponents(components: {
+  tracerProvider: any;
+  spanProcessor: any;
+  langsmithSpanExporter: any;
+}): void {
+  OTELProviderSingleton.setDefaultOTLPTracerComponents(components);
 }
 
 /**
  * Get the default OTLP tracer provider instance.
  * Returns undefined if not set.
  */
-export function getDefaultOTLPTracerProvider(): any {
-  return OTELProviderSingleton.getDefaultOTLPTracerProvider();
+export function getDefaultOTLPTracerComponents():
+  | { tracerProvider: any; spanProcessor: any; langsmithSpanExporter: any }
+  | undefined {
+  return OTELProviderSingleton.getDefaultOTLPTracerComponents();
 }

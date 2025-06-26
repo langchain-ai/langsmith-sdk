@@ -8,7 +8,7 @@ import {
   SerializedRunOperation,
 } from "./experimental/otel/translator.js";
 import {
-  getDefaultOTLPTracerProvider,
+  getDefaultOTLPTracerComponents,
   getOTELTrace,
   getOTELContext,
 } from "./singletons/otel.js";
@@ -82,6 +82,7 @@ import {
 } from "./singletons/fetch.js";
 
 import { serialize as serializePayloadForTracing } from "./utils/fast-safe-stringify/index.js";
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
 
 export interface ClientConfig {
   apiUrl?: string;
@@ -682,7 +683,8 @@ export class Client implements LangSmithTracingClientInterface {
     if (getEnvironmentVariable("OTEL_ENABLED") === "true") {
       const otel_trace = getOTELTrace();
       const existingTracerProvider = otel_trace.getTracerProvider();
-      const langSmithTracerProvider = getDefaultOTLPTracerProvider();
+      const { tracerProvider: langSmithTracerProvider } =
+        getDefaultOTLPTracerComponents() ?? {};
       // If user has set global tracer before, this fails and returns false
       const globalSuccessfullyOverridden = otel_trace.setGlobalTracerProvider(
         langSmithTracerProvider
@@ -5148,17 +5150,18 @@ export class Client implements LangSmithTracingClientInterface {
    *
    * @returns A promise that resolves once all currently pending traces have sent.
    */
-  public awaitPendingTraceBatches() {
+  public async awaitPendingTraceBatches() {
     if (this.manualFlushMode) {
       console.warn(
         "[WARNING]: When tracing in manual flush mode, you must call `await client.flush()` manually to submit trace batches."
       );
       return Promise.resolve();
     }
-    return Promise.all([
+    await Promise.all([
       ...this.autoBatchQueue.items.map(({ itemPromise }) => itemPromise),
       this.batchIngestCaller.queue.onIdle(),
     ]);
+    await getDefaultOTLPTracerComponents()?.spanProcessor?.forceFlush();
   }
 }
 
