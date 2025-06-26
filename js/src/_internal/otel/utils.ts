@@ -1,10 +1,8 @@
 import * as uuid from "uuid";
 import {
-  createTraceState,
   SpanContext as OTELSpanContext,
   TraceFlags as OTELTraceFlags,
 } from "@opentelemetry/api";
-import { Run, RunCreate, RunUpdate } from "../../schemas.js";
 
 /**
  * Get OpenTelemetry trace ID as hex string from UUID.

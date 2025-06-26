@@ -3,7 +3,6 @@ import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
 import {
   BatchSpanProcessor,
   BasicTracerProvider,
-  SimpleSpanProcessor,
   ReadableSpan,
 } from "@opentelemetry/sdk-trace-base";
 
@@ -22,7 +21,6 @@ export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
     resultCallback: Parameters<OTLPTraceExporter["export"]>[1]
   ): void {
     for (const span of spans) {
-      console.log("SPAN", span);
       if (!span.attributes[constants.GENAI_PROMPT]) {
         if (span.attributes["ai.prompt"]) {
           span.attributes[constants.GENAI_PROMPT] =
@@ -153,7 +151,7 @@ export function getOTLPTracerProvider(): OTELTracerProvider {
     url: getEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT"),
     headers: headersObj,
   });
-  const spanProcessor = new SimpleSpanProcessor(langsmithSpanExporter);
+  const spanProcessor = new BatchSpanProcessor(langsmithSpanExporter);
 
   return new BasicTracerProvider({
     spanProcessors: [spanProcessor],
