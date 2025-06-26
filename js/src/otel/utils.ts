@@ -1,8 +1,5 @@
 import * as uuid from "uuid";
-import {
-  SpanContext as OTELSpanContext,
-  TraceFlags as OTELTraceFlags,
-} from "@opentelemetry/api";
+import type { OTELSpanContext } from "./types.js";
 
 /**
  * Get OpenTelemetry trace ID as hex string from UUID.
@@ -49,6 +46,6 @@ export function createOtelSpanContextFromRun(run: {
     traceId,
     spanId,
     isRemote: false,
-    traceFlags: OTELTraceFlags.SAMPLED,
+    traceFlags: 1, // SAMPLED
   };
 }

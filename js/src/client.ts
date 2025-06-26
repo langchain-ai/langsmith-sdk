@@ -1,8 +1,5 @@
 import * as uuid from "uuid";
-import {
-  type Context as OTELContext,
-  type TracerProvider as OTELTracerProvider,
-} from "@opentelemetry/api";
+import type { OTELContext, OTELTracerProvider } from "./otel/types.js";
 import {
   LangSmithToOTELTranslator,
   SerializedRunOperation,

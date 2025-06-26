@@ -1,9 +1,9 @@
 import type {
-  Tracer as OTELTracer,
-  Context as OTELContext,
-  Span as OTELSpan,
-  TracerProvider as OTELTracerProvider,
-} from "@opentelemetry/api";
+  OTELTracer,
+  OTELContext,
+  OTELSpan,
+  OTELTracerProvider,
+} from "./types.js";
 import { __version__ } from "../index.js";
 import type { KVMap, RunCreate, RunUpdate } from "../schemas.js";
 import * as constants from "./constants.js";
