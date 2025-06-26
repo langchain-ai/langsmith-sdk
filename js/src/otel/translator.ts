@@ -1,14 +1,13 @@
-import {
-  trace,
+import type {
   Tracer as OTELTracer,
   Context as OTELContext,
   Span as OTELSpan,
-  type TracerProvider as OTELTracerProvider,
-  SpanStatusCode as OTELSpanStatusCode,
+  TracerProvider as OTELTracerProvider,
 } from "@opentelemetry/api";
-import { __version__ } from "../../index.js";
-import type { KVMap, RunCreate, RunUpdate } from "../../schemas.js";
+import { __version__ } from "../index.js";
+import type { KVMap, RunCreate, RunUpdate } from "../schemas.js";
 import * as constants from "./constants.js";
+import { getOTELTrace } from "../singletons/otel.js";
 
 const WELL_KNOWN_OPERATION_NAMES: Record<string, string> = {
   llm: "chat",
@@ -37,7 +36,10 @@ export class LangSmithToOTELTranslator {
   private spans: Map<string, OTELSpan> = new Map();
 
   constructor(tracerProvider?: OTELTracerProvider) {
-    this.tracer = (tracerProvider ?? trace).getTracer("langsmith", __version__);
+    this.tracer = (tracerProvider ?? getOTELTrace()).getTracer(
+      "langsmith",
+      __version__
+    );
   }
 
   exportBatch(
@@ -80,7 +82,7 @@ export class LangSmithToOTELTranslator {
     if (!this.tracer) {
       return;
     }
-    const activeSpan = otelContext && trace.getSpan(otelContext);
+    const activeSpan = otelContext && getOTELTrace().getSpan(otelContext);
     if (!activeSpan) {
       return;
     }
@@ -104,10 +106,10 @@ export class LangSmithToOTELTranslator {
 
     // Set status based on error
     if (runInfo.error) {
-      span.setStatus({ code: OTELSpanStatusCode.ERROR }); // ERROR status
+      span.setStatus({ code: 2 }); // ERROR status
       span.recordException(new Error(runInfo.error));
     } else {
-      span.setStatus({ code: OTELSpanStatusCode.OK }); // OK status
+      span.setStatus({ code: 1 }); // OK status
     }
 
     // End the span if end_time is present
@@ -134,10 +136,10 @@ export class LangSmithToOTELTranslator {
 
       // Update status based on error
       if (runInfo.error) {
-        span.setStatus({ code: OTELSpanStatusCode.ERROR }); // ERROR status
+        span.setStatus({ code: 2 }); // ERROR status
         span.recordException(new Error(runInfo.error));
       } else {
-        span.setStatus({ code: OTELSpanStatusCode.OK }); // OK status
+        span.setStatus({ code: 1 }); // OK status
       }
 
       // End the span if end_time is present

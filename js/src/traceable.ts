@@ -1,13 +1,4 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import {
-  trace as otel_trace,
-  context as otel_context,
-} from "@opentelemetry/api";
-import { AsyncHooksContextManager } from "@opentelemetry/context-async-hooks";
-
-const contextManager = new AsyncHooksContextManager();
-contextManager.enable();
-otel_context.setGlobalContextManager(contextManager);
 
 import {
   RunTree,
@@ -39,8 +30,9 @@ import {
   isPromiseMethod,
 } from "./utils/asserts.js";
 import { getEnvironmentVariable } from "./utils/env.js";
-import { createOtelSpanContextFromRun } from "./_internal/otel/utils.js";
+import { createOtelSpanContextFromRun } from "./otel/utils.js";
 import { __version__ } from "./index.js";
+import { getOTELTrace, getOTELContext } from "./singletons/otel.js";
 
 AsyncLocalStorageProviderSingleton.initializeGlobalInstance(
   new AsyncLocalStorage<RunTree | undefined>()
@@ -55,6 +47,9 @@ function maybeCreateOtelContext<T>(
   if (!runTree || getEnvironmentVariable("OTEL_ENABLED") !== "true") {
     return;
   }
+
+  const otel_trace = getOTELTrace();
+  const otel_context = getOTELContext();
 
   try {
     const spanContext = createOtelSpanContextFromRun(runTree);
@@ -644,6 +639,8 @@ export function traceable<Func extends (...args: any[]) => any>(
     })();
 
     const otelContextManager = maybeCreateOtelContext(currentRunTree);
+    const otel_context = getOTELContext();
+    const otel_trace = getOTELTrace();
 
     const runWithContext = () => {
       const postRunPromise = currentRunTree?.postRun();

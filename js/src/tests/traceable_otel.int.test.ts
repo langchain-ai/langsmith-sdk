@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import { traceable } from "../traceable.js";
 import { __version__ } from "../index.js";
+import "../otel/setup.js";
 
 describe("Traceable OTEL Integration Tests", () => {
   beforeEach(() => {

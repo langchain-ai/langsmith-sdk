@@ -1,16 +1,17 @@
 import * as uuid from "uuid";
 import {
-  context as otel_context,
-  trace as otel_trace,
   type Context as OTELContext,
   type TracerProvider as OTELTracerProvider,
 } from "@opentelemetry/api";
 import {
   LangSmithToOTELTranslator,
   SerializedRunOperation,
-} from "./_internal/otel/translator.js";
-import { getOTLPTracerProvider } from "./_internal/otel/client.js";
-
+} from "./otel/translator.js";
+import {
+  getDefaultOTLPTracerProvider,
+  getOTELTrace,
+  getOTELContext,
+} from "./singletons/otel.js";
 import { AsyncCaller, AsyncCallerParams } from "./utils/async_caller.js";
 import {
   ComparativeExperiment,
@@ -679,8 +680,9 @@ export class Client implements LangSmithTracingClientInterface {
     this.fetchOptions = config.fetchOptions || {};
     this.manualFlushMode = config.manualFlushMode ?? this.manualFlushMode;
     if (getEnvironmentVariable("OTEL_ENABLED") === "true") {
+      const otel_trace = getOTELTrace();
       const existingTracerProvider = otel_trace.getTracerProvider();
-      const langSmithTracerProvider = getOTLPTracerProvider();
+      const langSmithTracerProvider = getDefaultOTLPTracerProvider();
       // If user has set global tracer before, this fails and returns false
       const globalSuccessfullyOverridden = otel_trace.setGlobalTracerProvider(
         langSmithTracerProvider
@@ -1136,6 +1138,8 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   private _cloneCurrentOTELContext() {
+    const otel_trace = getOTELTrace();
+    const otel_context = getOTELContext();
     if (this.langSmithToOTELTranslator !== undefined) {
       const currentSpan = otel_trace.getActiveSpan();
       if (currentSpan) {
