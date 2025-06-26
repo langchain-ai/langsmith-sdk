@@ -1,5 +1,15 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { trace, SpanContext, TraceFlags, context } from "@opentelemetry/api";
+import {
+  trace as otel_trace,
+  SpanContext as OTELSpanContext,
+  TraceFlags as OTELTraceFlags,
+  context as otel_context,
+} from "@opentelemetry/api";
+import { AsyncHooksContextManager } from "@opentelemetry/context-async-hooks";
+
+const contextManager = new AsyncHooksContextManager();
+contextManager.enable();
+otel_context.setGlobalContextManager(contextManager);
 
 import {
   RunTree,
@@ -35,6 +45,7 @@ import {
   getOtelTraceIdFromUuid,
   getOtelSpanIdFromUuid,
 } from "./_internal/otel/utils.js";
+import { __version__ } from "./index.js";
 
 AsyncLocalStorageProviderSingleton.initializeGlobalInstance(
   new AsyncLocalStorage<RunTree | undefined>()
@@ -56,17 +67,20 @@ function maybeCreateOtelContext<T>(
     const spanId = getOtelSpanIdFromUuid(runTree.id);
 
     // Create span context with converted IDs
-    const spanContext: SpanContext = {
+    const spanContext: OTELSpanContext = {
       traceId,
       spanId,
       isRemote: false,
-      traceFlags: TraceFlags.SAMPLED,
+      traceFlags: OTELTraceFlags.SAMPLED,
     };
 
-    // Return context wrapper function like Python's use_span
     return (fn: (...args: any[]) => T) => {
-      const newContext = trace.setSpanContext(context.active(), spanContext);
-      return context.with(newContext, fn);
+      // Use a non-recording span here. `traceable` spans will be properly created in
+      // the OTEL translator after their corresponding LangSmith multipart
+      // operations are processed.
+      const span = otel_trace.wrapSpanContext(spanContext);
+      const newContext = otel_trace.setSpan(otel_context.active(), span);
+      return otel_context.with(newContext, fn);
     };
   } catch (error) {
     // Silent failure if OTEL setup is incomplete
@@ -662,7 +676,7 @@ export function traceable<Func extends (...args: any[]) => any>(
         const reader = stream.getReader();
         let finished = false;
         const chunks: unknown[] = [];
-        const capturedOtelContext = context.active();
+        const capturedOtelContext = otel_context.active();
 
         const tappedStream = new ReadableStream({
           async start(controller) {
@@ -670,9 +684,9 @@ export function traceable<Func extends (...args: any[]) => any>(
             while (true) {
               const result = await (snapshot
                 ? snapshot(() =>
-                    context.with(capturedOtelContext, () => reader.read())
+                    otel_context.with(capturedOtelContext, () => reader.read())
                   )
-                : context.with(capturedOtelContext, () => reader.read()));
+                : otel_context.with(capturedOtelContext, () => reader.read()));
               if (result.done) {
                 finished = true;
                 const processedOutputs = handleRunOutputs({
@@ -718,14 +732,14 @@ export function traceable<Func extends (...args: any[]) => any>(
       ) {
         let finished = false;
         const chunks: unknown[] = [];
-        const capturedOtelContext = context.active();
+        const capturedOtelContext = otel_context.active();
         try {
           while (true) {
             const { value, done } = await (snapshot
               ? snapshot(() =>
-                  context.with(capturedOtelContext, () => iterator.next())
+                  otel_context.with(capturedOtelContext, () => iterator.next())
                 )
-              : context.with(capturedOtelContext, () => iterator.next()));
+              : otel_context.with(capturedOtelContext, () => iterator.next()));
             if (done) {
               finished = true;
               break;

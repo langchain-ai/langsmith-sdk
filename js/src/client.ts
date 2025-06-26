@@ -5,7 +5,10 @@ import {
   type Context as OTELContext,
   type TracerProvider as OTELTracerProvider,
 } from "@opentelemetry/api";
-import { LangSmithToOTELTranslator, SerializedRunOperation } from "./_internal/otel/translator.js";
+import {
+  LangSmithToOTELTranslator,
+  SerializedRunOperation,
+} from "./_internal/otel/translator.js";
 import { getOTLPTracerProvider } from "./_internal/otel/client.js";
 
 import { AsyncCaller, AsyncCallerParams } from "./utils/async_caller.js";
@@ -501,6 +504,7 @@ export class AutoBatchQueue {
   items: {
     action: "create" | "update";
     payload: RunCreate | RunUpdate;
+    otelContext?: OTELContext;
     itemPromiseResolve: () => void;
     itemPromise: Promise<void>;
     size: number;
@@ -526,6 +530,7 @@ export class AutoBatchQueue {
     this.items.push({
       action: item.action,
       payload: item.item,
+      otelContext: item.otelContext,
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       itemPromiseResolve: itemPromiseResolve!,
       itemPromise,
@@ -562,7 +567,11 @@ export class AutoBatchQueue {
       this.sizeBytes -= item.size;
     }
     return [
-      popped.map((it) => ({ action: it.action, item: it.payload })),
+      popped.map((it) => ({
+        action: it.action,
+        item: it.payload,
+        otelContext: it.otelContext,
+      })),
       () => popped.forEach((it) => it.itemPromiseResolve()),
     ];
   }
@@ -673,7 +682,9 @@ export class Client implements LangSmithTracingClientInterface {
       const existingTracerProvider = otel_trace.getTracerProvider();
       const langSmithTracerProvider = getOTLPTracerProvider();
       // If user has set global tracer before, this fails and returns false
-      const globalSuccessfullyOverridden = otel_trace.setGlobalTracerProvider(langSmithTracerProvider);
+      const globalSuccessfullyOverridden = otel_trace.setGlobalTracerProvider(
+        langSmithTracerProvider
+      );
       this.langSmithToOTELTranslator = new LangSmithToOTELTranslator(
         globalSuccessfullyOverridden
           ? langSmithTracerProvider
@@ -985,26 +996,32 @@ export class Client implements LangSmithTracingClientInterface {
       return;
     }
     try {
-      const ingestParams = {
-        runCreates: batch
-          .filter((item) => item.action === "create")
-          .map((item) => item.item) as RunCreate[],
-        runUpdates: batch
-          .filter((item) => item.action === "update")
-          .map((item) => item.item) as RunUpdate[],
-      };
-      const serverInfo = await this._ensureServerInfo();
-      if (serverInfo?.batch_ingest_config?.use_multipart_endpoint) {
-        await this.multipartIngestRuns(ingestParams);
+      if (this.langSmithToOTELTranslator !== undefined) {
+        this._sendBatchToOTELTranslator(batch);
       } else {
-        await this.batchIngestRuns(ingestParams);
+        const ingestParams = {
+          runCreates: batch
+            .filter((item) => item.action === "create")
+            .map((item) => item.item) as RunCreate[],
+          runUpdates: batch
+            .filter((item) => item.action === "update")
+            .map((item) => item.item) as RunUpdate[],
+        };
+        const serverInfo = await this._ensureServerInfo();
+        if (serverInfo?.batch_ingest_config?.use_multipart_endpoint) {
+          await this.multipartIngestRuns(ingestParams);
+        } else {
+          await this.batchIngestRuns(ingestParams);
+        }
       }
+    } catch (e) {
+      console.error("Error exporting batch:", e);
     } finally {
       done();
     }
   }
-  
-  _sendBatchToOTELTranslator(batch: AutoBatchQueueItem[]) {
+
+  private _sendBatchToOTELTranslator(batch: AutoBatchQueueItem[]) {
     if (this.langSmithToOTELTranslator !== undefined) {
       const otelContextMap = new Map<string, OTELContext>();
       const operations: SerializedRunOperation[] = [];
@@ -1028,19 +1045,11 @@ export class Client implements LangSmithTracingClientInterface {
           }
         }
       }
-      try {
-        this.langSmithToOTELTranslator.exportBatch(operations, otelContextMap);
-      } catch (e) {
-        console.error("Error exporting batch to OTEL:", e);
-      }
+      this.langSmithToOTELTranslator.exportBatch(operations, otelContextMap);
     }
   }
 
   private async processRunOperation(item: AutoBatchQueueItem) {
-    const otelContext = this._cloneCurrentOTELContext();
-    if (otelContext) {
-      item.otelContext = otelContext;
-    }
     clearTimeout(this.autoBatchTimeout);
     this.autoBatchTimeout = undefined;
     if (item.action === "create") {
@@ -1135,7 +1144,7 @@ export class Client implements LangSmithTracingClientInterface {
     }
     return undefined;
   }
-  
+
   public async createRun(run: CreateRunParams): Promise<void> {
     if (!this._filterForSampling([run]).length) {
       return;
@@ -1154,9 +1163,11 @@ export class Client implements LangSmithTracingClientInterface {
       runCreate.trace_id !== undefined &&
       runCreate.dotted_order !== undefined
     ) {
+      const otelContext = this._cloneCurrentOTELContext();
       void this.processRunOperation({
         action: "create",
         item: runCreate,
+        otelContext,
       }).catch(console.error);
       return;
     }
@@ -1584,6 +1595,7 @@ export class Client implements LangSmithTracingClientInterface {
       data.trace_id !== undefined &&
       data.dotted_order !== undefined
     ) {
+      const otelContext = this._cloneCurrentOTELContext();
       if (
         run.end_time !== undefined &&
         data.parent_run_id === undefined &&
@@ -1592,14 +1604,18 @@ export class Client implements LangSmithTracingClientInterface {
       ) {
         // Trigger batches as soon as a root trace ends and wait to ensure trace finishes
         // in serverless environments.
-        await this.processRunOperation({ action: "update", item: data }).catch(
-          console.error
-        );
+        await this.processRunOperation({
+          action: "update",
+          item: data,
+          otelContext,
+        }).catch(console.error);
         return;
       } else {
-        void this.processRunOperation({ action: "update", item: data }).catch(
-          console.error
-        );
+        void this.processRunOperation({
+          action: "update",
+          item: data,
+          otelContext,
+        }).catch(console.error);
       }
       return;
     }

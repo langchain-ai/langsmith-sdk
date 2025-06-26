@@ -4,14 +4,16 @@ import {
   context,
   SpanContext as OTELSpanContext,
   TraceFlags as OTELTraceFlags,
+  Tracer as OTELTracer,
   createTraceState,
   Context as OTELContext,
   Span as OTELSpan,
   type TracerProvider as OTELTracerProvider,
   SpanStatusCode as OTELSpanStatusCode,
+  ROOT_CONTEXT as OTEL_ROOT_CONTEXT,
 } from "@opentelemetry/api";
 import { __version__ } from "../../index.js";
-import type { Attachments, KVMap, RunCreate, RunUpdate } from "../../schemas.js";
+import type { KVMap, RunCreate, RunUpdate } from "../../schemas.js";
 import { getOtelTraceIdFromUuid, getOtelSpanIdFromUuid } from "./utils.js";
 
 // OpenTelemetry GenAI semantic convention attribute names
@@ -48,10 +50,6 @@ export const GEN_AI_USAGE_OUTPUT_TOKEN_DETAILS =
   "gen_ai.usage.output_token_details";
 
 // LangSmith custom attributes
-export const LANGSMITH_RUN_ID = "langsmith.span.id";
-export const LANGSMITH_TRACE_ID = "langsmith.trace.id";
-export const LANGSMITH_DOTTED_ORDER = "langsmith.span.dotted_order";
-export const LANGSMITH_PARENT_RUN_ID = "langsmith.span.parent_id";
 export const LANGSMITH_SESSION_ID = "langsmith.trace.session_id";
 export const LANGSMITH_SESSION_NAME = "langsmith.trace.session_name";
 export const LANGSMITH_RUN_TYPE = "langsmith.span.kind";
@@ -80,20 +78,14 @@ function getOperationName(runType: string): string {
   return WELL_KNOWN_OPERATION_NAMES[runType] || runType;
 }
 
-export type SerializedRunOperation<T extends "post" | "patch" = "post" | "patch"> = {
+export type SerializedRunOperation<
+  T extends "post" | "patch" = "post" | "patch"
+> = {
   operation: T;
   id: string;
   trace_id: string;
   run: T extends "post" ? RunCreate : RunUpdate;
-  inputs?: string;
-  outputs?: string;
-  events?: string;
-  attachments?: Attachments;
 };
-
-export interface OTELTracer {
-  startSpan(name: string, options?: OTELSpanOptions, context?: any): OTELSpan;
-}
 
 export class LangSmithToOTELTranslator {
   private tracer?: OTELTracer;
@@ -149,10 +141,6 @@ export class LangSmithToOTELTranslator {
       const startTime = runInfo.start_time;
       const endTime = runInfo.end_time;
 
-      // Convert epoch timestamps to nanoseconds for OTEL compatibility
-      const startTimeNano = startTime ? this.epochToNano(startTime) : undefined;
-      const endTimeNano = endTime ? this.epochToNano(endTime) : undefined;
-
       // Create deterministic trace and span IDs from UUIDs
       const traceIdHex = getOtelTraceIdFromUuid(op.trace_id);
       const spanIdHex = getOtelSpanIdFromUuid(op.id);
@@ -179,27 +167,38 @@ export class LangSmithToOTELTranslator {
         const parentSpan = this.spans.get(parentRunId)!;
         const parentContext = trace.setSpan(context.active(), parentSpan);
         const spanOptions: OTELSpanOptions = {
-          startTime: startTimeNano,
+          startTime,
         };
         const span = this.tracer.startSpan(
           runInfo.name,
           spanOptions,
           parentContext
         );
-        return this.finishSpanSetup(span, runInfo, op, endTimeNano);
+        return this.finishSpanSetup(span, runInfo, op, endTime);
       } else {
         // For root spans, check if there's an existing OpenTelemetry context
         // If so, inherit from it; otherwise use our deterministic context
-        const currentContext = otelContext ?? deterministicContext;
+        let currentContext = otelContext ?? deterministicContext;
         const spanOptions: OTELSpanOptions = {
-          startTime: startTimeNano,
+          startTime,
         };
-        const span = this.tracer.startSpan(
-          runInfo.name,
-          spanOptions,
-          currentContext
-        );
-        return this.finishSpanSetup(span, runInfo, op, endTimeNano);
+        let span;
+        // For some reason OTEL populates non-recording spans as parentSpanContext
+        // on exported spans.
+        if (trace.getSpanContext(currentContext)?.traceId === traceIdHex) {
+          span = this.tracer.startSpan(
+            runInfo.name,
+            spanOptions,
+            OTEL_ROOT_CONTEXT
+          );
+        } else {
+          span = this.tracer.startSpan(
+            runInfo.name,
+            spanOptions,
+            currentContext
+          );
+        }
+        return this.finishSpanSetup(span, runInfo, op, endTime);
       }
     } catch (e) {
       console.error(`Failed to create span for run ${op.id}:`, e);
@@ -211,7 +210,7 @@ export class LangSmithToOTELTranslator {
     span: OTELSpan,
     runInfo: RunCreate | RunUpdate,
     op: SerializedRunOperation,
-    endTimeNano?: number
+    endTime?: number
   ): OTELSpan {
     // Set all attributes
     this.setSpanAttributes(span, runInfo, op);
@@ -225,14 +224,17 @@ export class LangSmithToOTELTranslator {
     }
 
     // End the span if end_time is present
-    if (endTimeNano) {
-      span.end(endTimeNano);
+    if (endTime) {
+      span.end(endTime);
     }
 
     return span;
   }
 
-  private updateSpanForRun(op: SerializedRunOperation, runInfo: RunUpdate): void {
+  private updateSpanForRun(
+    op: SerializedRunOperation,
+    runInfo: RunUpdate
+  ): void {
     try {
       const span = this.spans.get(op.id);
       if (!span) {
@@ -254,8 +256,7 @@ export class LangSmithToOTELTranslator {
       // End the span if end_time is present
       const endTime = runInfo.end_time;
       if (endTime) {
-        const endTimeNano = this.epochToNano(endTime);
-        span.end(endTimeNano);
+        span.end(endTime);
         // Remove the span from our dictionary
         this.spans.delete(op.id);
       }
@@ -293,18 +294,6 @@ export class LangSmithToOTELTranslator {
     runInfo: RunCreate | RunUpdate,
     op: SerializedRunOperation
   ): void {
-    // Set LangSmith-specific attributes
-    span.setAttribute(LANGSMITH_RUN_ID, op.id);
-    span.setAttribute(LANGSMITH_TRACE_ID, op.trace_id);
-
-    if (runInfo.dotted_order) {
-      span.setAttribute(LANGSMITH_DOTTED_ORDER, runInfo.dotted_order);
-    }
-
-    if (runInfo.parent_run_id) {
-      span.setAttribute(LANGSMITH_PARENT_RUN_ID, runInfo.parent_run_id);
-    }
-
     if ("run_type" in runInfo && runInfo.run_type) {
       span.setAttribute(LANGSMITH_RUN_TYPE, runInfo.run_type);
       // Set GenAI attributes according to OTEL semantic conventions
@@ -320,6 +309,9 @@ export class LangSmithToOTELTranslator {
       span.setAttribute(LANGSMITH_SESSION_ID, runInfo.session_id);
     }
 
+    if ("session_name" in runInfo && runInfo.session_name) {
+      span.setAttribute(LANGSMITH_SESSION_NAME, runInfo.session_name);
+    }
 
     // Set gen_ai.system
     this.setGenAiSystem(span, runInfo);
@@ -331,11 +323,17 @@ export class LangSmithToOTELTranslator {
     }
 
     // Set token usage information
-    if ("prompt_tokens" in runInfo && typeof runInfo.prompt_tokens === "number") {
+    if (
+      "prompt_tokens" in runInfo &&
+      typeof runInfo.prompt_tokens === "number"
+    ) {
       span.setAttribute(GEN_AI_USAGE_INPUT_TOKENS, runInfo.prompt_tokens);
     }
 
-    if ("completion_tokens" in runInfo && typeof runInfo.completion_tokens === "number") {
+    if (
+      "completion_tokens" in runInfo &&
+      typeof runInfo.completion_tokens === "number"
+    ) {
       span.setAttribute(GEN_AI_USAGE_OUTPUT_TOKENS, runInfo.completion_tokens);
     }
 
@@ -433,7 +431,10 @@ export class LangSmithToOTELTranslator {
     span.setAttribute(GEN_AI_SYSTEM, system);
   }
 
-  private setInvocationParameters(span: OTELSpan, runInfo: RunCreate | RunUpdate): void {
+  private setInvocationParameters(
+    span: OTELSpan,
+    runInfo: RunCreate | RunUpdate
+  ): void {
     if (!runInfo.extra?.metadata?.invocation_params) {
       return;
     }
@@ -472,9 +473,9 @@ export class LangSmithToOTELTranslator {
   }
 
   private setIOAttributes(span: OTELSpan, op: SerializedRunOperation): void {
-    if (op.inputs) {
+    if (op.run.inputs) {
       try {
-        const inputs = JSON.parse(op.inputs);
+        const inputs = op.run.inputs;
 
         if (typeof inputs === "object" && inputs !== null) {
           if (inputs.model && Array.isArray(inputs.messages) && inputs.model) {
@@ -505,15 +506,15 @@ export class LangSmithToOTELTranslator {
           }
         }
 
-        span.setAttribute(GENAI_PROMPT, op.inputs);
+        span.setAttribute(GENAI_PROMPT, JSON.stringify(inputs));
       } catch (e) {
         console.debug(`Failed to process inputs for run ${op.id}`, e);
       }
     }
 
-    if (op.outputs) {
+    if (op.run.outputs) {
       try {
-        const outputs = JSON.parse(op.outputs);
+        const outputs = op.run.outputs;
 
         // Extract token usage from outputs (for LLM runs)
         const tokenUsage = this.getUnifiedRunTokens(outputs);
@@ -583,7 +584,7 @@ export class LangSmithToOTELTranslator {
           }
         }
 
-        span.setAttribute(GENAI_COMPLETION, op.outputs);
+        span.setAttribute(GENAI_COMPLETION, JSON.stringify(outputs));
       } catch (e) {
         console.debug(`Failed to process outputs for run ${op.id}`, e);
       }
@@ -671,11 +672,5 @@ export class LangSmithToOTELTranslator {
     }
 
     return [outputs.input_tokens, outputs.output_tokens];
-  }
-
-  private epochToNano(epochTime: number): number {
-    // LangSmith epoch times are in milliseconds
-    // Convert to nanoseconds for OTEL compatibility
-    return Math.floor(epochTime * 1_000_000);
   }
 }

@@ -3,6 +3,8 @@ import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
 import {
   BatchSpanProcessor,
   BasicTracerProvider,
+  SimpleSpanProcessor,
+  ReadableSpan,
 } from "@opentelemetry/sdk-trace-base";
 
 import {
@@ -10,7 +12,17 @@ import {
   setEnvironmentVariable,
 } from "../../utils/env.js";
 
-const HAS_OTEL = getEnvironmentVariable("OTEL_ENABLED") === "true";
+export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
+  constructor(options: ConstructorParameters<typeof OTLPTraceExporter>[0]) {
+    super(options);
+  }
+  export(spans: ReadableSpan[], resultCallback: Parameters<OTLPTraceExporter["export"]>[1]): void {
+    for (const span of spans) {
+      console.log("EXPORTING SPAN", span);
+    }
+    super.export(spans, resultCallback);
+  }
+}
 
 /**
  * Convert headers string in format "name=value,name2=value2" to object
@@ -30,20 +42,17 @@ function parseHeadersString(headersStr: string): Record<string, string> {
 }
 
 export function getOTLPTracerProvider(): OTELTracerProvider {
-  if (!HAS_OTEL) {
-    throw new Error(
-      "OpenTelemetry packages are required to use this function. " +
-        "Please install the required OpenTelemetry packages."
-    );
-  }
-
   // Set LangSmith-specific defaults if not already set in environment
   if (!getEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT")) {
     const lsEndpoint =
       getEnvironmentVariable("LANGSMITH_ENDPOINT") ||
       getEnvironmentVariable("LANGCHAIN_ENDPOINT") ||
       "https://api.smith.langchain.com";
-    setEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", `${lsEndpoint}/otel`);
+    const baseUrl = lsEndpoint.replace(/\/$/, "");
+    setEnvironmentVariable(
+      "OTEL_EXPORTER_OTLP_ENDPOINT",
+      `${baseUrl}/otel/v1/traces`
+    );
   }
 
   // Configure headers with API key and project if available
@@ -73,11 +82,11 @@ export function getOTLPTracerProvider(): OTELTracerProvider {
   const headersStr = getEnvironmentVariable("OTEL_EXPORTER_OTLP_HEADERS") || "";
   const headersObj = parseHeadersString(headersStr);
 
-  const langsmithSpanExporter = new OTLPTraceExporter({
+  const langsmithSpanExporter = new LangSmithOTLPTraceExporter({
     url: getEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT"),
     headers: headersObj,
   });
-  const spanProcessor = new BatchSpanProcessor(langsmithSpanExporter);
+  const spanProcessor = new SimpleSpanProcessor(langsmithSpanExporter);
 
   return new BasicTracerProvider({
     spanProcessors: [spanProcessor],
