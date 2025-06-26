@@ -1,8 +1,11 @@
+// Avoid async hooks as even a peer dep to avoid pulling into
+// non-node build environments.
+// eslint-disable-next-line import/no-extraneous-dependencies
+import { AsyncHooksContextManager } from "@opentelemetry/context-async-hooks";
 import {
   trace as otel_trace,
   context as otel_context,
 } from "@opentelemetry/api";
-import { AsyncHooksContextManager } from "@opentelemetry/context-async-hooks";
 import { type TracerProvider as OTELTracerProvider } from "@opentelemetry/api";
 import {
   BatchSpanProcessor,
