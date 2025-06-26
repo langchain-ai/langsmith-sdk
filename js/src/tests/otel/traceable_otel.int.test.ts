@@ -7,7 +7,6 @@ import { v4 as uuidv4 } from "uuid";
 
 import { Client } from "../../client.js";
 import { traceable } from "../../traceable.js";
-import { __version__ } from "../../index.js";
 import { toArray, waitUntilRunFoundByMetaField } from "../utils.js";
 import { getLangSmithEnvironmentVariable } from "../../utils/env.js";
 
