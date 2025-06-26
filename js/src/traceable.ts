@@ -75,12 +75,11 @@ function maybeCreateOtelContext<T>(
     };
 
     return (fn: (...args: any[]) => T) => {
-      // Use a non-recording span here. `traceable` spans will be properly created in
-      // the OTEL translator after their corresponding LangSmith multipart
-      // operations are processed.
-      const span = otel_trace.wrapSpanContext(spanContext);
-      const newContext = otel_trace.setSpan(otel_context.active(), span);
-      return otel_context.with(newContext, fn);
+      const resolvedTracer = otel_trace.getTracer("langsmith", __version__);
+      return resolvedTracer.startActiveSpan(runTree.name, () => {
+        otel_trace.setSpanContext(otel_context.active(), spanContext);
+        return fn();
+      });
     };
   } catch (error) {
     // Silent failure if OTEL setup is incomplete

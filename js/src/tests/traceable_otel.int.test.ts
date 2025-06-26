@@ -55,7 +55,7 @@ describe("Traceable OTEL Integration Tests", () => {
     await new Promise((resolve) => setTimeout(resolve, 5000));
     expect(result).toBe("parent: child: test");
   });
-  
+
   it.only("works with AI SDK", async () => {
     process.env.OTEL_ENABLED = "true";
     const wrappedText = traceable(
@@ -91,21 +91,21 @@ describe("Traceable OTEL Integration Tests", () => {
           },
           maxSteps: 10,
         });
-  
+
         // const foo = traceable(
         //   async () => {
         //     return "bar";
         //   },
         //   { name: "foo" }
         // );
-  
+
         // await foo();
-  
+
         return { text };
       },
       { name: "parentTraceable" }
     );
-  
+
     const result = await wrappedText(
       "What are my orders and where are they? My user ID is 123. Use available tools."
     );
@@ -114,5 +114,5 @@ describe("Traceable OTEL Integration Tests", () => {
     // await waitUntilRunFound(client, runId, true);
     // const storedRun = await client.readRun(runId);
     // expect(storedRun.outputs).toEqual(result);
-  })
+  });
 });

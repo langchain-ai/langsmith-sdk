@@ -1,70 +1,14 @@
 import {
-  SpanOptions as OTELSpanOptions,
   trace,
-  context,
-  SpanContext as OTELSpanContext,
-  TraceFlags as OTELTraceFlags,
   Tracer as OTELTracer,
-  createTraceState,
   Context as OTELContext,
   Span as OTELSpan,
   type TracerProvider as OTELTracerProvider,
   SpanStatusCode as OTELSpanStatusCode,
-  ROOT_CONTEXT as OTEL_ROOT_CONTEXT,
 } from "@opentelemetry/api";
 import { __version__ } from "../../index.js";
 import type { KVMap, RunCreate, RunUpdate } from "../../schemas.js";
-import { getOtelTraceIdFromUuid, getOtelSpanIdFromUuid } from "./utils.js";
-
-// OpenTelemetry GenAI semantic convention attribute names
-export const GEN_AI_OPERATION_NAME = "gen_ai.operation.name";
-export const GEN_AI_SYSTEM = "gen_ai.system";
-export const GEN_AI_REQUEST_MODEL = "gen_ai.request.model";
-export const GEN_AI_RESPONSE_MODEL = "gen_ai.response.model";
-export const GEN_AI_USAGE_INPUT_TOKENS = "gen_ai.usage.input_tokens";
-export const GEN_AI_USAGE_OUTPUT_TOKENS = "gen_ai.usage.output_tokens";
-export const GEN_AI_USAGE_TOTAL_TOKENS = "gen_ai.usage.total_tokens";
-export const GEN_AI_REQUEST_MAX_TOKENS = "gen_ai.request.max_tokens";
-export const GEN_AI_REQUEST_TEMPERATURE = "gen_ai.request.temperature";
-export const GEN_AI_REQUEST_TOP_P = "gen_ai.request.top_p";
-export const GEN_AI_REQUEST_FREQUENCY_PENALTY =
-  "gen_ai.request.frequency_penalty";
-export const GEN_AI_REQUEST_PRESENCE_PENALTY =
-  "gen_ai.request.presence_penalty";
-export const GEN_AI_RESPONSE_FINISH_REASONS = "gen_ai.response.finish_reasons";
-export const GENAI_PROMPT = "gen_ai.prompt";
-export const GENAI_COMPLETION = "gen_ai.completion";
-
-export const GEN_AI_REQUEST_EXTRA_QUERY = "gen_ai.request.extra_query";
-export const GEN_AI_REQUEST_EXTRA_BODY = "gen_ai.request.extra_body";
-export const GEN_AI_SERIALIZED_NAME = "gen_ai.serialized.name";
-export const GEN_AI_SERIALIZED_SIGNATURE = "gen_ai.serialized.signature";
-export const GEN_AI_SERIALIZED_DOC = "gen_ai.serialized.doc";
-export const GEN_AI_RESPONSE_ID = "gen_ai.response.id";
-export const GEN_AI_RESPONSE_SERVICE_TIER = "gen_ai.response.service_tier";
-export const GEN_AI_RESPONSE_SYSTEM_FINGERPRINT =
-  "gen_ai.response.system_fingerprint";
-export const GEN_AI_USAGE_INPUT_TOKEN_DETAILS =
-  "gen_ai.usage.input_token_details";
-export const GEN_AI_USAGE_OUTPUT_TOKEN_DETAILS =
-  "gen_ai.usage.output_token_details";
-
-// LangSmith custom attributes
-export const LANGSMITH_SESSION_ID = "langsmith.trace.session_id";
-export const LANGSMITH_SESSION_NAME = "langsmith.trace.session_name";
-export const LANGSMITH_RUN_TYPE = "langsmith.span.kind";
-export const LANGSMITH_NAME = "langsmith.trace.name";
-export const LANGSMITH_METADATA = "langsmith.metadata";
-export const LANGSMITH_TAGS = "langsmith.span.tags";
-export const LANGSMITH_RUNTIME = "langsmith.span.runtime";
-export const LANGSMITH_REQUEST_STREAMING = "langsmith.request.streaming";
-export const LANGSMITH_REQUEST_HEADERS = "langsmith.request.headers";
-
-// GenAI event names
-export const GEN_AI_SYSTEM_MESSAGE = "gen_ai.system.message";
-export const GEN_AI_USER_MESSAGE = "gen_ai.user.message";
-export const GEN_AI_ASSISTANT_MESSAGE = "gen_ai.assistant.message";
-export const GEN_AI_CHOICE = "gen_ai.choice";
+import * as constants from "./constants.js";
 
 const WELL_KNOWN_OPERATION_NAMES: Record<string, string> = {
   llm: "chat",
@@ -136,70 +80,17 @@ export class LangSmithToOTELTranslator {
     if (!this.tracer) {
       return;
     }
-
     try {
       const startTime = runInfo.start_time;
       const endTime = runInfo.end_time;
-
-      // Create deterministic trace and span IDs from UUIDs
-      const traceIdHex = getOtelTraceIdFromUuid(op.trace_id);
-      const spanIdHex = getOtelSpanIdFromUuid(op.id);
-
-      // Create SpanContext with deterministic IDs
-      const spanContext: OTELSpanContext = {
-        traceId: traceIdHex,
-        spanId: spanIdHex,
-        isRemote: false,
-        traceFlags: OTELTraceFlags.SAMPLED,
-        traceState: createTraceState(),
-      };
-
-      const deterministicContext = trace.setSpanContext(
-        context.active(),
-        spanContext
-      );
-
-      // Handle parent context like Python
-      const parentRunId = runInfo.parent_run_id;
-
-      if (parentRunId && this.spans.has(parentRunId)) {
-        // Use the parent span context
-        const parentSpan = this.spans.get(parentRunId)!;
-        const parentContext = trace.setSpan(context.active(), parentSpan);
-        const spanOptions: OTELSpanOptions = {
-          startTime,
-        };
-        const span = this.tracer.startSpan(
-          runInfo.name,
-          spanOptions,
-          parentContext
-        );
-        return this.finishSpanSetup(span, runInfo, op, endTime);
+      let span;
+      const activeSpan = otelContext && trace.getSpan(otelContext);
+      if (activeSpan) {
+        span = activeSpan;
       } else {
-        // For root spans, check if there's an existing OpenTelemetry context
-        // If so, inherit from it; otherwise use our deterministic context
-        let currentContext = otelContext ?? deterministicContext;
-        const spanOptions: OTELSpanOptions = {
-          startTime,
-        };
-        let span;
-        // For some reason OTEL populates non-recording spans as parentSpanContext
-        // on exported spans.
-        if (trace.getSpanContext(currentContext)?.traceId === traceIdHex) {
-          span = this.tracer.startSpan(
-            runInfo.name,
-            spanOptions,
-            OTEL_ROOT_CONTEXT
-          );
-        } else {
-          span = this.tracer.startSpan(
-            runInfo.name,
-            spanOptions,
-            currentContext
-          );
-        }
-        return this.finishSpanSetup(span, runInfo, op, endTime);
+        span = this.tracer.startSpan(runInfo.name, { startTime, root: true });
       }
+      return this.finishSpanSetup(span, runInfo, op, endTime);
     } catch (e) {
       console.error(`Failed to create span for run ${op.id}:`, e);
       return undefined;
@@ -295,22 +186,22 @@ export class LangSmithToOTELTranslator {
     op: SerializedRunOperation
   ): void {
     if ("run_type" in runInfo && runInfo.run_type) {
-      span.setAttribute(LANGSMITH_RUN_TYPE, runInfo.run_type);
+      span.setAttribute(constants.LANGSMITH_RUN_TYPE, runInfo.run_type);
       // Set GenAI attributes according to OTEL semantic conventions
       const operationName = getOperationName(runInfo.run_type || "chain");
-      span.setAttribute(GEN_AI_OPERATION_NAME, operationName);
+      span.setAttribute(constants.GEN_AI_OPERATION_NAME, operationName);
     }
 
     if ("name" in runInfo && runInfo.name) {
-      span.setAttribute(LANGSMITH_NAME, runInfo.name);
+      span.setAttribute(constants.LANGSMITH_NAME, runInfo.name);
     }
 
     if ("session_id" in runInfo && runInfo.session_id) {
-      span.setAttribute(LANGSMITH_SESSION_ID, runInfo.session_id);
+      span.setAttribute(constants.LANGSMITH_SESSION_ID, runInfo.session_id);
     }
 
     if ("session_name" in runInfo && runInfo.session_name) {
-      span.setAttribute(LANGSMITH_SESSION_NAME, runInfo.session_name);
+      span.setAttribute(constants.LANGSMITH_SESSION_NAME, runInfo.session_name);
     }
 
     // Set gen_ai.system
@@ -319,7 +210,7 @@ export class LangSmithToOTELTranslator {
     // Set model name if available
     const modelName = this.extractModelName(runInfo);
     if (modelName) {
-      span.setAttribute(GEN_AI_REQUEST_MODEL, modelName);
+      span.setAttribute(constants.GEN_AI_REQUEST_MODEL, modelName);
     }
 
     // Set token usage information
@@ -327,18 +218,27 @@ export class LangSmithToOTELTranslator {
       "prompt_tokens" in runInfo &&
       typeof runInfo.prompt_tokens === "number"
     ) {
-      span.setAttribute(GEN_AI_USAGE_INPUT_TOKENS, runInfo.prompt_tokens);
+      span.setAttribute(
+        constants.GEN_AI_USAGE_INPUT_TOKENS,
+        runInfo.prompt_tokens
+      );
     }
 
     if (
       "completion_tokens" in runInfo &&
       typeof runInfo.completion_tokens === "number"
     ) {
-      span.setAttribute(GEN_AI_USAGE_OUTPUT_TOKENS, runInfo.completion_tokens);
+      span.setAttribute(
+        constants.GEN_AI_USAGE_OUTPUT_TOKENS,
+        runInfo.completion_tokens
+      );
     }
 
     if ("total_tokens" in runInfo && typeof runInfo.total_tokens === "number") {
-      span.setAttribute(GEN_AI_USAGE_TOTAL_TOKENS, runInfo.total_tokens);
+      span.setAttribute(
+        constants.GEN_AI_USAGE_TOTAL_TOKENS,
+        runInfo.total_tokens
+      );
     }
 
     // Set other parameters from invocation_params
@@ -348,31 +248,40 @@ export class LangSmithToOTELTranslator {
     const metadata = runInfo.extra?.metadata || {};
     for (const [key, value] of Object.entries(metadata)) {
       if (value !== null && value !== undefined) {
-        span.setAttribute(`${LANGSMITH_METADATA}.${key}`, String(value));
+        span.setAttribute(
+          `${constants.LANGSMITH_METADATA}.${key}`,
+          String(value)
+        );
       }
     }
 
     const tags = runInfo.tags;
     if (tags && Array.isArray(tags)) {
-      span.setAttribute(LANGSMITH_TAGS, tags.join(", "));
+      span.setAttribute(constants.LANGSMITH_TAGS, tags.join(", "));
     } else if (tags) {
-      span.setAttribute(LANGSMITH_TAGS, String(tags));
+      span.setAttribute(constants.LANGSMITH_TAGS, String(tags));
     }
 
     // Support additional serialized attributes, if present
     if ("serialized" in runInfo && typeof runInfo.serialized === "object") {
       const serialized = runInfo.serialized as KVMap;
       if (serialized.name) {
-        span.setAttribute(GEN_AI_SERIALIZED_NAME, String(serialized.name));
+        span.setAttribute(
+          constants.GEN_AI_SERIALIZED_NAME,
+          String(serialized.name)
+        );
       }
       if (serialized.signature) {
         span.setAttribute(
-          GEN_AI_SERIALIZED_SIGNATURE,
+          constants.GEN_AI_SERIALIZED_SIGNATURE,
           String(serialized.signature)
         );
       }
       if (serialized.doc) {
-        span.setAttribute(GEN_AI_SERIALIZED_DOC, String(serialized.doc));
+        span.setAttribute(
+          constants.GEN_AI_SERIALIZED_DOC,
+          String(serialized.doc)
+        );
       }
     }
 
@@ -428,7 +337,7 @@ export class LangSmithToOTELTranslator {
       }
     }
 
-    span.setAttribute(GEN_AI_SYSTEM, system);
+    span.setAttribute(constants.GEN_AI_SYSTEM, system);
   }
 
   private setInvocationParameters(
@@ -443,30 +352,33 @@ export class LangSmithToOTELTranslator {
 
     // Set relevant invocation parameters
     if (invocationParams.max_tokens !== undefined) {
-      span.setAttribute(GEN_AI_REQUEST_MAX_TOKENS, invocationParams.max_tokens);
+      span.setAttribute(
+        constants.GEN_AI_REQUEST_MAX_TOKENS,
+        invocationParams.max_tokens
+      );
     }
 
     if (invocationParams.temperature !== undefined) {
       span.setAttribute(
-        GEN_AI_REQUEST_TEMPERATURE,
+        constants.GEN_AI_REQUEST_TEMPERATURE,
         invocationParams.temperature
       );
     }
 
     if (invocationParams.top_p !== undefined) {
-      span.setAttribute(GEN_AI_REQUEST_TOP_P, invocationParams.top_p);
+      span.setAttribute(constants.GEN_AI_REQUEST_TOP_P, invocationParams.top_p);
     }
 
     if (invocationParams.frequency_penalty !== undefined) {
       span.setAttribute(
-        GEN_AI_REQUEST_FREQUENCY_PENALTY,
+        constants.GEN_AI_REQUEST_FREQUENCY_PENALTY,
         invocationParams.frequency_penalty
       );
     }
 
     if (invocationParams.presence_penalty !== undefined) {
       span.setAttribute(
-        GEN_AI_REQUEST_PRESENCE_PENALTY,
+        constants.GEN_AI_REQUEST_PRESENCE_PENALTY,
         invocationParams.presence_penalty
       );
     }
@@ -478,35 +390,38 @@ export class LangSmithToOTELTranslator {
         const inputs = op.run.inputs;
 
         if (typeof inputs === "object" && inputs !== null) {
-          if (inputs.model && Array.isArray(inputs.messages) && inputs.model) {
-            span.setAttribute(GEN_AI_REQUEST_MODEL, inputs.model);
+          if (inputs.model && Array.isArray(inputs.messages)) {
+            span.setAttribute(constants.GEN_AI_REQUEST_MODEL, inputs.model);
           }
 
           // Set additional request attributes if available
           if (inputs.stream !== undefined) {
-            span.setAttribute(LANGSMITH_REQUEST_STREAMING, inputs.stream);
+            span.setAttribute(
+              constants.LANGSMITH_REQUEST_STREAMING,
+              inputs.stream
+            );
           }
           if (inputs.extra_headers) {
             span.setAttribute(
-              LANGSMITH_REQUEST_HEADERS,
+              constants.LANGSMITH_REQUEST_HEADERS,
               JSON.stringify(inputs.extra_headers)
             );
           }
           if (inputs.extra_query) {
             span.setAttribute(
-              GEN_AI_REQUEST_EXTRA_QUERY,
+              constants.GEN_AI_REQUEST_EXTRA_QUERY,
               JSON.stringify(inputs.extra_query)
             );
           }
           if (inputs.extra_body) {
             span.setAttribute(
-              GEN_AI_REQUEST_EXTRA_BODY,
+              constants.GEN_AI_REQUEST_EXTRA_BODY,
               JSON.stringify(inputs.extra_body)
             );
           }
         }
 
-        span.setAttribute(GENAI_PROMPT, JSON.stringify(inputs));
+        span.setAttribute(constants.GENAI_PROMPT, JSON.stringify(inputs));
       } catch (e) {
         console.debug(`Failed to process inputs for run ${op.id}`, e);
       }
@@ -519,22 +434,28 @@ export class LangSmithToOTELTranslator {
         // Extract token usage from outputs (for LLM runs)
         const tokenUsage = this.getUnifiedRunTokens(outputs);
         if (tokenUsage) {
-          span.setAttribute(GEN_AI_USAGE_INPUT_TOKENS, tokenUsage[0]);
-          span.setAttribute(GEN_AI_USAGE_OUTPUT_TOKENS, tokenUsage[1]);
+          span.setAttribute(constants.GEN_AI_USAGE_INPUT_TOKENS, tokenUsage[0]);
           span.setAttribute(
-            GEN_AI_USAGE_TOTAL_TOKENS,
+            constants.GEN_AI_USAGE_OUTPUT_TOKENS,
+            tokenUsage[1]
+          );
+          span.setAttribute(
+            constants.GEN_AI_USAGE_TOTAL_TOKENS,
             tokenUsage[0] + tokenUsage[1]
           );
         }
 
         if (outputs && typeof outputs === "object") {
           if (outputs.model) {
-            span.setAttribute(GEN_AI_RESPONSE_MODEL, String(outputs.model));
+            span.setAttribute(
+              constants.GEN_AI_RESPONSE_MODEL,
+              String(outputs.model)
+            );
           }
 
           // Extract additional response attributes
           if (outputs.id) {
-            span.setAttribute(GEN_AI_RESPONSE_ID, outputs.id);
+            span.setAttribute(constants.GEN_AI_RESPONSE_ID, outputs.id);
           }
 
           if (outputs.choices && Array.isArray(outputs.choices)) {
@@ -544,7 +465,7 @@ export class LangSmithToOTELTranslator {
               .map(String);
             if (finishReasons.length > 0) {
               span.setAttribute(
-                GEN_AI_RESPONSE_FINISH_REASONS,
+                constants.GEN_AI_RESPONSE_FINISH_REASONS,
                 finishReasons.join(", ")
               );
             }
@@ -552,14 +473,14 @@ export class LangSmithToOTELTranslator {
 
           if (outputs.service_tier) {
             span.setAttribute(
-              GEN_AI_RESPONSE_SERVICE_TIER,
+              constants.GEN_AI_RESPONSE_SERVICE_TIER,
               outputs.service_tier
             );
           }
 
           if (outputs.system_fingerprint) {
             span.setAttribute(
-              GEN_AI_RESPONSE_SYSTEM_FINGERPRINT,
+              constants.GEN_AI_RESPONSE_SYSTEM_FINGERPRINT,
               outputs.system_fingerprint
             );
           }
@@ -571,20 +492,20 @@ export class LangSmithToOTELTranslator {
             const usageMetadata = outputs.usage_metadata;
             if (usageMetadata.input_token_details) {
               span.setAttribute(
-                GEN_AI_USAGE_INPUT_TOKEN_DETAILS,
+                constants.GEN_AI_USAGE_INPUT_TOKEN_DETAILS,
                 JSON.stringify(usageMetadata.input_token_details)
               );
             }
             if (usageMetadata.output_token_details) {
               span.setAttribute(
-                GEN_AI_USAGE_OUTPUT_TOKEN_DETAILS,
+                constants.GEN_AI_USAGE_OUTPUT_TOKEN_DETAILS,
                 JSON.stringify(usageMetadata.output_token_details)
               );
             }
           }
         }
 
-        span.setAttribute(GENAI_COMPLETION, JSON.stringify(outputs));
+        span.setAttribute(constants.GENAI_COMPLETION, JSON.stringify(outputs));
       } catch (e) {
         console.debug(`Failed to process outputs for run ${op.id}`, e);
       }
