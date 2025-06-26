@@ -1,5 +1,7 @@
 /* eslint-disable */
 // @ts-nocheck
+import { getLangSmithEnvironmentVariable } from "../../utils/env.js";
+
 var LIMIT_REPLACE_NODE = "[...]";
 var CIRCULAR_REPLACE_NODE = { result: "[Circular]" };
 
@@ -34,7 +36,7 @@ export function serialize(obj, errorContext?, replacer?, spacer?, options?) {
       );
       return encodeString("[Unserializable]");
     }
-    console.warn(
+    getLangSmithEnvironmentVariable("SUPPRESS_CIRCULAR_JSON_WARNINGS") !== "true" && console.warn(
       `[WARNING]: LangSmith received circular JSON. This will decrease tracer performance. ${
         errorContext ? `\nContext: ${errorContext}` : ""
       }`
