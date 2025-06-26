@@ -640,7 +640,6 @@ export function traceable<Func extends (...args: any[]) => any>(
 
     const otelContextManager = maybeCreateOtelContext(currentRunTree);
     const otel_context = getOTELContext();
-    const otel_trace = getOTELTrace();
 
     const runWithContext = () => {
       const postRunPromise = currentRunTree?.postRun();
