@@ -30,7 +30,7 @@ import {
   isPromiseMethod,
 } from "./utils/asserts.js";
 import { getEnvironmentVariable } from "./utils/env.js";
-import { createOtelSpanContextFromRun } from "./otel/utils.js";
+import { createOtelSpanContextFromRun } from "./experimental/otel/utils.js";
 import { __version__ } from "./index.js";
 import { getOTELTrace, getOTELContext } from "./singletons/otel.js";
 

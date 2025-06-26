@@ -16,13 +16,13 @@ import {
   getEnvironmentVariable,
   getLangSmithEnvironmentVariable,
   setEnvironmentVariable,
-} from "../utils/env.js";
+} from "../../utils/env.js";
 import { LangSmithOTLPTraceExporter } from "./exporter.js";
 
 import {
   setDefaultOTLPTracerProviderGetter,
   setOTELInstances,
-} from "../singletons/otel.js";
+} from "../../singletons/otel.js";
 
 const otel = {
   trace: otel_trace,

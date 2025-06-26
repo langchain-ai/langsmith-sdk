@@ -4,10 +4,10 @@ import type {
   OTELSpan,
   OTELTracerProvider,
 } from "./types.js";
-import { __version__ } from "../index.js";
-import type { KVMap, RunCreate, RunUpdate } from "../schemas.js";
+import { __version__ } from "../../index.js";
+import type { KVMap, RunCreate, RunUpdate } from "../../schemas.js";
 import * as constants from "./constants.js";
-import { getOTELTrace } from "../singletons/otel.js";
+import { getOTELTrace } from "../../singletons/otel.js";
 
 const WELL_KNOWN_OPERATION_NAMES: Record<string, string> = {
   llm: "chat",

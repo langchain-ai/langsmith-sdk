@@ -1,9 +1,9 @@
 import * as uuid from "uuid";
-import type { OTELContext, OTELTracerProvider } from "./otel/types.js";
+import type { OTELContext, OTELTracerProvider } from "./experimental/otel/types.js";
 import {
   LangSmithToOTELTranslator,
   SerializedRunOperation,
-} from "./otel/translator.js";
+} from "./experimental/otel/translator.js";
 import {
   getDefaultOTLPTracerProvider,
   getOTELTrace,
