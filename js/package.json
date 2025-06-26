@@ -173,12 +173,21 @@
   },
   "peerDependencies": {
     "openai": "*",
-    "@opentelemetry/api": "^1.9.0",
-    "@opentelemetry/exporter-trace-otlp-proto": "^0.202.0",
-    "@opentelemetry/sdk-trace-base": "^2.0.1"
+    "@opentelemetry/api": "*",
+    "@opentelemetry/exporter-trace-otlp-proto": "*",
+    "@opentelemetry/sdk-trace-base": "*"
   },
   "peerDependenciesMeta": {
     "openai": {
+      "optional": true
+    },
+    "@opentelemetry/api": {
+      "optional": true
+    },
+    "@opentelemetry/exporter-trace-otlp-proto": {
+      "optional": true
+    },
+    "@opentelemetry/sdk-trace-base": {
       "optional": true
     }
   },
