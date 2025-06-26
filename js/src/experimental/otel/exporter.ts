@@ -9,7 +9,7 @@ export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
     resultCallback: Parameters<OTLPTraceExporter["export"]>[1]
   ): void {
     if (!isTracingEnabled()) {
-      return;
+      return resultCallback({ code: 0 });
     }
     for (const span of spans) {
       if (!span.attributes[constants.GENAI_PROMPT]) {
