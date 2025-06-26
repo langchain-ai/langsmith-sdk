@@ -4,14 +4,15 @@ import { generateText, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 import { v4 as uuidv4 } from "uuid";
-import { trace } from "@opentelemetry/api";
 
-import { Client } from "../client.js";
-import { traceable } from "../traceable.js";
-import { __version__ } from "../index.js";
-import { toArray, waitUntilRunFoundByMetaField } from "./utils.js";
-import { getLangSmithEnvironmentVariable } from "../utils/env.js";
-import "../experimental/otel/setup.js";
+import { Client } from "../../client.js";
+import { traceable } from "../../traceable.js";
+import { __version__ } from "../../index.js";
+import { toArray, waitUntilRunFoundByMetaField } from "../utils.js";
+import { getLangSmithEnvironmentVariable } from "../../utils/env.js";
+
+// Initialize basic OTEL setup
+import "../../experimental/otel/setup.js";
 
 describe("Traceable OTEL Integration Tests", () => {
   beforeEach(() => {
@@ -71,7 +72,7 @@ describe("Traceable OTEL Integration Tests", () => {
     expect(runWithChildren.child_runs?.[0].name).toBe("child-function");
   });
 
-  it.only("works with AI SDK", async () => {
+  it("works with AI SDK", async () => {
     process.env.OTEL_ENABLED = "true";
 
     const meta = uuidv4();

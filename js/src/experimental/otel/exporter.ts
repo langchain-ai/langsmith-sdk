@@ -1,12 +1,16 @@
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
 import { ReadableSpan } from "@opentelemetry/sdk-trace-base";
 import * as constants from "./constants.js";
+import { isTracingEnabled } from "../../env.js";
 
 export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
   export(
     spans: ReadableSpan[],
     resultCallback: Parameters<OTLPTraceExporter["export"]>[1]
   ): void {
+    if (!isTracingEnabled()) {
+      return;
+    }
     for (const span of spans) {
       if (!span.attributes[constants.GENAI_PROMPT]) {
         if (span.attributes["ai.prompt"]) {
@@ -76,7 +80,6 @@ export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
         }
       }
     }
-    console.log("exporting spans", spans);
     super.export(spans, resultCallback);
   }
 }
