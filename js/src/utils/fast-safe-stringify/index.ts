@@ -36,11 +36,13 @@ export function serialize(obj, errorContext?, replacer?, spacer?, options?) {
       );
       return encodeString("[Unserializable]");
     }
-    getLangSmithEnvironmentVariable("SUPPRESS_CIRCULAR_JSON_WARNINGS") !== "true" && console.warn(
-      `[WARNING]: LangSmith received circular JSON. This will decrease tracer performance. ${
-        errorContext ? `\nContext: ${errorContext}` : ""
-      }`
-    );
+    getLangSmithEnvironmentVariable("SUPPRESS_CIRCULAR_JSON_WARNINGS") !==
+      "true" &&
+      console.warn(
+        `[WARNING]: LangSmith received circular JSON. This will decrease tracer performance. ${
+          errorContext ? `\nContext: ${errorContext}` : ""
+        }`
+      );
     if (typeof options === "undefined") {
       options = defaultOptions();
     }
