@@ -1,5 +1,7 @@
+import * as uuid from "uuid";
 import {
   trace,
+  context,
   Tracer as OTELTracer,
   Context as OTELContext,
   Span as OTELSpan,
@@ -9,6 +11,7 @@ import {
 import { __version__ } from "../../index.js";
 import type { KVMap, RunCreate, RunUpdate } from "../../schemas.js";
 import * as constants from "./constants.js";
+import { createOtelSpanContextFromRun } from "./utils.js";
 
 const WELL_KNOWN_OPERATION_NAMES: Record<string, string> = {
   llm: "chat",
@@ -88,7 +91,18 @@ export class LangSmithToOTELTranslator {
       if (activeSpan) {
         span = activeSpan;
       } else {
-        span = this.tracer.startSpan(runInfo.name, { startTime, root: true });
+        const spanContext = createOtelSpanContextFromRun({
+          id: uuid.v4(),
+          ...runInfo,
+        });
+        trace.setSpanContext(context.active(), spanContext);
+        span = this.tracer.startSpan(runInfo.name, {
+          startTime,
+          root: true,
+          attributes: {
+            "langsmith.traceable": "true",
+          },
+        });
       }
       return this.finishSpanSetup(span, runInfo, op, endTime);
     } catch (e) {

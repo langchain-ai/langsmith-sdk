@@ -5,7 +5,6 @@ import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 
 import { traceable } from "../traceable.js";
-import { trace } from "@opentelemetry/api";
 import { __version__ } from "../index.js";
 
 describe("Traceable OTEL Integration Tests", () => {
@@ -60,7 +59,6 @@ describe("Traceable OTEL Integration Tests", () => {
     process.env.OTEL_ENABLED = "true";
     const wrappedText = traceable(
       async (content: string) => {
-        console.log(trace.getActiveSpan());
         const { text } = await generateText({
           model: openai("gpt-4.1-nano"),
           messages: [{ role: "user", content }],

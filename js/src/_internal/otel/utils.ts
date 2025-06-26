@@ -1,4 +1,10 @@
 import * as uuid from "uuid";
+import {
+  createTraceState,
+  SpanContext as OTELSpanContext,
+  TraceFlags as OTELTraceFlags,
+} from "@opentelemetry/api";
+import { Run, RunCreate, RunUpdate } from "../../schemas.js";
 
 /**
  * Get OpenTelemetry trace ID as hex string from UUID.
@@ -33,4 +39,18 @@ export function validateAndNormalizeUuid(uuidStr: string): string {
     throw new Error(`Invalid UUID: ${uuidStr}`);
   }
   return uuidStr;
+}
+
+export function createOtelSpanContextFromRun(run: {
+  trace_id?: string;
+  id: string;
+}): OTELSpanContext {
+  const traceId = getOtelTraceIdFromUuid(run.trace_id ?? run.id);
+  const spanId = getOtelSpanIdFromUuid(run.id);
+  return {
+    traceId,
+    spanId,
+    isRemote: false,
+    traceFlags: OTELTraceFlags.SAMPLED,
+  };
 }

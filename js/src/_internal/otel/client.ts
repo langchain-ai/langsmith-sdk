@@ -22,6 +22,7 @@ export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
     resultCallback: Parameters<OTLPTraceExporter["export"]>[1]
   ): void {
     for (const span of spans) {
+      console.log("SPAN", span);
       if (!span.attributes[constants.GENAI_PROMPT]) {
         if (span.attributes["ai.prompt"]) {
           span.attributes[constants.GENAI_PROMPT] =

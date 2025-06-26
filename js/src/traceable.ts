@@ -1,8 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
   trace as otel_trace,
-  SpanContext as OTELSpanContext,
-  TraceFlags as OTELTraceFlags,
   context as otel_context,
 } from "@opentelemetry/api";
 import { AsyncHooksContextManager } from "@opentelemetry/context-async-hooks";
@@ -41,10 +39,7 @@ import {
   isPromiseMethod,
 } from "./utils/asserts.js";
 import { getEnvironmentVariable } from "./utils/env.js";
-import {
-  getOtelTraceIdFromUuid,
-  getOtelSpanIdFromUuid,
-} from "./_internal/otel/utils.js";
+import { createOtelSpanContextFromRun } from "./_internal/otel/utils.js";
 import { __version__ } from "./index.js";
 
 AsyncLocalStorageProviderSingleton.initializeGlobalInstance(
@@ -62,24 +57,21 @@ function maybeCreateOtelContext<T>(
   }
 
   try {
-    // Convert LangSmith UUIDs to OTEL IDs
-    const traceId = getOtelTraceIdFromUuid(runTree.trace_id);
-    const spanId = getOtelSpanIdFromUuid(runTree.id);
-
-    // Create span context with converted IDs
-    const spanContext: OTELSpanContext = {
-      traceId,
-      spanId,
-      isRemote: false,
-      traceFlags: OTELTraceFlags.SAMPLED,
-    };
-
+    const spanContext = createOtelSpanContextFromRun(runTree);
     return (fn: (...args: any[]) => T) => {
       const resolvedTracer = otel_trace.getTracer("langsmith", __version__);
-      return resolvedTracer.startActiveSpan(runTree.name, () => {
-        otel_trace.setSpanContext(otel_context.active(), spanContext);
-        return fn();
-      });
+      return resolvedTracer.startActiveSpan(
+        runTree.name,
+        {
+          attributes: {
+            "langsmith.traceable": "true",
+          },
+        },
+        () => {
+          otel_trace.setSpanContext(otel_context.active(), spanContext);
+          return fn();
+        }
+      );
     };
   } catch (error) {
     // Silent failure if OTEL setup is incomplete
