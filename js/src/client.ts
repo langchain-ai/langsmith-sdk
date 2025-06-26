@@ -686,7 +686,7 @@ export class Client implements LangSmithTracingClientInterface {
         getDefaultOTLPTracerComponents() ?? {};
       // If user has set global tracer before, this fails and returns false
       const globalSuccessfullyOverridden = otel_trace.setGlobalTracerProvider(
-        langSmithTracerProvider
+        config.otelTracerProvider ?? langSmithTracerProvider
       );
       this.langSmithToOTELTranslator = new LangSmithToOTELTranslator(
         globalSuccessfullyOverridden
