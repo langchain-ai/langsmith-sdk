@@ -82,7 +82,6 @@ import {
 } from "./singletons/fetch.js";
 
 import { serialize as serializePayloadForTracing } from "./utils/fast-safe-stringify/index.js";
-import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
 
 export interface ClientConfig {
   apiUrl?: string;
