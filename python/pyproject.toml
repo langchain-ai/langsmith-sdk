@@ -23,7 +23,7 @@ packages = [{ include = "langsmith" }]
 
 [tool.poetry.dependencies]
 python = ">=3.9"
-pydantic = ">=1,<3"
+pydantic = ">=1,<2"
 requests = "^2"
 orjson = { version = "^3.9.14", markers = "platform_python_implementation != 'PyPy'" }
 httpx = ">=0.23.0,<1"
