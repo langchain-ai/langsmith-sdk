@@ -1,0 +1,613 @@
+🚀 Starting OpenTelemetry context propagation demo...
+============================================================
+
+📋 Test 1: LangSmith @traceable functions with OTel spans inside...
+{
+    "name": "OTel get_greeting",
+    "context": {
+        "trace_id": "0x5bb53d5155824450ab70c2a393c5a2f0",
+        "span_id": "0xf7d6aff47cd4dd21",
+        "trace_state": "[]"
+    },
+    "kind": "SpanKind.INTERNAL",
+    "parent_id": "0x16c6826f52d94e19",
+    "start_time": "2025-06-10T21:51:14.838021Z",
+    "end_time": "2025-06-10T21:51:14.943081Z",
+    "status": {
+        "status_code": "UNSET"
+    },
+    "attributes": {
+        "greeting.name": "Alice",
+        "greeting.message": "Hello there Alice! \ud83d\ude0a"
+    },
+    "events": [
+        {
+            "name": "Creating greeting message",
+            "timestamp": "2025-06-10T21:51:14.838026Z",
+            "attributes": {}
+        }
+    ],
+    "links": [],
+    "resource": {
+        "attributes": {
+            "telemetry.sdk.language": "python",
+            "telemetry.sdk.name": "opentelemetry",
+            "telemetry.sdk.version": "1.30.0",
+            "service.name": "unknown_service"
+        },
+        "schema_url": ""
+    }
+}
+{
+    "name": "OTel process_request",
+    "context": {
+        "trace_id": "0x5bb53d5155824450ab70c2a393c5a2f0",
+        "span_id": "0x2d11033214859085",
+        "trace_state": "[]"
+    },
+    "kind": "SpanKind.INTERNAL",
+    "parent_id": "0x5bb53d5155824450",
+    "start_time": "2025-06-10T21:51:14.837667Z",
+    "end_time": "2025-06-10T21:51:14.943477Z",
+    "status": {
+        "status_code": "UNSET"
+    },
+    "attributes": {
+        "user.name": "Alice",
+        "response.greeting": "Hello there Alice! \ud83d\ude0a"
+    },
+    "events": [
+        {
+            "name": "Processing user request",
+            "timestamp": "2025-06-10T21:51:14.837686Z",
+            "attributes": {}
+        },
+        {
+            "name": "Request processed successfully",
+            "timestamp": "2025-06-10T21:51:14.943472Z",
+            "attributes": {}
+        }
+    ],
+    "links": [],
+    "resource": {
+        "attributes": {
+            "telemetry.sdk.language": "python",
+            "telemetry.sdk.name": "opentelemetry",
+            "telemetry.sdk.version": "1.30.0",
+            "service.name": "unknown_service"
+        },
+        "schema_url": ""
+    }
+}
+✅ Result 1: {'greeting': 'Hello there Alice! 😊', 'timestamp': 1749592274.943464, 'user': 'Alice'}
+
+📋 Test 2: OTel trace with LangSmith @traceable functions inside...
+{
+    "name": "big_otel_operation",
+    "context": {
+        "trace_id": "0xef47a8a241e88ab916323452bdb7cfd0",
+        "span_id": "0xd96422f2706450b6",
+        "trace_state": "[]"
+    },
+    "kind": "SpanKind.INTERNAL",
+    "parent_id": null,
+    "start_time": "2025-06-10T21:51:14.943693Z",
+    "end_time": "2025-06-10T21:51:14.944022Z",
+    "status": {
+        "status_code": "UNSET"
+    },
+    "attributes": {
+        "operation.type": "demo",
+        "nested.result": "Processed: test_data"
+    },
+    "events": [
+        {
+            "name": "Starting nested LangSmith operation",
+            "timestamp": "2025-06-10T21:51:14.943706Z",
+            "attributes": {}
+        },
+        {
+            "name": "Completed nested LangSmith operation",
+            "timestamp": "2025-06-10T21:51:14.944018Z",
+            "attributes": {}
+        }
+    ],
+    "links": [],
+    "resource": {
+        "attributes": {
+            "telemetry.sdk.language": "python",
+            "telemetry.sdk.name": "opentelemetry",
+            "telemetry.sdk.version": "1.30.0",
+            "service.name": "unknown_service"
+        },
+        "schema_url": ""
+    }
+}
+✅ Result 2: Processed: test_data
+{
+    "name": "process_request",
+    "context": {
+        "trace_id": "0x0aba3eb065d8f1d4284f8ddb77e7648f",
+        "span_id": "0x6213751ac7b02650",
+        "trace_state": "[]"
+    },
+    "kind": "SpanKind.INTERNAL",
+    "parent_id": null,
+    "start_time": "2025-06-10T21:51:14.757914Z",
+    "end_time": "2025-06-10T21:51:14.943597Z",
+    "status": {
+        "status_code": "OK"
+    },
+    "attributes": {
+        "langsmith.span.id": "5bb53d51-5582-4450-ab70-c2a393c5a2f0",
+        "langsmith.trace.id": "5bb53d51-5582-4450-ab70-c2a393c5a2f0",
+        "langsmith.span.dotted_order": "20250610T215114757914Z5bb53d51-5582-4450-ab70-c2a393c5a2f0",
+        "langsmith.span.kind": "chain",
+        "langsmith.trace.name": "process_request",
+        "langsmith.trace.session_name": "default",
+        "gen_ai.operation.name": "chain",
+        "gen_ai.system": "langchain",
+        "langsmith.metadata.ls_method": "traceable",
+        "langsmith.metadata.LANGSMITH_OTEL_ENABLED": "true",
+        "langsmith.metadata.LANGSMITH_TRACING": "true",
+        "langsmith.metadata.revision_id": "v0.4.1-3-g672a07e2-dirty",
+        "gen_ai.prompt": "{\"user_name\":\"Alice\"}",
+        "gen_ai.completion": "{\"greeting\":\"Hello there Alice! \ud83d\ude0a\",\"timestamp\":1749592274.943464,\"user\":\"Alice\"}"
+    },
+    "events": [],
+    "links": [],
+    "resource": {
+        "attributes": {
+            "telemetry.sdk.language": "python",
+            "telemetry.sdk.name": "opentelemetry",
+            "telemetry.sdk.version": "1.30.0",
+            "service.name": "unknown_service"
+        },
+        "schema_url": ""
+    }
+}
+{
+    "name": "get_greeting",
+    "context": {
+        "trace_id": "0x0aba3eb065d8f1d4284f8ddb77e7648f",
+        "span_id": "0xe6b9a6deb38ec51f",
+        "trace_state": "[]"
+    },
+    "kind": "SpanKind.INTERNAL",
+    "parent_id": "0x6213751ac7b02650",
+    "start_time": "2025-06-10T21:51:14.837805Z",
+    "end_time": "2025-06-10T21:51:14.943397Z",
+    "status": {
+        "status_code": "OK"
+    },
+    "attributes": {
+        "langsmith.span.id": "16c6826f-52d9-4e19-9ff0-31d2c839717b",
+        "langsmith.trace.id": "5bb53d51-5582-4450-ab70-c2a393c5a2f0",
+        "langsmith.span.dotted_order": "20250610T215114757914Z5bb53d51-5582-4450-ab70-c2a393c5a2f0.20250610T215114837805Z16c6826f-52d9-4e19-9ff0-31d2c839717b",
+        "langsmith.span.parent_id": "5bb53d51-5582-4450-ab70-c2a393c5a2f0",
+        "langsmith.span.kind": "chain",
+        "langsmith.trace.name": "get_greeting",
+        "langsmith.trace.session_name": "default",
+        "gen_ai.operation.name": "chain",
+        "gen_ai.system": "langchain",
+        "langsmith.metadata.ls_method": "traceable",
+        "langsmith.metadata.LANGSMITH_OTEL_ENABLED": "true",
+        "langsmith.metadata.LANGSMITH_TRACING": "true",
+        "langsmith.metadata.revision_id": "v0.4.1-3-g672a07e2-dirty",
+        "gen_ai.prompt": "{\"name\":\"Alice\"}",
+        "gen_ai.completion": "{\"output\":\"Hello there Alice! \ud83d\ude0a\"}"
+    },
+    "events": [],
+    "links": [],
+    "resource": {
+        "attributes": {
+            "telemetry.sdk.language": "python",
+            "telemetry.sdk.name": "opentelemetry",
+            "telemetry.sdk.version": "1.30.0",
+            "service.name": "unknown_service"
+        },
+        "schema_url": ""
+    }
+}
+{
+    "name": "langsmith_nested_function",
+    "context": {
+        "trace_id": "0xef47a8a241e88ab916323452bdb7cfd0",
+        "span_id": "0xa20e936e81f004ef",
+        "trace_state": "[]"
+    },
+    "kind": "SpanKind.INTERNAL",
+    "parent_id": "0xd96422f2706450b6",
+    "start_time": "2025-06-10T21:51:14.943810Z",
+    "end_time": "2025-06-10T21:51:14.943977Z",
+    "status": {
+        "status_code": "OK"
+    },
+    "attributes": {
+        "langsmith.span.id": "e8f48607-fb53-476b-a141-db4d8ca20b8d",
+        "langsmith.trace.id": "e8f48607-fb53-476b-a141-db4d8ca20b8d",
+        "langsmith.span.dotted_order": "20250610T215114943810Ze8f48607-fb53-476b-a141-db4d8ca20b8d",
+        "langsmith.span.kind": "chain",
+        "langsmith.trace.name": "langsmith_nested_function",
+        "langsmith.trace.session_name": "default",
+        "gen_ai.operation.name": "chain",
+        "gen_ai.system": "langchain",
+        "langsmith.metadata.ls_method": "traceable",
+        "langsmith.metadata.LANGSMITH_OTEL_ENABLED": "true",
+        "langsmith.metadata.LANGSMITH_TRACING": "true",
+        "langsmith.metadata.revision_id": "v0.4.1-3-g672a07e2-dirty",
+        "gen_ai.prompt": "{\"data\":\"test_data\"}",
+        "gen_ai.completion": "{\"output\":\"Processed: test_data\"}"
+    },
+    "events": [],
+    "links": [],
+    "resource": {
+        "attributes": {
+            "telemetry.sdk.language": "python",
+            "telemetry.sdk.name": "opentelemetry",
+            "telemetry.sdk.version": "1.30.0",
+            "service.name": "unknown_service"
+        },
+        "schema_url": ""
+    }
+}
+
+📋 Test 3: LangChain integration with OTel context propagation...
+{
+    "name": "langchain_format_response",
+    "context": {
+        "trace_id": "0x658e273656ba7284e4152414288ad5ef",
+        "span_id": "0x25dfb77a823a4b27",
+        "trace_state": "[]"
+    },
+    "kind": "SpanKind.INTERNAL",
+    "parent_id": "0xde59c9dfa9d0431f",
+    "start_time": "2025-06-10T21:51:15.035336Z",
+    "end_time": "2025-06-10T21:51:15.035377Z",
+    "status": {
+        "status_code": "UNSET"
+    },
+    "attributes": {
+        "input.prompt": "text='Process: Bob'",
+        "output.response": "Hello from LangChain! Prompt was: text='Process: Bob'"
+    },
+    "events": [],
+    "links": [],
+    "resource": {
+        "attributes": {
+            "telemetry.sdk.language": "python",
+            "telemetry.sdk.name": "opentelemetry",
+            "telemetry.sdk.version": "1.30.0",
+            "service.name": "unknown_service"
+        },
+        "schema_url": ""
+    }
+}
+{
+    "name": "langchain_test",
+    "context": {
+        "trace_id": "0x658e273656ba7284e4152414288ad5ef",
+        "span_id": "0xde59c9dfa9d0431f",
+        "trace_state": "[]"
+    },
+    "kind": "SpanKind.INTERNAL",
+    "parent_id": null,
+    "start_time": "2025-06-10T21:51:15.003845Z",
+    "end_time": "2025-06-10T21:51:15.035617Z",
+    "status": {
+        "status_code": "UNSET"
+    },
+    "attributes": {
+        "test.type": "langchain_integration",
+        "test.result": "Hello from LangChain! Prompt was: text='Process: Bob'"
+    },
+    "events": [],
+    "links": [],
+    "resource": {
+        "attributes": {
+            "telemetry.sdk.language": "python",
+            "telemetry.sdk.name": "opentelemetry",
+            "telemetry.sdk.version": "1.30.0",
+            "service.name": "unknown_service"
+        },
+        "schema_url": ""
+    }
+}
+✅ LangChain Result: Hello from LangChain! Prompt was: text='Process: Bob'
+{
+    "name": "nested_otel_in_langchain",
+    "context": {
+        "trace_id": "0xb0ccc81066747d99db207b5922aae0c5",
+        "span_id": "0x01891c12f2711f3e",
+        "trace_state": "[]"
+    },
+    "kind": "SpanKind.INTERNAL",
+    "parent_id": null,
+    "start_time": "2025-06-10T21:51:15.036434Z",
+    "end_time": "2025-06-10T21:51:15.036454Z",
+    "status": {
+        "status_code": "UNSET"
+    },
+    "attributes": {
+        "nested.operation": "within_langchain"
+    },
+    "events": [],
+    "links": [],
+    "resource": {
+        "attributes": {
+            "telemetry.sdk.language": "python",
+            "telemetry.sdk.name": "opentelemetry",
+            "telemetry.sdk.version": "1.30.0",
+            "service.name": "unknown_service"
+        },
+        "schema_url": ""
+    }
+}
+✅ Nested OTel in LangChain Result: Nested OTel processing: text='Process: Charlie'
+
+📤 Flushing spans to console...
+
+🎯 Demo complete!
+
+Look for the console output above to see:
+1. Test 1: LangSmith spans with OTel spans properly nested
+2. Test 2: OTel spans with LangSmith spans properly nested
+3. Test 3: LangChain integration with OTel context propagation
+4. Trace IDs show proper inheritance in all directions
+5. Parent-child relationships are correctly established
+{
+    "name": "RunnableSequence",
+    "context": {
+        "trace_id": "0x658e273656ba7284e4152414288ad5ef",
+        "span_id": "0x701d9a3d418c3198",
+        "trace_state": "[]"
+    },
+    "kind": "SpanKind.INTERNAL",
+    "parent_id": "0xde59c9dfa9d0431f",
+    "start_time": "2025-06-10T21:51:15.006564Z",
+    "end_time": "2025-06-10T21:51:15.035560Z",
+    "status": {
+        "status_code": "OK"
+    },
+    "attributes": {
+        "langsmith.span.id": "0c659ab8-c9b2-47d0-98c5-e96a3691ca75",
+        "langsmith.trace.id": "0c659ab8-c9b2-47d0-98c5-e96a3691ca75",
+        "langsmith.span.dotted_order": "20250610T215115006564Z0c659ab8-c9b2-47d0-98c5-e96a3691ca75",
+        "langsmith.span.kind": "chain",
+        "langsmith.trace.name": "RunnableSequence",
+        "langsmith.trace.session_name": "default",
+        "gen_ai.operation.name": "chain",
+        "gen_ai.system": "langchain",
+        "langsmith.metadata.LANGSMITH_OTEL_ENABLED": "true",
+        "langsmith.metadata.LANGSMITH_TRACING": "true",
+        "langsmith.metadata.revision_id": "v0.4.1-3-g672a07e2-dirty",
+        "gen_ai.prompt": "{\"name\":\"Bob\"}",
+        "gen_ai.completion": "{\"output\":\"Hello from LangChain! Prompt was: text='Process: Bob'\"}"
+    },
+    "events": [],
+    "links": [],
+    "resource": {
+        "attributes": {
+            "telemetry.sdk.language": "python",
+            "telemetry.sdk.name": "opentelemetry",
+            "telemetry.sdk.version": "1.30.0",
+            "service.name": "unknown_service"
+        },
+        "schema_url": ""
+    }
+}
+{
+    "name": "PromptTemplate",
+    "context": {
+        "trace_id": "0x658e273656ba7284e4152414288ad5ef",
+        "span_id": "0x5514de0d33cfead7",
+        "trace_state": "[]"
+    },
+    "kind": "SpanKind.INTERNAL",
+    "parent_id": "0x701d9a3d418c3198",
+    "start_time": "2025-06-10T21:51:15.006894Z",
+    "end_time": "2025-06-10T21:51:15.007053Z",
+    "status": {
+        "status_code": "OK"
+    },
+    "attributes": {
+        "langsmith.span.id": "51509262-3769-4724-b7f7-2c5590542776",
+        "langsmith.trace.id": "0c659ab8-c9b2-47d0-98c5-e96a3691ca75",
+        "langsmith.span.dotted_order": "20250610T215115006564Z0c659ab8-c9b2-47d0-98c5-e96a3691ca75.20250610T215115006894Z51509262-3769-4724-b7f7-2c5590542776",
+        "langsmith.span.parent_id": "0c659ab8-c9b2-47d0-98c5-e96a3691ca75",
+        "langsmith.span.kind": "prompt",
+        "langsmith.trace.name": "PromptTemplate",
+        "langsmith.trace.session_name": "default",
+        "gen_ai.operation.name": "chat",
+        "gen_ai.system": "langchain",
+        "langsmith.metadata.LANGSMITH_OTEL_ENABLED": "true",
+        "langsmith.metadata.LANGSMITH_TRACING": "true",
+        "langsmith.metadata.revision_id": "v0.4.1-3-g672a07e2-dirty",
+        "langsmith.span.tags": "seq:step:1",
+        "gen_ai.serialized.name": "PromptTemplate",
+        "gen_ai.prompt": "{\"name\":\"Bob\"}",
+        "gen_ai.completion": "{\"output\":{\"text\":\"Process: Bob\",\"type\":\"StringPromptValue\"}}"
+    },
+    "events": [],
+    "links": [],
+    "resource": {
+        "attributes": {
+            "telemetry.sdk.language": "python",
+            "telemetry.sdk.name": "opentelemetry",
+            "telemetry.sdk.version": "1.30.0",
+            "service.name": "unknown_service"
+        },
+        "schema_url": ""
+    }
+}
+{
+    "name": "format_response",
+    "context": {
+        "trace_id": "0x658e273656ba7284e4152414288ad5ef",
+        "span_id": "0xb3e15faddfd31be1",
+        "trace_state": "[]"
+    },
+    "kind": "SpanKind.INTERNAL",
+    "parent_id": "0x701d9a3d418c3198",
+    "start_time": "2025-06-10T21:51:15.035053Z",
+    "end_time": "2025-06-10T21:51:15.035490Z",
+    "status": {
+        "status_code": "OK"
+    },
+    "attributes": {
+        "langsmith.span.id": "3b511628-6be9-4ea2-a442-a92f14e8afb4",
+        "langsmith.trace.id": "0c659ab8-c9b2-47d0-98c5-e96a3691ca75",
+        "langsmith.span.dotted_order": "20250610T215115006564Z0c659ab8-c9b2-47d0-98c5-e96a3691ca75.20250610T215115035053Z3b511628-6be9-4ea2-a442-a92f14e8afb4",
+        "langsmith.span.parent_id": "0c659ab8-c9b2-47d0-98c5-e96a3691ca75",
+        "langsmith.span.kind": "chain",
+        "langsmith.trace.name": "format_response",
+        "langsmith.trace.session_name": "default",
+        "gen_ai.operation.name": "chain",
+        "gen_ai.system": "langchain",
+        "langsmith.metadata.LANGSMITH_OTEL_ENABLED": "true",
+        "langsmith.metadata.LANGSMITH_TRACING": "true",
+        "langsmith.metadata.revision_id": "v0.4.1-3-g672a07e2-dirty",
+        "langsmith.span.tags": "seq:step:2",
+        "gen_ai.prompt": "{\"input\":{\"text\":\"Process: Bob\",\"type\":\"StringPromptValue\"}}",
+        "gen_ai.completion": "{\"output\":\"Hello from LangChain! Prompt was: text='Process: Bob'\"}"
+    },
+    "events": [],
+    "links": [],
+    "resource": {
+        "attributes": {
+            "telemetry.sdk.language": "python",
+            "telemetry.sdk.name": "opentelemetry",
+            "telemetry.sdk.version": "1.30.0",
+            "service.name": "unknown_service"
+        },
+        "schema_url": ""
+    }
+}
+{
+    "name": "RunnableSequence",
+    "context": {
+        "trace_id": "0x6242b9e5ddb4194e15d015673afe363e",
+        "span_id": "0x70263c62c147e78b",
+        "trace_state": "[]"
+    },
+    "kind": "SpanKind.INTERNAL",
+    "parent_id": null,
+    "start_time": "2025-06-10T21:51:15.035955Z",
+    "end_time": "2025-06-10T21:51:15.036562Z",
+    "status": {
+        "status_code": "OK"
+    },
+    "attributes": {
+        "langsmith.span.id": "259359c7-49f5-47ff-882c-d6fcd8123a62",
+        "langsmith.trace.id": "259359c7-49f5-47ff-882c-d6fcd8123a62",
+        "langsmith.span.dotted_order": "20250610T215115035955Z259359c7-49f5-47ff-882c-d6fcd8123a62",
+        "langsmith.span.kind": "chain",
+        "langsmith.trace.name": "RunnableSequence",
+        "langsmith.trace.session_name": "default",
+        "gen_ai.operation.name": "chain",
+        "gen_ai.system": "langchain",
+        "langsmith.metadata.LANGSMITH_OTEL_ENABLED": "true",
+        "langsmith.metadata.LANGSMITH_TRACING": "true",
+        "langsmith.metadata.revision_id": "v0.4.1-3-g672a07e2-dirty",
+        "gen_ai.prompt": "{\"name\":\"Charlie\"}",
+        "gen_ai.completion": "{\"output\":\"Nested OTel processing: text='Process: Charlie'\"}"
+    },
+    "events": [],
+    "links": [],
+    "resource": {
+        "attributes": {
+            "telemetry.sdk.language": "python",
+            "telemetry.sdk.name": "opentelemetry",
+            "telemetry.sdk.version": "1.30.0",
+            "service.name": "unknown_service"
+        },
+        "schema_url": ""
+    }
+}
+{
+    "name": "PromptTemplate",
+    "context": {
+        "trace_id": "0x6242b9e5ddb4194e15d015673afe363e",
+        "span_id": "0x2693364323073db5",
+        "trace_state": "[]"
+    },
+    "kind": "SpanKind.INTERNAL",
+    "parent_id": "0x70263c62c147e78b",
+    "start_time": "2025-06-10T21:51:15.036080Z",
+    "end_time": "2025-06-10T21:51:15.036217Z",
+    "status": {
+        "status_code": "OK"
+    },
+    "attributes": {
+        "langsmith.span.id": "b587a2d3-226c-4ab5-882a-ea7073c91f05",
+        "langsmith.trace.id": "259359c7-49f5-47ff-882c-d6fcd8123a62",
+        "langsmith.span.dotted_order": "20250610T215115035955Z259359c7-49f5-47ff-882c-d6fcd8123a62.20250610T215115036080Zb587a2d3-226c-4ab5-882a-ea7073c91f05",
+        "langsmith.span.parent_id": "259359c7-49f5-47ff-882c-d6fcd8123a62",
+        "langsmith.span.kind": "prompt",
+        "langsmith.trace.name": "PromptTemplate",
+        "langsmith.trace.session_name": "default",
+        "gen_ai.operation.name": "chat",
+        "gen_ai.system": "langchain",
+        "langsmith.metadata.LANGSMITH_OTEL_ENABLED": "true",
+        "langsmith.metadata.LANGSMITH_TRACING": "true",
+        "langsmith.metadata.revision_id": "v0.4.1-3-g672a07e2-dirty",
+        "langsmith.span.tags": "seq:step:1",
+        "gen_ai.serialized.name": "PromptTemplate",
+        "gen_ai.prompt": "{\"name\":\"Charlie\"}",
+        "gen_ai.completion": "{\"output\":{\"text\":\"Process: Charlie\",\"type\":\"StringPromptValue\"}}"
+    },
+    "events": [],
+    "links": [],
+    "resource": {
+        "attributes": {
+            "telemetry.sdk.language": "python",
+            "telemetry.sdk.name": "opentelemetry",
+            "telemetry.sdk.version": "1.30.0",
+            "service.name": "unknown_service"
+        },
+        "schema_url": ""
+    }
+}
+{
+    "name": "traced_langchain_operation",
+    "context": {
+        "trace_id": "0x6242b9e5ddb4194e15d015673afe363e",
+        "span_id": "0x9d47a2b4eb217e95",
+        "trace_state": "[]"
+    },
+    "kind": "SpanKind.INTERNAL",
+    "parent_id": "0x70263c62c147e78b",
+    "start_time": "2025-06-10T21:51:15.036306Z",
+    "end_time": "2025-06-10T21:51:15.036510Z",
+    "status": {
+        "status_code": "OK"
+    },
+    "attributes": {
+        "langsmith.span.id": "cd0dd12e-39ec-49dc-b722-11c8adead038",
+        "langsmith.trace.id": "259359c7-49f5-47ff-882c-d6fcd8123a62",
+        "langsmith.span.dotted_order": "20250610T215115035955Z259359c7-49f5-47ff-882c-d6fcd8123a62.20250610T215115036306Zcd0dd12e-39ec-49dc-b722-11c8adead038",
+        "langsmith.span.parent_id": "259359c7-49f5-47ff-882c-d6fcd8123a62",
+        "langsmith.span.kind": "chain",
+        "langsmith.trace.name": "traced_langchain_operation",
+        "langsmith.trace.session_name": "default",
+        "gen_ai.operation.name": "chain",
+        "gen_ai.system": "langchain",
+        "langsmith.metadata.LANGSMITH_OTEL_ENABLED": "true",
+        "langsmith.metadata.LANGSMITH_TRACING": "true",
+        "langsmith.metadata.revision_id": "v0.4.1-3-g672a07e2-dirty",
+        "langsmith.span.tags": "seq:step:2",
+        "gen_ai.prompt": "{\"input\":{\"text\":\"Process: Charlie\",\"type\":\"StringPromptValue\"}}",
+        "gen_ai.completion": "{\"output\":\"Nested OTel processing: text='Process: Charlie'\"}"
+    },
+    "events": [],
+    "links": [],
+    "resource": {
+        "attributes": {
+            "telemetry.sdk.language": "python",
+            "telemetry.sdk.name": "opentelemetry",
+            "telemetry.sdk.version": "1.30.0",
+            "service.name": "unknown_service"
+        },
+        "schema_url": ""
+    }
+}
