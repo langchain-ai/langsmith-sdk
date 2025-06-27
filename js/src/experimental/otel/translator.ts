@@ -62,7 +62,7 @@ export class LangSmithToOTELTranslator {
             op.run as RunCreate,
             otelContextMap.get(op.id)
           );
-          if (span) {
+          if (span && !op.run.end_time) {
             this.spans.set(op.id, span);
           }
         } else {
@@ -87,8 +87,7 @@ export class LangSmithToOTELTranslator {
       return;
     }
     try {
-      const endTime = runInfo.end_time;
-      return this.finishSpanSetup(activeSpan, runInfo, op, endTime);
+      return this.finishSpanSetup(activeSpan, runInfo, op);
     } catch (e) {
       console.error(`Failed to create span for run ${op.id}:`, e);
       return undefined;
@@ -98,8 +97,7 @@ export class LangSmithToOTELTranslator {
   private finishSpanSetup(
     span: OTELSpan,
     runInfo: RunCreate | RunUpdate,
-    op: SerializedRunOperation,
-    endTime?: number
+    op: SerializedRunOperation
   ): OTELSpan {
     // Set all attributes
     this.setSpanAttributes(span, runInfo, op);
@@ -113,8 +111,8 @@ export class LangSmithToOTELTranslator {
     }
 
     // End the span if end_time is present
-    if (endTime) {
-      span.end(endTime);
+    if (runInfo.end_time) {
+      span.end(runInfo.end_time);
     }
 
     return span;
@@ -146,7 +144,6 @@ export class LangSmithToOTELTranslator {
       const endTime = runInfo.end_time;
       if (endTime) {
         span.end(endTime);
-        // Remove the span from our dictionary
         this.spans.delete(op.id);
       }
     } catch (e) {
