@@ -477,7 +477,7 @@ VT = TypeVar("VT", bound=Optional[dict])
 
 def _serde_example_values(values: VT) -> VT:
     if values is None:
-        return values
+        return cast(VT, values)
     bts = ls_client._dumps_json(values)
     return _orjson.loads(bts)
 
