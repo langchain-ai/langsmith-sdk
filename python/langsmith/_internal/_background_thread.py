@@ -40,7 +40,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("langsmith.client")
 
-HTTP_REQUEST_THREAD_POOL = cf.ThreadPoolExecutor(max_workers=10)
+HTTP_REQUEST_THREAD_POOL = cf.ThreadPoolExecutor(max_workers=cpu_count() * 3)
 
 
 @functools.total_ordering
