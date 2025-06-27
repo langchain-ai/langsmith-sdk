@@ -716,6 +716,7 @@ class RunTree(ls_schemas.RunBase):
             metadata=self.extra.get("metadata", {}),
             tags=self.tags,
             project_name=self.session_name,
+            replicas=self.replicas,
         )
         headers["baggage"] = baggage.to_header()
         return headers
