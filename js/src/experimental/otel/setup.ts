@@ -75,11 +75,16 @@ if (!getEnvironmentVariable("OTEL_EXPORTER_OTLP_HEADERS")) {
 const headersStr = getEnvironmentVariable("OTEL_EXPORTER_OTLP_HEADERS") || "";
 const headersObj = parseHeadersString(headersStr);
 
-const langsmithSpanExporter = new LangSmithOTLPTraceExporter({
+const DEFAULT_LANGSMITH_SPAN_EXPORTER = new LangSmithOTLPTraceExporter({
   url: getEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT"),
   headers: headersObj,
 });
-const spanProcessor = new BatchSpanProcessor(langsmithSpanExporter);
+const DEFAULT_LANGSMITH_SPAN_PROCESSOR = new BatchSpanProcessor(
+  DEFAULT_LANGSMITH_SPAN_EXPORTER
+);
+const DEFAULT_LANGSMITH_TRACER_PROVIDER = new BasicTracerProvider({
+  spanProcessors: [DEFAULT_LANGSMITH_SPAN_PROCESSOR],
+});
 
 const otel = {
   trace: otel_trace,
@@ -93,11 +98,9 @@ contextManager.enable();
 otel_context.setGlobalContextManager(contextManager);
 
 const defaultComponents = {
-  DEFAULT_LANGSMITH_SPAN_PROCESSOR: spanProcessor,
-  DEFAULT_LANGSMITH_TRACER_PROVIDER: new BasicTracerProvider({
-    spanProcessors: [spanProcessor],
-  }),
-  DEFAULT_LANGSMITH_SPAN_EXPORTER: langsmithSpanExporter,
+  DEFAULT_LANGSMITH_SPAN_PROCESSOR,
+  DEFAULT_LANGSMITH_TRACER_PROVIDER,
+  DEFAULT_LANGSMITH_SPAN_EXPORTER,
 };
 
 // If user has set global tracer before, this fails and returns false
@@ -109,4 +112,8 @@ if (globalSuccessfullyOverridden) {
   setDefaultOTLPTracerComponents(defaultComponents);
 }
 
-export { defaultComponents };
+export {
+  DEFAULT_LANGSMITH_SPAN_PROCESSOR,
+  DEFAULT_LANGSMITH_TRACER_PROVIDER,
+  DEFAULT_LANGSMITH_SPAN_EXPORTER,
+};
