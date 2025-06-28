@@ -131,9 +131,9 @@ class OTELProvider {
   }
 
   setDefaultOTLPTracerComponents(components: {
-    tracerProvider: any;
-    spanProcessor: any;
-    langsmithSpanExporter: any;
+    DEFAULT_LANGSMITH_SPAN_PROCESSOR: any;
+    DEFAULT_LANGSMITH_TRACER_PROVIDER: any;
+    DEFAULT_LANGSMITH_SPAN_EXPORTER: any;
   }) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (globalThis as any)[OTEL_GET_DEFAULT_OTLP_TRACER_PROVIDER_KEY] = components;
@@ -178,9 +178,9 @@ export function setOTELInstances(otel: OTELInterface): void {
  * This allows lazy initialization of the tracer provider.
  */
 export function setDefaultOTLPTracerComponents(components: {
-  tracerProvider: any;
-  spanProcessor: any;
-  langsmithSpanExporter: any;
+  DEFAULT_LANGSMITH_SPAN_PROCESSOR: any;
+  DEFAULT_LANGSMITH_TRACER_PROVIDER: any;
+  DEFAULT_LANGSMITH_SPAN_EXPORTER: any;
 }): void {
   OTELProviderSingleton.setDefaultOTLPTracerComponents(components);
 }
@@ -190,7 +190,11 @@ export function setDefaultOTLPTracerComponents(components: {
  * Returns undefined if not set.
  */
 export function getDefaultOTLPTracerComponents():
-  | { tracerProvider: any; spanProcessor: any; langsmithSpanExporter: any }
+  | {
+      DEFAULT_LANGSMITH_SPAN_PROCESSOR: any;
+      DEFAULT_LANGSMITH_TRACER_PROVIDER: any;
+      DEFAULT_LANGSMITH_SPAN_EXPORTER: any;
+    }
   | undefined {
   return OTELProviderSingleton.getDefaultOTLPTracerComponents();
 }

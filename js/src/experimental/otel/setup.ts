@@ -93,18 +93,20 @@ contextManager.enable();
 otel_context.setGlobalContextManager(contextManager);
 
 const defaultComponents = {
-  spanProcessor,
-  tracerProvider: new BasicTracerProvider({
+  DEFAULT_LANGSMITH_SPAN_PROCESSOR: spanProcessor,
+  DEFAULT_LANGSMITH_TRACER_PROVIDER: new BasicTracerProvider({
     spanProcessors: [spanProcessor],
   }),
-  langsmithSpanExporter,
+  DEFAULT_LANGSMITH_SPAN_EXPORTER: langsmithSpanExporter,
 };
 
 // If user has set global tracer before, this fails and returns false
 const globalSuccessfullyOverridden = otel_trace.setGlobalTracerProvider(
-  defaultComponents.tracerProvider
+  defaultComponents.DEFAULT_LANGSMITH_TRACER_PROVIDER
 );
 
 if (globalSuccessfullyOverridden) {
   setDefaultOTLPTracerComponents(defaultComponents);
 }
+
+export { defaultComponents };

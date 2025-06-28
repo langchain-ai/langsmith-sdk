@@ -5148,7 +5148,7 @@ export class Client implements LangSmithTracingClientInterface {
       ...this.autoBatchQueue.items.map(({ itemPromise }) => itemPromise),
       this.batchIngestCaller.queue.onIdle(),
     ]);
-    await getDefaultOTLPTracerComponents()?.spanProcessor?.forceFlush();
+    await getDefaultOTLPTracerComponents()?.DEFAULT_LANGSMITH_SPAN_PROCESSOR?.forceFlush();
   }
 }
 
