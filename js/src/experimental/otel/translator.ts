@@ -1,9 +1,4 @@
-import type {
-  OTELTracer,
-  OTELContext,
-  OTELSpan,
-  OTELTracerProvider,
-} from "./types.js";
+import type { OTELContext, OTELSpan } from "./types.js";
 import { __version__ } from "../../index.js";
 import type { KVMap, RunCreate, RunUpdate } from "../../schemas.js";
 import * as constants from "./constants.js";
@@ -31,25 +26,12 @@ export type SerializedRunOperation<
 };
 
 export class LangSmithToOTELTranslator {
-  private tracer?: OTELTracer;
-
   private spans: Map<string, OTELSpan> = new Map();
-
-  constructor(tracerProvider?: OTELTracerProvider) {
-    this.tracer = (tracerProvider ?? getOTELTrace()).getTracer(
-      "langsmith",
-      __version__
-    );
-  }
 
   exportBatch(
     operations: SerializedRunOperation[],
     otelContextMap: Map<string, OTELContext>
   ): void {
-    if (!this.tracer) {
-      return;
-    }
-
     for (const op of operations) {
       try {
         if (!op.run) {
@@ -79,9 +61,6 @@ export class LangSmithToOTELTranslator {
     runInfo: RunCreate,
     otelContext?: OTELContext
   ): OTELSpan | undefined {
-    if (!this.tracer) {
-      return;
-    }
     const activeSpan = otelContext && getOTELTrace().getSpan(otelContext);
     if (!activeSpan) {
       return;

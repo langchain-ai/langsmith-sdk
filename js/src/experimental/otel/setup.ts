@@ -23,17 +23,6 @@ import {
   setOTELInstances,
 } from "../../singletons/otel.js";
 
-const otel = {
-  trace: otel_trace,
-  context: otel_context,
-};
-
-setOTELInstances(otel);
-
-const contextManager = new AsyncHooksContextManager();
-contextManager.enable();
-otel_context.setGlobalContextManager(contextManager);
-
 /**
  * Convert headers string in format "name=value,name2=value2" to object
  */
@@ -51,55 +40,71 @@ function parseHeadersString(headersStr: string): Record<string, string> {
   return headers;
 }
 
-function getDefaultOTLPTracerComponents() {
-  // Set LangSmith-specific defaults if not already set in environment
-  if (!getEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT")) {
-    const lsEndpoint =
-      getLangSmithEnvironmentVariable("ENDPOINT") ||
-      "https://api.smith.langchain.com";
-    const baseUrl = lsEndpoint.replace(/\/$/, "");
-    setEnvironmentVariable(
-      "OTEL_EXPORTER_OTLP_ENDPOINT",
-      `${baseUrl}/otel/v1/traces`
+// Set LangSmith-specific defaults if not already set in environment
+if (!getEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT")) {
+  const lsEndpoint =
+    getLangSmithEnvironmentVariable("ENDPOINT") ||
+    "https://api.smith.langchain.com";
+  const baseUrl = lsEndpoint.replace(/\/$/, "");
+  setEnvironmentVariable(
+    "OTEL_EXPORTER_OTLP_ENDPOINT",
+    `${baseUrl}/otel/v1/traces`
+  );
+}
+
+// Configure headers with API key and project if available
+if (!getEnvironmentVariable("OTEL_EXPORTER_OTLP_HEADERS")) {
+  const apiKey = getLangSmithEnvironmentVariable("API_KEY");
+
+  if (!apiKey) {
+    throw new Error(
+      "LANGSMITH_API_KEY or LANGCHAIN_API_KEY environment variable is required"
     );
   }
 
-  // Configure headers with API key and project if available
-  if (!getEnvironmentVariable("OTEL_EXPORTER_OTLP_HEADERS")) {
-    const apiKey = getLangSmithEnvironmentVariable("API_KEY");
+  let headers = `x-api-key=${apiKey}`;
 
-    if (!apiKey) {
-      throw new Error(
-        "LANGSMITH_API_KEY or LANGCHAIN_API_KEY environment variable is required"
-      );
-    }
-
-    let headers = `x-api-key=${apiKey}`;
-
-    const project = getLangSmithEnvironmentVariable("PROJECT");
-    if (project) {
-      headers += `,Langsmith-Project=${project}`;
-    }
-
-    setEnvironmentVariable("OTEL_EXPORTER_OTLP_HEADERS", headers);
+  const project = getLangSmithEnvironmentVariable("PROJECT");
+  if (project) {
+    headers += `,Langsmith-Project=${project}`;
   }
 
-  const headersStr = getEnvironmentVariable("OTEL_EXPORTER_OTLP_HEADERS") || "";
-  const headersObj = parseHeadersString(headersStr);
-
-  const langsmithSpanExporter = new LangSmithOTLPTraceExporter({
-    url: getEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT"),
-    headers: headersObj,
-  });
-  const spanProcessor = new BatchSpanProcessor(langsmithSpanExporter);
-
-  return {
-    tracerProvider: new BasicTracerProvider({
-      spanProcessors: [spanProcessor],
-    }),
-    spanProcessor,
-    langsmithSpanExporter,
-  };
+  setEnvironmentVariable("OTEL_EXPORTER_OTLP_HEADERS", headers);
 }
 
-setDefaultOTLPTracerComponents(getDefaultOTLPTracerComponents());
+const headersStr = getEnvironmentVariable("OTEL_EXPORTER_OTLP_HEADERS") || "";
+const headersObj = parseHeadersString(headersStr);
+
+const langsmithSpanExporter = new LangSmithOTLPTraceExporter({
+  url: getEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT"),
+  headers: headersObj,
+});
+const spanProcessor = new BatchSpanProcessor(langsmithSpanExporter);
+
+const otel = {
+  trace: otel_trace,
+  context: otel_context,
+};
+
+setOTELInstances(otel);
+
+const contextManager = new AsyncHooksContextManager();
+contextManager.enable();
+otel_context.setGlobalContextManager(contextManager);
+
+const defaultComponents = {
+  spanProcessor,
+  tracerProvider: new BasicTracerProvider({
+    spanProcessors: [spanProcessor],
+  }),
+  langsmithSpanExporter,
+};
+
+// If user has set global tracer before, this fails and returns false
+const globalSuccessfullyOverridden = otel_trace.setGlobalTracerProvider(
+  defaultComponents.tracerProvider
+);
+
+if (globalSuccessfullyOverridden) {
+  setDefaultOTLPTracerComponents(defaultComponents);
+}

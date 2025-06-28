@@ -30,9 +30,10 @@ import {
   isPromiseMethod,
 } from "./utils/asserts.js";
 import { getEnvironmentVariable } from "./utils/env.js";
-import { createOtelSpanContextFromRun } from "./experimental/otel/utils.js";
 import { __version__ } from "./index.js";
 import { getOTELTrace, getOTELContext } from "./singletons/otel.js";
+import { createOtelSpanContextFromRun } from "./experimental/otel/utils.js";
+import { OTELTracer } from "./experimental/otel/types.js";
 
 AsyncLocalStorageProviderSingleton.initializeGlobalInstance(
   new AsyncLocalStorage<RunTree | undefined>()
@@ -42,7 +43,8 @@ AsyncLocalStorageProviderSingleton.initializeGlobalInstance(
  * Create OpenTelemetry context manager from RunTree if OTEL is enabled.
  */
 function maybeCreateOtelContext<T>(
-  runTree?: RunTree
+  runTree?: RunTree,
+  tracer?: OTELTracer
 ): ((fn: (...args: any[]) => T) => T) | undefined {
   if (!runTree || getEnvironmentVariable("OTEL_ENABLED") !== "true") {
     return;
@@ -54,7 +56,8 @@ function maybeCreateOtelContext<T>(
   try {
     const spanContext = createOtelSpanContextFromRun(runTree);
     return (fn: (...args: any[]) => T) => {
-      const resolvedTracer = otel_trace.getTracer("langsmith", __version__);
+      const resolvedTracer =
+        tracer ?? otel_trace.getTracer("langsmith", __version__);
       return resolvedTracer.startActiveSpan(
         runTree.name,
         {
@@ -436,6 +439,7 @@ export function traceable<Func extends (...args: any[]) => any>(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     aggregator?: (args: any[]) => any;
     argsConfigPath?: [number] | [number, string];
+    tracer?: OTELTracer;
     __finalTracedIteratorKey?: string;
 
     /**
@@ -638,7 +642,10 @@ export function traceable<Func extends (...args: any[]) => any>(
       return [currentRunTree, processedArgs as Inputs];
     })();
 
-    const otelContextManager = maybeCreateOtelContext(currentRunTree);
+    const otelContextManager = maybeCreateOtelContext(
+      currentRunTree,
+      config?.tracer
+    );
     const otel_context = getOTELContext();
 
     const runWithContext = () => {

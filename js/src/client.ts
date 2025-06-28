@@ -680,19 +680,7 @@ export class Client implements LangSmithTracingClientInterface {
     this.fetchOptions = config.fetchOptions || {};
     this.manualFlushMode = config.manualFlushMode ?? this.manualFlushMode;
     if (getEnvironmentVariable("OTEL_ENABLED") === "true") {
-      const otel_trace = getOTELTrace();
-      const existingTracerProvider = otel_trace.getTracerProvider();
-      const { tracerProvider: langSmithTracerProvider } =
-        getDefaultOTLPTracerComponents() ?? {};
-      // If user has set global tracer before, this fails and returns false
-      const globalSuccessfullyOverridden = otel_trace.setGlobalTracerProvider(
-        config.otelTracerProvider ?? langSmithTracerProvider
-      );
-      this.langSmithToOTELTranslator = new LangSmithToOTELTranslator(
-        globalSuccessfullyOverridden
-          ? langSmithTracerProvider
-          : existingTracerProvider
-      );
+      this.langSmithToOTELTranslator = new LangSmithToOTELTranslator();
     }
   }
 
