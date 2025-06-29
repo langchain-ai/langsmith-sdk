@@ -24,6 +24,12 @@ import {
  * Call this once at the start of your application to enable tracing integration. Sets global
  * OpenTelemetry components including the tracer provider and context manager.
  *
+ * Requires the following peer dependencies to be installed:
+ * - @opentelemetry/api
+ * - @opentelemetry/sdk-trace-base
+ * - @opentelemetry/exporter-trace-otlp-proto
+ * - @opentelemetry/context-async-hooks
+ *
  * @param options - Configuration options
  * @param options.globalTracerProvider - Optional custom TracerProvider to use instead of creating and globally setting a new one
  * @returns Object containing the initialized OTEL components (tracer provider, span processor, exporter)
