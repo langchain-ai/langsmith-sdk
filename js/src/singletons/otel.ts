@@ -29,7 +29,7 @@ class MockTracer {
     if (!this.hasWarned && getEnvironmentVariable("OTEL_ENABLED") === "true") {
       console.warn(
         "You have enabled OTEL export via the `OTEL_ENABLED` environment variable, but have not initialized the required OTEL instances. " +
-          'Please add `import "langsmith/experimental/otel/setup";` at the beginning of your code.'
+          'Please add:\n```\nimport { initializeOTEL } from "langsmith/experimental/otel/setup";\ninitializeOTEL();\n```\nat the beginning of your code.'
       );
       this.hasWarned = true;
     }

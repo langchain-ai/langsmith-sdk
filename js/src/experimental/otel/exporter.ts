@@ -2,8 +2,58 @@ import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
 import { ReadableSpan } from "@opentelemetry/sdk-trace-base";
 import * as constants from "./constants.js";
 import { isTracingEnabled } from "../../env.js";
+import {
+  getEnvironmentVariable,
+  getLangSmithEnvironmentVariable,
+} from "../../utils/env.js";
+
+/**
+ * Convert headers string in format "name=value,name2=value2" to object
+ */
+function parseHeadersString(headersStr: string): Record<string, string> {
+  const headers: Record<string, string> = {};
+  if (!headersStr) return headers;
+
+  headersStr.split(",").forEach((pair) => {
+    const [name, ...valueParts] = pair.split("=");
+    if (name && valueParts.length > 0) {
+      headers[name.trim()] = valueParts.join("=").trim();
+    }
+  });
+
+  return headers;
+}
 
 export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
+  constructor(config: ConstructorParameters<typeof OTLPTraceExporter>[0]) {
+    const lsEndpoint =
+      getEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT") ||
+      getLangSmithEnvironmentVariable("ENDPOINT") ||
+      "https://api.smith.langchain.com";
+    const defaultBaseUrl = lsEndpoint.replace(/\/$/, "");
+    const defaultUrl = `${defaultBaseUrl}/otel/v1/traces`;
+    // Configure headers with API key and project if available
+    let defaultHeaderString =
+      getEnvironmentVariable("OTEL_EXPORTER_OTLP_HEADERS") ?? "";
+    if (!defaultHeaderString) {
+      const apiKey = getLangSmithEnvironmentVariable("API_KEY");
+      if (apiKey) {
+        defaultHeaderString = `x-api-key=${apiKey}`;
+      }
+
+      const project = getLangSmithEnvironmentVariable("PROJECT");
+      if (project) {
+        defaultHeaderString += `,Langsmith-Project=${project}`;
+      }
+    }
+
+    super({
+      url: defaultUrl,
+      headers: parseHeadersString(defaultHeaderString),
+      ...config,
+    });
+  }
+
   export(
     spans: ReadableSpan[],
     resultCallback: Parameters<OTLPTraceExporter["export"]>[1]

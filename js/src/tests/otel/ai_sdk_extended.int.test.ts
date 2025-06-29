@@ -9,7 +9,9 @@ import { getLangSmithEnvironmentVariable } from "../../utils/env.js";
 import { toArray, waitUntilRunFoundByMetaField } from "../utils.js";
 
 // Initialize basic OTEL setup
-import "../../experimental/otel/setup.js";
+import { initializeOTEL } from "../../experimental/otel/setup.js";
+
+initializeOTEL();
 
 describe("AI SDK Streaming Integration", () => {
   beforeAll(() => {

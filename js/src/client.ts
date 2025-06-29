@@ -1,8 +1,5 @@
 import * as uuid from "uuid";
-import type {
-  OTELContext,
-  OTELTracerProvider,
-} from "./experimental/otel/types.js";
+import type { OTELContext } from "./experimental/otel/types.js";
 import {
   LangSmithToOTELTranslator,
   SerializedRunOperation,
@@ -107,11 +104,6 @@ export interface ClientConfig {
    * Enable debug mode for the client. If set, all sent HTTP requests will be logged.
    */
   debug?: boolean;
-  /**
-   * Optional tracer provider for OpenTelemetry integration.
-   * If not provided, a LangSmith-specific tracer provider will be used.
-   */
-  otelTracerProvider?: OTELTracerProvider;
 }
 
 /**

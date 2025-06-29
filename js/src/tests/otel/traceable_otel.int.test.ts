@@ -11,7 +11,9 @@ import { toArray, waitUntilRunFoundByMetaField } from "../utils.js";
 import { getLangSmithEnvironmentVariable } from "../../utils/env.js";
 
 // Initialize basic OTEL setup
-import "../../experimental/otel/setup.js";
+import { initializeOTEL } from "../../experimental/otel/setup.js";
+
+initializeOTEL();
 
 describe("Traceable OTEL Integration Tests", () => {
   beforeEach(() => {
