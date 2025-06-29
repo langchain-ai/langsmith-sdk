@@ -18,7 +18,32 @@ import {
   setOTELInstances,
 } from "../../singletons/otel.js";
 
-const initializeOTEL = ({
+/**
+ * Initializes OpenTelemetry with LangSmith-specific configuration for tracing.
+ *
+ * Call this once at the start of your application to enable tracing integration. Sets global
+ * OpenTelemetry components including the tracer provider and context manager.
+ *
+ * @param options - Configuration options
+ * @param options.globalTracerProvider - Optional custom TracerProvider to use instead of creating and globally setting a new one
+ * @returns Object containing the initialized OTEL components (tracer provider, span processor, exporter)
+ *
+ * @example
+ * ```typescript
+ * import { initializeOTEL } from "langsmith/experimental/otel/setup";
+ * initializeOTEL();
+ * ```
+ *
+ * @example With custom tracer provider
+ * ```typescript
+ * import { initializeOTEL } from "langsmith/experimental/otel/setup";
+ * import { BasicTracerProvider } from "@opentelemetry/sdk-trace-base";
+ *
+ * const customProvider = new BasicTracerProvider();
+ * initializeOTEL({ globalTracerProvider: customProvider });
+ * ```
+ */
+export const initializeOTEL = ({
   globalTracerProvider,
 }: {
   globalTracerProvider?: TracerProvider;
@@ -71,5 +96,3 @@ const initializeOTEL = ({
     return defaultComponents;
   }
 };
-
-export { initializeOTEL };
