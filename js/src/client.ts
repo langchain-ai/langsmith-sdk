@@ -5140,7 +5140,7 @@ export class Client implements LangSmithTracingClientInterface {
       ...this.autoBatchQueue.items.map(({ itemPromise }) => itemPromise),
       this.batchIngestCaller.queue.onIdle(),
     ]);
-    if (getEnvironmentVariable("OTEL_ENABLED") === "true") {
+    if (this.langSmithToOTELTranslator !== undefined) {
       await getDefaultOTLPTracerComponents()?.DEFAULT_LANGSMITH_SPAN_PROCESSOR?.forceFlush();
     }
   }
