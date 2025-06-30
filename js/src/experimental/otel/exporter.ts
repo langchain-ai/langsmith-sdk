@@ -103,6 +103,15 @@ export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
             span.attributes["ai.toolCall.args"];
         }
       }
+      // Iterate over all attributes starting with "ai.telemetry.metadata"
+      for (const [key, value] of Object.entries(span.attributes)) {
+        if (key.startsWith("ai.telemetry.metadata.")) {
+          const metadataKey = key.replace("ai.telemetry.metadata.", "");
+          span.attributes[`${constants.LANGSMITH_METADATA}.${metadataKey}`] =
+            value;
+          delete span.attributes[key];
+        }
+      }
       if (!span.attributes[constants.GENAI_COMPLETION]) {
         if (span.attributes["ai.response.text"]) {
           span.attributes[constants.GENAI_COMPLETION] =
