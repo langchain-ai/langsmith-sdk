@@ -45,6 +45,7 @@ AsyncLocalStorageProviderSingleton.initializeGlobalInstance(
 function maybeCreateOtelContext<T>(
   runTree?: RunTree,
   tracer?: OTELTracer
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): ((fn: (...args: any[]) => T) => T) | undefined {
   if (!runTree || getEnvironmentVariable("OTEL_ENABLED") !== "true") {
     return;
@@ -55,6 +56,7 @@ function maybeCreateOtelContext<T>(
 
   try {
     const spanContext = createOtelSpanContextFromRun(runTree);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (fn: (...args: any[]) => T) => {
       const resolvedTracer =
         tracer ?? otel_trace.getTracer("langsmith", __version__);
@@ -71,7 +73,7 @@ function maybeCreateOtelContext<T>(
         }
       );
     };
-  } catch (error) {
+  } catch {
     // Silent failure if OTEL setup is incomplete
     return;
   }

@@ -1,4 +1,5 @@
 /* eslint-disable no-process-env */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { z } from "zod";
 import { openai } from "@ai-sdk/openai";
 import { generateObject, streamObject, streamText } from "ai";

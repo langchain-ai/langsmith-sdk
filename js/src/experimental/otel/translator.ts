@@ -1,5 +1,4 @@
 import type { OTELContext, OTELSpan } from "./types.js";
-import { __version__ } from "../../index.js";
 import type { KVMap, RunCreate, RunUpdate } from "../../schemas.js";
 import * as constants from "./constants.js";
 import { getOTELTrace } from "../../singletons/otel.js";
@@ -434,7 +433,9 @@ export class LangSmithToOTELTranslator {
 
           if (outputs.choices && Array.isArray(outputs.choices)) {
             const finishReasons = outputs.choices
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
               .map((choice: any) => choice.finish_reason)
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
               .filter((reason: any) => reason)
               .map(String);
             if (finishReasons.length > 0) {
@@ -486,6 +487,7 @@ export class LangSmithToOTELTranslator {
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private getUnifiedRunTokens(outputs: any): [number, number] | null {
     if (!outputs) {
       return null;
@@ -554,6 +556,7 @@ export class LangSmithToOTELTranslator {
     return null;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private extractUnifiedRunTokens(outputs: any): [number, number] | null {
     if (!outputs || typeof outputs !== "object") {
       return null;
