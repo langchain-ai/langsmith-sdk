@@ -103,6 +103,14 @@ Chinook_Sqlite.sql
 /utils/jestlike.js
 /utils/jestlike.d.ts
 /utils/jestlike.d.cts
+/experimental/otel/setup.cjs
+/experimental/otel/setup.js
+/experimental/otel/setup.d.ts
+/experimental/otel/setup.d.cts
+/experimental/otel/exporter.cjs
+/experimental/otel/exporter.js
+/experimental/otel/exporter.d.ts
+/experimental/otel/exporter.d.cts
 /index.cjs
 /index.js
 /index.d.ts

@@ -749,7 +749,7 @@ test("Test upload attachments and process inputs.", async () => {
   multipartIngestRunsSpy.mockRestore();
 }, 60000);
 
-test.only("Test trace to multiple projects with replicas", async () => {
+test("Test trace to multiple projects with replicas", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
   const datasetName = `__test_trace_to_multiple_projects${uuidv4().slice(
     0,

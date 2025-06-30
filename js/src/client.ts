@@ -1,5 +1,14 @@
 import * as uuid from "uuid";
-
+import type { OTELContext } from "./experimental/otel/types.js";
+import {
+  LangSmithToOTELTranslator,
+  SerializedRunOperation,
+} from "./experimental/otel/translator.js";
+import {
+  getDefaultOTLPTracerComponents,
+  getOTELTrace,
+  getOTELContext,
+} from "./singletons/otel.js";
 import { AsyncCaller, AsyncCallerParams } from "./utils/async_caller.js";
 import {
   ComparativeExperiment,
@@ -373,6 +382,7 @@ export type CreateProjectParams = {
 type AutoBatchQueueItem = {
   action: "create" | "update";
   item: RunCreate | RunUpdate;
+  otelContext?: OTELContext;
 };
 
 type MultipartPart = {
@@ -487,6 +497,7 @@ export class AutoBatchQueue {
   items: {
     action: "create" | "update";
     payload: RunCreate | RunUpdate;
+    otelContext?: OTELContext;
     itemPromiseResolve: () => void;
     itemPromise: Promise<void>;
     size: number;
@@ -512,6 +523,7 @@ export class AutoBatchQueue {
     this.items.push({
       action: item.action,
       payload: item.item,
+      otelContext: item.otelContext,
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       itemPromiseResolve: itemPromiseResolve!,
       itemPromise,
@@ -548,7 +560,11 @@ export class AutoBatchQueue {
       this.sizeBytes -= item.size;
     }
     return [
-      popped.map((it) => ({ action: it.action, item: it.payload })),
+      popped.map((it) => ({
+        action: it.action,
+        item: it.payload,
+        otelContext: it.otelContext,
+      })),
       () => popped.forEach((it) => it.itemPromiseResolve()),
     ];
   }
@@ -608,6 +624,8 @@ export class Client implements LangSmithTracingClientInterface {
 
   private manualFlushMode = false;
 
+  private langSmithToOTELTranslator?: LangSmithToOTELTranslator;
+
   debug = getEnvironmentVariable("LANGSMITH_DEBUG") === "true";
 
   constructor(config: ClientConfig = {}) {
@@ -653,6 +671,9 @@ export class Client implements LangSmithTracingClientInterface {
     this.batchSizeBytesLimit = config.batchSizeBytesLimit;
     this.fetchOptions = config.fetchOptions || {};
     this.manualFlushMode = config.manualFlushMode ?? this.manualFlushMode;
+    if (getEnvironmentVariable("OTEL_ENABLED") === "true") {
+      this.langSmithToOTELTranslator = new LangSmithToOTELTranslator();
+    }
   }
 
   public static getDefaultClientConfig(): {
@@ -958,22 +979,56 @@ export class Client implements LangSmithTracingClientInterface {
       return;
     }
     try {
-      const ingestParams = {
-        runCreates: batch
-          .filter((item) => item.action === "create")
-          .map((item) => item.item) as RunCreate[],
-        runUpdates: batch
-          .filter((item) => item.action === "update")
-          .map((item) => item.item) as RunUpdate[],
-      };
-      const serverInfo = await this._ensureServerInfo();
-      if (serverInfo?.batch_ingest_config?.use_multipart_endpoint) {
-        await this.multipartIngestRuns(ingestParams);
+      if (this.langSmithToOTELTranslator !== undefined) {
+        this._sendBatchToOTELTranslator(batch);
       } else {
-        await this.batchIngestRuns(ingestParams);
+        const ingestParams = {
+          runCreates: batch
+            .filter((item) => item.action === "create")
+            .map((item) => item.item) as RunCreate[],
+          runUpdates: batch
+            .filter((item) => item.action === "update")
+            .map((item) => item.item) as RunUpdate[],
+        };
+        const serverInfo = await this._ensureServerInfo();
+        if (serverInfo?.batch_ingest_config?.use_multipart_endpoint) {
+          await this.multipartIngestRuns(ingestParams);
+        } else {
+          await this.batchIngestRuns(ingestParams);
+        }
       }
+    } catch (e) {
+      console.error("Error exporting batch:", e);
     } finally {
       done();
+    }
+  }
+
+  private _sendBatchToOTELTranslator(batch: AutoBatchQueueItem[]) {
+    if (this.langSmithToOTELTranslator !== undefined) {
+      const otelContextMap = new Map<string, OTELContext>();
+      const operations: SerializedRunOperation[] = [];
+      for (const item of batch) {
+        if (item.item.id && item.otelContext) {
+          otelContextMap.set(item.item.id, item.otelContext);
+          if (item.action === "create") {
+            operations.push({
+              operation: "post",
+              id: item.item.id,
+              trace_id: item.item.trace_id ?? item.item.id,
+              run: item.item as RunCreate,
+            });
+          } else {
+            operations.push({
+              operation: "patch",
+              id: item.item.id,
+              trace_id: item.item.trace_id ?? item.item.id,
+              run: item.item as RunUpdate,
+            });
+          }
+        }
+      }
+      this.langSmithToOTELTranslator.exportBatch(operations, otelContextMap);
     }
   }
 
@@ -1063,6 +1118,18 @@ export class Client implements LangSmithTracingClientInterface {
     await this.drainAutoBatchQueue(sizeLimitBytes);
   }
 
+  private _cloneCurrentOTELContext() {
+    const otel_trace = getOTELTrace();
+    const otel_context = getOTELContext();
+    if (this.langSmithToOTELTranslator !== undefined) {
+      const currentSpan = otel_trace.getActiveSpan();
+      if (currentSpan) {
+        return otel_trace.setSpan(otel_context.active(), currentSpan);
+      }
+    }
+    return undefined;
+  }
+
   public async createRun(run: CreateRunParams): Promise<void> {
     if (!this._filterForSampling([run]).length) {
       return;
@@ -1081,9 +1148,11 @@ export class Client implements LangSmithTracingClientInterface {
       runCreate.trace_id !== undefined &&
       runCreate.dotted_order !== undefined
     ) {
+      const otelContext = this._cloneCurrentOTELContext();
       void this.processRunOperation({
         action: "create",
         item: runCreate,
+        otelContext,
       }).catch(console.error);
       return;
     }
@@ -1511,6 +1580,7 @@ export class Client implements LangSmithTracingClientInterface {
       data.trace_id !== undefined &&
       data.dotted_order !== undefined
     ) {
+      const otelContext = this._cloneCurrentOTELContext();
       if (
         run.end_time !== undefined &&
         data.parent_run_id === undefined &&
@@ -1519,14 +1589,18 @@ export class Client implements LangSmithTracingClientInterface {
       ) {
         // Trigger batches as soon as a root trace ends and wait to ensure trace finishes
         // in serverless environments.
-        await this.processRunOperation({ action: "update", item: data }).catch(
-          console.error
-        );
+        await this.processRunOperation({
+          action: "update",
+          item: data,
+          otelContext,
+        }).catch(console.error);
         return;
       } else {
-        void this.processRunOperation({ action: "update", item: data }).catch(
-          console.error
-        );
+        void this.processRunOperation({
+          action: "update",
+          item: data,
+          otelContext,
+        }).catch(console.error);
       }
       return;
     }
@@ -5055,17 +5129,20 @@ export class Client implements LangSmithTracingClientInterface {
    *
    * @returns A promise that resolves once all currently pending traces have sent.
    */
-  public awaitPendingTraceBatches() {
+  public async awaitPendingTraceBatches() {
     if (this.manualFlushMode) {
       console.warn(
         "[WARNING]: When tracing in manual flush mode, you must call `await client.flush()` manually to submit trace batches."
       );
       return Promise.resolve();
     }
-    return Promise.all([
+    await Promise.all([
       ...this.autoBatchQueue.items.map(({ itemPromise }) => itemPromise),
       this.batchIngestCaller.queue.onIdle(),
     ]);
+    if (this.langSmithToOTELTranslator !== undefined) {
+      await getDefaultOTLPTracerComponents()?.DEFAULT_LANGSMITH_SPAN_PROCESSOR?.forceFlush();
+    }
   }
 }
 

@@ -1,6 +1,6 @@
 {
   "name": "langsmith",
-  "version": "0.3.34",
+  "version": "0.3.35",
   "description": "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform.",
   "packageManager": "yarn@1.22.19",
   "files": [
@@ -77,6 +77,14 @@
     "utils/jestlike.js",
     "utils/jestlike.d.ts",
     "utils/jestlike.d.cts",
+    "experimental/otel/setup.cjs",
+    "experimental/otel/setup.js",
+    "experimental/otel/setup.d.ts",
+    "experimental/otel/setup.d.cts",
+    "experimental/otel/exporter.cjs",
+    "experimental/otel/exporter.js",
+    "experimental/otel/exporter.d.ts",
+    "experimental/otel/exporter.d.cts",
     "index.cjs",
     "index.js",
     "index.d.ts",
@@ -172,10 +180,22 @@
     "zod": "^3.23.8"
   },
   "peerDependencies": {
-    "openai": "*"
+    "openai": "*",
+    "@opentelemetry/api": "*",
+    "@opentelemetry/exporter-trace-otlp-proto": "*",
+    "@opentelemetry/sdk-trace-base": "*"
   },
   "peerDependenciesMeta": {
     "openai": {
+      "optional": true
+    },
+    "@opentelemetry/api": {
+      "optional": true
+    },
+    "@opentelemetry/exporter-trace-otlp-proto": {
+      "optional": true
+    },
+    "@opentelemetry/sdk-trace-base": {
       "optional": true
     }
   },
@@ -356,6 +376,24 @@
       },
       "import": "./utils/jestlike.js",
       "require": "./utils/jestlike.cjs"
+    },
+    "./experimental/otel/setup": {
+      "types": {
+        "import": "./experimental/otel/setup.d.ts",
+        "require": "./experimental/otel/setup.d.cts",
+        "default": "./experimental/otel/setup.d.ts"
+      },
+      "import": "./experimental/otel/setup.js",
+      "require": "./experimental/otel/setup.cjs"
+    },
+    "./experimental/otel/exporter": {
+      "types": {
+        "import": "./experimental/otel/exporter.d.ts",
+        "require": "./experimental/otel/exporter.d.cts",
+        "default": "./experimental/otel/exporter.d.ts"
+      },
+      "import": "./experimental/otel/exporter.js",
+      "require": "./experimental/otel/exporter.cjs"
     },
     "./package.json": "./package.json"
   }
