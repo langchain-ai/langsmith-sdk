@@ -29,10 +29,55 @@ import {
   isGenerator,
   isPromiseMethod,
 } from "./utils/asserts.js";
+import { getEnvironmentVariable } from "./utils/env.js";
+import { __version__ } from "./index.js";
+import { getOTELTrace, getOTELContext } from "./singletons/otel.js";
+import { createOtelSpanContextFromRun } from "./experimental/otel/utils.js";
+import { OTELTracer } from "./experimental/otel/types.js";
 
 AsyncLocalStorageProviderSingleton.initializeGlobalInstance(
   new AsyncLocalStorage<RunTree | undefined>()
 );
+
+/**
+ * Create OpenTelemetry context manager from RunTree if OTEL is enabled.
+ */
+function maybeCreateOtelContext<T>(
+  runTree?: RunTree,
+  tracer?: OTELTracer
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): ((fn: (...args: any[]) => T) => T) | undefined {
+  if (!runTree || getEnvironmentVariable("OTEL_ENABLED") !== "true") {
+    return;
+  }
+
+  const otel_trace = getOTELTrace();
+  const otel_context = getOTELContext();
+
+  try {
+    const spanContext = createOtelSpanContextFromRun(runTree);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (fn: (...args: any[]) => T) => {
+      const resolvedTracer =
+        tracer ?? otel_trace.getTracer("langsmith", __version__);
+      return resolvedTracer.startActiveSpan(
+        runTree.name,
+        {
+          attributes: {
+            "langsmith.traceable": "true",
+          },
+        },
+        () => {
+          otel_trace.setSpanContext(otel_context.active(), spanContext);
+          return fn();
+        }
+      );
+    };
+  } catch {
+    // Silent failure if OTEL setup is incomplete
+    return;
+  }
+}
 
 const runInputsToMap = (rawInputs: unknown[]) => {
   const firstInput = rawInputs[0];
@@ -396,6 +441,7 @@ export function traceable<Func extends (...args: any[]) => any>(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     aggregator?: (args: any[]) => any;
     argsConfigPath?: [number] | [number, string];
+    tracer?: OTELTracer;
     __finalTracedIteratorKey?: string;
 
     /**
@@ -598,7 +644,13 @@ export function traceable<Func extends (...args: any[]) => any>(
       return [currentRunTree, processedArgs as Inputs];
     })();
 
-    return asyncLocalStorage.run(currentRunTree, () => {
+    const otelContextManager = maybeCreateOtelContext(
+      currentRunTree,
+      config?.tracer
+    );
+    const otel_context = getOTELContext();
+
+    const runWithContext = () => {
       const postRunPromise = currentRunTree?.postRun();
 
       async function handleChunks(chunks: unknown[]) {
@@ -620,14 +672,17 @@ export function traceable<Func extends (...args: any[]) => any>(
         const reader = stream.getReader();
         let finished = false;
         const chunks: unknown[] = [];
+        const capturedOtelContext = otel_context.active();
 
         const tappedStream = new ReadableStream({
           async start(controller) {
             // eslint-disable-next-line no-constant-condition
             while (true) {
               const result = await (snapshot
-                ? snapshot(() => reader.read())
-                : reader.read());
+                ? snapshot(() =>
+                    otel_context.with(capturedOtelContext, () => reader.read())
+                  )
+                : otel_context.with(capturedOtelContext, () => reader.read()));
               if (result.done) {
                 finished = true;
                 const processedOutputs = handleRunOutputs({
@@ -673,11 +728,14 @@ export function traceable<Func extends (...args: any[]) => any>(
       ) {
         let finished = false;
         const chunks: unknown[] = [];
+        const capturedOtelContext = otel_context.active();
         try {
           while (true) {
             const { value, done } = await (snapshot
-              ? snapshot(() => iterator.next())
-              : iterator.next());
+              ? snapshot(() =>
+                  otel_context.with(capturedOtelContext, () => iterator.next())
+                )
+              : otel_context.with(capturedOtelContext, () => iterator.next()));
             if (done) {
               finished = true;
               break;
@@ -875,7 +933,16 @@ export function traceable<Func extends (...args: any[]) => any>(
           return Reflect.get(target, prop, receiver);
         },
       });
-    });
+    };
+
+    // Wrap with OTEL context if available, similar to Python's implementation
+    if (otelContextManager) {
+      return asyncLocalStorage.run(currentRunTree, () =>
+        otelContextManager(runWithContext)
+      );
+    } else {
+      return asyncLocalStorage.run(currentRunTree, runWithContext);
+    }
   };
 
   Object.defineProperty(traceableFunc, "langsmith:traceable", {
