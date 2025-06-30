@@ -5,7 +5,8 @@ import { AsyncHooksContextManager } from "@opentelemetry/context-async-hooks";
 import {
   trace as otel_trace,
   context as otel_context,
-  TracerProvider,
+  type TracerProvider,
+  type ContextManager,
 } from "@opentelemetry/api";
 import {
   BatchSpanProcessor,
@@ -51,8 +52,10 @@ import {
  */
 export const initializeOTEL = ({
   globalTracerProvider,
+  globalContextManager,
 }: {
   globalTracerProvider?: TracerProvider;
+  globalContextManager?: ContextManager;
 } = {}) => {
   const otel = {
     trace: otel_trace,
@@ -61,9 +64,11 @@ export const initializeOTEL = ({
 
   setOTELInstances(otel);
 
-  const contextManager = new AsyncHooksContextManager();
-  contextManager.enable();
-  otel_context.setGlobalContextManager(contextManager);
+  if (!globalContextManager) {
+    const contextManager = new AsyncHooksContextManager();
+    contextManager.enable();
+    otel_context.setGlobalContextManager(contextManager);
+  }
 
   const DEFAULT_LANGSMITH_SPAN_EXPORTER = new LangSmithOTLPTraceExporter({});
 
