@@ -49,7 +49,9 @@ export type LangSmithOTLPTraceExporterConfig = ConstructorParameters<
    * @param span - The span to transform.
    * @returns A transformed version of the span.
    */
-  transformExportedSpan?: (span: ReadableSpan) => ReadableSpan;
+  transformExportedSpan?: (
+    span: ReadableSpan
+  ) => ReadableSpan | Promise<ReadableSpan>;
 };
 
 /**
