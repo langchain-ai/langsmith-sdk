@@ -23,6 +23,26 @@ import {
 } from "../../singletons/otel.js";
 
 /**
+ * Configuration options for initializing OpenTelemetry with LangSmith.
+ */
+export type InitializeOTELConfig = {
+  /**
+   * Optional custom OTEL TracerProvider to use instead of
+   * creating and globally setting a new one.
+   */
+  globalTracerProvider?: TracerProvider;
+  /**
+   * Optional custom OTEL ContextManager to use instead of
+   * creating and globally setting a new one with AsyncHooksContextManager.
+   */
+  globalContextManager?: ContextManager;
+  /**
+   * Optional configuration passed to the default LangSmith OTLP trace exporter.
+   */
+  exporterConfig?: LangSmithOTLPTraceExporterConfig;
+};
+
+/**
  * Initializes OpenTelemetry with LangSmith-specific configuration for tracing.
  *
  * Call this once at the start of your application to enable tracing integration. Sets global
@@ -53,13 +73,7 @@ import {
  * initializeOTEL({ globalTracerProvider: customProvider });
  * ```
  */
-export const initializeOTEL = (
-  config: {
-    globalTracerProvider?: TracerProvider;
-    globalContextManager?: ContextManager;
-    exporterConfig?: LangSmithOTLPTraceExporterConfig;
-  } = {}
-) => {
+export const initializeOTEL = (config: InitializeOTELConfig = {}) => {
   const { globalTracerProvider, globalContextManager, exporterConfig } = config;
 
   const otel = {

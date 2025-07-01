@@ -32,13 +32,18 @@ export type LangSmithOTLPTraceExporterConfig = ConstructorParameters<
    * May be used to add or remove attributes from the span.
    *
    * For example, to add a custom attribute to the span, you can do:
-   * ```typescript
-   * transformExportedSpan: (span) => {
-   *   if (span.name === "foo") {
-   *     span.attributes["langsmith.metadata.bar"] = "baz";
+   *
+   * ```ts
+   * import { LangSmithOTLPTraceExporter } from "langsmith/experimental/otel/exporter";
+   *
+   * const exporter = new LangSmithOTLPTraceExporter({
+   *   transformExportedSpan: (span) => {
+   *     if (span.name === "foo") {
+   *       span.attributes["langsmith.metadata.bar"] = "baz";
+   *     }
+   *     return span;
    *   }
-   *   return span;
-   * }
+   * });
    * ```
    *
    * @param span - The span to transform.
