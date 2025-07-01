@@ -196,6 +196,6 @@ export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
       }
       super.export(spans, resultCallback);
     };
-    runExport();
+    void runExport();
   }
 }
