@@ -95,9 +95,7 @@ export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
       ...config,
     });
 
-    if (config?.transformExportedSpan) {
-      this.transformExportedSpan = config.transformExportedSpan;
-    }
+    this.transformExportedSpan = config?.transformExportedSpan;
   }
 
   export(
