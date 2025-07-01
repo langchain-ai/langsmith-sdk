@@ -12,7 +12,10 @@ import {
   BatchSpanProcessor,
   BasicTracerProvider,
 } from "@opentelemetry/sdk-trace-base";
-import { LangSmithOTLPTraceExporter } from "./exporter.js";
+import {
+  LangSmithOTLPTraceExporter,
+  LangSmithOTLPTraceExporterConfig,
+} from "./exporter.js";
 
 import {
   setDefaultOTLPTracerComponents,
@@ -50,13 +53,15 @@ import {
  * initializeOTEL({ globalTracerProvider: customProvider });
  * ```
  */
-export const initializeOTEL = ({
-  globalTracerProvider,
-  globalContextManager,
-}: {
-  globalTracerProvider?: TracerProvider;
-  globalContextManager?: ContextManager;
-} = {}) => {
+export const initializeOTEL = (
+  config: {
+    globalTracerProvider?: TracerProvider;
+    globalContextManager?: ContextManager;
+    exporterConfig?: LangSmithOTLPTraceExporterConfig;
+  } = {}
+) => {
+  const { globalTracerProvider, globalContextManager, exporterConfig } = config;
+
   const otel = {
     trace: otel_trace,
     context: otel_context,
@@ -70,7 +75,9 @@ export const initializeOTEL = ({
     otel_context.setGlobalContextManager(contextManager);
   }
 
-  const DEFAULT_LANGSMITH_SPAN_EXPORTER = new LangSmithOTLPTraceExporter({});
+  const DEFAULT_LANGSMITH_SPAN_EXPORTER = new LangSmithOTLPTraceExporter(
+    exporterConfig
+  );
 
   const DEFAULT_LANGSMITH_SPAN_PROCESSOR = new BatchSpanProcessor(
     DEFAULT_LANGSMITH_SPAN_EXPORTER
