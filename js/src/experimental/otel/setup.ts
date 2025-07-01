@@ -12,12 +12,35 @@ import {
   BatchSpanProcessor,
   BasicTracerProvider,
 } from "@opentelemetry/sdk-trace-base";
-import { LangSmithOTLPTraceExporter } from "./exporter.js";
+import {
+  LangSmithOTLPTraceExporter,
+  LangSmithOTLPTraceExporterConfig,
+} from "./exporter.js";
 
 import {
   setDefaultOTLPTracerComponents,
   setOTELInstances,
 } from "../../singletons/otel.js";
+
+/**
+ * Configuration options for initializing OpenTelemetry with LangSmith.
+ */
+export type InitializeOTELConfig = {
+  /**
+   * Optional custom OTEL TracerProvider to use instead of
+   * creating and globally setting a new one.
+   */
+  globalTracerProvider?: TracerProvider;
+  /**
+   * Optional custom OTEL ContextManager to use instead of
+   * creating and globally setting a new one with AsyncHooksContextManager.
+   */
+  globalContextManager?: ContextManager;
+  /**
+   * Optional configuration passed to the default LangSmith OTLP trace exporter.
+   */
+  exporterConfig?: LangSmithOTLPTraceExporterConfig;
+};
 
 /**
  * Initializes OpenTelemetry with LangSmith-specific configuration for tracing.
@@ -50,13 +73,9 @@ import {
  * initializeOTEL({ globalTracerProvider: customProvider });
  * ```
  */
-export const initializeOTEL = ({
-  globalTracerProvider,
-  globalContextManager,
-}: {
-  globalTracerProvider?: TracerProvider;
-  globalContextManager?: ContextManager;
-} = {}) => {
+export const initializeOTEL = (config: InitializeOTELConfig = {}) => {
+  const { globalTracerProvider, globalContextManager, exporterConfig } = config;
+
   const otel = {
     trace: otel_trace,
     context: otel_context,
@@ -70,7 +89,9 @@ export const initializeOTEL = ({
     otel_context.setGlobalContextManager(contextManager);
   }
 
-  const DEFAULT_LANGSMITH_SPAN_EXPORTER = new LangSmithOTLPTraceExporter({});
+  const DEFAULT_LANGSMITH_SPAN_EXPORTER = new LangSmithOTLPTraceExporter(
+    exporterConfig
+  );
 
   const DEFAULT_LANGSMITH_SPAN_PROCESSOR = new BatchSpanProcessor(
     DEFAULT_LANGSMITH_SPAN_EXPORTER
