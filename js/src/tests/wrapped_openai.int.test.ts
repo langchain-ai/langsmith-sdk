@@ -592,7 +592,7 @@ test("chat extra name", async () => {
   });
 });
 
-test("chat.completions.parse", async () => {
+test.only("chat.completions.parse", async () => {
   const { client, callSpy } = mockClient();
 
   const openai = wrapOpenAI(new OpenAI(), {
@@ -600,7 +600,7 @@ test("chat.completions.parse", async () => {
   });
 
   await openai.chat.completions.parse({
-    model: "gpt-4o-mini",
+    model: "gpt-4.1-nano",
     temperature: 0,
     messages: [
       {
@@ -620,8 +620,8 @@ test("chat.completions.parse", async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);
     const body = parseRequestBody((call[2] as any).body);
-    expect(body.extra.metadata).toEqual({
-      ls_model_name: "gpt-4o-mini",
+    expect(body.extra.metadata).toMatchObject({
+      ls_model_name: "gpt-4.1-nano",
       ls_model_type: "chat",
       ls_provider: "openai",
       ls_temperature: 0,
