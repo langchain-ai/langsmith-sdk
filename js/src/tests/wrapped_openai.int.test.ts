@@ -592,7 +592,7 @@ test("chat extra name", async () => {
   });
 });
 
-test.only("chat.completions.parse", async () => {
+test("chat.completions.parse", async () => {
   const { client, callSpy } = mockClient();
 
   const openai = wrapOpenAI(new OpenAI(), {
