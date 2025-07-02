@@ -616,17 +616,29 @@ export function traceable<Func extends (...args: any[]) => any>(
       // Node.JS uses AsyncLocalStorage (ALS) and AsyncResource
       // to allow storing context
       const prevRunFromStore = asyncLocalStorage.getStore();
+      let lc_contextVars;
+      // If a context var is set by LangChain outside of a traceable,
+      // it will be an object with a single property and we should copy
+      // context vars over into the new run tree.
+      if (
+        prevRunFromStore !== undefined &&
+        _LC_CONTEXT_VARIABLES_KEY in prevRunFromStore
+      ) {
+        lc_contextVars = prevRunFromStore[_LC_CONTEXT_VARIABLES_KEY];
+      }
       if (isRunTree(prevRunFromStore)) {
-        return [
-          getTracingRunTree(
-            prevRunFromStore.createChild(ensuredConfig),
-            processedArgs,
-            config?.getInvocationParams,
-            processInputsFn,
-            extractAttachmentsFn
-          ),
-          processedArgs as Inputs,
-        ];
+        const currentRunTree = getTracingRunTree(
+          prevRunFromStore.createChild(ensuredConfig),
+          processedArgs,
+          config?.getInvocationParams,
+          processInputsFn,
+          extractAttachmentsFn
+        );
+        if (lc_contextVars) {
+          ((currentRunTree ?? {}) as any)[_LC_CONTEXT_VARIABLES_KEY] =
+            lc_contextVars;
+        }
+        return [currentRunTree, processedArgs as Inputs];
       }
 
       const currentRunTree = getTracingRunTree(
@@ -636,16 +648,9 @@ export function traceable<Func extends (...args: any[]) => any>(
         processInputsFn,
         extractAttachmentsFn
       );
-      // If a context var is set by LangChain outside of a traceable,
-      // it will be an object with a single property and we should copy
-      // context vars over into the new run tree.
-      if (
-        prevRunFromStore !== undefined &&
-        _LC_CONTEXT_VARIABLES_KEY in prevRunFromStore
-      ) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (currentRunTree as any)[_LC_CONTEXT_VARIABLES_KEY] =
-          prevRunFromStore[_LC_CONTEXT_VARIABLES_KEY];
+      if (lc_contextVars) {
+        ((currentRunTree ?? {}) as any)[_LC_CONTEXT_VARIABLES_KEY] =
+          lc_contextVars;
       }
       return [currentRunTree, processedArgs as Inputs];
     })();

@@ -406,6 +406,7 @@ describe("LangChain context variables", () => {
   test.each(["true", "false"])(
     "set and get context variables at top level with tracingEnabled=%s",
     async (tracingEnabled) => {
+      process.env.LANGSMITH_TRACING = tracingEnabled;
       const { client } = mockClient();
       setContextVariable("foo", "bar");
       expect(getContextVariable("foo")).toEqual("bar");
@@ -417,7 +418,6 @@ describe("LangChain context variables", () => {
         },
         {
           client,
-          tracingEnabled: tracingEnabled === "true",
         }
       );
       await main();
@@ -428,6 +428,7 @@ describe("LangChain context variables", () => {
   test.each(["true", "false"])(
     "set and get context variables from runnable nested in traceable with tracingEnabled=%s",
     async (tracingEnabled) => {
+      process.env.LANGSMITH_TRACING = tracingEnabled;
       const { client } = mockClient();
 
       const nested = RunnableLambda.from(async () => {
@@ -444,7 +445,6 @@ describe("LangChain context variables", () => {
         },
         {
           client,
-          tracingEnabled: tracingEnabled === "true",
         }
       );
       await main();
@@ -455,6 +455,7 @@ describe("LangChain context variables", () => {
   test.each(["true", "false"])(
     "set and get context variables from traceable nested in runnable with tracingEnabled=%s",
     async (tracingEnabled) => {
+      process.env.LANGSMITH_TRACING = tracingEnabled;
       const { client } = mockClient();
 
       const nested = traceable(
@@ -464,7 +465,6 @@ describe("LangChain context variables", () => {
         },
         {
           client,
-          tracingEnabled: tracingEnabled === "true",
         }
       );
 
