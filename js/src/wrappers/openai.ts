@@ -10,6 +10,7 @@ import { KVMap } from "../schemas.js";
 
 // Extra leniency around types in case multiple OpenAI SDK versions get installed
 type OpenAIType = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   beta?: any;
   chat: {
     completions: {
