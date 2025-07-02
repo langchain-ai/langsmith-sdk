@@ -322,27 +322,19 @@ export const wrapOpenAI = <T extends OpenAIType>(
     ...options,
   };
 
-  if (
-    openai.beta &&
-    openai.beta.chat &&
-    openai.beta.chat.completions &&
-    typeof openai.beta.chat.completions.parse === "function"
-  ) {
-    tracedOpenAIClient.beta = {
-      ...openai.beta,
-      chat: {
-        ...openai.beta.chat,
-        completions: {
-          ...openai.beta.chat.completions,
-          parse: traceable(
-            openai.beta.chat.completions.parse.bind(
-              openai.beta.chat.completions
-            ),
-            chatCompletionParseMetadata
-          ),
-        },
-      },
-    };
+  if (openai.beta) {
+    tracedOpenAIClient.beta = openai.beta;
+
+    if (
+      openai.beta.chat &&
+      openai.beta.chat.completions &&
+      typeof openai.beta.chat.completions.parse === "function"
+    ) {
+      tracedOpenAIClient.beta.chat.completions.parse = traceable(
+        openai.beta.chat.completions.parse.bind(openai.beta.chat.completions),
+        chatCompletionParseMetadata
+      );
+    }
   }
 
   tracedOpenAIClient.chat = {

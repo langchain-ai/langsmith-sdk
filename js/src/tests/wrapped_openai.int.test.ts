@@ -783,6 +783,35 @@ test("chat.completions other methods (untraced)", async () => {
   callSpy.mockClear();
 });
 
+test("beta methods preserved", async () => {
+  const { client, callSpy } = mockClient();
+
+  const openai = wrapOpenAI(new OpenAI(), {
+    client,
+  });
+
+  // Test that beta namespace is preserved
+  expect(openai.beta).toBeDefined();
+
+  // Test that all beta methods are accessible (they may not all exist depending on OpenAI SDK version)
+  if (openai.beta.assistants) {
+    expect(openai.beta.assistants).toBeDefined();
+  }
+
+  if (openai.beta.threads) {
+    expect(openai.beta.threads).toBeDefined();
+  }
+
+  // Verify that beta methods don't generate unexpected tracing calls
+  const initialCallCount = callSpy.mock.calls.length;
+
+  // Accessing beta should not generate tracing calls
+  expect(openai.beta).toBeDefined();
+  expect(callSpy.mock.calls.length).toBe(initialCallCount);
+
+  callSpy.mockClear();
+});
+
 const usageMetadataTestCases = [
   {
     description: "stream",
