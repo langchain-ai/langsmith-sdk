@@ -1,4 +1,4 @@
-import { isRunTree, RunTree } from "../run_trees.js";
+import type { RunTree } from "../run_trees.js";
 import type { ContextPlaceholder, TraceableFunction } from "./types.js";
 
 interface AsyncLocalStorageInterface {
