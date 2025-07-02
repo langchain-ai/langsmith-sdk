@@ -22,6 +22,12 @@ type OpenAIType = {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     create: (...args: any[]) => any;
   };
+  responses?: {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    create: (...args: any[]) => any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    retrieve: (...args: any[]) => any;
+  };
 };
 
 type ExtraRunTreeConfig = Pick<
@@ -164,6 +170,22 @@ const chatAggregator = (chunks: OpenAI.ChatCompletionChunk[]) => {
   return aggregatedOutput;
 };
 
+const responsesAggregator = (events: any[]) => {
+  if (!events || events.length === 0) {
+    return {};
+  }
+
+  // Find the response.completed event which contains the final response
+  for (const event of events) {
+    if (event.type === "response.completed" && event.response) {
+      return event.response;
+    }
+  }
+
+  // If no completed event found, return the last event
+  return events[events.length - 1] || {};
+};
+
 const textAggregator = (
   allChunks: OpenAI.Completions.Completion[]
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -290,7 +312,8 @@ export const wrapOpenAI = <T extends OpenAIType>(
         ls_provider: "openai",
         ls_model_type: "chat",
         ls_model_name: params.model,
-        ls_max_tokens: params.max_tokens ?? undefined,
+        ls_max_tokens:
+          params.max_completion_tokens ?? params.max_tokens ?? undefined,
         ls_temperature: params.temperature ?? undefined,
         ls_stop,
       };
@@ -324,16 +347,20 @@ export const wrapOpenAI = <T extends OpenAIType>(
 
   tracedOpenAIClient.chat = {
     ...openai.chat,
-    completions: {
-      ...openai.chat.completions,
-      create: traceable(
-        openai.chat.completions.create.bind(openai.chat.completions),
-        chatCompletionParseMetadata
-      ),
-    },
+    completions: Object.create(Object.getPrototypeOf(openai.chat.completions)),
   };
 
-  if (openai.chat.completions.parse) {
+  // Copy all own properties and then wrap specific methods
+  Object.assign(tracedOpenAIClient.chat.completions, openai.chat.completions);
+
+  // Wrap chat.completions.create
+  tracedOpenAIClient.chat.completions.create = traceable(
+    openai.chat.completions.create.bind(openai.chat.completions),
+    chatCompletionParseMetadata
+  );
+
+  // Wrap chat.completions.parse if it exists
+  if (typeof openai.chat.completions.parse === "function") {
     tracedOpenAIClient.chat.completions.parse = traceable(
       openai.chat.completions.parse.bind(openai.chat.completions),
       chatCompletionParseMetadata
@@ -368,6 +395,48 @@ export const wrapOpenAI = <T extends OpenAIType>(
       ...options,
     }),
   };
+
+  // Add responses API support if it exists
+  if (openai.responses) {
+    // Create a new object with the same prototype to preserve all methods
+    tracedOpenAIClient.responses = Object.create(
+      Object.getPrototypeOf(openai.responses)
+    );
+
+    // Copy all own properties
+    if (tracedOpenAIClient.responses) {
+      Object.assign(tracedOpenAIClient.responses, openai.responses);
+    }
+
+    // Wrap responses.create method
+    if (
+      tracedOpenAIClient.responses &&
+      typeof tracedOpenAIClient.responses.create === "function"
+    ) {
+      tracedOpenAIClient.responses.create = traceable(
+        openai.responses.create.bind(openai.responses),
+        {
+          name: "ChatOpenAI",
+          run_type: "llm",
+          aggregator: responsesAggregator,
+          argsConfigPath: [1, "langsmithExtra"],
+          getInvocationParams: (payload: unknown) => {
+            if (typeof payload !== "object" || payload == null)
+              return undefined;
+            // Handle responses API parameters
+            const params = payload as any;
+            return {
+              ls_provider: "openai",
+              ls_model_type: "llm",
+              ls_model_name: params.model || "unknown",
+            };
+          },
+          processOutputs: processChatCompletion,
+          ...options,
+        }
+      );
+    }
+  }
 
   return tracedOpenAIClient as PatchedOpenAIClient<T>;
 };
