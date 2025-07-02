@@ -1,5 +1,6 @@
 import { RunTree, RunnableConfigLike } from "../run_trees.js";
 import { ROOT } from "./traceable.js";
+import { _LC_CONTEXT_VARIABLES_KEY } from "./constants.js";
 
 type SmartPromise<T> = T extends AsyncGenerator
   ? T
@@ -75,3 +76,7 @@ export type TraceableFunction<Func extends (...args: any[]) => any> =
   };
 
 export type RunTreeLike = RunTree;
+
+export type ContextPlaceholder = {
+  [_LC_CONTEXT_VARIABLES_KEY]?: Record<string, unknown>;
+};
