@@ -19,7 +19,10 @@ import {
   AsyncLocalStorageProviderSingleton,
 } from "./singletons/traceable.js";
 import { _LC_CONTEXT_VARIABLES_KEY } from "./singletons/constants.js";
-import type { TraceableFunction, ContextPlaceholder } from "./singletons/types.js";
+import type {
+  TraceableFunction,
+  ContextPlaceholder,
+} from "./singletons/types.js";
 import {
   isKVMap,
   isReadableStream,
@@ -564,7 +567,10 @@ export function traceable<Func extends (...args: any[]) => any>(
       processedArgs[i] = convertSerializableArg(processedArgs[i]);
     }
 
-    const [currentContext, rawInputs] = ((): [RunTree | ContextPlaceholder, Inputs] => {
+    const [currentContext, rawInputs] = ((): [
+      RunTree | ContextPlaceholder,
+      Inputs
+    ] => {
       const [firstArg, ...restArgs] = processedArgs;
 
       // used for handoff between LangChain.JS and traceable functions
@@ -644,7 +650,9 @@ export function traceable<Func extends (...args: any[]) => any>(
       return [currentRunTree, processedArgs as Inputs];
     })();
 
-    const currentRunTree = isRunTree(currentContext) ? currentContext : undefined;
+    const currentRunTree = isRunTree(currentContext)
+      ? currentContext
+      : undefined;
 
     const otelContextManager = maybeCreateOtelContext(
       currentRunTree,

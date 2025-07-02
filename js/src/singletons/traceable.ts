@@ -4,7 +4,10 @@ import type { ContextPlaceholder, TraceableFunction } from "./types.js";
 interface AsyncLocalStorageInterface {
   getStore: () => RunTree | ContextPlaceholder | undefined;
 
-  run: (context: RunTree | ContextPlaceholder | undefined, fn: () => void) => void;
+  run: (
+    context: RunTree | ContextPlaceholder | undefined,
+    fn: () => void
+  ) => void;
 }
 
 class MockAsyncLocalStorage implements AsyncLocalStorageInterface {
