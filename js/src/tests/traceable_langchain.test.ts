@@ -1,3 +1,4 @@
+/* eslint-disable no-process-env */
 import { traceable } from "../traceable.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 import { mockClient } from "./utils/mock_client.js";
