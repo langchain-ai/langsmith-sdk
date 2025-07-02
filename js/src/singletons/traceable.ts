@@ -1,10 +1,10 @@
 import { isRunTree, RunTree } from "../run_trees.js";
-import { TraceableFunction } from "./types.js";
+import type { ContextPlaceholder, TraceableFunction } from "./types.js";
 
 interface AsyncLocalStorageInterface {
-  getStore: () => RunTree | undefined;
+  getStore: () => RunTree | ContextPlaceholder | undefined;
 
-  run: (context: RunTree | undefined, fn: () => void) => void;
+  run: (context: RunTree | ContextPlaceholder | undefined, fn: () => void) => void;
 }
 
 class MockAsyncLocalStorage implements AsyncLocalStorageInterface {
@@ -12,7 +12,7 @@ class MockAsyncLocalStorage implements AsyncLocalStorageInterface {
     return undefined;
   }
 
-  run(_: RunTree | undefined, callback: () => void): void {
+  run(_: RunTree | ContextPlaceholder | undefined, callback: () => void): void {
     return callback();
   }
 }
@@ -55,7 +55,7 @@ export function getCurrentRunTree(
 
 export function getCurrentRunTree(permitAbsentRunTree = false) {
   const runTree = AsyncLocalStorageProviderSingleton.getInstance().getStore();
-  if (!permitAbsentRunTree && !isRunTree(runTree)) {
+  if (!permitAbsentRunTree && runTree === undefined) {
     throw new Error(
       "Could not get the current run tree.\n\nPlease make sure you are calling this method within a traceable function and that tracing is enabled."
     );

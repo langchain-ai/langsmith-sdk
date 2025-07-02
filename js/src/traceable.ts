@@ -19,7 +19,7 @@ import {
   AsyncLocalStorageProviderSingleton,
 } from "./singletons/traceable.js";
 import { _LC_CONTEXT_VARIABLES_KEY } from "./singletons/constants.js";
-import { TraceableFunction } from "./singletons/types.js";
+import type { TraceableFunction, ContextPlaceholder } from "./singletons/types.js";
 import {
   isKVMap,
   isReadableStream,
@@ -36,7 +36,7 @@ import { createOtelSpanContextFromRun } from "./experimental/otel/utils.js";
 import { OTELTracer } from "./experimental/otel/types.js";
 
 AsyncLocalStorageProviderSingleton.initializeGlobalInstance(
-  new AsyncLocalStorage<RunTree | undefined>()
+  new AsyncLocalStorage<RunTree | ContextPlaceholder | undefined>()
 );
 
 /**
@@ -215,9 +215,9 @@ const getTracingRunTree = <Args extends unknown[]>(
   extractAttachments:
     | ((...args: Args) => [Attachments | undefined, KVMap])
     | undefined
-): RunTree | undefined => {
+): RunTree | ContextPlaceholder => {
   if (!isTracingEnabled(runTree.tracingEnabled)) {
-    return undefined;
+    return {};
   }
 
   const [attached, args] = handleRunAttachments(
@@ -564,7 +564,7 @@ export function traceable<Func extends (...args: any[]) => any>(
       processedArgs[i] = convertSerializableArg(processedArgs[i]);
     }
 
-    const [currentRunTree, rawInputs] = ((): [RunTree | undefined, Inputs] => {
+    const [currentContext, rawInputs] = ((): [RunTree | ContextPlaceholder, Inputs] => {
       const [firstArg, ...restArgs] = processedArgs;
 
       // used for handoff between LangChain.JS and traceable functions
@@ -643,6 +643,8 @@ export function traceable<Func extends (...args: any[]) => any>(
       }
       return [currentRunTree, processedArgs as Inputs];
     })();
+
+    const currentRunTree = isRunTree(currentContext) ? currentContext : undefined;
 
     const otelContextManager = maybeCreateOtelContext(
       currentRunTree,
@@ -937,11 +939,11 @@ export function traceable<Func extends (...args: any[]) => any>(
 
     // Wrap with OTEL context if available, similar to Python's implementation
     if (otelContextManager) {
-      return asyncLocalStorage.run(currentRunTree, () =>
+      return asyncLocalStorage.run(currentContext, () =>
         otelContextManager(runWithContext)
       );
     } else {
-      return asyncLocalStorage.run(currentRunTree, runWithContext);
+      return asyncLocalStorage.run(currentContext, runWithContext);
     }
   };
 
