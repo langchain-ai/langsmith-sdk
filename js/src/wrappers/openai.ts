@@ -1,23 +1,21 @@
 import { OpenAI } from "openai";
-import type { APIPromise } from "openai/core";
+import type { APIPromise } from "openai";
 import type { RunTreeConfig } from "../index.js";
-import { isTraceableFunction, traceable } from "../traceable.js";
+import {
+  isTraceableFunction,
+  traceable,
+  TraceableConfig,
+} from "../traceable.js";
 import { KVMap } from "../schemas.js";
 
 // Extra leniency around types in case multiple OpenAI SDK versions get installed
 type OpenAIType = {
-  beta?: {
-    chat?: {
-      completions?: {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        parse?: (...args: any[]) => any;
-      };
-    };
-  };
+  beta?: any;
   chat: {
     completions: {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       create: (...args: any[]) => any;
+      parse: (...args: any[]) => any;
     };
   };
   completions: {
@@ -272,6 +270,35 @@ export const wrapOpenAI = <T extends OpenAIType>(
   // OpenAI methods.
   const tracedOpenAIClient = { ...openai };
 
+  const chatCompletionParseMetadata: TraceableConfig<
+    typeof openai.chat.completions.create
+  > = {
+    name: "ChatOpenAI",
+    run_type: "llm",
+    aggregator: chatAggregator,
+    argsConfigPath: [1, "langsmithExtra"],
+    getInvocationParams: (payload: unknown) => {
+      if (typeof payload !== "object" || payload == null) return undefined;
+      // we can safely do so, as the types are not exported in TSC
+      const params = payload as OpenAI.ChatCompletionCreateParams;
+
+      const ls_stop =
+        (typeof params.stop === "string" ? [params.stop] : params.stop) ??
+        undefined;
+
+      return {
+        ls_provider: "openai",
+        ls_model_type: "chat",
+        ls_model_name: params.model,
+        ls_max_tokens: params.max_tokens ?? undefined,
+        ls_temperature: params.temperature ?? undefined,
+        ls_stop,
+      };
+    },
+    processOutputs: processChatCompletion,
+    ...options,
+  };
+
   if (
     openai.beta &&
     openai.beta.chat &&
@@ -288,33 +315,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
             openai.beta.chat.completions.parse.bind(
               openai.beta.chat.completions
             ),
-            {
-              name: "ChatOpenAI",
-              run_type: "llm",
-              aggregator: chatAggregator,
-              argsConfigPath: [1, "langsmithExtra"],
-              getInvocationParams: (payload: unknown) => {
-                if (typeof payload !== "object" || payload == null)
-                  return undefined;
-                // we can safely do so, as the types are not exported in TSC
-                const params = payload as OpenAI.ChatCompletionCreateParams;
-
-                const ls_stop =
-                  (typeof params.stop === "string"
-                    ? [params.stop]
-                    : params.stop) ?? undefined;
-
-                return {
-                  ls_provider: "openai",
-                  ls_model_type: "chat",
-                  ls_model_name: params.model,
-                  ls_max_tokens: params.max_tokens ?? undefined,
-                  ls_temperature: params.temperature ?? undefined,
-                  ls_stop,
-                };
-              },
-              ...options,
-            }
+            chatCompletionParseMetadata
           ),
         },
       },
@@ -327,36 +328,17 @@ export const wrapOpenAI = <T extends OpenAIType>(
       ...openai.chat.completions,
       create: traceable(
         openai.chat.completions.create.bind(openai.chat.completions),
-        {
-          name: "ChatOpenAI",
-          run_type: "llm",
-          aggregator: chatAggregator,
-          argsConfigPath: [1, "langsmithExtra"],
-          getInvocationParams: (payload: unknown) => {
-            if (typeof payload !== "object" || payload == null)
-              return undefined;
-            // we can safely do so, as the types are not exported in TSC
-            const params = payload as OpenAI.ChatCompletionCreateParams;
-
-            const ls_stop =
-              (typeof params.stop === "string" ? [params.stop] : params.stop) ??
-              undefined;
-
-            return {
-              ls_provider: "openai",
-              ls_model_type: "chat",
-              ls_model_name: params.model,
-              ls_max_tokens: params.max_tokens ?? undefined,
-              ls_temperature: params.temperature ?? undefined,
-              ls_stop,
-            };
-          },
-          processOutputs: processChatCompletion,
-          ...options,
-        }
+        chatCompletionParseMetadata
       ),
     },
   };
+
+  if (openai.chat.completions.parse) {
+    tracedOpenAIClient.chat.completions.parse = traceable(
+      openai.chat.completions.parse.bind(openai.chat.completions),
+      chatCompletionParseMetadata
+    );
+  }
 
   tracedOpenAIClient.completions = {
     ...openai.completions,

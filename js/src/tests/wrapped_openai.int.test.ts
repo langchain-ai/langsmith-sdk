@@ -592,14 +592,14 @@ test("chat extra name", async () => {
   });
 });
 
-test("beta.chat.completions.parse", async () => {
+test("chat.completions.parse", async () => {
   const { client, callSpy } = mockClient();
 
   const openai = wrapOpenAI(new OpenAI(), {
     client,
   });
 
-  await openai.beta.chat.completions.parse({
+  await openai.chat.completions.parse({
     model: "gpt-4o-mini",
     temperature: 0,
     messages: [
