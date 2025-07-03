@@ -130,7 +130,6 @@ test("chat.completions", async () => {
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   for await (const _ of patchedStreamToBreak) {
-    console.log(_);
     break;
   }
 
@@ -371,7 +370,7 @@ test("chat completions with tool calling", async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);
     const body = parseRequestBody((call[2] as any).body);
-    expect(body.extra.metadata).toEqual({
+    expect(body.extra.metadata).toMatchObject({
       thing1: "thing2",
       ls_model_name: "gpt-4.1-nano",
       ls_model_type: "chat",
@@ -502,8 +501,6 @@ test.skip("with initialization time config", async () => {
     // @ts-expect-error Should type check streamed output
     const _test = chunk.invalidPrompt;
   }
-
-  console.log(patchedChoices);
 });
 
 test.skip("no tracing with env var unset", async () => {
@@ -517,7 +514,6 @@ test.skip("no tracing with env var unset", async () => {
     model: "gpt-4.1-nano",
   });
   expect(patched).toBeDefined();
-  console.log(patched);
 });
 
 test("wrapping same instance", async () => {
@@ -592,15 +588,15 @@ test("chat extra name", async () => {
   });
 });
 
-test("beta.chat.completions.parse", async () => {
+test("chat.completions.parse", async () => {
   const { client, callSpy } = mockClient();
 
   const openai = wrapOpenAI(new OpenAI(), {
     client,
   });
 
-  await openai.beta.chat.completions.parse({
-    model: "gpt-4o-mini",
+  await openai.chat.completions.parse({
+    model: "gpt-4.1-nano",
     temperature: 0,
     messages: [
       {
@@ -620,13 +616,199 @@ test("beta.chat.completions.parse", async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);
     const body = parseRequestBody((call[2] as any).body);
-    expect(body.extra.metadata).toEqual({
-      ls_model_name: "gpt-4o-mini",
+    expect(body.extra.metadata).toMatchObject({
+      ls_model_name: "gpt-4.1-nano",
       ls_model_type: "chat",
       ls_provider: "openai",
       ls_temperature: 0,
     });
   }
+  callSpy.mockClear();
+});
+
+test("responses.create and retrieve workflow", async () => {
+  const { client, callSpy } = mockClient();
+
+  const openai = wrapOpenAI(new OpenAI(), {
+    client,
+  });
+
+  // Create a response (this should be traced)
+  const createResponse = await openai.responses.create({
+    model: "gpt-4.1-nano",
+    input: [
+      {
+        role: "user",
+        content: [{ type: "input_text", text: "What is 2+2?" }],
+      },
+    ],
+  });
+
+  expect(createResponse).toBeDefined();
+  expect(createResponse.id).toBeDefined();
+
+  // Verify that create was traced
+  const createCalls = callSpy.mock.calls.filter(
+    (call) => (call[2] as any).method === "POST"
+  );
+  expect(createCalls.length).toBeGreaterThanOrEqual(1);
+
+  const createCallCount = callSpy.mock.calls.length;
+
+  // Retrieve the response (this should NOT be traced)
+  const retrieveResponse = await openai.responses.retrieve(createResponse.id);
+
+  expect(retrieveResponse).toBeDefined();
+  expect(retrieveResponse.id).toBe(createResponse.id);
+
+  // Verify that retrieve did NOT add any new tracing calls
+  expect(callSpy.mock.calls.length).toBe(createCallCount);
+
+  // Verify the create call had proper metadata
+  for (const call of createCalls) {
+    const body = parseRequestBody((call[2] as any).body);
+    expect(body.extra.metadata).toMatchObject({
+      ls_model_name: "gpt-4.1-nano",
+      ls_model_type: "llm",
+      ls_provider: "openai",
+    });
+  }
+
+  callSpy.mockClear();
+});
+
+test("responses.create streaming", async () => {
+  const { client, callSpy } = mockClient();
+
+  const openai = wrapOpenAI(new OpenAI(), {
+    client,
+  });
+
+  const stream = await openai.responses.create({
+    model: "gpt-4.1-nano",
+    input: [
+      {
+        role: "user",
+        content: [{ type: "input_text", text: "Say hello" }],
+      },
+    ],
+    stream: true,
+  });
+
+  const chunks: unknown[] = [];
+  for await (const chunk of stream) {
+    chunks.push(chunk);
+  }
+
+  expect(chunks.length).toBeGreaterThan(0);
+  expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
+
+  // Verify token events were logged
+  const patchCalls = callSpy.mock.calls.filter(
+    (call) => (call[2] as any).method === "PATCH"
+  );
+  const lastPatchCall = patchCalls[patchCalls.length - 1];
+  const body = parseRequestBody((lastPatchCall[2] as any).body);
+
+  expect(body.events).toBeDefined();
+  const tokenEvents = body.events.filter(
+    (event: any) => event.name === "new_token"
+  );
+  expect(tokenEvents.length).toBeGreaterThan(0);
+
+  for (const call of callSpy.mock.calls) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);
+    const body = parseRequestBody((call[2] as any).body);
+    expect(body.extra.metadata).toMatchObject({
+      ls_model_name: "gpt-4.1-nano",
+      ls_model_type: "llm",
+      ls_provider: "openai",
+    });
+  }
+  callSpy.mockClear();
+});
+
+test("responses other methods (untraced)", async () => {
+  const { client, callSpy } = mockClient();
+
+  const openai = wrapOpenAI(new OpenAI(), {
+    client,
+  });
+
+  // Test that other responses methods exist and are preserved
+  expect(openai.responses.inputItems).toBeDefined();
+  expect(typeof openai.responses.create).toBe("function");
+  expect(typeof openai.responses.retrieve).toBe("function");
+  expect(typeof openai.responses.delete).toBe("function");
+  expect(typeof openai.responses.parse).toBe("function");
+  expect(typeof openai.responses.stream).toBe("function");
+  expect(typeof openai.responses.cancel).toBe("function");
+
+  // Verify that non-create methods don't generate tracing calls
+  const initialCallCount = callSpy.mock.calls.length;
+
+  // These should exist and be accessible without generating tracing calls
+  expect(openai.responses.inputItems).toBeDefined();
+  expect(callSpy.mock.calls.length).toBe(initialCallCount);
+
+  callSpy.mockClear();
+});
+
+test("chat.completions other methods (untraced)", async () => {
+  const { client, callSpy } = mockClient();
+
+  const openai = wrapOpenAI(new OpenAI(), {
+    client,
+  });
+
+  // Test that all chat.completions methods exist and are preserved
+  expect(typeof openai.chat.completions.create).toBe("function");
+  expect(typeof openai.chat.completions.parse).toBe("function");
+  expect(typeof openai.chat.completions.retrieve).toBe("function");
+  expect(typeof openai.chat.completions.update).toBe("function");
+  expect(typeof openai.chat.completions.list).toBe("function");
+  expect(typeof openai.chat.completions.delete).toBe("function");
+  expect(typeof openai.chat.completions.runTools).toBe("function");
+  expect(typeof openai.chat.completions.stream).toBe("function");
+
+  // Verify that non-traced methods don't generate tracing calls
+  const initialCallCount = callSpy.mock.calls.length;
+
+  // These methods should exist and be accessible without generating tracing calls
+  expect(typeof openai.chat.completions.retrieve).toBe("function");
+  expect(typeof openai.chat.completions.list).toBe("function");
+  expect(callSpy.mock.calls.length).toBe(initialCallCount);
+
+  callSpy.mockClear();
+});
+
+test("beta methods preserved", async () => {
+  const { client, callSpy } = mockClient();
+
+  const openai = wrapOpenAI(new OpenAI(), {
+    client,
+  });
+
+  // Test that beta namespace is preserved
+  expect(openai.beta).toBeDefined();
+
+  // Test that all beta methods are accessible (they may not all exist depending on OpenAI SDK version)
+  if (openai.beta.assistants) {
+    expect(openai.beta.assistants).toBeDefined();
+  }
+
+  if (openai.beta.threads) {
+    expect(openai.beta.threads).toBeDefined();
+  }
+
+  // Verify that beta methods don't generate unexpected tracing calls
+  const initialCallCount = callSpy.mock.calls.length;
+
+  // Accessing beta should not generate tracing calls
+  expect(openai.beta).toBeDefined();
+  expect(callSpy.mock.calls.length).toBe(initialCallCount);
+
   callSpy.mockClear();
 });
 

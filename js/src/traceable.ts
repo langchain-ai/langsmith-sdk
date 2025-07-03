@@ -423,6 +423,58 @@ const convertSerializableArg = (arg: unknown): unknown => {
   return arg;
 };
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type TraceableConfig<Func extends (...args: any[]) => any> = Partial<
+  Omit<RunTreeConfig, "inputs" | "outputs">
+> & {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  aggregator?: (args: any[]) => any;
+  argsConfigPath?: [number] | [number, string];
+  tracer?: OTELTracer;
+  __finalTracedIteratorKey?: string;
+
+  /**
+   * Extract attachments from args and return remaining args.
+   * @param args Arguments of the traced function
+   * @returns Tuple of [Attachments, remaining args]
+   */
+  extractAttachments?: (
+    ...args: Parameters<Func>
+  ) => [Attachments | undefined, KVMap];
+
+  /**
+   * Extract invocation parameters from the arguments of the traced function.
+   * This is useful for LangSmith to properly track common metadata like
+   * provider, model name and temperature.
+   *
+   * @param args Arguments of the traced function
+   * @returns Key-value map of the invocation parameters, which will be merged with the existing metadata
+   */
+  getInvocationParams?: (
+    ...args: Parameters<Func>
+  ) => InvocationParamsSchema | undefined;
+
+  /**
+   * Apply transformations to the inputs before logging.
+   * This function should NOT mutate the inputs.
+   * `processInputs` is not inherited by nested traceable functions.
+   *
+   * @param inputs Key-value map of the function inputs.
+   * @returns Transformed key-value map
+   */
+  processInputs?: (inputs: Readonly<KVMap>) => KVMap;
+
+  /**
+   * Apply transformations to the outputs before logging.
+   * This function should NOT mutate the outputs.
+   * `processOutputs` is not inherited by nested traceable functions.
+   *
+   * @param outputs Key-value map of the function outputs
+   * @returns Transformed key-value map
+   */
+  processOutputs?: (outputs: Readonly<KVMap>) => KVMap;
+};
+
 /**
  * Higher-order function that takes function as input and returns a
  * "TraceableFunction" - a wrapped version of the input that
@@ -440,54 +492,7 @@ const convertSerializableArg = (arg: unknown): unknown => {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function traceable<Func extends (...args: any[]) => any>(
   wrappedFunc: Func,
-  config?: Partial<Omit<RunTreeConfig, "inputs" | "outputs">> & {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    aggregator?: (args: any[]) => any;
-    argsConfigPath?: [number] | [number, string];
-    tracer?: OTELTracer;
-    __finalTracedIteratorKey?: string;
-
-    /**
-     * Extract attachments from args and return remaining args.
-     * @param args Arguments of the traced function
-     * @returns Tuple of [Attachments, remaining args]
-     */
-    extractAttachments?: (
-      ...args: Parameters<Func>
-    ) => [Attachments | undefined, KVMap];
-
-    /**
-     * Extract invocation parameters from the arguments of the traced function.
-     * This is useful for LangSmith to properly track common metadata like
-     * provider, model name and temperature.
-     *
-     * @param args Arguments of the traced function
-     * @returns Key-value map of the invocation parameters, which will be merged with the existing metadata
-     */
-    getInvocationParams?: (
-      ...args: Parameters<Func>
-    ) => InvocationParamsSchema | undefined;
-
-    /**
-     * Apply transformations to the inputs before logging.
-     * This function should NOT mutate the inputs.
-     * `processInputs` is not inherited by nested traceable functions.
-     *
-     * @param inputs Key-value map of the function inputs.
-     * @returns Transformed key-value map
-     */
-    processInputs?: (inputs: Readonly<KVMap>) => KVMap;
-
-    /**
-     * Apply transformations to the outputs before logging.
-     * This function should NOT mutate the outputs.
-     * `processOutputs` is not inherited by nested traceable functions.
-     *
-     * @param outputs Key-value map of the function outputs
-     * @returns Transformed key-value map
-     */
-    processOutputs?: (outputs: Readonly<KVMap>) => KVMap;
-  }
+  config?: TraceableConfig<Func>
 ) {
   type Inputs = Parameters<Func>;
   const {
