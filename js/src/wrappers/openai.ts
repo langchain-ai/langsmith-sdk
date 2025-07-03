@@ -1,28 +1,33 @@
 import { OpenAI } from "openai";
-import type { APIPromise } from "openai/core";
+import type { APIPromise } from "openai";
 import type { RunTreeConfig } from "../index.js";
-import { isTraceableFunction, traceable } from "../traceable.js";
+import {
+  isTraceableFunction,
+  traceable,
+  TraceableConfig,
+} from "../traceable.js";
 import { KVMap } from "../schemas.js";
 
 // Extra leniency around types in case multiple OpenAI SDK versions get installed
 type OpenAIType = {
-  beta?: {
-    chat?: {
-      completions?: {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        parse?: (...args: any[]) => any;
-      };
-    };
-  };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  beta?: any;
   chat: {
     completions: {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       create: (...args: any[]) => any;
+      parse: (...args: any[]) => any;
     };
   };
   completions: {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     create: (...args: any[]) => any;
+  };
+  responses?: {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    create: (...args: any[]) => any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    retrieve: (...args: any[]) => any;
   };
 };
 
@@ -166,6 +171,22 @@ const chatAggregator = (chunks: OpenAI.ChatCompletionChunk[]) => {
   return aggregatedOutput;
 };
 
+const responsesAggregator = (events: any[]) => {
+  if (!events || events.length === 0) {
+    return {};
+  }
+
+  // Find the response.completed event which contains the final response
+  for (const event of events) {
+    if (event.type === "response.completed" && event.response) {
+      return event.response;
+    }
+  }
+
+  // If no completed event found, return the last event
+  return events[events.length - 1] || {};
+};
+
 const textAggregator = (
   allChunks: OpenAI.Completions.Completion[]
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -272,91 +293,72 @@ export const wrapOpenAI = <T extends OpenAIType>(
   // OpenAI methods.
   const tracedOpenAIClient = { ...openai };
 
-  if (
-    openai.beta &&
-    openai.beta.chat &&
-    openai.beta.chat.completions &&
-    typeof openai.beta.chat.completions.parse === "function"
-  ) {
-    tracedOpenAIClient.beta = {
-      ...openai.beta,
-      chat: {
-        ...openai.beta.chat,
-        completions: {
-          ...openai.beta.chat.completions,
-          parse: traceable(
-            openai.beta.chat.completions.parse.bind(
-              openai.beta.chat.completions
-            ),
-            {
-              name: "ChatOpenAI",
-              run_type: "llm",
-              aggregator: chatAggregator,
-              argsConfigPath: [1, "langsmithExtra"],
-              getInvocationParams: (payload: unknown) => {
-                if (typeof payload !== "object" || payload == null)
-                  return undefined;
-                // we can safely do so, as the types are not exported in TSC
-                const params = payload as OpenAI.ChatCompletionCreateParams;
+  const chatCompletionParseMetadata: TraceableConfig<
+    typeof openai.chat.completions.create
+  > = {
+    name: "ChatOpenAI",
+    run_type: "llm",
+    aggregator: chatAggregator,
+    argsConfigPath: [1, "langsmithExtra"],
+    getInvocationParams: (payload: unknown) => {
+      if (typeof payload !== "object" || payload == null) return undefined;
+      // we can safely do so, as the types are not exported in TSC
+      const params = payload as OpenAI.ChatCompletionCreateParams;
 
-                const ls_stop =
-                  (typeof params.stop === "string"
-                    ? [params.stop]
-                    : params.stop) ?? undefined;
+      const ls_stop =
+        (typeof params.stop === "string" ? [params.stop] : params.stop) ??
+        undefined;
 
-                return {
-                  ls_provider: "openai",
-                  ls_model_type: "chat",
-                  ls_model_name: params.model,
-                  ls_max_tokens: params.max_tokens ?? undefined,
-                  ls_temperature: params.temperature ?? undefined,
-                  ls_stop,
-                };
-              },
-              ...options,
-            }
-          ),
-        },
-      },
-    };
+      return {
+        ls_provider: "openai",
+        ls_model_type: "chat",
+        ls_model_name: params.model,
+        ls_max_tokens:
+          params.max_completion_tokens ?? params.max_tokens ?? undefined,
+        ls_temperature: params.temperature ?? undefined,
+        ls_stop,
+      };
+    },
+    processOutputs: processChatCompletion,
+    ...options,
+  };
+
+  if (openai.beta) {
+    tracedOpenAIClient.beta = openai.beta;
+
+    if (
+      openai.beta.chat &&
+      openai.beta.chat.completions &&
+      typeof openai.beta.chat.completions.parse === "function"
+    ) {
+      tracedOpenAIClient.beta.chat.completions.parse = traceable(
+        openai.beta.chat.completions.parse.bind(openai.beta.chat.completions),
+        chatCompletionParseMetadata
+      );
+    }
   }
 
   tracedOpenAIClient.chat = {
     ...openai.chat,
-    completions: {
-      ...openai.chat.completions,
-      create: traceable(
-        openai.chat.completions.create.bind(openai.chat.completions),
-        {
-          name: "ChatOpenAI",
-          run_type: "llm",
-          aggregator: chatAggregator,
-          argsConfigPath: [1, "langsmithExtra"],
-          getInvocationParams: (payload: unknown) => {
-            if (typeof payload !== "object" || payload == null)
-              return undefined;
-            // we can safely do so, as the types are not exported in TSC
-            const params = payload as OpenAI.ChatCompletionCreateParams;
-
-            const ls_stop =
-              (typeof params.stop === "string" ? [params.stop] : params.stop) ??
-              undefined;
-
-            return {
-              ls_provider: "openai",
-              ls_model_type: "chat",
-              ls_model_name: params.model,
-              ls_max_tokens: params.max_tokens ?? undefined,
-              ls_temperature: params.temperature ?? undefined,
-              ls_stop,
-            };
-          },
-          processOutputs: processChatCompletion,
-          ...options,
-        }
-      ),
-    },
+    completions: Object.create(Object.getPrototypeOf(openai.chat.completions)),
   };
+
+  // Copy all own properties and then wrap specific methods
+  Object.assign(tracedOpenAIClient.chat.completions, openai.chat.completions);
+
+  // Wrap chat.completions.create
+  tracedOpenAIClient.chat.completions.create = traceable(
+    openai.chat.completions.create.bind(openai.chat.completions),
+    chatCompletionParseMetadata
+  );
+
+  // Wrap chat.completions.parse if it exists
+  if (typeof openai.chat.completions.parse === "function") {
+    tracedOpenAIClient.chat.completions.parse = traceable(
+      openai.chat.completions.parse.bind(openai.chat.completions),
+      chatCompletionParseMetadata
+    );
+  }
 
   tracedOpenAIClient.completions = {
     ...openai.completions,
@@ -386,6 +388,48 @@ export const wrapOpenAI = <T extends OpenAIType>(
       ...options,
     }),
   };
+
+  // Add responses API support if it exists
+  if (openai.responses) {
+    // Create a new object with the same prototype to preserve all methods
+    tracedOpenAIClient.responses = Object.create(
+      Object.getPrototypeOf(openai.responses)
+    );
+
+    // Copy all own properties
+    if (tracedOpenAIClient.responses) {
+      Object.assign(tracedOpenAIClient.responses, openai.responses);
+    }
+
+    // Wrap responses.create method
+    if (
+      tracedOpenAIClient.responses &&
+      typeof tracedOpenAIClient.responses.create === "function"
+    ) {
+      tracedOpenAIClient.responses.create = traceable(
+        openai.responses.create.bind(openai.responses),
+        {
+          name: "ChatOpenAI",
+          run_type: "llm",
+          aggregator: responsesAggregator,
+          argsConfigPath: [1, "langsmithExtra"],
+          getInvocationParams: (payload: unknown) => {
+            if (typeof payload !== "object" || payload == null)
+              return undefined;
+            // Handle responses API parameters
+            const params = payload as any;
+            return {
+              ls_provider: "openai",
+              ls_model_type: "llm",
+              ls_model_name: params.model || "unknown",
+            };
+          },
+          processOutputs: processChatCompletion,
+          ...options,
+        }
+      );
+    }
+  }
 
   return tracedOpenAIClient as PatchedOpenAIClient<T>;
 };
