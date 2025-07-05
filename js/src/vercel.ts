@@ -712,9 +712,14 @@ export class AISDKExporter {
           });
         }
 
+        const runType =
+          span.name === "ai.generateText" || span.name === "ai.streamText"
+            ? "chain"
+            : "llm";
+
         // TODO: add first_token_time
         return asRunCreate({
-          run_type: "llm",
+          run_type: runType,
           name: span.attributes["ai.model.provider"],
           inputs,
           outputs,
@@ -817,8 +822,13 @@ export class AISDKExporter {
           });
         }
 
+        const runType =
+          span.name === "ai.generateObject" || span.name === "ai.streamObject"
+            ? "chain"
+            : "llm";
+
         return asRunCreate({
-          run_type: "llm",
+          run_type: runType,
           name: span.attributes["ai.model.provider"],
           inputs,
           outputs,
