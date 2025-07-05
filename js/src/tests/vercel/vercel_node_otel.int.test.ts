@@ -26,9 +26,11 @@ test("nested generateText", async () => {
 
   const runId = uuid();
 
+  const aiSDKResponses: any[] = [];
+
   const wrapper = traceable(
     async () => {
-      return generateText({
+      const mainResult = await generateText({
         model: openai("gpt-4.1-mini"),
         messages: [
           {
@@ -47,7 +49,7 @@ test("nested generateText", async () => {
             description: "view tracking information for a specific order",
             parameters: z.object({ orderId: z.string() }),
             execute: async ({ orderId }) => {
-              await generateText({
+              const res1 = await generateText({
                 model: openai("gpt-4.1-nano"),
                 experimental_telemetry: AISDKExporter.getSettings({
                   runName: "How are you 1",
@@ -64,7 +66,9 @@ test("nested generateText", async () => {
                   },
                 ],
               });
-              await generateText({
+              aiSDKResponses.push(res1);
+
+              const res2 = await generateText({
                 model: openai("gpt-4.1-nano"),
                 experimental_telemetry: AISDKExporter.getSettings({
                   runName: "How are you 2",
@@ -76,7 +80,9 @@ test("nested generateText", async () => {
                   },
                 ],
               });
-              const res = await generateText({
+              aiSDKResponses.push(res2);
+
+              const res3 = await generateText({
                 model: openai("gpt-4.1-nano"),
                 experimental_telemetry: AISDKExporter.getSettings({
                   runName: "How are you 3",
@@ -88,7 +94,9 @@ test("nested generateText", async () => {
                   },
                 ],
               });
-              return res.text;
+              aiSDKResponses.push(res3);
+
+              return res3.text;
             },
           }),
         },
@@ -98,6 +106,8 @@ test("nested generateText", async () => {
         }),
         maxSteps: 10,
       });
+      aiSDKResponses.push(mainResult);
+      return mainResult;
     },
     { name: "AI SDK Agent Wrapper", id: runId, project_name: "lsjs-test" }
   );
@@ -126,6 +136,13 @@ test("nested generateText", async () => {
   expect(
     storedRun.child_runs?.[0]?.child_runs?.[3]?.child_runs?.[2].name
   ).toEqual("How are you 3");
+
+  // Sum token counts directly from AI SDK responses and compare to root run
+  const totalAISDKTokens = aiSDKResponses.reduce((sum, response) => {
+    return sum + (response.usage?.totalTokens || 0);
+  }, 0);
+
+  expect(storedRun.total_tokens).toEqual(totalAISDKTokens);
 });
 
 // Running two tests at a time interferes for some reason
