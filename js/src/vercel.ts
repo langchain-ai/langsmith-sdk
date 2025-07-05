@@ -717,10 +717,13 @@ export class AISDKExporter {
             ? "chain"
             : "llm";
 
+        const error = span.status?.code === 2 ? span.status.message : undefined;
+
         // TODO: add first_token_time
         return asRunCreate({
           run_type: runType,
           name: span.attributes["ai.model.provider"],
+          error,
           inputs,
           outputs,
           events,
@@ -728,6 +731,15 @@ export class AISDKExporter {
             invocation_params: invocationParams,
             batch_size: 1,
             metadata: {
+              ...(error
+                ? {
+                    usage_metadata: {
+                      input_tokens: 0,
+                      output_tokens: 0,
+                      total_tokens: 0,
+                    },
+                  }
+                : undefined),
               ls_provider: span.attributes["ai.model.provider"]
                 .split(".")
                 .at(0),
@@ -755,9 +767,23 @@ export class AISDKExporter {
           outputs = output;
         }
 
+        const error = span.status?.code === 2 ? span.status.message : undefined;
+
         return asRunCreate({
           run_type: "tool",
           name: span.attributes["ai.toolCall.name"],
+          error,
+          extra: error
+            ? {
+                metadata: {
+                  usage_metadata: {
+                    input_tokens: 0,
+                    output_tokens: 0,
+                    total_tokens: 0,
+                  },
+                },
+              }
+            : undefined,
           inputs,
           outputs,
         });
@@ -827,15 +853,26 @@ export class AISDKExporter {
             ? "chain"
             : "llm";
 
+        const error = span.status?.code === 2 ? span.status.message : undefined;
         return asRunCreate({
           run_type: runType,
           name: span.attributes["ai.model.provider"],
+          error,
           inputs,
           outputs,
           events,
           extra: {
             batch_size: 1,
             metadata: {
+              ...(error
+                ? {
+                    usage_metadata: {
+                      input_tokens: 0,
+                      output_tokens: 0,
+                      total_tokens: 0,
+                    },
+                  }
+                : undefined),
               ls_provider: span.attributes["ai.model.provider"]
                 .split(".")
                 .at(0),
