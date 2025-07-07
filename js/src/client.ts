@@ -84,10 +84,15 @@ import {
 
 import { serialize as serializePayloadForTracing } from "./utils/fast-safe-stringify/index.js";
 
+export interface Destination {
+  url: string;
+  apiKey?: string;
+}
+
 export interface ClientConfig {
   apiUrl?: string;
   apiKey?: string;
-  apiUrls?: Record<string, string>;
+  destinations?: Destination[];
   callerOptions?: AsyncCallerParams;
   timeout_ms?: number;
   webUrl?: string;
@@ -591,7 +596,7 @@ export class Client implements LangSmithTracingClientInterface {
 
   private batchIngestCaller: AsyncCaller;
 
-  private _writeApiUrls: Record<string, string | undefined> = {};
+  private _destinations: Record<string, string | undefined> = {};
 
   private timeout_ms: number;
 
@@ -639,8 +644,8 @@ export class Client implements LangSmithTracingClientInterface {
     const defaultConfig = Client.getDefaultClientConfig();
 
     this.tracingSampleRate = getTracingSamplingRate(config.tracingSamplingRate);
-    if (config.apiUrl && config.apiUrls) {
-      throw new Error("You cannot provide both apiUrl and apiUrls.");
+    if (config.apiUrl && config.destinations) {
+      throw new Error("You cannot provide both apiUrl and destinations.");
     }
     this.apiUrl = trimQuotes(config.apiUrl ?? defaultConfig.apiUrl) ?? "";
     if (this.apiUrl.endsWith("/")) {
@@ -648,13 +653,13 @@ export class Client implements LangSmithTracingClientInterface {
     }
     this.apiKey = trimQuotes(config.apiKey ?? defaultConfig.apiKey);
 
-    this._writeApiUrls = Client._getWriteApiUrls(config.apiUrls);
-    if (Object.keys(this._writeApiUrls).length > 0) {
-      const [firstUrl] = Object.keys(this._writeApiUrls);
+    this._destinations = Client._getDestinations(config.destinations);
+    if (Object.keys(this._destinations).length > 0) {
+      const [firstUrl] = Object.keys(this._destinations);
       this.apiUrl = firstUrl;
-      this.apiKey = this._writeApiUrls[firstUrl];
+      this.apiKey = this._destinations[firstUrl];
     } else {
-      this._writeApiUrls = { [this.apiUrl]: this.apiKey };
+      this._destinations = { [this.apiUrl]: this.apiKey };
     }
     this.webUrl = trimQuotes(config.webUrl ?? defaultConfig.webUrl);
     if (this.webUrl?.endsWith("/")) {
@@ -1051,34 +1056,30 @@ export class Client implements LangSmithTracingClientInterface {
     }
   }
 
-  private static _getWriteApiUrls(
-    apiUrls?: Record<string, string>
-  ): Record<string, string | undefined> {
-    if (apiUrls && Object.keys(apiUrls).length > 0) {
-      checkEndpointEnvUnset(apiUrls);
-      return Object.fromEntries(
-        Object.entries(apiUrls).map(([url, key]) => [
-          url.replace(/\/$/, ""),
-          key,
-        ])
-      );
+  private static _getDestinations(
+    destinations?: Destination[]
+  ): Destination[] {
+    if (destinations && destinations.length > 0) {
+      return destinations.map((destination) => ({
+        url: destination.url.replace(/\/$/, ""),
+        apiKey: destination.apiKey,
+      }));
     }
     const envVar = getEnvironmentVariable("LANGSMITH_RUNS_ENDPOINTS");
-    if (!envVar) return {};
+    if (!envVar) return [];
     try {
-      const parsed: Record<string, string> = JSON.parse(envVar);
-      console.warn(
-        `Parsed ${parsed} | LS: ${getEnvironmentVariable(
-          "LANGSMITH_ENDPOINT"
-        )} | LC: ${getEnvironmentVariable("LANGCHAIN_ENDPOINT")}`
-      );
+      const parsed: Record<string, string> | Destination[] = JSON.parse(envVar);
       checkEndpointEnvUnset(parsed);
-      return Object.fromEntries(
-        Object.entries(parsed).map(([url, key]) => [
-          url.replace(/\/$/, ""),
-          key,
-        ])
-      );
+      if (Array.isArray(parsed)) {
+        return parsed.map((destination) => ({
+          url: destination.url.replace(/\/$/, ""),
+          apiKey: destination.apiKey,
+        }));
+      }
+      return Object.entries(parsed).map(([url, key]) => ({
+          url: url.replace(/\/$/, ""),
+          apiKey: key,
+        }));
     } catch (e) {
       if (isConflictingEndpointsError(e)) {
         throw e;
@@ -1086,7 +1087,7 @@ export class Client implements LangSmithTracingClientInterface {
       console.warn(
         "Invalid LANGSMITH_RUNS_ENDPOINTS – must be valid JSON mapping of url->apiKey"
       );
-      return {};
+      return [];
     }
   }
 
@@ -1098,7 +1099,7 @@ export class Client implements LangSmithTracingClientInterface {
     ignoreConflict = false
   ) {
     const errors: unknown[] = [];
-    for (const [apiUrl, apiKey] of Object.entries(this._writeApiUrls)) {
+    for (const [apiUrl, apiKey] of Object.entries(this._destinations)) {
       const headers: Record<string, string> = {
         ...(init.headers as Record<string, string>),
         ...this.headers,
@@ -1122,7 +1123,7 @@ export class Client implements LangSmithTracingClientInterface {
       }
     }
     if (
-      errors.length === Object.keys(this._writeApiUrls).length &&
+      errors.length === Object.keys(this._destinations).length &&
       errors.length
     ) {
       // All requests failed – throw first error
@@ -5267,9 +5268,9 @@ function isExampleCreate(input: KVMap | ExampleCreate): input is ExampleCreate {
   return "dataset_id" in input || "dataset_name" in input;
 }
 
-function checkEndpointEnvUnset(parsed: Record<string, string>) {
+function checkEndpointEnvUnset(parsed: Record<string, string> | Destination[]) {
   if (
-    Object.keys(parsed).length > 0 &&
+    (Array.isArray(parsed) ? parsed.length : Object.keys(parsed).length) > 0 &&
     getLangSmithEnvironmentVariable("ENDPOINT")
   ) {
     throw new ConflictingEndpointsError();
