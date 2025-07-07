@@ -72,7 +72,11 @@ import { __version__ } from "./index.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
 import { parsePromptIdentifier } from "./utils/prompts.js";
-import { raiseForStatus } from "./utils/error.js";
+import {
+  ConflictingEndpointsError,
+  raiseForStatus,
+  isConflictingEndpointsError,
+} from "./utils/error.js";
 import {
   _globalFetchImplementationIsNodeFetch,
   _getFetchImplementation,
@@ -83,6 +87,7 @@ import { serialize as serializePayloadForTracing } from "./utils/fast-safe-strin
 export interface ClientConfig {
   apiUrl?: string;
   apiKey?: string;
+  apiUrls?: Record<string, string>;
   callerOptions?: AsyncCallerParams;
   timeout_ms?: number;
   webUrl?: string;
@@ -586,6 +591,8 @@ export class Client implements LangSmithTracingClientInterface {
 
   private batchIngestCaller: AsyncCaller;
 
+  private _writeApiUrls: Record<string, string | undefined> = {};
+
   private timeout_ms: number;
 
   private _tenantId: string | null = null;
@@ -632,11 +639,23 @@ export class Client implements LangSmithTracingClientInterface {
     const defaultConfig = Client.getDefaultClientConfig();
 
     this.tracingSampleRate = getTracingSamplingRate(config.tracingSamplingRate);
+    if (config.apiUrl && config.apiUrls) {
+      throw new Error("You cannot provide both apiUrl and apiUrls.");
+    }
     this.apiUrl = trimQuotes(config.apiUrl ?? defaultConfig.apiUrl) ?? "";
     if (this.apiUrl.endsWith("/")) {
       this.apiUrl = this.apiUrl.slice(0, -1);
     }
     this.apiKey = trimQuotes(config.apiKey ?? defaultConfig.apiKey);
+
+    this._writeApiUrls = Client._getWriteApiUrls(config.apiUrls);
+    if (Object.keys(this._writeApiUrls).length > 0) {
+      const [firstUrl] = Object.keys(this._writeApiUrls);
+      this.apiUrl = firstUrl;
+      this.apiKey = this._writeApiUrls[firstUrl];
+    } else {
+      this._writeApiUrls = { [this.apiUrl]: this.apiKey };
+    }
     this.webUrl = trimQuotes(config.webUrl ?? defaultConfig.webUrl);
     if (this.webUrl?.endsWith("/")) {
       this.webUrl = this.webUrl.slice(0, -1);
@@ -1032,6 +1051,85 @@ export class Client implements LangSmithTracingClientInterface {
     }
   }
 
+  private static _getWriteApiUrls(
+    apiUrls?: Record<string, string>
+  ): Record<string, string | undefined> {
+    if (apiUrls && Object.keys(apiUrls).length > 0) {
+      checkEndpointEnvUnset(apiUrls);
+      return Object.fromEntries(
+        Object.entries(apiUrls).map(([url, key]) => [
+          url.replace(/\/$/, ""),
+          key,
+        ])
+      );
+    }
+    const envVar = getEnvironmentVariable("LANGSMITH_RUNS_ENDPOINTS");
+    if (!envVar) return {};
+    try {
+      const parsed: Record<string, string> = JSON.parse(envVar);
+      console.warn(
+        `Parsed ${parsed} | LS: ${getEnvironmentVariable(
+          "LANGSMITH_ENDPOINT"
+        )} | LC: ${getEnvironmentVariable("LANGCHAIN_ENDPOINT")}`
+      );
+      checkEndpointEnvUnset(parsed);
+      return Object.fromEntries(
+        Object.entries(parsed).map(([url, key]) => [
+          url.replace(/\/$/, ""),
+          key,
+        ])
+      );
+    } catch (e) {
+      if (isConflictingEndpointsError(e)) {
+        throw e;
+      }
+      console.warn(
+        "Invalid LANGSMITH_RUNS_ENDPOINTS – must be valid JSON mapping of url->apiKey"
+      );
+      return {};
+    }
+  }
+
+  private async _callWithWriteApiUrls(
+    caller: AsyncCaller,
+    path: string,
+    init: RequestInit & { duplex?: string },
+    errorContext: string,
+    ignoreConflict = false
+  ) {
+    const errors: unknown[] = [];
+    for (const [apiUrl, apiKey] of Object.entries(this._writeApiUrls)) {
+      const headers: Record<string, string> = {
+        ...(init.headers as Record<string, string>),
+        ...this.headers,
+      };
+      if (apiKey) {
+        headers["x-api-key"] = apiKey;
+      }
+      try {
+        const response = await caller.call(
+          _getFetchImplementation(this.debug),
+          `${apiUrl}${path}`,
+          { ...init, headers }
+        );
+        await raiseForStatus(response, errorContext, true);
+      } catch (e: any) {
+        if (ignoreConflict && e?.status === 409) {
+          // Ignore conflict errors when flag is set
+          continue;
+        }
+        errors.push(e);
+      }
+    }
+    if (
+      errors.length === Object.keys(this._writeApiUrls).length &&
+      errors.length
+    ) {
+      // All requests failed – throw first error
+      throw errors[0];
+    }
+  }
+
   private async processRunOperation(item: AutoBatchQueueItem) {
     clearTimeout(this.autoBatchTimeout);
     this.autoBatchTimeout = undefined;
@@ -1266,8 +1364,20 @@ export class Client implements LangSmithTracingClientInterface {
       "Content-Type": "application/json",
       Accept: "application/json",
     };
-    const response = await this.batchIngestCaller.call(
-      _getFetchImplementation(this.debug),
+    await this._callWithWriteApiUrls(
+      this.batchIngestCaller,
+      "/runs/batch",
+      {
+        method: "POST",
+        headers,
+        body: body,
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      },
+      "batch create run",
+      true
+    );
+    _getFetchImplementation(this.debug),
       `${this.apiUrl}/runs/batch`,
       {
         method: "POST",
@@ -1275,9 +1385,7 @@ export class Client implements LangSmithTracingClientInterface {
         body: body,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
-      }
-    );
-    await raiseForStatus(response, "batch create run", true);
+      };
   }
 
   /**
@@ -1539,9 +1647,9 @@ export class Client implements LangSmithTracingClientInterface {
         ? this._createNodeFetchBody(parts, boundary)
         : this._createMultipartStream(parts, boundary));
 
-      const res = await this.batchIngestCaller.call(
-        _getFetchImplementation(this.debug),
-        `${this.apiUrl}/runs/multipart`,
+      await this._callWithWriteApiUrls(
+        this.batchIngestCaller,
+        "/runs/multipart",
         {
           method: "POST",
           headers: {
@@ -1552,9 +1660,11 @@ export class Client implements LangSmithTracingClientInterface {
           duplex: "half",
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
-        }
+        },
+        "ingest multipart runs",
+        true
       );
-      await raiseForStatus(res, "ingest multipart runs", true);
+
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       console.warn(`${e.message.trim()}\n\nContext: ${context}`);
@@ -1605,9 +1715,9 @@ export class Client implements LangSmithTracingClientInterface {
       return;
     }
     const headers = { ...this.headers, "Content-Type": "application/json" };
-    const response = await this.caller.call(
-      _getFetchImplementation(this.debug),
-      `${this.apiUrl}/runs/${runId}`,
+    await this._callWithWriteApiUrls(
+      this.caller,
+      `/runs/${runId}`,
       {
         method: "PATCH",
         headers,
@@ -1617,9 +1727,10 @@ export class Client implements LangSmithTracingClientInterface {
         ),
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
-      }
+      },
+      "update run",
+      true
     );
-    await raiseForStatus(response, "update run", true);
   }
 
   public async readRun(
@@ -5154,4 +5265,13 @@ export interface LangSmithTracingClientInterface {
 
 function isExampleCreate(input: KVMap | ExampleCreate): input is ExampleCreate {
   return "dataset_id" in input || "dataset_name" in input;
+}
+
+function checkEndpointEnvUnset(parsed: Record<string, string>) {
+  if (
+    Object.keys(parsed).length > 0 &&
+    getLangSmithEnvironmentVariable("ENDPOINT")
+  ) {
+    throw new ConflictingEndpointsError();
+  }
 }
