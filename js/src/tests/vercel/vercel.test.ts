@@ -115,7 +115,6 @@ test("generateText", async () => {
           llm_output: {
             type: "ai",
             data: { content: "Hello, world!" },
-            token_usage: { completion_tokens: 20, prompt_tokens: 10 },
           },
         },
         extra: {
@@ -123,6 +122,11 @@ test("generateText", async () => {
             functionId: "functionId",
             userId: "123",
             language: "english",
+            usage_metadata: {
+              input_tokens: 10,
+              output_tokens: 20,
+              total_tokens: 30,
+            },
           },
         },
         dotted_order: new ExecutionOrderSame(1, "000"),
@@ -169,7 +173,15 @@ test("generateText", async () => {
                 ],
               },
             },
-            token_usage: { completion_tokens: 20, prompt_tokens: 10 },
+          },
+        },
+        extra: {
+          metadata: {
+            usage_metadata: {
+              input_tokens: 10,
+              output_tokens: 20,
+              total_tokens: 30,
+            },
           },
         },
         dotted_order: new ExecutionOrderSame(2, "000"),
@@ -233,7 +245,15 @@ test("generateText", async () => {
           llm_output: {
             type: "ai",
             data: { content: "Hello, world!" },
-            token_usage: { completion_tokens: 20, prompt_tokens: 10 },
+          },
+        },
+        extra: {
+          metadata: {
+            usage_metadata: {
+              input_tokens: 10,
+              output_tokens: 20,
+              total_tokens: 30,
+            },
           },
         },
         dotted_order: new ExecutionOrderSame(2, "002"),
@@ -337,7 +357,6 @@ test("streamText", async () => {
           llm_output: {
             type: "ai",
             data: { content: "Hello, world!" },
-            token_usage: { completion_tokens: 20, prompt_tokens: 6 },
           },
         },
         extra: {
@@ -345,6 +364,11 @@ test("streamText", async () => {
             functionId: "functionId",
             userId: "123",
             language: "english",
+            usage_metadata: {
+              input_tokens: 6,
+              output_tokens: 20,
+              total_tokens: 26,
+            },
           },
         },
         dotted_order: new ExecutionOrderSame(1, "000"),
@@ -391,7 +415,15 @@ test("streamText", async () => {
                 ],
               },
             },
-            token_usage: { completion_tokens: 10, prompt_tokens: 3 },
+          },
+        },
+        extra: {
+          metadata: {
+            usage_metadata: {
+              input_tokens: 3,
+              output_tokens: 10,
+              total_tokens: 13,
+            },
           },
         },
         dotted_order: new ExecutionOrderSame(2, "000"),
@@ -455,7 +487,15 @@ test("streamText", async () => {
           llm_output: {
             type: "ai",
             data: { content: "Hello, world!" },
-            token_usage: { completion_tokens: 10, prompt_tokens: 3 },
+          },
+        },
+        extra: {
+          metadata: {
+            usage_metadata: {
+              input_tokens: 3,
+              output_tokens: 10,
+              total_tokens: 13,
+            },
           },
         },
         dotted_order: new ExecutionOrderSame(2, "002"),
@@ -513,8 +553,14 @@ test("generateObject", async () => {
         },
         outputs: {
           output: { weather: { city: "Prague", unit: "celsius" } },
-          llm_output: {
-            token_usage: { completion_tokens: 20, prompt_tokens: 10 },
+        },
+        extra: {
+          metadata: {
+            usage_metadata: {
+              input_tokens: 10,
+              output_tokens: 20,
+              total_tokens: 30,
+            },
           },
         },
         dotted_order: new ExecutionOrderSame(1, "000"),
@@ -534,15 +580,17 @@ test("generateObject", async () => {
         },
         outputs: {
           output: { weather: { city: "Prague", unit: "celsius" } },
-          llm_output: {
-            token_usage: { completion_tokens: 20, prompt_tokens: 10 },
-          },
         },
         extra: {
           metadata: {
             functionId: "functionId",
             userId: "123",
             language: "english",
+            usage_metadata: {
+              input_tokens: 10,
+              output_tokens: 20,
+              total_tokens: 30,
+            },
           },
         },
         dotted_order: new ExecutionOrderSame(2, "000"),
@@ -624,15 +672,17 @@ test("streamObject", async () => {
         },
         outputs: {
           output: { weather: { city: "Prague", unit: "celsius" } },
-          llm_output: {
-            token_usage: { completion_tokens: 10, prompt_tokens: 3 },
-          },
         },
         extra: {
           metadata: {
             functionId: "functionId",
             userId: "123",
             language: "english",
+            usage_metadata: {
+              input_tokens: 3,
+              output_tokens: 10,
+              total_tokens: 13,
+            },
           },
         },
         dotted_order: new ExecutionOrderSame(1, "000"),
@@ -652,8 +702,14 @@ test("streamObject", async () => {
         },
         outputs: {
           output: { weather: { city: "Prague", unit: "celsius" } },
-          llm_output: {
-            token_usage: { completion_tokens: 10, prompt_tokens: 3 },
+        },
+        extra: {
+          metadata: {
+            usage_metadata: {
+              input_tokens: 3,
+              output_tokens: 10,
+              total_tokens: 13,
+            },
           },
         },
         dotted_order: new ExecutionOrderSame(2, "000"),
