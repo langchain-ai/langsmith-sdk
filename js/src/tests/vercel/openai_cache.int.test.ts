@@ -40,7 +40,11 @@ describe.skip("OpenAI Cache Completion Tests", () => {
             ],
           });
           aiSDKResponses.push(res1);
-          console.log("Cache create response:", res1.usage);
+          console.log(
+            "Cache create response:",
+            res1.usage,
+            res1.providerMetadata
+          );
         } catch (error) {
           console.error("Cache create error:", error);
         }
@@ -60,7 +64,11 @@ describe.skip("OpenAI Cache Completion Tests", () => {
             ],
           });
           aiSDKResponses.push(res2);
-          console.log("Cache read response:", res2.usage);
+          console.log(
+            "Cache read response:",
+            res2.usage,
+            res2.providerMetadata
+          );
         } catch (error) {
           console.error("Cache read error:", error);
         }
