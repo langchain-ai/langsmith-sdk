@@ -314,9 +314,11 @@ def _get_tracing_sampling_rate(
 
 
 def _get_write_api_urls(_write_api_urls: Optional[dict[str, str]]) -> dict[str, str]:
-    _write_api_urls = _write_api_urls or json.loads(
-        os.getenv("LANGSMITH_RUNS_ENDPOINTS", "{}")
-    )
+    if not _write_api_urls:
+        _runs_endpoints = os.getenv("LANGSMITH_RUNS_ENDPOINTS")
+        if not _runs_endpoints:
+            return {}
+        _write_api_urls = _orjson.loads(_runs_endpoints)
     processed_write_api_urls = {}
     for url, api_key in _write_api_urls.items():
         processed_url = url.strip()
@@ -3617,7 +3619,7 @@ class Client:
             "GET",
             f"{path}/{_as_uuid(dataset_id, 'dataset_id')}/openai_ft",
         )
-        dataset = [json.loads(line) for line in response.text.strip().split("\n")]
+        dataset = [_orjson.loads(line) for line in response.text.strip().split("\n")]
         return dataset
 
     def list_datasets(
@@ -6999,7 +7001,7 @@ class Client:
             )
 
         json_object = dumps(object)
-        manifest_dict = json.loads(json_object)
+        manifest_dict = _orjson.loads(json_object)
 
         owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
         prompt_owner_and_name = f"{owner}/{prompt_name}"

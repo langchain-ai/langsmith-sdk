@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable no-process-env */
 import { jest } from "@jest/globals";
 import { Client } from "../client.js";
 import {
@@ -223,6 +224,57 @@ describe("Client", () => {
       expect(isVersionGreaterOrEqual("0.5.22", "0.5.23")).toBe(false);
       expect(isVersionGreaterOrEqual("0.5.0", "0.5.23")).toBe(false);
       expect(isVersionGreaterOrEqual("0.4.99", "0.5.23")).toBe(false);
+    });
+  });
+
+  describe("validate multiple urls", () => {
+    const ORIGINAL_ENV = { ...process.env };
+
+    afterEach(() => {
+      // Restore original env to avoid side-effects between tests
+      process.env = { ...ORIGINAL_ENV };
+    });
+
+    it("should throw when LANGSMITH_RUNS_ENDPOINTS set alongside LANGCHAIN/LANGSMITH_ENDPOINT", () => {
+      // eslint-disable-next-line no-process-env
+      process.env.LANGCHAIN_ENDPOINT =
+        "https://api.smith.langchain-endpoint.com";
+      // eslint-disable-next-line no-process-env
+      process.env.LANGSMITH_ENDPOINT =
+        "https://api.smith.langsmith-endpoint.com";
+      // eslint-disable-next-line no-process-env
+      process.env.LANGSMITH_RUNS_ENDPOINTS =
+        '{"https://api.smith.langsmith-endpoint_1.com": "123"}';
+      expect(() => new Client()).toThrow(
+        "You cannot provide both LANGSMITH_ENDPOINT / LANGCHAIN_ENDPOINT"
+      );
+    });
+
+    it("should parse LANGSMITH_RUNS_ENDPOINTS JSON mapping and set defaults correctly", () => {
+      const data = {
+        "https://api.smith.langsmith-endpoint_1.com": "123",
+        "https://api.smith.langsmith-endpoint_2.com": "456",
+        "https://api.smith.langsmith-endpoint_3.com": "789",
+      } as Record<string, string>;
+      // Ensure conflicting env vars are removed
+      // eslint-disable-next-line no-process-env
+      delete process.env.LANGCHAIN_ENDPOINT;
+      // eslint-disable-next-line no-process-env
+      delete process.env.LANGSMITH_ENDPOINT;
+      // eslint-disable-next-line no-process-env
+      process.env.LANGSMITH_RUNS_ENDPOINTS = JSON.stringify(data);
+
+      const client = new Client({ autoBatchTracing: false });
+      const internal = client as unknown as {
+        _writeApiUrls: Record<string, string>;
+        apiUrl: string;
+        apiKey?: string;
+      };
+
+      expect(internal._writeApiUrls).toEqual(data);
+      const firstUrl = Object.keys(data)[0];
+      expect(internal.apiUrl).toBe(firstUrl);
+      expect(internal.apiKey).toBe(data[firstUrl]);
     });
   });
 

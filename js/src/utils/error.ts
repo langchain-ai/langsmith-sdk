@@ -63,6 +63,27 @@ export class LangSmithConflictError extends Error {
   }
 }
 
+const ERR_CONFLICTING_ENDPOINTS = "ERR_CONFLICTING_ENDPOINTS";
+export class ConflictingEndpointsError extends Error {
+  readonly code = ERR_CONFLICTING_ENDPOINTS;
+  constructor() {
+    super(
+      "You cannot provide both LANGSMITH_ENDPOINT / LANGCHAIN_ENDPOINT " +
+        "and LANGSMITH_RUNS_ENDPOINTS."
+    );
+    this.name = "ConflictingEndpointsError"; // helpful in logs
+  }
+}
+export function isConflictingEndpointsError(
+  err: unknown
+): err is ConflictingEndpointsError {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    (err as Record<string, unknown>).code === ERR_CONFLICTING_ENDPOINTS
+  );
+}
+
 /**
  * Throws an appropriate error based on the response status and body.
  *
