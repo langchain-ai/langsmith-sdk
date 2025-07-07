@@ -107,6 +107,11 @@ test("traceable", async () => {
             functionId: "functionId",
             userId: "123",
             language: "english",
+            usage_metadata: {
+              input_tokens: 10,
+              output_tokens: 20,
+              total_tokens: 30,
+            },
           },
         },
         inputs: {
@@ -121,7 +126,6 @@ test("traceable", async () => {
           llm_output: {
             type: "ai",
             data: { content: "Hello, world!" },
-            token_usage: { completion_tokens: 20, prompt_tokens: 10 },
           },
         },
         dotted_order: new ExecutionOrderSame(2, "000"),
@@ -168,7 +172,15 @@ test("traceable", async () => {
                 ],
               },
             },
-            token_usage: { completion_tokens: 20, prompt_tokens: 10 },
+          },
+        },
+        extra: {
+          metadata: {
+            usage_metadata: {
+              input_tokens: 10,
+              output_tokens: 20,
+              total_tokens: 30,
+            },
           },
         },
         dotted_order: new ExecutionOrderSame(3, "000"),
@@ -232,7 +244,15 @@ test("traceable", async () => {
           llm_output: {
             type: "ai",
             data: { content: "Hello, world!" },
-            token_usage: { completion_tokens: 20, prompt_tokens: 10 },
+          },
+        },
+        extra: {
+          metadata: {
+            usage_metadata: {
+              input_tokens: 10,
+              output_tokens: 20,
+              total_tokens: 30,
+            },
           },
         },
         dotted_order: new ExecutionOrderSame(3, "002"),

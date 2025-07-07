@@ -6,6 +6,7 @@ import {
   getEnvironmentVariable,
   getLangSmithEnvironmentVariable,
 } from "../../utils/env.js";
+import { extractUsageMetadata } from "../../utils/vercel.js";
 
 /**
  * Convert headers string in format "name=value,name2=value2" to object
@@ -181,6 +182,9 @@ export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
           )
         ) {
           span.attributes[constants.LANGSMITH_RUN_TYPE] = "llm";
+          const usageMetadata = extractUsageMetadata(span);
+          span.attributes[constants.LANGSMITH_USAGE_METADATA] =
+            JSON.stringify(usageMetadata);
         } else if (
           typeof span.attributes["ai.operationId"] === "string" &&
           constants.AI_SDK_TOOL_OPERATIONS.includes(
