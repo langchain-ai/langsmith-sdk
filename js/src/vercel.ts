@@ -4,7 +4,8 @@ import type {
   ToolCallPart,
   generateText,
 } from "ai";
-import type { AISDKSpan } from "./vercel.types.js";
+import type { AISDKSpan } from "./utils/vercel.types.js";
+import { extractUsageMetadata } from "./utils/vercel.js";
 import { Client, RunTree } from "./index.js";
 import { KVMap, RunCreate } from "./schemas.js";
 import { v5 as uuid5 } from "uuid";
@@ -666,22 +667,6 @@ export class AISDKExporter {
             };
           }
 
-          if (span.attributes["ai.usage.completionTokens"]) {
-            result ??= {};
-            result.llm_output ??= {};
-            result.llm_output.token_usage ??= {};
-            result.llm_output.token_usage["completion_tokens"] =
-              span.attributes["ai.usage.completionTokens"];
-          }
-
-          if (span.attributes["ai.usage.promptTokens"]) {
-            result ??= {};
-            result.llm_output ??= {};
-            result.llm_output.token_usage ??= {};
-            result.llm_output.token_usage["prompt_tokens"] =
-              span.attributes["ai.usage.promptTokens"];
-          }
-
           return result;
         })();
 
@@ -718,6 +703,7 @@ export class AISDKExporter {
             : "llm";
 
         const error = span.status?.code === 2 ? span.status.message : undefined;
+        const usageMetadata = extractUsageMetadata(span as KVMap);
 
         // TODO: add first_token_time
         return asRunCreate({
@@ -731,15 +717,7 @@ export class AISDKExporter {
             invocation_params: invocationParams,
             batch_size: 1,
             metadata: {
-              ...(error
-                ? {
-                    usage_metadata: {
-                      input_tokens: 0,
-                      output_tokens: 0,
-                      total_tokens: 0,
-                    },
-                  }
-                : undefined),
+              usage_metadata: usageMetadata,
               ls_provider: span.attributes["ai.model.provider"]
                 .split(".")
                 .at(0),
@@ -818,22 +796,6 @@ export class AISDKExporter {
             };
           }
 
-          if (span.attributes["ai.usage.completionTokens"]) {
-            result ??= {};
-            result.llm_output ??= {};
-            result.llm_output.token_usage ??= {};
-            result.llm_output.token_usage["completion_tokens"] =
-              span.attributes["ai.usage.completionTokens"];
-          }
-
-          if (span.attributes["ai.usage.promptTokens"]) {
-            result ??= {};
-            result.llm_output ??= {};
-            result.llm_output.token_usage ??= {};
-            result.llm_output.token_usage["prompt_tokens"] =
-              +span.attributes["ai.usage.promptTokens"];
-          }
-
           return result;
         })();
 
@@ -854,6 +816,8 @@ export class AISDKExporter {
             : "llm";
 
         const error = span.status?.code === 2 ? span.status.message : undefined;
+        const usageMetadata = extractUsageMetadata(span as KVMap);
+
         return asRunCreate({
           run_type: runType,
           name: span.attributes["ai.model.provider"],
@@ -864,15 +828,7 @@ export class AISDKExporter {
           extra: {
             batch_size: 1,
             metadata: {
-              ...(error
-                ? {
-                    usage_metadata: {
-                      input_tokens: 0,
-                      output_tokens: 0,
-                      total_tokens: 0,
-                    },
-                  }
-                : undefined),
+              usage_metadata: usageMetadata,
               ls_provider: span.attributes["ai.model.provider"]
                 .split(".")
                 .at(0),
