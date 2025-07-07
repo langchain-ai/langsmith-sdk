@@ -8,7 +8,8 @@ import { AISDKExporter } from "../../vercel.js";
 import { traceable } from "../../traceable.js";
 import { generateLongContext } from "./utils.js";
 
-describe("OpenAI Cache Completion Tests", () => {
+// Token intensive test, so skipping by default
+describe.skip("OpenAI Cache Completion Tests", () => {
   test("openai cache with large prompt for automatic caching", async () => {
     const sdk = new NodeSDK({
       traceExporter: new AISDKExporter(),

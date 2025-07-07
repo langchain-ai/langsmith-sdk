@@ -8,7 +8,8 @@ import { AISDKExporter } from "../../vercel.js";
 import { traceable } from "../../traceable.js";
 import { generateLongContext } from "./utils.js";
 
-describe("Anthropic Cache Completion Tests", () => {
+// Token intensive test, so skipping by default
+describe.skip("Anthropic Cache Completion Tests", () => {
   test("anthropic cache read and write tokens with AISDKExporter", async () => {
     const sdk = new NodeSDK({
       traceExporter: new AISDKExporter(),

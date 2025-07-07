@@ -13,7 +13,8 @@ import { initializeOTEL } from "../../../experimental/otel/setup.js";
 
 initializeOTEL();
 
-describe("OpenAI Cache OTEL Integration Tests", () => {
+// Token intensive test, so skipping by default
+describe.skip("OpenAI Cache OTEL Integration Tests", () => {
   beforeEach(() => {
     process.env.LANGSMITH_TRACING = "true";
   });
