@@ -1,9 +1,6 @@
 import { KVMap } from "../schemas.js";
 
-function extractInputTokenDetails(providerMetadata: Record<string, unknown>): {
-  cache_read?: number;
-  cache_write?: number;
-} {
+function extractInputTokenDetails(providerMetadata: Record<string, unknown>) {
   const inputTokenDetails: Record<string, number> = {};
   if (
     providerMetadata.anthropic != null &&
