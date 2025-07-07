@@ -4,24 +4,24 @@ import { z } from "zod";
 import { openai } from "@ai-sdk/openai";
 import { generateObject, streamObject, streamText } from "ai";
 import { v4 as uuidv4 } from "uuid";
-import { Client } from "../../client.js";
-import { traceable } from "../../traceable.js";
-import { getLangSmithEnvironmentVariable } from "../../utils/env.js";
-import { toArray, waitUntilRunFoundByMetaField } from "../utils.js";
+import { Client } from "../../../client.js";
+import { traceable } from "../../../traceable.js";
+import { getLangSmithEnvironmentVariable } from "../../../utils/env.js";
+import { toArray, waitUntilRunFoundByMetaField } from "../../utils.js";
 
 // Initialize basic OTEL setup
-import { initializeOTEL } from "../../experimental/otel/setup.js";
+import { initializeOTEL } from "../../../experimental/otel/setup.js";
 
 initializeOTEL();
 
 describe("AI SDK Streaming Integration", () => {
   beforeAll(() => {
-    process.env.LANGCHAIN_TRACING = "true";
+    process.env.LANGSMITH_TRACING = "true";
   });
 
   afterAll(() => {
     delete process.env.OTEL_ENABLED;
-    delete process.env.LANGCHAIN_TRACING;
+    delete process.env.LANGSMITH_TRACING;
   });
 
   it("works with streamText", async () => {

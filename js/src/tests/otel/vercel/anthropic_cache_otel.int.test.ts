@@ -1,0 +1,113 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable no-process-env */
+import { generateText } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { v4 as uuidv4 } from "uuid";
+
+import { Client } from "../../../client.js";
+import { traceable } from "../../../traceable.js";
+import { generateLongContext } from "../../vercel/utils.js";
+
+// Initialize basic OTEL setup
+import { initializeOTEL } from "../../../experimental/otel/setup.js";
+
+initializeOTEL();
+
+describe("Anthropic Cache OTEL Integration Tests", () => {
+  beforeEach(() => {
+    process.env.LANGSMITH_TRACING = "true";
+  });
+
+  afterEach(() => {
+    delete process.env.OTEL_ENABLED;
+    delete process.env.LANGSMITH_TRACING;
+  });
+
+  it("anthropic cache read and write tokens with OTEL exporter", async () => {
+    process.env.OTEL_ENABLED = "true";
+
+    const meta = uuidv4();
+    const client = new Client();
+    const aiSDKResponses: any[] = [];
+
+    const errorMessage = generateLongContext();
+
+    const wrapper = traceable(
+      async () => {
+        // First call - creates cache with long error message
+        try {
+          const res1 = await generateText({
+            model: anthropic("claude-3-5-haiku-20241022"),
+            experimental_telemetry: {
+              isEnabled: true,
+            },
+            messages: [
+              {
+                role: "user",
+                content: [
+                  { type: "text", text: "You are a JavaScript expert." },
+                  {
+                    type: "text",
+                    text: `Error message: ${errorMessage}`,
+                    providerOptions: {
+                      anthropic: { cacheControl: { type: "ephemeral" } },
+                    },
+                  },
+                  { type: "text", text: "Explain this error message briefly." },
+                ],
+              },
+            ],
+          });
+          aiSDKResponses.push(res1);
+          console.log(
+            "Cache create response:",
+            res1.providerMetadata?.anthropic,
+            res1.usage
+          );
+        } catch (error) {
+          console.error("Cache create error:", error);
+        }
+
+        // Second call - should read from cache with same error message
+        try {
+          const res2 = await generateText({
+            model: anthropic("claude-3-5-haiku-20241022"),
+            experimental_telemetry: {
+              isEnabled: true,
+            },
+            messages: [
+              {
+                role: "user",
+                content: [
+                  { type: "text", text: "You are a JavaScript expert." },
+                  {
+                    type: "text",
+                    text: `Error message: ${errorMessage}`,
+                    providerOptions: {
+                      anthropic: { cacheControl: { type: "ephemeral" } },
+                    },
+                  },
+                  { type: "text", text: "Provide a solution for this error." },
+                ],
+              },
+            ],
+          });
+          aiSDKResponses.push(res2);
+          console.log("Cache read response:", res2.providerMetadata?.anthropic);
+        } catch (error) {
+          console.error("Cache read error:", error);
+        }
+
+        return "Anthropic cache test completed";
+      },
+      {
+        name: "Anthropic Cache Test Wrapper",
+        metadata: { testKey: meta },
+        client,
+      }
+    );
+
+    await wrapper();
+    await client.awaitPendingTraceBatches();
+  });
+});

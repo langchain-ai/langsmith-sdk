@@ -1,3 +1,5 @@
+/* eslint-disable no-process-env */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { v4 as uuid } from "uuid";
 import { generateText } from "ai";
 import { MockLanguageModelV1 } from "ai/test";
