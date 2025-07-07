@@ -15,7 +15,7 @@ interface BaseLLMSpanAttributes {
 
   "ai.usage.promptTokens": number;
   "ai.usage.completionTokens": number;
-  "ai.response.providerMetadata": string;
+  "ai.response.providerMetadata"?: string;
 
   "ai.telemetry.functionId"?: string;
   "resource.name"?: string;

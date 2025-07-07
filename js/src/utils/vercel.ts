@@ -36,12 +36,12 @@ function extractInputTokenDetails(providerMetadata: Record<string, unknown>) {
   return inputTokenDetails;
 }
 
-export function extractUsageMetadata(span: {
+export function extractUsageMetadata(span?: {
   status?: { code: number };
   attributes?: Record<string, unknown>;
 }) {
-  const isError = span.status?.code === 2;
-  if (isError || !span.attributes) {
+  const isError = span?.status?.code === 2;
+  if (isError || !span || !span.attributes) {
     return {
       input_tokens: 0,
       output_tokens: 0,
