@@ -31,6 +31,11 @@ import {
   isThenable,
   isGenerator,
   isPromiseMethod,
+  isMap,
+  isSet,
+  isWeakMap,
+  isWeakSet,
+  getConstructorName,
 } from "./utils/asserts.js";
 import { getEnvironmentVariable } from "./utils/env.js";
 import { __version__ } from "./index.js";
@@ -980,3 +985,4 @@ export {
 } from "./singletons/traceable.js";
 
 export type { RunTreeLike, TraceableFunction } from "./singletons/types.js";
+
