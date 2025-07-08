@@ -53,6 +53,16 @@ export type LangSmithOTLPTraceExporterConfig = ConstructorParameters<
   transformExportedSpan?: (
     span: ReadableSpan
   ) => ReadableSpan | Promise<ReadableSpan>;
+
+  /**
+   * The API key to use for the exporter.
+   */
+  apiKey?: string;
+
+  /**
+   * The name of the project to export traces to.
+   */
+  projectName?: string;
 };
 
 /**
@@ -86,12 +96,14 @@ export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
     let defaultHeaderString =
       getEnvironmentVariable("OTEL_EXPORTER_OTLP_HEADERS") ?? "";
     if (!defaultHeaderString) {
-      const apiKey = getLangSmithEnvironmentVariable("API_KEY");
+      const apiKey =
+        config?.apiKey ?? getLangSmithEnvironmentVariable("API_KEY");
       if (apiKey) {
         defaultHeaderString = `x-api-key=${apiKey}`;
       }
 
-      const project = getLangSmithEnvironmentVariable("PROJECT");
+      const project =
+        config?.projectName ?? getLangSmithEnvironmentVariable("PROJECT");
       if (project) {
         defaultHeaderString += `,Langsmith-Project=${project}`;
       }
@@ -147,9 +159,16 @@ export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
         // Iterate over all attributes starting with "ai.telemetry.metadata"
         for (const [key, value] of Object.entries(span.attributes)) {
           if (key.startsWith("ai.telemetry.metadata.")) {
-            const metadataKey = key.replace("ai.telemetry.metadata.", "");
-            span.attributes[`${constants.LANGSMITH_METADATA}.${metadataKey}`] =
-              value;
+            if (key === "ai.telemetry.metadata.ls_project_name") {
+              span.attributes[constants.LANGSMITH_SESSION_NAME] = value;
+            } else if (key === "ai.telemetry.metadata.ls_project_id") {
+              span.attributes[constants.LANGSMITH_SESSION_ID] = value;
+            } else {
+              const metadataKey = key.replace("ai.telemetry.metadata.", "");
+              span.attributes[
+                `${constants.LANGSMITH_METADATA}.${metadataKey}`
+              ] = value;
+            }
             delete span.attributes[key];
           }
         }
