@@ -331,6 +331,8 @@ interface CreateRunParams {
   trace_id?: string;
   dotted_order?: string;
   attachments?: Attachments;
+  apiKey?: string;
+  apiUrl?: string;
 }
 
 interface UpdateRunParams extends RunUpdate {
@@ -533,40 +535,81 @@ export class AutoBatchQueue {
     return itemPromise;
   }
 
-  pop(upToSizeBytes: number): [AutoBatchQueueItem[], () => void] {
+  pop(
+    upToSizeBytes: number
+  ): [
+    { url: string; apiKey: string } | undefined,
+    AutoBatchQueueItem[],
+    () => void
+  ][] {
     if (upToSizeBytes < 1) {
       throw new Error("Number of bytes to pop off may not be less than 1.");
     }
-    const popped: typeof this.items = [];
-    let poppedSizeBytes = 0;
-    // Pop items until we reach or exceed the size limit
-    while (
-      poppedSizeBytes + (this.peek()?.size ?? 0) < upToSizeBytes &&
-      this.items.length > 0
-    ) {
-      const item = this.items.shift();
-      if (item) {
-        popped.push(item);
-        poppedSizeBytes += item.size;
-        this.sizeBytes -= item.size;
+    type itemType = typeof this.items;
+    const groups = new Map<
+      string,
+      {
+        key: { url: string; apiKey: string } | undefined;
+        items: itemType;
+        size: number;
       }
+    >();
+
+    while (this.items.length > 0) {
+      const next = this.items[0];
+      const url = (next.payload as any).apiUrl as string | undefined;
+      const apiKey = (next.payload as any).apiKey as string | undefined;
+      const mapKey = url ? `${url}|${apiKey}` : "_default_";
+
+      let entry = groups.get(mapKey);
+      if (!entry) {
+        entry = {
+          key: url ? { url, apiKey: apiKey! } : undefined,
+          items: [],
+          size: 0,
+        };
+        groups.set(mapKey, entry);
+      }
+
+      if (entry.size > 0 && entry.size + next.size > upToSizeBytes) break;
+
+      this.items.shift();
+      this.sizeBytes -= next.size;
+      entry.items.push(next);
+      entry.size += next.size;
     }
-    // If there is an item on the queue we were unable to pop,
-    // just return it as a single batch.
-    if (popped.length === 0 && this.items.length > 0) {
-      const item = this.items.shift()!;
-      popped.push(item);
-      poppedSizeBytes += item.size;
-      this.sizeBytes -= item.size;
+
+    if (groups.size === 0 && this.items.length > 0) {
+      const next = this.items.shift()!;
+      this.sizeBytes -= next.size;
+      const url = (next.payload as any).apiUrl as string | undefined;
+      const apiKey = (next.payload as any).apiKey as string | undefined;
+      const key = url ? { url, apiKey: apiKey! } : undefined;
+      groups.set(url ? `${url}|${apiKey}` : "_default_", {
+        key,
+        items: [next],
+        size: next.size,
+      });
     }
-    return [
-      popped.map((it) => ({
+
+    return Array.from(groups.values()).map(({ key, items }) => {
+      const publicItems: AutoBatchQueueItem[] = items.map((it) => ({
         action: it.action,
         item: it.payload,
         otelContext: it.otelContext,
-      })),
-      () => popped.forEach((it) => it.itemPromiseResolve()),
-    ];
+      }));
+      return [
+        key,
+        publicItems,
+        () => {
+          for (const it of items) it.itemPromiseResolve();
+        },
+      ] as [
+        { url: string; apiKey: string } | undefined,
+        AutoBatchQueueItem[],
+        () => void
+      ];
+    });
   }
 }
 
@@ -962,13 +1005,21 @@ export class Client implements LangSmithTracingClientInterface {
   private drainAutoBatchQueue(batchSizeLimit: number) {
     const promises = [];
     while (this.autoBatchQueue.items.length > 0) {
-      const [batch, done] = this.autoBatchQueue.pop(batchSizeLimit);
-      if (!batch.length) {
-        done();
+      let isDone = false;
+      for (const [_, batch, done] of this.autoBatchQueue.pop(batchSizeLimit)) {
+        if (!batch.length) {
+          done();
+          isDone = true;
+          continue;
+        }
+        const batchPromise = this._processBatch(batch, done).catch(
+          console.error
+        );
+        promises.push(batchPromise);
+      }
+      if (isDone) {
         break;
       }
-      const batchPromise = this._processBatch(batch, done).catch(console.error);
-      promises.push(batchPromise);
     }
     return Promise.all(promises);
   }
@@ -1138,11 +1189,12 @@ export class Client implements LangSmithTracingClientInterface {
     const session_name = run.project_name;
     delete run.project_name;
 
-    const runCreate: RunCreate = await this.prepareRunCreateOrUpdateInputs({
-      session_name,
-      ...run,
-      start_time: run.start_time ?? Date.now(),
-    });
+    const runCreate: RunCreate & { apiKey?: string; apiUrl?: string } =
+      await this.prepareRunCreateOrUpdateInputs({
+        session_name,
+        ...run,
+        start_time: run.start_time ?? Date.now(),
+      });
     if (
       this.autoBatchTracing &&
       runCreate.trace_id !== undefined &&
@@ -1157,13 +1209,18 @@ export class Client implements LangSmithTracingClientInterface {
       return;
     }
     const mergedRunCreateParam = mergeRuntimeEnvIntoRunCreate(runCreate);
+    const apiUrl = runCreate?.apiUrl ?? this.apiUrl;
+    const apiKey = runCreate?.apiKey ?? this.apiKey;
 
     const response = await this.caller.call(
       _getFetchImplementation(this.debug),
-      `${this.apiUrl}/runs`,
+      `${apiUrl}/runs`,
       {
         method: "POST",
-        headers,
+        headers: {
+          ...headers,
+          "x-api-key": apiKey,
+        },
         body: serializePayloadForTracing(
           mergedRunCreateParam,
           `Creating run with id: ${mergedRunCreateParam.id}`
