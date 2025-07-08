@@ -64,12 +64,15 @@ function maybeCreateOtelContext<T>(
     return (fn: (...args: any[]) => T) => {
       const resolvedTracer =
         tracer ?? otel_trace.getTracer("langsmith", __version__);
+      const attributes: KVMap = {};
+      if (runTree.reference_example_id) {
+        attributes[LANGSMITH_REFERENCE_EXAMPLE_ID] =
+          runTree.reference_example_id;
+      }
       return resolvedTracer.startActiveSpan(
         runTree.name,
         {
-          attributes: {
-            [LANGSMITH_REFERENCE_EXAMPLE_ID]: runTree.reference_example_id,
-          },
+          attributes,
         },
         () => {
           otel_trace.setSpanContext(otel_context.active(), spanContext);
