@@ -21,10 +21,50 @@ function encodeString(str: string): Uint8Array {
   return encoder.encode(str);
 }
 
+// Shared function to handle well-known types
+function serializeWellKnownTypes(val) {
+  if (val && typeof val === "object" && val !== null) {
+    if (val instanceof Map) {
+      return Object.fromEntries(val);
+    } else if (val instanceof Set) {
+      return Array.from(val);
+    } else if (val instanceof Date) {
+      return val.toISOString();
+    } else if (val instanceof RegExp) {
+      return val.toString();
+    } else if (val instanceof Error) {
+      return {
+        name: val.name,
+        message: val.message,
+      };
+    }
+  } else if (typeof val === "bigint") {
+    return val.toString();
+  }
+  return val;
+}
+
+// Default replacer function to handle well-known types
+function createDefaultReplacer(userReplacer?) {
+  return function (key, val) {
+    // Apply user replacer first if provided
+    if (userReplacer) {
+      const userResult = userReplacer.call(this, key, val);
+      // If user replacer returned undefined, fall back to our serialization
+      if (userResult !== undefined) {
+        return userResult;
+      }
+    }
+
+    // Fall back to our well-known type handling
+    return serializeWellKnownTypes(val);
+  };
+}
+
 // Regular stringify
 export function serialize(obj, errorContext?, replacer?, spacer?, options?) {
   try {
-    const str = JSON.stringify(obj, replacer, spacer);
+    const str = JSON.stringify(obj, createDefaultReplacer(replacer), spacer);
     return encodeString(str);
   } catch (e: any) {
     // Fall back to more complex stringify if circular reference
@@ -122,6 +162,9 @@ function decirc(val, k, edgeIndex, stack, parent, depth, options) {
         decirc(val[i], i, i, stack, val, depth, options);
       }
     } else {
+      // Handle well-known types before Object.keys iteration
+      val = serializeWellKnownTypes(val);
+
       var keys = Object.keys(val);
       for (i = 0; i < keys.length; i++) {
         var key = keys[i];
@@ -215,6 +258,9 @@ function deterministicDecirc(val, k, edgeIndex, stack, parent, depth, options) {
         deterministicDecirc(val[i], i, i, stack, val, depth, options);
       }
     } else {
+      // Handle well-known types before Object.keys iteration
+      val = serializeWellKnownTypes(val);
+
       // Create a temporary object in the required way
       var tmp = {};
       var keys = Object.keys(val).sort(compareFunction);
