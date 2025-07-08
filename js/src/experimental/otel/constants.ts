@@ -46,6 +46,7 @@ export const LANGSMITH_TRACE_ID = "langsmith.trace.id";
 export const LANGSMITH_DOTTED_ORDER = "langsmith.span.dotted_order";
 export const LANGSMITH_PARENT_RUN_ID = "langsmith.span.parent_id";
 export const LANGSMITH_USAGE_METADATA = "langsmith.usage_metadata";
+export const LANGSMITH_REFERENCE_EXAMPLE_ID = "langsmith.reference_example_id";
 
 // GenAI event names
 export const GEN_AI_SYSTEM_MESSAGE = "gen_ai.system.message";

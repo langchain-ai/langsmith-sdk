@@ -37,6 +37,7 @@ import { __version__ } from "./index.js";
 import { getOTELTrace, getOTELContext } from "./singletons/otel.js";
 import { createOtelSpanContextFromRun } from "./experimental/otel/utils.js";
 import { OTELTracer } from "./experimental/otel/types.js";
+import { LANGSMITH_REFERENCE_EXAMPLE_ID } from "./experimental/otel/constants.js";
 
 AsyncLocalStorageProviderSingleton.initializeGlobalInstance(
   new AsyncLocalStorage<RunTree | ContextPlaceholder | undefined>()
@@ -67,7 +68,7 @@ function maybeCreateOtelContext<T>(
         runTree.name,
         {
           attributes: {
-            "langsmith.traceable": "true",
+            [LANGSMITH_REFERENCE_EXAMPLE_ID]: runTree.reference_example_id,
           },
         },
         () => {
