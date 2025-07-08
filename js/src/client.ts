@@ -84,7 +84,7 @@ import {
 
 import { serialize as serializePayloadForTracing } from "./utils/fast-safe-stringify/index.js";
 
-export interface Destination {
+interface Destination {
   url: string;
   apiKey?: string;
 }
@@ -92,7 +92,6 @@ export interface Destination {
 export interface ClientConfig {
   apiUrl?: string;
   apiKey?: string;
-  destinations?: Destination[];
   callerOptions?: AsyncCallerParams;
   timeout_ms?: number;
   webUrl?: string;
@@ -596,7 +595,7 @@ export class Client implements LangSmithTracingClientInterface {
 
   private batchIngestCaller: AsyncCaller;
 
-  private _destinations: Record<string, string | undefined> = {};
+  private _destinations: Destination[];
 
   private timeout_ms: number;
 
@@ -644,22 +643,18 @@ export class Client implements LangSmithTracingClientInterface {
     const defaultConfig = Client.getDefaultClientConfig();
 
     this.tracingSampleRate = getTracingSamplingRate(config.tracingSamplingRate);
-    if (config.apiUrl && config.destinations) {
-      throw new Error("You cannot provide both apiUrl and destinations.");
-    }
     this.apiUrl = trimQuotes(config.apiUrl ?? defaultConfig.apiUrl) ?? "";
     if (this.apiUrl.endsWith("/")) {
       this.apiUrl = this.apiUrl.slice(0, -1);
     }
     this.apiKey = trimQuotes(config.apiKey ?? defaultConfig.apiKey);
 
-    this._destinations = Client._getDestinations(config.destinations);
-    if (Object.keys(this._destinations).length > 0) {
-      const [firstUrl] = Object.keys(this._destinations);
-      this.apiUrl = firstUrl;
-      this.apiKey = this._destinations[firstUrl];
+    this._destinations = Client._getDestinations();
+    if (this._destinations.length > 0) {
+      this.apiUrl = this._destinations[0].url;
+      this.apiKey = this._destinations[0].apiKey;
     } else {
-      this._destinations = { [this.apiUrl]: this.apiKey };
+      this._destinations = [{ url: this.apiUrl, apiKey: this.apiKey }];
     }
     this.webUrl = trimQuotes(config.webUrl ?? defaultConfig.webUrl);
     if (this.webUrl?.endsWith("/")) {
@@ -1056,9 +1051,7 @@ export class Client implements LangSmithTracingClientInterface {
     }
   }
 
-  private static _getDestinations(
-    destinations?: Destination[]
-  ): Destination[] {
+  private static _getDestinations(destinations?: Destination[]): Destination[] {
     if (destinations && destinations.length > 0) {
       return destinations.map((destination) => ({
         url: destination.url.replace(/\/$/, ""),
@@ -1077,9 +1070,9 @@ export class Client implements LangSmithTracingClientInterface {
         }));
       }
       return Object.entries(parsed).map(([url, key]) => ({
-          url: url.replace(/\/$/, ""),
-          apiKey: key,
-        }));
+        url: url.replace(/\/$/, ""),
+        apiKey: key,
+      }));
     } catch (e) {
       if (isConflictingEndpointsError(e)) {
         throw e;
@@ -1097,36 +1090,34 @@ export class Client implements LangSmithTracingClientInterface {
     init: RequestInit & { duplex?: string },
     errorContext: string,
     ignoreConflict = false
-  ) {
-    const errors: unknown[] = [];
-    for (const [apiUrl, apiKey] of Object.entries(this._destinations)) {
+  ): Promise<void> {
+    const tasks = this._destinations.map(async (destination) => {
       const headers: Record<string, string> = {
         ...(init.headers as Record<string, string>),
         ...this.headers,
       };
-      if (apiKey) {
-        headers["x-api-key"] = apiKey;
+      if (destination.apiKey) {
+        headers["x-api-key"] = destination.apiKey;
       }
+
       try {
         const response = await caller.call(
           _getFetchImplementation(this.debug),
-          `${apiUrl}${path}`,
+          `${destination.url}${path}`,
           { ...init, headers }
         );
         await raiseForStatus(response, errorContext, true);
+        return null; // signal success
       } catch (e: any) {
-        if (ignoreConflict && e?.status === 409) {
-          // Ignore conflict errors when flag is set
-          continue;
-        }
-        errors.push(e);
+        if (ignoreConflict && e?.status === 409) return null;
+        return e as unknown; // bubble other errors up
       }
-    }
-    if (
-      errors.length === Object.keys(this._destinations).length &&
-      errors.length
-    ) {
-      // All requests failed – throw first error
+    });
+
+    const results = await Promise.all(tasks);
+    const errors = results.filter((e): e is unknown => e !== null);
+
+    if (errors.length === this._destinations.length && errors.length !== 0) {
       throw errors[0];
     }
   }
