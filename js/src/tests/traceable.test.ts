@@ -1675,3 +1675,82 @@ test("traceable with usage metadata with streaming", async () => {
     },
   });
 });
+
+test("serializes well-known types in inputs and outputs", async () => {
+  const { client, callSpy } = mockClient();
+
+  const func = traceable(
+    async (_input: {
+      map: Map<string, any>;
+      set: Set<any>;
+      date: Date;
+      regex: RegExp;
+      error: Error;
+      bigint: bigint;
+    }) => {
+      return {
+        processedMap: new Map([["result", "processed"]]),
+        processedSet: new Set([1, 2, 3]),
+        processedDate: new Date("2023-12-25T00:00:00.000Z"),
+        processedRegex: /processed.*pattern/gi,
+        processedError: new Error("Processed error"),
+        processedBigint: BigInt(987654321),
+        regularString: "normal output",
+      };
+    },
+    { client, tracingEnabled: true, name: "serializeTypesTest" }
+  );
+
+  const inputMap = new Map<string, unknown>([["input", "value"]]);
+  inputMap.set("nested", { deep: "object" });
+  const inputSet = new Set(["a", "b", "c", 123]);
+  const inputDate = new Date("2023-01-01T00:00:00.000Z");
+  const inputRegex = /input.*test/i;
+  const inputError = new Error("Input error message");
+  inputError.name = "CustomError";
+  const inputBigint = BigInt(123456789);
+
+  const result = await func({
+    map: inputMap,
+    set: inputSet,
+    date: inputDate,
+    regex: inputRegex,
+    error: inputError,
+    bigint: inputBigint,
+  });
+
+  // Verify the function returns the expected types
+  expect(result.processedMap).toBeInstanceOf(Map);
+  expect(result.processedSet).toBeInstanceOf(Set);
+  expect(result.processedDate).toBeInstanceOf(Date);
+  expect(result.processedRegex).toBeInstanceOf(RegExp);
+  expect(result.processedError).toBeInstanceOf(Error);
+  expect(typeof result.processedBigint).toBe("bigint");
+
+  // Verify serialization in traced inputs/outputs
+  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+    nodes: ["serializeTypesTest:0"],
+    edges: [],
+    data: {
+      "serializeTypesTest:0": {
+        inputs: {
+          map: { input: "value", nested: { deep: "object" } }, // Map -> Object
+          set: ["a", "b", "c", 123], // Set -> Array
+          date: "2023-01-01T00:00:00.000Z", // Date -> ISO string
+          regex: "/input.*test/i", // RegExp -> string
+          error: { name: "CustomError", message: "Input error message" }, // Error -> safe object (no stack)
+          bigint: "123456789", // BigInt -> string
+        },
+        outputs: {
+          processedMap: { result: "processed" }, // Map -> Object
+          processedSet: [1, 2, 3], // Set -> Array
+          processedDate: "2023-12-25T00:00:00.000Z", // Date -> ISO string
+          processedRegex: "/processed.*pattern/gi", // RegExp -> string
+          processedError: { name: "Error", message: "Processed error" }, // Error -> safe object
+          processedBigint: "987654321", // BigInt -> string
+          regularString: "normal output", // Regular string unchanged
+        },
+      },
+    },
+  });
+});
