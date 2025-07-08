@@ -1675,3 +1675,252 @@ test("traceable with usage metadata with streaming", async () => {
     },
   });
 });
+
+test("traceable with Map serialization", async () => {
+  const { client, callSpy } = mockClient();
+
+  const func = traceable(
+    async function func(input: Map<string, any>) {
+      return input;
+    },
+    { client, tracingEnabled: true }
+  );
+
+  const testMap = new Map([
+    ["key1", "value1"],
+    ["key2", 42],
+    ["key3", { nested: "object" }],
+  ]);
+
+  const result = await func(testMap);
+
+  expect(result).toBe(testMap);
+  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+    nodes: ["func:0"],
+    edges: [],
+    data: {
+      "func:0": {
+        inputs: {
+          input: {
+            key1: "value1",
+            key2: 42,
+            key3: { nested: "object" },
+          },
+        },
+        outputs: {
+          key1: "value1",
+          key2: 42,
+          key3: { nested: "object" },
+        },
+      },
+    },
+  });
+});
+
+test("traceable with Set serialization", async () => {
+  const { client, callSpy } = mockClient();
+
+  const func = traceable(
+    async function func(input: Set<any>) {
+      return input;
+    },
+    { client, tracingEnabled: true }
+  );
+
+  const testSet = new Set(["value1", 42, { nested: "object" }]);
+
+  const result = await func(testSet);
+
+  expect(result).toBe(testSet);
+  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+    nodes: ["func:0"],
+    edges: [],
+    data: {
+      "func:0": {
+        inputs: {
+          input: ["value1", 42, { nested: "object" }],
+        },
+        outputs: ["value1", 42, { nested: "object" }],
+      },
+    },
+  });
+});
+
+test("traceable with WeakMap serialization", async () => {
+  const { client, callSpy } = mockClient();
+
+  const func = traceable(
+    async function func(input: WeakMap<object, any>) {
+      return input;
+    },
+    { client, tracingEnabled: true }
+  );
+
+  const testWeakMap = new WeakMap();
+  const key = {};
+  testWeakMap.set(key, "value");
+
+  const result = await func(testWeakMap);
+
+  expect(result).toBe(testWeakMap);
+  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+    nodes: ["func:0"],
+    edges: [],
+    data: {
+      "func:0": {
+        inputs: {
+          input: "[WeakMap]",
+        },
+        outputs: "[WeakMap]",
+      },
+    },
+  });
+});
+
+test("traceable with WeakSet serialization", async () => {
+  const { client, callSpy } = mockClient();
+
+  const func = traceable(
+    async function func(input: WeakSet<object>) {
+      return input;
+    },
+    { client, tracingEnabled: true }
+  );
+
+  const testWeakSet = new WeakSet();
+  const obj = {};
+  testWeakSet.add(obj);
+
+  const result = await func(testWeakSet);
+
+  expect(result).toBe(testWeakSet);
+  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+    nodes: ["func:0"],
+    edges: [],
+    data: {
+      "func:0": {
+        inputs: {
+          input: "[WeakSet]",
+        },
+        outputs: "[WeakSet]",
+      },
+    },
+  });
+});
+
+test("traceable with nested Map and Set serialization", async () => {
+  const { client, callSpy } = mockClient();
+
+  const func = traceable(
+    async function func(input: { map: Map<string, any>; set: Set<any> }) {
+      return input;
+    },
+    { client, tracingEnabled: true }
+  );
+
+  const nestedMap = new Map([
+    ["nested", "value"],
+    ["count", 123],
+  ]);
+  const nestedSet = new Set([1, 2, 3, "test"]);
+
+  const testInput = {
+    map: nestedMap,
+    set: nestedSet,
+  };
+
+  const result = await func(testInput);
+
+  expect(result).toBe(testInput);
+  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+    nodes: ["func:0"],
+    edges: [],
+    data: {
+      "func:0": {
+        inputs: {
+          input: {
+            map: {
+              nested: "value",
+              count: 123,
+            },
+            set: [1, 2, 3, "test"],
+          },
+        },
+        outputs: {
+          map: {
+            nested: "value",
+            count: 123,
+          },
+          set: [1, 2, 3, "test"],
+        },
+      },
+    },
+  });
+});
+
+test("traceable with complex Map values and Set objects", async () => {
+  const { client, callSpy } = mockClient();
+
+  const func = traceable(
+    async function func(input: { complexMap: Map<string, any>; objectSet: Set<any> }) {
+      return input;
+    },
+    { client, tracingEnabled: true }
+  );
+
+  const complexMap = new Map([
+    ["array", [1, 2, 3]],
+    ["object", { foo: "bar", baz: 42 }],
+    ["nested_map", new Map([["inner", "value"]])],
+  ]);
+
+  const objectSet = new Set([
+    { id: 1, name: "first" },
+    { id: 2, name: "second" },
+    [1, 2, 3],
+  ]);
+
+  const testInput = {
+    complexMap,
+    objectSet,
+  };
+
+  const result = await func(testInput);
+
+  expect(result).toBe(testInput);
+  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+    nodes: ["func:0"],
+    edges: [],
+    data: {
+      "func:0": {
+        inputs: {
+          input: {
+            complexMap: {
+              array: [1, 2, 3],
+              object: { foo: "bar", baz: 42 },
+              nested_map: { inner: "value" },
+            },
+            objectSet: [
+              { id: 1, name: "first" },
+              { id: 2, name: "second" },
+              [1, 2, 3],
+            ],
+          },
+        },
+        outputs: {
+          complexMap: {
+            array: [1, 2, 3],
+            object: { foo: "bar", baz: 42 },
+            nested_map: { inner: "value" },
+          },
+          objectSet: [
+            { id: 1, name: "first" },
+            { id: 2, name: "second" },
+            [1, 2, 3],
+          ],
+        },
+      },
+    },
+  });
+});
+
