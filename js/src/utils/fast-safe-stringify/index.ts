@@ -47,10 +47,17 @@ function serializeWellKnownTypes(val) {
 // Default replacer function to handle well-known types
 function createDefaultReplacer(userReplacer?) {
   return function (key, val) {
-    val = serializeWellKnownTypes(val);
+    // Apply user replacer first if provided
+    if (userReplacer) {
+      const userResult = userReplacer.call(this, key, val);
+      // If user replacer returned undefined, fall back to our serialization
+      if (userResult !== undefined) {
+        return userResult;
+      }
+    }
 
-    // Apply user replacer if provided
-    return userReplacer ? userReplacer.call(this, key, val) : val;
+    // Fall back to our well-known type handling
+    return serializeWellKnownTypes(val);
   };
 }
 
