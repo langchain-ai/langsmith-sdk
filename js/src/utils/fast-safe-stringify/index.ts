@@ -252,6 +252,43 @@ function deterministicDecirc(val, k, edgeIndex, stack, parent, depth, options) {
         deterministicDecirc(val[i], i, i, stack, val, depth, options);
       }
     } else {
+      // Handle complex objects before Object.keys iteration
+      if (val instanceof Map) {
+        val = Object.fromEntries(val);
+      } else if (val instanceof Set) {
+        val = Array.from(val);
+      } else if (val instanceof RegExp) {
+        val = val.toString();
+      } else if (val instanceof Error) {
+        val = {
+          name: val.name,
+          message: val.message,
+          stack: val.stack
+        };
+      } else if (typeof val === 'bigint') {
+        val = val.toString();
+      } else if (val instanceof Date) {
+        val = val.toISOString();
+      } else if (val instanceof WeakMap || val instanceof WeakSet) {
+        val = {};
+      } else if (typeof val === 'symbol') {
+        val = val.toString();
+      } else if (typeof val === 'function') {
+        val = val.toString();
+      } else if (val && typeof val.constructor === 'function' && val.constructor.name && 
+                 val.constructor.name !== 'Object' && val.constructor.name !== 'Array') {
+        // Handle other complex objects by trying to extract meaningful properties
+        try {
+          const proto = Object.getPrototypeOf(val);
+          if (proto && proto.constructor && proto.constructor.name !== 'Object') {
+            // For complex objects, create a representation with constructor name and enumerable properties
+            val = { __type: val.constructor.name, ...val };
+          }
+        } catch (e) {
+          // If we can't handle it, leave it as is
+        }
+      }
+      
       // Create a temporary object in the required way
       var tmp = {};
       var keys = Object.keys(val).sort(compareFunction);
@@ -294,4 +331,5 @@ function replaceGetterValues(replacer) {
     return replacer.call(this, key, val);
   };
 }
+
 
