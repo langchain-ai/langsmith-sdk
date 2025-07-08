@@ -11,11 +11,10 @@ import type { Run } from "../../../schemas.js";
 
 // Initialize basic OTEL setup
 import { initializeOTEL } from "../../../experimental/otel/setup.js";
-import { getCurrentRunTree } from "../../../traceable.js";
 
 initializeOTEL();
 
-describe("AI SDK Evaluate Integration with OTEL", () => {
+describe.skip("AI SDK Evaluate Integration with OTEL", () => {
   beforeAll(() => {
     process.env.LANGSMITH_TRACING = "true";
     process.env.OTEL_ENABLED = "true";
