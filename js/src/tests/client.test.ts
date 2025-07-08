@@ -251,11 +251,11 @@ describe("Client", () => {
     });
 
     it("should parse LANGSMITH_RUNS_ENDPOINTS JSON mapping and set defaults correctly", () => {
-      const data = {
-        "https://api.smith.langsmith-endpoint_1.com": "123",
-        "https://api.smith.langsmith-endpoint_2.com": "456",
-        "https://api.smith.langsmith-endpoint_3.com": "789",
-      } as Record<string, string>;
+      const data = [
+        { url: "https://api.smith.langsmith-endpoint_1.com", apiKey: "123" },
+        { url: "https://api.smith.langsmith-endpoint_2.com", apiKey: "456" },
+        { url: "https://api.smith.langsmith-endpoint_3.com", apiKey: "789" },
+      ] as { url: string; apiKey?: string }[];
       // Ensure conflicting env vars are removed
       // eslint-disable-next-line no-process-env
       delete process.env.LANGCHAIN_ENDPOINT;
@@ -266,15 +266,14 @@ describe("Client", () => {
 
       const client = new Client({ autoBatchTracing: false });
       const internal = client as unknown as {
-        _writeApiUrls: Record<string, string>;
+        _destinations: { url: string; apiKey?: string }[];
         apiUrl: string;
         apiKey?: string;
       };
 
-      expect(internal._writeApiUrls).toEqual(data);
-      const firstUrl = Object.keys(data)[0];
-      expect(internal.apiUrl).toBe(firstUrl);
-      expect(internal.apiKey).toBe(data[firstUrl]);
+      expect(internal._destinations).toEqual(data);
+      expect(internal.apiUrl).toBe(data[0].url);
+      expect(internal.apiKey).toBe(data[0].apiKey);
     });
   });
 
