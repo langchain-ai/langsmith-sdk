@@ -49,3 +49,20 @@ export const isReadableStream = (x: unknown): x is ReadableStream =>
   typeof x === "object" &&
   "getReader" in x &&
   typeof x.getReader === "function";
+
+export const isMap = (x: unknown): x is Map<unknown, unknown> =>
+  x != null && x instanceof Map;
+
+export const isSet = (x: unknown): x is Set<unknown> =>
+  x != null && x instanceof Set;
+
+export const isWeakMap = (x: unknown): x is WeakMap<object, unknown> =>
+  x != null && x instanceof WeakMap;
+
+export const isWeakSet = (x: unknown): x is WeakSet<object> =>
+  x != null && x instanceof WeakSet;
+
+export const getConstructorName = (x: unknown): string =>
+  x != null && typeof x === "object" && x.constructor?.name
+    ? x.constructor.name : "Object";
+
