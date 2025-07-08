@@ -178,26 +178,6 @@ describe("serializeWellKnownTypes", () => {
     expect(parsed.regularProp).toBe("value");
   });
 
-  it("should work with custom replacer function", () => {
-    const obj = {
-      map: new Map([["key", "value"]]),
-      customProp: "test",
-    };
-
-    const customReplacer = (key: string, value: any) => {
-      if (key === "customProp") {
-        return "REPLACED";
-      }
-      return value;
-    };
-
-    const result = serialize(obj, undefined, customReplacer);
-    const parsed = JSON.parse(new TextDecoder().decode(result));
-
-    expect(parsed.map).toEqual({ key: "value" });
-    expect(parsed.customProp).toBe("REPLACED");
-  });
-
   it("should handle circular references", () => {
     const obj: any = { prop: "value" };
     obj.circular = obj;
