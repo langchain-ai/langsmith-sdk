@@ -421,6 +421,33 @@ const convertSerializableArg = (arg: unknown): unknown => {
     });
   }
 
+  // Handle Map objects by converting to plain objects
+  if (isMap(arg)) {
+    return Object.assign(arg, {
+      toJSON: () => Object.fromEntries(arg.entries())
+    });
+  }
+
+  // Handle Set objects by converting to arrays
+  if (isSet(arg)) {
+    return Object.assign(arg, {
+      toJSON: () => Array.from(arg)
+    });
+  }
+
+  // Handle WeakMap and WeakSet with descriptive strings
+  if (isWeakMap(arg)) {
+    return Object.assign(arg, {
+      toJSON: () => `[WeakMap]`
+    });
+  }
+
+  if (isWeakSet(arg)) {
+    return Object.assign(arg, {
+      toJSON: () => `[WeakSet]`
+    });
+  }
+
   if (isThenable(arg)) {
     return getSerializablePromise(arg);
   }
@@ -985,4 +1012,5 @@ export {
 } from "./singletons/traceable.js";
 
 export type { RunTreeLike, TraceableFunction } from "./singletons/types.js";
+
 
