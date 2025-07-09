@@ -987,8 +987,11 @@ export class Client implements LangSmithTracingClientInterface {
       }, {} as Record<string, AutoBatchQueueItem[]>);
 
       const batchPromises = [];
-      for (const batch of Object.values(batchesByDestination)) {
-        const batchPromise = this._processBatch(batch);
+      for (const [batchKey, batch] of Object.entries(batchesByDestination)) {
+        const batchPromise = this._processBatch(batch, {
+          apiUrl: batchKey.split("|")[0],
+          apiKey: batchKey.split("|")[1],
+        });
         batchPromises.push(batchPromise);
       }
 
