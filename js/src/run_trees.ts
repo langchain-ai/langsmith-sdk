@@ -862,8 +862,7 @@ function _ensureWriteReplicas(replicas?: Replica[]): WriteReplica[] {
           };
         }
         return replica;
-      })
-      .filter((replica) => !replica?.fromEnv);
+      });
   }
   return _getWriteReplicasFromEnv();
 }
