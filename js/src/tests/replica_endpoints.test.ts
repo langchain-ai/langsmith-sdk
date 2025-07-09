@@ -1,4 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable no-process-env */
+/* eslint-disable @typescript-eslint/no-non-null-assertion */
+/* eslint-disable prefer-const */
 import { jest } from "@jest/globals";
 import { Client } from "../client.js";
 import { RunTree } from "../run_trees.js";
