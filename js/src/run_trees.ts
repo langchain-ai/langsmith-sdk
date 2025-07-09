@@ -114,7 +114,7 @@ type WriteReplica = {
   apiUrl?: string;
   apiKey?: string;
   projectName?: string;
-  update?: KVMap | undefined;
+  updates?: KVMap | undefined;
   fromEnv?: boolean;
 };
 type Replica = ProjectReplica | WriteReplica;
@@ -540,18 +540,8 @@ export class RunTree implements BaseRun {
 
   async patchRun(): Promise<void> {
     if (this.replicas && this.replicas.length > 0) {
-      for (const replica of this.replicas) {
-        let runData;
-        if (!replica.projectName) {
-          runData = {
-            ...this,
-            parent_run_id: this.parent_run?.id ?? undefined,
-            session_name: this.project_name ?? undefined,
-          };
-        } else {
-          runData = this._remapForProject(replica.projectName);
-        }
-        const updates = replica.update;
+      for (const { projectName, apiKey, apiUrl, updates } of this.replicas) {
+        const runData = this._remapForProject(projectName ?? this.project_name);
         await this.client.updateRun(
           runData.id,
           {
@@ -571,8 +561,8 @@ export class RunTree implements BaseRun {
             ...updates,
           },
           {
-            apiKey: replica.apiKey,
-            apiUrl: replica.apiUrl,
+            apiKey,
+            apiUrl,
           }
         );
       }
