@@ -978,7 +978,9 @@ export class Client implements LangSmithTracingClientInterface {
       const batchesByDestination = batch.reduce((acc, item) => {
         const apiUrl = item.apiUrl ?? this.apiUrl;
         const apiKey = item.apiKey ?? this.apiKey;
-        const batchKey = `${apiUrl}|${apiKey}`;
+        const isDefault =
+          item.apiKey === this.apiKey && item.apiUrl === this.apiUrl;
+        const batchKey = isDefault ? "default" : `${apiUrl}|${apiKey}`;
         if (!acc[batchKey]) {
           acc[batchKey] = [];
         }
@@ -989,8 +991,8 @@ export class Client implements LangSmithTracingClientInterface {
       const batchPromises = [];
       for (const [batchKey, batch] of Object.entries(batchesByDestination)) {
         const batchPromise = this._processBatch(batch, {
-          apiUrl: batchKey.split("|")[0],
-          apiKey: batchKey.split("|")[1],
+          apiUrl: batchKey === "default" ? undefined : batchKey.split("|")[0],
+          apiKey: batchKey === "default" ? undefined : batchKey.split("|")[1],
         });
         batchPromises.push(batchPromise);
       }

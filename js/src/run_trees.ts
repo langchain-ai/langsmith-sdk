@@ -853,16 +853,15 @@ function _getWriteReplicasFromEnv(): WriteReplica[] {
 function _ensureWriteReplicas(replicas?: Replica[]): WriteReplica[] {
   // If null -> fetch from env
   if (replicas) {
-    return replicas
-      .map((replica) => {
-        if (Array.isArray(replica)) {
-          return {
-            projectName: replica[0],
-            update: replica[1],
-          };
-        }
-        return replica;
-      });
+    return replicas.map((replica) => {
+      if (Array.isArray(replica)) {
+        return {
+          projectName: replica[0],
+          update: replica[1],
+        };
+      }
+      return replica;
+    });
   }
   return _getWriteReplicasFromEnv();
 }
