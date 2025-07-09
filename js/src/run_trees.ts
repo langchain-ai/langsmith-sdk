@@ -126,7 +126,7 @@ class Baggage {
   metadata: KVMap | undefined;
   tags: string[] | undefined;
   project_name: string | undefined;
-  replicas: ProjectReplica[] | undefined;
+  replicas: Replica[] | undefined;
   constructor(
     metadata: KVMap | undefined,
     tags: string[] | undefined,
@@ -136,16 +136,7 @@ class Baggage {
     this.metadata = metadata;
     this.tags = tags;
     this.project_name = project_name;
-    this.replicas = replicas
-      ? replicas
-          .map((replica) => {
-            if (Array.isArray(replica)) {
-              return replica;
-            }
-            return [replica?.projectName, replica?.update] as ProjectReplica;
-          })
-          .filter((replica) => replica[0] !== undefined)
-      : undefined;
+    this.replicas = replicas;
   }
 
   static fromHeader(value: string) {
@@ -153,7 +144,7 @@ class Baggage {
     let metadata: KVMap = {};
     let tags: string[] = [];
     let project_name: string | undefined;
-    let replicas: ProjectReplica[] | undefined;
+    let replicas: Replica[] | undefined;
     for (const item of items) {
       const [key, uriValue] = item.split("=");
       const value = decodeURIComponent(uriValue);
@@ -249,9 +240,7 @@ export class RunTree implements BaseRun {
         this.trace_id = this.id;
       }
     }
-    if (this.replicas) {
-      this.replicas = _ensureWriteReplicas(this.replicas);
-    }
+    this.replicas = _ensureWriteReplicas(this.replicas);
 
     this.execution_order ??= 1;
     this.child_execution_order ??= 1;
@@ -397,7 +386,7 @@ export class RunTree implements BaseRun {
     run: RunTree,
     runtimeEnv: RuntimeEnvironment | undefined,
     excludeChildRuns = true
-  ): RunCreate & { id: string } & { apiKey?: string; apiUrl?: string } {
+  ): RunCreate & { id: string } {
     const runExtra = run.extra ?? {};
     // Avoid overwriting the runtime environment if it's already set
     if (runExtra?.runtime?.library === undefined) {
@@ -451,7 +440,7 @@ export class RunTree implements BaseRun {
     projectName: string,
     runtimeEnv?: RuntimeEnvironment,
     excludeChildRuns = true
-  ): RunCreate & { id: string } & { apiKey?: string; apiUrl?: string } {
+  ): RunCreate & { id: string } {
     const baseRun = this._convertToCreate(this, runtimeEnv, excludeChildRuns);
     if (projectName === this.project_name) {
       return baseRun;
@@ -516,24 +505,16 @@ export class RunTree implements BaseRun {
     try {
       const runtimeEnv = getRuntimeEnvironment();
       if (this.replicas && this.replicas.length > 0) {
-        for (const replica of this.replicas) {
-          let runCreate;
-          if (!replica.projectName) {
-            runCreate = this._convertToCreate(this, runtimeEnv, true);
-          } else {
-            runCreate = this._remapForProject(
-              replica.projectName,
-              runtimeEnv,
-              true
-            );
-          }
-          if (replica.apiKey) {
-            runCreate.apiKey = replica.apiKey;
-          }
-          if (replica.apiUrl) {
-            runCreate.apiUrl = replica.apiUrl;
-          }
-          await this.client.createRun(runCreate);
+        for (const { projectName, apiKey, apiUrl } of this.replicas) {
+          const runCreate = this._remapForProject(
+            projectName ?? this.project_name,
+            runtimeEnv,
+            true
+          );
+          await this.client.createRun(runCreate, {
+            apiKey,
+            apiUrl,
+          });
         }
       } else {
         const runCreate = this._convertToCreate(
@@ -571,24 +552,29 @@ export class RunTree implements BaseRun {
           runData = this._remapForProject(replica.projectName);
         }
         const updates = replica.update;
-        await this.client.updateRun(runData.id, {
-          inputs: runData.inputs,
-          outputs: runData.outputs,
-          error: runData.error,
-          parent_run_id: runData.parent_run_id,
-          session_name: runData.session_name,
-          reference_example_id: runData.reference_example_id,
-          end_time: runData.end_time,
-          dotted_order: runData.dotted_order,
-          trace_id: runData.trace_id,
-          events: runData.events,
-          tags: runData.tags,
-          extra: runData.extra,
-          attachments: this.attachments,
-          apiKey: replica?.apiKey,
-          apiUrl: replica?.apiUrl,
-          ...updates,
-        });
+        await this.client.updateRun(
+          runData.id,
+          {
+            inputs: runData.inputs,
+            outputs: runData.outputs,
+            error: runData.error,
+            parent_run_id: runData.parent_run_id,
+            session_name: runData.session_name,
+            reference_example_id: runData.reference_example_id,
+            end_time: runData.end_time,
+            dotted_order: runData.dotted_order,
+            trace_id: runData.trace_id,
+            events: runData.events,
+            tags: runData.tags,
+            extra: runData.extra,
+            attachments: this.attachments,
+            ...updates,
+          },
+          {
+            apiKey: replica.apiKey,
+            apiUrl: replica.apiUrl,
+          }
+        );
       }
     } else {
       try {
@@ -853,8 +839,6 @@ function _parseDottedOrder(dottedOrder: string): [Date, string][] {
   });
 }
 
-let _envWriteReplicas: WriteReplica[] | null = null;
-
 function _getWriteReplicasFromEnv(): WriteReplica[] {
   const envVar = getEnvironmentVariable("LANGSMITH_RUNS_ENDPOINTS");
   if (!envVar) return [];
@@ -878,12 +862,8 @@ function _getWriteReplicasFromEnv(): WriteReplica[] {
 
 function _ensureWriteReplicas(replicas?: Replica[]): WriteReplica[] {
   // If null -> fetch from env
-  if (_envWriteReplicas === null) {
-    _envWriteReplicas = _getWriteReplicasFromEnv();
-  }
-  let convertedReplicas: WriteReplica[] = [];
   if (replicas) {
-    convertedReplicas = replicas
+    return replicas
       .map((replica) => {
         if (Array.isArray(replica)) {
           return {
@@ -895,7 +875,7 @@ function _ensureWriteReplicas(replicas?: Replica[]): WriteReplica[] {
       })
       .filter((replica) => !replica?.fromEnv);
   }
-  return [...convertedReplicas, ..._envWriteReplicas];
+  return _getWriteReplicasFromEnv();
 }
 
 function _checkEndpointEnvUnset(parsed: Record<string, string>) {

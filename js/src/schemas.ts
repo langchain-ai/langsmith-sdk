@@ -217,8 +217,6 @@ export interface RunCreate extends BaseRun {
   revision_id?: string;
   child_runs?: this[];
   session_name?: string;
-  apiKey?: string;
-  apiUrl?: string;
 }
 
 export interface RunUpdate {
@@ -256,11 +254,6 @@ export interface RunUpdate {
    * Each entry is a tuple of [mime_type, bytes]
    */
   attachments?: Attachments;
-  /**The URL to submit this update operation to. Defaults to the client's API URL. */
-  apiUrl?: string;
-
-  /**The API key to submit this update operation with. Defaults to the client's API key. */
-  apiKey?: string;
 }
 
 export interface ExampleCreate {

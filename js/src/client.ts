@@ -331,8 +331,6 @@ interface CreateRunParams {
   trace_id?: string;
   dotted_order?: string;
   attachments?: Attachments;
-  apiKey?: string;
-  apiUrl?: string;
 }
 
 interface UpdateRunParams extends RunUpdate {
@@ -385,6 +383,8 @@ type AutoBatchQueueItem = {
   action: "create" | "update";
   item: RunCreate | RunUpdate;
   otelContext?: OTELContext;
+  apiKey?: string;
+  apiUrl?: string;
 };
 
 type MultipartPart = {
@@ -503,6 +503,8 @@ export class AutoBatchQueue {
     itemPromiseResolve: () => void;
     itemPromise: Promise<void>;
     size: number;
+    apiKey?: string;
+    apiUrl?: string;
   }[] = [];
 
   sizeBytes = 0;
@@ -526,6 +528,8 @@ export class AutoBatchQueue {
       action: item.action,
       payload: item.item,
       otelContext: item.otelContext,
+      apiKey: item.apiKey,
+      apiUrl: item.apiUrl,
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       itemPromiseResolve: itemPromiseResolve!,
       itemPromise,
@@ -535,81 +539,42 @@ export class AutoBatchQueue {
     return itemPromise;
   }
 
-  pop(
-    upToSizeBytes: number
-  ): [
-    { url: string; apiKey: string } | undefined,
-    AutoBatchQueueItem[],
-    () => void
-  ][] {
+  pop(upToSizeBytes: number): [AutoBatchQueueItem[], () => void] {
     if (upToSizeBytes < 1) {
       throw new Error("Number of bytes to pop off may not be less than 1.");
     }
-    type itemType = typeof this.items;
-    const groups = new Map<
-      string,
-      {
-        key: { url: string; apiKey: string } | undefined;
-        items: itemType;
-        size: number;
+    const popped: typeof this.items = [];
+    let poppedSizeBytes = 0;
+    // Pop items until we reach or exceed the size limit
+    while (
+      poppedSizeBytes + (this.peek()?.size ?? 0) < upToSizeBytes &&
+      this.items.length > 0
+    ) {
+      const item = this.items.shift();
+      if (item) {
+        popped.push(item);
+        poppedSizeBytes += item.size;
+        this.sizeBytes -= item.size;
       }
-    >();
-
-    while (this.items.length > 0) {
-      const next = this.items[0];
-      const url = (next.payload as any).apiUrl as string | undefined;
-      const apiKey = (next.payload as any).apiKey as string | undefined;
-      const mapKey = url ? `${url}|${apiKey}` : "_default_";
-
-      let entry = groups.get(mapKey);
-      if (!entry) {
-        entry = {
-          key: url ? { url, apiKey: apiKey! } : undefined,
-          items: [],
-          size: 0,
-        };
-        groups.set(mapKey, entry);
-      }
-
-      if (entry.size > 0 && entry.size + next.size > upToSizeBytes) break;
-
-      this.items.shift();
-      this.sizeBytes -= next.size;
-      entry.items.push(next);
-      entry.size += next.size;
     }
-
-    if (groups.size === 0 && this.items.length > 0) {
-      const next = this.items.shift()!;
-      this.sizeBytes -= next.size;
-      const url = (next.payload as any).apiUrl as string | undefined;
-      const apiKey = (next.payload as any).apiKey as string | undefined;
-      const key = url ? { url, apiKey: apiKey! } : undefined;
-      groups.set(url ? `${url}|${apiKey}` : "_default_", {
-        key,
-        items: [next],
-        size: next.size,
-      });
+    // If there is an item on the queue we were unable to pop,
+    // just return it as a single batch.
+    if (popped.length === 0 && this.items.length > 0) {
+      const item = this.items.shift()!;
+      popped.push(item);
+      poppedSizeBytes += item.size;
+      this.sizeBytes -= item.size;
     }
-
-    return Array.from(groups.values()).map(({ key, items }) => {
-      const publicItems: AutoBatchQueueItem[] = items.map((it) => ({
+    return [
+      popped.map((it) => ({
         action: it.action,
         item: it.payload,
         otelContext: it.otelContext,
-      }));
-      return [
-        key,
-        publicItems,
-        () => {
-          for (const it of items) it.itemPromiseResolve();
-        },
-      ] as [
-        { url: string; apiKey: string } | undefined,
-        AutoBatchQueueItem[],
-        () => void
-      ];
-    });
+        apiKey: it.apiKey,
+        apiUrl: it.apiUrl,
+      })),
+      () => popped.forEach((it) => it.itemPromiseResolve()),
+    ];
   }
 }
 
@@ -1005,21 +970,13 @@ export class Client implements LangSmithTracingClientInterface {
   private drainAutoBatchQueue(batchSizeLimit: number) {
     const promises = [];
     while (this.autoBatchQueue.items.length > 0) {
-      let isDone = false;
-      for (const [_, batch, done] of this.autoBatchQueue.pop(batchSizeLimit)) {
-        if (!batch.length) {
-          done();
-          isDone = true;
-          continue;
-        }
-        const batchPromise = this._processBatch(batch, done).catch(
-          console.error
-        );
-        promises.push(batchPromise);
-      }
-      if (isDone) {
+      const [batch, done] = this.autoBatchQueue.pop(batchSizeLimit);
+      if (!batch.length) {
+        done();
         break;
       }
+      const batchPromise = this._processBatch(batch, done).catch(console.error);
+      promises.push(batchPromise);
     }
     return Promise.all(promises);
   }
@@ -1181,20 +1138,25 @@ export class Client implements LangSmithTracingClientInterface {
     return undefined;
   }
 
-  public async createRun(run: CreateRunParams): Promise<void> {
+  public async createRun(
+    run: CreateRunParams,
+    options?: { apiKey?: string; apiUrl?: string }
+  ): Promise<void> {
     if (!this._filterForSampling([run]).length) {
       return;
     }
-    const headers = { ...this.headers, "Content-Type": "application/json" };
+    const headers: Record<string, string> = {
+      ...this.headers,
+      "Content-Type": "application/json",
+    };
     const session_name = run.project_name;
     delete run.project_name;
 
-    const runCreate: RunCreate & { apiKey?: string; apiUrl?: string } =
-      await this.prepareRunCreateOrUpdateInputs({
-        session_name,
-        ...run,
-        start_time: run.start_time ?? Date.now(),
-      });
+    const runCreate: RunCreate = await this.prepareRunCreateOrUpdateInputs({
+      session_name,
+      ...run,
+      start_time: run.start_time ?? Date.now(),
+    });
     if (
       this.autoBatchTracing &&
       runCreate.trace_id !== undefined &&
@@ -1205,22 +1167,21 @@ export class Client implements LangSmithTracingClientInterface {
         action: "create",
         item: runCreate,
         otelContext,
+        apiKey: options?.apiKey,
+        apiUrl: options?.apiUrl,
       }).catch(console.error);
       return;
     }
     const mergedRunCreateParam = mergeRuntimeEnvIntoRunCreate(runCreate);
-    const apiUrl = runCreate?.apiUrl ?? this.apiUrl;
-    const apiKey = runCreate?.apiKey ?? this.apiKey;
-
+    if (options?.apiKey !== undefined) {
+      headers["x-api-key"] = options.apiKey;
+    }
     const response = await this.caller.call(
       _getFetchImplementation(this.debug),
-      `${apiUrl}/runs`,
+      `${options?.apiUrl ?? this.apiUrl}/runs`,
       {
         method: "POST",
-        headers: {
-          ...headers,
-          "x-api-key": apiKey,
-        },
+        headers,
         body: serializePayloadForTracing(
           mergedRunCreateParam,
           `Creating run with id: ${mergedRunCreateParam.id}`
@@ -1618,7 +1579,11 @@ export class Client implements LangSmithTracingClientInterface {
     }
   }
 
-  public async updateRun(runId: string, run: RunUpdate): Promise<void> {
+  public async updateRun(
+    runId: string,
+    run: RunUpdate,
+    options?: { apiKey?: string; apiUrl?: string }
+  ): Promise<void> {
     assertUuid(runId);
     if (run.inputs) {
       run.inputs = await this.processInputs(run.inputs);
@@ -1650,6 +1615,8 @@ export class Client implements LangSmithTracingClientInterface {
           action: "update",
           item: data,
           otelContext,
+          apiKey: options?.apiKey,
+          apiUrl: options?.apiUrl,
         }).catch(console.error);
         return;
       } else {
@@ -1657,14 +1624,22 @@ export class Client implements LangSmithTracingClientInterface {
           action: "update",
           item: data,
           otelContext,
+          apiKey: options?.apiKey,
+          apiUrl: options?.apiUrl,
         }).catch(console.error);
       }
       return;
     }
-    const headers = { ...this.headers, "Content-Type": "application/json" };
+    const headers: Record<string, string> = {
+      ...this.headers,
+      "Content-Type": "application/json",
+    };
+    if (options?.apiKey !== undefined) {
+      headers["x-api-key"] = options.apiKey;
+    }
     const response = await this.caller.call(
       _getFetchImplementation(this.debug),
-      `${this.apiUrl}/runs/${runId}`,
+      `${options?.apiUrl ?? this.apiUrl}/runs/${runId}`,
       {
         method: "PATCH",
         headers,
