@@ -740,6 +740,13 @@ export class Client implements LangSmithTracingClientInterface {
     return headers;
   }
 
+  private _getPlatformEndpointPath(path: string): string {
+    // Check if apiUrl already ends with /v1 or /v1/ to avoid double /v1/v1/ paths
+    const needsV1Prefix =
+      this.apiUrl.slice(-3) !== "/v1" && this.apiUrl.slice(-4) !== "/v1/";
+    return needsV1Prefix ? `/v1/platform/${path}` : `/platform/${path}`;
+  }
+
   private async processInputs(inputs: KVMap): Promise<KVMap> {
     if (this.hideInputs === false) {
       return inputs;
@@ -4715,11 +4722,9 @@ export class Client implements LangSmithTracingClientInterface {
     const datasetIdToUse = datasetId ?? updates[0]?.dataset_id;
     const response = await this.caller.call(
       _getFetchImplementation(this.debug),
-      `${this.apiUrl}${
-        this.apiUrl.slice(-3) !== "/v1" && this.apiUrl.slice(-4) !== "/v1/"
-          ? "/v1/platform/datasets"
-          : "/platform/datasets"
-      }/${datasetIdToUse}/examples`,
+      `${this.apiUrl}${this._getPlatformEndpointPath(
+        `datasets/${datasetIdToUse}/examples`
+      )}`,
       {
         method: "PATCH",
         headers: this.headers,
@@ -4827,11 +4832,9 @@ export class Client implements LangSmithTracingClientInterface {
 
     const response = await this.caller.call(
       _getFetchImplementation(this.debug),
-      `${this.apiUrl}${
-        this.apiUrl.slice(-3) !== "/v1" && this.apiUrl.slice(-4) !== "/v1/"
-          ? "/v1/platform/datasets"
-          : "/platform/datasets"
-      }/${datasetId}/examples`,
+      `${this.apiUrl}${this._getPlatformEndpointPath(
+        `datasets/${datasetId}/examples`
+      )}`,
       {
         method: "POST",
         headers: this.headers,
