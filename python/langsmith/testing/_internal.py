@@ -301,6 +301,7 @@ def test(*args: Any, **kwargs: Any) -> Callable:
         client=kwargs.pop("client", None),
         test_suite_name=kwargs.pop("test_suite_name", None),
         cache=ls_utils.get_cache_dir(kwargs.pop("cache", None)),
+        metadata=kwargs.pop("metadata", None),
     )
     if kwargs:
         warnings.warn(f"Unexpected keyword arguments: {kwargs.keys()}")
@@ -648,6 +649,7 @@ class _LangSmithTestSuite:
         example_id,
         outputs,
         reference_outputs,
+        metadata,
         pytest_plugin=None,
         pytest_nodeid=None,
     ) -> Future:
@@ -657,6 +659,7 @@ class _LangSmithTestSuite:
             example_id=example_id,
             outputs=outputs,
             reference_outputs=reference_outputs,
+            metadata=metadata,
             pytest_plugin=pytest_plugin,
             pytest_nodeid=pytest_nodeid,
         )
@@ -667,12 +670,18 @@ class _LangSmithTestSuite:
         example_id,
         outputs,
         reference_outputs,
+        metadata,
         pytest_plugin,
         pytest_nodeid,
     ) -> None:
         # TODO: remove this hack so that run durations are correct
         # Ensure example is fully updated
-        self.sync_example(example_id, inputs=run_tree.inputs, outputs=reference_outputs)
+        self.sync_example(
+            example_id,
+            inputs=run_tree.inputs,
+            outputs=reference_outputs,
+            metadata=metadata,
+        )
         run_tree.end(outputs=outputs)
         run_tree.patch()
 
@@ -683,6 +692,7 @@ class _TestCase:
         test_suite: _LangSmithTestSuite,
         example_id: uuid.UUID,
         run_id: uuid.UUID,
+        metadata: Optional[dict] = None,
         pytest_plugin: Any = None,
         pytest_nodeid: Any = None,
         inputs: Optional[dict] = None,
@@ -691,6 +701,7 @@ class _TestCase:
         self.test_suite = test_suite
         self.example_id = example_id
         self.run_id = run_id
+        self.metadata = metadata
         self.pytest_plugin = pytest_plugin
         self.pytest_nodeid = pytest_nodeid
         self.inputs = inputs
@@ -714,6 +725,7 @@ class _TestCase:
             self.example_id,
             inputs=inputs,
             outputs=outputs,
+            metadata=self.metadata,
             pytest_plugin=self.pytest_plugin,
             pytest_nodeid=self.pytest_nodeid,
         )
@@ -783,6 +795,7 @@ class _TestCase:
             self.example_id,
             outputs,
             reference_outputs=self._logged_reference_outputs,
+            metadata=self.metadata,
             pytest_plugin=self.pytest_plugin,
             pytest_nodeid=self.pytest_nodeid,
         )
@@ -797,14 +810,7 @@ class _UTExtra(TypedDict, total=False):
     output_keys: Optional[Sequence[str]]
     test_suite_name: Optional[str]
     cache: Optional[str]
-
-
-def _get_test_repr(func: Callable, sig: inspect.Signature) -> str:
-    name = getattr(func, "__name__", None) or ""
-    description = getattr(func, "__doc__", None) or ""
-    if description:
-        description = f" - {description.strip()}"
-    return f"{name}{sig}{description}"
+    metadata: Optional[dict]
 
 
 def _create_test_case(
@@ -816,6 +822,7 @@ def _create_test_case(
 ) -> _TestCase:
     client = langtest_extra["client"] or rt.get_cached_client()
     output_keys = langtest_extra["output_keys"]
+    metadata = langtest_extra["metadata"]
     signature = inspect.signature(func)
     inputs = rh._get_inputs_safe(signature, *args, **kwargs) or None
     outputs = None
@@ -850,6 +857,7 @@ def _create_test_case(
         test_suite,
         example_id,
         run_id=uuid.uuid4(),
+        metadata=metadata,
         inputs=inputs,
         reference_outputs=outputs,
         pytest_plugin=pytest_plugin,
@@ -881,6 +889,14 @@ def _run_test(
             run_id=test_case.run_id,
             reference_example_id=test_case.example_id,
             inputs=test_case.inputs,
+            metadata={
+                # Experiment run metadata is prefixed with "ls_example_" in
+                # the ingest backend, but we must reproduce this behavior here
+                # because the example may not have been created before the trace
+                # starts.
+                f"ls_example_{k}": v
+                for k, v in (test_case.metadata or {}).items()
+            },
             project_name=test_case.test_suite.name,
             exceptions_to_handle=(SkipException,),
             _end_on_exit=False,
@@ -950,6 +966,14 @@ async def _arun_test(
             run_id=test_case.run_id,
             reference_example_id=test_case.example_id,
             inputs=test_case.inputs,
+            metadata={
+                # Experiment run metadata is prefixed with "ls_example_" in
+                # the ingest backend, but we must reproduce this behavior here
+                # because the example may not have been created before the trace
+                # starts.
+                f"ls_example_{k}": v
+                for k, v in (test_case.metadata or {}).items()
+            },
             project_name=test_case.test_suite.name,
             exceptions_to_handle=(SkipException,),
             _end_on_exit=False,
