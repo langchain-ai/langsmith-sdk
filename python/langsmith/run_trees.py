@@ -45,6 +45,9 @@ _REPLICAS = contextvars.ContextVar[Optional[Sequence[tuple[str, Optional[dict]]]
     "_REPLICAS", default=None
 )
 
+_DISTRIBUTED_PARENT_ID = contextvars.ContextVar[Optional[str]](
+    "_DISTRIBUTED_PARENT_ID", default=None
+)
 
 # Note, this is called directly by langchain. Do not remove.
 
@@ -415,6 +418,37 @@ class RunTree(ls_schemas.RunBase):
             self_dict["outputs"] = self.outputs.copy()
         return self_dict
 
+    def _slice_parent_id(self, parent_id: str, run_dict: dict) -> None:
+        """Slice the parent id from dotted order.
+
+        Additionally check if the current run is a child of the parent. If so, update
+        the parent_run_id to None, and set the trace id to the new root id after
+        parent_id.
+        """
+        if run_dict.get("dotted_order"):
+            segs = _parse_dotted_order(run_dict["dotted_order"])
+            # Find the index where seg_id == parent_id
+            start_idx = None
+            for idx, (_, seg_id) in enumerate(segs):
+                if str(seg_id) == str(parent_id):
+                    start_idx = idx
+                    break
+            if start_idx is not None:
+                # Trim segments to start after parent_id (exclusive)
+                trimmed_segs = segs[start_idx + 1 :]
+                # Rebuild dotted_order
+                run_dict["dotted_order"] = ".".join(
+                    ts.strftime("%Y%m%dT%H%M%S%fZ") + str(seg_id)
+                    for ts, seg_id in trimmed_segs
+                )
+                if trimmed_segs:
+                    run_dict["trace_id"] = trimmed_segs[0][1]
+                else:
+                    run_dict["trace_id"] = run_dict["id"]
+        # Remove parent_run_id if it matches parent_id
+        if str(run_dict.get("parent_run_id")) == str(parent_id):
+            run_dict.pop("parent_run_id", None)
+
     def _remap_for_project(
         self, project_name: str, updates: Optional[dict] = None
     ) -> dict:
@@ -422,6 +456,12 @@ class RunTree(ls_schemas.RunBase):
         run_dict = self._get_dicts_safe()
         if project_name == self.session_name:
             return run_dict
+
+        if updates and updates.get("distributed", False):
+            distributed_parent_id = _DISTRIBUTED_PARENT_ID.get()
+
+            if distributed_parent_id:
+                self._slice_parent_id(distributed_parent_id, run_dict)
 
         old_id = run_dict["id"]
         new_id = uuid5(NAMESPACE_DNS, f"{old_id}:{project_name}")
@@ -467,7 +507,7 @@ class RunTree(ls_schemas.RunBase):
         """Post the run tree to the API asynchronously."""
         if self.replicas:
             for project_name, updates in self.replicas:
-                run_dict = self._remap_for_project(project_name)
+                run_dict = self._remap_for_project(project_name, updates)
                 self.client.create_run(**run_dict)
         else:
             kwargs = self._get_dicts_safe()
