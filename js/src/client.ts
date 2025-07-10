@@ -383,6 +383,8 @@ type AutoBatchQueueItem = {
   action: "create" | "update";
   item: RunCreate | RunUpdate;
   otelContext?: OTELContext;
+  apiKey?: string;
+  apiUrl?: string;
 };
 
 type MultipartPart = {
@@ -501,6 +503,8 @@ export class AutoBatchQueue {
     itemPromiseResolve: () => void;
     itemPromise: Promise<void>;
     size: number;
+    apiKey?: string;
+    apiUrl?: string;
   }[] = [];
 
   sizeBytes = 0;
@@ -524,6 +528,8 @@ export class AutoBatchQueue {
       action: item.action,
       payload: item.item,
       otelContext: item.otelContext,
+      apiKey: item.apiKey,
+      apiUrl: item.apiUrl,
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       itemPromiseResolve: itemPromiseResolve!,
       itemPromise,
@@ -564,6 +570,8 @@ export class AutoBatchQueue {
         action: it.action,
         item: it.payload,
         otelContext: it.otelContext,
+        apiKey: it.apiKey,
+        apiUrl: it.apiUrl,
       })),
       () => popped.forEach((it) => it.itemPromiseResolve()),
     ];
@@ -974,15 +982,40 @@ export class Client implements LangSmithTracingClientInterface {
         done();
         break;
       }
-      const batchPromise = this._processBatch(batch, done).catch(console.error);
-      promises.push(batchPromise);
+      const batchesByDestination = batch.reduce((acc, item) => {
+        const apiUrl = item.apiUrl ?? this.apiUrl;
+        const apiKey = item.apiKey ?? this.apiKey;
+        const isDefault =
+          item.apiKey === this.apiKey && item.apiUrl === this.apiUrl;
+        const batchKey = isDefault ? "default" : `${apiUrl}|${apiKey}`;
+        if (!acc[batchKey]) {
+          acc[batchKey] = [];
+        }
+        acc[batchKey].push(item);
+        return acc;
+      }, {} as Record<string, AutoBatchQueueItem[]>);
+
+      const batchPromises = [];
+      for (const [batchKey, batch] of Object.entries(batchesByDestination)) {
+        const batchPromise = this._processBatch(batch, {
+          apiUrl: batchKey === "default" ? undefined : batchKey.split("|")[0],
+          apiKey: batchKey === "default" ? undefined : batchKey.split("|")[1],
+        });
+        batchPromises.push(batchPromise);
+      }
+
+      // Wait for all batches to complete, then call the overall done callback
+      const allBatchesPromise = Promise.all(batchPromises).finally(done);
+      promises.push(allBatchesPromise);
     }
     return Promise.all(promises);
   }
 
-  private async _processBatch(batch: AutoBatchQueueItem[], done: () => void) {
+  private async _processBatch(
+    batch: AutoBatchQueueItem[],
+    options?: { apiKey?: string; apiUrl?: string }
+  ) {
     if (!batch.length) {
-      done();
       return;
     }
     try {
@@ -999,15 +1032,13 @@ export class Client implements LangSmithTracingClientInterface {
         };
         const serverInfo = await this._ensureServerInfo();
         if (serverInfo?.batch_ingest_config?.use_multipart_endpoint) {
-          await this.multipartIngestRuns(ingestParams);
+          await this.multipartIngestRuns(ingestParams, options);
         } else {
-          await this.batchIngestRuns(ingestParams);
+          await this.batchIngestRuns(ingestParams, options);
         }
       }
     } catch (e) {
       console.error("Error exporting batch:", e);
-    } finally {
-      done();
     }
   }
 
@@ -1137,11 +1168,17 @@ export class Client implements LangSmithTracingClientInterface {
     return undefined;
   }
 
-  public async createRun(run: CreateRunParams): Promise<void> {
+  public async createRun(
+    run: CreateRunParams,
+    options?: { apiKey?: string; apiUrl?: string }
+  ): Promise<void> {
     if (!this._filterForSampling([run]).length) {
       return;
     }
-    const headers = { ...this.headers, "Content-Type": "application/json" };
+    const headers: Record<string, string> = {
+      ...this.headers,
+      "Content-Type": "application/json",
+    };
     const session_name = run.project_name;
     delete run.project_name;
 
@@ -1160,14 +1197,18 @@ export class Client implements LangSmithTracingClientInterface {
         action: "create",
         item: runCreate,
         otelContext,
+        apiKey: options?.apiKey,
+        apiUrl: options?.apiUrl,
       }).catch(console.error);
       return;
     }
     const mergedRunCreateParam = mergeRuntimeEnvIntoRunCreate(runCreate);
-
+    if (options?.apiKey !== undefined) {
+      headers["x-api-key"] = options.apiKey;
+    }
     const response = await this.caller.call(
       _getFetchImplementation(this.debug),
-      `${this.apiUrl}/runs`,
+      `${options?.apiUrl ?? this.apiUrl}/runs`,
       {
         method: "POST",
         headers,
@@ -1186,13 +1227,16 @@ export class Client implements LangSmithTracingClientInterface {
    * Batch ingest/upsert multiple runs in the Langsmith system.
    * @param runs
    */
-  public async batchIngestRuns({
-    runCreates,
-    runUpdates,
-  }: {
-    runCreates?: RunCreate[];
-    runUpdates?: RunUpdate[];
-  }) {
+  public async batchIngestRuns(
+    {
+      runCreates,
+      runUpdates,
+    }: {
+      runCreates?: RunCreate[];
+      runUpdates?: RunUpdate[];
+    },
+    options?: { apiKey?: string; apiUrl?: string }
+  ) {
     if (runCreates === undefined && runUpdates === undefined) {
       return;
     }
@@ -1262,20 +1306,27 @@ export class Client implements LangSmithTracingClientInterface {
         serializePayloadForTracing(
           batchChunks,
           `Ingesting runs with ids: ${runIds}`
-        )
+        ),
+        options
       );
     }
   }
 
-  private async _postBatchIngestRuns(body: Uint8Array) {
-    const headers = {
+  private async _postBatchIngestRuns(
+    body: Uint8Array,
+    options?: { apiKey?: string; apiUrl?: string }
+  ) {
+    const headers: Record<string, string> = {
       ...this.headers,
       "Content-Type": "application/json",
       Accept: "application/json",
     };
+    if (options?.apiKey !== undefined) {
+      headers["x-api-key"] = options.apiKey;
+    }
     const response = await this.batchIngestCaller.call(
       _getFetchImplementation(this.debug),
-      `${this.apiUrl}/runs/batch`,
+      `${options?.apiUrl ?? this.apiUrl}/runs/batch`,
       {
         method: "POST",
         headers,
@@ -1291,13 +1342,16 @@ export class Client implements LangSmithTracingClientInterface {
    * Batch ingest/upsert multiple runs in the Langsmith system.
    * @param runs
    */
-  public async multipartIngestRuns({
-    runCreates,
-    runUpdates,
-  }: {
-    runCreates?: RunCreate[];
-    runUpdates?: RunUpdate[];
-  }) {
+  public async multipartIngestRuns(
+    {
+      runCreates,
+      runUpdates,
+    }: {
+      runCreates?: RunCreate[];
+      runUpdates?: RunUpdate[];
+    },
+    options?: { apiKey?: string; apiUrl?: string }
+  ) {
     if (runCreates === undefined && runUpdates === undefined) {
       return;
     }
@@ -1454,7 +1508,8 @@ export class Client implements LangSmithTracingClientInterface {
     }
     await this._sendMultipartRequest(
       accumulatedParts,
-      accumulatedContext.join("; ")
+      accumulatedContext.join("; "),
+      options
     );
   }
 
@@ -1537,7 +1592,11 @@ export class Client implements LangSmithTracingClientInterface {
     return stream;
   }
 
-  private async _sendMultipartRequest(parts: MultipartPart[], context: string) {
+  private async _sendMultipartRequest(
+    parts: MultipartPart[],
+    context: string,
+    options?: { apiKey?: string; apiUrl?: string }
+  ) {
     try {
       // Create multipart form data boundary
       const boundary =
@@ -1546,15 +1605,20 @@ export class Client implements LangSmithTracingClientInterface {
         ? this._createNodeFetchBody(parts, boundary)
         : this._createMultipartStream(parts, boundary));
 
+      const headers: Record<string, string> = {
+        ...this.headers,
+        "Content-Type": `multipart/form-data; boundary=${boundary}`,
+      };
+      if (options?.apiKey !== undefined) {
+        headers["x-api-key"] = options.apiKey;
+      }
+
       const res = await this.batchIngestCaller.call(
         _getFetchImplementation(this.debug),
-        `${this.apiUrl}/runs/multipart`,
+        `${options?.apiUrl ?? this.apiUrl}/runs/multipart`,
         {
           method: "POST",
-          headers: {
-            ...this.headers,
-            "Content-Type": `multipart/form-data; boundary=${boundary}`,
-          },
+          headers,
           body,
           duplex: "half",
           signal: AbortSignal.timeout(this.timeout_ms),
@@ -1568,7 +1632,11 @@ export class Client implements LangSmithTracingClientInterface {
     }
   }
 
-  public async updateRun(runId: string, run: RunUpdate): Promise<void> {
+  public async updateRun(
+    runId: string,
+    run: RunUpdate,
+    options?: { apiKey?: string; apiUrl?: string }
+  ): Promise<void> {
     assertUuid(runId);
     if (run.inputs) {
       run.inputs = await this.processInputs(run.inputs);
@@ -1600,6 +1668,8 @@ export class Client implements LangSmithTracingClientInterface {
           action: "update",
           item: data,
           otelContext,
+          apiKey: options?.apiKey,
+          apiUrl: options?.apiUrl,
         }).catch(console.error);
         return;
       } else {
@@ -1607,14 +1677,22 @@ export class Client implements LangSmithTracingClientInterface {
           action: "update",
           item: data,
           otelContext,
+          apiKey: options?.apiKey,
+          apiUrl: options?.apiUrl,
         }).catch(console.error);
       }
       return;
     }
-    const headers = { ...this.headers, "Content-Type": "application/json" };
+    const headers: Record<string, string> = {
+      ...this.headers,
+      "Content-Type": "application/json",
+    };
+    if (options?.apiKey !== undefined) {
+      headers["x-api-key"] = options.apiKey;
+    }
     const response = await this.caller.call(
       _getFetchImplementation(this.debug),
-      `${this.apiUrl}/runs/${runId}`,
+      `${options?.apiUrl ?? this.apiUrl}/runs/${runId}`,
       {
         method: "PATCH",
         headers,
