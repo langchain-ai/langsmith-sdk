@@ -2,6 +2,10 @@ import * as uuid from "uuid";
 import { Client } from "./client.js";
 import { isTracingEnabled } from "./env.js";
 import { Attachments, BaseRun, KVMap, RunCreate } from "./schemas.js";
+import {
+  isConflictingEndpointsError,
+  ConflictingEndpointsError,
+} from "./utils/error.js";
 import { _LC_CONTEXT_VARIABLES_KEY } from "./singletons/constants.js";
 import {
   RuntimeEnvironment,
@@ -9,6 +13,7 @@ import {
   getRuntimeEnvironment,
 } from "./utils/env.js";
 import { getDefaultProjectName } from "./utils/project.js";
+import { getLangSmithEnvironmentVariable } from "./utils/env.js";
 import { warnOnce } from "./utils/warn.js";
 
 function stripNonAlphanumeric(input: string) {
@@ -57,7 +62,7 @@ export interface RunTreeConfig {
   trace_id?: string;
   dotted_order?: string;
   attachments?: Attachments;
-  replicas?: [string, KVMap | undefined][];
+  replicas?: Replica[];
 }
 
 export interface RunnableConfigLike {
@@ -104,6 +109,16 @@ interface HeadersLike {
   set(name: string, value: string): void;
 }
 
+type ProjectReplica = [string, KVMap | undefined];
+type WriteReplica = {
+  apiUrl?: string;
+  apiKey?: string;
+  projectName?: string;
+  updates?: KVMap | undefined;
+  fromEnv?: boolean;
+};
+type Replica = ProjectReplica | WriteReplica;
+
 /**
  * Baggage header information
  */
@@ -111,12 +126,12 @@ class Baggage {
   metadata: KVMap | undefined;
   tags: string[] | undefined;
   project_name: string | undefined;
-  replicas: [string, KVMap | undefined][] | undefined;
+  replicas: Replica[] | undefined;
   constructor(
     metadata: KVMap | undefined,
     tags: string[] | undefined,
     project_name: string | undefined,
-    replicas: [string, KVMap | undefined][] | undefined
+    replicas: Replica[] | undefined
   ) {
     this.metadata = metadata;
     this.tags = tags;
@@ -129,7 +144,7 @@ class Baggage {
     let metadata: KVMap = {};
     let tags: string[] = [];
     let project_name: string | undefined;
-    let replicas: [string, KVMap | undefined][] | undefined;
+    let replicas: Replica[] | undefined;
     for (const item of items) {
       const [key, uriValue] = item.split("=");
       const value = decodeURIComponent(uriValue);
@@ -201,7 +216,7 @@ export class RunTree implements BaseRun {
   /**
    * Projects to replicate this run to with optional updates.
    */
-  replicas?: [string, KVMap | undefined][];
+  replicas?: WriteReplica[];
 
   constructor(originalConfig: RunTreeConfig | RunTree) {
     // If you pass in a run tree directly, return a shallow clone
@@ -225,6 +240,7 @@ export class RunTree implements BaseRun {
         this.trace_id = this.id;
       }
     }
+    this.replicas = _ensureWriteReplicas(this.replicas);
 
     this.execution_order ??= 1;
     this.child_execution_order ??= 1;
@@ -489,13 +505,16 @@ export class RunTree implements BaseRun {
     try {
       const runtimeEnv = getRuntimeEnvironment();
       if (this.replicas && this.replicas.length > 0) {
-        for (const [projectName] of this.replicas) {
+        for (const { projectName, apiKey, apiUrl } of this.replicas) {
           const runCreate = this._remapForProject(
-            projectName,
+            projectName ?? this.project_name,
             runtimeEnv,
             true
           );
-          await this.client.createRun(runCreate);
+          await this.client.createRun(runCreate, {
+            apiKey,
+            apiUrl,
+          });
         }
       } else {
         const runCreate = this._convertToCreate(
@@ -521,24 +540,31 @@ export class RunTree implements BaseRun {
 
   async patchRun(): Promise<void> {
     if (this.replicas && this.replicas.length > 0) {
-      for (const [projectName, updates] of this.replicas) {
-        const runData = this._remapForProject(projectName);
-        await this.client.updateRun(runData.id, {
-          inputs: runData.inputs,
-          outputs: runData.outputs,
-          error: runData.error,
-          parent_run_id: runData.parent_run_id,
-          session_name: runData.session_name,
-          reference_example_id: runData.reference_example_id,
-          end_time: runData.end_time,
-          dotted_order: runData.dotted_order,
-          trace_id: runData.trace_id,
-          events: runData.events,
-          tags: runData.tags,
-          extra: runData.extra,
-          attachments: this.attachments,
-          ...updates,
-        });
+      for (const { projectName, apiKey, apiUrl, updates } of this.replicas) {
+        const runData = this._remapForProject(projectName ?? this.project_name);
+        await this.client.updateRun(
+          runData.id,
+          {
+            inputs: runData.inputs,
+            outputs: runData.outputs,
+            error: runData.error,
+            parent_run_id: runData.parent_run_id,
+            session_name: runData.session_name,
+            reference_example_id: runData.reference_example_id,
+            end_time: runData.end_time,
+            dotted_order: runData.dotted_order,
+            trace_id: runData.trace_id,
+            events: runData.events,
+            tags: runData.tags,
+            extra: runData.extra,
+            attachments: this.attachments,
+            ...updates,
+          },
+          {
+            apiKey,
+            apiUrl,
+          }
+        );
       }
     } else {
       try {
@@ -801,4 +827,50 @@ function _parseDottedOrder(dottedOrder: string): [Date, string][] {
 
     return [timestamp, uuidStr] as [Date, string];
   });
+}
+
+function _getWriteReplicasFromEnv(): WriteReplica[] {
+  const envVar = getEnvironmentVariable("LANGSMITH_RUNS_ENDPOINTS");
+  if (!envVar) return [];
+  try {
+    const parsed: Record<string, string> = JSON.parse(envVar);
+    _checkEndpointEnvUnset(parsed);
+    return Object.entries(parsed).map(([url, key]) => ({
+      apiUrl: url.replace(/\/$/, ""),
+      apiKey: key,
+    }));
+  } catch (e) {
+    if (isConflictingEndpointsError(e)) {
+      throw e;
+    }
+    console.warn(
+      "Invalid LANGSMITH_RUNS_ENDPOINTS – must be valid JSON mapping of url->apiKey"
+    );
+    return [];
+  }
+}
+
+function _ensureWriteReplicas(replicas?: Replica[]): WriteReplica[] {
+  // If null -> fetch from env
+  if (replicas) {
+    return replicas.map((replica) => {
+      if (Array.isArray(replica)) {
+        return {
+          projectName: replica[0],
+          update: replica[1],
+        };
+      }
+      return replica;
+    });
+  }
+  return _getWriteReplicasFromEnv();
+}
+
+function _checkEndpointEnvUnset(parsed: Record<string, string>) {
+  if (
+    Object.keys(parsed).length > 0 &&
+    getLangSmithEnvironmentVariable("ENDPOINT")
+  ) {
+    throw new ConflictingEndpointsError();
+  }
 }
