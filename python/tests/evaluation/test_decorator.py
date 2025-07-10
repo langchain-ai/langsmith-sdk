@@ -131,3 +131,35 @@ def test_log_langchain_outputs() -> None:
 
     t.log_inputs({"question": "foo"})
     t.log_outputs({"answer": AIMessage("bar")})
+
+
+@pytest.mark.langsmith(
+    metadata={"test_type": "metadata_test", "custom_key": "custom_value"}
+)
+def test_metadata_parameter():
+    """Test that metadata parameter is properly passed to the decorator."""
+    x = 5
+    y = 10
+    t.log_inputs({"x": x, "y": y})
+
+    result = x + y
+    t.log_outputs({"sum": result})
+    t.log_reference_outputs({"sum": 15})
+
+    assert result == 15
+
+
+@pytest.mark.langsmith(
+    metadata={"test_type": "metadata_test_async", "custom_key": "custom_value_async"}
+)
+async def test_metadata_parameter_async():
+    """Test that metadata parameter is properly passed to the decorator."""
+    x = 5
+    y = 10
+    t.log_inputs({"x": x, "y": y})
+
+    result = x + y
+    t.log_outputs({"sum": result})
+    t.log_reference_outputs({"sum": 15})
+
+    assert result == 15
