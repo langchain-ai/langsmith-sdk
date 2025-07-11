@@ -509,6 +509,7 @@ nouns = [
     "rub",
     "rule",
     "run",
+    "pebble",
     "sail",
     "salt",
     "sand",
