@@ -1607,22 +1607,27 @@ export class Client implements LangSmithTracingClientInterface {
     const buildBuffered = () => this._createNodeFetchBody(parts, boundary);
     const buildStream = () => this._createMultipartStream(parts, boundary);
 
-    const send = async (body: BodyInit) =>
-      await this.batchIngestCaller.call(
+    const send = async (body: BodyInit) => {
+      const headers: Record<string, string> = {
+        ...this.headers,
+        "Content-Type": `multipart/form-data; boundary=${boundary}`,
+      };
+      if (options?.apiKey !== undefined) {
+        headers["x-api-key"] = options.apiKey;
+      }
+      return await this.batchIngestCaller.call(
         _getFetchImplementation(this.debug),
         `${options?.apiUrl ?? this.apiUrl}/runs/multipart`,
         {
           method: "POST",
-          headers: {
-            ...this.headers,
-            "Content-Type": `multipart/form-data; boundary=${boundary}`,
-          },
+          headers,
           body,
           duplex: "half",
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
         }
       );
+    };
 
     try {
       let streamedAttempt = false;
