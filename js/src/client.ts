@@ -634,6 +634,8 @@ export class Client implements LangSmithTracingClientInterface {
 
   private langSmithToOTELTranslator?: LangSmithToOTELTranslator;
 
+  private streamingEnabled = true;
+
   debug = getEnvironmentVariable("LANGSMITH_DEBUG") === "true";
 
   constructor(config: ClientConfig = {}) {
@@ -1626,8 +1628,8 @@ export class Client implements LangSmithTracingClientInterface {
       let streamedAttempt = false;
       let res: Response;
 
-      // attempt stream
-      if (!isNodeFetch) {
+      // attempt stream only if not disabled and not using node-fetch
+      if (!isNodeFetch && this.streamingEnabled) {
         streamedAttempt = true;
         res = await send(await buildStream());
       } else {
@@ -1639,6 +1641,8 @@ export class Client implements LangSmithTracingClientInterface {
         console.warn(
           `Streaming multipart request failed with EOF error, falling back to buffered mode. Context: ${context}`
         );
+        // Disable streaming for future requests
+        this.streamingEnabled = false;
         // retry with fully-buffered body
         res = await send(await buildBuffered());
       }
