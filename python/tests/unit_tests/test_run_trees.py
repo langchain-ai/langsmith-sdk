@@ -2,7 +2,7 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from unittest.mock import MagicMock
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -150,3 +150,71 @@ def test_nested_run_trees_from_dotted_order():
     assert grandparent_clone.id == grandparent.id
     assert grandparent_clone.parent_run_id is None
     assert grandparent_clone.dotted_order == grandparent.dotted_order
+
+
+def test_distributed_tracing_slice_parent_id():
+    """Test distributed tracing functionality with _slice_parent_id method."""
+    mock_client = MagicMock(spec=Client)
+
+    grandparent = RunTree(
+        name="Grandparent",
+        inputs={"text": "root"},
+        client=mock_client,
+    )
+    parent = grandparent.create_child(name="Parent")
+    child = parent.create_child(name="Child")
+
+    parent_id = str(parent.id)
+
+    child_dict = child._get_dicts_safe()
+
+    assert child_dict["parent_run_id"] == parent.id
+    assert child_dict["trace_id"] == grandparent.id
+    assert child_dict["dotted_order"] is not None
+
+    child._slice_parent_id(parent_id, child_dict)
+
+    assert child_dict.get("parent_run_id") is None
+    assert child_dict["trace_id"] == child.id
+
+    parsed_order = run_trees._parse_dotted_order(child_dict["dotted_order"])
+    assert len(parsed_order) == 1
+    assert parsed_order[0][1] == child.id
+
+
+def test_distributed_tracing_remap_for_project():
+    """Test distributed tracing with _remap_for_project method."""
+    mock_client = MagicMock(spec=Client)
+
+    grandparent = RunTree(
+        name="Grandparent",
+        inputs={"text": "root"},
+        client=mock_client,
+        session_name="original_project"
+    )
+    parent = grandparent.create_child(name="Parent")
+    child = parent.create_child(name="Child")
+
+    parent_id = str(parent.id)
+    run_trees._DISTRIBUTED_PARENT_ID.set(parent_id)
+
+    try:
+        updates = {"distributed": True}
+        remapped_dict = child._remap_for_project("child_project", updates)
+
+        assert remapped_dict.get("parent_run_id") is None
+        assert remapped_dict["session_name"] == "child_project"
+
+        parsed_order = run_trees._parse_dotted_order(remapped_dict["dotted_order"])
+        assert len(parsed_order) == 1
+
+        updates_no_dist = {"distributed": False}
+        remapped_dict_no_dist = child._remap_for_project("child_project_2", updates_no_dist)
+
+        assert remapped_dict_no_dist.get("parent_run_id") is not None
+        remapped_dict_no_updates = child._remap_for_project("child_project_3", None)
+
+        assert remapped_dict_no_updates.get("parent_run_id") is not None
+
+    finally:
+        run_trees._DISTRIBUTED_PARENT_ID.set(None)
