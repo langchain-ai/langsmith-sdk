@@ -1617,7 +1617,7 @@ export class Client implements LangSmithTracingClientInterface {
       if (options?.apiKey !== undefined) {
         headers["x-api-key"] = options.apiKey;
       }
-      return await this.batchIngestCaller.call(
+      return this.batchIngestCaller.call(
         _getFetchImplementation(this.debug),
         `${options?.apiUrl ?? this.apiUrl}/runs/multipart`,
         {
