@@ -425,12 +425,13 @@ class RunTree(ls_schemas.RunBase):
         the parent_run_id to None, and set the trace id to the new root id after
         parent_id.
         """
-        if run_dict.get("dotted_order"):
-            segs = _parse_dotted_order(run_dict["dotted_order"])
-            # Find the index where seg_id == parent_id
+        if dotted_order := run_dict.get("dotted_order"):
+            segs = _parse_dotted_order(dotted_order)
             start_idx = None
+            parent_id = str(parent_id)
+            # TODO(angus): potentially use binary search to find the index
             for idx, (_, seg_id) in enumerate(segs):
-                if str(seg_id) == str(parent_id):
+                if str(seg_id) == parent_id:
                     start_idx = idx
                     break
             if start_idx is not None:
@@ -446,7 +447,7 @@ class RunTree(ls_schemas.RunBase):
                 else:
                     run_dict["trace_id"] = run_dict["id"]
         # Remove parent_run_id if it matches parent_id
-        if str(run_dict.get("parent_run_id")) == str(parent_id):
+        if str(run_dict.get("parent_run_id")) == parent_id:
             run_dict.pop("parent_run_id", None)
 
     def _remap_for_project(
