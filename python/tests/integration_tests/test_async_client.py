@@ -446,6 +446,9 @@ async def test_annotation_queue_runs(async_client: AsyncClient):
             project_name=project_name,
             start_time=datetime.datetime.now(datetime.timezone.utc),
             id=run_id,
+            extra={
+                "test_metadata": {"foo": f"bar_{i}"}
+            },  # Add extra data to test include_extra
         )
 
     async def _get_run(run_id: uuid.UUID) -> bool:
@@ -459,11 +462,20 @@ async def test_annotation_queue_runs(async_client: AsyncClient):
     # Add runs to queue
     await async_client.add_runs_to_annotation_queue(queue_id=queue.id, run_ids=run_ids)
 
-    # Test getting run at index
+    # Test getting run at index without extra data
     run_info = await async_client.get_run_from_annotation_queue(
-        queue_id=queue.id, index=0
+        queue_id=queue.id, index=0, include_extra=False
     )
     assert run_info.id in run_ids
+    assert not hasattr(run_info, "extra") or run_info.extra is None
+
+    # Test getting run at index with extra data
+    run_info_with_extra = await async_client.get_run_from_annotation_queue(
+        queue_id=queue.id, index=0, include_extra=True
+    )
+    assert run_info_with_extra.id in run_ids
+    assert run_info_with_extra.extra is not None
+    assert run_info_with_extra.extra.get("test_metadata") == {"foo": "bar_0"}
 
     # Test deleting a run from queue
     await async_client.delete_run_from_annotation_queue(
