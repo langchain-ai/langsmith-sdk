@@ -583,6 +583,8 @@ export const DEFAULT_BATCH_SIZE_LIMIT_BYTES = 20_971_520;
 
 const SERVER_INFO_REQUEST_TIMEOUT = 2500;
 
+const DEFAULT_API_URL = "https://api.smith.langchain.com";
+
 export class Client implements LangSmithTracingClientInterface {
   private apiKey?: string;
 
@@ -634,6 +636,8 @@ export class Client implements LangSmithTracingClientInterface {
 
   private langSmithToOTELTranslator?: LangSmithToOTELTranslator;
 
+  private multipartStreamingDisabled = false;
+
   debug = getEnvironmentVariable("LANGSMITH_DEBUG") === "true";
 
   constructor(config: ClientConfig = {}) {
@@ -644,6 +648,7 @@ export class Client implements LangSmithTracingClientInterface {
     if (this.apiUrl.endsWith("/")) {
       this.apiUrl = this.apiUrl.slice(0, -1);
     }
+
     this.apiKey = trimQuotes(config.apiKey ?? defaultConfig.apiKey);
     this.webUrl = trimQuotes(config.webUrl ?? defaultConfig.webUrl);
     if (this.webUrl?.endsWith("/")) {
@@ -693,8 +698,7 @@ export class Client implements LangSmithTracingClientInterface {
   } {
     const apiKey = getLangSmithEnvironmentVariable("API_KEY");
     const apiUrl =
-      getLangSmithEnvironmentVariable("ENDPOINT") ??
-      "https://api.smith.langchain.com";
+      getLangSmithEnvironmentVariable("ENDPOINT") ?? DEFAULT_API_URL;
     const hideInputs =
       getLangSmithEnvironmentVariable("HIDE_INPUTS") === "true";
     const hideOutputs =
@@ -1597,14 +1601,15 @@ export class Client implements LangSmithTracingClientInterface {
     context: string,
     options?: { apiKey?: string; apiUrl?: string }
   ) {
-    try {
-      // Create multipart form data boundary
-      const boundary =
-        "----LangSmithFormBoundary" + Math.random().toString(36).slice(2);
-      const body = await (_globalFetchImplementationIsNodeFetch()
-        ? this._createNodeFetchBody(parts, boundary)
-        : this._createMultipartStream(parts, boundary));
+    // Create multipart form data boundary
+    const boundary =
+      "----LangSmithFormBoundary" + Math.random().toString(36).slice(2);
 
+    const isNodeFetch = _globalFetchImplementationIsNodeFetch();
+    const buildBuffered = () => this._createNodeFetchBody(parts, boundary);
+    const buildStream = () => this._createMultipartStream(parts, boundary);
+
+    const send = async (body: BodyInit) => {
       const headers: Record<string, string> = {
         ...this.headers,
         "Content-Type": `multipart/form-data; boundary=${boundary}`,
@@ -1612,8 +1617,7 @@ export class Client implements LangSmithTracingClientInterface {
       if (options?.apiKey !== undefined) {
         headers["x-api-key"] = options.apiKey;
       }
-
-      const res = await this.batchIngestCaller.call(
+      return this.batchIngestCaller.call(
         _getFetchImplementation(this.debug),
         `${options?.apiUrl ?? this.apiUrl}/runs/multipart`,
         {
@@ -1625,6 +1629,40 @@ export class Client implements LangSmithTracingClientInterface {
           ...this.fetchOptions,
         }
       );
+    };
+
+    try {
+      let res: Response;
+      let streamedAttempt = false;
+
+      // attempt stream only if not disabled and not using node-fetch
+      if (!isNodeFetch && !this.multipartStreamingDisabled) {
+        streamedAttempt = true;
+        res = await send(await buildStream());
+      } else {
+        res = await send(await buildBuffered());
+      }
+
+      // if stream fails, fallback to buffered body
+      if (
+        (!this.multipartStreamingDisabled || streamedAttempt) &&
+        res.status === 422 &&
+        (options?.apiUrl ?? this.apiUrl) !== DEFAULT_API_URL
+      ) {
+        console.warn(
+          `Streaming multipart upload to ${
+            options?.apiUrl ?? this.apiUrl
+          }/runs/multipart failed. ` +
+            `This usually means the host does not support chunked uploads. ` +
+            `Retrying with a buffered upload for operation "${context}".`
+        );
+        // Disable streaming for future requests
+        this.multipartStreamingDisabled = true;
+        // retry with fully-buffered body
+        res = await send(await buildBuffered());
+      }
+
+      // raise if still failing
       await raiseForStatus(res, "ingest multipart runs", true);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
@@ -4613,7 +4651,7 @@ export class Client implements LangSmithTracingClientInterface {
     if (options?.isPublic && !settings.tenant_handle) {
       throw new Error(
         `Cannot create a public prompt without first\n
-        creating a LangChain Hub handle. 
+        creating a LangChain Hub handle.
         You can add a handle by creating a public prompt at:\n
         https://smith.langchain.com/prompts`
       );
