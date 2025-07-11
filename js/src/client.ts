@@ -1630,19 +1630,17 @@ export class Client implements LangSmithTracingClientInterface {
     };
 
     try {
-      let streamedAttempt = false;
       let res: Response;
 
       // attempt stream only if not disabled and not using node-fetch
       if (!isNodeFetch && this.streamingEnabled) {
-        streamedAttempt = true;
         res = await send(await buildStream());
       } else {
         res = await send(await buildBuffered());
       }
 
       // if stream fails, fallback to buffered body
-      if (streamedAttempt && res.status >= 400 && res.status < 500) {
+      if (this.streamingEnabled && res.status >= 400 && res.status < 500) {
         console.warn(
           `Streaming multipart request failed with EOF error, falling back to buffered mode. Context: ${context}`
         );
