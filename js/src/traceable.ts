@@ -78,18 +78,21 @@ function maybeCreateOtelContext<T>(
         },
         () => {
           if (activeTraceId === undefined || forceOTELRoot) {
-            const langsmithTraceId = getUuidFromOtelSpanId(
-              otel_trace.getActiveSpan()?.spanContext()?.spanId
-            );
-            // Must refetch from our primary async local storage
-            const currentRunTree = getCurrentRunTree();
-            if (currentRunTree) {
-              // This is only for root runs to ensure that trace id
-              // and the root run id are returned correctly.
-              // This is important for things like leaving feedback on
-              // target function runs during evaluation.
-              currentRunTree.id = langsmithTraceId;
-              currentRunTree.trace_id = langsmithTraceId;
+            const otelSpanId = otel_trace
+              .getActiveSpan()
+              ?.spanContext()?.spanId;
+            if (otelSpanId) {
+              const langsmithTraceId = getUuidFromOtelSpanId(otelSpanId);
+              // Must refetch from our primary async local storage
+              const currentRunTree = getCurrentRunTree();
+              if (currentRunTree) {
+                // This is only for root runs to ensure that trace id
+                // and the root run id are returned correctly.
+                // This is important for things like leaving feedback on
+                // target function runs during evaluation.
+                currentRunTree.id = langsmithTraceId;
+                currentRunTree.trace_id = langsmithTraceId;
+              }
             }
           }
           return fn();

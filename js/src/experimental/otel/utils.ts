@@ -21,7 +21,7 @@ export function getUuidFromOtelTraceId(traceId: string): string {
  */
 export function getUuidFromOtelSpanId(spanId: string): string {
   // Pad with zeros at the front, then format as UUID
-  const paddedHex = spanId.padStart(16, "0").padEnd(32, "0");
+  const paddedHex = spanId.padStart(16, "0");
   return `00000000-0000-0000-${paddedHex.substring(0, 4)}-${paddedHex.substring(
     4,
     16

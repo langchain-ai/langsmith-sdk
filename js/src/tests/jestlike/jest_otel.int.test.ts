@@ -6,8 +6,6 @@ import { traceable } from "../../traceable.js";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 
-process.env.OTEL_ENABLED = "true";
-
 initializeOTEL();
 
 const myEvaluator: SimpleEvaluator = (params) => {
@@ -30,6 +28,7 @@ const myEvaluator: SimpleEvaluator = (params) => {
   }
 };
 
+// Must have OTEL_ENABLED=true in the actual env vars for this to pass
 ls.describe.skip("js unit testing test demo with OTEL", () => {
   ls.test(
     "Should create an example with OTEL enabled",

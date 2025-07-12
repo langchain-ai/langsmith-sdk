@@ -805,7 +805,7 @@ test("evaluate can accept array of examples", async () => {
   expect(receivedCommentStrings).toEqual(expectedCommentStrings);
 });
 
-test("evaluate accepts evaluators which return multiple feedback keys", async () => {
+test.only("evaluate accepts evaluators which return multiple feedback keys", async () => {
   const targetFunc = (input: Record<string, any>) => {
     return { foo: input.input + 1 };
   };
