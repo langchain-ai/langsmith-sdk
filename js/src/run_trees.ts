@@ -857,7 +857,7 @@ function _ensureWriteReplicas(replicas?: Replica[]): WriteReplica[] {
       if (Array.isArray(replica)) {
         return {
           projectName: replica[0],
-          update: replica[1],
+          updates: replica[1],
         };
       }
       return replica;
