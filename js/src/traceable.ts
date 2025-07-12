@@ -69,13 +69,15 @@ function maybeCreateOtelContext<T>(
         attributes[LANGSMITH_REFERENCE_EXAMPLE_ID] =
           runTree.reference_example_id;
       }
+      const forceOTELRoot = runTree.extra?.ls_otel_root === true;
       return resolvedTracer.startActiveSpan(
         runTree.name,
         {
           attributes,
+          root: forceOTELRoot,
         },
         () => {
-          if (activeTraceId === undefined) {
+          if (activeTraceId === undefined || forceOTELRoot) {
             const langsmithTraceId = getUuidFromOtelSpanId(
               otel_trace.getActiveSpan()?.spanContext()?.spanId
             );

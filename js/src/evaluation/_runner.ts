@@ -998,6 +998,7 @@ async function _evaluate(
   // Start consuming the results.
   const results = new ExperimentResults(manager);
   await results.processData(manager);
+  await client.awaitPendingTraceBatches();
   return results;
 }
 

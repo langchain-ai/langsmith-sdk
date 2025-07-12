@@ -11,11 +11,7 @@ export interface OTELSpan {
 
 export interface OTELTracer {
   startSpan: (name: string, options?: any) => OTELSpan;
-  startActiveSpan: (
-    name: string,
-    options: any,
-    fn: () => any
-  ) => any;
+  startActiveSpan: (name: string, options: any, fn: () => any) => any;
 }
 
 export interface OTELContext {
