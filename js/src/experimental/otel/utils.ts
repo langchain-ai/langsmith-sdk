@@ -1,37 +1,29 @@
-import type { OTELSpanContext } from "./types.js";
-
 /**
- * Get OpenTelemetry trace ID as hex string from UUID.
- * @param uuidStr - The UUID string to convert
- * @returns Hex string representation of the trace ID
+ * Get UUID string from OpenTelemetry trace ID hex string.
+ * @param traceId - The hex string trace ID to convert
+ * @returns UUID string representation
  */
-export function getOtelTraceIdFromUuid(uuidStr: string): string {
-  // Use full UUID hex (like Python's uuid_val.hex)
-  return uuidStr.replace(/-/g, "");
+export function getUuidFromOtelTraceId(traceId: string): string {
+  // Insert hyphens to convert back to UUID format
+  return `${traceId.substring(0, 8)}-${traceId.substring(
+    8,
+    12
+  )}-${traceId.substring(12, 16)}-${traceId.substring(
+    16,
+    20
+  )}-${traceId.substring(20, 32)}`;
 }
 
 /**
- * Get OpenTelemetry span ID as hex string from UUID.
- * @param uuidStr - The UUID string to convert
- * @returns Hex string representation of the span ID
+ * Get UUID string from OpenTelemetry span ID hex string.
+ * @param spanId - The hex string span ID to convert (8 bytes/16 hex chars)
+ * @returns UUID string representation with zero padding at the front
  */
-export function getOtelSpanIdFromUuid(uuidStr: string): string {
-  // Convert UUID string to bytes equivalent (first 8 bytes for span ID)
-  // Like Python's uuid_val.bytes[:8].hex()
-  const cleanUuid = uuidStr.replace(/-/g, "");
-  return cleanUuid.substring(0, 16); // First 8 bytes (16 hex chars)
-}
-
-export function createOtelSpanContextFromRun(run: {
-  trace_id?: string;
-  id: string;
-}): OTELSpanContext {
-  const traceId = getOtelTraceIdFromUuid(run.trace_id ?? run.id);
-  const spanId = getOtelSpanIdFromUuid(run.id);
-  return {
-    traceId,
-    spanId,
-    isRemote: false,
-    traceFlags: 1, // SAMPLED
-  };
+export function getUuidFromOtelSpanId(spanId: string): string {
+  // Pad with zeros at the front, then format as UUID
+  const paddedHex = spanId.padStart(16, "0").padEnd(32, "0");
+  return `00000000-0000-0000-${paddedHex.substring(0, 4)}-${paddedHex.substring(
+    4,
+    16
+  )}`;
 }

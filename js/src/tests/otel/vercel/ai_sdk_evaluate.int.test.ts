@@ -14,17 +14,17 @@ import { initializeOTEL } from "../../../experimental/otel/setup.js";
 
 initializeOTEL();
 
-describe.skip("AI SDK Evaluate Integration with OTEL", () => {
-  beforeAll(() => {
-    process.env.LANGSMITH_TRACING = "true";
-    process.env.OTEL_ENABLED = "true";
-  });
+beforeAll(() => {
+  process.env.LANGSMITH_TRACING = "true";
+  process.env.OTEL_ENABLED = "true";
+});
 
-  afterAll(() => {
-    delete process.env.OTEL_ENABLED;
-    delete process.env.LANGSMITH_TRACING;
-  });
+afterAll(() => {
+  delete process.env.OTEL_ENABLED;
+  delete process.env.LANGSMITH_TRACING;
+});
 
+describe("AI SDK Evaluate Integration with OTEL", () => {
   it("works with evaluate() using generateText target function", async () => {
     const meta = uuidv4();
     const client = new Client();
@@ -69,9 +69,8 @@ describe.skip("AI SDK Evaluate Integration with OTEL", () => {
     // Create a simple evaluator
     const evaluator = async (run: Run) => {
       return {
-        key: "response_present",
-        score: run.outputs?.response ? 1 : 0,
-        comment: `Response present: ${!!run.outputs?.response}`,
+        key: "echo",
+        value: JSON.stringify(run.inputs),
       };
     };
 

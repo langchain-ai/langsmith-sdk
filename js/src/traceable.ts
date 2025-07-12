@@ -17,6 +17,7 @@ import { isTracingEnabled } from "./env.js";
 import {
   ROOT,
   AsyncLocalStorageProviderSingleton,
+  getCurrentRunTree,
 } from "./singletons/traceable.js";
 import { _LC_CONTEXT_VARIABLES_KEY } from "./singletons/constants.js";
 import type {
@@ -35,7 +36,7 @@ import {
 import { getEnvironmentVariable } from "./utils/env.js";
 import { __version__ } from "./index.js";
 import { getOTELTrace, getOTELContext } from "./singletons/otel.js";
-import { createOtelSpanContextFromRun } from "./experimental/otel/utils.js";
+import { getUuidFromOtelSpanId } from "./experimental/otel/utils.js";
 import { OTELTracer } from "./experimental/otel/types.js";
 import { LANGSMITH_REFERENCE_EXAMPLE_ID } from "./experimental/otel/constants.js";
 
@@ -56,10 +57,9 @@ function maybeCreateOtelContext<T>(
   }
 
   const otel_trace = getOTELTrace();
-  const otel_context = getOTELContext();
 
   try {
-    const spanContext = createOtelSpanContextFromRun(runTree);
+    const activeTraceId = otel_trace.getActiveSpan()?.spanContext()?.traceId;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (fn: (...args: any[]) => T) => {
       const resolvedTracer =
@@ -75,7 +75,21 @@ function maybeCreateOtelContext<T>(
           attributes,
         },
         () => {
-          otel_trace.setSpanContext(otel_context.active(), spanContext);
+          if (activeTraceId === undefined) {
+            const langsmithTraceId = getUuidFromOtelSpanId(
+              otel_trace.getActiveSpan()?.spanContext()?.spanId
+            );
+            // Must refetch from our primary async local storage
+            const currentRunTree = getCurrentRunTree();
+            if (currentRunTree) {
+              // This is only for root runs to ensure that trace id
+              // and the root run id are returned correctly.
+              // This is important for things like leaving feedback on
+              // target function runs during evaluation.
+              currentRunTree.id = langsmithTraceId;
+              currentRunTree.trace_id = langsmithTraceId;
+            }
+          }
           return fn();
         }
       );

@@ -693,6 +693,7 @@ export class _ExperimentManager {
           example,
           options
         );
+        console.log("evaluatorResponse", evaluatorResponse);
         evaluationResults.results.push(
           ...(await fields.client.logEvaluationFeedback(evaluatorResponse, run))
         );
