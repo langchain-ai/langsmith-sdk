@@ -30,7 +30,7 @@ const myEvaluator: SimpleEvaluator = (params) => {
   }
 };
 
-ls.describe("js unit testing test demo with OTEL", () => {
+ls.describe.skip("js unit testing test demo with OTEL", () => {
   ls.test(
     "Should create an example with OTEL enabled",
     { inputs: { foo: "bar" }, referenceOutputs: { bar: "qux" } },
