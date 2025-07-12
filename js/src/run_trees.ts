@@ -541,6 +541,7 @@ export class RunTree implements BaseRun {
   async patchRun(): Promise<void> {
     if (this.replicas && this.replicas.length > 0) {
       for (const { projectName, apiKey, apiUrl, updates } of this.replicas) {
+        console.log("patching run", projectName, apiKey, apiUrl, updates);
         const runData = this._remapForProject(projectName ?? this.project_name);
         await this.client.updateRun(
           runData.id,
@@ -857,7 +858,7 @@ function _ensureWriteReplicas(replicas?: Replica[]): WriteReplica[] {
       if (Array.isArray(replica)) {
         return {
           projectName: replica[0],
-          update: replica[1],
+          updates: replica[1],
         };
       }
       return replica;
