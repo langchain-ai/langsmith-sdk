@@ -404,5 +404,6 @@ export async function evaluateComparative(
   );
 
   const results: ComparisonEvaluationResultRow[] = await Promise.all(promises);
+  await client.awaitPendingTraceBatches();
   return { experimentName, results };
 }
