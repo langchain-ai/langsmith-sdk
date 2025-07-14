@@ -28,11 +28,13 @@ export function convertToDottedOrderFormat(
   // Date only has millisecond precision, so we use the microseconds to break
   // possible ties, avoiding incorrect run order
   const paddedOrder = executionOrder.toFixed(0).slice(0, 3).padStart(3, "0");
-  return (
-    stripNonAlphanumeric(
-      `${new Date(epoch).toISOString().slice(0, -1)}${paddedOrder}Z`
-    ) + runId
-  );
+  const microsecondPrecisionDatestring = `${new Date(epoch)
+    .toISOString()
+    .slice(0, -1)}${paddedOrder}Z`;
+  return {
+    dottedOrder: stripNonAlphanumeric(microsecondPrecisionDatestring) + runId,
+    microsecondPrecisionDatestring,
+  };
 }
 
 export interface RunTreeConfig {
@@ -218,6 +220,8 @@ export class RunTree implements BaseRun {
    */
   replicas?: WriteReplica[];
 
+  private _serialized_start_time: string | undefined;
+
   constructor(originalConfig: RunTreeConfig | RunTree) {
     // If you pass in a run tree directly, return a shallow clone
     if (isRunTree(originalConfig)) {
@@ -246,17 +250,18 @@ export class RunTree implements BaseRun {
     this.child_execution_order ??= 1;
 
     if (!this.dotted_order) {
-      const currentDottedOrder = convertToDottedOrderFormat(
-        this.start_time,
-        this.id,
-        this.execution_order
-      );
+      const { dottedOrder, microsecondPrecisionDatestring } =
+        convertToDottedOrderFormat(
+          this.start_time,
+          this.id,
+          this.execution_order
+        );
       if (this.parent_run) {
-        this.dotted_order =
-          this.parent_run.dotted_order + "." + currentDottedOrder;
+        this.dotted_order = this.parent_run.dotted_order + "." + dottedOrder;
       } else {
-        this.dotted_order = currentDottedOrder;
+        this.dotted_order = dottedOrder;
       }
+      this._serialized_start_time = microsecondPrecisionDatestring;
     }
   }
 
@@ -416,7 +421,7 @@ export class RunTree implements BaseRun {
     return {
       id: run.id,
       name: run.name,
-      start_time: run.start_time,
+      start_time: run._serialized_start_time ?? run.start_time,
       end_time: run.end_time,
       run_type: run.run_type,
       reference_example_id: run.reference_example_id,
