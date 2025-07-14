@@ -90,7 +90,7 @@ export class LangSmithToOTELTranslator {
 
     // End the span if end_time is present
     if (runInfo.end_time) {
-      span.end(runInfo.end_time);
+      span.end(new Date(runInfo.end_time));
     }
 
     return span;
@@ -121,7 +121,7 @@ export class LangSmithToOTELTranslator {
       // End the span if end_time is present
       const endTime = runInfo.end_time;
       if (endTime) {
-        span.end(endTime);
+        span.end(new Date(endTime));
         this.spans.delete(op.id);
       }
     } catch (e) {

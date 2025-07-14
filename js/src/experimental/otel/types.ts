@@ -6,7 +6,7 @@ export interface OTELSpan {
   setAttribute: (key: string, value: any) => void;
   setStatus: (status: { code: number; message?: string }) => void;
   recordException: (exception: Error | string) => void;
-  end: (endTime?: number) => void;
+  end: (endTime?: number | Date) => void;
 }
 
 export interface OTELTracer {

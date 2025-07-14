@@ -91,13 +91,13 @@ export interface BaseRun {
   name: string;
 
   /** The epoch time at which the run started, if available. */
-  start_time?: number;
+  start_time?: number | string;
 
   /** Specifies the type of run (tool, chain, llm, etc.). */
   run_type: string;
 
   /** The epoch time at which the run ended, if applicable. */
-  end_time?: number;
+  end_time?: number | string;
 
   /** Any additional metadata or settings for the run. */
   extra?: KVMap;
@@ -221,7 +221,7 @@ export interface RunCreate extends BaseRun {
 
 export interface RunUpdate {
   id?: string;
-  end_time?: number;
+  end_time?: number | string;
   extra?: KVMap;
   tags?: string[];
   error?: string;
