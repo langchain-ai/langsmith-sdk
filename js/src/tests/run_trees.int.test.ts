@@ -27,7 +27,7 @@ test("Test post and patch run", async () => {
   const parent_run = new RunTree(parentRunConfig);
   expect(parent_run.trace_id).toEqual(parent_run.id);
   expect(parent_run.dotted_order).toEqual(
-    convertToDottedOrderFormat(parent_run.start_time, parent_run.id)
+    convertToDottedOrderFormat(parent_run.start_time, parent_run.id).dottedOrder
   );
   await parent_run.postRun();
 
@@ -40,6 +40,7 @@ test("Test post and patch run", async () => {
     parent_run.dotted_order +
       "." +
       convertToDottedOrderFormat(child_llm_run.start_time, child_llm_run.id, 2)
+        .dottedOrder
   );
   expect(child_llm_run.trace_id).toEqual(parent_run.trace_id);
   await child_llm_run.postRun();
@@ -227,3 +228,24 @@ test("Test end() write to metadata", async () => {
   expect(runs[0].extra);
   await langchainClient.deleteProject({ projectName });
 }, 120_000);
+
+test("dotted order matches start_time", async () => {
+  const projectName = `__test_dotted_order_matches_start_time_run_tree_js ${uuid.v4()}`;
+  const langchainClient = new Client({ timeout_ms: 30_000 });
+  const parentRunConfig: RunTreeConfig = {
+    name: "parent_run",
+    project_name: projectName,
+    client: langchainClient,
+  };
+  const parentRun = new RunTree(parentRunConfig);
+  await parentRun.postRun();
+  await parentRun.end({ output: "Completed: foo" });
+  await parentRun.patchRun();
+  await pollRunsUntilCount(langchainClient, projectName, 1);
+  const runs = await toArray(langchainClient.listRuns({ projectName }));
+  expect(runs.length).toEqual(1);
+  expect(runs[0].dotted_order).toEqual(parentRun.dotted_order);
+  expect((runs[0].start_time as string).replace(/[-:.]/g, "")).toEqual(
+    parentRun.dotted_order.split(".")[0].split("Z")[0]
+  );
+});
