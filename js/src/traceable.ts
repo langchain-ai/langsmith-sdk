@@ -38,7 +38,10 @@ import { __version__ } from "./index.js";
 import { getOTELTrace, getOTELContext } from "./singletons/otel.js";
 import { getUuidFromOtelSpanId } from "./experimental/otel/utils.js";
 import { OTELTracer } from "./experimental/otel/types.js";
-import { LANGSMITH_REFERENCE_EXAMPLE_ID } from "./experimental/otel/constants.js";
+import {
+  LANGSMITH_REFERENCE_EXAMPLE_ID,
+  LANGSMITH_SESSION_NAME,
+} from "./experimental/otel/constants.js";
 
 AsyncLocalStorageProviderSingleton.initializeGlobalInstance(
   new AsyncLocalStorage<RunTree | ContextPlaceholder | undefined>()
@@ -49,6 +52,7 @@ AsyncLocalStorageProviderSingleton.initializeGlobalInstance(
  */
 function maybeCreateOtelContext<T>(
   runTree?: RunTree,
+  projectName?: string,
   tracer?: OTELTracer
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): ((fn: (...args: any[]) => T) => T) | undefined {
@@ -68,6 +72,9 @@ function maybeCreateOtelContext<T>(
       if (runTree.reference_example_id) {
         attributes[LANGSMITH_REFERENCE_EXAMPLE_ID] =
           runTree.reference_example_id;
+      }
+      if (projectName !== undefined) {
+        attributes[LANGSMITH_SESSION_NAME] = projectName;
       }
       const forceOTELRoot = runTree.extra?.ls_otel_root === true;
       return resolvedTracer.startActiveSpan(
@@ -689,6 +696,7 @@ export function traceable<Func extends (...args: any[]) => any>(
 
     const otelContextManager = maybeCreateOtelContext(
       currentRunTree,
+      config?.project_name,
       config?.tracer
     );
     const otel_context = getOTELContext();
