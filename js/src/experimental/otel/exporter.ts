@@ -63,6 +63,11 @@ export type LangSmithOTLPTraceExporterConfig = ConstructorParameters<
    * The name of the project to export traces to.
    */
   projectName?: string;
+
+  /**
+   * Default headers to add to exporter requests.
+   */
+  headers?: Record<string, string>;
 };
 
 /**
@@ -85,6 +90,8 @@ export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
     span: ReadableSpan
   ) => ReadableSpan | Promise<ReadableSpan>;
 
+  private projectName?: string;
+
   constructor(config?: LangSmithOTLPTraceExporterConfig) {
     const defaultLsEndpoint =
       getEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT") ||
@@ -93,29 +100,29 @@ export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
     const defaultBaseUrl = defaultLsEndpoint.replace(/\/$/, "");
     const defaultUrl = `${defaultBaseUrl}/otel/v1/traces`;
     // Configure headers with API key and project if available
-    let defaultHeaderString =
-      getEnvironmentVariable("OTEL_EXPORTER_OTLP_HEADERS") ?? "";
-    if (!defaultHeaderString) {
-      const apiKey =
-        config?.apiKey ?? getLangSmithEnvironmentVariable("API_KEY");
-      if (apiKey) {
-        defaultHeaderString = `x-api-key=${apiKey}`;
+    let headers = config?.headers;
+    if (headers === undefined) {
+      let defaultHeaderString =
+        getEnvironmentVariable("OTEL_EXPORTER_OTLP_HEADERS") ?? "";
+      if (!defaultHeaderString) {
+        const apiKey =
+          config?.apiKey ?? getLangSmithEnvironmentVariable("API_KEY");
+        if (apiKey) {
+          defaultHeaderString = `x-api-key=${apiKey}`;
+        }
       }
-
-      const project =
-        config?.projectName ?? getLangSmithEnvironmentVariable("PROJECT");
-      if (project) {
-        defaultHeaderString += `,Langsmith-Project=${project}`;
-      }
+      headers = parseHeadersString(defaultHeaderString);
     }
 
     super({
       url: defaultUrl,
-      headers: parseHeadersString(defaultHeaderString),
+      headers,
       ...config,
     });
 
     this.transformExportedSpan = config?.transformExportedSpan;
+    this.projectName =
+      config?.projectName ?? getLangSmithEnvironmentVariable("PROJECT");
   }
 
   export(
@@ -220,6 +227,12 @@ export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
           span.attributes[constants.LANGSMITH_NAME] =
             span.attributes[`${constants.LANGSMITH_METADATA}.ls_run_name`];
           delete span.attributes[`${constants.LANGSMITH_METADATA}.ls_run_name`];
+        }
+        if (
+          span.attributes[constants.LANGSMITH_SESSION_NAME] === undefined &&
+          this.projectName !== undefined
+        ) {
+          span.attributes[constants.LANGSMITH_SESSION_NAME] = this.projectName;
         }
       }
       super.export(spans, resultCallback);
