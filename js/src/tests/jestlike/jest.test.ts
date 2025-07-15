@@ -75,7 +75,7 @@ ls.describe(
       {
         inputs: { foo: "bar" },
         referenceOutputs: { foo: "bar" },
-        config: { iterations: 3 },
+        config: { repetitions: 3 },
       },
       async ({ inputs: _inputs, referenceOutputs: _referenceOutputs }) => {
         const myApp = () => {
@@ -155,7 +155,7 @@ ls.describe(
           },
         },
       ],
-      { iterations: 3, metadata: { something: "cool" } }
+      { repetitions: 3, metadata: { something: "cool" } }
     )(
       "Counts to ten",
       async ({ inputs: _inputs, referenceOutputs: _referenceOutputs }) => {
