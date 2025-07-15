@@ -302,6 +302,7 @@ def test(*args: Any, **kwargs: Any) -> Callable:
         test_suite_name=kwargs.pop("test_suite_name", None),
         cache=ls_utils.get_cache_dir(kwargs.pop("cache", None)),
         metadata=kwargs.pop("metadata", None),
+        repetitions=kwargs.pop("repetitions", None),
     )
     if kwargs:
         warnings.warn(f"Unexpected keyword arguments: {kwargs.keys()}")
@@ -313,6 +314,9 @@ def test(*args: Any, **kwargs: Any) -> Callable:
         )
 
     def decorator(func: Callable) -> Callable:
+        # Handle repetitions
+        repetitions = langtest_extra.get("repetitions", 1) or 1
+
         if inspect.iscoroutinefunction(func):
 
             @functools.wraps(func)
@@ -321,13 +325,17 @@ def test(*args: Any, **kwargs: Any) -> Callable:
             ):
                 if disable_tracking:
                     return await func(*test_args, **test_kwargs)
-                await _arun_test(
-                    func,
-                    *test_args,
-                    pytest_request=request,
-                    **test_kwargs,
-                    langtest_extra=langtest_extra,
-                )
+
+                # Run test multiple times for repetitions
+                for i in range(repetitions):
+                    repetition_extra = langtest_extra.copy()
+                    await _arun_test(
+                        func,
+                        *test_args,
+                        pytest_request=request,
+                        **test_kwargs,
+                        langtest_extra=repetition_extra,
+                    )
 
             return async_wrapper
 
@@ -335,13 +343,17 @@ def test(*args: Any, **kwargs: Any) -> Callable:
         def wrapper(*test_args: Any, request: Any = None, **test_kwargs: Any):
             if disable_tracking:
                 return func(*test_args, **test_kwargs)
-            _run_test(
-                func,
-                *test_args,
-                pytest_request=request,
-                **test_kwargs,
-                langtest_extra=langtest_extra,
-            )
+
+            # Run test multiple times for repetitions
+            for i in range(repetitions):
+                repetition_extra = langtest_extra.copy()
+                _run_test(
+                    func,
+                    *test_args,
+                    pytest_request=request,
+                    **test_kwargs,
+                    langtest_extra=repetition_extra,
+                )
 
         return wrapper
 
@@ -811,6 +823,7 @@ class _UTExtra(TypedDict, total=False):
     test_suite_name: Optional[str]
     cache: Optional[str]
     metadata: Optional[dict]
+    repetitions: Optional[int]
 
 
 def _create_test_case(
