@@ -2832,12 +2832,12 @@ export class Client implements LangSmithTracingClientInterface {
     let path = "/datasets";
     // limit to 1 result
     const params = new URLSearchParams({ limit: "1" });
-    if (datasetId !== undefined && datasetName !== undefined) {
+    if (datasetId && datasetName) {
       throw new Error("Must provide either datasetName or datasetId, not both");
-    } else if (datasetId !== undefined) {
+    } else if (datasetId) {
       assertUuid(datasetId);
       path += `/${datasetId}`;
-    } else if (datasetName !== undefined) {
+    } else if (datasetName) {
       params.append("name", datasetName);
     } else {
       throw new Error("Must provide datasetName or datasetId");
