@@ -45,8 +45,8 @@ export interface RunTreeConfig {
   parent_run?: RunTree;
   parent_run_id?: string;
   child_runs?: RunTree[];
-  start_time?: number;
-  end_time?: number;
+  start_time?: number | string;
+  end_time?: number | string;
   extra?: KVMap;
   metadata?: KVMap;
   tags?: string[];
@@ -192,6 +192,7 @@ export class RunTree implements BaseRun {
   run_type: string;
   project_name: string;
   parent_run?: RunTree;
+  parent_run_id?: string;
   child_runs: RunTree[];
   start_time: number;
   end_time?: number;
@@ -415,7 +416,7 @@ export class RunTree implements BaseRun {
       );
       parent_run_id = undefined;
     } else {
-      parent_run_id = run.parent_run?.id;
+      parent_run_id = run.parent_run?.id ?? run.parent_run_id;
       child_runs = [];
     }
     return {
@@ -578,7 +579,7 @@ export class RunTree implements BaseRun {
           error: this.error,
           inputs: this.inputs,
           outputs: this.outputs,
-          parent_run_id: this.parent_run?.id,
+          parent_run_id: this.parent_run?.id ?? this.parent_run_id,
           reference_example_id: this.reference_example_id,
           extra: this.extra,
           events: this.events,
