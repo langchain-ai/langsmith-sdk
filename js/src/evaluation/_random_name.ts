@@ -507,7 +507,7 @@ const nouns = [
   "rub",
   "rule",
   "run",
-  "sack",
+  "pebble",
   "sail",
   "salt",
   "sand",
