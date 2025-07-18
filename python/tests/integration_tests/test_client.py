@@ -567,6 +567,64 @@ def test_upload_examples_multipart(langchain_client: Client):
     langchain_client.delete_dataset(dataset_name=dataset_name)
 
 
+def test_update_example_preserves_existing_inputs_outputs(langchain_client: Client):
+    """Test update example with omitted inputs/outputs preserves existing values."""
+    dataset_name = "__test_update_preserve_values" + uuid4().hex[:4]
+    dataset = _create_dataset(langchain_client, dataset_name)
+
+    # Create an example with both inputs and outputs
+    original_example = langchain_client.create_example(
+        inputs={"original": "input", "number": 42},
+        outputs={"original": "output", "score": 0.85},
+        metadata={"version": "1.0"},
+        dataset_id=dataset.id,
+    )
+
+    # Update with None inputs - should preserve original inputs
+    langchain_client.update_example(
+        example_id=original_example.id,
+        outputs={"updated": "output", "score": 0.90},
+        metadata={"version": "2.0"},
+    )
+
+    # Verify inputs were preserved, outputs were updated
+    updated_example = langchain_client.read_example(original_example.id)
+    assert updated_example.inputs == {"original": "input", "number": 42}  # Preserved
+    assert updated_example.outputs == {"updated": "output", "score": 0.90}  # Updated
+    assert updated_example.metadata["version"] == "2.0"  # Updated
+
+    # Update with None outputs - should preserve current outputs
+    langchain_client.update_example(
+        example_id=original_example.id,
+        inputs={"final": "input", "count": 100},
+        metadata={"version": "3.0"},
+    )
+
+    # Verify outputs were preserved, inputs were updated
+    final_example = langchain_client.read_example(original_example.id)
+    assert final_example.inputs == {"final": "input", "count": 100}  # Updated
+    assert final_example.outputs == {"updated": "output", "score": 0.90}  # Preserved
+    assert final_example.metadata["version"] == "3.0"  # Updated
+
+    # Update with both None - should preserve both
+    langchain_client.update_example(
+        example_id=original_example.id,
+        metadata={"version": "4.0"},
+    )
+
+    # Verify both inputs and outputs were preserved
+    preserved_example = langchain_client.read_example(original_example.id)
+    assert preserved_example.inputs == {"final": "input", "count": 100}  # Preserved
+    assert preserved_example.outputs == {
+        "updated": "output",
+        "score": 0.90,
+    }  # Preserved
+    assert preserved_example.metadata["version"] == "4.0"  # Updated
+
+    # Clean up
+    langchain_client.delete_dataset(dataset_name=dataset_name)
+
+
 def test_create_dataset(langchain_client: Client) -> None:
     dataset_name = "__test_create_dataset" + uuid4().hex[:4]
     if langchain_client.has_dataset(dataset_name=dataset_name):
