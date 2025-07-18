@@ -45,6 +45,7 @@ _REPLICAS = contextvars.ContextVar[Optional[Sequence[tuple[str, Optional[dict]]]
     "_REPLICAS", default=None
 )
 
+_SENTINEL = cast(None, object())
 
 # Note, this is called directly by langchain. Do not remove.
 
@@ -56,6 +57,35 @@ def get_cached_client(**init_kwargs: Any) -> Client:
             if _CLIENT is None:
                 _CLIENT = Client(**init_kwargs)
     return _CLIENT
+
+
+def configure(
+    client: Optional[Client] = _SENTINEL,
+    enabled: Optional[bool] = _SENTINEL,
+    project_name: Optional[str] = _SENTINEL,
+    tags: Optional[list[str]] = _SENTINEL,
+    metadata: Optional[dict[str, Any]] = _SENTINEL,
+):
+    global _CLIENT
+    with _LOCK:
+        if client is not _SENTINEL:
+            _CLIENT = client
+        if enabled is not _SENTINEL:
+            from langsmith.run_helpers import _TRACING_ENABLED
+
+            _TRACING_ENABLED.set(enabled)
+        if project_name is not _SENTINEL:
+            from langsmith.run_helpers import _PROJECT_NAME
+
+            _PROJECT_NAME.set(project_name)
+        if tags is not _SENTINEL:
+            from langsmith.run_helpers import _TAGS
+
+            _TAGS.set(tags)
+        if metadata is not _SENTINEL:
+            from langsmith.run_helpers import _METADATA
+
+            _METADATA.set(metadata)
 
 
 def validate_extracted_usage_metadata(
