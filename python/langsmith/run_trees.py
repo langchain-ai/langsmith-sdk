@@ -66,6 +66,66 @@ def configure(
     tags: Optional[list[str]] = _SENTINEL,
     metadata: Optional[dict[str, Any]] = _SENTINEL,
 ):
+    """Configure global LangSmith tracing context.
+
+    This function allows you to set global configuration options for LangSmith
+    tracing that will be applied to all subsequent traced operations. It modifies
+    context variables that control tracing behavior across your application.
+
+    Do this once at startup to configure the global settings in code.
+
+    If, instead, you wish to only configure tracing for a single invocation,
+    use the `tracing_context` context manager instead.
+
+    Args:
+        client: A LangSmith Client instance to use for all tracing operations.
+            If provided, this client will be used instead of creating new clients.
+            Pass `None` to explicitly clear the global client.
+        enabled: Whether tracing is enabled. Can be:
+            - `True`: Enable tracing and send data to LangSmith
+            - `False`: Disable tracing completely
+            - `"local"`: Enable tracing but only store data locally
+            - `None`: Clear the setting (falls back to environment variables)
+        project_name: The LangSmith project name where traces will be sent.
+            This determines which project dashboard will display your traces.
+            Pass `None` to explicitly clear the project name.
+        tags: A list of tags to be applied to all traced runs. Tags are useful
+            for filtering and organizing runs in the LangSmith UI.
+            Pass `None` to explicitly clear all global tags.
+        metadata: A dictionary of metadata to attach to all traced runs.
+            Metadata can store any additional context about your runs.
+            Pass `None` to explicitly clear all global metadata.
+
+    Returns:
+        None
+
+    Examples:
+        Basic configuration:
+        >>> import langsmith as ls
+        >>> # Enable tracing with a specific project
+        >>> ls.configure(enabled=True, project_name="my-project")
+
+        Set global trace masking:
+        >>> def hide_keys(data):
+            if not data:
+                return {}
+            return {k: v for k, v in data.items() if k not in ["key1", "key2"]}
+        >>> ls.configure(
+        ...     client=ls.Client(
+        ...         hide_inputs=hide_keys,
+        ...         hide_outputs=hide_keys,
+        ...     )
+        ... )
+
+        Adding global tags and metadata:
+        >>> ls.configure(
+        ...     tags=["production", "v1.0"],
+        ...     metadata={"environment": "prod", "version": "1.0.0"},
+        ... )
+
+        Disabling tracing:
+        >>> ls.configure(enabled=False)
+    """
     global _CLIENT
     with _LOCK:
         if client is not _SENTINEL:
