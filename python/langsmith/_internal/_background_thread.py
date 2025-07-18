@@ -669,10 +669,11 @@ def tracing_control_thread_func_compress_parallel(
 
         else:
             if (time.monotonic() - last_flush_time) >= flush_interval:
-                data_stream, compressed_traces_info = (
-                    _tracing_thread_drain_compressed_buffer(
-                        client, size_limit=1, size_limit_bytes=1
-                    )
+                (
+                    data_stream,
+                    compressed_traces_info,
+                ) = _tracing_thread_drain_compressed_buffer(
+                    client, size_limit=1, size_limit_bytes=1
                 )
                 if data_stream is not None:
                     try:
@@ -694,10 +695,11 @@ def tracing_control_thread_func_compress_parallel(
 
     # Drain the buffer on exit (final flush)
     try:
-        final_data_stream, compressed_traces_info = (
-            _tracing_thread_drain_compressed_buffer(
-                client, size_limit=1, size_limit_bytes=1
-            )
+        (
+            final_data_stream,
+            compressed_traces_info,
+        ) = _tracing_thread_drain_compressed_buffer(
+            client, size_limit=1, size_limit_bytes=1
         )
         if final_data_stream is not None:
             try:

@@ -132,9 +132,10 @@ def test_serialized_run_operation_missing_file(tmp_path, caplog) -> None:
     )
 
     with caplog.at_level(logging.WARNING):
-        parts_and_context, opened = (
-            serialized_run_operation_to_multipart_parts_and_context(op)
-        )
+        (
+            parts_and_context,
+            opened,
+        ) = serialized_run_operation_to_multipart_parts_and_context(op)
 
     assert "Attachment file not found" in caplog.text
     part_names = [p[0] for p in parts_and_context.parts]
