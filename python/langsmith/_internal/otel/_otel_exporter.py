@@ -357,8 +357,9 @@ class OTELExporter:
 
         # Set GenAI attributes according to OTEL semantic conventions
         # Set gen_ai.operation.name
-        operation_name = _get_operation_name(run_info.get("run_type", "chain"))
-        span.set_attribute(GEN_AI_OPERATION_NAME, operation_name)
+        if op.operation == "post":
+            operation_name = _get_operation_name(run_info.get("run_type", "chain"))
+            span.set_attribute(GEN_AI_OPERATION_NAME, operation_name)
 
         # Set gen_ai.system
         self._set_gen_ai_system(span, run_info)
