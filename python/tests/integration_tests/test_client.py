@@ -2,6 +2,7 @@
 
 import asyncio
 import datetime
+import importlib
 import io
 import logging
 import os
@@ -20,9 +21,11 @@ from uuid import uuid4
 import pytest
 from freezegun import freeze_time
 from opentelemetry.sdk.trace import ReadableSpan
+from opentelemetry.trace import set_tracer_provider
 from pydantic import BaseModel
 from requests_toolbelt import MultipartEncoder, MultipartEncoderMonitor
 
+import langsmith
 from langsmith._internal._background_thread import (
     TracingQueueItem,
     _otel_tracing_thread_handle_batch,
@@ -30,6 +33,7 @@ from langsmith._internal._background_thread import (
 from langsmith._internal._operations import serialize_run_dict
 from langsmith._internal._serde import dumps_json
 from langsmith._internal.otel import _otel_exporter
+from langsmith._internal.otel._otel_client import get_otlp_tracer_provider
 from langsmith.client import ID_TYPE, Client, _close_files
 from langsmith.evaluation import aevaluate, evaluate
 from langsmith.run_helpers import traceable
@@ -3311,7 +3315,11 @@ def test_list_runs_with_child_runs(langchain_client: Client):
 
 def test_otel_trace_attributes(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("LANGSMITH_OTEL_ENABLED", "true")
-    monkeypatch.setenv("OTEL_ONLY", "true")
+    get_env_var.cache_clear()
+    importlib.reload(langsmith.client)
+    importlib.reload(langsmith._internal.otel._otel_client)
+    importlib.reload(langsmith._internal.otel._otel_exporter)
+    set_tracer_provider(get_otlp_tracer_provider())
 
     client = Client()
 
