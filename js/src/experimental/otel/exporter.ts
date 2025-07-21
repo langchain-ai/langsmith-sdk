@@ -158,7 +158,10 @@ export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
               });
             }
           }
-          if (span.attributes["ai.toolCall.args"]) {
+          if (span.attributes["ai.toolCall.input"]) {
+            span.attributes[constants.GENAI_PROMPT] =
+              span.attributes["ai.toolCall.input"];
+          } else if (span.attributes["ai.toolCall.args"]) {
             span.attributes[constants.GENAI_PROMPT] =
               span.attributes["ai.toolCall.args"];
           }
@@ -196,7 +199,10 @@ export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
             span.attributes[constants.GENAI_COMPLETION] =
               span.attributes["ai.response.toolCalls"];
           }
-          if (span.attributes["ai.toolCall.result"]) {
+          if (span.attributes["ai.toolCall.output"]) {
+            span.attributes[constants.GENAI_COMPLETION] =
+              span.attributes["ai.toolCall.output"];
+          } else if (span.attributes["ai.toolCall.result"]) {
             span.attributes[constants.GENAI_COMPLETION] =
               span.attributes["ai.toolCall.result"];
           }

@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { v4 as uuid } from "uuid";
 import { generateText } from "ai";
-import { MockLanguageModelV1 } from "ai/test";
+import { MockLanguageModelV2 } from "ai/test";
 
 import { toArray, waitUntilRunFoundByMetaField } from "../utils.js";
 import { Client } from "../../index.js";
@@ -34,29 +34,31 @@ describe("OTEL Rate Limit Error Tests", () => {
     const errors: any[] = [];
 
     // Create mock models for different scenarios
-    const successfulModel1 = new MockLanguageModelV1({
+    const successfulModel1 = new MockLanguageModelV2({
       provider: "openai",
       modelId: "gpt-4.1-nano",
       doGenerate: async () => ({
         rawCall: { rawPrompt: null, rawSettings: {} },
         finishReason: "stop",
-        usage: { promptTokens: 6, completionTokens: 4 },
-        text: "OTEL success response 1",
+        usage: { inputTokens: 6, outputTokens: 4, totalTokens: 10 },
+        content: [{ type: "text", text: "OTEL success response 1" }],
+        warnings: [],
       }),
     });
 
-    const successfulModel2 = new MockLanguageModelV1({
+    const successfulModel2 = new MockLanguageModelV2({
       provider: "openai",
       modelId: "gpt-4.1-nano",
       doGenerate: async () => ({
         rawCall: { rawPrompt: null, rawSettings: {} },
         finishReason: "stop",
-        usage: { promptTokens: 9, completionTokens: 6 },
-        text: "OTEL success response 2",
+        usage: { inputTokens: 9, outputTokens: 6, totalTokens: 15 },
+        content: [{ type: "text", text: "OTEL success response 2" }],
+        warnings: [],
       }),
     });
 
-    const rateLimitModel = new MockLanguageModelV1({
+    const rateLimitModel = new MockLanguageModelV2({
       provider: "openai",
       modelId: "gpt-4.1-nano",
       doGenerate: async () => {
