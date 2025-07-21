@@ -5,10 +5,6 @@ import { generateText, stepCountIs, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 
-import * as fs from "fs";
-import { fileURLToPath } from "url";
-import path from "path";
-
 import { AISDKExporter } from "../../vercel.js";
 import { waitUntilRunFound } from "../utils.js";
 import { Client } from "../../index.js";
