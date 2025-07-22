@@ -2,7 +2,7 @@ import { NodeSDK } from "@opentelemetry/sdk-node";
 import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
 import { v4 as uuid } from "uuid";
 import { generateText } from "ai";
-import { MockLanguageModelV1 } from "ai/test";
+import { MockLanguageModelV2 } from "ai/test";
 
 import { AISDKExporter } from "../../vercel.js";
 import { waitUntilRunFound } from "../utils.js";
@@ -24,29 +24,31 @@ test("rate limit errors with token tracking", async () => {
   const errors: any[] = [];
 
   // Create mock models for different scenarios
-  const successfulModel1 = new MockLanguageModelV1({
+  const successfulModel1 = new MockLanguageModelV2({
     provider: "openai",
     modelId: "gpt-4.1-nano",
     doGenerate: async () => ({
       rawCall: { rawPrompt: null, rawSettings: {} },
       finishReason: "stop",
-      usage: { promptTokens: 5, completionTokens: 5 },
-      text: "Hello world response",
+      usage: { inputTokens: 5, outputTokens: 5, totalTokens: 10 },
+      content: [{ type: "text", text: "Hello world response" }],
+      warnings: [],
     }),
   });
 
-  const successfulModel2 = new MockLanguageModelV1({
+  const successfulModel2 = new MockLanguageModelV2({
     provider: "openai",
     modelId: "gpt-4.1-nano",
     doGenerate: async () => ({
       rawCall: { rawPrompt: null, rawSettings: {} },
       finishReason: "stop",
-      usage: { promptTokens: 8, completionTokens: 7 },
-      text: "Another successful response",
+      usage: { inputTokens: 8, outputTokens: 7, totalTokens: 15 },
+      content: [{ type: "text", text: "Another successful response" }],
+      warnings: [],
     }),
   });
 
-  const rateLimitModel = new MockLanguageModelV1({
+  const rateLimitModel = new MockLanguageModelV2({
     provider: "openai",
     modelId: "gpt-4.1-nano",
     doGenerate: async () => {
