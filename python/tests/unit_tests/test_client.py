@@ -2855,3 +2855,55 @@ def test__convert_stored_attachments_to_attachments_dict(mock_get: mock.Mock):
     mock_get.assert_called_once_with(
         "https://api.langsmith.com/download/valid", stream=True
     )
+
+
+@mock.patch("langsmith.client.requests.Session")
+def test_push_prompt_with_runnable_sequence_of_three(mock_session_cls: mock.Mock):
+    """Test that push_prompt drops the output parser from a 3-step runnable sequence."""
+    try:
+        from langchain_core.output_parsers import StrOutputParser
+        from langchain_core.prompts import ChatPromptTemplate
+        from langchain_core.runnables.base import RunnableSequence
+        from langchain_openai import ChatOpenAI
+    except ImportError:
+        pytest.skip("Skipping test that requires langchain")
+
+    mock_session = mock_session_cls.return_value
+    mock_response = mock.Mock()
+    mock_response.raise_for_status.return_value = None
+    mock_response.json.return_value = {"id": "test-prompt-id", "url": "test-url"}
+    mock_session.request.return_value = mock_response
+
+    client = Client(api_url="http://localhost:1984", api_key="123")
+
+    # Create a 3-step runnable sequence: prompt | llm | output_parser
+    prompt = ChatPromptTemplate.from_template("Hello {name}")
+    llm = ChatOpenAI()
+    output_parser = StrOutputParser()
+    three_step_sequence = RunnableSequence(prompt, llm, output_parser)
+
+    assert len(three_step_sequence.steps) == 3
+
+    with (
+        mock.patch.object(client, "_prompt_exists", return_value=False),
+        mock.patch.object(client, "create_prompt"),
+        mock.patch.object(client, "create_commit") as mock_create_commit,
+    ):
+        mock_create_commit.return_value = "test-commit-url"
+
+        client.push_prompt("test-prompt", object=three_step_sequence)
+
+        # Verify create_commit was called with a 2-step sequence (output parser dropped)
+        mock_create_commit.assert_called_once()
+        args, kwargs = mock_create_commit.call_args
+        processed_object = args[1]  # Second argument is the object
+
+        # The processed object should be a RunnableSequence with only 2 steps
+        assert isinstance(processed_object, RunnableSequence)
+        assert len(processed_object.steps) == 2
+        assert (
+            processed_object.steps[0] is prompt
+        )  # First step should be the original prompt
+        assert (
+            processed_object.steps[1] is llm
+        )  # Second step should be the original llm

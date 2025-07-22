@@ -7340,10 +7340,22 @@ class Client:
         if object is None:
             return self._get_prompt_url(prompt_identifier=prompt_identifier)
 
+        # Handle runnable sequences - if it's a sequence of length 3, drop the output parser
+        processed_object = object
+        try:
+            from langchain_core.runnables.base import RunnableSequence
+
+            if isinstance(object, RunnableSequence) and len(object.steps) == 3:
+                # Create a new sequence with just the first two components
+                processed_object = RunnableSequence(object.steps[0], object.steps[1])
+        except ImportError:
+            # If langchain_core is not available, just use the original object
+            pass
+
         # Create a commit with the new manifest
         url = self.create_commit(
             prompt_identifier,
-            object,
+            processed_object,
             parent_commit_hash=parent_commit_hash,
         )
         return url
