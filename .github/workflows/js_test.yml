@@ -29,10 +29,10 @@ jobs:
         working-directory: "js"
     steps:
       - uses: actions/checkout@v4
-      - name: Use Node.js 18.x
+      - name: Use Node.js 20.x
         uses: actions/setup-node@v3
         with:
-          node-version: 18.x
+          node-version: 20.x
           cache: "yarn"
           cache-dependency-path: "js/yarn.lock"
       - name: Install dependencies
@@ -48,10 +48,10 @@ jobs:
         working-directory: "js"
     steps:
       - uses: actions/checkout@v4
-      - name: Use Node.js 18.x
+      - name: Use Node.js 20.x
         uses: actions/setup-node@v3
         with:
-          node-version: 18.x
+          node-version: 20.x
           cache: "yarn"
           cache-dependency-path: "js/yarn.lock"
       - name: Install dependencies
@@ -67,10 +67,10 @@ jobs:
         working-directory: "js"
     steps:
       - uses: actions/checkout@v4
-      - name: Use Node.js 18.x
+      - name: Use Node.js 20.x
         uses: actions/setup-node@v3
         with:
-          node-version: 18.x
+          node-version: 20.x
           cache: "yarn"
           cache-dependency-path: "js/yarn.lock"
       - name: Install dependencies
@@ -83,7 +83,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        node-version: [18.x, 20.x, "22.4.1"]
+        node-version: [20.x, 20.x, "22.4.1"]
         # See Node.js release schedule at https://nodejs.org/en/about/releases/
         include:
           - os: windows-latest
