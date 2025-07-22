@@ -1404,10 +1404,11 @@ class Client:
                         "Run compression is enabled but threading event is not configured"
                     )
                 serialized_op = serialize_run_dict("post", run_create)
-                multipart_form, opened_files = (
-                    serialized_run_operation_to_multipart_parts_and_context(
-                        serialized_op
-                    )
+                (
+                    multipart_form,
+                    opened_files,
+                ) = serialized_run_operation_to_multipart_parts_and_context(
+                    serialized_op
                 )
                 logger.log(
                     5,
@@ -1749,9 +1750,10 @@ class Client:
         opened_files_dict: dict[str, io.BufferedReader] = {}
         for op in ops:
             if isinstance(op, SerializedRunOperation):
-                part, opened_files = (
-                    serialized_run_operation_to_multipart_parts_and_context(op)
-                )
+                (
+                    part,
+                    opened_files,
+                ) = serialized_run_operation_to_multipart_parts_and_context(op)
                 parts.append(part)
                 opened_files_dict.update(opened_files)
             elif isinstance(op, SerializedFeedbackOperation):
@@ -2190,10 +2192,11 @@ class Client:
         elif use_multipart:
             serialized_op = serialize_run_dict(operation="patch", payload=data)
             if self.compressed_traces is not None:
-                multipart_form, opened_files = (
-                    serialized_run_operation_to_multipart_parts_and_context(
-                        serialized_op
-                    )
+                (
+                    multipart_form,
+                    opened_files,
+                ) = serialized_run_operation_to_multipart_parts_and_context(
+                    serialized_op
                 )
                 logger.log(
                     5,
@@ -2269,10 +2272,11 @@ class Client:
             _tracing_thread_drain_compressed_buffer,
         )
 
-        final_data_stream, compressed_traces_info = (
-            _tracing_thread_drain_compressed_buffer(
-                self, size_limit=1, size_limit_bytes=1
-            )
+        (
+            final_data_stream,
+            compressed_traces_info,
+        ) = _tracing_thread_drain_compressed_buffer(
+            self, size_limit=1, size_limit_bytes=1
         )
 
         if final_data_stream is not None:
