@@ -46,7 +46,7 @@ ls.describe.skip("js unit testing test demo with OTEL", () => {
             tools: {
               listOrders: tool({
                 description: "list all orders",
-                parameters: z.object({ userId: z.string() }),
+                inputSchema: z.object({ userId: z.string() }),
                 execute: async ({ userId }) => {
                   const getOrderNumber = traceable(
                     async () => {
@@ -60,7 +60,7 @@ ls.describe.skip("js unit testing test demo with OTEL", () => {
               }),
               viewTrackingInformation: tool({
                 description: "view tracking information for a specific order",
-                parameters: z.object({ orderId: z.string() }),
+                inputSchema: z.object({ orderId: z.string() }),
                 execute: async ({ orderId }) =>
                   `Here is the tracking information for ${orderId}`,
               }),
@@ -68,7 +68,6 @@ ls.describe.skip("js unit testing test demo with OTEL", () => {
             experimental_telemetry: {
               isEnabled: true,
             },
-            maxSteps: 10,
           });
 
           return { text };

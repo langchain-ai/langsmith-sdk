@@ -1,10 +1,10 @@
-import { MockLanguageModelV1 } from "ai/test";
+import { MockLanguageModelV2 } from "ai/test";
 
-export class MockMultiStepLanguageModelV1 extends MockLanguageModelV1 {
+export class MockMultiStepLanguageModelV2 extends MockLanguageModelV2 {
   generateStep = -1;
   streamStep = -1;
 
-  constructor(...args: ConstructorParameters<typeof MockLanguageModelV1>) {
+  constructor(...args: ConstructorParameters<typeof MockLanguageModelV2>) {
     super(...args);
 
     const oldDoGenerate = this.doGenerate;

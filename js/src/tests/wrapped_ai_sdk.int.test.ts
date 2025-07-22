@@ -28,14 +28,13 @@ test("AI SDK generateText with a tool", async () => {
     tools: {
       getIngredients: tool({
         description: "get a list of ingredients",
-        parameters: z.object({
+        inputSchema: z.object({
           ingredients: z.array(z.string()),
         }),
         execute: async () =>
           JSON.stringify(["pasta", "tomato", "cheese", "onions"]),
       }),
     },
-    maxSteps: 2,
   });
   DEBUG && console.log(text);
 });
