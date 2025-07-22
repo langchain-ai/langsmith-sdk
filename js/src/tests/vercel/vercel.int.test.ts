@@ -7,6 +7,7 @@ import {
   generateObject,
   streamObject,
   tool,
+  stepCountIs,
 } from "ai";
 import { openai } from "@ai-sdk/openai";
 
@@ -39,13 +40,13 @@ test("generateText", async () => {
     tools: {
       listOrders: tool({
         description: "list all orders",
-        parameters: z.object({ userId: z.string() }),
+        inputSchema: z.object({ userId: z.string() }),
         execute: async ({ userId }) =>
           `User ${userId} has the following orders: 1`,
       }),
       viewTrackingInformation: tool({
         description: "view tracking information for a specific order",
-        parameters: z.object({ orderId: z.string() }),
+        inputSchema: z.object({ orderId: z.string() }),
         execute: async ({ orderId }) =>
           `Here is the tracking information for ${orderId}`,
       }),
@@ -56,7 +57,7 @@ test("generateText", async () => {
       functionId: "functionId",
       metadata: { userId: "123", language: "english" },
     }),
-    maxSteps: 10,
+    stopWhen: stepCountIs(10),
   });
 
   await provider.forceFlush();
@@ -114,13 +115,13 @@ test("streamText", async () => {
     tools: {
       listOrders: tool({
         description: "list all orders",
-        parameters: z.object({ userId: z.string() }),
+        inputSchema: z.object({ userId: z.string() }),
         execute: async ({ userId }) =>
           `User ${userId} has the following orders: 1`,
       }),
       viewTrackingInformation: tool({
         description: "view tracking information for a specific order",
-        parameters: z.object({ orderId: z.string() }),
+        inputSchema: z.object({ orderId: z.string() }),
         execute: async ({ orderId }) =>
           `Here is the tracking information for ${orderId}`,
       }),
@@ -131,7 +132,7 @@ test("streamText", async () => {
       functionId: "functionId",
       metadata: { userId: "123", language: "english" },
     }),
-    maxSteps: 10,
+    stopWhen: stepCountIs(10),
   });
 
   await toArray(result.fullStream);
@@ -145,7 +146,7 @@ test("streamText", async () => {
 test("generateObject", async () => {
   const runId = uuid();
   await generateObject({
-    model: openai("gpt-4.1-nano", { structuredOutputs: true }),
+    model: openai("gpt-4.1-nano"),
     schema: z.object({
       weather: z.object({
         city: z.string(),
@@ -171,7 +172,7 @@ test("generateObject", async () => {
 test("streamObject", async () => {
   const runId = uuid();
   const result = await streamObject({
-    model: openai("gpt-4.1-nano", { structuredOutputs: true }),
+    model: openai("gpt-4.1-nano"),
     schema: z.object({
       weather: z.object({
         city: z.string(),
@@ -209,13 +210,13 @@ test("traceable", async () => {
         tools: {
           listOrders: tool({
             description: "list all orders",
-            parameters: z.object({ userId: z.string() }),
+            inputSchema: z.object({ userId: z.string() }),
             execute: async ({ userId }) =>
               `User ${userId} has the following orders: 1`,
           }),
           viewTrackingInformation: tool({
             description: "view tracking information for a specific order",
-            parameters: z.object({ orderId: z.string() }),
+            inputSchema: z.object({ orderId: z.string() }),
             execute: async ({ orderId }) =>
               `Here is the tracking information for ${orderId}`,
           }),
@@ -226,7 +227,7 @@ test("traceable", async () => {
           runName: "nestedVercelTrace",
           metadata: { userId: "123", language: "english" },
         }),
-        maxSteps: 10,
+        stopWhen: stepCountIs(10),
       });
 
       const foo = traceable(

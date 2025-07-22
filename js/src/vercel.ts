@@ -71,16 +71,20 @@ function convertCoreToSmith(
           return {
             type: "text",
             text: part.text,
+            // @ts-expect-error Backcompat for AI SDK 4
             ...part.experimental_providerMetadata,
           };
         }
 
         if (part.type === "tool-call") {
+          // @ts-expect-error Backcompat for AI SDK 4
+          const legacyToolCallInput = part.args;
           return {
             type: "tool_use",
             name: part.toolName,
             id: part.toolCallId,
-            input: part.args,
+            input: legacyToolCallInput ?? part.input,
+            // @ts-expect-error Backcompat for AI SDK 4
             ...part.experimental_providerMetadata,
           };
         }
@@ -95,13 +99,15 @@ function convertCoreToSmith(
       if (toolCalls.length > 0) {
         data.additional_kwargs ??= {};
         data.additional_kwargs.tool_calls = toolCalls.map((part) => {
+          // @ts-expect-error Backcompat for AI SDK 4
+          const legacyToolCallInput = part.args;
           return {
             id: part.toolCallId,
             type: "function",
             function: {
               name: part.toolName,
               id: part.toolCallId,
-              arguments: JSON.stringify(part.args),
+              arguments: JSON.stringify(legacyToolCallInput ?? part.input),
             },
           };
         });
@@ -120,6 +126,7 @@ function convertCoreToSmith(
           return {
             type: "text",
             text: part.text,
+            // @ts-expect-error Backcompat for AI SDK 4
             ...part.experimental_providerMetadata,
           };
         }
@@ -160,6 +167,7 @@ function convertCoreToSmith(
           return {
             type: "image_url",
             image_url: imageUrl,
+            // @ts-expect-error Backcompat for AI SDK 4
             ...part.experimental_providerMetadata,
           };
         }
@@ -177,10 +185,12 @@ function convertCoreToSmith(
 
   if (message.role === "tool") {
     const res = message.content.map((toolCall) => {
+      // @ts-expect-error Backcompat for AI SDK 4
+      const legacyToolCallResult = toolCall.result;
       return {
         type: "tool",
         data: {
-          content: JSON.stringify(toolCall.result),
+          content: JSON.stringify(legacyToolCallResult ?? toolCall.output),
           name: toolCall.toolName,
           tool_call_id: toolCall.toolCallId,
         },
@@ -731,14 +741,20 @@ export class AISDKExporter {
       }
 
       case "ai.toolCall": {
-        const args = tryJson(span.attributes["ai.toolCall.args"]);
+        const args = tryJson(
+          span.attributes["ai.toolCall.input"] ??
+            span.attributes["ai.toolCall.args"]
+        );
         let inputs: KVMap = { args };
 
         if (typeof args === "object" && args != null) {
           inputs = args;
         }
 
-        const output = tryJson(span.attributes["ai.toolCall.result"]);
+        const output = tryJson(
+          span.attributes["ai.toolCall.output"] ??
+            span.attributes["ai.toolCall.result"]
+        );
         let outputs: KVMap = { output };
 
         if (typeof output === "object" && output != null) {

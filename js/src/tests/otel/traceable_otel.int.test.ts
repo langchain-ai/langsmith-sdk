@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable no-process-env */
-import { generateText, tool } from "ai";
+import { generateText, stepCountIs, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 import { v4 as uuidv4 } from "uuid";
@@ -86,7 +86,7 @@ describe("Traceable OTEL Integration Tests", () => {
           tools: {
             listOrders: tool({
               description: "list all orders",
-              parameters: z.object({ userId: z.string() }),
+              inputSchema: z.object({ userId: z.string() }),
               execute: async ({ userId }) => {
                 const getOrderNumber = traceable(
                   async () => {
@@ -100,7 +100,7 @@ describe("Traceable OTEL Integration Tests", () => {
             }),
             viewTrackingInformation: tool({
               description: "view tracking information for a specific order",
-              parameters: z.object({ orderId: z.string() }),
+              inputSchema: z.object({ orderId: z.string() }),
               execute: async ({ orderId }) =>
                 `Here is the tracking information for ${orderId}`,
             }),
@@ -108,7 +108,7 @@ describe("Traceable OTEL Integration Tests", () => {
           experimental_telemetry: {
             isEnabled: true,
           },
-          maxSteps: 10,
+          stopWhen: stepCountIs(10),
         });
 
         return { text };
