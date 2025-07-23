@@ -115,8 +115,6 @@ export function getLangChainEnvVars(): Record<string, string> {
   return envVars;
 }
 
-let _cachedEnvVarsMetadata: Record<string, string> | null = null;
-
 /**
  * Retrieves the LangChain-specific metadata from the current runtime environment.
  *
@@ -124,8 +122,6 @@ let _cachedEnvVarsMetadata: Record<string, string> | null = null;
  *  - A record of LangChain-specific metadata environment variables.
  */
 export function getLangChainEnvVarsMetadata(): Record<string, string> {
-  if (_cachedEnvVarsMetadata !== null) return _cachedEnvVarsMetadata;
-
   const allEnvVars = getEnvironmentVariables() || {};
   const envVars: Record<string, string> = {};
   const excluded = [
@@ -157,8 +153,6 @@ export function getLangChainEnvVarsMetadata(): Record<string, string> {
       }
     }
   }
-
-  _cachedEnvVarsMetadata = envVars;
 
   return envVars;
 }
