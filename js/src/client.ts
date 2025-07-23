@@ -408,7 +408,9 @@ type Thread = {
   last_error: string | null;
 };
 
-export function mergeRuntimeEnvIntoRunCreate(run: RunCreate) {
+export function mergeRuntimeEnvIntoRun<T extends RunCreate | RunUpdate>(
+  run: T
+): T {
   const runtimeEnv = getRuntimeEnvironment();
   const envVars = getLangChainEnvVarsMetadata();
   const extra = run.extra ?? {};
@@ -421,8 +423,12 @@ export function mergeRuntimeEnvIntoRunCreate(run: RunCreate) {
     },
     metadata: {
       ...envVars,
-      ...(envVars.revision_id || run.revision_id
-        ? { revision_id: run.revision_id ?? envVars.revision_id }
+      ...(envVars.revision_id || ("revision_id" in run && run.revision_id)
+        ? {
+            revision_id:
+              ("revision_id" in run ? run.revision_id : undefined) ??
+              envVars.revision_id,
+          }
         : {}),
       ...metadata,
     },
@@ -1077,9 +1083,7 @@ export class Client implements LangSmithTracingClientInterface {
   private async processRunOperation(item: AutoBatchQueueItem) {
     clearTimeout(this.autoBatchTimeout);
     this.autoBatchTimeout = undefined;
-    if (item.action === "create") {
-      item.item = mergeRuntimeEnvIntoRunCreate(item.item as RunCreate);
-    }
+    item.item = mergeRuntimeEnvIntoRun(item.item as RunCreate);
     const itemPromise = this.autoBatchQueue.push(item);
     if (this.manualFlushMode) {
       // Rely on manual flushing in serverless environments
@@ -1206,7 +1210,7 @@ export class Client implements LangSmithTracingClientInterface {
       }).catch(console.error);
       return;
     }
-    const mergedRunCreateParam = mergeRuntimeEnvIntoRunCreate(runCreate);
+    const mergedRunCreateParam = mergeRuntimeEnvIntoRun(runCreate);
     if (options?.apiKey !== undefined) {
       headers["x-api-key"] = options.apiKey;
     }
