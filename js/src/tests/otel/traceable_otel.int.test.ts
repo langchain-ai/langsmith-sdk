@@ -73,7 +73,7 @@ describe("Traceable OTEL Integration Tests", () => {
     expect(runWithChildren.child_runs?.[0].name).toBe("child-function");
   });
 
-  it.only("works with AI SDK", async () => {
+  it("works with AI SDK", async () => {
     process.env.LANGSMITH_OTEL_ENABLED = "true";
 
     const meta = uuidv4();
