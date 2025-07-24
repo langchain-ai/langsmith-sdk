@@ -6,7 +6,7 @@ import { z } from "zod";
 import { v4 as uuidv4 } from "uuid";
 
 import { Client } from "../../client.js";
-import { getCurrentRunTree, traceable } from "../../traceable.js";
+import { traceable } from "../../traceable.js";
 import { toArray, waitUntilRunFoundByMetaField } from "../utils.js";
 import { getLangSmithEnvironmentVariable } from "../../utils/env.js";
 
@@ -90,7 +90,6 @@ describe("Traceable OTEL Integration Tests", () => {
               execute: async ({ userId }) => {
                 const getOrderNumber = traceable(
                   async () => {
-                    console.log(getCurrentRunTree());
                     return "1234";
                   },
                   { name: "getOrderNumber" }

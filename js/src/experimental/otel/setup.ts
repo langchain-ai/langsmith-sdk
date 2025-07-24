@@ -81,7 +81,7 @@ export type InitializeOTELConfig = {
  */
 export const initializeOTEL = (config: InitializeOTELConfig = {}) => {
   const {
-    globalTracerProvider = otel_trace.getTracerProvider(),
+    globalTracerProvider,
     globalContextManager,
     skipGlobalContextManagerSetup,
     exporterConfig,

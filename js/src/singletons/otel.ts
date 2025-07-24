@@ -1,9 +1,6 @@
 // Should not import any OTEL packages to avoid pulling in optional deps.
 
-import {
-  getEnvironmentVariable,
-  getLangSmithEnvironmentVariable,
-} from "../utils/env.js";
+import { getOtelEnabled } from "../utils/env.js";
 
 interface OTELTraceInterface {
   getTracer: (name: string, version?: string) => any;
@@ -29,13 +26,7 @@ class MockTracer {
   private hasWarned = false;
 
   startActiveSpan<T>(_name: string, ...args: any[]): T | undefined {
-    if (
-      !this.hasWarned &&
-      [
-        getEnvironmentVariable("OTEL_ENABLED"),
-        getLangSmithEnvironmentVariable("OTEL_ENABLED"),
-      ].includes("true")
-    ) {
+    if (!this.hasWarned && getOtelEnabled()) {
       console.warn(
         "You have enabled OTEL export via the `OTEL_ENABLED` or `LANGSMITH_OTEL_ENABLED` environment variable, but have not initialized the required OTEL instances. " +
           'Please add:\n```\nimport { initializeOTEL } from "langsmith/experimental/otel/setup";\ninitializeOTEL();\n```\nat the beginning of your code.'

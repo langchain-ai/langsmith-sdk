@@ -7,6 +7,7 @@ import {
   getLangSmithEnvironmentVariable,
 } from "../../utils/env.js";
 import { extractUsageMetadata } from "../../utils/vercel.js";
+import { LANGSMITH_TRACEABLE } from "./constants.js";
 
 /**
  * Convert headers string in format "name=value,name2=value2" to object
@@ -68,7 +69,25 @@ export type LangSmithOTLPTraceExporterConfig = ConstructorParameters<
    * Default headers to add to exporter requests.
    */
   headers?: Record<string, string>;
+
+  /**
+   * Trace all spans.
+   *
+   * If true, all spans will be traced, regardless of whether they are
+   * normally interesting to LangSmith.
+   * If false, only selected spans will be traced.
+   *
+   * @default false
+   */
+  exportAllSpans?: boolean;
 };
+
+function isTraceableSpan(span: ReadableSpan): boolean {
+  return (
+    span.attributes[LANGSMITH_TRACEABLE] === "true" ||
+    typeof span.attributes["ai.operationId"] === "string"
+  );
+}
 
 /**
  * LangSmith OpenTelemetry trace exporter that extends the standard OTLP trace exporter
@@ -92,13 +111,16 @@ export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
 
   private projectName?: string;
 
+  private exportAllSpans?: boolean;
+
   constructor(config?: LangSmithOTLPTraceExporterConfig) {
     const defaultLsEndpoint =
-      getEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT") ||
       getLangSmithEnvironmentVariable("ENDPOINT") ||
       "https://api.smith.langchain.com";
     const defaultBaseUrl = defaultLsEndpoint.replace(/\/$/, "");
-    const defaultUrl = `${defaultBaseUrl}/otel/v1/traces`;
+    const defaultUrl =
+      getEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT") ??
+      `${defaultBaseUrl}/otel/v1/traces`;
     // Configure headers with API key and project if available
     let headers = config?.headers;
     if (headers === undefined) {
@@ -123,6 +145,7 @@ export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
     this.transformExportedSpan = config?.transformExportedSpan;
     this.projectName =
       config?.projectName ?? getLangSmithEnvironmentVariable("PROJECT");
+    this.exportAllSpans = config?.exportAllSpans;
   }
 
   export(
@@ -134,6 +157,9 @@ export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
     }
     const runExport = async () => {
       for (let span of spans) {
+        if (!this.exportAllSpans && !isTraceableSpan(span)) {
+          continue;
+        }
         if (this.transformExportedSpan) {
           span = await this.transformExportedSpan(span);
         }

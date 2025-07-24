@@ -61,6 +61,7 @@ import {
   getLangChainEnvVarsMetadata,
   getLangSmithEnvironmentVariable,
   getRuntimeEnvironment,
+  getOtelEnabled,
 } from "./utils/env.js";
 
 import {
@@ -690,12 +691,7 @@ export class Client implements LangSmithTracingClientInterface {
     this.batchSizeBytesLimit = config.batchSizeBytesLimit;
     this.fetchOptions = config.fetchOptions || {};
     this.manualFlushMode = config.manualFlushMode ?? this.manualFlushMode;
-    if (
-      [
-        getEnvironmentVariable("OTEL_ENABLED"),
-        getLangSmithEnvironmentVariable("OTEL_ENABLED"),
-      ].includes("true")
-    ) {
+    if (getOtelEnabled()) {
       this.langSmithToOTELTranslator = new LangSmithToOTELTranslator();
     }
   }
