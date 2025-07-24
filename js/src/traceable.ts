@@ -33,7 +33,10 @@ import {
   isGenerator,
   isPromiseMethod,
 } from "./utils/asserts.js";
-import { getEnvironmentVariable } from "./utils/env.js";
+import {
+  getEnvironmentVariable,
+  getLangSmithEnvironmentVariable,
+} from "./utils/env.js";
 import { __version__ } from "./index.js";
 import { getOTELTrace, getOTELContext } from "./singletons/otel.js";
 import { getUuidFromOtelSpanId } from "./experimental/otel/utils.js";
@@ -56,7 +59,13 @@ function maybeCreateOtelContext<T>(
   tracer?: OTELTracer
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): ((fn: (...args: any[]) => T) => T) | undefined {
-  if (!runTree || getEnvironmentVariable("OTEL_ENABLED") !== "true") {
+  if (
+    !runTree ||
+    ![
+      getEnvironmentVariable("OTEL_ENABLED"),
+      getLangSmithEnvironmentVariable("OTEL_ENABLED"),
+    ].includes("true")
+  ) {
     return;
   }
 
