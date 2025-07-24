@@ -20,12 +20,12 @@ describe("AI SDK Streaming Integration", () => {
   });
 
   afterAll(() => {
-    delete process.env.OTEL_ENABLED;
+    delete process.env.LANGSMITH_OTEL_ENABLED;
     delete process.env.LANGSMITH_TRACING;
   });
 
   it("works with streamText", async () => {
-    process.env.OTEL_ENABLED = "true";
+    process.env.LANGSMITH_OTEL_ENABLED = "true";
     const meta = uuidv4();
     const client = new Client();
 
@@ -74,7 +74,7 @@ describe("AI SDK Streaming Integration", () => {
   });
 
   it("works with generateObject", async () => {
-    process.env.OTEL_ENABLED = "true";
+    process.env.LANGSMITH_OTEL_ENABLED = "true";
     const meta = uuidv4();
     const client = new Client();
 
@@ -131,7 +131,7 @@ describe("AI SDK Streaming Integration", () => {
   });
 
   it("works with streamObject", async () => {
-    process.env.OTEL_ENABLED = "true";
+    process.env.LANGSMITH_OTEL_ENABLED = "true";
     const meta = uuidv4();
     const client = new Client();
 

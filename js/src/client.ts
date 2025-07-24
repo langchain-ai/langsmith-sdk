@@ -690,7 +690,12 @@ export class Client implements LangSmithTracingClientInterface {
     this.batchSizeBytesLimit = config.batchSizeBytesLimit;
     this.fetchOptions = config.fetchOptions || {};
     this.manualFlushMode = config.manualFlushMode ?? this.manualFlushMode;
-    if (getEnvironmentVariable("OTEL_ENABLED") === "true") {
+    if (
+      [
+        getEnvironmentVariable("OTEL_ENABLED"),
+        getLangSmithEnvironmentVariable("OTEL_ENABLED"),
+      ].includes("true")
+    ) {
       this.langSmithToOTELTranslator = new LangSmithToOTELTranslator();
     }
   }

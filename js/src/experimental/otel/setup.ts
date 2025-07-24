@@ -37,6 +37,12 @@ export type InitializeOTELConfig = {
    */
   globalContextManager?: ContextManager;
   /**
+   * Skip automatic initialization of a global context manager.
+   *
+   * @default false
+   */
+  skipGlobalContextManagerSetup?: boolean;
+  /**
    * Optional configuration passed to the default LangSmith OTLP trace exporter.
    */
   exporterConfig?: LangSmithOTLPTraceExporterConfig;
@@ -74,7 +80,12 @@ export type InitializeOTELConfig = {
  * ```
  */
 export const initializeOTEL = (config: InitializeOTELConfig = {}) => {
-  const { globalTracerProvider, globalContextManager, exporterConfig } = config;
+  const {
+    globalTracerProvider = otel_trace.getTracerProvider(),
+    globalContextManager,
+    skipGlobalContextManagerSetup,
+    exporterConfig,
+  } = config;
 
   const otel = {
     trace: otel_trace,
@@ -83,10 +94,20 @@ export const initializeOTEL = (config: InitializeOTELConfig = {}) => {
 
   setOTELInstances(otel);
 
-  if (!globalContextManager) {
-    const contextManager = new AsyncHooksContextManager();
-    contextManager.enable();
-    otel_context.setGlobalContextManager(contextManager);
+  if (!globalContextManager && !skipGlobalContextManagerSetup) {
+    try {
+      const contextManager = new AsyncHooksContextManager();
+      contextManager.enable();
+      otel_context.setGlobalContextManager(contextManager);
+    } catch (e) {
+      console.log(
+        [
+          `Could not automatically set up an OTEL context manager.`,
+          `This may be expected if you have (or another imported library has) already set a global context manager.`,
+          `If expected, you can skip this warning by passing "skipGlobalContextManagerSetup: true" into your initializeOTEL call.`,
+        ].join("\n")
+      );
+    }
   }
 
   const DEFAULT_LANGSMITH_SPAN_EXPORTER = new LangSmithOTLPTraceExporter(

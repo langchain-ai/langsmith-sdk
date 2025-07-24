@@ -20,12 +20,12 @@ describe.skip("OpenAI Cache OTEL Integration Tests", () => {
   });
 
   afterEach(() => {
-    delete process.env.OTEL_ENABLED;
+    delete process.env.LANGSMITH_OTEL_ENABLED;
     delete process.env.LANGSMITH_TRACING;
   });
 
   it("openai cache with large prompt for automatic caching using OTEL", async () => {
-    process.env.OTEL_ENABLED = "true";
+    process.env.LANGSMITH_OTEL_ENABLED = "true";
 
     const meta = uuidv4();
     const client = new Client();

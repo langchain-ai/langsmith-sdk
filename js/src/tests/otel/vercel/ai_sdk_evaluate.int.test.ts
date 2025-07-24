@@ -14,11 +14,11 @@ initializeOTEL();
 
 beforeAll(() => {
   process.env.LANGSMITH_TRACING = "true";
-  process.env.OTEL_ENABLED = "true";
+  process.env.LANGSMITH_OTEL_ENABLED = "true";
 });
 
 afterAll(() => {
-  delete process.env.OTEL_ENABLED;
+  delete process.env.LANGSMITH_OTEL_ENABLED;
   delete process.env.LANGSMITH_TRACING;
 });
 

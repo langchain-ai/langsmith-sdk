@@ -18,13 +18,13 @@ describe("OTEL Rate Limit Error Tests", () => {
     initializeOTEL();
 
     // Enable OTEL tracing
-    process.env.OTEL_ENABLED = "true";
+    process.env.LANGSMITH_OTEL_ENABLED = "true";
     process.env.LANGCHAIN_TRACING = "true";
   });
 
   afterEach(() => {
     // Clean up environment
-    delete process.env.OTEL_ENABLED;
+    delete process.env.LANGSMITH_OTEL_ENABLED;
     delete process.env.LANGCHAIN_TRACING;
   });
 

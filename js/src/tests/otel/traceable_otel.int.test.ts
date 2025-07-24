@@ -6,7 +6,7 @@ import { z } from "zod";
 import { v4 as uuidv4 } from "uuid";
 
 import { Client } from "../../client.js";
-import { traceable } from "../../traceable.js";
+import { getCurrentRunTree, traceable } from "../../traceable.js";
 import { toArray, waitUntilRunFoundByMetaField } from "../utils.js";
 import { getLangSmithEnvironmentVariable } from "../../utils/env.js";
 
@@ -21,12 +21,12 @@ describe("Traceable OTEL Integration Tests", () => {
   });
 
   afterEach(() => {
-    delete process.env.OTEL_ENABLED;
+    delete process.env.LANGSMITH_OTEL_ENABLED;
     delete process.env.LANGCHAIN_TRACING;
   });
 
   it("handles nested calls with OTEL context", async () => {
-    process.env.OTEL_ENABLED = "true";
+    process.env.LANGSMITH_OTEL_ENABLED = "true";
 
     const meta = uuidv4();
     const client = new Client();
@@ -73,8 +73,8 @@ describe("Traceable OTEL Integration Tests", () => {
     expect(runWithChildren.child_runs?.[0].name).toBe("child-function");
   });
 
-  it("works with AI SDK", async () => {
-    process.env.OTEL_ENABLED = "true";
+  it.only("works with AI SDK", async () => {
+    process.env.LANGSMITH_OTEL_ENABLED = "true";
 
     const meta = uuidv4();
     const client = new Client();
@@ -90,6 +90,7 @@ describe("Traceable OTEL Integration Tests", () => {
               execute: async ({ userId }) => {
                 const getOrderNumber = traceable(
                   async () => {
+                    console.log(getCurrentRunTree());
                     return "1234";
                   },
                   { name: "getOrderNumber" }
