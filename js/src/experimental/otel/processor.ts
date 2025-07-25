@@ -42,10 +42,6 @@ type TraceInfo = {
 export class LangSmithOTLPSpanProcessor extends BatchSpanProcessor {
   private traceMap: Record<string, TraceInfo> = {};
 
-  constructor(...args: ConstructorParameters<typeof BatchSpanProcessor>) {
-    super(...args);
-  }
-
   onStart(span: Span, parentContext: Context): void {
     if (!this.traceMap[span.spanContext().traceId]) {
       this.traceMap[span.spanContext().traceId] = {
