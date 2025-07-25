@@ -7098,16 +7098,125 @@ class Client:
         response = self.request_with_retries("DELETE", f"/repos/{owner}/{prompt_name}")
         response.raise_for_status()
 
+    import json
+    import os
+    import time
+    from pathlib import Path
+    from typing import Optional, Union
+    import hashlib
+
+    class PromptCache:
+        """File system cache for prompt commits with TTL support."""
+
+        def __init__(self, cache_dir: str = ".prompt_cache", default_ttl: int = 3600):
+            """
+            Initialize the cache.
+
+            Args:
+                cache_dir: Directory to store cache files
+                default_ttl: Default time-to-live in seconds (default: 1 hour)
+            """
+            self.cache_dir = Path(cache_dir)
+            self.cache_dir.mkdir(exist_ok=True)
+            self.default_ttl = default_ttl
+
+        def _get_cache_key(self, prompt_identifier: str, include_model: bool) -> str:
+            """Generate a cache key based on the prompt identifier and include_model flag."""
+            key = f"{prompt_identifier}_{include_model}"
+            # Use hash to ensure valid filenames
+            return hashlib.md5(key.encode()).hexdigest()
+
+        def _get_cache_path(self, cache_key: str) -> Path:
+            """Get the file path for a cache key."""
+            return self.cache_dir / f"{cache_key}.json"
+
+        def get(self, prompt_identifier: str, include_model: bool) -> Optional[dict]:
+            """
+            Retrieve a cached prompt commit if it exists and hasn't expired.
+
+            Returns:
+                Cached data as dict or None if not found/expired
+            """
+            cache_key = self._get_cache_key(prompt_identifier, include_model)
+            cache_path = self._get_cache_path(cache_key)
+
+            if not cache_path.exists():
+                return None
+
+            try:
+                with open(cache_path, 'r') as f:
+                    cache_data = json.load(f)
+
+                # Check if cache has expired
+                if time.time() > cache_data['expires_at']:
+                    cache_path.unlink()  # Delete expired cache
+                    return None
+
+                return cache_data['data']
+            except (json.JSONDecodeError, KeyError, IOError):
+                # If cache is corrupted, delete it
+                cache_path.unlink(missing_ok=True)
+                return None
+
+        def set(self, prompt_identifier: str, include_model: bool, data: dict, ttl: Optional[int] = None):
+            """
+            Store a prompt commit in the cache.
+
+            Args:
+                prompt_identifier: The prompt identifier
+                include_model: Whether model was included
+                data: The data to cache
+                ttl: Time-to-live in seconds (uses default if None)
+            """
+            cache_key = self._get_cache_key(prompt_identifier, include_model)
+            cache_path = self._get_cache_path(cache_key)
+
+            ttl = ttl or self.default_ttl
+            cache_data = {
+                'data': data,
+                'expires_at': time.time() + ttl,
+                'cached_at': time.time(),
+                'prompt_identifier': prompt_identifier,
+                'include_model': include_model
+            }
+
+            with open(cache_path, 'w') as f:
+                json.dump(cache_data, f, indent=2)
+
+        def clear(self):
+            """Clear all cache files."""
+            for cache_file in self.cache_dir.glob("*.json"):
+                cache_file.unlink()
+
+        def clear_expired(self):
+            """Remove only expired cache files."""
+            current_time = time.time()
+            for cache_file in self.cache_dir.glob("*.json"):
+                try:
+                    with open(cache_file, 'r') as f:
+                        cache_data = json.load(f)
+                    if current_time > cache_data.get('expires_at', 0):
+                        cache_file.unlink()
+                except (json.JSONDecodeError, KeyError, IOError):
+                    cache_file.unlink()
+
     def pull_prompt_commit(
-        self,
-        prompt_identifier: str,
-        *,
-        include_model: Optional[bool] = False,
+            self,
+            prompt_identifier: str,
+            *,
+            include_model: Optional[bool] = False,
+            use_cache: bool = True,
+            cache_ttl: Optional[int] = None,
+            cache_dir: Optional[str] = None,
     ) -> ls_schemas.PromptCommit:
-        """Pull a prompt object from the LangSmith API.
+        """Pull a prompt object from the LangSmith API with optional file system caching.
 
         Args:
             prompt_identifier (str): The identifier of the prompt.
+            include_model (bool, optional): Whether to include the model. Defaults to False.
+            use_cache (bool, optional): Whether to use file system caching. Defaults to True.
+            cache_ttl (int, optional): Cache time-to-live in seconds. Defaults to 3600 (1 hour).
+            cache_dir (str, optional): Directory for cache files. Defaults to ".prompt_cache".
 
         Returns:
             PromptCommit: The prompt object.
@@ -7115,6 +7224,20 @@ class Client:
         Raises:
             ValueError: If no commits are found for the prompt.
         """
+        # Initialize cache if not already done
+        if use_cache:
+            if not hasattr(self, '_prompt_cache'):
+                self._prompt_cache = PromptCache(
+                    cache_dir=cache_dir or ".prompt_cache",
+                    default_ttl=cache_ttl or 3600
+                )
+
+            # Try to get from cache
+            cached_data = self._prompt_cache.get(prompt_identifier, include_model)
+            if cached_data is not None:
+                return ls_schemas.PromptCommit(**cached_data)
+
+        # Parse identifier and make API request
         owner, prompt_name, commit_hash = ls_utils.parse_prompt_identifier(
             prompt_identifier
         )
@@ -7125,9 +7248,20 @@ class Client:
                 f"{'?include_model=true' if include_model else ''}"
             ),
         )
-        return ls_schemas.PromptCommit(
-            **{"owner": owner, "repo": prompt_name, **response.json()}
-        )
+
+        # Prepare response data
+        response_data = {"owner": owner, "repo": prompt_name, **response.json()}
+
+        # Cache the response if caching is enabled
+        if use_cache:
+            self._prompt_cache.set(
+                prompt_identifier,
+                include_model,
+                response_data,
+                ttl=cache_ttl
+            )
+
+        return ls_schemas.PromptCommit(**response_data)
 
     def list_prompt_commits(
         self,
