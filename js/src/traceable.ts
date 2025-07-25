@@ -33,7 +33,7 @@ import {
   isGenerator,
   isPromiseMethod,
 } from "./utils/asserts.js";
-import { getEnvironmentVariable } from "./utils/env.js";
+import { getOtelEnabled } from "./utils/env.js";
 import { __version__ } from "./index.js";
 import { getOTELTrace, getOTELContext } from "./singletons/otel.js";
 import { getUuidFromOtelSpanId } from "./experimental/otel/utils.js";
@@ -41,6 +41,7 @@ import { OTELTracer } from "./experimental/otel/types.js";
 import {
   LANGSMITH_REFERENCE_EXAMPLE_ID,
   LANGSMITH_SESSION_NAME,
+  LANGSMITH_TRACEABLE,
 } from "./experimental/otel/constants.js";
 
 AsyncLocalStorageProviderSingleton.initializeGlobalInstance(
@@ -56,7 +57,7 @@ function maybeCreateOtelContext<T>(
   tracer?: OTELTracer
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): ((fn: (...args: any[]) => T) => T) | undefined {
-  if (!runTree || getEnvironmentVariable("OTEL_ENABLED") !== "true") {
+  if (!runTree || !getOtelEnabled()) {
     return;
   }
 
@@ -68,7 +69,9 @@ function maybeCreateOtelContext<T>(
     return (fn: (...args: any[]) => T) => {
       const resolvedTracer =
         tracer ?? otel_trace.getTracer("langsmith", __version__);
-      const attributes: KVMap = {};
+      const attributes: KVMap = {
+        [LANGSMITH_TRACEABLE]: "true",
+      };
       if (runTree.reference_example_id) {
         attributes[LANGSMITH_REFERENCE_EXAMPLE_ID] =
           runTree.reference_example_id;

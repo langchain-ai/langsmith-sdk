@@ -52,7 +52,8 @@
       "src/singletons/traceable.ts",
       "src/utils/jestlike/index.ts",
       "src/experimental/otel/setup.ts",
-      "src/experimental/otel/exporter.ts"
+      "src/experimental/otel/exporter.ts",
+      "src/experimental/otel/processor.ts"
     ]
   }
 }

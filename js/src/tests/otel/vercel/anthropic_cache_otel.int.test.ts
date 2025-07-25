@@ -11,7 +11,11 @@ import { generateLongContext } from "../../vercel/utils.js";
 // Initialize basic OTEL setup
 import { initializeOTEL } from "../../../experimental/otel/setup.js";
 
-initializeOTEL();
+const { DEFAULT_LANGSMITH_SPAN_PROCESSOR } = initializeOTEL();
+
+afterAll(async () => {
+  await DEFAULT_LANGSMITH_SPAN_PROCESSOR.shutdown();
+});
 
 // Token intensive test, so skipping by default
 describe.skip("Anthropic Cache OTEL Integration Tests", () => {
@@ -20,12 +24,12 @@ describe.skip("Anthropic Cache OTEL Integration Tests", () => {
   });
 
   afterEach(() => {
-    delete process.env.OTEL_ENABLED;
+    delete process.env.LANGSMITH_OTEL_ENABLED;
     delete process.env.LANGSMITH_TRACING;
   });
 
   it("anthropic cache read and write tokens with OTEL exporter", async () => {
-    process.env.OTEL_ENABLED = "true";
+    process.env.LANGSMITH_OTEL_ENABLED = "true";
 
     const meta = uuidv4();
     const client = new Client();

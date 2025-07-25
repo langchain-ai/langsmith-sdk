@@ -264,3 +264,10 @@ export function getShas(): ICommitSHAs {
   cachedCommitSHAs = shas;
   return shas;
 }
+
+export function getOtelEnabled(): boolean {
+  return (
+    getEnvironmentVariable("OTEL_ENABLED") === "true" ||
+    getLangSmithEnvironmentVariable("OTEL_ENABLED") === "true"
+  );
+}
