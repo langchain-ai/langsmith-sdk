@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable no-process-env */
-import { generateText } from "ai";
+import { generateText, streamText } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { v4 as uuidv4 } from "uuid";
 
@@ -18,7 +18,7 @@ afterAll(async () => {
 });
 
 // Token intensive test, so skipping by default
-describe.skip("OpenAI Cache OTEL Integration Tests", () => {
+describe("OpenAI Cache OTEL Integration Tests", () => {
   beforeEach(() => {
     process.env.LANGSMITH_TRACING = "true";
   });
@@ -28,7 +28,7 @@ describe.skip("OpenAI Cache OTEL Integration Tests", () => {
     delete process.env.LANGSMITH_TRACING;
   });
 
-  it("openai cache with large prompt for automatic caching using OTEL", async () => {
+  it.skip("openai cache with large prompt for automatic caching using OTEL", async () => {
     process.env.LANGSMITH_OTEL_ENABLED = "true";
 
     const meta = uuidv4();
@@ -94,6 +94,99 @@ describe.skip("OpenAI Cache OTEL Integration Tests", () => {
       },
       {
         name: "OpenAI Cache Test Wrapper",
+        metadata: { testKey: meta },
+        client,
+      }
+    );
+
+    await wrapper();
+
+    await client.awaitPendingTraceBatches();
+  });
+
+  it.skip("openai cache with streamText using OTEL", async () => {
+    process.env.LANGSMITH_OTEL_ENABLED = "true";
+
+    const meta = uuidv4();
+    const client = new Client();
+    const aiSDKResponses: any[] = [];
+
+    // Create a large prompt (>1024 tokens) to trigger OpenAI's automatic prompt caching
+    const largeProgrammingContext = generateLongContext();
+
+    const wrapper = traceable(
+      async () => {
+        // First call - should create cache due to large prompt (>1024 tokens)
+        try {
+          const { textStream } = streamText({
+            model: openai("gpt-4o-mini"),
+            experimental_telemetry: {
+              isEnabled: true,
+            },
+            messages: [
+              {
+                role: "system",
+                content: largeProgrammingContext,
+              },
+              {
+                role: "user",
+                content:
+                  "What are the top 3 memory optimization strategies you would recommend for this Java service?",
+              },
+            ],
+          });
+
+          let fullText = "";
+          for await (const chunk of textStream) {
+            fullText += chunk;
+          }
+          aiSDKResponses.push({ text: fullText });
+          console.log("Cache create response with streamText");
+        } catch (error) {
+          console.error("Cache create error:", error);
+        }
+
+        // Second call - should read from cache with same large context
+        try {
+          const { textStream } = streamText({
+            model: openai("gpt-4o-mini"),
+            experimental_telemetry: {
+              isEnabled: true,
+            },
+            messages: [
+              {
+                role: "system",
+                content: largeProgrammingContext,
+              },
+              {
+                role: "user",
+                content:
+                  "How would you redesign the database access pattern to reduce connection pool pressure?",
+              },
+            ],
+            providerOptions: {
+              openai: {
+                stream_options: {
+                  include_usage: true,
+                },
+              },
+            },
+          });
+
+          let fullText = "";
+          for await (const chunk of textStream) {
+            fullText += chunk;
+          }
+          aiSDKResponses.push({ text: fullText });
+          console.log("Cache read response with streamText");
+        } catch (error) {
+          console.error("Cache read error:", error);
+        }
+
+        return "OpenAI cache streamText test completed";
+      },
+      {
+        name: "OpenAI Cache StreamText Test Wrapper",
         metadata: { testKey: meta },
         client,
       }
