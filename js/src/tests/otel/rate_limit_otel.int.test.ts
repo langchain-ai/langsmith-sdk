@@ -12,20 +12,26 @@ import { getLangSmithEnvironmentVariable } from "../../utils/env.js";
 
 const client = new Client();
 
+const { DEFAULT_LANGSMITH_SPAN_PROCESSOR } = initializeOTEL();
+
 describe("OTEL Rate Limit Error Tests", () => {
   beforeEach(() => {
     // Initialize native OTEL exporter
     initializeOTEL();
 
     // Enable OTEL tracing
-    process.env.OTEL_ENABLED = "true";
+    process.env.LANGSMITH_OTEL_ENABLED = "true";
     process.env.LANGCHAIN_TRACING = "true";
   });
 
   afterEach(() => {
     // Clean up environment
-    delete process.env.OTEL_ENABLED;
+    delete process.env.LANGSMITH_OTEL_ENABLED;
     delete process.env.LANGCHAIN_TRACING;
+  });
+
+  afterAll(async () => {
+    await DEFAULT_LANGSMITH_SPAN_PROCESSOR.shutdown();
   });
 
   test("rate limit errors with native OTEL exporter", async () => {

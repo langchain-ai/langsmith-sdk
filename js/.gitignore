@@ -111,6 +111,10 @@ Chinook_Sqlite.sql
 /experimental/otel/exporter.js
 /experimental/otel/exporter.d.ts
 /experimental/otel/exporter.d.cts
+/experimental/otel/processor.cjs
+/experimental/otel/processor.js
+/experimental/otel/processor.d.ts
+/experimental/otel/processor.d.cts
 /index.cjs
 /index.js
 /index.d.ts

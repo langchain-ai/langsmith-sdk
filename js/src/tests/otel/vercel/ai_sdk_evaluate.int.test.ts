@@ -10,16 +10,18 @@ import type { Run } from "../../../schemas.js";
 // Initialize basic OTEL setup
 import { initializeOTEL } from "../../../experimental/otel/setup.js";
 
-initializeOTEL();
+const { DEFAULT_LANGSMITH_SPAN_PROCESSOR } = initializeOTEL();
 
 beforeAll(() => {
   process.env.LANGSMITH_TRACING = "true";
-  process.env.OTEL_ENABLED = "true";
+  process.env.LANGSMITH_OTEL_ENABLED = "true";
 });
 
-afterAll(() => {
-  delete process.env.OTEL_ENABLED;
+afterAll(async () => {
+  delete process.env.LANGSMITH_OTEL_ENABLED;
   delete process.env.LANGSMITH_TRACING;
+
+  await DEFAULT_LANGSMITH_SPAN_PROCESSOR.shutdown();
 });
 
 describe.skip("AI SDK Evaluate Integration with OTEL", () => {
