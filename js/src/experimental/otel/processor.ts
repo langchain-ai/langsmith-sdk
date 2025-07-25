@@ -46,11 +46,6 @@ export class LangSmithOTLPSpanProcessor extends BatchSpanProcessor {
     super(...args);
   }
 
-  async forceFlush() {
-    await RunTree.getSharedClient().awaitPendingTraceBatches();
-    await super.forceFlush();
-  }
-
   onStart(span: Span, parentContext: Context): void {
     if (!this.traceMap[span.spanContext().traceId]) {
       this.traceMap[span.spanContext().traceId] = {
@@ -108,5 +103,10 @@ export class LangSmithOTLPSpanProcessor extends BatchSpanProcessor {
     if (spanInfo.isTraceable) {
       super.onEnd(span);
     }
+  }
+
+  async shutdown() {
+    await RunTree.getSharedClient().awaitPendingTraceBatches();
+    await super.shutdown();
   }
 }
