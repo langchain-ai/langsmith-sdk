@@ -10,6 +10,7 @@ import {
   LANGSMITH_TRACEABLE,
 } from "./constants.js";
 import { getUuidFromOtelSpanId } from "./utils.js";
+import { RunTree } from "../../run_trees.js";
 
 export function isTraceableSpan(span: ReadableSpan): boolean {
   return (
@@ -31,7 +32,7 @@ type TraceInfo = {
     string,
     { isTraceable: boolean; parentSpanId: string | undefined }
   >;
-  lastAccessed: number;
+  spanCount: number;
 };
 
 /**
@@ -41,42 +42,23 @@ type TraceInfo = {
 export class LangSmithOTLPSpanProcessor extends BatchSpanProcessor {
   private traceMap: Record<string, TraceInfo> = {};
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private cleanupInterval: any;
-
-  private TRACE_TTL_MS = 10 * 60 * 1000; // 10 minutes
-
   constructor(...args: ConstructorParameters<typeof BatchSpanProcessor>) {
     super(...args);
-    // We must use a cleanup interval because LangSmith can start child spans
-    // after arbitrary OTEL parent spans have ended since it uses batching.
-    this.cleanupInterval = setInterval(() => this.cleanupStaleTraces(), 60000);
   }
 
-  private cleanupStaleTraces(): void {
-    const now = Date.now();
-    for (const [traceId, traceInfo] of Object.entries(this.traceMap)) {
-      if (now - traceInfo.lastAccessed > this.TRACE_TTL_MS) {
-        delete this.traceMap[traceId];
-      }
-    }
-  }
-
-  shutdown(): Promise<void> {
-    if (this.cleanupInterval) {
-      clearInterval(this.cleanupInterval);
-    }
-    return super.shutdown();
+  async forceFlush() {
+    await RunTree.getSharedClient().awaitPendingTraceBatches();
+    await super.forceFlush();
   }
 
   onStart(span: Span, parentContext: Context): void {
     if (!this.traceMap[span.spanContext().traceId]) {
       this.traceMap[span.spanContext().traceId] = {
         spanInfo: {},
-        lastAccessed: Date.now(),
+        spanCount: 0,
       };
     }
-    this.traceMap[span.spanContext().traceId].lastAccessed = Date.now();
+    this.traceMap[span.spanContext().traceId].spanCount++;
     const isTraceable = isTraceableSpan(span);
     const parentSpanId = getParentSpanId(span);
     this.traceMap[span.spanContext().traceId].spanInfo[
@@ -114,9 +96,14 @@ export class LangSmithOTLPSpanProcessor extends BatchSpanProcessor {
     const traceInfo = this.traceMap[span.spanContext().traceId];
     if (!traceInfo) return;
 
-    traceInfo.lastAccessed = Date.now();
     const spanInfo = traceInfo.spanInfo[span.spanContext().spanId];
     if (!spanInfo) return;
+
+    // Decrement span count and cleanup trace if all spans are done
+    traceInfo.spanCount--;
+    if (traceInfo.spanCount <= 0) {
+      delete this.traceMap[span.spanContext().traceId];
+    }
 
     if (spanInfo.isTraceable) {
       super.onEnd(span);
