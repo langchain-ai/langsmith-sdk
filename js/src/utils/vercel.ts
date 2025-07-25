@@ -1,6 +1,9 @@
 import { KVMap } from "../schemas.js";
 
-function extractInputTokenDetails(providerMetadata: Record<string, unknown>) {
+function extractInputTokenDetails(
+  providerMetadata: Record<string, unknown>,
+  spanAttributes?: Record<string, unknown>
+) {
   const inputTokenDetails: Record<string, number> = {};
   if (
     providerMetadata.anthropic != null &&
@@ -31,6 +34,11 @@ function extractInputTokenDetails(providerMetadata: Record<string, unknown>) {
       typeof openai.cachedPromptTokens === "number"
     ) {
       inputTokenDetails.cache_read = openai.cachedPromptTokens;
+    } else if (
+      typeof spanAttributes?.["ai.usage.cachedInputTokens"] === "number"
+    ) {
+      inputTokenDetails.cache_read =
+        spanAttributes["ai.usage.cachedInputTokens"];
     }
   }
   return inputTokenDetails;
@@ -55,12 +63,22 @@ export function extractUsageMetadata(span?: {
     total_tokens: 0,
   };
 
-  if (typeof span.attributes["ai.usage.promptTokens"] === "number") {
-    usageMetadata.input_tokens = span.attributes["ai.usage.promptTokens"];
+  if (
+    typeof span.attributes["ai.usage.promptTokens"] === "number" ||
+    typeof span.attributes["ai.usage.inputTokens"] === "number"
+  ) {
+    usageMetadata.input_tokens =
+      span.attributes["ai.usage.promptTokens"] ??
+      span.attributes["ai.usage.inputTokens"];
   }
 
-  if (typeof span.attributes["ai.usage.completionTokens"] === "number") {
-    usageMetadata.output_tokens = span.attributes["ai.usage.completionTokens"];
+  if (
+    typeof span.attributes["ai.usage.completionTokens"] === "number" ||
+    typeof span.attributes["ai.usage.outputTokens"] === "number"
+  ) {
+    usageMetadata.output_tokens =
+      span.attributes["ai.usage.completionTokens"] ??
+      span.attributes["ai.usage.outputTokens"];
   }
 
   if (typeof span.attributes["ai.response.providerMetadata"] === "string") {
@@ -68,8 +86,10 @@ export function extractUsageMetadata(span?: {
       const providerMetadata = JSON.parse(
         span.attributes["ai.response.providerMetadata"]
       );
-      usageMetadata.input_token_details =
-        extractInputTokenDetails(providerMetadata);
+      usageMetadata.input_token_details = extractInputTokenDetails(
+        providerMetadata,
+        span.attributes
+      );
       if (
         providerMetadata.anthropic != null &&
         typeof providerMetadata.anthropic === "object"

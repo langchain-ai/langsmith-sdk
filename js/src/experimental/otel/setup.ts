@@ -8,14 +8,12 @@ import {
   type TracerProvider,
   type ContextManager,
 } from "@opentelemetry/api";
-import {
-  BatchSpanProcessor,
-  BasicTracerProvider,
-} from "@opentelemetry/sdk-trace-base";
+import { BasicTracerProvider } from "@opentelemetry/sdk-trace-base";
 import {
   LangSmithOTLPTraceExporter,
   LangSmithOTLPTraceExporterConfig,
 } from "./exporter.js";
+import { LangSmithOTLPSpanProcessor } from "./processor.js";
 
 import {
   setDefaultOTLPTracerComponents,
@@ -36,6 +34,12 @@ export type InitializeOTELConfig = {
    * creating and globally setting a new one with AsyncHooksContextManager.
    */
   globalContextManager?: ContextManager;
+  /**
+   * Skip automatic initialization of a global context manager.
+   *
+   * @default false
+   */
+  skipGlobalContextManagerSetup?: boolean;
   /**
    * Optional configuration passed to the default LangSmith OTLP trace exporter.
    */
@@ -74,7 +78,12 @@ export type InitializeOTELConfig = {
  * ```
  */
 export const initializeOTEL = (config: InitializeOTELConfig = {}) => {
-  const { globalTracerProvider, globalContextManager, exporterConfig } = config;
+  const {
+    globalTracerProvider,
+    globalContextManager,
+    skipGlobalContextManagerSetup,
+    exporterConfig,
+  } = config;
 
   const otel = {
     trace: otel_trace,
@@ -83,17 +92,27 @@ export const initializeOTEL = (config: InitializeOTELConfig = {}) => {
 
   setOTELInstances(otel);
 
-  if (!globalContextManager) {
-    const contextManager = new AsyncHooksContextManager();
-    contextManager.enable();
-    otel_context.setGlobalContextManager(contextManager);
+  if (!globalContextManager && !skipGlobalContextManagerSetup) {
+    try {
+      const contextManager = new AsyncHooksContextManager();
+      contextManager.enable();
+      otel_context.setGlobalContextManager(contextManager);
+    } catch (e) {
+      console.log(
+        [
+          `Could not automatically set up an OTEL context manager.`,
+          `This may be expected if you have (or another imported library has) already set a global context manager.`,
+          `If expected, you can skip this warning by passing "skipGlobalContextManagerSetup: true" into your initializeOTEL call.`,
+        ].join("\n")
+      );
+    }
   }
 
   const DEFAULT_LANGSMITH_SPAN_EXPORTER = new LangSmithOTLPTraceExporter(
     exporterConfig
   );
 
-  const DEFAULT_LANGSMITH_SPAN_PROCESSOR = new BatchSpanProcessor(
+  const DEFAULT_LANGSMITH_SPAN_PROCESSOR = new LangSmithOTLPSpanProcessor(
     DEFAULT_LANGSMITH_SPAN_EXPORTER
   );
 
