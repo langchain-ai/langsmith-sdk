@@ -27,6 +27,7 @@ const entrypoints = {
   "utils/jestlike": "utils/jestlike/index",
   "experimental/otel/setup": "experimental/otel/setup",
   "experimental/otel/exporter": "experimental/otel/exporter",
+  "experimental/otel/processor": "experimental/otel/processor",
 };
 
 const defaultEntrypoints = [

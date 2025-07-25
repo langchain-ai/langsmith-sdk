@@ -85,6 +85,10 @@
     "experimental/otel/exporter.js",
     "experimental/otel/exporter.d.ts",
     "experimental/otel/exporter.d.cts",
+    "experimental/otel/processor.cjs",
+    "experimental/otel/processor.js",
+    "experimental/otel/processor.d.ts",
+    "experimental/otel/processor.d.cts",
     "index.cjs",
     "index.js",
     "index.d.ts",
@@ -396,6 +400,15 @@
       },
       "import": "./experimental/otel/exporter.js",
       "require": "./experimental/otel/exporter.cjs"
+    },
+    "./experimental/otel/processor": {
+      "types": {
+        "import": "./experimental/otel/processor.d.ts",
+        "require": "./experimental/otel/processor.d.cts",
+        "default": "./experimental/otel/processor.d.ts"
+      },
+      "import": "./experimental/otel/processor.js",
+      "require": "./experimental/otel/processor.cjs"
     },
     "./package.json": "./package.json"
   }
