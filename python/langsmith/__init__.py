@@ -105,6 +105,10 @@ def __getattr__(name: str) -> Any:
         from langsmith.utils import ContextThreadPoolExecutor
 
         return ContextThreadPoolExecutor
+    elif name == "configure":
+        from langsmith.run_trees import configure
+
+        return configure
 
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 

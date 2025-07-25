@@ -3,7 +3,7 @@
 /* eslint-disable no-process-env */
 import { jest } from "@jest/globals";
 import { v4 as uuidv4 } from "uuid";
-import { Client, mergeRuntimeEnvIntoRunCreate } from "../client.js";
+import { Client, mergeRuntimeEnvIntoRun } from "../client.js";
 import { convertToDottedOrderFormat } from "../run_trees.js";
 import { RunCreate } from "../schemas.js";
 
@@ -757,7 +757,7 @@ describe.each(ENDPOINT_TYPES)(
             new Date().getTime() / 1000,
             runId
           );
-          const params = mergeRuntimeEnvIntoRunCreate({
+          const params = mergeRuntimeEnvIntoRun({
             id: runId,
             project_name: projectName,
             name: "test_run " + i,
@@ -855,7 +855,7 @@ describe.each(ENDPOINT_TYPES)(
             new Date().getTime() / 1000,
             runId
           );
-          const params = mergeRuntimeEnvIntoRunCreate({
+          const params = mergeRuntimeEnvIntoRun({
             id: runId,
             project_name: projectName,
             name: "test_run " + i,
@@ -881,7 +881,7 @@ describe.each(ENDPOINT_TYPES)(
             new Date().getTime() / 1000,
             runId
           );
-          const params = mergeRuntimeEnvIntoRunCreate({
+          const params = mergeRuntimeEnvIntoRun({
             id: runId,
             project_name: projectName,
             name: "test_child_run " + i,
@@ -987,7 +987,7 @@ describe.each(ENDPOINT_TYPES)(
             new Date().getTime() / 1000,
             runId
           );
-          const params = mergeRuntimeEnvIntoRunCreate({
+          const params = mergeRuntimeEnvIntoRun({
             id: runId,
             project_name: projectName,
             name: "test_run " + i,
