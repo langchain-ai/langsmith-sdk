@@ -8,14 +8,12 @@ import {
   type TracerProvider,
   type ContextManager,
 } from "@opentelemetry/api";
-import {
-  BatchSpanProcessor,
-  BasicTracerProvider,
-} from "@opentelemetry/sdk-trace-base";
+import { BasicTracerProvider } from "@opentelemetry/sdk-trace-base";
 import {
   LangSmithOTLPTraceExporter,
   LangSmithOTLPTraceExporterConfig,
 } from "./exporter.js";
+import { LangSmithOTLPSpanProcessor } from "./processor.js";
 
 import {
   setDefaultOTLPTracerComponents,
@@ -114,7 +112,7 @@ export const initializeOTEL = (config: InitializeOTELConfig = {}) => {
     exporterConfig
   );
 
-  const DEFAULT_LANGSMITH_SPAN_PROCESSOR = new BatchSpanProcessor(
+  const DEFAULT_LANGSMITH_SPAN_PROCESSOR = new LangSmithOTLPSpanProcessor(
     DEFAULT_LANGSMITH_SPAN_EXPORTER
   );
 

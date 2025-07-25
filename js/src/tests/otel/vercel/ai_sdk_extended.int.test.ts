@@ -12,16 +12,17 @@ import { toArray, waitUntilRunFoundByMetaField } from "../../utils.js";
 // Initialize basic OTEL setup
 import { initializeOTEL } from "../../../experimental/otel/setup.js";
 
-initializeOTEL();
+const { DEFAULT_LANGSMITH_SPAN_PROCESSOR } = initializeOTEL();
 
 describe("AI SDK Streaming Integration", () => {
   beforeAll(() => {
     process.env.LANGSMITH_TRACING = "true";
   });
 
-  afterAll(() => {
+  afterAll(async () => {
     delete process.env.LANGSMITH_OTEL_ENABLED;
     delete process.env.LANGSMITH_TRACING;
+    await DEFAULT_LANGSMITH_SPAN_PROCESSOR.shutdown();
   });
 
   it("works with streamText", async () => {

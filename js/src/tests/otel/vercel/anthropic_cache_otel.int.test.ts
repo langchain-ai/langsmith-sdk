@@ -11,7 +11,11 @@ import { generateLongContext } from "../../vercel/utils.js";
 // Initialize basic OTEL setup
 import { initializeOTEL } from "../../../experimental/otel/setup.js";
 
-initializeOTEL();
+const { DEFAULT_LANGSMITH_SPAN_PROCESSOR } = initializeOTEL();
+
+afterAll(async () => {
+  await DEFAULT_LANGSMITH_SPAN_PROCESSOR.shutdown();
+});
 
 // Token intensive test, so skipping by default
 describe.skip("Anthropic Cache OTEL Integration Tests", () => {
