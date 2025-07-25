@@ -7148,7 +7148,7 @@ class Client:
                     cache_data = json.load(f)
 
                 # Check if cache has expired
-                if time.time() > cache_data['expires_at']:
+                if cache_data['expires_at'] and time.time() > cache_data['expires_at']:
                     cache_path.unlink()  # Delete expired cache
                     return None
 
@@ -7171,10 +7171,10 @@ class Client:
             cache_key = self._get_cache_key(prompt_identifier, include_model)
             cache_path = self._get_cache_path(cache_key)
 
-            ttl = ttl or self.default_ttl
+            ttl = ttl or None
             cache_data = {
                 'data': data,
-                'expires_at': time.time() + ttl,
+                'expires_at': time.time() + ttl if ttl else '',
                 'cached_at': time.time(),
                 'prompt_identifier': prompt_identifier,
                 'include_model': include_model
@@ -7182,23 +7182,6 @@ class Client:
 
             with open(cache_path, 'w') as f:
                 json.dump(cache_data, f, indent=2)
-
-        def clear(self):
-            """Clear all cache files."""
-            for cache_file in self.cache_dir.glob("*.json"):
-                cache_file.unlink()
-
-        def clear_expired(self):
-            """Remove only expired cache files."""
-            current_time = time.time()
-            for cache_file in self.cache_dir.glob("*.json"):
-                try:
-                    with open(cache_file, 'r') as f:
-                        cache_data = json.load(f)
-                    if current_time > cache_data.get('expires_at', 0):
-                        cache_file.unlink()
-                except (json.JSONDecodeError, KeyError, IOError):
-                    cache_file.unlink()
 
     def pull_prompt_commit(
             self,
