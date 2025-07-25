@@ -18,7 +18,7 @@ afterAll(async () => {
 });
 
 // Token intensive test, so skipping by default
-describe("OpenAI Cache OTEL Integration Tests", () => {
+describe.skip("OpenAI Cache OTEL Integration Tests", () => {
   beforeEach(() => {
     process.env.LANGSMITH_TRACING = "true";
   });
