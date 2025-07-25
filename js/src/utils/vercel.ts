@@ -55,12 +55,22 @@ export function extractUsageMetadata(span?: {
     total_tokens: 0,
   };
 
-  if (typeof span.attributes["ai.usage.promptTokens"] === "number") {
-    usageMetadata.input_tokens = span.attributes["ai.usage.promptTokens"];
+  if (
+    typeof span.attributes["ai.usage.promptTokens"] === "number" ||
+    typeof span.attributes["ai.usage.inputTokens"] === "number"
+  ) {
+    usageMetadata.input_tokens =
+      span.attributes["ai.usage.promptTokens"] ??
+      span.attributes["ai.usage.inputTokens"];
   }
 
-  if (typeof span.attributes["ai.usage.completionTokens"] === "number") {
-    usageMetadata.output_tokens = span.attributes["ai.usage.completionTokens"];
+  if (
+    typeof span.attributes["ai.usage.completionTokens"] === "number" ||
+    typeof span.attributes["ai.usage.outputTokens"] === "number"
+  ) {
+    usageMetadata.output_tokens =
+      span.attributes["ai.usage.completionTokens"] ??
+      span.attributes["ai.usage.outputTokens"];
   }
 
   if (typeof span.attributes["ai.response.providerMetadata"] === "string") {

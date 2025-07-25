@@ -72,6 +72,9 @@ describe("AI SDK Streaming Integration", () => {
     expect(
       runWithChildren.child_runs?.some((run) => run.name === "ai.streamText")
     ).toBe(true);
+    expect(runWithChildren.prompt_tokens).toBeGreaterThan(0);
+    expect(runWithChildren.completion_tokens).toBeGreaterThan(0);
+    expect(runWithChildren.total_tokens).toBeGreaterThan(0);
   });
 
   it("works with generateObject", async () => {
