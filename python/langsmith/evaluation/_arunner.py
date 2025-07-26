@@ -390,31 +390,40 @@ async def aevaluate_existing(
 
         Load the experiment and run the evaluation.
 
-        >>> from langsmith import aevaluate, aevaluate_existing  # doctest: +SKIP
-        >>> dataset_name = "Evaluate Examples"  # doctest: +SKIP
-        >>> async def apredict(inputs: dict) -> dict:  # doctest: +SKIP
-        ...     # This can be any async function or just an API call to your app.  # doctest: +SKIP
-        ...     await asyncio.sleep(0.1)  # doctest: +SKIP
-        ...     return {"output": "Yes"}  # doctest: +SKIP
-        >>> # First run inference on the dataset  # doctest: +SKIP
-        ... results = asyncio.run(  # doctest: +SKIP
-        ...     aevaluate(  # doctest: +SKIP
-        ...         apredict,  # doctest: +SKIP
-        ...         data=dataset_name,  # doctest: +SKIP
-        ...     )  # doctest: +SKIP
-        ... )  # doctest: +ELLIPSIS +SKIP
+        >>> import asyncio
+        >>> import uuid
+        >>> from langsmith import Client, aevaluate, aevaluate_existing
+        >>> client = Client()
+        >>> dataset_name = "__doctest_aevaluate_existing_" + uuid.uuid4().hex[:8]
+        >>> dataset = client.create_dataset(dataset_name)
+        >>> example = client.create_example(
+        ...     inputs={"question": "What is 2+2?"},
+        ...     outputs={"answer": "4"},
+        ...     dataset_id=dataset.id
+        ... )
+        >>> async def apredict(inputs: dict) -> dict:
+        ...     await asyncio.sleep(0.001)
+        ...     return {"output": "4"}
+        >>> results = asyncio.run(
+        ...     aevaluate(
+        ...         apredict,
+        ...         data=dataset_name,
+        ...         experiment_prefix="doctest_experiment"
+        ...     )
+        ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
-
-        Then evaluate the results
-        >>> experiment_name = "My Experiment:64e6e91"  # Or manually specify  # doctest: +SKIP
-        >>> results = asyncio.run(  # doctest: +SKIP
-        ...     aevaluate_existing(  # doctest: +SKIP
-        ...         experiment_name,  # doctest: +SKIP
-        ...         evaluators=[accuracy],  # doctest: +SKIP
-        ...         summary_evaluators=[precision],  # doctest: +SKIP
-        ...     )  # doctest: +SKIP
-        ... )  # doctest: +ELLIPSIS +SKIP
+        >>> experiment_id = results.experiment_name
+        >>> import time
+        >>> time.sleep(1)
+        >>> results = asyncio.run(
+        ...     aevaluate_existing(
+        ...         experiment_id,
+        ...         evaluators=[accuracy],
+        ...         summary_evaluators=[precision],
+        ...     )
+        ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
+        >>> client.delete_dataset(dataset_id=dataset.id)
 
 
     """  # noqa: E501
