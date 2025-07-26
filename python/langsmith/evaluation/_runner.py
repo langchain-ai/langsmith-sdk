@@ -476,11 +476,30 @@ def evaluate_existing(
             Requires the 'langsmith[vcr]' package to be installed.
 
     Examples:
+        Define your evaluators
+
+        >>> from typing import Sequence
+        >>> from langsmith.schemas import Example, Run
+        >>> def accuracy(run: Run, example: Example):
+        ...     # Row-level evaluator for accuracy.
+        ...     pred = run.outputs["output"]
+        ...     expected = example.outputs["answer"]
+        ...     return {"score": expected.lower() == pred.lower()}
+        >>> def precision(runs: Sequence[Run], examples: Sequence[Example]):
+        ...     # Experiment-level evaluator for precision.
+        ...     # TP / (TP + FP)
+        ...     predictions = [run.outputs["output"].lower() for run in runs]
+        ...     expected = [example.outputs["answer"].lower() for example in examples]
+        ...     # yes and no are the only possible answers
+        ...     tp = sum([p == e for p, e in zip(predictions, expected) if p == "yes"])
+        ...     fp = sum([p == "yes" and e == "no" for p, e in zip(predictions, expected)])
+        ...     return {"score": tp / (tp + fp)}
+
+        Load the experiment and run the evaluation.
+
         >>> import uuid
         >>> from langsmith import Client
         >>> from langsmith.evaluation import evaluate, evaluate_existing
-        >>> from langsmith.schemas import Example, Run
-        >>> from typing import Sequence
         >>> client = Client()
         >>> dataset_name = "__doctest_evaluate_existing_" + uuid.uuid4().hex[:8]
         >>> dataset = client.create_dataset(dataset_name)
@@ -498,24 +517,12 @@ def evaluate_existing(
         ...     experiment_prefix="doctest_experiment"
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
-        >>> # Then apply evaluators to the experiment
-        ... def accuracy(run: Run, example: Example):
-        ...     # Row-level evaluator for accuracy.
-        ...     pred = run.outputs["output"]
-        ...     expected = example.outputs["answer"]
-        ...     return {"score": expected.lower() == pred.lower()}
-        >>> def precision(runs: Sequence[Run], examples: Sequence[Example]):
-        ...     # Experiment-level evaluator for precision.
-        ...     # TP / (TP + FP)
-        ...     predictions = [run.outputs["output"].lower() for run in runs]
-        ...     expected = [example.outputs["answer"].lower() for example in examples]
-        ...     # yes and no are the only possible answers
-        ...     tp = sum([p == e for p, e in zip(predictions, expected) if p == "yes"])
-        ...     fp = sum([p == "yes" and e == "no" for p, e in zip(predictions, expected)])
-        ...     return {"score": tp / (tp + fp)}
         >>> experiment_id = results.experiment_name
+        >>> # Wait for the experiment to be fully processed and check if we have results
+        >>> len(results) > 0
+        True
         >>> import time
-        >>> time.sleep(1)
+        >>> time.sleep(2)
         >>> results = evaluate_existing(
         ...     experiment_id,
         ...     evaluators=[accuracy],
