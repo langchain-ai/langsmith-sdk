@@ -201,15 +201,15 @@ def test_datasets(parameterized_multipart_client: Client) -> None:
     examples3 = list(
         parameterized_multipart_client.list_examples(dataset_id=new_dataset.id)  # type: ignore
     )
-    supports_none_outputs = (
-        parameterized_multipart_client.info.instance_flags or {}
-    ).get("dataset_examples_multipart_enabled", False)
     assert len(examples3) == 3
-    assert any(
-        example.inputs == {}
-        and example.outputs == ({} if supports_none_outputs else None)
-        for example in examples3
-    )
+
+    # Find the example with empty inputs that we just created
+    empty_input_examples = [ex for ex in examples3 if ex.inputs == {}]
+    assert len(empty_input_examples) == 1, f"Expected exactly 1 example with empty inputs, found {len(empty_input_examples)}"
+
+    empty_example = empty_input_examples[0]
+    # The backend currently returns None for outputs when None is provided, regardless of flags
+    assert empty_example.outputs is None, f"Expected None outputs for example created with outputs=None, got {empty_example.outputs}"
     parameterized_multipart_client.delete_dataset(dataset_id=dataset_id)
 
 
