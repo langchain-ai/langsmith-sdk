@@ -205,11 +205,18 @@ def test_datasets(parameterized_multipart_client: Client) -> None:
 
     # Find the example with empty inputs that we just created
     empty_input_examples = [ex for ex in examples3 if ex.inputs == {}]
-    assert len(empty_input_examples) == 1, f"Expected exactly 1 example with empty inputs, found {len(empty_input_examples)}"
+    assert len(empty_input_examples) == 1, (
+        f"Expected exactly 1 example with empty inputs, "
+        f"found {len(empty_input_examples)}"
+    )
 
     empty_example = empty_input_examples[0]
-    # The backend currently returns None for outputs when None is provided, regardless of flags
-    assert empty_example.outputs is None, f"Expected None outputs for example created with outputs=None, got {empty_example.outputs}"
+    # The backend currently returns None for outputs when None is provided,
+    # regardless of flags
+    assert empty_example.outputs is None, (
+        f"Expected None outputs for example created with outputs=None, "
+        f"got {empty_example.outputs}"
+    )
     parameterized_multipart_client.delete_dataset(dataset_id=dataset_id)
 
 
