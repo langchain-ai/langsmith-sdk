@@ -476,15 +476,26 @@ def evaluate_existing(
             Requires the 'langsmith[vcr]' package to be installed.
 
     Examples:
+        >>> import uuid
+        >>> from langsmith import Client
         >>> from langsmith.evaluation import evaluate, evaluate_existing
-        >>> dataset_name = "Evaluate Examples"
+        >>> from langsmith.schemas import Example, Run
+        >>> from typing import Sequence
+        >>> client = Client()
+        >>> dataset_name = "__doctest_evaluate_existing_" + uuid.uuid4().hex[:8]
+        >>> dataset = client.create_dataset(dataset_name)
+        >>> example = client.create_example(
+        ...     inputs={"question": "What is 2+2?"},
+        ...     outputs={"answer": "4"},
+        ...     dataset_id=dataset.id
+        ... )
         >>> def predict(inputs: dict) -> dict:
-        ...     # This can be any function or just an API call to your app.
-        ...     return {"output": "Yes"}
+        ...     return {"output": "4"}
         >>> # First run inference on the dataset
         ... results = evaluate(
         ...     predict,
         ...     data=dataset_name,
+        ...     experiment_prefix="doctest_experiment"
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
         >>> # Then apply evaluators to the experiment
@@ -502,15 +513,16 @@ def evaluate_existing(
         ...     tp = sum([p == e for p, e in zip(predictions, expected) if p == "yes"])
         ...     fp = sum([p == "yes" and e == "no" for p, e in zip(predictions, expected)])
         ...     return {"score": tp / (tp + fp)}
-        >>> experiment_name = (
-        ...     results.experiment_name
-        ... )  # Can use the returned experiment name
-        >>> experiment_name = "My Experiment:64e6e91"  # Or manually specify
+        >>> experiment_id = results.experiment_name
+        >>> import time
+        >>> time.sleep(1)
         >>> results = evaluate_existing(
-        ...     experiment_name,
+        ...     experiment_id,
+        ...     evaluators=[accuracy],
         ...     summary_evaluators=[precision],
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
+        >>> client.delete_dataset(dataset_id=dataset.id)
     """  # noqa: E501
     client = client or rt.get_cached_client(timeout_ms=(20_000, 90_001))
     project = _load_experiment(experiment, client)
