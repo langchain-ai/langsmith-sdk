@@ -1982,6 +1982,9 @@ async def test_aevaluate_with_attachments(langchain_client: Client) -> None:
     )
 
     assert len(results) == 10
+    # Consume all results to ensure evaluation is complete before cleanup
+    async for result in results:
+        pass
 
     langchain_client.delete_dataset(dataset_name=dataset_name)
 
