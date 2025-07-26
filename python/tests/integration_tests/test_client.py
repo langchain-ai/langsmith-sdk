@@ -2754,7 +2754,7 @@ def test_bulk_update_examples_with_attachments_operations(
     langchain_client.delete_dataset(dataset_id=dataset.id)
 
 
-def test_examples_multipart_attachment_path(langchain_client: Client) -> None:
+def test_examples_multipart_attachment_path(langchain_client: Client, caplog: pytest.LogCaptureFixture) -> None:
     """Test uploading examples with attachments via multipart endpoint."""
     dataset_name = "__test_upload_examples_multipart" + uuid4().hex[:4]
     dataset = _create_dataset(langchain_client, dataset_name)
@@ -2861,13 +2861,16 @@ def test_examples_multipart_attachment_path(langchain_client: Client) -> None:
         },
     )
 
-    with pytest.raises(FileNotFoundError) as exc_info:
-        langchain_client.upload_examples_multipart(
+    # Test that missing files are skipped with a warning (like unit tests expect)
+    with caplog.at_level(logging.WARNING, logger="langsmith.client"):
+        result = langchain_client.upload_examples_multipart(
             dataset_id=dataset.id,
             uploads=[example_wrong_path],
             dangerously_allow_filesystem=True,
         )
-    assert "test_data/not-a-real-file.txt" in str(exc_info.value)
+        # Should succeed but skip the missing file
+        assert result["count"] == 1  # Example is created but without the missing attachment
+        assert "Attachment file not found" in caplog.text
 
     # Clean up
     langchain_client.delete_dataset(dataset_id=dataset.id)
