@@ -413,8 +413,14 @@ async def aevaluate_existing(
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
         >>> experiment_id = results.experiment_name
+        >>> # Consume all results to ensure evaluation is complete
+        >>> async def consume_results():
+        ...     result_list = [r async for r in results]
+        ...     return len(result_list) > 0
+        >>> asyncio.run(consume_results())
+        True
         >>> import time
-        >>> time.sleep(1)
+        >>> time.sleep(3)
         >>> results = asyncio.run(
         ...     aevaluate_existing(
         ...         experiment_id,
