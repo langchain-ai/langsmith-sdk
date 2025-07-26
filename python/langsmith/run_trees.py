@@ -107,9 +107,9 @@ def configure(
 
         Set global trace masking:
         >>> def hide_keys(data):
-            if not data:
-                return {}
-            return {k: v for k, v in data.items() if k not in ["key1", "key2"]}
+        ...     if not data:
+        ...         return {}
+        ...     return {k: v for k, v in data.items() if k not in ["key1", "key2"]}
         >>> ls.configure(
         ...     client=ls.Client(
         ...         hide_inputs=hide_keys,
