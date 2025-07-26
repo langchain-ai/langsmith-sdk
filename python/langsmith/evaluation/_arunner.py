@@ -390,30 +390,31 @@ async def aevaluate_existing(
 
         Load the experiment and run the evaluation.
 
-        >>> import asyncio
-        >>> from langsmith import aevaluate, aevaluate_existing
-        >>> from langsmith.schemas import Example, Run
-        >>> # Create a mock dataset and experiment for demonstration
-        >>> dataset_name = "__doctest_dataset"
-        >>> async def apredict(inputs: dict) -> dict:
-        ...     # This can be any async function or just an API call to your app.
-        ...     await asyncio.sleep(0.001)  # Minimal sleep for demo
-        ...     return {"output": "Yes"}
-        >>>
-        >>> # For this example, we'll create a mock experiment ID
-        >>> # In practice, you would get this from running aevaluate first
-        >>> experiment_id = "00000000-0000-0000-0000-000000000000"
-        >>>
-        >>> # Note: This example requires a real dataset and experiment to work
-        >>> # results = asyncio.run(
-        >>> #     aevaluate_existing(
-        >>> #         experiment_id,
-        >>> #         evaluators=[accuracy],
-        >>> #         summary_evaluators=[precision],
-        >>> #     )
-        >>> # )
-        >>> print("aevaluate_existing would evaluate the existing experiment")
-        aevaluate_existing would evaluate the existing experiment
+        >>> from langsmith import aevaluate, aevaluate_existing  # doctest: +SKIP
+        >>> dataset_name = "Evaluate Examples"  # doctest: +SKIP
+        >>> async def apredict(inputs: dict) -> dict:  # doctest: +SKIP
+        ...     # This can be any async function or just an API call to your app.  # doctest: +SKIP
+        ...     await asyncio.sleep(0.1)  # doctest: +SKIP
+        ...     return {"output": "Yes"}  # doctest: +SKIP
+        >>> # First run inference on the dataset  # doctest: +SKIP
+        ... results = asyncio.run(  # doctest: +SKIP
+        ...     aevaluate(  # doctest: +SKIP
+        ...         apredict,  # doctest: +SKIP
+        ...         data=dataset_name,  # doctest: +SKIP
+        ...     )  # doctest: +SKIP
+        ... )  # doctest: +ELLIPSIS +SKIP
+        View the evaluation results for experiment:...
+
+        Then evaluate the results
+        >>> experiment_name = "My Experiment:64e6e91"  # Or manually specify  # doctest: +SKIP
+        >>> results = asyncio.run(  # doctest: +SKIP
+        ...     aevaluate_existing(  # doctest: +SKIP
+        ...         experiment_name,  # doctest: +SKIP
+        ...         evaluators=[accuracy],  # doctest: +SKIP
+        ...         summary_evaluators=[precision],  # doctest: +SKIP
+        ...     )  # doctest: +SKIP
+        ... )  # doctest: +ELLIPSIS +SKIP
+        View the evaluation results for experiment:...
 
 
     """  # noqa: E501
