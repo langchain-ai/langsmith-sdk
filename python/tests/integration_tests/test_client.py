@@ -1993,6 +1993,8 @@ async def test_aevaluate_with_attachments(langchain_client: Client) -> None:
     async for result in results:
         pass
 
+    time.sleep(1) # avoid postgres deadlock
+
     langchain_client.delete_dataset(dataset_name=dataset_name)
 
 
