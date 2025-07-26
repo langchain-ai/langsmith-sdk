@@ -2843,7 +2843,7 @@ def test_examples_multipart_attachment_path(langchain_client: Client) -> None:
     assert retrieved.attachments["new_file2"]["reader"].read() == file_path.read_bytes()
 
     example_wrong_path = ExampleCreate(
-        id=uuid4(),  # Generate a new UUID instead of reusing example_id
+        id=uuid4(),
         inputs={"text": "hello world"},
         attachments={
             "file1": (
