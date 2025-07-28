@@ -16,7 +16,7 @@ import { getDefaultProjectName } from "./utils/project.js";
 import { getLangSmithEnvironmentVariable } from "./utils/env.js";
 import { warnOnce } from "./utils/warn.js";
 
-function stripNonAlphanumeric(input: string) {
+export function stripNonAlphanumeric(input: string) {
   return input.replace(/[-:.]/g, "");
 }
 
