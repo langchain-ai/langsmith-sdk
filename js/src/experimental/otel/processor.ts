@@ -50,7 +50,7 @@ type TraceInfo = {
     string,
     {
       isTraceable: boolean;
-      traceId: string;
+      lsTraceId: string;
       spanId: string;
       parentSpanId: string | undefined;
       dottedOrder: string;
@@ -82,7 +82,7 @@ export class LangSmithOTLPSpanProcessor extends BatchSpanProcessor {
     let parentDottedOrder;
     // LangSmith uses the first span's id as the trace id, NOT the actual OTEL trace id
     // Default to the current span if no parent information is present
-    let traceId = getUuidFromOtelSpanId(span.spanContext().spanId);
+    let lsTraceId = getUuidFromOtelSpanId(span.spanContext().spanId);
     while (currentCandidateParentSpanId) {
       const currentSpanInfo =
         this.traceMap[span.spanContext().traceId].spanInfo[
@@ -91,7 +91,7 @@ export class LangSmithOTLPSpanProcessor extends BatchSpanProcessor {
       if (currentSpanInfo?.isTraceable) {
         traceableParentId = currentCandidateParentSpanId;
         parentDottedOrder = currentSpanInfo.dottedOrder;
-        traceId = currentSpanInfo.traceId;
+        lsTraceId = currentSpanInfo.lsTraceId;
         break;
       }
       currentCandidateParentSpanId = currentSpanInfo?.parentSpanId;
@@ -107,7 +107,7 @@ export class LangSmithOTLPSpanProcessor extends BatchSpanProcessor {
       span.spanContext().spanId
     ] = {
       isTraceable,
-      traceId,
+      lsTraceId,
       spanId: span.spanContext().spanId,
       parentSpanId,
       dottedOrder: currentDottedOrder,
@@ -119,7 +119,7 @@ export class LangSmithOTLPSpanProcessor extends BatchSpanProcessor {
         getUuidFromOtelSpanId(traceableParentId);
     }
     span.attributes[LANGSMITH_DOTTED_ORDER] = currentDottedOrder;
-    span.attributes[LANGSMITH_TRACE_ID] = traceId;
+    span.attributes[LANGSMITH_TRACE_ID] = lsTraceId;
     if (isTraceable) {
       super.onStart(span, parentContext);
     }
