@@ -1989,9 +1989,8 @@ async def test_aevaluate_with_attachments(langchain_client: Client) -> None:
     )
 
     assert len(results) == 10
-    # Consume all results to ensure evaluation is complete before cleanup
-    async for result in results:
-        pass
+
+    langchain_client.delete_dataset(dataset_name=dataset_name)
 
 
 async def test_aevaluate_with_attachments_not_in_target(
@@ -2754,7 +2753,9 @@ def test_bulk_update_examples_with_attachments_operations(
     langchain_client.delete_dataset(dataset_id=dataset.id)
 
 
-def test_examples_multipart_attachment_path(langchain_client: Client, caplog: pytest.LogCaptureFixture) -> None:
+def test_examples_multipart_attachment_path(
+    langchain_client: Client, caplog: pytest.LogCaptureFixture
+) -> None:
     """Test uploading examples with attachments via multipart endpoint."""
     dataset_name = "__test_upload_examples_multipart" + uuid4().hex[:4]
     dataset = _create_dataset(langchain_client, dataset_name)
@@ -2869,7 +2870,9 @@ def test_examples_multipart_attachment_path(langchain_client: Client, caplog: py
             dangerously_allow_filesystem=True,
         )
         # Should succeed but skip the missing file
-        assert result["count"] == 1  # Example is created but without the missing attachment
+        assert (
+            result["count"] == 1
+        )  # Example is created but without the missing attachment
         assert "Attachment file not found" in caplog.text
 
     # Clean up
