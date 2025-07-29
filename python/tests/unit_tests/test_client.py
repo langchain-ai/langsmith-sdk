@@ -147,7 +147,7 @@ def test_validate_multiple_urls(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LANGSMITH_ENDPOINT", "https://api.smith.langsmith-endpoint.com")
     monkeypatch.setenv("LANGSMITH_RUNS_ENDPOINTS", "{}")
 
-    with pytest.raises(ls_utils.LangSmithConflictingEndpointsError):
+    with pytest.raises(ls_utils.LangSmithUserError):
         Client()
 
     monkeypatch.undo()

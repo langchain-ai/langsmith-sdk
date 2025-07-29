@@ -8,14 +8,12 @@ from unittest.mock import Mock, patch
 import pytest
 
 from langsmith import Client
+from langsmith import utils as ls_utils
 from langsmith.run_trees import (
     RunTree,
     WriteReplica,
     _ensure_write_replicas,
     _get_write_replicas_from_env,
-)
-from langsmith.utils import (
-    LangSmithConflictingEndpointsError,
 )
 
 
@@ -128,7 +126,7 @@ class TestEnvironmentVariableParsing:
                 "LANGSMITH_RUNS_ENDPOINTS": '{"https://replica.example.com": "key123"}',
             },
         ):
-            with pytest.raises(LangSmithConflictingEndpointsError):
+            with pytest.raises(ls_utils.LangSmithUserError):
                 _get_write_replicas_from_env()
 
     def test_langsmith_runs_endpoints_not_in_write_api_urls(self):

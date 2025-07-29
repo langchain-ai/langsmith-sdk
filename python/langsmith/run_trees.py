@@ -957,7 +957,7 @@ def _get_write_replicas_from_env() -> list[WriteReplica]:
             )
             for url, key in parsed.items()
         ]
-    except utils.LangSmithConflictingEndpointsError:
+    except utils.LangSmithUserError:
         raise
     except Exception as e:
         logger.warning(
@@ -972,7 +972,10 @@ def _check_endpoint_env_unset(parsed: dict[str, str]) -> None:
     import os
 
     if parsed and (os.getenv("LANGSMITH_ENDPOINT") or os.getenv("LANGCHAIN_ENDPOINT")):
-        raise utils.LangSmithConflictingEndpointsError()
+        raise utils.LangSmithUserError(
+            "You cannot provide both LANGSMITH_ENDPOINT / LANGCHAIN_ENDPOINT "
+            "and LANGSMITH_RUNS_ENDPOINTS."
+        )
 
 
 def _ensure_write_replicas(replicas: Optional[Sequence[Replica]]) -> list[WriteReplica]:

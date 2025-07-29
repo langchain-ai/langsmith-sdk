@@ -501,7 +501,10 @@ class Client:
         if (
             os.getenv("LANGSMITH_ENDPOINT") or os.getenv("LANGCHAIN_ENDPOINT")
         ) and os.getenv("LANGSMITH_RUNS_ENDPOINTS"):
-            raise ls_utils.LangSmithConflictingEndpointsError()
+            raise ls_utils.LangSmithUserError(
+                "You cannot provide both LANGSMITH_ENDPOINT / LANGCHAIN_ENDPOINT "
+                "and LANGSMITH_RUNS_ENDPOINTS."
+            )
 
         self.tracing_sample_rate = _get_tracing_sampling_rate(tracing_sampling_rate)
         self._filtered_post_uuids: set[uuid.UUID] = set()
