@@ -44,6 +44,7 @@ from langsmith import client as ls_client
 from langsmith import run_trees, schemas, utils
 from langsmith._internal import _aiter as aitertools
 from langsmith.env import _runtime_env
+from langsmith.run_trees import Replica
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -108,7 +109,7 @@ def tracing_context(
     parent: Optional[Union[run_trees.RunTree, Mapping, str, Literal[False]]] = None,
     enabled: Optional[Union[bool, Literal["local"]]] = None,
     client: Optional[ls_client.Client] = None,
-    replicas: Optional[Sequence[tuple[str, Optional[dict]]]] = None,
+    replicas: Optional[Sequence[Replica]] = None,
     **kwargs: Any,
 ) -> Generator[None, None, None]:
     """Set the tracing context for a block of code.
@@ -123,8 +124,11 @@ def tracing_context(
         client: The client to use for logging the run to LangSmith. Defaults to None,
         enabled: Whether tracing is enabled. Defaults to None, meaning it will use the
             current context value or environment variables.
-        replicas: A sequence of tuples containing project names and optional updates for each replica.
-            Example: [("my_experiment", {"reference_example_id": None}), ("my_project", None)]
+        replicas: A sequence of replicas to send runs to. Can be either:
+            - Legacy format: tuples of (project_name, updates)
+              Example: [("my_experiment", {"reference_example_id": None}), ("my_project", None)]
+            - New format: WriteReplica dictionaries with api_url, api_key, project_name, updates
+              Example: [{"api_url": "https://api.example.com", "api_key": "key", "project_name": "proj"}]
     """
     if kwargs:
         # warn

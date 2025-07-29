@@ -147,7 +147,7 @@ def test_validate_multiple_urls(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LANGSMITH_ENDPOINT", "https://api.smith.langsmith-endpoint.com")
     monkeypatch.setenv("LANGSMITH_RUNS_ENDPOINTS", "{}")
 
-    with pytest.raises(ls_utils.LangSmithUserError):
+    with pytest.raises(ls_utils.LangSmithConflictingEndpointsError):
         Client()
 
     monkeypatch.undo()
@@ -167,6 +167,12 @@ def test_validate_multiple_urls(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("LANGSMITH_ENDPOINT", raising=False)
     monkeypatch.setenv("LANGSMITH_RUNS_ENDPOINTS", json.dumps(data))
     client = Client(auto_batch_tracing=False)
+    # _write_api_urls should only contain the default endpoint
+    assert len(client._write_api_urls) == 1
+    # The default API URL should be used
+    assert client.api_url == "https://api.smith.langchain.com"
+    # Setting api_urls should still be respected
+    client = Client(api_urls=data)
     assert client._write_api_urls == data
     assert client.api_url == "https://api.smith.langsmith-endpoint_1.com"
     assert client.api_key == "123"

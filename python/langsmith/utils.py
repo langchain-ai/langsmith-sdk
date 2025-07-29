@@ -85,6 +85,30 @@ class LangSmithExceptionGroup(LangSmithError):
         self.exceptions = exceptions
 
 
+ERR_CONFLICTING_ENDPOINTS = "ERR_CONFLICTING_ENDPOINTS"
+
+
+class LangSmithConflictingEndpointsError(LangSmithError):
+    """Error raised when both LANGSMITH_ENDPOINT and LANGSMITH_RUNS_ENDPOINTS are set."""  # noqa: E501
+
+    def __init__(self) -> None:
+        """Initialize the error."""
+        super().__init__(
+            "You cannot provide both LANGSMITH_ENDPOINT / LANGCHAIN_ENDPOINT "
+            "and LANGSMITH_RUNS_ENDPOINTS."
+        )
+        self.code = ERR_CONFLICTING_ENDPOINTS
+
+
+def is_conflicting_endpoints_error(err: Exception) -> bool:
+    """Check if an error is a ConflictingEndpointsError."""
+    return (
+        isinstance(err, LangSmithConflictingEndpointsError)
+        and hasattr(err, "code")
+        and err.code == ERR_CONFLICTING_ENDPOINTS
+    )
+
+
 ## Warning classes
 
 
