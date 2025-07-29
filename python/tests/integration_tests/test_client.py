@@ -8,6 +8,7 @@ import os
 import random
 import string
 import sys
+import threading
 import time
 import uuid
 from datetime import timedelta
@@ -15,7 +16,6 @@ from pathlib import Path
 from typing import Any, Callable, Dict
 from unittest import mock
 from uuid import uuid4
-import threading
 
 import pytest
 from freezegun import freeze_time
@@ -50,7 +50,9 @@ logger = logging.getLogger(__name__)
 _dataset_deletion_lock = threading.Lock()
 
 
-def safe_delete_dataset(client: Client, dataset_id: str = None, dataset_name: str = None):
+def safe_delete_dataset(
+    client: Client, dataset_id: str = None, dataset_name: str = None
+):
     """Delete a dataset with thread safety to prevent deadlocks in parallel tests."""
     with _dataset_deletion_lock:
         try:
