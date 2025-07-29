@@ -17,6 +17,7 @@ import { isTracingEnabled } from "./env.js";
 import {
   ROOT,
   AsyncLocalStorageProviderSingleton,
+  getCurrentRunTree,
 } from "./singletons/traceable.js";
 import { _LC_CONTEXT_VARIABLES_KEY } from "./singletons/constants.js";
 import type {
@@ -32,12 +33,16 @@ import {
   isGenerator,
   isPromiseMethod,
 } from "./utils/asserts.js";
-import { getEnvironmentVariable } from "./utils/env.js";
+import { getOtelEnabled } from "./utils/env.js";
 import { __version__ } from "./index.js";
 import { getOTELTrace, getOTELContext } from "./singletons/otel.js";
-import { createOtelSpanContextFromRun } from "./experimental/otel/utils.js";
+import { getUuidFromOtelSpanId } from "./experimental/otel/utils.js";
 import { OTELTracer } from "./experimental/otel/types.js";
-import { LANGSMITH_REFERENCE_EXAMPLE_ID } from "./experimental/otel/constants.js";
+import {
+  LANGSMITH_REFERENCE_EXAMPLE_ID,
+  LANGSMITH_SESSION_NAME,
+  LANGSMITH_TRACEABLE,
+} from "./experimental/otel/constants.js";
 
 AsyncLocalStorageProviderSingleton.initializeGlobalInstance(
   new AsyncLocalStorage<RunTree | ContextPlaceholder | undefined>()
@@ -48,34 +53,58 @@ AsyncLocalStorageProviderSingleton.initializeGlobalInstance(
  */
 function maybeCreateOtelContext<T>(
   runTree?: RunTree,
+  projectName?: string,
   tracer?: OTELTracer
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): ((fn: (...args: any[]) => T) => T) | undefined {
-  if (!runTree || getEnvironmentVariable("OTEL_ENABLED") !== "true") {
+  if (!runTree || !getOtelEnabled()) {
     return;
   }
 
   const otel_trace = getOTELTrace();
-  const otel_context = getOTELContext();
 
   try {
-    const spanContext = createOtelSpanContextFromRun(runTree);
+    const activeTraceId = otel_trace.getActiveSpan()?.spanContext()?.traceId;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (fn: (...args: any[]) => T) => {
       const resolvedTracer =
         tracer ?? otel_trace.getTracer("langsmith", __version__);
-      const attributes: KVMap = {};
+      const attributes: KVMap = {
+        [LANGSMITH_TRACEABLE]: "true",
+      };
       if (runTree.reference_example_id) {
         attributes[LANGSMITH_REFERENCE_EXAMPLE_ID] =
           runTree.reference_example_id;
       }
+      if (projectName !== undefined) {
+        attributes[LANGSMITH_SESSION_NAME] = projectName;
+      }
+      const forceOTELRoot = runTree.extra?.ls_otel_root === true;
       return resolvedTracer.startActiveSpan(
         runTree.name,
         {
           attributes,
+          root: forceOTELRoot,
         },
         () => {
-          otel_trace.setSpanContext(otel_context.active(), spanContext);
+          if (activeTraceId === undefined || forceOTELRoot) {
+            const otelSpanId = otel_trace
+              .getActiveSpan()
+              ?.spanContext()?.spanId;
+            if (otelSpanId) {
+              const langsmithTraceId = getUuidFromOtelSpanId(otelSpanId);
+              // Must refetch from our primary async local storage
+              const currentRunTree = getCurrentRunTree();
+              if (currentRunTree) {
+                // This is only for root runs to ensure that trace id
+                // and the root run id are returned correctly.
+                // This is important for things like leaving feedback on
+                // target function runs during evaluation.
+                currentRunTree.id = langsmithTraceId;
+                currentRunTree.trace_id = langsmithTraceId;
+              }
+            }
+          }
           return fn();
         }
       );
@@ -670,6 +699,7 @@ export function traceable<Func extends (...args: any[]) => any>(
 
     const otelContextManager = maybeCreateOtelContext(
       currentRunTree,
+      config?.project_name,
       config?.tracer
     );
     const otel_context = getOTELContext();

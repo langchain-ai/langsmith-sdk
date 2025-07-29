@@ -8,6 +8,15 @@ from langsmith import run_trees as rt
 try:
     from agents import tracing  # type: ignore[import]
 
+    required = (
+        "TracingProcessor",
+        "Trace",
+        "Span",
+        "ResponseSpanData",
+    )
+    if not all(hasattr(tracing, name) for name in required):
+        raise ImportError("The `agents` package is not installed.")
+
     import langsmith.wrappers._agent_utils as agent_utils
 
     HAVE_AGENTS = True

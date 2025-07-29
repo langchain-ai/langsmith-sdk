@@ -32,7 +32,7 @@ ls.describe(
           },
         },
       ],
-      { iterations: 3, metadata: { something: "cool" } }
+      { repetitions: 3, metadata: { something: "cool" } }
     )("Does the thing", async ({ inputs, referenceOutputs }) => {
       const myApp = () => {
         return { bar: "bad" };
@@ -72,7 +72,7 @@ ls.describe(
           },
         },
       ],
-      { iterations: 3, metadata: { something: "cool" } }
+      { repetitions: 3, metadata: { something: "cool" } }
     )("Does the thing", async ({ inputs, referenceOutputs }) => {
       const myApp = () => {
         return { bar: "bad" };

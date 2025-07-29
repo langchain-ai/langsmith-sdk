@@ -12,20 +12,21 @@ import { toArray, waitUntilRunFoundByMetaField } from "../../utils.js";
 // Initialize basic OTEL setup
 import { initializeOTEL } from "../../../experimental/otel/setup.js";
 
-initializeOTEL();
+const { DEFAULT_LANGSMITH_SPAN_PROCESSOR } = initializeOTEL();
 
 describe("AI SDK Streaming Integration", () => {
   beforeAll(() => {
     process.env.LANGSMITH_TRACING = "true";
   });
 
-  afterAll(() => {
-    delete process.env.OTEL_ENABLED;
+  afterAll(async () => {
+    delete process.env.LANGSMITH_OTEL_ENABLED;
     delete process.env.LANGSMITH_TRACING;
+    await DEFAULT_LANGSMITH_SPAN_PROCESSOR.shutdown();
   });
 
   it("works with streamText", async () => {
-    process.env.OTEL_ENABLED = "true";
+    process.env.LANGSMITH_OTEL_ENABLED = "true";
     const meta = uuidv4();
     const client = new Client();
 
@@ -71,10 +72,13 @@ describe("AI SDK Streaming Integration", () => {
     expect(
       runWithChildren.child_runs?.some((run) => run.name === "ai.streamText")
     ).toBe(true);
+    expect(runWithChildren.prompt_tokens).toBeGreaterThan(0);
+    expect(runWithChildren.completion_tokens).toBeGreaterThan(0);
+    expect(runWithChildren.total_tokens).toBeGreaterThan(0);
   });
 
   it("works with generateObject", async () => {
-    process.env.OTEL_ENABLED = "true";
+    process.env.LANGSMITH_OTEL_ENABLED = "true";
     const meta = uuidv4();
     const client = new Client();
 
@@ -131,7 +135,7 @@ describe("AI SDK Streaming Integration", () => {
   });
 
   it("works with streamObject", async () => {
-    process.env.OTEL_ENABLED = "true";
+    process.env.LANGSMITH_OTEL_ENABLED = "true";
     const meta = uuidv4();
     const client = new Client();
 
