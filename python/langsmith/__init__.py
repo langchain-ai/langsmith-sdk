@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
 # Avoid calling into importlib on every call to __version__
 
-__version__ = "0.4.4"
+__version__ = "0.4.8"
 version = __version__  # for backwards compatibility
 
 
@@ -105,6 +105,10 @@ def __getattr__(name: str) -> Any:
         from langsmith.utils import ContextThreadPoolExecutor
 
         return ContextThreadPoolExecutor
+    elif name == "configure":
+        from langsmith.run_trees import configure
+
+        return configure
 
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 

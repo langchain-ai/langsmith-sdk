@@ -5,26 +5,26 @@ import { generateText } from "ai";
 import { v4 as uuidv4 } from "uuid";
 import { Client } from "../../../client.js";
 import { evaluate } from "../../../evaluation/index.js";
-import { getLangSmithEnvironmentVariable } from "../../../utils/env.js";
-import { toArray, waitUntilRunFoundByMetaField } from "../../utils.js";
 import type { Run } from "../../../schemas.js";
 
 // Initialize basic OTEL setup
 import { initializeOTEL } from "../../../experimental/otel/setup.js";
 
-initializeOTEL();
+const { DEFAULT_LANGSMITH_SPAN_PROCESSOR } = initializeOTEL();
+
+beforeAll(() => {
+  process.env.LANGSMITH_TRACING = "true";
+  process.env.LANGSMITH_OTEL_ENABLED = "true";
+});
+
+afterAll(async () => {
+  delete process.env.LANGSMITH_OTEL_ENABLED;
+  delete process.env.LANGSMITH_TRACING;
+
+  await DEFAULT_LANGSMITH_SPAN_PROCESSOR.shutdown();
+});
 
 describe.skip("AI SDK Evaluate Integration with OTEL", () => {
-  beforeAll(() => {
-    process.env.LANGSMITH_TRACING = "true";
-    process.env.OTEL_ENABLED = "true";
-  });
-
-  afterAll(() => {
-    delete process.env.OTEL_ENABLED;
-    delete process.env.LANGSMITH_TRACING;
-  });
-
   it("works with evaluate() using generateText target function", async () => {
     const meta = uuidv4();
     const client = new Client();
@@ -69,9 +69,8 @@ describe.skip("AI SDK Evaluate Integration with OTEL", () => {
     // Create a simple evaluator
     const evaluator = async (run: Run) => {
       return {
-        key: "response_present",
-        score: run.outputs?.response ? 1 : 0,
-        comment: `Response present: ${!!run.outputs?.response}`,
+        key: "echo",
+        value: JSON.stringify(run.inputs),
       };
     };
 
@@ -89,28 +88,5 @@ describe.skip("AI SDK Evaluate Integration with OTEL", () => {
     expect(results.results.every((r) => r.run.outputs?.response)).toBe(true);
 
     await client.awaitPendingTraceBatches();
-    const projectName = getLangSmithEnvironmentVariable("PROJECT") ?? "default";
-    await waitUntilRunFoundByMetaField(client, projectName, "testKey", meta);
-
-    // Verify traces were created
-    const storedRuns = await toArray(
-      client.listRuns({
-        projectName,
-        filter: `and(eq(metadata_key, "testKey"), eq(metadata_value, "${meta}"))`,
-      })
-    );
-    expect(storedRuns.length).toBeGreaterThan(0);
-
-    // Check that AI SDK traces are present
-    const runWithChildren = await client.readRun(storedRuns[0].id, {
-      loadChildRuns: true,
-    });
-    expect(runWithChildren.child_runs?.length).toBeGreaterThan(0);
-    expect(
-      runWithChildren.child_runs?.some((run) => run.name === "ai.generateText")
-    ).toBe(true);
-
-    // Cleanup
-    await client.deleteDataset({ datasetId: dataset.id });
   });
 });

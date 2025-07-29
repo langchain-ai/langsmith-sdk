@@ -28,8 +28,8 @@ test("Test persist update run", async () => {
   await deleteProject(langchainClient, projectName);
 
   const runId = uuidv4();
-  const dottedOrder = convertToDottedOrderFormat(
-    new Date().getTime() / 1000,
+  const { dottedOrder } = convertToDottedOrderFormat(
+    new Date().getTime(),
     runId
   );
   await langchainClient.createRun({
@@ -71,8 +71,8 @@ test("Test persist update runs above the batch size limit", async () => {
 
   const createRun = async () => {
     const runId = uuidv4();
-    const dottedOrder = convertToDottedOrderFormat(
-      new Date().getTime() / 1000,
+    const { dottedOrder } = convertToDottedOrderFormat(
+      new Date().getTime(),
       runId
     );
     await langchainClient.createRun({
@@ -116,7 +116,7 @@ test("Test persist update run with delay", async () => {
   await deleteProject(langchainClient, projectName);
 
   const runId = uuidv4();
-  const dottedOrder = convertToDottedOrderFormat(
+  const { dottedOrder } = convertToDottedOrderFormat(
     new Date().getTime() / 1000,
     runId
   );
@@ -189,7 +189,7 @@ test("Test persist run with attachment", async () => {
   await deleteProject(langchainClient, projectName);
 
   const runId = uuidv4();
-  const dottedOrder = convertToDottedOrderFormat(
+  const { dottedOrder } = convertToDottedOrderFormat(
     new Date().getTime() / 1000,
     runId
   );

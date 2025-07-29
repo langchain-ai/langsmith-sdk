@@ -3,7 +3,7 @@
 /* eslint-disable no-process-env */
 import { jest } from "@jest/globals";
 import { v4 as uuidv4 } from "uuid";
-import { Client, mergeRuntimeEnvIntoRunCreate } from "../client.js";
+import { Client, mergeRuntimeEnvIntoRun } from "../client.js";
 import { convertToDottedOrderFormat } from "../run_trees.js";
 import { RunCreate } from "../schemas.js";
 
@@ -119,7 +119,7 @@ describe.each(ENDPOINT_TYPES)(
       const projectName = "__test_batch";
 
       const runId = uuidv4();
-      const dottedOrder = convertToDottedOrderFormat(
+      const { dottedOrder } = convertToDottedOrderFormat(
         new Date().getTime() / 1000,
         runId
       );
@@ -184,7 +184,7 @@ describe.each(ENDPOINT_TYPES)(
       const projectName = "__test_batch";
 
       const runId = uuidv4();
-      const dottedOrder = convertToDottedOrderFormat(
+      const { dottedOrder } = convertToDottedOrderFormat(
         new Date().getTime() / 1000,
         runId
       );
@@ -253,7 +253,7 @@ describe.each(ENDPOINT_TYPES)(
       const projectName = "__test_batch";
 
       const runId = uuidv4();
-      const dottedOrder = convertToDottedOrderFormat(
+      const { dottedOrder } = convertToDottedOrderFormat(
         new Date().getTime() / 1000,
         runId
       );
@@ -322,7 +322,7 @@ describe.each(ENDPOINT_TYPES)(
       const projectName = "__test_batch";
 
       const runId = uuidv4();
-      const dottedOrder = convertToDottedOrderFormat(
+      const { dottedOrder } = convertToDottedOrderFormat(
         new Date().getTime() / 1000,
         runId
       );
@@ -360,7 +360,7 @@ describe.each(ENDPOINT_TYPES)(
       const projectName = "__test_batch";
 
       const runId = uuidv4();
-      const dottedOrder = convertToDottedOrderFormat(
+      const { dottedOrder } = convertToDottedOrderFormat(
         new Date().getTime() / 1000,
         runId
       );
@@ -441,7 +441,7 @@ describe.each(ENDPOINT_TYPES)(
       const projectName = "__test_batch";
 
       const runId = uuidv4();
-      const dottedOrder = convertToDottedOrderFormat(
+      const { dottedOrder } = convertToDottedOrderFormat(
         new Date().getTime() / 1000,
         runId
       );
@@ -520,7 +520,7 @@ describe.each(ENDPOINT_TYPES)(
       const projectName = "__test_batch";
 
       const runId = uuidv4();
-      const dottedOrder = convertToDottedOrderFormat(
+      const { dottedOrder } = convertToDottedOrderFormat(
         new Date().getTime() / 1000,
         runId
       );
@@ -548,7 +548,7 @@ describe.each(ENDPOINT_TYPES)(
       });
 
       const runId2 = uuidv4();
-      const dottedOrder2 = convertToDottedOrderFormat(
+      const { dottedOrder: dottedOrder2 } = convertToDottedOrderFormat(
         new Date().getTime() / 1000,
         runId2
       );
@@ -635,7 +635,7 @@ describe.each(ENDPOINT_TYPES)(
       const projectName = "__test_batch";
 
       const runId = uuidv4();
-      const dottedOrder = convertToDottedOrderFormat(
+      const { dottedOrder } = convertToDottedOrderFormat(
         new Date().getTime() / 1000,
         runId
       );
@@ -665,7 +665,7 @@ describe.each(ENDPOINT_TYPES)(
       });
 
       const runId2 = uuidv4();
-      const dottedOrder2 = convertToDottedOrderFormat(
+      const { dottedOrder: dottedOrder2 } = convertToDottedOrderFormat(
         new Date().getTime() / 1000,
         runId2
       );
@@ -753,11 +753,11 @@ describe.each(ENDPOINT_TYPES)(
       const runIds = await Promise.all(
         [...Array(15)].map(async (_, i) => {
           const runId = uuidv4();
-          const dottedOrder = convertToDottedOrderFormat(
+          const { dottedOrder } = convertToDottedOrderFormat(
             new Date().getTime() / 1000,
             runId
           );
-          const params = mergeRuntimeEnvIntoRunCreate({
+          const params = mergeRuntimeEnvIntoRun({
             id: runId,
             project_name: projectName,
             name: "test_run " + i,
@@ -851,11 +851,11 @@ describe.each(ENDPOINT_TYPES)(
       const runParams = await Promise.all(
         [...Array(4)].map(async (_, i) => {
           const runId = uuidv4();
-          const dottedOrder = convertToDottedOrderFormat(
+          const { dottedOrder } = convertToDottedOrderFormat(
             new Date().getTime() / 1000,
             runId
           );
-          const params = mergeRuntimeEnvIntoRunCreate({
+          const params = mergeRuntimeEnvIntoRun({
             id: runId,
             project_name: projectName,
             name: "test_run " + i,
@@ -877,11 +877,11 @@ describe.each(ENDPOINT_TYPES)(
       const childRunParams = await Promise.all(
         runParams.map(async (runParam, i) => {
           const runId = uuidv4();
-          const dottedOrder = convertToDottedOrderFormat(
+          const { dottedOrder } = convertToDottedOrderFormat(
             new Date().getTime() / 1000,
             runId
           );
-          const params = mergeRuntimeEnvIntoRunCreate({
+          const params = mergeRuntimeEnvIntoRun({
             id: runId,
             project_name: projectName,
             name: "test_child_run " + i,
@@ -983,11 +983,11 @@ describe.each(ENDPOINT_TYPES)(
       const runIds = await Promise.all(
         [...Array(15)].map(async (_, i) => {
           const runId = uuidv4();
-          const dottedOrder = convertToDottedOrderFormat(
+          const { dottedOrder } = convertToDottedOrderFormat(
             new Date().getTime() / 1000,
             runId
           );
-          const params = mergeRuntimeEnvIntoRunCreate({
+          const params = mergeRuntimeEnvIntoRun({
             id: runId,
             project_name: projectName,
             name: "test_run " + i,
@@ -1084,7 +1084,7 @@ describe.each(ENDPOINT_TYPES)(
       const runIds = await Promise.all(
         [...Array(4)].map(async (_, i) => {
           const runId = uuidv4();
-          const dottedOrder = convertToDottedOrderFormat(
+          const { dottedOrder } = convertToDottedOrderFormat(
             new Date().getTime() / 1000,
             runId
           );
@@ -1186,7 +1186,7 @@ describe.each(ENDPOINT_TYPES)(
       const projectName = "__test_batch";
 
       const runId = uuidv4();
-      const dottedOrder = convertToDottedOrderFormat(
+      const { dottedOrder } = convertToDottedOrderFormat(
         new Date().getTime() / 1000,
         runId
       );
@@ -1256,7 +1256,7 @@ describe.each(ENDPOINT_TYPES)(
       b.a = a;
 
       const runId = uuidv4();
-      const dottedOrder = convertToDottedOrderFormat(
+      const { dottedOrder } = convertToDottedOrderFormat(
         new Date().getTime() / 1000,
         runId
       );

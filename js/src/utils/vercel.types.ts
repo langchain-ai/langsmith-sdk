@@ -43,7 +43,11 @@ type ToolCallSpan = TypedReadableSpan<
     "ai.operationId": "ai.toolCall";
     "ai.toolCall.name": string;
     "ai.toolCall.id": string;
-    "ai.toolCall.args": string;
+    "ai.toolCall.input"?: string;
+    "ai.toolCall.output"?: string;
+    /** @deprecated AI SDK 4 span */
+    "ai.toolCall.args"?: string;
+    /** @deprecated AI SDK 4 span */
     "ai.toolCall.result"?: string;
   }
 >;

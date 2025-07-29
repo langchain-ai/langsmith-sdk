@@ -1,5 +1,6 @@
 import importlib
 import os
+import random
 import time
 
 import pytest
@@ -131,3 +132,63 @@ def test_log_langchain_outputs() -> None:
 
     t.log_inputs({"question": "foo"})
     t.log_outputs({"answer": AIMessage("bar")})
+
+
+@pytest.mark.langsmith(
+    metadata={"test_type": "metadata_test", "custom_key": "custom_value"}
+)
+def test_metadata_parameter():
+    """Test that metadata parameter is properly passed to the decorator."""
+    x = 5
+    y = 10
+    t.log_inputs({"x": x, "y": y})
+
+    result = x + y
+    t.log_outputs({"sum": result})
+    t.log_reference_outputs({"sum": 15})
+
+    assert result == 15
+
+
+@pytest.mark.langsmith(
+    metadata={"test_type": "metadata_test_async", "custom_key": "custom_value_async"}
+)
+async def test_metadata_parameter_async():
+    """Test that metadata parameter is properly passed to the decorator."""
+    x = 5
+    y = 10
+    t.log_inputs({"x": x, "y": y})
+
+    result = x + y
+    t.log_outputs({"sum": result})
+    t.log_reference_outputs({"sum": 15})
+
+    assert result == 15
+
+
+@pytest.mark.langsmith(repetitions=2)
+def test_repetitions_parameter():
+    """Test that repetitions parameter causes test to run multiple times."""
+    x = 5
+    y = 10
+    t.log_inputs({"x": x, "y": y})
+
+    result = x + y
+    t.log_outputs({"sum": result, "random": random.random()})
+    t.log_reference_outputs({"sum": 15})
+
+    assert result == 15
+
+
+@pytest.mark.langsmith(repetitions=3)
+async def test_repetitions_parameter_async():
+    """Test that repetitions parameter causes async test to run multiple times."""
+    x = 5
+    y = 10
+    t.log_inputs({"x": x, "y": y})
+
+    result = x + y
+    t.log_outputs({"sum": result, "random": random.random()})
+    t.log_reference_outputs({"sum": 15})
+
+    assert result == 15

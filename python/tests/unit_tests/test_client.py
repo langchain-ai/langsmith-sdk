@@ -597,6 +597,75 @@ def test_upsert_examples_multipart_missing_file(
     assert "Attachment file not found" in caplog.text
 
 
+@mock.patch("langsmith.client.requests.Session")
+def test_update_example_multipart_none_preserves_existing(
+    mock_session_cls: mock.Mock,
+) -> None:
+    """Test that updating with None inputs/outputs via multipart preserves existing values."""
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_session.request.return_value = mock_response
+    mock_session_cls.return_value = mock_session
+
+    # Mock the read_example call to return existing example
+    existing_example = ls_schemas.Example(
+        id=str(uuid.uuid4()),
+        dataset_id=str(uuid.uuid4()),
+        inputs={"existing": "input"},
+        outputs={"existing": "output"},
+        created_at=datetime.now(),
+    )
+
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        info={"instance_flags": {"dataset_examples_multipart_enabled": True}},
+    )
+
+    # Mock read_example to return the existing example
+    with mock.patch.object(Client, "read_example", return_value=existing_example):
+        # Update with omitted inputs and outputs
+        client.update_example(
+            example_id=existing_example.id,
+            metadata={"updated": "metadata"},
+        )
+
+    # Verify the multipart request was made
+    assert mock_session.request.call_count == 1
+    call_args = mock_session.request.call_args
+    assert call_args[0][0] == "PATCH"
+    # Check it's calling the correct multipart endpoint
+    assert "/v1/platform/datasets/" in call_args[0][1]
+    assert call_args[0][1].endswith("/examples")
+
+    # Parse the multipart data
+    request_data = call_args[1]["data"]
+    content_type = call_args[1]["headers"]["Content-Type"]
+    boundary = parse_options_header(content_type)[1]["boundary"]
+
+    parser = MultipartParser(
+        io.BytesIO(
+            request_data
+            if isinstance(request_data, bytes)
+            else request_data.to_string()
+        ),
+        boundary,
+    )
+    parts = list(parser.parts())
+
+    # Verify that inputs and outputs parts are NOT included (preserving existing values)
+    part_names = [p.name for p in parts]
+    assert str(existing_example.id) in part_names
+    assert f"{existing_example.id}.inputs" not in part_names
+    assert f"{existing_example.id}.outputs" not in part_names
+
+    # Verify the main example part contains updated metadata
+    example_part = next(p for p in parts if p.name == str(existing_example.id))
+    example_data = json.loads(example_part.value)
+    assert example_data["metadata"] == {"updated": "metadata"}
+
+
 class CallTracker:
     def __init__(self) -> None:
         self.counter = 0
