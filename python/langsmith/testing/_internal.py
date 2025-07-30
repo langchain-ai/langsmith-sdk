@@ -989,12 +989,12 @@ def _run_test(
     # Handle cached_hosts parameter
     ignore_hosts = [test_case.test_suite.client.api_url]
     cached_hosts = langtest_extra.get("cached_hosts")
-    allow_endpoints = cached_hosts if cached_hosts else None
+    allow_hosts = cached_hosts if cached_hosts else None
 
     with (
         rh.tracing_context(**{**current_context, "metadata": metadata}),
         ls_utils.with_optional_cache(
-            cache_path, ignore_hosts=ignore_hosts, allow_endpoints=allow_endpoints
+            cache_path, ignore_hosts=ignore_hosts, allow_hosts=allow_hosts
         ),
     ):
         _test()
@@ -1071,12 +1071,12 @@ async def _arun_test(
     # Handle cached_hosts parameter
     ignore_hosts = [test_case.test_suite.client.api_url]
     cached_hosts = langtest_extra.get("cached_hosts")
-    allow_endpoints = cached_hosts if cached_hosts else None
+    allow_hosts = cached_hosts if cached_hosts else None
 
     with (
         rh.tracing_context(**{**current_context, "metadata": metadata}),
         ls_utils.with_optional_cache(
-            cache_path, ignore_hosts=ignore_hosts, allow_endpoints=allow_endpoints
+            cache_path, ignore_hosts=ignore_hosts, allow_hosts=allow_hosts
         ),
     ):
         await _test()

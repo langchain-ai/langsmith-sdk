@@ -495,7 +495,7 @@ def get_cache_dir(cache: Optional[str]) -> Optional[str]:
 def with_cache(
     path: Union[str, pathlib.Path],
     ignore_hosts: Optional[Sequence[str]] = None,
-    allow_endpoints: Optional[Sequence[str]] = None,
+    allow_hosts: Optional[Sequence[str]] = None,
 ) -> Generator[None, None, None]:
     """Use a cache for requests."""
     try:
@@ -514,8 +514,8 @@ def with_cache(
         if ignore_hosts and any(request.url.startswith(host) for host in ignore_hosts):
             return None
 
-        if allow_endpoints and not any(
-            request.url.startswith(endpoint) for endpoint in allow_endpoints
+        if allow_hosts and not any(
+            request.url.startswith(host) for host in allow_hosts
         ):
             return None
 
@@ -546,11 +546,11 @@ def with_cache(
 def with_optional_cache(
     path: Optional[Union[str, pathlib.Path]],
     ignore_hosts: Optional[Sequence[str]] = None,
-    allow_endpoints: Optional[Sequence[str]] = None,
+    allow_hosts: Optional[Sequence[str]] = None,
 ) -> Generator[None, None, None]:
     """Use a cache for requests."""
     if path is not None:
-        with with_cache(path, ignore_hosts, allow_endpoints):
+        with with_cache(path, ignore_hosts, allow_hosts):
             yield
     else:
         yield
