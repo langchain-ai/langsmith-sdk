@@ -132,7 +132,7 @@ describe("Anthropic Cache OTEL Integration Tests", () => {
           const res1 = await generateText({
             model: anthropic("claude-sonnet-4-20250514"),
             headers: {
-              'anthropic-beta': 'extended-cache-ttl-2025-04-11',
+              "anthropic-beta": "extended-cache-ttl-2025-04-11",
             },
             experimental_telemetry: {
               isEnabled: true,
@@ -146,7 +146,9 @@ describe("Anthropic Cache OTEL Integration Tests", () => {
                     type: "text",
                     text: `Error message: ${errorMessage}`,
                     providerOptions: {
-                      anthropic: { cacheControl: { type: "ephemeral", ttl: '1h' } },
+                      anthropic: {
+                        cacheControl: { type: "ephemeral", ttl: "1h" },
+                      },
                     },
                   },
                   { type: "text", text: "Explain this error message briefly." },
@@ -169,7 +171,7 @@ describe("Anthropic Cache OTEL Integration Tests", () => {
           const res2 = await generateText({
             model: anthropic("claude-sonnet-4-20250514"),
             headers: {
-              'anthropic-beta': 'extended-cache-ttl-2025-04-11',
+              "anthropic-beta": "extended-cache-ttl-2025-04-11",
             },
             experimental_telemetry: {
               isEnabled: true,
@@ -183,7 +185,9 @@ describe("Anthropic Cache OTEL Integration Tests", () => {
                     type: "text",
                     text: `Error message: ${errorMessage}`,
                     providerOptions: {
-                      anthropic: { cacheControl: { type: "ephemeral", ttl: '1h' } },
+                      anthropic: {
+                        cacheControl: { type: "ephemeral", ttl: "1h" },
+                      },
                     },
                   },
                   { type: "text", text: "Provide a solution for this error." },
