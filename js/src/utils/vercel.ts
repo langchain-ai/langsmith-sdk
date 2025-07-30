@@ -10,18 +10,40 @@ function extractInputTokenDetails(
     typeof providerMetadata.anthropic === "object"
   ) {
     const anthropic = providerMetadata.anthropic as Record<string, unknown>;
-    if (
-      anthropic.cacheReadInputTokens != null &&
-      typeof anthropic.cacheReadInputTokens === "number"
-    ) {
-      inputTokenDetails.cache_read = anthropic.cacheReadInputTokens;
-    }
-    if (
-      anthropic.cacheCreationInputTokens != null &&
-      typeof anthropic.cacheCreationInputTokens === "number"
-    ) {
-      inputTokenDetails.ephemeral_5m_input_tokens =
-        anthropic.cacheCreationInputTokens;
+    if (anthropic.usage != null && typeof anthropic.usage === "object") {
+      // Raw usage from Anthropic returned in AI SDK 5
+      const usage = anthropic.usage as Record<string, unknown>;
+      if (usage.cache_creation != null && typeof usage.cache_creation === "object") {
+        const cacheCreation = usage.cache_creation as Record<string, unknown>;
+        if (typeof cacheCreation.ephemeral_5m_input_tokens === "number") {
+          inputTokenDetails.ephemeral_5m_input_tokens = cacheCreation.ephemeral_5m_input_tokens;
+        }
+        if (typeof cacheCreation.ephemeral_1h_input_tokens === "number") {
+          inputTokenDetails.ephemeral_1hr_input_tokens = cacheCreation.ephemeral_1h_input_tokens;
+        }
+        // If cache_creation not returned (no beta header passed),
+        // fallback to assuming 5m cache tokens
+      } else if (typeof usage.cache_creation_input_tokens === "number") {
+        inputTokenDetails.ephemeral_5m_input_tokens = usage.cache_creation_input_tokens;
+      }
+      if (typeof usage.cache_read_input_tokens === "number") {
+        inputTokenDetails.cache_read = usage.cache_read_input_tokens;
+      }
+    } else {
+      // AI SDK 4 fields
+      if (
+        anthropic.cacheReadInputTokens != null &&
+        typeof anthropic.cacheReadInputTokens === "number"
+      ) {
+        inputTokenDetails.cache_read = anthropic.cacheReadInputTokens;
+      }
+      if (
+        anthropic.cacheCreationInputTokens != null &&
+        typeof anthropic.cacheCreationInputTokens === "number"
+      ) {
+        inputTokenDetails.ephemeral_5m_input_tokens =
+          anthropic.cacheCreationInputTokens;
+      }
     }
     return inputTokenDetails;
   } else if (
