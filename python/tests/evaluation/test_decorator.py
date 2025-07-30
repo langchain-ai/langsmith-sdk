@@ -192,3 +192,78 @@ async def test_repetitions_parameter_async():
     t.log_reference_outputs({"sum": 15})
 
     assert result == 15
+
+
+@pytest.mark.langsmith(cached_hosts=["https://api.openai.com"])
+def test_cached_hosts_parameter():
+    """Test that cached_hosts parameter is properly passed to the decorator."""
+    x = 3
+    y = 4
+    t.log_inputs({"x": x, "y": y})
+
+    result = x + y
+    t.log_outputs({"sum": result})
+    t.log_reference_outputs({"sum": 7})
+
+    t.log_feedback(key="cached_hosts_test", score=1)
+
+    assert result == 7
+
+
+@pytest.mark.langsmith(cached_hosts=["api.anthropic.com", "https://api.openai.com"])
+async def test_cached_hosts_parameter_async():
+    """Test that cached_hosts parameter works with async tests."""
+    text = "Hello, world!"
+    response = "Hello back!"
+
+    t.log_inputs({"text": text})
+    t.log_outputs({"response": response})
+    t.log_reference_outputs({"response": "Hello back!"})
+
+    with t.trace_feedback():
+        grade = 1 if "Hello" in response else 0
+        t.log_feedback(key="greeting_check", score=grade)
+
+    assert "Hello" in response
+
+
+def test_cached_hosts_requires_cache():
+    """Test that cached_hosts parameter throws error when caching is not enabled."""
+    import os
+
+    from langsmith.testing._internal import test
+
+    # Temporarily remove cache environment variable if it exists
+    original_cache_env = os.environ.pop("LANGSMITH_TEST_CACHE", None)
+
+    try:
+        # This should raise a ValueError because no cache is configured
+        with pytest.raises(
+            ValueError, match="cached_hosts parameter requires caching to be enabled"
+        ):
+
+            @test(cached_hosts=["https://api.openai.com"])
+            def dummy_test():
+                pass
+
+    finally:
+        # Restore original environment
+        if original_cache_env is not None:
+            os.environ["LANGSMITH_TEST_CACHE"] = original_cache_env
+
+
+def test_cached_hosts_works_with_explicit_cache():
+    """Test that cached_hosts parameter works when cache is explicitly provided."""
+    import tempfile
+
+    from langsmith.testing._internal import test
+
+    # This should NOT raise an error because cache is explicitly provided
+    with tempfile.TemporaryDirectory() as temp_dir:
+
+        @test(cache=temp_dir, cached_hosts=["https://api.openai.com"])
+        def dummy_test_with_cache():
+            pass
+
+        # If we get here without an exception, the test passed
+        assert True

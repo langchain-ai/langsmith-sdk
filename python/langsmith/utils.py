@@ -493,7 +493,9 @@ def get_cache_dir(cache: Optional[str]) -> Optional[str]:
 
 @contextlib.contextmanager
 def with_cache(
-    path: Union[str, pathlib.Path], ignore_hosts: Optional[Sequence[str]] = None
+    path: Union[str, pathlib.Path],
+    ignore_hosts: Optional[Sequence[str]] = None,
+    allow_endpoints: Optional[Sequence[str]] = None,
 ) -> Generator[None, None, None]:
     """Use a cache for requests."""
     try:
@@ -511,6 +513,12 @@ def with_cache(
     def _filter_request_headers(request: Any) -> Any:
         if ignore_hosts and any(request.url.startswith(host) for host in ignore_hosts):
             return None
+
+        if allow_endpoints and not any(
+            request.url.startswith(endpoint) for endpoint in allow_endpoints
+        ):
+            return None
+
         request.headers = {}
         return request
 
@@ -538,10 +546,11 @@ def with_cache(
 def with_optional_cache(
     path: Optional[Union[str, pathlib.Path]],
     ignore_hosts: Optional[Sequence[str]] = None,
+    allow_endpoints: Optional[Sequence[str]] = None,
 ) -> Generator[None, None, None]:
     """Use a cache for requests."""
     if path is not None:
-        with with_cache(path, ignore_hosts):
+        with with_cache(path, ignore_hosts, allow_endpoints):
             yield
     else:
         yield
