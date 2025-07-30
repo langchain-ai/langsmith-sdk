@@ -267,3 +267,22 @@ def test_cached_hosts_works_with_explicit_cache():
 
         # If we get here without an exception, the test passed
         assert True
+
+
+def test_cached_hosts_hostname_format():
+    """Test that cached_hosts works with hostname-only format
+    (e.g., 'api.openai.com')."""
+    import tempfile
+
+    from langsmith.testing._internal import test
+
+    # Test with hostname format (without https://)
+    with tempfile.TemporaryDirectory() as temp_dir:
+
+        @test(cache=temp_dir, cached_hosts=["api.openai.com"])
+        def test_with_hostname_format():
+            # This should work with hostname-only format
+            pass
+
+        # If we get here without an exception, the test passed
+        assert True

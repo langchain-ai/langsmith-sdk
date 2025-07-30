@@ -511,13 +511,32 @@ def with_cache(
     patch_urllib3.patch_urllib3()
 
     def _filter_request_headers(request: Any) -> Any:
+        # Legacy behavior
         if ignore_hosts and any(request.url.startswith(host) for host in ignore_hosts):
             return None
 
-        if allow_hosts and not any(
-            request.url.startswith(host) for host in allow_hosts
-        ):
-            return None
+        if allow_hosts:
+            from urllib.parse import urlparse
+
+            try:
+                parsed_url = urlparse(request.url)
+                request_host = parsed_url.hostname or ""
+                # Check if request matches any allowed host
+                host_matches = any(
+                    # Handle both full URLs (https://api.openai.com)
+                    # and hostnames (api.openai.com)
+                    (
+                        request.url.startswith(host)
+                        if host.startswith(("http://", "https://"))
+                        else request_host == host or request_host.endswith(f".{host}")
+                    )
+                    for host in allow_hosts
+                )
+                if not host_matches:
+                    return None
+            except Exception:
+                # If URL parsing fails, don't cache to be safe
+                return None
 
         request.headers = {}
         return request
