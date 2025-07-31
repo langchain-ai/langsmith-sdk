@@ -482,7 +482,7 @@ describe("Client", () => {
   });
 
   describe("listRuns", () => {
-    it("should include cursor parameter in request body when provided", async () => {
+    it("should handle cursor parameter correctly", async () => {
       const client = new Client({ apiKey: "test-api-key" });
 
       // Mock the _getCursorPaginatedList method to capture the request body
@@ -496,22 +496,33 @@ describe("Client", () => {
           yield [];
         });
 
+      // Test with cursor parameter
       const cursorValue = "test-cursor-123";
-
-      // Call listRuns with cursor parameter
-      const runs = client.listRuns({
+      const runsWithCursor = client.listRuns({
         projectId: "test-project-id",
         cursor: cursorValue,
         limit: 1,
       });
 
-      // Consume the first item from the async generator to trigger the request
-      const iterator = runs[Symbol.asyncIterator]();
-      await iterator.next();
+      const iteratorWithCursor = runsWithCursor[Symbol.asyncIterator]();
+      await iteratorWithCursor.next();
 
       // Verify that cursor was included in the request body
       expect(capturedBody).toBeDefined();
       expect(capturedBody.cursor).toBe(cursorValue);
+
+      // Test without cursor parameter
+      const runsWithoutCursor = client.listRuns({
+        projectId: "test-project-id",
+        limit: 1,
+      });
+
+      const iteratorWithoutCursor = runsWithoutCursor[Symbol.asyncIterator]();
+      await iteratorWithoutCursor.next();
+
+      // Verify that cursor is undefined when not provided
+      expect(capturedBody).toBeDefined();
+      expect(capturedBody.cursor).toBeUndefined();
     });
   });
 });
