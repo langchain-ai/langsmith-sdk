@@ -14,9 +14,6 @@ on:
         default: false
         description: "Release from a non-main branch (danger!)"
 
-env:
-  POETRY_VERSION: "1.4.2"
-
 jobs:
   if_release:
     # Disallow publishing from branches that aren't `main`.
@@ -28,19 +25,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # Python Build
-      - name: Install poetry
-        run: pipx install poetry==$POETRY_VERSION
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
       - name: Set up Python 3.11
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: "poetry"
       - name: Build project for distribution
-        run: cd python && poetry build
+        run: cd python && uv build
       - name: Check Version
         id: check-version
         run: |
-          cd python && echo version=$(poetry version --short) >> $GITHUB_OUTPUT
+          cd python && echo version=$(grep '^version =' pyproject.toml | sed 's/version = "\(.*\)"/\1/') >> $GITHUB_OUTPUT
       - name: Create Release
         uses: ncipollo/release-action@v1
         with:

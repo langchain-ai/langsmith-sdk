@@ -22,5 +22,5 @@ Any pytest options may be included inside the `TEST` variable.
 
 ## Notes
 
-- The project uses `poetry` for dependency management and the Makefile commands will automatically run inside the `poetry` environment.
+- The project uses `uv` for dependency management and the Makefile commands will automatically run inside the `uv` environment.
 - `make tests` sets some environment variables (such as disabling network access) for reliability. If a test requires network access, adjust it accordingly.
