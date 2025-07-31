@@ -1590,7 +1590,9 @@ def test_patch_sampling_follows_trace_logic():
         }
 
         # Test POST filtering (initial sampling)
-        post_filtered = client._filter_for_sampling([root_run_1, root_run_2], patch=False)
+        post_filtered = client._filter_for_sampling(
+            [root_run_1, root_run_2], patch=False
+        )
 
         # Based on our mock, first call returns False, second returns True
         # So only root_run_2 should be sampled
@@ -1630,7 +1632,9 @@ def test_patch_sampling_follows_trace_logic():
 
         # trace_id_1 should be removed from filtered set since we processed its root run
         assert trace_id_1 not in client._filtered_post_uuids
-        assert trace_id_2 not in client._filtered_post_uuids  # Still not in filtered set
+        assert (
+            trace_id_2 not in client._filtered_post_uuids
+        )  # Still not in filtered set
 
 
 def test_patch_sampling_mixed_traces():
@@ -1664,13 +1668,15 @@ def test_patch_sampling_mixed_traces():
         # Create root runs
         root_runs = []
         for i, trace_id in enumerate(trace_ids):
-            root_runs.append({
-                "id": trace_id,
-                "trace_id": trace_id,
-                "name": f"root_run_{i}",
-                "run_type": "llm",
-                "inputs": {"text": f"hello {i}"},
-            })
+            root_runs.append(
+                {
+                    "id": trace_id,
+                    "trace_id": trace_id,
+                    "name": f"root_run_{i}",
+                    "run_type": "llm",
+                    "inputs": {"text": f"hello {i}"},
+                }
+            )
 
         # Sample the root runs
         post_filtered = client._filter_for_sampling(root_runs, patch=False)
@@ -1684,14 +1690,16 @@ def test_patch_sampling_mixed_traces():
         # Create child runs for all traces
         child_runs = []
         for i, (trace_id, child_id) in enumerate(zip(trace_ids, child_run_ids)):
-            child_runs.append({
-                "id": child_id,
-                "trace_id": trace_id,
-                "name": f"child_run_{i}",
-                "run_type": "tool",
-                "inputs": {"text": f"child {i}"},
-                "outputs": {"result": f"child result {i}"},
-            })
+            child_runs.append(
+                {
+                    "id": child_id,
+                    "trace_id": trace_id,
+                    "name": f"child_run_{i}",
+                    "run_type": "tool",
+                    "inputs": {"text": f"child {i}"},
+                    "outputs": {"result": f"child result {i}"},
+                }
+            )
 
         # Test patch filtering for child runs
         patch_filtered = client._filter_for_sampling(child_runs, patch=True)
