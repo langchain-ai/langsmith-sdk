@@ -197,8 +197,8 @@ class TestClientReplicaMethods:
 class TestRunTreeReplicas:
     """Test RunTree with replica functionality."""
 
-    def test_run_tree_with_tuple_replicas(self):
-        """Test RunTree with tuple replica format."""
+    def test_run_tree_with_write_replicas(self):
+        """Test RunTree with WriteReplica format."""
         client = Mock()
 
         run_tree = RunTree(
@@ -206,7 +206,9 @@ class TestRunTreeReplicas:
             inputs={"input": "test"},
             client=client,
             project_name="test-project",
-            replicas=[("replica-project", {"key": "value"})],
+            replicas=[
+                WriteReplica(project_name="replica-project", updates={"key": "value"})
+            ],
         )
 
         run_tree.post()
