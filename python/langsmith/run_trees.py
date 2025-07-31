@@ -560,7 +560,7 @@ class RunTree(ls_schemas.RunBase):
         if project_name == self.session_name:
             return run_dict
 
-        if updates and updates.get("distributed", False):
+        if updates and updates.get("reroot", False):
             distributed_parent_id = _DISTRIBUTED_PARENT_ID.get()
 
             if distributed_parent_id:
@@ -1013,7 +1013,7 @@ def _parse_write_replicas_from_env_var(env_var: Optional[str]) -> list[WriteRepl
 def _get_write_replicas_from_env() -> list[WriteReplica]:
     """Get write replicas from LANGSMITH_RUNS_ENDPOINTS environment variable."""
     env_var = utils.get_env_var("RUNS_ENDPOINTS")
-    
+
     return _parse_write_replicas_from_env_var(env_var)
 
 

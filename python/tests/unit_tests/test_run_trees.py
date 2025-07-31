@@ -2,7 +2,7 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from unittest.mock import MagicMock
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import pytest
 
@@ -190,7 +190,7 @@ def test_distributed_tracing_remap_for_project():
         name="Grandparent",
         inputs={"text": "root"},
         client=mock_client,
-        session_name="original_project"
+        session_name="original_project",
     )
     parent = grandparent.create_child(name="Parent")
     child = parent.create_child(name="Child")
@@ -199,7 +199,7 @@ def test_distributed_tracing_remap_for_project():
     run_trees._DISTRIBUTED_PARENT_ID.set(parent_id)
 
     try:
-        updates = {"distributed": True}
+        updates = {"reroot": True}
         remapped_dict = child._remap_for_project("child_project", updates)
 
         assert remapped_dict.get("parent_run_id") is None
@@ -208,9 +208,10 @@ def test_distributed_tracing_remap_for_project():
         parsed_order = run_trees._parse_dotted_order(remapped_dict["dotted_order"])
         assert len(parsed_order) == 1
 
-        updates_no_dist = {"distributed": False}
-        remapped_dict_no_dist = child._remap_for_project("child_project_2", updates_no_dist)
-
+        updates_no_dist = {"reroot": False}
+        remapped_dict_no_dist = child._remap_for_project(
+            "child_project_2", updates_no_dist
+        )
         assert remapped_dict_no_dist.get("parent_run_id") is not None
         remapped_dict_no_updates = child._remap_for_project("child_project_3", None)
 
