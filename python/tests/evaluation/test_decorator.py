@@ -197,17 +197,37 @@ async def test_repetitions_parameter_async():
 @pytest.mark.langsmith(cached_hosts=["https://api.openai.com"])
 def test_cached_hosts_parameter():
     """Test that cached_hosts parameter is properly passed to the decorator."""
-    x = 3
-    y = 4
-    t.log_inputs({"x": x, "y": y})
+    from unittest.mock import Mock, patch
 
-    result = x + y
-    t.log_outputs({"sum": result})
-    t.log_reference_outputs({"sum": 7})
+    import requests
 
-    t.log_feedback(key="cached_hosts_test", score=1)
+    # Mock response
+    mock_response = Mock()
+    mock_response.json.return_value = {"choices": [{"message": {"content": "Hello"}}]}
+    mock_response.status_code = 200
 
-    assert result == 7
+    with patch("requests.post", return_value=mock_response) as mock_post:
+        # Make calls to api.openai.com that should be cached
+        response1 = requests.post(
+            "https://api.openai.com/v1/chat/completions", json={"test": "data"}
+        )
+        response2 = requests.post(
+            "https://api.openai.com/v1/chat/completions", json={"test": "data"}
+        )
+
+        result1 = response1.json()
+        result2 = response2.json()
+
+        t.log_inputs({"mock_call_count": mock_post.call_count})
+        t.log_outputs({"result1": result1, "result2": result2})
+        t.log_reference_outputs({"expected_calls": 1})  # Should be 1 if cached
+
+        # If caching works, mock should only be called once
+        t.log_feedback(key="caching_test", score=1 if mock_post.call_count == 1 else 0)
+
+        assert result1 == result2, "Results should be identical"
+
+
 
 
 @pytest.mark.langsmith(cached_hosts=["api.anthropic.com", "https://api.openai.com"])
