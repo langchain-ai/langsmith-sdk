@@ -528,11 +528,12 @@ class RunTree(ls_schemas.RunBase):
         parent_id.
         """
         if dotted_order := run_dict.get("dotted_order"):
-            segs = _parse_dotted_order(dotted_order)
+            segs = dotted_order.split(".")
             start_idx = None
             parent_id = str(parent_id)
             # TODO(angus): potentially use binary search to find the index
-            for idx, (_, seg_id) in enumerate(segs):
+            for idx, part in enumerate(segs):
+                seg_id = part[-36:]
                 if str(seg_id) == parent_id:
                     start_idx = idx
                     break
@@ -540,16 +541,13 @@ class RunTree(ls_schemas.RunBase):
                 # Trim segments to start after parent_id (exclusive)
                 trimmed_segs = segs[start_idx + 1 :]
                 # Rebuild dotted_order
-                run_dict["dotted_order"] = ".".join(
-                    ts.strftime("%Y%m%dT%H%M%S%fZ") + str(seg_id)
-                    for ts, seg_id in trimmed_segs
-                )
+                run_dict["dotted_order"] = ".".join(trimmed_segs)
                 if trimmed_segs:
-                    run_dict["trace_id"] = trimmed_segs[0][1]
+                    run_dict["trace_id"] = trimmed_segs[0][-36:]
                 else:
                     run_dict["trace_id"] = run_dict["id"]
-        # Remove parent_run_id if it matches parent_id
         if str(run_dict.get("parent_run_id")) == parent_id:
+            # We've found the new root node.
             run_dict.pop("parent_run_id", None)
 
     def _remap_for_project(
@@ -582,13 +580,12 @@ class RunTree(ls_schemas.RunBase):
             new_parent = None
         # dotted order
         if run_dict.get("dotted_order"):
-            segs = _parse_dotted_order(run_dict["dotted_order"])
+            segs = run_dict["dotted_order"].split(".")
             rebuilt = []
-            for ts, seg_id in segs[:-1]:
-                repl = uuid5(NAMESPACE_DNS, f"{seg_id}:{project_name}")
-                rebuilt.append(ts.strftime("%Y%m%dT%H%M%S%fZ") + str(repl))
-            ts_last, _ = segs[-1]
-            rebuilt.append(ts_last.strftime("%Y%m%dT%H%M%S%fZ") + str(new_id))
+            for part in segs[:-1]:
+                repl = uuid5(NAMESPACE_DNS, f"{part[-36:]}:{project_name}")
+                rebuilt.append(part[:-36] + str(repl))
+            rebuilt.append(segs[-1][:-36] + str(new_id))
             dotted = ".".join(rebuilt)
         else:
             dotted = None

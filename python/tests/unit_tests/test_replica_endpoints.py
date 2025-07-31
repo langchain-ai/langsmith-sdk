@@ -76,12 +76,14 @@ class TestEnvironmentVariableParsing:
 
     def test_get_write_replicas_from_env_empty(self):
         """Test _get_write_replicas_from_env with no environment variable."""
+        ls_utils.get_env_var.cache_clear()
         with patch.dict(os.environ, {}, clear=True):
             result = _get_write_replicas_from_env()
             assert result == []
 
     def test_get_write_replicas_from_env_valid_json(self):
         """Test _get_write_replicas_from_env with valid JSON."""
+        ls_utils.get_env_var.cache_clear()
         endpoints_config = {
             "https://api.smith.langchain.com": "primary-key-123",
             "https://replica1.example.com": "replica1-key-456",
@@ -113,12 +115,14 @@ class TestEnvironmentVariableParsing:
 
     def test_get_write_replicas_from_env_invalid_json(self):
         """Test _get_write_replicas_from_env with invalid JSON."""
+        ls_utils.get_env_var.cache_clear()
         with patch.dict(os.environ, {"LANGSMITH_RUNS_ENDPOINTS": "invalid-json"}):
             result = _get_write_replicas_from_env()
             assert result == []
 
     def test_get_write_replicas_from_env_conflicting_endpoints(self):
         """Test _get_write_replicas_from_env with conflicting env vars."""
+        ls_utils.get_env_var.cache_clear()
         with patch.dict(
             os.environ,
             {
@@ -131,6 +135,7 @@ class TestEnvironmentVariableParsing:
 
     def test_langsmith_runs_endpoints_not_in_write_api_urls(self):
         """Test that LANGSMITH_RUNS_ENDPOINTS is not parsed into _write_api_urls."""
+        ls_utils.get_env_var.cache_clear()
         endpoints_config = {
             "https://replica1.example.com": "replica1-key",
             "https://replica2.example.com": "replica2-key",
