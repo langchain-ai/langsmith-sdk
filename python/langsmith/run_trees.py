@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import sys
@@ -38,10 +39,6 @@ class WriteReplica(TypedDict, total=False):
     updates: Optional[dict]
 
 
-ProjectReplica = tuple[str, Optional[dict]]
-
-Replica = Union[WriteReplica, ProjectReplica]
-
 LANGSMITH_PREFIX = "langsmith-"
 LANGSMITH_DOTTED_ORDER = sys.intern(f"{LANGSMITH_PREFIX}trace")
 LANGSMITH_DOTTED_ORDER_BYTES = LANGSMITH_DOTTED_ORDER.encode("utf-8")
@@ -55,7 +52,7 @@ _CLIENT: Optional[Client] = None
 _LOCK = threading.Lock()
 
 # Context variables
-_REPLICAS = contextvars.ContextVar[Optional[Sequence[Replica]]](
+_REPLICAS = contextvars.ContextVar[Optional[Sequence[WriteReplica]]](
     "_REPLICAS", default=None
 )
 
@@ -217,7 +214,7 @@ class RunTree(ls_schemas.RunBase):
     dangerously_allow_filesystem: Optional[bool] = Field(
         default=False, description="Whether to allow filesystem access for attachments."
     )
-    replicas: Optional[Sequence[Replica]] = Field(
+    replicas: Optional[Sequence[WriteReplica]] = Field(
         default=None,
         description="Projects to replicate this run to with optional updates.",
     )
@@ -852,7 +849,7 @@ class _Baggage:
         metadata: Optional[dict[str, str]] = None,
         tags: Optional[list[str]] = None,
         project_name: Optional[str] = None,
-        replicas: Optional[Sequence[Replica]] = None,
+        replicas: Optional[Sequence[WriteReplica]] = None,
     ):
         """Initialize the Baggage object."""
         self.metadata = metadata or {}
@@ -868,7 +865,7 @@ class _Baggage:
         metadata = {}
         tags = []
         project_name = None
-        replicas: Optional[list[Replica]] = None
+        replicas: Optional[list[WriteReplica]] = None
         try:
             for item in header_value.split(","):
                 key, value = item.split("=", 1)
@@ -880,12 +877,17 @@ class _Baggage:
                     project_name = urllib.parse.unquote(value)
                 elif key == LANGSMITH_REPLICAS:
                     replicas_data = json.loads(urllib.parse.unquote(value))
-                    parsed_replicas: list[Replica] = []
+                    parsed_replicas: list[WriteReplica] = []
                     for replica_item in replicas_data:
                         if isinstance(replica_item, list) and len(replica_item) == 2:
-                            # Legacy format: [project_name, updates]
+                            # Convert legacy format to WriteReplica
                             parsed_replicas.append(
-                                (str(replica_item[0]), replica_item[1])
+                                WriteReplica(
+                                    api_url=None,
+                                    api_key=None,
+                                    project_name=str(replica_item[0]),
+                                    updates=replica_item[1],
+                                )
                             )
                         elif isinstance(replica_item, dict):
                             # New WriteReplica format: preserve as dict
@@ -937,11 +939,9 @@ class _Baggage:
         return ",".join(items)
 
 
-def _get_write_replicas_from_env() -> list[WriteReplica]:
-    """Get write replicas from LANGSMITH_RUNS_ENDPOINTS environment variable."""
-    import os
-
-    env_var = os.getenv("LANGSMITH_RUNS_ENDPOINTS")
+@functools.lru_cache(maxsize=1)
+def _parse_write_replicas_from_env_var(env_var: Optional[str]) -> list[WriteReplica]:
+    """Parse write replicas from LANGSMITH_RUNS_ENDPOINTS environment variable value."""
     if not env_var:
         return []
 
@@ -967,6 +967,14 @@ def _get_write_replicas_from_env() -> list[WriteReplica]:
         return []
 
 
+def _get_write_replicas_from_env() -> list[WriteReplica]:
+    """Get write replicas from LANGSMITH_RUNS_ENDPOINTS environment variable."""
+    import os
+
+    env_var = os.getenv("LANGSMITH_RUNS_ENDPOINTS")
+    return _parse_write_replicas_from_env_var(env_var)
+
+
 def _check_endpoint_env_unset(parsed: dict[str, str]) -> None:
     """Check if endpoint environment variables conflict with runs endpoints."""
     import os
@@ -978,27 +986,15 @@ def _check_endpoint_env_unset(parsed: dict[str, str]) -> None:
         )
 
 
-def _ensure_write_replicas(replicas: Optional[Sequence[Replica]]) -> list[WriteReplica]:
+def _ensure_write_replicas(
+    replicas: Optional[Sequence[WriteReplica]],
+) -> list[WriteReplica]:
     """Convert replicas to WriteReplica format."""
     if replicas is None:
         return _get_write_replicas_from_env()
 
-    write_replicas = []
-    for replica in replicas:
-        if isinstance(replica, tuple):
-            project_name, updates = replica
-            write_replicas.append(
-                WriteReplica(
-                    api_url=None,
-                    api_key=None,
-                    project_name=project_name,
-                    updates=updates,
-                )
-            )
-        else:
-            write_replicas.append(replica)
-
-    return write_replicas
+    # All replicas should now be WriteReplica dicts
+    return list(replicas)
 
 
 def _parse_dotted_order(dotted_order: str) -> list[tuple[datetime, UUID]]:

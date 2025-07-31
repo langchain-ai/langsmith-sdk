@@ -25,20 +25,20 @@ class TestWriteReplicaTypes:
             result = _ensure_write_replicas(None)
             assert result == []
 
-    def test_ensure_write_replicas_with_tuple_format(self):
-        """Test _ensure_write_replicas with tuple format."""
-        tuple_replicas = [
-            ("project1", {"key": "value"}),
-            ("project2", None),
+    def test_ensure_write_replicas_with_write_replica_format(self):
+        """Test _ensure_write_replicas with WriteReplica format."""
+        write_replicas = [
+            WriteReplica(project_name="project1", updates={"key": "value"}),
+            WriteReplica(project_name="project2", updates=None),
         ]
 
-        result = _ensure_write_replicas(tuple_replicas)
+        result = _ensure_write_replicas(write_replicas)
 
         assert len(result) == 2
         assert result[0]["project_name"] == "project1"
         assert result[0]["updates"] == {"key": "value"}
-        assert result[0]["api_key"] is None
-        assert result[0]["api_url"] is None
+        assert result[0].get("api_key") is None
+        assert result[0].get("api_url") is None
 
         assert result[1]["project_name"] == "project2"
         assert result[1]["updates"] is None
@@ -305,8 +305,14 @@ class TestBaggageReplicaParsing:
         baggage = _Baggage.from_header(baggage_value)
 
         assert len(baggage.replicas) == 2
-        assert baggage.replicas[0] == ("replica-project-1", {"environment": "staging"})
-        assert baggage.replicas[1] == ("replica-project-2", None)
+        # Legacy tuple format should be converted to WriteReplica dict format
+        assert baggage.replicas[0]["project_name"] == "replica-project-1"
+        assert baggage.replicas[0]["updates"] == {"environment": "staging"}
+        assert baggage.replicas[0].get("api_url") is None
+        assert baggage.replicas[0].get("api_key") is None
+
+        assert baggage.replicas[1]["project_name"] == "replica-project-2"
+        assert baggage.replicas[1]["updates"] is None
 
     def test_baggage_parsing_new_format(self):
         """Test baggage headers with WriteReplica format are parsed
@@ -369,8 +375,11 @@ class TestBaggageReplicaParsing:
         baggage = _Baggage.from_header(baggage_value)
 
         assert len(baggage.replicas) == 2
-        # First should be tuple tuple format
-        assert baggage.replicas[0] == ("tuple-project", {"tuple": "true"})
+        # First should be converted from tuple format to WriteReplica dict format
+        assert baggage.replicas[0]["project_name"] == "tuple-project"
+        assert baggage.replicas[0]["updates"] == {"tuple": "true"}
+        assert baggage.replicas[0].get("api_url") is None
+        assert baggage.replicas[0].get("api_key") is None
         # Second should be new dict format
         assert baggage.replicas[1]["api_url"] == "https://new.example.com"
         assert baggage.replicas[1]["api_key"] == "new-key"
@@ -398,28 +407,33 @@ class TestTracingContextReplicas:
         with tracing_context(replicas=replicas):
             pass  # Just testing that the context manager works
 
-    def test_tracing_context_with_tuple_replica_format(self):
-        """Test that tracing_context still accepts the tuple tuple format."""
+    def test_tracing_context_with_project_replica_format(self):
+        """Test that tracing_context accepts replica format."""
         from langsmith.run_helpers import tracing_context
+        from langsmith.run_trees import WriteReplica
 
-        replicas = [("tuple-project", {"tuple": True}), ("another-project", None)]
+        replicas = [
+            WriteReplica(project_name="project1", updates={"tuple": True}),
+            WriteReplica(project_name="another-project", updates=None),
+        ]
 
         # This should not raise a type error
         with tracing_context(replicas=replicas):
             pass  # Just testing that the context manager works
 
-    def test_tracing_context_with_mixed_replica_formats(self):
-        """Test that tracing_context accepts mixed replica formats."""
+    def test_tracing_context_with_mixed_replica_types(self):
+        """Test that tracing_context accepts different types of replicas."""
         from langsmith.run_helpers import tracing_context
         from langsmith.run_trees import WriteReplica
 
         replicas = [
-            ("tuple-project", {"tuple": True}),  # tuple format
+            # project replica
+            WriteReplica(project_name="project-replica", updates={"env": "test"}),
             WriteReplica(
                 api_url="https://new.example.com",
                 api_key="new-key",
                 project_name="new-project",
-            ),
+            ),  # API replica
         ]
 
         # This should not raise a type error
