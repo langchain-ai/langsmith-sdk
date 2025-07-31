@@ -480,4 +480,38 @@ describe("Client", () => {
       expect(patchTraceIds.has(traceIds[3])).toBe(false);
     });
   });
+
+  describe("listRuns", () => {
+    it("should include cursor parameter in request body when provided", async () => {
+      const client = new Client({ apiKey: "test-api-key" });
+
+      // Mock the _getCursorPaginatedList method to capture the request body
+      let capturedBody: any = null;
+
+      jest
+        .spyOn(client as any, "_getCursorPaginatedList")
+        .mockImplementation(async function* (...args: any[]) {
+          const [, body] = args;
+          capturedBody = body;
+          yield [];
+        });
+
+      const cursorValue = "test-cursor-123";
+
+      // Call listRuns with cursor parameter
+      const runs = client.listRuns({
+        projectId: "test-project-id",
+        cursor: cursorValue,
+        limit: 1,
+      });
+
+      // Consume the first item from the async generator to trigger the request
+      const iterator = runs[Symbol.asyncIterator]();
+      await iterator.next();
+
+      // Verify that cursor was included in the request body
+      expect(capturedBody).toBeDefined();
+      expect(capturedBody.cursor).toBe(cursorValue);
+    });
+  });
 });

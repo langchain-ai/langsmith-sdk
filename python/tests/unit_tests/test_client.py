@@ -3154,3 +3154,54 @@ def test__convert_stored_attachments_to_attachments_dict(mock_get: mock.Mock):
     mock_get.assert_called_once_with(
         "https://api.langsmith.com/download/valid", stream=True
     )
+
+
+@mock.patch("langsmith.client.requests.Session")
+def test_list_runs_with_cursor(mock_session_cls: mock.Mock) -> None:
+    """Test that list_runs properly includes cursor parameter in request body."""
+    _clear_env_cache()
+    mock_session = mock.Mock()
+    mock_response = mock.Mock()
+    mock_response.json.return_value = {
+        "runs": [
+            {
+                "id": str(uuid.uuid4()),
+                "name": "test_run",
+                "run_type": "llm",
+                "inputs": {"prompt": "test"},
+                "outputs": {"response": "test"},
+                "start_time": "2023-01-01T00:00:00Z",
+                "end_time": "2023-01-01T00:01:00Z",
+                "trace_id": str(uuid.uuid4()),
+                "dotted_order": "20230101T000000Z" + str(uuid.uuid4()),
+                "session_id": str(uuid.uuid4()),
+            }
+        ],
+        "cursors": {"next": None},
+    }
+
+    request_data = None
+
+    def mock_request(method, url, **kwargs):
+        nonlocal request_data
+        if method == "POST" and url.endswith("/runs/query"):
+            request_data = json.loads(kwargs.get("data", "{}"))
+        return mock_response
+
+    mock_session.request = mock_request
+    mock_session_cls.return_value = mock_session
+
+    client = Client(api_url="http://localhost:8000", api_key="test-api-key")
+    cursor_value = "test-cursor-123"
+
+    # Call list_runs with cursor parameter
+    test_project_id = str(uuid.uuid4())
+    runs = list(
+        client.list_runs(project_id=test_project_id, cursor=cursor_value, limit=1)
+    )
+
+    # Verify that cursor was included in the request body
+    assert request_data is not None
+    assert "cursor" in request_data
+    assert request_data["cursor"] == cursor_value
+    assert len(runs) == 1

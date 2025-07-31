@@ -264,6 +264,7 @@ class AsyncClient:
         run_ids: Optional[Sequence[ls_client.ID_TYPE]] = None,
         select: Optional[Sequence[str]] = None,
         limit: Optional[int] = None,
+        cursor: Optional[str] = None,
         **kwargs: Any,
     ) -> AsyncIterator[ls_schemas.Run]:
         """List runs from the LangSmith API.
@@ -305,6 +306,8 @@ class AsyncClient:
             The IDs of the runs to filter by.
         limit : int or None, default=None
             The maximum number of runs to return.
+        cursor : str or None, default=None
+            The cursor to use for pagination.
         **kwargs : Any
             Additional keyword arguments.
 
@@ -429,6 +432,7 @@ class AsyncClient:
             "id": run_ids,
             "trace": trace_id,
             "select": select,
+            "cursor": cursor,
             **kwargs,
         }
         if project_ids:

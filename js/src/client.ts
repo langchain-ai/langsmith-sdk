@@ -217,6 +217,10 @@ interface ListRunsParams {
    * The values to include in the response.
    */
   select?: string[];
+  /**
+   * The cursor to use for pagination.
+   */
+  cursor?: string;
 }
 
 interface GroupRunsParams {
@@ -1946,6 +1950,7 @@ export class Client implements LangSmithTracingClientInterface {
       limit,
       select,
       order,
+      cursor,
     } = props;
     let projectIds: string[] = [];
     if (projectId) {
@@ -2009,6 +2014,7 @@ export class Client implements LangSmithTracingClientInterface {
       select: select ? select : default_select,
       is_root: isRoot,
       order,
+      cursor,
     };
 
     let runsYielded = 0;
