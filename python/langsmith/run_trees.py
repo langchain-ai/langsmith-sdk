@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import sys
@@ -9,6 +10,8 @@ from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from typing import Any, Optional, Union, cast
 from uuid import NAMESPACE_DNS, UUID, uuid4, uuid5
+
+from typing_extensions import TypedDict
 
 try:
     from pydantic.v1 import Field, root_validator  # type: ignore[import]
@@ -28,6 +31,14 @@ from langsmith.client import ID_TYPE, RUN_TYPE_T, Client, _dumps_json, _ensure_u
 
 logger = logging.getLogger(__name__)
 
+
+class WriteReplica(TypedDict, total=False):
+    api_url: Optional[str]
+    api_key: Optional[str]
+    project_name: Optional[str]
+    updates: Optional[dict]
+
+
 LANGSMITH_PREFIX = "langsmith-"
 LANGSMITH_DOTTED_ORDER = sys.intern(f"{LANGSMITH_PREFIX}trace")
 LANGSMITH_DOTTED_ORDER_BYTES = LANGSMITH_DOTTED_ORDER.encode("utf-8")
@@ -41,7 +52,7 @@ _CLIENT: Optional[Client] = None
 _LOCK = threading.Lock()
 
 # Context variables
-_REPLICAS = contextvars.ContextVar[Optional[Sequence[tuple[str, Optional[dict]]]]](
+_REPLICAS = contextvars.ContextVar[Optional[Sequence[WriteReplica]]](
     "_REPLICAS", default=None
 )
 
@@ -203,7 +214,7 @@ class RunTree(ls_schemas.RunBase):
     dangerously_allow_filesystem: Optional[bool] = Field(
         default=False, description="Whether to allow filesystem access for attachments."
     )
-    replicas: Optional[Sequence[tuple[str, Optional[dict]]]] = Field(
+    replicas: Optional[Sequence[WriteReplica]] = Field(
         default=None,
         description="Projects to replicate this run to with optional updates.",
     )
@@ -555,10 +566,16 @@ class RunTree(ls_schemas.RunBase):
 
     def post(self, exclude_child_runs: bool = True) -> None:
         """Post the run tree to the API asynchronously."""
-        if self.replicas:
-            for project_name, updates in self.replicas:
+        write_replicas = _ensure_write_replicas(self.replicas)
+        if write_replicas:
+            for replica in write_replicas:
+                project_name = replica.get("project_name") or self.session_name
                 run_dict = self._remap_for_project(project_name)
-                self.client.create_run(**run_dict)
+                self.client.create_run(
+                    **run_dict,
+                    api_key=replica.get("api_key"),
+                    api_url=replica.get("api_url"),
+                )
         else:
             kwargs = self._get_dicts_safe()
             self.client.create_run(**kwargs)
@@ -606,8 +623,11 @@ class RunTree(ls_schemas.RunBase):
         except Exception as e:
             logger.warning(f"Error filtering attachments to upload: {e}")
         # Fanout logic for patch
-        if self.replicas:
-            for project_name, updates in self.replicas:
+        write_replicas = _ensure_write_replicas(self.replicas)
+        if write_replicas:
+            for replica in write_replicas:
+                project_name = replica.get("project_name") or self.session_name
+                updates = replica.get("updates")
                 run_dict = self._remap_for_project(project_name, updates)
                 self.client.update_run(
                     name=run_dict["name"],
@@ -625,6 +645,8 @@ class RunTree(ls_schemas.RunBase):
                     tags=run_dict.get("tags"),
                     extra=run_dict.get("extra"),
                     attachments=attachments,
+                    api_key=replica.get("api_key"),
+                    api_url=replica.get("api_url"),
                 )
         else:
             self.client.update_run(
@@ -827,7 +849,7 @@ class _Baggage:
         metadata: Optional[dict[str, str]] = None,
         tags: Optional[list[str]] = None,
         project_name: Optional[str] = None,
-        replicas: Optional[Sequence[tuple[str, Optional[dict]]]] = None,
+        replicas: Optional[Sequence[WriteReplica]] = None,
     ):
         """Initialize the Baggage object."""
         self.metadata = metadata or {}
@@ -843,7 +865,7 @@ class _Baggage:
         metadata = {}
         tags = []
         project_name = None
-        replicas = None
+        replicas: Optional[list[WriteReplica]] = None
         try:
             for item in header_value.split(","):
                 key, value = item.split("=", 1)
@@ -855,7 +877,27 @@ class _Baggage:
                     project_name = urllib.parse.unquote(value)
                 elif key == LANGSMITH_REPLICAS:
                     replicas_data = json.loads(urllib.parse.unquote(value))
-                    replicas = [(str(proj), updates) for proj, updates in replicas_data]
+                    parsed_replicas: list[WriteReplica] = []
+                    for replica_item in replicas_data:
+                        if isinstance(replica_item, list) and len(replica_item) == 2:
+                            # Convert legacy format to WriteReplica
+                            parsed_replicas.append(
+                                WriteReplica(
+                                    api_url=None,
+                                    api_key=None,
+                                    project_name=str(replica_item[0]),
+                                    updates=replica_item[1],
+                                )
+                            )
+                        elif isinstance(replica_item, dict):
+                            # New WriteReplica format: preserve as dict
+                            parsed_replicas.append(cast(WriteReplica, replica_item))
+                        else:
+                            logger.warning(
+                                f"Unknown replica format in baggage: {replica_item}"
+                            )
+                            continue
+                    replicas = parsed_replicas
         except Exception as e:
             logger.warning(f"Error parsing baggage header: {e}")
 
@@ -895,6 +937,64 @@ class _Baggage:
                 f"{LANGSMITH_PREFIX}replicas={urllib.parse.quote(serialized_replicas)}"
             )
         return ",".join(items)
+
+
+@functools.lru_cache(maxsize=1)
+def _parse_write_replicas_from_env_var(env_var: Optional[str]) -> list[WriteReplica]:
+    """Parse write replicas from LANGSMITH_RUNS_ENDPOINTS environment variable value."""
+    if not env_var:
+        return []
+
+    try:
+        parsed = json.loads(env_var)
+        _check_endpoint_env_unset(parsed)
+        return [
+            WriteReplica(
+                api_url=url.rstrip("/"),
+                api_key=key,
+                project_name=None,
+                updates=None,
+            )
+            for url, key in parsed.items()
+        ]
+    except utils.LangSmithUserError:
+        raise
+    except Exception as e:
+        logger.warning(
+            "Invalid LANGSMITH_RUNS_ENDPOINTS – must be valid JSON mapping of "
+            f"url->apiKey: {e}"
+        )
+        return []
+
+
+def _get_write_replicas_from_env() -> list[WriteReplica]:
+    """Get write replicas from LANGSMITH_RUNS_ENDPOINTS environment variable."""
+    import os
+
+    env_var = os.getenv("LANGSMITH_RUNS_ENDPOINTS")
+    return _parse_write_replicas_from_env_var(env_var)
+
+
+def _check_endpoint_env_unset(parsed: dict[str, str]) -> None:
+    """Check if endpoint environment variables conflict with runs endpoints."""
+    import os
+
+    if parsed and (os.getenv("LANGSMITH_ENDPOINT") or os.getenv("LANGCHAIN_ENDPOINT")):
+        raise utils.LangSmithUserError(
+            "You cannot provide both LANGSMITH_ENDPOINT / LANGCHAIN_ENDPOINT "
+            "and LANGSMITH_RUNS_ENDPOINTS."
+        )
+
+
+def _ensure_write_replicas(
+    replicas: Optional[Sequence[WriteReplica]],
+) -> list[WriteReplica]:
+    """Convert replicas to WriteReplica format."""
+    if replicas is None:
+        return _get_write_replicas_from_env()
+
+    # All replicas should now be WriteReplica dicts
+    return list(replicas)
 
 
 def _parse_dotted_order(dotted_order: str) -> list[tuple[datetime, UUID]]:
