@@ -3157,8 +3157,8 @@ def test__convert_stored_attachments_to_attachments_dict(mock_get: mock.Mock):
 
 
 @mock.patch("langsmith.client.requests.Session")
-def test_list_runs_with_cursor(mock_session_cls: mock.Mock) -> None:
-    """Test that list_runs properly includes cursor parameter in request body."""
+def test_list_runs_parameters(mock_session_cls: mock.Mock) -> None:
+    """Test that list_runs properly handles various parameters including cursor."""
     _clear_env_cache()
     mock_session = mock.Mock()
     mock_response = mock.Mock()
@@ -3192,10 +3192,10 @@ def test_list_runs_with_cursor(mock_session_cls: mock.Mock) -> None:
     mock_session_cls.return_value = mock_session
 
     client = Client(api_url="http://localhost:8000", api_key="test-api-key")
-    cursor_value = "test-cursor-123"
-
-    # Call list_runs with cursor parameter
     test_project_id = str(uuid.uuid4())
+
+    # Test with cursor parameter
+    cursor_value = "test-cursor-123"
     runs = list(
         client.list_runs(project_id=test_project_id, cursor=cursor_value, limit=1)
     )
@@ -3204,4 +3204,12 @@ def test_list_runs_with_cursor(mock_session_cls: mock.Mock) -> None:
     assert request_data is not None
     assert "cursor" in request_data
     assert request_data["cursor"] == cursor_value
+    assert len(runs) == 1
+
+    # Test without cursor parameter
+    runs = list(client.list_runs(project_id=test_project_id, limit=1))
+
+    # Verify that cursor was not included in the request body when not provided
+    assert request_data is not None
+    assert "cursor" not in request_data
     assert len(runs) == 1
