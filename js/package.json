@@ -1,6 +1,6 @@
 {
   "name": "langsmith",
-  "version": "0.3.49",
+  "version": "0.3.50",
   "description": "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform.",
   "packageManager": "yarn@1.22.19",
   "files": [
@@ -144,8 +144,8 @@
     "uuid": "^10.0.0"
   },
   "devDependencies": {
-    "@ai-sdk/anthropic": "2.0.0-beta.8",
-    "@ai-sdk/openai": "2.0.0-beta.11",
+    "@ai-sdk/anthropic": "2.0.0-beta.12",
+    "@ai-sdk/openai": "2.0.0-beta.15",
     "@babel/preset-env": "^7.22.4",
     "@faker-js/faker": "^8.4.1",
     "@jest/globals": "^29.5.0",
