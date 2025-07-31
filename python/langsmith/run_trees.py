@@ -1012,9 +1012,8 @@ def _parse_write_replicas_from_env_var(env_var: Optional[str]) -> list[WriteRepl
 
 def _get_write_replicas_from_env() -> list[WriteReplica]:
     """Get write replicas from LANGSMITH_RUNS_ENDPOINTS environment variable."""
-    import os
-
-    env_var = os.getenv("LANGSMITH_RUNS_ENDPOINTS")
+    env_var = utils.get_env_var("RUNS_ENDPOINTS")
+    
     return _parse_write_replicas_from_env_var(env_var)
 
 
