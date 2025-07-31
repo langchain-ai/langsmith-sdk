@@ -1284,11 +1284,12 @@ class Client:
         if patch:
             sampled = []
             for run in runs:
-                run_id = _as_uuid(run["id"])
-                if run_id not in self._filtered_post_uuids:
+                trace_id = _as_uuid(run["trace_id"])
+                if trace_id not in self._filtered_post_uuids:
                     sampled.append(run)
                 else:
-                    self._filtered_post_uuids.remove(run_id)
+                    if run["id"] == trace_id:
+                        self._filtered_post_uuids.remove(trace_id)
             return sampled
         else:
             sampled = []

@@ -1526,6 +1526,228 @@ def test_sampling_and_batching():
             client.create_run(**params)
             run_params.append(params)
 
+
+def test_patch_sampling_follows_trace_logic():
+    """Test that patch runs correctly follow post logic by checking trace_id instead of run.id."""
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_session.request.return_value = mock_response
+
+    # Mock sampling to reject first trace, accept second trace
+    counter = 0
+
+    def mock_should_sample():
+        nonlocal counter
+        counter += 1
+        return counter % 2 == 0  # Accept even-numbered calls (2nd, 4th, etc.)
+
+    with patch(
+        "langsmith.client.Client._should_sample", side_effect=mock_should_sample
+    ):
+        client = Client(
+            api_key="test-api-key",
+            tracing_sampling_rate=0.5,
+            session=mock_session,
+        )
+
+        # Create two traces
+        trace_id_1 = uuid.uuid4()
+        trace_id_2 = uuid.uuid4()
+        child_run_id_1 = uuid.uuid4()
+        child_run_id_2 = uuid.uuid4()
+
+        # Create root runs (these will be sampled)
+        root_run_1 = {
+            "id": trace_id_1,
+            "trace_id": trace_id_1,
+            "name": "root_run_1",
+            "run_type": "llm",
+            "inputs": {"text": "hello"},
+        }
+        root_run_2 = {
+            "id": trace_id_2,
+            "trace_id": trace_id_2,
+            "name": "root_run_2",
+            "run_type": "llm",
+            "inputs": {"text": "world"},
+        }
+
+        # Create child runs
+        child_run_1 = {
+            "id": child_run_id_1,
+            "trace_id": trace_id_1,
+            "name": "child_run_1",
+            "run_type": "tool",
+            "inputs": {"text": "child hello"},
+        }
+        child_run_2 = {
+            "id": child_run_id_2,
+            "trace_id": trace_id_2,
+            "name": "child_run_2",
+            "run_type": "tool",
+            "inputs": {"text": "child world"},
+        }
+
+        # Test POST filtering (initial sampling)
+        post_filtered = client._filter_for_sampling([root_run_1, root_run_2], patch=False)
+
+        # Based on our mock, first call returns False, second returns True
+        # So only root_run_2 should be sampled
+        assert len(post_filtered) == 1
+        assert post_filtered[0]["id"] == trace_id_2
+
+        # Verify that trace_id_1 is in filtered set, trace_id_2 is not
+        assert trace_id_1 in client._filtered_post_uuids
+        assert trace_id_2 not in client._filtered_post_uuids
+
+        # Test PATCH filtering - child runs should follow their trace's sampling decision
+        patch_runs = [
+            {**child_run_1, "outputs": {"result": "child result 1"}},
+            {**child_run_2, "outputs": {"result": "child result 2"}},
+        ]
+
+        patch_filtered = client._filter_for_sampling(patch_runs, patch=True)
+
+        # Only child_run_2 should be included (its trace was sampled)
+        # child_run_1 should be filtered out (its trace was not sampled)
+        assert len(patch_filtered) == 1
+        assert patch_filtered[0]["id"] == child_run_id_2
+        assert patch_filtered[0]["trace_id"] == trace_id_2
+
+        # Test PATCH filtering for root runs (updates to the root runs themselves)
+        root_patch_runs = [
+            {**root_run_1, "outputs": {"result": "root result 1"}},
+            {**root_run_2, "outputs": {"result": "root result 2"}},
+        ]
+
+        root_patch_filtered = client._filter_for_sampling(root_patch_runs, patch=True)
+
+        # Only root_run_2 should be included, and trace_id_1 should be removed from filtered set
+        # since we're updating the root run that was originally filtered
+        assert len(root_patch_filtered) == 1
+        assert root_patch_filtered[0]["id"] == trace_id_2
+
+        # trace_id_1 should be removed from filtered set since we processed its root run
+        assert trace_id_1 not in client._filtered_post_uuids
+        assert trace_id_2 not in client._filtered_post_uuids  # Still not in filtered set
+
+
+def test_patch_sampling_mixed_traces():
+    """Test patch sampling with a mix of sampled and unsampled traces."""
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_session.request.return_value = mock_response
+
+    # Mock sampling to accept every other trace
+    counter = 0
+
+    def mock_should_sample():
+        nonlocal counter
+        counter += 1
+        return counter % 2 == 1  # Accept odd-numbered calls (1st, 3rd, etc.)
+
+    with patch(
+        "langsmith.client.Client._should_sample", side_effect=mock_should_sample
+    ):
+        client = Client(
+            api_key="test-api-key",
+            tracing_sampling_rate=0.5,
+            session=mock_session,
+        )
+
+        # Create multiple traces
+        trace_ids = [uuid.uuid4() for _ in range(4)]
+        child_run_ids = [uuid.uuid4() for _ in range(4)]
+
+        # Create root runs
+        root_runs = []
+        for i, trace_id in enumerate(trace_ids):
+            root_runs.append({
+                "id": trace_id,
+                "trace_id": trace_id,
+                "name": f"root_run_{i}",
+                "run_type": "llm",
+                "inputs": {"text": f"hello {i}"},
+            })
+
+        # Sample the root runs
+        post_filtered = client._filter_for_sampling(root_runs, patch=False)
+
+        # Based on our mock: 1st and 3rd calls return True (indices 0, 2)
+        assert len(post_filtered) == 2
+        sampled_trace_ids = {run["id"] for run in post_filtered}
+        assert trace_ids[0] in sampled_trace_ids
+        assert trace_ids[2] in sampled_trace_ids
+
+        # Create child runs for all traces
+        child_runs = []
+        for i, (trace_id, child_id) in enumerate(zip(trace_ids, child_run_ids)):
+            child_runs.append({
+                "id": child_id,
+                "trace_id": trace_id,
+                "name": f"child_run_{i}",
+                "run_type": "tool",
+                "inputs": {"text": f"child {i}"},
+                "outputs": {"result": f"child result {i}"},
+            })
+
+        # Test patch filtering for child runs
+        patch_filtered = client._filter_for_sampling(child_runs, patch=True)
+
+        # Only children of sampled traces should be included
+        assert len(patch_filtered) == 2
+        patch_trace_ids = {run["trace_id"] for run in patch_filtered}
+        assert trace_ids[0] in patch_trace_ids
+        assert trace_ids[2] in patch_trace_ids
+        assert trace_ids[1] not in patch_trace_ids
+        assert trace_ids[3] not in patch_trace_ids
+
+
+def test_original_sampling_and_batching():
+    """Test that sampling and batching work correctly (continuation of original test)."""
+    # Setup mock client
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_session.request.return_value = mock_response
+
+    counter = 0
+
+    def mock_should_sample():
+        nonlocal counter
+        counter += 1
+        return counter % 2 != 0
+
+    with patch(
+        "langsmith.client.Client._should_sample", side_effect=mock_should_sample
+    ):
+        client = Client(
+            api_key="test-api-key",
+            auto_batch_tracing=True,
+            tracing_sampling_rate=0.5,
+            session=mock_session,
+        )
+
+        project_name = "__test_batch"
+
+        # Create parent runs
+        run_params = []
+        for i in range(4):
+            run_id = uuid.uuid4()
+            params = {
+                "id": run_id,
+                "project_name": project_name,
+                "name": f"test_run {i}",
+                "run_type": "llm",
+                "inputs": {"text": f"hello world {i}"},
+                "dotted_order": "foo",
+                "trace_id": run_id,
+            }
+            client.create_run(**params)
+            run_params.append(params)
+
         client.flush()
 
         # Create child runs and update parent runs
