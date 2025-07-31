@@ -2407,6 +2407,7 @@ class Client:
         run_ids: Optional[Sequence[ID_TYPE]] = None,
         select: Optional[Sequence[str]] = None,
         limit: Optional[int] = None,
+        cursor: Optional[str] = None,
         **kwargs: Any,
     ) -> Iterator[ls_schemas.Run]:
         """List runs from the LangSmith API.
@@ -2437,6 +2438,7 @@ class Client:
                 The IDs of the runs to filter by.
             select (Optional[Sequence[str]]): The fields to select.
             limit (Optional[int]): The maximum number of runs to return.
+            cursor (Optional[str]): The cursor to use for pagination.
             **kwargs (Any): Additional keyword arguments.
 
         Yields:
@@ -2557,6 +2559,7 @@ class Client:
             "id": run_ids,
             "trace": trace_id,
             "select": select,
+            "cursor": cursor,
             **kwargs,
         }
         body_query = {k: v for k, v in body_query.items() if v is not None}
