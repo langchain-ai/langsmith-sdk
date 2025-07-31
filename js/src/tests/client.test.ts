@@ -271,7 +271,7 @@ describe("Client", () => {
     it("should filter patch runs based on trace_id instead of run.id", () => {
       const client = new Client({
         apiKey: "test-api-key",
-        tracingSamplingRate: 0.5
+        tracingSamplingRate: 0.5,
       });
 
       // Mock the _shouldSample method to control sampling decisions
@@ -349,7 +349,7 @@ describe("Client", () => {
     it("should remove trace_id from filtered set when processing root run patches", () => {
       const client = new Client({
         apiKey: "test-api-key",
-        tracingSamplingRate: 0.5
+        tracingSamplingRate: 0.5,
       });
 
       // Mock the _shouldSample method to reject first trace, accept second
@@ -406,7 +406,10 @@ describe("Client", () => {
         },
       ];
 
-      const rootPatchFiltered = (client as any)._filterForSampling(rootPatchRuns, true);
+      const rootPatchFiltered = (client as any)._filterForSampling(
+        rootPatchRuns,
+        true
+      );
 
       // Only root_run_2 should be included, and traceId1 should be removed from filtered set
       // since we're updating the root run that was originally filtered
@@ -421,7 +424,7 @@ describe("Client", () => {
     it("should handle mixed traces with patch sampling", () => {
       const client = new Client({
         apiKey: "test-api-key",
-        tracingSamplingRate: 0.5
+        tracingSamplingRate: 0.5,
       });
 
       // Mock sampling to accept every other trace
@@ -468,7 +471,9 @@ describe("Client", () => {
 
       // Only children of sampled traces should be included
       expect(patchFiltered).toHaveLength(2);
-      const patchTraceIds = new Set(patchFiltered.map((run: any) => run.trace_id));
+      const patchTraceIds = new Set(
+        patchFiltered.map((run: any) => run.trace_id)
+      );
       expect(patchTraceIds.has(traceIds[0])).toBe(true);
       expect(patchTraceIds.has(traceIds[2])).toBe(true);
       expect(patchTraceIds.has(traceIds[1])).toBe(false);
