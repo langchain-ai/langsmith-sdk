@@ -937,10 +937,8 @@ export class Client implements LangSmithTracingClientInterface {
       for (const run of runs) {
         if (!this.filteredPostUuids.has(run.trace_id)) {
           sampled.push(run);
-        } else {
-          if (run.id === run.trace_id) {
-            this.filteredPostUuids.delete(run.trace_id);
-          }
+        } else if (run.id === run.trace_id) {
+          this.filteredPostUuids.delete(run.trace_id);
         }
       }
       return sampled;

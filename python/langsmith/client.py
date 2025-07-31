@@ -1287,9 +1287,8 @@ class Client:
                 trace_id = _as_uuid(run["trace_id"])
                 if trace_id not in self._filtered_post_uuids:
                     sampled.append(run)
-                else:
-                    if run["id"] == trace_id:
-                        self._filtered_post_uuids.remove(trace_id)
+                elif run["id"] == trace_id:
+                    self._filtered_post_uuids.remove(trace_id)
             return sampled
         else:
             sampled = []
