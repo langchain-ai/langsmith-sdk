@@ -226,20 +226,45 @@ def test_cached_hosts_parameter():
         t.log_feedback(key="caching_test", score=1 if mock_post.call_count == 1 else 0)
 
         assert result1 == result2, "Results should be identical"
+        assert mock_post.call_count == 1, f"Expected 1 HTTP call due to caching, got {mock_post.call_count}"
 
 
 @pytest.mark.langsmith(cached_hosts=["api.anthropic.com", "https://api.openai.com"])
 async def test_cached_hosts_parameter_async():
     """Test that cached_hosts parameter works with async tests."""
-    text = "Hello, world!"
-    response = "Hello back!"
+    import aiohttp
+    from unittest.mock import patch, Mock, AsyncMock
 
-    t.log_inputs({"text": text})
-    t.log_outputs({"response": response})
-    t.log_reference_outputs({"response": "Hello back!"})
+    # Mock async response
+    mock_response = AsyncMock()
+    mock_response.json.return_value = {"content": [{"text": "Hello async!"}]}
+    mock_response.status = 200
+    mock_response.__aenter__.return_value = mock_response
+    mock_response.__aexit__.return_value = None
 
-    with t.trace_feedback():
-        grade = 1 if "Hello" in response else 0
-        t.log_feedback(key="greeting_check", score=grade)
+    mock_session = AsyncMock()
+    mock_session.post.return_value = mock_response
 
-    assert "Hello" in response
+    with patch('aiohttp.ClientSession', return_value=mock_session) as mock_session_class:
+        async with aiohttp.ClientSession() as session:
+            # Make calls to both hosts that should be cached
+            response1 = await session.post("https://api.openai.com/v1/chat/completions", json={"test": "data"})
+            response2 = await session.post("https://api.openai.com/v1/chat/completions", json={"test": "data"})
+            response3 = await session.post("https://api.anthropic.com/v1/messages", json={"test": "data"})
+            response4 = await session.post("https://api.anthropic.com/v1/messages", json={"test": "data"})
+
+            result1 = await response1.json()
+            result2 = await response2.json()
+            result3 = await response3.json()
+            result4 = await response4.json()
+
+            t.log_inputs({"total_mock_calls": mock_session.post.call_count})
+            t.log_outputs({"openai_results": [result1, result2], "anthropic_results": [result3, result4]})
+            t.log_reference_outputs({"expected_calls": 2})  # Should be 2 if both hosts cached (1 each)
+
+            # If caching works, should only have 2 calls total (1 per host)
+            t.log_feedback(key="async_caching_test", score=1 if mock_session.post.call_count == 2 else 0)
+
+            assert result1 == result2, "OpenAI results should be identical"
+            assert result3 == result4, "Anthropic results should be identical"
+            assert mock_session.post.call_count == 2, f"Expected 2 HTTP calls due to caching, got {mock_session.post.call_count}"
