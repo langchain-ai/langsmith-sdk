@@ -228,8 +228,6 @@ def test_cached_hosts_parameter():
         assert result1 == result2, "Results should be identical"
 
 
-
-
 @pytest.mark.langsmith(cached_hosts=["api.anthropic.com", "https://api.openai.com"])
 async def test_cached_hosts_parameter_async():
     """Test that cached_hosts parameter works with async tests."""
