@@ -56,11 +56,16 @@ _REPLICAS = contextvars.ContextVar[Optional[Sequence[WriteReplica]]](
     "_REPLICAS", default=None
 )
 
+_DISTRIBUTED_PARENT_ID = contextvars.ContextVar[Optional[str]](
+    "_DISTRIBUTED_PARENT_ID", default=None
+)
+
 _SENTINEL = cast(None, object())
 
+TIMESTAMP_LENGTH = 36
+
+
 # Note, this is called directly by langchain. Do not remove.
-
-
 def get_cached_client(**init_kwargs: Any) -> Client:
     global _CLIENT
     if _CLIENT is None:
@@ -516,6 +521,36 @@ class RunTree(ls_schemas.RunBase):
             self_dict["outputs"] = self.outputs.copy()
         return self_dict
 
+    def _slice_parent_id(self, parent_id: str, run_dict: dict) -> None:
+        """Slice the parent id from dotted order.
+
+        Additionally check if the current run is a child of the parent. If so, update
+        the parent_run_id to None, and set the trace id to the new root id after
+        parent_id.
+        """
+        if dotted_order := run_dict.get("dotted_order"):
+            segs = dotted_order.split(".")
+            start_idx = None
+            parent_id = str(parent_id)
+            # TODO(angus): potentially use binary search to find the index
+            for idx, part in enumerate(segs):
+                seg_id = part[-TIMESTAMP_LENGTH:]
+                if str(seg_id) == parent_id:
+                    start_idx = idx
+                    break
+            if start_idx is not None:
+                # Trim segments to start after parent_id (exclusive)
+                trimmed_segs = segs[start_idx + 1 :]
+                # Rebuild dotted_order
+                run_dict["dotted_order"] = ".".join(trimmed_segs)
+                if trimmed_segs:
+                    run_dict["trace_id"] = UUID(trimmed_segs[0][-TIMESTAMP_LENGTH:])
+                else:
+                    run_dict["trace_id"] = run_dict["id"]
+        if str(run_dict.get("parent_run_id")) == parent_id:
+            # We've found the new root node.
+            run_dict.pop("parent_run_id", None)
+
     def _remap_for_project(
         self, project_name: str, updates: Optional[dict] = None
     ) -> dict:
@@ -523,6 +558,12 @@ class RunTree(ls_schemas.RunBase):
         run_dict = self._get_dicts_safe()
         if project_name == self.session_name:
             return run_dict
+
+        if updates and updates.get("reroot", False):
+            distributed_parent_id = _DISTRIBUTED_PARENT_ID.get()
+
+            if distributed_parent_id:
+                self._slice_parent_id(distributed_parent_id, run_dict)
 
         old_id = run_dict["id"]
         new_id = uuid5(NAMESPACE_DNS, f"{old_id}:{project_name}")
@@ -540,13 +581,14 @@ class RunTree(ls_schemas.RunBase):
             new_parent = None
         # dotted order
         if run_dict.get("dotted_order"):
-            segs = _parse_dotted_order(run_dict["dotted_order"])
+            segs = run_dict["dotted_order"].split(".")
             rebuilt = []
-            for ts, seg_id in segs[:-1]:
-                repl = uuid5(NAMESPACE_DNS, f"{seg_id}:{project_name}")
-                rebuilt.append(ts.strftime("%Y%m%dT%H%M%S%fZ") + str(repl))
-            ts_last, _ = segs[-1]
-            rebuilt.append(ts_last.strftime("%Y%m%dT%H%M%S%fZ") + str(new_id))
+            for part in segs[:-1]:
+                repl = uuid5(
+                    NAMESPACE_DNS, f"{part[-TIMESTAMP_LENGTH:]}:{project_name}"
+                )
+                rebuilt.append(part[:-TIMESTAMP_LENGTH] + str(repl))
+            rebuilt.append(segs[-1][:-TIMESTAMP_LENGTH] + str(new_id))
             dotted = ".".join(rebuilt)
         else:
             dotted = None
@@ -570,7 +612,8 @@ class RunTree(ls_schemas.RunBase):
         if write_replicas:
             for replica in write_replicas:
                 project_name = replica.get("project_name") or self.session_name
-                run_dict = self._remap_for_project(project_name)
+                updates = replica.get("updates")
+                run_dict = self._remap_for_project(project_name, updates)
                 self.client.create_run(
                     **run_dict,
                     api_key=replica.get("api_key"),
@@ -817,7 +860,12 @@ class RunTree(ls_schemas.RunBase):
         if baggage.replicas:
             init_args["replicas"] = baggage.replicas
 
-        return RunTree(**init_args)
+        run_tree = RunTree(**init_args)
+
+        # Set the distributed parent ID to this run's ID for rerooting
+        _DISTRIBUTED_PARENT_ID.set(str(run_tree.id))
+
+        return run_tree
 
     def to_headers(self) -> dict[str, str]:
         """Return the RunTree as a dictionary of headers."""
@@ -969,9 +1017,8 @@ def _parse_write_replicas_from_env_var(env_var: Optional[str]) -> list[WriteRepl
 
 def _get_write_replicas_from_env() -> list[WriteReplica]:
     """Get write replicas from LANGSMITH_RUNS_ENDPOINTS environment variable."""
-    import os
+    env_var = utils.get_env_var("RUNS_ENDPOINTS")
 
-    env_var = os.getenv("LANGSMITH_RUNS_ENDPOINTS")
     return _parse_write_replicas_from_env_var(env_var)
 
 
@@ -1001,7 +1048,10 @@ def _parse_dotted_order(dotted_order: str) -> list[tuple[datetime, UUID]]:
     """Parse the dotted order string."""
     parts = dotted_order.split(".")
     return [
-        (datetime.strptime(part[:-36], "%Y%m%dT%H%M%S%fZ"), UUID(part[-36:]))
+        (
+            datetime.strptime(part[:-TIMESTAMP_LENGTH], "%Y%m%dT%H%M%S%fZ"),
+            UUID(part[-TIMESTAMP_LENGTH:]),
+        )
         for part in parts
     ]
 
