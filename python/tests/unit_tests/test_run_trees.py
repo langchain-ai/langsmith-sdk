@@ -235,8 +235,6 @@ def test_distributed_parent_id_from_headers():
     parent = grandparent.create_child(name="Parent")
     child = parent.create_child(name="Child")
 
-    headers = child.to_headers()
-
     current_distributed_parent_id = run_trees._DISTRIBUTED_PARENT_ID.get()
 
     new_run = RunTree(
