@@ -9,6 +9,7 @@ import itertools
 import json
 import logging
 import math
+import os
 import pathlib
 import sys
 import time
@@ -141,44 +142,53 @@ def test_validate_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     assert client.api_key == "env_langsmith_api_key"
 
 
-def test_validate_multiple_urls(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_validate_multiple_urls() -> None:
+    """Test URL validation without environment variable manipulation."""
     _clear_env_cache()
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain-endpoint.com")
-    monkeypatch.setenv("LANGSMITH_ENDPOINT", "https://api.smith.langsmith-endpoint.com")
-    monkeypatch.setenv("LANGSMITH_RUNS_ENDPOINTS", "{}")
 
-    with pytest.raises(ls_utils.LangSmithUserError):
-        Client()
+    # Test 1: Multiple conflicting endpoint environment variables should raise error
+    with patch.dict(
+        os.environ,
+        {
+            "LANGCHAIN_ENDPOINT": "https://api.smith.langchain-endpoint.com",
+            "LANGSMITH_ENDPOINT": "https://api.smith.langsmith-endpoint.com",
+            "LANGSMITH_RUNS_ENDPOINTS": "{}",
+        },
+        clear=True,
+    ):
+        with pytest.raises(ls_utils.LangSmithUserError):
+            Client()
 
-    monkeypatch.undo()
-    with pytest.raises(ls_utils.LangSmithUserError):
-        Client(
-            api_url="https://api.smith.langchain.com",
-            api_key="123",
-            api_urls={"https://api.smith.langchain.com": "123"},
-        )
+    # Test 2: Conflicting api_url parameter and api_urls parameter should raise error
+    with patch.dict(os.environ, {}, clear=True):
+        with pytest.raises(ls_utils.LangSmithUserError):
+            Client(
+                api_url="https://api.smith.langchain.com",
+                api_key="123",
+                api_urls={"https://api.smith.langchain.com": "123"},
+            )
 
+    # Test 3: LANGSMITH_RUNS_ENDPOINTS should not affect _write_api_urls
     data = {
         "https://api.smith.langsmith-endpoint_1.com": "123",
         "https://api.smith.langsmith-endpoint_2.com": "456",
         "https://api.smith.langsmith-endpoint_3.com": "789",
     }
-    monkeypatch.delenv("LANGCHAIN_ENDPOINT", raising=False)
-    monkeypatch.delenv("LANGSMITH_ENDPOINT", raising=False)
-    monkeypatch.setenv("LANGSMITH_RUNS_ENDPOINTS", json.dumps(data))
-    client = Client(auto_batch_tracing=False)
-    # _write_api_urls should only contain the default endpoint
-    assert len(client._write_api_urls) == 1
-    # The default API URL should be used
-    assert client.api_url == "https://api.smith.langchain.com"
-    # Setting api_urls should still be respected
-    client = Client(api_urls=data)
-    assert client._write_api_urls == data
-    assert client.api_url == "https://api.smith.langsmith-endpoint_1.com"
-    assert client.api_key == "123"
+    with patch.dict(
+        os.environ, {"LANGSMITH_RUNS_ENDPOINTS": json.dumps(data)}, clear=True
+    ):
+        client = Client(auto_batch_tracing=False)
+        # _write_api_urls should only contain the default endpoint
+        assert len(client._write_api_urls) == 1
+        # The default API URL should be used
+        assert client.api_url == "https://api.smith.langchain.com"
 
-    # Clean up environment variable
-    monkeypatch.delenv("LANGSMITH_RUNS_ENDPOINTS", raising=False)
+    # Test 4: Setting api_urls should still be respected
+    with patch.dict(os.environ, {}, clear=True):
+        client = Client(api_urls=data)
+        assert client._write_api_urls == data
+        assert client.api_url == "https://api.smith.langsmith-endpoint_1.com"
+        assert client.api_key == "123"
 
 
 @mock.patch("langsmith.client.requests.Session")
