@@ -543,7 +543,7 @@ class RunTree(ls_schemas.RunBase):
                 # Rebuild dotted_order
                 run_dict["dotted_order"] = ".".join(trimmed_segs)
                 if trimmed_segs:
-                    run_dict["trace_id"] = trimmed_segs[0][-36:]
+                    run_dict["trace_id"] = UUID(trimmed_segs[0][-36:])
                 else:
                     run_dict["trace_id"] = run_dict["id"]
         if str(run_dict.get("parent_run_id")) == parent_id:
@@ -857,7 +857,12 @@ class RunTree(ls_schemas.RunBase):
         if baggage.replicas:
             init_args["replicas"] = baggage.replicas
 
-        return RunTree(**init_args)
+        run_tree = RunTree(**init_args)
+
+        # Set the distributed parent ID to this run's ID for rerooting
+        _DISTRIBUTED_PARENT_ID.set(str(run_tree.id))
+
+        return run_tree
 
     def to_headers(self) -> dict[str, str]:
         """Return the RunTree as a dictionary of headers."""

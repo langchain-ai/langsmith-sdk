@@ -97,6 +97,8 @@ def get_tracing_context(
             "metadata": _METADATA.get(),
             "enabled": _TRACING_ENABLED.get(),
             "client": _CLIENT.get(),
+            "replicas": run_trees._REPLICAS.get(),
+            "distributed_parent_id": run_trees._DISTRIBUTED_PARENT_ID.get(),
         }
     return {k: context.get(v) for k, v in _CONTEXT_KEYS.items()}
 
