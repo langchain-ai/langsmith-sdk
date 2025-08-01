@@ -250,18 +250,18 @@ def test_distributed_parent_id_from_headers():
 
     remapped_dict = new_run._remap_for_project("child_project", {"reroot": True})
 
-    assert (
-        remapped_dict.get("parent_run_id") is None
-    ), "Run should be rerooted with no parent"
+    assert remapped_dict.get("parent_run_id") is None, (
+        "Run should be rerooted with no parent"
+    )
 
     parsed_order = run_trees._parse_dotted_order(remapped_dict["dotted_order"])
-    assert (
-        len(parsed_order) == 1
-    ), f"Expected 1 segment after rerooting, got {len(parsed_order)}"
+    assert len(parsed_order) == 1, (
+        f"Expected 1 segment after rerooting, got {len(parsed_order)}"
+    )
 
-    assert (
-        remapped_dict["trace_id"] == new_run.id
-    ), "Trace ID should be the new run's ID after rerooting"
+    assert remapped_dict["trace_id"] == new_run.id, (
+        "Trace ID should be the new run's ID after rerooting"
+    )
 
     assert str(current_distributed_parent_id) == str(child.id), (
         f"Distributed parent ID should be the immediate parent from headers! "
