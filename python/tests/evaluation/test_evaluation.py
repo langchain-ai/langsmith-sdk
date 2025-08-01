@@ -258,9 +258,9 @@ async def test_aevaluate():
 
     final_runs = wait_for(check_run_count, max_sleep_time=60, sleep_time=2)
 
-    assert len(final_runs) == len(
-        all_examples
-    ), f"Expected {len(all_examples)} runs, but got {len(final_runs)}"
+    assert len(final_runs) == len(all_examples), (
+        f"Expected {len(all_examples)} runs, but got {len(final_runs)}"
+    )
 
     # Run it again with the existing project
     results2 = await aevaluate(

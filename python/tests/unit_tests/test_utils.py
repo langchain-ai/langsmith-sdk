@@ -423,9 +423,9 @@ def test_get_host_url():
     # When web_url is None and api_url is localhost.
     assert ls_utils.get_host_url(None, "http://localhost:5000") == "http://localhost"
     # A port variation on localhost.
-    assert (
-        ls_utils.get_host_url(None, "http://127.0.0.1:8080") == "http://localhost"
-    ), "Should recognize 127.x.x.x as localhost."
+    assert ls_utils.get_host_url(None, "http://127.0.0.1:8080") == "http://localhost", (
+        "Should recognize 127.x.x.x as localhost."
+    )
 
     # If api_url path ends with /api, trimmed back to netloc.
     assert (
