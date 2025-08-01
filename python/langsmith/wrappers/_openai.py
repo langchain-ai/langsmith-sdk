@@ -123,9 +123,9 @@ def _reduce_choices(choices: list[Choice]) -> dict:
                         message["tool_calls"][index]["function"]["name"] += name_
                     arguments_ = getattr(chunk.function, "arguments", None)
                     if arguments_:
-                        message["tool_calls"][index]["function"][
-                            "arguments"
-                        ] += arguments_
+                        message["tool_calls"][index]["function"]["arguments"] += (
+                            arguments_
+                        )
     return {
         "index": getattr(choices[0], "index", 0) if choices else 0,
         "finish_reason": next(
