@@ -175,41 +175,39 @@ class TestClientReplicaMethods:
 
     def test_create_run_accepts_api_key_and_url_parameters(self):
         """Test that create_run accepts api_key and api_url parameters without error."""
-        with patch.dict(os.environ, {}, clear=True):
-            client = Client(auto_batch_tracing=False)
+        client = Client(auto_batch_tracing=False)
 
-            # Mock the session to avoid actual HTTP requests
-            with patch.object(client.session, "request") as mock_request:
-                mock_request.return_value.status_code = 200
-                mock_request.return_value.text = ""
+        # Mock the session to avoid actual HTTP requests
+        with patch.object(client.session, "request") as mock_request:
+            mock_request.return_value.status_code = 200
+            mock_request.return_value.text = ""
 
-                # This should not raise an error
-                client.create_run(
-                    name="test_run",
-                    inputs={"input": "test"},
-                    run_type="chain",
-                    api_key="custom-key",
-                    api_url="https://custom.example.com",
-                )
+            # This should not raise an error
+            client.create_run(
+                name="test_run",
+                inputs={"input": "test"},
+                run_type="chain",
+                api_key="custom-key",
+                api_url="https://custom.example.com",
+            )
 
     def test_update_run_accepts_api_key_and_url_parameters(self):
         """Test that update_run accepts api_key and api_url parameters without error."""
-        with patch.dict(os.environ, {}, clear=True):
-            client = Client(auto_batch_tracing=False)
-            run_id = uuid.uuid4()
+        client = Client(auto_batch_tracing=False)
+        run_id = uuid.uuid4()
 
-            # Mock the session to avoid actual HTTP requests
-            with patch.object(client.session, "request") as mock_request:
-                mock_request.return_value.status_code = 200
-                mock_request.return_value.text = ""
+        # Mock the session to avoid actual HTTP requests
+        with patch.object(client.session, "request") as mock_request:
+            mock_request.return_value.status_code = 200
+            mock_request.return_value.text = ""
 
-                # This should not raise an error
-                client.update_run(
-                    run_id=run_id,
-                    outputs={"output": "test"},
-                    api_key="custom-key",
-                    api_url="https://custom.example.com",
-                )
+            # This should not raise an error
+            client.update_run(
+                run_id=run_id,
+                outputs={"output": "test"},
+                api_key="custom-key",
+                api_url="https://custom.example.com",
+            )
 
 
 class TestRunTreeReplicas:
