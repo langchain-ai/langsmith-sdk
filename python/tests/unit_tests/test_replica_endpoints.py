@@ -116,7 +116,9 @@ class TestEnvironmentVariableParsing:
     def test_get_write_replicas_from_env_invalid_json(self):
         """Test _get_write_replicas_from_env with invalid JSON."""
         ls_utils.get_env_var.cache_clear()
-        with patch.dict(os.environ, {"LANGSMITH_RUNS_ENDPOINTS": "invalid-json"}):
+        with patch.dict(
+            os.environ, {"LANGSMITH_RUNS_ENDPOINTS": "invalid-json"}, clear=True
+        ):
             result = _get_write_replicas_from_env()
             assert result == []
 
@@ -129,6 +131,7 @@ class TestEnvironmentVariableParsing:
                 "LANGSMITH_ENDPOINT": "https://api.smith.langchain.com",
                 "LANGSMITH_RUNS_ENDPOINTS": '{"https://replica.example.com": "key123"}',
             },
+            clear=True,
         ):
             with pytest.raises(ls_utils.LangSmithUserError):
                 _get_write_replicas_from_env()
