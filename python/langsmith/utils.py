@@ -491,9 +491,47 @@ def get_cache_dir(cache: Optional[str]) -> Optional[str]:
     return get_env_var("TEST_CACHE", default=None)
 
 
+def filter_request_headers(
+    request: Any,
+    *,
+    ignore_hosts: Optional[Sequence[str]] = None,
+    allow_hosts: Optional[Sequence[str]] = None,
+) -> Any:
+    """Filter request headers based on ignore_hosts and allow_hosts."""
+    # Legacy behavior
+    if ignore_hosts and any(request.url.startswith(host) for host in ignore_hosts):
+        return None
+
+    if allow_hosts:
+        try:
+            parsed_url = urllib_parse.urlparse(request.url)
+        except Exception:
+            # If URL parsing fails, don't cache to be safe
+            return None
+        request_host = parsed_url.hostname or ""
+        # Check if request matches any allowed host
+        host_matches = any(
+            # Handle both full URLs (https://api.openai.com)
+            # and hostnames (api.openai.com)
+            (
+                request.url.startswith(host)
+                if host.startswith(("http://", "https://"))
+                else request_host == host or request_host.endswith(f".{host}")
+            )
+            for host in allow_hosts
+        )
+        if not host_matches:
+            return None
+
+    request.headers = {}
+    return request
+
+
 @contextlib.contextmanager
 def with_cache(
-    path: Union[str, pathlib.Path], ignore_hosts: Optional[Sequence[str]] = None
+    path: Union[str, pathlib.Path],
+    ignore_hosts: Optional[Sequence[str]] = None,
+    allow_hosts: Optional[Sequence[str]] = None,
 ) -> Generator[None, None, None]:
     """Use a cache for requests."""
     try:
@@ -507,12 +545,6 @@ def with_cache(
     from langsmith._internal import _patch as patch_urllib3
 
     patch_urllib3.patch_urllib3()
-
-    def _filter_request_headers(request: Any) -> Any:
-        if ignore_hosts and any(request.url.startswith(host) for host in ignore_hosts):
-            return None
-        request.headers = {}
-        return request
 
     cache_dir, cache_file = os.path.split(path)
 
@@ -528,7 +560,9 @@ def with_cache(
         record_mode="new_episodes",
         match_on=["uri", "method", "path", "body"],
         filter_headers=["authorization", "Set-Cookie"],
-        before_record_request=_filter_request_headers,
+        before_record_request=lambda request: filter_request_headers(
+            request, ignore_hosts=ignore_hosts, allow_hosts=allow_hosts
+        ),
     )
     with ls_vcr.use_cassette(cache_file):
         yield
@@ -538,10 +572,11 @@ def with_cache(
 def with_optional_cache(
     path: Optional[Union[str, pathlib.Path]],
     ignore_hosts: Optional[Sequence[str]] = None,
+    allow_hosts: Optional[Sequence[str]] = None,
 ) -> Generator[None, None, None]:
     """Use a cache for requests."""
     if path is not None:
-        with with_cache(path, ignore_hosts):
+        with with_cache(path, ignore_hosts, allow_hosts):
             yield
     else:
         yield
