@@ -69,6 +69,7 @@ def test(
     output_keys: Optional[Sequence[str]] = None,
     client: Optional[ls_client.Client] = None,
     test_suite_name: Optional[str] = None,
+    cached_hosts: Optional[Sequence[str]] = None,
 ) -> Callable[[Callable], Callable]: ...
 
 
@@ -93,6 +94,10 @@ def test(*args: Any, **kwargs: Any) -> Callable:
         - test_suite_name (Optional[str]): The name of the test suite to which the
             test case belongs. If not provided, the test suite name will be determined
             based on the environment or the package name.
+        - cached_hosts (Optional[Sequence[str]]): A list of hosts or URL prefixes to
+            cache requests to during testing. If not provided, all requests will be
+            cached (default behavior). This is useful for caching only specific
+            API calls (e.g., ["api.openai.com"] or ["https://api.openai.com"]).
 
     Returns:
         Callable: The decorated test function.
@@ -169,6 +174,24 @@ def test(*args: Any, **kwargs: Any) -> Callable:
             @pytest.mark.langsmith
             def test_openai_says_hello():
                 # Traced code will be included in the test case
+                response = oai_client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {"role": "system", "content": "You are a helpful assistant."},
+                        {"role": "user", "content": "Say hello!"},
+                    ],
+                )
+                assert "hello" in response.choices[0].message.content.lower()
+
+        You can also specify which hosts to cache by using the `cached_hosts` parameter.
+        This is useful when you only want to cache specific API calls:
+
+        .. code-block:: python
+
+            @pytest.mark.langsmith(cached_hosts=["https://api.openai.com"])
+            def test_openai_with_selective_caching():
+                # Only OpenAI API calls will be cached, other API calls will not
+                # be cached
                 response = oai_client.chat.completions.create(
                     model="gpt-3.5-turbo",
                     messages=[
@@ -295,14 +318,29 @@ def test(*args: Any, **kwargs: Any) -> Callable:
             test_openai_says_hello()
             test_addition_with_multiple_inputs(1, 2, 3)
     """
+    cached_hosts = kwargs.pop("cached_hosts", None)
+    cache_dir = ls_utils.get_cache_dir(kwargs.pop("cache", None))
+
+    # Validate cached_hosts usage
+    if cached_hosts and not cache_dir:
+        raise ValueError(
+            "cached_hosts parameter requires caching to be enabled. "
+            "Please set the LANGSMITH_TEST_CACHE environment variable "
+            "to a cache directory path, "
+            "or pass a cache parameter to the test decorator. "
+            "Example: LANGSMITH_TEST_CACHE='tests/cassettes' "
+            "or @pytest.mark.langsmith(cache='tests/cassettes', cached_hosts=[...])"
+        )
+
     langtest_extra = _UTExtra(
         id=kwargs.pop("id", None),
         output_keys=kwargs.pop("output_keys", None),
         client=kwargs.pop("client", None),
         test_suite_name=kwargs.pop("test_suite_name", None),
-        cache=ls_utils.get_cache_dir(kwargs.pop("cache", None)),
+        cache=cache_dir,
         metadata=kwargs.pop("metadata", None),
         repetitions=kwargs.pop("repetitions", None),
+        cached_hosts=cached_hosts,
     )
     if kwargs:
         warnings.warn(f"Unexpected keyword arguments: {kwargs.keys()}")
@@ -824,6 +862,7 @@ class _UTExtra(TypedDict, total=False):
     cache: Optional[str]
     metadata: Optional[dict]
     repetitions: Optional[int]
+    cached_hosts: Optional[Sequence[str]]
 
 
 def _create_test_case(
@@ -947,10 +986,14 @@ def _run_test(
             "reference_example_id": str(test_case.example_id),
         },
     }
+    # Handle cached_hosts parameter
+    ignore_hosts = [test_case.test_suite.client.api_url]
+    allow_hosts = langtest_extra.get("cached_hosts") or None
+
     with (
         rh.tracing_context(**{**current_context, "metadata": metadata}),
         ls_utils.with_optional_cache(
-            cache_path, ignore_hosts=[test_case.test_suite.client.api_url]
+            cache_path, ignore_hosts=ignore_hosts, allow_hosts=allow_hosts
         ),
     ):
         _test()
@@ -1024,10 +1067,15 @@ async def _arun_test(
             "reference_example_id": str(test_case.example_id),
         },
     }
+    # Handle cached_hosts parameter
+    ignore_hosts = [test_case.test_suite.client.api_url]
+    cached_hosts = langtest_extra.get("cached_hosts")
+    allow_hosts = cached_hosts if cached_hosts else None
+
     with (
         rh.tracing_context(**{**current_context, "metadata": metadata}),
         ls_utils.with_optional_cache(
-            cache_path, ignore_hosts=[test_case.test_suite.client.api_url]
+            cache_path, ignore_hosts=ignore_hosts, allow_hosts=allow_hosts
         ),
     ):
         await _test()
