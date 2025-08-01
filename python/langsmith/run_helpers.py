@@ -72,6 +72,7 @@ _CONTEXT_KEYS: dict[str, contextvars.ContextVar] = {
     "enabled": _TRACING_ENABLED,
     "client": _CLIENT,
     "replicas": run_trees._REPLICAS,
+    "distributed_parent_id": run_trees._DISTRIBUTED_PARENT_ID,
 }
 
 _EXCLUDED_FRAME_FNAME = "langsmith/run_helpers.py"
@@ -96,6 +97,8 @@ def get_tracing_context(
             "metadata": _METADATA.get(),
             "enabled": _TRACING_ENABLED.get(),
             "client": _CLIENT.get(),
+            "replicas": run_trees._REPLICAS.get(),
+            "distributed_parent_id": run_trees._DISTRIBUTED_PARENT_ID.get(),
         }
     return {k: context.get(v) for k, v in _CONTEXT_KEYS.items()}
 
@@ -140,9 +143,12 @@ def tracing_context(
         if parent is not False
         else None
     )
+    distributed_parent_id = None
     if parent_run is not None:
+        # TODO(angus): decide if we want to merge tags and metadata
         tags = sorted(set(tags or []) | set(parent_run.tags or []))
         metadata = {**parent_run.metadata, **(metadata or {})}
+        distributed_parent_id = parent_run.id
     enabled = enabled if enabled is not None else current_context.get("enabled")
     _set_tracing_context(
         {
@@ -153,6 +159,7 @@ def tracing_context(
             "enabled": enabled,
             "client": client,
             "replicas": replicas,
+            "distributed_parent_id": distributed_parent_id,
         }
     )
     try:
