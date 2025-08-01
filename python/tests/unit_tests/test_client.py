@@ -177,6 +177,9 @@ def test_validate_multiple_urls(monkeypatch: pytest.MonkeyPatch) -> None:
     assert client.api_url == "https://api.smith.langsmith-endpoint_1.com"
     assert client.api_key == "123"
 
+    # Clean up environment variable
+    monkeypatch.delenv("LANGSMITH_RUNS_ENDPOINTS", raising=False)
+
 
 @mock.patch("langsmith.client.requests.Session")
 def test_headers(monkeypatch: pytest.MonkeyPatch) -> None:
