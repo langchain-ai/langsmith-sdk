@@ -988,8 +988,7 @@ def _run_test(
     }
     # Handle cached_hosts parameter
     ignore_hosts = [test_case.test_suite.client.api_url]
-    cached_hosts = langtest_extra.get("cached_hosts")
-    allow_hosts = cached_hosts if cached_hosts else None
+    allow_hosts = langtest_extra.get("cached_hosts") or None
 
     with (
         rh.tracing_context(**{**current_context, "metadata": metadata}),
