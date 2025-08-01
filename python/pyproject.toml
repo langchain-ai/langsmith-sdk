@@ -62,7 +62,6 @@ vcr = ["vcrpy>=7.0.0"]
 # Development dependencies
 dev = [
     "pytest>=8.3.5",
-    "black>=23.3,<25.0",
     "mypy>=1.9.0",
     "ruff>=0.6.9",
     "types-requests>=2.31.0.1",
