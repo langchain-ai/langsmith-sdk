@@ -62,9 +62,10 @@ _DISTRIBUTED_PARENT_ID = contextvars.ContextVar[Optional[str]](
 
 _SENTINEL = cast(None, object())
 
+TIMESTAMP_LENGTH = 36
+
+
 # Note, this is called directly by langchain. Do not remove.
-
-
 def get_cached_client(**init_kwargs: Any) -> Client:
     global _CLIENT
     if _CLIENT is None:
@@ -533,7 +534,7 @@ class RunTree(ls_schemas.RunBase):
             parent_id = str(parent_id)
             # TODO(angus): potentially use binary search to find the index
             for idx, part in enumerate(segs):
-                seg_id = part[-36:]
+                seg_id = part[-TIMESTAMP_LENGTH:]
                 if str(seg_id) == parent_id:
                     start_idx = idx
                     break
@@ -543,7 +544,7 @@ class RunTree(ls_schemas.RunBase):
                 # Rebuild dotted_order
                 run_dict["dotted_order"] = ".".join(trimmed_segs)
                 if trimmed_segs:
-                    run_dict["trace_id"] = UUID(trimmed_segs[0][-36:])
+                    run_dict["trace_id"] = UUID(trimmed_segs[0][-TIMESTAMP_LENGTH:])
                 else:
                     run_dict["trace_id"] = run_dict["id"]
         if str(run_dict.get("parent_run_id")) == parent_id:
@@ -583,9 +584,11 @@ class RunTree(ls_schemas.RunBase):
             segs = run_dict["dotted_order"].split(".")
             rebuilt = []
             for part in segs[:-1]:
-                repl = uuid5(NAMESPACE_DNS, f"{part[-36:]}:{project_name}")
-                rebuilt.append(part[:-36] + str(repl))
-            rebuilt.append(segs[-1][:-36] + str(new_id))
+                repl = uuid5(
+                    NAMESPACE_DNS, f"{part[-TIMESTAMP_LENGTH:]}:{project_name}"
+                )
+                rebuilt.append(part[:-TIMESTAMP_LENGTH] + str(repl))
+            rebuilt.append(segs[-1][:-TIMESTAMP_LENGTH] + str(new_id))
             dotted = ".".join(rebuilt)
         else:
             dotted = None
@@ -1045,7 +1048,10 @@ def _parse_dotted_order(dotted_order: str) -> list[tuple[datetime, UUID]]:
     """Parse the dotted order string."""
     parts = dotted_order.split(".")
     return [
-        (datetime.strptime(part[:-36], "%Y%m%dT%H%M%S%fZ"), UUID(part[-36:]))
+        (
+            datetime.strptime(part[:-TIMESTAMP_LENGTH], "%Y%m%dT%H%M%S%fZ"),
+            UUID(part[-TIMESTAMP_LENGTH:]),
+        )
         for part in parts
     ]
 
