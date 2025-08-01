@@ -98,7 +98,7 @@ class TestEnvironmentVariableParsing:
                 "LANGSMITH_ENDPOINT": "",
                 "LANGCHAIN_ENDPOINT": "",
             },
-            clear=False,
+            clear=True,
         ):
             result = _get_write_replicas_from_env()
 
