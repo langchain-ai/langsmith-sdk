@@ -778,7 +778,7 @@ test = [
 requires-dist = [
     { name = "httpx", specifier = ">=0.23.0,<1" },
     { name = "langsmith-pyo3", marker = "extra == 'langsmith-pyo3'", specifier = ">=0.1.0rc2" },
-    { name = "openai-agents", marker = "extra == 'openai-agents'", specifier = ">=0.0.3,<0.1" },
+    { name = "openai-agents", marker = "extra == 'openai-agents'", specifier = ">=0.0.3" },
     { name = "opentelemetry-api", marker = "extra == 'otel'", specifier = ">=1.30.0" },
     { name = "opentelemetry-exporter-otlp-proto-http", marker = "extra == 'otel'", specifier = ">=1.30.0" },
     { name = "opentelemetry-sdk", marker = "extra == 'otel'", specifier = ">=1.30.0" },

@@ -50,7 +50,7 @@ otel = [
 ]
 
 # Enabled via `pip install langsmith[openai-agents]`
-openai-agents = ["openai-agents>=0.0.3,<0.1"]
+openai-agents = ["openai-agents>=0.0.3"]
 
 # Enabled via `pip install langsmith[pytest]`
 pytest = ["pytest>=7.0.0", "rich>=13.9.4", "vcrpy>=7.0.0"]
