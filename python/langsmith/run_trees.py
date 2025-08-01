@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import sys
@@ -9,6 +10,8 @@ from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from typing import Any, Optional, Union, cast
 from uuid import NAMESPACE_DNS, UUID, uuid4, uuid5
+
+from typing_extensions import TypedDict
 
 try:
     from pydantic.v1 import Field, root_validator  # type: ignore[import]
@@ -28,6 +31,14 @@ from langsmith.client import ID_TYPE, RUN_TYPE_T, Client, _dumps_json, _ensure_u
 
 logger = logging.getLogger(__name__)
 
+
+class WriteReplica(TypedDict, total=False):
+    api_url: Optional[str]
+    api_key: Optional[str]
+    project_name: Optional[str]
+    updates: Optional[dict]
+
+
 LANGSMITH_PREFIX = "langsmith-"
 LANGSMITH_DOTTED_ORDER = sys.intern(f"{LANGSMITH_PREFIX}trace")
 LANGSMITH_DOTTED_ORDER_BYTES = LANGSMITH_DOTTED_ORDER.encode("utf-8")
@@ -41,15 +52,20 @@ _CLIENT: Optional[Client] = None
 _LOCK = threading.Lock()
 
 # Context variables
-_REPLICAS = contextvars.ContextVar[Optional[Sequence[tuple[str, Optional[dict]]]]](
+_REPLICAS = contextvars.ContextVar[Optional[Sequence[WriteReplica]]](
     "_REPLICAS", default=None
+)
+
+_DISTRIBUTED_PARENT_ID = contextvars.ContextVar[Optional[str]](
+    "_DISTRIBUTED_PARENT_ID", default=None
 )
 
 _SENTINEL = cast(None, object())
 
+TIMESTAMP_LENGTH = 36
+
+
 # Note, this is called directly by langchain. Do not remove.
-
-
 def get_cached_client(**init_kwargs: Any) -> Client:
     global _CLIENT
     if _CLIENT is None:
@@ -203,7 +219,7 @@ class RunTree(ls_schemas.RunBase):
     dangerously_allow_filesystem: Optional[bool] = Field(
         default=False, description="Whether to allow filesystem access for attachments."
     )
-    replicas: Optional[Sequence[tuple[str, Optional[dict]]]] = Field(
+    replicas: Optional[Sequence[WriteReplica]] = Field(
         default=None,
         description="Projects to replicate this run to with optional updates.",
     )
@@ -505,6 +521,36 @@ class RunTree(ls_schemas.RunBase):
             self_dict["outputs"] = self.outputs.copy()
         return self_dict
 
+    def _slice_parent_id(self, parent_id: str, run_dict: dict) -> None:
+        """Slice the parent id from dotted order.
+
+        Additionally check if the current run is a child of the parent. If so, update
+        the parent_run_id to None, and set the trace id to the new root id after
+        parent_id.
+        """
+        if dotted_order := run_dict.get("dotted_order"):
+            segs = dotted_order.split(".")
+            start_idx = None
+            parent_id = str(parent_id)
+            # TODO(angus): potentially use binary search to find the index
+            for idx, part in enumerate(segs):
+                seg_id = part[-TIMESTAMP_LENGTH:]
+                if str(seg_id) == parent_id:
+                    start_idx = idx
+                    break
+            if start_idx is not None:
+                # Trim segments to start after parent_id (exclusive)
+                trimmed_segs = segs[start_idx + 1 :]
+                # Rebuild dotted_order
+                run_dict["dotted_order"] = ".".join(trimmed_segs)
+                if trimmed_segs:
+                    run_dict["trace_id"] = UUID(trimmed_segs[0][-TIMESTAMP_LENGTH:])
+                else:
+                    run_dict["trace_id"] = run_dict["id"]
+        if str(run_dict.get("parent_run_id")) == parent_id:
+            # We've found the new root node.
+            run_dict.pop("parent_run_id", None)
+
     def _remap_for_project(
         self, project_name: str, updates: Optional[dict] = None
     ) -> dict:
@@ -512,6 +558,12 @@ class RunTree(ls_schemas.RunBase):
         run_dict = self._get_dicts_safe()
         if project_name == self.session_name:
             return run_dict
+
+        if updates and updates.get("reroot", False):
+            distributed_parent_id = _DISTRIBUTED_PARENT_ID.get()
+
+            if distributed_parent_id:
+                self._slice_parent_id(distributed_parent_id, run_dict)
 
         old_id = run_dict["id"]
         new_id = uuid5(NAMESPACE_DNS, f"{old_id}:{project_name}")
@@ -529,13 +581,14 @@ class RunTree(ls_schemas.RunBase):
             new_parent = None
         # dotted order
         if run_dict.get("dotted_order"):
-            segs = _parse_dotted_order(run_dict["dotted_order"])
+            segs = run_dict["dotted_order"].split(".")
             rebuilt = []
-            for ts, seg_id in segs[:-1]:
-                repl = uuid5(NAMESPACE_DNS, f"{seg_id}:{project_name}")
-                rebuilt.append(ts.strftime("%Y%m%dT%H%M%S%fZ") + str(repl))
-            ts_last, _ = segs[-1]
-            rebuilt.append(ts_last.strftime("%Y%m%dT%H%M%S%fZ") + str(new_id))
+            for part in segs[:-1]:
+                repl = uuid5(
+                    NAMESPACE_DNS, f"{part[-TIMESTAMP_LENGTH:]}:{project_name}"
+                )
+                rebuilt.append(part[:-TIMESTAMP_LENGTH] + str(repl))
+            rebuilt.append(segs[-1][:-TIMESTAMP_LENGTH] + str(new_id))
             dotted = ".".join(rebuilt)
         else:
             dotted = None
@@ -555,10 +608,17 @@ class RunTree(ls_schemas.RunBase):
 
     def post(self, exclude_child_runs: bool = True) -> None:
         """Post the run tree to the API asynchronously."""
-        if self.replicas:
-            for project_name, updates in self.replicas:
-                run_dict = self._remap_for_project(project_name)
-                self.client.create_run(**run_dict)
+        write_replicas = _ensure_write_replicas(self.replicas)
+        if write_replicas:
+            for replica in write_replicas:
+                project_name = replica.get("project_name") or self.session_name
+                updates = replica.get("updates")
+                run_dict = self._remap_for_project(project_name, updates)
+                self.client.create_run(
+                    **run_dict,
+                    api_key=replica.get("api_key"),
+                    api_url=replica.get("api_url"),
+                )
         else:
             kwargs = self._get_dicts_safe()
             self.client.create_run(**kwargs)
@@ -606,8 +666,11 @@ class RunTree(ls_schemas.RunBase):
         except Exception as e:
             logger.warning(f"Error filtering attachments to upload: {e}")
         # Fanout logic for patch
-        if self.replicas:
-            for project_name, updates in self.replicas:
+        write_replicas = _ensure_write_replicas(self.replicas)
+        if write_replicas:
+            for replica in write_replicas:
+                project_name = replica.get("project_name") or self.session_name
+                updates = replica.get("updates")
                 run_dict = self._remap_for_project(project_name, updates)
                 self.client.update_run(
                     name=run_dict["name"],
@@ -625,6 +688,8 @@ class RunTree(ls_schemas.RunBase):
                     tags=run_dict.get("tags"),
                     extra=run_dict.get("extra"),
                     attachments=attachments,
+                    api_key=replica.get("api_key"),
+                    api_url=replica.get("api_url"),
                 )
         else:
             self.client.update_run(
@@ -795,7 +860,12 @@ class RunTree(ls_schemas.RunBase):
         if baggage.replicas:
             init_args["replicas"] = baggage.replicas
 
-        return RunTree(**init_args)
+        run_tree = RunTree(**init_args)
+
+        # Set the distributed parent ID to this run's ID for rerooting
+        _DISTRIBUTED_PARENT_ID.set(str(run_tree.id))
+
+        return run_tree
 
     def to_headers(self) -> dict[str, str]:
         """Return the RunTree as a dictionary of headers."""
@@ -827,7 +897,7 @@ class _Baggage:
         metadata: Optional[dict[str, str]] = None,
         tags: Optional[list[str]] = None,
         project_name: Optional[str] = None,
-        replicas: Optional[Sequence[tuple[str, Optional[dict]]]] = None,
+        replicas: Optional[Sequence[WriteReplica]] = None,
     ):
         """Initialize the Baggage object."""
         self.metadata = metadata or {}
@@ -843,7 +913,7 @@ class _Baggage:
         metadata = {}
         tags = []
         project_name = None
-        replicas = None
+        replicas: Optional[list[WriteReplica]] = None
         try:
             for item in header_value.split(","):
                 key, value = item.split("=", 1)
@@ -855,7 +925,27 @@ class _Baggage:
                     project_name = urllib.parse.unquote(value)
                 elif key == LANGSMITH_REPLICAS:
                     replicas_data = json.loads(urllib.parse.unquote(value))
-                    replicas = [(str(proj), updates) for proj, updates in replicas_data]
+                    parsed_replicas: list[WriteReplica] = []
+                    for replica_item in replicas_data:
+                        if isinstance(replica_item, list) and len(replica_item) == 2:
+                            # Convert legacy format to WriteReplica
+                            parsed_replicas.append(
+                                WriteReplica(
+                                    api_url=None,
+                                    api_key=None,
+                                    project_name=str(replica_item[0]),
+                                    updates=replica_item[1],
+                                )
+                            )
+                        elif isinstance(replica_item, dict):
+                            # New WriteReplica format: preserve as dict
+                            parsed_replicas.append(cast(WriteReplica, replica_item))
+                        else:
+                            logger.warning(
+                                f"Unknown replica format in baggage: {replica_item}"
+                            )
+                            continue
+                    replicas = parsed_replicas
         except Exception as e:
             logger.warning(f"Error parsing baggage header: {e}")
 
@@ -897,11 +987,71 @@ class _Baggage:
         return ",".join(items)
 
 
+@functools.lru_cache(maxsize=1)
+def _parse_write_replicas_from_env_var(env_var: Optional[str]) -> list[WriteReplica]:
+    """Parse write replicas from LANGSMITH_RUNS_ENDPOINTS environment variable value."""
+    if not env_var:
+        return []
+
+    try:
+        parsed = json.loads(env_var)
+        _check_endpoint_env_unset(parsed)
+        return [
+            WriteReplica(
+                api_url=url.rstrip("/"),
+                api_key=key,
+                project_name=None,
+                updates=None,
+            )
+            for url, key in parsed.items()
+        ]
+    except utils.LangSmithUserError:
+        raise
+    except Exception as e:
+        logger.warning(
+            "Invalid LANGSMITH_RUNS_ENDPOINTS – must be valid JSON mapping of "
+            f"url->apiKey: {e}"
+        )
+        return []
+
+
+def _get_write_replicas_from_env() -> list[WriteReplica]:
+    """Get write replicas from LANGSMITH_RUNS_ENDPOINTS environment variable."""
+    env_var = utils.get_env_var("RUNS_ENDPOINTS")
+
+    return _parse_write_replicas_from_env_var(env_var)
+
+
+def _check_endpoint_env_unset(parsed: dict[str, str]) -> None:
+    """Check if endpoint environment variables conflict with runs endpoints."""
+    import os
+
+    if parsed and (os.getenv("LANGSMITH_ENDPOINT") or os.getenv("LANGCHAIN_ENDPOINT")):
+        raise utils.LangSmithUserError(
+            "You cannot provide both LANGSMITH_ENDPOINT / LANGCHAIN_ENDPOINT "
+            "and LANGSMITH_RUNS_ENDPOINTS."
+        )
+
+
+def _ensure_write_replicas(
+    replicas: Optional[Sequence[WriteReplica]],
+) -> list[WriteReplica]:
+    """Convert replicas to WriteReplica format."""
+    if replicas is None:
+        return _get_write_replicas_from_env()
+
+    # All replicas should now be WriteReplica dicts
+    return list(replicas)
+
+
 def _parse_dotted_order(dotted_order: str) -> list[tuple[datetime, UUID]]:
     """Parse the dotted order string."""
     parts = dotted_order.split(".")
     return [
-        (datetime.strptime(part[:-36], "%Y%m%dT%H%M%S%fZ"), UUID(part[-36:]))
+        (
+            datetime.strptime(part[:-TIMESTAMP_LENGTH], "%Y%m%dT%H%M%S%fZ"),
+            UUID(part[-TIMESTAMP_LENGTH:]),
+        )
         for part in parts
     ]
 

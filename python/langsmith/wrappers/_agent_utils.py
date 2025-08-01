@@ -115,7 +115,12 @@ if HAVE_AGENTS:
         if span_data.input is not None:
             data["inputs"] = {
                 "input": span_data.input,
-                "instructions": span_data.response.instructions,
+                "instructions": (
+                    span_data.response.instructions
+                    if span_data.response is not None
+                    and span_data.response.instructions
+                    else ""
+                ),
             }
         if span_data.response is not None:
             response = span_data.response.model_dump(exclude_none=True, mode="json")

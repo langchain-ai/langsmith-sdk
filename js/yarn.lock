@@ -2,13 +2,13 @@
 # yarn lockfile v1
 
 
-"@ai-sdk/anthropic@2.0.0-beta.8":
-  version "2.0.0-beta.8"
-  resolved "https://registry.yarnpkg.com/@ai-sdk/anthropic/-/anthropic-2.0.0-beta.8.tgz#f38cf786f9802a2e76d172d67831251c8b2947d5"
-  integrity sha512-j5G3PQ2rVp2vC6WNrq+0SwQVqMq/RXMVDmPKGlJUZ7fAhzwW7BMppLer8tv+B+wmccvZe4ggIgPzqw0PDXLjFQ==
+"@ai-sdk/anthropic@2.0.0-beta.12":
+  version "2.0.0-beta.12"
+  resolved "https://registry.yarnpkg.com/@ai-sdk/anthropic/-/anthropic-2.0.0-beta.12.tgz#ad4988d0cb29c141f8d731d66893d01a3d2c3bb6"
+  integrity sha512-y5K7yh2AR23z/YuSTKSxJNYvXVcViyYCQ4bvDtvVfHaC4ae1sgObyxmQ3WjLMFIqMgk2Xi6GFmUCp6GBYUapOg==
   dependencies:
-    "@ai-sdk/provider" "2.0.0-beta.1"
-    "@ai-sdk/provider-utils" "3.0.0-beta.5"
+    "@ai-sdk/provider" "2.0.0-beta.2"
+    "@ai-sdk/provider-utils" "3.0.0-beta.9"
 
 "@ai-sdk/gateway@1.0.0-beta.11":
   version "1.0.0-beta.11"
@@ -18,13 +18,13 @@
     "@ai-sdk/provider" "2.0.0-beta.1"
     "@ai-sdk/provider-utils" "3.0.0-beta.5"
 
-"@ai-sdk/openai@2.0.0-beta.11":
-  version "2.0.0-beta.11"
-  resolved "https://registry.yarnpkg.com/@ai-sdk/openai/-/openai-2.0.0-beta.11.tgz#28799eb309e48152d5d52da55d443d3c63627311"
-  integrity sha512-HQXUMb1V6Xr8EBYvEDwNb8ISyRqyxg2zUst7lzPb6s1nGDKJRBTfSyytNWRL9dZ9vxjM2wK34cltCfZbjaHpAA==
+"@ai-sdk/openai@2.0.0-beta.15":
+  version "2.0.0-beta.15"
+  resolved "https://registry.yarnpkg.com/@ai-sdk/openai/-/openai-2.0.0-beta.15.tgz#10aaa8d11c8540fa4edf7183d71e9e02ce41df36"
+  integrity sha512-H2LqYz7RGkEO/jHjeATPQylFQJff3skkkmKy8dAB9UU8y/oJcV4JEQKR3CrMMFkG/39mXYxgZiNNkv/8jF40sQ==
   dependencies:
-    "@ai-sdk/provider" "2.0.0-beta.1"
-    "@ai-sdk/provider-utils" "3.0.0-beta.5"
+    "@ai-sdk/provider" "2.0.0-beta.2"
+    "@ai-sdk/provider-utils" "3.0.0-beta.9"
 
 "@ai-sdk/provider-utils@3.0.0-beta.5":
   version "3.0.0-beta.5"
@@ -36,10 +36,27 @@
     eventsource-parser "^3.0.3"
     zod-to-json-schema "^3.24.1"
 
+"@ai-sdk/provider-utils@3.0.0-beta.9":
+  version "3.0.0-beta.9"
+  resolved "https://registry.yarnpkg.com/@ai-sdk/provider-utils/-/provider-utils-3.0.0-beta.9.tgz#259d8e87a1f778f56876ce7243e15c783d4e4029"
+  integrity sha512-RJMeoqFA9mGo1XOE20bpVv4/ikVbZMHo00vmF4RweN7GHS+nEXU3SHFgtcp7NBG3j8W15b9MAitOBycRMYxecg==
+  dependencies:
+    "@ai-sdk/provider" "2.0.0-beta.2"
+    "@standard-schema/spec" "^1.0.0"
+    eventsource-parser "^3.0.3"
+    zod-to-json-schema "^3.24.1"
+
 "@ai-sdk/provider@2.0.0-beta.1":
   version "2.0.0-beta.1"
   resolved "https://registry.yarnpkg.com/@ai-sdk/provider/-/provider-2.0.0-beta.1.tgz#2aa72843fe5ab43d9925db8e90c6586383906d5d"
   integrity sha512-Z8SPncMtS3RsoXITmT7NVwrAq6M44dmw0DoUOYJqNNtCu8iMWuxB8Nxsoqpa0uEEy9R1V1ZThJAXTYgjTUxl3w==
+  dependencies:
+    json-schema "^0.4.0"
+
+"@ai-sdk/provider@2.0.0-beta.2":
+  version "2.0.0-beta.2"
+  resolved "https://registry.yarnpkg.com/@ai-sdk/provider/-/provider-2.0.0-beta.2.tgz#20144210024ee3d484c3639bad1a36a372a824e2"
+  integrity sha512-vqhtZA7R24q1XnmfmIb1fZSmHMIaJH1BVQ+0kFnNJgqWsc+V8i+yfetZ37gUc4fXATFmBuS/6O7+RPoHsZ2Fqg==
   dependencies:
     json-schema "^0.4.0"
 
