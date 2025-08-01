@@ -58,6 +58,7 @@ pytest = ["pytest>=7.0.0", "rich>=13.9.4", "vcrpy>=7.0.0"]
 # VCR support
 vcr = ["vcrpy>=7.0.0"]
 
+[dependency-groups]
 # Development dependencies
 dev = [
     "pytest>=8.3.5",
@@ -105,6 +106,7 @@ test = [
     "pytest-socket>=0.7.0",
     "anthropic>=0.45.0",
 ]
+
 
 [project.entry-points."pytest11"]
 langsmith_plugin = "langsmith.pytest_plugin"

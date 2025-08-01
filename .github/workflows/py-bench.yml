@@ -21,15 +21,11 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v6
-
-      - uses: actions/setup-python@v5
-        name: Setup python 3.11
-        id: setup-python
         with:
           python-version: 3.11
 
       - name: Install dependencies
-        run: uv sync --extra dev
+        run: uv sync --group dev
 
       - name: Download baseline
         uses: actions/cache/restore@v4

@@ -27,8 +27,6 @@ jobs:
       # Python Build
       - name: Install uv
         uses: astral-sh/setup-uv@v6
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
       - name: Build project for distribution
