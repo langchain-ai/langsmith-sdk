@@ -30,6 +30,8 @@ class SerializedRunOperation:
     outputs: Optional[bytes]
     events: Optional[bytes]
     error: Optional[bytes]
+    extra: Optional[bytes]
+    serialized: Optional[bytes]
     attachments: Optional[ls_schemas.Attachments]
 
     __slots__ = (
@@ -41,6 +43,8 @@ class SerializedRunOperation:
         "outputs",
         "events",
         "error",
+        "extra",
+        "serialized",
         "attachments",
     )
 
@@ -54,6 +58,8 @@ class SerializedRunOperation:
         outputs: Optional[bytes] = None,
         events: Optional[bytes] = None,
         error: Optional[bytes] = None,
+        extra: Optional[bytes] = None,
+        serialized: Optional[bytes] = None,
         attachments: Optional[ls_schemas.Attachments] = None,
     ) -> None:
         self.operation = operation
@@ -64,6 +70,8 @@ class SerializedRunOperation:
         self.outputs = outputs
         self.events = events
         self.error = error
+        self.extra = extra
+        self.serialized = serialized
         self.attachments = attachments
 
     def __eq__(self, other: object) -> bool:
@@ -76,6 +84,8 @@ class SerializedRunOperation:
             self.outputs,
             self.events,
             self.error,
+            self.extra,
+            self.serialized,
             self.attachments,
         ) == (
             other.operation,
@@ -86,6 +96,8 @@ class SerializedRunOperation:
             other.outputs,
             other.events,
             other.error,
+            other.extra,
+            other.serialized,
             other.attachments,
         )
 
@@ -241,6 +253,8 @@ def serialized_run_operation_to_multipart_parts_and_context(
         ("outputs", op.outputs),
         ("events", op.events),
         ("error", op.error),
+        ("extra", op.extra),
+        ("serialized", op.serialized),
     ):
         if value is None:
             continue
@@ -335,22 +349,21 @@ def compress_multipart_parts_and_context(
     compressed_traces: CompressedTraces,
     boundary: str,
 ) -> None:
+    write = compressed_traces.compressor_writer.write
+
     for headers, data in encode_multipart_parts_and_context(
         parts_and_context, boundary
     ):
-        compressed_traces.compressor_writer.write(headers)
+        write(headers)
 
-        if isinstance(data, (bytes, bytearray)):
-            compressed_traces.uncompressed_size += len(data)
-            compressed_traces.compressor_writer.write(data)
-        else:
-            if isinstance(data, BufferedReader):
-                encoded_data = data.read()
-            else:
-                encoded_data = str(data).encode()
-            compressed_traces.uncompressed_size += len(encoded_data)
-            compressed_traces.compressor_writer.write(encoded_data)
+        # Normalise to bytes
+        if not isinstance(data, (bytes, bytearray)):
+            data = (
+                data.read() if isinstance(data, BufferedReader) else str(data).encode()
+            )
 
-        # Write part terminator
-        compressed_traces.compressor_writer.write(b"\r\n")
+        compressed_traces.uncompressed_size += len(data)
+        write(data)
+        write(b"\r\n")  # part terminator
+
     compressed_traces._context.append(parts_and_context.context)
