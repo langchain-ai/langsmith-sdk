@@ -55,12 +55,10 @@ evals:
 lint:
 	uv run ruff check .
 	uv run mypy langsmith 
-	uv run black . --check
 
 format:
 	uv run ruff format .
 	uv run ruff check . --fix
-	uv run black .
 
 build:
 	uv build
