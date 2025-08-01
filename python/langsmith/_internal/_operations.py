@@ -29,6 +29,7 @@ class SerializedRunOperation:
     inputs: Optional[bytes]
     outputs: Optional[bytes]
     events: Optional[bytes]
+    error: Optional[bytes]
     attachments: Optional[ls_schemas.Attachments]
 
     __slots__ = (
@@ -39,6 +40,7 @@ class SerializedRunOperation:
         "inputs",
         "outputs",
         "events",
+        "error",
         "attachments",
     )
 
@@ -51,6 +53,7 @@ class SerializedRunOperation:
         inputs: Optional[bytes] = None,
         outputs: Optional[bytes] = None,
         events: Optional[bytes] = None,
+        error: Optional[bytes] = None,
         attachments: Optional[ls_schemas.Attachments] = None,
     ) -> None:
         self.operation = operation
@@ -60,6 +63,7 @@ class SerializedRunOperation:
         self.inputs = inputs
         self.outputs = outputs
         self.events = events
+        self.error = error
         self.attachments = attachments
 
     def __eq__(self, other: object) -> bool:
@@ -71,6 +75,7 @@ class SerializedRunOperation:
             self.inputs,
             self.outputs,
             self.events,
+            self.error,
             self.attachments,
         ) == (
             other.operation,
@@ -80,6 +85,7 @@ class SerializedRunOperation:
             other.inputs,
             other.outputs,
             other.events,
+            other.error,
             other.attachments,
         )
 
@@ -234,6 +240,7 @@ def serialized_run_operation_to_multipart_parts_and_context(
         ("inputs", op.inputs),
         ("outputs", op.outputs),
         ("events", op.events),
+        ("error", op.error),
     ):
         if value is None:
             continue
