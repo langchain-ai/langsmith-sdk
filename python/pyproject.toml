@@ -94,6 +94,7 @@ dev = [
     "opentelemetry-exporter-otlp-proto-http>=1.34.1",
     "opentelemetry-api>=1.34.1",
     "bump2version>=1.0.1",
+    "openai-agents>=0.2.4",
 ]
 
 # Linting dependencies
