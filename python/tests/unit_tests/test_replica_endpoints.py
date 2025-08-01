@@ -84,34 +84,38 @@ class TestEnvironmentVariableParsing:
     def test_get_write_replicas_from_env_valid_json(self):
         """Test _get_write_replicas_from_env with valid JSON."""
         ls_utils.get_env_var.cache_clear()
-        endpoints_config = {
-            "https://api.smith.langchain.com": "primary-key-123",
-            "https://replica1.example.com": "replica1-key-456",
-            "https://replica2.example.com": "replica2-key-789",
-        }
+        try:
+            endpoints_config = {
+                "https://api.smith.langchain.com": "primary-key-123",
+                "https://replica1.example.com": "replica1-key-456",
+                "https://replica2.example.com": "replica2-key-789",
+            }
 
-        # Clear conflicting environment variables
-        with patch.dict(
-            os.environ,
-            {
-                "LANGSMITH_RUNS_ENDPOINTS": json.dumps(endpoints_config),
-                "LANGSMITH_ENDPOINT": "",
-                "LANGCHAIN_ENDPOINT": "",
-            },
-            clear=True,
-        ):
-            result = _get_write_replicas_from_env()
+            # Clear conflicting environment variables
+            with patch.dict(
+                os.environ,
+                {
+                    "LANGSMITH_RUNS_ENDPOINTS": json.dumps(endpoints_config),
+                    "LANGSMITH_ENDPOINT": "",
+                    "LANGCHAIN_ENDPOINT": "",
+                },
+                clear=True,
+            ):
+                result = _get_write_replicas_from_env()
 
-            assert len(result) == 3
-            urls = [r["api_url"] for r in result]
-            keys = [r["api_key"] for r in result]
+                assert len(result) == 3
+                urls = [r["api_url"] for r in result]
+                keys = [r["api_key"] for r in result]
 
-            assert "https://api.smith.langchain.com" in urls
-            assert "https://replica1.example.com" in urls
-            assert "https://replica2.example.com" in urls
-            assert "primary-key-123" in keys
-            assert "replica1-key-456" in keys
-            assert "replica2-key-789" in keys
+                assert "https://api.smith.langchain.com" in urls
+                assert "https://replica1.example.com" in urls
+                assert "https://replica2.example.com" in urls
+                assert "primary-key-123" in keys
+                assert "replica1-key-456" in keys
+                assert "replica2-key-789" in keys
+        finally:
+            # Clear cache to prevent pollution
+            ls_utils.get_env_var.cache_clear()
 
     def test_get_write_replicas_from_env_invalid_json(self):
         """Test _get_write_replicas_from_env with invalid JSON."""
@@ -139,27 +143,31 @@ class TestEnvironmentVariableParsing:
     def test_langsmith_runs_endpoints_not_in_write_api_urls(self):
         """Test that LANGSMITH_RUNS_ENDPOINTS is not parsed into _write_api_urls."""
         ls_utils.get_env_var.cache_clear()
-        endpoints_config = {
-            "https://replica1.example.com": "replica1-key",
-            "https://replica2.example.com": "replica2-key",
-        }
+        try:
+            endpoints_config = {
+                "https://replica1.example.com": "replica1-key",
+                "https://replica2.example.com": "replica2-key",
+            }
 
-        # Use a clean environment with only LANGSMITH_RUNS_ENDPOINTS set
-        clean_env = {"LANGSMITH_RUNS_ENDPOINTS": json.dumps(endpoints_config)}
+            # Use a clean environment with only LANGSMITH_RUNS_ENDPOINTS set
+            clean_env = {"LANGSMITH_RUNS_ENDPOINTS": json.dumps(endpoints_config)}
 
-        with patch.dict(os.environ, clean_env, clear=True):
-            client = Client(auto_batch_tracing=False)
+            with patch.dict(os.environ, clean_env, clear=True):
+                client = Client(auto_batch_tracing=False)
 
-            # _write_api_urls should only contain the default endpoint
-            assert len(client._write_api_urls) == 1
-            assert client.api_url == "https://api.smith.langchain.com"
+                # _write_api_urls should only contain the default endpoint
+                assert len(client._write_api_urls) == 1
+                assert client.api_url == "https://api.smith.langchain.com"
 
-            # LANGSMITH_RUNS_ENDPOINTS should be available via replicas instead
-            replicas = _get_write_replicas_from_env()
-            assert len(replicas) == 2
-            replica_urls = [r["api_url"] for r in replicas]
-            assert "https://replica1.example.com" in replica_urls
-            assert "https://replica2.example.com" in replica_urls
+                # LANGSMITH_RUNS_ENDPOINTS should be available via replicas instead
+                replicas = _get_write_replicas_from_env()
+                assert len(replicas) == 2
+                replica_urls = [r["api_url"] for r in replicas]
+                assert "https://replica1.example.com" in replica_urls
+                assert "https://replica2.example.com" in replica_urls
+        finally:
+            # Clear cache to prevent pollution
+            ls_utils.get_env_var.cache_clear()
 
 
 class TestClientReplicaMethods:
