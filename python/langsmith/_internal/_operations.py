@@ -160,6 +160,9 @@ def serialize_run_dict(
         inputs=_dumps_json(inputs) if inputs is not None else None,
         outputs=_dumps_json(outputs) if outputs is not None else None,
         events=_dumps_json(events) if events is not None else None,
+        error=_dumps_json(payload.pop("error", None)),
+        extra=_dumps_json(payload.pop("extra", None)),
+        serialized=_dumps_json(payload.pop("serialized", None)),
         attachments=attachments if attachments is not None else None,
     )
 
