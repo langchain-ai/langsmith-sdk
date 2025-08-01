@@ -6,21 +6,21 @@ OUTPUT ?= out/benchmark.json
 benchmark:
 	mkdir -p out
 	rm -f $(OUTPUT)
-	poetry run python -m bench -o $(OUTPUT) --rigorous
+	uv run python -m bench -o $(OUTPUT) --rigorous
 
 benchmark-fast:
 	mkdir -p out
 	rm -f $(OUTPUT)
-	poetry run python -m bench -o $(OUTPUT) --fast
+	uv run python -m bench -o $(OUTPUT) --fast
 
 PROFILE_NAME ?= output
 
 profile-background-thread:
 	mkdir -p profiles
-	poetry run python -m cProfile -o profiles/$(PROFILE_NAME).prof bench/create_run.py
+	uv run python -m cProfile -o profiles/$(PROFILE_NAME).prof bench/create_run.py
 
 view-profile:
-	poetry run snakeviz profiles/${PROFILE_NAME}.prof
+	uv run snakeviz profiles/${PROFILE_NAME}.prof
 
 TEST ?= "tests/unit_tests"
 tests:
@@ -31,47 +31,47 @@ tests:
 	 -u LANGSMITH_TRACING \
 	 PYTHONDEVMODE=1 \
 	 PYTHONASYNCIODEBUG=1 \
-	 poetry run python -m pytest --disable-socket --allow-unix-socket -n auto --durations=10 ${TEST}
+	 uv run python -m pytest --disable-socket --allow-unix-socket -n auto --durations=10 ${TEST}
 
 tests_watch:
-	poetry run ptw --now . -- -vv -x  tests/unit_tests
+	uv run ptw --now . -- -vv -x  tests/unit_tests
 
 INT_TEST ?= "tests/integration_tests"
 integration_tests:
-	poetry run python -m pytest -x -v --durations=10 --cov=langsmith --cov-report=term-missing --cov-report=html --cov-config=.coveragerc ${INT_TEST}
+	uv run python -m pytest -x -v --durations=10 --cov=langsmith --cov-report=term-missing --cov-report=html --cov-config=.coveragerc ${INT_TEST}
 
 integration_tests_fast:
-	poetry run python -m pytest -x -n auto --durations=10 -v --cov=langsmith --cov-report=term-missing --cov-report=html --cov-config=.coveragerc ${INT_TEST}
+	uv run python -m pytest -x -n auto --durations=10 -v --cov=langsmith --cov-report=term-missing --cov-report=html --cov-config=.coveragerc ${INT_TEST}
 
 integration_tests_watch:
-	poetry run ptw --now . -- -vv -x  ${INT_TEST}
+	uv run ptw --now . -- -vv -x  ${INT_TEST}
 
 doctest:
-	poetry run python -m pytest -n auto -x --durations=10 --doctest-modules langsmith
+	uv run python -m pytest -n auto -x --durations=10 --doctest-modules langsmith
 
 evals:
-	poetry run python -m pytest -n auto -x tests/evaluation
+	uv run python -m pytest -n auto -x tests/evaluation
 
 lint:
-	poetry run ruff check .
-	poetry run mypy langsmith 
-	poetry run black . --check
+	uv run ruff check .
+	uv run mypy langsmith 
+	uv run black . --check
 
 format:
-	poetry run ruff format .
-	poetry run ruff check . --fix
-	poetry run black .
+	uv run ruff format .
+	uv run ruff check . --fix
+	uv run black .
 
 build:
-	poetry build
+	uv build
 
 publish:
-	poetry publish --dry-run
+	uv publish --dry-run
 
 api_docs_build:
-	poetry run python docs/create_api_rst.py
-	cd docs && poetry run make html
-	poetry run python docs/scripts/custom_formatter.py docs/_build/html/
+	uv run python docs/create_api_rst.py
+	cd docs && uv run make html
+	uv run python docs/scripts/custom_formatter.py docs/_build/html/
 	cp docs/_build/html/{reference,index}.html
 	open docs/_build/html/index.html
 
