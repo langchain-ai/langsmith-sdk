@@ -151,6 +151,9 @@ def serialize_run_dict(
     inputs = payload.pop("inputs", None)
     outputs = payload.pop("outputs", None)
     events = payload.pop("events", None)
+    error = payload.pop("error", None)
+    extra = payload.pop("extra", None)
+    serialized = payload.pop("serialized", None)
     attachments = payload.pop("attachments", None)
     return SerializedRunOperation(
         operation=operation,
@@ -160,9 +163,9 @@ def serialize_run_dict(
         inputs=_dumps_json(inputs) if inputs is not None else None,
         outputs=_dumps_json(outputs) if outputs is not None else None,
         events=_dumps_json(events) if events is not None else None,
-        error=_dumps_json(payload.pop("error", None)),
-        extra=_dumps_json(payload.pop("extra", None)),
-        serialized=_dumps_json(payload.pop("serialized", None)),
+        error=_dumps_json(error) if error is not None else None,
+        extra=_dumps_json(extra) if extra is not None else None,
+        serialized=_dumps_json(serialized) if serialized is not None else None,
         attachments=attachments if attachments is not None else None,
     )
 
