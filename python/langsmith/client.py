@@ -2995,15 +2995,16 @@ class Client:
         )
 
     def list_shared_examples(
-        self, share_token: str, *, example_ids: Optional[List[ID_TYPE]] = None,
+        self, share_token: str, *, example_ids: Optional[list[ID_TYPE]] = None,
         limit: Optional[int] = None
-    ) -> List[ls_schemas.Example]:
+    ) -> Iterator[ls_schemas.Example]:
         """Get shared examples.
 
         Args:
             share_token (Union[UUID, str]): The share token or URL of the shared dataset.
             example_ids (Optional[List[UUID, str]], optional): The IDs of the examples to filter by. Defaults to None.
             limit (Optional[int]): Maximum number of examples to return, by default None.
+
         Returns:
             List[ls_schemas.Example]: The list of shared examples.
         """
