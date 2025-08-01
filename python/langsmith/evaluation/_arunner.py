@@ -399,16 +399,14 @@ async def aevaluate_existing(
         >>> example = client.create_example(
         ...     inputs={"question": "What is 2+2?"},
         ...     outputs={"answer": "4"},
-        ...     dataset_id=dataset.id
+        ...     dataset_id=dataset.id,
         ... )
         >>> async def apredict(inputs: dict) -> dict:
         ...     await asyncio.sleep(0.001)
         ...     return {"output": "4"}
         >>> results = asyncio.run(
         ...     aevaluate(
-        ...         apredict,
-        ...         data=dataset_name,
-        ...         experiment_prefix="doctest_experiment"
+        ...         apredict, data=dataset_name, experiment_prefix="doctest_experiment"
         ...     )
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...

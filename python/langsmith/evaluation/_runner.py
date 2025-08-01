@@ -506,15 +506,13 @@ def evaluate_existing(
         >>> example = client.create_example(
         ...     inputs={"question": "What is 2+2?"},
         ...     outputs={"answer": "4"},
-        ...     dataset_id=dataset.id
+        ...     dataset_id=dataset.id,
         ... )
         >>> def predict(inputs: dict) -> dict:
         ...     return {"output": "4"}
         >>> # First run inference on the dataset
         ... results = evaluate(
-        ...     predict,
-        ...     data=dataset_name,
-        ...     experiment_prefix="doctest_experiment"
+        ...     predict, data=dataset_name, experiment_prefix="doctest_experiment"
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
         >>> experiment_id = results.experiment_name
