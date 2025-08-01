@@ -3316,8 +3316,13 @@ class Client:
                         {
                             f"feedback.{k}": v.get("avg")
                             for k, v in r.feedback_stats.items()
+                            if not (k == "note" and v.get("comments"))
                         }
                     )
+                    if r.feedback_stats.get("note") and (
+                        comments := r.feedback_stats["note"].get("comments")
+                    ):
+                        row["notes"] = comments
                 if r.reference_example_id:
                     example_ids.append(r.reference_example_id)
                 else:
