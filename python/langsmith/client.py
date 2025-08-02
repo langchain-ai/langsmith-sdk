@@ -2995,13 +2995,15 @@ class Client:
         )
 
     def list_shared_examples(
-        self, share_token: str, *, example_ids: Optional[list[ID_TYPE]] = None
-    ) -> list[ls_schemas.Example]:
+        self, share_token: str, *, example_ids: Optional[list[ID_TYPE]] = None,
+        limit: Optional[int] = None
+    ) -> Iterator[ls_schemas.Example]:
         """Get shared examples.
 
         Args:
             share_token (Union[UUID, str]): The share token or URL of the shared dataset.
             example_ids (Optional[List[UUID, str]], optional): The IDs of the examples to filter by. Defaults to None.
+            limit (Optional[int]): Maximum number of examples to return, by default None.
 
         Returns:
             List[ls_schemas.Example]: The list of shared examples.
@@ -3009,17 +3011,15 @@ class Client:
         params = {}
         if example_ids is not None:
             params["id"] = [str(id) for id in example_ids]
-        response = self.request_with_retries(
-            "GET",
-            f"/public/{_as_uuid(share_token, 'share_token')}/examples",
-            headers=self._headers,
-            params=params,
-        )
-        ls_utils.raise_for_status_with_text(response)
-        return [
-            ls_schemas.Example(**dataset, _host_url=self._host_url)
-            for dataset in response.json()
-        ]
+        for i, example in enumerate(
+            self._get_paginated_list(
+                f"/public/{_as_uuid(share_token, 'share_token')}/examples",
+                params=params,
+            )
+        ):
+            yield ls_schemas.Example(**example, _host_url=self._host_url)
+            if limit is not None and i + 1 >= limit:
+                break
 
     def list_shared_projects(
         self,
