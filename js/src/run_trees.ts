@@ -930,7 +930,7 @@ function _ensureWriteReplicas(replicas?: Replica[]): WriteReplica[] {
   return _getWriteReplicasFromEnv();
 }
 
-function _checkEndpointEnvUnset(parsed: Record<string, any>) {
+function _checkEndpointEnvUnset(parsed: Record<string, unknown>) {
   if (
     Object.keys(parsed).length > 0 &&
     getLangSmithEnvironmentVariable("ENDPOINT")
