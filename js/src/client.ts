@@ -426,10 +426,10 @@ export function mergeRuntimeEnvIntoRun<T extends RunCreate | RunUpdate>(
       ...envVars,
       ...(envVars.revision_id || ("revision_id" in run && run.revision_id)
         ? {
-            revision_id:
-              ("revision_id" in run ? run.revision_id : undefined) ??
-              envVars.revision_id,
-          }
+          revision_id:
+            ("revision_id" in run ? run.revision_id : undefined) ??
+            envVars.revision_id,
+        }
         : {}),
       ...metadata,
     },
@@ -1119,8 +1119,8 @@ export class Client implements LangSmithTracingClientInterface {
     if (this.debug) {
       console.log(
         "\n=== LangSmith Server Configuration ===\n" +
-          JSON.stringify(json, null, 2) +
-          "\n"
+        JSON.stringify(json, null, 2) +
+        "\n"
       );
     }
     return json;
@@ -1453,12 +1453,11 @@ export class Client implements LangSmithTracingClientInterface {
           outputs,
           events,
           error,
-          extra,
           serialized,
           attachments,
           ...payload
         } = originalPayload;
-        const fields = { inputs, outputs, events, error, extra, serialized };
+        const fields = { inputs, outputs, events, error, serialized };
         // encode the main run payload
         const stringifiedPayload = serializePayloadForTracing(
           payload,
@@ -1506,7 +1505,7 @@ export class Client implements LangSmithTracingClientInterface {
               if (name.includes(".")) {
                 console.warn(
                   `Skipping attachment '${name}' for run ${payload.id}: Invalid attachment name. ` +
-                    `Attachment names must not contain periods ('.'). Please rename the attachment and try again.`
+                  `Attachment names must not contain periods ('.'). Please rename the attachment and try again.`
                 );
                 continue;
               }
@@ -1663,11 +1662,10 @@ export class Client implements LangSmithTracingClientInterface {
         (options?.apiUrl ?? this.apiUrl) !== DEFAULT_API_URL
       ) {
         console.warn(
-          `Streaming multipart upload to ${
-            options?.apiUrl ?? this.apiUrl
+          `Streaming multipart upload to ${options?.apiUrl ?? this.apiUrl
           }/runs/multipart failed. ` +
-            `This usually means the host does not support chunked uploads. ` +
-            `Retrying with a buffered upload for operation "${context}".`
+          `This usually means the host does not support chunked uploads. ` +
+          `Retrying with a buffered upload for operation "${context}".`
         );
         // Disable streaming for future requests
         this.multipartStreamingDisabled = true;
@@ -1796,9 +1794,8 @@ export class Client implements LangSmithTracingClientInterface {
         sessionId = project.id;
       }
       const tenantId = await this._getTenantId();
-      return `${this.getHostUrl()}/o/${tenantId}/projects/p/${sessionId}/r/${
-        run.id
-      }?poll=true`;
+      return `${this.getHostUrl()}/o/${tenantId}/projects/p/${sessionId}/r/${run.id
+        }?poll=true`;
     } else if (runId !== undefined) {
       const run_ = await this.readRun(runId);
       if (!run_.app_path) {
@@ -2311,9 +2308,8 @@ export class Client implements LangSmithTracingClientInterface {
       }
     );
     const shareSchema = await response.json();
-    shareSchema.url = `${this.getHostUrl()}/public/${
-      shareSchema.share_token
-    }/d`;
+    shareSchema.url = `${this.getHostUrl()}/public/${shareSchema.share_token
+      }/d`;
     return shareSchema as DatasetShareSchema;
   }
 
@@ -2344,9 +2340,8 @@ export class Client implements LangSmithTracingClientInterface {
       }
     );
     const shareSchema = await response.json();
-    shareSchema.url = `${this.getHostUrl()}/public/${
-      shareSchema.share_token
-    }/d`;
+    shareSchema.url = `${this.getHostUrl()}/public/${shareSchema.share_token
+      }/d`;
     return shareSchema as DatasetShareSchema;
   }
 
@@ -2421,12 +2416,10 @@ export class Client implements LangSmithTracingClientInterface {
     if (!response.ok) {
       if ("detail" in result) {
         throw new Error(
-          `Failed to list shared examples.\nStatus: ${
-            response.status
-          }\nMessage: ${
-            Array.isArray(result.detail)
-              ? result.detail.join("\n")
-              : "Unspecified error"
+          `Failed to list shared examples.\nStatus: ${response.status
+          }\nMessage: ${Array.isArray(result.detail)
+            ? result.detail.join("\n")
+            : "Unspecified error"
           }`
         );
       }
@@ -3296,18 +3289,18 @@ export class Client implements LangSmithTracingClientInterface {
     propsOrUploads:
       | ExampleCreate[]
       | {
-          inputs?: Array<KVMap>;
-          outputs?: Array<KVMap>;
-          metadata?: Array<KVMap>;
-          splits?: Array<string | Array<string>>;
-          sourceRunIds?: Array<string>;
-          useSourceRunIOs?: Array<boolean>;
-          useSourceRunAttachments?: Array<string[]>;
-          attachments?: Array<Attachments>;
-          exampleIds?: Array<string>;
-          datasetId?: string;
-          datasetName?: string;
-        }
+        inputs?: Array<KVMap>;
+        outputs?: Array<KVMap>;
+        metadata?: Array<KVMap>;
+        splits?: Array<string | Array<string>>;
+        sourceRunIds?: Array<string>;
+        useSourceRunIOs?: Array<boolean>;
+        useSourceRunAttachments?: Array<string[]>;
+        attachments?: Array<Attachments>;
+        exampleIds?: Array<string>;
+        datasetId?: string;
+        datasetName?: string;
+      }
   ): Promise<Example[]> {
     if (Array.isArray(propsOrUploads)) {
       if (propsOrUploads.length === 0) {
@@ -3666,8 +3659,7 @@ export class Client implements LangSmithTracingClientInterface {
 
     const response = await this.caller.call(
       _getFetchImplementation(this.debug),
-      `${
-        this.apiUrl
+      `${this.apiUrl
       }/datasets/${resolvedDatasetId}/version?${params.toString()}`,
       {
         method: "GET",
@@ -4558,9 +4550,8 @@ export class Client implements LangSmithTracingClientInterface {
           8
         )}?organizationId=${settings.id}`;
       } else {
-        return `${this.getHostUrl()}/prompts/${promptName}?organizationId=${
-          settings.id
-        }`;
+        return `${this.getHostUrl()}/prompts/${promptName}?organizationId=${settings.id
+          }`;
       }
     }
   }
@@ -4739,8 +4730,7 @@ export class Client implements LangSmithTracingClientInterface {
 
     const result = await response.json();
     return this._getPromptUrl(
-      `${owner}/${promptName}${
-        result.commit_hash ? `:${result.commit_hash}` : ""
+      `${owner}/${promptName}${result.commit_hash ? `:${result.commit_hash}` : ""
       }`
     );
   }
@@ -5064,8 +5054,7 @@ export class Client implements LangSmithTracingClientInterface {
       parsePromptIdentifier(promptIdentifier);
     const response = await this.caller.call(
       _getFetchImplementation(this.debug),
-      `${this.apiUrl}/commits/${owner}/${promptName}/${commitHash}${
-        options?.includeModel ? "?include_model=true" : ""
+      `${this.apiUrl}/commits/${owner}/${promptName}/${commitHash}${options?.includeModel ? "?include_model=true" : ""
       }`,
       {
         method: "GET",
@@ -5210,7 +5199,7 @@ export class Client implements LangSmithTracingClientInterface {
     } catch (e) {
       console.error(
         `An error occurred while creating dataset ${finalDatasetName}. ` +
-          "You should delete it manually."
+        "You should delete it manually."
       );
       throw e;
     }
