@@ -1008,7 +1008,8 @@ def _parse_write_replicas_from_env_var(env_var: Optional[str]) -> list[WriteRepl
                 for key in key_or_keys:
                     if not isinstance(key, str):
                         logger.warning(
-                            f"Invalid API key type in LANGSMITH_RUNS_ENDPOINTS for URL {url}: "
+                            f"Invalid API key type in LANGSMITH_RUNS_ENDPOINTS for URL "
+                            f"{url}: "
                             f"expected string, got {type(key).__name__}"
                         )
                         continue
@@ -1031,8 +1032,10 @@ def _parse_write_replicas_from_env_var(env_var: Optional[str]) -> list[WriteRepl
                 )
             else:
                 logger.warning(
-                    f"Invalid value type in LANGSMITH_RUNS_ENDPOINTS for URL {url}: "
-                    f"expected string or list of strings, got {type(key_or_keys).__name__}"
+                    f"Invalid value type in LANGSMITH_RUNS_ENDPOINTS for URL "
+                    f"{url}: "
+                    f"expected string or list of strings, got "
+                    f"{type(key_or_keys).__name__}"
                 )
                 continue
 

@@ -839,18 +839,49 @@ function _getWriteReplicasFromEnv(): WriteReplica[] {
   const envVar = getEnvironmentVariable("LANGSMITH_RUNS_ENDPOINTS");
   if (!envVar) return [];
   try {
-    const parsed: Record<string, string> = JSON.parse(envVar);
+    const parsed: Record<string, string | string[]> = JSON.parse(envVar);
     _checkEndpointEnvUnset(parsed);
-    return Object.entries(parsed).map(([url, key]) => ({
-      apiUrl: url.replace(/\/$/, ""),
-      apiKey: key,
-    }));
+
+    const replicas: WriteReplica[] = [];
+    for (const [url, keyOrKeys] of Object.entries(parsed)) {
+      const cleanUrl = url.replace(/\/$/, "");
+
+      if (Array.isArray(keyOrKeys)) {
+        for (const key of keyOrKeys) {
+          if (typeof key !== "string") {
+            console.warn(
+              `Invalid API key type in LANGSMITH_RUNS_ENDPOINTS for URL ${url}: ` +
+                `expected string, got ${typeof key}`
+            );
+            continue;
+          }
+          replicas.push({
+            apiUrl: cleanUrl,
+            apiKey: key,
+          });
+        }
+      } else if (typeof keyOrKeys === "string") {
+        replicas.push({
+          apiUrl: cleanUrl,
+          apiKey: keyOrKeys,
+        });
+      } else {
+        console.warn(
+          `Invalid value type in LANGSMITH_RUNS_ENDPOINTS for URL ${url}: ` +
+            `expected string or array of strings, got ${typeof keyOrKeys}`
+        );
+        continue;
+      }
+    }
+
+    return replicas;
   } catch (e) {
     if (isConflictingEndpointsError(e)) {
       throw e;
     }
     console.warn(
-      "Invalid LANGSMITH_RUNS_ENDPOINTS – must be valid JSON mapping of url->apiKey"
+      "Invalid LANGSMITH_RUNS_ENDPOINTS – must be valid JSON mapping of " +
+        "url->apiKey or url->[apiKeys]"
     );
     return [];
   }
@@ -872,7 +903,7 @@ function _ensureWriteReplicas(replicas?: Replica[]): WriteReplica[] {
   return _getWriteReplicasFromEnv();
 }
 
-function _checkEndpointEnvUnset(parsed: Record<string, string>) {
+function _checkEndpointEnvUnset(parsed: Record<string, string | string[]>) {
   if (
     Object.keys(parsed).length > 0 &&
     getLangSmithEnvironmentVariable("ENDPOINT")
