@@ -1094,9 +1094,9 @@ def test_multipart_ingest_create_with_attachments(
         assert not caplog.records
         wait_for(lambda: _get_run(str(trace_a_id), langchain_client))
         created_run = langchain_client.read_run(run_id=str(trace_a_id))
-        assert sorted(created_run.attachments.keys()) == sorted(
-            ["foo", "bar"]
-        ), f"See failed run at {created_run.url}"
+        assert sorted(created_run.attachments.keys()) == sorted(["foo", "bar"]), (
+            f"See failed run at {created_run.url}"
+        )
         assert created_run.attachments["foo"]["reader"].read() == b"bar"
         assert (
             created_run.attachments["bar"]["reader"].read()
