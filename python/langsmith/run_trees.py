@@ -991,28 +991,59 @@ class _Baggage:
 def _parse_write_replicas_from_env_var(env_var: Optional[str]) -> list[WriteReplica]:
     """Parse write replicas from LANGSMITH_RUNS_ENDPOINTS environment variable value.
 
-    Supports url -> apiKey and url -> [apiKeys] formats.
+    Supports array format [{"api_url": "x", "api_key": "y"}] and object format 
+    {"url": "key"}.
     """
     if not env_var:
         return []
 
     try:
         parsed = json.loads(env_var)
-        _check_endpoint_env_unset(parsed)
 
-        replicas = []
-        for url, key_or_keys in parsed.items():
-            url = url.rstrip("/")
+        if isinstance(parsed, list):
+            replicas = []
+            for item in parsed:
+                if not isinstance(item, dict):
+                    logger.warning(
+                        f"Invalid item type in LANGSMITH_RUNS_ENDPOINTS: "
+                        f"expected dict, got {type(item).__name__}"
+                    )
+                    continue
 
-            if isinstance(key_or_keys, list):
-                for key in key_or_keys:
-                    if not isinstance(key, str):
-                        logger.warning(
-                            f"Invalid API key type in LANGSMITH_RUNS_ENDPOINTS for URL "
-                            f"{url}: "
-                            f"expected string, got {type(key).__name__}"
-                        )
-                        continue
+                api_url = item.get("api_url")
+                api_key = item.get("api_key")
+
+                if not isinstance(api_url, str):
+                    logger.warning(
+                        f"Invalid api_url type in LANGSMITH_RUNS_ENDPOINTS: "
+                        f"expected string, got {type(api_url).__name__}"
+                    )
+                    continue
+
+                if not isinstance(api_key, str):
+                    logger.warning(
+                        f"Invalid api_key type in LANGSMITH_RUNS_ENDPOINTS: "
+                        f"expected string, got {type(api_key).__name__}"
+                    )
+                    continue
+
+                replicas.append(
+                    WriteReplica(
+                        api_url=api_url.rstrip("/"),
+                        api_key=api_key,
+                        project_name=None,
+                        updates=None,
+                    )
+                )
+            return replicas
+        elif isinstance(parsed, dict):
+            _check_endpoint_env_unset(parsed)
+
+            replicas = []
+            for url, key in parsed.items():
+                url = url.rstrip("/")
+
+                if isinstance(key, str):
                     replicas.append(
                         WriteReplica(
                             api_url=url,
@@ -1021,31 +1052,28 @@ def _parse_write_replicas_from_env_var(env_var: Optional[str]) -> list[WriteRepl
                             updates=None,
                         )
                     )
-            elif isinstance(key_or_keys, str):
-                replicas.append(
-                    WriteReplica(
-                        api_url=url,
-                        api_key=key_or_keys,
-                        project_name=None,
-                        updates=None,
+                else:
+                    logger.warning(
+                        f"Invalid value type in LANGSMITH_RUNS_ENDPOINTS for URL "
+                        f"{url}: "
+                        f"expected string, got {type(key).__name__}"
                     )
-                )
-            else:
-                logger.warning(
-                    f"Invalid value type in LANGSMITH_RUNS_ENDPOINTS for URL "
-                    f"{url}: "
-                    f"expected string or list of strings, got "
-                    f"{type(key_or_keys).__name__}"
-                )
-                continue
-
-        return replicas
+                    continue
+            return replicas
+        else:
+            logger.warning(
+                f"Invalid LANGSMITH_RUNS_ENDPOINTS – must be valid JSON list of "
+                "objects with api_url and api_key properties, or object mapping "
+                f"url->apiKey, got {type(parsed).__name__}"
+            )
+            return []
     except utils.LangSmithUserError:
         raise
     except Exception as e:
         logger.warning(
-            "Invalid LANGSMITH_RUNS_ENDPOINTS – must be valid JSON mapping of "
-            f"url->apiKey or url->[apiKeys]: {e}"
+            "Invalid LANGSMITH_RUNS_ENDPOINTS – must be valid JSON list of "
+            f"objects with api_url and api_key properties, or object mapping"
+            f" url->apiKey: {e}"
         )
         return []
 

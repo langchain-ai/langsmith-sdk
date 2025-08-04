@@ -170,15 +170,16 @@ class TestEnvironmentVariableParsing:
             # Clear cache to prevent pollution
             ls_utils.get_env_var.cache_clear()
 
-    def test_get_write_replicas_from_env_array_format(self):
-        """Test _get_write_replicas_from_env with array format for multiple keys
-        per URL."""
+    def test_get_write_replicas_from_env_new_array_format(self):
+        """Test _get_write_replicas_from_env with new array format."""
         ls_utils.get_env_var.cache_clear()
         try:
-            endpoints_config = {
-                "https://api.example.com": ["key1", "key2", "key3"],
-                "https://replica.example.com": "single-key",
-            }
+            endpoints_config = [
+                {"api_url": "https://api.example.com", "api_key": "key1"},
+                {"api_url": "https://api.example.com", "api_key": "key2"},
+                {"api_url": "https://api.example.com", "api_key": "key3"},
+                {"api_url": "https://replica.example.com", "api_key": "single-key"},
+            ]
 
             with patch.dict(
                 os.environ,
@@ -191,7 +192,7 @@ class TestEnvironmentVariableParsing:
             ):
                 result = _get_write_replicas_from_env()
 
-                assert len(result) == 4  # 3 from array + 1 single
+                assert len(result) == 4
 
                 # Check that we have 3 replicas for the first URL
                 api_example_replicas = [
@@ -214,14 +215,14 @@ class TestEnvironmentVariableParsing:
         finally:
             ls_utils.get_env_var.cache_clear()
 
-    def test_get_write_replicas_from_env_mixed_format(self):
-        """Test _get_write_replicas_from_env with mixed single and array formats."""
+    def test_get_write_replicas_from_env_object_format(self):
+        """Test _get_write_replicas_from_env with object format."""
         ls_utils.get_env_var.cache_clear()
         try:
             endpoints_config = {
                 "https://single.example.com": "single-key",
-                "https://multi.example.com": ["multi-key1", "multi-key2"],
-                "https://another.example.com": "another-single-key",
+                "https://another.example.com": "another-key",
+                "https://third.example.com": "third-key",
             }
 
             with patch.dict(
@@ -235,19 +236,18 @@ class TestEnvironmentVariableParsing:
             ):
                 result = _get_write_replicas_from_env()
 
-                assert len(result) == 4  # 1 + 2 + 1
+                assert len(result) == 3
 
                 urls = [r["api_url"] for r in result]
                 keys = [r["api_key"] for r in result]
 
                 assert "https://single.example.com" in urls
-                assert "https://multi.example.com" in urls
                 assert "https://another.example.com" in urls
+                assert "https://third.example.com" in urls
 
                 assert "single-key" in keys
-                assert "multi-key1" in keys
-                assert "multi-key2" in keys
-                assert "another-single-key" in keys
+                assert "another-key" in keys
+                assert "third-key" in keys
 
         finally:
             ls_utils.get_env_var.cache_clear()
@@ -280,18 +280,14 @@ class TestEnvironmentVariableParsing:
         finally:
             ls_utils.get_env_var.cache_clear()
 
-    def test_get_write_replicas_from_env_invalid_array_elements(self):
-        """Test _get_write_replicas_from_env with invalid elements in array."""
+    def test_get_write_replicas_from_env_invalid_object_values(self):
+        """Test _get_write_replicas_from_env with invalid values in object format."""
         ls_utils.get_env_var.cache_clear()
         try:
             endpoints_config = {
-                "https://api.example.com": [
-                    "valid-key",
-                    123,
-                    None,
-                    "another-valid-key",
-                ],
+                "https://api.example.com": 123,  # Invalid: should be string
                 "https://valid.example.com": "valid-key",
+                "https://another.example.com": None,  # Invalid: should be string
             }
 
             with patch.dict(
@@ -305,15 +301,11 @@ class TestEnvironmentVariableParsing:
             ):
                 result = _get_write_replicas_from_env()
 
-                # Should have 3 replicas: 2 valid from array + 1 single
-                assert len(result) == 3
+                # Should have 1 replica: only the valid one
+                assert len(result) == 1
 
-                api_keys = [r["api_key"] for r in result]
-                assert "valid-key" in api_keys
-                assert "another-valid-key" in api_keys
-                # Invalid elements (123, None) should be filtered out
-                assert 123 not in api_keys
-                assert None not in api_keys
+                assert result[0]["api_url"] == "https://valid.example.com"
+                assert result[0]["api_key"] == "valid-key"
 
         finally:
             ls_utils.get_env_var.cache_clear()
@@ -351,9 +343,13 @@ class TestEnvironmentVariableParsing:
 class TestParseWriteReplicasFromEnvVar:
     """Test the _parse_write_replicas_from_env_var function directly."""
 
-    def test_parse_array_format_single_url(self):
-        """Test parsing array format with single URL."""
-        env_var = '{"https://api.example.com": ["key1", "key2", "key3"]}'
+    def test_parse_new_array_format(self):
+        """Test parsing new array format."""
+        env_var = json.dumps([
+            {"api_url": "https://api.example.com", "api_key": "key1"},
+            {"api_url": "https://api.example.com", "api_key": "key2"},
+            {"api_url": "https://api.example.com", "api_key": "key3"},
+        ])
 
         with patch.dict(
             os.environ, {"LANGSMITH_ENDPOINT": "", "LANGCHAIN_ENDPOINT": ""}, clear=True
@@ -372,12 +368,12 @@ class TestParseWriteReplicasFromEnvVar:
         assert all(r["project_name"] is None for r in result)
         assert all(r["updates"] is None for r in result)
 
-    def test_parse_mixed_format(self):
-        """Test parsing mixed single and array formats."""
+    def test_parse_object_format(self):
+        """Test parsing object format."""
         env_var = json.dumps(
             {
                 "https://single.example.com": "single-key",
-                "https://multi.example.com": ["multi1", "multi2"],
+                "https://another.example.com": "another-key",
             }
         )
 
@@ -386,39 +382,31 @@ class TestParseWriteReplicasFromEnvVar:
         ):
             result = _parse_write_replicas_from_env_var(env_var)
 
-        assert len(result) == 3
+        assert len(result) == 2
 
-        # Check single format replica
-        single_replicas = [
-            r for r in result if r["api_url"] == "https://single.example.com"
-        ]
-        assert len(single_replicas) == 1
-        assert single_replicas[0]["api_key"] == "single-key"
+        # Check replicas
+        urls = [r["api_url"] for r in result]
+        keys = [r["api_key"] for r in result]
 
-        # Check array format replicas
-        multi_replicas = [
-            r for r in result if r["api_url"] == "https://multi.example.com"
-        ]
-        assert len(multi_replicas) == 2
-        multi_keys = [r["api_key"] for r in multi_replicas]
-        assert "multi1" in multi_keys
-        assert "multi2" in multi_keys
+        assert "https://single.example.com" in urls
+        assert "https://another.example.com" in urls
+        assert "single-key" in keys
+        assert "another-key" in keys
 
     def test_parse_url_trailing_slash_removal(self):
         """Test that trailing slashes are removed from URLs."""
-        env_var = json.dumps(
-            {
-                "https://api.example.com/": ["key1", "key2"],
-                "https://other.example.com/path/": "single-key",
-            }
-        )
+        # Test with new array format
+        env_var = json.dumps([
+            {"api_url": "https://api.example.com/", "api_key": "key1"},
+            {"api_url": "https://other.example.com/path/", "api_key": "key2"},
+        ])
 
         with patch.dict(
             os.environ, {"LANGSMITH_ENDPOINT": "", "LANGCHAIN_ENDPOINT": ""}, clear=True
         ):
             result = _parse_write_replicas_from_env_var(env_var)
 
-        assert len(result) == 3
+        assert len(result) == 2
 
         # Check that trailing slashes are removed
         urls = [r["api_url"] for r in result]
@@ -426,6 +414,19 @@ class TestParseWriteReplicasFromEnvVar:
         assert "https://other.example.com/path" in urls
         assert "https://api.example.com/" not in urls
         assert "https://other.example.com/path/" not in urls
+
+        # Test with object format
+        env_var2 = json.dumps({
+            "https://object.example.com/": "object-key",
+        })
+
+        with patch.dict(
+            os.environ, {"LANGSMITH_ENDPOINT": "", "LANGCHAIN_ENDPOINT": ""}, clear=True
+        ):
+            result2 = _parse_write_replicas_from_env_var(env_var2)
+
+        assert len(result2) == 1
+        assert result2[0]["api_url"] == "https://object.example.com"
 
     def test_parse_empty_array(self):
         """Test parsing with empty array."""
@@ -446,17 +447,14 @@ class TestParseWriteReplicasFromEnvVar:
         assert result[0]["api_url"] == "https://valid.example.com"
         assert result[0]["api_key"] == "valid-key"
 
-    def test_parse_invalid_array_elements(self):
-        """Test parsing with invalid elements in array."""
+    def test_parse_invalid_object_values(self):
+        """Test parsing with invalid values in object format."""
         env_var = json.dumps(
             {
-                "https://api.example.com": [
-                    "valid1",
-                    123,
-                    None,
-                    "valid2",
-                    {"invalid": "dict"},
-                ],
+                "https://api.example.com": ["invalid", "array"],
+                "https://valid.example.com": "valid-key",
+                "https://number.example.com": 123,  # Invalid: should be string
+                "https://dict.example.com": {"invalid": "dict"},
             }
         )
 
@@ -465,11 +463,10 @@ class TestParseWriteReplicasFromEnvVar:
         ):
             result = _parse_write_replicas_from_env_var(env_var)
 
-        # Should only have valid string elements
-        assert len(result) == 2
-        keys = [r["api_key"] for r in result]
-        assert "valid1" in keys
-        assert "valid2" in keys
+        # Should only have the valid replica
+        assert len(result) == 1
+        assert result[0]["api_url"] == "https://valid.example.com"
+        assert result[0]["api_key"] == "valid-key"
 
     def test_parse_invalid_value_types(self):
         """Test parsing with invalid value types."""
@@ -504,6 +501,38 @@ class TestParseWriteReplicasFromEnvVar:
     def test_parse_invalid_json(self):
         """Test parsing with invalid JSON."""
         result = _parse_write_replicas_from_env_var("invalid-json")
+        assert result == []
+
+    def test_parse_new_array_format_invalid_items(self):
+        """Test parsing new array format with invalid items."""
+        env_var = json.dumps([
+            {"api_url": "https://valid.example.com", "api_key": "valid-key"},
+            "invalid-string-item",
+            {"api_url": "https://missing-key.example.com"},  # missing api_key
+            {"api_key": "missing-url-key"},  # missing api_url
+            {"api_url": 123, "api_key": "invalid-url-type"},  # invalid api_url type
+            {"api_url": "https://invalid-key-type.example.com", "api_key": 456},
+        ])
+
+        with patch.dict(
+            os.environ, {"LANGSMITH_ENDPOINT": "", "LANGCHAIN_ENDPOINT": ""}, clear=True
+        ):
+            result = _parse_write_replicas_from_env_var(env_var)
+
+        # Should only have the valid replica
+        assert len(result) == 1
+        assert result[0]["api_url"] == "https://valid.example.com"
+        assert result[0]["api_key"] == "valid-key"
+
+    def test_parse_invalid_root_type(self):
+        """Test parsing with invalid root type (not list or dict)."""
+        env_var = json.dumps("invalid-string-root")
+
+        with patch.dict(
+            os.environ, {"LANGSMITH_ENDPOINT": "", "LANGCHAIN_ENDPOINT": ""}, clear=True
+        ):
+            result = _parse_write_replicas_from_env_var(env_var)
+
         assert result == []
 
 
