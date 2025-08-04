@@ -989,28 +989,60 @@ class _Baggage:
 
 @functools.lru_cache(maxsize=1)
 def _parse_write_replicas_from_env_var(env_var: Optional[str]) -> list[WriteReplica]:
-    """Parse write replicas from LANGSMITH_RUNS_ENDPOINTS environment variable value."""
+    """Parse write replicas from LANGSMITH_RUNS_ENDPOINTS environment variable value.
+
+    Supports url -> apiKey and url -> [apiKeys] formats.
+    """
     if not env_var:
         return []
 
     try:
         parsed = json.loads(env_var)
         _check_endpoint_env_unset(parsed)
-        return [
-            WriteReplica(
-                api_url=url.rstrip("/"),
-                api_key=key,
-                project_name=None,
-                updates=None,
-            )
-            for url, key in parsed.items()
-        ]
+
+        replicas = []
+        for url, key_or_keys in parsed.items():
+            url = url.rstrip("/")
+
+            if isinstance(key_or_keys, list):
+                for key in key_or_keys:
+                    if not isinstance(key, str):
+                        logger.warning(
+                            f"Invalid API key type in LANGSMITH_RUNS_ENDPOINTS for URL {url}: "
+                            f"expected string, got {type(key).__name__}"
+                        )
+                        continue
+                    replicas.append(
+                        WriteReplica(
+                            api_url=url,
+                            api_key=key,
+                            project_name=None,
+                            updates=None,
+                        )
+                    )
+            elif isinstance(key_or_keys, str):
+                replicas.append(
+                    WriteReplica(
+                        api_url=url,
+                        api_key=key_or_keys,
+                        project_name=None,
+                        updates=None,
+                    )
+                )
+            else:
+                logger.warning(
+                    f"Invalid value type in LANGSMITH_RUNS_ENDPOINTS for URL {url}: "
+                    f"expected string or list of strings, got {type(key_or_keys).__name__}"
+                )
+                continue
+
+        return replicas
     except utils.LangSmithUserError:
         raise
     except Exception as e:
         logger.warning(
             "Invalid LANGSMITH_RUNS_ENDPOINTS – must be valid JSON mapping of "
-            f"url->apiKey: {e}"
+            f"url->apiKey or url->[apiKeys]: {e}"
         )
         return []
 
