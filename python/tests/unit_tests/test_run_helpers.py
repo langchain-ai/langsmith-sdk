@@ -1786,15 +1786,15 @@ def test_traceable_input_attachments():
                 break
             time.sleep(1)
 
-        # main run, inputs, outputs, events, extra, att1, att2, anoutput
-        assert len(datas) == 8
+        # main run, inputs, outputs, events, att1, att2, anoutput
+        assert len(datas) == 7
         trace_id = datas[0][0].split(".")[1]
 
-        _, (_, extra_stuff) = next(
-            data for data in datas if data[0] == f"post.{trace_id}.extra"
+        _, (_, run_stuff) = next(
+            data for data in datas if data[0] == f"post.{trace_id}"
         )
         assert (
-            json.loads(extra_stuff)["runtime"].get(
+            json.loads(run_stuff)["extra"]["runtime"].get(
                 "LANGSMITH_test_traceable_input_attachments"
             )
             == "aval"

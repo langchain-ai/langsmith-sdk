@@ -30,7 +30,6 @@ class SerializedRunOperation:
     outputs: Optional[bytes]
     events: Optional[bytes]
     error: Optional[bytes]
-    extra: Optional[bytes]
     serialized: Optional[bytes]
     attachments: Optional[ls_schemas.Attachments]
 
@@ -43,7 +42,6 @@ class SerializedRunOperation:
         "outputs",
         "events",
         "error",
-        "extra",
         "serialized",
         "attachments",
     )
@@ -58,7 +56,6 @@ class SerializedRunOperation:
         outputs: Optional[bytes] = None,
         events: Optional[bytes] = None,
         error: Optional[bytes] = None,
-        extra: Optional[bytes] = None,
         serialized: Optional[bytes] = None,
         attachments: Optional[ls_schemas.Attachments] = None,
     ) -> None:
@@ -70,7 +67,6 @@ class SerializedRunOperation:
         self.outputs = outputs
         self.events = events
         self.error = error
-        self.extra = extra
         self.serialized = serialized
         self.attachments = attachments
 
@@ -84,7 +80,6 @@ class SerializedRunOperation:
             self.outputs,
             self.events,
             self.error,
-            self.extra,
             self.serialized,
             self.attachments,
         ) == (
@@ -96,7 +91,6 @@ class SerializedRunOperation:
             other.outputs,
             other.events,
             other.error,
-            other.extra,
             other.serialized,
             other.attachments,
         )
@@ -152,7 +146,6 @@ def serialize_run_dict(
     outputs = payload.pop("outputs", None)
     events = payload.pop("events", None)
     error = payload.pop("error", None)
-    extra = payload.pop("extra", None)
     serialized = payload.pop("serialized", None)
     attachments = payload.pop("attachments", None)
     return SerializedRunOperation(
@@ -164,7 +157,6 @@ def serialize_run_dict(
         outputs=_dumps_json(outputs) if outputs is not None else None,
         events=_dumps_json(events) if events is not None else None,
         error=_dumps_json(error) if error is not None else None,
-        extra=_dumps_json(extra) if extra is not None else None,
         serialized=_dumps_json(serialized) if serialized is not None else None,
         attachments=attachments if attachments is not None else None,
     )
@@ -259,7 +251,6 @@ def serialized_run_operation_to_multipart_parts_and_context(
         ("outputs", op.outputs),
         ("events", op.events),
         ("error", op.error),
-        ("extra", op.extra),
         ("serialized", op.serialized),
     ):
         if value is None:
