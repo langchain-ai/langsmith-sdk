@@ -616,6 +616,11 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
 
       const client = new Client({ autoBatchTracing: false });
 
+      // Mock HTTP calls to prevent actual requests
+      jest
+        .spyOn((client as any).caller, "call")
+        .mockResolvedValue({ ok: true, text: () => "" });
+
       // Create a RunTree to trigger replica parsing
       const runTree = new RunTree({
         name: "test-run",
@@ -654,6 +659,10 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
       const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
 
       const client = new Client({ autoBatchTracing: false });
+
+      jest
+        .spyOn((client as any).caller, "call")
+        .mockResolvedValue({ ok: true, text: () => "" });
 
       // Create a RunTree to trigger replica parsing
       const runTree = new RunTree({
