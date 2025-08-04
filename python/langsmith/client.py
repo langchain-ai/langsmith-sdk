@@ -1792,6 +1792,12 @@ class Client:
         if acc_multipart:
             try:
                 self._send_multipart_req(acc_multipart)
+            except ls_utils.LangSmithNotFoundError:
+                # Fallback to batch ingest if multipart endpoint returns 404
+                # Filter out feedback operations as they're not supported in non-multipart mode
+                run_ops = [op for op in ops if isinstance(op, SerializedRunOperation)]
+                if run_ops:
+                    self._batch_ingest_run_ops(run_ops)
             finally:
                 _close_files(list(opened_files_dict.values()))
 
@@ -5994,7 +6000,7 @@ class Client:
             )
 
             use_multipart = (self.info.batch_ingest_config or {}).get(
-                "use_multipart_endpoint", False
+                "use_multipart_endpoint", True
             )
 
             if (
