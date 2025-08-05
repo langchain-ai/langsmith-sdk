@@ -140,6 +140,38 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
         "https://new.example.com": "new-key",
       });
     });
+
+    it("should parse LANGSMITH_RUNS_ENDPOINTS with new array format", () => {
+      const endpointsConfig = [
+        { api_url: "https://api.smith.langchain.com", api_key: "key1" },
+        { api_url: "https://api.smith.langchain.com", api_key: "key2" },
+        { api_url: "https://replica.example.com", api_key: "replica-key" },
+      ];
+
+      process.env.LANGSMITH_RUNS_ENDPOINTS = JSON.stringify(endpointsConfig);
+
+      const envVar = getLangSmithEnvironmentVariable("RUNS_ENDPOINTS");
+      expect(envVar).toBe(JSON.stringify(endpointsConfig));
+
+      const parsed = JSON.parse(envVar!);
+      expect(parsed).toEqual(endpointsConfig);
+    });
+
+    it("should parse LANGSMITH_RUNS_ENDPOINTS with object format", () => {
+      const endpointsConfig = {
+        "https://api.smith.langchain.com": "key1",
+        "https://replica.example.com": "single-key",
+        "https://another.example.com": "key3",
+      };
+
+      process.env.LANGSMITH_RUNS_ENDPOINTS = JSON.stringify(endpointsConfig);
+
+      const envVar = getLangSmithEnvironmentVariable("RUNS_ENDPOINTS");
+      expect(envVar).toBe(JSON.stringify(endpointsConfig));
+
+      const parsed = JSON.parse(envVar!);
+      expect(parsed).toEqual(endpointsConfig);
+    });
   });
 
   describe("Client Replica Configuration", () => {
@@ -260,6 +292,71 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
       await runTree.postRun();
 
       // Should make calls for primary + replicas (at least 1 call)
+      expect(callSpy).toHaveBeenCalled();
+    });
+
+    it("should handle new array format with multiple endpoints", async () => {
+      const endpointsConfig = [
+        {
+          api_url: "https://workspace1.example.com",
+          api_key: "workspace1-key",
+        },
+        {
+          api_url: "https://workspace2.example.com",
+          api_key: "workspace2-key",
+        },
+        {
+          api_url: "https://workspace1.example.com",
+          api_key: "workspace1-alt-key",
+        },
+      ];
+
+      process.env.LANGSMITH_RUNS_ENDPOINTS = JSON.stringify(endpointsConfig);
+
+      const client = new Client({ autoBatchTracing: false });
+
+      const callSpy = jest
+        .spyOn((client as any).caller, "call")
+        .mockResolvedValue({ ok: true, text: () => "" });
+
+      const runTree = new RunTree({
+        name: "test-run",
+        inputs: { input: "test" },
+        client,
+        project_name: "test-project",
+      });
+
+      await runTree.postRun();
+
+      // Should make calls for all replicas
+      expect(callSpy).toHaveBeenCalled();
+    });
+
+    it("should handle object format", async () => {
+      const endpointsConfig = {
+        "https://workspace1.example.com": "workspace1-key",
+        "https://workspace2.example.com": "workspace2-key",
+        "https://single.example.com": "single-key",
+      };
+
+      process.env.LANGSMITH_RUNS_ENDPOINTS = JSON.stringify(endpointsConfig);
+
+      const client = new Client({ autoBatchTracing: false });
+
+      const callSpy = jest
+        .spyOn((client as any).caller, "call")
+        .mockResolvedValue({ ok: true, text: () => "" });
+
+      const runTree = new RunTree({
+        name: "test-run",
+        inputs: { input: "test" },
+        client,
+        project_name: "test-project",
+      });
+
+      await runTree.postRun();
+
+      // Should make calls for all replicas (3 total)
       expect(callSpy).toHaveBeenCalled();
     });
   });
@@ -500,6 +597,99 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
 
       // Creating client should not throw, but invalid URLs might be handled during requests
       expect(() => new Client({ autoBatchTracing: false })).not.toThrow();
+    });
+
+    it("should handle invalid value types in LANGSMITH_RUNS_ENDPOINTS", async () => {
+      const invalidEndpointsConfig = {
+        "https://valid-string.example.com": "valid-key",
+        "https://invalid-number.example.com": 123,
+        "https://invalid-object.example.com": { key: "value" },
+        "https://invalid-null.example.com": null,
+      };
+
+      process.env.LANGSMITH_RUNS_ENDPOINTS = JSON.stringify(
+        invalidEndpointsConfig
+      );
+
+      // Spy on console.warn to check warning messages
+      const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+
+      const client = new Client({ autoBatchTracing: false });
+
+      // Mock HTTP calls to prevent actual requests
+      jest
+        .spyOn((client as any).caller, "call")
+        .mockResolvedValue({ ok: true, text: () => "" });
+
+      // Create a RunTree to trigger replica parsing
+      const runTree = new RunTree({
+        name: "test-run",
+        inputs: { input: "test" },
+        client,
+        project_name: "test-project",
+      });
+
+      await runTree.postRun();
+
+      // Should warn about invalid value types
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "Invalid value type in LANGSMITH_RUNS_ENDPOINTS"
+        )
+      );
+
+      warnSpy.mockRestore();
+    });
+
+    it("should handle invalid items in new array format", async () => {
+      const invalidEndpointsConfig = [
+        { api_url: "https://valid.example.com", api_key: "valid-key" },
+        "invalid-string-item",
+        { api_url: "https://missing-key.example.com" }, // missing api_key
+        { api_key: "missing-url-key" }, // missing api_url
+        { api_url: 123, api_key: "invalid-url-type" }, // invalid api_url type
+        { api_url: "https://invalid-key-type.example.com", api_key: 456 }, // invalid api_key type
+      ];
+
+      process.env.LANGSMITH_RUNS_ENDPOINTS = JSON.stringify(
+        invalidEndpointsConfig
+      );
+
+      // Spy on console.warn to check warning messages
+      const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+
+      const client = new Client({ autoBatchTracing: false });
+
+      jest
+        .spyOn((client as any).caller, "call")
+        .mockResolvedValue({ ok: true, text: () => "" });
+
+      // Create a RunTree to trigger replica parsing
+      const runTree = new RunTree({
+        name: "test-run",
+        inputs: { input: "test" },
+        client,
+        project_name: "test-project",
+      });
+
+      await runTree.postRun();
+
+      // Should warn about various invalid types
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Invalid item type in LANGSMITH_RUNS_ENDPOINTS")
+      );
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "Invalid api_url type in LANGSMITH_RUNS_ENDPOINTS"
+        )
+      );
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "Invalid api_key type in LANGSMITH_RUNS_ENDPOINTS"
+        )
+      );
+
+      warnSpy.mockRestore();
     });
   });
 
