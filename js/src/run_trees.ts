@@ -839,18 +839,76 @@ function _getWriteReplicasFromEnv(): WriteReplica[] {
   const envVar = getEnvironmentVariable("LANGSMITH_RUNS_ENDPOINTS");
   if (!envVar) return [];
   try {
-    const parsed: Record<string, string> = JSON.parse(envVar);
-    _checkEndpointEnvUnset(parsed);
-    return Object.entries(parsed).map(([url, key]) => ({
-      apiUrl: url.replace(/\/$/, ""),
-      apiKey: key,
-    }));
+    const parsed = JSON.parse(envVar);
+
+    if (Array.isArray(parsed)) {
+      const replicas: WriteReplica[] = [];
+      for (const item of parsed) {
+        if (typeof item !== "object" || item === null) {
+          console.warn(
+            `Invalid item type in LANGSMITH_RUNS_ENDPOINTS: ` +
+              `expected object, got ${typeof item}`
+          );
+          continue;
+        }
+
+        if (typeof item.api_url !== "string") {
+          console.warn(
+            `Invalid api_url type in LANGSMITH_RUNS_ENDPOINTS: ` +
+              `expected string, got ${typeof item.api_url}`
+          );
+          continue;
+        }
+
+        if (typeof item.api_key !== "string") {
+          console.warn(
+            `Invalid api_key type in LANGSMITH_RUNS_ENDPOINTS: ` +
+              `expected string, got ${typeof item.api_key}`
+          );
+          continue;
+        }
+
+        replicas.push({
+          apiUrl: item.api_url.replace(/\/$/, ""),
+          apiKey: item.api_key,
+        });
+      }
+      return replicas;
+    } else if (typeof parsed === "object" && parsed !== null) {
+      _checkEndpointEnvUnset(parsed);
+
+      const replicas: WriteReplica[] = [];
+      for (const [url, key] of Object.entries(parsed)) {
+        const cleanUrl = url.replace(/\/$/, "");
+
+        if (typeof key === "string") {
+          replicas.push({
+            apiUrl: cleanUrl,
+            apiKey: key,
+          });
+        } else {
+          console.warn(
+            `Invalid value type in LANGSMITH_RUNS_ENDPOINTS for URL ${url}: ` +
+              `expected string, got ${typeof key}`
+          );
+          continue;
+        }
+      }
+      return replicas;
+    } else {
+      console.warn(
+        "Invalid LANGSMITH_RUNS_ENDPOINTS – must be valid JSON array of " +
+          `objects with api_url and api_key properties, or object mapping url->apiKey, got ${typeof parsed}`
+      );
+      return [];
+    }
   } catch (e) {
     if (isConflictingEndpointsError(e)) {
       throw e;
     }
     console.warn(
-      "Invalid LANGSMITH_RUNS_ENDPOINTS – must be valid JSON mapping of url->apiKey"
+      "Invalid LANGSMITH_RUNS_ENDPOINTS – must be valid JSON array of " +
+        "objects with api_url and api_key properties, or object mapping url->apiKey"
     );
     return [];
   }
@@ -872,7 +930,7 @@ function _ensureWriteReplicas(replicas?: Replica[]): WriteReplica[] {
   return _getWriteReplicasFromEnv();
 }
 
-function _checkEndpointEnvUnset(parsed: Record<string, string>) {
+function _checkEndpointEnvUnset(parsed: Record<string, unknown>) {
   if (
     Object.keys(parsed).length > 0 &&
     getLangSmithEnvironmentVariable("ENDPOINT")
