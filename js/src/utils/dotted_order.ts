@@ -17,6 +17,26 @@ export const parseStrippedIsoTime = (stripped: string): Date => {
   return new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}.${ms}Z`);
 };
 
+// Helper function to convert stripped ISO string to full ISO string with microsecond precision
+export const parseStrippedIsoTimeWithMicroseconds = (
+  stripped: string
+): string => {
+  // Same parsing logic as parseStrippedIsoTime but preserve microseconds
+  const year = stripped.slice(0, 4);
+  const month = stripped.slice(4, 6);
+  const day = stripped.slice(6, 8);
+  const hour = stripped.slice(9, 11); // Skip 'T'
+  const minute = stripped.slice(11, 13);
+  const second = stripped.slice(13, 15);
+  const ms = stripped.slice(15, 18); // milliseconds
+  const us = stripped.length >= 21 ? stripped.slice(18, 21) : "000"; // microseconds
+
+  // Create ISO string with microsecond precision only if microseconds are present
+  return us !== "000"
+    ? `${year}-${month}-${day}T${hour}:${minute}:${second}.${ms}${us}Z`
+    : `${year}-${month}-${day}T${hour}:${minute}:${second}.${ms}Z`;
+};
+
 // Helper function to convert Date back to stripped format
 export const toStrippedIsoTime = (date: Date): string => {
   return stripNonAlphanumeric(date.toISOString().slice(0, -1)) + "000";
@@ -97,23 +117,6 @@ export function getStartTimeFromDottedOrder(dotOrder: string): string {
     throw new Error(`Invalid dotted order segment: ${lastSegment}`);
   }
 
-  try {
-    const parsedTime = parseStrippedIsoTime(startTime);
-
-    // Validate the parsed timestamp
-    if (isNaN(parsedTime.getTime())) {
-      throw new Error(`Invalid timestamp in dotted order: ${dotOrder}`);
-    }
-
-    return parsedTime.toISOString();
-  } catch (error) {
-    console.error(
-      "Error parsing start time from dotted order:",
-      error,
-      dotOrder
-    );
-    throw new Error(
-      `Failed to parse start time from dotted order: ${dotOrder}`
-    );
-  }
+  // Use the shared parsing logic with microsecond preservation
+  return parseStrippedIsoTimeWithMicroseconds(startTime);
 }
