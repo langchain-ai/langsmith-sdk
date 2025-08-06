@@ -247,14 +247,28 @@ export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
         const dottedOrder = span.attributes[constants.LANGSMITH_DOTTED_ORDER];
         if (typeof dottedOrder === "string") {
           try {
+            // Extract the final segment to get the full precision timestamp
+            const segments = dottedOrder.split(".");
+            const lastSegment = segments[segments.length - 1];
+            const [rawTimestamp] = lastSegment.split("Z");
+
             const correctedStartTime = getStartTimeFromDottedOrder(dottedOrder);
             const correctedDate = new Date(correctedStartTime);
             const correctedTimestampMs = correctedDate.getTime();
 
+            // Extract microseconds from the raw dotted order timestamp
+            // Format: YYYYMMDDTHHMMSSmmmMMM where mmm=milliseconds, MMM=microseconds
+            let microseconds = 0;
+            if (rawTimestamp && rawTimestamp.length >= 21) {
+              const microsecondsPart = rawTimestamp.slice(18, 21);
+              microseconds = parseInt(microsecondsPart, 10) || 0;
+            }
+
             // Convert to HrTime format [seconds, nanoseconds]
+            // Include both milliseconds and microseconds in nanoseconds
             const correctedHrTime: [number, number] = [
               Math.floor(correctedTimestampMs / 1000),
-              (correctedTimestampMs % 1000) * 1000000,
+              (correctedTimestampMs % 1000) * 1000000 + microseconds * 1000,
             ];
 
             // Directly modify the span's start time

@@ -57,7 +57,8 @@ type TraceInfo = {
       dottedOrder: string;
     }
   >;
-  spanCount: number;
+  activeSpanCount: number;
+  totalSpanCount: number;
 };
 
 /**
@@ -71,10 +72,12 @@ export class LangSmithOTLPSpanProcessor extends BatchSpanProcessor {
     if (!this.traceMap[span.spanContext().traceId]) {
       this.traceMap[span.spanContext().traceId] = {
         spanInfo: {},
-        spanCount: 0,
+        activeSpanCount: 0,
+        totalSpanCount: 0,
       };
     }
-    this.traceMap[span.spanContext().traceId].spanCount++;
+    this.traceMap[span.spanContext().traceId].activeSpanCount++;
+    this.traceMap[span.spanContext().traceId].totalSpanCount++;
     const isTraceable = isTraceableSpan(span);
     const parentSpanId = getParentSpanId(span);
 
@@ -99,19 +102,27 @@ export class LangSmithOTLPSpanProcessor extends BatchSpanProcessor {
     }
     const startTimestamp = hrTimeToTimeStamp(span.startTime);
     const spanUuid = getUuidFromOtelSpanId(span.spanContext().spanId);
+
+    // TODO: Make our backend support non chronological dotted orders
+    // Add execution order microseconds to the timestamp like convertToDottedOrderFormat
+    const executionOrder =
+      this.traceMap[span.spanContext().traceId].totalSpanCount;
+    // Use modulo to ensure we stay within 3-digit microsecond range while preserving some order
+    const paddedOrder = (executionOrder % 1000).toString().padStart(3, "0");
+    // Replace the last 3 digits of microseconds with execution order (startTimestamp already has 6-digit precision)
+    const microsecondTimestamp = `${startTimestamp.slice(
+      0,
+      -4
+    )}${paddedOrder}Z`;
+
     const dottedOrderComponent =
-      stripNonAlphanumeric(startTimestamp) + spanUuid;
+      stripNonAlphanumeric(microsecondTimestamp) + spanUuid;
     const rawDottedOrder = parentDottedOrder
       ? `${parentDottedOrder}.${dottedOrderComponent}`
       : dottedOrderComponent;
 
     // Apply timing fix to ensure chronological ordering
-    // Use the span count as execution order for mock microseconds
-    const executionOrder = this.traceMap[span.spanContext().traceId].spanCount;
-    const currentDottedOrder = fixDottedOrderTiming(
-      rawDottedOrder,
-      executionOrder
-    );
+    const currentDottedOrder = fixDottedOrderTiming(rawDottedOrder);
     this.traceMap[span.spanContext().traceId].spanInfo[
       span.spanContext().spanId
     ] = {
@@ -142,8 +153,8 @@ export class LangSmithOTLPSpanProcessor extends BatchSpanProcessor {
     if (!spanInfo) return;
 
     // Decrement span count and cleanup trace if all spans are done
-    traceInfo.spanCount--;
-    if (traceInfo.spanCount <= 0) {
+    traceInfo.activeSpanCount--;
+    if (traceInfo.activeSpanCount <= 0) {
       delete this.traceMap[span.spanContext().traceId];
     }
 
