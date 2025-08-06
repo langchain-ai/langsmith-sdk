@@ -3,38 +3,20 @@ import {
   Span,
   BatchSpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
-import { Context, type HrTime } from "@opentelemetry/api";
+import { Context } from "@opentelemetry/api";
 import {
   LANGSMITH_IS_ROOT,
   LANGSMITH_PARENT_RUN_ID,
   LANGSMITH_TRACEABLE,
-  LANGSMITH_DOTTED_ORDER,
-  LANGSMITH_TRACE_ID,
 } from "./constants.js";
 import { getUuidFromOtelSpanId } from "./utils.js";
-import { RunTree, stripNonAlphanumeric } from "../../run_trees.js";
-
-const NANOSECOND_DIGITS = 9;
-const MICROSECOND_DIGITS = 6;
+import { RunTree } from "../../run_trees.js";
 
 export function isTraceableSpan(span: ReadableSpan): boolean {
   return (
     span.attributes[LANGSMITH_TRACEABLE] === "true" ||
     typeof span.attributes["ai.operationId"] === "string"
   );
-}
-
-/**
- * Convert hrTime to timestamp, for example "2019-05-14T17:00:00.000123Z"
- * @param time
- */
-function hrTimeToTimeStamp(time: HrTime): string {
-  const precision = NANOSECOND_DIGITS;
-  const tmp = `${"0".repeat(precision)}${time[1]}Z`;
-  const nanoString = tmp.substring(tmp.length - precision - 1);
-  const date = new Date(time[0] * 1000).toISOString();
-  // We only need 6 digits of precision for the dotted order
-  return `${date.replace("000Z", nanoString.slice(0, MICROSECOND_DIGITS))}Z`;
 }
 
 function getParentSpanId(span: ReadableSpan): string | undefined {
@@ -48,13 +30,7 @@ function getParentSpanId(span: ReadableSpan): string | undefined {
 type TraceInfo = {
   spanInfo: Record<
     string,
-    {
-      isTraceable: boolean;
-      lsTraceId: string;
-      spanId: string;
-      parentSpanId: string | undefined;
-      dottedOrder: string;
-    }
+    { isTraceable: boolean; parentSpanId: string | undefined }
   >;
   spanCount: number;
 };
@@ -76,13 +52,15 @@ export class LangSmithOTLPSpanProcessor extends BatchSpanProcessor {
     this.traceMap[span.spanContext().traceId].spanCount++;
     const isTraceable = isTraceableSpan(span);
     const parentSpanId = getParentSpanId(span);
+    this.traceMap[span.spanContext().traceId].spanInfo[
+      span.spanContext().spanId
+    ] = {
+      isTraceable,
+      parentSpanId,
+    };
 
     let currentCandidateParentSpanId = parentSpanId;
     let traceableParentId;
-    let parentDottedOrder;
-    // LangSmith uses the first span's id as the trace id, NOT the actual OTEL trace id
-    // Default to the current span if no parent information is present
-    let lsTraceId = getUuidFromOtelSpanId(span.spanContext().spanId);
     while (currentCandidateParentSpanId) {
       const currentSpanInfo =
         this.traceMap[span.spanContext().traceId].spanInfo[
@@ -90,36 +68,16 @@ export class LangSmithOTLPSpanProcessor extends BatchSpanProcessor {
         ];
       if (currentSpanInfo?.isTraceable) {
         traceableParentId = currentCandidateParentSpanId;
-        parentDottedOrder = currentSpanInfo.dottedOrder;
-        lsTraceId = currentSpanInfo.lsTraceId;
         break;
       }
       currentCandidateParentSpanId = currentSpanInfo?.parentSpanId;
     }
-    const startTimestamp = hrTimeToTimeStamp(span.startTime);
-    const spanUuid = getUuidFromOtelSpanId(span.spanContext().spanId);
-    const dottedOrderComponent =
-      stripNonAlphanumeric(startTimestamp) + spanUuid;
-    const currentDottedOrder = parentDottedOrder
-      ? `${parentDottedOrder}.${dottedOrderComponent}`
-      : dottedOrderComponent;
-    this.traceMap[span.spanContext().traceId].spanInfo[
-      span.spanContext().spanId
-    ] = {
-      isTraceable,
-      lsTraceId,
-      spanId: span.spanContext().spanId,
-      parentSpanId,
-      dottedOrder: currentDottedOrder,
-    };
     if (!traceableParentId) {
       span.attributes[LANGSMITH_IS_ROOT] = true;
     } else {
       span.attributes[LANGSMITH_PARENT_RUN_ID] =
         getUuidFromOtelSpanId(traceableParentId);
     }
-    span.attributes[LANGSMITH_DOTTED_ORDER] = currentDottedOrder;
-    span.attributes[LANGSMITH_TRACE_ID] = lsTraceId;
     if (isTraceable) {
       super.onStart(span, parentContext);
     }
