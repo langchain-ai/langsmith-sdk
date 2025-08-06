@@ -23,6 +23,7 @@ import {
 
 export {
   parseStrippedIsoTime,
+  parseStrippedIsoTimeWithMicroseconds,
   toStrippedIsoTime,
 } from "./utils/dotted_order.js";
 
@@ -295,8 +296,6 @@ interface MutableRunCreate {
 
 export function getMutableRunCreate(dotOrder: string): MutableRunCreate {
   // Fix timing issues in the dotted order
-  // This flow funnels runs into main multipart flow along with original
-  // executionOrder, so no need to worry about breaking timing ties here
   const updatedDotOrder = fixDottedOrderTiming(dotOrder);
 
   const segments = updatedDotOrder.split(".").map((i) => {

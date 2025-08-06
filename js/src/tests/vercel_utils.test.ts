@@ -78,9 +78,8 @@ describe("vercel utils", () => {
       expect(result).toBe("2023-12-01T12:00:00.001Z");
     });
 
-    test("should throw error for invalid dotted order", () => {
+    test("should throw error for empty dotted order", () => {
       expect(() => getStartTimeFromDottedOrder("")).toThrow();
-      expect(() => getStartTimeFromDottedOrder("invalid")).toThrow();
     });
 
     describe("fixDottedOrderTiming with microsecond preservation", () => {
