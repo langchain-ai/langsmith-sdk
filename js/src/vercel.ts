@@ -289,22 +289,24 @@ interface MutableRunCreate {
 
 // Helper function to convert stripped ISO string back to parseable format
 export const parseStrippedIsoTime = (stripped: string): Date => {
-  // Insert back the removed characters: YYYYMMDDTHHMMSSSSS -> YYYY-MM-DDTHH:MM:SS.SSSZ
+  // Insert back the removed characters: YYYYMMDDTHHMMSSSSSSSS -> YYYY-MM-DDTHH:MM:SS.SSSZ
   // The stripped format is timestamp part only (no Z - that becomes the separator)
+  // Format includes microseconds: 20231201T120000000000 (milliseconds + microseconds)
   const year = stripped.slice(0, 4);
   const month = stripped.slice(4, 6);
   const day = stripped.slice(6, 8);
   const hour = stripped.slice(9, 11); // Skip 'T'
   const minute = stripped.slice(11, 13);
   const second = stripped.slice(13, 15);
-  const ms = stripped.slice(15, 18);
+  const ms = stripped.slice(15, 18); // Only use first 3 digits for milliseconds
+  // Ignore microseconds (18-21) as Date only has millisecond precision
 
   return new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}.${ms}Z`);
 };
 
 // Helper function to convert Date back to stripped format
 export const toStrippedIsoTime = (date: Date): string => {
-  return stripNonAlphanumeric(date.toISOString().slice(0, -1));
+  return stripNonAlphanumeric(date.toISOString().slice(0, -1)) + "000";
 };
 
 export function getMutableRunCreate(dotOrder: string): MutableRunCreate {
