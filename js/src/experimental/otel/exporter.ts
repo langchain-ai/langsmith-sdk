@@ -7,6 +7,7 @@ import {
   getLangSmithEnvironmentVariable,
 } from "../../utils/env.js";
 import { extractUsageMetadata } from "../../utils/vercel.js";
+import { getStartTimeFromDottedOrder } from "../../utils/dotted_order.js";
 
 /**
  * Convert headers string in format "name=value,name2=value2" to object
@@ -240,6 +241,32 @@ export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
           this.projectName !== undefined
         ) {
           span.attributes[constants.LANGSMITH_SESSION_NAME] = this.projectName;
+        }
+
+        // Apply start time correction based on dotted order
+        const dottedOrder = span.attributes[constants.LANGSMITH_DOTTED_ORDER];
+        if (typeof dottedOrder === "string") {
+          try {
+            const correctedStartTime = getStartTimeFromDottedOrder(dottedOrder);
+            const correctedDate = new Date(correctedStartTime);
+            const correctedTimestampMs = correctedDate.getTime();
+
+            // Convert to HrTime format [seconds, nanoseconds]
+            const correctedHrTime: [number, number] = [
+              Math.floor(correctedTimestampMs / 1000),
+              (correctedTimestampMs % 1000) * 1000000,
+            ];
+
+            // Directly modify the span's start time
+            (span as any).startTime = correctedHrTime;
+          } catch (error) {
+            console.error(
+              "Failed to correct start time from dotted order:",
+              error,
+              dottedOrder
+            );
+            // Continue without corrected start time if parsing fails
+          }
         }
       }
       super.export(spans, resultCallback);

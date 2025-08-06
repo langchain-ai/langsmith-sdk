@@ -13,6 +13,7 @@ import {
 } from "./constants.js";
 import { getUuidFromOtelSpanId } from "./utils.js";
 import { RunTree, stripNonAlphanumeric } from "../../run_trees.js";
+import { fixDottedOrderTiming } from "../../utils/dotted_order.js";
 
 const NANOSECOND_DIGITS = 9;
 const MICROSECOND_DIGITS = 6;
@@ -100,9 +101,17 @@ export class LangSmithOTLPSpanProcessor extends BatchSpanProcessor {
     const spanUuid = getUuidFromOtelSpanId(span.spanContext().spanId);
     const dottedOrderComponent =
       stripNonAlphanumeric(startTimestamp) + spanUuid;
-    const currentDottedOrder = parentDottedOrder
+    const rawDottedOrder = parentDottedOrder
       ? `${parentDottedOrder}.${dottedOrderComponent}`
       : dottedOrderComponent;
+
+    // Apply timing fix to ensure chronological ordering
+    // Use the span count as execution order for mock microseconds
+    const executionOrder = this.traceMap[span.spanContext().traceId].spanCount;
+    const currentDottedOrder = fixDottedOrderTiming(
+      rawDottedOrder,
+      executionOrder
+    );
     this.traceMap[span.spanContext().traceId].spanInfo[
       span.spanContext().spanId
     ] = {
