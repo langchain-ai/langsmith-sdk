@@ -964,13 +964,27 @@ export class AISDKExporter {
           : undefined) ?? parentSpanInfo?.projectName;
       const run = this.getRunCreate(span, projectName);
 
+      // Modify span startTime to include execution order as microseconds
+      const executionOrder =
+        traceMap.relativeExecutionOrder[parentRunId ?? ROOT];
+      const microseconds = executionOrder % 1000;
+      const originalStartTimeMs =
+        span.startTime[0] * 1000 + span.startTime[1] / 1000000;
+      const modifiedStartTimeMs =
+        Math.floor(originalStartTimeMs) + microseconds / 1000;
+      const modifiedStartTime: [number, number] = [
+        Math.floor(modifiedStartTimeMs / 1000),
+        (modifiedStartTimeMs % 1000) * 1000000 + microseconds * 1000,
+      ];
+      (span as any).startTime = modifiedStartTime;
+
       traceMap.nodeMap[runId] ??= {
         id: runId,
-        startTime: span.startTime,
+        startTime: modifiedStartTime,
         run,
         sent: false,
         interop,
-        executionOrder: traceMap.relativeExecutionOrder[parentRunId ?? ROOT],
+        executionOrder,
       };
 
       if (this.seenSpanInfo[runId] == null) {
