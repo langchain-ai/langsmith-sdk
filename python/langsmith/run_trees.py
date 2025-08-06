@@ -927,7 +927,10 @@ class _Baggage:
                     replicas_data = json.loads(urllib.parse.unquote(value))
                     parsed_replicas: list[WriteReplica] = []
                     for replica_item in replicas_data:
-                        if isinstance(replica_item, tuple) and len(replica_item) == 2:
+                        if (
+                            isinstance(replica_item, (tuple, list))
+                            and len(replica_item) == 2
+                        ):
                             # Convert legacy format to WriteReplica
                             parsed_replicas.append(
                                 WriteReplica(
