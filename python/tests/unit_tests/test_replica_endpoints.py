@@ -345,11 +345,13 @@ class TestParseWriteReplicasFromEnvVar:
 
     def test_parse_new_array_format(self):
         """Test parsing new array format."""
-        env_var = json.dumps([
-            {"api_url": "https://api.example.com", "api_key": "key1"},
-            {"api_url": "https://api.example.com", "api_key": "key2"},
-            {"api_url": "https://api.example.com", "api_key": "key3"},
-        ])
+        env_var = json.dumps(
+            [
+                {"api_url": "https://api.example.com", "api_key": "key1"},
+                {"api_url": "https://api.example.com", "api_key": "key2"},
+                {"api_url": "https://api.example.com", "api_key": "key3"},
+            ]
+        )
 
         with patch.dict(
             os.environ, {"LANGSMITH_ENDPOINT": "", "LANGCHAIN_ENDPOINT": ""}, clear=True
@@ -396,10 +398,12 @@ class TestParseWriteReplicasFromEnvVar:
     def test_parse_url_trailing_slash_removal(self):
         """Test that trailing slashes are removed from URLs."""
         # Test with new array format
-        env_var = json.dumps([
-            {"api_url": "https://api.example.com/", "api_key": "key1"},
-            {"api_url": "https://other.example.com/path/", "api_key": "key2"},
-        ])
+        env_var = json.dumps(
+            [
+                {"api_url": "https://api.example.com/", "api_key": "key1"},
+                {"api_url": "https://other.example.com/path/", "api_key": "key2"},
+            ]
+        )
 
         with patch.dict(
             os.environ, {"LANGSMITH_ENDPOINT": "", "LANGCHAIN_ENDPOINT": ""}, clear=True
@@ -416,9 +420,11 @@ class TestParseWriteReplicasFromEnvVar:
         assert "https://other.example.com/path/" not in urls
 
         # Test with object format
-        env_var2 = json.dumps({
-            "https://object.example.com/": "object-key",
-        })
+        env_var2 = json.dumps(
+            {
+                "https://object.example.com/": "object-key",
+            }
+        )
 
         with patch.dict(
             os.environ, {"LANGSMITH_ENDPOINT": "", "LANGCHAIN_ENDPOINT": ""}, clear=True
@@ -505,14 +511,16 @@ class TestParseWriteReplicasFromEnvVar:
 
     def test_parse_new_array_format_invalid_items(self):
         """Test parsing new array format with invalid items."""
-        env_var = json.dumps([
-            {"api_url": "https://valid.example.com", "api_key": "valid-key"},
-            "invalid-string-item",
-            {"api_url": "https://missing-key.example.com"},  # missing api_key
-            {"api_key": "missing-url-key"},  # missing api_url
-            {"api_url": 123, "api_key": "invalid-url-type"},  # invalid api_url type
-            {"api_url": "https://invalid-key-type.example.com", "api_key": 456},
-        ])
+        env_var = json.dumps(
+            [
+                {"api_url": "https://valid.example.com", "api_key": "valid-key"},
+                "invalid-string-item",
+                {"api_url": "https://missing-key.example.com"},  # missing api_key
+                {"api_key": "missing-url-key"},  # missing api_url
+                {"api_url": 123, "api_key": "invalid-url-type"},  # invalid api_url type
+                {"api_url": "https://invalid-key-type.example.com", "api_key": 456},
+            ]
+        )
 
         with patch.dict(
             os.environ, {"LANGSMITH_ENDPOINT": "", "LANGCHAIN_ENDPOINT": ""}, clear=True
@@ -677,10 +685,10 @@ class TestBaggageReplicaParsing:
 
         from langsmith.run_trees import _Baggage
 
-        # tuple format: [project_name, updates]
+        # tuple format: (project_name, updates)
         tuple_replicas = [
-            ["replica-project-1", {"environment": "staging"}],
-            ["replica-project-2", None],
+            ("replica-project-1", {"environment": "staging"}),
+            ("replica-project-2", None),
         ]
 
         baggage_value = (
@@ -745,7 +753,7 @@ class TestBaggageReplicaParsing:
 
         # Mixed format: both tuple and new
         mixed_replicas = [
-            ["tuple-project", {"tuple": "true"}],  # tuple format
+            ("tuple-project", {"tuple": "true"}),  # tuple format
             {
                 "api_url": "https://new.example.com",
                 "api_key": "new-key",
