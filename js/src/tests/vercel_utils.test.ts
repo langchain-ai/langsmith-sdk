@@ -1,0 +1,122 @@
+/* eslint-disable no-process-env, @typescript-eslint/no-explicit-any */
+
+import {
+  getMutableRunCreate,
+  parseStrippedIsoTime,
+  toStrippedIsoTime,
+} from "../vercel.js";
+
+describe("vercel utils", () => {
+  describe("parseStrippedIsoTime and toStrippedIsoTime", () => {
+    test("should parse and format stripped ISO time correctly", () => {
+      const originalDate = new Date("2023-12-01T12:30:45.678Z");
+      const stripped = toStrippedIsoTime(originalDate);
+      expect(stripped).toBe("20231201T123045678");
+
+      // When parsing, we work with the timestamp part only (no Z suffix)
+      const parsed = parseStrippedIsoTime(stripped);
+      expect(parsed.toISOString()).toBe("2023-12-01T12:30:45.678Z");
+    });
+  });
+
+  describe("getMutableRunCreate", () => {
+    test("should handle normal case without timing issues", () => {
+      const dotOrder =
+        "20231201T120000000Zparent-id.20231201T120001000Zchild-id";
+      const result = getMutableRunCreate(dotOrder);
+
+      expect(result).toEqual({
+        id: "child-id",
+        trace_id: "parent-id",
+        dotted_order:
+          "20231201T120000000Zparent-id.20231201T120001000Zchild-id",
+        parent_run_id: "parent-id",
+        start_time: "2023-12-01T12:00:01.000Z",
+      });
+    });
+
+    test("should fix timing when child segment equals parent timestamp", () => {
+      // Child has same timestamp as parent
+      const dotOrder =
+        "20231201T120000000Zparent-id.20231201T120000000Zchild-id";
+      const result = getMutableRunCreate(dotOrder);
+
+      expect(result.id).toBe("child-id");
+      expect(result.trace_id).toBe("parent-id");
+      expect(result.parent_run_id).toBe("parent-id");
+
+      // Child timestamp should be incremented by 1ms
+      expect(result.start_time).toBe("2023-12-01T12:00:00.001Z");
+      expect(result.dotted_order).toBe(
+        "20231201T120000000Zparent-id.20231201T120000001Zchild-id"
+      );
+    });
+
+    test("should fix timing when child segment is less than parent timestamp", () => {
+      // Child has earlier timestamp than parent (shouldn't happen but we handle it)
+      const dotOrder =
+        "20231201T120001000Zparent-id.20231201T120000000Zchild-id";
+      const result = getMutableRunCreate(dotOrder);
+
+      expect(result.id).toBe("child-id");
+      expect(result.trace_id).toBe("parent-id");
+      expect(result.parent_run_id).toBe("parent-id");
+
+      // Child timestamp should be incremented to parent + 1ms
+      expect(result.start_time).toBe("2023-12-01T12:00:01.001Z");
+      expect(result.dotted_order).toBe(
+        "20231201T120001000Zparent-id.20231201T120001001Zchild-id"
+      );
+    });
+
+    test("should handle iterative fixing for multiple segments", () => {
+      // Multiple segments with timing issues
+      const dotOrder =
+        "20231201T120000000Zroot-id.20231201T120000000Zparent-id.20231201T120000000Zchild-id";
+      const result = getMutableRunCreate(dotOrder);
+
+      expect(result.id).toBe("child-id");
+      expect(result.trace_id).toBe("root-id");
+      expect(result.parent_run_id).toBe("parent-id");
+
+      // Each segment should be incremented iteratively
+      expect(result.start_time).toBe("2023-12-01T12:00:00.002Z");
+      expect(result.dotted_order).toBe(
+        "20231201T120000000Zroot-id.20231201T120000001Zparent-id.20231201T120000002Zchild-id"
+      );
+    });
+
+    test("should handle complex cascading timing fixes", () => {
+      // Root: 12:00:05.000
+      // Parent: 12:00:04.000 (earlier than root)
+      // Child: 12:00:03.000 (earlier than parent)
+      const dotOrder =
+        "20231201T120005000Zroot-id.20231201T120004000Zparent-id.20231201T120003000Zchild-id";
+      const result = getMutableRunCreate(dotOrder);
+
+      expect(result.id).toBe("child-id");
+      expect(result.trace_id).toBe("root-id");
+      expect(result.parent_run_id).toBe("parent-id");
+
+      // Parent should be root + 1ms = 12:00:05.001
+      // Child should be parent + 1ms = 12:00:05.002
+      expect(result.start_time).toBe("2023-12-01T12:00:05.002Z");
+      expect(result.dotted_order).toBe(
+        "20231201T120005000Zroot-id.20231201T120005001Zparent-id.20231201T120005002Zchild-id"
+      );
+    });
+
+    test("should handle single segment (root only)", () => {
+      const dotOrder = "20231201T120000000Zroot-id";
+      const result = getMutableRunCreate(dotOrder);
+
+      expect(result).toEqual({
+        id: "root-id",
+        trace_id: "root-id",
+        dotted_order: "20231201T120000000Zroot-id",
+        parent_run_id: undefined,
+        start_time: "2023-12-01T12:00:00.000Z",
+      });
+    });
+  });
+});

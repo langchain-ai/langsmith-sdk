@@ -288,8 +288,9 @@ interface MutableRunCreate {
 }
 
 // Helper function to convert stripped ISO string back to parseable format
-const parseStrippedIsoTime = (stripped: string): Date => {
-  // Insert back the removed characters: YYYYMMDDTHHMMSSSSSZXXX -> YYYY-MM-DDTHH:MM:SS.SSSZ
+export const parseStrippedIsoTime = (stripped: string): Date => {
+  // Insert back the removed characters: YYYYMMDDTHHMMSSSSS -> YYYY-MM-DDTHH:MM:SS.SSSZ
+  // The stripped format is timestamp part only (no Z - that becomes the separator)
   const year = stripped.slice(0, 4);
   const month = stripped.slice(4, 6);
   const day = stripped.slice(6, 8);
@@ -302,11 +303,11 @@ const parseStrippedIsoTime = (stripped: string): Date => {
 };
 
 // Helper function to convert Date back to stripped format
-const toStrippedIsoTime = (date: Date): string => {
-  return stripNonAlphanumeric(date.toISOString().slice(0, -1)) + "Z";
+export const toStrippedIsoTime = (date: Date): string => {
+  return stripNonAlphanumeric(date.toISOString().slice(0, -1));
 };
 
-function getMutableRunCreate(dotOrder: string): MutableRunCreate {
+export function getMutableRunCreate(dotOrder: string): MutableRunCreate {
   const segments = dotOrder.split(".").map((i) => {
     const [startTime, runId] = i.split("Z");
     return { startTime, runId };
