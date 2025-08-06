@@ -590,17 +590,14 @@ export class AISDKExporter {
           span.attributes["resource.name"];
       }
 
-      let parsedStart = convertToTimestamp(span.startTime);
+      const parsedStart = convertToTimestamp(span.startTime);
       const parsedEnd = convertToTimestamp(span.endTime);
 
-      // If execution order is provided, create timestamp with execution order as microseconds
-      if (executionOrder !== undefined) {
-        const startTimeMs = Math.floor(
-          span.startTime[0] * 1000 + span.startTime[1] / 1000000
-        );
-        const microseconds = executionOrder % 1000;
-        parsedStart = startTimeMs + microseconds / 1000;
-      }
+      const startTimeToUse = Math.min(parsedStart, parsedEnd);
+      const endTimeToUse = Math.max(parsedStart, parsedEnd);
+
+      // Always append execution order as microseconds to start_time
+      const microseconds = (executionOrder ?? 0) % 1000;
 
       let name = rawConfig.name;
 
@@ -626,8 +623,11 @@ export class AISDKExporter {
           this.projectName ??
           getLangSmithEnvironmentVariable("PROJECT") ??
           getLangSmithEnvironmentVariable("SESSION"),
-        start_time: Math.min(parsedStart, parsedEnd),
-        end_time: Math.max(parsedStart, parsedEnd),
+        start_time:
+          new Date(startTimeToUse).toISOString().slice(0, -1) +
+          microseconds.toString().padStart(3, "0") +
+          "Z",
+        end_time: new Date(endTimeToUse).toISOString(),
       };
 
       return config;
