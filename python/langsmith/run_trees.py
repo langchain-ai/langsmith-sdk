@@ -927,7 +927,10 @@ class _Baggage:
                     replicas_data = json.loads(urllib.parse.unquote(value))
                     parsed_replicas: list[WriteReplica] = []
                     for replica_item in replicas_data:
-                        if isinstance(replica_item, list) and len(replica_item) == 2:
+                        if (
+                            isinstance(replica_item, (tuple, list))
+                            and len(replica_item) == 2
+                        ):
                             # Convert legacy format to WriteReplica
                             parsed_replicas.append(
                                 WriteReplica(
@@ -991,7 +994,7 @@ class _Baggage:
 def _parse_write_replicas_from_env_var(env_var: Optional[str]) -> list[WriteReplica]:
     """Parse write replicas from LANGSMITH_RUNS_ENDPOINTS environment variable value.
 
-    Supports array format [{"api_url": "x", "api_key": "y"}] and object format 
+    Supports array format [{"api_url": "x", "api_key": "y"}] and object format
     {"url": "key"}.
     """
     if not env_var:
