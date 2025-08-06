@@ -1,10 +1,12 @@
 /* eslint-disable no-process-env, @typescript-eslint/no-explicit-any */
 
+import { getMutableRunCreate } from "../vercel.js";
 import {
-  getMutableRunCreate,
   parseStrippedIsoTime,
   toStrippedIsoTime,
-} from "../vercel.js";
+  fixDottedOrderTiming,
+  getStartTimeFromDottedOrder,
+} from "../utils/dotted_order.js";
 
 describe("vercel utils", () => {
   describe("parseStrippedIsoTime and toStrippedIsoTime", () => {
@@ -16,6 +18,94 @@ describe("vercel utils", () => {
       // When parsing, we work with the timestamp part only (no Z suffix)
       const parsed = parseStrippedIsoTime(stripped);
       expect(parsed.toISOString()).toBe("2023-12-01T12:30:45.678Z");
+    });
+  });
+
+  describe("fixDottedOrderTiming", () => {
+    test("should fix timing when child segment equals parent timestamp", () => {
+      const dotOrder =
+        "20231201T120000000000Zparent-id.20231201T120000000000Zchild-id";
+      const result = fixDottedOrderTiming(dotOrder);
+
+      expect(result).toBe(
+        "20231201T120000000000Zparent-id.20231201T120000001000Zchild-id"
+      );
+    });
+
+    test("should handle multiple segments with cascading fixes", () => {
+      const dotOrder =
+        "20231201T120000000000Zroot-id.20231201T120000000000Zparent-id.20231201T120000000000Zchild-id";
+      const result = fixDottedOrderTiming(dotOrder);
+
+      expect(result).toBe(
+        "20231201T120000000000Zroot-id.20231201T120000001000Zparent-id.20231201T120000002000Zchild-id"
+      );
+    });
+
+    test("should handle already correct timing", () => {
+      const dotOrder =
+        "20231201T120000000000Zparent-id.20231201T120001000000Zchild-id";
+      const result = fixDottedOrderTiming(dotOrder);
+
+      expect(result).toBe(
+        "20231201T120000000000Zparent-id.20231201T120001000000Zchild-id"
+      );
+    });
+  });
+
+  describe("getStartTimeFromDottedOrder", () => {
+    test("should extract start time from single segment", () => {
+      const dotOrder = "20231201T120000000000Zroot-id";
+      const result = getStartTimeFromDottedOrder(dotOrder);
+
+      expect(result).toBe("2023-12-01T12:00:00.000Z");
+    });
+
+    test("should extract start time from final segment", () => {
+      const dotOrder =
+        "20231201T120000000000Zparent-id.20231201T120001000000Zchild-id";
+      const result = getStartTimeFromDottedOrder(dotOrder);
+
+      expect(result).toBe("2023-12-01T12:00:01.000Z");
+    });
+
+    test("should handle corrected dotted order", () => {
+      // After timing fix, child should be parent + 1ms
+      const fixedDotOrder =
+        "20231201T120000000000Zparent-id.20231201T120000001000Zchild-id";
+      const result = getStartTimeFromDottedOrder(fixedDotOrder);
+
+      expect(result).toBe("2023-12-01T12:00:00.001Z");
+    });
+
+    test("should throw error for invalid dotted order", () => {
+      expect(() => getStartTimeFromDottedOrder("")).toThrow();
+      expect(() => getStartTimeFromDottedOrder("invalid")).toThrow();
+    });
+
+    describe("fixDottedOrderTiming with executionOrder", () => {
+      test("should use execution order for mock microseconds", () => {
+        // Create a dotted order where child equals parent time
+        const parentTime = "20231201T120000000000";
+        const childTime = "20231201T120000000000";
+        const dotOrder = `${parentTime}Zparent-id.${childTime}Zchild-id`;
+
+        const result = fixDottedOrderTiming(dotOrder, 42);
+
+        // The child should be incremented by 1ms and have execution order 43 (42+1) as microseconds
+        expect(result).toMatch(/20231201T120000001043Zchild-id$/);
+      });
+
+      test("should work without execution order (backward compatibility)", () => {
+        const parentTime = "20231201T120000000000";
+        const childTime = "20231201T120000000000";
+        const dotOrder = `${parentTime}Zparent-id.${childTime}Zchild-id`;
+
+        const result = fixDottedOrderTiming(dotOrder);
+
+        // Should still work but use default "000" microseconds
+        expect(result).toMatch(/20231201T120000001000Zchild-id$/);
+      });
     });
   });
 

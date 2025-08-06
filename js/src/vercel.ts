@@ -15,6 +15,16 @@ import {
   getEnvironmentVariable,
 } from "./utils/env.js";
 import { isTracingEnabled } from "./env.js";
+import { stripNonAlphanumeric } from "./run_trees.js";
+import {
+  fixDottedOrderTiming,
+  getStartTimeFromDottedOrder,
+} from "./utils/dotted_order.js";
+
+export {
+  parseStrippedIsoTime,
+  toStrippedIsoTime,
+} from "./utils/dotted_order.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-types
 type AnyString = string & {};
@@ -222,10 +232,6 @@ const tryJson = (
   }
 };
 
-function stripNonAlphanumeric(input: string) {
-  return input.replace(/[-:.]/g, "");
-}
-
 function getDotOrder(item: {
   startTime: [seconds: number, nanoseconds: number];
   id: string;
@@ -287,50 +293,17 @@ interface MutableRunCreate {
   start_time: string;
 }
 
-// Helper function to convert stripped ISO string back to parseable format
-export const parseStrippedIsoTime = (stripped: string): Date => {
-  // Insert back the removed characters: YYYYMMDDTHHMMSSSSSSSS -> YYYY-MM-DDTHH:MM:SS.SSSZ
-  // The stripped format is timestamp part only (no Z - that becomes the separator)
-  // Format includes microseconds: 20231201T120000000000 (milliseconds + microseconds)
-  const year = stripped.slice(0, 4);
-  const month = stripped.slice(4, 6);
-  const day = stripped.slice(6, 8);
-  const hour = stripped.slice(9, 11); // Skip 'T'
-  const minute = stripped.slice(11, 13);
-  const second = stripped.slice(13, 15);
-  const ms = stripped.slice(15, 18); // Only use first 3 digits for milliseconds
-  // Ignore microseconds (18-21) as Date only has millisecond precision
+export function getMutableRunCreate(
+  dotOrder: string,
+  executionOrder?: number
+): MutableRunCreate {
+  // Fix timing issues in the dotted order
+  const updatedDotOrder = fixDottedOrderTiming(dotOrder, executionOrder);
 
-  return new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}.${ms}Z`);
-};
-
-// Helper function to convert Date back to stripped format
-export const toStrippedIsoTime = (date: Date): string => {
-  return stripNonAlphanumeric(date.toISOString().slice(0, -1)) + "000";
-};
-
-export function getMutableRunCreate(dotOrder: string): MutableRunCreate {
-  const segments = dotOrder.split(".").map((i) => {
+  const segments = updatedDotOrder.split(".").map((i) => {
     const [startTime, runId] = i.split("Z");
     return { startTime, runId };
   });
-
-  // Iteratively check and fix timing to ensure each segment is greater than its parent
-  for (let i = 1; i < segments.length; i++) {
-    const parentTime = parseStrippedIsoTime(segments[i - 1].startTime);
-    const currentTime = parseStrippedIsoTime(segments[i].startTime);
-
-    if (currentTime.getTime() <= parentTime.getTime()) {
-      // Increment by 1 millisecond to make it greater than parent
-      const newTime = new Date(parentTime.getTime() + 1);
-      segments[i].startTime = toStrippedIsoTime(newTime);
-    }
-  }
-
-  // Reconstruct the dotted order with potentially updated timestamps
-  const updatedDotOrder = segments
-    .map((segment) => `${segment.startTime}Z${segment.runId}`)
-    .join(".");
 
   const traceId = segments[0].runId;
   const parentRunId = segments.at(-2)?.runId;
@@ -338,15 +311,12 @@ export function getMutableRunCreate(dotOrder: string): MutableRunCreate {
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   const runId = segments.at(-1)!.runId;
 
-  // If this is the last segment (current run), set start_time to its ISO timestamp
-  const lastSegmentTime = parseStrippedIsoTime(segments.at(-1)!.startTime);
-
   return {
     id: runId,
     trace_id: traceId,
     dotted_order: updatedDotOrder,
     parent_run_id: parentRunId,
-    start_time: lastSegmentTime.toISOString(),
+    start_time: getStartTimeFromDottedOrder(updatedDotOrder),
   };
 }
 
@@ -1085,7 +1055,7 @@ export class AISDKExporter {
             if (!this.seenSpanInfo[task.id].sent) {
               const updated = {
                 ...task.run,
-                ...getMutableRunCreate(taskDotOrder),
+                ...getMutableRunCreate(taskDotOrder, task.executionOrder),
               };
               if (
                 updated.end_time !== undefined &&
