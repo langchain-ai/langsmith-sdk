@@ -295,6 +295,8 @@ interface MutableRunCreate {
 
 export function getMutableRunCreate(dotOrder: string): MutableRunCreate {
   // Fix timing issues in the dotted order
+  // This funnels runs into multipart flow along with original executionOrder
+  // so ties are broken there
   const updatedDotOrder = fixDottedOrderTiming(dotOrder);
 
   const segments = updatedDotOrder.split(".").map((i) => {
