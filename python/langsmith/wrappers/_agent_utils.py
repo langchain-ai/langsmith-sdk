@@ -89,6 +89,23 @@ if HAVE_AGENTS:
             "outputs": parse_io(span_data.output, "output"),
         }
 
+    def _extract_usage_metadata(usage: dict[str, Any]) -> dict[str, int]:
+        """Extract standardized usage metadata.
+
+        Supports both older OpenAI chat completions format
+        (prompt_tokens/completion_tokens) and newer format (input_tokens/output_tokens).
+        """
+        input_tokens = usage.get("input_tokens") or usage.get("prompt_tokens") or 0
+        output_tokens = (
+            usage.get("output_tokens") or usage.get("completion_tokens") or 0
+        )
+        total_tokens = usage.get("total_tokens") or (input_tokens + output_tokens)
+        return {
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": total_tokens,
+        }
+
     def _extract_generation_span_data(
         span_data: tracing.GenerationSpanData,
     ) -> dict[str, Any]:
@@ -101,11 +118,7 @@ if HAVE_AGENTS:
             },
         }
         if span_data.usage:
-            data["outputs"]["usage_metadata"] = {
-                "total_tokens": span_data.usage.get("total_tokens"),
-                "input_tokens": span_data.usage.get("prompt_tokens"),
-                "output_tokens": span_data.usage.get("completion_tokens"),
-            }
+            data["outputs"]["usage_metadata"] = _extract_usage_metadata(span_data.usage)
         return data
 
     def _extract_response_span_data(
