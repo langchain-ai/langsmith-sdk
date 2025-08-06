@@ -563,8 +563,7 @@ export class AISDKExporter {
   /** @internal */
   protected getRunCreate(
     span: AISDKSpan,
-    projectName?: string,
-    executionOrder?: number
+    projectName?: string
   ): RunCreate | undefined {
     const asRunCreate = (rawConfig: RunCreate) => {
       const aiMetadata = Object.keys(span.attributes)
@@ -593,12 +592,6 @@ export class AISDKExporter {
       const parsedStart = convertToTimestamp(span.startTime);
       const parsedEnd = convertToTimestamp(span.endTime);
 
-      const startTimeToUse = Math.min(parsedStart, parsedEnd);
-      const endTimeToUse = Math.max(parsedStart, parsedEnd);
-
-      // Always append execution order as microseconds to start_time
-      const microseconds = (executionOrder ?? 0) % 1000;
-
       let name = rawConfig.name;
 
       // if user provided a custom name, only use it if it's the root
@@ -623,11 +616,8 @@ export class AISDKExporter {
           this.projectName ??
           getLangSmithEnvironmentVariable("PROJECT") ??
           getLangSmithEnvironmentVariable("SESSION"),
-        start_time:
-          new Date(startTimeToUse).toISOString().slice(0, -1) +
-          microseconds.toString().padStart(3, "0") +
-          "Z",
-        end_time: new Date(endTimeToUse).toISOString(),
+        start_time: Math.min(parsedStart, parsedEnd),
+        end_time: Math.max(parsedStart, parsedEnd),
       };
 
       return config;
@@ -970,9 +960,7 @@ export class AISDKExporter {
         (interop?.type === "traceable"
           ? interop.parentRunTree.project_name
           : undefined) ?? parentSpanInfo?.projectName;
-      const executionOrder =
-        traceMap.relativeExecutionOrder[parentRunId ?? ROOT];
-      const run = this.getRunCreate(span, projectName, executionOrder);
+      const run = this.getRunCreate(span, projectName);
 
       traceMap.nodeMap[runId] ??= {
         id: runId,
