@@ -83,27 +83,27 @@ describe("vercel utils", () => {
       expect(() => getStartTimeFromDottedOrder("invalid")).toThrow();
     });
 
-    describe("fixDottedOrderTiming with executionOrder", () => {
-      test("should use execution order for mock microseconds", () => {
-        // Create a dotted order where child equals parent time
-        const parentTime = "20231201T120000000000";
-        const childTime = "20231201T120000000000";
+    describe("fixDottedOrderTiming with microsecond preservation", () => {
+      test("should preserve existing microseconds when fixing timing", () => {
+        // Create a dotted order where child equals parent time but has execution order microseconds
+        const parentTime = "20231201T120000000000"; // 000 microseconds
+        const childTime = "20231201T120000000123"; // 123 microseconds from execution order
         const dotOrder = `${parentTime}Zparent-id.${childTime}Zchild-id`;
 
-        const result = fixDottedOrderTiming(dotOrder, 42);
+        const result = fixDottedOrderTiming(dotOrder);
 
-        // The child should be incremented by 1ms and have execution order 43 (42+1) as microseconds
-        expect(result).toMatch(/20231201T120000001043Zchild-id$/);
+        // The child should be incremented by 1ms but preserve the 123 microseconds
+        expect(result).toMatch(/20231201T120000001123Zchild-id$/);
       });
 
-      test("should work without execution order (backward compatibility)", () => {
+      test("should preserve default microseconds", () => {
         const parentTime = "20231201T120000000000";
         const childTime = "20231201T120000000000";
         const dotOrder = `${parentTime}Zparent-id.${childTime}Zchild-id`;
 
         const result = fixDottedOrderTiming(dotOrder);
 
-        // Should still work but use default "000" microseconds
+        // Should preserve the default "000" microseconds
         expect(result).toMatch(/20231201T120000001000Zchild-id$/);
       });
     });

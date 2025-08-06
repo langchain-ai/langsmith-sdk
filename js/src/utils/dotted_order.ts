@@ -18,18 +18,7 @@ export const parseStrippedIsoTime = (stripped: string): Date => {
 };
 
 // Helper function to convert Date back to stripped format
-export const toStrippedIsoTime = (
-  date: Date,
-  executionOrder?: number
-): string => {
-  if (executionOrder !== undefined) {
-    // Mock microseconds using execution order like in convertToDottedOrderFormat
-    const paddedOrder = executionOrder.toFixed(0).slice(0, 3).padStart(3, "0");
-    const microsecondIso = `${date.toISOString().slice(0, -1)}${paddedOrder}Z`;
-    // stripNonAlphanumeric removes -:. but keeps Z, so remove the Z manually after stripping
-    return stripNonAlphanumeric(microsecondIso).slice(0, -1);
-  }
-
+export const toStrippedIsoTime = (date: Date): string => {
   return stripNonAlphanumeric(date.toISOString().slice(0, -1)) + "000";
 };
 
@@ -37,15 +26,12 @@ export const toStrippedIsoTime = (
  * Fixes timing issues in dotted order strings where child segments have timestamps
  * less than or equal to their parent segments. Ensures chronological ordering by
  * incrementing child timestamps to be parent + 1ms when needed.
+ * Preserves existing microseconds from the original timestamps.
  *
  * @param dotOrder - Dotted order string like "timestamp1Zid1.timestamp2Zid2"
- * @param executionOrder - Optional execution order to mock microseconds for tie-breaking
  * @returns Fixed dotted order string with corrected timestamps
  */
-export function fixDottedOrderTiming(
-  dotOrder: string,
-  executionOrder?: number
-): string {
+export function fixDottedOrderTiming(dotOrder: string): string {
   const segments = dotOrder.split(".").map((i) => {
     const [startTime, runId] = i.split("Z");
     return { startTime, runId };
@@ -66,13 +52,18 @@ export function fixDottedOrderTiming(
       if (currentTime.getTime() <= parentTime.getTime()) {
         // Increment by 1 millisecond to make it greater than parent
         const newTime = new Date(parentTime.getTime() + 1);
-        // Use execution order for mock microseconds if provided, incremented for each segment
-        const segmentExecutionOrder =
-          executionOrder !== undefined ? executionOrder + i : undefined;
-        segments[i].startTime = toStrippedIsoTime(
-          newTime,
-          segmentExecutionOrder
-        );
+
+        // Preserve existing microseconds from the original timestamp
+        const originalTimestamp = segments[i].startTime;
+        let microseconds = "000";
+        if (originalTimestamp.length >= 21) {
+          microseconds = originalTimestamp.slice(18, 21);
+        }
+
+        // Create new timestamp with preserved microseconds
+        const newIsoString =
+          newTime.toISOString().slice(0, -1) + microseconds + "Z";
+        segments[i].startTime = stripNonAlphanumeric(newIsoString).slice(0, -1);
       }
     } catch (error) {
       console.error("Error processing dotted order segment:", error, dotOrder);

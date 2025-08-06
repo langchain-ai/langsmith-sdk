@@ -293,12 +293,9 @@ interface MutableRunCreate {
   start_time: string;
 }
 
-export function getMutableRunCreate(
-  dotOrder: string,
-  executionOrder?: number
-): MutableRunCreate {
+export function getMutableRunCreate(dotOrder: string): MutableRunCreate {
   // Fix timing issues in the dotted order
-  const updatedDotOrder = fixDottedOrderTiming(dotOrder, executionOrder);
+  const updatedDotOrder = fixDottedOrderTiming(dotOrder);
 
   const segments = updatedDotOrder.split(".").map((i) => {
     const [startTime, runId] = i.split("Z");
@@ -566,7 +563,8 @@ export class AISDKExporter {
   /** @internal */
   protected getRunCreate(
     span: AISDKSpan,
-    projectName?: string
+    projectName?: string,
+    executionOrder?: number
   ): RunCreate | undefined {
     const asRunCreate = (rawConfig: RunCreate) => {
       const aiMetadata = Object.keys(span.attributes)
@@ -592,8 +590,17 @@ export class AISDKExporter {
           span.attributes["resource.name"];
       }
 
-      const parsedStart = convertToTimestamp(span.startTime);
+      let parsedStart = convertToTimestamp(span.startTime);
       const parsedEnd = convertToTimestamp(span.endTime);
+
+      // If execution order is provided, create timestamp with execution order as microseconds
+      if (executionOrder !== undefined) {
+        const startTimeMs = Math.floor(
+          span.startTime[0] * 1000 + span.startTime[1] / 1000000
+        );
+        const microseconds = executionOrder % 1000;
+        parsedStart = startTimeMs + microseconds / 1000;
+      }
 
       let name = rawConfig.name;
 
@@ -963,7 +970,9 @@ export class AISDKExporter {
         (interop?.type === "traceable"
           ? interop.parentRunTree.project_name
           : undefined) ?? parentSpanInfo?.projectName;
-      const run = this.getRunCreate(span, projectName);
+      const executionOrder =
+        traceMap.relativeExecutionOrder[parentRunId ?? ROOT];
+      const run = this.getRunCreate(span, projectName, executionOrder);
 
       traceMap.nodeMap[runId] ??= {
         id: runId,
@@ -1055,7 +1064,7 @@ export class AISDKExporter {
             if (!this.seenSpanInfo[task.id].sent) {
               const updated = {
                 ...task.run,
-                ...getMutableRunCreate(taskDotOrder, task.executionOrder),
+                ...getMutableRunCreate(taskDotOrder),
               };
               if (
                 updated.end_time !== undefined &&
