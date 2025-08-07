@@ -245,11 +245,11 @@ function getDotOrder(item: {
 
   const ms = Number(msString.slice(0, -3));
   const ns = msString.slice(-3);
-  const serializedStartTime = `${new Date(seconds * 1000 + ms)
-    .toISOString()
-    .slice(0, -1)}${ns}Z`;
-
-  return stripNonAlphanumeric(serializedStartTime) + runId;
+  return (
+    stripNonAlphanumeric(
+      `${new Date(seconds * 1000 + ms).toISOString().slice(0, -1)}${ns}Z`
+    ) + runId
+  );
 }
 
 function joinDotOrder(...segments: (string | undefined | null)[]): string {
