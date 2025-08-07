@@ -245,12 +245,11 @@ function getDotOrder(item: {
 
   const ms = Number(msString.slice(0, -3));
   const ns = msString.slice(-3);
+  const serializedStartTime = `${new Date(seconds * 1000 + ms)
+    .toISOString()
+    .slice(0, -1)}${ns}Z`;
 
-  return (
-    stripNonAlphanumeric(
-      `${new Date(seconds * 1000 + ms).toISOString().slice(0, -1)}${ns}Z`
-    ) + runId
-  );
+  return stripNonAlphanumeric(serializedStartTime) + runId;
 }
 
 function joinDotOrder(...segments: (string | undefined | null)[]): string {
@@ -284,7 +283,27 @@ interface MutableRunCreate {
   trace_id: string;
   dotted_order: string;
   parent_run_id: string | undefined;
+  start_time: string;
 }
+
+// Helper function to convert dotted order version of start time to ISO string
+export const parseStrippedIsoTime = (
+  stripped: string
+): string => {
+  const year = stripped.slice(0, 4);
+  const month = stripped.slice(4, 6);
+  const day = stripped.slice(6, 8);
+  const hour = stripped.slice(9, 11); // Skip 'T'
+  const minute = stripped.slice(11, 13);
+  const second = stripped.slice(13, 15);
+  const ms = stripped.slice(15, 18); // milliseconds
+  const us = stripped.length >= 21 ? stripped.slice(18, 21) : "000"; // microseconds
+
+  // Create ISO string with microsecond precision only if microseconds are present
+  return us !== "000"
+    ? `${year}-${month}-${day}T${hour}:${minute}:${second}.${ms}${us}Z`
+    : `${year}-${month}-${day}T${hour}:${minute}:${second}.${ms}Z`;
+};
 
 function getMutableRunCreate(dotOrder: string): MutableRunCreate {
   const segments = dotOrder.split(".").map((i) => {
@@ -296,13 +315,15 @@ function getMutableRunCreate(dotOrder: string): MutableRunCreate {
   const parentRunId = segments.at(-2)?.runId;
 
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-  const runId = segments.at(-1)!.runId;
+  const lastSegment = segments.at(-1)!;
+  const startTime = parseStrippedIsoTime(lastSegment.startTime);
 
   return {
-    id: runId,
+    id: lastSegment.runId,
     trace_id: traceId,
     dotted_order: dotOrder,
     parent_run_id: parentRunId,
+    start_time: startTime,
   };
 }
 
