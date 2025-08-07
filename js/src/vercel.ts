@@ -71,21 +71,24 @@ function convertCoreToSmith(
           return {
             type: "text",
             text: part.text,
-            // @ts-expect-error Backcompat for AI SDK 4
-            ...part.experimental_providerMetadata,
+            // Backcompat for AI SDK 4
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ...(part as any).experimental_providerMetadata,
           };
         }
 
         if (part.type === "tool-call") {
-          // @ts-expect-error Backcompat for AI SDK 4
-          const legacyToolCallInput = part.args;
+          // Backcompat for AI SDK 4
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const legacyToolCallInput = (part as any).args;
           return {
             type: "tool_use",
             name: part.toolName,
             id: part.toolCallId,
             input: legacyToolCallInput ?? part.input,
-            // @ts-expect-error Backcompat for AI SDK 4
-            ...part.experimental_providerMetadata,
+            // Backcompat for AI SDK 4
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ...(part as any).experimental_providerMetadata,
           };
         }
 
@@ -99,8 +102,9 @@ function convertCoreToSmith(
       if (toolCalls.length > 0) {
         data.additional_kwargs ??= {};
         data.additional_kwargs.tool_calls = toolCalls.map((part) => {
-          // @ts-expect-error Backcompat for AI SDK 4
-          const legacyToolCallInput = part.args;
+          // Backcompat for AI SDK 4
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const legacyToolCallInput = (part as any).args;
           return {
             id: part.toolCallId,
             type: "function",
@@ -126,8 +130,9 @@ function convertCoreToSmith(
           return {
             type: "text",
             text: part.text,
-            // @ts-expect-error Backcompat for AI SDK 4
-            ...part.experimental_providerMetadata,
+            // Backcompat for AI SDK 4
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ...(part as any).experimental_providerMetadata,
           };
         }
 
@@ -167,8 +172,9 @@ function convertCoreToSmith(
           return {
             type: "image_url",
             image_url: imageUrl,
-            // @ts-expect-error Backcompat for AI SDK 4
-            ...part.experimental_providerMetadata,
+            // Backcompat for AI SDK 4
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ...(part as any).experimental_providerMetadata,
           };
         }
 
@@ -185,8 +191,9 @@ function convertCoreToSmith(
 
   if (message.role === "tool") {
     const res = message.content.map((toolCall) => {
-      // @ts-expect-error Backcompat for AI SDK 4
-      const legacyToolCallResult = toolCall.result;
+      // Backcompat for AI SDK 4
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const legacyToolCallResult = (toolCall as any).result;
       return {
         type: "tool",
         data: {
