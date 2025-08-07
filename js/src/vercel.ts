@@ -287,9 +287,7 @@ interface MutableRunCreate {
 }
 
 // Helper function to convert dotted order version of start time to ISO string
-export const parseStrippedIsoTime = (
-  stripped: string
-): string => {
+export const parseStrippedIsoTime = (stripped: string): string => {
   const year = stripped.slice(0, 4);
   const month = stripped.slice(4, 6);
   const day = stripped.slice(6, 8);
