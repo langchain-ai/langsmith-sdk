@@ -245,6 +245,7 @@ function getDotOrder(item: {
 
   const ms = Number(msString.slice(0, -3));
   const ns = msString.slice(-3);
+
   return (
     stripNonAlphanumeric(
       `${new Date(seconds * 1000 + ms).toISOString().slice(0, -1)}${ns}Z`
