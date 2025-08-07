@@ -67,10 +67,6 @@ GEN_AI_USAGE_INPUT_TOKEN_DETAILS = "gen_ai.usage.input_token_details"
 GEN_AI_USAGE_OUTPUT_TOKEN_DETAILS = "gen_ai.usage.output_token_details"
 
 # LangSmith custom attributes
-LANGSMITH_RUN_ID = "langsmith.span.id"
-LANGSMITH_TRACE_ID = "langsmith.trace.id"
-LANGSMITH_DOTTED_ORDER = "langsmith.span.dotted_order"
-LANGSMITH_PARENT_RUN_ID = "langsmith.span.parent_id"
 LANGSMITH_SESSION_ID = "langsmith.trace.session_id"
 LANGSMITH_SESSION_NAME = "langsmith.trace.session_name"
 LANGSMITH_RUN_TYPE = "langsmith.span.kind"
@@ -330,18 +326,6 @@ class OTELExporter:
             op: The serialized run operation.
         """
         # Set LangSmith-specific attributes
-        span.set_attribute(LANGSMITH_RUN_ID, str(op.id))
-        span.set_attribute(LANGSMITH_TRACE_ID, str(op.trace_id))
-
-        if run_info.get("dotted_order"):
-            span.set_attribute(
-                LANGSMITH_DOTTED_ORDER, str(run_info.get("dotted_order"))
-            )
-
-        if run_info.get("parent_run_id"):
-            span.set_attribute(
-                LANGSMITH_PARENT_RUN_ID, str(run_info.get("parent_run_id"))
-            )
         if run_info.get("run_type"):
             span.set_attribute(LANGSMITH_RUN_TYPE, str(run_info.get("run_type")))
 

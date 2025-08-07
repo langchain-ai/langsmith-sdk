@@ -314,16 +314,13 @@ def _get_tracing_sampling_rate(
 
 
 def _get_write_api_urls(_write_api_urls: Optional[dict[str, str]]) -> dict[str, str]:
-    _write_api_urls = _write_api_urls or json.loads(
-        os.getenv("LANGSMITH_RUNS_ENDPOINTS", "{}")
-    )
+    # Note: LANGSMITH_RUNS_ENDPOINTS is now handled via replicas, not _write_api_urls
+    _write_api_urls = _write_api_urls or {}
     processed_write_api_urls = {}
     for url, api_key in _write_api_urls.items():
         processed_url = url.strip()
         if not processed_url:
-            raise ls_utils.LangSmithUserError(
-                "LangSmith runs API URL within LANGSMITH_RUNS_ENDPOINTS cannot be empty"
-            )
+            raise ls_utils.LangSmithUserError("LangSmith runs API URL cannot be empty")
         processed_url = processed_url.strip().strip('"').strip("'").rstrip("/")
         processed_api_key = api_key.strip().strip('"').strip("'")
         _validate_api_key_if_hosted(processed_url, processed_api_key)
@@ -1284,11 +1281,11 @@ class Client:
         if patch:
             sampled = []
             for run in runs:
-                run_id = _as_uuid(run["id"])
-                if run_id not in self._filtered_post_uuids:
+                trace_id = _as_uuid(run["trace_id"])
+                if trace_id not in self._filtered_post_uuids:
                     sampled.append(run)
-                else:
-                    self._filtered_post_uuids.remove(run_id)
+                elif run["id"] == trace_id:
+                    self._filtered_post_uuids.remove(trace_id)
             return sampled
         else:
             sampled = []
@@ -1319,6 +1316,8 @@ class Client:
         project_name: Optional[str] = None,
         revision_id: Optional[str] = None,
         dangerously_allow_filesystem: bool = False,
+        api_key: Optional[str] = None,
+        api_url: Optional[str] = None,
         **kwargs: Any,
     ) -> None:
         """Persist a run to the LangSmith API.
@@ -1330,6 +1329,8 @@ class Client:
                 embedding, prompt, or parser.
             project_name (Optional[str]): The project name of the run.
             revision_id (Optional[Union[UUID, str]]): The revision ID of the run.
+            api_key (Optional[str]): The API key to use for this specific run.
+            api_url (Optional[str]): The API URL to use for this specific run.
             **kwargs (Any): Additional keyword arguments.
 
         Returns:
@@ -1450,18 +1451,27 @@ class Client:
             else:
                 # Neither Rust nor Python batch ingestion is configured,
                 # fall back to the non-batch approach.
-                self._create_run(run_create)
+                self._create_run(run_create, api_key=api_key, api_url=api_url)
         else:
-            self._create_run(run_create)
+            self._create_run(run_create, api_key=api_key, api_url=api_url)
 
-    def _create_run(self, run_create: dict):
+    def _create_run(
+        self,
+        run_create: dict,
+        *,
+        api_key: Optional[str] = None,
+        api_url: Optional[str] = None,
+    ):
         errors = []
-        for api_url, api_key in self._write_api_urls.items():
-            headers = {**self._headers, X_API_KEY: api_key}
+        # If specific api_key/api_url provided, use those; otherwise use all configured endpoints
+        if api_key is not None or api_url is not None:
+            target_api_url = api_url or self.api_url
+            target_api_key = api_key or self.api_key
+            headers = {**self._headers, X_API_KEY: target_api_key}
             try:
                 self.request_with_retries(
                     "POST",
-                    f"{api_url}/runs",
+                    f"{target_api_url}/runs",
                     request_kwargs={
                         "data": _dumps_json(run_create),
                         "headers": headers,
@@ -1470,6 +1480,22 @@ class Client:
                 )
             except Exception as e:
                 errors.append(e)
+        else:
+            # Use all configured write API URLs
+            for write_api_url, write_api_key in self._write_api_urls.items():
+                headers = {**self._headers, X_API_KEY: write_api_key}
+                try:
+                    self.request_with_retries(
+                        "POST",
+                        f"{write_api_url}/runs",
+                        request_kwargs={
+                            "data": _dumps_json(run_create),
+                            "headers": headers,
+                        },
+                        to_ignore=(ls_utils.LangSmithConflictError,),
+                    )
+                except Exception as e:
+                    errors.append(e)
         if errors:
             if len(errors) > 1:
                 raise ls_utils.LangSmithExceptionGroup(exceptions=errors)
@@ -2080,6 +2106,8 @@ class Client:
         attachments: Optional[ls_schemas.Attachments] = None,
         dangerously_allow_filesystem: bool = False,
         reference_example_id: str | uuid.UUID | None = None,
+        api_key: Optional[str] = None,
+        api_url: Optional[str] = None,
         **kwargs: Any,
     ) -> None:
         """Update a run in the LangSmith API.
@@ -2099,6 +2127,8 @@ class Client:
             reference_example_id (Optional[Union[str, uuid.UUID]]): ID of the example
                 that was the source of the run inputs. Used for runs that were part of
                 an experiment.
+            api_key (Optional[str]): The API key to use for this specific run.
+            api_url (Optional[str]): The API URL to use for this specific run.
             **kwargs (Any): Kwargs are ignored.
 
         Returns:
@@ -2238,23 +2268,48 @@ class Client:
                         TracingQueueItem(data["dotted_order"], serialized_op)
                     )
         else:
-            self._update_run(data)
+            self._update_run(data, api_key=api_key, api_url=api_url)
 
-    def _update_run(self, run_update: dict) -> None:
-        for api_url, api_key in self._write_api_urls.items():
+    def _update_run(
+        self,
+        run_update: dict,
+        *,
+        api_key: Optional[str] = None,
+        api_url: Optional[str] = None,
+    ) -> None:
+        # If specific api_key/api_url provided, use those; otherwise use all configured endpoints
+        if api_key is not None or api_url is not None:
+            target_api_url = api_url or self.api_url
+            target_api_key = api_key or self.api_key
             headers = {
                 **self._headers,
-                X_API_KEY: api_key,
+                X_API_KEY: target_api_key,
             }
 
             self.request_with_retries(
                 "PATCH",
-                f"{api_url}/runs/{run_update['id']}",
+                f"{target_api_url}/runs/{run_update['id']}",
                 request_kwargs={
                     "data": _dumps_json(run_update),
                     "headers": headers,
                 },
             )
+        else:
+            # Use all configured write API URLs
+            for write_api_url, write_api_key in self._write_api_urls.items():
+                headers = {
+                    **self._headers,
+                    X_API_KEY: write_api_key,
+                }
+
+                self.request_with_retries(
+                    "PATCH",
+                    f"{write_api_url}/runs/{run_update['id']}",
+                    request_kwargs={
+                        "data": _dumps_json(run_update),
+                        "headers": headers,
+                    },
+                )
 
     def flush_compressed_traces(self, attempts: int = 3) -> None:
         """Force flush the currently buffered compressed runs."""
@@ -2940,13 +2995,15 @@ class Client:
         )
 
     def list_shared_examples(
-        self, share_token: str, *, example_ids: Optional[list[ID_TYPE]] = None
-    ) -> list[ls_schemas.Example]:
+        self, share_token: str, *, example_ids: Optional[list[ID_TYPE]] = None,
+        limit: Optional[int] = None
+    ) -> Iterator[ls_schemas.Example]:
         """Get shared examples.
 
         Args:
             share_token (Union[UUID, str]): The share token or URL of the shared dataset.
             example_ids (Optional[List[UUID, str]], optional): The IDs of the examples to filter by. Defaults to None.
+            limit (Optional[int]): Maximum number of examples to return, by default None.
 
         Returns:
             List[ls_schemas.Example]: The list of shared examples.
@@ -2954,17 +3011,15 @@ class Client:
         params = {}
         if example_ids is not None:
             params["id"] = [str(id) for id in example_ids]
-        response = self.request_with_retries(
-            "GET",
-            f"/public/{_as_uuid(share_token, 'share_token')}/examples",
-            headers=self._headers,
-            params=params,
-        )
-        ls_utils.raise_for_status_with_text(response)
-        return [
-            ls_schemas.Example(**dataset, _host_url=self._host_url)
-            for dataset in response.json()
-        ]
+        for i, example in enumerate(
+            self._get_paginated_list(
+                f"/public/{_as_uuid(share_token, 'share_token')}/examples",
+                params=params,
+            )
+        ):
+            yield ls_schemas.Example(**example, _host_url=self._host_url)
+            if limit is not None and i + 1 >= limit:
+                break
 
     def list_shared_projects(
         self,
@@ -3261,8 +3316,13 @@ class Client:
                         {
                             f"feedback.{k}": v.get("avg")
                             for k, v in r.feedback_stats.items()
+                            if not (k == "note" and v.get("comments"))
                         }
                     )
+                    if r.feedback_stats.get("note") and (
+                        comments := r.feedback_stats["note"].get("comments")
+                    ):
+                        row["notes"] = comments
                 if r.reference_example_id:
                     example_ids.append(r.reference_example_id)
                 else:

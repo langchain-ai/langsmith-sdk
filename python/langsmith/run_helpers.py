@@ -44,6 +44,7 @@ from langsmith import client as ls_client
 from langsmith import run_trees, schemas, utils
 from langsmith._internal import _aiter as aitertools
 from langsmith.env import _runtime_env
+from langsmith.run_trees import WriteReplica
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -71,6 +72,7 @@ _CONTEXT_KEYS: dict[str, contextvars.ContextVar] = {
     "enabled": _TRACING_ENABLED,
     "client": _CLIENT,
     "replicas": run_trees._REPLICAS,
+    "distributed_parent_id": run_trees._DISTRIBUTED_PARENT_ID,
 }
 
 _EXCLUDED_FRAME_FNAME = "langsmith/run_helpers.py"
@@ -95,6 +97,8 @@ def get_tracing_context(
             "metadata": _METADATA.get(),
             "enabled": _TRACING_ENABLED.get(),
             "client": _CLIENT.get(),
+            "replicas": run_trees._REPLICAS.get(),
+            "distributed_parent_id": run_trees._DISTRIBUTED_PARENT_ID.get(),
         }
     return {k: context.get(v) for k, v in _CONTEXT_KEYS.items()}
 
@@ -108,7 +112,7 @@ def tracing_context(
     parent: Optional[Union[run_trees.RunTree, Mapping, str, Literal[False]]] = None,
     enabled: Optional[Union[bool, Literal["local"]]] = None,
     client: Optional[ls_client.Client] = None,
-    replicas: Optional[Sequence[tuple[str, Optional[dict]]]] = None,
+    replicas: Optional[Sequence[WriteReplica]] = None,
     **kwargs: Any,
 ) -> Generator[None, None, None]:
     """Set the tracing context for a block of code.
@@ -123,8 +127,9 @@ def tracing_context(
         client: The client to use for logging the run to LangSmith. Defaults to None,
         enabled: Whether tracing is enabled. Defaults to None, meaning it will use the
             current context value or environment variables.
-        replicas: A sequence of tuples containing project names and optional updates for each replica.
-            Example: [("my_experiment", {"reference_example_id": None}), ("my_project", None)]
+        replicas: A sequence of WriteReplica dictionaries to send runs to.
+              Example: [{"api_url": "https://api.example.com", "api_key": "key", "project_name": "proj"}]
+              or [{"project_name": "my_experiment", "updates": {"reference_example_id": None}}]
     """
     if kwargs:
         # warn
@@ -138,9 +143,12 @@ def tracing_context(
         if parent is not False
         else None
     )
+    distributed_parent_id = None
     if parent_run is not None:
+        # TODO(angus): decide if we want to merge tags and metadata
         tags = sorted(set(tags or []) | set(parent_run.tags or []))
         metadata = {**parent_run.metadata, **(metadata or {})}
+        distributed_parent_id = parent_run.id
     enabled = enabled if enabled is not None else current_context.get("enabled")
     _set_tracing_context(
         {
@@ -151,6 +159,7 @@ def tracing_context(
             "enabled": enabled,
             "client": client,
             "replicas": replicas,
+            "distributed_parent_id": distributed_parent_id,
         }
     )
     try:

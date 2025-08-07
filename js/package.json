@@ -1,6 +1,6 @@
 {
   "name": "langsmith",
-  "version": "0.3.48",
+  "version": "0.3.53",
   "description": "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform.",
   "packageManager": "yarn@1.22.19",
   "files": [
@@ -85,6 +85,10 @@
     "experimental/otel/exporter.js",
     "experimental/otel/exporter.d.ts",
     "experimental/otel/exporter.d.cts",
+    "experimental/otel/processor.cjs",
+    "experimental/otel/processor.js",
+    "experimental/otel/processor.d.ts",
+    "experimental/otel/processor.d.cts",
     "index.cjs",
     "index.js",
     "index.d.ts",
@@ -140,8 +144,8 @@
     "uuid": "^10.0.0"
   },
   "devDependencies": {
-    "@ai-sdk/anthropic": "2.0.0-beta.8",
-    "@ai-sdk/openai": "2.0.0-beta.11",
+    "@ai-sdk/anthropic": "2.0.0-beta.12",
+    "@ai-sdk/openai": "2.0.0-beta.15",
     "@babel/preset-env": "^7.22.4",
     "@faker-js/faker": "^8.4.1",
     "@jest/globals": "^29.5.0",
@@ -396,6 +400,15 @@
       },
       "import": "./experimental/otel/exporter.js",
       "require": "./experimental/otel/exporter.cjs"
+    },
+    "./experimental/otel/processor": {
+      "types": {
+        "import": "./experimental/otel/processor.d.ts",
+        "require": "./experimental/otel/processor.d.cts",
+        "default": "./experimental/otel/processor.d.ts"
+      },
+      "import": "./experimental/otel/processor.js",
+      "require": "./experimental/otel/processor.cjs"
     },
     "./package.json": "./package.json"
   }

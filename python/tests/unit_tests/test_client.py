@@ -9,6 +9,7 @@ import itertools
 import json
 import logging
 import math
+import os
 import pathlib
 import sys
 import time
@@ -141,35 +142,53 @@ def test_validate_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     assert client.api_key == "env_langsmith_api_key"
 
 
-def test_validate_multiple_urls(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_validate_multiple_urls() -> None:
+    """Test URL validation without environment variable manipulation."""
     _clear_env_cache()
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain-endpoint.com")
-    monkeypatch.setenv("LANGSMITH_ENDPOINT", "https://api.smith.langsmith-endpoint.com")
-    monkeypatch.setenv("LANGSMITH_RUNS_ENDPOINTS", "{}")
 
-    with pytest.raises(ls_utils.LangSmithUserError):
-        Client()
+    # Test 1: Multiple conflicting endpoint environment variables should raise error
+    with patch.dict(
+        os.environ,
+        {
+            "LANGCHAIN_ENDPOINT": "https://api.smith.langchain-endpoint.com",
+            "LANGSMITH_ENDPOINT": "https://api.smith.langsmith-endpoint.com",
+            "LANGSMITH_RUNS_ENDPOINTS": "{}",
+        },
+        clear=True,
+    ):
+        with pytest.raises(ls_utils.LangSmithUserError):
+            Client()
 
-    monkeypatch.undo()
-    with pytest.raises(ls_utils.LangSmithUserError):
-        Client(
-            api_url="https://api.smith.langchain.com",
-            api_key="123",
-            api_urls={"https://api.smith.langchain.com": "123"},
-        )
+    # Test 2: Conflicting api_url parameter and api_urls parameter should raise error
+    with patch.dict(os.environ, {}, clear=True):
+        with pytest.raises(ls_utils.LangSmithUserError):
+            Client(
+                api_url="https://api.smith.langchain.com",
+                api_key="123",
+                api_urls={"https://api.smith.langchain.com": "123"},
+            )
 
+    # Test 3: LANGSMITH_RUNS_ENDPOINTS should not affect _write_api_urls
     data = {
         "https://api.smith.langsmith-endpoint_1.com": "123",
         "https://api.smith.langsmith-endpoint_2.com": "456",
         "https://api.smith.langsmith-endpoint_3.com": "789",
     }
-    monkeypatch.delenv("LANGCHAIN_ENDPOINT", raising=False)
-    monkeypatch.delenv("LANGSMITH_ENDPOINT", raising=False)
-    monkeypatch.setenv("LANGSMITH_RUNS_ENDPOINTS", json.dumps(data))
-    client = Client(auto_batch_tracing=False)
-    assert client._write_api_urls == data
-    assert client.api_url == "https://api.smith.langsmith-endpoint_1.com"
-    assert client.api_key == "123"
+    with patch.dict(
+        os.environ, {"LANGSMITH_RUNS_ENDPOINTS": json.dumps(data)}, clear=True
+    ):
+        client = Client(auto_batch_tracing=False)
+        # _write_api_urls should only contain the default endpoint
+        assert len(client._write_api_urls) == 1
+        # The default API URL should be used
+        assert client.api_url == "https://api.smith.langchain.com"
+
+    # Test 4: Setting api_urls should still be respected
+    with patch.dict(os.environ, {}, clear=True):
+        client = Client(api_urls=data)
+        assert client._write_api_urls == data
+        assert client.api_url == "https://api.smith.langsmith-endpoint_1.com"
+        assert client.api_key == "123"
 
 
 @mock.patch("langsmith.client.requests.Session")
@@ -295,9 +314,9 @@ def test_async_methods() -> None:
         sync_args = set(inspect.signature(Client.__dict__[sync_method]).parameters)
         async_args = set(inspect.signature(Client.__dict__[async_method]).parameters)
         extra_args = sync_args - async_args
-        assert (
-            not extra_args
-        ), f"Extra args for {async_method} (compared to {sync_method}): {extra_args}"
+        assert not extra_args, (
+            f"Extra args for {async_method} (compared to {sync_method}): {extra_args}"
+        )
 
 
 def test_create_run_unicode() -> None:
@@ -894,9 +913,9 @@ def test_hide_metadata(
     payload_extra = payload.get("extra", {})
 
     if expected_metadata_key_present:
-        assert (
-            "metadata" in payload_extra
-        ), f"Metadata key should be present in extra {payload_extra}"
+        assert "metadata" in payload_extra, (
+            f"Metadata key should be present in extra {payload_extra}"
+        )
         if callable(hide_metadata_config):
             # Check if the callable modified the metadata as expected
             assert payload_extra["metadata"].get("modified") is True
@@ -906,9 +925,9 @@ def test_hide_metadata(
                 for k, v in initial_metadata.items()
             )
     else:
-        assert all(
-            k not in payload_extra["metadata"] for k in initial_metadata
-        ), f"Metadata key should NOT be present in extra {payload_extra}"
+        assert all(k not in payload_extra["metadata"] for k in initial_metadata), (
+            f"Metadata key should NOT be present in extra {payload_extra}"
+        )
 
 
 @pytest.mark.flaky(retries=3)
@@ -1176,9 +1195,9 @@ def test_serialize_json(caplog) -> None:
         "my_mock": MagicMock(text="Hello, world"),
     }
     res = _orjson.loads(_dumps_json(to_serialize))
-    assert (
-        "model_dump" not in caplog.text
-    ), f"Unexpected error logs were emitted: {caplog.text}"
+    assert "model_dump" not in caplog.text, (
+        f"Unexpected error logs were emitted: {caplog.text}"
+    )
 
     expected = {
         "uid": str(uid),
@@ -1485,6 +1504,236 @@ def test_batch_ingest_run_splits_large_batches(
 
 def test_sampling_and_batching():
     """Test that sampling and batching work correctly."""
+    # Setup mock client
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_session.request.return_value = mock_response
+
+    counter = 0
+
+    def mock_should_sample():
+        nonlocal counter
+        counter += 1
+        return counter % 2 != 0
+
+    with patch(
+        "langsmith.client.Client._should_sample", side_effect=mock_should_sample
+    ):
+        client = Client(
+            api_key="test-api-key",
+            auto_batch_tracing=True,
+            tracing_sampling_rate=0.5,
+            session=mock_session,
+        )
+
+        project_name = "__test_batch"
+
+        # Create parent runs
+        run_params = []
+        for i in range(4):
+            run_id = uuid.uuid4()
+            params = {
+                "id": run_id,
+                "project_name": project_name,
+                "name": f"test_run {i}",
+                "run_type": "llm",
+                "inputs": {"text": f"hello world {i}"},
+                "dotted_order": "foo",
+                "trace_id": run_id,
+            }
+            client.create_run(**params)
+            run_params.append(params)
+
+
+def test_patch_sampling_follows_trace_logic():
+    """Test that patch runs correctly follow post logic by checking trace_id instead of run.id."""
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_session.request.return_value = mock_response
+
+    # Mock sampling to reject first trace, accept second trace
+    counter = 0
+
+    def mock_should_sample():
+        nonlocal counter
+        counter += 1
+        return counter % 2 == 0  # Accept even-numbered calls (2nd, 4th, etc.)
+
+    with patch(
+        "langsmith.client.Client._should_sample", side_effect=mock_should_sample
+    ):
+        client = Client(
+            api_key="test-api-key",
+            tracing_sampling_rate=0.5,
+            session=mock_session,
+        )
+
+        # Create two traces
+        trace_id_1 = uuid.uuid4()
+        trace_id_2 = uuid.uuid4()
+        child_run_id_1 = uuid.uuid4()
+        child_run_id_2 = uuid.uuid4()
+
+        # Create root runs (these will be sampled)
+        root_run_1 = {
+            "id": trace_id_1,
+            "trace_id": trace_id_1,
+            "name": "root_run_1",
+            "run_type": "llm",
+            "inputs": {"text": "hello"},
+        }
+        root_run_2 = {
+            "id": trace_id_2,
+            "trace_id": trace_id_2,
+            "name": "root_run_2",
+            "run_type": "llm",
+            "inputs": {"text": "world"},
+        }
+
+        # Create child runs
+        child_run_1 = {
+            "id": child_run_id_1,
+            "trace_id": trace_id_1,
+            "name": "child_run_1",
+            "run_type": "tool",
+            "inputs": {"text": "child hello"},
+        }
+        child_run_2 = {
+            "id": child_run_id_2,
+            "trace_id": trace_id_2,
+            "name": "child_run_2",
+            "run_type": "tool",
+            "inputs": {"text": "child world"},
+        }
+
+        # Test POST filtering (initial sampling)
+        post_filtered = client._filter_for_sampling(
+            [root_run_1, root_run_2], patch=False
+        )
+
+        # Based on our mock, first call returns False, second returns True
+        # So only root_run_2 should be sampled
+        assert len(post_filtered) == 1
+        assert post_filtered[0]["id"] == trace_id_2
+
+        # Verify that trace_id_1 is in filtered set, trace_id_2 is not
+        assert trace_id_1 in client._filtered_post_uuids
+        assert trace_id_2 not in client._filtered_post_uuids
+
+        # Test PATCH filtering - child runs should follow their trace's sampling decision
+        patch_runs = [
+            {**child_run_1, "outputs": {"result": "child result 1"}},
+            {**child_run_2, "outputs": {"result": "child result 2"}},
+        ]
+
+        patch_filtered = client._filter_for_sampling(patch_runs, patch=True)
+
+        # Only child_run_2 should be included (its trace was sampled)
+        # child_run_1 should be filtered out (its trace was not sampled)
+        assert len(patch_filtered) == 1
+        assert patch_filtered[0]["id"] == child_run_id_2
+        assert patch_filtered[0]["trace_id"] == trace_id_2
+
+        # Test PATCH filtering for root runs (updates to the root runs themselves)
+        root_patch_runs = [
+            {**root_run_1, "outputs": {"result": "root result 1"}},
+            {**root_run_2, "outputs": {"result": "root result 2"}},
+        ]
+
+        root_patch_filtered = client._filter_for_sampling(root_patch_runs, patch=True)
+
+        # Only root_run_2 should be included, and trace_id_1 should be removed from filtered set
+        # since we're updating the root run that was originally filtered
+        assert len(root_patch_filtered) == 1
+        assert root_patch_filtered[0]["id"] == trace_id_2
+
+        # trace_id_1 should be removed from filtered set since we processed its root run
+        assert trace_id_1 not in client._filtered_post_uuids
+        assert (
+            trace_id_2 not in client._filtered_post_uuids
+        )  # Still not in filtered set
+
+
+def test_patch_sampling_mixed_traces():
+    """Test patch sampling with a mix of sampled and unsampled traces."""
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_session.request.return_value = mock_response
+
+    # Mock sampling to accept every other trace
+    counter = 0
+
+    def mock_should_sample():
+        nonlocal counter
+        counter += 1
+        return counter % 2 == 1  # Accept odd-numbered calls (1st, 3rd, etc.)
+
+    with patch(
+        "langsmith.client.Client._should_sample", side_effect=mock_should_sample
+    ):
+        client = Client(
+            api_key="test-api-key",
+            tracing_sampling_rate=0.5,
+            session=mock_session,
+        )
+
+        # Create multiple traces
+        trace_ids = [uuid.uuid4() for _ in range(4)]
+        child_run_ids = [uuid.uuid4() for _ in range(4)]
+
+        # Create root runs
+        root_runs = []
+        for i, trace_id in enumerate(trace_ids):
+            root_runs.append(
+                {
+                    "id": trace_id,
+                    "trace_id": trace_id,
+                    "name": f"root_run_{i}",
+                    "run_type": "llm",
+                    "inputs": {"text": f"hello {i}"},
+                }
+            )
+
+        # Sample the root runs
+        post_filtered = client._filter_for_sampling(root_runs, patch=False)
+
+        # Based on our mock: 1st and 3rd calls return True (indices 0, 2)
+        assert len(post_filtered) == 2
+        sampled_trace_ids = {run["id"] for run in post_filtered}
+        assert trace_ids[0] in sampled_trace_ids
+        assert trace_ids[2] in sampled_trace_ids
+
+        # Create child runs for all traces
+        child_runs = []
+        for i, (trace_id, child_id) in enumerate(zip(trace_ids, child_run_ids)):
+            child_runs.append(
+                {
+                    "id": child_id,
+                    "trace_id": trace_id,
+                    "name": f"child_run_{i}",
+                    "run_type": "tool",
+                    "inputs": {"text": f"child {i}"},
+                    "outputs": {"result": f"child result {i}"},
+                }
+            )
+
+        # Test patch filtering for child runs
+        patch_filtered = client._filter_for_sampling(child_runs, patch=True)
+
+        # Only children of sampled traces should be included
+        assert len(patch_filtered) == 2
+        patch_trace_ids = {run["trace_id"] for run in patch_filtered}
+        assert trace_ids[0] in patch_trace_ids
+        assert trace_ids[2] in patch_trace_ids
+        assert trace_ids[1] not in patch_trace_ids
+        assert trace_ids[3] not in patch_trace_ids
+
+
+def test_original_sampling_and_batching():
+    """Test that sampling and batching work correctly (continuation of original test)."""
     # Setup mock client
     mock_session = MagicMock()
     mock_response = MagicMock()
@@ -2467,9 +2716,9 @@ def test_create_run_with_zstd_compression(mock_session_cls: mock.Mock) -> None:
     for call_obj in mock_session.request.mock_calls:
         if call_obj.args and call_obj.args[0] == "POST":
             post_calls.append(call_obj)
-    assert (
-        len(post_calls) >= 1
-    ), "Expected at least one POST to the compression endpoint"
+    assert len(post_calls) >= 1, (
+        "Expected at least one POST to the compression endpoint"
+    )
 
     call_data = post_calls[0][2]["data"]
 
@@ -2555,9 +2804,9 @@ def test_create_feedback_with_zstd_compression(mock_session_cls: mock.Mock) -> N
 
     # Verify Content-Encoding header
     headers = post_calls[0][2]["headers"]
-    assert (
-        headers.get("Content-Encoding") == "zstd"
-    ), "Expected Content-Encoding header to be 'zstd'"
+    assert headers.get("Content-Encoding") == "zstd", (
+        "Expected Content-Encoding header to be 'zstd'"
+    )
 
 
 @patch("langsmith.client.requests.Session")
@@ -2784,6 +3033,57 @@ def test__construct_url():
         for prefix in ("", "/", "https://foobar.com/api/"):
             actual = _construct_url(api_url + suffix, prefix + pathname)
             assert actual == expected
+
+
+@mock.patch("langsmith.client.requests.Session")
+def test_list_shared_examples_pagination(mock_session_cls: mock.Mock) -> None:
+    """Test list_shared_examples handles pagination correctly."""
+    mock_session = mock.Mock()
+
+    def mock_request(*args, **kwargs):
+        response = mock.Mock()
+        response.status_code = 200
+
+        if "/info" in args[1]:
+            response.json.return_value = {}
+            return response
+
+        # First request will return 100 examples, second request 50 examples
+        if kwargs.get('params', {}).get('offset', 0) == 0:
+            examples = [
+                {
+                    "id": str(uuid.uuid4()),
+                    "created_at": _CREATED_AT.isoformat(),
+                    "inputs": {"text": f"input_{i}"},
+                    "outputs": {"result": f"output_{i}"},
+                    "dataset_id": str(uuid.uuid4())
+                }
+                for i in range(100)
+            ]
+        else:
+            examples = [
+                {
+                    "id": str(uuid.uuid4()),
+                    "created_at": _CREATED_AT.isoformat(),
+                    "inputs": {"text": f"input_{i}"},
+                    "outputs": {"result": f"output_{i}"},
+                    "dataset_id": str(uuid.uuid4())
+                }
+                for i in range(100, 150)
+            ]
+
+        response.json.return_value = examples
+        return response
+
+    mock_session.request.side_effect = mock_request
+    mock_session_cls.return_value = mock_session
+
+    client = Client(api_url="http://localhost:1984", api_key="fake-key", session=mock_session)
+    examples = list(client.list_shared_examples(str(uuid.uuid4())))
+
+    assert len(examples) == 150  # Should get all examples
+    assert examples[0].inputs["text"] == "input_0"
+    assert examples[149].inputs["text"] == "input_149"
 
 
 @mock.patch("langsmith.client.requests.get")

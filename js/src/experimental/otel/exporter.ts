@@ -94,11 +94,12 @@ export class LangSmithOTLPTraceExporter extends OTLPTraceExporter {
 
   constructor(config?: LangSmithOTLPTraceExporterConfig) {
     const defaultLsEndpoint =
-      getEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT") ||
       getLangSmithEnvironmentVariable("ENDPOINT") ||
       "https://api.smith.langchain.com";
     const defaultBaseUrl = defaultLsEndpoint.replace(/\/$/, "");
-    const defaultUrl = `${defaultBaseUrl}/otel/v1/traces`;
+    const defaultUrl =
+      getEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT") ??
+      `${defaultBaseUrl}/otel/v1/traces`;
     // Configure headers with API key and project if available
     let headers = config?.headers;
     if (headers === undefined) {

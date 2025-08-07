@@ -61,6 +61,7 @@ import {
   getLangChainEnvVarsMetadata,
   getLangSmithEnvironmentVariable,
   getRuntimeEnvironment,
+  getOtelEnabled,
 } from "./utils/env.js";
 
 import {
@@ -690,7 +691,7 @@ export class Client implements LangSmithTracingClientInterface {
     this.batchSizeBytesLimit = config.batchSizeBytesLimit;
     this.fetchOptions = config.fetchOptions || {};
     this.manualFlushMode = config.manualFlushMode ?? this.manualFlushMode;
-    if (getEnvironmentVariable("OTEL_ENABLED") === "true") {
+    if (getOtelEnabled()) {
       this.langSmithToOTELTranslator = new LangSmithToOTELTranslator();
     }
   }
@@ -934,10 +935,10 @@ export class Client implements LangSmithTracingClientInterface {
     if (patch) {
       const sampled = [];
       for (const run of runs) {
-        if (!this.filteredPostUuids.has(run.id)) {
+        if (!this.filteredPostUuids.has(run.trace_id)) {
           sampled.push(run);
-        } else {
-          this.filteredPostUuids.delete(run.id);
+        } else if (run.id === run.trace_id) {
+          this.filteredPostUuids.delete(run.trace_id);
         }
       }
       return sampled;

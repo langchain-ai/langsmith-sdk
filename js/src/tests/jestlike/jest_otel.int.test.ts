@@ -28,7 +28,7 @@ const myEvaluator: SimpleEvaluator = (params) => {
   }
 };
 
-// Must have OTEL_ENABLED=true in the actual env vars for this to pass
+// Must have LANGSMITH_OTEL_ENABLED=true in the actual env vars for this to pass
 ls.describe.skip("js unit testing test demo with OTEL", () => {
   ls.test(
     "Should create an example with OTEL enabled",

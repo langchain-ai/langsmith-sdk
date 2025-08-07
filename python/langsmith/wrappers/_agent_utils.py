@@ -4,6 +4,8 @@ from datetime import datetime, timezone
 from typing import Any, Literal, Optional
 from uuid import uuid4
 
+from langsmith.schemas import InputTokenDetails, OutputTokenDetails, UsageMetadata
+
 try:
     from agents import tracing  # type: ignore[import]
 
@@ -89,6 +91,42 @@ if HAVE_AGENTS:
             "outputs": parse_io(span_data.output, "output"),
         }
 
+    def _extract_usage_metadata(usage: dict[str, Any]) -> UsageMetadata:
+        """Extract standardized usage metadata.
+
+        Supports both older OpenAI chat completions format
+        (prompt_tokens/completion_tokens) and newer format (input_tokens/output_tokens).
+
+        Token details follow new OpenAI format only:
+        - input_tokens_details: cached_tokens
+        - output_tokens_details: reasoning_tokens
+        """
+        input_tokens = usage.get("input_tokens") or usage.get("prompt_tokens") or 0
+        output_tokens = (
+            usage.get("output_tokens") or usage.get("completion_tokens") or 0
+        )
+        total_tokens = usage.get("total_tokens") or (input_tokens + output_tokens)
+
+        # Handle input token details (new format only)
+        input_token_details: dict = {}
+        if input_details := usage.get("input_tokens_details"):
+            if cached_tokens := input_details.get("cached_tokens"):
+                input_token_details["cache_read"] = cached_tokens
+
+        # Handle output token details (new format only)
+        output_token_details: dict = {}
+        if output_details := usage.get("output_tokens_details"):
+            if reasoning_tokens := output_details.get("reasoning_tokens"):
+                output_token_details["reasoning"] = reasoning_tokens
+
+        return UsageMetadata(
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=total_tokens,
+            input_token_details=InputTokenDetails(**input_token_details),
+            output_token_details=OutputTokenDetails(**output_token_details),
+        )
+
     def _extract_generation_span_data(
         span_data: tracing.GenerationSpanData,
     ) -> dict[str, Any]:
@@ -101,11 +139,7 @@ if HAVE_AGENTS:
             },
         }
         if span_data.usage:
-            data["outputs"]["usage_metadata"] = {
-                "total_tokens": span_data.usage.get("total_tokens"),
-                "input_tokens": span_data.usage.get("prompt_tokens"),
-                "output_tokens": span_data.usage.get("completion_tokens"),
-            }
+            data["outputs"]["usage_metadata"] = _extract_usage_metadata(span_data.usage)
         return data
 
     def _extract_response_span_data(
@@ -115,7 +149,12 @@ if HAVE_AGENTS:
         if span_data.input is not None:
             data["inputs"] = {
                 "input": span_data.input,
-                "instructions": span_data.response.instructions,
+                "instructions": (
+                    span_data.response.instructions
+                    if span_data.response is not None
+                    and span_data.response.instructions
+                    else ""
+                ),
             }
         if span_data.response is not None:
             response = span_data.response.model_dump(exclude_none=True, mode="json")

@@ -1494,6 +1494,7 @@ async def test_traceable_async_exception(auto_batch_tracing: bool):
 
 @pytest.mark.parametrize("auto_batch_tracing", [True, False])
 async def test_traceable_async_gen_exception(auto_batch_tracing: bool):
+    ls_utils.get_env_var.cache_clear()
     mock_client = _get_mock_client(
         auto_batch_tracing=auto_batch_tracing,
         info=ls_schemas.LangSmithInfo(
@@ -1534,6 +1535,7 @@ async def test_traceable_async_gen_exception(auto_batch_tracing: bool):
 
 @pytest.mark.parametrize("auto_batch_tracing", [True, False])
 async def test_traceable_gen_exception(auto_batch_tracing: bool):
+    ls_utils.get_env_var.cache_clear()
     mock_client = _get_mock_client(
         auto_batch_tracing=auto_batch_tracing,
         info=ls_schemas.LangSmithInfo(

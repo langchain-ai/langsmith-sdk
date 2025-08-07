@@ -476,19 +476,11 @@ def evaluate_existing(
             Requires the 'langsmith[vcr]' package to be installed.
 
     Examples:
-        >>> from langsmith.evaluation import evaluate, evaluate_existing
-        >>> dataset_name = "Evaluate Examples"
-        >>> def predict(inputs: dict) -> dict:
-        ...     # This can be any function or just an API call to your app.
-        ...     return {"output": "Yes"}
-        >>> # First run inference on the dataset
-        ... results = evaluate(
-        ...     predict,
-        ...     data=dataset_name,
-        ... )  # doctest: +ELLIPSIS
-        View the evaluation results for experiment:...
-        >>> # Then apply evaluators to the experiment
-        ... def accuracy(run: Run, example: Example):
+        Define your evaluators
+
+        >>> from typing import Sequence
+        >>> from langsmith.schemas import Example, Run
+        >>> def accuracy(run: Run, example: Example):
         ...     # Row-level evaluator for accuracy.
         ...     pred = run.outputs["output"]
         ...     expected = example.outputs["answer"]
@@ -502,15 +494,40 @@ def evaluate_existing(
         ...     tp = sum([p == e for p, e in zip(predictions, expected) if p == "yes"])
         ...     fp = sum([p == "yes" and e == "no" for p, e in zip(predictions, expected)])
         ...     return {"score": tp / (tp + fp)}
-        >>> experiment_name = (
-        ...     results.experiment_name
-        ... )  # Can use the returned experiment name
-        >>> experiment_name = "My Experiment:64e6e91"  # Or manually specify
+
+        Load the experiment and run the evaluation.
+
+        >>> import uuid
+        >>> from langsmith import Client
+        >>> from langsmith.evaluation import evaluate, evaluate_existing
+        >>> client = Client()
+        >>> dataset_name = "__doctest_evaluate_existing_" + uuid.uuid4().hex[:8]
+        >>> dataset = client.create_dataset(dataset_name)
+        >>> example = client.create_example(
+        ...     inputs={"question": "What is 2+2?"},
+        ...     outputs={"answer": "4"},
+        ...     dataset_id=dataset.id,
+        ... )
+        >>> def predict(inputs: dict) -> dict:
+        ...     return {"output": "4"}
+        >>> # First run inference on the dataset
+        ... results = evaluate(
+        ...     predict, data=dataset_name, experiment_prefix="doctest_experiment"
+        ... )  # doctest: +ELLIPSIS
+        View the evaluation results for experiment:...
+        >>> experiment_id = results.experiment_name
+        >>> # Wait for the experiment to be fully processed and check if we have results
+        >>> len(results) > 0
+        True
+        >>> import time
+        >>> time.sleep(2)
         >>> results = evaluate_existing(
-        ...     experiment_name,
+        ...     experiment_id,
+        ...     evaluators=[accuracy],
         ...     summary_evaluators=[precision],
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
+        >>> client.delete_dataset(dataset_id=dataset.id)
     """  # noqa: E501
     client = client or rt.get_cached_client(timeout_ms=(20_000, 90_001))
     project = _load_experiment(experiment, client)

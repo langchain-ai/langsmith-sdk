@@ -8,6 +8,7 @@ import os
 import random
 import string
 import sys
+import threading
 import time
 import uuid
 from datetime import timedelta
@@ -44,6 +45,24 @@ from langsmith.utils import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Global lock to prevent parallel dataset deletions that can cause deadlocks
+_dataset_deletion_lock = threading.Lock()
+
+
+def safe_delete_dataset(
+    client: Client, dataset_id: str = None, dataset_name: str = None
+):
+    """Delete a dataset with thread safety to prevent deadlocks in parallel tests."""
+    with _dataset_deletion_lock:
+        try:
+            if dataset_id:
+                client.delete_dataset(dataset_id=dataset_id)
+            elif dataset_name:
+                client.delete_dataset(dataset_name=dataset_name)
+        except Exception as e:
+            # Log the error but don't fail the test - dataset might already be deleted
+            logger.warning(f"Failed to delete dataset: {e}")
 
 
 def wait_for(
@@ -201,21 +220,28 @@ def test_datasets(parameterized_multipart_client: Client) -> None:
     examples3 = list(
         parameterized_multipart_client.list_examples(dataset_id=new_dataset.id)  # type: ignore
     )
-    supports_none_outputs = (
-        parameterized_multipart_client.info.instance_flags or {}
-    ).get("dataset_examples_multipart_enabled", False)
     assert len(examples3) == 3
-    assert any(
-        example.inputs == {}
-        and example.outputs == ({} if supports_none_outputs else None)
-        for example in examples3
+
+    # Find the example with empty inputs that we just created
+    empty_input_examples = [ex for ex in examples3 if ex.inputs == {}]
+    assert len(empty_input_examples) == 1, (
+        f"Expected exactly 1 example with empty inputs, "
+        f"found {len(empty_input_examples)}"
     )
-    parameterized_multipart_client.delete_dataset(dataset_id=dataset_id)
+
+    empty_example = empty_input_examples[0]
+    # The backend currently returns None for outputs when None is provided,
+    # regardless of flags
+    assert empty_example.outputs is None, (
+        f"Expected None outputs for example created with outputs=None, "
+        f"got {empty_example.outputs}"
+    )
+    safe_delete_dataset(parameterized_multipart_client, dataset_id=dataset_id)
 
 
 def _create_dataset(client: Client, dataset_name: str) -> Dataset:
     if client.has_dataset(dataset_name=dataset_name):
-        client.delete_dataset(dataset_name=dataset_name)
+        safe_delete_dataset(client, dataset_name=dataset_name)
     return client.create_dataset(dataset_name=dataset_name)
 
 
@@ -344,7 +370,7 @@ def test_list_examples(langchain_client: Client) -> None:
     )
     assert len(example_list) == 0
 
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
 @pytest.mark.slow
@@ -357,7 +383,7 @@ def test_similar_examples(langchain_client: Client) -> None:
     ]
     dataset_name = "__test_similar_examples" + uuid4().hex[:4]
     if langchain_client.has_dataset(dataset_name=dataset_name):
-        langchain_client.delete_dataset(dataset_name=dataset_name)
+        safe_delete_dataset(langchain_client, dataset_name=dataset_name)
     dataset = langchain_client.create_dataset(
         dataset_name=dataset_name,
         inputs_schema={
@@ -404,7 +430,7 @@ def test_similar_examples(langchain_client: Client) -> None:
     )
     assert len(similar_list) == 4
 
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
 @pytest.mark.skip(reason="This test is flaky")
@@ -564,7 +590,7 @@ def test_upload_examples_multipart(langchain_client: Client):
         )
 
     # Clean up
-    langchain_client.delete_dataset(dataset_name=dataset_name)
+    safe_delete_dataset(langchain_client, dataset_name=dataset_name)
 
 
 def test_update_example_preserves_existing_inputs_outputs(langchain_client: Client):
@@ -622,13 +648,13 @@ def test_update_example_preserves_existing_inputs_outputs(langchain_client: Clie
     assert preserved_example.metadata["version"] == "4.0"  # Updated
 
     # Clean up
-    langchain_client.delete_dataset(dataset_name=dataset_name)
+    safe_delete_dataset(langchain_client, dataset_name=dataset_name)
 
 
 def test_create_dataset(langchain_client: Client) -> None:
     dataset_name = "__test_create_dataset" + uuid4().hex[:4]
     if langchain_client.has_dataset(dataset_name=dataset_name):
-        langchain_client.delete_dataset(dataset_name=dataset_name)
+        safe_delete_dataset(langchain_client, dataset_name=dataset_name)
     dataset = langchain_client.create_dataset(dataset_name, data_type=DataType.llm)
     ground_truth = "bcde"
     example = langchain_client.create_example(
@@ -666,13 +692,13 @@ def test_create_dataset(langchain_client: Client) -> None:
     assert diffs.examples_added == [example_2.id]
     assert diffs.examples_removed == []
     assert diffs.examples_modified == [example.id]
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
 def test_dataset_schema_validation(langchain_client: Client) -> None:
     dataset_name = "__test_create_dataset" + uuid4().hex[:4]
     if langchain_client.has_dataset(dataset_name=dataset_name):
-        langchain_client.delete_dataset(dataset_name=dataset_name)
+        safe_delete_dataset(langchain_client, dataset_name=dataset_name)
 
     class InputSchema(BaseModel):
         input: str
@@ -719,7 +745,7 @@ def test_dataset_schema_validation(langchain_client: Client) -> None:
     assert read_dataset.inputs_schema == InputSchema.model_json_schema()
     assert read_dataset.outputs_schema == OutputSchema.model_json_schema()
 
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
 @freeze_time("2023-01-01")
@@ -872,7 +898,7 @@ def test_create_chat_example(
             },
         },
     }
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
 @pytest.mark.parametrize("use_multipart_endpoint", [True, False])
@@ -1068,9 +1094,9 @@ def test_multipart_ingest_create_with_attachments(
         assert not caplog.records
         wait_for(lambda: _get_run(str(trace_a_id), langchain_client))
         created_run = langchain_client.read_run(run_id=str(trace_a_id))
-        assert sorted(created_run.attachments.keys()) == sorted(
-            ["foo", "bar"]
-        ), f"See failed run at {created_run.url}"
+        assert sorted(created_run.attachments.keys()) == sorted(["foo", "bar"]), (
+            f"See failed run at {created_run.url}"
+        )
         assert created_run.attachments["foo"]["reader"].read() == b"bar"
         assert (
             created_run.attachments["bar"]["reader"].read()
@@ -1588,7 +1614,7 @@ def test_list_examples_attachments_keys(langchain_client: Client) -> None:
         f"Only in without_attachments: {without_keys - with_keys}"
     )
 
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
 def test_mime_type_is_propogated(langchain_client: Client) -> None:
@@ -1617,7 +1643,7 @@ def test_mime_type_is_propogated(langchain_client: Client) -> None:
     example = langchain_client.read_example(example_id=example.id)
     assert example.attachments["test_file"]["mime_type"] == "text/plain"
 
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
 def test_evaluate_mime_type_is_propogated(langchain_client: Client) -> None:
@@ -1656,7 +1682,7 @@ def test_evaluate_mime_type_is_propogated(langchain_client: Client) -> None:
 
     langchain_client.evaluate(target, data=dataset_name, evaluators=[evaluator])
 
-    langchain_client.delete_dataset(dataset_name=dataset_name)
+    safe_delete_dataset(langchain_client, dataset_name=dataset_name)
 
 
 async def test_aevaluate_mime_type_is_propogated(langchain_client: Client) -> None:
@@ -1697,7 +1723,7 @@ async def test_aevaluate_mime_type_is_propogated(langchain_client: Client) -> No
 
     await langchain_client.aevaluate(target, data=dataset_name, evaluators=[evaluator])
 
-    langchain_client.delete_dataset(dataset_name=dataset_name)
+    safe_delete_dataset(langchain_client, dataset_name=dataset_name)
 
 
 def test_evaluate_with_attachments_multiple_evaluators(
@@ -1764,7 +1790,7 @@ def test_evaluate_with_attachments_multiple_evaluators(
         assert result["evaluation_results"]["results"][0].score == 1.0
         assert result["evaluation_results"]["results"][1].score == 1.0
 
-    langchain_client.delete_dataset(dataset_name=dataset_name)
+    safe_delete_dataset(langchain_client, dataset_name=dataset_name)
 
 
 def test_evaluate_with_attachments(langchain_client: Client) -> None:
@@ -1815,7 +1841,7 @@ def test_evaluate_with_attachments(langchain_client: Client) -> None:
     for result in results:
         assert result["evaluation_results"]["results"][0].score == 1.0
 
-    langchain_client.delete_dataset(dataset_name=dataset_name)
+    safe_delete_dataset(langchain_client, dataset_name=dataset_name)
 
 
 def test_evaluate_with_attachments_not_in_target(langchain_client: Client) -> None:
@@ -1870,7 +1896,7 @@ def test_evaluate_with_attachments_not_in_target(langchain_client: Client) -> No
     for result in results:
         assert result["evaluation_results"]["results"][0].score == 1.0
 
-    langchain_client.delete_dataset(dataset_name=dataset_name)
+    safe_delete_dataset(langchain_client, dataset_name=dataset_name)
 
 
 def test_evaluate_with_no_attachments(langchain_client: Client) -> None:
@@ -1913,7 +1939,7 @@ def test_evaluate_with_no_attachments(langchain_client: Client) -> None:
     for result in results:
         assert result["evaluation_results"]["results"][0].score == 1.0
 
-    langchain_client.delete_dataset(dataset_name=dataset_name)
+    safe_delete_dataset(langchain_client, dataset_name=dataset_name)
 
 
 async def test_aevaluate_with_attachments(langchain_client: Client) -> None:
@@ -1983,7 +2009,7 @@ async def test_aevaluate_with_attachments(langchain_client: Client) -> None:
 
     assert len(results) == 10
 
-    langchain_client.delete_dataset(dataset_name=dataset_name)
+    safe_delete_dataset(langchain_client, dataset_name=dataset_name)
 
 
 async def test_aevaluate_with_attachments_not_in_target(
@@ -2028,7 +2054,7 @@ async def test_aevaluate_with_attachments_not_in_target(
     async for result in results:
         assert result["evaluation_results"]["results"][0].score == 1.0
 
-    langchain_client.delete_dataset(dataset_name=dataset_name)
+    safe_delete_dataset(langchain_client, dataset_name=dataset_name)
 
 
 async def test_aevaluate_with_no_attachments(langchain_client: Client) -> None:
@@ -2073,7 +2099,7 @@ async def test_aevaluate_with_no_attachments(langchain_client: Client) -> None:
     async for result in results:
         assert result["evaluation_results"]["results"][0].score == 1.0
 
-    langchain_client.delete_dataset(dataset_name=dataset_name)
+    safe_delete_dataset(langchain_client, dataset_name=dataset_name)
 
 
 def test_examples_length_validation(langchain_client: Client) -> None:
@@ -2114,7 +2140,7 @@ def test_examples_length_validation(langchain_client: Client) -> None:
     )
 
     # Clean up
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
 def test_new_create_example(parameterized_multipart_client: Client) -> None:
@@ -2411,7 +2437,7 @@ def test_use_source_run_io(langchain_client: Client) -> None:
     assert list(retrieved_example.attachments.keys()) == ["test_file"]
 
     # Clean up
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
 @pytest.mark.xfail(reason="Need to wait for backend changes to go endpoint")
@@ -2472,7 +2498,7 @@ def test_use_source_run_attachments(langchain_client: Client) -> None:
     assert list(retrieved_example.attachments.keys()) == ["test_file"]
 
     # Clean up
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
 def test_create_examples_xor_dataset_args(langchain_client: Client) -> None:
@@ -2490,7 +2516,7 @@ def test_create_examples_xor_dataset_args(langchain_client: Client) -> None:
         )
 
     # Clean up
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
 def test_must_pass_uploads_or_inputs(langchain_client: Client) -> None:
@@ -2502,7 +2528,7 @@ def test_must_pass_uploads_or_inputs(langchain_client: Client) -> None:
         langchain_client.create_examples(dataset_id=dataset.id, outputs={"foo": "bar"})
 
     # Clean up
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
 def test_create_examples_errors(langchain_client: Client) -> None:
@@ -2517,7 +2543,7 @@ def test_create_examples_errors(langchain_client: Client) -> None:
         )
 
     # Clean up
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
 @pytest.mark.xfail(reason="Need to wait for backend changes to go endpoint")
@@ -2590,14 +2616,14 @@ def test_use_source_run_io_multiple_examples(langchain_client: Client) -> None:
     assert sorted(example_3.attachments.keys()) == ["real_file", "test_file"]
 
     # Clean up
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
 def test_update_example_with_attachments_operations(langchain_client: Client) -> None:
     """Test updating an example with attachment operations."""
     dataset_name = "__test_update_example_attachments" + uuid4().hex[:4]
     if langchain_client.has_dataset(dataset_name=dataset_name):
-        langchain_client.delete_dataset(dataset_name=dataset_name)
+        safe_delete_dataset(langchain_client, dataset_name=dataset_name)
     dataset = _create_dataset(langchain_client, dataset_name)
     example_id = uuid4()
     # Create example with attachments
@@ -2660,7 +2686,7 @@ def test_update_example_with_attachments_operations(langchain_client: Client) ->
     )
 
     # Clean up
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
 def test_bulk_update_examples_with_attachments_operations(
@@ -2669,7 +2695,7 @@ def test_bulk_update_examples_with_attachments_operations(
     """Test bulk updating examples with attachment operations."""
     dataset_name = "__test_bulk_update_attachments" + uuid4().hex[:4]
     if langchain_client.has_dataset(dataset_name=dataset_name):
-        langchain_client.delete_dataset(dataset_name=dataset_name)
+        safe_delete_dataset(langchain_client, dataset_name=dataset_name)
     dataset = _create_dataset(langchain_client, dataset_name)
 
     example_id1, example_id2 = uuid4(), uuid4()
@@ -2743,10 +2769,12 @@ def test_bulk_update_examples_with_attachments_operations(
     assert updated_example_2.attachments["extra"]["reader"].read() == b"extra data"
 
     # Clean up
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
-def test_examples_multipart_attachment_path(langchain_client: Client) -> None:
+def test_examples_multipart_attachment_path(
+    langchain_client: Client, caplog: pytest.LogCaptureFixture
+) -> None:
     """Test uploading examples with attachments via multipart endpoint."""
     dataset_name = "__test_upload_examples_multipart" + uuid4().hex[:4]
     dataset = _create_dataset(langchain_client, dataset_name)
@@ -2843,7 +2871,7 @@ def test_examples_multipart_attachment_path(langchain_client: Client) -> None:
     assert retrieved.attachments["new_file2"]["reader"].read() == file_path.read_bytes()
 
     example_wrong_path = ExampleCreate(
-        id=example_id,
+        id=uuid4(),
         inputs={"text": "hello world"},
         attachments={
             "file1": (
@@ -2853,16 +2881,21 @@ def test_examples_multipart_attachment_path(langchain_client: Client) -> None:
         },
     )
 
-    with pytest.raises(FileNotFoundError) as exc_info:
-        langchain_client.upload_examples_multipart(
+    # Test that missing files are skipped with a warning (like unit tests expect)
+    with caplog.at_level(logging.WARNING, logger="langsmith.client"):
+        result = langchain_client.upload_examples_multipart(
             dataset_id=dataset.id,
             uploads=[example_wrong_path],
             dangerously_allow_filesystem=True,
         )
-    assert "test_data/not-a-real-file.txt" in str(exc_info.value)
+        # Should succeed but skip the missing file
+        assert (
+            result["count"] == 1
+        )  # Example is created but without the missing attachment
+        assert "Attachment file not found" in caplog.text
 
     # Clean up
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
 def test_update_examples_multipart(langchain_client: Client) -> None:
@@ -3014,7 +3047,7 @@ def test_update_examples_multipart(langchain_client: Client) -> None:
     assert example_1_updated.attachments["foo"]["reader"].read() == b"new content 2"
 
     # Clean up
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
 async def test_aevaluate_max_concurrency(langchain_client: Client) -> None:

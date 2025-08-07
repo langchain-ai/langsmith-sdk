@@ -582,9 +582,9 @@ class TestOTELContextPropagation:
 
         trace_ids = [ctx[1] for ctx in captured_contexts]
         unique_trace_ids = set(trace_ids)
-        assert (
-            len(unique_trace_ids) == 1
-        ), f"Expected all contexts to share same trace_id, got: {unique_trace_ids}"
+        assert len(unique_trace_ids) == 1, (
+            f"Expected all contexts to share same trace_id, got: {unique_trace_ids}"
+        )
 
     @patch.dict(
         os.environ, {"LANGSMITH_OTEL_ENABLED": "true", "LANGSMITH_TRACING": "true"}
@@ -657,9 +657,9 @@ class TestOTELContextPropagation:
 
         span_ids = [ctx[2] for ctx in captured_contexts]
         unique_span_ids = set(span_ids)
-        assert len(unique_span_ids) == len(
-            captured_contexts
-        ), "Each async span should have unique span_id"
+        assert len(unique_span_ids) == len(captured_contexts), (
+            "Each async span should have unique span_id"
+        )
 
     @patch.dict(
         os.environ, {"LANGSMITH_OTEL_ENABLED": "true", "LANGSMITH_TRACING": "true"}
@@ -732,29 +732,29 @@ class TestOTELContextPropagation:
         assert len(generator_contexts) == 5
 
         generator_trace_ids = [ctx[1] for ctx in generator_contexts]
-        assert (
-            len(set(generator_trace_ids)) == 1
-        ), "Generator should maintain same trace ID"
+        assert len(set(generator_trace_ids)) == 1, (
+            "Generator should maintain same trace ID"
+        )
 
         sibling_contexts = [ctx for ctx in captured_contexts if "sibling" in ctx[0]]
         assert len(sibling_contexts) == 2
 
         sibling_trace_ids = [ctx[1] for ctx in sibling_contexts]
-        assert (
-            len(set(sibling_trace_ids)) == 1
-        ), "Sibling should have consistent trace ID"
+        assert len(set(sibling_trace_ids)) == 1, (
+            "Sibling should have consistent trace ID"
+        )
 
         generator_trace_id = generator_trace_ids[0]
         sibling_trace_id = sibling_trace_ids[0]
-        assert (
-            generator_trace_id != sibling_trace_id
-        ), "Generator and sibling should have different trace_ids"
+        assert generator_trace_id != sibling_trace_id, (
+            "Generator and sibling should have different trace_ids"
+        )
 
         generator_span_ids = [ctx[2] for ctx in generator_contexts]
         sibling_span_ids = [ctx[2] for ctx in sibling_contexts]
-        assert (
-            len(set(generator_span_ids)) >= 1
-        ), "Generator should have at least one span"
+        assert len(set(generator_span_ids)) >= 1, (
+            "Generator should have at least one span"
+        )
         assert len(set(sibling_span_ids)) >= 1, "Sibling should have at least one span"
 
         for label, trace_id, span_id in captured_contexts + generator_contexts:
@@ -838,29 +838,29 @@ class TestOTELContextPropagation:
             assert span_id > 0, f"Invalid span_id for {label}"
 
         generator_trace_ids = [ctx[1] for ctx in generator_contexts]
-        assert (
-            len(set(generator_trace_ids)) == 1
-        ), "Async generator should have consistent trace ID"
+        assert len(set(generator_trace_ids)) == 1, (
+            "Async generator should have consistent trace ID"
+        )
 
         sibling_trace_ids = [ctx[1] for ctx in sibling_contexts]
-        assert (
-            len(set(sibling_trace_ids)) == 1
-        ), "Async sibling should have consistent trace ID"
+        assert len(set(sibling_trace_ids)) == 1, (
+            "Async sibling should have consistent trace ID"
+        )
 
         generator_trace_id = generator_trace_ids[0]
         sibling_trace_id = sibling_trace_ids[0]
-        assert (
-            generator_trace_id != sibling_trace_id
-        ), "Async generator and sibling should have different trace_ids"
+        assert generator_trace_id != sibling_trace_id, (
+            "Async generator and sibling should have different trace_ids"
+        )
 
         generator_span_ids = [ctx[2] for ctx in generator_contexts]
         sibling_span_ids = [ctx[2] for ctx in sibling_contexts]
-        assert (
-            len(set(generator_span_ids)) >= 1
-        ), "Async generator should have at least one span"
-        assert (
-            len(set(sibling_span_ids)) >= 1
-        ), "Async sibling should have at least one span"
+        assert len(set(generator_span_ids)) >= 1, (
+            "Async generator should have at least one span"
+        )
+        assert len(set(sibling_span_ids)) >= 1, (
+            "Async sibling should have at least one span"
+        )
 
     @patch.dict(
         os.environ, {"LANGSMITH_OTEL_ENABLED": "true", "LANGSMITH_TRACING": "true"}
@@ -938,22 +938,22 @@ class TestOTELContextPropagation:
         trace_ids = [ctx[1] for ctx in captured_contexts]
         unique_trace_ids = set(trace_ids)
 
-        assert (
-            test_trace_id in unique_trace_ids
-        ), "Pre-existing OTEL trace_id should be captured"
+        assert test_trace_id in unique_trace_ids, (
+            "Pre-existing OTEL trace_id should be captured"
+        )
 
         pre_existing_traces = [
             ctx for ctx in captured_contexts if ctx[1] == test_trace_id
         ]
-        assert (
-            len(pre_existing_traces) >= 1
-        ), "Should capture the pre-existing OTEL context"
+        assert len(pre_existing_traces) >= 1, (
+            "Should capture the pre-existing OTEL context"
+        )
 
         span_ids = [ctx[2] for ctx in captured_contexts]
         unique_span_ids = set(span_ids)
-        assert len(unique_span_ids) == len(
-            captured_contexts
-        ), "Each span should have unique span_id in nested hierarchy"
+        assert len(unique_span_ids) == len(captured_contexts), (
+            "Each span should have unique span_id in nested hierarchy"
+        )
 
     @patch.dict(
         os.environ, {"LANGSMITH_OTEL_ENABLED": "true", "LANGSMITH_TRACING": "true"}
@@ -1030,15 +1030,15 @@ class TestOTELContextPropagation:
 
         sibling_trace_ids = [ctx[1] for ctx in sibling_contexts]
         unique_sibling_trace_ids = set(sibling_trace_ids)
-        assert (
-            len(unique_sibling_trace_ids) == 1
-        ), f"Sibling should have consistent trace_id, got: {unique_sibling_trace_ids}"
+        assert len(unique_sibling_trace_ids) == 1, (
+            f"Sibling should have consistent trace_id, got: {unique_sibling_trace_ids}"
+        )
 
         generator_trace_id = generator_trace_ids[0]
         sibling_trace_id = sibling_trace_ids[0]
-        assert (
-            generator_trace_id != sibling_trace_id
-        ), "Generator and sibling should have different trace_ids"
+        assert generator_trace_id != sibling_trace_id, (
+            "Generator and sibling should have different trace_ids"
+        )
 
         contexts_before_sibling = [
             ctx
@@ -1054,9 +1054,9 @@ class TestOTELContextPropagation:
         before_trace_ids = [ctx[1] for ctx in contexts_before_sibling]
         after_trace_ids = [ctx[1] for ctx in contexts_after_sibling]
 
-        assert set(before_trace_ids) == set(
-            after_trace_ids
-        ), "Generator trace should be consistent before and after sibling"
+        assert set(before_trace_ids) == set(after_trace_ids), (
+            "Generator trace should be consistent before and after sibling"
+        )
 
         for label, trace_id, span_id in captured_contexts:
             assert trace_id > 0, f"Invalid trace_id for {label}"

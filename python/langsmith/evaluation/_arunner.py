@@ -390,31 +390,44 @@ async def aevaluate_existing(
 
         Load the experiment and run the evaluation.
 
-        >>> from langsmith import aevaluate, aevaluate_existing
-        >>> dataset_name = "Evaluate Examples"
+        >>> import asyncio
+        >>> import uuid
+        >>> from langsmith import Client, aevaluate, aevaluate_existing
+        >>> client = Client()
+        >>> dataset_name = "__doctest_aevaluate_existing_" + uuid.uuid4().hex[:8]
+        >>> dataset = client.create_dataset(dataset_name)
+        >>> example = client.create_example(
+        ...     inputs={"question": "What is 2+2?"},
+        ...     outputs={"answer": "4"},
+        ...     dataset_id=dataset.id,
+        ... )
         >>> async def apredict(inputs: dict) -> dict:
-        ...     # This can be any async function or just an API call to your app.
-        ...     await asyncio.sleep(0.1)
-        ...     return {"output": "Yes"}
-        >>> # First run inference on the dataset
-        ... results = asyncio.run(
+        ...     await asyncio.sleep(0.001)
+        ...     return {"output": "4"}
+        >>> results = asyncio.run(
         ...     aevaluate(
-        ...         apredict,
-        ...         data=dataset_name,
+        ...         apredict, data=dataset_name, experiment_prefix="doctest_experiment"
         ...     )
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
-
-        Then evaluate the results
-        >>> experiment_name = "My Experiment:64e6e91"  # Or manually specify
+        >>> experiment_id = results.experiment_name
+        >>> # Consume all results to ensure evaluation is complete
+        >>> async def consume_results():
+        ...     result_list = [r async for r in results]
+        ...     return len(result_list) > 0
+        >>> asyncio.run(consume_results())
+        True
+        >>> import time
+        >>> time.sleep(3)
         >>> results = asyncio.run(
         ...     aevaluate_existing(
-        ...         experiment_name,
+        ...         experiment_id,
         ...         evaluators=[accuracy],
         ...         summary_evaluators=[precision],
         ...     )
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
+        >>> client.delete_dataset(dataset_id=dataset.id)
 
 
     """  # noqa: E501
