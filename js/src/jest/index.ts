@@ -4,6 +4,7 @@
 import {
   expect as jestExpect,
   test as jestTest,
+  it as jestIt,
   describe as jestDescribe,
   beforeAll as jestBeforeAll,
   afterAll as jestAfterAll,
@@ -115,22 +116,40 @@ declare global {
  * See https://docs.smith.langchain.com/evaluation/how_to_guides/vitest_jest
  * for more details.
  */
-const wrapJest = (originalJestMethods: {
-  expect: typeof jestExpect;
-  test: typeof jestTest;
-  describe: typeof jestDescribe;
-  beforeAll: typeof jestBeforeAll;
-  afterAll: typeof jestAfterAll;
-  beforeEach: typeof jestBeforeEach;
-  afterEach: typeof jestAfterEach;
-}) => {
+const wrapJest = (originalJestMethods: Record<string, unknown>) => {
+  if (typeof originalJestMethods !== "object" || originalJestMethods == null) {
+    throw new Error("originalJestMethods must be an non-null object.");
+  }
+  if (!("expect" in originalJestMethods) || typeof originalJestMethods.expect !== "function") {
+    throw new Error("Your passed object must contain a `expect` method.");
+  }
+  if (!("it" in originalJestMethods) || typeof originalJestMethods.it !== "function") {
+    throw new Error("Your passed object must contain a `it` method.");
+  }
+  if (!("test" in originalJestMethods) || typeof originalJestMethods.test !== "function") {
+    throw new Error("Your passed object must contain a `test` method.");
+  }
+  if (!("describe" in originalJestMethods) || typeof originalJestMethods.describe !== "function") {
+    throw new Error("Your passed object must contain a `describe` method.");
+  }
+  if (!("beforeAll" in originalJestMethods) || typeof originalJestMethods.beforeAll !== "function") {
+    throw new Error("Your passed object must contain a `beforeAll` method.");
+  }
+  if (!("afterAll" in originalJestMethods) || typeof originalJestMethods.afterAll !== "function") {
+    throw new Error("Your passed object must contain a `afterAll` method.");
+  }
+
   const wrappedMethods = generateWrapperFromJestlikeMethods(
     {
       expect: originalJestMethods.expect,
+      it: originalJestMethods.it,
       test: originalJestMethods.test,
       describe: originalJestMethods.describe,
       beforeAll: originalJestMethods.beforeAll,
       afterAll: originalJestMethods.afterAll,
+      logFeedback,
+      logOutputs,
+      wrapEvaluator,
     },
     process?.versions?.bun !== undefined ? "bun" : "jest"
   );
@@ -143,6 +162,7 @@ const wrapJest = (originalJestMethods: {
 
 const { test, it, describe, expect } = wrapJest({
   expect: jestExpect,
+  it: jestIt,
   test: jestTest,
   describe: jestDescribe,
   beforeAll: jestBeforeAll,

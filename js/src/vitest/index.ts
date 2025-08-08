@@ -4,6 +4,7 @@
 import {
   expect as vitestExpect,
   test as vitestTest,
+  it as vitestIt,
   describe as vitestDescribe,
   beforeAll as vitestBeforeAll,
   afterAll as vitestAfterAll,
@@ -103,34 +104,50 @@ declare module "vitest" {
  * See https://docs.smith.langchain.com/evaluation/how_to_guides/vitest_jest
  * for more details.
  */
-const wrapVitest = (originalVitestMethods: {
-  expect: typeof vitestExpect;
-  test: typeof vitestTest;
-  describe: typeof vitestDescribe;
-  beforeAll: typeof vitestBeforeAll;
-  afterAll: typeof vitestAfterAll;
-  beforeEach: typeof vitestBeforeEach;
-  afterEach: typeof vitestAfterEach;
-}) => {
+const wrapVitest = (originalVitestMethods: Record<string, unknown>) => {
+  if (typeof originalVitestMethods !== "object" || originalVitestMethods == null) {
+    throw new Error("originalVitestMethods must be an non-null object.");
+  }
+  if (!("expect" in originalVitestMethods) || typeof originalVitestMethods.expect !== "function") {
+    throw new Error("Your passed object must contain a `expect` method.");
+  }
+  if (!("it" in originalVitestMethods) || typeof originalVitestMethods.it !== "function") {
+    throw new Error("Your passed object must contain a `it` method.");
+  }
+  if (!("test" in originalVitestMethods) || typeof originalVitestMethods.test !== "function") {
+    throw new Error("Your passed object must contain a `test` method.");
+  }
+  if (!("describe" in originalVitestMethods) || typeof originalVitestMethods.describe !== "function") {
+    throw new Error("Your passed object must contain a `describe` method.");
+  }
+  if (!("beforeAll" in originalVitestMethods) || typeof originalVitestMethods.beforeAll !== "function") {
+    throw new Error("Your passed object must contain a `beforeAll` method.");
+  }
+  if (!("afterAll" in originalVitestMethods) || typeof originalVitestMethods.afterAll !== "function") {
+    throw new Error("Your passed object must contain a `afterAll` method.");
+  }
+
   const wrappedMethods = generateWrapperFromJestlikeMethods(
     {
       expect: originalVitestMethods.expect,
+      it: originalVitestMethods.it,
       test: originalVitestMethods.test,
       describe: originalVitestMethods.describe,
       beforeAll: originalVitestMethods.beforeAll,
       afterAll: originalVitestMethods.afterAll,
+      logFeedback,
+      logOutputs,
+      wrapEvaluator,
     },
     "vitest"
   );
 
-  return {
-    ...originalVitestMethods,
-    ...wrappedMethods,
-  };
+  return wrappedMethods;
 };
 
 const { test, it, describe, expect } = wrapVitest({
   expect: vitestExpect,
+  it: vitestIt,
   test: vitestTest,
   describe: vitestDescribe,
   beforeAll: vitestBeforeAll,
