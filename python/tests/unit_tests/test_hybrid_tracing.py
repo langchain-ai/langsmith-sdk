@@ -73,7 +73,7 @@ def client_with_otel(mock_session):
 class TestHybridTracing:
     """Test suite for hybrid OTEL and LangSmith tracing."""
 
-    @patch.dict(os.environ, {"OTEL_ENABLED": "true"})
+    @patch.dict(os.environ, {"LANGSMITH_OTEL_ENABLED": "true"})
     def test_hybrid_tracing_enabled_both_exports_succeed(
         self, client_with_otel, mock_session
     ):
@@ -118,7 +118,7 @@ class TestHybridTracing:
         call_args = mock_session.request.call_args
         assert call_args[0][0] == "POST"  # Method
 
-    @patch.dict(os.environ, {"OTEL_ENABLED": "true"})
+    @patch.dict(os.environ, {"LANGSMITH_OTEL_ENABLED": "true"})
     def test_hybrid_tracing_otel_failure_langsmith_succeeds(
         self, client_with_otel, mock_session
     ):
@@ -157,7 +157,7 @@ class TestHybridTracing:
         # Verify LangSmith export still worked
         mock_session.request.assert_called()
 
-    @patch.dict(os.environ, {"OTEL_ENABLED": "true"})
+    @patch.dict(os.environ, {"LANGSMITH_OTEL_ENABLED": "true"})
     def test_hybrid_tracing_langsmith_failure_otel_succeeds(
         self, client_with_otel, mock_session
     ):
@@ -196,7 +196,9 @@ class TestHybridTracing:
         assert len(client.otel_exporter.export_batch_calls) == 1
         assert len(client.otel_exporter.exported_batches) == 1
 
-    @patch.dict(os.environ, {"OTEL_ENABLED": "true", "OTEL_ONLY": "true"})
+    @patch.dict(
+        os.environ, {"LANGSMITH_OTEL_ENABLED": "true", "LANGSMITH_OTEL_ONLY": "true"}
+    )
     def test_otel_only_mode_behavior(self, client_with_otel, mock_session):
         """Test that OTEL-only mode works when OTEL_ONLY is enabled."""
         client = client_with_otel
@@ -214,7 +216,7 @@ class TestHybridTracing:
                 dotted_order=f"20231201T120000000000Z{trace_id}.{run_id}",
             )
 
-    @patch.dict(os.environ, {"OTEL_ENABLED": "true"})
+    @patch.dict(os.environ, {"LANGSMITH_OTEL_ENABLED": "true"})
     def test_hybrid_tracing_no_otel_exporter(self, mock_session):
         """Test hybrid mode when no OTEL exporter is configured."""
         client = Client(
@@ -243,7 +245,7 @@ class TestHybridTracing:
         # Should still export to LangSmith
         mock_session.request.assert_called()
 
-    @patch.dict(os.environ, {"OTEL_ENABLED": "true"})
+    @patch.dict(os.environ, {"LANGSMITH_OTEL_ENABLED": "true"})
     def test_hybrid_tracing_queue_task_done_called_once(self, mock_session):
         """Test that queue.task_done() is called exactly once per item in
         hybrid mode."""
@@ -310,7 +312,7 @@ class TestHybridTracing:
                 except Exception:
                     break
 
-    @patch.dict(os.environ, {"OTEL_ENABLED": "true"})
+    @patch.dict(os.environ, {"LANGSMITH_OTEL_ENABLED": "true"})
     def test_hybrid_tracing_multiple_items_in_batch(
         self, client_with_otel, mock_session
     ):
@@ -361,7 +363,7 @@ class TestHybridTracing:
     def test_langsmith_only_mode_default(self, mock_session):
         """Test that LangSmith-only mode is used when no environment
         variables are set."""
-        # When auto_batch_tracing=False and no OTEL_ENABLED,
+        # When auto_batch_tracing=False and no LANGSMITH_OTEL_ENABLED,
         # runs are sent directly to LangSmith
         client = Client(
             api_url="http://localhost:1984",
@@ -399,7 +401,7 @@ class TestHybridTracing:
 class TestHybridTracingIntegration:
     """Integration tests for hybrid tracing with real Client usage."""
 
-    @patch.dict(os.environ, {"OTEL_ENABLED": "true"})
+    @patch.dict(os.environ, {"LANGSMITH_OTEL_ENABLED": "true"})
     def test_hybrid_tracing_end_to_end(self, mock_session):
         """Test hybrid tracing from Client.create_run() to final export."""
         client = Client(
@@ -437,7 +439,7 @@ class TestHybridTracingIntegration:
 
     def test_hybrid_tracing_graceful_cleanup(self, mock_session):
         """Test that hybrid tracing cleans up gracefully."""
-        with patch.dict(os.environ, {"OTEL_ENABLED": "true"}):
+        with patch.dict(os.environ, {"LANGSMITH_OTEL_ENABLED": "true"}):
             client = Client(
                 api_url="http://localhost:1984",
                 api_key="123",
