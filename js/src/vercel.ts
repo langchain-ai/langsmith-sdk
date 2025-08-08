@@ -15,6 +15,10 @@ import {
   getEnvironmentVariable,
 } from "./utils/env.js";
 import { isTracingEnabled } from "./env.js";
+import {
+  LANGSMITH_IS_ROOT,
+  LANGSMITH_TRACEABLE_PARENT_OTEL_SPAN_ID,
+} from "./experimental/otel/constants.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-types
 type AnyString = string & {};
@@ -927,6 +931,15 @@ export class AISDKExporter {
       const runId = uuid5(spanId, RUN_ID_NAMESPACE);
 
       let parentId = getParentSpanId(span);
+      if (LANGSMITH_IS_ROOT in span.attributes) {
+        parentId = undefined;
+      } else if (
+        LANGSMITH_TRACEABLE_PARENT_OTEL_SPAN_ID in span.attributes &&
+        typeof span.attributes[LANGSMITH_TRACEABLE_PARENT_OTEL_SPAN_ID] ===
+          "string"
+      ) {
+        parentId = span.attributes[LANGSMITH_TRACEABLE_PARENT_OTEL_SPAN_ID];
+      }
       let parentRunId = parentId
         ? uuid5(parentId, RUN_ID_NAMESPACE)
         : undefined;
