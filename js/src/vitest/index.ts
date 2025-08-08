@@ -7,6 +7,8 @@ import {
   describe as vitestDescribe,
   beforeAll as vitestBeforeAll,
   afterAll as vitestAfterAll,
+  beforeEach as vitestBeforeEach,
+  afterEach as vitestAfterEach,
   Assertion,
 } from "vitest";
 import {
@@ -89,16 +91,53 @@ declare module "vitest" {
   interface AsymmetricMatchersContaining extends CustomMatchers {}
 }
 
-const { test, it, describe, expect } = generateWrapperFromJestlikeMethods(
-  {
-    expect: vitestExpect,
-    test: vitestTest,
-    describe: vitestDescribe,
-    beforeAll: vitestBeforeAll,
-    afterAll: vitestAfterAll,
-  },
-  "vitest"
-);
+/**
+ * Dynamically wrap original Vitest imports.
+ *
+ * This may be necessary to ensure you are wrapping the correct
+ * Vitest version if you are using a monorepo whose workspaces
+ * use multiple versions of Vitest.
+ *
+ * @param originalVitestMethods - The original Vitest imports to wrap.
+ * @returns The wrapped Vitest imports.
+ * See https://docs.smith.langchain.com/evaluation/how_to_guides/vitest_jest
+ * for more details.
+ */
+const wrapVitest = (originalVitestMethods: {
+  expect: typeof vitestExpect;
+  test: typeof vitestTest;
+  describe: typeof vitestDescribe;
+  beforeAll: typeof vitestBeforeAll;
+  afterAll: typeof vitestAfterAll;
+  beforeEach: typeof vitestBeforeEach;
+  afterEach: typeof vitestAfterEach;
+}) => {
+  const wrappedMethods = generateWrapperFromJestlikeMethods(
+    {
+      expect: originalVitestMethods.expect,
+      test: originalVitestMethods.test,
+      describe: originalVitestMethods.describe,
+      beforeAll: originalVitestMethods.beforeAll,
+      afterAll: originalVitestMethods.afterAll,
+    },
+    "vitest"
+  );
+
+  return {
+    ...originalVitestMethods,
+    ...wrappedMethods,
+  };
+};
+
+const { test, it, describe, expect } = wrapVitest({
+  expect: vitestExpect,
+  test: vitestTest,
+  describe: vitestDescribe,
+  beforeAll: vitestBeforeAll,
+  afterAll: vitestAfterAll,
+  beforeEach: vitestBeforeEach,
+  afterEach: vitestAfterEach,
+});
 
 export {
   /**
@@ -403,6 +442,7 @@ export {
    */
   wrapEvaluator,
   type LangSmithJestlikeWrapperParams,
+  wrapVitest,
 };
 
 export * from "../utils/jestlike/types.js";
