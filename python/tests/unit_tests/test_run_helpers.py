@@ -1788,8 +1788,8 @@ def test_traceable_input_attachments():
 
         # main run, inputs, outputs, events, att1, att2, anoutput
         assert len(datas) == 7
-        # First 4 are type application/json (run, inputs, outputs, events)
         trace_id = datas[0][0].split(".")[1]
+
         _, (_, run_stuff) = next(
             data for data in datas if data[0] == f"post.{trace_id}"
         )

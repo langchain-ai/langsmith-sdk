@@ -29,6 +29,8 @@ class SerializedRunOperation:
     inputs: Optional[bytes]
     outputs: Optional[bytes]
     events: Optional[bytes]
+    error: Optional[bytes]
+    serialized: Optional[bytes]
     attachments: Optional[ls_schemas.Attachments]
 
     __slots__ = (
@@ -39,6 +41,8 @@ class SerializedRunOperation:
         "inputs",
         "outputs",
         "events",
+        "error",
+        "serialized",
         "attachments",
     )
 
@@ -51,6 +55,8 @@ class SerializedRunOperation:
         inputs: Optional[bytes] = None,
         outputs: Optional[bytes] = None,
         events: Optional[bytes] = None,
+        error: Optional[bytes] = None,
+        serialized: Optional[bytes] = None,
         attachments: Optional[ls_schemas.Attachments] = None,
     ) -> None:
         self.operation = operation
@@ -60,6 +66,8 @@ class SerializedRunOperation:
         self.inputs = inputs
         self.outputs = outputs
         self.events = events
+        self.error = error
+        self.serialized = serialized
         self.attachments = attachments
 
     def __eq__(self, other: object) -> bool:
@@ -71,6 +79,8 @@ class SerializedRunOperation:
             self.inputs,
             self.outputs,
             self.events,
+            self.error,
+            self.serialized,
             self.attachments,
         ) == (
             other.operation,
@@ -80,6 +90,8 @@ class SerializedRunOperation:
             other.inputs,
             other.outputs,
             other.events,
+            other.error,
+            other.serialized,
             other.attachments,
         )
 
@@ -133,6 +145,8 @@ def serialize_run_dict(
     inputs = payload.pop("inputs", None)
     outputs = payload.pop("outputs", None)
     events = payload.pop("events", None)
+    error = payload.pop("error", None)
+    serialized = payload.pop("serialized", None)
     attachments = payload.pop("attachments", None)
     return SerializedRunOperation(
         operation=operation,
@@ -142,6 +156,8 @@ def serialize_run_dict(
         inputs=_dumps_json(inputs) if inputs is not None else None,
         outputs=_dumps_json(outputs) if outputs is not None else None,
         events=_dumps_json(events) if events is not None else None,
+        error=_dumps_json(error) if error is not None else None,
+        serialized=_dumps_json(serialized) if serialized is not None else None,
         attachments=attachments if attachments is not None else None,
     )
 
@@ -234,6 +250,8 @@ def serialized_run_operation_to_multipart_parts_and_context(
         ("inputs", op.inputs),
         ("outputs", op.outputs),
         ("events", op.events),
+        ("error", op.error),
+        ("serialized", op.serialized),
     ):
         if value is None:
             continue
@@ -328,22 +346,21 @@ def compress_multipart_parts_and_context(
     compressed_traces: CompressedTraces,
     boundary: str,
 ) -> None:
+    write = compressed_traces.compressor_writer.write
+
     for headers, data in encode_multipart_parts_and_context(
         parts_and_context, boundary
     ):
-        compressed_traces.compressor_writer.write(headers)
+        write(headers)
 
-        if isinstance(data, (bytes, bytearray)):
-            compressed_traces.uncompressed_size += len(data)
-            compressed_traces.compressor_writer.write(data)
-        else:
-            if isinstance(data, BufferedReader):
-                encoded_data = data.read()
-            else:
-                encoded_data = str(data).encode()
-            compressed_traces.uncompressed_size += len(encoded_data)
-            compressed_traces.compressor_writer.write(encoded_data)
+        # Normalise to bytes
+        if not isinstance(data, (bytes, bytearray)):
+            data = (
+                data.read() if isinstance(data, BufferedReader) else str(data).encode()
+            )
 
-        # Write part terminator
-        compressed_traces.compressor_writer.write(b"\r\n")
+        compressed_traces.uncompressed_size += len(data)
+        write(data)
+        write(b"\r\n")  # part terminator
+
     compressed_traces._context.append(parts_and_context.context)

@@ -225,6 +225,7 @@ export interface RunUpdate {
   extra?: KVMap;
   tags?: string[];
   error?: string;
+  serialized?: object;
   inputs?: KVMap;
   outputs?: KVMap;
   parent_run_id?: string;
