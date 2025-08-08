@@ -269,6 +269,7 @@ class RunTree(ls_schemas.RunBase):
             values["attachments"] = {}
         if values.get("replicas") is None:
             values["replicas"] = _REPLICAS.get()
+        values["replicas"] = _ensure_write_replicas(values["replicas"])
         return values
 
     @root_validator(pre=False)
@@ -608,9 +609,8 @@ class RunTree(ls_schemas.RunBase):
 
     def post(self, exclude_child_runs: bool = True) -> None:
         """Post the run tree to the API asynchronously."""
-        write_replicas = _ensure_write_replicas(self.replicas)
-        if write_replicas:
-            for replica in write_replicas:
+        if self.replicas:
+            for replica in self.replicas:
                 project_name = replica.get("project_name") or self.session_name
                 updates = replica.get("updates")
                 run_dict = self._remap_for_project(project_name, updates)
@@ -665,10 +665,8 @@ class RunTree(ls_schemas.RunBase):
                     }
         except Exception as e:
             logger.warning(f"Error filtering attachments to upload: {e}")
-        # Fanout logic for patch
-        write_replicas = _ensure_write_replicas(self.replicas)
-        if write_replicas:
-            for replica in write_replicas:
+        if self.replicas:
+            for replica in self.replicas:
                 project_name = replica.get("project_name") or self.session_name
                 updates = replica.get("updates")
                 run_dict = self._remap_for_project(project_name, updates)
