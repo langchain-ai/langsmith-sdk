@@ -8,6 +8,7 @@ import {
   LANGSMITH_IS_ROOT,
   LANGSMITH_PARENT_RUN_ID,
   LANGSMITH_TRACEABLE,
+  LANGSMITH_TRACEABLE_PARENT_OTEL_SPAN_ID,
 } from "./constants.js";
 import { getUuidFromOtelSpanId } from "./utils.js";
 import { RunTree } from "../../run_trees.js";
@@ -77,6 +78,8 @@ export class LangSmithOTLPSpanProcessor extends BatchSpanProcessor {
     } else {
       span.attributes[LANGSMITH_PARENT_RUN_ID] =
         getUuidFromOtelSpanId(traceableParentId);
+      span.attributes[LANGSMITH_TRACEABLE_PARENT_OTEL_SPAN_ID] =
+        traceableParentId;
     }
     if (isTraceable) {
       super.onStart(span, parentContext);

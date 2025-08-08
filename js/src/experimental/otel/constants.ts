@@ -49,6 +49,8 @@ export const LANGSMITH_USAGE_METADATA = "langsmith.usage_metadata";
 export const LANGSMITH_REFERENCE_EXAMPLE_ID = "langsmith.reference_example_id";
 export const LANGSMITH_TRACEABLE = "langsmith.traceable";
 export const LANGSMITH_IS_ROOT = "langsmith.is_root";
+export const LANGSMITH_TRACEABLE_PARENT_OTEL_SPAN_ID =
+  "langsmith.traceable_parent_otel_span_id";
 
 // GenAI event names
 export const GEN_AI_SYSTEM_MESSAGE = "gen_ai.system.message";
