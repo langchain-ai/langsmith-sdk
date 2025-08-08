@@ -7,6 +7,8 @@ import {
   describe as jestDescribe,
   beforeAll as jestBeforeAll,
   afterAll as jestAfterAll,
+  beforeEach as jestBeforeEach,
+  afterEach as jestAfterEach,
 } from "@jest/globals";
 import {
   toBeRelativeCloseTo,
@@ -101,16 +103,53 @@ declare global {
   }
 }
 
-const { test, it, describe, expect } = generateWrapperFromJestlikeMethods(
-  {
-    expect: jestExpect,
-    test: jestTest,
-    describe: jestDescribe,
-    beforeAll: jestBeforeAll,
-    afterAll: jestAfterAll,
-  },
-  process?.versions?.bun !== undefined ? "bun" : "jest"
-);
+/**
+ * Dynamically wrap original Jest imports.
+ *
+ * This may be necessary to ensure you are wrapping the correct
+ * Jest version if you are using a monorepo whose workspaces
+ * use multiple versions of Jest.
+ *
+ * @param originalJestMethods - The original Jest imports to wrap.
+ * @returns The wrapped Jest imports.
+ * See https://docs.smith.langchain.com/evaluation/how_to_guides/vitest_jest
+ * for more details.
+ */
+const wrapJest = (originalJestMethods: {
+  expect: typeof jestExpect;
+  test: typeof jestTest;
+  describe: typeof jestDescribe;
+  beforeAll: typeof jestBeforeAll;
+  afterAll: typeof jestAfterAll;
+  beforeEach: typeof jestBeforeEach;
+  afterEach: typeof jestAfterEach;
+}) => {
+  const wrappedMethods = generateWrapperFromJestlikeMethods(
+    {
+      expect: originalJestMethods.expect,
+      test: originalJestMethods.test,
+      describe: originalJestMethods.describe,
+      beforeAll: originalJestMethods.beforeAll,
+      afterAll: originalJestMethods.afterAll,
+    },
+    process?.versions?.bun !== undefined ? "bun" : "jest"
+  );
+
+  return {
+    ...originalJestMethods,
+    ...wrappedMethods,
+  };
+};
+
+const { test, it, describe, expect } = wrapJest({
+  expect: jestExpect,
+  test: jestTest,
+  describe: jestDescribe,
+  beforeAll: jestBeforeAll,
+  afterAll: jestAfterAll,
+  beforeEach: jestBeforeEach,
+  afterEach: jestAfterEach,
+});
 
 export {
   /**
@@ -415,6 +454,7 @@ export {
    */
   wrapEvaluator,
   type LangSmithJestlikeWrapperParams,
+  wrapJest,
 };
 
 export * from "../utils/jestlike/types.js";
