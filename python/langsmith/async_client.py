@@ -1055,7 +1055,7 @@ class AsyncClient:
         ls_utils.raise_for_status_with_text(response)
 
     async def get_run_from_annotation_queue(
-        self, queue_id: ID_TYPE, *, index: int
+        self, queue_id: ID_TYPE, *, index: int, include_extra: bool = False
     ) -> ls_schemas.RunWithAnnotationQueueInfo:
         """Get a run from an annotation queue at the specified index.
 
@@ -1071,7 +1071,11 @@ class AsyncClient:
             LangSmithError: For other API-related errors.
         """
         base_url = f"/annotation-queues/{ls_client._as_uuid(queue_id, 'queue_id')}/run"
-        response = await self._arequest_with_retries("GET", f"{base_url}/{index}")
+        response = await self._arequest_with_retries(
+            "GET",
+            f"{base_url}/{index}",
+            params={"include_extra": include_extra},
+        )
         ls_utils.raise_for_status_with_text(response)
         return ls_schemas.RunWithAnnotationQueueInfo(**response.json())
 
