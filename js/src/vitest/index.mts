@@ -1,16 +1,5 @@
 /* eslint-disable import/no-extraneous-dependencies */
-/* eslint-disable @typescript-eslint/no-namespace */
-
-import {
-  expect as vitestExpect,
-  test as vitestTest,
-  it as vitestIt,
-  describe as vitestDescribe,
-  beforeAll as vitestBeforeAll,
-  afterAll as vitestAfterAll,
-  beforeEach as vitestBeforeEach,
-  afterEach as vitestAfterEach,
-} from "vitest";
+import { createRequire } from "module";
 import {
   toBeRelativeCloseTo,
   toBeAbsoluteCloseTo,
@@ -18,6 +7,45 @@ import {
 } from "../utils/jestlike/matchers.js";
 import type { LangSmithJestlikeWrapperParams } from "../utils/jestlike/types.js";
 import { wrapVitest } from "./utils/wrapper.js";
+
+// Resolve vitest ESM module from correct workspace
+// This is necessary for monorepos where langsmith is hoisted to
+// the top level of the monorepo but Vitest is not.
+// This can occur if you have multiple versions of vitest installed in the monorepo
+// and only one shared version of langsmith.
+let vitestModule;
+try {
+  const require = createRequire(import.meta.url);
+  // Find the package.json to get the correct ESM entry point
+  const vitestPackagePath = require.resolve("vitest/package.json", {
+    paths: [process.cwd()],
+  });
+  const vitestPackage = require(vitestPackagePath);
+  const vitestDir = vitestPackagePath.replace("/package.json", "");
+  const esmEntry =
+    vitestPackage.module ||
+    vitestPackage.exports?.["."]?.import ||
+    "dist/index.js";
+  const vitestPath = `file://${vitestDir}/${esmEntry}`;
+  vitestModule = await import(vitestPath);
+  if (!vitestModule) {
+    throw new Error("Failed to import vitest");
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+} catch (error: any) {
+  vitestModule = await import("vitest");
+}
+
+const {
+  expect: vitestExpect,
+  test: vitestTest,
+  it: vitestIt,
+  describe: vitestDescribe,
+  beforeAll: vitestBeforeAll,
+  afterAll: vitestAfterAll,
+  beforeEach: vitestBeforeEach,
+  afterEach: vitestAfterEach,
+} = vitestModule;
 
 vitestExpect.extend({
   toBeRelativeCloseTo,

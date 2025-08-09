@@ -1,6 +1,6 @@
 /* eslint-disable import/no-extraneous-dependencies */
 import { createRequire } from "module";
-import { printVitestReporterTable } from "./utils.js";
+import { printVitestReporterTable } from "./utils/reporter.js";
 
 // Resolve vitest from the current working directory to get the correct version
 const require = createRequire(import.meta.url);

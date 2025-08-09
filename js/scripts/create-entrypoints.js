@@ -34,8 +34,10 @@ const defaultEntrypoints = [
   "vitest/reporter"
 ];
 
+// Easier to have mts files ignored by CJS build
 const hasMjs = [
   "vitest/reporter",
+  "vitest",
 ];
 
 const updateJsonFile = (relativePath, updateFunction) => {

@@ -1,4 +1,4 @@
-import { printReporterTable } from "../utils/jestlike/reporter.js";
+import { printReporterTable } from "../../utils/jestlike/reporter.js";
 
 // Can't use types here because of module resolution issues
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
