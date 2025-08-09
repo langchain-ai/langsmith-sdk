@@ -4,9 +4,12 @@
 import {
   expect as vitestExpect,
   test as vitestTest,
+  it as vitestIt,
   describe as vitestDescribe,
   beforeAll as vitestBeforeAll,
   afterAll as vitestAfterAll,
+  beforeEach as vitestBeforeEach,
+  afterEach as vitestAfterEach,
   Assertion,
 } from "vitest";
 import {
@@ -89,16 +92,97 @@ declare module "vitest" {
   interface AsymmetricMatchersContaining extends CustomMatchers {}
 }
 
-const { test, it, describe, expect } = generateWrapperFromJestlikeMethods(
-  {
-    expect: vitestExpect,
-    test: vitestTest,
-    describe: vitestDescribe,
-    beforeAll: vitestBeforeAll,
-    afterAll: vitestAfterAll,
-  },
-  "vitest"
-);
+/**
+ * Dynamically wrap original Vitest imports.
+ *
+ * This may be necessary to ensure you are wrapping the correct
+ * Vitest version if you are using a monorepo whose workspaces
+ * use multiple versions of Vitest.
+ *
+ * @param originalVitestMethods - The original Vitest imports to wrap.
+ * @returns The wrapped Vitest imports.
+ * See https://docs.smith.langchain.com/evaluation/how_to_guides/vitest_jest
+ * for more details.
+ */
+const wrapVitest = (originalVitestMethods: Record<string, unknown>) => {
+  if (
+    typeof originalVitestMethods !== "object" ||
+    originalVitestMethods == null
+  ) {
+    throw new Error("originalVitestMethods must be an non-null object.");
+  }
+  if (
+    !("expect" in originalVitestMethods) ||
+    typeof originalVitestMethods.expect !== "function"
+  ) {
+    throw new Error("Your passed object must contain a `expect` method.");
+  }
+  if (
+    !("it" in originalVitestMethods) ||
+    typeof originalVitestMethods.it !== "function"
+  ) {
+    throw new Error("Your passed object must contain a `it` method.");
+  }
+  if (
+    !("test" in originalVitestMethods) ||
+    typeof originalVitestMethods.test !== "function"
+  ) {
+    throw new Error("Your passed object must contain a `test` method.");
+  }
+  if (
+    !("describe" in originalVitestMethods) ||
+    typeof originalVitestMethods.describe !== "function"
+  ) {
+    throw new Error("Your passed object must contain a `describe` method.");
+  }
+  if (
+    !("beforeAll" in originalVitestMethods) ||
+    typeof originalVitestMethods.beforeAll !== "function"
+  ) {
+    throw new Error("Your passed object must contain a `beforeAll` method.");
+  }
+  if (
+    !("afterAll" in originalVitestMethods) ||
+    typeof originalVitestMethods.afterAll !== "function"
+  ) {
+    throw new Error("Your passed object must contain a `afterAll` method.");
+  }
+
+  const wrappedMethods = generateWrapperFromJestlikeMethods(
+    {
+      expect: originalVitestMethods.expect,
+      it: originalVitestMethods.it,
+      test: originalVitestMethods.test,
+      describe: originalVitestMethods.describe,
+      beforeAll: originalVitestMethods.beforeAll,
+      afterAll: originalVitestMethods.afterAll,
+    },
+    "vitest"
+  );
+
+  // Return the normal used LS methods for convenience
+  // so that you can do:
+  //
+  // const ls = wrapVitest(vitest);
+  // ls.logFeedback({ key: "quality", score: 0.7 });
+  return {
+    ...wrappedMethods,
+    logFeedback,
+    logOutputs,
+    wrapEvaluator,
+  };
+};
+
+const { test, it, describe, expect } = wrapVitest({
+  expect: vitestExpect,
+  it: vitestIt,
+  test: vitestTest,
+  describe: vitestDescribe,
+  beforeAll: vitestBeforeAll,
+  afterAll: vitestAfterAll,
+  beforeEach: vitestBeforeEach,
+  afterEach: vitestAfterEach,
+});
 
 export {
   /**
@@ -403,6 +487,7 @@ export {
    */
   wrapEvaluator,
   type LangSmithJestlikeWrapperParams,
+  wrapVitest,
 };
 
 export * from "../utils/jestlike/types.js";
