@@ -34,6 +34,10 @@ const defaultEntrypoints = [
   "vitest/reporter"
 ];
 
+const hasMjs = [
+  "vitest/reporter",
+];
+
 const updateJsonFile = (relativePath, updateFunction) => {
   const contents = fs.readFileSync(relativePath).toString();
   const res = updateFunction(JSON.parse(contents));
@@ -46,14 +50,15 @@ const generateFiles = () => {
       const nrOfDots = key.split("/").length - 1;
       const relativePath = "../".repeat(nrOfDots) || "./";
       const compiledPath = `${relativePath}dist/${value}.js`;
+      const modulePath = hasMjs.includes(key) ? `${relativePath}dist/${value}.mjs` : compiledPath;
       if (defaultEntrypoints.includes(key)) {
         return [
           [
             `${key}.cjs`,
             `module.exports = require('${relativePath}dist/${value}.cjs').default;`,
           ],
-          [`${key}.js`, `export { default } from '${compiledPath}'`],
-          [`${key}.d.ts`, `export { default } from '${compiledPath}'`],
+          [`${key}.js`, `export { default } from '${modulePath}'`],
+          [`${key}.d.ts`, `export { default } from '${modulePath}'`],
           [`${key}.d.cts`, `export { default } from '${compiledPath}'`],
         ];
       }
@@ -62,8 +67,8 @@ const generateFiles = () => {
           `${key}.cjs`,
           `module.exports = require('${relativePath}dist/${value}.cjs');`,
         ],
-        [`${key}.js`, `export * from '${compiledPath}'`],
-        [`${key}.d.ts`, `export * from '${compiledPath}'`],
+        [`${key}.js`, `export * from '${modulePath}'`],
+        [`${key}.d.ts`, `export * from '${modulePath}'`],
         [`${key}.d.cts`, `export * from '${compiledPath}'`],
       ];
     }
