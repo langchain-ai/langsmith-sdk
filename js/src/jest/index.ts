@@ -120,22 +120,40 @@ const wrapJest = (originalJestMethods: Record<string, unknown>) => {
   if (typeof originalJestMethods !== "object" || originalJestMethods == null) {
     throw new Error("originalJestMethods must be an non-null object.");
   }
-  if (!("expect" in originalJestMethods) || typeof originalJestMethods.expect !== "function") {
+  if (
+    !("expect" in originalJestMethods) ||
+    typeof originalJestMethods.expect !== "function"
+  ) {
     throw new Error("Your passed object must contain a `expect` method.");
   }
-  if (!("it" in originalJestMethods) || typeof originalJestMethods.it !== "function") {
+  if (
+    !("it" in originalJestMethods) ||
+    typeof originalJestMethods.it !== "function"
+  ) {
     throw new Error("Your passed object must contain a `it` method.");
   }
-  if (!("test" in originalJestMethods) || typeof originalJestMethods.test !== "function") {
+  if (
+    !("test" in originalJestMethods) ||
+    typeof originalJestMethods.test !== "function"
+  ) {
     throw new Error("Your passed object must contain a `test` method.");
   }
-  if (!("describe" in originalJestMethods) || typeof originalJestMethods.describe !== "function") {
+  if (
+    !("describe" in originalJestMethods) ||
+    typeof originalJestMethods.describe !== "function"
+  ) {
     throw new Error("Your passed object must contain a `describe` method.");
   }
-  if (!("beforeAll" in originalJestMethods) || typeof originalJestMethods.beforeAll !== "function") {
+  if (
+    !("beforeAll" in originalJestMethods) ||
+    typeof originalJestMethods.beforeAll !== "function"
+  ) {
     throw new Error("Your passed object must contain a `beforeAll` method.");
   }
-  if (!("afterAll" in originalJestMethods) || typeof originalJestMethods.afterAll !== "function") {
+  if (
+    !("afterAll" in originalJestMethods) ||
+    typeof originalJestMethods.afterAll !== "function"
+  ) {
     throw new Error("Your passed object must contain a `afterAll` method.");
   }
 
@@ -154,9 +172,16 @@ const wrapJest = (originalJestMethods: Record<string, unknown>) => {
     process?.versions?.bun !== undefined ? "bun" : "jest"
   );
 
+  // Return the normal used LS methods for convenience
+  // so that you can do:
+  //
+  // const ls = wrapJest(jest);
+  // ls.logFeedback({ key: "quality", score: 0.7 });
   return {
-    ...originalJestMethods,
     ...wrappedMethods,
+    logFeedback,
+    logOutputs,
+    wrapEvaluator,
   };
 };
 
