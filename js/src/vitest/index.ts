@@ -105,25 +105,46 @@ declare module "vitest" {
  * for more details.
  */
 const wrapVitest = (originalVitestMethods: Record<string, unknown>) => {
-  if (typeof originalVitestMethods !== "object" || originalVitestMethods == null) {
+  if (
+    typeof originalVitestMethods !== "object" ||
+    originalVitestMethods == null
+  ) {
     throw new Error("originalVitestMethods must be an non-null object.");
   }
-  if (!("expect" in originalVitestMethods) || typeof originalVitestMethods.expect !== "function") {
+  if (
+    !("expect" in originalVitestMethods) ||
+    typeof originalVitestMethods.expect !== "function"
+  ) {
     throw new Error("Your passed object must contain a `expect` method.");
   }
-  if (!("it" in originalVitestMethods) || typeof originalVitestMethods.it !== "function") {
+  if (
+    !("it" in originalVitestMethods) ||
+    typeof originalVitestMethods.it !== "function"
+  ) {
     throw new Error("Your passed object must contain a `it` method.");
   }
-  if (!("test" in originalVitestMethods) || typeof originalVitestMethods.test !== "function") {
+  if (
+    !("test" in originalVitestMethods) ||
+    typeof originalVitestMethods.test !== "function"
+  ) {
     throw new Error("Your passed object must contain a `test` method.");
   }
-  if (!("describe" in originalVitestMethods) || typeof originalVitestMethods.describe !== "function") {
+  if (
+    !("describe" in originalVitestMethods) ||
+    typeof originalVitestMethods.describe !== "function"
+  ) {
     throw new Error("Your passed object must contain a `describe` method.");
   }
-  if (!("beforeAll" in originalVitestMethods) || typeof originalVitestMethods.beforeAll !== "function") {
+  if (
+    !("beforeAll" in originalVitestMethods) ||
+    typeof originalVitestMethods.beforeAll !== "function"
+  ) {
     throw new Error("Your passed object must contain a `beforeAll` method.");
   }
-  if (!("afterAll" in originalVitestMethods) || typeof originalVitestMethods.afterAll !== "function") {
+  if (
+    !("afterAll" in originalVitestMethods) ||
+    typeof originalVitestMethods.afterAll !== "function"
+  ) {
     throw new Error("Your passed object must contain a `afterAll` method.");
   }
 
@@ -135,14 +156,21 @@ const wrapVitest = (originalVitestMethods: Record<string, unknown>) => {
       describe: originalVitestMethods.describe,
       beforeAll: originalVitestMethods.beforeAll,
       afterAll: originalVitestMethods.afterAll,
-      logFeedback,
-      logOutputs,
-      wrapEvaluator,
     },
     "vitest"
   );
 
-  return wrappedMethods;
+  // Return the normal used LS methods for convenience
+  // so that you can do:
+  //
+  // const ls = wrapVitest(vitest);
+  // ls.logFeedback({ key: "quality", score: 0.7 });
+  return {
+    ...wrappedMethods,
+    logFeedback,
+    logOutputs,
+    wrapEvaluator,
+  };
 };
 
 const { test, it, describe, expect } = wrapVitest({
