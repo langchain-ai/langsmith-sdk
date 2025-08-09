@@ -1,6 +1,6 @@
 /* eslint-disable import/no-extraneous-dependencies */
 import * as vitest from "vitest";
-import { SimpleEvaluator, wrapVitest } from "../../vitest/index.js";
+import { SimpleEvaluator, wrapVitest } from "../../vitest/index.mjs";
 
 const ls = wrapVitest(vitest);
 

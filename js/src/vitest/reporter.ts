@@ -4,7 +4,7 @@
 import { DefaultReporter } from "vitest/reporters";
 
 import { RunnerTestFile } from "vitest";
-import { printVitestReporterTable } from "./utils.js";
+import { printVitestReporterTable } from "./utils/reporter.js";
 
 class LangSmithEvalReporter extends DefaultReporter {
   async onFinished(files: RunnerTestFile[], errors: unknown[]) {
