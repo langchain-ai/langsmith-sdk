@@ -974,7 +974,8 @@ class Client:
                             )
 
                     else:
-                        self._check_workspace_error(response)
+                        if response is not None:
+                            self._check_workspace_error(response)
                         raise ls_utils.LangSmithUserError(
                             f"Failed to {method} {pathname} in LangSmith API. {repr(e)}"
                         )
