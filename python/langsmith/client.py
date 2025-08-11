@@ -275,6 +275,27 @@ def _validate_api_key_if_hosted(api_url: str, api_key: Optional[str]) -> None:
             )
 
 
+def _validate_workspace_for_org_scoped_key(workspace: Optional[str], workspace_id: Optional[str]) -> None:
+    """Validate that workspace is specified for org-scoped keys.
+    
+    This validation is called when the backend returns an error indicating
+    that the API key is org-scoped and requires workspace specification.
+    
+    Args:
+        workspace (Optional[str]): The workspace name.
+        workspace_id (Optional[str]): The workspace ID.
+        
+    Raises:
+        LangSmithUserError: If neither workspace nor workspace_id is provided.
+    """
+    if not workspace and not workspace_id:
+        raise ls_utils.LangSmithUserError(
+            "This API key is org-scoped and requires workspace specification. "
+            "Please provide either 'workspace' or 'workspace_id' parameter, "
+            "or set LANGSMITH_WORKSPACE or LANGSMITH_WORKSPACE_ID environment variable."
+        )
+
+
 def _format_feedback_score(score: Union[float, int, bool, None]):
     """Format a feedback score by truncating numerical values to 4 decimal places.
 
@@ -313,7 +334,7 @@ def _get_tracing_sampling_rate(
     return sampling_rate
 
 
-def _get_write_api_urls(_write_api_urls: Optional[dict[str, str]]) -> dict[str, str]:
+def _get_write_api_urls(_write_api_urls: Optional[dict[str, str]], workspace: Optional[str] = None, workspace_id: Optional[str] = None) -> dict[str, str]:
     # Note: LANGSMITH_RUNS_ENDPOINTS is now handled via replicas, not _write_api_urls
     _write_api_urls = _write_api_urls or {}
     processed_write_api_urls = {}
@@ -399,6 +420,8 @@ class Client:
         "__weakref__",
         "api_url",
         "_api_key",
+        "_workspace",
+        "_workspace_id",
         "_headers",
         "retry_config",
         "timeout_ms",
@@ -448,6 +471,8 @@ class Client:
         api_urls: Optional[dict[str, str]] = None,
         otel_tracer_provider: Optional[TracerProvider] = None,
         tracing_sampling_rate: Optional[float] = None,
+        workspace: Optional[str] = None,
+        workspace_id: Optional[str] = None,
     ) -> None:
         """Initialize a Client instance.
 
@@ -488,6 +513,8 @@ class Client:
                 overrides the LANGCHAIN_TRACING_SAMPLING_RATE environment variable.
                 Should be a float between 0 and 1, where 1 means trace everything
                 and 0 means trace nothing.
+            workspace (Optional[str]): The workspace name. Required for org-scoped API keys.
+            workspace_id (Optional[str]): The workspace ID. Required for org-scoped API keys.
 
         Raises:
             LangSmithUserError: If the API key is not provided when using the hosted service.
@@ -509,8 +536,12 @@ class Client:
         self.tracing_sample_rate = _get_tracing_sampling_rate(tracing_sampling_rate)
         self._filtered_post_uuids: set[uuid.UUID] = set()
         self._write_api_urls: Mapping[str, Optional[str]] = _get_write_api_urls(
-            api_urls
+            api_urls, workspace, workspace_id
         )
+        # Initialize workspace attributes first
+        self._workspace = ls_utils.get_workspace(workspace)
+        self._workspace_id = ls_utils.get_workspace_id(workspace_id)
+        
         if self._write_api_urls:
             self.api_url = next(iter(self._write_api_urls))
             self.api_key = self._write_api_urls[self.api_url]
@@ -688,7 +719,25 @@ class Client:
         }
         if self.api_key:
             headers[X_API_KEY] = self.api_key
+        if self._workspace:
+            headers["X-Workspace"] = self._workspace
+        if self._workspace_id:
+            headers["X-Workspace-Id"] = self._workspace_id
         return headers
+
+    def _validate_workspace_requirements(self) -> None:
+        """Validate workspace requirements for org-scoped keys."""
+        _validate_workspace_for_org_scoped_key(self._workspace, self._workspace_id)
+
+    def _check_workspace_error(self, response: requests.Response) -> None:
+        """Check if response indicates a workspace-related error for org-scoped keys."""
+        try:
+            error_data = response.json()
+            error_message = error_data.get("detail", "")
+            if "workspace" in error_message.lower() and "org-scoped" in error_message.lower():
+                self._validate_workspace_requirements()
+        except (ValueError, KeyError):
+            pass
 
     @property
     def api_key(self) -> Optional[str]:
@@ -698,6 +747,36 @@ class Client:
     @api_key.setter
     def api_key(self, value: Optional[str]) -> None:
         object.__setattr__(self, "_api_key", value)
+        object.__setattr__(self, "_headers", self._compute_headers())
+
+    @property
+    def workspace_name(self) -> Optional[str]:
+        """Return the workspace used for API requests."""
+        return self._workspace
+
+    @workspace_name.setter
+    def workspace_name(self, value: Optional[str]) -> None:
+        object.__setattr__(self, "_workspace", value)
+        object.__setattr__(self, "_headers", self._compute_headers())
+
+    @property
+    def workspace(self) -> Optional[str]:
+        """Return the workspace used for API requests (alias for workspace_name)."""
+        return self._workspace
+
+    @workspace.setter
+    def workspace(self, value: Optional[str]) -> None:
+        object.__setattr__(self, "_workspace", value)
+        object.__setattr__(self, "_headers", self._compute_headers())
+
+    @property
+    def workspace_id(self) -> Optional[str]:
+        """Return the workspace ID used for API requests."""
+        return self._workspace_id
+
+    @workspace_id.setter
+    def workspace_id(self, value: Optional[str]) -> None:
+        object.__setattr__(self, "_workspace_id", value)
         object.__setattr__(self, "_headers", self._compute_headers())
 
     @property
@@ -882,6 +961,12 @@ class Client:
                             raise ls_utils.LangSmithConflictError(
                                 f"Conflict for {pathname}. {repr(e)}{_context}"
                             )
+                        elif response.status_code == 400:
+                            self._check_workspace_error(response)
+                            raise ls_utils.LangSmithError(
+                                f"Failed to {method} {pathname} in LangSmith"
+                                f" API. {repr(e)}"
+                            )
                         else:
                             raise ls_utils.LangSmithError(
                                 f"Failed to {method} {pathname} in LangSmith"
@@ -889,6 +974,7 @@ class Client:
                             )
 
                     else:
+                        self._check_workspace_error(response)
                         raise ls_utils.LangSmithUserError(
                             f"Failed to {method} {pathname} in LangSmith API. {repr(e)}"
                         )
