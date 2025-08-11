@@ -105,6 +105,10 @@ export interface ClientConfig {
    * Enable debug mode for the client. If set, all sent HTTP requests will be logged.
    */
   debug?: boolean;
+  /**
+   * The workspace ID. Required for org-scoped API keys.
+   */
+  workspaceId?: string;
 }
 
 /**
@@ -599,6 +603,8 @@ export class Client implements LangSmithTracingClientInterface {
 
   private webUrl?: string;
 
+  private workspaceId?: string;
+
   private caller: AsyncCaller;
 
   private batchIngestCaller: AsyncCaller;
@@ -661,6 +667,7 @@ export class Client implements LangSmithTracingClientInterface {
     if (this.webUrl?.endsWith("/")) {
       this.webUrl = this.webUrl.slice(0, -1);
     }
+    this.workspaceId = trimQuotes(config.workspaceId ?? getLangSmithEnvironmentVariable("WORKSPACE_ID"));
     this.timeout_ms = config.timeout_ms ?? 90_000;
     this.caller = new AsyncCaller({
       ...(config.callerOptions ?? {}),
@@ -756,7 +763,31 @@ export class Client implements LangSmithTracingClientInterface {
     if (this.apiKey) {
       headers["x-api-key"] = `${this.apiKey}`;
     }
+    if (this.workspaceId) {
+      headers["X-Tenant-Id"] = this.workspaceId;
+    }
     return headers;
+  }
+
+  private validateWorkspaceRequirements(): void {
+    // Validate workspace requirements for org-scoped keys
+    if (this.apiKey && !this.workspaceId) {
+      throw new Error(
+        "This API key is org-scoped and requires workspace specification. " +
+        "Please provide either 'workspaceId' parameter or set LANGSMITH_WORKSPACE_ID environment variable."
+      );
+    }
+  }
+
+  private checkWorkspaceError(response: Response): void {
+    // Check for 400 status code or error messages containing workspace-related content
+    if (response.status === 400) {
+      this.validateWorkspaceRequirements();
+    }
+  }
+
+  public getWorkspaceId(): string | undefined {
+    return this.workspaceId;
   }
 
   private _getPlatformEndpointPath(path: string): string {
@@ -827,6 +858,11 @@ export class Client implements LangSmithTracingClientInterface {
         ...this.fetchOptions,
       }
     );
+
+    if (!response.ok) {
+      this.checkWorkspaceError(response);
+    }
+
     await raiseForStatus(response, `Failed to fetch ${path}`);
     return response;
   }
@@ -1229,6 +1265,10 @@ export class Client implements LangSmithTracingClientInterface {
         ...this.fetchOptions,
       }
     );
+
+    if (!response.ok) {
+      this.checkWorkspaceError(response);
+    }
     await raiseForStatus(response, "create run", true);
   }
 

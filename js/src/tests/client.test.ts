@@ -480,4 +480,64 @@ describe("Client", () => {
       expect(patchTraceIds.has(traceIds[3])).toBe(false);
     });
   });
+
+  describe("Workspace Support", () => {
+    const originalEnv = process.env;
+
+    beforeEach(() => {
+      jest.resetModules();
+      process.env = { ...originalEnv };
+    });
+
+    afterEach(() => {
+      process.env = originalEnv;
+    });
+
+    it("should accept workspaceId in config", () => {
+      const client = new Client({ workspaceId: "test-workspace-id" });
+      expect(client.getWorkspaceId()).toBe("test-workspace-id");
+    });
+
+    it("should read workspaceId from environment variable", () => {
+      process.env.LANGSMITH_WORKSPACE_ID = "env-workspace-id";
+      const client = new Client();
+      expect(client.getWorkspaceId()).toBe("env-workspace-id");
+    });
+
+    it("should prioritize config over environment variable", () => {
+      process.env.LANGSMITH_WORKSPACE_ID = "env-workspace-id";
+      const client = new Client({ workspaceId: "config-workspace-id" });
+      expect(client.getWorkspaceId()).toBe("config-workspace-id");
+    });
+
+    it("should include X-Tenant-Id header when workspaceId is set", () => {
+      const client = new Client({ workspaceId: "test-workspace-id" });
+      const headers = (client as any).headers;
+      expect(headers["X-Tenant-Id"]).toBe("test-workspace-id");
+    });
+
+    it("should not include X-Tenant-Id header when workspaceId is not set", () => {
+      const client = new Client();
+      const headers = (client as any).headers;
+      expect(headers["X-Tenant-Id"]).toBeUndefined();
+    });
+
+    it("should validate workspace requirements for org-scoped keys", () => {
+      const client = new Client({ apiKey: "test-key" });
+      
+      // Should throw when no workspace is specified
+      expect(() => {
+        (client as any).validateWorkspaceRequirements();
+      }).toThrow("This API key is org-scoped and requires workspace specification");
+      
+      // Should not throw when workspace is specified
+      const clientWithWorkspace = new Client({ 
+        apiKey: "test-key", 
+        workspaceId: "test-workspace-id" 
+      });
+      expect(() => {
+        (clientWithWorkspace as any).validateWorkspaceRequirements();
+      }).not.toThrow();
+    });
+  });
 });
