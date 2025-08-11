@@ -1452,12 +1452,13 @@ export class Client implements LangSmithTracingClientInterface {
           inputs,
           outputs,
           events,
+          extra,
           error,
           serialized,
           attachments,
           ...payload
         } = originalPayload;
-        const fields = { inputs, outputs, events, error, serialized };
+        const fields = { inputs, outputs, events, extra, error, serialized };
         // encode the main run payload
         const stringifiedPayload = serializePayloadForTracing(
           payload,

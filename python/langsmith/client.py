@@ -1550,6 +1550,8 @@ class Client:
                     curr_dict["outputs"] = _orjson.Fragment(op.outputs)
                 if op.events:
                     curr_dict["events"] = _orjson.Fragment(op.events)
+                if op.extra:
+                    curr_dict["extra"] = _orjson.Fragment(op.extra)
                 if op.error:
                     curr_dict["error"] = _orjson.Fragment(op.error)
                 if op.serialized:

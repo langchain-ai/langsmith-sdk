@@ -205,7 +205,7 @@ async def test_list_examples(async_client: AsyncClient):
 
     await async_client.delete_dataset(dataset_id=dataset.id)
 
-
+@pytest.mark.skip(reason="flakty due to rate limits")
 @pytest.mark.asyncio
 async def test_create_feedback(async_client: AsyncClient):
     project_name = "__test_create_feedback" + uuid.uuid4().hex[:8]
