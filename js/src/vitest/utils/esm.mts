@@ -1,5 +1,7 @@
 /* eslint-disable import/no-extraneous-dependencies */
 import { createRequire } from "module";
+import { pathToFileURL } from "url";
+import { sep } from "path";
 
 /**
  * Resolve vitest ESM module from correct workspace
@@ -17,12 +19,13 @@ export const importVitestModule = async (entrypoint?: string) => {
       paths: [process.cwd()],
     });
     const pkg = require(packagePath);
-    const pkgDir = packagePath.replace("/package.json", "");
+    const pkgDir = packagePath.replace(`${sep}package.json`, "");
     const esmEntry = !entrypoint
       ? pkg.module ?? pkg.exports?.["."]?.import ?? "dist/index.js"
       : pkg.exports?.[`./${entrypoint}`]?.import ??
         pkg.exports?.[`./${entrypoint}`]?.default;
-    const path = `file://${pkgDir}/${esmEntry}`;
+    const modulePath = `${pkgDir}${sep}${esmEntry}`;
+    const path = pathToFileURL(modulePath).href;
     importedModule = await import(path);
     if (!importedModule) {
       throw new Error(
