@@ -782,17 +782,6 @@ def get_api_key(api_key: Optional[str]) -> Optional[str]:
         return None
     return api_key_.strip().strip('"').strip("'")
 
-def get_workspace(workspace: Optional[str]) -> Optional[str]:
-    """Get workspace from the env or the given value."""
-    workspace_ = (
-        workspace 
-        if workspace is not None 
-        else get_env_var("WORKSPACE", default=None)
-    )
-    if workspace_ is None or not workspace_.strip():
-        return None
-    return workspace_.strip().strip('"').strip("'")
-
 def get_workspace_id(workspace_id: Optional[str]) -> Optional[str]:
     """Get workspace ID."""
     workspace_id_ = (

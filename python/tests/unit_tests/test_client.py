@@ -3232,23 +3232,13 @@ def test_workspace_validation_optional(monkeypatch: pytest.MonkeyPatch) -> None:
     
     # Clear environment variables
     monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
-    monkeypatch.delenv("LANGSMITH_WORKSPACE", raising=False)
     monkeypatch.delenv("LANGSMITH_WORKSPACE_ID", raising=False)
     
     # Test 1: API key without workspace should succeed (backward compatibility)
     client = Client(api_key="test-key", auto_batch_tracing=False)
-    assert client.workspace is None
     assert client.workspace_id is None
     
-    # Test 2: API key with workspace should succeed
-    client = Client(
-        api_key="test-key", 
-        workspace="test-workspace", 
-        auto_batch_tracing=False
-    )
-    assert client.workspace == "test-workspace"
-    
-    # Test 3: API key with workspace_id should succeed
+    # Test 2: API key with workspace_id should succeed
     client = Client(
         api_key="test-key", 
         workspace_id="test-workspace-id", 
@@ -3261,17 +3251,9 @@ def test_workspace_validation_with_env_vars(monkeypatch: pytest.MonkeyPatch) -> 
     """Test workspace validation with environment variables."""
     _clear_env_cache()
     
-    # Test with LANGSMITH_WORKSPACE env var
-    monkeypatch.setenv("LANGSMITH_API_KEY", "test-key")
-    monkeypatch.setenv("LANGSMITH_WORKSPACE", "env-workspace")
-    
-    client = Client(auto_batch_tracing=False)
-    assert client.workspace == "env-workspace"
-    
     # Test with LANGSMITH_WORKSPACE_ID env var
-    _clear_env_cache()
+    monkeypatch.setenv("LANGSMITH_API_KEY", "test-key")
     monkeypatch.setenv("LANGSMITH_WORKSPACE_ID", "env-workspace-id")
-    monkeypatch.delenv("LANGSMITH_WORKSPACE", raising=False)
     
     client = Client(auto_batch_tracing=False)
     assert client.workspace_id == "env-workspace-id"
@@ -3283,13 +3265,11 @@ def test_workspace_validation_without_api_key(monkeypatch: pytest.MonkeyPatch) -
     
     # Clear all environment variables
     monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
-    monkeypatch.delenv("LANGSMITH_WORKSPACE", raising=False)
     monkeypatch.delenv("LANGSMITH_WORKSPACE_ID", raising=False)
     
     # Should succeed without workspace when no API key
     client = Client(auto_batch_tracing=False)
     assert client.api_key is None
-    assert client.workspace is None
     assert client.workspace_id is None
 
 
@@ -3299,15 +3279,13 @@ def test_workspace_headers_injection(monkeypatch: pytest.MonkeyPatch) -> None:
     
     # Set up environment
     monkeypatch.setenv("LANGSMITH_API_KEY", "test-key")
-    monkeypatch.setenv("LANGSMITH_WORKSPACE", "test-workspace")
     monkeypatch.setenv("LANGSMITH_WORKSPACE_ID", "test-workspace-id")
     
     client = Client(auto_batch_tracing=False)
     headers = client._compute_headers()
     
     # Check that workspace headers are present
-    assert "X-Workspace" in headers
-    assert "X-Workspace-Id" in headers
+    assert "X-Tenant-Id" in headers
 
 
 def test_workspace_validation_for_org_scoped_keys(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -3319,10 +3297,6 @@ def test_workspace_validation_for_org_scoped_keys(monkeypatch: pytest.MonkeyPatc
     
     with pytest.raises(ls_utils.LangSmithUserError, match="This API key is org-scoped and requires workspace specification"):
         client._validate_workspace_requirements()
-    
-    # Test that validation passes when workspace is specified
-    client = Client(api_key="test-key", workspace="test-workspace", auto_batch_tracing=False)
-    client._validate_workspace_requirements()  # Should not raise
     
     # Test that validation passes when workspace_id is specified
     client = Client(api_key="test-key", workspace_id="test-workspace-id", auto_batch_tracing=False)
