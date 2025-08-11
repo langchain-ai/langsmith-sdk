@@ -1794,7 +1794,7 @@ def test_traceable_input_attachments():
             data for data in datas if data[0] == f"post.{trace_id}.extra"
         )
         assert (
-            json.loads(extra_stuff)["extra"]["runtime"].get(
+            json.loads(extra_stuff)["runtime"].get(
                 "LANGSMITH_test_traceable_input_attachments"
             )
             == "aval"
