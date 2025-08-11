@@ -482,14 +482,17 @@ describe("Client", () => {
   });
 
   describe("Workspace Support", () => {
+    // eslint-disable-next-line no-process-env
     const originalEnv = process.env;
 
     beforeEach(() => {
       jest.resetModules();
+      // eslint-disable-next-line no-process-env
       process.env = { ...originalEnv };
     });
 
     afterEach(() => {
+      // eslint-disable-next-line no-process-env
       process.env = originalEnv;
     });
 
@@ -499,12 +502,14 @@ describe("Client", () => {
     });
 
     it("should read workspaceId from environment variable", () => {
+      // eslint-disable-next-line no-process-env
       process.env.LANGSMITH_WORKSPACE_ID = "env-workspace-id";
       const client = new Client();
       expect(client.getWorkspaceId()).toBe("env-workspace-id");
     });
 
     it("should prioritize config over environment variable", () => {
+      // eslint-disable-next-line no-process-env
       process.env.LANGSMITH_WORKSPACE_ID = "env-workspace-id";
       const client = new Client({ workspaceId: "config-workspace-id" });
       expect(client.getWorkspaceId()).toBe("config-workspace-id");
@@ -524,16 +529,18 @@ describe("Client", () => {
 
     it("should validate workspace requirements for org-scoped keys", () => {
       const client = new Client({ apiKey: "test-key" });
-      
+
       // Should throw when no workspace is specified
       expect(() => {
         (client as any).validateWorkspaceRequirements();
-      }).toThrow("This API key is org-scoped and requires workspace specification");
-      
+      }).toThrow(
+        "This API key is org-scoped and requires workspace specification"
+      );
+
       // Should not throw when workspace is specified
-      const clientWithWorkspace = new Client({ 
-        apiKey: "test-key", 
-        workspaceId: "test-workspace-id" 
+      const clientWithWorkspace = new Client({
+        apiKey: "test-key",
+        workspaceId: "test-workspace-id",
       });
       expect(() => {
         (clientWithWorkspace as any).validateWorkspaceRequirements();

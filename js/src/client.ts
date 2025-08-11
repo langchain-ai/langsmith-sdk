@@ -667,7 +667,9 @@ export class Client implements LangSmithTracingClientInterface {
     if (this.webUrl?.endsWith("/")) {
       this.webUrl = this.webUrl.slice(0, -1);
     }
-    this.workspaceId = trimQuotes(config.workspaceId ?? getLangSmithEnvironmentVariable("WORKSPACE_ID"));
+    this.workspaceId = trimQuotes(
+      config.workspaceId ?? getLangSmithEnvironmentVariable("WORKSPACE_ID")
+    );
     this.timeout_ms = config.timeout_ms ?? 90_000;
     this.caller = new AsyncCaller({
       ...(config.callerOptions ?? {}),
@@ -774,7 +776,7 @@ export class Client implements LangSmithTracingClientInterface {
     if (this.apiKey && !this.workspaceId) {
       throw new Error(
         "This API key is org-scoped and requires workspace specification. " +
-        "Please provide either 'workspaceId' parameter or set LANGSMITH_WORKSPACE_ID environment variable."
+          "Please provide either 'workspaceId' parameter or set LANGSMITH_WORKSPACE_ID environment variable."
       );
     }
   }
