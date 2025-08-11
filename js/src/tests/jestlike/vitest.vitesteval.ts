@@ -1,8 +1,8 @@
 /* eslint-disable import/no-extraneous-dependencies */
 import { AsyncLocalStorage } from "node:async_hooks";
 
-import * as ls from "../../vitest/index.js";
-import { type SimpleEvaluator } from "../../vitest/index.js";
+import * as ls from "../../vitest/index.mjs";
+import { type SimpleEvaluator } from "../../vitest/index.mjs";
 
 const myEvaluator: SimpleEvaluator = (params) => {
   const { referenceOutputs, outputs } = params;

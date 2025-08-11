@@ -1,6 +1,6 @@
 {
   "name": "langsmith",
-  "version": "0.3.55",
+  "version": "0.3.56",
   "description": "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform.",
   "packageManager": "yarn@1.22.19",
   "files": [
@@ -113,8 +113,8 @@
     "test:eval:vitest": "vitest run --config ls.vitest.config.ts",
     "lint": "NODE_OPTIONS=--max-old-space-size=4096 eslint --cache --ext .ts,.js src/",
     "lint:fix": "yarn lint --fix",
-    "format": "prettier --write 'src/**/*.{ts,tsx}'",
-    "format:check": "prettier --check 'src/**/*.{ts,tsx}'",
+    "format": "prettier --write 'src/**/*.{ts,tsx,mts}'",
+    "format:check": "prettier --check 'src/**/*.{ts,tsx,mts}'",
     "precommit": "lint-staged",
     "prepublish": "yarn run build"
   },
