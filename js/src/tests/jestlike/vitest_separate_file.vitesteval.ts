@@ -1,7 +1,7 @@
 /* eslint-disable import/no-extraneous-dependencies */
 import { AsyncLocalStorage } from "node:async_hooks";
 
-import * as ls from "../../vitest/index.js";
+import * as ls from "../../vitest/index.mjs";
 
 const myEvaluator = () => {
   return { key: "accuracy", score: Math.random() };

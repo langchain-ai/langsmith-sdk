@@ -372,11 +372,22 @@ export function generateWrapperFromJestlikeMethods(
           let commit;
           let dirty;
           try {
-            branch = execSync("git rev-parse --abbrev-ref HEAD")
+            branch = execSync("git rev-parse --abbrev-ref HEAD", {
+              stdio: ["ignore", "pipe", "ignore"],
+            })
               .toString()
               .trim();
-            commit = execSync("git rev-parse HEAD").toString().trim();
-            dirty = execSync("git status --porcelain").toString().trim() !== "";
+            commit = execSync("git rev-parse HEAD", {
+              stdio: ["ignore", "pipe", "ignore"],
+            })
+              .toString()
+              .trim();
+            dirty =
+              execSync("git status --porcelain", {
+                stdio: ["ignore", "pipe", "ignore"],
+              })
+                .toString()
+                .trim() !== "";
           } catch {
             return;
           }
