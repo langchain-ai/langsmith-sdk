@@ -234,17 +234,7 @@ export function LangSmithMiddleware(config?: {
       } catch (error: any) {
         await runTree?.end(undefined, error.message ?? String(error));
         await runTree?.patchRun();
-
-        // Instead of throwing, return a stream that emits the error
-        const errorStream = new ReadableStream<LanguageModelV2StreamPart>({
-          start(controller) {
-            controller.error(error);
-          },
-        });
-
-        return {
-          stream: errorStream,
-        };
+        throw error;
       }
     },
   };
