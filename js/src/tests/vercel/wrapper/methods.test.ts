@@ -268,7 +268,7 @@ describe("wrapAISDK", () => {
       expect(generateTextRun).toBeDefined();
     });
 
-    it("should create LangSmith traces for streamText operations", async () => {
+    it("should handle streamText errors properly", async () => {
       const wrappedMethods = wrapAISDK(
         {
           wrapLanguageModel: ai.wrapLanguageModel,
@@ -280,42 +280,41 @@ describe("wrapAISDK", () => {
         { client: mockClient as any }
       );
 
+      // Test error at doStream level
       const mockLangModel = new MockLanguageModelV2({
-        modelId: "stream-trace-test",
-        doStream: async () => ({
-          stream: simulateReadableStream({
-            chunks: [
-              { type: "text-start", id: "text-1" },
-              { type: "text-delta", id: "text-1", delta: "Traced" },
-              { type: "text-end", id: "text-1" },
-              {
-                type: "finish",
-                finishReason: "stop",
-                usage: {
-                  inputTokens: 3,
-                  outputTokens: 1,
-                  totalTokens: 4,
-                },
-              },
-            ],
-          }),
-        }),
+        modelId: "stream-error-model",
+        doStream: async () => {
+          throw new Error("doStream failed");
+        },
       });
 
-      await wrappedMethods.streamText({
-        model: mockLangModel,
-        prompt: "Test tracing",
-      });
+      try {
+        const result = await wrappedMethods.streamText({
+          model: mockLangModel,
+          prompt: "This should fail",
+        });
 
-      // Verify HTTP requests were made for streamText tracing
-      expect(mockHttpRequests.length).toBeGreaterThan(0);
+        // Try to consume the stream - this should throw because the stream errors
+        for await (const textPart of result.textStream) {
+          // This should not be reached
+          console.log("Unexpected text part:", textPart);
+        }
 
-      const streamTextRun = mockHttpRequests.find(
-        (req) =>
-          req.type === "createRun" &&
-          req.body.extra.metadata.ai_sdk_method === "ai.streamText"
+        expect(true).toBe(false); // Should not reach here
+      } catch (error: any) {
+        expect(error.message).toContain("doStream failed");
+      }
+
+      // Add delay for async operations
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Verify error was captured in LangSmith traces
+      const updateRunCall = mockHttpRequests.find(
+        (req) => req.type === "updateRun" && req.body.error
       );
-      expect(streamTextRun).toBeDefined();
+
+      expect(updateRunCall).toBeDefined();
+      expect(updateRunCall.body.error).toContain("doStream failed");
     });
 
     it("should handle generateObject with proper output processing", async () => {
@@ -467,6 +466,60 @@ describe("wrapAISDK", () => {
           req.body.extra.metadata.ai_sdk_method === "ai.streamObject"
       );
       expect(streamObjectRun).toBeDefined();
+    });
+
+    it("should handle streamObject errors properly", async () => {
+      const wrappedMethods = wrapAISDK(
+        {
+          wrapLanguageModel: ai.wrapLanguageModel,
+          generateText: ai.generateText,
+          streamText: ai.streamText,
+          generateObject: ai.generateObject,
+          streamObject: ai.streamObject,
+        },
+        { client: mockClient as any }
+      );
+
+      // Test error at doStream level for streamObject
+      const mockLangModel = new MockLanguageModelV2({
+        modelId: "stream-object-error-model",
+        doStream: async () => {
+          throw new Error("streamObject doStream failed");
+        },
+      });
+
+      try {
+        const result = await wrappedMethods.streamObject({
+          model: mockLangModel,
+          prompt: "This should fail",
+          schema: z.object({
+            name: z.string(),
+          }),
+        });
+
+        // Try to consume the stream - this should throw because the stream errors
+        for await (const partialObject of result.partialObjectStream) {
+          // This should not be reached
+          console.log("Unexpected partial object:", partialObject);
+        }
+
+        expect(true).toBe(false); // Should not reach here
+      } catch (error: any) {
+        expect(error.message).toContain("streamObject doStream failed");
+      }
+
+      // Add delay for async operations
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Verify error was captured in LangSmith traces
+      const updateRunCall = mockHttpRequests.find(
+        (req) => req.type === "updateRun" && req.body.error
+      );
+
+      expect(updateRunCall).toBeDefined();
+      expect(updateRunCall.body.error).toContain(
+        "streamObject doStream failed"
+      );
     });
   });
 
