@@ -4,6 +4,7 @@ import { MockLanguageModelV2 } from "ai/test";
 import * as ai from "ai";
 import { simulateReadableStream } from "ai";
 import { z } from "zod";
+import { APICallError } from "ai";
 import { wrapAISDK } from "../../../experimental/vercel/index.js";
 
 // Track HTTP requests made by the real traceable function
@@ -509,6 +510,231 @@ describe("wrapAISDK", () => {
       expect(updateRunCall.body.error).toContain(
         "streamObject doStream failed"
       );
+    });
+
+    it("should handle rate limit retries in streaming", async () => {
+      const wrappedMethods = wrapAISDK(
+        {
+          wrapLanguageModel: ai.wrapLanguageModel,
+          generateText: ai.generateText,
+          streamText: ai.streamText,
+          generateObject: ai.generateObject,
+          streamObject: ai.streamObject,
+        },
+        { client: mockClient as any }
+      );
+
+      let callCount = 0;
+      const mockLangModel = new MockLanguageModelV2({
+        modelId: "rate-limit-test-model",
+        doStream: async () => {
+          callCount++;
+          if (callCount <= 2) {
+            // First two calls hit rate limit
+            const delaySeconds = 1;
+            throw new APICallError({
+              message: "Rate limit reached for requests",
+              url: "https://api.openai.com/v1/chat/completions",
+              requestBodyValues: {},
+              statusCode: 429,
+              isRetryable: true,
+              data: {
+                error: {
+                  message: "Rate limit reached for requests",
+                  type: "requests",
+                  param: null,
+                  code: "rate_limit_exceeded",
+                },
+              },
+              responseHeaders: {
+                "retry-after": delaySeconds.toString(),
+                "x-request-id": "req_abcdef123456",
+              },
+            });
+          }
+
+          // Third call succeeds
+          return {
+            stream: simulateReadableStream({
+              chunks: [
+                { type: "text-start", id: "text-1" },
+                {
+                  type: "text-delta",
+                  id: "text-1",
+                  delta: "Success after retry",
+                },
+                { type: "text-end", id: "text-1" },
+                {
+                  type: "finish",
+                  finishReason: "stop",
+                  usage: {
+                    inputTokens: 5,
+                    outputTokens: 3,
+                    totalTokens: 8,
+                  },
+                },
+              ],
+            }),
+          };
+        },
+      });
+
+      const result = await wrappedMethods.streamText({
+        model: mockLangModel,
+        prompt: "Test rate limit retry",
+      });
+
+      // Consume the stream to verify it eventually succeeds
+      let fullText = "";
+      for await (const textPart of result.textStream) {
+        fullText += textPart;
+      }
+
+      expect(fullText).toBe("Success after retry");
+      expect(callCount).toBe(3); // Should have retried twice
+
+      // Add delay for async operations
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Verify HTTP request patterns for streaming retries
+      expect(mockHttpRequests.length).toBeGreaterThan(0);
+
+      const createRunCalls = mockHttpRequests.filter(
+        (req) => req.type === "createRun"
+      );
+      const updateRunCalls = mockHttpRequests.filter(
+        (req) => req.type === "updateRun"
+      );
+
+      // With 3 doStream attempts (2 failures + 1 success), we should see:
+      // 4 createRun calls: 1 parent + 3 child doStream attempts
+      // 4 updateRun calls: 1 parent success + 2 child failures + 1 child success
+      expect(createRunCalls.length).toBe(4);
+      expect(updateRunCalls.length).toBe(4);
+
+      // Verify the success/error pattern: 1 parent success + 2 child errors + 1 child success
+      const successUpdateCalls = mockHttpRequests.filter(
+        (req) => req.type === "updateRun" && !req.body.error && req.body.outputs
+      );
+      const errorUpdateCalls = mockHttpRequests.filter(
+        (req) => req.type === "updateRun" && req.body.error
+      );
+
+      expect(successUpdateCalls.length).toBe(2); // 1 parent streamText + 1 child doStream success
+      expect(errorUpdateCalls.length).toBe(2); // 2 child doStream failures
+    });
+
+    it("should handle rate limit retries in generateText", async () => {
+      const wrappedMethods = wrapAISDK(
+        {
+          wrapLanguageModel: ai.wrapLanguageModel,
+          generateText: ai.generateText,
+          streamText: ai.streamText,
+          generateObject: ai.generateObject,
+          streamObject: ai.streamObject,
+        },
+        { client: mockClient as any }
+      );
+
+      let callCount = 0;
+      const mockLangModel = new MockLanguageModelV2({
+        modelId: "generatetext-rate-limit-test-model",
+        doGenerate: async () => {
+          callCount++;
+          if (callCount <= 2) {
+            // First two calls hit rate limit
+            const delaySeconds = 1;
+            throw new APICallError({
+              message: "Rate limit reached for requests",
+              url: "https://api.openai.com/v1/chat/completions",
+              requestBodyValues: {},
+              statusCode: 429,
+              isRetryable: true,
+              data: {
+                error: {
+                  message: "Rate limit reached for requests",
+                  type: "requests",
+                  param: null,
+                  code: "rate_limit_exceeded",
+                },
+              },
+              responseHeaders: {
+                "retry-after": delaySeconds.toString(),
+                "x-request-id": "req_generatetext123",
+              },
+            });
+          }
+
+          // Third call succeeds
+          return {
+            content: [{ type: "text" as const, text: "Generated after retry" }],
+            finishReason: "stop" as const,
+            usage: {
+              promptTokens: 10,
+              completionTokens: 5,
+              inputTokens: 10,
+              outputTokens: 5,
+              totalTokens: 15,
+            },
+            warnings: [],
+          };
+        },
+      });
+
+      const result = await wrappedMethods.generateText({
+        model: mockLangModel,
+        prompt: "Test generateText rate limit retry",
+      });
+
+      expect(result.text).toBe("Generated after retry");
+      expect(callCount).toBe(3); // Should have retried twice
+
+      // Add delay for async operations
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Verify HTTP request patterns for retries
+      expect(mockHttpRequests.length).toBeGreaterThan(0);
+
+      const createRunCalls = mockHttpRequests.filter(
+        (req) => req.type === "createRun"
+      );
+      const updateRunCalls = mockHttpRequests.filter(
+        (req) => req.type === "updateRun"
+      );
+
+      // With 3 doGenerate attempts (2 failures + 1 success), we should see:
+      // 4 createRun calls: 1 parent + 3 child doGenerate attempts
+      // 4 updateRun calls: 2 child failures + 1 child success + 1 parent success
+      expect(createRunCalls.length).toBe(4);
+      expect(updateRunCalls.length).toBe(4);
+
+      // Verify the success/error pattern: 1 parent success + 2 child errors + 1 child success
+      const successUpdateCalls = mockHttpRequests.filter(
+        (req) => req.type === "updateRun" && !req.body.error && req.body.outputs
+      );
+      const errorUpdateCalls = mockHttpRequests.filter(
+        (req) => req.type === "updateRun" && req.body.error
+      );
+
+      expect(successUpdateCalls.length).toBe(2); // 1 parent generateText + 1 child doGenerate success
+      expect(errorUpdateCalls.length).toBe(2); // 2 child doGenerate failures
+
+      // Find the parent generateText success (has content array)
+      const parentSuccessCall = successUpdateCalls.find(
+        (req) => req.body.outputs.content?.[0]?.text
+      );
+      expect(parentSuccessCall).toBeDefined();
+      expect(parentSuccessCall.body.outputs.content[0].text).toBe(
+        "Generated after retry"
+      );
+
+      // Verify the final successful call has usage metadata
+      expect(
+        parentSuccessCall.body.extra?.metadata?.usage_metadata
+      ).toBeDefined();
+      expect(
+        parentSuccessCall.body.extra.metadata.usage_metadata.total_tokens
+      ).toBe(15);
     });
   });
 
