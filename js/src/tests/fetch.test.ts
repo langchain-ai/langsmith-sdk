@@ -99,7 +99,7 @@ describe.each([[""], ["mocked"]])("Client uses %s fetch", (description) => {
     });
   });
 
-  test.only("basic traceable implementation", async () => {
+  test("basic traceable implementation", async () => {
     process.env.LANGSMITH_TRACING_BACKGROUND = "false";
     const llm = traceable(
       async function* llm(input: string) {
