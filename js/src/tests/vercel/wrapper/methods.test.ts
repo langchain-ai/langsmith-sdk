@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { MockLanguageModelV2 } from "ai/test";
 import * as ai from "ai";
 import { simulateReadableStream } from "ai";
@@ -5,7 +6,7 @@ import { z } from "zod";
 import { wrapAISDK } from "../../../experimental/vercel/index.js";
 
 // Track HTTP requests made by the real traceable function
-let mockHttpRequests: any[] = [];
+const mockHttpRequests: any[] = [];
 
 // Mock LangSmith Client that captures HTTP calls
 class MockLangSmithClient {
