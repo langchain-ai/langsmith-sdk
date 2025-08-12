@@ -209,6 +209,12 @@ def combine_serialized_queue_operations(
                 create_op.outputs = op.outputs
             if op.events is not None:
                 create_op.events = op.events
+            if op.extra is not None:
+                create_op.extra = op.extra
+            if op.error is not None:
+                create_op.error = op.error
+            if op.serialized is not None:
+                create_op.serialized = op.serialized
             if op.attachments is not None:
                 if create_op.attachments is None:
                     create_op.attachments = {}
