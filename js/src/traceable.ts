@@ -190,16 +190,14 @@ async function handleEnd(params: {
   const onEnd = on_end;
   if (onEnd) {
     if (!runTree) {
-      console.warn(
-        "Can not call 'on_end' if currentRunTree is undefined"
-      );
+      console.warn("Can not call 'on_end' if currentRunTree is undefined");
     } else {
       onEnd(runTree);
     }
   }
   await postRunPromise;
   await runTree?.patchRun();
-};
+}
 
 const _populateUsageMetadata = (processedOutputs: KVMap, runTree?: RunTree) => {
   if (runTree !== undefined) {
@@ -220,7 +218,11 @@ const _populateUsageMetadata = (processedOutputs: KVMap, runTree?: RunTree) => {
 };
 
 function isAsync(fn: unknown): fn is (...args: unknown[]) => Promise<unknown> {
-  return fn != null && typeof fn === 'function' && fn.constructor.name === 'AsyncFunction';
+  return (
+    fn != null &&
+    typeof fn === "function" &&
+    fn.constructor.name === "AsyncFunction"
+  );
 }
 
 // Note: This mutates the run tree
@@ -230,8 +232,9 @@ async function handleRunOutputs(params: {
   processOutputsFn: (outputs: Readonly<KVMap>) => KVMap | Promise<KVMap>;
   on_end?: (runTree: RunTree) => void;
   postRunPromise?: Promise<void>;
-}): Promise<KVMap> {
-  const { runTree, rawOutputs, processOutputsFn, on_end, postRunPromise } = params;
+}): Promise<void> {
+  const { runTree, rawOutputs, processOutputsFn, on_end, postRunPromise } =
+    params;
   let outputs: KVMap;
 
   if (isKVMap(rawOutputs)) {
@@ -243,17 +246,22 @@ async function handleRunOutputs(params: {
   try {
     outputs = processOutputsFn(outputs);
     if (isAsync(processOutputsFn)) {
-      outputs = outputs.then(async (processedOutputs: KVMap) => {
-        _populateUsageMetadata(processedOutputs, runTree);
-        await handleEnd({ runTree, postRunPromise, on_end });
-      }).catch(async (e: unknown) => {
-        console.error(
-          "Error occurred during processOutputs. Sending unprocessed outputs:",
-          e
-        );
-        await handleEnd({ runTree, postRunPromise, on_end });
-      });
-      return outputs;
+      void outputs
+        .then(async (processedOutputs: KVMap) => {
+          _populateUsageMetadata(processedOutputs, runTree);
+          await runTree?.end(processedOutputs);
+        })
+        .catch(async (e: unknown) => {
+          console.error(
+            "Error occurred during processOutputs. Sending unprocessed outputs:",
+            e
+          );
+          await runTree?.end(outputs);
+        })
+        .finally(async () => {
+          await handleEnd({ runTree, postRunPromise, on_end });
+        });
+      return;
     }
   } catch (e) {
     console.error(
@@ -262,8 +270,9 @@ async function handleRunOutputs(params: {
     );
   }
   _populateUsageMetadata(outputs, runTree);
+  await runTree?.end(outputs);
   await handleEnd({ runTree, postRunPromise, on_end });
-  return outputs;
+  return;
 }
 
 const handleRunAttachments = (
@@ -812,7 +821,7 @@ export function traceable<Func extends (...args: any[]) => any>(
               processOutputsFn,
               on_end: config?.on_end,
               postRunPromise,
-            })
+            });
             return reader.cancel(reason);
           },
         });
@@ -954,21 +963,28 @@ export function traceable<Func extends (...args: any[]) => any>(
               if (isGenerator(wrappedFunc) && isIteratorLike(rawOutput)) {
                 const chunks = gatherAll(rawOutput);
 
-                await handleRunOutputs({
-                  runTree: currentRunTree,
-                  rawOutputs: await handleChunks(
-                    chunks.reduce<unknown[]>((memo, { value, done }) => {
-                      if (!done || typeof value !== "undefined") {
-                        memo.push(value);
-                      }
+                try {
+                  await handleRunOutputs({
+                    runTree: currentRunTree,
+                    rawOutputs: await handleChunks(
+                      chunks.reduce<unknown[]>((memo, { value, done }) => {
+                        if (!done || typeof value !== "undefined") {
+                          memo.push(value);
+                        }
 
-                      return memo;
-                    }, [])
-                  ),
-                  processOutputsFn,
-                  on_end: config?.on_end,
-                  postRunPromise,
-                });
+                        return memo;
+                      }, [])
+                    ),
+                    processOutputsFn,
+                    on_end: config?.on_end,
+                    postRunPromise,
+                  });
+                } catch (e) {
+                  console.error(
+                    "[LANGSMITH]: Error occurred while handling run outputs:",
+                    e
+                  );
+                }
 
                 return (function* () {
                   for (const ret of chunks) {
@@ -985,7 +1001,7 @@ export function traceable<Func extends (...args: any[]) => any>(
                   processOutputsFn,
                   on_end: config?.on_end,
                   postRunPromise,
-                })
+                });
               } finally {
                 // eslint-disable-next-line no-unsafe-finally
                 return rawOutput;
@@ -993,7 +1009,11 @@ export function traceable<Func extends (...args: any[]) => any>(
             },
             async (error: unknown) => {
               await currentRunTree?.end(undefined, String(error));
-              await handleEnd({ runTree: currentRunTree, postRunPromise, on_end: config?.on_end });
+              await handleEnd({
+                runTree: currentRunTree,
+                postRunPromise,
+                on_end: config?.on_end,
+              });
               throw error;
             }
           )
