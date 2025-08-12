@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable no-process-env */
 import { MockLanguageModelV2 } from "ai/test";
 import * as ai from "ai";
 import { simulateReadableStream } from "ai";
