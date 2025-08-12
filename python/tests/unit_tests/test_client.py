@@ -3321,7 +3321,7 @@ def test_construct_url(api_url, pathname, expected):
         (
             "",
             "/some/path",
-            "Must specify non-empty api_url or pathname must be a full url.",
+            "api_url must start with 'http://'",
         ),
     ],
 )
