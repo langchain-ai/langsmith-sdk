@@ -657,9 +657,8 @@ def test_usage_metadata(langchain_client: Client):
             pass
 
     funcs = [my_func, my_func2, my_func3]
-    with tracing_context(enabled=True):
-        for func in funcs:
-            func("foo")
+    for func in funcs:
+        func("foo")
     _filter = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{run_meta}"))'
     poll_runs_until_count(
         langchain_client, project_name, len(funcs), max_retries=20, filter_=_filter
@@ -697,9 +696,8 @@ def test_usage_metadata(langchain_client: Client):
         )
 
     with pytest.raises(ValueError, match="Unexpected keys in usage metadata:"):
-        with tracing_context(enabled=True):
-            for _ in my_func4("foo"):
-                pass
+        for _ in my_func4("foo"):
+            pass
 
 
 async def test_usage_metadata_async(langchain_client: Client):
@@ -753,9 +751,8 @@ async def test_usage_metadata_async(langchain_client: Client):
             pass
 
     funcs = [my_func, my_func2, my_func3]
-    with tracing_context(enabled=True):
-        for func in funcs:
-            await func("foo")
+    for func in funcs:
+        await func("foo")
 
     _filter = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{run_meta}"))'
     poll_runs_until_count(
@@ -795,9 +792,8 @@ async def test_usage_metadata_async(langchain_client: Client):
         )
 
     with pytest.raises(ValueError, match="Unexpected keys in usage metadata:"):
-        with tracing_context(enabled=True):
-            async for _ in my_func4("foo"):
-                pass
+        async for _ in my_func4("foo"):
+            pass
 
 
 # TODO: Don't skip this test after langchain-ai/langchain#31493 is merged
