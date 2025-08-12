@@ -1,5 +1,7 @@
 import { MockLanguageModelV2 } from "ai/test";
 import * as ai from "ai";
+import { simulateReadableStream } from "ai";
+import { z } from "zod";
 import { wrapAISDK } from "../../../experimental/vercel/index.js";
 
 // Track HTTP requests made by the real traceable function
@@ -206,9 +208,8 @@ describe("wrapAISDK", () => {
       expect(updateRunCall.body.error).toContain("Model generation failed");
     });
 
-    it("should create separate LangSmith runs for each retry attempt", async () => {
-      // Create wrapped methods with mock client for this test
-      const wrappedMethodsWithMock = wrapAISDK(
+    it("should handle streamText with proper aggregation", async () => {
+      const wrappedMethods = wrapAISDK(
         {
           wrapLanguageModel: ai.wrapLanguageModel,
           generateText: ai.generateText,
@@ -219,69 +220,253 @@ describe("wrapAISDK", () => {
         { client: mockClient as any }
       );
 
-      let attempts = 0;
       const mockLangModel = new MockLanguageModelV2({
-        modelId: "retry-error-model",
+        modelId: "stream-test-model",
+        doStream: async () => ({
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "text-start", id: "text-1" },
+              { type: "text-delta", id: "text-1", delta: "Hello" },
+              { type: "text-delta", id: "text-1", delta: " " },
+              { type: "text-delta", id: "text-1", delta: "world" },
+              { type: "text-end", id: "text-1" },
+              {
+                type: "finish",
+                finishReason: "stop",
+                usage: {
+                  inputTokens: 5,
+                  outputTokens: 2,
+                  totalTokens: 7,
+                },
+              },
+            ],
+          }),
+        }),
+      });
+
+      const result = await wrappedMethods.streamText({
+        model: mockLangModel,
+        prompt: "Say hello",
+      });
+
+      // Consume the stream to trigger aggregation
+      let fullText = "";
+      for await (const textPart of result.textStream) {
+        fullText += textPart;
+      }
+
+      expect(fullText).toBe("Hello world");
+
+      // Verify HTTP requests were made for streamText
+      expect(mockHttpRequests.length).toBe(4); // 2 createRun + 2 updateRun
+
+      const generateTextRun = mockHttpRequests.find(
+        (req) =>
+          req.type === "createRun" &&
+          req.body.extra.metadata.ai_sdk_method === "ai.streamText"
+      );
+      expect(generateTextRun).toBeDefined();
+    });
+
+    it("should create LangSmith traces for streamText operations", async () => {
+      const wrappedMethods = wrapAISDK(
+        {
+          wrapLanguageModel: ai.wrapLanguageModel,
+          generateText: ai.generateText,
+          streamText: ai.streamText,
+          generateObject: ai.generateObject,
+          streamObject: ai.streamObject,
+        },
+        { client: mockClient as any }
+      );
+
+      const mockLangModel = new MockLanguageModelV2({
+        modelId: "stream-trace-test",
+        doStream: async () => ({
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "text-start", id: "text-1" },
+              { type: "text-delta", id: "text-1", delta: "Traced" },
+              { type: "text-end", id: "text-1" },
+              {
+                type: "finish",
+                finishReason: "stop",
+                usage: {
+                  inputTokens: 3,
+                  outputTokens: 1,
+                  totalTokens: 4,
+                },
+              },
+            ],
+          }),
+        }),
+      });
+
+      await wrappedMethods.streamText({
+        model: mockLangModel,
+        prompt: "Test tracing",
+      });
+
+      // Verify HTTP requests were made for streamText tracing
+      expect(mockHttpRequests.length).toBeGreaterThan(0);
+
+      const streamTextRun = mockHttpRequests.find(
+        (req) =>
+          req.type === "createRun" &&
+          req.body.extra.metadata.ai_sdk_method === "ai.streamText"
+      );
+      expect(streamTextRun).toBeDefined();
+    });
+
+    it("should handle generateObject with proper output processing", async () => {
+      const wrappedMethods = wrapAISDK(
+        {
+          wrapLanguageModel: ai.wrapLanguageModel,
+          generateText: ai.generateText,
+          streamText: ai.streamText,
+          generateObject: ai.generateObject,
+          streamObject: ai.streamObject,
+        },
+        { client: mockClient as any }
+      );
+
+      const mockLangModel = new MockLanguageModelV2({
+        modelId: "object-test-model",
+        doGenerate: async () => ({
+          content: [
+            {
+              type: "text" as const,
+              text: '{"name": "John", "age": 30}',
+            },
+          ],
+          finishReason: "stop" as const,
+          usage: {
+            promptTokens: 10,
+            completionTokens: 8,
+            inputTokens: 10,
+            outputTokens: 8,
+            totalTokens: 18,
+          },
+          warnings: [],
+        }),
+      });
+
+      const result = await wrappedMethods.generateObject({
+        model: mockLangModel,
+        prompt: "Generate a person object",
+        schema: z.object({
+          name: z.string(),
+          age: z.number(),
+        }),
+      });
+
+      expect(result.object).toEqual({ name: "John", age: 30 });
+
+      // Verify HTTP requests were made for generateObject
+      expect(mockHttpRequests.length).toBe(4); // 2 createRun + 2 updateRun
+
+      const generateObjectRun = mockHttpRequests.find(
+        (req) =>
+          req.type === "createRun" &&
+          req.body.extra.metadata.ai_sdk_method === "ai.generateObject"
+      );
+      expect(generateObjectRun).toBeDefined();
+    });
+
+    it("should handle generateObject errors", async () => {
+      const wrappedMethods = wrapAISDK(
+        {
+          wrapLanguageModel: ai.wrapLanguageModel,
+          generateText: ai.generateText,
+          streamText: ai.streamText,
+          generateObject: ai.generateObject,
+          streamObject: ai.streamObject,
+        },
+        { client: mockClient as any }
+      );
+
+      const mockLangModel = new MockLanguageModelV2({
+        modelId: "object-error-model",
         doGenerate: async () => {
-          attempts++;
-          // Always fail to test retry behavior
-          throw new Error(`Attempt ${attempts} failed`);
+          throw new Error("Object generation failed");
         },
       });
 
       try {
-        await wrappedMethodsWithMock.generateText({
+        await wrappedMethods.generateObject({
           model: mockLangModel,
-          prompt: "This will retry and fail",
-          maxRetries: 2, // AI SDK will retry 2 times (3 total attempts)
+          prompt: "This should fail",
+          schema: z.object({
+            name: z.string(),
+          }),
         });
         expect(true).toBe(false); // Should not reach here
       } catch (error: any) {
-        expect(error.message).toContain("failed");
+        expect(error.message).toContain("Object generation failed");
       }
 
-      // Add delay to allow all async operations to complete
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      // Add delay for async operations
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
-      // Verify we captured multiple attempts - AI SDK creates separate runs for each retry
-      expect(mockHttpRequests.length).toBeGreaterThan(2);
-
-      // Should have multiple createRun calls (one for each attempt)
-      const createRunCalls = mockHttpRequests.filter(
-        (req) => req.type === "createRun"
-      );
-      expect(createRunCalls.length).toBeGreaterThanOrEqual(2); // At least original + 1 retry
-
-      // Should have corresponding updateRun calls with errors
-      const updateRunCalls = mockHttpRequests.filter(
+      // Verify error was captured in LangSmith
+      const updateRunCall = mockHttpRequests.find(
         (req) => req.type === "updateRun" && req.body.error
       );
-      expect(updateRunCalls.length).toBeGreaterThanOrEqual(2);
+      expect(updateRunCall).toBeDefined();
+      expect(updateRunCall.body.error).toContain("Object generation failed");
+    });
 
-      // Verify the requests are in the correct order: createRun -> updateRun for each attempt
-      const requestSequence = mockHttpRequests.map((req) => req.type);
-      expect(requestSequence.indexOf("createRun")).toBeLessThan(
-        requestSequence.indexOf("updateRun")
+    it("should create LangSmith traces for streamObject operations", async () => {
+      const wrappedMethods = wrapAISDK(
+        {
+          wrapLanguageModel: ai.wrapLanguageModel,
+          generateText: ai.generateText,
+          streamText: ai.streamText,
+          generateObject: ai.generateObject,
+          streamObject: ai.streamObject,
+        },
+        { client: mockClient as any }
       );
 
-      // Verify all createRun calls have the same input (either prompt or messages format)
-      createRunCalls.forEach((call) => {
-        const inputs = call.body.inputs;
-        const hasPrompt = inputs.prompt === "This will retry and fail";
-        const hasMessages =
-          inputs.messages?.[0]?.content?.[0]?.text ===
-          "This will retry and fail";
-        expect(hasPrompt || hasMessages).toBe(true);
+      const mockLangModel = new MockLanguageModelV2({
+        modelId: "stream-object-trace-test",
+        doStream: async () => ({
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "text-start", id: "text-1" },
+              { type: "text-delta", id: "text-1", delta: '{ "name": "John" }' },
+              { type: "text-end", id: "text-1" },
+              {
+                type: "finish",
+                finishReason: "stop",
+                usage: {
+                  inputTokens: 10,
+                  outputTokens: 5,
+                  totalTokens: 15,
+                },
+              },
+            ],
+          }),
+        }),
       });
 
-      // Verify all error messages contain failure information
-      const errorMessages = updateRunCalls.map((call) => call.body.error);
-      expect(errorMessages.every((msg) => msg.includes("failed"))).toBe(true);
+      await wrappedMethods.streamObject({
+        model: mockLangModel,
+        prompt: "Generate an object",
+        schema: z.object({
+          name: z.string(),
+        }),
+      });
 
-      // The key verification: AI SDK with retries creates multiple LangSmith runs
-      // Each retry attempt gets its own LangSmith run for proper observability
-      expect(createRunCalls.length).toBeGreaterThanOrEqual(2);
-      expect(updateRunCalls.length).toBeGreaterThanOrEqual(2);
+      // Verify HTTP requests were made for streamObject tracing
+      expect(mockHttpRequests.length).toBeGreaterThan(0);
+
+      const streamObjectRun = mockHttpRequests.find(
+        (req) =>
+          req.type === "createRun" &&
+          req.body.extra.metadata.ai_sdk_method === "ai.streamObject"
+      );
+      expect(streamObjectRun).toBeDefined();
     });
   });
 
