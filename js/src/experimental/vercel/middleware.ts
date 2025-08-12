@@ -117,7 +117,7 @@ const setUsageMetadataOnRunTree = (
 export function LangSmithMiddleware(config?: {
   name: string;
   modelId?: string;
-  lsConfig?: Partial<Omit<RunTreeConfig, "inputs" | "outputs">>;
+  lsConfig?: Partial<Omit<RunTreeConfig, "inputs" | "outputs" | "run_type">>;
 }): LanguageModelV2Middleware {
   const { name, modelId, lsConfig } = config ?? {};
 
@@ -191,7 +191,7 @@ export function LangSmithMiddleware(config?: {
                     }
                     return {
                       ...aggregated,
-                      text: aggregated.text + chunk.delta,
+                      content: aggregated.content + chunk.delta,
                     };
                   } else if (chunk.type === "tool-call") {
                     const matchingToolCall = aggregated.tool_calls.find(
@@ -228,7 +228,7 @@ export function LangSmithMiddleware(config?: {
                   }
                 },
                 {
-                  text: "",
+                  content: "",
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   tool_calls: [] as Record<string, any>[],
                 }
