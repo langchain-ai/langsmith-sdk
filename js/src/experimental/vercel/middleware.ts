@@ -143,17 +143,24 @@ export function LangSmithMiddleware(config?: {
     },
     wrapStream: async ({ doStream, params }) => {
       const parentRunTree = getCurrentRunTree(true);
-      const runTree = parentRunTree?.createChild({
-        ...lsConfig,
-        name: name ?? "ai.doStream",
-        run_type: "llm",
-        metadata: {
-          ls_model_name: modelId,
-          ai_sdk_method: "ai.doStream",
-          ...lsConfig?.metadata,
-        },
-        inputs: _formatTracedInputs(params),
-      });
+      let runTree: RunTree | undefined;
+      if (
+        parentRunTree != null &&
+        typeof parentRunTree === "object" &&
+        typeof parentRunTree.createChild === "function"
+      ) {
+        runTree = parentRunTree?.createChild({
+          ...lsConfig,
+          name: name ?? "ai.doStream",
+          run_type: "llm",
+          metadata: {
+            ls_model_name: modelId,
+            ai_sdk_method: "ai.doStream",
+            ...lsConfig?.metadata,
+          },
+          inputs: _formatTracedInputs(params),
+        });
+      }
 
       await runTree?.postRun();
       try {

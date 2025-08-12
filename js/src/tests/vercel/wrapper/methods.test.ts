@@ -38,6 +38,7 @@ describe("wrapAISDK", () => {
 
   beforeEach(() => {
     // Reset HTTP requests and create fresh mock client
+    process.env.LANGSMITH_TRACING = "true";
     mockHttpRequests.length = 0;
     mockClient = new MockLangSmithClient();
   });
