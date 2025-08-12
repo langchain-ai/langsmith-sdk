@@ -2464,6 +2464,7 @@ class Client:
         is_root: Optional[bool] = None,
         parent_run_id: Optional[ID_TYPE] = None,
         start_time: Optional[datetime.datetime] = None,
+        end_time: Optional[datetime.datetime] = None,
         error: Optional[bool] = None,
         run_ids: Optional[Sequence[ID_TYPE]] = None,
         select: Optional[Sequence[str]] = None,
@@ -2492,7 +2493,9 @@ class Client:
             parent_run_id (Optional[Union[UUID, str]]):
                 The ID of the parent run to filter by.
             start_time (Optional[datetime.datetime]):
-                The start time to filter by.
+                Filter to only return runs that started after this time.
+            end_time (Optional[datetime.datetime]):
+                Filter to only return runs that ended before this time.
             error (Optional[bool]): Whether to filter by error status.
             run_ids (Optional[Sequence[Union[UUID, str]]]):
                 The IDs of the runs to filter by.
