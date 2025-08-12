@@ -4,6 +4,8 @@ import type {
   LanguageModelV2StreamPart,
   LanguageModelV2CallOptions,
   LanguageModelV2Message,
+  LanguageModelV2Usage,
+  SharedV2ProviderMetadata,
 } from "@ai-sdk/provider";
 import type { RunTree, RunTreeConfig } from "../../run_trees.js";
 import { getCurrentRunTree, traceable } from "../../traceable.js";
@@ -74,9 +76,11 @@ const _formatTracedOutputs = (outputs: Record<string, any>) => {
   );
 };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const setUsageMetadataOnRunTree = (
-  result: Record<string, any>,
+  result: {
+    usage?: LanguageModelV2Usage | null;
+    providerMetadata?: SharedV2ProviderMetadata | null;
+  },
   runTree: RunTree
 ) => {
   if (result.usage == null || typeof result.usage !== "object") {
@@ -141,10 +145,15 @@ export function LangSmithMiddleware(config?: {
             ai_sdk_method: "ai.doGenerate",
             ...lsConfig?.metadata,
           },
-          processInputs: (inputs) =>
-            _formatTracedInputs(inputs as LanguageModelV2CallOptions),
+          processInputs: (inputs) => {
+            const typedInputs = inputs as LanguageModelV2CallOptions;
+            return _formatTracedInputs(typedInputs);
+          },
           processOutputs: (outputs) => {
-            return _formatTracedOutputs(outputs);
+            const typedOutputs = outputs as Awaited<
+              ReturnType<typeof doGenerate>
+            >;
+            return _formatTracedOutputs(typedOutputs);
           },
         }
       );
