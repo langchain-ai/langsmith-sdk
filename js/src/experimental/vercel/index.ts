@@ -110,7 +110,7 @@ const wrapAISDK = <
     streamObject: StreamObjectType;
     generateObject: GenerateObjectType;
   },
-  lsConfig?: Partial<Omit<RunTreeConfig, "inputs" | "outputs">>
+  lsConfig?: Partial<Omit<RunTreeConfig, "inputs" | "outputs" | "run_type">>
 ) => {
   /**
    * Wrapped version of AI SDK 5's generateText with LangSmith tracing.
@@ -287,6 +287,19 @@ const wrapAISDK = <
           ...lsConfig?.metadata,
         },
         processInputs: (inputs) => _formatTracedInputs(inputs),
+        processOutputs: async (outputs) => {
+          if (outputs.outputs == null || typeof outputs.outputs !== "object") {
+            return outputs;
+          }
+          const content = await outputs.outputs.content;
+          if (content == null || typeof content !== "object") {
+            return outputs;
+          }
+          return populateToolCallsForTracing({
+            content,
+            role: "assistant",
+          });
+        },
       }
     ) as (params: Parameters<StreamTextType>[0]) => ReturnType<StreamTextType>;
     return traceableFunc(params);
@@ -338,6 +351,16 @@ const wrapAISDK = <
           ...lsConfig?.metadata,
         },
         processInputs: (inputs) => _formatTracedInputs(inputs),
+        processOutputs: async (outputs) => {
+          if (outputs.outputs == null || typeof outputs.outputs !== "object") {
+            return outputs;
+          }
+          const object = await outputs.outputs.object;
+          if (object == null || typeof object !== "object") {
+            return outputs;
+          }
+          return object;
+        },
       }
     ) as (
       params: Parameters<StreamObjectType>[0]

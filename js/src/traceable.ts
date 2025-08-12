@@ -148,11 +148,11 @@ const handleRunInputs = (
 
 const _extractUsage = (runData: {
   runTree: RunTree;
-  outputs: KVMap;
+  outputs?: KVMap;
 }): ExtractedUsageMetadata | undefined => {
   const usageMetadataFromMetadata = (runData.runTree.extra.metadata ?? {})
     .usage_metadata;
-  return runData.outputs.usage_metadata ?? usageMetadataFromMetadata;
+  return runData.outputs?.usage_metadata ?? usageMetadataFromMetadata;
 };
 
 function validateExtractedUsageMetadata(
@@ -182,11 +182,11 @@ function validateExtractedUsageMetadata(
 }
 
 // Note: This mutates the run tree
-function handleRunOutputs(params: {
+async function handleRunOutputs(params: {
   runTree?: RunTree;
   rawOutputs: unknown;
-  processOutputsFn: (outputs: Readonly<KVMap>) => KVMap;
-}) {
+  processOutputsFn: (outputs: Readonly<KVMap>) => KVMap | Promise<KVMap>;
+}): Promise<KVMap> {
   const { runTree, rawOutputs, processOutputsFn } = params;
   let outputs: KVMap;
 
@@ -197,7 +197,7 @@ function handleRunOutputs(params: {
   }
 
   try {
-    outputs = processOutputsFn(outputs);
+    outputs = await processOutputsFn(outputs);
   } catch (e) {
     console.error(
       "Error occurred during processOutputs. Sending unprocessed outputs:",
@@ -505,7 +505,7 @@ export type TraceableConfig<Func extends (...args: any[]) => any> = Partial<
    * @param outputs Key-value map of the function outputs
    * @returns Transformed key-value map
    */
-  processOutputs?: (outputs: Readonly<KVMap>) => KVMap;
+  processOutputs?: (outputs: Readonly<KVMap>) => KVMap | Promise<KVMap>;
 };
 
 /**
@@ -739,13 +739,18 @@ export function traceable<Func extends (...args: any[]) => any>(
                 : otel_context.with(capturedOtelContext, () => reader.read()));
               if (result.done) {
                 finished = true;
-                const processedOutputs = handleRunOutputs({
+                void handleRunOutputs({
                   runTree: currentRunTree,
                   rawOutputs: await handleChunks(chunks),
                   processOutputsFn,
-                });
-                await currentRunTree?.end(processedOutputs);
-                await handleEnd();
+                })
+                  .then(async (processedOutputs: Record<string, unknown>) => {
+                    await currentRunTree?.end(processedOutputs);
+                    await handleEnd();
+                  })
+                  .catch((e: unknown) => {
+                    console.error("Error occurred during handleEnd:", e);
+                  });
                 controller.close();
                 break;
               }
@@ -762,13 +767,18 @@ export function traceable<Func extends (...args: any[]) => any>(
           },
           async cancel(reason) {
             if (!finished) await currentRunTree?.end(undefined, "Cancelled");
-            const processedOutputs = handleRunOutputs({
+            void handleRunOutputs({
               runTree: currentRunTree,
               rawOutputs: await handleChunks(chunks),
               processOutputsFn,
-            });
-            await currentRunTree?.end(processedOutputs);
-            await handleEnd();
+            })
+              .then(async (processedOutputs: Record<string, unknown>) => {
+                await currentRunTree?.end(processedOutputs);
+                await handleEnd();
+              })
+              .catch((e: unknown) => {
+                console.error("Error occurred during handleEnd:", e);
+              });
             return reader.cancel(reason);
           },
         });
@@ -809,13 +819,18 @@ export function traceable<Func extends (...args: any[]) => any>(
           throw e;
         } finally {
           if (!finished) await currentRunTree?.end(undefined, "Cancelled");
-          const processedOutputs = handleRunOutputs({
+          void handleRunOutputs({
             runTree: currentRunTree,
             rawOutputs: await handleChunks(chunks),
             processOutputsFn,
-          });
-          await currentRunTree?.end(processedOutputs);
-          await handleEnd();
+          })
+            .then(async (processedOutputs: Record<string, unknown>) => {
+              await currentRunTree?.end(processedOutputs);
+              await handleEnd();
+            })
+            .catch((e: unknown) => {
+              console.error("Error occurred during handleEnd:", e);
+            });
         }
       }
 
@@ -925,25 +940,26 @@ export function traceable<Func extends (...args: any[]) => any>(
               if (isGenerator(wrappedFunc) && isIteratorLike(rawOutput)) {
                 const chunks = gatherAll(rawOutput);
 
-                try {
-                  const processedOutputs = handleRunOutputs({
-                    runTree: currentRunTree,
-                    rawOutputs: await handleChunks(
-                      chunks.reduce<unknown[]>((memo, { value, done }) => {
-                        if (!done || typeof value !== "undefined") {
-                          memo.push(value);
-                        }
+                void handleRunOutputs({
+                  runTree: currentRunTree,
+                  rawOutputs: await handleChunks(
+                    chunks.reduce<unknown[]>((memo, { value, done }) => {
+                      if (!done || typeof value !== "undefined") {
+                        memo.push(value);
+                      }
 
-                        return memo;
-                      }, [])
-                    ),
-                    processOutputsFn,
+                      return memo;
+                    }, [])
+                  ),
+                  processOutputsFn,
+                })
+                  .then(async (processedOutputs: Record<string, unknown>) => {
+                    await currentRunTree?.end(processedOutputs);
+                    await handleEnd();
+                  })
+                  .catch((e: unknown) => {
+                    console.error("Error occurred during handleEnd:", e);
                   });
-                  await currentRunTree?.end(processedOutputs);
-                  await handleEnd();
-                } catch (e) {
-                  console.error("Error occurred during handleEnd:", e);
-                }
 
                 return (function* () {
                   for (const ret of chunks) {
@@ -954,13 +970,18 @@ export function traceable<Func extends (...args: any[]) => any>(
               }
 
               try {
-                const processedOutputs = handleRunOutputs({
+                void handleRunOutputs({
                   runTree: currentRunTree,
                   rawOutputs: rawOutput,
                   processOutputsFn,
-                });
-                await currentRunTree?.end(processedOutputs);
-                await handleEnd();
+                })
+                  .then(async (processedOutputs: Record<string, unknown>) => {
+                    await currentRunTree?.end(processedOutputs);
+                    await handleEnd();
+                  })
+                  .catch((e: unknown) => {
+                    console.error("Error occurred during handleEnd:", e);
+                  });
               } finally {
                 // eslint-disable-next-line no-unsafe-finally
                 return rawOutput;
