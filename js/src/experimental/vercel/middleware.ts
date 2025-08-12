@@ -7,7 +7,10 @@ import type {
 } from "@ai-sdk/provider";
 import type { RunTree, RunTreeConfig } from "../../run_trees.js";
 import { getCurrentRunTree, traceable } from "../../traceable.js";
-import { extractInputTokenDetails } from "../../utils/vercel.js";
+import {
+  extractInputTokenDetails,
+  extractOutputTokenDetails,
+} from "../../utils/vercel.js";
 
 export const populateToolCallsForTracing = (
   message: LanguageModelV2Message
@@ -88,6 +91,9 @@ const setUsageMetadataOnRunTree = (
     result.providerMetadata ?? {},
     result.usage?.cachedInputTokens
   );
+  const outputTokenDetails = extractOutputTokenDetails(
+    result.usage?.reasoningTokens
+  );
   runTree.extra = {
     ...runTree.extra,
     metadata: {
@@ -96,6 +102,9 @@ const setUsageMetadataOnRunTree = (
         ...langsmithUsage,
         input_token_details: {
           ...inputTokenDetails,
+        },
+        output_token_details: {
+          ...outputTokenDetails,
         },
       },
     },

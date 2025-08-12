@@ -1,5 +1,13 @@
 import { KVMap } from "../schemas.js";
 
+export function extractOutputTokenDetails(reasoningTokens?: number) {
+  const outputTokenDetails: Record<string, number> = {};
+  if (typeof reasoningTokens === "number") {
+    outputTokenDetails.reasoning = reasoningTokens;
+  }
+  return outputTokenDetails;
+}
+
 export function extractInputTokenDetails(
   providerMetadata: Record<string, unknown>,
   cachedTokenUsage?: number
