@@ -4,6 +4,7 @@ import {
   populateToolCallsForTracing,
 } from "./middleware.js";
 import { traceable } from "../../traceable.js";
+import { RunTreeConfig } from "../../run_trees.js";
 
 const _wrapTools = (tools?: Record<string, unknown>) => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -62,7 +63,7 @@ const _formatTracedInputs = (params: Record<string, any>) => {
 };
 
 /**
- * Wraps Vercel AI SDK functions with LangSmith tracing capabilities.
+ * Wraps Vercel AI SDK 5 functions with LangSmith tracing capabilities.
  *
  * @param methods - Object containing AI SDK methods to wrap
  * @param methods.wrapLanguageModel - AI SDK's wrapLanguageModel function
@@ -88,21 +89,24 @@ const wrapAISDK = <
   StreamObjectType extends (...args: any[]) => any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   GenerateObjectType extends (...args: any[]) => any
->({
-  wrapLanguageModel,
-  generateText,
-  streamText,
-  streamObject,
-  generateObject,
-}: {
-  wrapLanguageModel: WrapLanguageModelType;
-  generateText: GenerateTextType;
-  streamText: StreamTextType;
-  streamObject: StreamObjectType;
-  generateObject: GenerateObjectType;
-}) => {
+>(
+  {
+    wrapLanguageModel,
+    generateText,
+    streamText,
+    streamObject,
+    generateObject,
+  }: {
+    wrapLanguageModel: WrapLanguageModelType;
+    generateText: GenerateTextType;
+    streamText: StreamTextType;
+    streamObject: StreamObjectType;
+    generateObject: GenerateObjectType;
+  },
+  lsConfig?: Partial<Omit<RunTreeConfig, "inputs" | "outputs">>
+) => {
   /**
-   * Wrapped version of AI SDK's generateText with LangSmith tracing.
+   * Wrapped version of AI SDK 5's generateText with LangSmith tracing.
    *
    * This function has the same signature and behavior as the original generateText,
    * but adds automatic tracing to LangSmith for observability.
@@ -141,6 +145,11 @@ const wrapAISDK = <
       },
       {
         name: _getModelDisplayName(params.model),
+        ...lsConfig,
+        metadata: {
+          ai_sdk_method: "ai.generateText",
+          ...lsConfig?.metadata,
+        },
         processInputs: (inputs) => _formatTracedInputs(inputs),
         processOutputs: (outputs) => {
           if (outputs.outputs == null || typeof outputs.outputs !== "object") {
@@ -169,7 +178,7 @@ const wrapAISDK = <
   };
 
   /**
-   * Wrapped version of AI SDK's generateObject with LangSmith tracing.
+   * Wrapped version of AI SDK 5's generateObject with LangSmith tracing.
    *
    * This function has the same signature and behavior as the original generateObject,
    * but adds automatic tracing to LangSmith for observability.
@@ -189,9 +198,6 @@ const wrapAISDK = <
   const wrappedGenerateObject = async (
     params: Parameters<GenerateObjectType>[0]
   ) => {
-    if (typeof params.model === "string") {
-      throw new Error("Model must be a LanguageModelV2 instance");
-    }
     const traceableFunc = traceable(
       async (
         params: Parameters<GenerateObjectType>[0]
@@ -210,6 +216,11 @@ const wrapAISDK = <
       },
       {
         name: _getModelDisplayName(params.model),
+        ...lsConfig,
+        metadata: {
+          ai_sdk_method: "ai.generateObject",
+          ...lsConfig?.metadata,
+        },
         processInputs: (inputs) => _formatTracedInputs(inputs),
         processOutputs: (outputs) => {
           if (outputs.outputs == null || typeof outputs.outputs !== "object") {
@@ -225,7 +236,7 @@ const wrapAISDK = <
   };
 
   /**
-   * Wrapped version of AI SDK's streamText with LangSmith tracing.
+   * Wrapped version of AI SDK 5's streamText with LangSmith tracing.
    *
    * Must be called with `await`, but otherwise behaves the same as the
    * original streamText and adds adds automatic tracing to LangSmith
@@ -244,9 +255,6 @@ const wrapAISDK = <
    * @returns Promise resolving to the same result as streamText, with tracing applied
    */
   const wrappedStreamText = async (params: Parameters<StreamTextType>[0]) => {
-    if (typeof params.model === "string") {
-      throw new Error("Model must be a LanguageModelV2 instance");
-    }
     const traceableFunc = traceable(
       async (
         params: Parameters<StreamTextType>[0]
@@ -266,6 +274,11 @@ const wrapAISDK = <
       },
       {
         name: _getModelDisplayName(params.model),
+        ...lsConfig,
+        metadata: {
+          ai_sdk_method: "ai.streamText",
+          ...lsConfig?.metadata,
+        },
         processInputs: (inputs) => _formatTracedInputs(inputs),
       }
     ) as (params: Parameters<StreamTextType>[0]) => ReturnType<StreamTextType>;
@@ -273,7 +286,7 @@ const wrapAISDK = <
   };
 
   /**
-   * Wrapped version of AI SDK's streamObject with LangSmith tracing.
+   * Wrapped version of AI SDK 5's streamObject with LangSmith tracing.
    *
    * Must be called with `await`, but otherwise behaves the same as the
    * original streamObject and adds adds automatic tracing to LangSmith
@@ -294,9 +307,6 @@ const wrapAISDK = <
   const wrappedStreamObject = async (
     params: Parameters<StreamObjectType>[0]
   ) => {
-    if (typeof params.model === "string") {
-      throw new Error("Model must be a LanguageModelV2 instance");
-    }
     const traceableFunc = traceable(
       async (
         params: Parameters<StreamObjectType>[0]
@@ -315,6 +325,11 @@ const wrapAISDK = <
       },
       {
         name: _getModelDisplayName(params.model),
+        ...lsConfig,
+        metadata: {
+          ai_sdk_method: "ai.streamObject",
+          ...lsConfig?.metadata,
+        },
         processInputs: (inputs) => _formatTracedInputs(inputs),
       }
     ) as (

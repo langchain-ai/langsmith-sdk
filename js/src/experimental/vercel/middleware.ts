@@ -5,6 +5,7 @@ import type {
   LanguageModelV2CallOptions,
   LanguageModelV2Message,
 } from "@ai-sdk/provider";
+import type { RunTree, RunTreeConfig } from "../../run_trees.js";
 import { getCurrentRunTree, traceable } from "../../traceable.js";
 import { extractInputTokenDetails } from "../../utils/vercel.js";
 
@@ -18,7 +19,7 @@ export const populateToolCallsForTracing = (
     return formattedMessage;
   }
   if (Array.isArray(formattedMessage.content)) {
-    formattedMessage.tool_calls = formattedMessage.content
+    const toolCalls = formattedMessage.content
       .filter((block) => {
         return (
           block != null &&
@@ -39,6 +40,9 @@ export const populateToolCallsForTracing = (
           },
         };
       });
+    if (toolCalls.length > 0) {
+      formattedMessage.tool_calls = toolCalls;
+    }
   }
   return formattedMessage;
 };
@@ -57,7 +61,7 @@ const _formatTracedInputs = (params: Record<string, any>) => {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const _formatTracedOutputs = (outputs: Record<string, any>) => {
-  const { request, response, providerMetadata, ...rest } = outputs;
+  const { request, response, ...rest } = outputs;
   const formattedOutputs = { ...rest };
   if (formattedOutputs.role == null) {
     formattedOutputs.role = formattedOutputs.type ?? "assistant";
@@ -67,51 +71,66 @@ const _formatTracedOutputs = (outputs: Record<string, any>) => {
   );
 };
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const setUsageMetadataOnRunTree = (
+  result: Record<string, any>,
+  runTree: RunTree
+) => {
+  if (result.usage == null || typeof result.usage !== "object") {
+    return;
+  }
+  const langsmithUsage = {
+    input_tokens: result.usage?.inputTokens,
+    output_tokens: result.usage?.outputTokens,
+    total_tokens: result.usage?.totalTokens,
+  };
+  const inputTokenDetails = extractInputTokenDetails(
+    result.providerMetadata ?? {},
+    result.usage?.cachedInputTokens
+  );
+  runTree.extra = {
+    ...runTree.extra,
+    metadata: {
+      ...runTree.extra?.metadata,
+      usage_metadata: {
+        ...langsmithUsage,
+        input_token_details: {
+          ...inputTokenDetails,
+        },
+      },
+    },
+  };
+};
+
 /**
  * AI SDK middleware that wraps an AI SDK 5 model and adds LangSmith tracing.
  */
 export function LangSmithMiddleware(config?: {
   name: string;
   modelId?: string;
+  lsConfig?: Partial<Omit<RunTreeConfig, "inputs" | "outputs">>;
 }): LanguageModelV2Middleware {
-  const { name, modelId } = config ?? {};
+  const { name, modelId, lsConfig } = config ?? {};
 
   return {
     wrapGenerate: async ({ doGenerate, params }) => {
       const traceableFunc = traceable(
         async (_params: Record<string, any>) => {
           const result = await doGenerate();
-          const langsmithUsage = {
-            input_tokens: result.usage?.inputTokens,
-            output_tokens: result.usage?.outputTokens,
-            total_tokens: result.usage?.totalTokens,
-          };
-          const inputTokenDetails = extractInputTokenDetails(
-            result.providerMetadata ?? {},
-            result.usage?.cachedInputTokens
-          );
           const currentRunTree = getCurrentRunTree(true);
-          if (currentRunTree) {
-            currentRunTree.extra = {
-              ...currentRunTree.extra,
-              metadata: {
-                ...currentRunTree.extra?.metadata,
-                usage_metadata: {
-                  ...langsmithUsage,
-                  input_token_details: {
-                    ...inputTokenDetails,
-                  },
-                },
-              },
-            };
+          if (currentRunTree !== undefined) {
+            setUsageMetadataOnRunTree(result, currentRunTree);
           }
           return result;
         },
         {
+          ...lsConfig,
           name: name ?? "ai.doGenerate",
           run_type: "llm",
           metadata: {
             ls_model_name: modelId,
+            ai_sdk_method: "ai.doGenerate",
+            ...lsConfig?.metadata,
           },
           processInputs: (inputs) =>
             _formatTracedInputs(inputs as LanguageModelV2CallOptions),
@@ -123,12 +142,15 @@ export function LangSmithMiddleware(config?: {
       return traceableFunc(params);
     },
     wrapStream: async ({ doStream, params }) => {
-      const currentRunTree = getCurrentRunTree(true);
-      const runTree = currentRunTree?.createChild({
+      const parentRunTree = getCurrentRunTree(true);
+      const runTree = parentRunTree?.createChild({
+        ...lsConfig,
         name: name ?? "ai.doStream",
         run_type: "llm",
         metadata: {
           ls_model_name: modelId,
+          ai_sdk_method: "ai.doStream",
+          ...lsConfig?.metadata,
         },
         inputs: _formatTracedInputs(params),
       });
@@ -138,24 +160,64 @@ export function LangSmithMiddleware(config?: {
         const { stream, ...rest } = await doStream();
         const chunks: LanguageModelV2StreamPart[] = [];
         const transformStream = new TransformStream({
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          async transform(chunk: LanguageModelV2StreamPart, controller: any) {
+          async transform(chunk: LanguageModelV2StreamPart, controller) {
             chunks.push(chunk);
             controller.enqueue(chunk);
           },
 
           async flush() {
             try {
-              // Log the final aggregated result when stream completes
-              const generatedText = chunks
-                .filter((chunk) => chunk.type === "text-delta")
-                .map((chunk) => chunk.delta)
-                .join("");
-              console.log(chunks);
-              const output: unknown = generatedText
-                ? [{ type: "text", text: generatedText }]
-                : [];
-              await runTree?.end({ outputs: output });
+              const output = chunks.reduce(
+                (aggregated, chunk) => {
+                  if (chunk.type === "text-delta") {
+                    if (chunk.delta == null) {
+                      return aggregated;
+                    }
+                    return {
+                      ...aggregated,
+                      text: aggregated.text + chunk.delta,
+                    };
+                  } else if (chunk.type === "tool-call") {
+                    const matchingToolCall = aggregated.tool_calls.find(
+                      (call) => call.id === chunk.toolCallId
+                    );
+                    if (matchingToolCall != null) {
+                      return aggregated;
+                    }
+                    return {
+                      ...aggregated,
+                      tool_calls: [
+                        ...aggregated.tool_calls,
+                        {
+                          id: chunk.toolCallId,
+                          type: "function",
+                          function: {
+                            name: chunk.toolName,
+                            arguments: chunk.input,
+                          },
+                        },
+                      ],
+                    };
+                  } else if (chunk.type === "finish") {
+                    if (runTree != null) {
+                      setUsageMetadataOnRunTree(chunk, runTree);
+                    }
+                    return {
+                      ...aggregated,
+                      providerMetadata: chunk.providerMetadata,
+                      finishReason: chunk.finishReason,
+                    };
+                  } else {
+                    return aggregated;
+                  }
+                },
+                {
+                  text: "",
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  tool_calls: [] as Record<string, any>[],
+                }
+              );
+              await runTree?.end(_formatTracedOutputs(output));
             } catch (error: any) {
               await runTree?.end(undefined, error.message ?? String(error));
               throw error;

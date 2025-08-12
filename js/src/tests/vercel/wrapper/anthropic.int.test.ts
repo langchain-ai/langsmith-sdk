@@ -1,5 +1,5 @@
 // import { generateText, stepCountIs, tool, wrapLanguageModel } from "ai";
-import { openai } from "@ai-sdk/openai";
+import { anthropic } from "@ai-sdk/anthropic";
 import * as ai from "ai";
 import z from "zod";
 
@@ -12,7 +12,7 @@ const { generateText, streamText, generateObject, streamObject } =
 
 test("wrap generateText", async () => {
   const result = await generateText({
-    model: openai("gpt-4.1-nano"),
+    model: anthropic("claude-3-5-haiku-latest"),
     messages: [
       {
         role: "user",
@@ -37,7 +37,7 @@ test("wrap generateText", async () => {
 
 test("wrap streamText", async () => {
   const result = await streamText({
-    model: openai("gpt-4.1-nano"),
+    model: anthropic("claude-3-5-haiku-latest"),
     messages: [
       {
         role: "user",
@@ -69,7 +69,7 @@ test("wrap generateObject", async () => {
     color: z.string(),
   });
   const result = await generateObject({
-    model: openai("gpt-4.1-nano"),
+    model: anthropic("claude-3-5-haiku-latest"),
     messages: [
       {
         role: "user",
@@ -89,7 +89,7 @@ test("wrap streamObject", async () => {
     color: z.string(),
   });
   const result = await streamObject({
-    model: openai("gpt-4.1-nano"),
+    model: anthropic("claude-3-5-haiku-latest"),
     messages: [
       {
         role: "user",
