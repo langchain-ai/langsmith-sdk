@@ -51,7 +51,7 @@ export const populateToolCallsForTracing = (
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const _formatTracedInputs = (params: Record<string, any>) => {
+const _formatTracedInputs = (params: LanguageModelV2CallOptions) => {
   const { prompt, ...rest } = params;
   if (prompt == null) {
     return params;
@@ -124,7 +124,7 @@ export function LangSmithMiddleware(config?: {
   return {
     wrapGenerate: async ({ doGenerate, params }) => {
       const traceableFunc = traceable(
-        async (_params: Record<string, any>) => {
+        async (_params: typeof params) => {
           const result = await doGenerate();
           const currentRunTree = getCurrentRunTree(true);
           if (currentRunTree !== undefined) {
