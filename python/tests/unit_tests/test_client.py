@@ -3031,16 +3031,6 @@ def test__dataset_examples_path():
         assert expected == actual
 
 
-def test__construct_url():
-    api_url = "https://foobar.com/api"
-    pathname = "v1/platform/datasets/123/examples"
-    expected = "https://foobar.com/api/v1/platform/datasets/123/examples"
-    for suffix in ("", "/"):
-        for prefix in ("", "/", "https://foobar.com/api/"):
-            actual = _construct_url(api_url + suffix, prefix + pathname)
-            assert actual == expected
-
-
 @mock.patch("langsmith.client.requests.Session")
 def test_list_shared_examples_pagination(mock_session_cls: mock.Mock) -> None:
     """Test list_shared_examples handles pagination correctly."""
@@ -3055,14 +3045,14 @@ def test_list_shared_examples_pagination(mock_session_cls: mock.Mock) -> None:
             return response
 
         # First request will return 100 examples, second request 50 examples
-        if kwargs.get('params', {}).get('offset', 0) == 0:
+        if kwargs.get("params", {}).get("offset", 0) == 0:
             examples = [
                 {
                     "id": str(uuid.uuid4()),
                     "created_at": _CREATED_AT.isoformat(),
                     "inputs": {"text": f"input_{i}"},
                     "outputs": {"result": f"output_{i}"},
-                    "dataset_id": str(uuid.uuid4())
+                    "dataset_id": str(uuid.uuid4()),
                 }
                 for i in range(100)
             ]
@@ -3073,7 +3063,7 @@ def test_list_shared_examples_pagination(mock_session_cls: mock.Mock) -> None:
                     "created_at": _CREATED_AT.isoformat(),
                     "inputs": {"text": f"input_{i}"},
                     "outputs": {"result": f"output_{i}"},
-                    "dataset_id": str(uuid.uuid4())
+                    "dataset_id": str(uuid.uuid4()),
                 }
                 for i in range(100, 150)
             ]
@@ -3084,7 +3074,9 @@ def test_list_shared_examples_pagination(mock_session_cls: mock.Mock) -> None:
     mock_session.request.side_effect = mock_request
     mock_session_cls.return_value = mock_session
 
-    client = Client(api_url="http://localhost:1984", api_key="fake-key", session=mock_session)
+    client = Client(
+        api_url="http://localhost:1984", api_key="fake-key", session=mock_session
+    )
     examples = list(client.list_shared_examples(str(uuid.uuid4())))
 
     assert len(examples) == 150  # Should get all examples
@@ -3230,3 +3222,110 @@ def test__convert_stored_attachments_to_attachments_dict(mock_get: mock.Mock):
     mock_get.assert_called_once_with(
         "https://api.langsmith.com/download/valid", stream=True
     )
+
+
+@pytest.mark.parametrize(
+    "api_url,pathname,expected",
+    [
+        # Test absolute URLs in pathname
+        (
+            "https://api.smith.langchain.com",
+            "https://example.com/path",
+            "https://example.com/path",
+        ),
+        # Test empty pathname
+        ("https://api.smith.langchain.com", "", "https://api.smith.langchain.com"),
+        # Test regular paths
+        (
+            "https://api.smith.langchain.com",
+            "/v1/stuff",
+            "https://api.smith.langchain.com/v1/stuff",
+        ),
+        (
+            "https://api.smith.langchain.com/",
+            "/v1/stuff",
+            "https://api.smith.langchain.com/v1/stuff",
+        ),
+        # Test with 'api' in pathname
+        (
+            "https://api.smith.langchain.com",
+            "/api/v1/stuff",
+            "https://api.smith.langchain.com/api/v1/stuff",
+        ),
+        # Standard API URL: https://api.smith.langchain.com
+        (
+            "https://api.smith.langchain.com",
+            "/v1/stuff",
+            "https://api.smith.langchain.com/v1/stuff",
+        ),
+        (
+            "https://api.smith.langchain.com",
+            "/api/v1/stuff",
+            "https://api.smith.langchain.com/api/v1/stuff",
+        ),
+        # API URL with /api: https://api.smith.langchain.com/api
+        (
+            "https://api.smith.langchain.com/api",
+            "/v1/stuff",
+            "https://api.smith.langchain.com/api/v1/stuff",
+        ),
+        (
+            "https://api.smith.langchain.com/api",
+            "/api/v1/stuff",
+            "https://api.smith.langchain.com/api/v1/stuff",
+        ),
+        # API URL with /api/v1: https://api.smith.langchain.com/api/v1
+        (
+            "https://api.smith.langchain.com/api/v1",
+            "/runs",
+            "https://api.smith.langchain.com/api/v1/runs",
+        ),
+        (
+            "https://api.smith.langchain.com/api/v1",
+            "/api/runs",
+            "https://api.smith.langchain.com/api/runs",
+        ),
+        # Self-hosted API URL with /api: https://self-hosted.smith.langchain.com/api
+        (
+            "https://self-hosted.smith.langchain.com/api",
+            "/v1/stuff",
+            "https://self-hosted.smith.langchain.com/api/v1/stuff",
+        ),
+        (
+            "https://self-hosted.smith.langchain.com/api",
+            "/api/v1/stuff",
+            "https://self-hosted.smith.langchain.com/api/v1/stuff",
+        ),
+        # Self-hosted API URL with /api/v1: https://self-hosted.smith.langchain.com/api/v1
+        (
+            "https://self-hosted.smith.langchain.com/api/v1",
+            "/runs",
+            "https://self-hosted.smith.langchain.com/api/v1/runs",
+        ),
+        (
+            "https://self-hosted.smith.langchain.com/api/v1",
+            "/api/runs",
+            "https://self-hosted.smith.langchain.com/api/runs",
+        ),
+    ],
+)
+def test_construct_url(api_url, pathname, expected):
+    """Test _construct_url with various combinations of API URLs and pathnames."""
+    result = _construct_url(api_url, pathname)
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    "api_url,pathname,error_match",
+    [
+        (
+            "",
+            "/some/path",
+            "Must specify non-empty api_url or pathname must be a full url.",
+        ),
+    ],
+)
+def test_construct_url_errors(api_url, pathname, error_match):
+    """Test error cases for _construct_url."""
+    with pytest.raises(ValueError, match=error_match):
+        _construct_url(api_url, pathname)
