@@ -202,6 +202,8 @@ describe("Client", () => {
         LANGCHAIN_OTHER_NON_SENSITIVE_METADATA: "test_some_metadata",
       });
       expect(langchainEnvVars).not.toHaveProperty("SOME_RANDOM_THING");
+
+      delete langchainMetadataEnvVars.LANGSMITH_TRACING;
       expect(langchainMetadataEnvVars).toEqual({
         revision_id: "test_revision_id",
         LANGCHAIN_OTHER_NON_SENSITIVE_METADATA: "test_some_metadata",

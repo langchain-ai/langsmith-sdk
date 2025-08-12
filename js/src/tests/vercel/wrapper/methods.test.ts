@@ -264,12 +264,24 @@ describe("wrapAISDK", () => {
       // Verify HTTP requests were made for streamText
       expect(mockHttpRequests.length).toBe(4); // 2 createRun + 2 updateRun
 
-      const generateTextRun = mockHttpRequests.find(
+      const generateTextPostRun = mockHttpRequests.find(
         (req) =>
           req.type === "createRun" &&
           req.body.extra.metadata.ai_sdk_method === "ai.streamText"
       );
-      expect(generateTextRun).toBeDefined();
+      expect(generateTextPostRun).toBeDefined();
+      const generateTextPatchRun = mockHttpRequests.find(
+        (req) =>
+          req.type === "updateRun" &&
+          req.body.extra.metadata.ai_sdk_method === "ai.streamText"
+      );
+      expect(generateTextPatchRun).toBeDefined();
+      expect(generateTextPatchRun.body.outputs.content).toMatchObject([
+        {
+          type: "text",
+          text: "Hello world",
+        },
+      ]);
     });
 
     it("should handle streamText errors properly", async () => {
@@ -446,7 +458,7 @@ describe("wrapAISDK", () => {
         }),
       });
 
-      await wrappedMethods.streamObject({
+      const { partialObjectStream } = await wrappedMethods.streamObject({
         model: mockLangModel,
         prompt: "Generate an object",
         schema: z.object({
@@ -454,8 +466,18 @@ describe("wrapAISDK", () => {
         }),
       });
 
-      // Verify HTTP requests were made for streamObject tracing
-      expect(mockHttpRequests.length).toBeGreaterThan(0);
+      const chunks: unknown[] = [];
+      for await (const partialObject of partialObjectStream) {
+        chunks.push(partialObject);
+      }
+      expect(chunks.length).toEqual(1);
+      expect(chunks.at(-1)).toMatchObject({
+        name: "John",
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      expect(mockHttpRequests.length).toEqual(4);
 
       const streamObjectRun = mockHttpRequests.find(
         (req) =>
@@ -463,6 +485,15 @@ describe("wrapAISDK", () => {
           req.body.extra.metadata.ai_sdk_method === "ai.streamObject"
       );
       expect(streamObjectRun).toBeDefined();
+      const streamObjectPatchRun = mockHttpRequests.find(
+        (req) =>
+          req.type === "updateRun" &&
+          req.body.extra.metadata.ai_sdk_method === "ai.streamObject"
+      );
+      expect(streamObjectPatchRun).toBeDefined();
+      expect(streamObjectPatchRun.body.outputs).toMatchObject({
+        name: "John",
+      });
     });
 
     it("should handle streamObject errors properly", async () => {

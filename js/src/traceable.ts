@@ -148,11 +148,11 @@ const handleRunInputs = (
 
 const _extractUsage = (runData: {
   runTree: RunTree;
-  outputs: KVMap;
+  outputs?: KVMap;
 }): ExtractedUsageMetadata | undefined => {
   const usageMetadataFromMetadata = (runData.runTree.extra.metadata ?? {})
     .usage_metadata;
-  return runData.outputs.usage_metadata ?? usageMetadataFromMetadata;
+  return runData.outputs?.usage_metadata ?? usageMetadataFromMetadata;
 };
 
 function validateExtractedUsageMetadata(
@@ -181,13 +181,62 @@ function validateExtractedUsageMetadata(
   return data as ExtractedUsageMetadata;
 }
 
+async function handleEnd(params: {
+  runTree?: RunTree;
+  on_end?: (runTree: RunTree) => void;
+  postRunPromise?: Promise<void>;
+}) {
+  const { runTree, on_end, postRunPromise } = params;
+  const onEnd = on_end;
+  if (onEnd) {
+    if (!runTree) {
+      console.warn("Can not call 'on_end' if currentRunTree is undefined");
+    } else {
+      onEnd(runTree);
+    }
+  }
+  await postRunPromise;
+  await runTree?.patchRun();
+}
+
+const _populateUsageMetadata = (processedOutputs: KVMap, runTree?: RunTree) => {
+  if (runTree !== undefined) {
+    let usageMetadata: ExtractedUsageMetadata | undefined;
+    try {
+      usageMetadata = _extractUsage({ runTree, outputs: processedOutputs });
+    } catch (e) {
+      console.error("Error occurred while extracting usage metadata:", e);
+    }
+    if (usageMetadata !== undefined) {
+      runTree.extra.metadata = {
+        ...runTree.extra.metadata,
+        usage_metadata: validateExtractedUsageMetadata(usageMetadata),
+      };
+      processedOutputs.usage_metadata = usageMetadata;
+    }
+  }
+};
+
+function isAsyncFn(
+  fn: unknown
+): fn is (...args: unknown[]) => Promise<unknown> {
+  return (
+    fn != null &&
+    typeof fn === "function" &&
+    fn.constructor.name === "AsyncFunction"
+  );
+}
+
 // Note: This mutates the run tree
-function handleRunOutputs(params: {
+async function handleRunOutputs(params: {
   runTree?: RunTree;
   rawOutputs: unknown;
-  processOutputsFn: (outputs: Readonly<KVMap>) => KVMap;
-}) {
-  const { runTree, rawOutputs, processOutputsFn } = params;
+  processOutputsFn: (outputs: Readonly<KVMap>) => KVMap | Promise<KVMap>;
+  on_end?: (runTree: RunTree) => void;
+  postRunPromise?: Promise<void>;
+}): Promise<void> {
+  const { runTree, rawOutputs, processOutputsFn, on_end, postRunPromise } =
+    params;
   let outputs: KVMap;
 
   if (isKVMap(rawOutputs)) {
@@ -198,28 +247,36 @@ function handleRunOutputs(params: {
 
   try {
     outputs = processOutputsFn(outputs);
+    // TODO: Investigate making this behavior for all returned promises
+    // on next minor bump.
+    if (isAsyncFn(processOutputsFn)) {
+      void outputs
+        .then(async (processedOutputs: KVMap) => {
+          _populateUsageMetadata(processedOutputs, runTree);
+          await runTree?.end(processedOutputs);
+        })
+        .catch(async (e: unknown) => {
+          console.error(
+            "Error occurred during processOutputs. Sending unprocessed outputs:",
+            e
+          );
+          await runTree?.end(outputs);
+        })
+        .finally(async () => {
+          await handleEnd({ runTree, postRunPromise, on_end });
+        });
+      return;
+    }
   } catch (e) {
     console.error(
       "Error occurred during processOutputs. Sending unprocessed outputs:",
       e
     );
   }
-  if (runTree !== undefined) {
-    let usageMetadata: ExtractedUsageMetadata | undefined;
-    try {
-      usageMetadata = _extractUsage({ runTree, outputs });
-    } catch (e) {
-      console.error("Error occurred while extracting usage metadata:", e);
-    }
-    if (usageMetadata !== undefined) {
-      runTree.extra.metadata = {
-        ...runTree.extra.metadata,
-        usage_metadata: validateExtractedUsageMetadata(usageMetadata),
-      };
-      outputs.usage_metadata = usageMetadata;
-    }
-  }
-  return outputs;
+  _populateUsageMetadata(outputs, runTree);
+  await runTree?.end(outputs);
+  await handleEnd({ runTree, postRunPromise, on_end });
+  return;
 }
 
 const handleRunAttachments = (
@@ -505,7 +562,7 @@ export type TraceableConfig<Func extends (...args: any[]) => any> = Partial<
    * @param outputs Key-value map of the function outputs
    * @returns Transformed key-value map
    */
-  processOutputs?: (outputs: Readonly<KVMap>) => KVMap;
+  processOutputs?: (outputs: Readonly<KVMap>) => KVMap | Promise<KVMap>;
 };
 
 /**
@@ -739,13 +796,13 @@ export function traceable<Func extends (...args: any[]) => any>(
                 : otel_context.with(capturedOtelContext, () => reader.read()));
               if (result.done) {
                 finished = true;
-                const processedOutputs = handleRunOutputs({
+                await handleRunOutputs({
                   runTree: currentRunTree,
                   rawOutputs: await handleChunks(chunks),
                   processOutputsFn,
+                  on_end: config?.on_end,
+                  postRunPromise,
                 });
-                await currentRunTree?.end(processedOutputs);
-                await handleEnd();
                 controller.close();
                 break;
               }
@@ -762,13 +819,13 @@ export function traceable<Func extends (...args: any[]) => any>(
           },
           async cancel(reason) {
             if (!finished) await currentRunTree?.end(undefined, "Cancelled");
-            const processedOutputs = handleRunOutputs({
+            await handleRunOutputs({
               runTree: currentRunTree,
               rawOutputs: await handleChunks(chunks),
               processOutputsFn,
+              on_end: config?.on_end,
+              postRunPromise,
             });
-            await currentRunTree?.end(processedOutputs);
-            await handleEnd();
             return reader.cancel(reason);
           },
         });
@@ -809,13 +866,13 @@ export function traceable<Func extends (...args: any[]) => any>(
           throw e;
         } finally {
           if (!finished) await currentRunTree?.end(undefined, "Cancelled");
-          const processedOutputs = handleRunOutputs({
+          await handleRunOutputs({
             runTree: currentRunTree,
             rawOutputs: await handleChunks(chunks),
             processOutputsFn,
+            on_end: config?.on_end,
+            postRunPromise,
           });
-          await currentRunTree?.end(processedOutputs);
-          await handleEnd();
         }
       }
 
@@ -830,21 +887,6 @@ export function traceable<Func extends (...args: any[]) => any>(
         const wrappedIterator = wrapAsyncIteratorForTracing(iterator, snapshot);
         iterable[Symbol.asyncIterator] = () => wrappedIterator;
         return iterable;
-      }
-
-      async function handleEnd() {
-        const onEnd = config?.on_end;
-        if (onEnd) {
-          if (!currentRunTree) {
-            console.warn(
-              "Can not call 'on_end' if currentRunTree is undefined"
-            );
-          } else {
-            onEnd(currentRunTree);
-          }
-        }
-        await postRunPromise;
-        await currentRunTree?.patchRun();
       }
 
       function gatherAll(iterator: Iterator<unknown>) {
@@ -926,7 +968,7 @@ export function traceable<Func extends (...args: any[]) => any>(
                 const chunks = gatherAll(rawOutput);
 
                 try {
-                  const processedOutputs = handleRunOutputs({
+                  await handleRunOutputs({
                     runTree: currentRunTree,
                     rawOutputs: await handleChunks(
                       chunks.reduce<unknown[]>((memo, { value, done }) => {
@@ -938,11 +980,14 @@ export function traceable<Func extends (...args: any[]) => any>(
                       }, [])
                     ),
                     processOutputsFn,
+                    on_end: config?.on_end,
+                    postRunPromise,
                   });
-                  await currentRunTree?.end(processedOutputs);
-                  await handleEnd();
                 } catch (e) {
-                  console.error("Error occurred during handleEnd:", e);
+                  console.error(
+                    "[LANGSMITH]: Error occurred while handling run outputs:",
+                    e
+                  );
                 }
 
                 return (function* () {
@@ -954,13 +999,13 @@ export function traceable<Func extends (...args: any[]) => any>(
               }
 
               try {
-                const processedOutputs = handleRunOutputs({
+                await handleRunOutputs({
                   runTree: currentRunTree,
                   rawOutputs: rawOutput,
                   processOutputsFn,
+                  on_end: config?.on_end,
+                  postRunPromise,
                 });
-                await currentRunTree?.end(processedOutputs);
-                await handleEnd();
               } finally {
                 // eslint-disable-next-line no-unsafe-finally
                 return rawOutput;
@@ -968,7 +1013,11 @@ export function traceable<Func extends (...args: any[]) => any>(
             },
             async (error: unknown) => {
               await currentRunTree?.end(undefined, String(error));
-              await handleEnd();
+              await handleEnd({
+                runTree: currentRunTree,
+                postRunPromise,
+                on_end: config?.on_end,
+              });
               throw error;
             }
           )
