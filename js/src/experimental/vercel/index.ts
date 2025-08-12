@@ -1,40 +1,9 @@
 /* eslint-disable import/no-extraneous-dependencies */
-import { LangSmithMiddleware } from "./middleware.js";
+import {
+  LangSmithMiddleware,
+  populateToolCallsForTracing,
+} from "./middleware.js";
 import { traceable } from "../../traceable.js";
-
-const _formatToolsForTracing = (tools?: Record<string, unknown>) => {
-  let formattedTools: Record<string, unknown> | undefined;
-  try {
-    if (tools) {
-      formattedTools = {};
-      for (const [key, tool] of Object.entries(tools)) {
-        if (tool == null || typeof tool !== "object") {
-          continue;
-        }
-        const castTool = tool as any;
-        formattedTools[key] = {
-          description: castTool.description,
-          inputSchema: castTool.inputSchema,
-        };
-        if (
-          formattedTools[key] != null &&
-          typeof formattedTools[key] === "object" &&
-          "inputSchema" in formattedTools[key] &&
-          formattedTools[key].inputSchema != null &&
-          typeof formattedTools[key].inputSchema === "object" &&
-          "toJSONSchema" in formattedTools[key].inputSchema &&
-          typeof formattedTools[key].inputSchema.toJSONSchema === "function"
-        ) {
-          formattedTools[key].inputSchema =
-            formattedTools[key].inputSchema.toJSONSchema();
-        }
-      }
-    }
-  } catch (error) {
-    console.error("[LANGSMITH]: Error formatting tools for tracing", error);
-  }
-  return formattedTools;
-};
 
 const _wrapTools = (tools?: Record<string, unknown>) => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -79,6 +48,17 @@ const _getModelId = (model: string | Record<string, unknown>) => {
     return model;
   }
   return typeof model.modelId === "string" ? model.modelId : undefined;
+};
+
+const _formatTracedInputs = (params: Record<string, any>) => {
+  const { prompt, messages, model, tools, ...rest } = params;
+  if (Array.isArray(prompt)) {
+    return { ...rest, messages: prompt.map(populateToolCallsForTracing) };
+  } else if (Array.isArray(messages)) {
+    return { ...rest, messages: messages.map(populateToolCallsForTracing) };
+  } else {
+    return { ...rest, prompt, messages };
+  }
 };
 
 /**
@@ -127,6 +107,14 @@ const wrapAISDK = <
    * This function has the same signature and behavior as the original generateText,
    * but adds automatic tracing to LangSmith for observability.
    *
+   * ```ts
+   * import * as ai from "ai";
+   * import { wrapAISDK } from "langsmith/experimental/vercel";
+   *
+   * const { generateText } = wrapAISDK(ai);
+   * const { text } = await generateText(...);
+   * ```
+   *
    * @see {@link https://sdk.vercel.ai/docs/ai-sdk-core/generating-text} Original generateText documentation
    * @param params - Same parameters as the original generateText function
    * @returns Promise resolving to the same result as generateText, with tracing applied
@@ -153,8 +141,25 @@ const wrapAISDK = <
       },
       {
         name: _getModelDisplayName(params.model),
-        processInputs: (inputs) => {
-          return { ...inputs, tools: _formatToolsForTracing(inputs.tools) };
+        processInputs: (inputs) => _formatTracedInputs(inputs),
+        processOutputs: (outputs) => {
+          if (outputs.outputs == null || typeof outputs.outputs !== "object") {
+            return outputs;
+          }
+          const { steps } = outputs.outputs;
+          if (Array.isArray(steps)) {
+            const lastStep = steps.at(-1);
+            if (lastStep == null || typeof lastStep !== "object") {
+              return outputs;
+            }
+            const { content } = lastStep;
+            return populateToolCallsForTracing({
+              content,
+              role: "assistant",
+            });
+          } else {
+            return outputs;
+          }
         },
       }
     ) as (
@@ -165,6 +170,17 @@ const wrapAISDK = <
 
   /**
    * Wrapped version of AI SDK's generateObject with LangSmith tracing.
+   *
+   * This function has the same signature and behavior as the original generateObject,
+   * but adds automatic tracing to LangSmith for observability.
+   *
+   * ```ts
+   * import * as ai from "ai";
+   * import { wrapAISDK } from "langsmith/experimental/vercel";
+   *
+   * const { generateObject } = wrapAISDK(ai);
+   * const { object } = await generateObject(...);
+   * ```
    *
    * @see {@link https://sdk.vercel.ai/docs/ai-sdk-core/generating-structured-data} Original generateObject documentation
    * @param params - Same parameters as the original generateObject function
@@ -194,6 +210,13 @@ const wrapAISDK = <
       },
       {
         name: _getModelDisplayName(params.model),
+        processInputs: (inputs) => _formatTracedInputs(inputs),
+        processOutputs: (outputs) => {
+          if (outputs.outputs == null || typeof outputs.outputs !== "object") {
+            return outputs;
+          }
+          return outputs.outputs.object ?? outputs;
+        },
       }
     ) as (
       params: Parameters<GenerateObjectType>[0]
@@ -203,6 +226,18 @@ const wrapAISDK = <
 
   /**
    * Wrapped version of AI SDK's streamText with LangSmith tracing.
+   *
+   * Must be called with `await`, but otherwise behaves the same as the
+   * original streamText and adds adds automatic tracing to LangSmith
+   * for observability.
+   *
+   * ```ts
+   * import * as ai from "ai";
+   * import { wrapAISDK } from "langsmith/experimental/vercel";
+   *
+   * const { streamText } = wrapAISDK(ai);
+   * const { textStream } = await streamText(...);
+   * ```
    *
    * @see {@link https://sdk.vercel.ai/docs/ai-sdk-core/generating-text} Original streamText documentation
    * @param params - Same parameters as the original streamText function
@@ -231,18 +266,26 @@ const wrapAISDK = <
       },
       {
         name: _getModelDisplayName(params.model),
-        processInputs: (inputs) => {
-          return { ...inputs, tools: _formatToolsForTracing(inputs.tools) };
-        },
+        processInputs: (inputs) => _formatTracedInputs(inputs),
       }
-    ) as (
-      params: Parameters<StreamTextType>[0]
-    ) => Promise<ReturnType<StreamTextType>>;
+    ) as (params: Parameters<StreamTextType>[0]) => ReturnType<StreamTextType>;
     return traceableFunc(params);
   };
 
   /**
    * Wrapped version of AI SDK's streamObject with LangSmith tracing.
+   *
+   * Must be called with `await`, but otherwise behaves the same as the
+   * original streamObject and adds adds automatic tracing to LangSmith
+   * for observability.
+   *
+   * ```ts
+   * import * as ai from "ai";
+   * import { wrapAISDK } from "langsmith/experimental/vercel";
+   *
+   * const { streamObject } = wrapAISDK(ai);
+   * const { partialObjectStream } = await streamObject(...);
+   * ```
    *
    * @see {@link https://sdk.vercel.ai/docs/ai-sdk-core/generating-structured-data} Original streamObject documentation
    * @param params - Same parameters as the original streamObject function
@@ -272,10 +315,11 @@ const wrapAISDK = <
       },
       {
         name: _getModelDisplayName(params.model),
+        processInputs: (inputs) => _formatTracedInputs(inputs),
       }
     ) as (
       params: Parameters<StreamObjectType>[0]
-    ) => Promise<ReturnType<StreamObjectType>>;
+    ) => ReturnType<StreamObjectType>;
     return traceableFunc(params);
   };
 

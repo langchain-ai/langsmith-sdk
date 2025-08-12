@@ -10,14 +10,13 @@ const { tool, stepCountIs } = ai;
 const { generateText, streamText, generateObject, streamObject } =
   wrapAISDK(ai);
 
-test.only("wrap generateText", async () => {
+test("wrap generateText", async () => {
   const result = await generateText({
     model: openai("gpt-4.1-nano"),
     messages: [
       {
         role: "user",
-        content:
-          "What are my orders and where are they? My user ID is 123. Always use tools.",
+        content: "What are my orders? My user ID is 123. Always use tools.",
       },
     ],
     tools: {
@@ -35,14 +34,13 @@ test.only("wrap generateText", async () => {
   expect(result.providerMetadata).toBeDefined();
 });
 
-test("wrap streamText", async () => {
+test.only("wrap streamText", async () => {
   const result = await streamText({
     model: openai("gpt-4.1-nano"),
     messages: [
       {
         role: "user",
-        content:
-          "What are my orders and where are they? My user ID is 123. Always use tools.",
+        content: "What are my orders? My user ID is 123. Always use tools.",
       },
     ],
     tools: {
