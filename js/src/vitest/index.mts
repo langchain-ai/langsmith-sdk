@@ -1,16 +1,4 @@
 /* eslint-disable import/no-extraneous-dependencies */
-/* eslint-disable @typescript-eslint/no-namespace */
-
-import {
-  expect as vitestExpect,
-  test as vitestTest,
-  it as vitestIt,
-  describe as vitestDescribe,
-  beforeAll as vitestBeforeAll,
-  afterAll as vitestAfterAll,
-  beforeEach as vitestBeforeEach,
-  afterEach as vitestAfterEach,
-} from "vitest";
 import {
   toBeRelativeCloseTo,
   toBeAbsoluteCloseTo,
@@ -18,6 +6,20 @@ import {
 } from "../utils/jestlike/matchers.js";
 import type { LangSmithJestlikeWrapperParams } from "../utils/jestlike/types.js";
 import { wrapVitest } from "./utils/wrapper.js";
+import { importVitestModule } from "./utils/esm.mjs";
+
+const vitestModule = await importVitestModule();
+
+const {
+  expect: vitestExpect,
+  test: vitestTest,
+  it: vitestIt,
+  describe: vitestDescribe,
+  beforeAll: vitestBeforeAll,
+  afterAll: vitestAfterAll,
+  beforeEach: vitestBeforeEach,
+  afterEach: vitestAfterEach,
+} = vitestModule;
 
 vitestExpect.extend({
   toBeRelativeCloseTo,
