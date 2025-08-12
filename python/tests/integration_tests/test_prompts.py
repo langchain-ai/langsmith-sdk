@@ -479,6 +479,7 @@ def test_list_prompts_filter(
 
     langsmith_client.delete_prompt(prompt_name)
 
+
 def test_update_prompt_archive(
     langsmith_client: Client, prompt_template_1: ChatPromptTemplate
 ):

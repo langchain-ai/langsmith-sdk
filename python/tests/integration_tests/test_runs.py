@@ -795,8 +795,9 @@ async def test_usage_metadata_async(langchain_client: Client):
         )
 
     with pytest.raises(ValueError, match="Unexpected keys in usage metadata:"):
-        async for _ in my_func4("foo"):
-            pass
+        with tracing_context(enabled=True):
+            async for _ in my_func4("foo"):
+                pass
 
 
 # TODO: Don't skip this test after langchain-ai/langchain#31493 is merged
