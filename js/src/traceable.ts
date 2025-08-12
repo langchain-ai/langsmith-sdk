@@ -217,7 +217,9 @@ const _populateUsageMetadata = (processedOutputs: KVMap, runTree?: RunTree) => {
   }
 };
 
-function isAsync(fn: unknown): fn is (...args: unknown[]) => Promise<unknown> {
+function isAsyncFn(
+  fn: unknown
+): fn is (...args: unknown[]) => Promise<unknown> {
   return (
     fn != null &&
     typeof fn === "function" &&
@@ -245,7 +247,9 @@ async function handleRunOutputs(params: {
 
   try {
     outputs = processOutputsFn(outputs);
-    if (isAsync(processOutputsFn)) {
+    // TODO: Investigate making this behavior for all returned promises
+    // on next minor bump.
+    if (isAsyncFn(processOutputsFn)) {
       void outputs
         .then(async (processedOutputs: KVMap) => {
           _populateUsageMetadata(processedOutputs, runTree);
