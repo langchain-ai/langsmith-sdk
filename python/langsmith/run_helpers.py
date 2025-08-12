@@ -1002,6 +1002,7 @@ class trace:
                 "parent": self.parent,
                 "run_tree": self.run_tree,
                 "client": client_,
+                "project_name": self.project_name,
             }
         )
 
