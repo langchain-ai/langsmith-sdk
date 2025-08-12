@@ -1,24 +1,55 @@
 /* eslint-disable import/no-extraneous-dependencies */
-import { LanguageModelV2Middleware } from "@ai-sdk/provider";
+import type { LanguageModelV2Middleware } from "@ai-sdk/provider";
 import { getCurrentRunTree, traceable } from "../../traceable.js";
+import { extractInputTokenDetails } from "../../utils/vercel.js";
 
 /**
  * AI SDK middleware that wraps an AI SDK 5 model and adds LangSmith tracing.
  */
 export function LangSmithMiddleware(config?: {
   name: string;
+  modelId?: string;
 }): LanguageModelV2Middleware {
-  const { name } = config ?? {};
+  const { name, modelId } = config ?? {};
 
   return {
     wrapGenerate: async ({ doGenerate, params }) => {
       const traceableFunc = traceable(
         async (_params: Record<string, any>) => {
-          return await doGenerate();
+          const result = await doGenerate();
+          const langsmithUsage = {
+            input_tokens: result.usage?.inputTokens,
+            output_tokens: result.usage?.outputTokens,
+            total_tokens: result.usage?.totalTokens,
+          };
+          const inputTokenDetails = extractInputTokenDetails(
+            result.providerMetadata ?? {},
+            result.usage?.cachedInputTokens
+          );
+          const currentRunTree = getCurrentRunTree(true);
+          if (currentRunTree) {
+            currentRunTree.extra = {
+              ...currentRunTree.extra,
+              metadata: {
+                ...currentRunTree.extra?.metadata,
+                usage_metadata: {
+                  ...langsmithUsage,
+                  input_token_details: {
+                    ...inputTokenDetails,
+                  },
+                },
+              },
+            };
+          }
+          console.log(currentRunTree?.extra);
+          return result;
         },
         {
-          name: name ?? "ai.doStream",
+          name: name ?? "ai.doGenerate",
           run_type: "llm",
+          metadata: {
+            ls_model_name: modelId,
+          },
         }
       );
       return traceableFunc(params);
@@ -28,6 +59,9 @@ export function LangSmithMiddleware(config?: {
       const runTree = currentRunTree?.createChild({
         name: name ?? "ai.doStream",
         run_type: "llm",
+        metadata: {
+          ls_model_name: modelId,
+        },
         inputs: params,
       });
 

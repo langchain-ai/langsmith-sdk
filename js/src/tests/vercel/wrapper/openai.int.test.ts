@@ -1,15 +1,16 @@
 // import { generateText, stepCountIs, tool, wrapLanguageModel } from "ai";
 import { openai } from "@ai-sdk/openai";
-import { tool, stepCountIs, streamObject } from "ai";
+import * as ai from "ai";
 import z from "zod";
 
-import {
-  generateText,
-  streamText,
-  generateObject,
-} from "../../../experimental/vercel/index.js";
+import { wrapAISDK } from "../../../experimental/vercel/index.js";
 
-test("wrap generateText", async () => {
+const { tool, stepCountIs } = ai;
+
+const { generateText, streamText, generateObject, streamObject } =
+  wrapAISDK(ai);
+
+test.only("wrap generateText", async () => {
   const result = await generateText({
     model: openai("gpt-4.1-nano"),
     messages: [
@@ -29,7 +30,9 @@ test("wrap generateText", async () => {
     },
     stopWhen: stepCountIs(10),
   });
-  console.log(result);
+  expect(result.text).toBeDefined();
+  expect(result.usage).toBeDefined();
+  expect(result.providerMetadata).toBeDefined();
 });
 
 test("wrap streamText", async () => {
@@ -55,7 +58,7 @@ test("wrap streamText", async () => {
   await result.consumeStream();
 });
 
-test.only("wrap generateObject", async () => {
+test("wrap generateObject", async () => {
   const result = await generateObject({
     model: openai("gpt-4.1-nano"),
     messages: [
@@ -68,12 +71,11 @@ test.only("wrap generateObject", async () => {
       color: z.string(),
     }),
   });
-  console.log(result);
   expect(result.object).toBeDefined();
 });
 
 test("wrap streamObject", async () => {
-  const result = streamObject({
+  const result = await streamObject({
     model: openai("gpt-4.1-nano"),
     messages: [
       {
