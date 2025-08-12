@@ -28,22 +28,29 @@ const _wrapTools = (tools?: Record<string, unknown>) => {
   return wrappedTools;
 };
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-const _getModelDisplayName = (model: string | Record<string, any>) => {
+const _getModelDisplayName = (
+  model: string | Record<string, unknown>
+): string => {
   if (typeof model === "string") {
     return model;
   }
+
   if (
     model.config != null &&
     typeof model.config === "object" &&
+    "provider" in model.config &&
     typeof model.config.provider === "string"
   ) {
     return model.config.provider;
   }
-  return model.modelId ?? "unknown";
+
+  if (model.modelId != null && typeof model.modelId === "string") {
+    return model.modelId;
+  }
+
+  return "unknown";
 };
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 const _getModelId = (model: string | Record<string, unknown>) => {
   if (typeof model === "string") {
     return model;
@@ -51,7 +58,7 @@ const _getModelId = (model: string | Record<string, unknown>) => {
   return typeof model.modelId === "string" ? model.modelId : undefined;
 };
 
-const _formatTracedInputs = (params: Record<string, any>) => {
+const _formatTracedInputs = (params: Record<string, unknown>) => {
   const { prompt, messages, model, tools, ...rest } = params;
   if (Array.isArray(prompt)) {
     return { ...rest, messages: prompt.map(populateToolCallsForTracing) };
