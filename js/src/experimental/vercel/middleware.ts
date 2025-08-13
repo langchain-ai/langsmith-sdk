@@ -186,6 +186,30 @@ export function LangSmithMiddleware(config?: {
         const chunks: LanguageModelV2StreamPart[] = [];
         const transformStream = new TransformStream({
           async transform(chunk: LanguageModelV2StreamPart, controller) {
+            if (
+              chunk.type === "tool-input-start" ||
+              chunk.type === "text-start"
+            ) {
+              if (runTree != null && runTree.events == null) {
+                // Time to first token
+                // Only logging the first one is necessary
+                runTree.events = [
+                  {
+                    name: "new_token",
+                    time: new Date().toISOString(),
+                  },
+                ];
+              }
+            } else if (chunk.type === "finish") {
+              if (runTree != null && Array.isArray(runTree.events)) {
+                runTree.events.push([
+                  {
+                    name: "end",
+                    time: new Date().toISOString(),
+                  },
+                ]);
+              }
+            }
             chunks.push(chunk);
             controller.enqueue(chunk);
           },
