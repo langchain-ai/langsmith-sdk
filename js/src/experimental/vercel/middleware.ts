@@ -190,25 +190,15 @@ export function LangSmithMiddleware(config?: {
               chunk.type === "tool-input-start" ||
               chunk.type === "text-start"
             ) {
-              if (runTree != null && runTree.events == null) {
-                // Time to first token
-                // Only logging the first one is necessary
-                runTree.events = [
-                  {
-                    name: "new_token",
-                    time: new Date().toISOString(),
-                  },
-                ];
+              // Only necessary to log the first token event
+              if (
+                runTree?.events == null ||
+                (Array.isArray(runTree.events) && runTree.events.length === 0)
+              ) {
+                runTree?.addEvent({ name: "new_token" });
               }
             } else if (chunk.type === "finish") {
-              if (runTree != null && Array.isArray(runTree.events)) {
-                runTree.events.push([
-                  {
-                    name: "end",
-                    time: new Date().toISOString(),
-                  },
-                ]);
-              }
+              runTree?.addEvent({ name: "end" });
             }
             chunks.push(chunk);
             controller.enqueue(chunk);
