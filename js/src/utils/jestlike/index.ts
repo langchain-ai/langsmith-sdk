@@ -564,6 +564,7 @@ export function generateWrapperFromJestlikeMethods(
                           ...rest,
                           inputs: testInput,
                           referenceOutputs: testOutput,
+                          repetition: i,
                         }
                       )
                     );
