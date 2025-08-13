@@ -1,8 +1,16 @@
 import { KVMap } from "../schemas.js";
 
-function extractInputTokenDetails(
+export function extractOutputTokenDetails(reasoningTokens?: number) {
+  const outputTokenDetails: Record<string, number> = {};
+  if (typeof reasoningTokens === "number") {
+    outputTokenDetails.reasoning = reasoningTokens;
+  }
+  return outputTokenDetails;
+}
+
+export function extractInputTokenDetails(
   providerMetadata: Record<string, unknown>,
-  spanAttributes?: Record<string, unknown>
+  cachedTokenUsage?: number
 ) {
   const inputTokenDetails: Record<string, number> = {};
   if (
@@ -62,11 +70,8 @@ function extractInputTokenDetails(
       typeof openai.cachedPromptTokens === "number"
     ) {
       inputTokenDetails.cache_read = openai.cachedPromptTokens;
-    } else if (
-      typeof spanAttributes?.["ai.usage.cachedInputTokens"] === "number"
-    ) {
-      inputTokenDetails.cache_read =
-        spanAttributes["ai.usage.cachedInputTokens"];
+    } else if (typeof cachedTokenUsage === "number") {
+      inputTokenDetails.cache_read = cachedTokenUsage;
     }
   }
   return inputTokenDetails;
@@ -116,7 +121,9 @@ export function extractUsageMetadata(span?: {
       );
       usageMetadata.input_token_details = extractInputTokenDetails(
         providerMetadata,
-        span.attributes
+        typeof span.attributes["ai.usage.cachedInputTokens"] === "number"
+          ? span.attributes["ai.usage.cachedInputTokens"]
+          : undefined
       );
       if (
         providerMetadata.anthropic != null &&

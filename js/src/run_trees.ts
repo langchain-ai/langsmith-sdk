@@ -57,6 +57,7 @@ export interface RunTreeConfig {
   reference_example_id?: string;
   client?: Client;
   tracingEnabled?: boolean;
+  // TODO: Change/alias as `onEnd`.
   on_end?: (runTree: RunTree) => void;
   execution_order?: number;
   child_execution_order?: number;
