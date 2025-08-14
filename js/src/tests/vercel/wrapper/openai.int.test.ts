@@ -129,7 +129,7 @@ test("can set run id", async () => {
   expect(run.id).toBe(runId);
 });
 
-test.only("should reuse tool def", async () => {
+test("should reuse tool def", async () => {
   const toolDef = {
     listOrders: tool({
       description: "list all orders",
