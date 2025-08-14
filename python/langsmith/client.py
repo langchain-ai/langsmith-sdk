@@ -414,6 +414,8 @@ class Client:
         "_hide_inputs",
         "_hide_outputs",
         "_hide_metadata",
+        "_process_buffered_run_ops",
+        "_run_ops_buffer_size",
         "_info",
         "_write_api_urls",
         "_settings",
@@ -422,6 +424,8 @@ class Client:
         "compressed_traces",
         "_data_available_event",
         "_futures",
+        "_run_ops_buffer",
+        "_run_ops_buffer_lock",
         "otel_exporter",
     ]
 
@@ -444,6 +448,10 @@ class Client:
         hide_inputs: Optional[Union[Callable[[dict], dict], bool]] = None,
         hide_outputs: Optional[Union[Callable[[dict], dict], bool]] = None,
         hide_metadata: Optional[Union[Callable[[dict], dict], bool]] = None,
+        process_buffered_run_ops: Optional[
+            Callable[[Sequence[dict]], Sequence[dict]]
+        ] = None,
+        run_ops_buffer_size: Optional[int] = None,
         info: Optional[Union[dict, ls_schemas.LangSmithInfo]] = None,
         api_urls: Optional[dict[str, str]] = None,
         otel_tracer_provider: Optional[TracerProvider] = None,
@@ -475,6 +483,12 @@ class Client:
             hide_metadata (Optional[Union[Callable[[dict], dict], bool]]): Whether to hide run metadata when tracing with this client.
                 If True, hides the entire metadata. If a function, applied to
                 all run metadata when creating runs.
+            process_buffered_run_ops (Optional[Callable[[Sequence[dict]], Sequence[dict]]]): A function applied to buffered run operations
+                that allows for modification of the run dicts before they are sent to the LangSmith API.
+                This is separate from the main multipart batch processing and works by buffering run operations.
+            run_ops_buffer_size (Optional[int]): Maximum number of run operations to collect in the buffer before applying
+                process_buffered_run_ops and sending to the API when using compressed traces. Required when
+                process_buffered_run_ops is provided.
             info (Optional[ls_schemas.LangSmithInfo]): The information about the LangSmith API.
                 If not provided, it will be fetched from the API.
             api_urls (Optional[Dict[str, str]]): A dictionary of write API URLs and their corresponding API keys.
@@ -541,6 +555,8 @@ class Client:
         self.compressed_traces: Optional[CompressedTraces] = None
         self._data_available_event: Optional[threading.Event] = None
         self._futures: Optional[weakref.WeakSet[cf.Future]] = None
+        self._run_ops_buffer: list[tuple[str, dict]] = []
+        self._run_ops_buffer_lock = threading.Lock()
         self.otel_exporter: Optional[OTELExporter] = None
 
         # Initialize auto batching
@@ -586,6 +602,18 @@ class Client:
             if hide_metadata is not None
             else ls_utils.get_env_var("HIDE_METADATA") == "true"
         )
+        self._process_buffered_run_ops = process_buffered_run_ops
+        self._run_ops_buffer_size = run_ops_buffer_size
+
+        # Validate that run_ops_buffer_size is provided when process_buffered_run_ops is used
+        if process_buffered_run_ops is not None and run_ops_buffer_size is None:
+            raise ValueError(
+                "run_ops_buffer_size must be provided when process_buffered_run_ops is specified"
+            )
+        if process_buffered_run_ops is None and run_ops_buffer_size is not None:
+            raise ValueError(
+                "process_buffered_run_ops must be provided when run_ops_buffer_size is specified"
+            )
 
         # To trigger this code, set the `LANGSMITH_USE_PYO3_CLIENT` env var to any value.
         self._pyo3_client = None
@@ -1404,28 +1432,22 @@ class Client:
                     raise ValueError(
                         "Run compression is enabled but threading event is not configured"
                     )
-                serialized_op = serialize_run_dict("post", run_create)
-                (
-                    multipart_form,
-                    opened_files,
-                ) = serialized_run_operation_to_multipart_parts_and_context(
-                    serialized_op
-                )
-                logger.log(
-                    5,
-                    "Adding compressed multipart to queue with context: %s",
-                    multipart_form.context,
-                )
-                with self.compressed_traces.lock:
-                    compress_multipart_parts_and_context(
-                        multipart_form,
-                        self.compressed_traces,
-                        _BOUNDARY,
-                    )
-                    self.compressed_traces.trace_count += 1
-                    self._data_available_event.set()
 
-                _close_files(list(opened_files.values()))
+                # If process_buffered_run_ops is enabled, collect runs in batches
+                if self._process_buffered_run_ops:
+                    with self._run_ops_buffer_lock:
+                        self._run_ops_buffer.append(("post", run_create))
+                        # Process batch when we have enough runs
+                        if len(self._run_ops_buffer) >= self._run_ops_buffer_size:
+                            self._flush_run_ops_buffer()
+                else:
+                    # Original single-run processing
+                    opened_files = self._add_run_to_compressed_traces(
+                        "post", run_create
+                    )
+                    if self._data_available_event:
+                        self._data_available_event.set()
+                    _close_files(opened_files)
             elif self.tracing_queue is not None:
                 serialized_op = serialize_run_dict("post", run_create)
                 logger.log(
@@ -1528,6 +1550,61 @@ class Client:
         if self._hide_metadata is False:
             return metadata
         return self._hide_metadata(metadata)
+
+    def _add_run_to_compressed_traces(self, operation: str, run_data: dict) -> list:
+        """Helper method to serialize a run and add it to compressed traces.
+
+        Returns a list of opened files that need to be closed.
+        """
+        if operation == "post":
+            serialized_op = serialize_run_dict("post", run_data)
+        else:  # "patch"
+            serialized_op = serialize_run_dict(operation="patch", payload=run_data)
+
+        (
+            multipart_form,
+            opened_files,
+        ) = serialized_run_operation_to_multipart_parts_and_context(serialized_op)
+        logger.log(
+            5,
+            "Adding compressed multipart to queue with context: %s",
+            multipart_form.context,
+        )
+        with self.compressed_traces.lock:
+            compress_multipart_parts_and_context(
+                multipart_form,
+                self.compressed_traces,
+                _BOUNDARY,
+            )
+            self.compressed_traces.trace_count += 1
+
+        return list(opened_files.values())
+
+    def _flush_run_ops_buffer(self) -> None:
+        """Process and flush run ops buffer in a background thread."""
+        if not self._run_ops_buffer:
+            return
+
+        # Copy the buffer contents and clear it immediately to avoid blocking
+        batch_to_process = list(self._run_ops_buffer)
+        self._run_ops_buffer.clear()
+
+        # Submit the processing to processing thread pool
+        from langsmith._internal._background_thread import (
+            LANGSMITH_CLIENT_THREAD_POOL,
+            _process_buffered_run_ops_batch,
+        )
+
+        try:
+            future = LANGSMITH_CLIENT_THREAD_POOL.submit(
+                _process_buffered_run_ops_batch, self, batch_to_process
+            )
+            # Track the future if we have a futures set
+            if self._futures is not None:
+                self._futures.add(future)
+        except RuntimeError:
+            # Thread pool is shut down, process synchronously as fallback
+            _process_buffered_run_ops_batch(self, batch_to_process)
 
     def _batch_ingest_run_ops(
         self,
@@ -1731,6 +1808,13 @@ class Client:
 
         if not create_dicts and not update_dicts:
             return
+
+        # Apply process_buffered_run_ops function if provided
+        if self._process_buffered_run_ops:
+            if create_dicts:
+                create_dicts = list(self._process_buffered_run_ops(create_dicts))
+            if update_dicts:
+                update_dicts = list(self._process_buffered_run_ops(update_dicts))
 
         self._insert_runtime_env(create_dicts + update_dicts)
 
@@ -2226,33 +2310,27 @@ class Client:
         if self._pyo3_client is not None:
             self._pyo3_client.update_run(data)
         elif use_multipart:
-            serialized_op = serialize_run_dict(operation="patch", payload=data)
             if self.compressed_traces is not None:
-                (
-                    multipart_form,
-                    opened_files,
-                ) = serialized_run_operation_to_multipart_parts_and_context(
-                    serialized_op
-                )
-                logger.log(
-                    5,
-                    "Adding compressed multipart to queue with context: %s",
-                    multipart_form.context,
-                )
-                with self.compressed_traces.lock:
-                    if self._data_available_event is None:
-                        raise ValueError(
-                            "Run compression is enabled but threading event is not configured"
-                        )
-                    compress_multipart_parts_and_context(
-                        multipart_form,
-                        self.compressed_traces,
-                        _BOUNDARY,
+                if self._data_available_event is None:
+                    raise ValueError(
+                        "Run compression is enabled but threading event is not configured"
                     )
-                    self.compressed_traces.trace_count += 1
-                    self._data_available_event.set()
-                _close_files(list(opened_files.values()))
+
+                # If process_buffered_run_ops is enabled, collect runs in batches
+                if self._process_buffered_run_ops:
+                    with self._run_ops_buffer_lock:
+                        self._run_ops_buffer.append(("patch", data))
+                        # Process batch when we have enough runs
+                        if len(self._run_ops_buffer) >= self._run_ops_buffer_size:
+                            self._flush_run_ops_buffer()
+                else:
+                    # Original single-run processing
+                    opened_files = self._add_run_to_compressed_traces("patch", data)
+                    if self._data_available_event:
+                        self._data_available_event.set()
+                    _close_files(opened_files)
             elif self.tracing_queue is not None:
+                serialized_op = serialize_run_dict(operation="patch", payload=data)
                 logger.log(
                     5,
                     "Adding to tracing queue: trace_id=%s, run_id=%s",
@@ -2329,7 +2407,7 @@ class Client:
 
         # Attempt to drain and send any remaining data
         from langsmith._internal._background_thread import (
-            HTTP_REQUEST_THREAD_POOL,
+            LANGSMITH_CLIENT_THREAD_POOL,
             _tracing_thread_drain_compressed_buffer,
         )
 
@@ -2344,7 +2422,7 @@ class Client:
             # We have data to send
             future = None
             try:
-                future = HTTP_REQUEST_THREAD_POOL.submit(
+                future = LANGSMITH_CLIENT_THREAD_POOL.submit(
                     self._send_compressed_multipart_req,
                     final_data_stream,
                     compressed_traces_info,
@@ -2367,6 +2445,11 @@ class Client:
     def flush(self) -> None:
         """Flush either queue or compressed buffer, depending on mode."""
         if self.compressed_traces is not None:
+            # Flush any remaining batch items first
+            if self._process_buffered_run_ops:
+                with self._run_ops_buffer_lock:
+                    if self._run_ops_buffer:
+                        self._flush_run_ops_buffer()
             self.flush_compressed_traces()
         elif self.tracing_queue is not None:
             self.tracing_queue.join()

@@ -40,7 +40,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("langsmith.client")
 
-HTTP_REQUEST_THREAD_POOL = cf.ThreadPoolExecutor(max_workers=cpu_count() * 3)
+LANGSMITH_CLIENT_THREAD_POOL = cf.ThreadPoolExecutor(max_workers=cpu_count() * 3)
 
 
 @functools.total_ordering
@@ -152,6 +152,43 @@ def _tracing_thread_drain_compressed_buffer(
         # exceptions are logged elsewhere, but we need to make sure the
         # background thread continues to run
         return None, None
+
+
+def _process_buffered_run_ops_batch(
+    client: "Client", batch_to_process: list[tuple[str, dict]]
+) -> None:
+    """Process a batch of run operations asynchronously."""
+    try:
+        # Extract just the run dictionaries for process_buffered_run_ops
+        run_dicts = [run_data for _, run_data in batch_to_process]
+
+        # Apply process_buffered_run_ops transformation
+        processed_runs = list(client._process_buffered_run_ops(run_dicts))
+
+        # Process each run and add to compressed traces
+        all_opened_files = []
+        for (operation, _), processed_run in zip(batch_to_process, processed_runs):
+            opened_files = client._add_run_to_compressed_traces(
+                operation, processed_run
+            )
+            all_opened_files.extend(opened_files)
+
+        # Trigger data available event
+        if client._data_available_event:
+            client._data_available_event.set()
+
+        # Close all opened files
+        from langsmith._internal._operations import _close_files
+
+        _close_files(all_opened_files)
+    except Exception:
+        # Log errors but don't crash the background thread
+        logger.error(
+            "LangSmith buffered run ops processing error: Failed to process batch.\n"
+            "This does not affect your application's runtime.\n"
+            "Error details:",
+            exc_info=True,
+        )
 
 
 def _tracing_thread_handle_batch(
@@ -654,7 +691,7 @@ def tracing_control_thread_func_compress_parallel(
             # If we have data, submit the send request
             if data_stream is not None:
                 try:
-                    future = HTTP_REQUEST_THREAD_POOL.submit(
+                    future = LANGSMITH_CLIENT_THREAD_POOL.submit(
                         client._send_compressed_multipart_req,
                         data_stream,
                         compressed_traces_info,
@@ -679,7 +716,7 @@ def tracing_control_thread_func_compress_parallel(
                     try:
                         cf.wait(
                             [
-                                HTTP_REQUEST_THREAD_POOL.submit(
+                                LANGSMITH_CLIENT_THREAD_POOL.submit(
                                     client._send_compressed_multipart_req,
                                     data_stream,
                                     compressed_traces_info,
@@ -705,7 +742,7 @@ def tracing_control_thread_func_compress_parallel(
             try:
                 cf.wait(
                     [
-                        HTTP_REQUEST_THREAD_POOL.submit(
+                        LANGSMITH_CLIENT_THREAD_POOL.submit(
                             client._send_compressed_multipart_req,
                             final_data_stream,
                             compressed_traces_info,
