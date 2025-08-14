@@ -122,7 +122,6 @@ const wrapAISDK = <
       | "run_type"
       | "child_runs"
       | "error"
-      | "attachments"
       | "serialized"
     >
   >
@@ -133,6 +132,7 @@ const wrapAISDK = <
     parent_run_id,
     start_time,
     end_time,
+    attachments,
     dotted_order,
     ...inheritedConfig
   } = lsConfig ?? {};
