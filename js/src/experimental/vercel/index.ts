@@ -6,7 +6,10 @@ import {
 import { traceable } from "../../traceable.js";
 import { RunTreeConfig } from "../../run_trees.js";
 
-const _wrapTools = (tools?: Record<string, unknown>) => {
+const _wrapTools = (
+  tools?: Record<string, unknown>,
+  lsConfig?: Partial<RunTreeConfig>
+) => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const wrappedTools: Record<string, any> = {};
   if (tools) {
@@ -19,6 +22,7 @@ const _wrapTools = (tools?: Record<string, unknown>) => {
         typeof tool.execute === "function"
       ) {
         wrappedTools[key].execute = traceable(tool.execute.bind(tool), {
+          ...lsConfig,
           name: key,
           run_type: "tool",
         });
@@ -110,8 +114,30 @@ const wrapAISDK = <
     streamObject: StreamObjectType;
     generateObject: GenerateObjectType;
   },
-  lsConfig?: Partial<Omit<RunTreeConfig, "inputs" | "outputs" | "run_type">>
+  lsConfig?: Partial<
+    Omit<
+      RunTreeConfig,
+      | "inputs"
+      | "outputs"
+      | "run_type"
+      | "child_runs"
+      | "parent_run"
+      | "error"
+      | "serialized"
+    >
+  >
 ) => {
+  const {
+    id,
+    name,
+    parent_run_id,
+    start_time,
+    end_time,
+    attachments,
+    dotted_order,
+    ...inheritedConfig
+  } = lsConfig ?? {};
+
   /**
    * Wrapped version of AI SDK 5's generateText with LangSmith tracing.
    *
@@ -142,11 +168,12 @@ const wrapAISDK = <
           middleware: LangSmithMiddleware({
             name: _getModelDisplayName(params.model),
             modelId: params.model.modelId,
+            lsConfig: inheritedConfig,
           }),
         });
         return generateText({
           ...params,
-          tools: _wrapTools(params.tools),
+          tools: _wrapTools(params.tools, inheritedConfig),
           model: wrappedModel,
         }) as ReturnType<GenerateTextType>;
       },
@@ -214,6 +241,7 @@ const wrapAISDK = <
           middleware: LangSmithMiddleware({
             name: _getModelDisplayName(params.model),
             modelId: _getModelId(params.model),
+            lsConfig: inheritedConfig,
           }),
         });
         return generateObject({
@@ -271,11 +299,12 @@ const wrapAISDK = <
           middleware: LangSmithMiddleware({
             name: _getModelDisplayName(params.model),
             modelId: _getModelId(params.model),
+            lsConfig: inheritedConfig,
           }),
         });
         return streamText({
           ...params,
-          tools: _wrapTools(params.tools),
+          tools: _wrapTools(params.tools, inheritedConfig),
           model: wrappedModel,
         }) as ReturnType<StreamTextType>;
       },
@@ -336,6 +365,7 @@ const wrapAISDK = <
           middleware: LangSmithMiddleware({
             name: _getModelDisplayName(params.model),
             modelId: _getModelId(params.model),
+            lsConfig: inheritedConfig,
           }),
         });
         return streamObject({
