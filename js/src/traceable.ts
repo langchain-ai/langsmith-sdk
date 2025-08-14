@@ -515,10 +515,7 @@ const convertSerializableArg = (arg: unknown): unknown => {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type TraceableConfig<Func extends (...args: any[]) => any> = Partial<
-  Omit<
-    RunTreeConfig,
-    "inputs" | "outputs" | "child_runs" | "parent_run" | "error" | "serialized"
-  >
+  Omit<RunTreeConfig, "inputs" | "outputs">
 > & {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   aggregator?: (args: any[]) => any;
