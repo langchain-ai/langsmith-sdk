@@ -197,7 +197,7 @@ def _process_buffered_run_ops_batch(
             client._data_available_event.set()
 
         # Close all opened files
-        from langsmith._internal._operations import _close_files
+        from langsmith.client import _close_files
 
         _close_files(all_opened_files)
     except Exception:

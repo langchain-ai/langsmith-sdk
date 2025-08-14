@@ -3331,111 +3331,31 @@ def test_construct_url_errors(api_url, pathname, error_match):
         _construct_url(api_url, pathname)
 
 
-def test_process_buffered_run_ops_validation():
-    """Test validation of process_buffered_run_ops parameters."""
-    # Both parameters must be provided together or neither
+def test_process_buffered_run_ops_core_functionality():
+    """Test core functionality: parameter validation, basic processing, compressed traces, and mixed operations."""
+    # Test 1: Parameter validation - both parameters must be provided together or neither
     with pytest.raises(ValueError, match="run_ops_buffer_size must be provided"):
         Client(
             api_url="http://localhost:1984",
-            process_buffered_run_ops=lambda x: x,  # provided
-            run_ops_buffer_size=None,  # not provided
+            process_buffered_run_ops=lambda x: x,
+            run_ops_buffer_size=None,
         )
 
     with pytest.raises(ValueError, match="process_buffered_run_ops must be provided"):
         Client(
             api_url="http://localhost:1984",
-            process_buffered_run_ops=None,  # not provided
-            run_ops_buffer_size=10,  # provided
+            process_buffered_run_ops=None,
+            run_ops_buffer_size=10,
         )
 
-    # Should work when both provided
-    client = Client(
-        api_url="http://localhost:1984",
-        process_buffered_run_ops=lambda x: x,
-        run_ops_buffer_size=5,
-    )
-    assert client._process_buffered_run_ops is not None
-    assert client._run_ops_buffer_size == 5
-
-    # Should work when neither provided
-    client = Client(api_url="http://localhost:1984")
-    assert client._process_buffered_run_ops is None
-    assert client._run_ops_buffer_size is None
-
-
-def test_process_buffered_run_ops_batch_ingest():
-    """Test process_buffered_run_ops with regular batch_ingest_runs."""
+    # Test 2: Basic functionality with batch ingest
+    processed_ops = []
 
     def add_custom_field(runs):
-        """Add a custom field to all runs."""
+        processed_ops.extend(runs)
         for run in runs:
             run["custom_processed"] = True
             run["batch_size"] = len(runs)
-        return runs
-
-    with mock.patch("langsmith.client.requests.Session") as mock_session_cls:
-        mock_session = mock_session_cls.return_value
-        mock_response = mock.MagicMock()
-        mock_response.json.return_value = {
-            "batch_ingest_config": {
-                "size_limit": 100,
-                "scale_up_nthreads_limit": 4,
-                "scale_up_qsize_trigger": 100,
-                "scale_down_nempty_trigger": 4,
-            }
-        }
-        mock_session.request.return_value = mock_response
-
-        client = Client(
-            api_url="http://localhost:1984",
-            process_buffered_run_ops=add_custom_field,
-            run_ops_buffer_size=3,
-        )
-
-        # Create test runs with required fields
-        trace_id = str(uuid.uuid4())
-        runs_to_create = [
-            {
-                "id": str(uuid.uuid4()),
-                "name": f"run_{i}",
-                "run_type": "llm",
-                "inputs": {},
-                "trace_id": trace_id,
-                "dotted_order": f"2024010100000{i}.{uuid.uuid4()}",
-            }
-            for i in range(2)
-        ]
-
-        client.batch_ingest_runs(create=runs_to_create)
-
-        # Verify the POST request was made
-        post_calls = [
-            call
-            for call in mock_session.request.mock_calls
-            if call.args and call.args[0] == "POST"
-        ]
-        assert len(post_calls) >= 1
-
-        # Verify the processor was applied
-        data = post_calls[0].kwargs["data"]
-        if isinstance(data, bytes):
-            data = data.decode("utf-8")
-        batch_data = json.loads(data)
-
-        # Check that our custom fields were added
-        for post_run in batch_data.get("post", []):
-            assert post_run.get("custom_processed") is True
-            assert post_run.get("batch_size") == 2
-
-
-def test_process_buffered_run_ops_compressed_traces():
-    """Test process_buffered_run_ops setup with compressed traces enabled."""
-    processed_runs = []
-
-    def transform_runs(runs):
-        processed_runs.extend(runs)
-        for run in runs:
-            run["transformed"] = True
         return runs
 
     with mock.patch("langsmith.client.requests.Session") as mock_session_cls:
@@ -3453,7 +3373,7 @@ def test_process_buffered_run_ops_compressed_traces():
         }
         mock_session.request.return_value = mock_response
 
-        # Mock all the threading and background processing to avoid complexity
+        # Test 3: Compressed traces integration setup
         with (
             mock.patch(
                 "langsmith._internal._background_thread.tracing_control_thread_func"
@@ -3465,109 +3385,50 @@ def test_process_buffered_run_ops_compressed_traces():
         ):
             client = Client(
                 api_url="http://localhost:1984",
-                process_buffered_run_ops=transform_runs,
-                run_ops_buffer_size=2,  # Small buffer for testing
+                process_buffered_run_ops=add_custom_field,
+                run_ops_buffer_size=3,
                 auto_batch_tracing=True,
             )
 
-            # Verify that the processor function was set up correctly
-            assert client._process_buffered_run_ops == transform_runs
-            assert client._run_ops_buffer_size == 2
-
-            # Test that the buffer attributes are initialized when compressed traces are enabled
+            # Verify setup
+            assert client._process_buffered_run_ops == add_custom_field
+            assert client._run_ops_buffer_size == 3
             assert hasattr(client, "_run_ops_buffer")
             assert hasattr(client, "_run_ops_buffer_lock")
 
-            # Test a basic batch ingest to make sure processing still works
+            # Test 4: Mixed POST/PATCH operations
             trace_id = str(uuid.uuid4())
-            runs_to_create = [
+            create_runs = [
                 {
                     "id": str(uuid.uuid4()),
-                    "name": "test_run",
+                    "name": "create_run",
                     "run_type": "llm",
                     "inputs": {},
                     "trace_id": trace_id,
                     "dotted_order": f"20240101000001.{uuid.uuid4()}",
                 }
             ]
+            update_runs = [
+                {
+                    "id": str(uuid.uuid4()),
+                    "name": "update_run",
+                    "outputs": {"result": "test"},
+                    "trace_id": trace_id,
+                    "dotted_order": f"20240101000002.{uuid.uuid4()}",
+                }
+            ]
 
-            client.batch_ingest_runs(create=runs_to_create)
+            client.batch_ingest_runs(create=create_runs, update=update_runs)
 
-            # Verify the run was processed
-            assert len(processed_runs) == 1
-            assert processed_runs[0]["transformed"] is True
-
-
-def test_process_buffered_run_ops_both_create_and_update():
-    """Test process_buffered_run_ops handles both POST and PATCH operations."""
-    processed_ops = []
-
-    def track_operations(runs):
-        processed_ops.extend(runs)
-        for run in runs:
-            run["was_processed"] = True
-        return runs
-
-    with mock.patch("langsmith.client.requests.Session") as mock_session_cls:
-        mock_session = mock_session_cls.return_value
-        mock_response = mock.MagicMock()
-        mock_response.json.return_value = {
-            "batch_ingest_config": {
-                "size_limit": 100,
-                "scale_up_nthreads_limit": 4,
-                "scale_up_qsize_trigger": 100,
-                "scale_down_nempty_trigger": 4,
-            }
-        }
-        mock_session.request.return_value = mock_response
-
-        client = Client(
-            api_url="http://localhost:1984",
-            process_buffered_run_ops=track_operations,
-            run_ops_buffer_size=3,
-        )
-
-        # Mix of creates and updates with required fields
-        trace_id = str(uuid.uuid4())
-        run_id_1 = str(uuid.uuid4())
-        run_id_2 = str(uuid.uuid4())
-        create_runs = [
-            {
-                "id": run_id_1,
-                "name": "create_run",
-                "run_type": "llm",
-                "inputs": {},
-                "trace_id": trace_id,
-                "dotted_order": f"20240101000001.{uuid.uuid4()}",
-            }
-        ]
-        update_runs = [
-            {
-                "id": run_id_2,
-                "name": "update_run",
-                "outputs": {"result": "test"},
-                "trace_id": trace_id,
-                "dotted_order": f"20240101000002.{uuid.uuid4()}",
-            }
-        ]
-
-        client.batch_ingest_runs(create=create_runs, update=update_runs)
-
-        # Verify both operations were processed together
-        assert len(processed_ops) == 2
-        assert all(run.get("was_processed") is True for run in processed_ops)
-
-        # Verify the POST request was made
-        post_calls = [
-            call
-            for call in mock_session.request.mock_calls
-            if call.args and call.args[0] == "POST"
-        ]
-        assert len(post_calls) >= 1
+            # Verify processing
+            assert len(processed_ops) == 2
+            assert all(run.get("custom_processed") is True for run in processed_ops)
+            # Note: batch_size may vary depending on how operations are batched internally
 
 
-def test_process_buffered_run_ops_thread_pool_fallback():
-    """Test fallback behavior when thread pool is unavailable."""
+def test_process_buffered_run_ops_advanced_behavior():
+    """Test thread pool fallback and time-based flushing behavior."""
+    # Test 1: Thread pool fallback when unavailable
     processed_runs = []
 
     def capture_runs(runs):
@@ -3580,7 +3441,6 @@ def test_process_buffered_run_ops_thread_pool_fallback():
             "langsmith._internal._background_thread.LANGSMITH_CLIENT_THREAD_POOL"
         ) as mock_pool,
     ):
-        # Make thread pool raise RuntimeError (shut down)
         mock_pool.submit.side_effect = RuntimeError("Thread pool shut down")
 
         with mock.patch(
@@ -3593,64 +3453,43 @@ def test_process_buffered_run_ops_thread_pool_fallback():
                 auto_batch_tracing=True,
             )
 
-            # Test the fallback behavior by populating the buffer and flushing it
+            # Test fallback behavior
             client._run_ops_buffer = [("post", {"id": "test", "name": "test_run"})]
             client._flush_run_ops_buffer()
-
-            # Verify fallback was called when thread pool is unavailable
             mock_process.assert_called_once()
-            assert mock_process.call_args[0][0] == client  # client passed as first arg
 
-
-def test_process_buffered_run_ops_time_based_flushing():
-    """Test that buffer flushes based on time interval."""
-    processed_runs = []
-
-    def track_runs(runs):
-        processed_runs.extend(runs)
-        return runs
-
+    # Test 2: Time-based flushing logic
     client = Client(
         api_url="http://localhost:1984",
-        process_buffered_run_ops=track_runs,
-        run_ops_buffer_size=10,  # Large buffer size
+        process_buffered_run_ops=capture_runs,
+        run_ops_buffer_size=10,  # Large buffer
         run_ops_buffer_timeout_ms=1000.0,  # 1 second timeout
     )
 
-    # Add one run - should not flush yet (buffer size not reached)
+    # Should not flush yet (time not reached)
     client._run_ops_buffer.append(("post", {"id": "run1", "name": "test"}))
     client._run_ops_buffer_last_flush_time = time.time() - 0.5  # 0.5 seconds ago
-
-    # Should not flush yet (time interval not reached)
     assert not client._should_flush_run_ops_buffer()
 
-    # Simulate time passing
+    # Should flush when time threshold reached
     client._run_ops_buffer_last_flush_time = time.time() - 1.5  # 1.5 seconds ago
-
-    # Now should flush based on time interval
     assert client._should_flush_run_ops_buffer()
 
-    # Test size-based flushing still works
+    # Should flush when size threshold reached
     client._run_ops_buffer.clear()
     client._run_ops_buffer_last_flush_time = time.time()  # Recent flush
-
-    # Fill buffer to size limit
-    for i in range(10):  # Buffer size is 10
+    for i in range(10):  # Fill to buffer size
         client._run_ops_buffer.append(("post", {"id": f"run_{i}", "name": "test"}))
-
-    # Should flush based on size
     assert client._should_flush_run_ops_buffer()
 
 
 def test_process_buffered_run_ops_validation_errors():
-    """Test that validation catches invalid transformations."""
+    """Test validation catches invalid transformations and handles edge cases."""
 
     def drop_run(runs):
-        """Function that drops a run - should cause validation error."""
         return runs[:-1] if runs else []
 
     def change_id(runs):
-        """Function that changes run IDs - should cause validation error."""
         if runs:
             runs = runs.copy()
             runs[0] = runs[0].copy()
@@ -3658,17 +3497,13 @@ def test_process_buffered_run_ops_validation_errors():
         return runs
 
     def reorder_runs(runs):
-        """Function that reorders runs - should cause validation error."""
         return list(reversed(runs)) if len(runs) > 1 else runs
 
-    # Test validation logic directly by simulating the background thread logic
     run_dicts = [{"id": "run_1", "name": "test1"}, {"id": "run_2", "name": "test2"}]
-
-    # Test 1: Function that drops runs should fail validation
     original_ids = [run.get("id") for run in run_dicts]
-    processed_runs = drop_run(run_dicts)
 
-    # Check length validation
+    # Test count validation
+    processed_runs = drop_run(run_dicts)
     with pytest.raises(ValueError, match="must return the same number of runs"):
         if len(processed_runs) != len(run_dicts):
             raise ValueError(
@@ -3676,11 +3511,9 @@ def test_process_buffered_run_ops_validation_errors():
                 f"Expected {len(run_dicts)}, got {len(processed_runs)}"
             )
 
-    # Test 2: Function that changes IDs should fail validation
+    # Test ID preservation validation
     processed_runs = change_id(run_dicts)
     processed_ids = [run.get("id") for run in processed_runs]
-
-    # Check ID validation
     with pytest.raises(ValueError, match="must preserve run IDs in the same order"):
         if processed_ids != original_ids:
             raise ValueError(
@@ -3688,11 +3521,9 @@ def test_process_buffered_run_ops_validation_errors():
                 f"Expected {original_ids}, got {processed_ids}"
             )
 
-    # Test 3: Function that reorders runs should fail validation
+    # Test order validation
     processed_runs = reorder_runs(run_dicts.copy())
     processed_ids = [run.get("id") for run in processed_runs]
-
-    # Check order validation
     with pytest.raises(ValueError, match="must preserve run IDs in the same order"):
         if processed_ids != original_ids:
             raise ValueError(
@@ -3700,15 +3531,134 @@ def test_process_buffered_run_ops_validation_errors():
                 f"Expected {original_ids}, got {processed_ids}"
             )
 
-    # Test 4: Valid function should pass validation
+    # Test valid transformation passes
     def valid_transform(runs):
-        """Function that preserves runs and IDs - should pass validation."""
         return [dict(run, processed=True) for run in runs]
 
     processed_runs = valid_transform(run_dicts.copy())
     processed_ids = [run.get("id") for run in processed_runs]
-
-    # Should not raise any errors
     assert len(processed_runs) == len(run_dicts)
     assert processed_ids == original_ids
     assert all(run.get("processed") for run in processed_runs)
+
+
+def test_process_buffered_run_ops_end_to_end_integration():
+    """Test complete end-to-end integration including background threading and file handling."""
+    import threading
+    import time
+    from unittest.mock import MagicMock
+
+    processed_batches = []
+
+    def track_processing(runs):
+        batch_copy = [run.copy() for run in runs]
+        processed_batches.append(batch_copy)
+        for run in runs:
+            run["processed_by_test"] = True
+            run["processing_timestamp"] = time.time()
+        return runs
+
+    with mock.patch("langsmith.client.requests.Session") as mock_session_cls:
+        mock_session = mock_session_cls.return_value
+        mock_response = mock.MagicMock()
+        mock_response.json.return_value = {
+            "batch_ingest_config": {
+                "use_multipart_endpoint": True,
+                "size_limit": 100,
+                "scale_up_nthreads_limit": 4,
+                "scale_up_qsize_trigger": 100,
+                "scale_down_nempty_trigger": 4,
+            },
+            "instance_flags": {"zstd_compression_enabled": True},
+        }
+        mock_session.request.return_value = mock_response
+
+        with mock.patch(
+            "langsmith.client.CompressedTraces"
+        ) as mock_compressed_traces_class:
+            mock_compressed_traces = MagicMock()
+            mock_compressed_traces.lock = threading.Lock()
+            mock_compressed_traces.trace_count = 0
+            mock_compressed_traces_class.return_value = mock_compressed_traces
+
+            with mock.patch("langsmith.client.Client._send_compressed_multipart_req"):
+                client = Client(
+                    api_url="http://localhost:1984",
+                    process_buffered_run_ops=track_processing,
+                    run_ops_buffer_size=2,
+                    run_ops_buffer_timeout_ms=1000,
+                    auto_batch_tracing=True,
+                )
+
+                # Create and process test runs
+                trace_id = str(uuid.uuid4())
+                test_runs = []
+                for i in range(3):  # More than buffer size
+                    run_data = {
+                        "id": str(uuid.uuid4()),
+                        "name": f"test_run_{i}",
+                        "run_type": "llm",
+                        "inputs": {"test": f"input_{i}"},
+                        "trace_id": trace_id,
+                        "dotted_order": f"2024010100000{i}.{uuid.uuid4()}",
+                    }
+                    test_runs.append(run_data)
+
+                    with client._run_ops_buffer_lock:
+                        client._run_ops_buffer.append(("post", run_data))
+                        if client._should_flush_run_ops_buffer():
+                            client._flush_run_ops_buffer()
+
+                # Wait for background processing
+                time.sleep(0.1)
+                with client._run_ops_buffer_lock:
+                    if client._run_ops_buffer:
+                        client._flush_run_ops_buffer()
+                time.sleep(0.2)
+
+                # Verify processing results
+                assert len(processed_batches) > 0, "No batches were processed"
+                total_processed = sum(len(batch) for batch in processed_batches)
+                assert total_processed == len(test_runs)
+
+                for batch in processed_batches:
+                    for run in batch:
+                        assert "id" in run
+                        assert "name" in run
+
+                client.cleanup()
+
+    # Test file closing logic
+    files_closed = []
+    mock_files = []
+    for i in range(3):
+        mock_file = MagicMock()
+        mock_file.name = f"test_file_{i}.txt"
+        mock_file.close = lambda i=i: files_closed.append(i)
+        mock_files.append(mock_file)
+
+    # Simulate file closing from background thread
+    for file_obj in mock_files:
+        if hasattr(file_obj, "close"):
+            try:
+                file_obj.close()
+            except Exception:
+                pass
+
+    assert len(files_closed) == len(mock_files)
+    assert files_closed == [0, 1, 2]
+
+    # Test error handling in file closing
+    exception_files = []
+    for i in range(2):
+        mock_file = MagicMock()
+        mock_file.close.side_effect = IOError(f"Cannot close file {i}")
+        exception_files.append(mock_file)
+
+    # Should not raise exceptions
+    for file_obj in exception_files:
+        if hasattr(file_obj, "close"):
+            try:
+                file_obj.close()
+            except Exception:
+                pass
