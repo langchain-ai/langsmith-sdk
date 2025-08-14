@@ -14,14 +14,14 @@ const _wrapTools = (
   const wrappedTools: Record<string, any> = {};
   if (tools) {
     for (const [key, tool] of Object.entries(tools)) {
-      wrappedTools[key] = tool;
+      wrappedTools[key] = { ...(tool as Record<string, unknown>) };
       if (
-        tool != null &&
-        typeof tool === "object" &&
-        "execute" in tool &&
-        typeof tool.execute === "function"
+        wrappedTools[key] != null &&
+        typeof wrappedTools[key] === "object" &&
+        "execute" in wrappedTools[key] &&
+        typeof wrappedTools[key].execute === "function"
       ) {
-        wrappedTools[key].execute = traceable(tool.execute.bind(tool), {
+        wrappedTools[key].execute = traceable(wrappedTools[key].execute.bind(wrappedTools[key]), {
           ...lsConfig,
           name: key,
           run_type: "tool",
