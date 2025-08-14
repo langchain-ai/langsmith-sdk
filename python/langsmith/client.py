@@ -1440,7 +1440,8 @@ class Client:
                         "Run compression is enabled but threading event is not configured"
                     )
 
-                # If process_buffered_run_ops is enabled, collect runs in batches
+                # If process_buffered_run_ops is enabled, collect run ops in batches
+                # before batching
                 if self._process_buffered_run_ops:
                     with self._run_ops_buffer_lock:
                         self._run_ops_buffer.append(("post", run_create))
@@ -1559,7 +1560,7 @@ class Client:
         return self._hide_metadata(metadata)
 
     def _add_run_to_compressed_traces(self, operation: str, run_data: dict) -> list:
-        """Helper method to serialize a run and add it to compressed traces.
+        """Adds runs to the compressed traces buffer.
 
         Returns a list of opened files that need to be closed.
         """

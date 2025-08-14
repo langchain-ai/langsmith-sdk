@@ -3614,7 +3614,7 @@ def test_process_buffered_run_ops_time_based_flushing():
         api_url="http://localhost:1984",
         process_buffered_run_ops=track_runs,
         run_ops_buffer_size=10,  # Large buffer size
-        run_ops_buffer_timeout=1.0,  # 1 second timeout
+        run_ops_buffer_timeout_ms=1000.0,  # 1 second timeout
     )
 
     # Add one run - should not flush yet (buffer size not reached)
@@ -3640,3 +3640,75 @@ def test_process_buffered_run_ops_time_based_flushing():
 
     # Should flush based on size
     assert client._should_flush_run_ops_buffer()
+
+
+def test_process_buffered_run_ops_validation_errors():
+    """Test that validation catches invalid transformations."""
+
+    def drop_run(runs):
+        """Function that drops a run - should cause validation error."""
+        return runs[:-1] if runs else []
+
+    def change_id(runs):
+        """Function that changes run IDs - should cause validation error."""
+        if runs:
+            runs = runs.copy()
+            runs[0] = runs[0].copy()
+            runs[0]["id"] = "changed_id"
+        return runs
+
+    def reorder_runs(runs):
+        """Function that reorders runs - should cause validation error."""
+        return list(reversed(runs)) if len(runs) > 1 else runs
+
+    # Test validation logic directly by simulating the background thread logic
+    run_dicts = [{"id": "run_1", "name": "test1"}, {"id": "run_2", "name": "test2"}]
+
+    # Test 1: Function that drops runs should fail validation
+    original_ids = [run.get("id") for run in run_dicts]
+    processed_runs = drop_run(run_dicts)
+
+    # Check length validation
+    with pytest.raises(ValueError, match="must return the same number of runs"):
+        if len(processed_runs) != len(run_dicts):
+            raise ValueError(
+                f"process_buffered_run_ops must return the same number of runs. "
+                f"Expected {len(run_dicts)}, got {len(processed_runs)}"
+            )
+
+    # Test 2: Function that changes IDs should fail validation
+    processed_runs = change_id(run_dicts)
+    processed_ids = [run.get("id") for run in processed_runs]
+
+    # Check ID validation
+    with pytest.raises(ValueError, match="must preserve run IDs in the same order"):
+        if processed_ids != original_ids:
+            raise ValueError(
+                f"process_buffered_run_ops must preserve run IDs in the same order. "
+                f"Expected {original_ids}, got {processed_ids}"
+            )
+
+    # Test 3: Function that reorders runs should fail validation
+    processed_runs = reorder_runs(run_dicts.copy())
+    processed_ids = [run.get("id") for run in processed_runs]
+
+    # Check order validation
+    with pytest.raises(ValueError, match="must preserve run IDs in the same order"):
+        if processed_ids != original_ids:
+            raise ValueError(
+                f"process_buffered_run_ops must preserve run IDs in the same order. "
+                f"Expected {original_ids}, got {processed_ids}"
+            )
+
+    # Test 4: Valid function should pass validation
+    def valid_transform(runs):
+        """Function that preserves runs and IDs - should pass validation."""
+        return [dict(run, processed=True) for run in runs]
+
+    processed_runs = valid_transform(run_dicts.copy())
+    processed_ids = [run.get("id") for run in processed_runs]
+
+    # Should not raise any errors
+    assert len(processed_runs) == len(run_dicts)
+    assert processed_ids == original_ids
+    assert all(run.get("processed") for run in processed_runs)

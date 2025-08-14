@@ -155,15 +155,30 @@ def _tracing_thread_drain_compressed_buffer(
 
 
 def _process_buffered_run_ops_batch(
-    client: "Client", batch_to_process: list[tuple[str, dict]]
+    client: Client, batch_to_process: list[tuple[str, dict]]
 ) -> None:
     """Process a batch of run operations asynchronously."""
     try:
         # Extract just the run dictionaries for process_buffered_run_ops
         run_dicts = [run_data for _, run_data in batch_to_process]
+        original_ids = [run.get("id") for run in run_dicts]
 
         # Apply process_buffered_run_ops transformation
         processed_runs = list(client._process_buffered_run_ops(run_dicts))
+
+        # Validate that the transformation preserves run count and IDs
+        if len(processed_runs) != len(run_dicts):
+            raise ValueError(
+                f"process_buffered_run_ops must return the same number of runs. "
+                f"Expected {len(run_dicts)}, got {len(processed_runs)}"
+            )
+
+        processed_ids = [run.get("id") for run in processed_runs]
+        if processed_ids != original_ids:
+            raise ValueError(
+                f"process_buffered_run_ops must preserve run IDs in the same order. "
+                f"Expected {original_ids}, got {processed_ids}"
+            )
 
         # Process each run and add to compressed traces
         all_opened_files = []
