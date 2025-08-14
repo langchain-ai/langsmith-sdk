@@ -136,8 +136,8 @@ test("should reuse tool def", async () => {
       inputSchema: z.object({ userId: z.string() }),
       execute: async ({ userId }) =>
         `User ${userId} has the following orders: 1`,
-      }),
-    }
+    }),
+  };
   const result = await generateText({
     model: openai("gpt-4.1-nano"),
     messages: [

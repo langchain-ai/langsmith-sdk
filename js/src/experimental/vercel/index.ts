@@ -21,11 +21,14 @@ const _wrapTools = (
         "execute" in wrappedTools[key] &&
         typeof wrappedTools[key].execute === "function"
       ) {
-        wrappedTools[key].execute = traceable(wrappedTools[key].execute.bind(wrappedTools[key]), {
-          ...lsConfig,
-          name: key,
-          run_type: "tool",
-        });
+        wrappedTools[key].execute = traceable(
+          wrappedTools[key].execute.bind(wrappedTools[key]),
+          {
+            ...lsConfig,
+            name: key,
+            run_type: "tool",
+          }
+        );
       }
     }
   }
