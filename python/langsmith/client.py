@@ -1578,6 +1578,10 @@ class Client:
             "Adding compressed multipart to queue with context: %s",
             multipart_form.context,
         )
+        if self.compressed_traces is None:
+            raise RuntimeError(
+                "compressed_traces should not be None when adding run to compressed traces"
+            )
         with self.compressed_traces.lock:
             compress_multipart_parts_and_context(
                 multipart_form,
@@ -1594,13 +1598,17 @@ class Client:
             return False
 
         # Check size-based flushing
-        if len(self._run_ops_buffer) >= self._run_ops_buffer_size:
+        if (
+            self._run_ops_buffer_size is not None
+            and len(self._run_ops_buffer) >= self._run_ops_buffer_size
+        ):
             return True
 
         # Check time-based flushing
-        time_since_last_flush = time.time() - self._run_ops_buffer_last_flush_time
-        if time_since_last_flush >= (self._run_ops_buffer_timeout_ms / 1000):
-            return True
+        if self._run_ops_buffer_timeout_ms is not None:
+            time_since_last_flush = time.time() - self._run_ops_buffer_last_flush_time
+            if time_since_last_flush >= (self._run_ops_buffer_timeout_ms / 1000):
+                return True
 
         return False
 

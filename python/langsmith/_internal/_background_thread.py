@@ -164,6 +164,10 @@ def _process_buffered_run_ops_batch(
         original_ids = [run.get("id") for run in run_dicts]
 
         # Apply process_buffered_run_ops transformation
+        if client._process_buffered_run_ops is None:
+            raise RuntimeError(
+                "process_buffered_run_ops should not be None when processing batch"
+            )
         processed_runs = list(client._process_buffered_run_ops(run_dicts))
 
         # Validate that the transformation preserves run count and IDs
