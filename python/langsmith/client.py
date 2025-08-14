@@ -1560,7 +1560,7 @@ class Client:
         return self._hide_metadata(metadata)
 
     def _add_run_to_compressed_traces(self, operation: str, run_data: dict) -> list:
-        """Adds runs to the compressed traces buffer.
+        """Add runs to the compressed traces buffer.
 
         Returns a list of opened files that need to be closed.
         """
