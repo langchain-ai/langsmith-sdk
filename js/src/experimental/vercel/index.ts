@@ -121,6 +121,7 @@ const wrapAISDK = <
       | "outputs"
       | "run_type"
       | "child_runs"
+      | "parent_run"
       | "error"
       | "serialized"
     >
