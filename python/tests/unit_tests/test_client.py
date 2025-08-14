@@ -3600,3 +3600,43 @@ def test_process_buffered_run_ops_thread_pool_fallback():
             # Verify fallback was called when thread pool is unavailable
             mock_process.assert_called_once()
             assert mock_process.call_args[0][0] == client  # client passed as first arg
+
+
+def test_process_buffered_run_ops_time_based_flushing():
+    """Test that buffer flushes based on time interval."""
+    processed_runs = []
+
+    def track_runs(runs):
+        processed_runs.extend(runs)
+        return runs
+
+    client = Client(
+        api_url="http://localhost:1984",
+        process_buffered_run_ops=track_runs,
+        run_ops_buffer_size=10,  # Large buffer size
+        run_ops_buffer_timeout=1.0,  # 1 second timeout
+    )
+
+    # Add one run - should not flush yet (buffer size not reached)
+    client._run_ops_buffer.append(("post", {"id": "run1", "name": "test"}))
+    client._run_ops_buffer_last_flush_time = time.time() - 0.5  # 0.5 seconds ago
+
+    # Should not flush yet (time interval not reached)
+    assert not client._should_flush_run_ops_buffer()
+
+    # Simulate time passing
+    client._run_ops_buffer_last_flush_time = time.time() - 1.5  # 1.5 seconds ago
+
+    # Now should flush based on time interval
+    assert client._should_flush_run_ops_buffer()
+
+    # Test size-based flushing still works
+    client._run_ops_buffer.clear()
+    client._run_ops_buffer_last_flush_time = time.time()  # Recent flush
+
+    # Fill buffer to size limit
+    for i in range(10):  # Buffer size is 10
+        client._run_ops_buffer.append(("post", {"id": f"run_{i}", "name": "test"}))
+
+    # Should flush based on size
+    assert client._should_flush_run_ops_buffer()

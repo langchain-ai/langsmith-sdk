@@ -416,6 +416,8 @@ class Client:
         "_hide_metadata",
         "_process_buffered_run_ops",
         "_run_ops_buffer_size",
+        "_run_ops_buffer_timeout_ms",
+        "_run_ops_buffer_last_flush_time",
         "_info",
         "_write_api_urls",
         "_settings",
@@ -452,6 +454,7 @@ class Client:
             Callable[[Sequence[dict]], Sequence[dict]]
         ] = None,
         run_ops_buffer_size: Optional[int] = None,
+        run_ops_buffer_timeout_ms: Optional[float] = None,
         info: Optional[Union[dict, ls_schemas.LangSmithInfo]] = None,
         api_urls: Optional[dict[str, str]] = None,
         otel_tracer_provider: Optional[TracerProvider] = None,
@@ -484,11 +487,13 @@ class Client:
                 If True, hides the entire metadata. If a function, applied to
                 all run metadata when creating runs.
             process_buffered_run_ops (Optional[Callable[[Sequence[dict]], Sequence[dict]]]): A function applied to buffered run operations
-                that allows for modification of the run dicts before they are sent to the LangSmith API.
-                This is separate from the main multipart batch processing and works by buffering run operations.
+                that allows for modification of the raw run dicts before they are converted to multipart and compressed.
+                This is useful specifically for high throughput tracing where you need to apply a rate-limited API or other
+                costly process to the runs before they are sent to the API.
             run_ops_buffer_size (Optional[int]): Maximum number of run operations to collect in the buffer before applying
-                process_buffered_run_ops and sending to the API when using compressed traces. Required when
-                process_buffered_run_ops is provided.
+                process_buffered_run_ops and sending to the API. Required when process_buffered_run_ops is provided.
+            run_ops_buffer_timeout_ms (Optional[int]): Maximum time in milliseconds to wait before flushing the run ops buffer
+                when new runs are added. Defaults to 5000. Only used when process_buffered_run_ops is provided.
             info (Optional[ls_schemas.LangSmithInfo]): The information about the LangSmith API.
                 If not provided, it will be fetched from the API.
             api_urls (Optional[Dict[str, str]]): A dictionary of write API URLs and their corresponding API keys.
@@ -604,6 +609,8 @@ class Client:
         )
         self._process_buffered_run_ops = process_buffered_run_ops
         self._run_ops_buffer_size = run_ops_buffer_size
+        self._run_ops_buffer_timeout_ms = run_ops_buffer_timeout_ms or 5000
+        self._run_ops_buffer_last_flush_time = time.time()
 
         # Validate that run_ops_buffer_size is provided when process_buffered_run_ops is used
         if process_buffered_run_ops is not None and run_ops_buffer_size is None:
@@ -1437,8 +1444,8 @@ class Client:
                 if self._process_buffered_run_ops:
                     with self._run_ops_buffer_lock:
                         self._run_ops_buffer.append(("post", run_create))
-                        # Process batch when we have enough runs
-                        if len(self._run_ops_buffer) >= self._run_ops_buffer_size:
+                        # Process batch when we have enough runs or enough time has passed
+                        if self._should_flush_run_ops_buffer():
                             self._flush_run_ops_buffer()
                 else:
                     # Original single-run processing
@@ -1580,6 +1587,22 @@ class Client:
 
         return list(opened_files.values())
 
+    def _should_flush_run_ops_buffer(self) -> bool:
+        """Check if the run ops buffer should be flushed based on size or time."""
+        if not self._run_ops_buffer:
+            return False
+
+        # Check size-based flushing
+        if len(self._run_ops_buffer) >= self._run_ops_buffer_size:
+            return True
+
+        # Check time-based flushing
+        time_since_last_flush = time.time() - self._run_ops_buffer_last_flush_time
+        if time_since_last_flush >= (self._run_ops_buffer_timeout_ms / 1000):
+            return True
+
+        return False
+
     def _flush_run_ops_buffer(self) -> None:
         """Process and flush run ops buffer in a background thread."""
         if not self._run_ops_buffer:
@@ -1588,6 +1611,7 @@ class Client:
         # Copy the buffer contents and clear it immediately to avoid blocking
         batch_to_process = list(self._run_ops_buffer)
         self._run_ops_buffer.clear()
+        self._run_ops_buffer_last_flush_time = time.time()
 
         # Submit the processing to processing thread pool
         from langsmith._internal._background_thread import (
@@ -2320,8 +2344,8 @@ class Client:
                 if self._process_buffered_run_ops:
                     with self._run_ops_buffer_lock:
                         self._run_ops_buffer.append(("patch", data))
-                        # Process batch when we have enough runs
-                        if len(self._run_ops_buffer) >= self._run_ops_buffer_size:
+                        # Process batch when we have enough runs or enough time has passed
+                        if self._should_flush_run_ops_buffer():
                             self._flush_run_ops_buffer()
                 else:
                     # Original single-run processing
