@@ -6,6 +6,7 @@
   version "2.0.0-beta.12"
   resolved "https://registry.npmjs.org/@ai-sdk/anthropic/-/anthropic-2.0.0-beta.12.tgz"
   integrity sha512-y5K7yh2AR23z/YuSTKSxJNYvXVcViyYCQ4bvDtvVfHaC4ae1sgObyxmQ3WjLMFIqMgk2Xi6GFmUCp6GBYUapOg==
+  
   dependencies:
     "@ai-sdk/provider" "2.0.0-beta.2"
     "@ai-sdk/provider-utils" "3.0.0-beta.9"
@@ -14,34 +15,36 @@
   version "1.0.0-beta.11"
   resolved "https://registry.npmjs.org/@ai-sdk/gateway/-/gateway-1.0.0-beta.11.tgz"
   integrity sha512-dnRUPzSLvp3xvIx6M4FIz4ht8dfL8JkPKwH+akj10im4zbxUii3c3TQ3BJLRdx2Gq/SeljE9H0dX7PDtVyIrbQ==
+
   dependencies:
-    "@ai-sdk/provider" "2.0.0-beta.1"
-    "@ai-sdk/provider-utils" "3.0.0-beta.5"
+    "@ai-sdk/provider" "2.0.0"
+    "@ai-sdk/provider-utils" "3.0.1"
 
 "@ai-sdk/openai@2.0.0-beta.15":
   version "2.0.0-beta.15"
   resolved "https://registry.npmjs.org/@ai-sdk/openai/-/openai-2.0.0-beta.15.tgz"
   integrity sha512-H2LqYz7RGkEO/jHjeATPQylFQJff3skkkmKy8dAB9UU8y/oJcV4JEQKR3CrMMFkG/39mXYxgZiNNkv/8jF40sQ==
+
   dependencies:
-    "@ai-sdk/provider" "2.0.0-beta.2"
-    "@ai-sdk/provider-utils" "3.0.0-beta.9"
+    "@ai-sdk/provider" "2.0.0"
+    "@ai-sdk/provider-utils" "3.0.1"
 
 "@ai-sdk/provider-utils@3.0.0-beta.5":
   version "3.0.0-beta.5"
   resolved "https://registry.npmjs.org/@ai-sdk/provider-utils/-/provider-utils-3.0.0-beta.5.tgz"
   integrity sha512-4Dv/wiGZrvO6fI7P0yMLa4XZru0XW8LPibTObbkHBdweLUVGIze7aCfxxQeY44Uqcbl/h6/yBTkx2XmPtwf/Ow==
+
   dependencies:
-    "@ai-sdk/provider" "2.0.0-beta.1"
-    "@standard-schema/spec" "^1.0.0"
-    eventsource-parser "^3.0.3"
-    zod-to-json-schema "^3.24.1"
+    "@ai-sdk/provider" "2.0.0"
+    "@ai-sdk/provider-utils" "3.0.1"
 
 "@ai-sdk/provider-utils@3.0.0-beta.9":
   version "3.0.0-beta.9"
   resolved "https://registry.npmjs.org/@ai-sdk/provider-utils/-/provider-utils-3.0.0-beta.9.tgz"
   integrity sha512-RJMeoqFA9mGo1XOE20bpVv4/ikVbZMHo00vmF4RweN7GHS+nEXU3SHFgtcp7NBG3j8W15b9MAitOBycRMYxecg==
+
   dependencies:
-    "@ai-sdk/provider" "2.0.0-beta.2"
+    "@ai-sdk/provider" "2.0.0"
     "@standard-schema/spec" "^1.0.0"
     eventsource-parser "^3.0.3"
     zod-to-json-schema "^3.24.1"
@@ -50,6 +53,7 @@
   version "2.0.0-beta.1"
   resolved "https://registry.npmjs.org/@ai-sdk/provider/-/provider-2.0.0-beta.1.tgz"
   integrity sha512-Z8SPncMtS3RsoXITmT7NVwrAq6M44dmw0DoUOYJqNNtCu8iMWuxB8Nxsoqpa0uEEy9R1V1ZThJAXTYgjTUxl3w==
+  
   dependencies:
     json-schema "^0.4.0"
 
@@ -57,6 +61,7 @@
   version "2.0.0-beta.2"
   resolved "https://registry.npmjs.org/@ai-sdk/provider/-/provider-2.0.0-beta.2.tgz"
   integrity sha512-vqhtZA7R24q1XnmfmIb1fZSmHMIaJH1BVQ+0kFnNJgqWsc+V8i+yfetZ37gUc4fXATFmBuS/6O7+RPoHsZ2Fqg==
+  
   dependencies:
     json-schema "^0.4.0"
 
@@ -2863,10 +2868,11 @@ ai@5.0.0-beta.25:
   version "5.0.0-beta.25"
   resolved "https://registry.npmjs.org/ai/-/ai-5.0.0-beta.25.tgz"
   integrity sha512-pbfFqtQvz7hiDw6TwUH75CK9FgrZFBsxqbW4yW0aqluHw3nRbhf0w1u2AMiYgvWMy8Xf8TkBbMtY4vyMc4neeA==
+
   dependencies:
-    "@ai-sdk/gateway" "1.0.0-beta.11"
-    "@ai-sdk/provider" "2.0.0-beta.1"
-    "@ai-sdk/provider-utils" "3.0.0-beta.5"
+    "@ai-sdk/gateway" "1.0.4"
+    "@ai-sdk/provider" "2.0.0"
+    "@ai-sdk/provider-utils" "3.0.1"
     "@opentelemetry/api" "1.9.0"
 
 ajv@^6.12.4:

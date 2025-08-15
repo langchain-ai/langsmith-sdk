@@ -28,6 +28,7 @@ const entrypoints = {
   "experimental/otel/setup": "experimental/otel/setup",
   "experimental/otel/exporter": "experimental/otel/exporter",
   "experimental/otel/processor": "experimental/otel/processor",
+  "experimental/vercel": "experimental/vercel/index",
 };
 
 const defaultEntrypoints = [
