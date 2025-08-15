@@ -74,29 +74,21 @@ export const normalizeFileDataAsDataURL = (
   let normalizedFileData: string;
   if (typeof fileData !== "string") {
     let uint8Array;
-    if (
-      fileData != null &&
-      typeof fileData === "object" &&
-      "type" in fileData &&
-      "data" in fileData
-    ) {
-      // Typing is wrong here if a buffer is passed in
-      uint8Array = new Uint8Array(fileData.data as Uint8Array);
-      // eslint-disable-next-line no-instanceof/no-instanceof
-    } else if (fileData instanceof ArrayBuffer) {
-      uint8Array = new Uint8Array(fileData);
+    // eslint-disable-next-line no-instanceof/no-instanceof
+    if (fileData instanceof Uint8Array) {
+      uint8Array = fileData;
     } else if (
       fileData != null &&
       typeof fileData === "object" &&
-      Object.keys(fileData).every((key) => !isNaN(Number(key)))
+      "type" in fileData &&
+      "data" in fileData &&
+      typeof fileData.data === "object" &&
+      fileData.data instanceof Uint8Array
     ) {
-      uint8Array = new Uint8Array(
-        Array.from({
-          // Node buffer case
-          ...(fileData as Record<string, number>),
-          length: Object.keys(fileData).length,
-        })
-      );
+      uint8Array = fileData.data;
+      // eslint-disable-next-line no-instanceof/no-instanceof
+    } else if (fileData instanceof ArrayBuffer) {
+      uint8Array = new Uint8Array(fileData);
     }
     if (uint8Array) {
       let binary = "";
