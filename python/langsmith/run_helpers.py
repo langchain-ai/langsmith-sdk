@@ -150,7 +150,7 @@ def tracing_context(
         # TODO(angus): decide if we want to merge tags and metadata
         tags = sorted(set(tags or []) | set(parent_run.tags or []))
         metadata = {**parent_run.metadata, **(metadata or {})}
-        distributed_parent_id_to_use = parent_run.id
+        distributed_parent_id_to_use = parent_run.id  # type: ignore[assignment]
     enabled = enabled if enabled is not None else current_context.get("enabled")
     _set_tracing_context(
         {
@@ -1002,6 +1002,7 @@ class trace:
                 "parent": self.parent,
                 "run_tree": self.run_tree,
                 "client": client_,
+                "project_name": self.project_name,
             }
         )
 
