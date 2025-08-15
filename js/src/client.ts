@@ -790,7 +790,9 @@ export class Client implements LangSmithTracingClientInterface {
         if (errorCode === "org_scoped_key_requires_workspace") {
           this.validateWorkspaceRequirements();
         }
-      } catch {}
+      } catch {
+        // Don't assume workspace error
+      }
     }
   }
 
@@ -868,7 +870,7 @@ export class Client implements LangSmithTracingClientInterface {
     );
 
     if (!response.ok) {
-      this.checkWorkspaceError(response);
+      void this.checkWorkspaceError(response);
     }
 
     await raiseForStatus(response, `Failed to fetch ${path}`);
