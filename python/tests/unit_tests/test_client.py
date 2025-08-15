@@ -3301,3 +3301,38 @@ def test_workspace_validation_for_org_scoped_keys(monkeypatch: pytest.MonkeyPatc
     # Test that validation passes when workspace_id is specified
     client = Client(api_key="test-key", workspace_id="test-workspace-id", auto_batch_tracing=False)
     client._validate_workspace_requirements()  # Should not raise
+    
+
+def test_workspace_error_detection_from_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that org-scoped key errors are detected from specific backend error messages."""
+    _clear_env_cache()
+    
+    client = Client(api_key="test-key", auto_batch_tracing=False)
+    
+    # Mock a response with the specific org-scoped error
+    class MockResponse:
+        def __init__(self, status_code: int, json_data: dict):
+            self.status_code = status_code
+            self._json_data = json_data
+        
+        def json(self):
+            return self._json_data
+    
+    # Test with specific org-scoped error message
+    mock_response = MockResponse(403, {"error": "org_scoped_key_requires_workspace"})
+    
+    # Should raise the validation error when specific error is detected
+    with pytest.raises(ls_utils.LangSmithUserError, match="This API key is org-scoped and requires workspace specification"):
+        client._check_workspace_error(mock_response)
+    
+    # Test with different error message (should not trigger validation)
+    mock_response_other = MockResponse(403, {"error": "other_error"})
+    
+    # Should not raise any error
+    client._check_workspace_error(mock_response_other)
+    
+    # Test with different status code (should not trigger validation)
+    mock_response_400 = MockResponse(400, {"error": "org_scoped_key_requires_workspace"})
+    
+    # Should not raise any error
+    client._check_workspace_error(mock_response_400)

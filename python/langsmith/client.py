@@ -724,8 +724,14 @@ class Client:
 
     def _check_workspace_error(self, response: requests.Response) -> None:
         """Check if response indicates a workspace-related error for org-scoped keys."""
-        if response.status_code == 400:
-            self._validate_workspace_requirements()
+        if response.status_code == 403:
+            try:
+                error_data = response.json()
+                error_code = error_data.get("error", "")
+                if error_code == "org_scoped_key_requires_workspace":
+                    self._validate_workspace_requirements()
+            except (ValueError, KeyError):
+                pass
 
     @property
     def api_key(self) -> Optional[str]:

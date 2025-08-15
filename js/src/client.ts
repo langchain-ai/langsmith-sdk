@@ -781,10 +781,18 @@ export class Client implements LangSmithTracingClientInterface {
     }
   }
 
-  private checkWorkspaceError(response: Response): void {
+  private async checkWorkspaceError(response: Response): Promise<void> {
     // Check for 400 status code or error messages containing workspace-related content
-    if (response.status === 400) {
-      this.validateWorkspaceRequirements();
+    if (response.status === 403) {
+      try {
+        const errorData = await response.json();
+        const errorCode = errorData?.error;
+        if (errorCode === "org_scoped_key_requires_workspace") {
+          this.validateWorkspaceRequirements();
+        }
+      } catch {
+        
+      }
     }
   }
 
