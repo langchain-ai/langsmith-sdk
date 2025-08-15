@@ -83,6 +83,7 @@ export const normalizeFileDataAsDataURL = (
       "type" in fileData &&
       "data" in fileData &&
       typeof fileData.data === "object" &&
+      // eslint-disable-next-line no-instanceof/no-instanceof
       fileData.data instanceof Uint8Array
     ) {
       uint8Array = fileData.data;
