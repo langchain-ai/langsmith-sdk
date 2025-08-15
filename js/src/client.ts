@@ -790,9 +790,7 @@ export class Client implements LangSmithTracingClientInterface {
         if (errorCode === "org_scoped_key_requires_workspace") {
           this.validateWorkspaceRequirements();
         }
-      } catch {
-        
-      }
+      } catch {}
     }
   }
 

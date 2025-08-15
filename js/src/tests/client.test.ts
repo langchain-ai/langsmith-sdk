@@ -549,34 +549,39 @@ describe("Client", () => {
 
     it("should detect org-scoped key errors from specific backend error messages", async () => {
       const client = new Client({ apiKey: "test-key" });
-      
+
       // Mock a response with the specific org-scoped error
       const mockResponse = {
         status: 403,
-        json: () => Promise.resolve({ error: "org_scoped_key_requires_workspace" })
+        json: () =>
+          Promise.resolve({ error: "org_scoped_key_requires_workspace" }),
       } as unknown as Response;
-      
+
       // Should call validateWorkspaceRequirements when specific error is detected
-      const mockValidate = jest.spyOn(client as any, 'validateWorkspaceRequirements');
+      const mockValidate = jest.spyOn(
+        client as any,
+        "validateWorkspaceRequirements"
+      );
       await (client as any).checkWorkspaceError(mockResponse);
       expect(mockValidate).toHaveBeenCalledTimes(1);
-      
+
       // Test with different error message (should not trigger validation)
       const mockResponseOther = {
         status: 403,
-        json: () => Promise.resolve({ error: "other_error" })
+        json: () => Promise.resolve({ error: "other_error" }),
       } as unknown as Response;
-      
+
       mockValidate.mockClear();
       await (client as any).checkWorkspaceError(mockResponseOther);
       expect(mockValidate).not.toHaveBeenCalled();
-      
+
       // Test with different status code (should not trigger validation)
       const mockResponse400 = {
         status: 400,
-        json: () => Promise.resolve({ error: "org_scoped_key_requires_workspace" })
+        json: () =>
+          Promise.resolve({ error: "org_scoped_key_requires_workspace" }),
       } as unknown as Response;
-      
+
       mockValidate.mockClear();
       await (client as any).checkWorkspaceError(mockResponse400);
       expect(mockValidate).not.toHaveBeenCalled();
