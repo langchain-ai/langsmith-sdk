@@ -3223,7 +3223,118 @@ def test__convert_stored_attachments_to_attachments_dict(mock_get: mock.Mock):
         "https://api.langsmith.com/download/valid", stream=True
     )
 
+def test_workspace_validation_optional(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that workspace is optional when API key is present."""
+    _clear_env_cache()
+    
+    # Clear environment variables
+    monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
+    monkeypatch.delenv("LANGSMITH_WORKSPACE_ID", raising=False)
+    
+    # Test 1: API key without workspace should succeed (backward compatibility)
+    client = Client(api_key="test-key", auto_batch_tracing=False)
+    assert client.workspace_id is None
+    
+    # Test 2: API key with workspace_id should succeed
+    client = Client(
+        api_key="test-key", 
+        workspace_id="test-workspace-id", 
+        auto_batch_tracing=False
+    )
+    assert client.workspace_id == "test-workspace-id"
 
+
+def test_workspace_validation_with_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test workspace validation with environment variables."""
+    _clear_env_cache()
+    
+    # Test with LANGSMITH_WORKSPACE_ID env var
+    monkeypatch.setenv("LANGSMITH_API_KEY", "test-key")
+    monkeypatch.setenv("LANGSMITH_WORKSPACE_ID", "env-workspace-id")
+    
+    client = Client(auto_batch_tracing=False)
+    assert client.workspace_id == "env-workspace-id"
+
+
+def test_workspace_validation_without_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that workspace is not required when no API key is present."""
+    _clear_env_cache()
+    
+    # Clear all environment variables
+    monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
+    monkeypatch.delenv("LANGSMITH_WORKSPACE_ID", raising=False)
+    
+    # Should succeed without workspace when no API key
+    client = Client(auto_batch_tracing=False)
+    assert client.api_key is None
+    assert client.workspace_id is None
+
+
+def test_workspace_headers_injection(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that workspace headers are properly injected."""
+    _clear_env_cache()
+    
+    # Set up environment
+    monkeypatch.setenv("LANGSMITH_API_KEY", "test-key")
+    monkeypatch.setenv("LANGSMITH_WORKSPACE_ID", "test-workspace-id")
+    
+    client = Client(auto_batch_tracing=False)
+    headers = client._compute_headers()
+    
+    # Check that workspace headers are present
+    assert "X-Tenant-Id" in headers
+
+
+def test_workspace_validation_for_org_scoped_keys(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that workspace validation is called for org-scoped keys."""
+    _clear_env_cache()
+    
+    # Test that validation fails when no workspace is specified
+    client = Client(api_key="test-key", auto_batch_tracing=False)
+    
+    with pytest.raises(ls_utils.LangSmithUserError, match="This API key is org-scoped and requires workspace specification"):
+        client._validate_workspace_requirements()
+    
+    # Test that validation passes when workspace_id is specified
+    client = Client(api_key="test-key", workspace_id="test-workspace-id", auto_batch_tracing=False)
+    client._validate_workspace_requirements()  # Should not raise
+    
+
+def test_workspace_error_detection_from_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that org-scoped key errors are detected from specific backend error messages."""
+    _clear_env_cache()
+    
+    client = Client(api_key="test-key", auto_batch_tracing=False)
+    
+    # Mock a response with the specific org-scoped error
+    class MockResponse:
+        def __init__(self, status_code: int, json_data: dict):
+            self.status_code = status_code
+            self._json_data = json_data
+        
+        def json(self):
+            return self._json_data
+    
+    # Test with specific org-scoped error message
+    mock_response = MockResponse(403, {"error": "org_scoped_key_requires_workspace"})
+    
+    # Should raise the validation error when specific error is detected
+    with pytest.raises(ls_utils.LangSmithUserError, match="This API key is org-scoped and requires workspace specification"):
+        client._check_workspace_error(mock_response)
+    
+    # Test with different error message (should not trigger validation)
+    mock_response_other = MockResponse(403, {"error": "other_error"})
+    
+    # Should not raise any error
+    client._check_workspace_error(mock_response_other)
+    
+    # Test with different status code (should not trigger validation)
+    mock_response_400 = MockResponse(400, {"error": "org_scoped_key_requires_workspace"})
+    
+    # Should not raise any error
+    client._check_workspace_error(mock_response_400)
+
+    
 @pytest.mark.parametrize(
     "api_url,pathname,expected",
     [

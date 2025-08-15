@@ -482,4 +482,111 @@ describe("Client", () => {
       expect(patchTraceIds.has(traceIds[3])).toBe(false);
     });
   });
+
+  describe("Workspace Support", () => {
+    // eslint-disable-next-line no-process-env
+    const originalEnv = process.env;
+
+    beforeEach(() => {
+      jest.resetModules();
+      // eslint-disable-next-line no-process-env
+      process.env = { ...originalEnv };
+    });
+
+    afterEach(() => {
+      // eslint-disable-next-line no-process-env
+      process.env = originalEnv;
+    });
+
+    it("should accept workspaceId in config", () => {
+      const client = new Client({ workspaceId: "test-workspace-id" });
+      expect(client.getWorkspaceId()).toBe("test-workspace-id");
+    });
+
+    it("should read workspaceId from environment variable", () => {
+      // eslint-disable-next-line no-process-env
+      process.env.LANGSMITH_WORKSPACE_ID = "env-workspace-id";
+      const client = new Client();
+      expect(client.getWorkspaceId()).toBe("env-workspace-id");
+    });
+
+    it("should prioritize config over environment variable", () => {
+      // eslint-disable-next-line no-process-env
+      process.env.LANGSMITH_WORKSPACE_ID = "env-workspace-id";
+      const client = new Client({ workspaceId: "config-workspace-id" });
+      expect(client.getWorkspaceId()).toBe("config-workspace-id");
+    });
+
+    it("should include X-Tenant-Id header when workspaceId is set", () => {
+      const client = new Client({ workspaceId: "test-workspace-id" });
+      const headers = (client as any).headers;
+      expect(headers["X-Tenant-Id"]).toBe("test-workspace-id");
+    });
+
+    it("should not include X-Tenant-Id header when workspaceId is not set", () => {
+      const client = new Client();
+      const headers = (client as any).headers;
+      expect(headers["X-Tenant-Id"]).toBeUndefined();
+    });
+
+    it("should validate workspace requirements for org-scoped keys", () => {
+      const client = new Client({ apiKey: "test-key" });
+
+      // Should throw when no workspace is specified
+      expect(() => {
+        (client as any).validateWorkspaceRequirements();
+      }).toThrow(
+        "This API key is org-scoped and requires workspace specification"
+      );
+
+      // Should not throw when workspace is specified
+      const clientWithWorkspace = new Client({
+        apiKey: "test-key",
+        workspaceId: "test-workspace-id",
+      });
+      expect(() => {
+        (clientWithWorkspace as any).validateWorkspaceRequirements();
+      }).not.toThrow();
+    });
+
+    it("should detect org-scoped key errors from specific backend error messages", async () => {
+      const client = new Client({ apiKey: "test-key" });
+
+      // Mock a response with the specific org-scoped error
+      const mockResponse = {
+        status: 403,
+        json: () =>
+          Promise.resolve({ error: "org_scoped_key_requires_workspace" }),
+      } as unknown as Response;
+
+      // Should call validateWorkspaceRequirements when specific error is detected
+      const mockValidate = jest.spyOn(
+        client as any,
+        "validateWorkspaceRequirements"
+      );
+      await (client as any).checkWorkspaceError(mockResponse);
+      expect(mockValidate).toHaveBeenCalledTimes(1);
+
+      // Test with different error message (should not trigger validation)
+      const mockResponseOther = {
+        status: 403,
+        json: () => Promise.resolve({ error: "other_error" }),
+      } as unknown as Response;
+
+      mockValidate.mockClear();
+      await (client as any).checkWorkspaceError(mockResponseOther);
+      expect(mockValidate).not.toHaveBeenCalled();
+
+      // Test with different status code (should not trigger validation)
+      const mockResponse400 = {
+        status: 400,
+        json: () =>
+          Promise.resolve({ error: "org_scoped_key_requires_workspace" }),
+      } as unknown as Response;
+
+      mockValidate.mockClear();
+      await (client as any).checkWorkspaceError(mockResponse400);
+      expect(mockValidate).not.toHaveBeenCalled();
+    });
+  });
 });
