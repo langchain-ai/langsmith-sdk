@@ -128,3 +128,44 @@ test("can set run id", async () => {
   const run = await client.readRun(runId);
   expect(run.id).toBe(runId);
 });
+
+test("should reuse tool def", async () => {
+  const toolDef = {
+    listOrders: tool({
+      description: "list all orders",
+      inputSchema: z.object({ userId: z.string() }),
+      execute: async ({ userId }) =>
+        `User ${userId} has the following orders: 1`,
+    }),
+  };
+  const result = await generateText({
+    model: openai("gpt-4.1-nano"),
+    messages: [
+      {
+        role: "user",
+        content: "What are my orders? My user ID is 123. Always use tools.",
+      },
+    ],
+    tools: toolDef,
+    stopWhen: stepCountIs(10),
+  });
+  expect(result.text).toBeDefined();
+  expect(result.text.length).toBeGreaterThan(0);
+  expect(result.usage).toBeDefined();
+  expect(result.providerMetadata).toBeDefined();
+  const result2 = await generateText({
+    model: openai("gpt-4.1-nano"),
+    messages: [
+      {
+        role: "user",
+        content: "What are my orders? My user ID is 123. Always use tools.",
+      },
+    ],
+    tools: toolDef,
+    stopWhen: stepCountIs(10),
+  });
+  expect(result2.text).toBeDefined();
+  expect(result2.text.length).toBeGreaterThan(0);
+  expect(result2.usage).toBeDefined();
+  expect(result2.providerMetadata).toBeDefined();
+});
