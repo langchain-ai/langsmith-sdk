@@ -13,44 +13,7 @@ import {
   extractInputTokenDetails,
   extractOutputTokenDetails,
 } from "../../utils/vercel.js";
-
-export const populateToolCallsForTracing = (
-  message: LanguageModelV2Message
-) => {
-  const formattedMessage: LanguageModelV2Message & Record<string, unknown> = {
-    ...message,
-  };
-  if (formattedMessage.role !== "assistant") {
-    return formattedMessage;
-  }
-  if (Array.isArray(formattedMessage.content)) {
-    const toolCalls = formattedMessage.content
-      .filter((block) => {
-        return (
-          block != null &&
-          typeof block === "object" &&
-          block.type == "tool-call"
-        );
-      })
-      .map((block) => {
-        return {
-          id: block.toolCallId,
-          type: "function",
-          function: {
-            name: block.toolName,
-            arguments:
-              typeof block.input !== "string"
-                ? JSON.stringify(block.input)
-                : block.input,
-          },
-        };
-      });
-    if (toolCalls.length > 0) {
-      formattedMessage.tool_calls = toolCalls;
-    }
-  }
-  return formattedMessage;
-};
+import { convertMessageToTracedFormat } from "./utils.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const _formatTracedInputs = (params: LanguageModelV2CallOptions) => {
@@ -59,7 +22,7 @@ const _formatTracedInputs = (params: LanguageModelV2CallOptions) => {
     return params;
   }
   if (Array.isArray(prompt)) {
-    return { ...rest, messages: prompt.map(populateToolCallsForTracing) };
+    return { ...rest, messages: prompt.map(convertMessageToTracedFormat) };
   }
   return rest;
 };
@@ -71,7 +34,7 @@ const _formatTracedOutputs = (outputs: Record<string, any>) => {
   if (formattedOutputs.role == null) {
     formattedOutputs.role = formattedOutputs.type ?? "assistant";
   }
-  return populateToolCallsForTracing(
+  return convertMessageToTracedFormat(
     formattedOutputs as LanguageModelV2Message
   );
 };
@@ -157,7 +120,8 @@ export function LangSmithMiddleware(config?: {
           },
         }
       );
-      return traceableFunc(params);
+      const res = await traceableFunc(params);
+      return res;
     },
     wrapStream: async ({ doStream, params }) => {
       const parentRunTree = getCurrentRunTree(true);

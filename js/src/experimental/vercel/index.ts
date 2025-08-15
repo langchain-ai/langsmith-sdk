@@ -1,8 +1,5 @@
-/* eslint-disable import/no-extraneous-dependencies */
-import {
-  LangSmithMiddleware,
-  populateToolCallsForTracing,
-} from "./middleware.js";
+import { LangSmithMiddleware } from "./middleware.js";
+import { convertMessageToTracedFormat } from "./utils.js";
 import { traceable } from "../../traceable.js";
 import { RunTreeConfig } from "../../run_trees.js";
 
@@ -68,9 +65,9 @@ const _getModelId = (model: string | Record<string, unknown>) => {
 const _formatTracedInputs = (params: Record<string, unknown>) => {
   const { prompt, messages, model, tools, ...rest } = params;
   if (Array.isArray(prompt)) {
-    return { ...rest, messages: prompt.map(populateToolCallsForTracing) };
+    return { ...rest, messages: prompt.map(convertMessageToTracedFormat) };
   } else if (Array.isArray(messages)) {
-    return { ...rest, messages: messages.map(populateToolCallsForTracing) };
+    return { ...rest, messages: messages.map(convertMessageToTracedFormat) };
   } else {
     return { ...rest, prompt, messages };
   }
@@ -199,7 +196,7 @@ const wrapAISDK = <
               return outputs;
             }
             const { content } = lastStep;
-            return populateToolCallsForTracing({
+            return convertMessageToTracedFormat({
               content,
               role: "assistant",
             });
@@ -327,7 +324,7 @@ const wrapAISDK = <
           if (content == null || typeof content !== "object") {
             return outputs;
           }
-          return populateToolCallsForTracing({
+          return convertMessageToTracedFormat({
             content,
             role: "assistant",
           });
