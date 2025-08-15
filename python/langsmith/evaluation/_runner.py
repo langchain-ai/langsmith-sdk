@@ -753,9 +753,9 @@ def evaluate_comparative(
         ...     assert len(runs) == 2  # Comparing 2 systems
         ...     assert isinstance(example, schemas.Example)
         ...     assert all(run.reference_example_id == example.id for run in runs)
-        ...     pred_a = runs[0].outputs["output"]
-        ...     pred_b = runs[1].outputs["output"]
-        ...     ground_truth = example.outputs["answer"]
+        ...     pred_a = runs[0].outputs["output"] if runs[0].outputs else ""
+        ...     pred_b = runs[1].outputs["output"] if runs[1].outputs else ""
+        ...     ground_truth = example.outputs["answer"] if example.outputs else ""
         ...     tools = [
         ...         {
         ...             "type": "function",
@@ -819,8 +819,8 @@ def evaluate_comparative(
         ...     assert len(runs) == 2  # Comparing 2 systems
         ...     assert isinstance(example, schemas.Example)
         ...     assert all(run.reference_example_id == example.id for run in runs)
-        ...     pred_a = runs[0].outputs["output"]
-        ...     pred_b = runs[1].outputs["output"]
+        ...     pred_a = runs[0].outputs["output"] if runs[0].outputs else ""
+        ...     pred_b = runs[1].outputs["output"] if runs[1].outputs else ""
         ...     if len(pred_a) > len(pred_b):
         ...         return {
         ...             "key": "length_difference",
