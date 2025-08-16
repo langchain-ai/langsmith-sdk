@@ -1,27 +1,31 @@
-/* eslint-disable import/no-extraneous-dependencies */
-import {
-  LangSmithMiddleware,
-  populateToolCallsForTracing,
-} from "./middleware.js";
+import { LangSmithMiddleware } from "./middleware.js";
+import { convertMessageToTracedFormat } from "./utils.js";
 import { traceable } from "../../traceable.js";
 import { RunTreeConfig } from "../../run_trees.js";
 
-const _wrapTools = (tools?: Record<string, unknown>) => {
+const _wrapTools = (
+  tools?: Record<string, unknown>,
+  lsConfig?: Partial<RunTreeConfig>
+) => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const wrappedTools: Record<string, any> = {};
   if (tools) {
     for (const [key, tool] of Object.entries(tools)) {
-      wrappedTools[key] = tool;
+      wrappedTools[key] = { ...(tool as Record<string, unknown>) };
       if (
-        tool != null &&
-        typeof tool === "object" &&
-        "execute" in tool &&
-        typeof tool.execute === "function"
+        wrappedTools[key] != null &&
+        typeof wrappedTools[key] === "object" &&
+        "execute" in wrappedTools[key] &&
+        typeof wrappedTools[key].execute === "function"
       ) {
-        wrappedTools[key].execute = traceable(tool.execute.bind(tool), {
-          name: key,
-          run_type: "tool",
-        });
+        wrappedTools[key].execute = traceable(
+          wrappedTools[key].execute.bind(wrappedTools[key]),
+          {
+            ...lsConfig,
+            name: key,
+            run_type: "tool",
+          }
+        );
       }
     }
   }
@@ -61,9 +65,9 @@ const _getModelId = (model: string | Record<string, unknown>) => {
 const _formatTracedInputs = (params: Record<string, unknown>) => {
   const { prompt, messages, model, tools, ...rest } = params;
   if (Array.isArray(prompt)) {
-    return { ...rest, messages: prompt.map(populateToolCallsForTracing) };
+    return { ...rest, messages: prompt.map(convertMessageToTracedFormat) };
   } else if (Array.isArray(messages)) {
-    return { ...rest, messages: messages.map(populateToolCallsForTracing) };
+    return { ...rest, messages: messages.map(convertMessageToTracedFormat) };
   } else {
     return { ...rest, prompt, messages };
   }
@@ -110,8 +114,30 @@ const wrapAISDK = <
     streamObject: StreamObjectType;
     generateObject: GenerateObjectType;
   },
-  lsConfig?: Partial<Omit<RunTreeConfig, "inputs" | "outputs" | "run_type">>
+  lsConfig?: Partial<
+    Omit<
+      RunTreeConfig,
+      | "inputs"
+      | "outputs"
+      | "run_type"
+      | "child_runs"
+      | "parent_run"
+      | "error"
+      | "serialized"
+    >
+  >
 ) => {
+  const {
+    id,
+    name,
+    parent_run_id,
+    start_time,
+    end_time,
+    attachments,
+    dotted_order,
+    ...inheritedConfig
+  } = lsConfig ?? {};
+
   /**
    * Wrapped version of AI SDK 5's generateText with LangSmith tracing.
    *
@@ -142,11 +168,12 @@ const wrapAISDK = <
           middleware: LangSmithMiddleware({
             name: _getModelDisplayName(params.model),
             modelId: params.model.modelId,
+            lsConfig: inheritedConfig,
           }),
         });
         return generateText({
           ...params,
-          tools: _wrapTools(params.tools),
+          tools: _wrapTools(params.tools, inheritedConfig),
           model: wrappedModel,
         }) as ReturnType<GenerateTextType>;
       },
@@ -169,7 +196,7 @@ const wrapAISDK = <
               return outputs;
             }
             const { content } = lastStep;
-            return populateToolCallsForTracing({
+            return convertMessageToTracedFormat({
               content,
               role: "assistant",
             });
@@ -214,6 +241,7 @@ const wrapAISDK = <
           middleware: LangSmithMiddleware({
             name: _getModelDisplayName(params.model),
             modelId: _getModelId(params.model),
+            lsConfig: inheritedConfig,
           }),
         });
         return generateObject({
@@ -271,11 +299,12 @@ const wrapAISDK = <
           middleware: LangSmithMiddleware({
             name: _getModelDisplayName(params.model),
             modelId: _getModelId(params.model),
+            lsConfig: inheritedConfig,
           }),
         });
         return streamText({
           ...params,
-          tools: _wrapTools(params.tools),
+          tools: _wrapTools(params.tools, inheritedConfig),
           model: wrappedModel,
         }) as ReturnType<StreamTextType>;
       },
@@ -295,7 +324,7 @@ const wrapAISDK = <
           if (content == null || typeof content !== "object") {
             return outputs;
           }
-          return populateToolCallsForTracing({
+          return convertMessageToTracedFormat({
             content,
             role: "assistant",
           });
@@ -336,6 +365,7 @@ const wrapAISDK = <
           middleware: LangSmithMiddleware({
             name: _getModelDisplayName(params.model),
             modelId: _getModelId(params.model),
+            lsConfig: inheritedConfig,
           }),
         });
         return streamObject({
