@@ -3336,7 +3336,6 @@ def test_list_runs_with_child_runs(langchain_client: Client):
 
 
 def test_run_ops_buffer_integration(langchain_client: Client) -> None:
-    """Integration test for run_ops_buffer functionality that modifies run inputs/outputs."""
     project_name = f"test-run-ops-buffer-{str(uuid.uuid4())[:8]}"
 
     # Clean up existing project if it exists
