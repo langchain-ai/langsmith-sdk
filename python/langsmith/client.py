@@ -7068,8 +7068,8 @@ class Client:
             from langchain_core.load.dump import dumps
         except ImportError:
             raise ImportError(
-                "The client.create_commit function requires the langchain_core"
-                "package to run.\nInstall with `pip install langchain_core`"
+                "The client.create_commit function requires the langchain-core"
+                "package to run.\nInstall with `pip install langchain-core`"
             )
 
         json_object = dumps(object)
@@ -7259,7 +7259,7 @@ class Client:
     ) -> Any:
         """Pull a prompt and return it as a LangChain PromptTemplate.
 
-        This method requires `langchain_core`.
+        This method requires `langchain-core <https://pypi.org/project/langchain-core/>`__.
 
         Args:
             prompt_identifier (str): The identifier of the prompt.
@@ -7277,8 +7277,8 @@ class Client:
             from langchain_core.runnables.base import RunnableBinding, RunnableSequence
         except ImportError:
             raise ImportError(
-                "The client.pull_prompt function requires the langchain_core"
-                "package to run.\nInstall with `pip install langchain_core`"
+                "The client.pull_prompt function requires the langchain-core"
+                "package to run.\nInstall with `pip install langchain-core`"
             )
         try:
             from langchain_core._api import suppress_langchain_beta_warning
