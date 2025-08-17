@@ -29,8 +29,7 @@ const _formatTracedInputs = (params: LanguageModelV2CallOptions) => {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const _formatTracedOutputs = (outputs: Record<string, any>) => {
-  const { request, response, ...rest } = outputs;
-  const formattedOutputs = { ...rest };
+  const formattedOutputs = { ...outputs };
   if (formattedOutputs.role == null) {
     formattedOutputs.role = formattedOutputs.type ?? "assistant";
   }
