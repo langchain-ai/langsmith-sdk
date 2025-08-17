@@ -3377,13 +3377,16 @@ def test_run_ops_buffer_integration(langchain_client: Client) -> None:
         for i in range(3):
             run_id = uuid.uuid4()
             run_ids.append(run_id)
-
+            start_time = datetime.datetime.now(datetime.timezone.utc)
             buffer_client.create_run(
                 id=run_id,
                 name=f"test_buffered_run_{i}",
                 run_type="llm",
                 inputs={"text": f"input_{i}", "index": i},
                 project_name=project_name,
+                trace_id=run_id,
+                dotted_order=f"{start_time.strftime('%Y%m%dT%H%M%S%fZ')}{str(run_id)}",
+                start_time=start_time,
             )
 
             # Update with outputs
