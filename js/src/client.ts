@@ -1277,7 +1277,7 @@ export class Client implements LangSmithTracingClientInterface {
     );
 
     if (!response.ok) {
-      this.checkWorkspaceError(response);
+      void this.checkWorkspaceError(response);
     }
     await raiseForStatus(response, "create run", true);
   }
