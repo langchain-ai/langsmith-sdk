@@ -3347,8 +3347,9 @@ def test_run_ops_buffer_integration(langchain_client: Client) -> None:
         """Modify run inputs/outputs by adding custom fields and transforming data."""
         for run in runs:
             # Add custom metadata
-            run["custom_processed"] = True
-            run["processing_timestamp"] = time.time()
+            if "extra" in run and run["extra"]:
+                run["extra"]["custom_processed"] = True
+                run["extra"]["processing_timestamp"] = time.time()
 
             # Modify inputs if they exist
             if "inputs" in run and run["inputs"]:
@@ -3387,11 +3388,15 @@ def test_run_ops_buffer_integration(langchain_client: Client) -> None:
                 trace_id=run_id,
                 dotted_order=f"{start_time.strftime('%Y%m%dT%H%M%S%fZ')}{str(run_id)}",
                 start_time=start_time,
+                extra={},
             )
 
             # Update with outputs
             buffer_client.update_run(
-                run_id, outputs={"result": f"output_{i}", "processed_index": i * 2}
+                run_id,
+                outputs={"result": f"output_{i}", "processed_index": i * 2},
+                trace_id=run_id,
+                dotted_order=f"{start_time.strftime('%Y%m%dT%H%M%S%fZ')}{str(run_id)}",
             )
 
         # Flush to ensure all runs are processed
@@ -3414,14 +3419,14 @@ def test_run_ops_buffer_integration(langchain_client: Client) -> None:
 
             # Check that inputs were modified
             assert stored_run.inputs["processed"] is True
-            assert stored_run.inputs["original_input_count"] == 2  # text + index
+            assert stored_run.inputs["original_input_count"] == 3  # text + index
             assert stored_run.inputs["text"] == f"input_{i}"
             assert stored_run.inputs["index"] == i
 
             # Check that outputs were modified
             assert stored_run.outputs["processed"] is True
             assert (
-                stored_run.outputs["original_output_count"] == 2
+                stored_run.outputs["original_output_count"] == 3
             )  # result + processed_index
             assert stored_run.outputs["result"] == f"output_{i}"
             assert stored_run.outputs["processed_index"] == i * 2
