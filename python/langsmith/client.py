@@ -2301,7 +2301,6 @@ class Client:
                         "Must set dangerously_allow_filesystem=True to allow passing in Paths for attachments."
                     )
             data["attachments"] = attachments
-
         use_multipart = (
             (self.tracing_queue is not None or self.compressed_traces is not None)
             # batch ingest requires trace_id and dotted_order to be set
