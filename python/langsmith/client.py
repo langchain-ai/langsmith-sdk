@@ -1457,13 +1457,28 @@ class Client:
                     raise ValueError(
                         "Run compression is enabled but threading event is not configured"
                     )
-                else:
-                    opened_files = self._add_run_to_compressed_traces(
-                        "post", run_create
+                serialized_op = serialize_run_dict("post", run_create)
+                (
+                    multipart_form,
+                    opened_files,
+                ) = serialized_run_operation_to_multipart_parts_and_context(
+                    serialized_op
+                )
+                logger.log(
+                    5,
+                    "Adding compressed multipart to queue with context: %s",
+                    multipart_form.context,
+                )
+                with self.compressed_traces.lock:
+                    compress_multipart_parts_and_context(
+                        multipart_form,
+                        self.compressed_traces,
+                        _BOUNDARY,
                     )
-                    if self._data_available_event:
-                        self._data_available_event.set()
-                    _close_files(opened_files)
+                    self.compressed_traces.trace_count += 1
+                    self._data_available_event.set()
+
+                _close_files(list(opened_files.values()))
             elif self.tracing_queue is not None:
                 serialized_op = serialize_run_dict("post", run_create)
                 logger.log(
@@ -1566,39 +1581,6 @@ class Client:
         if self._hide_metadata is False:
             return metadata
         return self._hide_metadata(metadata)
-
-    def _add_run_to_compressed_traces(self, operation: str, run_data: dict) -> list:
-        """Add runs to the compressed traces buffer.
-
-        Returns a list of opened files that need to be closed.
-        """
-        if operation == "post":
-            serialized_op = serialize_run_dict("post", run_data)
-        else:  # "patch"
-            serialized_op = serialize_run_dict(operation="patch", payload=run_data)
-
-        (
-            multipart_form,
-            opened_files,
-        ) = serialized_run_operation_to_multipart_parts_and_context(serialized_op)
-        logger.log(
-            5,
-            "Adding compressed multipart to queue with context: %s",
-            multipart_form.context,
-        )
-        if self.compressed_traces is None:
-            raise RuntimeError(
-                "compressed_traces should not be None when adding run to compressed traces"
-            )
-        with self.compressed_traces.lock:
-            compress_multipart_parts_and_context(
-                multipart_form,
-                self.compressed_traces,
-                _BOUNDARY,
-            )
-            self.compressed_traces.trace_count += 1
-
-        return list(opened_files.values())
 
     def _should_flush_run_ops_buffer(self) -> bool:
         """Check if the run ops buffer should be flushed based on size or time."""
@@ -2376,22 +2358,33 @@ class Client:
         if self._pyo3_client is not None:
             self._pyo3_client.update_run(run_update)
         elif use_multipart:
+            serialized_op = serialize_run_dict(operation="patch", payload=run_update)
             if self.compressed_traces is not None:
-                if self._data_available_event is None:
-                    raise ValueError(
-                        "Run compression is enabled but threading event is not configured"
-                    )
-                else:
-                    opened_files = self._add_run_to_compressed_traces(
-                        "patch", run_update
-                    )
-                    if self._data_available_event:
-                        self._data_available_event.set()
-                    _close_files(opened_files)
-            elif self.tracing_queue is not None:
-                serialized_op = serialize_run_dict(
-                    operation="patch", payload=run_update
+                (
+                    multipart_form,
+                    opened_files,
+                ) = serialized_run_operation_to_multipart_parts_and_context(
+                    serialized_op
                 )
+                logger.log(
+                    5,
+                    "Adding compressed multipart to queue with context: %s",
+                    multipart_form.context,
+                )
+                with self.compressed_traces.lock:
+                    if self._data_available_event is None:
+                        raise ValueError(
+                            "Run compression is enabled but threading event is not configured"
+                        )
+                    compress_multipart_parts_and_context(
+                        multipart_form,
+                        self.compressed_traces,
+                        _BOUNDARY,
+                    )
+                    self.compressed_traces.trace_count += 1
+                    self._data_available_event.set()
+                _close_files(list(opened_files.values()))
+            elif self.tracing_queue is not None:
                 logger.log(
                     5,
                     "Adding to tracing queue: trace_id=%s, run_id=%s",
