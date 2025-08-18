@@ -203,10 +203,6 @@ def _tracing_thread_handle_batch(
         for (api_url, api_key), group_batch in grouped_batches.items():
             if ops is None:
                 group_ops = combine_serialized_queue_operations([item.item for item in group_batch])
-            else:
-                # If ops were pre-combined, we need to filter them for this group
-                group_item_ids = {item.item.id for item in group_batch if hasattr(item.item, 'id')}
-                group_ops = [op for op in ops if hasattr(op, 'id') and op.id in group_item_ids]
 
             if use_multipart:
                 client._multipart_ingest_ops(group_ops, api_url=api_url, api_key=api_key)
