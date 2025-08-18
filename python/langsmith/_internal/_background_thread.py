@@ -8,7 +8,6 @@ import logging
 import sys
 import threading
 import time
-import traceback
 import weakref
 from multiprocessing import cpu_count
 from queue import Empty, Queue
