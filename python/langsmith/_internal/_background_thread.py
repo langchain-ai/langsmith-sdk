@@ -53,7 +53,7 @@ def _group_batch_by_api_endpoint(
     for item in batch:
         key = (item.api_url, item.api_key)
         grouped[key].append(item)
-    return dict(grouped)
+    return grouped
 
 
 @functools.total_ordering
