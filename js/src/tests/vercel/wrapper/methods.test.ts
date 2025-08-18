@@ -248,7 +248,7 @@ describe("wrapAISDK", () => {
         }),
       });
 
-      const result = await wrappedMethods.streamText({
+      const result = wrappedMethods.streamText({
         model: mockLangModel,
         prompt: "Say hello",
       });
@@ -304,7 +304,7 @@ describe("wrapAISDK", () => {
         },
       });
 
-      const result = await wrappedMethods.streamText({
+      const result = wrappedMethods.streamText({
         model: mockLangModel,
         prompt: "This should fail",
       });
@@ -424,6 +424,60 @@ describe("wrapAISDK", () => {
       expect(updateRunCall.body.error).toContain("Object generation failed");
     });
 
+    it("should handle generateObject with explicit generics", async () => {
+      const wrappedMethods = wrapAISDK(
+        {
+          wrapLanguageModel: ai.wrapLanguageModel,
+          generateText: ai.generateText,
+          streamText: ai.streamText,
+          generateObject: ai.generateObject,
+          streamObject: ai.streamObject,
+        },
+        { client: mockClient as any }
+      );
+
+      const mockLangModel = new MockLanguageModelV2({
+        modelId: "object-generics-test-model",
+        doGenerate: async () => ({
+          content: [
+            {
+              type: "text" as const,
+              text: '{"key": "test-value"}',
+            },
+          ],
+          finishReason: "stop" as const,
+          usage: {
+            promptTokens: 10,
+            completionTokens: 8,
+            inputTokens: 10,
+            outputTokens: 8,
+            totalTokens: 18,
+          },
+          warnings: [],
+        }),
+      });
+
+      const result = await wrappedMethods.generateObject<
+        z.ZodObject<{ key: z.ZodString; keybar: z.ZodString }>,
+        "object",
+        { key: string; keybar: string }
+      >({
+        model: mockLangModel,
+        prompt: "Generate an object with a key",
+        // @ts-expect-error - bad schema for test
+        schema: z.object({
+          key: z.string(),
+        }),
+      });
+
+      void result.object.key;
+      void result.object.keybar;
+      // @ts-expect-error - test nonpresent keys throw type error
+      void result.object.keybaz;
+
+      expect(result.object).toEqual({ key: "test-value" });
+    });
+
     it("should create LangSmith traces for streamObject operations", async () => {
       const wrappedMethods = wrapAISDK(
         {
@@ -458,7 +512,7 @@ describe("wrapAISDK", () => {
         }),
       });
 
-      const { partialObjectStream } = await wrappedMethods.streamObject({
+      const { partialObjectStream } = wrappedMethods.streamObject({
         model: mockLangModel,
         prompt: "Generate an object",
         schema: z.object({
@@ -516,7 +570,7 @@ describe("wrapAISDK", () => {
         },
       });
 
-      const result = await wrappedMethods.streamObject({
+      const result = wrappedMethods.streamObject({
         model: mockLangModel,
         prompt: "This should fail",
         schema: z.object({
@@ -610,7 +664,7 @@ describe("wrapAISDK", () => {
         },
       });
 
-      const result = await wrappedMethods.streamText({
+      const result = wrappedMethods.streamText({
         model: mockLangModel,
         prompt: "Test rate limit retry",
       });

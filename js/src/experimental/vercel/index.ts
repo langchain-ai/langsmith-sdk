@@ -91,15 +91,15 @@ const _formatTracedInputs = (params: Record<string, unknown>) => {
  */
 const wrapAISDK = <
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  WrapLanguageModelType extends (...args: any[]) => any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   GenerateTextType extends (...args: any[]) => any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   StreamTextType extends (...args: any[]) => any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  GenerateObjectType extends (...args: any[]) => any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   StreamObjectType extends (...args: any[]) => any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  GenerateObjectType extends (...args: any[]) => any
+  WrapLanguageModelType extends (...args: any[]) => any
 >(
   {
     wrapLanguageModel,
@@ -156,26 +156,29 @@ const wrapAISDK = <
    * @param params - Same parameters as the original generateText function
    * @returns Promise resolving to the same result as generateText, with tracing applied
    */
-  const wrappedGenerateText = async (
-    params: Parameters<GenerateTextType>[0]
-  ) => {
+  const wrappedGenerateText = async (...args: Parameters<GenerateTextType>) => {
+    const params = args[0];
     const traceableFunc = traceable(
       async (
-        params: Parameters<GenerateTextType>[0]
+        ...args: Parameters<GenerateTextType>
       ): Promise<ReturnType<GenerateTextType>> => {
+        const [params, ...rest] = args;
         const wrappedModel = wrapLanguageModel({
           model: params.model,
           middleware: LangSmithMiddleware({
             name: _getModelDisplayName(params.model),
-            modelId: params.model.modelId,
+            modelId: _getModelId(params.model),
             lsConfig: inheritedConfig,
           }),
         });
-        return generateText({
-          ...params,
-          tools: _wrapTools(params.tools, inheritedConfig),
-          model: wrappedModel,
-        }) as ReturnType<GenerateTextType>;
+        return generateText(
+          {
+            ...params,
+            tools: _wrapTools(params.tools, inheritedConfig),
+            model: wrappedModel,
+          },
+          ...rest
+        ) as ReturnType<GenerateTextType>;
       },
       {
         name: _getModelDisplayName(params.model),
@@ -206,9 +209,9 @@ const wrapAISDK = <
         },
       }
     ) as (
-      params: Parameters<GenerateTextType>[0]
+      ...args: Parameters<GenerateTextType>
     ) => Promise<ReturnType<GenerateTextType>>;
-    return traceableFunc(params);
+    return traceableFunc(...args);
   };
 
   /**
@@ -230,12 +233,14 @@ const wrapAISDK = <
    * @returns Promise resolving to the same result as generateObject, with tracing applied
    */
   const wrappedGenerateObject = async (
-    params: Parameters<GenerateObjectType>[0]
+    ...args: Parameters<GenerateObjectType>
   ) => {
+    const params = args[0];
     const traceableFunc = traceable(
       async (
-        params: Parameters<GenerateObjectType>[0]
+        ...args: Parameters<GenerateObjectType>
       ): Promise<ReturnType<GenerateObjectType>> => {
+        const [params, ...rest] = args;
         const wrappedModel = wrapLanguageModel({
           model: params.model,
           middleware: LangSmithMiddleware({
@@ -244,10 +249,13 @@ const wrapAISDK = <
             lsConfig: inheritedConfig,
           }),
         });
-        return generateObject({
-          ...params,
-          model: wrappedModel,
-        }) as ReturnType<GenerateObjectType>;
+        return generateObject(
+          {
+            ...params,
+            model: wrappedModel,
+          },
+          ...rest
+        ) as ReturnType<GenerateObjectType>;
       },
       {
         name: _getModelDisplayName(params.model),
@@ -265,9 +273,9 @@ const wrapAISDK = <
         },
       }
     ) as (
-      params: Parameters<GenerateObjectType>[0]
+      ...args: Parameters<GenerateObjectType>
     ) => Promise<ReturnType<GenerateObjectType>>;
-    return traceableFunc(params);
+    return traceableFunc(...args);
   };
 
   /**
@@ -289,11 +297,11 @@ const wrapAISDK = <
    * @param params - Same parameters as the original streamText function
    * @returns Promise resolving to the same result as streamText, with tracing applied
    */
-  const wrappedStreamText = async (params: Parameters<StreamTextType>[0]) => {
+  const wrappedStreamText = (...args: Parameters<StreamTextType>) => {
+    const params = args[0];
     const traceableFunc = traceable(
-      async (
-        params: Parameters<StreamTextType>[0]
-      ): Promise<ReturnType<StreamTextType>> => {
+      (...args: Parameters<StreamTextType>): ReturnType<StreamTextType> => {
+        const [params, ...rest] = args;
         const wrappedModel = wrapLanguageModel({
           model: params.model,
           middleware: LangSmithMiddleware({
@@ -302,11 +310,14 @@ const wrapAISDK = <
             lsConfig: inheritedConfig,
           }),
         });
-        return streamText({
-          ...params,
-          tools: _wrapTools(params.tools, inheritedConfig),
-          model: wrappedModel,
-        }) as ReturnType<StreamTextType>;
+        return streamText(
+          {
+            ...params,
+            tools: _wrapTools(params.tools, inheritedConfig),
+            model: wrappedModel,
+          },
+          ...rest
+        ) as ReturnType<StreamTextType>;
       },
       {
         name: _getModelDisplayName(params.model),
@@ -330,8 +341,8 @@ const wrapAISDK = <
           });
         },
       }
-    ) as (params: Parameters<StreamTextType>[0]) => ReturnType<StreamTextType>;
-    return traceableFunc(params);
+    ) as (...args: Parameters<StreamTextType>) => ReturnType<StreamTextType>;
+    return traceableFunc(...args);
   };
 
   /**
@@ -353,13 +364,11 @@ const wrapAISDK = <
    * @param params - Same parameters as the original streamObject function
    * @returns Promise resolving to the same result as streamObject, with tracing applied
    */
-  const wrappedStreamObject = async (
-    params: Parameters<StreamObjectType>[0]
-  ) => {
+  const wrappedStreamObject = (...args: Parameters<StreamObjectType>) => {
+    const params = args[0];
     const traceableFunc = traceable(
-      async (
-        params: Parameters<StreamObjectType>[0]
-      ): Promise<ReturnType<StreamObjectType>> => {
+      (...args: Parameters<StreamObjectType>): ReturnType<StreamObjectType> => {
+        const [params, ...rest] = args;
         const wrappedModel = wrapLanguageModel({
           model: params.model,
           middleware: LangSmithMiddleware({
@@ -368,10 +377,13 @@ const wrapAISDK = <
             lsConfig: inheritedConfig,
           }),
         });
-        return streamObject({
-          ...params,
-          model: wrappedModel,
-        }) as ReturnType<StreamObjectType>;
+        return streamObject(
+          {
+            ...params,
+            model: wrappedModel,
+          },
+          ...rest
+        ) as ReturnType<StreamObjectType>;
       },
       {
         name: _getModelDisplayName(params.model),
@@ -393,16 +405,16 @@ const wrapAISDK = <
         },
       }
     ) as (
-      params: Parameters<StreamObjectType>[0]
+      ...args: Parameters<StreamObjectType>
     ) => ReturnType<StreamObjectType>;
-    return traceableFunc(params);
+    return traceableFunc(...args);
   };
 
   return {
-    generateText: wrappedGenerateText,
-    generateObject: wrappedGenerateObject,
-    streamText: wrappedStreamText,
-    streamObject: wrappedStreamObject,
+    generateText: wrappedGenerateText as GenerateTextType,
+    generateObject: wrappedGenerateObject as GenerateObjectType,
+    streamText: wrappedStreamText as StreamTextType,
+    streamObject: wrappedStreamObject as StreamObjectType,
   };
 };
 
