@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "langsmith"
-version = "0.4.13"
+version = "0.4.14"
 description = "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform."
 authors = [
     {name = "LangChain", email = "support@langchain.dev"},
