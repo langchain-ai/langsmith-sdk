@@ -1545,7 +1545,7 @@ class Client:
         ops: list[SerializedRunOperation],
         *,
         api_url: Optional[str] = None,
-        api_key: Optional[str] = None
+        api_key: Optional[str] = None,
     ) -> None:
         ids_and_partial_body: dict[
             Literal["post", "patch"], list[tuple[str, bytes]]
@@ -1774,9 +1774,10 @@ class Client:
         *,
         _context: str,
         api_url: Optional[str] = None,
-        api_key: Optional[str] = None
+        api_key: Optional[str] = None,
     ):
         # Use provided endpoint or fall back to all configured endpoints
+        endpoints: Mapping[str, Optional[str]]
         if api_url is not None and api_key is not None:
             endpoints = {api_url: api_key}
         else:
@@ -1784,7 +1785,9 @@ class Client:
 
         for target_api_url, target_api_key in endpoints.items():
             try:
-                logger.debug(f"Sending batch ingest request to {target_api_url} with context: {_context}")
+                logger.debug(
+                    f"Sending batch ingest request to {target_api_url} with context: {_context}"
+                )
                 self.request_with_retries(
                     "POST",
                     f"{target_api_url}/runs/batch",
@@ -1812,7 +1815,7 @@ class Client:
         ops: list[Union[SerializedRunOperation, SerializedFeedbackOperation]],
         *,
         api_url: Optional[str] = None,
-        api_key: Optional[str] = None
+        api_key: Optional[str] = None,
     ) -> None:
         parts: list[MultipartPartsAndContext] = []
         opened_files_dict: dict[str, io.BufferedReader] = {}
@@ -1833,7 +1836,9 @@ class Client:
         acc_multipart = join_multipart_parts_and_context(parts)
         if acc_multipart:
             try:
-                self._send_multipart_req(acc_multipart, api_url=api_url, api_key=api_key)
+                self._send_multipart_req(
+                    acc_multipart, api_url=api_url, api_key=api_key
+                )
             finally:
                 _close_files(list(opened_files_dict.values()))
 
@@ -2019,14 +2024,14 @@ class Client:
         *,
         attempts: int = 3,
         api_url: Optional[str] = None,
-        api_key: Optional[str] = None
+        api_key: Optional[str] = None,
     ):
         parts = acc.parts
         _context = acc.context
 
         # Use provided endpoint or fall back to all configured endpoints
         if api_url is not None and api_key is not None:
-            endpoints = {api_url: api_key}
+            endpoints: Mapping[str, str | None] = {api_url: api_key}
         else:
             endpoints = self._write_api_urls
 
@@ -2038,7 +2043,9 @@ class Client:
                         data = encoder.to_string()
                     else:
                         data = encoder
-                    logger.debug(f"Sending multipart request to {target_api_url} with context: {_context}")
+                    logger.debug(
+                        f"Sending multipart request to {target_api_url} with context: {_context}"
+                    )
                     self.request_with_retries(
                         "POST",
                         f"{target_api_url}/runs/multipart",

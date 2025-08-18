@@ -201,19 +201,29 @@ def _tracing_thread_handle_batch(
 
         for (api_url, api_key), group_batch in grouped_batches.items():
             if ops is None:
-                group_ops = combine_serialized_queue_operations([item.item for item in group_batch])
+                group_ops = combine_serialized_queue_operations(
+                    [item.item for item in group_batch]
+                )
 
             if use_multipart:
-                client._multipart_ingest_ops(group_ops, api_url=api_url, api_key=api_key)
+                client._multipart_ingest_ops(
+                    group_ops, api_url=api_url, api_key=api_key
+                )
             else:
                 if any(isinstance(op, SerializedFeedbackOperation) for op in group_ops):
                     logger.warning(
                         "Feedback operations are not supported in non-multipart mode"
                     )
                     group_ops = [
-                        op for op in group_ops if not isinstance(op, SerializedFeedbackOperation)
+                        op
+                        for op in group_ops
+                        if not isinstance(op, SerializedFeedbackOperation)
                     ]
-                client._batch_ingest_run_ops(cast(list[SerializedRunOperation], group_ops), api_url=api_url, api_key=api_key)
+                client._batch_ingest_run_ops(
+                    cast(list[SerializedRunOperation], group_ops),
+                    api_url=api_url,
+                    api_key=api_key,
+                )
 
     except Exception:
         logger.error(

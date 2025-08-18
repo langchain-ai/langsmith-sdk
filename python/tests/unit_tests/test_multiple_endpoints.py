@@ -10,18 +10,18 @@ This test covers:
 """
 
 import json
-import os
 import uuid
-import time
-from unittest.mock import Mock, patch, call
-from queue import Queue
+from unittest.mock import Mock, patch
 
 import pytest
 
 from langsmith import Client
-from langsmith.run_trees import RunTree, WriteReplica
-from langsmith._internal._background_thread import TracingQueueItem, _tracing_thread_handle_batch
+from langsmith._internal._background_thread import (
+    TracingQueueItem,
+    _tracing_thread_handle_batch,
+)
 from langsmith._internal._operations import serialize_run_dict
+from langsmith.run_trees import RunTree, WriteReplica
 
 
 class TestLangsmithRunsEndpoints:
@@ -46,7 +46,9 @@ class TestLangsmithRunsEndpoints:
         ]
 
     def test_client_create_run_with_multiple_write_api_urls(self):
-        """Test that client.create_run() sends to multiple endpoints when using _write_api_urls."""
+        """Test that client.create_run() sends to multiple endpoints when using
+        _write_api_urls.
+        """
         # Create client with multiple write API URLs
         api_urls = {
             "https://api1.example.com": "key1",
@@ -61,7 +63,8 @@ class TestLangsmithRunsEndpoints:
             mock_response.json.return_value = {}
             mock_request.return_value = mock_response
             
-            # Call create_run without specific api_key/api_url (should use all endpoints)
+            # Call create_run without specific api_key/api_url
+            # (should use all endpoints)
             client.create_run(**self.run_data)
             
             # Verify requests were made to all 3 endpoints
@@ -70,7 +73,8 @@ class TestLangsmithRunsEndpoints:
             # Extract the URLs from the calls
             called_urls = []
             for call_args in mock_request.call_args_list:
-                # The URL is the second positional argument: session.request(method, url, ...)
+                # The URL is the second positional argument:
+                # session.request(method, url, ...)
                 full_url = call_args[0][1]  # call_args[0] is args tuple, [1] is the URL
                 base_url = full_url.replace('/runs', '')
                 called_urls.append(base_url)
@@ -88,7 +92,9 @@ class TestLangsmithRunsEndpoints:
                 assert api_key in ["key1", "key2", "key3"]
 
     def test_client_create_run_with_specific_endpoint(self):
-        """Test that client.create_run() with specific api_key/api_url only sends to that endpoint."""
+        """Test that client.create_run() with specific api_key/api_url only sends
+        to that endpoint.
+        """
         api_urls = {
             "https://api1.example.com": "key1",
             "https://api2.example.com": "key2",
@@ -115,7 +121,8 @@ class TestLangsmithRunsEndpoints:
             assert full_url == "https://custom.example.com/runs"
 
             headers = call_args[1].get('headers', {})
-            assert headers.get('x-api-key') == "custom_key"  # Note: lowercase header key
+            # Note: lowercase header key
+            assert headers.get('x-api-key') == "custom_key"
 
     def test_run_tree_with_replicas(self):
         """Test RunTree.post() with replicas containing api_key/api_url."""
@@ -165,7 +172,9 @@ class TestLangsmithRunsEndpoints:
         assert second_call.kwargs['session_name'] == 'project2'
 
     def test_background_threading_with_different_endpoints(self):
-        """Test background threading correctly groups and sends to different endpoints."""
+        """Test background threading correctly groups and sends to different
+        endpoints.
+        """
         client = Mock()
         tracing_queue = Mock()
         
@@ -174,14 +183,28 @@ class TestLangsmithRunsEndpoints:
         client._batch_ingest_run_ops = Mock()
         
         # Create batch with items for different endpoints
-        serialized_op1 = serialize_run_dict('post', {**self.run_data, 'id': uuid.uuid4()})
-        serialized_op2 = serialize_run_dict('post', {**self.run_data, 'id': uuid.uuid4()})
-        serialized_op3 = serialize_run_dict('post', {**self.run_data, 'id': uuid.uuid4()})
+        serialized_op1 = serialize_run_dict(
+            'post', {**self.run_data, 'id': uuid.uuid4()}
+        )
+        serialized_op2 = serialize_run_dict(
+            'post', {**self.run_data, 'id': uuid.uuid4()}
+        )
+        serialized_op3 = serialize_run_dict(
+            'post', {**self.run_data, 'id': uuid.uuid4()}
+        )
         
         batch = [
-            TracingQueueItem('priority1', serialized_op1, api_key='key1', api_url='https://api1.com'),
-            TracingQueueItem('priority2', serialized_op2, api_key='key1', api_url='https://api1.com'),  # Same endpoint
-            TracingQueueItem('priority3', serialized_op3, api_key='key2', api_url='https://api2.com'),  # Different endpoint
+            TracingQueueItem(
+                'priority1', serialized_op1, api_key='key1', api_url='https://api1.com'
+            ),
+            # Same endpoint
+            TracingQueueItem(
+                'priority2', serialized_op2, api_key='key1', api_url='https://api1.com'
+            ),
+            # Different endpoint
+            TracingQueueItem(
+                'priority3', serialized_op3, api_key='key2', api_url='https://api2.com'
+            ),
         ]
         
         # Test multipart mode
@@ -192,7 +215,9 @@ class TestLangsmithRunsEndpoints:
         
         # Verify the calls had correct endpoint parameters
         calls = client._multipart_ingest_ops.call_args_list
-        endpoint_calls = [(call.kwargs.get('api_url'), call.kwargs.get('api_key')) for call in calls]
+        endpoint_calls = [
+            (call.kwargs.get('api_url'), call.kwargs.get('api_key')) for call in calls
+        ]
         
         assert ('https://api1.com', 'key1') in endpoint_calls
         assert ('https://api2.com', 'key2') in endpoint_calls
@@ -214,12 +239,20 @@ class TestLangsmithRunsEndpoints:
         client._batch_ingest_run_ops = Mock()
         
         # Create batch with items for different endpoints
-        serialized_op1 = serialize_run_dict('post', {**self.run_data, 'id': uuid.uuid4()})
-        serialized_op2 = serialize_run_dict('post', {**self.run_data, 'id': uuid.uuid4()})
+        serialized_op1 = serialize_run_dict(
+            'post', {**self.run_data, 'id': uuid.uuid4()}
+        )
+        serialized_op2 = serialize_run_dict(
+            'post', {**self.run_data, 'id': uuid.uuid4()}
+        )
         
         batch = [
-            TracingQueueItem('priority1', serialized_op1, api_key='key1', api_url='https://api1.com'),
-            TracingQueueItem('priority2', serialized_op2, api_key='key2', api_url='https://api2.com'),
+            TracingQueueItem(
+                'priority1', serialized_op1, api_key='key1', api_url='https://api1.com'
+            ),
+            TracingQueueItem(
+                'priority2', serialized_op2, api_key='key2', api_url='https://api2.com'
+            ),
         ]
         
         # Test non-multipart mode
@@ -230,7 +263,9 @@ class TestLangsmithRunsEndpoints:
         
         # Verify the calls had correct endpoint parameters
         calls = client._batch_ingest_run_ops.call_args_list
-        endpoint_calls = [(call.kwargs.get('api_url'), call.kwargs.get('api_key')) for call in calls]
+        endpoint_calls = [
+            (call.kwargs.get('api_url'), call.kwargs.get('api_key')) for call in calls
+        ]
         
         assert ('https://api1.com', 'key1') in endpoint_calls
         assert ('https://api2.com', 'key2') in endpoint_calls
@@ -258,14 +293,27 @@ class TestLangsmithRunsEndpoints:
         client._multipart_ingest_ops = Mock()
         
         # Create batch with mixed endpoint specifications
-        serialized_op1 = serialize_run_dict('post', {**self.run_data, 'id': uuid.uuid4()})
-        serialized_op2 = serialize_run_dict('post', {**self.run_data, 'id': uuid.uuid4()})
-        serialized_op3 = serialize_run_dict('post', {**self.run_data, 'id': uuid.uuid4()})
+        serialized_op1 = serialize_run_dict(
+            'post', {**self.run_data, 'id': uuid.uuid4()}
+        )
+        serialized_op2 = serialize_run_dict(
+            'post', {**self.run_data, 'id': uuid.uuid4()}
+        )
+        serialized_op3 = serialize_run_dict(
+            'post', {**self.run_data, 'id': uuid.uuid4()}
+        )
         
         batch = [
-            TracingQueueItem('priority1', serialized_op1, api_key='key1', api_url='https://api1.com'),
-            TracingQueueItem('priority2', serialized_op2, api_key=None, api_url=None),  # Should use default
-            TracingQueueItem('priority3', serialized_op3, api_key='key2', api_url='https://api2.com'),
+            TracingQueueItem(
+                'priority1', serialized_op1, api_key='key1', api_url='https://api1.com'
+            ),
+            # Should use default
+            TracingQueueItem(
+                'priority2', serialized_op2, api_key=None, api_url=None
+            ),
+            TracingQueueItem(
+                'priority3', serialized_op3, api_key='key2', api_url='https://api2.com'
+            ),
         ]
         
         _tracing_thread_handle_batch(client, tracing_queue, batch, use_multipart=True)
@@ -275,7 +323,9 @@ class TestLangsmithRunsEndpoints:
         
         # Verify endpoint combinations
         calls = client._multipart_ingest_ops.call_args_list
-        endpoint_calls = [(call.kwargs.get('api_url'), call.kwargs.get('api_key')) for call in calls]
+        endpoint_calls = [
+            (call.kwargs.get('api_url'), call.kwargs.get('api_key')) for call in calls
+        ]
         
         assert ('https://api1.com', 'key1') in endpoint_calls
         assert ('https://api2.com', 'key2') in endpoint_calls
