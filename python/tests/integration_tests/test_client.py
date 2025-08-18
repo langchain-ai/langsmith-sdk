@@ -3347,17 +3347,17 @@ def test_run_ops_buffer_integration(langchain_client: Client) -> None:
         """Modify run inputs/outputs by adding custom fields and transforming data."""
         for run in runs:
             # Add custom metadata
-            if "extra" in run and run["extra"]:
+            if "extra" in run and isinstance(run["extra"], dict):
                 run["extra"]["custom_processed"] = True
                 run["extra"]["processing_timestamp"] = time.time()
 
             # Modify inputs if they exist
-            if "inputs" in run and run["inputs"]:
+            if "inputs" in run and isinstance(run["inputs"], dict):
                 run["inputs"]["processed"] = True
                 run["inputs"]["original_input_count"] = len(run["inputs"])
 
             # Modify outputs if they exist
-            if "outputs" in run and run["outputs"]:
+            if "outputs" in run and isinstance(run["outputs"], dict):
                 run["outputs"]["processed"] = True
                 run["outputs"]["original_output_count"] = len(run["outputs"])
 

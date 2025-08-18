@@ -185,21 +185,15 @@ def _process_buffered_run_ops_batch(
             )
 
         # Process each run and add to compressed traces
-        all_opened_files = []
         for (operation, _), processed_run in zip(batch_to_process, processed_runs):
-            opened_files = client._add_run_to_compressed_traces(
-                operation, processed_run
-            )
-            all_opened_files.extend(opened_files)
+            if operation == "post":
+                client._create_run(processed_run)
+            elif operation == "patch":
+                client._update_run(processed_run)
 
         # Trigger data available event
         if client._data_available_event:
             client._data_available_event.set()
-
-        # Close all opened files
-        from langsmith.client import _close_files
-
-        _close_files(all_opened_files)
     except Exception:
         # Log errors but don't crash the background thread
         logger.error(

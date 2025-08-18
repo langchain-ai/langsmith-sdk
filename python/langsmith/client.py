@@ -1426,7 +1426,25 @@ class Client:
                     raise ValueError(
                         "Must set dangerously_allow_filesystem=True to allow passing in Paths for attachments."
                     )
+        # If process_buffered_run_ops is enabled, collect run ops in batches
+        # before batching
+        if self._process_buffered_run_ops and not kwargs.get("is_run_ops_buffer_flush"):
+            with self._run_ops_buffer_lock:
+                self._run_ops_buffer.append(("post", run_create))
+                # Process batch when we have enough runs or enough time has passed
+                if self._should_flush_run_ops_buffer():
+                    self._flush_run_ops_buffer()
+                return
+        else:
+            self._create_run(run_create, api_key=api_key, api_url=api_url)
 
+    def _create_run(
+        self,
+        run_create: dict,
+        *,
+        api_key: Optional[str] = None,
+        api_url: Optional[str] = None,
+    ) -> None:
         if (
             # batch ingest requires trace_id and dotted_order to be set
             run_create.get("trace_id") is not None
@@ -1439,17 +1457,7 @@ class Client:
                     raise ValueError(
                         "Run compression is enabled but threading event is not configured"
                     )
-
-                # If process_buffered_run_ops is enabled, collect run ops in batches
-                # before batching
-                if self._process_buffered_run_ops:
-                    with self._run_ops_buffer_lock:
-                        self._run_ops_buffer.append(("post", run_create))
-                        # Process batch when we have enough runs or enough time has passed
-                        if self._should_flush_run_ops_buffer():
-                            self._flush_run_ops_buffer()
                 else:
-                    # Original single-run processing
                     opened_files = self._add_run_to_compressed_traces(
                         "post", run_create
                     )
@@ -1481,11 +1489,11 @@ class Client:
             else:
                 # Neither Rust nor Python batch ingestion is configured,
                 # fall back to the non-batch approach.
-                self._create_run(run_create, api_key=api_key, api_url=api_url)
+                self._create_run_non_batch(run_create, api_key=api_key, api_url=api_url)
         else:
-            self._create_run(run_create, api_key=api_key, api_url=api_url)
+            self._create_run_non_batch(run_create, api_key=api_key, api_url=api_url)
 
-    def _create_run(
+    def _create_run_non_batch(
         self,
         run_create: dict,
         *,
@@ -2311,6 +2319,7 @@ class Client:
                         "Must set dangerously_allow_filesystem=True to allow passing in Paths for attachments."
                     )
             data["attachments"] = attachments
+
         use_multipart = (
             (self.tracing_queue is not None or self.compressed_traces is not None)
             # batch ingest requires trace_id and dotted_order to be set
@@ -2340,30 +2349,49 @@ class Client:
         if reference_example_id is not None:
             data["reference_example_id"] = reference_example_id
 
+        # If process_buffered_run_ops is enabled, collect runs in batches
+        if self._process_buffered_run_ops and not kwargs.get("is_run_ops_buffer_flush"):
+            with self._run_ops_buffer_lock:
+                self._run_ops_buffer.append(("patch", data))
+                # Process batch when we have enough runs or enough time has passed
+                if self._should_flush_run_ops_buffer():
+                    self._flush_run_ops_buffer()
+                return
+        else:
+            self._update_run(data, api_key=api_key, api_url=api_url)
+
+    def _update_run(
+        self,
+        run_update: dict,
+        *,
+        api_key: Optional[str] = None,
+        api_url: Optional[str] = None,
+    ):
+        use_multipart = (
+            (self.tracing_queue is not None or self.compressed_traces is not None)
+            # batch ingest requires trace_id and dotted_order to be set
+            and run_update["trace_id"] is not None
+            and run_update["dotted_order"] is not None
+        )
         if self._pyo3_client is not None:
-            self._pyo3_client.update_run(data)
+            self._pyo3_client.update_run(run_update)
         elif use_multipart:
             if self.compressed_traces is not None:
                 if self._data_available_event is None:
                     raise ValueError(
                         "Run compression is enabled but threading event is not configured"
                     )
-
-                # If process_buffered_run_ops is enabled, collect runs in batches
-                if self._process_buffered_run_ops:
-                    with self._run_ops_buffer_lock:
-                        self._run_ops_buffer.append(("patch", data))
-                        # Process batch when we have enough runs or enough time has passed
-                        if self._should_flush_run_ops_buffer():
-                            self._flush_run_ops_buffer()
                 else:
-                    # Original single-run processing
-                    opened_files = self._add_run_to_compressed_traces("patch", data)
+                    opened_files = self._add_run_to_compressed_traces(
+                        "patch", run_update
+                    )
                     if self._data_available_event:
                         self._data_available_event.set()
                     _close_files(opened_files)
             elif self.tracing_queue is not None:
-                serialized_op = serialize_run_dict(operation="patch", payload=data)
+                serialized_op = serialize_run_dict(
+                    operation="patch", payload=run_update
+                )
                 logger.log(
                     5,
                     "Adding to tracing queue: trace_id=%s, run_id=%s",
@@ -2373,7 +2401,7 @@ class Client:
                 if HAS_OTEL:
                     self.tracing_queue.put(
                         TracingQueueItem(
-                            data["dotted_order"],
+                            run_update["dotted_order"],
                             serialized_op,
                             otel_context=set_span_in_context(
                                 otel_trace.get_current_span()
@@ -2382,12 +2410,12 @@ class Client:
                     )
                 else:
                     self.tracing_queue.put(
-                        TracingQueueItem(data["dotted_order"], serialized_op)
+                        TracingQueueItem(run_update["dotted_order"], serialized_op)
                     )
         else:
-            self._update_run(data, api_key=api_key, api_url=api_url)
+            self._update_run_non_batch(run_update, api_key=api_key, api_url=api_url)
 
-    def _update_run(
+    def _update_run_non_batch(
         self,
         run_update: dict,
         *,
