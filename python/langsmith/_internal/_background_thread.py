@@ -43,6 +43,19 @@ logger = logging.getLogger("langsmith.client")
 LANGSMITH_CLIENT_THREAD_POOL = cf.ThreadPoolExecutor(max_workers=cpu_count() * 3)
 
 
+def _group_batch_by_api_endpoint(
+    batch: list[TracingQueueItem],
+) -> dict[tuple[Optional[str], Optional[str]], list[TracingQueueItem]]:
+    """Group batch items by (api_url, api_key) combination."""
+    from collections import defaultdict
+
+    grouped = defaultdict(list)
+    for item in batch:
+        key = (item.api_url, item.api_key)
+        grouped[key].append(item)
+    return grouped
+
+
 @functools.total_ordering
 class TracingQueueItem:
     """An item in the tracing queue.
@@ -55,18 +68,24 @@ class TracingQueueItem:
 
     priority: str
     item: Union[SerializedRunOperation, SerializedFeedbackOperation]
+    api_url: Optional[str]
+    api_key: Optional[str]
     otel_context: Optional[Context]
 
-    __slots__ = ("priority", "item", "otel_context")
+    __slots__ = ("priority", "item", "api_key", "api_url", "otel_context")
 
     def __init__(
         self,
         priority: str,
         item: Union[SerializedRunOperation, SerializedFeedbackOperation],
+        api_key: Optional[str] = None,
+        api_url: Optional[str] = None,
         otel_context: Optional[Context] = None,
     ) -> None:
         self.priority = priority
         self.item = item
+        self.api_key = api_key
+        self.api_url = api_url
         self.otel_context = otel_context
 
     def __lt__(self, other: TracingQueueItem) -> bool:
@@ -227,20 +246,34 @@ def _tracing_thread_handle_batch(
             If None, operations will be combined from the batch items.
     """
     try:
-        if ops is None:
-            ops = combine_serialized_queue_operations([item.item for item in batch])
+        # Group batch items by (api_url, api_key) combination
+        grouped_batches = _group_batch_by_api_endpoint(batch)
 
-        if use_multipart:
-            client._multipart_ingest_ops(ops)
-        else:
-            if any(isinstance(op, SerializedFeedbackOperation) for op in ops):
-                logger.warn(
-                    "Feedback operations are not supported in non-multipart mode"
+        for (api_url, api_key), group_batch in grouped_batches.items():
+            if ops is None:
+                group_ops = combine_serialized_queue_operations(
+                    [item.item for item in group_batch]
                 )
-                ops = [
-                    op for op in ops if not isinstance(op, SerializedFeedbackOperation)
-                ]
-            client._batch_ingest_run_ops(cast(list[SerializedRunOperation], ops))
+
+            if use_multipart:
+                client._multipart_ingest_ops(
+                    group_ops, api_url=api_url, api_key=api_key
+                )
+            else:
+                if any(isinstance(op, SerializedFeedbackOperation) for op in group_ops):
+                    logger.warning(
+                        "Feedback operations are not supported in non-multipart mode"
+                    )
+                    group_ops = [
+                        op
+                        for op in group_ops
+                        if not isinstance(op, SerializedFeedbackOperation)
+                    ]
+                client._batch_ingest_run_ops(
+                    cast(list[SerializedRunOperation], group_ops),
+                    api_url=api_url,
+                    api_key=api_key,
+                )
 
     except Exception:
         logger.error(

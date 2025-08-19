@@ -18,7 +18,7 @@ const { generateText, streamText, generateObject, streamObject } =
 
 test("wrap generateText", async () => {
   const result = await generateText({
-    model: openai("gpt-4.1-nano"),
+    model: openai("gpt-5-nano"),
     messages: [
       {
         role: "user",
@@ -43,7 +43,7 @@ test("wrap generateText", async () => {
 
 test("wrap streamText", async () => {
   const result = await streamText({
-    model: openai("gpt-4.1-nano"),
+    model: openai("gpt-5-nano"),
     messages: [
       {
         role: "user",
@@ -75,7 +75,7 @@ test("wrap generateObject", async () => {
     color: z.string(),
   });
   const result = await generateObject({
-    model: openai("gpt-4.1-nano"),
+    model: openai("gpt-5-nano"),
     messages: [
       {
         role: "user",
@@ -95,7 +95,7 @@ test("wrap streamObject", async () => {
     color: z.string(),
   });
   const result = await streamObject({
-    model: openai("gpt-4.1-nano"),
+    model: openai("gpt-5-nano"),
     messages: [
       {
         role: "user",
@@ -119,7 +119,7 @@ test("can set run id", async () => {
   const client = new Client();
   const { generateText } = wrapAISDK(ai, { id: runId });
   await generateText({
-    model: openai("gpt-4.1-nano"),
+    model: openai("gpt-5-nano"),
     messages: [
       {
         role: "user",
@@ -142,7 +142,7 @@ test("should reuse tool def without double wrapping tool traces", async () => {
     }),
   };
   const result = await generateText({
-    model: openai("gpt-4.1-nano"),
+    model: openai("gpt-5-nano"),
     messages: [
       {
         role: "user",
@@ -157,7 +157,7 @@ test("should reuse tool def without double wrapping tool traces", async () => {
   expect(result.usage).toBeDefined();
   expect(result.providerMetadata).toBeDefined();
   const result2 = await generateText({
-    model: openai("gpt-4.1-nano"),
+    model: openai("gpt-5-nano"),
     messages: [
       {
         role: "user",
@@ -192,7 +192,7 @@ test("image and file data normalization", async () => {
   const imgUrlObject = new URL("https://picsum.photos/200/300");
 
   const result = await generateText({
-    model: openai("gpt-4.1-nano"),
+    model: openai("gpt-5-nano"),
     messages: [
       {
         role: "user",
