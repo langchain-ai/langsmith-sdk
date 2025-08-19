@@ -3114,7 +3114,7 @@ export class Client implements LangSmithTracingClientInterface {
       as_of: typeof asOf === "string" ? asOf : asOf.toISOString(),
       tag,
     });
-    const response = await this.caller.call(async () => {
+    await this.caller.call(async () => {
       const res = await _getFetchImplementation(this.debug)(
         `${this.apiUrl}/datasets/${_datasetId}/tags`,
         {
@@ -3125,7 +3125,7 @@ export class Client implements LangSmithTracingClientInterface {
           ...this.fetchOptions,
         }
       );
-      await raiseForStatus(res, "update dataset tags");
+      await raiseForStatus(res, "update dataset tags", true);
       return res;
     });
   }
@@ -3997,7 +3997,7 @@ export class Client implements LangSmithTracingClientInterface {
     }
     assertUuid(feedbackId);
     const body = JSON.stringify(feedbackUpdate);
-    const response = await this.caller.call(async () => {
+    await this.caller.call(async () => {
       const res = await _getFetchImplementation(this.debug)(
         `${this.apiUrl}/feedback/${feedbackId}`,
         {
@@ -4422,7 +4422,7 @@ export class Client implements LangSmithTracingClientInterface {
       description,
       rubric_instructions: rubricInstructions,
     });
-    const response = await this.caller.call(async () => {
+    await this.caller.call(async () => {
       const res = await _getFetchImplementation(this.debug)(
         `${this.apiUrl}/annotation-queues/${assertUuid(queueId, "queueId")}`,
         {
