@@ -1460,7 +1460,11 @@ class Client:
         ):
             if self._pyo3_client is not None:
                 self._pyo3_client.create_run(run_create)
-            elif self.compressed_traces is not None:
+            elif (
+                self.compressed_traces is not None
+                and api_key is None
+                and api_url is None
+            ):
                 if self._data_available_event is None:
                     raise ValueError(
                         "Run compression is enabled but threading event is not configured"
@@ -1500,6 +1504,8 @@ class Client:
                         TracingQueueItem(
                             run_create["dotted_order"],
                             serialized_op,
+                            api_key=api_key,
+                            api_url=api_url,
                             otel_context=set_span_in_context(
                                 otel_trace.get_current_span()
                             ),
@@ -1507,7 +1513,12 @@ class Client:
                     )
                 else:
                     self.tracing_queue.put(
-                        TracingQueueItem(run_create["dotted_order"], serialized_op)
+                        TracingQueueItem(
+                            run_create["dotted_order"],
+                            serialized_op,
+                            api_key=api_key,
+                            api_url=api_url,
+                        )
                     )
             else:
                 # Neither Rust nor Python batch ingestion is configured,
@@ -1593,6 +1604,9 @@ class Client:
     def _batch_ingest_run_ops(
         self,
         ops: list[SerializedRunOperation],
+        *,
+        api_url: Optional[str] = None,
+        api_key: Optional[str] = None,
     ) -> None:
         ids_and_partial_body: dict[
             Literal["post", "patch"], list[tuple[str, bytes]]
@@ -1651,6 +1665,8 @@ class Client:
                     self._post_batch_ingest_runs(
                         _orjson.dumps(body_chunks),
                         _context=f"\n{key}: {'; '.join(context_ids[key])}",
+                        api_url=api_url,
+                        api_key=api_key,
                     )
                     body_size = 0
                     body_chunks.clear()
@@ -1662,7 +1678,10 @@ class Client:
         if body_size:
             context = "; ".join(f"{k}: {'; '.join(v)}" for k, v in context_ids.items())
             self._post_batch_ingest_runs(
-                _orjson.dumps(body_chunks), _context="\n" + context
+                _orjson.dumps(body_chunks),
+                _context="\n" + context,
+                api_url=api_url,
+                api_key=api_key,
             )
 
     def batch_ingest_runs(
@@ -1810,18 +1829,34 @@ class Client:
 
         self._batch_ingest_run_ops(serialized_ops)
 
-    def _post_batch_ingest_runs(self, body: bytes, *, _context: str):
-        for api_url, api_key in self._write_api_urls.items():
+    def _post_batch_ingest_runs(
+        self,
+        body: bytes,
+        *,
+        _context: str,
+        api_url: Optional[str] = None,
+        api_key: Optional[str] = None,
+    ):
+        # Use provided endpoint or fall back to all configured endpoints
+        endpoints: Mapping[str, Optional[str]]
+        if api_url is not None and api_key is not None:
+            endpoints = {api_url: api_key}
+        else:
+            endpoints = self._write_api_urls
+
+        for target_api_url, target_api_key in endpoints.items():
             try:
-                logger.debug(f"Sending batch ingest request with context: {_context}")
+                logger.debug(
+                    f"Sending batch ingest request to {target_api_url} with context: {_context}"
+                )
                 self.request_with_retries(
                     "POST",
-                    f"{api_url}/runs/batch",
+                    f"{target_api_url}/runs/batch",
                     request_kwargs={
                         "data": body,
                         "headers": {
                             **self._headers,
-                            X_API_KEY: api_key,
+                            X_API_KEY: target_api_key,
                         },
                     },
                     to_ignore=(ls_utils.LangSmithConflictError,),
@@ -1837,7 +1872,11 @@ class Client:
                     logger.warning(f"Failed to batch ingest runs: {repr(e)}")
 
     def _multipart_ingest_ops(
-        self, ops: list[Union[SerializedRunOperation, SerializedFeedbackOperation]]
+        self,
+        ops: list[Union[SerializedRunOperation, SerializedFeedbackOperation]],
+        *,
+        api_url: Optional[str] = None,
+        api_key: Optional[str] = None,
     ) -> None:
         parts: list[MultipartPartsAndContext] = []
         opened_files_dict: dict[str, io.BufferedReader] = {}
@@ -1858,7 +1897,9 @@ class Client:
         acc_multipart = join_multipart_parts_and_context(parts)
         if acc_multipart:
             try:
-                self._send_multipart_req(acc_multipart)
+                self._send_multipart_req(
+                    acc_multipart, api_url=api_url, api_key=api_key
+                )
             finally:
                 _close_files(list(opened_files_dict.values()))
 
@@ -2038,10 +2079,24 @@ class Client:
         # sent the runs in multipart requests
         self._multipart_ingest_ops(serialized_ops)
 
-    def _send_multipart_req(self, acc: MultipartPartsAndContext, *, attempts: int = 3):
+    def _send_multipart_req(
+        self,
+        acc: MultipartPartsAndContext,
+        *,
+        attempts: int = 3,
+        api_url: Optional[str] = None,
+        api_key: Optional[str] = None,
+    ):
         parts = acc.parts
         _context = acc.context
-        for api_url, api_key in self._write_api_urls.items():
+
+        # Use provided endpoint or fall back to all configured endpoints
+        if api_url is not None and api_key is not None:
+            endpoints: Mapping[str, str | None] = {api_url: api_key}
+        else:
+            endpoints = self._write_api_urls
+
+        for target_api_url, target_api_key in endpoints.items():
             for idx in range(1, attempts + 1):
                 try:
                     encoder = rqtb_multipart.MultipartEncoder(parts, boundary=_BOUNDARY)
@@ -2049,15 +2104,17 @@ class Client:
                         data = encoder.to_string()
                     else:
                         data = encoder
-                    logger.debug(f"Sending multipart request with context: {_context}")
+                    logger.debug(
+                        f"Sending multipart request to {target_api_url} with context: {_context}"
+                    )
                     self.request_with_retries(
                         "POST",
-                        f"{api_url}/runs/multipart",
+                        f"{target_api_url}/runs/multipart",
                         request_kwargs={
                             "data": data,
                             "headers": {
                                 **self._headers,
-                                X_API_KEY: api_key,
+                                X_API_KEY: target_api_key,
                                 "Content-Type": encoder.content_type,
                             },
                         },
@@ -2325,6 +2382,8 @@ class Client:
                         TracingQueueItem(
                             data["dotted_order"],
                             serialized_op,
+                            api_key=api_key,
+                            api_url=api_url,
                             otel_context=set_span_in_context(
                                 otel_trace.get_current_span()
                             ),
@@ -2332,7 +2391,12 @@ class Client:
                     )
                 else:
                     self.tracing_queue.put(
-                        TracingQueueItem(data["dotted_order"], serialized_op)
+                        TracingQueueItem(
+                            data["dotted_order"],
+                            serialized_op,
+                            api_key=api_key,
+                            api_url=api_url,
+                        )
                     )
         else:
             self._update_run(data, api_key=api_key, api_url=api_url)
@@ -7129,8 +7193,8 @@ class Client:
             from langchain_core.load.dump import dumps
         except ImportError:
             raise ImportError(
-                "The client.create_commit function requires the langchain_core"
-                "package to run.\nInstall with `pip install langchain_core`"
+                "The client.create_commit function requires the langchain-core"
+                "package to run.\nInstall with `pip install langchain-core`"
             )
 
         json_object = dumps(object)
@@ -7320,7 +7384,7 @@ class Client:
     ) -> Any:
         """Pull a prompt and return it as a LangChain PromptTemplate.
 
-        This method requires `langchain_core`.
+        This method requires `langchain-core <https://pypi.org/project/langchain-core/>`__.
 
         Args:
             prompt_identifier (str): The identifier of the prompt.
@@ -7338,8 +7402,8 @@ class Client:
             from langchain_core.runnables.base import RunnableBinding, RunnableSequence
         except ImportError:
             raise ImportError(
-                "The client.pull_prompt function requires the langchain_core"
-                "package to run.\nInstall with `pip install langchain_core`"
+                "The client.pull_prompt function requires the langchain-core"
+                "package to run.\nInstall with `pip install langchain-core`"
             )
         try:
             from langchain_core._api import suppress_langchain_beta_warning
