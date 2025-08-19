@@ -107,10 +107,10 @@ export class AsyncCaller {
               const response: Response | undefined = error?.response;
               const status = response?.status ?? error?.status;
               if (status) {
-                if (!STATUS_RETRYABLE.includes(+status)) {
-                  throw error;
-                } else if (STATUS_IGNORE.includes(+status)) {
+                if (STATUS_IGNORE.includes(+status)) {
                   return;
+                } else if (!STATUS_RETRYABLE.includes(+status)) {
+                  throw error;
                 }
                 if (onFailedResponseHook) {
                   await onFailedResponseHook(response);
