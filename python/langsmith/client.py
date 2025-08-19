@@ -489,7 +489,10 @@ class Client:
             process_buffered_run_ops (Optional[Callable[[Sequence[dict]], Sequence[dict]]]): A function applied to buffered run operations
                 that allows for modification of the raw run dicts before they are converted to multipart and compressed.
                 This is useful specifically for high throughput tracing where you need to apply a rate-limited API or other
-                costly process to the runs before they are sent to the API.
+                costly process to the runs before they are sent to the API. Note that the buffer will only flush automatically
+                when run_ops_buffer_size is reached or a new run is added to the buffer after run_ops_buffer_timeout_ms
+                has elapsed - it will not flush outside of these conditions unless you manually
+                call client.flush(), so be sure to do this before your code exits.
             run_ops_buffer_size (Optional[int]): Maximum number of run operations to collect in the buffer before applying
                 process_buffered_run_ops and sending to the API. Required when process_buffered_run_ops is provided.
             run_ops_buffer_timeout_ms (Optional[int]): Maximum time in milliseconds to wait before flushing the run ops buffer
@@ -2561,12 +2564,12 @@ class Client:
 
     def flush(self) -> None:
         """Flush either queue or compressed buffer, depending on mode."""
+        # Flush any remaining batch items first
+        if self._process_buffered_run_ops:
+            with self._run_ops_buffer_lock:
+                if self._run_ops_buffer:
+                    self._flush_run_ops_buffer()
         if self.compressed_traces is not None:
-            # Flush any remaining batch items first
-            if self._process_buffered_run_ops:
-                with self._run_ops_buffer_lock:
-                    if self._run_ops_buffer:
-                        self._flush_run_ops_buffer()
             self.flush_compressed_traces()
         elif self.tracing_queue is not None:
             self.tracing_queue.join()
