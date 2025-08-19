@@ -588,7 +588,7 @@ export class AutoBatchQueue {
 // 20 MB
 export const DEFAULT_BATCH_SIZE_LIMIT_BYTES = 20_971_520;
 
-const SERVER_INFO_REQUEST_TIMEOUT = 5000;
+const SERVER_INFO_REQUEST_TIMEOUT = 2500;
 
 const DEFAULT_API_URL = "https://api.smith.langchain.com";
 
@@ -1105,17 +1105,19 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   protected async _getServerInfo() {
-    const response = await this.caller.call(
-      _getFetchImplementation(this.debug),
-      `${this.apiUrl}/info`,
-      {
-        method: "GET",
-        headers: { Accept: "application/json" },
-        signal: AbortSignal.timeout(SERVER_INFO_REQUEST_TIMEOUT),
-        ...this.fetchOptions,
-      }
-    );
-    await raiseForStatus(response, "get server info");
+    const response = await this.caller.call(async () => {
+      const res = await _getFetchImplementation(this.debug)(
+        `${this.apiUrl}/info`,
+        {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          signal: AbortSignal.timeout(SERVER_INFO_REQUEST_TIMEOUT),
+          ...this.fetchOptions,
+        }
+      );
+      await raiseForStatus(res, "get server info");
+      return res;
+    });
     const json = await response.json();
     if (this.debug) {
       console.log(
