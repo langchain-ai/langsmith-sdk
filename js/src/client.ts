@@ -1043,8 +1043,7 @@ export class Client implements LangSmithTracingClientInterface {
         };
         const serverInfo = await this._ensureServerInfo();
         if (serverInfo?.batch_ingest_config?.use_multipart_endpoint) {
-          const useGzip =
-            serverInfo?.batch_ingest_config?.gzip_compression_enabled;
+          const useGzip = serverInfo?.batch_ingest_config?.gzip_body_enabled;
           await this.multipartIngestRuns(ingestParams, { ...options, useGzip });
         } else {
           await this.batchIngestRuns(ingestParams, options);
