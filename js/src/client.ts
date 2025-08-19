@@ -1043,7 +1043,7 @@ export class Client implements LangSmithTracingClientInterface {
         };
         const serverInfo = await this._ensureServerInfo();
         if (serverInfo?.batch_ingest_config?.use_multipart_endpoint) {
-          const useGzip = serverInfo?.batch_ingest_config?.gzip_body_enabled;
+          const useGzip = serverInfo?.instance_flags?.gzip_body_enabled;
           await this.multipartIngestRuns(ingestParams, { ...options, useGzip });
         } else {
           await this.batchIngestRuns(ingestParams, options);
@@ -1640,6 +1640,7 @@ export class Client implements LangSmithTracingClientInterface {
         "pipeThrough" in body
       ) {
         transformedBody = body.pipeThrough(new CompressionStream("gzip"));
+        headers["Content-Encoding"] = "gzip";
       }
       return this.batchIngestCaller.call(
         _getFetchImplementation(this.debug),
