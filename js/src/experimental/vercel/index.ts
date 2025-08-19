@@ -1,6 +1,6 @@
 import { LangSmithMiddleware } from "./middleware.js";
 import { convertMessageToTracedFormat } from "./utils.js";
-import { traceable } from "../../traceable.js";
+import { isTraceableFunction, traceable } from "../../traceable.js";
 import { RunTreeConfig } from "../../run_trees.js";
 
 const _wrapTools = (
@@ -16,7 +16,8 @@ const _wrapTools = (
         wrappedTools[key] != null &&
         typeof wrappedTools[key] === "object" &&
         "execute" in wrappedTools[key] &&
-        typeof wrappedTools[key].execute === "function"
+        typeof wrappedTools[key].execute === "function" &&
+        !isTraceableFunction(wrappedTools[key].execute)
       ) {
         wrappedTools[key].execute = traceable(
           wrappedTools[key].execute.bind(wrappedTools[key]),
