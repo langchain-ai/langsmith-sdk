@@ -17,7 +17,9 @@ const parseMockRequestBody = async (
   let rawMultipart;
   // eslint-disable-next-line no-instanceof/no-instanceof
   if (body instanceof ReadableStream) {
-    rawMultipart = await new Response(body).text();
+    rawMultipart = await new Response(
+      body.pipeThrough(new DecompressionStream("gzip"))
+    ).text();
   } else {
     rawMultipart = new TextDecoder().decode(body);
   }
@@ -94,6 +96,7 @@ describe.each(ENDPOINT_TYPES)(
         ? {}
         : {
             use_multipart_endpoint: true,
+            gzip_body_enabled: true,
           };
     const expectedTraceURL =
       endpointType === "batch"
