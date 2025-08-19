@@ -935,7 +935,7 @@ class Client:
                             raise ls_utils.LangSmithConflictError(
                                 f"Conflict for {pathname}. {repr(e)}{_context}"
                             )
-                        elif response.status_code == 400:
+                        elif (response.status_code == 400 or response.status_code == 403):
                             self._check_workspace_error(response)
                             raise ls_utils.LangSmithError(
                                 f"Failed to {method} {pathname} in LangSmith"

@@ -74,7 +74,8 @@ export class LangSmithConflictError extends Error {
 export async function raiseForStatus(
   response: Response,
   context: string,
-  consume?: boolean
+  consume?: boolean,
+  onWorkspaceError?: () => void
 ): Promise<void> {
   // consume the response body to release the connection
   // https://undici.nodejs.org/#/?id=garbage-collection
@@ -84,6 +85,18 @@ export async function raiseForStatus(
       errorBody = await response.text();
     }
     return;
+  }
+
+  if (response.status === 403 && onWorkspaceError) {
+    try {
+      const errorData = await response.json();
+      const errorCode = errorData?.error;
+      if (errorCode === "org_scoped_key_requires_workspace") {
+        onWorkspaceError();
+      }
+    } catch {
+      // Not JSON, ignore
+    }
   }
   errorBody = await response.text();
   const fullMessage = `Failed to ${context}. Received status [${response.status}]: ${response.statusText}. Server response: ${errorBody}`;

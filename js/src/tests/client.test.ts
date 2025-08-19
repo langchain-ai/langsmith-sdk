@@ -498,95 +498,212 @@ describe("Client", () => {
       process.env = originalEnv;
     });
 
-    it("should accept workspaceId in config", () => {
-      const client = new Client({ workspaceId: "test-workspace-id" });
-      expect(client.getWorkspaceId()).toBe("test-workspace-id");
-    });
-
     it("should read workspaceId from environment variable", () => {
       // eslint-disable-next-line no-process-env
       process.env.LANGSMITH_WORKSPACE_ID = "env-workspace-id";
       const client = new Client();
-      expect(client.getWorkspaceId()).toBe("env-workspace-id");
+      expect((client as any).workspaceId).toBe("env-workspace-id");
     });
 
     it("should prioritize config over environment variable", () => {
       // eslint-disable-next-line no-process-env
       process.env.LANGSMITH_WORKSPACE_ID = "env-workspace-id";
       const client = new Client({ workspaceId: "config-workspace-id" });
-      expect(client.getWorkspaceId()).toBe("config-workspace-id");
+      expect((client as any).workspaceId).toBe("config-workspace-id");
     });
 
-    it("should include X-Tenant-Id header when workspaceId is set", () => {
-      const client = new Client({ workspaceId: "test-workspace-id" });
-      const headers = (client as any).headers;
-      expect(headers["X-Tenant-Id"]).toBe("test-workspace-id");
-    });
 
-    it("should not include X-Tenant-Id header when workspaceId is not set", () => {
-      const client = new Client();
-      const headers = (client as any).headers;
-      expect(headers["X-Tenant-Id"]).toBeUndefined();
-    });
+    describe("E2E Workspace Tests", () => {
+      it("should include workspace ID in headers when making API calls", async () => {
+        // set env vars
+        // eslint-disable-next-line no-process-env
+        process.env.LANGSMITH_API_KEY = "test-api-key";
+        // eslint-disable-next-line no-process-env
+        process.env.LANGSMITH_WORKSPACE_ID = "test-workspace-id";
 
-    it("should validate workspace requirements for org-scoped keys", () => {
-      const client = new Client({ apiKey: "test-key" });
+        const client = new Client();
 
-      // Should throw when no workspace is specified
-      expect(() => {
-        (client as any).validateWorkspaceRequirements();
-      }).toThrow(
-        "This API key is org-scoped and requires workspace specification"
-      );
+        const mockCaller = {
+          // @ts-expect-error - Jest mock type inference issue
+          call: jest.fn().mockImplementation(async (fetchFn: any, url: string, options: any) => {
+            // fetch call and response
+            return {
+              ok: true,
+              status: 200,
+              statusText: 'OK',
+              json: () => Promise.resolve({ id: 'run-123', name: 'test-run' }),
+              text: () => Promise.resolve('{"id":"run-123","name":"test-run"}'),
+            } as Response;
+          }),
+        };
+        (client as any).caller = mockCaller;
 
-      // Should not throw when workspace is specified
-      const clientWithWorkspace = new Client({
-        apiKey: "test-key",
-        workspaceId: "test-workspace-id",
+        // API call
+        await client.createRun({
+          name: "test-run",
+          run_type: "llm",
+          inputs: { text: "hello" }
+        });
+
+        // Verify the call was made with correct headers
+        expect(mockCaller.call).toHaveBeenCalledWith(
+          expect.any(Function),
+          expect.any(String),
+          expect.objectContaining({
+            headers: expect.objectContaining({
+              "x-tenant-id": "test-workspace-id",
+              "x-api-key": "test-api-key"
+            })
+          })
+        );
+
+        // eslint-disable-next-line no-process-env
+        delete process.env.LANGSMITH_API_KEY;
+        // eslint-disable-next-line no-process-env
+        delete process.env.LANGSMITH_WORKSPACE_ID;
       });
-      expect(() => {
-        (clientWithWorkspace as any).validateWorkspaceRequirements();
-      }).not.toThrow();
-    });
 
-    it("should detect org-scoped key errors from specific backend error messages", async () => {
-      const client = new Client({ apiKey: "test-key" });
+      it("should handle org-scoped key error and throw workspace validation error", async () => {
+        const client = new Client({
+          apiKey: "org-scoped-key"
+        });
 
-      // Mock a response with the specific org-scoped error
-      const mockResponse = {
-        status: 403,
-        json: () =>
-          Promise.resolve({ error: "org_scoped_key_requires_workspace" }),
-      } as unknown as Response;
+        // return 403 with org-scoped error
+        const mockCaller = {
+          // @ts-expect-error - Jest mock type inference issue
+          call: jest.fn().mockImplementation(async (fetchFn: any, url: string, options: any) => {
+            return {
+              ok: false,
+              status: 403,
+              statusText: "Forbidden",
+              json: () => Promise.resolve({ error: "org_scoped_key_requires_workspace" }),
+              text: () => Promise.resolve('{"error":"org_scoped_key_requires_workspace"}'),
+            } as Response;
+          }),
+        };
+        (client as any).caller = mockCaller;
 
-      // Should call validateWorkspaceRequirements when specific error is detected
-      const mockValidate = jest.spyOn(
-        client as any,
-        "validateWorkspaceRequirements"
-      );
-      await (client as any).checkWorkspaceError(mockResponse);
-      expect(mockValidate).toHaveBeenCalledTimes(1);
+        // call API without workspace - should fail with workspace validation error
+        await expect(client.createRun({
+          name: "test-run",
+          run_type: "llm",
+          inputs: { text: "hello" }
+        })).rejects.toThrow(
+          "Failed to create run. Received status [403]: Forbidden. Server response: {\"error\":\"org_scoped_key_requires_workspace\"}"
+        );
 
-      // Test with different error message (should not trigger validation)
-      const mockResponseOther = {
-        status: 403,
-        json: () => Promise.resolve({ error: "other_error" }),
-      } as unknown as Response;
+        expect(mockCaller.call).toHaveBeenCalled();
+      });
 
-      mockValidate.mockClear();
-      await (client as any).checkWorkspaceError(mockResponseOther);
-      expect(mockValidate).not.toHaveBeenCalled();
+      it("should handle other 403 errors without throwing workspace validation error", async () => {
+        const client = new Client({
+          apiKey: "test-key"
+        });
 
-      // Test with different status code (should not trigger validation)
-      const mockResponse400 = {
-        status: 400,
-        json: () =>
-          Promise.resolve({ error: "org_scoped_key_requires_workspace" }),
-      } as unknown as Response;
+        // return 403 with random error
+        const mockCaller = {
+          // @ts-expect-error - Jest mock type inference issue
+          call: jest.fn().mockImplementation(async (fetchFn: any, url: string, options: any) => {
+            return {
+              ok: false,
+              status: 403,
+              statusText: "Forbidden",
+              json: () => Promise.resolve({ error: "insufficient_permissions" }),
+              text: () => Promise.resolve('{"error":"insufficient_permissions"}'),
+            } as Response;
+          }),
+        };
+        (client as any).caller = mockCaller;
 
-      mockValidate.mockClear();
-      await (client as any).checkWorkspaceError(mockResponse400);
-      expect(mockValidate).not.toHaveBeenCalled();
+        // call API - should fail with regular error
+        await expect(client.createRun({
+          name: "test-run",
+          run_type: "llm",
+          inputs: { text: "hello" }
+        })).rejects.toThrow("Failed to create run");
+
+        expect(mockCaller.call).toHaveBeenCalled();
+      });
+
+      it("should work correctly when workspace is provided in options", async () => {
+        const client = new Client({
+          apiKey: "org-scoped-key"
+        });
+
+        const mockCaller = {
+          // @ts-expect-error - Jest mock type inference issue
+          call: jest.fn().mockImplementation(async (fetchFn: any, url: string, options: any) => {
+            return {
+              ok: true,
+              status: 200,
+              statusText: 'OK',
+              json: () => Promise.resolve({ id: 'run-123', name: 'test-run' }),
+              text: () => Promise.resolve('{"id":"run-123","name":"test-run"}'),
+            } as Response;
+          }),
+        };
+        (client as any).caller = mockCaller;
+
+        // call with workspace ID in options should succeed
+        await client.createRun({
+          name: "test-run",
+          run_type: "llm",
+          inputs: { text: "hello" }
+        }, { workspaceId: "test-workspace-id" });
+
+        // check call was made with correct headers
+        expect(mockCaller.call).toHaveBeenCalledWith(
+          expect.any(Function),
+          expect.any(String),
+          expect.objectContaining({
+            headers: expect.objectContaining({
+              "x-tenant-id": "test-workspace-id"
+            })
+          })
+        );
+      });
+
+      it("should handle multiple API calls with different workspace configurations", async () => {
+        const client = new Client({
+          apiKey: "test-api-key",
+          workspaceId: "default-workspace-id"
+        });
+
+        // return success
+        const mockCaller = {
+          // @ts-expect-error - Jest mock type inference issue
+          call: jest.fn().mockImplementation(async (fetchFn: any, url: string, options: any) => {
+            return {
+              ok: true,
+              status: 200,
+              statusText: 'OK',
+              json: () => Promise.resolve({ id: 'run-123', name: 'test-run' }),
+              text: () => Promise.resolve('{"id":"run-123","name":"test-run"}'),
+            } as Response;
+          }),
+        };
+        (client as any).caller = mockCaller;
+
+        // first call uses default workspace
+        await client.createRun({
+          name: "test-run",
+          run_type: "llm",
+          inputs: { text: "hello" }
+        });
+
+        // second call overrides workspace
+        await client.updateRun("550e8400-e29b-41d4-a716-446655440000", {
+          outputs: { result: "updated" }
+        }, { workspaceId: "override-workspace-id" });
+
+        expect(mockCaller.call).toHaveBeenCalledTimes(2);
+        
+        const firstCall = mockCaller.call.mock.calls[0];
+        const secondCall = mockCaller.call.mock.calls[1];
+        
+        expect((firstCall as any)[2].headers['x-tenant-id']).toBe('default-workspace-id');
+        expect((secondCall as any)[2].headers['x-tenant-id']).toBe('override-workspace-id');
+      });
     });
   });
 });

@@ -3227,7 +3227,7 @@ def test_workspace_validation_optional(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that workspace is optional when API key is present."""
     _clear_env_cache()
     
-    # Clear environment variables
+    # clear env variables
     monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
     monkeypatch.delenv("LANGSMITH_WORKSPACE_ID", raising=False)
     
@@ -3244,44 +3244,18 @@ def test_workspace_validation_optional(monkeypatch: pytest.MonkeyPatch) -> None:
     assert client.workspace_id == "test-workspace-id"
 
 
-def test_workspace_validation_with_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test workspace validation with environment variables."""
-    _clear_env_cache()
-    
-    # Test with LANGSMITH_WORKSPACE_ID env var
-    monkeypatch.setenv("LANGSMITH_API_KEY", "test-key")
-    monkeypatch.setenv("LANGSMITH_WORKSPACE_ID", "env-workspace-id")
-    
-    client = Client(auto_batch_tracing=False)
-    assert client.workspace_id == "env-workspace-id"
-
-
-def test_workspace_validation_without_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test that workspace is not required when no API key is present."""
-    _clear_env_cache()
-    
-    # Clear all environment variables
-    monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
-    monkeypatch.delenv("LANGSMITH_WORKSPACE_ID", raising=False)
-    
-    # Should succeed without workspace when no API key
-    client = Client(auto_batch_tracing=False)
-    assert client.api_key is None
-    assert client.workspace_id is None
-
-
 def test_workspace_headers_injection(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that workspace headers are properly injected."""
     _clear_env_cache()
     
-    # Set up environment
+    # env setup
     monkeypatch.setenv("LANGSMITH_API_KEY", "test-key")
     monkeypatch.setenv("LANGSMITH_WORKSPACE_ID", "test-workspace-id")
     
     client = Client(auto_batch_tracing=False)
     headers = client._compute_headers()
     
-    # Check that workspace headers are present
+    # check headers
     assert "X-Tenant-Id" in headers
 
 
@@ -3289,50 +3263,251 @@ def test_workspace_validation_for_org_scoped_keys(monkeypatch: pytest.MonkeyPatc
     """Test that workspace validation is called for org-scoped keys."""
     _clear_env_cache()
     
-    # Test that validation fails when no workspace is specified
+    # no workspace specified causes failure
     client = Client(api_key="test-key", auto_batch_tracing=False)
     
     with pytest.raises(ls_utils.LangSmithUserError, match="This API key is org-scoped and requires workspace specification"):
         client._validate_workspace_requirements()
     
-    # Test that validation passes when workspace_id is specified
+    # workspace specified passes
     client = Client(api_key="test-key", workspace_id="test-workspace-id", auto_batch_tracing=False)
     client._validate_workspace_requirements()  # Should not raise
-    
 
-def test_workspace_error_detection_from_backend(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test that org-scoped key errors are detected from specific backend error messages."""
-    _clear_env_cache()
+
+class TestEndToEndWorkspaceFlow:
+    """Comprehensive end-to-end tests for workspace functionality."""
     
-    client = Client(api_key="test-key", auto_batch_tracing=False)
-    
-    # Mock a response with the specific org-scoped error
-    class MockResponse:
-        def __init__(self, status_code: int, json_data: dict):
-            self.status_code = status_code
-            self._json_data = json_data
+    def test_successful_api_call_with_workspace_id(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test complete flow: client creation -> API call -> headers verification."""
+        _clear_env_cache()
         
-        def json(self):
-            return self._json_data
+        # env setup
+        monkeypatch.setenv("LANGSMITH_API_KEY", "test-api-key")
+        monkeypatch.setenv("LANGSMITH_WORKSPACE_ID", "test-workspace-id")
+        
+        client = Client(auto_batch_tracing=False)
+        
+        # mock session for API call
+        with mock.patch.object(client.session, 'request') as mock_request:
+            # Set up successful response
+            mock_response = mock.MagicMock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {"id": "run-123", "name": "test-run"}
+            mock_request.return_value = mock_response
+            
+            # API call
+            client.create_run(
+                name="test-run",
+                run_type="llm",
+                inputs={"text": "hello"}
+            )
+            
+            # HTTP call made with correct headers
+            mock_request.assert_called_once()
+            call_args = mock_request.call_args
+            
+            headers = call_args[1]['headers']
+            assert headers['X-Tenant-Id'] == 'test-workspace-id'
+            assert headers['x-api-key'] == 'test-api-key'
+            
+            assert call_args[0][0] == 'POST'
+            assert '/runs' in call_args[0][1]
     
-    # Test with specific org-scoped error message
-    mock_response = MockResponse(403, {"error": "org_scoped_key_requires_workspace"})
+    def test_org_scoped_key_error_flow(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test complete flow: org-scoped key without workspace -> error detection -> validation error."""
+        _clear_env_cache()
+        
+        client = Client(api_key="org-scoped-key", auto_batch_tracing=False)
+        
+        # mock session to return error
+        with mock.patch.object(client.session, 'request') as mock_request:
+            mock_response = mock.MagicMock()
+            mock_response.status_code = 403
+            mock_response.json.return_value = {"error": "org_scoped_key_requires_workspace"}
+            mock_response.text = '{"error":"org_scoped_key_requires_workspace"}'
+            mock_response.raise_for_status.side_effect = HTTPError("403 Client Error")
+            mock_request.return_value = mock_response
+            
+            # try API call - should fail due to error
+            with pytest.raises(ls_utils.LangSmithUserError, match="This API key is org-scoped and requires workspace specification"):
+                client.create_run(
+                    name="test-run",
+                    run_type="llm",
+                    inputs={"text": "hello"}
+                )
+            
+            mock_request.assert_called_once()
+            
+            # check that no workspace header was sent
+            call_args = mock_request.call_args
+            headers = call_args[1]['headers']
+            assert 'X-Tenant-Id' not in headers
     
-    # Should raise the validation error when specific error is detected
-    with pytest.raises(ls_utils.LangSmithUserError, match="This API key is org-scoped and requires workspace specification"):
-        client._check_workspace_error(mock_response)
+    def test_other_403_error_flow(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test that other 403 errors don't trigger workspace validation."""
+        _clear_env_cache()
+        
+        client = Client(api_key="test-key", auto_batch_tracing=False)
+        
+        # mock session to return diff error
+        with mock.patch.object(client.session, 'request') as mock_request:
+            mock_response = mock.MagicMock()
+            mock_response.status_code = 403
+            mock_response.json.return_value = {"error": "insufficient_permissions"}
+            mock_response.text = "insufficient_permissions"
+            mock_response.raise_for_status.side_effect = HTTPError("403 Client Error")
+            mock_request.return_value = mock_response
+            
+            # try API call - should fail but not bc of workspace validation
+            with pytest.raises(ls_utils.LangSmithError, match="Failed to POST"):
+                client.create_run(
+                    name="test-run",
+                    run_type="llm",
+                    inputs={"text": "hello"}
+                )
+            
+            mock_request.assert_called_once()
     
-    # Test with different error message (should not trigger validation)
-    mock_response_other = MockResponse(403, {"error": "other_error"})
     
-    # Should not raise any error
-    client._check_workspace_error(mock_response_other)
+    def test_multiple_api_calls_different_workspaces(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test multiple API calls with different workspace configurations."""
+        _clear_env_cache()
+        
+        # default workspace setup
+        monkeypatch.setenv("LANGSMITH_API_KEY", "test-api-key")
+        monkeypatch.setenv("LANGSMITH_WORKSPACE_ID", "default-workspace-id")
+        
+        client = Client(auto_batch_tracing=False)
+        
+        # mock requests.Session
+        with mock.patch('requests.Session.request') as mock_request:
+            mock_response = mock.MagicMock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {"id": "run-123", "name": "test-run"}
+            mock_request.return_value = mock_response
+            
+            # first call uses default workspace
+            client.create_run(
+                name="test-run-1",
+                run_type="llm",
+                inputs={"text": "hello"}
+            )
+            
+            # override for second call
+            client.workspace_id = "override-workspace-id"
+            
+            client.create_run(
+                name="test-run-2",
+                run_type="llm",
+                inputs={"text": "world"}
+            )
+            
+            # check both calls
+            assert mock_request.call_count == 2
+            
+            # check first call was default
+            first_call_args = mock_request.call_args_list[0]
+            first_headers = first_call_args[1]['headers']
+            assert first_headers['X-Tenant-Id'] == 'default-workspace-id'
+            
+            # check second call was overridden
+            second_call_args = mock_request.call_args_list[1]
+            second_headers = second_call_args[1]['headers']
+            assert second_headers['X-Tenant-Id'] == 'override-workspace-id'
     
-    # Test with different status code (should not trigger validation)
-    mock_response_400 = MockResponse(400, {"error": "org_scoped_key_requires_workspace"})
+    def test_environment_variable_priority(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test that config workspace_id takes priority over environment variable."""
+        _clear_env_cache()
+        
+        # env var setup
+        monkeypatch.setenv("LANGSMITH_API_KEY", "test-api-key")
+        monkeypatch.setenv("LANGSMITH_WORKSPACE_ID", "env-workspace-id")
+        
+        client = Client(workspace_id="config-workspace-id", auto_batch_tracing=False)
+
+        # mock requests.Session
+        with mock.patch('requests.Session.request') as mock_request:
+            # Set up successful response
+            mock_response = mock.MagicMock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {"id": "run-123", "name": "test-run"}
+            mock_request.return_value = mock_response
+            
+            # API call
+            client.create_run(
+                name="test-run",
+                run_type="llm",
+                inputs={"text": "hello"}
+            )
+            
+            # HTTP call made with config workspace header
+            mock_request.assert_called_once()
+            call_args = mock_request.call_args
+            headers = call_args[1]['headers']
+            assert headers['X-Tenant-Id'] == 'config-workspace-id'
+
     
-    # Should not raise any error
-    client._check_workspace_error(mock_response_400)
+    def test_workspace_id_none_empty_handling(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test handling of None and empty workspace_id values."""
+        _clear_env_cache()
+        
+        # test with None workspace_id
+        client = Client(api_key="test-key", workspace_id=None, auto_batch_tracing=False)
+        headers = client._compute_headers()
+        assert 'X-Tenant-Id' not in headers
+
+        # test with empty workspace_id
+        client = Client(api_key="test-key", workspace_id="", auto_batch_tracing=False)
+        headers = client._compute_headers()
+        assert 'X-Tenant-Id' not in headers
+    
+    def test_workspace_error_recovery_flow(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test recovery from org-scoped key error by providing workspace."""
+        _clear_env_cache()
+        
+        client = Client(api_key="org-scoped-key", auto_batch_tracing=False)
+        
+        # mock requests.Session
+        with mock.patch('requests.Session.request') as mock_request:
+            # org-scoped error
+            mock_response_error = mock.MagicMock()
+            mock_response_error.status_code = 403
+            mock_response_error.json.return_value = {"error": "org_scoped_key_requires_workspace"}
+            mock_response_error.text = '{"error":"org_scoped_key_requires_workspace"}'
+            mock_response_error.raise_for_status.side_effect = HTTPError("403 Client Error")
+            
+            # success
+            mock_response_success = mock.MagicMock()
+            mock_response_success.status_code = 200
+            mock_response_success.json.return_value = {"id": "run-123", "name": "test-run"}
+            
+            mock_request.side_effect = [mock_response_error, mock_response_success]
+            
+            # fail bc of org-scoped error
+            with pytest.raises(ls_utils.LangSmithUserError, match="This API key is org-scoped and requires workspace specification"):
+                client.create_run(
+                    name="test-run",
+                    run_type="llm",
+                    inputs={"text": "hello"}
+                )
+            
+            # set workspace_id for second call
+            client.workspace_id = "test-workspace-id"
+            
+            # succeeds
+            client.create_run(
+                name="test-run",
+                run_type="llm",
+                inputs={"text": "hello"}
+            )
+            
+            assert mock_request.call_count == 2
+
+            # check that second call had workspace header
+            second_call_args = mock_request.call_args_list[1]
+            second_headers = second_call_args[1]['headers']
+            assert second_headers['X-Tenant-Id'] == 'test-workspace-id'
+
 
     
 @pytest.mark.parametrize(

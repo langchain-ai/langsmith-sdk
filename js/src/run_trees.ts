@@ -116,6 +116,7 @@ type ProjectReplica = [string, KVMap | undefined];
 type WriteReplica = {
   apiUrl?: string;
   apiKey?: string;
+  workspaceId?: string;
   projectName?: string;
   updates?: KVMap | undefined;
   fromEnv?: boolean;
@@ -512,7 +513,7 @@ export class RunTree implements BaseRun {
     try {
       const runtimeEnv = getRuntimeEnvironment();
       if (this.replicas && this.replicas.length > 0) {
-        for (const { projectName, apiKey, apiUrl } of this.replicas) {
+        for (const { projectName, apiKey, apiUrl, workspaceId } of this.replicas) {
           const runCreate = this._remapForProject(
             projectName ?? this.project_name,
             runtimeEnv,
@@ -521,6 +522,7 @@ export class RunTree implements BaseRun {
           await this.client.createRun(runCreate, {
             apiKey,
             apiUrl,
+            workspaceId,
           });
         }
       } else {
@@ -547,7 +549,7 @@ export class RunTree implements BaseRun {
 
   async patchRun(): Promise<void> {
     if (this.replicas && this.replicas.length > 0) {
-      for (const { projectName, apiKey, apiUrl, updates } of this.replicas) {
+      for (const { projectName, apiKey, apiUrl, workspaceId, updates } of this.replicas) {
         const runData = this._remapForProject(projectName ?? this.project_name);
         await this.client.updateRun(
           runData.id,
@@ -570,6 +572,7 @@ export class RunTree implements BaseRun {
           {
             apiKey,
             apiUrl,
+            workspaceId,
           }
         );
       }

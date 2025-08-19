@@ -766,7 +766,7 @@ export class Client implements LangSmithTracingClientInterface {
       headers["x-api-key"] = `${this.apiKey}`;
     }
     if (this.workspaceId) {
-      headers["X-Tenant-Id"] = this.workspaceId;
+      headers["x-tenant-id"] = this.workspaceId;
     }
     return headers;
   }
@@ -779,25 +779,6 @@ export class Client implements LangSmithTracingClientInterface {
           "Please provide either 'workspaceId' parameter or set LANGSMITH_WORKSPACE_ID environment variable."
       );
     }
-  }
-
-  private async checkWorkspaceError(response: Response): Promise<void> {
-    // Check for 400 status code or error messages containing workspace-related content
-    if (response.status === 403) {
-      try {
-        const errorData = await response.json();
-        const errorCode = errorData?.error;
-        if (errorCode === "org_scoped_key_requires_workspace") {
-          this.validateWorkspaceRequirements();
-        }
-      } catch {
-        // Don't assume workspace error
-      }
-    }
-  }
-
-  public getWorkspaceId(): string | undefined {
-    return this.workspaceId;
   }
 
   private _getPlatformEndpointPath(path: string): string {
@@ -869,11 +850,9 @@ export class Client implements LangSmithTracingClientInterface {
       }
     );
 
-    if (!response.ok) {
-      void this.checkWorkspaceError(response);
-    }
-
-    await raiseForStatus(response, `Failed to fetch ${path}`);
+    await raiseForStatus(response, `Failed to fetch ${path}`, false, () =>
+      this.validateWorkspaceRequirements()
+    );
     return response;
   }
 
@@ -1225,7 +1204,7 @@ export class Client implements LangSmithTracingClientInterface {
 
   public async createRun(
     run: CreateRunParams,
-    options?: { apiKey?: string; apiUrl?: string }
+    options?: { apiKey?: string; apiUrl?: string; workspaceId?: string }
   ): Promise<void> {
     if (!this._filterForSampling([run]).length) {
       return;
@@ -1261,6 +1240,9 @@ export class Client implements LangSmithTracingClientInterface {
     if (options?.apiKey !== undefined) {
       headers["x-api-key"] = options.apiKey;
     }
+    if (options?.workspaceId !== undefined) {
+      headers["x-tenant-id"] = options.workspaceId;
+    }
     const response = await this.caller.call(
       _getFetchImplementation(this.debug),
       `${options?.apiUrl ?? this.apiUrl}/runs`,
@@ -1276,10 +1258,9 @@ export class Client implements LangSmithTracingClientInterface {
       }
     );
 
-    if (!response.ok) {
-      void this.checkWorkspaceError(response);
-    }
-    await raiseForStatus(response, "create run", true);
+    await raiseForStatus(response, "create run", true, () =>
+      this.validateWorkspaceRequirements()
+    );
   }
 
   /**
@@ -1736,7 +1717,7 @@ export class Client implements LangSmithTracingClientInterface {
   public async updateRun(
     runId: string,
     run: RunUpdate,
-    options?: { apiKey?: string; apiUrl?: string }
+    options?: { apiKey?: string; apiUrl?: string; workspaceId?: string }
   ): Promise<void> {
     assertUuid(runId);
     if (run.inputs) {
@@ -1790,6 +1771,9 @@ export class Client implements LangSmithTracingClientInterface {
     };
     if (options?.apiKey !== undefined) {
       headers["x-api-key"] = options.apiKey;
+    }
+    if (options?.workspaceId !== undefined) {
+      headers["x-tenant-id"] = options.workspaceId;
     }
     const response = await this.caller.call(
       _getFetchImplementation(this.debug),
