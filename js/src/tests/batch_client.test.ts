@@ -96,8 +96,10 @@ describe.each(ENDPOINT_TYPES)(
         ? {}
         : {
             use_multipart_endpoint: true,
-            gzip_body_enabled: true,
           };
+    const extraInstanceFlags = {
+      gzip_body_enabled: true,
+    };
     const expectedTraceURL =
       endpointType === "batch"
         ? "https://api.smith.langchain.com/runs/batch"
@@ -117,6 +119,7 @@ describe.each(ENDPOINT_TYPES)(
         return {
           version: "foo",
           batch_ingest_config: { ...extraBatchIngestConfig },
+          instance_flags: { ...extraInstanceFlags },
         };
       });
       const projectName = "__test_batch";
@@ -182,6 +185,7 @@ describe.each(ENDPOINT_TYPES)(
         return {
           version: "foo",
           batch_ingest_config: { ...extraBatchIngestConfig },
+          instance_flags: { ...extraInstanceFlags },
         };
       });
       const projectName = "__test_batch";
@@ -251,6 +255,7 @@ describe.each(ENDPOINT_TYPES)(
         return {
           version: "foo",
           batch_ingest_config: { ...extraBatchIngestConfig },
+          instance_flags: { ...extraInstanceFlags },
         };
       });
       const projectName = "__test_batch";
@@ -320,6 +325,7 @@ describe.each(ENDPOINT_TYPES)(
         return {
           version: "foo",
           batch_ingest_config: { ...extraBatchIngestConfig },
+          instance_flags: { ...extraInstanceFlags },
         };
       });
       const projectName = "__test_batch";
@@ -358,6 +364,7 @@ describe.each(ENDPOINT_TYPES)(
         return {
           version: "foo",
           batch_ingest_config: { ...extraBatchIngestConfig },
+          instance_flags: { ...extraInstanceFlags },
         };
       });
       const projectName = "__test_batch";
@@ -439,6 +446,7 @@ describe.each(ENDPOINT_TYPES)(
         return {
           version: "foo",
           batch_ingest_config: { ...extraBatchIngestConfig },
+          instance_flags: { ...extraInstanceFlags },
         };
       });
       const projectName = "__test_batch";
@@ -518,6 +526,7 @@ describe.each(ENDPOINT_TYPES)(
         return {
           version: "foo",
           batch_ingest_config: { ...extraBatchIngestConfig },
+          instance_flags: { ...extraInstanceFlags },
         };
       });
       const projectName = "__test_batch";
@@ -633,6 +642,7 @@ describe.each(ENDPOINT_TYPES)(
         return {
           version: "foo",
           batch_ingest_config: { ...extraBatchIngestConfig },
+          instance_flags: { ...extraInstanceFlags },
         };
       });
       const projectName = "__test_batch";
@@ -749,6 +759,7 @@ describe.each(ENDPOINT_TYPES)(
         return {
           version: "foo",
           batch_ingest_config: { ...extraBatchIngestConfig },
+          instance_flags: { ...extraInstanceFlags },
         };
       });
       const projectName = "__test_batch";
@@ -847,6 +858,7 @@ describe.each(ENDPOINT_TYPES)(
         return {
           version: "foo",
           batch_ingest_config: { ...extraBatchIngestConfig },
+          instance_flags: { ...extraInstanceFlags },
         };
       });
       const projectName = "__test_batch";
@@ -979,6 +991,7 @@ describe.each(ENDPOINT_TYPES)(
         return {
           version: "foo",
           batch_ingest_config: { ...extraBatchIngestConfig },
+          instance_flags: { ...extraInstanceFlags },
         };
       });
       const projectName = "__test_batch";
@@ -1080,6 +1093,7 @@ describe.each(ENDPOINT_TYPES)(
           batch_ingest_config: {
             ...extraBatchIngestConfig,
           },
+          instance_flags: { ...extraInstanceFlags },
         };
       });
       const projectName = "__test_batch";
@@ -1250,6 +1264,7 @@ describe.each(ENDPOINT_TYPES)(
         return {
           version: "foo",
           batch_ingest_config: { ...extraBatchIngestConfig },
+          instance_flags: { ...extraInstanceFlags },
         };
       });
       const projectName = "__test_batch";
@@ -1327,6 +1342,70 @@ describe.each(ENDPOINT_TYPES)(
           ),
         })
       );
+    });
+
+    it("should drop new items when queue buffer exceeds maxQueuedBufferSizeBytes", async () => {
+      const client = new Client({
+        apiKey: "test-api-key",
+        autoBatchTracing: true,
+        maxQueuedBufferSizeBytes: 1000, // Very low limit for testing
+        manualFlushMode: true, // Prevent automatic flushing
+      });
+      const callSpy = jest
+        .spyOn((client as any).batchIngestCaller, "call")
+        .mockResolvedValue({
+          ok: true,
+          text: () => "",
+        });
+      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
+        return {
+          version: "foo",
+          batch_ingest_config: { ...extraBatchIngestConfig },
+          instance_flags: { ...extraInstanceFlags },
+        };
+      });
+      const projectName = "__test_batch";
+
+      // Create runs with large inputs to exceed the buffer size
+      const runIds: string[] = [];
+      for (let i = 0; i < 10; i++) {
+        const runId = uuidv4();
+        const { dottedOrder } = convertToDottedOrderFormat(
+          new Date().getTime() / 1000,
+          runId
+        );
+        await client.createRun({
+          id: runId,
+          project_name: projectName,
+          name: "test_run_" + i,
+          run_type: "llm",
+          inputs: { text: "x".repeat(200) }, // Large input to exceed buffer quickly
+          trace_id: runId,
+          dotted_order: dottedOrder,
+        });
+        runIds.push(runId);
+      }
+
+      // Check that some items were dropped (queue should be under the limit)
+      const queueSizeBytes = (client as any).autoBatchQueue.sizeBytes;
+      const queueItemCount = (client as any).autoBatchQueue.items.length;
+
+      expect(queueSizeBytes).toBeLessThanOrEqual(1000);
+      expect(queueItemCount).toBeLessThan(10); // Some items should have been dropped
+      expect(queueItemCount).toBeGreaterThan(0); // But not all items should be dropped
+
+      // No requests should have been made yet (manual flush mode)
+      expect(callSpy.mock.calls.length).toBe(0);
+
+      await client.flush();
+
+      // After flush, only the remaining items should be sent
+      expect(callSpy.mock.calls.length).toBe(1);
+      const calledRequestParam: any = callSpy.mock.calls[0][2];
+      const batchBody = await parseMockRequestBody(calledRequestParam?.body);
+
+      expect(batchBody.post.length).toBe(queueItemCount);
+      expect(batchBody.patch.length).toBe(0);
     });
   }
 );
