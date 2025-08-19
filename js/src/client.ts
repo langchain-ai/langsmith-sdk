@@ -588,7 +588,7 @@ export class AutoBatchQueue {
 // 20 MB
 export const DEFAULT_BATCH_SIZE_LIMIT_BYTES = 20_971_520;
 
-const SERVER_INFO_REQUEST_TIMEOUT = 2500;
+const SERVER_INFO_REQUEST_TIMEOUT = 5000;
 
 const DEFAULT_API_URL = "https://api.smith.langchain.com";
 
