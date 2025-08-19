@@ -283,6 +283,7 @@ class Dataset(DatasetBase):
     inputs_schema: Optional[dict[str, Any]] = None
     outputs_schema: Optional[dict[str, Any]] = None
     transformations: Optional[list[DatasetTransformation]] = None
+    extra: Optional[dict[str, Any]] = None
     _host_url: Optional[str] = PrivateAttr(default=None)
     _tenant_id: Optional[UUID] = PrivateAttr(default=None)
     _public_path: Optional[str] = PrivateAttr(default=None)
@@ -316,6 +317,13 @@ class Dataset(DatasetBase):
                 return f"{self._host_url}/o/{str(self._tenant_id)}/datasets/{self.id}"
             return f"{self._host_url}/datasets/{self.id}"
         return None
+
+    @property
+    def metadata(self) -> dict[str, Any]:
+        """Retrieve the metadata (if any)."""
+        if self.extra is None or "metadata" not in self.extra:
+            return {}
+        return self.extra["metadata"]
 
 
 class DatasetVersion(BaseModel):
