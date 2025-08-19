@@ -823,7 +823,7 @@ export class Client implements LangSmithTracingClientInterface {
       {
         method: "GET",
         headers: this.headers,
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -857,7 +857,7 @@ export class Client implements LangSmithTracingClientInterface {
         {
           method: "GET",
           headers: this.headers,
-          signal: AbortSignal.timeout(this.timeout_ms),
+          timeout_ms: this.timeout_ms,
           ...this.fetchOptions,
         }
       );
@@ -892,7 +892,7 @@ export class Client implements LangSmithTracingClientInterface {
         {
           method: requestMethod,
           headers: { ...this.headers, "Content-Type": "application/json" },
-          signal: AbortSignal.timeout(this.timeout_ms),
+          timeout_ms: this.timeout_ms,
           ...this.fetchOptions,
           body: JSON.stringify(bodyParams),
         }
@@ -1110,7 +1110,7 @@ export class Client implements LangSmithTracingClientInterface {
       {
         method: "GET",
         headers: { Accept: "application/json" },
-        signal: AbortSignal.timeout(SERVER_INFO_REQUEST_TIMEOUT),
+        timeout_ms: SERVER_INFO_REQUEST_TIMEOUT,
         ...this.fetchOptions,
       }
     );
@@ -1225,7 +1225,7 @@ export class Client implements LangSmithTracingClientInterface {
           mergedRunCreateParam,
           `Creating run with id: ${mergedRunCreateParam.id}`
         ),
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -1340,7 +1340,7 @@ export class Client implements LangSmithTracingClientInterface {
         method: "POST",
         headers,
         body: body,
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -1638,7 +1638,7 @@ export class Client implements LangSmithTracingClientInterface {
           headers,
           body,
           duplex: "half",
-          signal: AbortSignal.timeout(this.timeout_ms),
+          timeout_ms: this.timeout_ms,
           ...this.fetchOptions,
         }
       );
@@ -1751,7 +1751,7 @@ export class Client implements LangSmithTracingClientInterface {
           run,
           `Serializing payload to update run with id: ${runId}`
         ),
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -2084,7 +2084,7 @@ export class Client implements LangSmithTracingClientInterface {
         method: "POST",
         headers: { ...this.headers, "Content-Type": "application/json" },
         body: JSON.stringify(filteredPayload),
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       });
 
@@ -2187,7 +2187,7 @@ export class Client implements LangSmithTracingClientInterface {
         method: "POST",
         headers: this.headers,
         body: JSON.stringify(filteredPayload),
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -2212,7 +2212,7 @@ export class Client implements LangSmithTracingClientInterface {
         method: "PUT",
         headers: this.headers,
         body: JSON.stringify(data),
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -2231,7 +2231,7 @@ export class Client implements LangSmithTracingClientInterface {
       {
         method: "DELETE",
         headers: this.headers,
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -2246,7 +2246,7 @@ export class Client implements LangSmithTracingClientInterface {
       {
         method: "GET",
         headers: this.headers,
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -2280,7 +2280,7 @@ export class Client implements LangSmithTracingClientInterface {
       {
         method: "GET",
         headers: this.headers,
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -2306,7 +2306,7 @@ export class Client implements LangSmithTracingClientInterface {
       {
         method: "GET",
         headers: this.headers,
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -2339,7 +2339,7 @@ export class Client implements LangSmithTracingClientInterface {
         method: "PUT",
         headers: this.headers,
         body: JSON.stringify(data),
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -2358,7 +2358,7 @@ export class Client implements LangSmithTracingClientInterface {
       {
         method: "DELETE",
         headers: this.headers,
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -2373,7 +2373,7 @@ export class Client implements LangSmithTracingClientInterface {
       {
         method: "GET",
         headers: this.headers,
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -2413,7 +2413,7 @@ export class Client implements LangSmithTracingClientInterface {
       {
         method: "GET",
         headers: this.headers,
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -2469,7 +2469,7 @@ export class Client implements LangSmithTracingClientInterface {
         method: "POST",
         headers: { ...this.headers, "Content-Type": "application/json" },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -2512,7 +2512,7 @@ export class Client implements LangSmithTracingClientInterface {
         method: "PATCH",
         headers: { ...this.headers, "Content-Type": "application/json" },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -2547,7 +2547,7 @@ export class Client implements LangSmithTracingClientInterface {
       {
         method: "GET",
         headers: this.headers,
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -2732,7 +2732,7 @@ export class Client implements LangSmithTracingClientInterface {
       {
         method: "DELETE",
         headers: this.headers,
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -2779,7 +2779,7 @@ export class Client implements LangSmithTracingClientInterface {
         method: "POST",
         headers: this.headers,
         body: formData,
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -2826,7 +2826,7 @@ export class Client implements LangSmithTracingClientInterface {
         method: "POST",
         headers: { ...this.headers, "Content-Type": "application/json" },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -3018,7 +3018,7 @@ export class Client implements LangSmithTracingClientInterface {
         method: "PATCH",
         headers: { ...this.headers, "Content-Type": "application/json" },
         body: JSON.stringify(update),
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -3066,7 +3066,7 @@ export class Client implements LangSmithTracingClientInterface {
           as_of: typeof asOf === "string" ? asOf : asOf.toISOString(),
           tag,
         }),
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -3100,7 +3100,7 @@ export class Client implements LangSmithTracingClientInterface {
       {
         method: "DELETE",
         headers: this.headers,
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -3139,7 +3139,7 @@ export class Client implements LangSmithTracingClientInterface {
         method: "POST",
         headers: { ...this.headers, "Content-Type": "application/json" },
         body: JSON.stringify(data),
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -3204,7 +3204,7 @@ export class Client implements LangSmithTracingClientInterface {
         method: "POST",
         headers: { ...this.headers, "Content-Type": "application/json" },
         body: JSON.stringify(data),
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -3554,7 +3554,7 @@ export class Client implements LangSmithTracingClientInterface {
       {
         method: "DELETE",
         headers: this.headers,
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -3672,7 +3672,7 @@ export class Client implements LangSmithTracingClientInterface {
       {
         method: "GET",
         headers: { ...this.headers },
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -3765,7 +3765,7 @@ export class Client implements LangSmithTracingClientInterface {
         method: "PUT",
         headers: { ...this.headers, "Content-Type": "application/json" },
         body: JSON.stringify(data),
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -3891,7 +3891,7 @@ export class Client implements LangSmithTracingClientInterface {
         method: "POST",
         headers: { ...this.headers, "Content-Type": "application/json" },
         body: JSON.stringify(feedback),
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -3934,7 +3934,7 @@ export class Client implements LangSmithTracingClientInterface {
         method: "PATCH",
         headers: { ...this.headers, "Content-Type": "application/json" },
         body: JSON.stringify(feedbackUpdate),
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -3957,7 +3957,7 @@ export class Client implements LangSmithTracingClientInterface {
       {
         method: "DELETE",
         headers: this.headers,
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -4046,7 +4046,7 @@ export class Client implements LangSmithTracingClientInterface {
         method: "POST",
         headers: { ...this.headers, "Content-Type": "application/json" },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -4106,7 +4106,7 @@ export class Client implements LangSmithTracingClientInterface {
         method: "POST",
         headers: { ...this.headers, "Content-Type": "application/json" },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -4283,7 +4283,7 @@ export class Client implements LangSmithTracingClientInterface {
             Object.entries(body).filter(([_, v]) => v !== undefined)
           )
         ),
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -4306,7 +4306,7 @@ export class Client implements LangSmithTracingClientInterface {
       {
         method: "GET",
         headers: this.headers,
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -4342,7 +4342,7 @@ export class Client implements LangSmithTracingClientInterface {
           description,
           rubric_instructions: rubricInstructions,
         }),
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -4360,7 +4360,7 @@ export class Client implements LangSmithTracingClientInterface {
       {
         method: "DELETE",
         headers: { ...this.headers, Accept: "application/json" },
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -4385,7 +4385,7 @@ export class Client implements LangSmithTracingClientInterface {
         body: JSON.stringify(
           runIds.map((id, i) => assertUuid(id, `runIds[${i}]`).toString())
         ),
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -4410,7 +4410,7 @@ export class Client implements LangSmithTracingClientInterface {
       {
         method: "GET",
         headers: this.headers,
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -4437,7 +4437,7 @@ export class Client implements LangSmithTracingClientInterface {
       {
         method: "DELETE",
         headers: { ...this.headers, Accept: "application/json" },
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -4457,7 +4457,7 @@ export class Client implements LangSmithTracingClientInterface {
       {
         method: "GET",
         headers: this.headers,
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -4491,7 +4491,7 @@ export class Client implements LangSmithTracingClientInterface {
       {
         method: "GET",
         headers: this.headers,
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -4529,7 +4529,7 @@ export class Client implements LangSmithTracingClientInterface {
         method: "POST",
         body: JSON.stringify({ like: like }),
         headers: { ...this.headers, "Content-Type": "application/json" },
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -4633,7 +4633,7 @@ export class Client implements LangSmithTracingClientInterface {
       {
         method: "GET",
         headers: this.headers,
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -4690,7 +4690,7 @@ export class Client implements LangSmithTracingClientInterface {
         method: "POST",
         headers: { ...this.headers, "Content-Type": "application/json" },
         body: JSON.stringify(data),
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -4730,7 +4730,7 @@ export class Client implements LangSmithTracingClientInterface {
         method: "POST",
         headers: { ...this.headers, "Content-Type": "application/json" },
         body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -5019,7 +5019,7 @@ export class Client implements LangSmithTracingClientInterface {
           ...this.headers,
           "Content-Type": "application/json",
         },
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -5046,7 +5046,7 @@ export class Client implements LangSmithTracingClientInterface {
       {
         method: "DELETE",
         headers: this.headers,
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );
@@ -5070,7 +5070,7 @@ export class Client implements LangSmithTracingClientInterface {
       {
         method: "GET",
         headers: this.headers,
-        signal: AbortSignal.timeout(this.timeout_ms),
+        timeout_ms: this.timeout_ms,
         ...this.fetchOptions,
       }
     );

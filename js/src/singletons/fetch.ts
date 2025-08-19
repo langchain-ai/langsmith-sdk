@@ -14,7 +14,7 @@ const LANGSMITH_FETCH_IMPLEMENTATION_KEY = Symbol.for(
  * Overrides the fetch implementation used for LangSmith calls.
  * You should use this if you need to use an implementation of fetch
  * other than the default global (e.g. for dealing with proxies).
- * @param fetch The new fetch functino to use.
+ * @param fetch The new fetch function to use.
  */
 export const overrideFetchImplementation = (fetch: (...args: any[]) => any) => {
   (globalThis as any)[LANGSMITH_FETCH_IMPLEMENTATION_KEY] = fetch;
@@ -40,14 +40,31 @@ export const _getFetchImplementation: (
   debug?: boolean
 ) => (...args: any[]) => any = (debug?: boolean) => {
   return async (...args: any[]) => {
+    const [url, options, ...rest] = args;
     if (debug || getLangSmithEnvironmentVariable("DEBUG") === "true") {
-      const [url, options] = args;
       console.log(`→ ${options?.method || "GET"} ${url}`);
+    }
+    if (options.timeout_ms) {
+      if (!options.signal) {
+        options.signal = AbortSignal.timeout(options.timeout_ms);
+      } else {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(
+          () => controller.abort(),
+          options.timeout_ms
+        );
+        options.signal.addEventListener("abort", () => {
+          clearTimeout(timeoutId);
+          controller.abort();
+        });
+        options.signal = controller.signal;
+      }
+      delete options.timeout_ms;
     }
     const res = await (
       (globalThis as any)[LANGSMITH_FETCH_IMPLEMENTATION_KEY] ??
       DEFAULT_FETCH_IMPLEMENTATION
-    )(...args);
+    )(url, options, ...rest);
     if (debug || getLangSmithEnvironmentVariable("DEBUG") === "true") {
       console.log(`← ${res.status} ${res.statusText} ${res.url}`);
     }
