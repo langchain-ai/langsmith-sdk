@@ -745,11 +745,14 @@ def test_dataset_schema_validation(langchain_client: Client) -> None:
     read_dataset = langchain_client.read_dataset(dataset_id=dataset.id)
     assert read_dataset.inputs_schema == InputSchema.model_json_schema()
     assert read_dataset.outputs_schema == OutputSchema.model_json_schema()
-    
+
     # assert read API includes the extra field and metadata
     assert read_dataset.extra is not None
     assert "metadata" in read_dataset.extra
-    assert read_dataset.extra["metadata"] == {"test": "schema_validation", "version": "1.0"}
+    assert read_dataset.extra["metadata"] == {
+        "test": "schema_validation",
+        "version": "1.0",
+    }
     assert read_dataset.metadata == {"test": "schema_validation", "version": "1.0"}
 
     safe_delete_dataset(langchain_client, dataset_id=dataset.id)
@@ -766,7 +769,7 @@ def test_list_datasets(langchain_client: Client) -> None:
         dataset2 = langchain_client.create_dataset(ds2n, data_type=DataType.kv)
         assert dataset1.url is not None
         assert dataset2.url is not None
-        
+
         # Test datasets without metadata return empty metadata
         assert dataset2.metadata == {}  # dataset2 has no metadata
         assert dataset2.extra is None or dataset2.extra.get("metadata", {}) == {}
@@ -796,21 +799,21 @@ def test_list_datasets(langchain_client: Client) -> None:
             )
         )
         assert len(datasets) == 1
-        
+
         # Test extra field and metadata property
         dataset_with_metadata = next(d for d in datasets if d.id == dataset1.id)
         assert dataset_with_metadata.extra is not None
         assert "metadata" in dataset_with_metadata.extra
         assert dataset_with_metadata.extra["metadata"] == {"foo": "barqux"}
         assert dataset_with_metadata.metadata == {"foo": "barqux"}
-        
+
         # Test read_dataset also includes extra/metadata
         read_dataset = langchain_client.read_dataset(dataset_id=dataset1.id)
         assert read_dataset.extra is not None
         assert "metadata" in read_dataset.extra
         assert read_dataset.extra["metadata"] == {"foo": "barqux"}
         assert read_dataset.metadata == {"foo": "barqux"}
-        
+
     finally:
         # Delete datasets
         for name in [ds1n, ds2n]:
