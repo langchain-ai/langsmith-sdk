@@ -502,8 +502,6 @@ function _formatFeedbackScore(score?: ScoreType): ScoreType | undefined {
   return score;
 }
 
-export const DEFAULT_MAX_QUEUE_BUFFER_SIZE_BYTES = 500 * 1024 * 1024; // 500MB
-
 export class AutoBatchQueue {
   items: {
     action: "create" | "update";
