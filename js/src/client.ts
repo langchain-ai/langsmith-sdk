@@ -105,11 +105,6 @@ export interface ClientConfig {
    * Enable debug mode for the client. If set, all sent HTTP requests will be logged.
    */
   debug?: boolean;
-  /**
-   * Max size of the queue buffer in bytes.
-   * If the queue buffer is full, the client will drop new items.
-   */
-  maxQueuedBufferSizeBytes?: number;
 }
 
 /**
@@ -522,43 +517,22 @@ export class AutoBatchQueue {
   }[] = [];
 
   sizeBytes = 0;
-  maxTotalSizeBytes: number;
-  private droppedItemCount = 0;
-
-  constructor(maxTotalSizeBytes = DEFAULT_MAX_QUEUE_BUFFER_SIZE_BYTES) {
-    this.maxTotalSizeBytes = maxTotalSizeBytes;
-  }
 
   peek() {
     return this.items[0];
   }
 
   push(item: AutoBatchQueueItem): Promise<void> {
-    const size = serializePayloadForTracing(
-      item.item,
-      `Serializing run with id: ${item.item.id}`
-    ).length;
-
-    // Drop the new item if adding it would exceed the size limit
-    if (this.sizeBytes + size > this.maxTotalSizeBytes) {
-      this.droppedItemCount++;
-
-      // Log the first drop and then sample at 1% rate to avoid spam
-      if (this.droppedItemCount === 1 || this.droppedItemCount % 100 === 0) {
-        console.warn(
-          `[LANGSMITH] Dropping trace item (size: ${size} bytes) - queue at capacity (${this.sizeBytes}/${this.maxTotalSizeBytes} bytes). Total dropped: ${this.droppedItemCount}`
-        );
-      }
-      return Promise.resolve();
-    }
-
     let itemPromiseResolve;
     const itemPromise = new Promise<void>((resolve) => {
       // Setting itemPromiseResolve is synchronous with promise creation:
       // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/Promise
       itemPromiseResolve = resolve;
     });
-
+    const size = serializePayloadForTracing(
+      item.item,
+      `Serializing run with id: ${item.item.id}`
+    ).length;
     this.items.push({
       action: item.action,
       payload: item.item,
@@ -644,7 +618,7 @@ export class Client implements LangSmithTracingClientInterface {
 
   private autoBatchTracing = true;
 
-  private autoBatchQueue: AutoBatchQueue;
+  private autoBatchQueue = new AutoBatchQueue();
 
   private autoBatchTimeout: ReturnType<typeof setTimeout> | undefined;
 
@@ -718,7 +692,6 @@ export class Client implements LangSmithTracingClientInterface {
     this.batchSizeBytesLimit = config.batchSizeBytesLimit;
     this.fetchOptions = config.fetchOptions || {};
     this.manualFlushMode = config.manualFlushMode ?? this.manualFlushMode;
-    this.autoBatchQueue = new AutoBatchQueue(config.maxQueuedBufferSizeBytes);
     if (getOtelEnabled()) {
       this.langSmithToOTELTranslator = new LangSmithToOTELTranslator();
     }
