@@ -134,6 +134,7 @@ export class RunnableTraceable<RunInput, RunOutput> extends Runnable<
   async invoke(input: RunInput, options?: Partial<RunnableConfig>) {
     const [config] = this._getOptionsList(options ?? {}, 1);
     const callbacks = await getCallbackManagerForConfig(config);
+    await new Promise((resolve) => setImmediate(resolve));
 
     return (await this.func(
       patchConfig(config, { callbacks }),

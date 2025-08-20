@@ -614,8 +614,8 @@ test("chat.completions.parse", async () => {
 
   for (const call of callSpy.mock.calls) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);
-    const body = parseRequestBody((call[2] as any).body);
+    expect(["POST", "PATCH"]).toContain((call[1] as any)["method"]);
+    const body = parseRequestBody((call[1] as any).body);
     expect(body.extra.metadata).toMatchObject({
       ls_model_name: "gpt-4.1-nano",
       ls_model_type: "chat",
@@ -649,7 +649,7 @@ test("responses.create and retrieve workflow", async () => {
 
   // Verify that create was traced
   const createCalls = callSpy.mock.calls.filter(
-    (call) => (call[2] as any).method === "POST"
+    (call) => (call[1] as any).method === "POST"
   );
   expect(createCalls.length).toBeGreaterThanOrEqual(1);
 
@@ -666,7 +666,7 @@ test("responses.create and retrieve workflow", async () => {
 
   // Verify the create call had proper metadata
   for (const call of createCalls) {
-    const body = parseRequestBody((call[2] as any).body);
+    const body = parseRequestBody((call[1] as any).body);
     expect(body.extra.metadata).toMatchObject({
       ls_model_name: "gpt-4.1-nano",
       ls_model_type: "llm",
@@ -705,10 +705,10 @@ test("responses.create streaming", async () => {
 
   // Verify token events were logged
   const patchCalls = callSpy.mock.calls.filter(
-    (call) => (call[2] as any).method === "PATCH"
+    (call) => (call[1] as any).method === "PATCH"
   );
   const lastPatchCall = patchCalls[patchCalls.length - 1];
-  const body = parseRequestBody((lastPatchCall[2] as any).body);
+  const body = parseRequestBody((lastPatchCall[1] as any).body);
 
   expect(body.events).toBeDefined();
   const tokenEvents = body.events.filter(
@@ -718,8 +718,8 @@ test("responses.create streaming", async () => {
 
   for (const call of callSpy.mock.calls) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);
-    const body = parseRequestBody((call[2] as any).body);
+    expect(["POST", "PATCH"]).toContain((call[1] as any)["method"]);
+    const body = parseRequestBody((call[1] as any).body);
     expect(body.extra.metadata).toMatchObject({
       ls_model_name: "gpt-4.1-nano",
       ls_model_type: "llm",
@@ -889,7 +889,7 @@ describe("Usage Metadata Tests", () => {
         let usageMetadata: UsageMetadata | undefined;
         const requestBodies: any = {};
         for (const call of callSpy.mock.calls) {
-          const request = call[2] as any;
+          const request = call[1] as any;
           const requestBody = parseRequestBody(request.body);
           if (request.method === "POST") {
             requestBodies["post"] = [requestBody];

@@ -6,10 +6,6 @@ import { v4 as uuidv4 } from "uuid";
 import { Client, mergeRuntimeEnvIntoRun } from "../client.js";
 import { convertToDottedOrderFormat } from "../run_trees.js";
 import { RunCreate } from "../schemas.js";
-import {
-  clearFetchImplementation,
-  overrideFetchImplementation,
-} from "../singletons/fetch.js";
 
 const parseMockRequestBody = async (
   body: string | Uint8Array | ReadableStream
@@ -97,7 +93,19 @@ describe.each(ENDPOINT_TYPES)(
         ? "https://api.smith.langchain.com/runs/batch"
         : "https://api.smith.langchain.com/runs/multipart";
 
-    let mockFetch: jest.MockedFunction<typeof fetch>;
+    let testClients: any[] = [];
+
+    const createClient = (
+      config: any,
+      mockFetch?: jest.MockedFunction<typeof fetch>
+    ) => {
+      const client = new Client({
+        ...config,
+        fetch: mockFetch,
+      });
+      testClients.push(client);
+      return client;
+    };
 
     const createMockFetch = (callsArray: any[]) => {
       return jest.fn((...args: any[]) => {
@@ -110,20 +118,6 @@ describe.each(ENDPOINT_TYPES)(
           text: () => Promise.resolve(""),
         } as Response);
       });
-    };
-
-    beforeEach(() => {
-      // Create a basic mock that will be overridden by individual tests
-      mockFetch = createMockFetch([]);
-      overrideFetchImplementation(mockFetch);
-    });
-
-    let testClients: any[] = [];
-
-    const createClient = (config: any) => {
-      const client = new Client(config);
-      testClients.push(client);
-      return client;
     };
 
     afterEach(async () => {
@@ -142,17 +136,19 @@ describe.each(ENDPOINT_TYPES)(
       jest.clearAllMocks();
       jest.clearAllTimers();
       jest.useRealTimers();
-      clearFetchImplementation();
     });
 
     it("should create a batched run with the given input", async () => {
       const calls: any[] = [];
-      overrideFetchImplementation(createMockFetch(calls));
+      const mockFetch = createMockFetch(calls);
 
-      const client = createClient({
-        apiKey: "test-api-key",
-        autoBatchTracing: true,
-      });
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          autoBatchTracing: true,
+        },
+        mockFetch
+      );
       jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
         return {
           version: "foo",
@@ -199,14 +195,17 @@ describe.each(ENDPOINT_TYPES)(
 
     it("should hide inputs and outputs", async () => {
       const calls: any[] = [];
-      overrideFetchImplementation(createMockFetch(calls));
+      const mockFetch = createMockFetch(calls);
 
-      const client = createClient({
-        apiKey: "test-api-key",
-        autoBatchTracing: true,
-        hideInputs: () => ({ hidden: "inputs" }),
-        hideOutputs: () => ({ hidden: "outputs" }),
-      });
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          autoBatchTracing: true,
+          hideInputs: () => ({ hidden: "inputs" }),
+          hideOutputs: () => ({ hidden: "outputs" }),
+        },
+        mockFetch
+      );
       jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
         return {
           version: "foo",
@@ -257,14 +256,17 @@ describe.each(ENDPOINT_TYPES)(
 
     it("should hide inputs and outputs with an async function", async () => {
       const calls: any[] = [];
-      overrideFetchImplementation(createMockFetch(calls));
+      const mockFetch = createMockFetch(calls);
 
-      const client = createClient({
-        apiKey: "test-api-key",
-        autoBatchTracing: true,
-        hideInputs: async () => ({ hidden: "inputs" }),
-        hideOutputs: async () => ({ hidden: "outputs" }),
-      });
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          autoBatchTracing: true,
+          hideInputs: async () => ({ hidden: "inputs" }),
+          hideOutputs: async () => ({ hidden: "outputs" }),
+        },
+        mockFetch
+      );
       jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
         return {
           version: "foo",
@@ -315,17 +317,18 @@ describe.each(ENDPOINT_TYPES)(
 
     it("should not throw an error if fetch fails for batch requests", async () => {
       const calls: any[] = [];
-      const mockFetchInstance = createMockFetch(calls);
-      mockFetchInstance.mockImplementation((...args: any[]) => {
+      const mockFetch = jest.fn((...args: any[]) => {
         calls.push(args);
         throw new Error("Totally expected mock error");
       });
-      overrideFetchImplementation(mockFetchInstance);
 
-      const client = createClient({
-        apiKey: "test-api-key",
-        autoBatchTracing: true,
-      });
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          autoBatchTracing: true,
+        },
+        mockFetch
+      );
       jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
         return {
           version: "foo",
@@ -356,12 +359,15 @@ describe.each(ENDPOINT_TYPES)(
 
     it("Create + update batching should merge into a single call", async () => {
       const calls: any[] = [];
-      overrideFetchImplementation(createMockFetch(calls));
+      const mockFetch = createMockFetch(calls);
 
-      const client = createClient({
-        apiKey: "test-api-key",
-        autoBatchTracing: true,
-      });
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          autoBatchTracing: true,
+        },
+        mockFetch
+      );
       jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
         return {
           version: "foo",
@@ -421,12 +427,15 @@ describe.each(ENDPOINT_TYPES)(
 
     it("server info fetch should retry even if initial call fails", async () => {
       const calls: any[] = [];
-      overrideFetchImplementation(createMockFetch(calls));
+      const mockFetch = createMockFetch(calls);
 
-      const client = createClient({
-        apiKey: "test-api-key",
-        autoBatchTracing: true,
-      });
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          autoBatchTracing: true,
+        },
+        mockFetch
+      );
       let serverInfoFailedOnce = false;
       jest.spyOn(client as any, "_getServerInfo").mockImplementationOnce(() => {
         serverInfoFailedOnce = true;
@@ -493,13 +502,16 @@ describe.each(ENDPOINT_TYPES)(
 
     it("should immediately trigger a batch on root run end if blockOnRootRunFinalization is set", async () => {
       const calls: any[] = [];
-      overrideFetchImplementation(createMockFetch(calls));
+      const mockFetch = createMockFetch(calls);
 
-      const client = createClient({
-        apiKey: "test-api-key",
-        autoBatchTracing: true,
-        blockOnRootRunFinalization: true,
-      });
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          autoBatchTracing: true,
+          blockOnRootRunFinalization: true,
+        },
+        mockFetch
+      );
       jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
         return {
           version: "foo",
@@ -612,24 +624,16 @@ describe.each(ENDPOINT_TYPES)(
 
     it("should not trigger a batch on root run end and instead batch call with previous batch if blockOnRootRunFinalization is false", async () => {
       const calls: any[] = [];
-      const mockFetchInstance = createMockFetch(calls);
-      mockFetchInstance.mockImplementation((...args: any[]) => {
-        // Only count calls to batch/multipart endpoints, not info calls
-        if (args[0]?.includes("/runs/")) {
-          calls.push(args);
-        }
-        return Promise.resolve({
-          ok: true,
-          text: () => Promise.resolve(""),
-        } as Response);
-      });
-      overrideFetchImplementation(mockFetchInstance);
+      const mockFetch = createMockFetch(calls);
 
-      const client = createClient({
-        apiKey: "test-api-key",
-        autoBatchTracing: true,
-        blockOnRootRunFinalization: false,
-      });
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          autoBatchTracing: true,
+          blockOnRootRunFinalization: false,
+        },
+        mockFetch
+      );
       jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
         return {
           version: "foo",
@@ -742,13 +746,16 @@ describe.each(ENDPOINT_TYPES)(
 
     it("should send traces above the batch size and see even batches", async () => {
       const calls: any[] = [];
-      overrideFetchImplementation(createMockFetch(calls));
+      const mockFetch = createMockFetch(calls);
 
-      const client = createClient({
-        apiKey: "test-api-key",
-        batchSizeBytesLimit: 10000,
-        autoBatchTracing: true,
-      });
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          batchSizeBytesLimit: 10000,
+          autoBatchTracing: true,
+        },
+        mockFetch
+      );
       jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
         return {
           version: "foo",
@@ -835,13 +842,16 @@ describe.each(ENDPOINT_TYPES)(
 
     it("should sample and see proper batching", async () => {
       const calls: any[] = [];
-      overrideFetchImplementation(createMockFetch(calls));
+      const mockFetch = createMockFetch(calls);
 
-      const client = createClient({
-        apiKey: "test-api-key",
-        autoBatchTracing: true,
-        tracingSamplingRate: 0.5,
-      });
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          autoBatchTracing: true,
+          tracingSamplingRate: 0.5,
+        },
+        mockFetch
+      );
       let counter = 0;
       jest.spyOn(client as any, "_shouldSample").mockImplementation(() => {
         counter += 1;
@@ -971,14 +981,17 @@ describe.each(ENDPOINT_TYPES)(
 
     it("should flush traces in batches with manualFlushMode enabled", async () => {
       const calls: any[] = [];
-      overrideFetchImplementation(createMockFetch(calls));
+      const mockFetch = createMockFetch(calls);
 
-      const client = createClient({
-        apiKey: "test-api-key",
-        batchSizeBytesLimit: 10000,
-        autoBatchTracing: true,
-        manualFlushMode: true,
-      });
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          batchSizeBytesLimit: 10000,
+          autoBatchTracing: true,
+          manualFlushMode: true,
+        },
+        mockFetch
+      );
       jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
         return {
           version: "foo",
@@ -1071,13 +1084,16 @@ describe.each(ENDPOINT_TYPES)(
 
     it("a very low batch size limit should be equivalent to single calls", async () => {
       const calls: any[] = [];
-      overrideFetchImplementation(createMockFetch(calls));
+      const mockFetch = createMockFetch(calls);
 
-      const client = createClient({
-        apiKey: "test-api-key",
-        batchSizeBytesLimit: 1,
-        autoBatchTracing: true,
-      });
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          batchSizeBytesLimit: 1,
+          autoBatchTracing: true,
+        },
+        mockFetch
+      );
       jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
         return {
           version: "foo",
@@ -1183,12 +1199,15 @@ describe.each(ENDPOINT_TYPES)(
 
     it("Use batch endpoint if info call fails", async () => {
       const calls: any[] = [];
-      overrideFetchImplementation(createMockFetch(calls));
+      const mockFetch = createMockFetch(calls);
 
-      const client = createClient({
-        apiKey: "test-api-key",
-        autoBatchTracing: true,
-      });
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          autoBatchTracing: true,
+        },
+        mockFetch
+      );
       jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
         throw new Error("Totally expected mock error");
       });
@@ -1239,12 +1258,15 @@ describe.each(ENDPOINT_TYPES)(
 
     it("Should handle circular values", async () => {
       const calls: any[] = [];
-      overrideFetchImplementation(createMockFetch(calls));
+      const mockFetch = createMockFetch(calls);
 
-      const client = createClient({
-        apiKey: "test-api-key",
-        autoBatchTracing: true,
-      });
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          autoBatchTracing: true,
+        },
+        mockFetch
+      );
       jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
         return {
           version: "foo",
