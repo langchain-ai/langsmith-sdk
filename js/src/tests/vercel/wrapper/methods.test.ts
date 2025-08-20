@@ -179,7 +179,7 @@ describe("wrapAISDK", () => {
       const mockLangModel = new MockLanguageModelV2({
         modelId: "error-test-model",
         doGenerate: async () => {
-          throw new Error("Model generation failed");
+          throw new Error("TOTALLY EXPECTED MOCK DOGENERATE ERROR");
         },
       });
 
@@ -190,7 +190,7 @@ describe("wrapAISDK", () => {
         });
         expect(true).toBe(false); // Should not reach here
       } catch (error: any) {
-        expect(error.message).toContain("Model generation failed");
+        expect(error.message).toContain("TOTALLY EXPECTED MOCK DOGENERATE ERROR");
       }
 
       // Add a small delay to allow async operations to complete
@@ -212,7 +212,7 @@ describe("wrapAISDK", () => {
         (req) => req.type === "updateRun" && req.body.error
       );
       expect(updateRunCall).toBeDefined();
-      expect(updateRunCall.body.error).toContain("Model generation failed");
+      expect(updateRunCall.body.error).toContain("TOTALLY EXPECTED MOCK DOGENERATE ERROR");
     });
 
     it("should handle streamText with proper aggregation", async () => {
@@ -303,7 +303,7 @@ describe("wrapAISDK", () => {
       const mockLangModel = new MockLanguageModelV2({
         modelId: "stream-error-model",
         doStream: async () => {
-          throw new Error("doStream failed");
+          throw new Error("TOTALLY EXPECTED MOCK DOSTREAM ERROR");
         },
       });
 
@@ -326,7 +326,7 @@ describe("wrapAISDK", () => {
       );
 
       expect(updateRunCall).toBeDefined();
-      expect(updateRunCall.body.error).toContain("doStream failed");
+      expect(updateRunCall.body.error).toContain("TOTALLY EXPECTED MOCK DOSTREAM ERROR");
     });
 
     it("should handle generateObject with proper output processing", async () => {
@@ -399,7 +399,7 @@ describe("wrapAISDK", () => {
       const mockLangModel = new MockLanguageModelV2({
         modelId: "object-error-model",
         doGenerate: async () => {
-          throw new Error("Object generation failed");
+          throw new Error("TOTALLY EXPECTED MOCK DOGENERATE ERROR");
         },
       });
 
@@ -413,7 +413,7 @@ describe("wrapAISDK", () => {
         });
         expect(true).toBe(false); // Should not reach here
       } catch (error: any) {
-        expect(error.message).toContain("Object generation failed");
+        expect(error.message).toContain("TOTALLY EXPECTED MOCK DOGENERATE ERROR");
       }
 
       // Add delay for async operations
@@ -424,7 +424,7 @@ describe("wrapAISDK", () => {
         (req) => req.type === "updateRun" && req.body.error
       );
       expect(updateRunCall).toBeDefined();
-      expect(updateRunCall.body.error).toContain("Object generation failed");
+      expect(updateRunCall.body.error).toContain("TOTALLY EXPECTED MOCK DOGENERATE ERROR");
     });
 
     it("should handle generateObject with explicit generics", async () => {
@@ -569,7 +569,7 @@ describe("wrapAISDK", () => {
       const mockLangModel = new MockLanguageModelV2({
         modelId: "stream-object-error-model",
         doStream: async () => {
-          throw new Error("streamObject doStream failed");
+          throw new Error("TOTALLY EXPECTED MOCK STREAMOBJECT DOSTREAM ERROR");
         },
       });
 
@@ -596,7 +596,7 @@ describe("wrapAISDK", () => {
 
       expect(updateRunCall).toBeDefined();
       expect(updateRunCall.body.error).toContain(
-        "streamObject doStream failed"
+        "TOTALLY EXPECTED MOCK STREAMOBJECT DOSTREAM ERROR"
       );
     });
 
@@ -895,7 +895,7 @@ describe("wrapAISDK", () => {
       expect(createRunCall.body.tags).toEqual(["runtime-tag"]); // Runtime overrides base
     });
 
-    it.only("should handle process inputs and output options", async () => {
+    it("should handle process inputs and output options", async () => {
       const wrappedMethods = wrapAISDK(
         {
           wrapLanguageModel: ai.wrapLanguageModel,
