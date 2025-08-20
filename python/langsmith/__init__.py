@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from langsmith.testing._internal import test, unit
     from langsmith.utils import ContextThreadPoolExecutor
 
-__version__ = "0.4.14"
+__version__ = "0.4.15"
 version = __version__  # for backwards compatibility
 
 
