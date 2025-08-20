@@ -589,7 +589,7 @@ export class AutoBatchQueue {
 
 export const DEFAULT_UNCOMPRESSED_BATCH_SIZE_LIMIT_BYTES = 32 * 1024 * 1024;
 
-const SERVER_INFO_REQUEST_TIMEOUT = 10000;
+const SERVER_INFO_REQUEST_TIMEOUT_MS = 10000;
 
 const DEFAULT_API_URL = "https://api.smith.langchain.com";
 
@@ -1112,7 +1112,7 @@ export class Client implements LangSmithTracingClientInterface {
         {
           method: "GET",
           headers: { Accept: "application/json" },
-          signal: AbortSignal.timeout(SERVER_INFO_REQUEST_TIMEOUT),
+          signal: AbortSignal.timeout(SERVER_INFO_REQUEST_TIMEOUT_MS),
           ...this.fetchOptions,
         }
       );
