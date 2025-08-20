@@ -224,7 +224,9 @@ export function LangSmithMiddleware(config?: {
               await runTree?.end(undefined, error.message ?? String(error));
               throw error;
             } finally {
-              await runTree?.patchRun();
+              await runTree?.patchRun({
+                excludeInputs: true,
+              });
             }
           },
         });
@@ -235,7 +237,9 @@ export function LangSmithMiddleware(config?: {
         };
       } catch (error: any) {
         await runTree?.end(undefined, error.message ?? String(error));
-        await runTree?.patchRun();
+        await runTree?.patchRun({
+          excludeInputs: true,
+        });
         throw error;
       }
     },
