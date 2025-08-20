@@ -8,7 +8,10 @@ import { fileURLToPath } from "url";
 import path from "path";
 
 import { Client } from "../../../index.js";
-import { wrapAISDK } from "../../../experimental/vercel/index.js";
+import {
+  createLangSmithProviderOptions,
+  wrapAISDK,
+} from "../../../experimental/vercel/index.js";
 import { waitUntilRunFound } from "../../utils.js";
 
 const { tool, stepCountIs } = ai;
@@ -218,4 +221,51 @@ test("image and file data normalization", async () => {
   expect(result.text.length).toBeGreaterThan(0);
   expect(result.usage).toBeDefined();
   expect(result.providerMetadata).toBeDefined();
+});
+
+test("process inputs and outputs", async () => {
+  const lsConfig = createLangSmithProviderOptions<typeof ai.generateText>({
+    processInputs: (inputs) => {
+      const { messages } = inputs;
+      return {
+        messages: messages?.map((message) => ({
+          providerMetadata: message.providerOptions,
+          role: "assistant",
+          content: "REDACTED",
+        })),
+        prompt: "REDACTED",
+      };
+    },
+    processOutputs: (outputs) => {
+      return {
+        providerMetadata: outputs.providerMetadata,
+        role: "assistant",
+        content: "REDACTED",
+      };
+    },
+    processChildLLMRunInputs: (inputs) => {
+      const { prompt } = inputs;
+      return {
+        messages: prompt.map((message) => ({
+          ...message,
+          content: "REDACTED CHILD INPUTS",
+        })),
+      };
+    },
+    processChildLLMRunOutputs: (outputs) => {
+      return {
+        providerMetadata: outputs.providerMetadata,
+        content: "REDACTED CHILD OUTPUTS",
+        role: "assistant",
+      };
+    },
+  });
+  const { text } = await generateText({
+    model: openai("gpt-5-nano"),
+    prompt: "What is the capital of France?",
+    providerOptions: {
+      langsmith: lsConfig,
+    },
+  });
+  expect(text).not.toContain("REDACTED");
 });

@@ -483,7 +483,7 @@ function trimQuotes(str?: string): string | undefined {
 const handle429 = async (response?: Response) => {
   if (response?.status === 429) {
     const retryAfter =
-      parseInt(response.headers.get("retry-after") ?? "30", 10) * 1000;
+      parseInt(response.headers.get("retry-after") ?? "10", 10) * 1000;
     if (retryAfter > 0) {
       await new Promise((resolve) => setTimeout(resolve, retryAfter));
       // Return directly after calling this check
@@ -585,10 +585,9 @@ export class AutoBatchQueue {
   }
 }
 
-// 20 MB
-export const DEFAULT_BATCH_SIZE_LIMIT_BYTES = 20_971_520;
+export const DEFAULT_UNCOMPRESSED_BATCH_SIZE_LIMIT_BYTES = 32 * 1024 * 1024;
 
-const SERVER_INFO_REQUEST_TIMEOUT = 2500;
+const SERVER_INFO_REQUEST_TIMEOUT_MS = 10000;
 
 const DEFAULT_API_URL = "https://api.smith.langchain.com";
 
@@ -976,11 +975,11 @@ export class Client implements LangSmithTracingClientInterface {
     return (
       this.batchSizeBytesLimit ??
       serverInfo.batch_ingest_config?.size_limit_bytes ??
-      DEFAULT_BATCH_SIZE_LIMIT_BYTES
+      DEFAULT_UNCOMPRESSED_BATCH_SIZE_LIMIT_BYTES
     );
   }
 
-  private async _getMultiPartSupport(): Promise<boolean> {
+  private async _getDatasetExamplesMultiPartSupport(): Promise<boolean> {
     const serverInfo = await this._ensureServerInfo();
     return (
       serverInfo.instance_flags?.dataset_examples_multipart_enabled ?? false
@@ -1045,7 +1044,8 @@ export class Client implements LangSmithTracingClientInterface {
         };
         const serverInfo = await this._ensureServerInfo();
         if (serverInfo?.batch_ingest_config?.use_multipart_endpoint) {
-          await this.multipartIngestRuns(ingestParams, options);
+          const useGzip = serverInfo?.instance_flags?.gzip_body_enabled;
+          await this.multipartIngestRuns(ingestParams, { ...options, useGzip });
         } else {
           await this.batchIngestRuns(ingestParams, options);
         }
@@ -1112,7 +1112,7 @@ export class Client implements LangSmithTracingClientInterface {
         {
           method: "GET",
           headers: { Accept: "application/json" },
-          signal: AbortSignal.timeout(SERVER_INFO_REQUEST_TIMEOUT),
+          signal: AbortSignal.timeout(SERVER_INFO_REQUEST_TIMEOUT_MS),
           ...this.fetchOptions,
         }
       );
@@ -1368,7 +1368,7 @@ export class Client implements LangSmithTracingClientInterface {
       runCreates?: RunCreate[];
       runUpdates?: RunUpdate[];
     },
-    options?: { apiKey?: string; apiUrl?: string }
+    options?: { apiKey?: string; apiUrl?: string; useGzip?: boolean }
   ) {
     if (runCreates === undefined && runUpdates === undefined) {
       return;
@@ -1621,7 +1621,7 @@ export class Client implements LangSmithTracingClientInterface {
   private async _sendMultipartRequest(
     parts: MultipartPart[],
     context: string,
-    options?: { apiKey?: string; apiUrl?: string }
+    options?: { apiKey?: string; apiUrl?: string; useGzip?: boolean }
   ) {
     // Create multipart form data boundary
     const boundary =
@@ -1639,14 +1639,22 @@ export class Client implements LangSmithTracingClientInterface {
       if (options?.apiKey !== undefined) {
         headers["x-api-key"] = options.apiKey;
       }
-      // TODO: Investigate retries - streaming the request body makes this tricky
+      let transformedBody = body;
+      if (
+        options?.useGzip &&
+        typeof body === "object" &&
+        "pipeThrough" in body
+      ) {
+        transformedBody = body.pipeThrough(new CompressionStream("gzip"));
+        headers["Content-Encoding"] = "gzip";
+      }
       return this.batchIngestCaller.call(
         _getFetchImplementation(this.debug),
         `${options?.apiUrl ?? this.apiUrl}/runs/multipart`,
         {
           method: "POST",
           headers,
-          body,
+          body: transformedBody,
           duplex: "half",
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
@@ -4871,7 +4879,7 @@ export class Client implements LangSmithTracingClientInterface {
     datasetId: string,
     updates: ExampleUpdate[] = []
   ): Promise<UpdateExamplesResponse> {
-    if (!(await this._getMultiPartSupport())) {
+    if (!(await this._getDatasetExamplesMultiPartSupport())) {
       throw new Error(
         "Your LangSmith deployment does not allow using the multipart examples endpoint, please upgrade your deployment to the latest version."
       );
@@ -4993,7 +5001,7 @@ export class Client implements LangSmithTracingClientInterface {
     datasetId: string,
     uploads: ExampleCreate[] = []
   ): Promise<UploadExamplesResponse> {
-    if (!(await this._getMultiPartSupport())) {
+    if (!(await this._getDatasetExamplesMultiPartSupport())) {
       throw new Error(
         "Your LangSmith deployment does not allow using the multipart examples endpoint, please upgrade your deployment to the latest version."
       );
