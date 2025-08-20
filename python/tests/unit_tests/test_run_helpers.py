@@ -1613,7 +1613,9 @@ def test_set_parent_and_project_name():
             assert rt.session_name == project_name
             assert str(rt.id) == str(rt.trace_id)
             assert str(rt.trace_id) == trace_id
-            assert rt.start_time == datetime.datetime.fromisoformat(start_time)
+            assert rt.start_time == datetime.datetime.strptime(
+                start_time, "%Y%m%dT%H%M%S%fZ"
+            ).replace(tzinfo=datetime.timezone.utc)
 
 
 async def test_process_inputs_outputs():

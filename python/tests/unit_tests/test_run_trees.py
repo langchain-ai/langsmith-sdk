@@ -1,6 +1,6 @@
 import json
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import MagicMock
 from uuid import UUID
 
@@ -94,7 +94,8 @@ def test_json_serializable():
     ],
 )
 def test_parse_dotted_order(inputs, expected):
-    assert run_trees._parse_dotted_order(inputs) == expected
+    as_utc = [(x[0].replace(tzinfo=timezone.utc), *x[1:]) for x in expected]
+    assert run_trees._parse_dotted_order(inputs) == as_utc
 
 
 def test_run_tree_events_not_null():
