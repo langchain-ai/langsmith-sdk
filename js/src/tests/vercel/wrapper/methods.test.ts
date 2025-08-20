@@ -3,10 +3,6 @@
 import { MockLanguageModelV2 } from "ai/test";
 import * as ai from "ai";
 import { simulateReadableStream, APICallError } from "ai";
-import type {
-  LanguageModelV2,
-  LanguageModelV2CallOptions,
-} from "@ai-sdk/provider";
 import { z } from "zod";
 import {
   createLangSmithProviderOptions,
