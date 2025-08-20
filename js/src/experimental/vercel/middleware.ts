@@ -6,6 +6,7 @@ import type {
   LanguageModelV2Message,
   LanguageModelV2Usage,
   SharedV2ProviderMetadata,
+  LanguageModelV2FinishReason,
 } from "@ai-sdk/provider";
 import type { RunTree, RunTreeConfig } from "../../run_trees.js";
 import { getCurrentRunTree, traceable } from "../../traceable.js";
@@ -27,8 +28,7 @@ const _formatTracedInputs = (params: LanguageModelV2CallOptions) => {
   return rest;
 };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const _formatTracedOutputs = (outputs: Record<string, any>) => {
+const _formatTracedOutputs = (outputs: Record<string, unknown>) => {
   const formattedOutputs = { ...outputs };
   if (formattedOutputs.role == null) {
     formattedOutputs.role = formattedOutputs.type ?? "assistant";
@@ -77,13 +77,35 @@ const setUsageMetadataOnRunTree = (
   };
 };
 
+export type AggregatedDoStreamOutput = {
+  content: string;
+  role: "assistant";
+  tool_calls: {
+    id: string;
+    type: "function";
+    function: {
+      name: string;
+      arguments: string;
+    };
+  }[];
+  providerMetadata?: SharedV2ProviderMetadata;
+  finishReason?: LanguageModelV2FinishReason;
+};
+
 /**
  * AI SDK middleware that wraps an AI SDK 5 model and adds LangSmith tracing.
  */
 export function LangSmithMiddleware(config?: {
   name: string;
   modelId?: string;
-  lsConfig?: Partial<Omit<RunTreeConfig, "inputs" | "outputs" | "run_type">>;
+  lsConfig?: Partial<Omit<RunTreeConfig, "inputs" | "outputs" | "run_type">> & {
+    processInputs?: (
+      inputs: Record<string, unknown>
+    ) => Record<string, unknown>;
+    processOutputs?: (
+      outputs: Record<string, unknown>
+    ) => Record<string, unknown>;
+  };
 }): LanguageModelV2Middleware {
   const { name, modelId, lsConfig } = config ?? {};
 
@@ -109,13 +131,17 @@ export function LangSmithMiddleware(config?: {
           },
           processInputs: (inputs) => {
             const typedInputs = inputs as LanguageModelV2CallOptions;
-            return _formatTracedInputs(typedInputs);
+            const inputFormatter =
+              lsConfig?.processInputs ?? _formatTracedInputs;
+            return inputFormatter(typedInputs);
           },
           processOutputs: (outputs) => {
             const typedOutputs = outputs as Awaited<
               ReturnType<typeof doGenerate>
             >;
-            return _formatTracedOutputs(typedOutputs);
+            const outputFormatter =
+              lsConfig?.processOutputs ?? _formatTracedOutputs;
+            return outputFormatter(typedOutputs);
           },
         }
       );
@@ -130,6 +156,8 @@ export function LangSmithMiddleware(config?: {
         typeof parentRunTree === "object" &&
         typeof parentRunTree.createChild === "function"
       ) {
+        const inputFormatter = lsConfig?.processInputs ?? _formatTracedInputs;
+        const formattedInputs = inputFormatter(params);
         runTree = parentRunTree?.createChild({
           ...lsConfig,
           name: name ?? "ai.doStream",
@@ -139,7 +167,7 @@ export function LangSmithMiddleware(config?: {
             ai_sdk_method: "ai.doStream",
             ...lsConfig?.metadata,
           },
-          inputs: _formatTracedInputs(params),
+          inputs: formattedInputs,
         });
       }
 
@@ -170,7 +198,7 @@ export function LangSmithMiddleware(config?: {
           async flush() {
             try {
               const output = chunks.reduce(
-                (aggregated, chunk) => {
+                (aggregated: AggregatedDoStreamOutput, chunk) => {
                   if (chunk.type === "text-delta") {
                     if (chunk.delta == null) {
                       return aggregated;
@@ -192,7 +220,7 @@ export function LangSmithMiddleware(config?: {
                         ...aggregated.tool_calls,
                         {
                           id: chunk.toolCallId,
-                          type: "function",
+                          type: "function" as const,
                           function: {
                             name: chunk.toolName,
                             arguments: chunk.input,
@@ -215,11 +243,14 @@ export function LangSmithMiddleware(config?: {
                 },
                 {
                   content: "",
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  tool_calls: [] as Record<string, any>[],
+                  role: "assistant",
+                  tool_calls: [],
                 }
               );
-              await runTree?.end(_formatTracedOutputs(output));
+              const outputFormatter =
+                lsConfig?.processOutputs ?? convertMessageToTracedFormat;
+              const formattedOutputs = outputFormatter(output);
+              await runTree?.end(formattedOutputs);
             } catch (error: any) {
               await runTree?.end(undefined, error.message ?? String(error));
               throw error;
