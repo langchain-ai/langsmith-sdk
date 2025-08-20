@@ -143,6 +143,30 @@ const _extractChildRunConfig = (lsConfig?: WrapAISDKConfig) => {
   return childConfig;
 };
 
+const _resolveConfigs = (
+  baseLsConfig?: WrapAISDKConfig,
+  runtimeLsConfig?: WrapAISDKConfig
+) => {
+  const baseChildRunConfig = _extractChildRunConfig(baseLsConfig);
+  const runtimeChildLLMRunConfig = _extractChildRunConfig(runtimeLsConfig);
+  const resolvedLsConfig = _mergeConfig(baseLsConfig, runtimeLsConfig);
+  const resolvedChildLLMRunConfig = _mergeConfig(
+    baseChildRunConfig,
+    runtimeChildLLMRunConfig
+  );
+  const {
+    processInputs: _processInputs,
+    processOutputs: _processOutputs,
+    ...resolvedToolConfig
+  } = resolvedChildLLMRunConfig;
+
+  return {
+    resolvedLsConfig,
+    resolvedChildLLMRunConfig,
+    resolvedToolConfig,
+  };
+};
+
 /**
  * Wraps Vercel AI SDK 5 functions with LangSmith tracing capabilities.
  *
@@ -186,7 +210,6 @@ const wrapAISDK = <
   },
   baseLsConfig?: WrapAISDKConfig
 ) => {
-  const baseChildRunConfig = _extractChildRunConfig(baseLsConfig);
   /**
    * Wrapped version of AI SDK 5's generateText with LangSmith tracing.
    *
@@ -208,17 +231,8 @@ const wrapAISDK = <
   const wrappedGenerateText = async (...args: Parameters<GenerateTextType>) => {
     const params = args[0];
     const runtimeLsConfig = params.providerMetadata?.langsmith;
-    const runtimeChildLLMRunConfig = _extractChildRunConfig(runtimeLsConfig);
-    const resolvedLsConfig = _mergeConfig(baseLsConfig, runtimeLsConfig);
-    const resolvedChildLLMRunConfig = _mergeConfig(
-      baseChildRunConfig,
-      runtimeChildLLMRunConfig
-    );
-    const {
-      processInputs: _processInputs,
-      processOutputs: _processOutputs,
-      ...resolvedToolConfig
-    } = resolvedChildLLMRunConfig;
+    const { resolvedLsConfig, resolvedChildLLMRunConfig, resolvedToolConfig } =
+      _resolveConfigs(baseLsConfig, runtimeLsConfig);
     const traceableFunc = traceable(
       async (
         ...args: Parameters<GenerateTextType>
@@ -310,11 +324,9 @@ const wrapAISDK = <
   ) => {
     const params = args[0];
     const runtimeLsConfig = params.providerMetadata?.langsmith;
-    const runtimeChildLLMRunConfig = _extractChildRunConfig(runtimeLsConfig);
-    const resolvedLsConfig = _mergeConfig(baseLsConfig, runtimeLsConfig);
-    const resolvedChildLLMRunConfig = _mergeConfig(
-      baseChildRunConfig,
-      runtimeChildLLMRunConfig
+    const { resolvedLsConfig, resolvedChildLLMRunConfig } = _resolveConfigs(
+      baseLsConfig,
+      runtimeLsConfig
     );
     const traceableFunc = traceable(
       async (
@@ -392,17 +404,8 @@ const wrapAISDK = <
   const wrappedStreamText = (...args: Parameters<StreamTextType>) => {
     const params = args[0];
     const runtimeLsConfig = params.providerMetadata?.langsmith;
-    const runtimeChildLLMRunConfig = _extractChildRunConfig(runtimeLsConfig);
-    const resolvedLsConfig = _mergeConfig(baseLsConfig, runtimeLsConfig);
-    const resolvedChildLLMRunConfig = _mergeConfig(
-      baseChildRunConfig,
-      runtimeChildLLMRunConfig
-    );
-    const {
-      processInputs: _processInputs,
-      processOutputs: _processOutputs,
-      ...resolvedToolConfig
-    } = resolvedChildLLMRunConfig;
+    const { resolvedLsConfig, resolvedChildLLMRunConfig, resolvedToolConfig } =
+      _resolveConfigs(baseLsConfig, runtimeLsConfig);
     const traceableFunc = traceable(
       (...args: Parameters<StreamTextType>): ReturnType<StreamTextType> => {
         const [params, ...rest] = args;
@@ -483,11 +486,9 @@ const wrapAISDK = <
   const wrappedStreamObject = (...args: Parameters<StreamObjectType>) => {
     const params = args[0];
     const runtimeLsConfig = params.providerMetadata?.langsmith;
-    const runtimeChildLLMRunConfig = _extractChildRunConfig(runtimeLsConfig);
-    const resolvedLsConfig = _mergeConfig(baseLsConfig, runtimeLsConfig);
-    const resolvedChildLLMRunConfig = _mergeConfig(
-      baseChildRunConfig,
-      runtimeChildLLMRunConfig
+    const { resolvedLsConfig, resolvedChildLLMRunConfig } = _resolveConfigs(
+      baseLsConfig,
+      runtimeLsConfig
     );
     const traceableFunc = traceable(
       (...args: Parameters<StreamObjectType>): ReturnType<StreamObjectType> => {
