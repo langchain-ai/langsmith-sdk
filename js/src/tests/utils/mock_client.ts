@@ -27,7 +27,6 @@ export const mockClient = (config?: Omit<ClientParams, "autoBatchTracing">) => {
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore Overriden client
     client,
-    _awaitHandler: true,
   });
 
   return { client, callSpy, langChainTracer };
