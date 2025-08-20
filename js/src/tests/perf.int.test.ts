@@ -12,7 +12,7 @@ test.skip("Test performance with large runs and concurrency", async () => {
     "beemovie.txt"
   );
 
-  const largeInput = { bee: fs.readFileSync(pathname) };
+  const largeInput = { bee: fs.readFileSync(pathname).toString() };
   const client = new Client({
     debug: true,
   });

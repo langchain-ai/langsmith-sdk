@@ -613,8 +613,7 @@ export class AutoBatchQueue {
   }
 }
 
-// 20 MB
-export const DEFAULT_BATCH_SIZE_LIMIT_BYTES = 20_971_520;
+export const DEFAULT_UNCOMPRESSED_BATCH_SIZE_LIMIT_BYTES = 20 * 1024 * 1024;
 
 const SERVER_INFO_REQUEST_TIMEOUT = 10000;
 
@@ -1003,7 +1002,7 @@ export class Client implements LangSmithTracingClientInterface {
     return (
       this.batchSizeBytesLimit ??
       serverInfo.batch_ingest_config?.size_limit_bytes ??
-      DEFAULT_BATCH_SIZE_LIMIT_BYTES
+      DEFAULT_UNCOMPRESSED_BATCH_SIZE_LIMIT_BYTES
     );
   }
 
