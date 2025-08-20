@@ -65,21 +65,13 @@ const _getModelId = (model: string | Record<string, unknown>) => {
 
 const _formatTracedInputs = (params: Record<string, unknown>) => {
   const { prompt, messages, model, tools, ...rest } = params;
-  let defaultOutputs;
   if (Array.isArray(prompt)) {
-    defaultOutputs = {
-      ...rest,
-      messages: prompt.map(convertMessageToTracedFormat),
-    };
+    return { ...rest, messages: prompt.map(convertMessageToTracedFormat) };
   } else if (Array.isArray(messages)) {
-    defaultOutputs = {
-      ...rest,
-      messages: messages.map(convertMessageToTracedFormat),
-    };
+    return { ...rest, messages: messages.map(convertMessageToTracedFormat) };
   } else {
-    defaultOutputs = { ...rest, prompt, messages };
+    return { ...rest, prompt, messages };
   }
-  return defaultOutputs;
 };
 
 const _mergeConfig = (
