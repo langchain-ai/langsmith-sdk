@@ -1,3 +1,5 @@
+import type { JSONValue } from "ai";
+
 import { LangSmithMiddleware } from "./middleware.js";
 import { convertMessageToTracedFormat, RETURN_FORMATTED } from "./utils.js";
 import { isTraceableFunction, traceable } from "../../traceable.js";
@@ -100,19 +102,206 @@ export type WrapAISDKConfig = Partial<
     | "serialized"
   >
 > & {
+  /**
+   * Apply transformations to AI SDK inputs before logging.
+   * This function should NOT mutate the inputs.
+   * Receives both "raw" and LangSmith-suggested "formatted" inputs,
+   * and should combine them into a single LangSmith-formatted input.
+   *
+   * ```ts
+   * import {
+   *   wrapAISDK,
+   *   createLangSmithProviderOptions,
+   * } from "langsmith/experimental/vercel";
+   * import * as ai from "ai";
+   * import { openai } from "@ai-sdk/openai";
+   *
+   * const { generateText } = wrapAISDK(ai);
+   *
+   * const lsConfig = createLangSmithProviderOptions({
+   *   processInputs: ({ formatted }) => {
+   *     const { messages, prompt, ...rest } = formatted;
+   *     let redactedMessages = undefined;
+   *     if (Array.isArray(messages)) {
+   *       redactedMessages = messages.map((message) => ({
+   *         ...message,
+   *         content: "REDACTED INPUTS",
+   *       }));
+   *     }
+   *     return {
+   *       ...rest,
+   *       messages: redactedMessages,
+   *       prompt: "REDACTED INPUTS",
+   *     };
+   *   },
+   * });
+   * const { text } = await generateText({
+   *   model: openai("gpt-5-nano"),
+   *   prompt: "What is the capital of France?",
+   *   providerOptions: {
+   *     langsmith: lsConfig,
+   *   },
+   * });
+   * ```
+   *
+   * This function is not inherited by nested LLM runs or tool calls.
+   * Pass `processChildLLMRunInputs` to override child LLM run
+   * input processing or wrap your tool's `execute` method in a
+   * separate `traceable` for tool calls.
+   *
+   * @param inputs Key-value map of the function inputs.
+   * @param inputs.formatted - Inputs formatted for LangSmith.
+   * @param inputs.raw - Raw inputs from the AI SDK.
+   * @returns A single combined key-value map of processed inputs.
+   */
   processInputs?: (inputs: {
     formatted: Record<string, unknown>;
     raw: Record<string, unknown>;
   }) => Record<string, unknown>;
+  /**
+   * Apply transformations to AI SDK outputs before logging.
+   * This function should NOT mutate the outputs.
+   * Receives both "raw" and LangSmith-suggested "formatted" outputs,
+   * and should combine them into a single LangSmith-formatted output.
+   *
+   * ```ts
+   * import {
+   *   wrapAISDK,
+   *   createLangSmithProviderOptions,
+   * } from "langsmith/experimental/vercel";
+   * import * as ai from "ai";
+   * import { openai } from "@ai-sdk/openai";
+   *
+   * const { generateText } = wrapAISDK(ai);
+   *
+   * const lsConfig = createLangSmithProviderOptions({
+   *   processOutputs: ({ formatted, raw }) => {
+   *     const originalTracedMessage = { ...formatted };
+   *     return {
+   *       ...originalTracedMessage,
+   *       content: "REDACTED OUTPUTS",
+   *     };
+   *   },
+   * });
+   * const { text } = await generateText({
+   *   model: openai("gpt-5-nano"),
+   *   prompt: "What is the capital of France?",
+   *   providerOptions: {
+   *     langsmith: lsConfig,
+   *   },
+   * });
+   * ```
+   *
+   * This function is not inherited by nested LLM runs or tool calls.
+   * Pass `processChildLLMRunOutputs` to override child LLM run
+   * output processing or wrap your tool's `execute` method in a
+   * separate `traceable` for tool calls.
+   *
+   * @param outputs Key-value map of the function inputs.
+   * @param outputs.formatted - Outputs formatted for LangSmith.
+   * @param outputs.raw - Raw outputs from the AI SDK.
+   * @returns A single combined key-value map of processed outputs.
+   */
   processOutputs?: (outputs: {
     formatted: Record<string, unknown>;
     raw: Record<string, unknown>;
   }) => Record<string, unknown>;
-  childLLMRunProcessInputs?: (inputs: {
+  /**
+   * Apply transformations to AI SDK child LLM run inputs before logging.
+   * This function should NOT mutate the inputs.
+   * Receives both "raw" and LangSmith-suggested "formatted" inputs,
+   * and should combine them into a single LangSmith-formatted input.
+   *
+   * ```ts
+   * import {
+   *   wrapAISDK,
+   *   createLangSmithProviderOptions,
+   * } from "langsmith/experimental/vercel";
+   * import * as ai from "ai";
+   * import { openai } from "@ai-sdk/openai";
+   *
+   * const { generateText } = wrapAISDK(ai);
+   *
+   * const lsConfig = createLangSmithProviderOptions({
+   *   processChildLLMRunInputs: ({ formatted }) => {
+   *     const { messages, ...rest } = formatted;
+   *     let redactedMessages = undefined;
+   *     if (Array.isArray(messages)) {
+   *       redactedMessages = messages.map((message) => ({
+   *         ...message,
+   *         content: "REDACTED CHILD INPUTS",
+   *       }));
+   *     }
+   *     return {
+   *       ...rest,
+   *       messages: redactedMessages,
+   *     };
+   *   },
+   * });
+   * const { text } = await generateText({
+   *   model: openai("gpt-5-nano"),
+   *   prompt: "What is the capital of France?",
+   *   providerOptions: {
+   *     langsmith: lsConfig,
+   *   },
+   * });
+   * ```
+   *
+   * @param inputs Key-value map of the function inputs.
+   * @param inputs.formatted - Inputs formatted for LangSmith.
+   * @param inputs.raw - Raw inputs from the AI SDK.
+   * @returns A single combined key-value map of processed inputs.
+   */
+  processChildLLMRunInputs?: (inputs: {
     formatted: Record<string, unknown>;
     raw: Record<string, unknown>;
   }) => Record<string, unknown>;
-  childLLMRunProcessOutputs?: (outputs: {
+  /**
+   * Apply transformations to AI SDK child LLM run outputs before logging.
+   * This function should NOT mutate the outputs.
+   * Receives both "raw" and LangSmith-suggested "formatted" outputs,
+   * and should combine them into a single LangSmith-formatted output.
+   *
+   * ```ts
+   * import {
+   *   wrapAISDK,
+   *   createLangSmithProviderOptions,
+   * } from "langsmith/experimental/vercel";
+   * import * as ai from "ai";
+   * import { openai } from "@ai-sdk/openai";
+   *
+   * const { generateText } = wrapAISDK(ai);
+   *
+   * const lsConfig = createLangSmithProviderOptions({
+   *   processChildLLMRunOutputs: ({ formatted }) => {
+   *     const { message, request, response, ...rest } = formatted;
+   *     if (message != null) {
+   *       return {
+   *         ...rest,
+   *         message: {
+   *           ...message,
+   *           content: "REDACTED CHILD OUTPUTS",
+   *         },
+   *       };
+   *     }
+   *     return rest;
+   *   },
+   * });
+   * const { text } = await generateText({
+   *   model: openai("gpt-5-nano"),
+   *   prompt: "What is the capital of France?",
+   *   providerOptions: {
+   *     langsmith: lsConfig,
+   *   },
+   * });
+   * ```
+   *
+   * @param outputs Key-value map of the function inputs.
+   * @param outputs.formatted - Outputs formatted for LangSmith.
+   * @param outputs.raw - Raw outputs from the AI SDK.
+   * @returns A single combined key-value map of processed outputs.
+   */
+  processChildLLMRunOutputs?: (outputs: {
     formatted: Record<string, unknown>;
     raw: Record<string, unknown>;
   }) => Record<string, unknown>;
@@ -129,16 +318,16 @@ const _extractChildRunConfig = (lsConfig?: WrapAISDKConfig) => {
     dotted_order,
     processInputs,
     processOutputs,
-    childLLMRunProcessInputs,
-    childLLMRunProcessOutputs,
+    processChildLLMRunInputs,
+    processChildLLMRunOutputs,
     ...inheritedConfig
   } = lsConfig ?? {};
   const childConfig: WrapAISDKConfig = inheritedConfig;
-  if (childLLMRunProcessInputs) {
-    childConfig.processInputs = childLLMRunProcessInputs;
+  if (processChildLLMRunInputs) {
+    childConfig.processInputs = processChildLLMRunInputs;
   }
-  if (childLLMRunProcessOutputs) {
-    childConfig.processOutputs = childLLMRunProcessOutputs;
+  if (processChildLLMRunOutputs) {
+    childConfig.processOutputs = processChildLLMRunOutputs;
   }
   return childConfig;
 };
@@ -165,6 +354,17 @@ const _resolveConfigs = (
     resolvedChildLLMRunConfig,
     resolvedToolConfig,
   };
+};
+
+/**
+ * Wraps LangSmith config in a way that matches AI SDK provider
+ * option types. AI SDK expects only JSON values in an object for
+ * provider options, but LangSmith's config may contain non-JSON values.
+ * These are not passed to the underlying AI SDK model, so it is safe to
+ * cast the typing here.
+ */
+export const createLangSmithProviderOptions = (lsConfig?: WrapAISDKConfig) => {
+  return (lsConfig ?? {}) as Record<string, JSONValue>;
 };
 
 /**
@@ -266,7 +466,7 @@ const wrapAISDK = <
         },
         processInputs: (inputs) => {
           const formatInputs =
-            resolvedLsConfig?.processInputs?.(inputs) ?? RETURN_FORMATTED;
+            resolvedLsConfig?.processInputs ?? RETURN_FORMATTED;
           return formatInputs({
             formatted: _formatTracedInputs(inputs),
             raw: inputs,
@@ -274,7 +474,7 @@ const wrapAISDK = <
         },
         processOutputs: (outputs) => {
           const formatOutputs =
-            resolvedLsConfig?.processOutputs?.(outputs) ?? RETURN_FORMATTED;
+            resolvedLsConfig?.processOutputs ?? RETURN_FORMATTED;
           if (outputs.outputs == null || typeof outputs.outputs !== "object") {
             return formatOutputs({ formatted: outputs, raw: outputs });
           }
@@ -362,7 +562,7 @@ const wrapAISDK = <
         },
         processInputs: (inputs) => {
           const formatInputs =
-            resolvedLsConfig?.processInputs?.(inputs) ?? RETURN_FORMATTED;
+            resolvedLsConfig?.processInputs ?? RETURN_FORMATTED;
           return formatInputs({
             formatted: _formatTracedInputs(inputs),
             raw: inputs,
@@ -370,7 +570,7 @@ const wrapAISDK = <
         },
         processOutputs: (outputs) => {
           const formatOutputs =
-            resolvedLsConfig?.processOutputs?.(outputs) ?? RETURN_FORMATTED;
+            resolvedLsConfig?.processOutputs ?? RETURN_FORMATTED;
           if (outputs.outputs == null || typeof outputs.outputs !== "object") {
             return formatOutputs({ formatted: outputs, raw: outputs });
           }
@@ -441,7 +641,7 @@ const wrapAISDK = <
         },
         processInputs: (inputs) => {
           const formatInputs =
-            resolvedLsConfig?.processInputs?.(inputs) ?? RETURN_FORMATTED;
+            resolvedLsConfig?.processInputs ?? RETURN_FORMATTED;
           return formatInputs({
             formatted: _formatTracedInputs(inputs),
             raw: inputs,
@@ -449,7 +649,7 @@ const wrapAISDK = <
         },
         processOutputs: async (outputs) => {
           const formatOutputs =
-            resolvedLsConfig?.processOutputs?.(outputs) ?? RETURN_FORMATTED;
+            resolvedLsConfig?.processOutputs ?? RETURN_FORMATTED;
           if (outputs.outputs == null || typeof outputs.outputs !== "object") {
             return formatOutputs({ formatted: outputs, raw: outputs });
           }
@@ -526,7 +726,7 @@ const wrapAISDK = <
         },
         processInputs: (inputs) => {
           const formatInputs =
-            resolvedLsConfig?.processInputs?.(inputs) ?? RETURN_FORMATTED;
+            resolvedLsConfig?.processInputs ?? RETURN_FORMATTED;
           return formatInputs({
             formatted: _formatTracedInputs(inputs),
             raw: inputs,
@@ -534,7 +734,7 @@ const wrapAISDK = <
         },
         processOutputs: async (outputs) => {
           const formatOutputs =
-            resolvedLsConfig?.processOutputs?.(outputs) ?? RETURN_FORMATTED;
+            resolvedLsConfig?.processOutputs ?? RETURN_FORMATTED;
           if (outputs.outputs == null || typeof outputs.outputs !== "object") {
             return formatOutputs({ formatted: outputs, raw: outputs });
           }

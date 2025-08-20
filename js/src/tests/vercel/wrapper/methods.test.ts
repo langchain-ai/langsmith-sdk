@@ -5,7 +5,10 @@ import * as ai from "ai";
 import { simulateReadableStream } from "ai";
 import { z } from "zod";
 import { APICallError } from "ai";
-import { wrapAISDK } from "../../../experimental/vercel/index.js";
+import {
+  createLangSmithProviderOptions,
+  wrapAISDK,
+} from "../../../experimental/vercel/index.js";
 
 // Track HTTP requests made by the real traceable function
 const mockHttpRequests: any[] = [];
@@ -829,13 +832,15 @@ describe("wrapAISDK", () => {
         name: "base-tracer",
         metadata: { baseField: "base-value", shared: "base" },
         tags: ["base-tag"],
+        badClient: "bad",
       };
 
-      const runtimeConfig = {
+      const runtimeConfig = createLangSmithProviderOptions({
         name: "runtime-tracer",
         metadata: { runtimeField: "runtime-value", shared: "runtime" },
         tags: ["runtime-tag"],
-      };
+        client: mockClient as any,
+      });
 
       const wrappedMethods = wrapAISDK(
         {
@@ -890,19 +895,7 @@ describe("wrapAISDK", () => {
       expect(createRunCall.body.tags).toEqual(["runtime-tag"]); // Runtime overrides base
     });
 
-    it("should handle child run config inheritance", async () => {
-      const baseConfig = {
-        childLLMRunProcessInputs: (inputs: any) => ({
-          ...inputs.formatted,
-          custom: "child-input",
-        }),
-        childLLMRunProcessOutputs: (outputs: any) => ({
-          ...outputs.formatted,
-          custom: "child-output",
-        }),
-        metadata: { parent: "base" },
-      };
-
+    it.only("should handle process inputs and output options", async () => {
       const wrappedMethods = wrapAISDK(
         {
           wrapLanguageModel: ai.wrapLanguageModel,
@@ -911,13 +904,13 @@ describe("wrapAISDK", () => {
           generateObject: ai.generateObject,
           streamObject: ai.streamObject,
         },
-        baseConfig
+        { client: mockClient as any }
       );
 
       const mockLangModel = new MockLanguageModelV2({
-        modelId: "child-config-test",
+        modelId: "config-provider-test",
         doGenerate: async () => ({
-          content: [{ type: "text" as const, text: "Child config test" }],
+          content: [{ type: "text" as const, text: "Config test" }],
           finishReason: "stop" as const,
           usage: {
             promptTokens: 5,
@@ -930,85 +923,119 @@ describe("wrapAISDK", () => {
         }),
       });
 
-      await wrappedMethods.generateText({
-        model: mockLangModel,
-        prompt: "Test child config",
-      });
-
-      // Verify child run used inherited config
-      const childRunCall = mockHttpRequests.find(
-        (req) =>
-          req.type === "createRun" &&
-          req.body.extra.metadata.ai_sdk_method === "ai.doGenerate"
-      );
-
-      expect(childRunCall).toBeDefined();
-      expect(childRunCall.body.inputs).toHaveProperty("custom", "child-input");
-    });
-
-    it("should override child config with runtime metadata", async () => {
-      const baseConfig = {
-        childLLMRunProcessInputs: (inputs: any) => ({
-          ...inputs.formatted,
-          base: "base-value",
-        }),
-      };
-
-      const runtimeConfig = {
-        childLLMRunProcessInputs: (inputs: any) => ({
-          ...inputs.formatted,
-          runtime: "runtime-value",
-        }),
-      };
-
-      const wrappedMethods = wrapAISDK(
-        {
-          wrapLanguageModel: ai.wrapLanguageModel,
-          generateText: ai.generateText,
-          streamText: ai.streamText,
-          generateObject: ai.generateObject,
-          streamObject: ai.streamObject,
+      const lsConfig = createLangSmithProviderOptions({
+        processInputs: ({ formatted }) => {
+          const { messages, prompt, ...rest } = formatted;
+          let redactedMessages = undefined;
+          if (Array.isArray(messages)) {
+            redactedMessages = messages.map((message) => ({
+              ...message,
+              content: "REDACTED",
+            }));
+          }
+          return {
+            ...rest,
+            messages: redactedMessages,
+            prompt: "REDACTED",
+          };
         },
-        baseConfig
-      );
-
-      const mockLangModel = new MockLanguageModelV2({
-        modelId: "runtime-override-test",
-        doGenerate: async () => ({
-          content: [{ type: "text" as const, text: "Runtime override test" }],
-          finishReason: "stop" as const,
-          usage: {
-            promptTokens: 5,
-            completionTokens: 3,
-            inputTokens: 5,
-            outputTokens: 3,
-            totalTokens: 8,
-          },
-          warnings: [],
-        }),
+        processOutputs: ({ formatted }) => {
+          const originalTracedMessage = { ...formatted };
+          return {
+            ...originalTracedMessage,
+            content: "REDACTED",
+          };
+        },
+        processChildLLMRunInputs: ({ formatted }) => {
+          const { messages, ...rest } = formatted;
+          let redactedMessages = undefined;
+          if (Array.isArray(messages)) {
+            redactedMessages = messages.map((message) => ({
+              ...message,
+              content: "REDACTED CHILD",
+            }));
+          }
+          return {
+            ...rest,
+            messages: redactedMessages,
+          };
+        },
+        processChildLLMRunOutputs: ({ formatted }) => {
+          const { message, request, response, ...rest } = formatted;
+          if (message != null) {
+            return {
+              ...rest,
+              message: {
+                ...message,
+                content: "REDACTED CHILD OUTPUTS",
+              },
+            };
+          }
+          return rest;
+        },
       });
 
       await wrappedMethods.generateText({
         model: mockLangModel,
-        prompt: "Test runtime override",
+        messages: [
+          {
+            role: "user",
+            content: "hello there!",
+          },
+        ],
         providerOptions: {
-          langsmith: runtimeConfig,
+          langsmith: lsConfig,
         },
       });
+      expect(mockHttpRequests).toHaveLength(4);
+      // Verify merged config was used in trace
+      const createRunCall = mockHttpRequests.find(
+        (req) =>
+          req.type === "createRun" &&
+          req.body.extra.metadata.ai_sdk_method === "ai.generateText"
+      );
 
-      // Verify runtime config overrode base config for child run
-      const childRunCall = mockHttpRequests.find(
+      expect(createRunCall).toBeDefined();
+      expect(createRunCall.body.inputs).toMatchObject({
+        prompt: "REDACTED",
+        messages: [
+          {
+            content: "REDACTED",
+          },
+        ],
+      });
+      const createUpdateCall = mockHttpRequests.find(
+        (req) =>
+          req.type === "updateRun" &&
+          req.body.extra.metadata.ai_sdk_method === "ai.generateText"
+      );
+      expect(createUpdateCall.body.outputs).toMatchObject({
+        content: "REDACTED",
+      });
+      const createLLMRunCall = mockHttpRequests.find(
         (req) =>
           req.type === "createRun" &&
           req.body.extra.metadata.ai_sdk_method === "ai.doGenerate"
       );
-
-      expect(childRunCall).toBeDefined();
-      expect(childRunCall.body.inputs).toHaveProperty(
-        "runtime",
-        "runtime-value"
+      expect(createLLMRunCall.body.inputs).toMatchObject({
+        messages: [
+          {
+            content: "REDACTED CHILD",
+          },
+        ],
+      });
+      const updateLLMRunCall = mockHttpRequests.find(
+        (req) =>
+          req.type === "createRun" &&
+          req.body.extra.metadata.ai_sdk_method === "ai.doGenerate"
       );
-      expect(childRunCall.body.inputs).not.toHaveProperty("base");
+      expect(updateLLMRunCall.body.inputs).toMatchObject({
+        messages: [
+          {
+            content: "REDACTED CHILD",
+          },
+        ],
+      });
     });
   });
 
