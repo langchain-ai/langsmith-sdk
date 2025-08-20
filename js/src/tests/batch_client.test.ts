@@ -17,7 +17,9 @@ const parseMockRequestBody = async (
   let rawMultipart;
   // eslint-disable-next-line no-instanceof/no-instanceof
   if (body instanceof ReadableStream) {
-    rawMultipart = await new Response(body).text();
+    rawMultipart = await new Response(
+      body.pipeThrough(new DecompressionStream("gzip"))
+    ).text();
   } else {
     rawMultipart = new TextDecoder().decode(body);
   }
@@ -95,6 +97,9 @@ describe.each(ENDPOINT_TYPES)(
         : {
             use_multipart_endpoint: true,
           };
+    const extraInstanceFlags = {
+      gzip_body_enabled: true,
+    };
     const expectedTraceURL =
       endpointType === "batch"
         ? "https://api.smith.langchain.com/runs/batch"
@@ -114,6 +119,7 @@ describe.each(ENDPOINT_TYPES)(
         return {
           version: "foo",
           batch_ingest_config: { ...extraBatchIngestConfig },
+          instance_flags: { ...extraInstanceFlags },
         };
       });
       const projectName = "__test_batch";
@@ -179,6 +185,7 @@ describe.each(ENDPOINT_TYPES)(
         return {
           version: "foo",
           batch_ingest_config: { ...extraBatchIngestConfig },
+          instance_flags: { ...extraInstanceFlags },
         };
       });
       const projectName = "__test_batch";
@@ -248,6 +255,7 @@ describe.each(ENDPOINT_TYPES)(
         return {
           version: "foo",
           batch_ingest_config: { ...extraBatchIngestConfig },
+          instance_flags: { ...extraInstanceFlags },
         };
       });
       const projectName = "__test_batch";
@@ -317,6 +325,7 @@ describe.each(ENDPOINT_TYPES)(
         return {
           version: "foo",
           batch_ingest_config: { ...extraBatchIngestConfig },
+          instance_flags: { ...extraInstanceFlags },
         };
       });
       const projectName = "__test_batch";
@@ -355,6 +364,7 @@ describe.each(ENDPOINT_TYPES)(
         return {
           version: "foo",
           batch_ingest_config: { ...extraBatchIngestConfig },
+          instance_flags: { ...extraInstanceFlags },
         };
       });
       const projectName = "__test_batch";
@@ -436,6 +446,7 @@ describe.each(ENDPOINT_TYPES)(
         return {
           version: "foo",
           batch_ingest_config: { ...extraBatchIngestConfig },
+          instance_flags: { ...extraInstanceFlags },
         };
       });
       const projectName = "__test_batch";
@@ -515,6 +526,7 @@ describe.each(ENDPOINT_TYPES)(
         return {
           version: "foo",
           batch_ingest_config: { ...extraBatchIngestConfig },
+          instance_flags: { ...extraInstanceFlags },
         };
       });
       const projectName = "__test_batch";
@@ -630,6 +642,7 @@ describe.each(ENDPOINT_TYPES)(
         return {
           version: "foo",
           batch_ingest_config: { ...extraBatchIngestConfig },
+          instance_flags: { ...extraInstanceFlags },
         };
       });
       const projectName = "__test_batch";
@@ -746,6 +759,7 @@ describe.each(ENDPOINT_TYPES)(
         return {
           version: "foo",
           batch_ingest_config: { ...extraBatchIngestConfig },
+          instance_flags: { ...extraInstanceFlags },
         };
       });
       const projectName = "__test_batch";
@@ -844,6 +858,7 @@ describe.each(ENDPOINT_TYPES)(
         return {
           version: "foo",
           batch_ingest_config: { ...extraBatchIngestConfig },
+          instance_flags: { ...extraInstanceFlags },
         };
       });
       const projectName = "__test_batch";
@@ -976,6 +991,7 @@ describe.each(ENDPOINT_TYPES)(
         return {
           version: "foo",
           batch_ingest_config: { ...extraBatchIngestConfig },
+          instance_flags: { ...extraInstanceFlags },
         };
       });
       const projectName = "__test_batch";
@@ -1077,6 +1093,7 @@ describe.each(ENDPOINT_TYPES)(
           batch_ingest_config: {
             ...extraBatchIngestConfig,
           },
+          instance_flags: { ...extraInstanceFlags },
         };
       });
       const projectName = "__test_batch";
@@ -1247,6 +1264,7 @@ describe.each(ENDPOINT_TYPES)(
         return {
           version: "foo",
           batch_ingest_config: { ...extraBatchIngestConfig },
+          instance_flags: { ...extraInstanceFlags },
         };
       });
       const projectName = "__test_batch";

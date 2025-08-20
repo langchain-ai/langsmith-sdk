@@ -103,6 +103,7 @@ export class AsyncCaller {
               if (
                 error.message.startsWith("Cancel") ||
                 error.message.startsWith("TimeoutError") ||
+                error.name === "TimeoutError" ||
                 error.message.startsWith("AbortError")
               ) {
                 throw error;

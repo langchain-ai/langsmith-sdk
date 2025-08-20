@@ -233,7 +233,9 @@ test("trace circular input and output objects", async () => {
         outputs: {
           b: {
             a: {
-              result: "[Circular]",
+              b: {
+                result: "[Circular]",
+              },
             },
           },
         },
