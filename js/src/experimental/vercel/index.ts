@@ -230,7 +230,8 @@ const wrapAISDK = <
    */
   const wrappedGenerateText = async (...args: Parameters<GenerateTextType>) => {
     const params = args[0];
-    const runtimeLsConfig = params.providerMetadata?.langsmith;
+    const { langsmith: runtimeLsConfig, ...providerOptions } =
+      params.providerOptions ?? {};
     const { resolvedLsConfig, resolvedChildLLMRunConfig, resolvedToolConfig } =
       _resolveConfigs(baseLsConfig, runtimeLsConfig);
     const traceableFunc = traceable(
@@ -249,6 +250,7 @@ const wrapAISDK = <
         return generateText(
           {
             ...params,
+            providerOptions,
             tools: _wrapTools(params.tools, resolvedToolConfig),
             model: wrappedModel,
           },
@@ -323,7 +325,8 @@ const wrapAISDK = <
     ...args: Parameters<GenerateObjectType>
   ) => {
     const params = args[0];
-    const runtimeLsConfig = params.providerMetadata?.langsmith;
+    const { langsmith: runtimeLsConfig, ...providerOptions } =
+      params.providerOptions ?? {};
     const { resolvedLsConfig, resolvedChildLLMRunConfig } = _resolveConfigs(
       baseLsConfig,
       runtimeLsConfig
@@ -344,6 +347,7 @@ const wrapAISDK = <
         return generateObject(
           {
             ...params,
+            providerOptions,
             model: wrappedModel,
           },
           ...rest
@@ -403,7 +407,8 @@ const wrapAISDK = <
    */
   const wrappedStreamText = (...args: Parameters<StreamTextType>) => {
     const params = args[0];
-    const runtimeLsConfig = params.providerMetadata?.langsmith;
+    const { langsmith: runtimeLsConfig, ...providerOptions } =
+      params.providerOptions ?? {};
     const { resolvedLsConfig, resolvedChildLLMRunConfig, resolvedToolConfig } =
       _resolveConfigs(baseLsConfig, runtimeLsConfig);
     const traceableFunc = traceable(
@@ -420,6 +425,7 @@ const wrapAISDK = <
         return streamText(
           {
             ...params,
+            providerOptions,
             tools: _wrapTools(params.tools, resolvedToolConfig),
             model: wrappedModel,
           },
@@ -485,7 +491,8 @@ const wrapAISDK = <
    */
   const wrappedStreamObject = (...args: Parameters<StreamObjectType>) => {
     const params = args[0];
-    const runtimeLsConfig = params.providerMetadata?.langsmith;
+    const { langsmith: runtimeLsConfig, ...providerOptions } =
+      params.providerOptions ?? {};
     const { resolvedLsConfig, resolvedChildLLMRunConfig } = _resolveConfigs(
       baseLsConfig,
       runtimeLsConfig
@@ -504,6 +511,7 @@ const wrapAISDK = <
         return streamObject(
           {
             ...params,
+            providerOptions,
             model: wrappedModel,
           },
           ...rest

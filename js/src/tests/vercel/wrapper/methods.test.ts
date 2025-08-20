@@ -823,6 +823,195 @@ describe("wrapAISDK", () => {
     });
   });
 
+  describe("config resolution", () => {
+    it("should merge base and runtime configs correctly", async () => {
+      const baseConfig = {
+        name: "base-tracer",
+        metadata: { baseField: "base-value", shared: "base" },
+        tags: ["base-tag"],
+      };
+
+      const runtimeConfig = {
+        name: "runtime-tracer",
+        metadata: { runtimeField: "runtime-value", shared: "runtime" },
+        tags: ["runtime-tag"],
+      };
+
+      const wrappedMethods = wrapAISDK(
+        {
+          wrapLanguageModel: ai.wrapLanguageModel,
+          generateText: ai.generateText,
+          streamText: ai.streamText,
+          generateObject: ai.generateObject,
+          streamObject: ai.streamObject,
+        },
+        baseConfig
+      );
+
+      const mockLangModel = new MockLanguageModelV2({
+        modelId: "config-merge-test",
+        doGenerate: async () => ({
+          content: [{ type: "text" as const, text: "Config test" }],
+          finishReason: "stop" as const,
+          usage: {
+            promptTokens: 5,
+            completionTokens: 3,
+            inputTokens: 5,
+            outputTokens: 3,
+            totalTokens: 8,
+          },
+          warnings: [],
+        }),
+      });
+
+      await wrappedMethods.generateText({
+        model: mockLangModel,
+        prompt: "Test config merging",
+        providerOptions: {
+          langsmith: runtimeConfig,
+        },
+      });
+
+      // Verify merged config was used in trace
+      const createRunCall = mockHttpRequests.find(
+        (req) =>
+          req.type === "createRun" &&
+          req.body.extra.metadata.ai_sdk_method === "ai.generateText"
+      );
+
+      expect(createRunCall).toBeDefined();
+      expect(createRunCall.body.name).toBe("runtime-tracer"); // Runtime overrides base
+      expect(createRunCall.body.extra.metadata).toMatchObject({
+        baseField: "base-value",
+        runtimeField: "runtime-value",
+        shared: "runtime", // Runtime wins for conflicts
+        ai_sdk_method: "ai.generateText",
+      });
+      expect(createRunCall.body.tags).toEqual(["runtime-tag"]); // Runtime overrides base
+    });
+
+    it("should handle child run config inheritance", async () => {
+      const baseConfig = {
+        childLLMRunProcessInputs: (inputs: any) => ({
+          ...inputs.formatted,
+          custom: "child-input",
+        }),
+        childLLMRunProcessOutputs: (outputs: any) => ({
+          ...outputs.formatted,
+          custom: "child-output",
+        }),
+        metadata: { parent: "base" },
+      };
+
+      const wrappedMethods = wrapAISDK(
+        {
+          wrapLanguageModel: ai.wrapLanguageModel,
+          generateText: ai.generateText,
+          streamText: ai.streamText,
+          generateObject: ai.generateObject,
+          streamObject: ai.streamObject,
+        },
+        baseConfig
+      );
+
+      const mockLangModel = new MockLanguageModelV2({
+        modelId: "child-config-test",
+        doGenerate: async () => ({
+          content: [{ type: "text" as const, text: "Child config test" }],
+          finishReason: "stop" as const,
+          usage: {
+            promptTokens: 5,
+            completionTokens: 3,
+            inputTokens: 5,
+            outputTokens: 3,
+            totalTokens: 8,
+          },
+          warnings: [],
+        }),
+      });
+
+      await wrappedMethods.generateText({
+        model: mockLangModel,
+        prompt: "Test child config",
+      });
+
+      // Verify child run used inherited config
+      const childRunCall = mockHttpRequests.find(
+        (req) =>
+          req.type === "createRun" &&
+          req.body.extra.metadata.ai_sdk_method === "ai.doGenerate"
+      );
+
+      expect(childRunCall).toBeDefined();
+      expect(childRunCall.body.inputs).toHaveProperty("custom", "child-input");
+    });
+
+    it("should override child config with runtime metadata", async () => {
+      const baseConfig = {
+        childLLMRunProcessInputs: (inputs: any) => ({
+          ...inputs.formatted,
+          base: "base-value",
+        }),
+      };
+
+      const runtimeConfig = {
+        childLLMRunProcessInputs: (inputs: any) => ({
+          ...inputs.formatted,
+          runtime: "runtime-value",
+        }),
+      };
+
+      const wrappedMethods = wrapAISDK(
+        {
+          wrapLanguageModel: ai.wrapLanguageModel,
+          generateText: ai.generateText,
+          streamText: ai.streamText,
+          generateObject: ai.generateObject,
+          streamObject: ai.streamObject,
+        },
+        baseConfig
+      );
+
+      const mockLangModel = new MockLanguageModelV2({
+        modelId: "runtime-override-test",
+        doGenerate: async () => ({
+          content: [{ type: "text" as const, text: "Runtime override test" }],
+          finishReason: "stop" as const,
+          usage: {
+            promptTokens: 5,
+            completionTokens: 3,
+            inputTokens: 5,
+            outputTokens: 3,
+            totalTokens: 8,
+          },
+          warnings: [],
+        }),
+      });
+
+      await wrappedMethods.generateText({
+        model: mockLangModel,
+        prompt: "Test runtime override",
+        providerOptions: {
+          langsmith: runtimeConfig,
+        },
+      });
+
+      // Verify runtime config overrode base config for child run
+      const childRunCall = mockHttpRequests.find(
+        (req) =>
+          req.type === "createRun" &&
+          req.body.extra.metadata.ai_sdk_method === "ai.doGenerate"
+      );
+
+      expect(childRunCall).toBeDefined();
+      expect(childRunCall.body.inputs).toHaveProperty(
+        "runtime",
+        "runtime-value"
+      );
+      expect(childRunCall.body.inputs).not.toHaveProperty("base");
+    });
+  });
+
   describe("model display name handling", () => {
     it("should handle model with config provider", async () => {
       const wrappedMethods = wrapAISDK(
