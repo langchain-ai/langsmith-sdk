@@ -1,7 +1,14 @@
 import type { JSONValue } from "ai";
+import type {
+  LanguageModelV2,
+  LanguageModelV2CallOptions,
+} from "@ai-sdk/provider";
 
-import { LangSmithMiddleware } from "./middleware.js";
-import { convertMessageToTracedFormat, RETURN_FORMATTED } from "./utils.js";
+import {
+  type AggregatedDoStreamOutput,
+  LangSmithMiddleware,
+} from "./middleware.js";
+import { convertMessageToTracedFormat } from "./utils.js";
 import { isTraceableFunction, traceable } from "../../traceable.js";
 import { RunTreeConfig } from "../../run_trees.js";
 
@@ -90,7 +97,10 @@ const _mergeConfig = (
   };
 };
 
-export type WrapAISDKConfig = Partial<
+export type WrapAISDKConfig<
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  T extends (...args: any[]) => any = (...args: any[]) => any
+> = Partial<
   Omit<
     RunTreeConfig,
     | "inputs"
@@ -118,20 +128,16 @@ export type WrapAISDKConfig = Partial<
    *
    * const { generateText } = wrapAISDK(ai);
    *
-   * const lsConfig = createLangSmithProviderOptions({
-   *   processInputs: ({ formatted }) => {
-   *     const { messages, prompt, ...rest } = formatted;
-   *     let redactedMessages = undefined;
-   *     if (Array.isArray(messages)) {
-   *       redactedMessages = messages.map((message) => ({
-   *         ...message,
-   *         content: "REDACTED INPUTS",
-   *       }));
-   *     }
+   * const lsConfig = createLangSmithProviderOptions<typeof ai.generateText>({
+   *   processInputs: (inputs) => {
+   *     const { messages } = inputs;
    *     return {
-   *       ...rest,
-   *       messages: redactedMessages,
-   *       prompt: "REDACTED INPUTS",
+   *       messages: messages?.map((message) => ({
+   *         providerMetadata: message.providerOptions,
+   *         role: "assistant",
+   *         content: "REDACTED",
+   *       })),
+   *       prompt: "REDACTED",
    *     };
    *   },
    * });
@@ -154,10 +160,7 @@ export type WrapAISDKConfig = Partial<
    * @param inputs.raw - Raw inputs from the AI SDK.
    * @returns A single combined key-value map of processed inputs.
    */
-  processInputs?: (inputs: {
-    formatted: Record<string, unknown>;
-    raw: Record<string, unknown>;
-  }) => Record<string, unknown>;
+  processInputs?: (inputs: Parameters<T>[0]) => Record<string, unknown>;
   /**
    * Apply transformations to AI SDK outputs before logging.
    * This function should NOT mutate the outputs.
@@ -174,12 +177,12 @@ export type WrapAISDKConfig = Partial<
    *
    * const { generateText } = wrapAISDK(ai);
    *
-   * const lsConfig = createLangSmithProviderOptions({
-   *   processOutputs: ({ formatted, raw }) => {
-   *     const originalTracedMessage = { ...formatted };
+   * const lsConfig = createLangSmithProviderOptions<typeof ai.generateText>({
+   *   processOutputs: (outputs) => {
    *     return {
-   *       ...originalTracedMessage,
-   *       content: "REDACTED OUTPUTS",
+   *       providerMetadata: outputs.providerMetadata,
+   *       role: "assistant",
+   *       content: "REDACTED",
    *     };
    *   },
    * });
@@ -202,10 +205,7 @@ export type WrapAISDKConfig = Partial<
    * @param outputs.raw - Raw outputs from the AI SDK.
    * @returns A single combined key-value map of processed outputs.
    */
-  processOutputs?: (outputs: {
-    formatted: Record<string, unknown>;
-    raw: Record<string, unknown>;
-  }) => Record<string, unknown>;
+  processOutputs?: (outputs: Awaited<ReturnType<T>>) => Record<string, unknown>;
   /**
    * Apply transformations to AI SDK child LLM run inputs before logging.
    * This function should NOT mutate the inputs.
@@ -222,19 +222,14 @@ export type WrapAISDKConfig = Partial<
    *
    * const { generateText } = wrapAISDK(ai);
    *
-   * const lsConfig = createLangSmithProviderOptions({
-   *   processChildLLMRunInputs: ({ formatted }) => {
-   *     const { messages, ...rest } = formatted;
-   *     let redactedMessages = undefined;
-   *     if (Array.isArray(messages)) {
-   *       redactedMessages = messages.map((message) => ({
+   * const lsConfig = createLangSmithProviderOptions<typeof ai.generateText>({
+   *   processChildLLMRunInputs: (inputs) => {
+   *     const { prompt } = inputs;
+   *     return {
+   *       messages: prompt.map((message) => ({
    *         ...message,
    *         content: "REDACTED CHILD INPUTS",
-   *       }));
-   *     }
-   *     return {
-   *       ...rest,
-   *       messages: redactedMessages,
+   *       })),
    *     };
    *   },
    * });
@@ -252,10 +247,9 @@ export type WrapAISDKConfig = Partial<
    * @param inputs.raw - Raw inputs from the AI SDK.
    * @returns A single combined key-value map of processed inputs.
    */
-  processChildLLMRunInputs?: (inputs: {
-    formatted: Record<string, unknown>;
-    raw: Record<string, unknown>;
-  }) => Record<string, unknown>;
+  processChildLLMRunInputs?: (
+    inputs: LanguageModelV2CallOptions
+  ) => Record<string, unknown>;
   /**
    * Apply transformations to AI SDK child LLM run outputs before logging.
    * This function should NOT mutate the outputs.
@@ -272,19 +266,13 @@ export type WrapAISDKConfig = Partial<
    *
    * const { generateText } = wrapAISDK(ai);
    *
-   * const lsConfig = createLangSmithProviderOptions({
-   *   processChildLLMRunOutputs: ({ formatted }) => {
-   *     const { message, request, response, ...rest } = formatted;
-   *     if (message != null) {
-   *       return {
-   *         ...rest,
-   *         message: {
-   *           ...message,
-   *           content: "REDACTED CHILD OUTPUTS",
-   *         },
-   *       };
-   *     }
-   *     return rest;
+   * const lsConfig = createLangSmithProviderOptions<typeof ai.generateText>({
+   *   processChildLLMRunOutputs: (outputs) => {
+   *     return {
+   *       providerMetadata: outputs.providerMetadata,
+   *       content: "REDACTED CHILD OUTPUTS",
+   *       role: "assistant",
+   *     };
    *   },
    * });
    * const { text } = await generateText({
@@ -301,10 +289,11 @@ export type WrapAISDKConfig = Partial<
    * @param outputs.raw - Raw outputs from the AI SDK.
    * @returns A single combined key-value map of processed outputs.
    */
-  processChildLLMRunOutputs?: (outputs: {
-    formatted: Record<string, unknown>;
-    raw: Record<string, unknown>;
-  }) => Record<string, unknown>;
+  processChildLLMRunOutputs?: (
+    outputs: "fullStream" extends keyof Awaited<ReturnType<T>>
+      ? AggregatedDoStreamOutput
+      : Awaited<ReturnType<LanguageModelV2["doGenerate"]>>
+  ) => Record<string, unknown>;
 };
 
 const _extractChildRunConfig = (lsConfig?: WrapAISDKConfig) => {
@@ -357,13 +346,38 @@ const _resolveConfigs = (
 };
 
 /**
- * Wraps LangSmith config in a way that matches AI SDK provider
- * option types. AI SDK expects only JSON values in an object for
+ * Wraps LangSmith config in a way that matches AI SDK provider types.
+ *
+ * ```ts
+ * import { createLangSmithProviderOptions } from "langsmith/experimental/vercel";
+ * import * as ai from "ai";
+ *
+ * const lsConfig = createLangSmithProviderOptions<typeof ai.generateText>({
+ *   // Will have appropriate typing
+ *   processInputs: (inputs) => {
+ *     const { messages } = inputs;
+ *     return {
+ *       messages: messages?.map((message) => ({
+ *         ...message,
+ *         content: "REDACTED",
+ *       })),
+ *       prompt: "REDACTED",
+ *     };
+ *   },
+ * });
+ * ```
+ *
+ * Note: AI SDK expects only JSON values in an object for
  * provider options, but LangSmith's config may contain non-JSON values.
  * These are not passed to the underlying AI SDK model, so it is safe to
  * cast the typing here.
  */
-export const createLangSmithProviderOptions = (lsConfig?: WrapAISDKConfig) => {
+export const createLangSmithProviderOptions = <
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  T extends (...args: any[]) => any
+>(
+  lsConfig?: WrapAISDKConfig<T>
+) => {
   return (lsConfig ?? {}) as Record<string, JSONValue>;
 };
 
@@ -465,35 +479,30 @@ const wrapAISDK = <
           ...resolvedLsConfig?.metadata,
         },
         processInputs: (inputs) => {
-          const formatInputs =
-            resolvedLsConfig?.processInputs ?? RETURN_FORMATTED;
-          return formatInputs({
-            formatted: _formatTracedInputs(inputs),
-            raw: inputs,
-          });
+          const inputFormatter =
+            resolvedLsConfig?.processInputs ?? _formatTracedInputs;
+          return inputFormatter(inputs);
         },
         processOutputs: (outputs) => {
-          const formatOutputs =
-            resolvedLsConfig?.processOutputs ?? RETURN_FORMATTED;
+          if (resolvedLsConfig?.processOutputs) {
+            return resolvedLsConfig.processOutputs(outputs);
+          }
           if (outputs.outputs == null || typeof outputs.outputs !== "object") {
-            return formatOutputs({ formatted: outputs, raw: outputs });
+            return outputs;
           }
           const { steps } = outputs.outputs;
           if (Array.isArray(steps)) {
             const lastStep = steps.at(-1);
             if (lastStep == null || typeof lastStep !== "object") {
-              return formatOutputs({ formatted: outputs, raw: outputs });
+              return outputs;
             }
             const { content } = lastStep;
-            return formatOutputs({
-              formatted: convertMessageToTracedFormat({
-                content,
-                role: "assistant",
-              }),
-              raw: outputs,
+            return convertMessageToTracedFormat({
+              content,
+              role: "assistant",
             });
           } else {
-            return formatOutputs({ formatted: outputs, raw: outputs });
+            return outputs;
           }
         },
       }
@@ -561,23 +570,18 @@ const wrapAISDK = <
           ...resolvedLsConfig?.metadata,
         },
         processInputs: (inputs) => {
-          const formatInputs =
-            resolvedLsConfig?.processInputs ?? RETURN_FORMATTED;
-          return formatInputs({
-            formatted: _formatTracedInputs(inputs),
-            raw: inputs,
-          });
+          const inputFormatter =
+            resolvedLsConfig?.processInputs ?? _formatTracedInputs;
+          return inputFormatter(inputs);
         },
         processOutputs: (outputs) => {
-          const formatOutputs =
-            resolvedLsConfig?.processOutputs ?? RETURN_FORMATTED;
-          if (outputs.outputs == null || typeof outputs.outputs !== "object") {
-            return formatOutputs({ formatted: outputs, raw: outputs });
+          if (resolvedLsConfig?.processOutputs) {
+            return resolvedLsConfig.processOutputs(outputs);
           }
-          return formatOutputs({
-            formatted: outputs.outputs.object ?? outputs,
-            raw: outputs,
-          });
+          if (outputs.outputs == null || typeof outputs.outputs !== "object") {
+            return outputs;
+          }
+          return outputs.outputs.object ?? outputs;
         },
       }
     ) as (
@@ -640,29 +644,24 @@ const wrapAISDK = <
           ...resolvedLsConfig?.metadata,
         },
         processInputs: (inputs) => {
-          const formatInputs =
-            resolvedLsConfig?.processInputs ?? RETURN_FORMATTED;
-          return formatInputs({
-            formatted: _formatTracedInputs(inputs),
-            raw: inputs,
-          });
+          const inputFormatter =
+            resolvedLsConfig?.processInputs ?? _formatTracedInputs;
+          return inputFormatter(inputs);
         },
         processOutputs: async (outputs) => {
-          const formatOutputs =
-            resolvedLsConfig?.processOutputs ?? RETURN_FORMATTED;
+          if (resolvedLsConfig?.processOutputs) {
+            return resolvedLsConfig.processOutputs(outputs);
+          }
           if (outputs.outputs == null || typeof outputs.outputs !== "object") {
-            return formatOutputs({ formatted: outputs, raw: outputs });
+            return outputs;
           }
           const content = await outputs.outputs.content;
           if (content == null || typeof content !== "object") {
-            return formatOutputs({ formatted: outputs, raw: outputs });
+            return outputs;
           }
-          return formatOutputs({
-            formatted: convertMessageToTracedFormat({
-              content,
-              role: "assistant",
-            }),
-            raw: outputs,
+          return convertMessageToTracedFormat({
+            content,
+            role: "assistant",
           });
         },
       }
@@ -725,24 +724,22 @@ const wrapAISDK = <
           ...resolvedLsConfig?.metadata,
         },
         processInputs: (inputs) => {
-          const formatInputs =
-            resolvedLsConfig?.processInputs ?? RETURN_FORMATTED;
-          return formatInputs({
-            formatted: _formatTracedInputs(inputs),
-            raw: inputs,
-          });
+          const inputFormatter =
+            resolvedLsConfig?.processInputs ?? _formatTracedInputs;
+          return inputFormatter(inputs);
         },
         processOutputs: async (outputs) => {
-          const formatOutputs =
-            resolvedLsConfig?.processOutputs ?? RETURN_FORMATTED;
+          if (resolvedLsConfig?.processOutputs) {
+            return resolvedLsConfig.processOutputs(outputs);
+          }
           if (outputs.outputs == null || typeof outputs.outputs !== "object") {
-            return formatOutputs({ formatted: outputs, raw: outputs });
+            return outputs;
           }
           const object = await outputs.outputs.object;
           if (object == null || typeof object !== "object") {
-            return formatOutputs({ formatted: outputs, raw: outputs });
+            return outputs;
           }
-          return formatOutputs({ formatted: object, raw: outputs });
+          return object;
         },
       }
     ) as (

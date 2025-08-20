@@ -2,9 +2,12 @@
 /* eslint-disable no-process-env */
 import { MockLanguageModelV2 } from "ai/test";
 import * as ai from "ai";
-import { simulateReadableStream } from "ai";
+import { simulateReadableStream, APICallError } from "ai";
+import type {
+  LanguageModelV2,
+  LanguageModelV2CallOptions,
+} from "@ai-sdk/provider";
 import { z } from "zod";
-import { APICallError } from "ai";
 import {
   createLangSmithProviderOptions,
   wrapAISDK,
@@ -933,55 +936,40 @@ describe("wrapAISDK", () => {
         }),
       });
 
-      const lsConfig = createLangSmithProviderOptions({
-        processInputs: ({ formatted }) => {
-          const { messages, prompt, ...rest } = formatted;
-          let redactedMessages = undefined;
-          if (Array.isArray(messages)) {
-            redactedMessages = messages.map((message) => ({
-              ...message,
-              content: "REDACTED",
-            }));
-          }
+      const lsConfig = createLangSmithProviderOptions<typeof ai.generateText>({
+        processInputs: (inputs) => {
+          const { messages, prompt, ...rest } = inputs;
           return {
             ...rest,
-            messages: redactedMessages,
+            messages: messages?.map((message) => ({
+              ...message,
+              content: "REDACTED",
+            })),
             prompt: "REDACTED",
           };
         },
-        processOutputs: ({ formatted }) => {
-          const originalTracedMessage = { ...formatted };
+        processOutputs: (outputs) => {
+          const originalTracedMessage = { ...outputs };
           return {
             ...originalTracedMessage,
             content: "REDACTED",
           };
         },
-        processChildLLMRunInputs: ({ formatted }) => {
-          const { messages, ...rest } = formatted;
-          let redactedMessages = undefined;
-          if (Array.isArray(messages)) {
-            redactedMessages = messages.map((message) => ({
-              ...message,
-              content: "REDACTED CHILD",
-            }));
-          }
+        processChildLLMRunInputs: (inputs) => {
+          const { prompt } = inputs;
           return {
-            ...rest,
-            messages: redactedMessages,
+            messages: prompt.map((message) => ({
+              ...message,
+              content: "REDACTED CHILD INPUTS",
+            })),
           };
         },
-        processChildLLMRunOutputs: ({ formatted }) => {
-          const { message, request, response, ...rest } = formatted;
-          if (message != null) {
-            return {
-              ...rest,
-              message: {
-                ...message,
-                content: "REDACTED CHILD OUTPUTS",
-              },
-            };
-          }
-          return rest;
+        processChildLLMRunOutputs: (outputs) => {
+          return {
+            providerMetadata: outputs.providerMetadata,
+            content: "REDACTED CHILD OUTPUTS",
+            role: "assistant",
+          };
         },
       });
 
@@ -1030,21 +1018,18 @@ describe("wrapAISDK", () => {
       expect(createLLMRunCall.body.inputs).toMatchObject({
         messages: [
           {
-            content: "REDACTED CHILD",
+            role: "user",
+            content: "REDACTED CHILD INPUTS",
           },
         ],
       });
       const updateLLMRunCall = mockHttpRequests.find(
         (req) =>
-          req.type === "createRun" &&
+          req.type === "updateRun" &&
           req.body.extra.metadata.ai_sdk_method === "ai.doGenerate"
       );
-      expect(updateLLMRunCall.body.inputs).toMatchObject({
-        messages: [
-          {
-            content: "REDACTED CHILD",
-          },
-        ],
+      expect(updateLLMRunCall.body.outputs).toMatchObject({
+        content: "REDACTED CHILD OUTPUTS",
       });
     });
   });

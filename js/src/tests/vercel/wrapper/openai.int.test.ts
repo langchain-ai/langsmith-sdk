@@ -224,55 +224,40 @@ test("image and file data normalization", async () => {
 });
 
 test("process inputs and outputs", async () => {
-  const lsConfig = createLangSmithProviderOptions({
-    processInputs: ({ formatted }) => {
-      const { messages, prompt, ...rest } = formatted;
-      let redactedMessages = undefined;
-      if (Array.isArray(messages)) {
-        redactedMessages = messages.map((message) => ({
-          ...message,
-          content: "REDACTED",
-        }));
-      }
+  const lsConfig = createLangSmithProviderOptions<typeof ai.generateText>({
+    processInputs: (inputs) => {
+      const { messages } = inputs;
       return {
-        ...rest,
-        messages: redactedMessages,
+        messages: messages?.map((message) => ({
+          providerMetadata: message.providerOptions,
+          role: "assistant",
+          content: "REDACTED",
+        })),
         prompt: "REDACTED",
       };
     },
-    processOutputs: ({ formatted }) => {
-      const originalTracedMessage = { ...formatted };
+    processOutputs: (outputs) => {
       return {
-        ...originalTracedMessage,
+        providerMetadata: outputs.providerMetadata,
+        role: "assistant",
         content: "REDACTED",
       };
     },
-    processChildLLMRunInputs: ({ formatted }) => {
-      const { messages, ...rest } = formatted;
-      let redactedMessages = undefined;
-      if (Array.isArray(messages)) {
-        redactedMessages = messages.map((message) => ({
-          ...message,
-          content: "REDACTED CHILD",
-        }));
-      }
+    processChildLLMRunInputs: (inputs) => {
+      const { prompt } = inputs;
       return {
-        ...rest,
-        messages: redactedMessages,
+        messages: prompt.map((message) => ({
+          ...message,
+          content: "REDACTED CHILD INPUTS",
+        })),
       };
     },
-    processChildLLMRunOutputs: ({ formatted }) => {
-      const { message, request, response, ...rest } = formatted;
-      if (message != null) {
-        return {
-          ...rest,
-          message: {
-            ...message,
-            content: "REDACTED CHILD OUTPUTS",
-          },
-        };
-      }
-      return rest;
+    processChildLLMRunOutputs: (outputs) => {
+      return {
+        providerMetadata: outputs.providerMetadata,
+        content: "REDACTED CHILD OUTPUTS",
+        role: "assistant",
+      };
     },
   });
   const { text } = await generateText({
