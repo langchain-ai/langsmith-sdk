@@ -20,6 +20,10 @@ export const overrideFetchImplementation = (fetch: (...args: any[]) => any) => {
   (globalThis as any)[LANGSMITH_FETCH_IMPLEMENTATION_KEY] = fetch;
 };
 
+export const clearFetchImplementation = () => {
+  delete (globalThis as any)[LANGSMITH_FETCH_IMPLEMENTATION_KEY];
+};
+
 export const _globalFetchImplementationIsNodeFetch = () => {
   const fetchImpl = (globalThis as any)[LANGSMITH_FETCH_IMPLEMENTATION_KEY];
   if (!fetchImpl) return false;
