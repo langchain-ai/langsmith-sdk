@@ -8,7 +8,10 @@ import { fileURLToPath } from "url";
 import path from "path";
 
 import { Client } from "../../../index.js";
-import { wrapAISDK } from "../../../experimental/vercel/index.js";
+import {
+  createLangSmithProviderOptions,
+  wrapAISDK,
+} from "../../../experimental/vercel/index.js";
 import { waitUntilRunFound } from "../../utils.js";
 
 const { tool, stepCountIs } = ai;
@@ -218,4 +221,66 @@ test("image and file data normalization", async () => {
   expect(result.text.length).toBeGreaterThan(0);
   expect(result.usage).toBeDefined();
   expect(result.providerMetadata).toBeDefined();
+});
+
+test("process inputs and outputs", async () => {
+  const lsConfig = createLangSmithProviderOptions({
+    processInputs: ({ formatted }) => {
+      const { messages, prompt, ...rest } = formatted;
+      let redactedMessages = undefined;
+      if (Array.isArray(messages)) {
+        redactedMessages = messages.map((message) => ({
+          ...message,
+          content: "REDACTED",
+        }));
+      }
+      return {
+        ...rest,
+        messages: redactedMessages,
+        prompt: "REDACTED",
+      };
+    },
+    processOutputs: ({ formatted }) => {
+      const originalTracedMessage = { ...formatted };
+      return {
+        ...originalTracedMessage,
+        content: "REDACTED",
+      };
+    },
+    processChildLLMRunInputs: ({ formatted }) => {
+      const { messages, ...rest } = formatted;
+      let redactedMessages = undefined;
+      if (Array.isArray(messages)) {
+        redactedMessages = messages.map((message) => ({
+          ...message,
+          content: "REDACTED CHILD",
+        }));
+      }
+      return {
+        ...rest,
+        messages: redactedMessages,
+      };
+    },
+    processChildLLMRunOutputs: ({ formatted }) => {
+      const { message, request, response, ...rest } = formatted;
+      if (message != null) {
+        return {
+          ...rest,
+          message: {
+            ...message,
+            content: "REDACTED CHILD OUTPUTS",
+          },
+        };
+      }
+      return rest;
+    },
+  });
+  const { text } = await generateText({
+    model: openai("gpt-5-nano"),
+    prompt: "What is the capital of France?",
+    providerOptions: {
+      langsmith: lsConfig,
+    },
+  });
+  expect(text).not.toContain("REDACTED");
 });

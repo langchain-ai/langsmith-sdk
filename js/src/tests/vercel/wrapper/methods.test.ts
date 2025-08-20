@@ -190,7 +190,9 @@ describe("wrapAISDK", () => {
         });
         expect(true).toBe(false); // Should not reach here
       } catch (error: any) {
-        expect(error.message).toContain("TOTALLY EXPECTED MOCK DOGENERATE ERROR");
+        expect(error.message).toContain(
+          "TOTALLY EXPECTED MOCK DOGENERATE ERROR"
+        );
       }
 
       // Add a small delay to allow async operations to complete
@@ -212,7 +214,9 @@ describe("wrapAISDK", () => {
         (req) => req.type === "updateRun" && req.body.error
       );
       expect(updateRunCall).toBeDefined();
-      expect(updateRunCall.body.error).toContain("TOTALLY EXPECTED MOCK DOGENERATE ERROR");
+      expect(updateRunCall.body.error).toContain(
+        "TOTALLY EXPECTED MOCK DOGENERATE ERROR"
+      );
     });
 
     it("should handle streamText with proper aggregation", async () => {
@@ -326,7 +330,9 @@ describe("wrapAISDK", () => {
       );
 
       expect(updateRunCall).toBeDefined();
-      expect(updateRunCall.body.error).toContain("TOTALLY EXPECTED MOCK DOSTREAM ERROR");
+      expect(updateRunCall.body.error).toContain(
+        "TOTALLY EXPECTED MOCK DOSTREAM ERROR"
+      );
     });
 
     it("should handle generateObject with proper output processing", async () => {
@@ -413,7 +419,9 @@ describe("wrapAISDK", () => {
         });
         expect(true).toBe(false); // Should not reach here
       } catch (error: any) {
-        expect(error.message).toContain("TOTALLY EXPECTED MOCK DOGENERATE ERROR");
+        expect(error.message).toContain(
+          "TOTALLY EXPECTED MOCK DOGENERATE ERROR"
+        );
       }
 
       // Add delay for async operations
@@ -424,7 +432,9 @@ describe("wrapAISDK", () => {
         (req) => req.type === "updateRun" && req.body.error
       );
       expect(updateRunCall).toBeDefined();
-      expect(updateRunCall.body.error).toContain("TOTALLY EXPECTED MOCK DOGENERATE ERROR");
+      expect(updateRunCall.body.error).toContain(
+        "TOTALLY EXPECTED MOCK DOGENERATE ERROR"
+      );
     });
 
     it("should handle generateObject with explicit generics", async () => {
