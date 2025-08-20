@@ -2,10 +2,12 @@
 /* eslint-disable no-process-env */
 import { MockLanguageModelV2 } from "ai/test";
 import * as ai from "ai";
-import { simulateReadableStream } from "ai";
+import { simulateReadableStream, APICallError } from "ai";
 import { z } from "zod";
-import { APICallError } from "ai";
-import { wrapAISDK } from "../../../experimental/vercel/index.js";
+import {
+  createLangSmithProviderOptions,
+  wrapAISDK,
+} from "../../../experimental/vercel/index.js";
 
 // Track HTTP requests made by the real traceable function
 const mockHttpRequests: any[] = [];
@@ -176,7 +178,7 @@ describe("wrapAISDK", () => {
       const mockLangModel = new MockLanguageModelV2({
         modelId: "error-test-model",
         doGenerate: async () => {
-          throw new Error("Model generation failed");
+          throw new Error("TOTALLY EXPECTED MOCK DOGENERATE ERROR");
         },
       });
 
@@ -187,7 +189,9 @@ describe("wrapAISDK", () => {
         });
         expect(true).toBe(false); // Should not reach here
       } catch (error: any) {
-        expect(error.message).toContain("Model generation failed");
+        expect(error.message).toContain(
+          "TOTALLY EXPECTED MOCK DOGENERATE ERROR"
+        );
       }
 
       // Add a small delay to allow async operations to complete
@@ -209,7 +213,9 @@ describe("wrapAISDK", () => {
         (req) => req.type === "updateRun" && req.body.error
       );
       expect(updateRunCall).toBeDefined();
-      expect(updateRunCall.body.error).toContain("Model generation failed");
+      expect(updateRunCall.body.error).toContain(
+        "TOTALLY EXPECTED MOCK DOGENERATE ERROR"
+      );
     });
 
     it("should handle streamText with proper aggregation", async () => {
@@ -300,7 +306,7 @@ describe("wrapAISDK", () => {
       const mockLangModel = new MockLanguageModelV2({
         modelId: "stream-error-model",
         doStream: async () => {
-          throw new Error("doStream failed");
+          throw new Error("TOTALLY EXPECTED MOCK DOSTREAM ERROR");
         },
       });
 
@@ -323,7 +329,9 @@ describe("wrapAISDK", () => {
       );
 
       expect(updateRunCall).toBeDefined();
-      expect(updateRunCall.body.error).toContain("doStream failed");
+      expect(updateRunCall.body.error).toContain(
+        "TOTALLY EXPECTED MOCK DOSTREAM ERROR"
+      );
     });
 
     it("should handle generateObject with proper output processing", async () => {
@@ -396,7 +404,7 @@ describe("wrapAISDK", () => {
       const mockLangModel = new MockLanguageModelV2({
         modelId: "object-error-model",
         doGenerate: async () => {
-          throw new Error("Object generation failed");
+          throw new Error("TOTALLY EXPECTED MOCK DOGENERATE ERROR");
         },
       });
 
@@ -410,7 +418,9 @@ describe("wrapAISDK", () => {
         });
         expect(true).toBe(false); // Should not reach here
       } catch (error: any) {
-        expect(error.message).toContain("Object generation failed");
+        expect(error.message).toContain(
+          "TOTALLY EXPECTED MOCK DOGENERATE ERROR"
+        );
       }
 
       // Add delay for async operations
@@ -421,7 +431,9 @@ describe("wrapAISDK", () => {
         (req) => req.type === "updateRun" && req.body.error
       );
       expect(updateRunCall).toBeDefined();
-      expect(updateRunCall.body.error).toContain("Object generation failed");
+      expect(updateRunCall.body.error).toContain(
+        "TOTALLY EXPECTED MOCK DOGENERATE ERROR"
+      );
     });
 
     it("should handle generateObject with explicit generics", async () => {
@@ -566,7 +578,7 @@ describe("wrapAISDK", () => {
       const mockLangModel = new MockLanguageModelV2({
         modelId: "stream-object-error-model",
         doStream: async () => {
-          throw new Error("streamObject doStream failed");
+          throw new Error("TOTALLY EXPECTED MOCK STREAMOBJECT DOSTREAM ERROR");
         },
       });
 
@@ -593,7 +605,7 @@ describe("wrapAISDK", () => {
 
       expect(updateRunCall).toBeDefined();
       expect(updateRunCall.body.error).toContain(
-        "streamObject doStream failed"
+        "TOTALLY EXPECTED MOCK STREAMOBJECT DOSTREAM ERROR"
       );
     });
 
@@ -820,6 +832,201 @@ describe("wrapAISDK", () => {
       expect(
         parentSuccessCall.body.extra.metadata.usage_metadata.total_tokens
       ).toBe(15);
+    });
+  });
+
+  describe("config resolution", () => {
+    it("should merge base and runtime configs correctly", async () => {
+      const baseConfig = {
+        name: "base-tracer",
+        metadata: { baseField: "base-value", shared: "base" },
+        tags: ["base-tag"],
+        badClient: "bad",
+      };
+
+      const runtimeConfig = createLangSmithProviderOptions({
+        name: "runtime-tracer",
+        metadata: { runtimeField: "runtime-value", shared: "runtime" },
+        tags: ["runtime-tag"],
+        client: mockClient as any,
+      });
+
+      const wrappedMethods = wrapAISDK(
+        {
+          wrapLanguageModel: ai.wrapLanguageModel,
+          generateText: ai.generateText,
+          streamText: ai.streamText,
+          generateObject: ai.generateObject,
+          streamObject: ai.streamObject,
+        },
+        baseConfig
+      );
+
+      const mockLangModel = new MockLanguageModelV2({
+        modelId: "config-merge-test",
+        doGenerate: async () => ({
+          content: [{ type: "text" as const, text: "Config test" }],
+          finishReason: "stop" as const,
+          usage: {
+            promptTokens: 5,
+            completionTokens: 3,
+            inputTokens: 5,
+            outputTokens: 3,
+            totalTokens: 8,
+          },
+          warnings: [],
+        }),
+      });
+
+      await wrappedMethods.generateText({
+        model: mockLangModel,
+        prompt: "Test config merging",
+        providerOptions: {
+          langsmith: runtimeConfig,
+        },
+      });
+
+      // Verify merged config was used in trace
+      const createRunCall = mockHttpRequests.find(
+        (req) =>
+          req.type === "createRun" &&
+          req.body.extra.metadata.ai_sdk_method === "ai.generateText"
+      );
+
+      expect(createRunCall).toBeDefined();
+      expect(createRunCall.body.name).toBe("runtime-tracer"); // Runtime overrides base
+      expect(createRunCall.body.extra.metadata).toMatchObject({
+        baseField: "base-value",
+        runtimeField: "runtime-value",
+        shared: "runtime", // Runtime wins for conflicts
+        ai_sdk_method: "ai.generateText",
+      });
+      expect(createRunCall.body.tags).toEqual(["runtime-tag"]); // Runtime overrides base
+    });
+
+    it("should handle process inputs and output options", async () => {
+      const wrappedMethods = wrapAISDK(
+        {
+          wrapLanguageModel: ai.wrapLanguageModel,
+          generateText: ai.generateText,
+          streamText: ai.streamText,
+          generateObject: ai.generateObject,
+          streamObject: ai.streamObject,
+        },
+        { client: mockClient as any }
+      );
+
+      const mockLangModel = new MockLanguageModelV2({
+        modelId: "config-provider-test",
+        doGenerate: async () => ({
+          content: [{ type: "text" as const, text: "Config test" }],
+          finishReason: "stop" as const,
+          usage: {
+            promptTokens: 5,
+            completionTokens: 3,
+            inputTokens: 5,
+            outputTokens: 3,
+            totalTokens: 8,
+          },
+          warnings: [],
+        }),
+      });
+
+      const lsConfig = createLangSmithProviderOptions<typeof ai.generateText>({
+        processInputs: (inputs) => {
+          const { messages, prompt, ...rest } = inputs;
+          return {
+            ...rest,
+            messages: messages?.map((message) => ({
+              ...message,
+              content: "REDACTED",
+            })),
+            prompt: "REDACTED",
+          };
+        },
+        processOutputs: (outputs) => {
+          const originalTracedMessage = { ...outputs };
+          return {
+            ...originalTracedMessage,
+            content: "REDACTED",
+          };
+        },
+        processChildLLMRunInputs: (inputs) => {
+          const { prompt } = inputs;
+          return {
+            messages: prompt.map((message) => ({
+              ...message,
+              content: "REDACTED CHILD INPUTS",
+            })),
+          };
+        },
+        processChildLLMRunOutputs: (outputs) => {
+          return {
+            providerMetadata: outputs.providerMetadata,
+            content: "REDACTED CHILD OUTPUTS",
+            role: "assistant",
+          };
+        },
+      });
+
+      await wrappedMethods.generateText({
+        model: mockLangModel,
+        messages: [
+          {
+            role: "user",
+            content: "hello there!",
+          },
+        ],
+        providerOptions: {
+          langsmith: lsConfig,
+        },
+      });
+      expect(mockHttpRequests).toHaveLength(4);
+      // Verify merged config was used in trace
+      const createRunCall = mockHttpRequests.find(
+        (req) =>
+          req.type === "createRun" &&
+          req.body.extra.metadata.ai_sdk_method === "ai.generateText"
+      );
+
+      expect(createRunCall).toBeDefined();
+      expect(createRunCall.body.inputs).toMatchObject({
+        prompt: "REDACTED",
+        messages: [
+          {
+            content: "REDACTED",
+          },
+        ],
+      });
+      const createUpdateCall = mockHttpRequests.find(
+        (req) =>
+          req.type === "updateRun" &&
+          req.body.extra.metadata.ai_sdk_method === "ai.generateText"
+      );
+      expect(createUpdateCall.body.outputs).toMatchObject({
+        content: "REDACTED",
+      });
+      const createLLMRunCall = mockHttpRequests.find(
+        (req) =>
+          req.type === "createRun" &&
+          req.body.extra.metadata.ai_sdk_method === "ai.doGenerate"
+      );
+      expect(createLLMRunCall.body.inputs).toMatchObject({
+        messages: [
+          {
+            role: "user",
+            content: "REDACTED CHILD INPUTS",
+          },
+        ],
+      });
+      const updateLLMRunCall = mockHttpRequests.find(
+        (req) =>
+          req.type === "updateRun" &&
+          req.body.extra.metadata.ai_sdk_method === "ai.doGenerate"
+      );
+      expect(updateLLMRunCall.body.outputs).toMatchObject({
+        content: "REDACTED CHILD OUTPUTS",
+      });
     });
   });
 
