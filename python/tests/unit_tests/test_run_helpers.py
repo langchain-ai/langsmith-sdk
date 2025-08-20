@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 import functools
 import inspect
 import json
@@ -1597,6 +1598,24 @@ async def test_trace_respects_env_var(env_var: bool, context: Optional[bool]):
         assert len(mock_calls) >= 1
     else:
         assert not mock_calls
+
+
+def test_set_parent_and_project_name():
+    trace_id = "97d461ba-2dd2-4ef0-ac6e-aaa3ea88ff10"
+    start_time = "20250820T050114826612Z"
+    parent_dotted_order = f"{start_time}{trace_id}"
+    project_name = "SUREITSFOO"
+    with tracing_context(project_name="NOTFOO"):
+        # now we set at the same time.
+        with tracing_context(parent=parent_dotted_order, project_name=project_name):
+            rt = get_current_run_tree()
+            assert rt is not None
+            assert rt.session_name == project_name
+            assert str(rt.id) == str(rt.trace_id)
+            assert str(rt.trace_id) == trace_id
+            assert rt.start_time == datetime.datetime.strptime(
+                start_time, "%Y%m%dT%H%M%S%fZ"
+            ).replace(tzinfo=datetime.timezone.utc)
 
 
 async def test_process_inputs_outputs():

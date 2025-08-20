@@ -141,7 +141,12 @@ def tracing_context(
         )
     current_context = get_tracing_context()
     parent_run = (
-        _get_parent_run({"parent": parent or kwargs.get("parent_run")})
+        _get_parent_run(
+            {
+                "parent": parent or kwargs.get("parent_run"),
+                "project_name": project_name,
+            }
+        )
         if parent is not False
         else None
     )

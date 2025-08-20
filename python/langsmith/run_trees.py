@@ -837,8 +837,8 @@ class RunTree(ls_schemas.RunBase):
             init_args["parent_run_id"] = parsed_dotted_order[-2][1]
         # All placeholders. We assume the source process
         # handles the life-cycle of the run.
-        init_args["start_time"] = init_args.get("start_time") or datetime.now(
-            timezone.utc
+        init_args["start_time"] = (
+            init_args.get("start_time") or parsed_dotted_order[-1][0]
         )
         init_args["run_type"] = init_args.get("run_type") or "chain"
         init_args["name"] = init_args.get("name") or "parent"
@@ -1113,7 +1113,9 @@ def _parse_dotted_order(dotted_order: str) -> list[tuple[datetime, UUID]]:
     parts = dotted_order.split(".")
     return [
         (
-            datetime.strptime(part[:-TIMESTAMP_LENGTH], "%Y%m%dT%H%M%S%fZ"),
+            datetime.strptime(part[:-TIMESTAMP_LENGTH], "%Y%m%dT%H%M%S%fZ").replace(
+                tzinfo=timezone.utc
+            ),
             UUID(part[-TIMESTAMP_LENGTH:]),
         )
         for part in parts
