@@ -1,5 +1,5 @@
 import { LangSmithMiddleware } from "./middleware.js";
-import { convertMessageToTracedFormat } from "./utils.js";
+import { convertMessageToTracedFormat, RETURN_FORMATTED } from "./utils.js";
 import { isTraceableFunction, traceable } from "../../traceable.js";
 import { RunTreeConfig } from "../../run_trees.js";
 
@@ -63,12 +63,7 @@ const _getModelId = (model: string | Record<string, unknown>) => {
   return typeof model.modelId === "string" ? model.modelId : undefined;
 };
 
-const _formatTracedInputs = (
-  params: Record<string, unknown>,
-  overriddenProcessInputs?: (
-    inputs: Record<string, unknown>
-  ) => Record<string, unknown>
-) => {
+const _formatTracedInputs = (params: Record<string, unknown>) => {
   const { prompt, messages, model, tools, ...rest } = params;
   let defaultOutputs;
   if (Array.isArray(prompt)) {
@@ -83,9 +78,6 @@ const _formatTracedInputs = (
     };
   } else {
     defaultOutputs = { ...rest, prompt, messages };
-  }
-  if (overriddenProcessInputs) {
-    return overriddenProcessInputs({ formatted: defaultOutputs, raw: params });
   }
   return defaultOutputs;
 };
@@ -104,12 +96,6 @@ const _mergeConfig = (
   };
 };
 
-const DEFAULT_PROCESS_OUTPUTS = ({
-  formatted,
-}: {
-  formatted: Record<string, unknown>;
-}) => formatted;
-
 export type WrapAISDKConfig = Partial<
   Omit<
     RunTreeConfig,
@@ -122,16 +108,22 @@ export type WrapAISDKConfig = Partial<
     | "serialized"
   >
 > & {
-  processInputs?: (inputs: Record<string, unknown>) => Record<string, unknown>;
-  processOutputs?: (
-    outputs: Record<string, unknown>
-  ) => Record<string, unknown>;
-  childLLMRunProcessInputs?: (
-    inputs: Record<string, unknown>
-  ) => Record<string, unknown>;
-  childLLMRunProcessOutputs?: (
-    outputs: Record<string, unknown>
-  ) => Record<string, unknown>;
+  processInputs?: (inputs: {
+    formatted: Record<string, unknown>;
+    raw: Record<string, unknown>;
+  }) => Record<string, unknown>;
+  processOutputs?: (outputs: {
+    formatted: Record<string, unknown>;
+    raw: Record<string, unknown>;
+  }) => Record<string, unknown>;
+  childLLMRunProcessInputs?: (inputs: {
+    formatted: Record<string, unknown>;
+    raw: Record<string, unknown>;
+  }) => Record<string, unknown>;
+  childLLMRunProcessOutputs?: (outputs: {
+    formatted: Record<string, unknown>;
+    raw: Record<string, unknown>;
+  }) => Record<string, unknown>;
 };
 
 const _extractChildRunConfig = (lsConfig?: WrapAISDKConfig) => {
@@ -224,17 +216,17 @@ const wrapAISDK = <
   const wrappedGenerateText = async (...args: Parameters<GenerateTextType>) => {
     const params = args[0];
     const runtimeLsConfig = params.providerMetadata?.langsmith;
-    const runtimeChildRunConfig = _extractChildRunConfig(runtimeLsConfig);
+    const runtimeChildLLMRunConfig = _extractChildRunConfig(runtimeLsConfig);
     const resolvedLsConfig = _mergeConfig(baseLsConfig, runtimeLsConfig);
-    const resolvedChildRunConfig = _mergeConfig(
+    const resolvedChildLLMRunConfig = _mergeConfig(
       baseChildRunConfig,
-      runtimeChildRunConfig
+      runtimeChildLLMRunConfig
     );
     const {
       processInputs: _processInputs,
       processOutputs: _processOutputs,
       ...resolvedToolConfig
-    } = resolvedChildRunConfig;
+    } = resolvedChildLLMRunConfig;
     const traceableFunc = traceable(
       async (
         ...args: Parameters<GenerateTextType>
@@ -245,7 +237,7 @@ const wrapAISDK = <
           middleware: LangSmithMiddleware({
             name: _getModelDisplayName(params.model),
             modelId: _getModelId(params.model),
-            lsConfig: resolvedChildRunConfig,
+            lsConfig: resolvedChildLLMRunConfig,
           }),
         });
         return generateText(
@@ -264,12 +256,17 @@ const wrapAISDK = <
           ai_sdk_method: "ai.generateText",
           ...resolvedLsConfig?.metadata,
         },
-        processInputs: (inputs) =>
-          _formatTracedInputs(inputs, resolvedLsConfig?.processInputs),
+        processInputs: (inputs) => {
+          const formatInputs =
+            resolvedLsConfig?.processInputs?.(inputs) ?? RETURN_FORMATTED;
+          return formatInputs({
+            formatted: _formatTracedInputs(inputs),
+            raw: inputs,
+          });
+        },
         processOutputs: (outputs) => {
           const formatOutputs =
-            resolvedLsConfig?.processOutputs?.(outputs) ??
-            DEFAULT_PROCESS_OUTPUTS;
+            resolvedLsConfig?.processOutputs?.(outputs) ?? RETURN_FORMATTED;
           if (outputs.outputs == null || typeof outputs.outputs !== "object") {
             return formatOutputs({ formatted: outputs, raw: outputs });
           }
@@ -321,11 +318,11 @@ const wrapAISDK = <
   ) => {
     const params = args[0];
     const runtimeLsConfig = params.providerMetadata?.langsmith;
-    const runtimeChildRunConfig = _extractChildRunConfig(runtimeLsConfig);
+    const runtimeChildLLMRunConfig = _extractChildRunConfig(runtimeLsConfig);
     const resolvedLsConfig = _mergeConfig(baseLsConfig, runtimeLsConfig);
-    const resolvedChildRunConfig = _mergeConfig(
+    const resolvedChildLLMRunConfig = _mergeConfig(
       baseChildRunConfig,
-      runtimeChildRunConfig
+      runtimeChildLLMRunConfig
     );
     const traceableFunc = traceable(
       async (
@@ -337,7 +334,7 @@ const wrapAISDK = <
           middleware: LangSmithMiddleware({
             name: _getModelDisplayName(params.model),
             modelId: _getModelId(params.model),
-            lsConfig: resolvedChildRunConfig,
+            lsConfig: resolvedChildLLMRunConfig,
           }),
         });
         return generateObject(
@@ -355,12 +352,17 @@ const wrapAISDK = <
           ai_sdk_method: "ai.generateObject",
           ...resolvedLsConfig?.metadata,
         },
-        processInputs: (inputs) =>
-          _formatTracedInputs(inputs, resolvedLsConfig?.processInputs),
+        processInputs: (inputs) => {
+          const formatInputs =
+            resolvedLsConfig?.processInputs?.(inputs) ?? RETURN_FORMATTED;
+          return formatInputs({
+            formatted: _formatTracedInputs(inputs),
+            raw: inputs,
+          });
+        },
         processOutputs: (outputs) => {
           const formatOutputs =
-            resolvedLsConfig?.processOutputs?.(outputs) ??
-            DEFAULT_PROCESS_OUTPUTS;
+            resolvedLsConfig?.processOutputs?.(outputs) ?? RETURN_FORMATTED;
           if (outputs.outputs == null || typeof outputs.outputs !== "object") {
             return formatOutputs({ formatted: outputs, raw: outputs });
           }
@@ -398,17 +400,17 @@ const wrapAISDK = <
   const wrappedStreamText = (...args: Parameters<StreamTextType>) => {
     const params = args[0];
     const runtimeLsConfig = params.providerMetadata?.langsmith;
-    const runtimeChildRunConfig = _extractChildRunConfig(runtimeLsConfig);
+    const runtimeChildLLMRunConfig = _extractChildRunConfig(runtimeLsConfig);
     const resolvedLsConfig = _mergeConfig(baseLsConfig, runtimeLsConfig);
-    const resolvedChildRunConfig = _mergeConfig(
+    const resolvedChildLLMRunConfig = _mergeConfig(
       baseChildRunConfig,
-      runtimeChildRunConfig
+      runtimeChildLLMRunConfig
     );
     const {
       processInputs: _processInputs,
       processOutputs: _processOutputs,
       ...resolvedToolConfig
-    } = resolvedChildRunConfig;
+    } = resolvedChildLLMRunConfig;
     const traceableFunc = traceable(
       (...args: Parameters<StreamTextType>): ReturnType<StreamTextType> => {
         const [params, ...rest] = args;
@@ -417,7 +419,7 @@ const wrapAISDK = <
           middleware: LangSmithMiddleware({
             name: _getModelDisplayName(params.model),
             modelId: _getModelId(params.model),
-            lsConfig: resolvedChildRunConfig,
+            lsConfig: resolvedChildLLMRunConfig,
           }),
         });
         return streamText(
@@ -436,12 +438,17 @@ const wrapAISDK = <
           ai_sdk_method: "ai.streamText",
           ...resolvedLsConfig?.metadata,
         },
-        processInputs: (inputs) =>
-          _formatTracedInputs(inputs, resolvedLsConfig?.processInputs),
+        processInputs: (inputs) => {
+          const formatInputs =
+            resolvedLsConfig?.processInputs?.(inputs) ?? RETURN_FORMATTED;
+          return formatInputs({
+            formatted: _formatTracedInputs(inputs),
+            raw: inputs,
+          });
+        },
         processOutputs: async (outputs) => {
           const formatOutputs =
-            resolvedLsConfig?.processOutputs?.(outputs) ??
-            DEFAULT_PROCESS_OUTPUTS;
+            resolvedLsConfig?.processOutputs?.(outputs) ?? RETURN_FORMATTED;
           if (outputs.outputs == null || typeof outputs.outputs !== "object") {
             return formatOutputs({ formatted: outputs, raw: outputs });
           }
@@ -484,11 +491,11 @@ const wrapAISDK = <
   const wrappedStreamObject = (...args: Parameters<StreamObjectType>) => {
     const params = args[0];
     const runtimeLsConfig = params.providerMetadata?.langsmith;
-    const runtimeChildRunConfig = _extractChildRunConfig(runtimeLsConfig);
+    const runtimeChildLLMRunConfig = _extractChildRunConfig(runtimeLsConfig);
     const resolvedLsConfig = _mergeConfig(baseLsConfig, runtimeLsConfig);
-    const resolvedChildRunConfig = _mergeConfig(
+    const resolvedChildLLMRunConfig = _mergeConfig(
       baseChildRunConfig,
-      runtimeChildRunConfig
+      runtimeChildLLMRunConfig
     );
     const traceableFunc = traceable(
       (...args: Parameters<StreamObjectType>): ReturnType<StreamObjectType> => {
@@ -498,7 +505,7 @@ const wrapAISDK = <
           middleware: LangSmithMiddleware({
             name: _getModelDisplayName(params.model),
             modelId: _getModelId(params.model),
-            lsConfig: resolvedChildRunConfig,
+            lsConfig: resolvedChildLLMRunConfig,
           }),
         });
         return streamObject(
@@ -516,12 +523,17 @@ const wrapAISDK = <
           ai_sdk_method: "ai.streamObject",
           ...resolvedLsConfig?.metadata,
         },
-        processInputs: (inputs) =>
-          _formatTracedInputs(inputs, resolvedLsConfig?.processInputs),
+        processInputs: (inputs) => {
+          const formatInputs =
+            resolvedLsConfig?.processInputs?.(inputs) ?? RETURN_FORMATTED;
+          return formatInputs({
+            formatted: _formatTracedInputs(inputs),
+            raw: inputs,
+          });
+        },
         processOutputs: async (outputs) => {
           const formatOutputs =
-            resolvedLsConfig?.processOutputs?.(outputs) ??
-            DEFAULT_PROCESS_OUTPUTS;
+            resolvedLsConfig?.processOutputs?.(outputs) ?? RETURN_FORMATTED;
           if (outputs.outputs == null || typeof outputs.outputs !== "object") {
             return formatOutputs({ formatted: outputs, raw: outputs });
           }

@@ -13,7 +13,7 @@ import {
   extractInputTokenDetails,
   extractOutputTokenDetails,
 } from "../../utils/vercel.js";
-import { convertMessageToTracedFormat } from "./utils.js";
+import { convertMessageToTracedFormat, RETURN_FORMATTED } from "./utils.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const _formatTracedInputs = (params: LanguageModelV2CallOptions) => {
@@ -83,7 +83,16 @@ const setUsageMetadataOnRunTree = (
 export function LangSmithMiddleware(config?: {
   name: string;
   modelId?: string;
-  lsConfig?: Partial<Omit<RunTreeConfig, "inputs" | "outputs" | "run_type">>;
+  lsConfig?: Partial<Omit<RunTreeConfig, "inputs" | "outputs" | "run_type">> & {
+    processInputs?: (inputs: {
+      formatted: Record<string, unknown>;
+      raw: Record<string, unknown>;
+    }) => Record<string, unknown>;
+    processOutputs?: (outputs: {
+      formatted: Record<string, unknown>;
+      raw: Record<string, unknown>;
+    }) => Record<string, unknown>;
+  };
 }): LanguageModelV2Middleware {
   const { name, modelId, lsConfig } = config ?? {};
 
@@ -109,13 +118,17 @@ export function LangSmithMiddleware(config?: {
           },
           processInputs: (inputs) => {
             const typedInputs = inputs as LanguageModelV2CallOptions;
-            return _formatTracedInputs(typedInputs);
+            const formatted = _formatTracedInputs(typedInputs);
+            const formatInputs = lsConfig?.processInputs ?? RETURN_FORMATTED;
+            return formatInputs({ formatted, raw: typedInputs });
           },
           processOutputs: (outputs) => {
             const typedOutputs = outputs as Awaited<
               ReturnType<typeof doGenerate>
             >;
-            return _formatTracedOutputs(typedOutputs);
+            const formatted = _formatTracedOutputs(typedOutputs);
+            const formatOutputs = lsConfig?.processOutputs ?? RETURN_FORMATTED;
+            return formatOutputs({ formatted, raw: typedOutputs });
           },
         }
       );
@@ -130,6 +143,8 @@ export function LangSmithMiddleware(config?: {
         typeof parentRunTree === "object" &&
         typeof parentRunTree.createChild === "function"
       ) {
+        const formattedInputs = _formatTracedInputs(params);
+        const formatInputs = lsConfig?.processInputs ?? RETURN_FORMATTED;
         runTree = parentRunTree?.createChild({
           ...lsConfig,
           name: name ?? "ai.doStream",
@@ -139,7 +154,7 @@ export function LangSmithMiddleware(config?: {
             ai_sdk_method: "ai.doStream",
             ...lsConfig?.metadata,
           },
-          inputs: _formatTracedInputs(params),
+          inputs: formatInputs({ formatted: formattedInputs, raw: params }),
         });
       }
 
@@ -219,7 +234,12 @@ export function LangSmithMiddleware(config?: {
                   tool_calls: [] as Record<string, any>[],
                 }
               );
-              await runTree?.end(_formatTracedOutputs(output));
+              const formattedOutputs = _formatTracedOutputs(output);
+              const formatOutputs =
+                lsConfig?.processOutputs ?? RETURN_FORMATTED;
+              await runTree?.end(
+                formatOutputs({ formatted: formattedOutputs, raw: output })
+              );
             } catch (error: any) {
               await runTree?.end(undefined, error.message ?? String(error));
               throw error;

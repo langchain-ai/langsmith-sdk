@@ -5,6 +5,12 @@ import type {
 } from "@ai-sdk/provider";
 import type { ModelMessage, ToolCallPart } from "ai";
 
+export const RETURN_FORMATTED = ({
+  formatted,
+}: {
+  formatted: Record<string, unknown>;
+}) => formatted;
+
 const guessMimetypeFromBase64 = (data: string) => {
   // Check magic bytes from base64 data
   const bytes = atob(data.substring(0, 20)); // Decode first few bytes
