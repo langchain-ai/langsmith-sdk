@@ -15,7 +15,7 @@ import {
   AsyncLocalStorageProviderSingleton,
   getCurrentRunTree,
 } from "../singletons/traceable.js";
-import { KVMap, BaseRun } from "../schemas.js";
+import { KVMap } from "../schemas.js";
 
 test("basic traceable implementation", async () => {
   const { client, callSpy } = mockClient();
