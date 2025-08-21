@@ -1144,7 +1144,9 @@ export class Client implements LangSmithTracingClientInterface {
             this._serverInfo = await this._getServerInfo();
           } catch (e: any) {
             console.warn(
-              `[WARNING]: LangSmith failed to fetch info on supported operations with status code ${e.status}. Falling back to batch operations and default limits.`
+              `[LANGSMITH]: Failed to fetch info on supported operations. Falling back to batch operations and default limits. Info: ${
+                e.status ?? "Unspecified status code"
+              } ${e.message}`
             );
           }
         }
@@ -1349,9 +1351,9 @@ export class Client implements LangSmithTracingClientInterface {
         {
           method: "POST",
           headers,
-          body,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
+          body,
         }
       );
       await raiseForStatus(res, "batch create run", true);
