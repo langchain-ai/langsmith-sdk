@@ -414,7 +414,7 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
 
       const client = new Client({
         autoBatchTracing: true,
-        fetch: mockFetch,
+        fetchImplementation: mockFetch,
       });
 
       const batchCallSpy = mockFetch;
@@ -489,7 +489,7 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
 
       const client = new Client({
         autoBatchTracing: true,
-        fetch: multipartCallSpy,
+        fetchImplementation: multipartCallSpy,
       });
 
       jest.spyOn(client as any, "_getServerInfo").mockResolvedValue({

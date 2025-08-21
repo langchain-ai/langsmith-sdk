@@ -20,7 +20,7 @@ test("Should work with manually set API key", async () => {
       callerOptions: { maxRetries: 0 },
       timeout_ms: 30_000,
       apiKey: key,
-      fetch: callSpy,
+      fetchImplementation: callSpy,
     });
     const projectName = "__test_persist_update_run_tree";
     const runTree = new RunTree({

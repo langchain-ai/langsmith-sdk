@@ -18,7 +18,7 @@ export const mockClient = (config?: Omit<ClientParams, "autoBatchTracing">) => {
     ...config,
     apiKey: "MOCK",
     autoBatchTracing: false,
-    fetch: mockFetch,
+    fetchImplementation: mockFetch,
   });
 
   const callSpy = mockFetch;
