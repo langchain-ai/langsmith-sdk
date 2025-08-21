@@ -673,6 +673,7 @@ export class Client implements LangSmithTracingClientInterface {
     this.timeout_ms = config.timeout_ms ?? 90_000;
     this.caller = new AsyncCaller({
       ...(config.callerOptions ?? {}),
+      maxRetries: 4,
       debug: config.debug ?? this.debug,
     });
     this.traceBatchConcurrency =
@@ -1633,31 +1634,45 @@ export class Client implements LangSmithTracingClientInterface {
     const buildBuffered = () => this._createNodeFetchBody(parts, boundary);
     const buildStream = () => this._createMultipartStream(parts, boundary);
 
-    const send = async (body: BodyInit) => {
-      const headers: Record<string, string> = {
-        ...this.headers,
-        "Content-Type": `multipart/form-data; boundary=${boundary}`,
-      };
-      if (options?.apiKey !== undefined) {
-        headers["x-api-key"] = options.apiKey;
-      }
-      let transformedBody = body;
-      if (
-        options?.useGzip &&
-        typeof body === "object" &&
-        "pipeThrough" in body
-      ) {
-        transformedBody = body.pipeThrough(new CompressionStream("gzip"));
-        headers["Content-Encoding"] = "gzip";
-      }
-      return this._fetch(`${options?.apiUrl ?? this.apiUrl}/runs/multipart`, {
-        method: "POST",
-        headers,
-        duplex: "half",
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
-        body: transformedBody,
-      } as RequestInit);
+    const sendWithRetry = async (
+      bodyFactory: () => Promise<BodyInit>
+    ): Promise<Response> => {
+      return this.batchIngestCaller.call(async () => {
+        const body = await bodyFactory();
+        const headers: Record<string, string> = {
+          ...this.headers,
+          "Content-Type": `multipart/form-data; boundary=${boundary}`,
+        };
+        if (options?.apiKey !== undefined) {
+          headers["x-api-key"] = options.apiKey;
+        }
+
+        let transformedBody = body;
+        if (
+          options?.useGzip &&
+          typeof body === "object" &&
+          "pipeThrough" in body
+        ) {
+          transformedBody = body.pipeThrough(new CompressionStream("gzip"));
+          headers["Content-Encoding"] = "gzip";
+        }
+
+        const response = await this._fetch(
+          `${options?.apiUrl ?? this.apiUrl}/runs/multipart`,
+          {
+            method: "POST",
+            headers,
+            body: transformedBody,
+            duplex: "half",
+            signal: AbortSignal.timeout(this.timeout_ms),
+            ...this.fetchOptions,
+          } as RequestInit
+        );
+
+        await raiseForStatus(response, `Failed to send multipart request`, true);
+
+        return response;
+      });
     };
 
     try {
@@ -1667,9 +1682,9 @@ export class Client implements LangSmithTracingClientInterface {
       // attempt stream only if not disabled and not using node-fetch
       if (!isNodeFetch && !this.multipartStreamingDisabled) {
         streamedAttempt = true;
-        res = await send(await buildStream());
+        res = await sendWithRetry(buildStream);
       } else {
-        res = await send(await buildBuffered());
+        res = await sendWithRetry(buildBuffered);
       }
 
       // if stream fails, fallback to buffered body
@@ -1688,11 +1703,8 @@ export class Client implements LangSmithTracingClientInterface {
         // Disable streaming for future requests
         this.multipartStreamingDisabled = true;
         // retry with fully-buffered body
-        res = await send(await buildBuffered());
+        res = await sendWithRetry(buildBuffered);
       }
-
-      // raise if still failing
-      await raiseForStatus(res, "ingest multipart runs", true);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       console.warn(`${e.message.trim()}\n\nContext: ${context}`);

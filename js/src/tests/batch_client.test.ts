@@ -101,7 +101,7 @@ describe.each(ENDPOINT_TYPES)(
     ) => {
       const client = new Client({
         ...config,
-        fetch: mockFetch,
+        fetchImplementation: mockFetch,
       });
       testClients.push(client);
       return client;
