@@ -1343,5 +1343,213 @@ describe.each(ENDPOINT_TYPES)(
 
       expect(calls.length).toBe(1);
     });
+
+    it("should retry multipart requests on 5xx errors", async () => {
+      const calls: any[] = [];
+      let callCount = 0;
+
+      const mockFetch = jest.fn((...args: any[]) => {
+        callCount++;
+        // Only count calls to multipart endpoints, not info calls
+        if (args[0]?.includes("/runs/")) {
+          calls.push(args);
+
+          // Fail first two attempts with 500, succeed on third
+          if (callCount <= 2) {
+            return Promise.resolve({
+              ok: false,
+              status: 500,
+              statusText: "Internal Server Error",
+              text: () => Promise.resolve("Server error"),
+            } as Response);
+          }
+        }
+
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: () => Promise.resolve(""),
+        } as Response);
+      });
+
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          autoBatchTracing: true,
+        },
+        mockFetch
+      );
+
+      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
+        return {
+          version: "foo",
+          batch_ingest_config: { ...extraBatchIngestConfig },
+          instance_flags: { ...extraInstanceFlags },
+        };
+      });
+
+      const projectName = "__test_batch";
+      const runId = uuidv4();
+      const { dottedOrder } = convertToDottedOrderFormat(
+        new Date().getTime() / 1000,
+        runId
+      );
+
+      await client.createRun({
+        id: runId,
+        project_name: projectName,
+        name: "test_run",
+        run_type: "llm",
+        inputs: { text: "hello world" },
+        trace_id: runId,
+        dotted_order: dottedOrder,
+      });
+
+      await client.awaitPendingTraceBatches();
+
+      // Should have made 3 calls (2 failures + 1 success)
+      expect(calls.length).toBe(3);
+      expect(calls[0][0]).toBe(expectedTraceURL);
+      expect(calls[1][0]).toBe(expectedTraceURL);
+      expect(calls[2][0]).toBe(expectedTraceURL);
+    });
+
+    it("should not retry multipart requests on 422 errors", async () => {
+      const calls: any[] = [];
+
+      const mockFetch = jest.fn((...args: any[]) => {
+        // Only count calls to multipart endpoints, not info calls
+        if (args[0]?.includes("/runs/")) {
+          calls.push(args);
+
+          // Always return 422 (should not retry)
+          return Promise.resolve({
+            ok: false,
+            status: 422,
+            statusText: "Unprocessable Entity",
+            text: () => Promise.resolve("Validation error"),
+          } as Response);
+        }
+
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: () => Promise.resolve(""),
+        } as Response);
+      });
+
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          autoBatchTracing: true,
+        },
+        mockFetch
+      );
+
+      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
+        return {
+          version: "foo",
+          batch_ingest_config: { ...extraBatchIngestConfig },
+          instance_flags: { ...extraInstanceFlags },
+        };
+      });
+
+      const projectName = "__test_batch";
+      const runId = uuidv4();
+      const { dottedOrder } = convertToDottedOrderFormat(
+        new Date().getTime() / 1000,
+        runId
+      );
+
+      await client.createRun({
+        id: runId,
+        project_name: projectName,
+        name: "test_run",
+        run_type: "llm",
+        inputs: { text: "hello world" },
+        trace_id: runId,
+        dotted_order: dottedOrder,
+      });
+
+      // Wait for batch processing to complete (and fail)
+      await client.awaitPendingTraceBatches();
+
+      // Should have made only 1 call (no retries for 422)
+      expect(calls.length).toBe(1);
+      expect(calls[0][0]).toBe(expectedTraceURL);
+    });
+
+    it("should retry multipart requests on 429 errors", async () => {
+      const calls: any[] = [];
+      let callCount = 0;
+
+      const mockFetch = jest.fn((...args: any[]) => {
+        callCount++;
+        // Only count calls to multipart endpoints, not info calls
+        if (args[0]?.includes("/runs/")) {
+          calls.push(args);
+
+          // Fail first two attempts with 429, succeed on third
+          if (callCount <= 2) {
+            return Promise.resolve({
+              ok: false,
+              status: 429,
+              statusText: "Too Many Requests",
+              text: () => Promise.resolve("Rate limited"),
+              headers: {
+                get: (name: string) => (name === "retry-after" ? "1" : null),
+              },
+            } as Response);
+          }
+        }
+
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: () => Promise.resolve(""),
+        } as Response);
+      });
+
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          autoBatchTracing: true,
+        },
+        mockFetch
+      );
+
+      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
+        return {
+          version: "foo",
+          batch_ingest_config: { ...extraBatchIngestConfig },
+          instance_flags: { ...extraInstanceFlags },
+        };
+      });
+
+      const projectName = "__test_batch";
+      const runId = uuidv4();
+      const { dottedOrder } = convertToDottedOrderFormat(
+        new Date().getTime() / 1000,
+        runId
+      );
+
+      await client.createRun({
+        id: runId,
+        project_name: projectName,
+        name: "test_run",
+        run_type: "llm",
+        inputs: { text: "hello world" },
+        trace_id: runId,
+        dotted_order: dottedOrder,
+      });
+
+      await client.awaitPendingTraceBatches();
+
+      // Should have made 3 calls (2 failures + 1 success)
+      expect(calls.length).toBe(3);
+      expect(calls[0][0]).toBe(expectedTraceURL);
+      expect(calls[1][0]).toBe(expectedTraceURL);
+      expect(calls[2][0]).toBe(expectedTraceURL);
+    });
   }
 );

@@ -1669,7 +1669,11 @@ export class Client implements LangSmithTracingClientInterface {
           } as RequestInit
         );
 
-        await raiseForStatus(response, `Failed to send multipart request`, true);
+        await raiseForStatus(
+          response,
+          `Failed to send multipart request`,
+          true
+        );
 
         return response;
       });

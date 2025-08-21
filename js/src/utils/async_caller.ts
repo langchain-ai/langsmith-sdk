@@ -4,6 +4,10 @@ import { _getFetchImplementation } from "../singletons/fetch.js";
 
 const STATUS_RETRYABLE = [
   429, // Too Many Requests
+  500, // Internal Server Error
+  502, // Bad Gateway
+  503, // Service Unavailable
+  504, // Gateway Timeout
 ];
 
 type ResponseCallback = (response?: Response) => Promise<boolean>;
@@ -111,13 +115,13 @@ export class AsyncCaller {
                 throw error;
               }
               const response: Response | undefined = error?.response;
+              if (onFailedResponseHook) {
+                await onFailedResponseHook(response);
+              }
               const status = response?.status ?? error?.status;
               if (status) {
                 if (!STATUS_RETRYABLE.includes(+status)) {
                   throw error;
-                }
-                if (onFailedResponseHook) {
-                  await onFailedResponseHook(response);
                 }
               }
             },
