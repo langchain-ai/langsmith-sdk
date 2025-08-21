@@ -2121,9 +2121,9 @@ export class Client implements LangSmithTracingClientInterface {
         const res = await this._fetch(url, {
           method: "POST",
           headers: { ...this.headers, "Content-Type": "application/json" },
-          body: JSON.stringify(filteredPayload),
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
+          body: JSON.stringify(filteredPayload),
         });
         await raiseForStatus(res, `Failed to fetch ${path}`);
         return res;
