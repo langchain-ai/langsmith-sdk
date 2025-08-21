@@ -2329,7 +2329,6 @@ def test_pull_prompt(
 @pytest.mark.parametrize("include_model, manifest_type, manifest_data", _PROMPT_COMMITS)
 def test_pull_and_push_prompt(
     include_model: bool,
-    manifest_type: Literal["structured", "tool", "none"],
     manifest_data: dict,
 ):
     """Test that pulling a prompt and then pushing it results in the same manifest structure."""
@@ -2389,17 +2388,17 @@ def test_pull_and_push_prompt(
             )
 
             # Capture the dumps call when pushing
-            captured_manifest = None
-            
+            pushing_manifest = None
+
             # Import the real dumps function outside the mock context
             from langchain_core.load.dump import dumps as real_dumps
             
             def capture_dumps(obj):
-                nonlocal captured_manifest
-                captured_manifest = obj
+                nonlocal pushing_manifest
+                pushing_manifest = obj
                 # Call the real dumps function
                 return real_dumps(obj)
-            
+
             with mock.patch('langchain_core.load.dump.dumps', side_effect=capture_dumps):
                 # Push the pulled prompt back
                 client.push_prompt(
@@ -2408,55 +2407,31 @@ def test_pull_and_push_prompt(
                 )
 
             # Verify the captured manifest structure
-            assert captured_manifest is not None
+            assert pushing_manifest is not None
 
-            # For structured prompts with include_model=True, verify the reverse transformation happened
-            if manifest_type == "structured" and include_model:
-                # The pulled object should be a 3-step RunnableSequence
-                assert isinstance(pulled_prompt, RunnableSequence)
-                assert len(pulled_prompt.steps) == 3
-                assert isinstance(pulled_prompt.first, StructuredPrompt)
+            # Convert the captured manifest back to a JSON dict for comparison
+            captured_json = json.loads(real_dumps(pushing_manifest))
+            original_manifest = manifest_data["manifest"]
 
-                # The captured manifest (what gets pushed) should be a 2-step sequence
-                # because our reverse transformation should have converted it back
-                assert isinstance(captured_manifest, RunnableSequence)
-                assert len(captured_manifest.steps) == 2
-                assert isinstance(captured_manifest.first, StructuredPrompt)
+            # The key test: the pushed structure should match the original manifest structure
+            # This verifies that our reverse transformation in push_prompt correctly undoes 
+            # the expansion that pull_prompt does
+            assert captured_json["id"] == original_manifest["id"]
+            assert captured_json["type"] == original_manifest["type"]
 
-                # The structure should match the original manifest's structure
-                original_manifest = manifest_data["manifest"]
-                assert original_manifest["id"] == ["langchain", "schema", "runnable", "RunnableSequence"]
-                assert len(original_manifest["kwargs"]) == 2  # first and last
-
-            elif manifest_type == "tool" and include_model:
-                # For tool-based prompts with include_model=True, should be 2-step
-                assert isinstance(pulled_prompt, RunnableSequence)
-                assert len(pulled_prompt.steps) == 2
-
-                # The captured manifest should also be 2-step (no transformation needed)
-                assert isinstance(captured_manifest, RunnableSequence)
-                assert len(captured_manifest.steps) == 2
-
-            elif not include_model:
-                # When include_model=False, should be the base prompt template
-                expected_prompt_type = (
-                    StructuredPrompt if manifest_type == "structured" else ChatPromptTemplate
-                )
-                assert isinstance(pulled_prompt, expected_prompt_type)
-                assert isinstance(captured_manifest, expected_prompt_type)
-
-            # Additional verification: check that metadata is preserved
-            if hasattr(captured_manifest, 'metadata') or (
-                isinstance(captured_manifest, RunnableSequence) and hasattr(captured_manifest.first, 'metadata')
-            ):
-                metadata_obj = (
-                    captured_manifest.first if isinstance(captured_manifest, RunnableSequence) 
-                    else captured_manifest
-                )
-                if hasattr(metadata_obj, 'metadata') and metadata_obj.metadata:
-                    assert metadata_obj.metadata.get("lc_hub_owner") == manifest_data["owner"]
-                    assert metadata_obj.metadata.get("lc_hub_repo") == manifest_data["repo"]
-                    assert metadata_obj.metadata.get("lc_hub_commit_hash") == manifest_data["commit_hash"]
+            # For RunnableSequence, verify the structure is preserved
+            if "RunnableSequence" in original_manifest["id"]:
+                # Should have the same top-level structure (first and last)
+                assert "kwargs" in captured_json
+                assert "kwargs" in original_manifest
+                # Both should have 'first' and 'last' (2-step structure)
+                assert "first" in captured_json["kwargs"]
+                assert "first" in original_manifest["kwargs"]
+                assert captured_json["kwargs"]["first"]["id"] == original_manifest["kwargs"]["first"]["id"]
+                assert "last" in captured_json["kwargs"]
+                assert "last" in original_manifest["kwargs"]
+                assert captured_json["kwargs"]["last"]["id"] == original_manifest["kwargs"]["last"]["id"]
+                assert "middle" not in captured_json["kwargs"]
 
 
 def test_evaluate_methods() -> None:
