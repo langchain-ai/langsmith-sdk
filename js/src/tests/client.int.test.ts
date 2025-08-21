@@ -1453,10 +1453,9 @@ test("update examples multipart", async () => {
     },
   };
 
-  let response = await client.updateExamplesMultipart(dataset.id, [
-    exampleUpdate1,
-  ]);
-  expect(response).toHaveProperty("error");
+  await expect(
+    client.updateExamplesMultipart(dataset.id, [exampleUpdate1])
+  ).rejects.toThrow();
 
   const exampleUpdate2: ExampleUpdateWithAttachments = {
     id: exampleId,
@@ -1467,8 +1466,9 @@ test("update examples multipart", async () => {
     },
   };
 
-  response = await client.updateExamplesMultipart(dataset.id, [exampleUpdate2]);
-  expect(response).toHaveProperty("error");
+  await expect(
+    client.updateExamplesMultipart(dataset.id, [exampleUpdate2])
+  ).rejects.toThrow();
 
   const exampleUpdate3: ExampleUpdateWithAttachments = {
     id: exampleId,
