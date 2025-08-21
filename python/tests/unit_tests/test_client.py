@@ -2326,6 +2326,139 @@ def test_pull_prompt(
             assert not isinstance(result, StructuredPrompt)
 
 
+@pytest.mark.parametrize("include_model, manifest_type, manifest_data", _PROMPT_COMMITS)
+def test_pull_and_push_prompt(
+    include_model: bool,
+    manifest_type: Literal["structured", "tool", "none"],
+    manifest_data: dict,
+):
+    """Test that pulling a prompt and then pushing it results in the same manifest structure."""
+    try:
+        from langchain_core.prompts import ChatPromptTemplate
+        from langchain_core.prompts.structured import StructuredPrompt
+        from langchain_core.runnables import RunnableSequence
+    except ImportError:
+        pytest.skip("Skipping test that requires langchain")
+
+    # Create a mock session for pull_prompt and push_prompt
+    mock_session = mock.Mock()
+    def mock_request(method, url, **kwargs):
+        if method == "GET" and "/commits/" in url:
+            return mock.Mock(json=lambda: manifest_data)
+        elif method == "POST" and "/commits/" in url:
+            return mock.Mock(json=lambda: {"commit": {"commit_hash": "new_hash"}})
+        else:
+            return mock.Mock(json=lambda: {})
+    
+    mock_session.request.side_effect = mock_request
+
+    # Create a client with Info pre-created and version >= 0.6
+    info = ls_schemas.LangSmithInfo(version="0.6.0")
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="fake_api_key",
+        session=mock_session,
+        info=info,
+        auto_batch_tracing=False,
+    )
+
+    # Mock the necessary methods for push_prompt and settings
+    mock_settings = ls_schemas.LangSmithSettings(
+        id="test-tenant-id",
+        display_name="Test Tenant",
+        created_at=datetime.now(),
+    )
+    
+    with mock.patch('langsmith.client.Client._prompt_exists', return_value=True), \
+         mock.patch('langsmith.client.Client._get_latest_commit_hash', return_value="parent_hash"), \
+         mock.patch('langsmith.client.Client._get_settings', return_value=mock_settings):
+
+        with mock.patch.dict(
+            "os.environ",
+            {
+                "ANTHROPIC_API_KEY": "test_anthropic_key", 
+                "OPENAI_API_KEY": "test_openai_key",
+                "LANGSMITH_API_KEY": "fake_api_key",
+                "LANGSMITH_ENDPOINT": "http://localhost:1984",
+            },
+            clear=True,
+        ):
+            # Pull the prompt
+            pulled_prompt = client.pull_prompt(
+                prompt_identifier=manifest_data["repo"], include_model=include_model
+            )
+
+            # Capture the dumps call when pushing
+            captured_manifest = None
+            
+            # Import the real dumps function outside the mock context
+            from langchain_core.load.dump import dumps as real_dumps
+            
+            def capture_dumps(obj):
+                nonlocal captured_manifest
+                captured_manifest = obj
+                # Call the real dumps function
+                return real_dumps(obj)
+            
+            with mock.patch('langchain_core.load.dump.dumps', side_effect=capture_dumps):
+                # Push the pulled prompt back
+                client.push_prompt(
+                    prompt_identifier=manifest_data["repo"],
+                    object=pulled_prompt
+                )
+
+            # Verify the captured manifest structure
+            assert captured_manifest is not None
+
+            # For structured prompts with include_model=True, verify the reverse transformation happened
+            if manifest_type == "structured" and include_model:
+                # The pulled object should be a 3-step RunnableSequence
+                assert isinstance(pulled_prompt, RunnableSequence)
+                assert len(pulled_prompt.steps) == 3
+                assert isinstance(pulled_prompt.first, StructuredPrompt)
+
+                # The captured manifest (what gets pushed) should be a 2-step sequence
+                # because our reverse transformation should have converted it back
+                assert isinstance(captured_manifest, RunnableSequence)
+                assert len(captured_manifest.steps) == 2
+                assert isinstance(captured_manifest.first, StructuredPrompt)
+
+                # The structure should match the original manifest's structure
+                original_manifest = manifest_data["manifest"]
+                assert original_manifest["id"] == ["langchain", "schema", "runnable", "RunnableSequence"]
+                assert len(original_manifest["kwargs"]) == 2  # first and last
+
+            elif manifest_type == "tool" and include_model:
+                # For tool-based prompts with include_model=True, should be 2-step
+                assert isinstance(pulled_prompt, RunnableSequence)
+                assert len(pulled_prompt.steps) == 2
+
+                # The captured manifest should also be 2-step (no transformation needed)
+                assert isinstance(captured_manifest, RunnableSequence)
+                assert len(captured_manifest.steps) == 2
+
+            elif not include_model:
+                # When include_model=False, should be the base prompt template
+                expected_prompt_type = (
+                    StructuredPrompt if manifest_type == "structured" else ChatPromptTemplate
+                )
+                assert isinstance(pulled_prompt, expected_prompt_type)
+                assert isinstance(captured_manifest, expected_prompt_type)
+
+            # Additional verification: check that metadata is preserved
+            if hasattr(captured_manifest, 'metadata') or (
+                isinstance(captured_manifest, RunnableSequence) and hasattr(captured_manifest.first, 'metadata')
+            ):
+                metadata_obj = (
+                    captured_manifest.first if isinstance(captured_manifest, RunnableSequence) 
+                    else captured_manifest
+                )
+                if hasattr(metadata_obj, 'metadata') and metadata_obj.metadata:
+                    assert metadata_obj.metadata.get("lc_hub_owner") == manifest_data["owner"]
+                    assert metadata_obj.metadata.get("lc_hub_repo") == manifest_data["repo"]
+                    assert metadata_obj.metadata.get("lc_hub_commit_hash") == manifest_data["commit_hash"]
+
+
 def test_evaluate_methods() -> None:
     client_args = set(inspect.signature(Client.evaluate).parameters).difference(
         {"self"}
