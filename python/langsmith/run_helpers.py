@@ -190,7 +190,7 @@ def ensure_traceable(
     metadata: Optional[Mapping[str, Any]] = None,
     tags: Optional[list[str]] = None,
     client: Optional[ls_client.Client] = None,
-    reduce_fn: Optional[Callable[[Sequence], dict]] = None,
+    reduce_fn: Optional[Callable[[Sequence], Union[dict, str]]] = None,
     project_name: Optional[str] = None,
     process_inputs: Optional[Callable[[dict], dict]] = None,
     process_outputs: Optional[Callable[..., dict]] = None,
