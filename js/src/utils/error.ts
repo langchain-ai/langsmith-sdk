@@ -74,13 +74,13 @@ export class LangSmithConflictError extends Error {
 export async function raiseForStatus(
   response: Response,
   context: string,
-  consume?: boolean
+  consumeOnSuccess?: boolean
 ): Promise<void> {
-  // consume the response body to release the connection
-  // https://undici.nodejs.org/#/?id=garbage-collection
   let errorBody;
   if (response.ok) {
-    if (consume) {
+    // consume the response body to release the connection
+    // https://undici.nodejs.org/#/?id=garbage-collection
+    if (consumeOnSuccess) {
       errorBody = await response.text();
     }
     return;

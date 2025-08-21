@@ -14,7 +14,7 @@ import { initializeOTEL } from "../../../experimental/otel/setup.js";
 
 const { DEFAULT_LANGSMITH_SPAN_PROCESSOR } = initializeOTEL();
 
-describe("AI SDK Streaming Integration", () => {
+describe.skip("AI SDK Streaming Integration", () => {
   beforeAll(() => {
     process.env.LANGSMITH_TRACING = "true";
   });

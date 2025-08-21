@@ -134,6 +134,7 @@ export interface ComparisonEvaluationResults {
   results: ComparisonEvaluationResultRow[];
 }
 
+/** @deprecated Use `evaluate` and pass two experiments as targets. */
 export async function evaluateComparative(
   experiments:
     | Array<string>
