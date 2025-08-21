@@ -2207,11 +2207,13 @@ export class Client implements LangSmithTracingClientInterface {
       Object.entries(payload).filter(([_, value]) => value !== undefined)
     );
 
+    const body = JSON.stringify(filteredPayload);
+
     const response = await this.caller.call(async () => {
       const res = await this._getFetch()(`${this.apiUrl}/runs/stats`, {
         method: "POST",
         headers: this.headers,
-        body: JSON.stringify(filteredPayload),
+        body,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       });
@@ -4721,7 +4723,7 @@ export class Client implements LangSmithTracingClientInterface {
         }
       );
 
-      if (response?.status === 404) {
+      if (res?.status === 404) {
         return null;
       }
       await raiseForStatus(res, "get prompt");

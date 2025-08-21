@@ -5,9 +5,6 @@ import { _getFetchImplementation } from "../singletons/fetch.js";
 const STATUS_RETRYABLE = [
   429, // Too Many Requests
 ];
-const STATUS_IGNORE = [
-  409, // Conflict
-];
 
 type ResponseCallback = (response?: Response) => Promise<boolean>;
 
@@ -116,9 +113,7 @@ export class AsyncCaller {
               const response: Response | undefined = error?.response;
               const status = response?.status ?? error?.status;
               if (status) {
-                if (STATUS_IGNORE.includes(+status)) {
-                  return;
-                } else if (!STATUS_RETRYABLE.includes(+status)) {
+                if (!STATUS_RETRYABLE.includes(+status)) {
                   throw error;
                 }
                 if (onFailedResponseHook) {

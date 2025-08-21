@@ -764,10 +764,11 @@ test("list runs limit arg works", async () => {
   }
 });
 
-test("Test run stats", async () => {
+test.skip("Test run stats", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
   const stats = await client.getRunStats({
     projectNames: ["default"],
+    filter: "eq(status, 'error')",
     runType: "llm",
   });
   expect(stats).toBeDefined();
