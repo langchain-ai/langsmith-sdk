@@ -116,7 +116,10 @@ export class AsyncCaller {
               }
               const response: Response | undefined = error?.response;
               if (onFailedResponseHook) {
-                await onFailedResponseHook(response);
+                const handled = await onFailedResponseHook(response);
+                if (handled) {
+                  return;
+                }
               }
               const status = response?.status ?? error?.status;
               if (status) {
