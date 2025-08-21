@@ -7269,13 +7269,37 @@ class Client:
 
         try:
             from langchain_core.load.dump import dumps
+            from langchain_core.language_models.base import BaseLanguageModel
+            from langchain_core.output_parsers import BaseOutputParser
+            from langchain_core.prompts.structured import StructuredPrompt
+            from langchain_core.runnables.base import RunnableBinding, RunnableSequence
         except ImportError:
             raise ImportError(
                 "The client.create_commit function requires the langchain-core"
                 "package to run.\nInstall with `pip install langchain-core`"
             )
 
-        json_object = dumps(object)
+        # Transform 3-step RunnableSequence back to 2-step for structured prompts
+        # See pull_prompt for the forward transformation
+        processed_object = object
+        if (
+            isinstance(object, RunnableSequence)
+            and len(object.steps) == 3
+            and isinstance(object.first, StructuredPrompt)
+            and isinstance(object.steps[1], (BaseLanguageModel, RunnableBinding))
+            and isinstance(object.last, BaseOutputParser)
+        ):
+            # Convert from: first | middle | last
+            # Back to: first | bound_middle_with_kwargs
+            middle_step = object.steps[1]
+            if isinstance(middle_step, RunnableBinding):
+                # If middle step is already bound, use it directly
+                processed_object = RunnableSequence(object.first, middle_step)
+            else:
+                # If middle step is a bare language model, keep it as is
+                processed_object = RunnableSequence(object.first, middle_step)
+
+        json_object = dumps(processed_object)
         manifest_dict = json.loads(json_object)
 
         owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
@@ -7526,6 +7550,9 @@ class Client:
                     "lc_hub_commit_hash": prompt_object.commit_hash,
                 }
             )
+        
+        # Transform 2-step RunnableSequence to 3-step for structured prompts
+        # See create_commit for the reverse transformation
         if (
             include_model
             and isinstance(prompt, RunnableSequence)

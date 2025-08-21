@@ -2646,6 +2646,114 @@ def test_pull_prompt(
             assert not isinstance(result, StructuredPrompt)
 
 
+@pytest.mark.parametrize("include_model, manifest_type, manifest_data", _PROMPT_COMMITS)
+def test_pull_and_push_prompt(
+    include_model: bool,
+    manifest_data: dict,
+):
+    """Test that pulling a prompt and then pushing it results in the same manifest structure."""
+    try:
+        from langchain_core.prompts import ChatPromptTemplate
+        from langchain_core.prompts.structured import StructuredPrompt
+        from langchain_core.runnables import RunnableSequence
+    except ImportError:
+        pytest.skip("Skipping test that requires langchain")
+
+    # Create a mock session for pull_prompt and push_prompt
+    mock_session = mock.Mock()
+    def mock_request(method, url, **kwargs):
+        if method == "GET" and "/commits/" in url:
+            return mock.Mock(json=lambda: manifest_data)
+        elif method == "POST" and "/commits/" in url:
+            return mock.Mock(json=lambda: {"commit": {"commit_hash": "new_hash"}})
+        else:
+            return mock.Mock(json=lambda: {})
+    
+    mock_session.request.side_effect = mock_request
+
+    # Create a client with Info pre-created and version >= 0.6
+    info = ls_schemas.LangSmithInfo(version="0.6.0")
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="fake_api_key",
+        session=mock_session,
+        info=info,
+        auto_batch_tracing=False,
+    )
+
+    # Mock the necessary methods for push_prompt and settings
+    mock_settings = ls_schemas.LangSmithSettings(
+        id="test-tenant-id",
+        display_name="Test Tenant",
+        created_at=datetime.now(),
+    )
+    
+    with mock.patch('langsmith.client.Client._prompt_exists', return_value=True), \
+         mock.patch('langsmith.client.Client._get_latest_commit_hash', return_value="parent_hash"), \
+         mock.patch('langsmith.client.Client._get_settings', return_value=mock_settings):
+
+        with mock.patch.dict(
+            "os.environ",
+            {
+                "ANTHROPIC_API_KEY": "test_anthropic_key", 
+                "OPENAI_API_KEY": "test_openai_key",
+                "LANGSMITH_API_KEY": "fake_api_key",
+                "LANGSMITH_ENDPOINT": "http://localhost:1984",
+            },
+            clear=True,
+        ):
+            # Pull the prompt
+            pulled_prompt = client.pull_prompt(
+                prompt_identifier=manifest_data["repo"], include_model=include_model
+            )
+
+            # Capture the dumps call when pushing
+            pushing_manifest = None
+
+            # Import the real dumps function outside the mock context
+            from langchain_core.load.dump import dumps as real_dumps
+            
+            def capture_dumps(obj):
+                nonlocal pushing_manifest
+                pushing_manifest = obj
+                # Call the real dumps function
+                return real_dumps(obj)
+
+            with mock.patch('langchain_core.load.dump.dumps', side_effect=capture_dumps):
+                # Push the pulled prompt back
+                client.push_prompt(
+                    prompt_identifier=manifest_data["repo"],
+                    object=pulled_prompt
+                )
+
+            # Verify the captured manifest structure
+            assert pushing_manifest is not None
+
+            # Convert the captured manifest back to a JSON dict for comparison
+            captured_json = json.loads(real_dumps(pushing_manifest))
+            original_manifest = manifest_data["manifest"]
+
+            # The key test: the pushed structure should match the original manifest structure
+            # This verifies that our reverse transformation in push_prompt correctly undoes 
+            # the expansion that pull_prompt does
+            assert captured_json["id"] == original_manifest["id"]
+            assert captured_json["type"] == original_manifest["type"]
+
+            # For RunnableSequence, verify the structure is preserved
+            if "RunnableSequence" in original_manifest["id"]:
+                # Should have the same top-level structure (first and last)
+                assert "kwargs" in captured_json
+                assert "kwargs" in original_manifest
+                # Both should have 'first' and 'last' (2-step structure)
+                assert "first" in captured_json["kwargs"]
+                assert "first" in original_manifest["kwargs"]
+                assert captured_json["kwargs"]["first"]["id"] == original_manifest["kwargs"]["first"]["id"]
+                assert "last" in captured_json["kwargs"]
+                assert "last" in original_manifest["kwargs"]
+                assert captured_json["kwargs"]["last"]["id"] == original_manifest["kwargs"]["last"]["id"]
+                assert "middle" not in captured_json["kwargs"]
+
+
 def test_evaluate_methods() -> None:
     client_args = set(inspect.signature(Client.evaluate).parameters).difference(
         {"self"}
