@@ -1232,9 +1232,9 @@ export class Client implements LangSmithTracingClientInterface {
       const res = await this._fetch(`${options?.apiUrl ?? this.apiUrl}/runs`, {
         method: "POST",
         headers,
-        body,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
+        body,
       });
       await raiseForStatus(res, "create run", true);
       return res;
@@ -1653,10 +1653,10 @@ export class Client implements LangSmithTracingClientInterface {
       return this._fetch(`${options?.apiUrl ?? this.apiUrl}/runs/multipart`, {
         method: "POST",
         headers,
-        body: transformedBody,
         duplex: "half",
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
+        body: transformedBody,
       } as RequestInit);
     };
 
@@ -1767,9 +1767,9 @@ export class Client implements LangSmithTracingClientInterface {
         {
           method: "PATCH",
           headers,
-          body,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
+          body,
         }
       );
       await raiseForStatus(res, "update run", true);
@@ -2207,16 +2207,16 @@ export class Client implements LangSmithTracingClientInterface {
       const res = await this._fetch(`${this.apiUrl}/runs/stats`, {
         method: "POST",
         headers: this.headers,
-        body,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
+        body,
       });
       await raiseForStatus(res, "get run stats");
       return res;
     });
 
     const result = await response.json();
-    return result as any;
+    return result;
   }
 
   public async shareRun(
@@ -2233,9 +2233,9 @@ export class Client implements LangSmithTracingClientInterface {
       const res = await this._fetch(`${this.apiUrl}/runs/${runId}/share`, {
         method: "PUT",
         headers: this.headers,
-        body,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
+        body,
       });
       await raiseForStatus(res, "share run");
       return res;
@@ -2368,9 +2368,9 @@ export class Client implements LangSmithTracingClientInterface {
         {
           method: "PUT",
           headers: this.headers,
-          body,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
+          body,
         }
       );
       await raiseForStatus(res, "share dataset");
@@ -2508,9 +2508,9 @@ export class Client implements LangSmithTracingClientInterface {
       const res = await this._fetch(endpoint, {
         method: "POST",
         headers: { ...this.headers, "Content-Type": "application/json" },
-        body: serializedBody,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
+        body: serializedBody,
       });
       await raiseForStatus(res, "create project");
       return res;
@@ -2550,9 +2550,9 @@ export class Client implements LangSmithTracingClientInterface {
       const res = await this._fetch(endpoint, {
         method: "PATCH",
         headers: { ...this.headers, "Content-Type": "application/json" },
-        body,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
+        body,
       });
       await raiseForStatus(res, "update project");
       return res;
@@ -2815,9 +2815,9 @@ export class Client implements LangSmithTracingClientInterface {
       const res = await this._fetch(url, {
         method: "POST",
         headers: this.headers,
-        body: formData,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
+        body: formData,
       });
       await raiseForStatus(res, "upload CSV");
       return res;
@@ -2862,9 +2862,9 @@ export class Client implements LangSmithTracingClientInterface {
       const res = await this._fetch(`${this.apiUrl}/datasets`, {
         method: "POST",
         headers: { ...this.headers, "Content-Type": "application/json" },
-        body: serializedBody,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
+        body: serializedBody,
       });
       await raiseForStatus(res, "create dataset");
       return res;
@@ -3054,9 +3054,9 @@ export class Client implements LangSmithTracingClientInterface {
       const res = await this._fetch(`${this.apiUrl}/datasets/${_datasetId}`, {
         method: "PATCH",
         headers: { ...this.headers, "Content-Type": "application/json" },
-        body,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
+        body,
       });
       await raiseForStatus(res, "update dataset");
       return res;
@@ -3104,9 +3104,9 @@ export class Client implements LangSmithTracingClientInterface {
         {
           method: "PUT",
           headers: { ...this.headers, "Content-Type": "application/json" },
-          body,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
+          body,
         }
       );
       await raiseForStatus(res, "update dataset tags", true);
@@ -3135,17 +3135,16 @@ export class Client implements LangSmithTracingClientInterface {
     } else {
       throw new Error("Must provide datasetName or datasetId");
     }
-    const response = await this.caller.call(async () => {
+    await this.caller.call(async () => {
       const res = await this._fetch(this.apiUrl + path, {
         method: "DELETE",
         headers: this.headers,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       });
-      await raiseForStatus(res, `delete ${path}`);
+      await raiseForStatus(res, `delete ${path}`, true);
       return res;
     });
-    await response.json();
   }
 
   public async indexDataset({
@@ -3178,9 +3177,9 @@ export class Client implements LangSmithTracingClientInterface {
         {
           method: "POST",
           headers: { ...this.headers, "Content-Type": "application/json" },
-          body,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
+          body,
         }
       );
       await raiseForStatus(res, "index dataset");
@@ -3244,11 +3243,11 @@ export class Client implements LangSmithTracingClientInterface {
       const res = await this._fetch(
         `${this.apiUrl}/datasets/${datasetId}/search`,
         {
-          method: "POST",
           headers: { ...this.headers, "Content-Type": "application/json" },
-          body,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
+          method: "POST",
+          body,
         }
       );
       await raiseForStatus(res, "fetch similar examples");
@@ -3593,17 +3592,16 @@ export class Client implements LangSmithTracingClientInterface {
   public async deleteExample(exampleId: string): Promise<void> {
     assertUuid(exampleId);
     const path = `/examples/${exampleId}`;
-    const response = await this.caller.call(async () => {
+    await this.caller.call(async () => {
       const res = await this._fetch(this.apiUrl + path, {
         method: "DELETE",
         headers: this.headers,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       });
-      await raiseForStatus(res, `delete ${path}`);
+      await raiseForStatus(res, `delete ${path}`, true);
       return res;
     });
-    await response.json();
   }
 
   /**
@@ -3810,9 +3808,9 @@ export class Client implements LangSmithTracingClientInterface {
         {
           method: "PUT",
           headers: { ...this.headers, "Content-Type": "application/json" },
-          body,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
+          body,
         }
       );
       await raiseForStatus(res, "update dataset splits", true);
@@ -3936,9 +3934,9 @@ export class Client implements LangSmithTracingClientInterface {
       const res = await this._fetch(url, {
         method: "POST",
         headers: { ...this.headers, "Content-Type": "application/json" },
-        body,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
+        body,
       });
       await raiseForStatus(res, "create feedback", true);
       return res;
@@ -3979,9 +3977,9 @@ export class Client implements LangSmithTracingClientInterface {
       const res = await this._fetch(`${this.apiUrl}/feedback/${feedbackId}`, {
         method: "PATCH",
         headers: { ...this.headers, "Content-Type": "application/json" },
-        body,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
+        body,
       });
       await raiseForStatus(res, "update feedback", true);
       return res;
@@ -3998,17 +3996,16 @@ export class Client implements LangSmithTracingClientInterface {
   public async deleteFeedback(feedbackId: string): Promise<void> {
     assertUuid(feedbackId);
     const path = `/feedback/${feedbackId}`;
-    const response = await this.caller.call(async () => {
+    await this.caller.call(async () => {
       const res = await this._fetch(this.apiUrl + path, {
         method: "DELETE",
         headers: this.headers,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       });
-      await raiseForStatus(res, `delete ${path}`);
+      await raiseForStatus(res, `delete ${path}`, true);
       return res;
     });
-    await response.json();
   }
 
   public async *listFeedback({
@@ -4091,9 +4088,9 @@ export class Client implements LangSmithTracingClientInterface {
       const res = await this._fetch(`${this.apiUrl}/feedback/tokens`, {
         method: "POST",
         headers: { ...this.headers, "Content-Type": "application/json" },
-        body: serializedBody,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
+        body: serializedBody,
       });
       await raiseForStatus(res, "create presigned feedback token");
       return res;
@@ -4152,9 +4149,9 @@ export class Client implements LangSmithTracingClientInterface {
       const res = await this._fetch(`${this.apiUrl}/datasets/comparative`, {
         method: "POST",
         headers: { ...this.headers, "Content-Type": "application/json" },
-        body: serializedBody,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
+        body: serializedBody,
       });
       await raiseForStatus(res, "create comparative experiment");
       return res;
@@ -4330,9 +4327,9 @@ export class Client implements LangSmithTracingClientInterface {
       const res = await this._fetch(`${this.apiUrl}/annotation-queues`, {
         method: "POST",
         headers: { ...this.headers, "Content-Type": "application/json" },
-        body: serializedBody,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
+        body: serializedBody,
       });
       await raiseForStatus(res, "create annotation queue");
       return res;
@@ -4391,9 +4388,9 @@ export class Client implements LangSmithTracingClientInterface {
         {
           method: "PATCH",
           headers: { ...this.headers, "Content-Type": "application/json" },
-          body,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
+          body,
         }
       );
       await raiseForStatus(res, "update annotation queue", true);
@@ -4442,9 +4439,9 @@ export class Client implements LangSmithTracingClientInterface {
         {
           method: "POST",
           headers: { ...this.headers, "Content-Type": "application/json" },
-          body,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
+          body,
         }
       );
       await raiseForStatus(res, "add runs to annotation queue", true);
@@ -4550,31 +4547,21 @@ export class Client implements LangSmithTracingClientInterface {
   protected async _getLatestCommitHash(
     promptOwnerAndName: string
   ): Promise<string | undefined> {
-    const res = await this.caller.call(
-      this._fetch,
-      `${this.apiUrl}/commits/${promptOwnerAndName}/?limit=${1}&offset=${0}`,
-      {
-        method: "GET",
-        headers: this.headers,
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
-      }
-    );
-
-    const json = await res.json();
-    if (!res.ok) {
-      const detail =
-        typeof json.detail === "string"
-          ? json.detail
-          : JSON.stringify(json.detail);
-      const error = new Error(
-        `Error ${res.status}: ${res.statusText}\n${detail}`
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${this.apiUrl}/commits/${promptOwnerAndName}/?limit=${1}&offset=${0}`,
+        {
+          method: "GET",
+          headers: this.headers,
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+        }
       );
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (error as any).statusCode = res.status;
-      throw error;
-    }
+      await raiseForStatus(res, "get latest commit hash");
+      return res;
+    });
 
+    const json = await response.json();
     if (json.commits.length === 0) {
       return undefined;
     }
@@ -4593,10 +4580,10 @@ export class Client implements LangSmithTracingClientInterface {
         `${this.apiUrl}/likes/${owner}/${promptName}`,
         {
           method: "POST",
-          body,
           headers: { ...this.headers, "Content-Type": "application/json" },
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
+          body,
         }
       );
       await raiseForStatus(res, `${like ? "like" : "unlike"} prompt`);
@@ -4751,13 +4738,14 @@ export class Client implements LangSmithTracingClientInterface {
       is_public: !!options?.isPublic,
     };
 
+    const body = JSON.stringify(data);
     const response = await this.caller.call(async () => {
       const res = await this._fetch(`${this.apiUrl}/repos/`, {
         method: "POST",
         headers: { ...this.headers, "Content-Type": "application/json" },
-        body: JSON.stringify(data),
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
+        body,
       });
       await raiseForStatus(res, "create prompt");
       return res;
@@ -4796,9 +4784,9 @@ export class Client implements LangSmithTracingClientInterface {
         {
           method: "POST",
           headers: { ...this.headers, "Content-Type": "application/json" },
-          body,
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
+          body,
         }
       );
       await raiseForStatus(res, "create commit");
@@ -4924,6 +4912,8 @@ export class Client implements LangSmithTracingClientInterface {
         {
           method: "PATCH",
           headers: this.headers,
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
           body: formData,
         }
       );
@@ -5036,6 +5026,8 @@ export class Client implements LangSmithTracingClientInterface {
         {
           method: "POST",
           headers: this.headers,
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
           body: formData,
         }
       );
@@ -5085,13 +5077,13 @@ export class Client implements LangSmithTracingClientInterface {
         `${this.apiUrl}/repos/${owner}/${promptName}`,
         {
           method: "PATCH",
-          body,
           headers: {
             ...this.headers,
             "Content-Type": "application/json",
           },
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
+          body,
         }
       );
       await raiseForStatus(res, "update prompt");
@@ -5135,20 +5127,21 @@ export class Client implements LangSmithTracingClientInterface {
   ): Promise<PromptCommit> {
     const [owner, promptName, commitHash] =
       parsePromptIdentifier(promptIdentifier);
-    const response = await this.caller.call(
-      this._fetch,
-      `${this.apiUrl}/commits/${owner}/${promptName}/${commitHash}${
-        options?.includeModel ? "?include_model=true" : ""
-      }`,
-      {
-        method: "GET",
-        headers: this.headers,
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
-      }
-    );
-
-    await raiseForStatus(response, "pull prompt commit");
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${this.apiUrl}/commits/${owner}/${promptName}/${commitHash}${
+          options?.includeModel ? "?include_model=true" : ""
+        }`,
+        {
+          method: "GET",
+          headers: this.headers,
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+        }
+      );
+      await raiseForStatus(res, "pull prompt commit");
+      return res;
+    });
 
     const result = await response.json();
 
