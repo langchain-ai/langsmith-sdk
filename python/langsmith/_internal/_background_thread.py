@@ -40,7 +40,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("langsmith.client")
 
-HTTP_REQUEST_THREAD_POOL = cf.ThreadPoolExecutor(max_workers=cpu_count() * 3)
+LANGSMITH_CLIENT_THREAD_POOL = cf.ThreadPoolExecutor(max_workers=cpu_count() * 3)
 
 
 def _group_batch_by_api_endpoint(
@@ -171,6 +171,56 @@ def _tracing_thread_drain_compressed_buffer(
         # exceptions are logged elsewhere, but we need to make sure the
         # background thread continues to run
         return None, None
+
+
+def _process_buffered_run_ops_batch(
+    client: Client, batch_to_process: list[tuple[str, dict]]
+) -> None:
+    """Process a batch of run operations asynchronously."""
+    try:
+        # Extract just the run dictionaries for process_buffered_run_ops
+        run_dicts = [run_data for _, run_data in batch_to_process]
+        original_ids = [run.get("id") for run in run_dicts]
+
+        # Apply process_buffered_run_ops transformation
+        if client._process_buffered_run_ops is None:
+            raise RuntimeError(
+                "process_buffered_run_ops should not be None when processing batch"
+            )
+        processed_runs = list(client._process_buffered_run_ops(run_dicts))
+
+        # Validate that the transformation preserves run count and IDs
+        if len(processed_runs) != len(run_dicts):
+            raise ValueError(
+                f"process_buffered_run_ops must return the same number of runs. "
+                f"Expected {len(run_dicts)}, got {len(processed_runs)}"
+            )
+
+        processed_ids = [run.get("id") for run in processed_runs]
+        if processed_ids != original_ids:
+            raise ValueError(
+                f"process_buffered_run_ops must preserve run IDs in the same order. "
+                f"Expected {original_ids}, got {processed_ids}"
+            )
+
+        # Process each run and add to compressed traces
+        for (operation, _), processed_run in zip(batch_to_process, processed_runs):
+            if operation == "post":
+                client._create_run(processed_run)
+            elif operation == "patch":
+                client._update_run(processed_run)
+
+        # Trigger data available event
+        if client._data_available_event:
+            client._data_available_event.set()
+    except Exception:
+        # Log errors but don't crash the background thread
+        logger.error(
+            "LangSmith buffered run ops processing error: Failed to process batch.\n"
+            "This does not affect your application's runtime.\n"
+            "Error details:",
+            exc_info=True,
+        )
 
 
 def _tracing_thread_handle_batch(
@@ -687,7 +737,7 @@ def tracing_control_thread_func_compress_parallel(
             # If we have data, submit the send request
             if data_stream is not None:
                 try:
-                    future = HTTP_REQUEST_THREAD_POOL.submit(
+                    future = LANGSMITH_CLIENT_THREAD_POOL.submit(
                         client._send_compressed_multipart_req,
                         data_stream,
                         compressed_traces_info,
@@ -712,7 +762,7 @@ def tracing_control_thread_func_compress_parallel(
                     try:
                         cf.wait(
                             [
-                                HTTP_REQUEST_THREAD_POOL.submit(
+                                LANGSMITH_CLIENT_THREAD_POOL.submit(
                                     client._send_compressed_multipart_req,
                                     data_stream,
                                     compressed_traces_info,
@@ -738,7 +788,7 @@ def tracing_control_thread_func_compress_parallel(
             try:
                 cf.wait(
                     [
-                        HTTP_REQUEST_THREAD_POOL.submit(
+                        LANGSMITH_CLIENT_THREAD_POOL.submit(
                             client._send_compressed_multipart_req,
                             final_data_stream,
                             compressed_traces_info,

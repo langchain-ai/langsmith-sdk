@@ -435,6 +435,10 @@ class Client:
         "_hide_inputs",
         "_hide_outputs",
         "_hide_metadata",
+        "_process_buffered_run_ops",
+        "_run_ops_buffer_size",
+        "_run_ops_buffer_timeout_ms",
+        "_run_ops_buffer_last_flush_time",
         "_info",
         "_write_api_urls",
         "_settings",
@@ -443,6 +447,8 @@ class Client:
         "compressed_traces",
         "_data_available_event",
         "_futures",
+        "_run_ops_buffer",
+        "_run_ops_buffer_lock",
         "otel_exporter",
     ]
 
@@ -465,6 +471,11 @@ class Client:
         hide_inputs: Optional[Union[Callable[[dict], dict], bool]] = None,
         hide_outputs: Optional[Union[Callable[[dict], dict], bool]] = None,
         hide_metadata: Optional[Union[Callable[[dict], dict], bool]] = None,
+        process_buffered_run_ops: Optional[
+            Callable[[Sequence[dict]], Sequence[dict]]
+        ] = None,
+        run_ops_buffer_size: Optional[int] = None,
+        run_ops_buffer_timeout_ms: Optional[float] = None,
         info: Optional[Union[dict, ls_schemas.LangSmithInfo]] = None,
         api_urls: Optional[dict[str, str]] = None,
         otel_tracer_provider: Optional[TracerProvider] = None,
@@ -497,6 +508,17 @@ class Client:
             hide_metadata (Optional[Union[Callable[[dict], dict], bool]]): Whether to hide run metadata when tracing with this client.
                 If True, hides the entire metadata. If a function, applied to
                 all run metadata when creating runs.
+            process_buffered_run_ops (Optional[Callable[[Sequence[dict]], Sequence[dict]]]): A function applied to buffered run operations
+                that allows for modification of the raw run dicts before they are converted to multipart and compressed.
+                This is useful specifically for high throughput tracing where you need to apply a rate-limited API or other
+                costly process to the runs before they are sent to the API. Note that the buffer will only flush automatically
+                when run_ops_buffer_size is reached or a new run is added to the buffer after run_ops_buffer_timeout_ms
+                has elapsed - it will not flush outside of these conditions unless you manually
+                call client.flush(), so be sure to do this before your code exits.
+            run_ops_buffer_size (Optional[int]): Maximum number of run operations to collect in the buffer before applying
+                process_buffered_run_ops and sending to the API. Required when process_buffered_run_ops is provided.
+            run_ops_buffer_timeout_ms (Optional[int]): Maximum time in milliseconds to wait before flushing the run ops buffer
+                when new runs are added. Defaults to 5000. Only used when process_buffered_run_ops is provided.
             info (Optional[ls_schemas.LangSmithInfo]): The information about the LangSmith API.
                 If not provided, it will be fetched from the API.
             api_urls (Optional[Dict[str, str]]): A dictionary of write API URLs and their corresponding API keys.
@@ -567,6 +589,8 @@ class Client:
         self.compressed_traces: Optional[CompressedTraces] = None
         self._data_available_event: Optional[threading.Event] = None
         self._futures: Optional[weakref.WeakSet[cf.Future]] = None
+        self._run_ops_buffer: list[tuple[str, dict]] = []
+        self._run_ops_buffer_lock = threading.Lock()
         self.otel_exporter: Optional[OTELExporter] = None
 
         # Initialize auto batching
@@ -612,6 +636,20 @@ class Client:
             if hide_metadata is not None
             else ls_utils.get_env_var("HIDE_METADATA") == "true"
         )
+        self._process_buffered_run_ops = process_buffered_run_ops
+        self._run_ops_buffer_size = run_ops_buffer_size
+        self._run_ops_buffer_timeout_ms = run_ops_buffer_timeout_ms or 5000
+        self._run_ops_buffer_last_flush_time = time.time()
+
+        # Validate that run_ops_buffer_size is provided when process_buffered_run_ops is used
+        if process_buffered_run_ops is not None and run_ops_buffer_size is None:
+            raise ValueError(
+                "run_ops_buffer_size must be provided when process_buffered_run_ops is specified"
+            )
+        if process_buffered_run_ops is None and run_ops_buffer_size is not None:
+            raise ValueError(
+                "process_buffered_run_ops must be provided when run_ops_buffer_size is specified"
+            )
 
         # To trigger this code, set the `LANGSMITH_USE_PYO3_CLIENT` env var to any value.
         self._pyo3_client = None
@@ -1452,7 +1490,25 @@ class Client:
                     raise ValueError(
                         "Must set dangerously_allow_filesystem=True to allow passing in Paths for attachments."
                     )
+        # If process_buffered_run_ops is enabled, collect run ops in batches
+        # before batching
+        if self._process_buffered_run_ops and not kwargs.get("is_run_ops_buffer_flush"):
+            with self._run_ops_buffer_lock:
+                self._run_ops_buffer.append(("post", run_create))
+                # Process batch when we have enough runs or enough time has passed
+                if self._should_flush_run_ops_buffer():
+                    self._flush_run_ops_buffer()
+                return
+        else:
+            self._create_run(run_create, api_key=api_key, api_url=api_url)
 
+    def _create_run(
+        self,
+        run_create: dict,
+        *,
+        api_key: Optional[str] = None,
+        api_url: Optional[str] = None,
+    ) -> None:
         if (
             # batch ingest requires trace_id and dotted_order to be set
             run_create.get("trace_id") is not None
@@ -1523,11 +1579,11 @@ class Client:
             else:
                 # Neither Rust nor Python batch ingestion is configured,
                 # fall back to the non-batch approach.
-                self._create_run(run_create, api_key=api_key, api_url=api_url)
+                self._create_run_non_batch(run_create, api_key=api_key, api_url=api_url)
         else:
-            self._create_run(run_create, api_key=api_key, api_url=api_url)
+            self._create_run_non_batch(run_create, api_key=api_key, api_url=api_url)
 
-    def _create_run(
+    def _create_run_non_batch(
         self,
         run_create: dict,
         *,
@@ -1600,6 +1656,53 @@ class Client:
         if self._hide_metadata is False:
             return metadata
         return self._hide_metadata(metadata)
+
+    def _should_flush_run_ops_buffer(self) -> bool:
+        """Check if the run ops buffer should be flushed based on size or time."""
+        if not self._run_ops_buffer:
+            return False
+
+        # Check size-based flushing
+        if (
+            self._run_ops_buffer_size is not None
+            and len(self._run_ops_buffer) >= self._run_ops_buffer_size
+        ):
+            return True
+
+        # Check time-based flushing
+        if self._run_ops_buffer_timeout_ms is not None:
+            time_since_last_flush = time.time() - self._run_ops_buffer_last_flush_time
+            if time_since_last_flush >= (self._run_ops_buffer_timeout_ms / 1000):
+                return True
+
+        return False
+
+    def _flush_run_ops_buffer(self) -> None:
+        """Process and flush run ops buffer in a background thread."""
+        if not self._run_ops_buffer:
+            return
+
+        # Copy the buffer contents and clear it immediately to avoid blocking
+        batch_to_process = list(self._run_ops_buffer)
+        self._run_ops_buffer.clear()
+        self._run_ops_buffer_last_flush_time = time.time()
+
+        # Submit the processing to processing thread pool
+        from langsmith._internal._background_thread import (
+            LANGSMITH_CLIENT_THREAD_POOL,
+            _process_buffered_run_ops_batch,
+        )
+
+        try:
+            future = LANGSMITH_CLIENT_THREAD_POOL.submit(
+                _process_buffered_run_ops_batch, self, batch_to_process
+            )
+            # Track the future if we have a futures set
+            if self._futures is not None:
+                self._futures.add(future)
+        except RuntimeError:
+            # Thread pool is shut down, process synchronously as fallback
+            _process_buffered_run_ops_batch(self, batch_to_process)
 
     def _batch_ingest_run_ops(
         self,
@@ -1811,6 +1914,13 @@ class Client:
 
         if not create_dicts and not update_dicts:
             return
+
+        # Apply process_buffered_run_ops function if provided
+        if self._process_buffered_run_ops:
+            if create_dicts:
+                create_dicts = list(self._process_buffered_run_ops(create_dicts))
+            if update_dicts:
+                update_dicts = list(self._process_buffered_run_ops(update_dicts))
 
         self._insert_runtime_env(create_dicts + update_dicts)
 
@@ -2341,10 +2451,34 @@ class Client:
         if reference_example_id is not None:
             data["reference_example_id"] = reference_example_id
 
+        # If process_buffered_run_ops is enabled, collect runs in batches
+        if self._process_buffered_run_ops and not kwargs.get("is_run_ops_buffer_flush"):
+            with self._run_ops_buffer_lock:
+                self._run_ops_buffer.append(("patch", data))
+                # Process batch when we have enough runs or enough time has passed
+                if self._should_flush_run_ops_buffer():
+                    self._flush_run_ops_buffer()
+                return
+        else:
+            self._update_run(data, api_key=api_key, api_url=api_url)
+
+    def _update_run(
+        self,
+        run_update: dict,
+        *,
+        api_key: Optional[str] = None,
+        api_url: Optional[str] = None,
+    ):
+        use_multipart = (
+            (self.tracing_queue is not None or self.compressed_traces is not None)
+            # batch ingest requires trace_id and dotted_order to be set
+            and run_update["trace_id"] is not None
+            and run_update["dotted_order"] is not None
+        )
         if self._pyo3_client is not None:
-            self._pyo3_client.update_run(data)
+            self._pyo3_client.update_run(run_update)
         elif use_multipart:
-            serialized_op = serialize_run_dict(operation="patch", payload=data)
+            serialized_op = serialize_run_dict(operation="patch", payload=run_update)
             if self.compressed_traces is not None:
                 (
                     multipart_form,
@@ -2380,7 +2514,7 @@ class Client:
                 if HAS_OTEL:
                     self.tracing_queue.put(
                         TracingQueueItem(
-                            data["dotted_order"],
+                            run_update["dotted_order"],
                             serialized_op,
                             api_key=api_key,
                             api_url=api_url,
@@ -2392,16 +2526,16 @@ class Client:
                 else:
                     self.tracing_queue.put(
                         TracingQueueItem(
-                            data["dotted_order"],
+                            run_update["dotted_order"],
                             serialized_op,
                             api_key=api_key,
                             api_url=api_url,
                         )
                     )
         else:
-            self._update_run(data, api_key=api_key, api_url=api_url)
+            self._update_run_non_batch(run_update, api_key=api_key, api_url=api_url)
 
-    def _update_run(
+    def _update_run_non_batch(
         self,
         run_update: dict,
         *,
@@ -2454,7 +2588,7 @@ class Client:
 
         # Attempt to drain and send any remaining data
         from langsmith._internal._background_thread import (
-            HTTP_REQUEST_THREAD_POOL,
+            LANGSMITH_CLIENT_THREAD_POOL,
             _tracing_thread_drain_compressed_buffer,
         )
 
@@ -2469,7 +2603,7 @@ class Client:
             # We have data to send
             future = None
             try:
-                future = HTTP_REQUEST_THREAD_POOL.submit(
+                future = LANGSMITH_CLIENT_THREAD_POOL.submit(
                     self._send_compressed_multipart_req,
                     final_data_stream,
                     compressed_traces_info,
@@ -2491,6 +2625,11 @@ class Client:
 
     def flush(self) -> None:
         """Flush either queue or compressed buffer, depending on mode."""
+        # Flush any remaining batch items first
+        if self._process_buffered_run_ops:
+            with self._run_ops_buffer_lock:
+                if self._run_ops_buffer:
+                    self._flush_run_ops_buffer()
         if self.compressed_traces is not None:
             self.flush_compressed_traces()
         elif self.tracing_queue is not None:

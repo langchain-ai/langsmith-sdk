@@ -3333,3 +3333,105 @@ def test_list_runs_with_child_runs(langchain_client: Client):
     finally:
         if langchain_client.has_project(project_name=project_name):
             langchain_client.delete_project(project_name=project_name)
+
+
+def test_run_ops_buffer_integration(langchain_client: Client) -> None:
+    project_name = f"test-run-ops-buffer-{str(uuid.uuid4())[:8]}"
+
+    # Clean up existing project if it exists
+    if langchain_client.has_project(project_name=project_name):
+        langchain_client.delete_project(project_name=project_name)
+
+    # Create client with run_ops_buffer functionality
+    def modify_runs(runs):
+        """Modify run inputs/outputs by adding custom fields and transforming data."""
+        for run in runs:
+            # Add custom metadata
+            if "extra" in run and isinstance(run["extra"], dict):
+                run["extra"]["custom_processed"] = True
+                run["extra"]["processing_timestamp"] = time.time()
+
+            # Modify inputs if they exist
+            if "inputs" in run and isinstance(run["inputs"], dict):
+                run["inputs"]["processed"] = True
+                run["inputs"]["original_input_count"] = len(run["inputs"])
+
+            # Modify outputs if they exist
+            if "outputs" in run and isinstance(run["outputs"], dict):
+                run["outputs"]["processed"] = True
+                run["outputs"]["original_output_count"] = len(run["outputs"])
+
+        return runs
+
+    buffer_client = Client(
+        api_url=langchain_client.api_url,
+        api_key=langchain_client.api_key,
+        process_buffered_run_ops=modify_runs,
+        run_ops_buffer_size=2,  # Small buffer for quick testing
+        run_ops_buffer_timeout_ms=1000,  # 1 second timeout
+    )
+
+    try:
+        # Create test runs that will be buffered and processed
+        run_ids = []
+
+        for i in range(3):
+            run_id = uuid.uuid4()
+            run_ids.append(run_id)
+            start_time = datetime.datetime.now(datetime.timezone.utc)
+            buffer_client.create_run(
+                id=run_id,
+                name=f"test_buffered_run_{i}",
+                run_type="llm",
+                inputs={"text": f"input_{i}", "index": i},
+                project_name=project_name,
+                trace_id=run_id,
+                dotted_order=f"{start_time.strftime('%Y%m%dT%H%M%S%fZ')}{str(run_id)}",
+                start_time=start_time,
+                extra={},
+            )
+
+            # Update with outputs
+            buffer_client.update_run(
+                run_id,
+                outputs={"result": f"output_{i}", "processed_index": i * 2},
+                trace_id=run_id,
+                dotted_order=f"{start_time.strftime('%Y%m%dT%H%M%S%fZ')}{str(run_id)}",
+            )
+
+        # Flush to ensure all runs are processed
+        buffer_client.flush()
+
+        # Wait for runs to be created and processed
+        for run_id in run_ids:
+            wait_for(
+                lambda rid=run_id: _get_run(rid, langchain_client=langchain_client),
+                max_sleep_time=30,
+            )
+
+        # Verify that the modifications were applied in LangSmith
+        for i, run_id in enumerate(run_ids):
+            stored_run = langchain_client.read_run(run_id)
+
+            # Check that custom metadata was added
+            assert stored_run.extra.get("custom_processed") is True
+            assert "processing_timestamp" in stored_run.extra
+
+            # Check that inputs were modified
+            assert stored_run.inputs["processed"] is True
+            assert stored_run.inputs["original_input_count"] == 3  # text + index
+            assert stored_run.inputs["text"] == f"input_{i}"
+            assert stored_run.inputs["index"] == i
+
+            # Check that outputs were modified
+            assert stored_run.outputs["processed"] is True
+            assert (
+                stored_run.outputs["original_output_count"] == 3
+            )  # result + processed_index
+            assert stored_run.outputs["result"] == f"output_{i}"
+            assert stored_run.outputs["processed_index"] == i * 2
+
+    finally:
+        # Clean up
+        if buffer_client.has_project(project_name=project_name):
+            buffer_client.delete_project(project_name=project_name)
