@@ -100,7 +100,7 @@ describe("Client timeout and retry behavior", () => {
     expect(requestCount).toBe(3); // Should have made 3 requests (2 failures + 1 success)
   });
 
-  it("should fail after max retries on persistent timeout", async () => {
+  it("should not retry on timeout", async () => {
     testMode = "timeout";
     requestCount = 0;
 
@@ -111,13 +111,7 @@ describe("Client timeout and retry behavior", () => {
       autoBatchTracing: true,
     });
 
-    // Override batchIngestCaller with lower max retries for faster test
-    (client as any).batchIngestCaller = new AsyncCaller({
-      maxRetries: 2,
-      maxConcurrency: 1,
-    });
-
-    // Test should fail after exhausting retries due to network timeout
     await expect(client.readRun(v4())).rejects.toThrow();
+    expect(requestCount).toBe(1);
   });
 });
