@@ -1925,7 +1925,7 @@ test("traceable wrapper with getCurrentRunTree", async () => {
 test("traceable wrapper with aggregator function", async () => {
   const { client, callSpy } = mockClient();
   const runId = uuidv4();
-  let tracedOutput: string = "";
+  let tracedOutput = "";
 
   // Mock a streaming function that yields chunks
   async function* mockStreamingFunction(input: string) {
