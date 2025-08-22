@@ -2649,6 +2649,7 @@ def test_pull_prompt(
 @pytest.mark.parametrize("include_model, manifest_type, manifest_data", _PROMPT_COMMITS)
 def test_pull_and_push_prompt(
     include_model: bool,
+    manifest_type: str,
     manifest_data: dict,
 ):
     """Test that pulling a prompt and then pushing it results in the same manifest structure."""

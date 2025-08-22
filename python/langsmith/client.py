@@ -7291,13 +7291,16 @@ class Client:
             if isinstance(prompt, StructuredPrompt):
                 kwargs_from_structured_prompt = (prompt | runnable_binding.bound).first.structured_output_kwargs
                 runnable_binding.kwargs = {k: v for k, v in runnable_binding.kwargs.items() if k not in kwargs_from_structured_prompt}
+                kwargs_from_structured_prompt = (prompt | runnable_binding.bound).first.structured_output_kwargs
+                runnable_binding.kwargs = {k: v for k, v in runnable_binding.kwargs.items() if k not in kwargs_from_structured_prompt}
+                chain_to_push = RunnableSequence(prompt, runnable_binding)
+
             elif isinstance(prompt, ChatPromptTemplate) and "ls_structured_output_format" in runnable_binding.kwargs:
                 structured_kwargs = runnable_binding.kwargs["ls_structured_output_format"]
                 prompt = StructuredPrompt(messages=prompt.messages, schema_=structured_kwargs["schema"]["function"], structured_output_kwargs=structured_kwargs["kwargs"])
-
-            kwargs_from_structured_prompt = (prompt | runnable_binding.bound).first.structured_output_kwargs
-            runnable_binding.kwargs = {k: v for k, v in runnable_binding.kwargs.items() if k not in kwargs_from_structured_prompt}
-            chain_to_push = RunnableSequence(prompt, runnable_binding)
+                kwargs_from_structured_prompt = (prompt | runnable_binding.bound).first.structured_output_kwargs
+                runnable_binding.kwargs = {k: v for k, v in runnable_binding.kwargs.items() if k not in kwargs_from_structured_prompt}
+                chain_to_push = RunnableSequence(prompt, runnable_binding)
 
         json_object = dumps(chain_to_push)
         manifest_dict = json.loads(json_object)
@@ -7314,7 +7317,6 @@ class Client:
         )
 
         commit_hash = response.json()["commit"]["commit_hash"]
-
         return self._get_prompt_url(f"{prompt_owner_and_name}:{commit_hash}")
 
     def update_prompt(
