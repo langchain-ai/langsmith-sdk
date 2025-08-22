@@ -106,6 +106,10 @@ export interface ClientConfig {
    */
   debug?: boolean;
   /**
+   * The workspace ID. Required for org-scoped API keys.
+   */
+  workspaceId?: string;
+  /**
    * Custom fetch implementation. Useful for testing.
    */
   fetchImplementation?: typeof fetch;
@@ -602,6 +606,8 @@ export class Client implements LangSmithTracingClientInterface {
 
   private webUrl?: string;
 
+  private workspaceId?: string;
+
   private caller: AsyncCaller;
 
   private batchIngestCaller: AsyncCaller;
@@ -670,6 +676,9 @@ export class Client implements LangSmithTracingClientInterface {
     if (this.webUrl?.endsWith("/")) {
       this.webUrl = this.webUrl.slice(0, -1);
     }
+    this.workspaceId = trimQuotes(
+      config.workspaceId ?? getLangSmithEnvironmentVariable("WORKSPACE_ID")
+    );
     this.timeout_ms = config.timeout_ms ?? 90_000;
     this.caller = new AsyncCaller({
       ...(config.callerOptions ?? {}),
@@ -767,7 +776,20 @@ export class Client implements LangSmithTracingClientInterface {
     if (this.apiKey) {
       headers["x-api-key"] = `${this.apiKey}`;
     }
+    if (this.workspaceId) {
+      headers["x-tenant-id"] = this.workspaceId;
+    }
     return headers;
+  }
+
+  private validateWorkspaceRequirements(): void {
+    // Validate workspace requirements for org-scoped keys
+    if (this.apiKey && !this.workspaceId) {
+      throw new Error(
+        "This API key is org-scoped and requires workspace specification. " +
+          "Please provide either 'workspaceId' parameter or set LANGSMITH_WORKSPACE_ID environment variable."
+      );
+    }
   }
 
   private _getPlatformEndpointPath(path: string): string {
@@ -835,7 +857,9 @@ export class Client implements LangSmithTracingClientInterface {
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       });
-      await raiseForStatus(res, `Failed to fetch ${path}`);
+      await raiseForStatus(res, `Failed to fetch ${path}`, false, ()) =>
+        this.validateWorkspaceRequirements()
+      );
       return res;
     });
     return response;
@@ -1191,7 +1215,7 @@ export class Client implements LangSmithTracingClientInterface {
 
   public async createRun(
     run: CreateRunParams,
-    options?: { apiKey?: string; apiUrl?: string }
+    options?: { apiKey?: string; apiUrl?: string; workspaceId?: string }
   ): Promise<void> {
     if (!this._filterForSampling([run]).length) {
       return;
@@ -1227,6 +1251,9 @@ export class Client implements LangSmithTracingClientInterface {
     if (options?.apiKey !== undefined) {
       headers["x-api-key"] = options.apiKey;
     }
+    if (options?.workspaceId !== undefined) {
+      headers["x-tenant-id"] = options.workspaceId;
+    }
     const body = serializePayloadForTracing(
       mergedRunCreateParam,
       `Creating run with id: ${mergedRunCreateParam.id}`
@@ -1239,7 +1266,9 @@ export class Client implements LangSmithTracingClientInterface {
         ...this.fetchOptions,
         body,
       });
-      await raiseForStatus(res, "create run", true);
+      await raiseForStatus(res, "create run", true, () =>
+        this.validateWorkspaceRequirements()
+      );
       return res;
     });
   }
@@ -1720,7 +1749,7 @@ export class Client implements LangSmithTracingClientInterface {
   public async updateRun(
     runId: string,
     run: RunUpdate,
-    options?: { apiKey?: string; apiUrl?: string }
+    options?: { apiKey?: string; apiUrl?: string; workspaceId?: string }
   ): Promise<void> {
     assertUuid(runId);
     if (run.inputs) {
@@ -1774,6 +1803,9 @@ export class Client implements LangSmithTracingClientInterface {
     };
     if (options?.apiKey !== undefined) {
       headers["x-api-key"] = options.apiKey;
+    }
+    if (options?.workspaceId !== undefined) {
+      headers["x-tenant-id"] = options.workspaceId;
     }
     const body = serializePayloadForTracing(
       run,

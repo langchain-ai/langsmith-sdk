@@ -482,4 +482,266 @@ describe("Client", () => {
       expect(patchTraceIds.has(traceIds[3])).toBe(false);
     });
   });
+
+  describe("Workspace Support", () => {
+    // eslint-disable-next-line no-process-env
+    const originalEnv = process.env;
+
+    beforeEach(() => {
+      jest.resetModules();
+      // eslint-disable-next-line no-process-env
+      process.env = { ...originalEnv };
+    });
+
+    afterEach(() => {
+      // eslint-disable-next-line no-process-env
+      process.env = originalEnv;
+    });
+
+    it("should read workspaceId from environment variable", () => {
+      // eslint-disable-next-line no-process-env
+      process.env.LANGSMITH_WORKSPACE_ID = "env-workspace-id";
+      const client = new Client();
+      expect((client as any).workspaceId).toBe("env-workspace-id");
+    });
+
+    it("should prioritize config over environment variable", () => {
+      // eslint-disable-next-line no-process-env
+      process.env.LANGSMITH_WORKSPACE_ID = "env-workspace-id";
+      const client = new Client({ workspaceId: "config-workspace-id" });
+      expect((client as any).workspaceId).toBe("config-workspace-id");
+    });
+
+    describe("E2E Workspace Tests", () => {
+      it("should include workspace ID in headers when making API calls", async () => {
+        // set env vars
+        // eslint-disable-next-line no-process-env
+        process.env.LANGSMITH_API_KEY = "test-api-key";
+        // eslint-disable-next-line no-process-env
+        process.env.LANGSMITH_WORKSPACE_ID = "test-workspace-id";
+
+        const client = new Client();
+
+        const mockCaller = {
+          call: jest.fn().mockImplementation(
+            // @ts-expect-error - Jest mock type inference issue
+            async (fetchFn: any, url: string, options: any) => {
+              // fetch call and response
+              return {
+                ok: true,
+                status: 200,
+                statusText: "OK",
+                json: () =>
+                  Promise.resolve({ id: "run-123", name: "test-run" }),
+                text: () =>
+                  Promise.resolve('{"id":"run-123","name":"test-run"}'),
+              } as Response;
+            }
+          ),
+        };
+        (client as any).caller = mockCaller;
+
+        // API call
+        await client.createRun({
+          name: "test-run",
+          run_type: "llm",
+          inputs: { text: "hello" },
+        });
+
+        // Verify the call was made with correct headers
+        expect(mockCaller.call).toHaveBeenCalledWith(
+          expect.any(Function),
+          expect.any(String),
+          expect.objectContaining({
+            headers: expect.objectContaining({
+              "x-tenant-id": "test-workspace-id",
+              "x-api-key": "test-api-key",
+            }),
+          })
+        );
+
+        // eslint-disable-next-line no-process-env
+        delete process.env.LANGSMITH_API_KEY;
+        // eslint-disable-next-line no-process-env
+        delete process.env.LANGSMITH_WORKSPACE_ID;
+      });
+
+      it("should handle org-scoped key error and throw workspace validation error", async () => {
+        const client = new Client({
+          apiKey: "org-scoped-key",
+        });
+
+        // return 403 with org-scoped error
+        const mockCaller = {
+          call: jest.fn().mockImplementation(
+            // @ts-expect-error - Jest mock type inference issue
+            async (fetchFn: any, url: string, options: any) => {
+              return {
+                ok: false,
+                status: 403,
+                statusText: "Forbidden",
+                json: () =>
+                  Promise.resolve({
+                    error: "org_scoped_key_requires_workspace",
+                  }),
+                text: () =>
+                  Promise.resolve(
+                    '{"error":"org_scoped_key_requires_workspace"}'
+                  ),
+              } as Response;
+            }
+          ),
+        };
+        (client as any).caller = mockCaller;
+
+        // call API without workspace - should fail with workspace validation error
+        await expect(
+          client.createRun({
+            name: "test-run",
+            run_type: "llm",
+            inputs: { text: "hello" },
+          })
+        ).rejects.toThrow(
+          'Failed to create run. Received status [403]: Forbidden. Server response: {"error":"org_scoped_key_requires_workspace"}'
+        );
+
+        expect(mockCaller.call).toHaveBeenCalled();
+      });
+
+      it("should handle other 403 errors without throwing workspace validation error", async () => {
+        const client = new Client({
+          apiKey: "test-key",
+        });
+
+        // return 403 with random error
+        const mockCaller = {
+          call: jest.fn().mockImplementation(
+            // @ts-expect-error - Jest mock type inference issue
+            async (fetchFn: any, url: string, options: any) => {
+              return {
+                ok: false,
+                status: 403,
+                statusText: "Forbidden",
+                json: () =>
+                  Promise.resolve({ error: "insufficient_permissions" }),
+                text: () =>
+                  Promise.resolve('{"error":"insufficient_permissions"}'),
+              } as Response;
+            }
+          ),
+        };
+        (client as any).caller = mockCaller;
+
+        // call API - should fail with regular error
+        await expect(
+          client.createRun({
+            name: "test-run",
+            run_type: "llm",
+            inputs: { text: "hello" },
+          })
+        ).rejects.toThrow("Failed to create run");
+
+        expect(mockCaller.call).toHaveBeenCalled();
+      });
+
+      it("should work correctly when workspace is provided in options", async () => {
+        const client = new Client({
+          apiKey: "org-scoped-key",
+        });
+
+        const mockCaller = {
+          call: jest.fn().mockImplementation(
+            // @ts-expect-error - Jest mock type inference issue
+            async (fetchFn: any, url: string, options: any) => {
+              return {
+                ok: true,
+                status: 200,
+                statusText: "OK",
+                json: () =>
+                  Promise.resolve({ id: "run-123", name: "test-run" }),
+                text: () =>
+                  Promise.resolve('{"id":"run-123","name":"test-run"}'),
+              } as Response;
+            }
+          ),
+        };
+        (client as any).caller = mockCaller;
+
+        // call with workspace ID in options should succeed
+        await client.createRun(
+          {
+            name: "test-run",
+            run_type: "llm",
+            inputs: { text: "hello" },
+          },
+          { workspaceId: "test-workspace-id" }
+        );
+
+        // check call was made with correct headers
+        expect(mockCaller.call).toHaveBeenCalledWith(
+          expect.any(Function),
+          expect.any(String),
+          expect.objectContaining({
+            headers: expect.objectContaining({
+              "x-tenant-id": "test-workspace-id",
+            }),
+          })
+        );
+      });
+
+      it("should handle multiple API calls with different workspace configurations", async () => {
+        const client = new Client({
+          apiKey: "test-api-key",
+          workspaceId: "default-workspace-id",
+        });
+
+        // return success
+        const mockCaller = {
+          call: jest.fn().mockImplementation(
+            // @ts-expect-error - Jest mock type inference issue
+            async (fetchFn: any, url: string, options: any) => {
+              return {
+                ok: true,
+                status: 200,
+                statusText: "OK",
+                json: () =>
+                  Promise.resolve({ id: "run-123", name: "test-run" }),
+                text: () =>
+                  Promise.resolve('{"id":"run-123","name":"test-run"}'),
+              } as Response;
+            }
+          ),
+        };
+        (client as any).caller = mockCaller;
+
+        // first call uses default workspace
+        await client.createRun({
+          name: "test-run",
+          run_type: "llm",
+          inputs: { text: "hello" },
+        });
+
+        // second call overrides workspace
+        await client.updateRun(
+          "550e8400-e29b-41d4-a716-446655440000",
+          {
+            outputs: { result: "updated" },
+          },
+          { workspaceId: "override-workspace-id" }
+        );
+
+        expect(mockCaller.call).toHaveBeenCalledTimes(2);
+
+        const firstCall = mockCaller.call.mock.calls[0];
+        const secondCall = mockCaller.call.mock.calls[1];
+
+        expect((firstCall as any)[2].headers["x-tenant-id"]).toBe(
+          "default-workspace-id"
+        );
+        expect((secondCall as any)[2].headers["x-tenant-id"]).toBe(
+          "override-workspace-id"
+        );
+      });
+    });
+  });
 });
