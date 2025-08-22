@@ -2335,6 +2335,113 @@ _PROMPT_COMMITS = [
         },
     ),
     (
+        True,
+        "none",
+        {
+            "owner": "-",
+            "repo": "tweet-generator-example-with-nothing",
+            "commit_hash": "06c657373bdfcadec0d4d0933416b2c11f1b283ef3d1ca5dfb35dd6ed28b9f78",
+            "manifest": {
+                "lc": 1,
+                "type": "constructor",
+                "id": ["langchain", "schema", "runnable", "RunnableSequence"],
+                "kwargs": {
+                    "first": {
+                        "lc": 1,
+                        "type": "constructor",
+                        "id": ["langchain", "prompts", "chat", "ChatPromptTemplate"],
+                        "kwargs": {
+                            "messages": [
+                                {
+                                    "lc": 1,
+                                    "type": "constructor",
+                                    "id": [
+                                        "langchain",
+                                        "prompts",
+                                        "chat",
+                                        "SystemMessagePromptTemplate",
+                                    ],
+                                    "kwargs": {
+                                        "prompt": {
+                                            "lc": 1,
+                                            "type": "constructor",
+                                            "id": [
+                                                "langchain",
+                                                "prompts",
+                                                "prompt",
+                                                "PromptTemplate",
+                                            ],
+                                            "kwargs": {
+                                                "input_variables": [],
+                                                "template_format": "f-string",
+                                                "template": "Generate a tweet about the given topic.",
+                                            },
+                                        }
+                                    },
+                                },
+                                {
+                                    "lc": 1,
+                                    "type": "constructor",
+                                    "id": [
+                                        "langchain",
+                                        "prompts",
+                                        "chat",
+                                        "HumanMessagePromptTemplate",
+                                    ],
+                                    "kwargs": {
+                                        "prompt": {
+                                            "lc": 1,
+                                            "type": "constructor",
+                                            "id": [
+                                                "langchain",
+                                                "prompts",
+                                                "prompt",
+                                                "PromptTemplate",
+                                            ],
+                                            "kwargs": {
+                                                "input_variables": ["topic"],
+                                                "template_format": "f-string",
+                                                "template": "{topic}",
+                                            },
+                                        }
+                                    },
+                                },
+                            ],
+                            "input_variables": ["topic"],
+                        },
+                    },
+                    "last": {
+                        "lc": 1,
+                        "type": "constructor",
+                        "id": ["langchain", "schema", "runnable", "RunnableBinding"],
+                        "kwargs": {
+                            "bound": {
+                                "lc": 1,
+                                "type": "constructor",
+                                "id": [
+                                    "langchain",
+                                    "chat_models",
+                                    "anthropic",
+                                    "ChatAnthropic",
+                                ],
+                                "kwargs": {
+                                    "anthropic_api_key": {
+                                        "id": ["ANTHROPIC_API_KEY"],
+                                        "lc": 1,
+                                        "type": "secret",
+                                    },
+                                    "model": "claude-3-haiku-20240307",
+                                },
+                            },
+                            "kwargs": {},
+                        },
+                    },
+                },
+            },
+            "examples": [],
+        },
+    ),
+    (
         False,
         "tools",
         {
