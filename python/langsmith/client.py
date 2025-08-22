@@ -7286,18 +7286,18 @@ class Client:
             and isinstance(object.steps[1], RunnableBinding)
             and len(object.steps) in (2, 3)
         ):
+            prompt = object.first
             runnable_binding = object.steps[1]
-            if isinstance(object.first, StructuredPrompt):
-                kwargs_from_structured_prompt = (object.first | runnable_binding.bound).first.structured_output_kwargs
-                runnable_binding.kwargs = {k: v for k, v in runnable_binding.kwargs.items() if k not in kwargs_from_structured_prompt}
-                chain_to_push = RunnableSequence(object.first, runnable_binding)
-
-            elif isinstance(object.first, ChatPromptTemplate) and "ls_structured_output_format" in runnable_binding.kwargs:
-                structured_kwargs = runnable_binding.kwargs["ls_structured_output_format"]
-                prompt = StructuredPrompt(messages=object.first.messages, schema_=structured_kwargs["schema"]["function"], structured_output_kwargs=structured_kwargs["kwargs"])
+            if isinstance(prompt, StructuredPrompt):
                 kwargs_from_structured_prompt = (prompt | runnable_binding.bound).first.structured_output_kwargs
                 runnable_binding.kwargs = {k: v for k, v in runnable_binding.kwargs.items() if k not in kwargs_from_structured_prompt}
-                chain_to_push = RunnableSequence(prompt, runnable_binding)
+            elif isinstance(prompt, ChatPromptTemplate) and "ls_structured_output_format" in runnable_binding.kwargs:
+                structured_kwargs = runnable_binding.kwargs["ls_structured_output_format"]
+                prompt = StructuredPrompt(messages=prompt.messages, schema_=structured_kwargs["schema"]["function"], structured_output_kwargs=structured_kwargs["kwargs"])
+
+            kwargs_from_structured_prompt = (prompt | runnable_binding.bound).first.structured_output_kwargs
+            runnable_binding.kwargs = {k: v for k, v in runnable_binding.kwargs.items() if k not in kwargs_from_structured_prompt}
+            chain_to_push = RunnableSequence(prompt, runnable_binding)
 
         json_object = dumps(chain_to_push)
         manifest_dict = json.loads(json_object)
