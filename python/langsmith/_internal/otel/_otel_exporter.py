@@ -1,4 +1,5 @@
 """OpenTelemetry exporter for LangSmith runs."""
+# ruff: noqa: F821
 
 from __future__ import annotations
 
@@ -8,7 +9,6 @@ import uuid
 import warnings
 from typing import Any, Optional
 
-from langsmith import utils as ls_utils
 from langsmith._internal import _orjson
 from langsmith._internal._operations import (
     SerializedRunOperation,
@@ -17,6 +17,7 @@ from langsmith._internal._otel_utils import (
     get_otel_span_id_from_uuid,
     get_otel_trace_id_from_uuid,
 )
+
 
 def _import_otel_exporter():
     """Dynamically import OTEL exporter modules when needed."""
@@ -32,12 +33,22 @@ def _import_otel_exporter():
             set_span_in_context,
         )
 
-        return trace, Context, NonRecordingSpan, Span, SpanContext, TraceFlags, TraceState, set_span_in_context
-    except ImportError:
-        raise ImportError(
-            "OpenTelemetry packages are required to use this function. "
-            "Please install with `pip install langsmith[otel]`"
+        return (
+            trace,
+            Context,
+            NonRecordingSpan,
+            Span,
+            SpanContext,
+            TraceFlags,
+            TraceState,
+            set_span_in_context,
         )
+    except ImportError as e:
+        warnings.warn(
+            f"OTEL_ENABLED is set but OpenTelemetry packages are not installed: {e}"
+        )
+        return None
+
 
 logger = logging.getLogger(__name__)
 
@@ -110,25 +121,33 @@ class OTELExporter:
             tracer_provider: Optional tracer provider to use. If not provided,
                 the global tracer provider will be used.
         """
-        try:
-            trace, Context, NonRecordingSpan, Span, SpanContext, TraceFlags, TraceState, set_span_in_context = _import_otel_exporter()
-            
-            self._tracer = trace.get_tracer("langsmith", tracer_provider=tracer_provider)
-            self._spans = {}
-            self._otel_available = True
-            
-        except ImportError as e:
-            warnings.warn(
-                f"OTEL_ENABLED is set but OpenTelemetry packages are not installed: {e}"
-            )
+        otel_imports = _import_otel_exporter()
+        if otel_imports is None:
             self._tracer = None
             self._spans = {}
             self._otel_available = False
+        else:
+            (
+                trace,
+                Context,
+                NonRecordingSpan,
+                Span,
+                SpanContext,
+                TraceFlags,
+                TraceState,
+                set_span_in_context,
+            ) = otel_imports
+
+            self._tracer = trace.get_tracer(
+                "langsmith", tracer_provider=tracer_provider
+            )
+            self._spans = {}
+            self._otel_available = True
 
     def export_batch(
         self,
         operations: list[SerializedRunOperation],
-        otel_context_map: dict[uuid.UUID, Optional[Context]],
+        otel_context_map: dict[uuid.UUID, Optional[Any]],  # type: ignore[misc]
     ) -> None:
         """Export a batch of serialized run operations to OTEL.
 
@@ -138,7 +157,7 @@ class OTELExporter:
         # Return early if OTEL not available
         if not self._otel_available:
             return
-            
+
         # Create a dictionary mapping run IDs to their operations
 
         for op in operations:
@@ -180,8 +199,8 @@ class OTELExporter:
         self,
         op: SerializedRunOperation,
         run_info: dict,
-        otel_context: Optional[Context] = None,
-    ) -> Optional[Span]:
+        otel_context: Optional[Context] = None,  # type: ignore
+    ) -> Optional[Span]:  # type: ignore
         """Create an OpenTelemetry span for a run operation.
 
         Args:
@@ -204,8 +223,20 @@ class OTELExporter:
             span_id_int = get_otel_span_id_from_uuid(op.id)
 
             # Get OTEL imports for this operation
-            trace, Context, NonRecordingSpan, Span, SpanContext, TraceFlags, TraceState, set_span_in_context = _import_otel_exporter()
-            
+            otel_imports = _import_otel_exporter()
+            if otel_imports is None:
+                return None
+            (
+                trace,
+                Context,
+                NonRecordingSpan,
+                Span,
+                SpanContext,
+                TraceFlags,
+                TraceState,
+                set_span_in_context,
+            ) = otel_imports
+
             # Create SpanContext with deterministic IDs
             span_context = SpanContext(
                 trace_id=trace_id_int,
@@ -278,9 +309,12 @@ class OTELExporter:
                 return
 
             span = self._spans[op.id]
-            
+
             # Get OTEL imports for status setting
-            trace, *_ = _import_otel_exporter()
+            otel_imports = _import_otel_exporter()
+            if otel_imports is None:
+                return
+            trace, *_ = otel_imports
 
             # Update attributes
             self._set_span_attributes(span, run_info, op)
@@ -334,7 +368,10 @@ class OTELExporter:
         return None
 
     def _set_span_attributes(
-        self, span: Span, run_info: dict, op: SerializedRunOperation
+        self,
+        span: Span,
+        run_info: dict,
+        op: SerializedRunOperation,  # type: ignore
     ) -> None:
         """Set attributes on the span.
 
@@ -413,7 +450,7 @@ class OTELExporter:
         # Set inputs/outputs if available
         self._set_io_attributes(span, op)
 
-    def _set_gen_ai_system(self, span: Span, run_info: dict) -> None:
+    def _set_gen_ai_system(self, span: Span, run_info: dict) -> None:  # type: ignore
         """Set the gen_ai.system attribute on the span based on the model provider.
 
         Args:
@@ -459,7 +496,7 @@ class OTELExporter:
         span.set_attribute(GEN_AI_SYSTEM, system)
         setattr(span, "_gen_ai_system", system)
 
-    def _set_invocation_parameters(self, span: Span, run_info: dict) -> None:
+    def _set_invocation_parameters(self, span: Span, run_info: dict) -> None:  # type: ignore
         """Set invocation parameters on the span.
 
         Args:
@@ -499,7 +536,7 @@ class OTELExporter:
                 GEN_AI_REQUEST_PRESENCE_PENALTY, invocation_params["presence_penalty"]
             )
 
-    def _set_io_attributes(self, span: Span, op: SerializedRunOperation) -> None:
+    def _set_io_attributes(self, span: Span, op: SerializedRunOperation) -> None:  # type: ignore
         """Set input/output attributes on the span.
 
         Args:

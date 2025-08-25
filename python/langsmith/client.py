@@ -94,6 +94,7 @@ from langsmith._internal._operations import (
 from langsmith._internal._serde import dumps_json as _dumps_json
 from langsmith.schemas import AttachmentInfo
 
+
 def _check_otel_enabled() -> bool:
     """Check if OTEL is enabled and imports are available."""
     return ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED"))
@@ -115,6 +116,7 @@ def _import_otel():
         raise ImportError(
             "To use OTEL tracing, you must install it with `pip install langsmith[otel]`"
         )
+
 
 try:
     from zoneinfo import ZoneInfo  # type: ignore[import-not-found]
@@ -675,8 +677,13 @@ class Client:
 
         if _check_otel_enabled() or otel_enabled:
             try:
-                otel_trace, set_span_in_context, get_otlp_tracer_provider, OTELExporter = _import_otel()
-                
+                (
+                    otel_trace,
+                    set_span_in_context,
+                    get_otlp_tracer_provider,
+                    OTELExporter,
+                ) = _import_otel()
+
                 existing_provider = otel_trace.get_tracer_provider()
                 tracer = existing_provider.get_tracer(__name__)
                 if otel_tracer_provider is None:
@@ -698,11 +705,11 @@ class Client:
                         otel_trace.set_tracer_provider(otel_tracer_provider)
 
                 self.otel_exporter = OTELExporter(tracer_provider=otel_tracer_provider)
-                
+
                 # Store imports for later use
                 self._otel_trace = otel_trace
                 self._set_span_in_context = set_span_in_context
-                
+
             except ImportError as e:
                 warnings.warn(
                     f"LANGSMITH_OTEL_ENABLED is set but OpenTelemetry packages are not installed: {e}"
@@ -710,7 +717,6 @@ class Client:
                 self.otel_exporter = None
         else:
             self.otel_exporter = None
-
 
     def _repr_html_(self) -> str:
         """Return an HTML representation of the instance with a link to the URL.
@@ -1520,7 +1526,9 @@ class Client:
                             serialized_op,
                             api_key=api_key,
                             api_url=api_url,
-                            otel_context=self._set_span_in_context(self._otel_trace.get_current_span()),
+                            otel_context=self._set_span_in_context(
+                                self._otel_trace.get_current_span()
+                            ),
                         )
                     )
                 else:
@@ -2474,7 +2482,9 @@ class Client:
                             serialized_op,
                             api_key=api_key,
                             api_url=api_url,
-                            otel_context=self._set_span_in_context(self._otel_trace.get_current_span()),
+                            otel_context=self._set_span_in_context(
+                                self._otel_trace.get_current_span()
+                            ),
                         )
                     )
                 else:

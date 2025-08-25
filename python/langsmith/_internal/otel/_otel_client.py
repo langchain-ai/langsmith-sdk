@@ -1,8 +1,11 @@
 """Client configuration for OpenTelemetry integration with LangSmith."""
+# ruff: noqa: F821
 
 import os
+import warnings
 
 from langsmith import utils as ls_utils
+
 
 def _import_otel_client():
     """Dynamically import OTEL client modules when needed."""
@@ -19,12 +22,18 @@ def _import_otel_client():
             BatchSpanProcessor,
         )
 
-        return OTLPSpanExporter, SERVICE_NAME, Resource, TracerProvider, BatchSpanProcessor
-    except ImportError:
-        raise ImportError(
-            "OpenTelemetry packages are required to use this function. "
-            "Please install with `pip install langsmith[otel]`"
+        return (
+            OTLPSpanExporter,
+            SERVICE_NAME,
+            Resource,
+            TracerProvider,
+            BatchSpanProcessor,
         )
+    except ImportError as e:
+        warnings.warn(
+            f"OTEL_ENABLED is set but OpenTelemetry packages are not installed: {e}"
+        )
+        return None
 
 
 def get_otlp_tracer_provider() -> "TracerProvider":
@@ -44,7 +53,19 @@ def get_otlp_tracer_provider() -> "TracerProvider":
         TracerProvider: The OTLP tracer provider.
     """
     # Import OTEL modules dynamically
-    OTLPSpanExporter, SERVICE_NAME, Resource, TracerProvider, BatchSpanProcessor = _import_otel_client()
+    otel_imports = _import_otel_client()
+    if otel_imports is None:
+        raise ImportError(
+            "OpenTelemetry packages are required to use this function. "
+            "Please install with `pip install langsmith[otel]`"
+        )
+    (
+        OTLPSpanExporter,
+        SERVICE_NAME,
+        Resource,
+        TracerProvider,
+        BatchSpanProcessor,
+    ) = otel_imports
 
     if "OTEL_EXPORTER_OTLP_ENDPOINT" not in os.environ:
         ls_endpoint = ls_utils.get_api_url(None)
