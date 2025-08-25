@@ -11,7 +11,7 @@ test("Simple Bun tracing integration test", async () => {
 
   await traceable(
     async (input: { text: string }) => {
-      return {out: input.text};
+      return { out: input.text };
     },
     {
       name: "bun_tracing_test",
