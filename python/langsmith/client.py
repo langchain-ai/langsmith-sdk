@@ -719,9 +719,9 @@ class Client:
                 self._otel_trace = otel_trace
                 self._set_span_in_context = set_span_in_context
 
-            except ImportError as e:
+            except ImportError:
                 warnings.warn(
-                    f"LANGSMITH_OTEL_ENABLED is set but OpenTelemetry packages are not installed: {e}"
+                    "LANGSMITH_OTEL_ENABLED is set but OpenTelemetry packages are not installed: Install with `pip install langsmith[otel]"
                 )
                 self.otel_exporter = None
         else:

@@ -163,9 +163,6 @@ class OTELExporter:
         Args:
             operations: List of serialized run operations to export.
         """
-        # Return early if OTEL not available
-        if not self._otel_available:
-            return
 
         # Create a dictionary mapping run IDs to their operations
 
