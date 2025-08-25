@@ -98,7 +98,13 @@ export async function raiseForStatus(
         );
       }
     } catch (e) {
-      if (e && typeof e === 'object' && 'message' in e && typeof e.message === 'string' && e.message.includes("org-scoped")) {
+      if (
+        e &&
+        typeof e === "object" &&
+        "message" in e &&
+        typeof e.message === "string" &&
+        e.message.includes("org-scoped")
+      ) {
         throw e;
       }
     }
