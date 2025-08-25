@@ -1,5 +1,4 @@
 """Client configuration for OpenTelemetry integration with LangSmith."""
-# ruff: noqa: F821
 
 import os
 import warnings

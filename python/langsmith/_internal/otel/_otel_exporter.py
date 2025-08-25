@@ -1,5 +1,4 @@
 """OpenTelemetry exporter for LangSmith runs."""
-# ruff: noqa: F821
 
 from __future__ import annotations
 
