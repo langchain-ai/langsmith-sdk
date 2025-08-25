@@ -237,7 +237,9 @@ class OTELExporter:
                 return None
             (
                 trace,
+                Context,
                 NonRecordingSpan,
+                Span,
                 SpanContext,
                 TraceFlags,
                 TraceState,
