@@ -119,7 +119,9 @@ const runInputsToMap = (rawInputs: unknown[]) => {
   const firstInput = rawInputs[0];
   let inputs: KVMap;
 
-  if (firstInput == null) {
+  if (firstInput === null) {
+    inputs = { inputs: null };
+  } else if (firstInput === undefined) {
     inputs = {};
   } else if (rawInputs.length > 1) {
     inputs = { args: rawInputs };
@@ -671,7 +673,7 @@ export function traceable<Func extends (...args: any[]) => any>(
     const asyncLocalStorage = AsyncLocalStorageProviderSingleton.getInstance();
 
     // TODO: deal with possible nested promises and async iterables
-    const processedArgs = args as unknown as Inputs;
+    const processedArgs = args as Inputs;
     let deferredInput = false;
     for (let i = 0; i < processedArgs.length; i++) {
       const { converted, deferredInput: argDefersInput } =
