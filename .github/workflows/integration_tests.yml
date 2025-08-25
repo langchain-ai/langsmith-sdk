@@ -155,7 +155,7 @@ jobs:
       - name: Install dependencies
         run: bun install
       - name: Run Bun tests
-        run: bun test src/tests/bun/
+        run: bun test ./src/tests/bun/traceable.test.bun.ts
         env:
           LANGSMITH_TRACING: "true"
           LANGSMITH_ENDPOINT: https://beta.api.smith.langchain.com
