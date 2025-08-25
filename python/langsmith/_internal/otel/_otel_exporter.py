@@ -18,9 +18,9 @@ from langsmith._internal._otel_utils import (
     get_otel_trace_id_from_uuid,
 )
 
-HAS_OTEL = False
-try:
-    if ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED")):
+def _import_otel_exporter():
+    """Dynamically import OTEL exporter modules when needed."""
+    try:
         from opentelemetry import trace  # type: ignore[import]
         from opentelemetry.context.context import Context  # type: ignore[import]
         from opentelemetry.trace import (  # type: ignore[import]
@@ -32,9 +32,12 @@ try:
             set_span_in_context,
         )
 
-        HAS_OTEL = True
-except ImportError:
-    pass
+        return trace, Context, NonRecordingSpan, Span, SpanContext, TraceFlags, TraceState, set_span_in_context
+    except ImportError:
+        raise ImportError(
+            "OpenTelemetry packages are required to use this function. "
+            "Please install with `pip install langsmith[otel]`"
+        )
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +100,7 @@ def _get_operation_name(run_type: str) -> str:
 
 
 class OTELExporter:
-    __slots__ = ["_tracer", "_spans"]
+    __slots__ = ["_tracer", "_spans", "_otel_available"]
     """OpenTelemetry exporter for LangSmith runs."""
 
     def __init__(self, tracer_provider=None):
@@ -107,15 +110,20 @@ class OTELExporter:
             tracer_provider: Optional tracer provider to use. If not provided,
                 the global tracer provider will be used.
         """
-        if not HAS_OTEL:
+        try:
+            trace, Context, NonRecordingSpan, Span, SpanContext, TraceFlags, TraceState, set_span_in_context = _import_otel_exporter()
+            
+            self._tracer = trace.get_tracer("langsmith", tracer_provider=tracer_provider)
+            self._spans = {}
+            self._otel_available = True
+            
+        except ImportError as e:
             warnings.warn(
-                "OTEL_ENABLED is set but OpenTelemetry packages are not installed. "
-                "Install with `pip install langsmith[otel]`"
+                f"OTEL_ENABLED is set but OpenTelemetry packages are not installed: {e}"
             )
-            return
-
-        self._tracer = trace.get_tracer("langsmith", tracer_provider=tracer_provider)
-        self._spans = {}
+            self._tracer = None
+            self._spans = {}
+            self._otel_available = False
 
     def export_batch(
         self,
@@ -127,6 +135,10 @@ class OTELExporter:
         Args:
             operations: List of serialized run operations to export.
         """
+        # Return early if OTEL not available
+        if not self._otel_available:
+            return
+            
         # Create a dictionary mapping run IDs to their operations
 
         for op in operations:
@@ -191,6 +203,9 @@ class OTELExporter:
             trace_id_int = get_otel_trace_id_from_uuid(op.trace_id)
             span_id_int = get_otel_span_id_from_uuid(op.id)
 
+            # Get OTEL imports for this operation
+            trace, Context, NonRecordingSpan, Span, SpanContext, TraceFlags, TraceState, set_span_in_context = _import_otel_exporter()
+            
             # Create SpanContext with deterministic IDs
             span_context = SpanContext(
                 trace_id=trace_id_int,
@@ -263,6 +278,9 @@ class OTELExporter:
                 return
 
             span = self._spans[op.id]
+            
+            # Get OTEL imports for status setting
+            trace, *_ = _import_otel_exporter()
 
             # Update attributes
             self._set_span_attributes(span, run_info, op)

@@ -364,7 +364,7 @@ def is_base_message_like(obj: object) -> bool:
     )
 
 
-@functools.lru_cache(maxsize=100)
+@functools.lru_cache(maxsize=10)
 def get_env_var(
     name: str,
     default: Optional[str] = None,

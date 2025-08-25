@@ -4,9 +4,9 @@ import os
 
 from langsmith import utils as ls_utils
 
-HAS_OTEL = False
-try:
-    if ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED")):
+def _import_otel_client():
+    """Dynamically import OTEL client modules when needed."""
+    try:
         from opentelemetry.exporter.otlp.proto.http.trace_exporter import (  # type: ignore[import]
             OTLPSpanExporter,
         )
@@ -19,9 +19,12 @@ try:
             BatchSpanProcessor,
         )
 
-        HAS_OTEL = True
-except ImportError:
-    pass
+        return OTLPSpanExporter, SERVICE_NAME, Resource, TracerProvider, BatchSpanProcessor
+    except ImportError:
+        raise ImportError(
+            "OpenTelemetry packages are required to use this function. "
+            "Please install with `pip install langsmith[otel]`"
+        )
 
 
 def get_otlp_tracer_provider() -> "TracerProvider":
@@ -40,12 +43,8 @@ def get_otlp_tracer_provider() -> "TracerProvider":
     Returns:
         TracerProvider: The OTLP tracer provider.
     """
-    # Set LangSmith-specific defaults if not already set in environment
-    if not HAS_OTEL:
-        raise ImportError(
-            "OpenTelemetry packages are required to use this function. "
-            "Please install with `pip install langsmith[otel]`"
-        )
+    # Import OTEL modules dynamically
+    OTLPSpanExporter, SERVICE_NAME, Resource, TracerProvider, BatchSpanProcessor = _import_otel_client()
 
     if "OTEL_EXPORTER_OTLP_ENDPOINT" not in os.environ:
         ls_endpoint = ls_utils.get_api_url(None)
