@@ -520,26 +520,18 @@ describe("Client", () => {
         // eslint-disable-next-line no-process-env
         process.env.LANGSMITH_WORKSPACE_ID = "test-workspace-id";
 
-        const client = new Client();
+        // Create mock fetch function
+        const mockFetch = jest.fn().mockImplementation(async () => ({
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          json: async () => ({ id: "run-123", name: "test-run" }),
+          text: async () => '{"id":"run-123","name":"test-run"}',
+        }));
 
-        const mockCaller = {
-          call: jest.fn().mockImplementation(
-            // @ts-expect-error - Jest mock type inference issue
-            async (fetchFn: any, url: string, options: any) => {
-              // fetch call and response
-              return {
-                ok: true,
-                status: 200,
-                statusText: "OK",
-                json: () =>
-                  Promise.resolve({ id: "run-123", name: "test-run" }),
-                text: () =>
-                  Promise.resolve('{"id":"run-123","name":"test-run"}'),
-              } as Response;
-            }
-          ),
-        };
-        (client as any).caller = mockCaller;
+        const client = new Client({
+          fetchImplementation: mockFetch as any,
+        });
 
         // API call
         await client.createRun({
@@ -549,10 +541,10 @@ describe("Client", () => {
         });
 
         // Verify the call was made with correct headers
-        expect(mockCaller.call).toHaveBeenCalledWith(
-          expect.any(Function),
-          expect.any(String),
+        expect(mockFetch).toHaveBeenCalledWith(
+          expect.stringContaining("/runs"),
           expect.objectContaining({
+            method: "POST",
             headers: expect.objectContaining({
               "x-tenant-id": "test-workspace-id",
               "x-api-key": "test-api-key",
@@ -567,32 +559,19 @@ describe("Client", () => {
       });
 
       it("should handle org-scoped key error and throw workspace validation error", async () => {
+        // Create mock fetch function that returns 403 with org-scoped error
+        const mockFetch = jest.fn().mockImplementation(async () => ({
+          ok: false,
+          status: 403,
+          statusText: "Forbidden",
+          json: async () => ({ error: "org_scoped_key_requires_workspace" }),
+          text: async () => '{"error":"org_scoped_key_requires_workspace"}',
+        }));
+
         const client = new Client({
           apiKey: "org-scoped-key",
+          fetchImplementation: mockFetch as any,
         });
-
-        // return 403 with org-scoped error
-        const mockCaller = {
-          call: jest.fn().mockImplementation(
-            // @ts-expect-error - Jest mock type inference issue
-            async (fetchFn: any, url: string, options: any) => {
-              return {
-                ok: false,
-                status: 403,
-                statusText: "Forbidden",
-                json: () =>
-                  Promise.resolve({
-                    error: "org_scoped_key_requires_workspace",
-                  }),
-                text: () =>
-                  Promise.resolve(
-                    '{"error":"org_scoped_key_requires_workspace"}'
-                  ),
-              } as Response;
-            }
-          ),
-        };
-        (client as any).caller = mockCaller;
 
         // call API without workspace - should fail with workspace validation error
         await expect(
@@ -602,35 +581,26 @@ describe("Client", () => {
             inputs: { text: "hello" },
           })
         ).rejects.toThrow(
-          'Failed to create run. Received status [403]: Forbidden. Server response: {"error":"org_scoped_key_requires_workspace"}'
+          "This API key is org-scoped and requires workspace specification. Please provide 'workspaceId' parameter, or set LANGSMITH_WORKSPACE_ID environment variable."
         );
 
-        expect(mockCaller.call).toHaveBeenCalled();
+        expect(mockFetch).toHaveBeenCalled();
       });
 
       it("should handle other 403 errors without throwing workspace validation error", async () => {
+        // Create mock fetch function that returns 403 with different error
+        const mockFetch = jest.fn().mockImplementation(async () => ({
+          ok: false,
+          status: 403,
+          statusText: "Forbidden",
+          json: async () => ({ error: "insufficient_permissions" }),
+          text: async () => '{"error":"insufficient_permissions"}',
+        }));
+
         const client = new Client({
           apiKey: "test-key",
+          fetchImplementation: mockFetch as any,
         });
-
-        // return 403 with random error
-        const mockCaller = {
-          call: jest.fn().mockImplementation(
-            // @ts-expect-error - Jest mock type inference issue
-            async (fetchFn: any, url: string, options: any) => {
-              return {
-                ok: false,
-                status: 403,
-                statusText: "Forbidden",
-                json: () =>
-                  Promise.resolve({ error: "insufficient_permissions" }),
-                text: () =>
-                  Promise.resolve('{"error":"insufficient_permissions"}'),
-              } as Response;
-            }
-          ),
-        };
-        (client as any).caller = mockCaller;
 
         // call API - should fail with regular error
         await expect(
@@ -641,31 +611,23 @@ describe("Client", () => {
           })
         ).rejects.toThrow("Failed to create run");
 
-        expect(mockCaller.call).toHaveBeenCalled();
+        expect(mockFetch).toHaveBeenCalled();
       });
 
       it("should work correctly when workspace is provided in options", async () => {
+        // Create mock fetch function
+        const mockFetch = jest.fn().mockImplementation(async () => ({
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          json: async () => ({ id: "run-123", name: "test-run" }),
+          text: async () => '{"id":"run-123","name":"test-run"}',
+        }));
+
         const client = new Client({
           apiKey: "org-scoped-key",
+          fetchImplementation: mockFetch as any,
         });
-
-        const mockCaller = {
-          call: jest.fn().mockImplementation(
-            // @ts-expect-error - Jest mock type inference issue
-            async (fetchFn: any, url: string, options: any) => {
-              return {
-                ok: true,
-                status: 200,
-                statusText: "OK",
-                json: () =>
-                  Promise.resolve({ id: "run-123", name: "test-run" }),
-                text: () =>
-                  Promise.resolve('{"id":"run-123","name":"test-run"}'),
-              } as Response;
-            }
-          ),
-        };
-        (client as any).caller = mockCaller;
 
         // call with workspace ID in options should succeed
         await client.createRun(
@@ -678,10 +640,10 @@ describe("Client", () => {
         );
 
         // check call was made with correct headers
-        expect(mockCaller.call).toHaveBeenCalledWith(
-          expect.any(Function),
-          expect.any(String),
+        expect(mockFetch).toHaveBeenCalledWith(
+          expect.stringContaining("/runs"),
           expect.objectContaining({
+            method: "POST",
             headers: expect.objectContaining({
               "x-tenant-id": "test-workspace-id",
             }),
@@ -690,29 +652,20 @@ describe("Client", () => {
       });
 
       it("should handle multiple API calls with different workspace configurations", async () => {
+        // Create mock fetch function
+        const mockFetch = jest.fn().mockImplementation(async () => ({
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          json: async () => ({ id: "run-123", name: "test-run" }),
+          text: async () => '{"id":"run-123","name":"test-run"}',
+        }));
+
         const client = new Client({
           apiKey: "test-api-key",
           workspaceId: "default-workspace-id",
+          fetchImplementation: mockFetch as any,
         });
-
-        // return success
-        const mockCaller = {
-          call: jest.fn().mockImplementation(
-            // @ts-expect-error - Jest mock type inference issue
-            async (fetchFn: any, url: string, options: any) => {
-              return {
-                ok: true,
-                status: 200,
-                statusText: "OK",
-                json: () =>
-                  Promise.resolve({ id: "run-123", name: "test-run" }),
-                text: () =>
-                  Promise.resolve('{"id":"run-123","name":"test-run"}'),
-              } as Response;
-            }
-          ),
-        };
-        (client as any).caller = mockCaller;
 
         // first call uses default workspace
         await client.createRun({
@@ -730,15 +683,15 @@ describe("Client", () => {
           { workspaceId: "override-workspace-id" }
         );
 
-        expect(mockCaller.call).toHaveBeenCalledTimes(2);
+        expect(mockFetch).toHaveBeenCalledTimes(2);
 
-        const firstCall = mockCaller.call.mock.calls[0];
-        const secondCall = mockCaller.call.mock.calls[1];
+        const firstCall = mockFetch.mock.calls[0];
+        const secondCall = mockFetch.mock.calls[1];
 
-        expect((firstCall as any)[2].headers["x-tenant-id"]).toBe(
+        expect((firstCall[1] as any).headers["x-tenant-id"]).toBe(
           "default-workspace-id"
         );
-        expect((secondCall as any)[2].headers["x-tenant-id"]).toBe(
+        expect((secondCall[1] as any).headers["x-tenant-id"]).toBe(
           "override-workspace-id"
         );
       });

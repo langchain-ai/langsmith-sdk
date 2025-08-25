@@ -74,8 +74,7 @@ export class LangSmithConflictError extends Error {
 export async function raiseForStatus(
   response: Response,
   context: string,
-  consumeOnSuccess?: boolean,
-  onWorkspaceError?: () => void
+  consumeOnSuccess?: boolean
 ): Promise<void> {
   let errorBody;
   if (response.ok) {
@@ -87,15 +86,21 @@ export async function raiseForStatus(
     return;
   }
 
-  if (response.status === 403 && onWorkspaceError) {
+  if (response.status === 403) {
     try {
       const errorData = await response.json();
       const errorCode = errorData?.error;
       if (errorCode === "org_scoped_key_requires_workspace") {
-        onWorkspaceError();
+        throw new Error(
+          "This API key is org-scoped and requires workspace specification. " +
+            "Please provide 'workspaceId' parameter, " +
+            "or set LANGSMITH_WORKSPACE_ID environment variable."
+        );
       }
-    } catch {
-      // Not JSON, ignore
+    } catch (e) {
+      if (e && typeof e === 'object' && 'message' in e && typeof e.message === 'string' && e.message.includes("org-scoped")) {
+        throw e;
+      }
     }
   }
   errorBody = await response.text();

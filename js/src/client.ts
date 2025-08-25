@@ -782,16 +782,6 @@ export class Client implements LangSmithTracingClientInterface {
     return headers;
   }
 
-  private validateWorkspaceRequirements(): void {
-    // Validate workspace requirements for org-scoped keys
-    if (this.apiKey && !this.workspaceId) {
-      throw new Error(
-        "This API key is org-scoped and requires workspace specification. " +
-          "Please provide either 'workspaceId' parameter or set LANGSMITH_WORKSPACE_ID environment variable."
-      );
-    }
-  }
-
   private _getPlatformEndpointPath(path: string): string {
     // Check if apiUrl already ends with /v1 or /v1/ to avoid double /v1/v1/ paths
     const needsV1Prefix =
@@ -857,9 +847,7 @@ export class Client implements LangSmithTracingClientInterface {
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       });
-      await raiseForStatus(res, `Failed to fetch ${path}`, false, ()) =>
-        this.validateWorkspaceRequirements()
-      );
+      await raiseForStatus(res, `Failed to fetch ${path}`, false);
       return res;
     });
     return response;
@@ -1266,9 +1254,7 @@ export class Client implements LangSmithTracingClientInterface {
         ...this.fetchOptions,
         body,
       });
-      await raiseForStatus(res, "create run", true, () =>
-        this.validateWorkspaceRequirements()
-      );
+      await raiseForStatus(res, "create run", true);
       return res;
     });
   }
