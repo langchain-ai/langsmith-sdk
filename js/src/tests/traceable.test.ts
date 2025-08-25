@@ -2212,3 +2212,22 @@ test("traceable promise for async generator break", async () => {
   expect(tree.data["i_traceable:0"].outputs).toEqual({ outputs: "0" });
   expect(tree.data["i_traceable:0"].error).toEqual("Cancelled");
 });
+
+test("passing null doesn't throw an error", async () => {
+  const { client, callSpy } = mockClient();
+  const runId = uuidv4();
+
+  const func = traceable(async (input: null) => input, {
+    name: "i_traceable",
+    project_name: "__test_traceable_wrapper_aggregator",
+    client: client,
+    id: runId,
+    tracingEnabled: true,
+  });
+
+  expect(await func(null)).toBe(null);
+  const tree = getAssumedTreeFromCalls(callSpy.mock.calls);
+  expect(tree.nodes).toEqual(["i_traceable:0"]);
+  expect(tree.data["i_traceable:0"].inputs).toEqual({ inputs: null });
+  expect(tree.data["i_traceable:0"].outputs).toEqual({ outputs: null });
+});
