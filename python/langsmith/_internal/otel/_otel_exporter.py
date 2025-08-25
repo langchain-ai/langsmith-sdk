@@ -118,7 +118,7 @@ def _get_operation_name(run_type: str) -> str:
 
 
 class OTELExporter:
-    __slots__ = ["_tracer", "_spans", "_otel_available"]
+    __slots__ = ["_tracer", "_spans", "_otel_available", "_trace"]
     """OpenTelemetry exporter for LangSmith runs."""
 
     def __init__(self, tracer_provider=None):
@@ -133,6 +133,7 @@ class OTELExporter:
             self._tracer = None
             self._spans = {}
             self._otel_available = False
+            self._trace = None
         else:
             (
                 trace,
@@ -150,11 +151,12 @@ class OTELExporter:
             )
             self._spans = {}
             self._otel_available = True
+            self._trace = trace
 
     def export_batch(
         self,
         operations: list[SerializedRunOperation],
-        otel_context_map: dict[uuid.UUID, Optional[Any]],  # type: ignore[misc]
+        otel_context_map: dict[uuid.UUID, Optional[Context]],
     ) -> None:
         """Export a batch of serialized run operations to OTEL.
 
@@ -206,8 +208,8 @@ class OTELExporter:
         self,
         op: SerializedRunOperation,
         run_info: dict,
-        otel_context: Optional[Context] = None,  # type: ignore
-    ) -> Optional[Span]:  # type: ignore
+        otel_context: Optional[Context] = None,
+    ) -> Optional[Span]:
         """Create an OpenTelemetry span for a run operation.
 
         Args:
@@ -235,9 +237,7 @@ class OTELExporter:
                 return None
             (
                 trace,
-                Context,
                 NonRecordingSpan,
-                Span,
                 SpanContext,
                 TraceFlags,
                 TraceState,
@@ -317,20 +317,14 @@ class OTELExporter:
 
             span = self._spans[op.id]
 
-            # Get OTEL imports for status setting
-            otel_imports = _import_otel_exporter()
-            if otel_imports is None:
-                return
-            trace, *_ = otel_imports
-
             # Update attributes
             self._set_span_attributes(span, run_info, op)
             # Update status based on error
             if run_info.get("error"):
-                span.set_status(trace.StatusCode.ERROR)
+                span.set_status(self._trace.StatusCode.ERROR)
                 span.record_exception(Exception(run_info.get("error")))
             else:
-                span.set_status(trace.StatusCode.OK)
+                span.set_status(self._trace.StatusCode.OK)
 
             # End the span if end_time is present
             end_time = run_info.get("end_time")
@@ -378,7 +372,7 @@ class OTELExporter:
         self,
         span: Span,
         run_info: dict,
-        op: SerializedRunOperation,  # type: ignore
+        op: SerializedRunOperation,
     ) -> None:
         """Set attributes on the span.
 
@@ -457,7 +451,7 @@ class OTELExporter:
         # Set inputs/outputs if available
         self._set_io_attributes(span, op)
 
-    def _set_gen_ai_system(self, span: Span, run_info: dict) -> None:  # type: ignore
+    def _set_gen_ai_system(self, span: Span, run_info: dict) -> None:
         """Set the gen_ai.system attribute on the span based on the model provider.
 
         Args:
@@ -503,7 +497,7 @@ class OTELExporter:
         span.set_attribute(GEN_AI_SYSTEM, system)
         setattr(span, "_gen_ai_system", system)
 
-    def _set_invocation_parameters(self, span: Span, run_info: dict) -> None:  # type: ignore
+    def _set_invocation_parameters(self, span: Span, run_info: dict) -> None:
         """Set invocation parameters on the span.
 
         Args:
@@ -543,7 +537,7 @@ class OTELExporter:
                 GEN_AI_REQUEST_PRESENCE_PENALTY, invocation_params["presence_penalty"]
             )
 
-    def _set_io_attributes(self, span: Span, op: SerializedRunOperation) -> None:  # type: ignore
+    def _set_io_attributes(self, span: Span, op: SerializedRunOperation) -> None:
         """Set input/output attributes on the span.
 
         Args:
