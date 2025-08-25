@@ -3,6 +3,13 @@
 
 import os
 import warnings
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    try:
+        from opentelemetry.sdk.trace import TracerProvider  # type: ignore[import]
+    except ImportError:
+        TracerProvider = object  # type: ignore[assignment, misc]
 
 from langsmith import utils as ls_utils
 

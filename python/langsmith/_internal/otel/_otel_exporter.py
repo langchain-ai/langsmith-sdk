@@ -7,7 +7,15 @@ import datetime
 import logging
 import uuid
 import warnings
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
+
+if TYPE_CHECKING:
+    try:
+        from opentelemetry.context.context import Context  # type: ignore[import]
+        from opentelemetry.trace import Span  # type: ignore[import]
+    except ImportError:
+        Context = Any  # type: ignore[assignment, misc]
+        Span = Any  # type: ignore[assignment, misc]
 
 from langsmith._internal import _orjson
 from langsmith._internal._operations import (

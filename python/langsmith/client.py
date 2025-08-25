@@ -139,6 +139,15 @@ if TYPE_CHECKING:
     from langchain_core.runnables import Runnable
 
     from langsmith import schemas
+
+    # OTEL imports for type hints
+    try:
+        from opentelemetry import trace as otel_trace  # type: ignore[import]
+
+        from langsmith._internal.otel._otel_exporter import OTELExporter
+    except ImportError:
+        otel_trace = Any  # type: ignore[assignment, misc]
+        OTELExporter = Any  # type: ignore[assignment, misc]
     from langsmith.evaluation import evaluator as ls_evaluator
     from langsmith.evaluation._arunner import (
         AEVALUATOR_T,
@@ -693,7 +702,7 @@ class Client:
                         and hasattr(tracer, "_tracer")
                         and isinstance(
                             cast(
-                                otel_trace.ProxyTracer,
+                                otel_trace.ProxyTracer,  # type: ignore[attr-defined, name-defined]
                                 tracer,
                             )._tracer,
                             otel_trace.NoOpTracer,
