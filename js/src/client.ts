@@ -62,6 +62,7 @@ import {
   getLangSmithEnvironmentVariable,
   getRuntimeEnvironment,
   getOtelEnabled,
+  getEnv,
 } from "./utils/env.js";
 
 import {
@@ -1700,8 +1701,12 @@ export class Client implements LangSmithTracingClientInterface {
       let res: Response;
       let streamedAttempt = false;
 
-      // attempt stream only if not disabled and not using node-fetch
-      if (!isNodeFetch && !this.multipartStreamingDisabled) {
+      // attempt stream only if not disabled and not using node-fetch or Bun
+      if (
+        !isNodeFetch &&
+        !this.multipartStreamingDisabled &&
+        getEnv() !== "bun"
+      ) {
         streamedAttempt = true;
         res = await sendWithRetry(buildStream);
       } else {
