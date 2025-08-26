@@ -1888,6 +1888,9 @@ def test_select_eval_results(mock_session_cls: mock.Mock):
 def test_validate_api_key_if_hosted_with_tracing(
     _mock_session: mock.Mock, client_cls: Union[Type[Client], Type[AsyncClient]]
 ) -> None:
+    from langsmith import utils as ls_utils
+
+    ls_utils.get_env_var.cache_clear()
     with pytest.warns(ls_utils.LangSmithMissingAPIKeyWarning):
         client_cls(api_url="https://api.smith.langchain.com")
     with warnings.catch_warnings():
@@ -1906,6 +1909,9 @@ def test_validate_api_key_if_hosted_with_tracing(
 def test_validate_api_key_if_hosted_without_tracing(
     _mock_session: mock.Mock, client_cls: Union[Type[Client], Type[AsyncClient]]
 ) -> None:
+    from langsmith import utils as ls_utils
+
+    ls_utils.get_env_var.cache_clear()
     with warnings.catch_warnings(record=True) as w:
         client_cls(api_url="https://api.smith.langchain.com")
         assert len(w) == 0, (
