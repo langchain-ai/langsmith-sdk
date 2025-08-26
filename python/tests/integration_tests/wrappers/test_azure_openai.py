@@ -1,4 +1,5 @@
 # mypy: disable-error-code="attr-defined, union-attr, arg-type, call-overload"
+import json
 import os
 import time
 from unittest import mock
@@ -10,7 +11,9 @@ from langsmith.wrappers import wrap_openai
 
 
 @pytest.mark.parametrize("stream", [False, True])
-@pytest.mark.skipif(os.getenv("AZURE_OPENAI_API_KEY") is None, reason="AZURE_OPENAI_API_KEY is not set")
+@pytest.mark.skipif(
+    os.getenv("AZURE_OPENAI_API_KEY") is None, reason="AZURE_OPENAI_API_KEY is not set"
+)
 def test_chat_sync_api(stream: bool):
     from openai import AzureOpenAI  # noqa
 
@@ -58,22 +61,26 @@ def test_chat_sync_api(stream: bool):
     time.sleep(0.01)
     for call in mock_session.request.call_args_list[1:]:
         assert call[0][0].upper() == "POST"
+        data = json.loads(call.kwargs["data"].decode("utf-8"))
+        assert data["post"][0]["extra"]["metadata"]["ls_provider"] == "azure"
 
 
 @pytest.mark.parametrize("stream", [False, True])
-@pytest.mark.skipif(os.getenv("AZURE_OPENAI_API_KEY") is None, reason="AZURE_OPENAI_API_KEY is not set")
+@pytest.mark.skipif(
+    os.getenv("AZURE_OPENAI_API_KEY") is None, reason="AZURE_OPENAI_API_KEY is not set"
+)
 async def test_chat_async_api(stream: bool):
-    from openai import AzureOpenAI  # noqa
+    from openai import AsyncAzureOpenAI  # noqa
 
     mock_session = mock.MagicMock()
     client = langsmith.Client(session=mock_session)
-    original_client = AzureOpenAI(
+    original_client = AsyncAzureOpenAI(
         api_key=os.getenv("AZURE_OPENAI_API_KEY"),
         api_version=os.getenv("AZURE_OPENAI_API_VERSION"),
         azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
     )
     patched_client = wrap_openai(
-        AzureOpenAI(
+        AsyncAzureOpenAI(
             api_key=os.getenv("AZURE_OPENAI_API_KEY"),
             api_version=os.getenv("AZURE_OPENAI_API_VERSION"),
             azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
@@ -105,3 +112,9 @@ async def test_chat_async_api(stream: bool):
     time.sleep(0.1)
     for call in mock_session.request.call_args_list[1:]:
         assert call[0][0].upper() == "POST"
+        data = json.loads(call.kwargs["data"].decode("utf-8"))
+        # Handle both "post" and "patch" operations
+        if "post" in data and data["post"]:
+            assert data["post"][0]["extra"]["metadata"]["ls_provider"] == "azure"
+        elif "patch" in data and data["patch"]:
+            assert data["patch"][0]["extra"]["metadata"]["ls_provider"] == "azure"
