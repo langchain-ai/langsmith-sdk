@@ -395,9 +395,9 @@ def wrap_openai(
 
     ls_provider = "openai"
     try:
-        from openai import AzureOpenAI
+        from openai import AsyncAzureOpenAI, AzureOpenAI
 
-        if isinstance(client, AzureOpenAI):
+        if isinstance(client, AzureOpenAI) or isinstance(client, AsyncAzureOpenAI):
             ls_provider = "azure"
             chat_name = "AzureChatOpenAI"
             completions_name = "AzureOpenAI"
