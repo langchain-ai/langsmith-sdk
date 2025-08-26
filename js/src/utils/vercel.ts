@@ -1,16 +1,61 @@
+import type { LanguageModelV2Usage } from "@ai-sdk/provider";
 import { KVMap } from "../schemas.js";
 
-export function extractOutputTokenDetails(reasoningTokens?: number) {
+function isOpenAIResponse(
+  aiSDKResponse: Record<string, unknown>
+): aiSDKResponse is Record<string, unknown> {
+  const providerMetadata =
+    "providerMetadata" in aiSDKResponse
+      ? (aiSDKResponse.providerMetadata as Record<string, unknown>)
+      : {};
+  return (
+    providerMetadata != null &&
+    typeof providerMetadata === "object" &&
+    "openai" in providerMetadata
+  );
+}
+
+function extractServiceTier(
+  aiSDKResponse: Record<string, unknown>
+): string | undefined {
+  if (
+    isOpenAIResponse(aiSDKResponse) &&
+    aiSDKResponse.response != null &&
+    typeof aiSDKResponse.response === "object" &&
+    "body" in aiSDKResponse.response &&
+    aiSDKResponse.response.body != null &&
+    typeof aiSDKResponse.response.body === "object" &&
+    "service_tier" in aiSDKResponse.response.body &&
+    typeof aiSDKResponse.response.body.service_tier === "string"
+  ) {
+    return aiSDKResponse.response.body.service_tier;
+  }
+  return undefined;
+}
+
+export function extractOutputTokenDetails(
+  usage: Partial<LanguageModelV2Usage>,
+  aiSDKResponse: Record<string, unknown> = {}
+) {
+  const openAIServiceTier = extractServiceTier(aiSDKResponse);
+  const outputTokenDetailsKeyPrefix = openAIServiceTier
+    ? `${openAIServiceTier}_`
+    : "";
   const outputTokenDetails: Record<string, number> = {};
-  if (typeof reasoningTokens === "number") {
-    outputTokenDetails.reasoning = reasoningTokens;
+  if (typeof usage.reasoningTokens === "number") {
+    outputTokenDetails[`${outputTokenDetailsKeyPrefix}reasoning`] =
+      usage.reasoningTokens;
+  }
+  if (openAIServiceTier && typeof usage.outputTokens === "number") {
+    outputTokenDetails[openAIServiceTier] = usage.outputTokens;
   }
   return outputTokenDetails;
 }
 
 export function extractInputTokenDetails(
   providerMetadata: Record<string, unknown>,
-  cachedTokenUsage?: number
+  usage?: Partial<LanguageModelV2Usage>,
+  aiSDKResponse?: Record<string, unknown>
 ) {
   const inputTokenDetails: Record<string, number> = {};
   if (
@@ -64,14 +109,23 @@ export function extractInputTokenDetails(
     providerMetadata.openai != null &&
     typeof providerMetadata.openai === "object"
   ) {
-    const openai = providerMetadata.openai as Record<string, unknown>;
-    if (
-      openai.cachedPromptTokens != null &&
-      typeof openai.cachedPromptTokens === "number"
+    const openAIServiceTier = extractServiceTier(aiSDKResponse ?? {});
+    const outputTokenDetailsKeyPrefix = openAIServiceTier
+      ? `${openAIServiceTier}_`
+      : "";
+    if (typeof usage?.cachedInputTokens === "number") {
+      inputTokenDetails[`${outputTokenDetailsKeyPrefix}cache_read`] =
+        usage.cachedInputTokens;
+    } else if (
+      "cachedPromptTokens" in providerMetadata.openai &&
+      providerMetadata.openai.cachedPromptTokens != null &&
+      typeof providerMetadata.openai.cachedPromptTokens === "number"
     ) {
-      inputTokenDetails.cache_read = openai.cachedPromptTokens;
-    } else if (typeof cachedTokenUsage === "number") {
-      inputTokenDetails.cache_read = cachedTokenUsage;
+      inputTokenDetails[`${outputTokenDetailsKeyPrefix}cache_read`] =
+        providerMetadata.openai.cachedPromptTokens;
+    }
+    if (openAIServiceTier && typeof usage?.inputTokens === "number") {
+      inputTokenDetails[openAIServiceTier] = usage.inputTokens;
     }
   }
   return inputTokenDetails;
@@ -122,7 +176,7 @@ export function extractUsageMetadata(span?: {
       usageMetadata.input_token_details = extractInputTokenDetails(
         providerMetadata,
         typeof span.attributes["ai.usage.cachedInputTokens"] === "number"
-          ? span.attributes["ai.usage.cachedInputTokens"]
+          ? { cachedInputTokens: span.attributes["ai.usage.cachedInputTokens"] }
           : undefined
       );
       if (
