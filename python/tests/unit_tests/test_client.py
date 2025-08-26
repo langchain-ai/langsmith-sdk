@@ -1883,7 +1883,7 @@ def test_select_eval_results(mock_session_cls: mock.Mock):
 @mock.patch.dict(
     os.environ,
     {"LANGCHAIN_API_KEY": "", "LANGSMITH_API_KEY": "", "LANGSMITH_TRACING": "true"},
-    clear=False,
+    clear=True,
 )
 def test_validate_api_key_if_hosted_with_tracing(
     _mock_session: mock.Mock, client_cls: Union[Type[Client], Type[AsyncClient]]
@@ -1901,7 +1901,7 @@ def test_validate_api_key_if_hosted_with_tracing(
 @mock.patch.dict(
     os.environ,
     {"LANGCHAIN_API_KEY": "", "LANGSMITH_API_KEY": "", "LANGSMITH_TRACING": "false"},
-    clear=False,
+    clear=True,
 )
 def test_validate_api_key_if_hosted_without_tracing(
     _mock_session: mock.Mock, client_cls: Union[Type[Client], Type[AsyncClient]]
