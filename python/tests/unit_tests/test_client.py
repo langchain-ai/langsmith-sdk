@@ -1880,17 +1880,37 @@ def test_select_eval_results(mock_session_cls: mock.Mock):
 
 @pytest.mark.parametrize("client_cls", [Client, AsyncClient])
 @mock.patch("langsmith.client.requests.Session")
-def test_validate_api_key_if_hosted(
-    monkeypatch: pytest.MonkeyPatch, client_cls: Union[Type[Client], Type[AsyncClient]]
+@mock.patch.dict(
+    os.environ,
+    {"LANGCHAIN_API_KEY": "", "LANGSMITH_API_KEY": "", "LANGSMITH_TRACING": "true"},
+    clear=False,
+)
+def test_validate_api_key_if_hosted_with_tracing(
+    _mock_session: mock.Mock, client_cls: Union[Type[Client], Type[AsyncClient]]
 ) -> None:
-    monkeypatch.delenv("LANGCHAIN_API_KEY", raising=False)
-    monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
     with pytest.warns(ls_utils.LangSmithMissingAPIKeyWarning):
         client_cls(api_url="https://api.smith.langchain.com")
     with warnings.catch_warnings():
         # Check no warning is raised here.
         warnings.simplefilter("error")
         client_cls(api_url="http://localhost:1984")
+
+
+@pytest.mark.parametrize("client_cls", [Client, AsyncClient])
+@mock.patch("langsmith.client.requests.Session")
+@mock.patch.dict(
+    os.environ,
+    {"LANGCHAIN_API_KEY": "", "LANGSMITH_API_KEY": "", "LANGSMITH_TRACING": "false"},
+    clear=False,
+)
+def test_validate_api_key_if_hosted_without_tracing(
+    _mock_session: mock.Mock, client_cls: Union[Type[Client], Type[AsyncClient]]
+) -> None:
+    with warnings.catch_warnings(record=True) as w:
+        client_cls(api_url="https://api.smith.langchain.com")
+        assert len(w) == 0, (
+            f"Expected no warnings, but got: {[str(warning.message) for warning in w]}"
+        )
 
 
 def test_parse_token_or_url():
