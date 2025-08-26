@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable prefer-const */
 /* eslint-disable no-process-env */
-import { jest } from "@jest/globals";
+import { jest, describe } from "@jest/globals";
 import { v4 as uuidv4 } from "uuid";
 import { Client, mergeRuntimeEnvIntoRun } from "../client.js";
 import { convertToDottedOrderFormat } from "../run_trees.js";
