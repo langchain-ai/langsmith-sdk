@@ -59,7 +59,7 @@ def _strip_not_given(d: dict) -> dict:
         return d
 
 
-def _infer_invocation_params(model_type: str, kwargs: dict):
+def _infer_invocation_params(model_type: str, provider: str, kwargs: dict):
     stripped = _strip_not_given(kwargs)
 
     stop = stripped.get("stop")
@@ -67,7 +67,7 @@ def _infer_invocation_params(model_type: str, kwargs: dict):
         stop = [stop]
 
     return {
-        "ls_provider": "openai",
+        "ls_provider": provider,
         "ls_model_type": model_type,
         "ls_model_name": stripped.get("model"),
         "ls_temperature": stripped.get("temperature"),
@@ -393,13 +393,26 @@ def wrap_openai(
     """  # noqa: E501
     tracing_extra = tracing_extra or {}
 
+    ls_provider = "openai"
+    try:
+        from openai import AsyncAzureOpenAI, AzureOpenAI
+
+        if isinstance(client, AzureOpenAI) or isinstance(client, AsyncAzureOpenAI):
+            ls_provider = "azure"
+            chat_name = "AzureChatOpenAI"
+            completions_name = "AzureOpenAI"
+    except ImportError:
+        pass
+
     # First wrap the create methods - these handle non-streaming cases
     client.chat.completions.create = _get_wrapper(  # type: ignore[method-assign]
         client.chat.completions.create,
         chat_name,
         _reduce_chat,
         tracing_extra=tracing_extra,
-        invocation_params_fn=functools.partial(_infer_invocation_params, "chat"),
+        invocation_params_fn=functools.partial(
+            _infer_invocation_params, "chat", ls_provider
+        ),
         process_outputs=_process_chat_completion,
     )
 
@@ -408,7 +421,9 @@ def wrap_openai(
         completions_name,
         _reduce_completions,
         tracing_extra=tracing_extra,
-        invocation_params_fn=functools.partial(_infer_invocation_params, "llm"),
+        invocation_params_fn=functools.partial(
+            _infer_invocation_params, "llm", ls_provider
+        ),
     )
 
     # Wrap beta.chat.completions.parse if it exists
@@ -423,7 +438,9 @@ def wrap_openai(
             chat_name,
             _process_chat_completion,
             tracing_extra=tracing_extra,
-            invocation_params_fn=functools.partial(_infer_invocation_params, "chat"),
+            invocation_params_fn=functools.partial(
+                _infer_invocation_params, "chat", ls_provider
+            ),
         )
 
     # For the responses API: "client.responses.create(**kwargs)"
@@ -436,7 +453,7 @@ def wrap_openai(
                 process_outputs=_process_responses_api_output,
                 tracing_extra=tracing_extra,
                 invocation_params_fn=functools.partial(
-                    _infer_invocation_params, "chat"
+                    _infer_invocation_params, "chat", ls_provider
                 ),
             )
         if hasattr(client.responses, "parse"):
@@ -446,7 +463,7 @@ def wrap_openai(
                 _process_responses_api_output,
                 tracing_extra=tracing_extra,
                 invocation_params_fn=functools.partial(
-                    _infer_invocation_params, "chat"
+                    _infer_invocation_params, "chat", ls_provider
                 ),
             )
 
