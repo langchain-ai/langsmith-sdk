@@ -163,7 +163,6 @@ class OTELExporter:
         Args:
             operations: List of serialized run operations to export.
         """
-
         # Create a dictionary mapping run IDs to their operations
 
         for op in operations:
