@@ -1,4 +1,4 @@
-import { OpenAI, AzureOpenAI } from "openai";
+import type { OpenAI } from "openai";
 import type { APIPromise } from "openai";
 import type { RunTreeConfig } from "../index.js";
 import {
@@ -290,9 +290,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
   }
 
   // Attempt to determine if this is an Azure OpenAI client
-  const isAzureOpenAI =
-    // eslint-disable-next-line no-instanceof/no-instanceof
-    openai instanceof AzureOpenAI || openai.constructor?.name === "AzureOpenAI";
+  const isAzureOpenAI = openai.constructor?.name === "AzureOpenAI";
 
   const provider = isAzureOpenAI ? "azure" : "openai";
   const chatName = isAzureOpenAI ? "AzureChatOpenAI" : "ChatOpenAI";
