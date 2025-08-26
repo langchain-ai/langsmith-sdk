@@ -6,7 +6,7 @@ from zstandard import ZstdCompressor  # type: ignore[import]
 from langsmith import utils as ls_utils
 
 compression_level = int(ls_utils.get_env_var("RUN_COMPRESSION_LEVEL") or 1)
-compression_threads = int(ls_utils.get_env_var("RUN_COMPRESSION_THREADS") or 1)
+compression_threads = int(ls_utils.get_env_var("RUN_COMPRESSION_THREADS") or -1)
 
 
 class CompressedTraces:
