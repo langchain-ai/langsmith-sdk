@@ -6,7 +6,6 @@ from zstandard import ZstdCompressor  # type: ignore[import]
 from langsmith import utils as ls_utils
 
 compression_level = int(ls_utils.get_env_var("RUN_COMPRESSION_LEVEL", 1))
-compression_threads = int(ls_utils.get_env_var("RUN_COMPRESSION_THREADS", 2))
 
 
 class CompressedTraces:
@@ -18,7 +17,7 @@ class CompressedTraces:
         self._context = []
 
         self.compressor_writer = ZstdCompressor(
-            level=compression_level, threads=compression_threads
+            level=compression_level, threads=-1
         ).stream_writer(self.buffer, closefd=False)
 
     def reset(self):
