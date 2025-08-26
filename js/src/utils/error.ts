@@ -97,16 +97,8 @@ export async function raiseForStatus(
             "or set LANGSMITH_WORKSPACE_ID environment variable."
         );
       }
-    } catch (e) {
-      if (
-        e &&
-        typeof e === "object" &&
-        "message" in e &&
-        typeof e.message === "string" &&
-        e.message.includes("org-scoped")
-      ) {
-        throw e;
-      }
+    } catch (e: any) {
+      throw new Error(`${response.status} ${response.statusText}`);
     }
   }
   errorBody = await response.text();

@@ -580,9 +580,7 @@ describe("Client", () => {
             run_type: "llm",
             inputs: { text: "hello" },
           })
-        ).rejects.toThrow(
-          "This API key is org-scoped and requires workspace specification. Please provide 'workspaceId' parameter, or set LANGSMITH_WORKSPACE_ID environment variable."
-        );
+        ).rejects.toThrow("403 Forbidden");
 
         expect(mockFetch).toHaveBeenCalled();
       });

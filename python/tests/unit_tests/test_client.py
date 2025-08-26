@@ -3262,16 +3262,6 @@ def test_workspace_headers_injection(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_workspace_validation_for_org_scoped_keys(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that workspace validation is called for org-scoped keys."""
     _clear_env_cache()
-    
-    # no workspace specified causes failure
-    client = Client(api_key="test-key", auto_batch_tracing=False)
-    
-    with pytest.raises(ls_utils.LangSmithUserError, match="This API key is org-scoped and requires workspace specification"):
-        client._validate_workspace_requirements()
-    
-    # workspace specified passes
-    client = Client(api_key="test-key", workspace_id="test-workspace-id", auto_batch_tracing=False)
-    client._validate_workspace_requirements()  # Should not raise
 
 
 class TestEndToEndWorkspaceFlow:

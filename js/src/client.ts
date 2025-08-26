@@ -847,7 +847,7 @@ export class Client implements LangSmithTracingClientInterface {
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       });
-      await raiseForStatus(res, `Failed to fetch ${path}`, false);
+      await raiseForStatus(res, `Failed to fetch ${path}`);
       return res;
     });
     return response;

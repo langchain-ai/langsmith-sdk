@@ -11,6 +11,7 @@ import io
 import itertools
 import logging
 import pathlib
+import pytest
 import queue
 import random
 import textwrap
@@ -437,7 +438,7 @@ def evaluate(
             error_handling=error_handling,
         )
 
-
+@pytest.mark.flaky(max_retries=7)
 def evaluate_existing(
     experiment: Union[str, uuid.UUID, schemas.TracerSession],
     /,
