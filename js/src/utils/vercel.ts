@@ -15,9 +15,9 @@ function isOpenAIResponse(
   );
 }
 
-function extractServiceTier(
+function extractTraceableServiceTier(
   aiSDKResponse: Record<string, unknown>
-): string | undefined {
+): "priority" | "flex" | undefined {
   if (
     isOpenAIResponse(aiSDKResponse) &&
     aiSDKResponse.response != null &&
@@ -26,9 +26,10 @@ function extractServiceTier(
     aiSDKResponse.response.body != null &&
     typeof aiSDKResponse.response.body === "object" &&
     "service_tier" in aiSDKResponse.response.body &&
-    typeof aiSDKResponse.response.body.service_tier === "string"
+    typeof aiSDKResponse.response.body.service_tier === "string" &&
+    ["priority", "flex"].includes(aiSDKResponse.response.body.service_tier)
   ) {
-    return aiSDKResponse.response.body.service_tier;
+    return aiSDKResponse.response.body.service_tier as "priority" | "flex";
   }
   return undefined;
 }
@@ -37,7 +38,7 @@ export function extractOutputTokenDetails(
   usage: Partial<LanguageModelV2Usage>,
   aiSDKResponse: Record<string, unknown> = {}
 ) {
-  const openAIServiceTier = extractServiceTier(aiSDKResponse);
+  const openAIServiceTier = extractTraceableServiceTier(aiSDKResponse);
   const outputTokenDetailsKeyPrefix = openAIServiceTier
     ? `${openAIServiceTier}_`
     : "";
@@ -109,7 +110,7 @@ export function extractInputTokenDetails(
     providerMetadata.openai != null &&
     typeof providerMetadata.openai === "object"
   ) {
-    const openAIServiceTier = extractServiceTier(aiSDKResponse ?? {});
+    const openAIServiceTier = extractTraceableServiceTier(aiSDKResponse ?? {});
     const outputTokenDetailsKeyPrefix = openAIServiceTier
       ? `${openAIServiceTier}_`
       : "";
