@@ -11,7 +11,6 @@ import io
 import itertools
 import logging
 import pathlib
-import pytest
 import queue
 import random
 import textwrap
@@ -30,6 +29,7 @@ from typing import (
     cast,
 )
 
+import pytest
 from typing_extensions import TypedDict, overload
 
 import langsmith

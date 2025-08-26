@@ -771,7 +771,7 @@ class Client:
         return headers
 
     def _set_header_affecting_attr(self, attr_name: str, value: Any) -> None:
-        """Helper to set attributes that affect headers and recalculate them."""
+        """Set attributes that affect headers and recalculate them."""
         object.__setattr__(self, attr_name, value)
         object.__setattr__(self, "_headers", self._compute_headers())
 
