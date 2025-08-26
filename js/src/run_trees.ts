@@ -771,7 +771,7 @@ export class RunTree implements BaseRun {
 
 export function isRunTree(x?: unknown): x is RunTree {
   return (
-    x !== undefined &&
+    x != null &&
     typeof (x as RunTree).createChild === "function" &&
     typeof (x as RunTree).postRun === "function"
   );
@@ -814,7 +814,7 @@ export function isRunnableConfigLike(x?: unknown): x is RunnableConfigLike {
   // or an array with a LangChainTracerLike object within it
 
   return (
-    x !== undefined &&
+    x != null &&
     typeof (x as RunnableConfigLike).callbacks === "object" &&
     // Callback manager with a langchain tracer
     (containsLangChainTracerLike(

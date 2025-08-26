@@ -94,9 +94,15 @@ from langsmith._internal._operations import (
 from langsmith._internal._serde import dumps_json as _dumps_json
 from langsmith.schemas import AttachmentInfo
 
-HAS_OTEL = False
-try:
-    if ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED")):
+
+def _check_otel_enabled() -> bool:
+    """Check if OTEL is enabled and imports are available."""
+    return ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED"))
+
+
+def _import_otel():
+    """Dynamically import OTEL modules when needed."""
+    try:
         from opentelemetry import trace as otel_trace  # type: ignore[import]
         from opentelemetry.trace import set_span_in_context  # type: ignore[import]
 
@@ -105,11 +111,12 @@ try:
         )
         from langsmith._internal.otel._otel_exporter import OTELExporter
 
-        HAS_OTEL = True
-except ImportError:
-    raise ImportError(
-        "To use OTEL tracing, you must install it with `pip install langsmith[otel]`"
-    )
+        return otel_trace, set_span_in_context, get_otlp_tracer_provider, OTELExporter
+    except ImportError:
+        raise ImportError(
+            "To use OTEL tracing, you must install it with `pip install langsmith[otel]`"
+        )
+
 
 try:
     from zoneinfo import ZoneInfo  # type: ignore[import-not-found]
@@ -132,6 +139,15 @@ if TYPE_CHECKING:
     from langchain_core.runnables import Runnable
 
     from langsmith import schemas
+
+    # OTEL imports for type hints
+    try:
+        from opentelemetry import trace as otel_trace  # type: ignore[import]
+
+        from langsmith._internal.otel._otel_exporter import OTELExporter
+    except ImportError:
+        otel_trace = Any  # type: ignore[assignment, misc]
+        OTELExporter = Any  # type: ignore[assignment, misc]
     from langsmith.evaluation import evaluator as ls_evaluator
     from langsmith.evaluation._arunner import (
         AEVALUATOR_T,
@@ -430,6 +446,8 @@ class Client:
         "_run_ops_buffer",
         "_run_ops_buffer_lock",
         "otel_exporter",
+        "_otel_trace",
+        "_set_span_in_context",
     ]
 
     _api_key: Optional[str]
@@ -459,6 +477,7 @@ class Client:
         info: Optional[Union[dict, ls_schemas.LangSmithInfo]] = None,
         api_urls: Optional[dict[str, str]] = None,
         otel_tracer_provider: Optional[TracerProvider] = None,
+        otel_enabled: Optional[bool] = None,
         tracing_sampling_rate: Optional[float] = None,
         workspace_id: Optional[str] = None,
     ) -> None:
@@ -671,33 +690,48 @@ class Client:
 
         self._manual_cleanup = False
 
-        if ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED")):
-            if not HAS_OTEL:
-                warnings.warn(
-                    "LANGSMITH_OTEL_ENABLED is set but OpenTelemetry packages are not installed. "
-                    "Install with `pip install langsmith[otel]`"
-                )
-            existing_provider = otel_trace.get_tracer_provider()
-            tracer = existing_provider.get_tracer(__name__)
-            if otel_tracer_provider is None:
-                # Use existing global provider if available
-                if not (
-                    isinstance(existing_provider, otel_trace.ProxyTracerProvider)
-                    and hasattr(tracer, "_tracer")
-                    and isinstance(
-                        cast(
-                            otel_trace.ProxyTracer,
-                            tracer,
-                        )._tracer,
-                        otel_trace.NoOpTracer,
-                    )
-                ):
-                    otel_tracer_provider = cast(TracerProvider, existing_provider)
-                else:
-                    otel_tracer_provider = get_otlp_tracer_provider()
-                    otel_trace.set_tracer_provider(otel_tracer_provider)
+        if _check_otel_enabled() or otel_enabled:
+            try:
+                (
+                    otel_trace,
+                    set_span_in_context,
+                    get_otlp_tracer_provider,
+                    OTELExporter,
+                ) = _import_otel()
 
-            self.otel_exporter = OTELExporter(tracer_provider=otel_tracer_provider)
+                existing_provider = otel_trace.get_tracer_provider()
+                tracer = existing_provider.get_tracer(__name__)
+                if otel_tracer_provider is None:
+                    # Use existing global provider if available
+                    if not (
+                        isinstance(existing_provider, otel_trace.ProxyTracerProvider)
+                        and hasattr(tracer, "_tracer")
+                        and isinstance(
+                            cast(
+                                otel_trace.ProxyTracer,  # type: ignore[attr-defined, name-defined]
+                                tracer,
+                            )._tracer,
+                            otel_trace.NoOpTracer,
+                        )
+                    ):
+                        otel_tracer_provider = cast(TracerProvider, existing_provider)
+                    else:
+                        otel_tracer_provider = get_otlp_tracer_provider()
+                        otel_trace.set_tracer_provider(otel_tracer_provider)
+
+                self.otel_exporter = OTELExporter(tracer_provider=otel_tracer_provider)
+
+                # Store imports for later use
+                self._otel_trace = otel_trace
+                self._set_span_in_context = set_span_in_context
+
+            except ImportError:
+                warnings.warn(
+                    "LANGSMITH_OTEL_ENABLED is set but OpenTelemetry packages are not installed: Install with `pip install langsmith[otel]"
+                )
+                self.otel_exporter = None
+        else:
+            self.otel_exporter = None
 
     def _repr_html_(self) -> str:
         """Return an HTML representation of the instance with a link to the URL.
@@ -1531,15 +1565,15 @@ class Client:
                     serialized_op.trace_id,
                     serialized_op.id,
                 )
-                if HAS_OTEL:
+                if self.otel_exporter is not None:
                     self.tracing_queue.put(
                         TracingQueueItem(
                             run_create["dotted_order"],
                             serialized_op,
                             api_key=api_key,
                             api_url=api_url,
-                            otel_context=set_span_in_context(
-                                otel_trace.get_current_span()
+                            otel_context=self._set_span_in_context(
+                                self._otel_trace.get_current_span()
                             ),
                         )
                     )
@@ -2487,15 +2521,15 @@ class Client:
                     serialized_op.trace_id,
                     serialized_op.id,
                 )
-                if HAS_OTEL:
+                if self.otel_exporter is not None:
                     self.tracing_queue.put(
                         TracingQueueItem(
                             run_update["dotted_order"],
                             serialized_op,
                             api_key=api_key,
                             api_url=api_url,
-                            otel_context=set_span_in_context(
-                                otel_trace.get_current_span()
+                            otel_context=self._set_span_in_context(
+                                self._otel_trace.get_current_span()
                             ),
                         )
                     )
