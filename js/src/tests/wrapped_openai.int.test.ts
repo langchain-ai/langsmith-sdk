@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable no-process-env */
-import { OpenAI } from "openai";
+import { AzureOpenAI, OpenAI } from "openai";
 import { wrapOpenAI } from "../wrappers/index.js";
 import { mockClient } from "./utils/mock_client.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
@@ -859,6 +859,43 @@ const usageMetadataTestCases = [
     checkReasoningTokens: true,
   },
 ];
+
+test("Azure OpenAI provider detection", async () => {
+  if (!process.env.AZURE_OPENAI_API_KEY) {
+    return;
+  }
+  const { client, callSpy } = mockClient();
+
+  const azureClient = new AzureOpenAI({
+    apiKey: process.env.AZURE_OPENAI_API_KEY,
+    apiVersion: process.env.AZURE_OPENAI_API_VERSION,
+    endpoint: process.env.AZURE_OPENAI_ENDPOINT,
+  });
+
+  const patchedClient = wrapOpenAI(azureClient, {
+    client,
+    tracingEnabled: true,
+  });
+
+  await patchedClient.chat.completions.create({
+    messages: [{ role: "user", content: "Say 'hello'" }],
+    temperature: 0,
+    seed: 42,
+    model: "gpt-4o-mini",
+  });
+
+  expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
+
+  // Check that the provider is set to "azure_openai" in the request
+  for (const call of callSpy.mock.calls) {
+    const body = parseRequestBody((call[1] as any).body);
+    if (body.extra && body.extra.metadata) {
+      expect(body.extra.metadata.ls_provider).toBe("azure");
+    }
+  }
+
+  callSpy.mockClear();
+});
 
 describe("Usage Metadata Tests", () => {
   usageMetadataTestCases.forEach(

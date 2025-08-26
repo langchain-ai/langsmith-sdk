@@ -1,4 +1,4 @@
-import { OpenAI } from "openai";
+import { OpenAI, AzureOpenAI } from "openai";
 import type { APIPromise } from "openai";
 import type { RunTreeConfig } from "../index.js";
 import {
@@ -289,6 +289,15 @@ export const wrapOpenAI = <T extends OpenAIType>(
     );
   }
 
+  // Attempt to determine if this is an Azure OpenAI client
+  const isAzureOpenAI =
+    // eslint-disable-next-line no-instanceof/no-instanceof
+    openai instanceof AzureOpenAI || openai.constructor?.name === "AzureOpenAI";
+
+  const provider = isAzureOpenAI ? "azure" : "openai";
+  const chatName = isAzureOpenAI ? "AzureChatOpenAI" : "ChatOpenAI";
+  const completionsName = isAzureOpenAI ? "AzureOpenAI" : "OpenAI";
+
   // Some internal OpenAI methods call each other, so we need to preserve original
   // OpenAI methods.
   const tracedOpenAIClient = { ...openai };
@@ -296,7 +305,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
   const chatCompletionParseMetadata: TraceableConfig<
     typeof openai.chat.completions.create
   > = {
-    name: "ChatOpenAI",
+    name: chatName,
     run_type: "llm",
     aggregator: chatAggregator,
     argsConfigPath: [1, "langsmithExtra"],
@@ -310,7 +319,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
         undefined;
 
       return {
-        ls_provider: "openai",
+        ls_provider: provider,
         ls_model_type: "chat",
         ls_model_name: params.model,
         ls_max_tokens:
@@ -363,7 +372,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
   tracedOpenAIClient.completions = {
     ...openai.completions,
     create: traceable(openai.completions.create.bind(openai.completions), {
-      name: "OpenAI",
+      name: completionsName,
       run_type: "llm",
       aggregator: textAggregator,
       argsConfigPath: [1, "langsmithExtra"],
@@ -377,7 +386,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
           undefined;
 
         return {
-          ls_provider: "openai",
+          ls_provider: provider,
           ls_model_type: "llm",
           ls_model_name: params.model,
           ls_max_tokens: params.max_tokens ?? undefined,
@@ -409,7 +418,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
       tracedOpenAIClient.responses.create = traceable(
         openai.responses.create.bind(openai.responses),
         {
-          name: "ChatOpenAI",
+          name: chatName,
           run_type: "llm",
           aggregator: responsesAggregator,
           argsConfigPath: [1, "langsmithExtra"],
@@ -419,7 +428,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
             // Handle responses API parameters
             const params = payload as any;
             return {
-              ls_provider: "openai",
+              ls_provider: provider,
               ls_model_type: "llm",
               ls_model_name: params.model || "unknown",
             };
