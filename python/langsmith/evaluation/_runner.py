@@ -29,7 +29,6 @@ from typing import (
     cast,
 )
 
-import pytest
 from typing_extensions import TypedDict, overload
 
 import langsmith
@@ -438,7 +437,7 @@ def evaluate(
             error_handling=error_handling,
         )
 
-@pytest.mark.flaky(max_retries=7)
+
 def evaluate_existing(
     experiment: Union[str, uuid.UUID, schemas.TracerSession],
     /,
