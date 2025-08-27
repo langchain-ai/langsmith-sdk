@@ -245,6 +245,7 @@ if HAVE_AGENTS:
                     self.client.update_run(
                         run_id=run["id"],
                         trace_id=run["trace_id"],
+                        parent_run_id=run["parent_run_id"],
                         dotted_order=run["dotted_order"],
                         inputs=self._first_response_inputs.pop(trace.trace_id, {}),
                         outputs=self._last_response_outputs.pop(trace.trace_id, {}),
