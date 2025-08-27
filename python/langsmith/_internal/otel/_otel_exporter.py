@@ -492,6 +492,8 @@ class OTELExporter:
                 system = "vertex_ai"
             elif "xai" in model_lower or "grok" in model_lower:
                 system = "xai"
+            elif "qwen" in model_lower:
+                system = "qwen"
 
         span.set_attribute(GEN_AI_SYSTEM, system)
         setattr(span, "_gen_ai_system", system)
