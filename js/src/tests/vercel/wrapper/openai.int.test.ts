@@ -88,6 +88,49 @@ test("wrap generateText with service tier", async () => {
   ).toBeGreaterThan(1);
 });
 
+test("wrap generateText with flex service tier", async () => {
+  const { client, callSpy } = mockClient();
+
+  const result = await generateText({
+    model: openai("gpt-5-mini"),
+    messages: [
+      {
+        role: "user",
+        content: "What color is the sky in one word?",
+      },
+    ],
+    providerOptions: {
+      openai: {
+        serviceTier: "flex",
+      },
+      langsmith: createLangSmithProviderOptions({
+        client,
+      }),
+    },
+  });
+  expect(result.text).toBeDefined();
+  expect(result.text.length).toBeGreaterThan(0);
+  expect(result.usage).toBeDefined();
+  expect(result.providerMetadata).toBeDefined();
+  const patchBodies = await Promise.all(
+    callSpy.mock.calls
+      .filter((call) => call[1]!.method === "PATCH")
+      .map((call) => new Response(call[1]!.body).json())
+  );
+  const childRunPatchBodies = patchBodies.filter(
+    (body) => body.parent_run_id != null
+  );
+  expect(childRunPatchBodies.length).toEqual(1);
+  expect(
+    childRunPatchBodies[0].extra.metadata.usage_metadata.input_token_details
+      .flex
+  ).toBeGreaterThan(1);
+  expect(
+    childRunPatchBodies[0].extra.metadata.usage_metadata.output_token_details
+      .flex
+  ).toBeGreaterThan(1);
+});
+
 test("wrap streamText", async () => {
   const result = await streamText({
     model: openai("gpt-5-nano"),

@@ -271,6 +271,26 @@ test_cases = [
         "expect_usage_metadata": True,
         "check_reasoning_tokens": True,
     },
+    {
+        "description": "priority service tier",
+        "params": {
+            "model": "gpt-4o-mini",
+            "messages": [{"role": "user", "content": "howdy"}],
+            "service_tier": "priority",
+        },
+        "expect_usage_metadata": True,
+        "check_service_tier": "priority",
+    },
+    {
+        "description": "flex service tier",
+        "params": {
+            "model": "gpt-4o-mini",
+            "messages": [{"role": "user", "content": "howdy"}],
+            "service_tier": "flex",
+        },
+        "expect_usage_metadata": True,
+        "check_service_tier": "flex",
+    },
 ]
 
 
@@ -310,6 +330,12 @@ def test_wrap_openai_chat_tokens(test_case):
                     usage_metadata["output_token_details"]["reasoning"]
                     == oai_usage.completion_tokens_details.reasoning_tokens
                 )
+            if test_case.get("check_service_tier"):
+                service_tier = test_case["check_service_tier"]
+                assert service_tier in usage_metadata["input_token_details"]
+                assert service_tier in usage_metadata["output_token_details"]
+                assert usage_metadata["input_token_details"][service_tier] > 0
+                assert usage_metadata["output_token_details"][service_tier] > 0
         else:
             assert collect.run.outputs.get("usage_metadata") is None
             assert collect.run.outputs.get("usage") is None
@@ -360,6 +386,12 @@ async def test_wrap_openai_chat_async_tokens(test_case):
                     usage_metadata["output_token_details"]["reasoning"]
                     == oai_usage.completion_tokens_details.reasoning_tokens
                 )
+            if test_case.get("check_service_tier"):
+                service_tier = test_case["check_service_tier"]
+                assert service_tier in usage_metadata["input_token_details"]
+                assert service_tier in usage_metadata["output_token_details"]
+                assert usage_metadata["input_token_details"][service_tier] > 0
+                assert usage_metadata["output_token_details"][service_tier] > 0
         else:
             assert collect.run.outputs.get("usage_metadata") is None
             assert collect.run.outputs.get("usage") is None

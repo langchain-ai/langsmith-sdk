@@ -858,6 +858,26 @@ const usageMetadataTestCases = [
     expectUsageMetadata: true,
     checkReasoningTokens: true,
   },
+  {
+    description: "priority service tier",
+    params: {
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: "howdy" }],
+      service_tier: "priority",
+    },
+    expectUsageMetadata: true,
+    checkServiceTier: "priority",
+  },
+  {
+    description: "flex service tier",
+    params: {
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: "howdy" }],
+      service_tier: "flex",
+    },
+    expectUsageMetadata: true,
+    checkServiceTier: "flex",
+  },
 ];
 
 test("Azure OpenAI provider detection", async () => {
@@ -899,7 +919,13 @@ test("Azure OpenAI provider detection", async () => {
 
 describe("Usage Metadata Tests", () => {
   usageMetadataTestCases.forEach(
-    ({ description, params, expectUsageMetadata, checkReasoningTokens }) => {
+    ({
+      description,
+      params,
+      expectUsageMetadata,
+      checkReasoningTokens,
+      checkServiceTier,
+    }) => {
       it(`should handle ${description}`, async () => {
         const { client, callSpy } = mockClient();
         const openai = wrapOpenAI(new OpenAI(), {
@@ -962,6 +988,23 @@ describe("Usage Metadata Tests", () => {
             expect(usageMetadata!.output_token_details!.reasoning).toEqual(
               oaiUsage!.completion_tokens_details?.reasoning_tokens
             );
+          }
+
+          if (checkServiceTier) {
+            expect(usageMetadata!.input_token_details).not.toBeUndefined();
+            expect(usageMetadata!.output_token_details).not.toBeUndefined();
+            expect(
+              usageMetadata?.input_token_details?.[checkServiceTier]
+            ).not.toBeUndefined();
+            expect(
+              usageMetadata?.output_token_details?.[checkServiceTier]
+            ).not.toBeUndefined();
+            expect(
+              usageMetadata?.input_token_details?.[checkServiceTier]
+            ).toBeGreaterThan(0);
+            expect(
+              usageMetadata?.output_token_details?.[checkServiceTier]
+            ).toBeGreaterThan(0);
           }
         } else {
           expect(usageMetadata).toBeUndefined();
