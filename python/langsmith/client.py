@@ -3701,7 +3701,7 @@ class Client:
         for i, project in enumerate(
             self._get_paginated_list("/sessions", params=params)
         ):
-            yield ls_schemas.TracerSession(**project, _host_url=self._host_url)
+            yield ls_schemas.TracerSessionResult(**project, _host_url=self._host_url)
             if limit is not None and i + 1 >= limit:
                 break
 
