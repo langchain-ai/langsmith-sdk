@@ -113,6 +113,7 @@ def tracing_context(
     enabled: Optional[Union[bool, Literal["local"]]] = None,
     client: Optional[ls_client.Client] = None,
     replicas: Optional[Sequence[WriteReplica]] = None,
+    distributed_parent_id: Optional[str] = None,
     **kwargs: Any,
 ) -> Generator[None, None, None]:
     """Set the tracing context for a block of code.
@@ -130,6 +131,7 @@ def tracing_context(
         replicas: A sequence of WriteReplica dictionaries to send runs to.
               Example: [{"api_url": "https://api.example.com", "api_key": "key", "project_name": "proj"}]
               or [{"project_name": "my_experiment", "updates": {"reference_example_id": None}}]
+        distributed_parent_id: The distributed parent ID for distributed tracing. Defaults to None.
     """
     if kwargs:
         # warn
@@ -143,12 +145,12 @@ def tracing_context(
         if parent is not False
         else None
     )
-    distributed_parent_id = None
-    if parent_run is not None:
+    distributed_parent_id_to_use = distributed_parent_id
+    if distributed_parent_id_to_use is None and parent_run is not None:
         # TODO(angus): decide if we want to merge tags and metadata
         tags = sorted(set(tags or []) | set(parent_run.tags or []))
         metadata = {**parent_run.metadata, **(metadata or {})}
-        distributed_parent_id = parent_run.id
+        distributed_parent_id_to_use = parent_run.id  # type: ignore[assignment]
     enabled = enabled if enabled is not None else current_context.get("enabled")
     _set_tracing_context(
         {
@@ -159,7 +161,7 @@ def tracing_context(
             "enabled": enabled,
             "client": client,
             "replicas": replicas,
-            "distributed_parent_id": distributed_parent_id,
+            "distributed_parent_id": distributed_parent_id_to_use,
         }
     )
     try:
@@ -188,7 +190,7 @@ def ensure_traceable(
     metadata: Optional[Mapping[str, Any]] = None,
     tags: Optional[list[str]] = None,
     client: Optional[ls_client.Client] = None,
-    reduce_fn: Optional[Callable[[Sequence], dict]] = None,
+    reduce_fn: Optional[Callable[[Sequence], Union[dict, str]]] = None,
     project_name: Optional[str] = None,
     process_inputs: Optional[Callable[[dict], dict]] = None,
     process_outputs: Optional[Callable[..., dict]] = None,
@@ -309,7 +311,7 @@ def traceable(
     metadata: Optional[Mapping[str, Any]] = None,
     tags: Optional[list[str]] = None,
     client: Optional[ls_client.Client] = None,
-    reduce_fn: Optional[Callable[[Sequence], dict]] = None,
+    reduce_fn: Optional[Callable[[Sequence], Union[dict, str]]] = None,
     project_name: Optional[str] = None,
     process_inputs: Optional[Callable[[dict], dict]] = None,
     process_outputs: Optional[Callable[..., dict]] = None,
@@ -1000,6 +1002,7 @@ class trace:
                 "parent": self.parent,
                 "run_tree": self.run_tree,
                 "client": client_,
+                "project_name": self.project_name,
             }
         )
 

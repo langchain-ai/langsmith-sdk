@@ -15,6 +15,10 @@ import {
   getEnvironmentVariable,
 } from "./utils/env.js";
 import { isTracingEnabled } from "./env.js";
+import {
+  LANGSMITH_IS_ROOT,
+  LANGSMITH_TRACEABLE_PARENT_OTEL_SPAN_ID,
+} from "./experimental/otel/constants.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-types
 type AnyString = string & {};
@@ -71,21 +75,24 @@ function convertCoreToSmith(
           return {
             type: "text",
             text: part.text,
-            // @ts-expect-error Backcompat for AI SDK 4
-            ...part.experimental_providerMetadata,
+            // Backcompat for AI SDK 4
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ...(part as any).experimental_providerMetadata,
           };
         }
 
         if (part.type === "tool-call") {
-          // @ts-expect-error Backcompat for AI SDK 4
-          const legacyToolCallInput = part.args;
+          // Backcompat for AI SDK 4
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const legacyToolCallInput = (part as any).args;
           return {
             type: "tool_use",
             name: part.toolName,
             id: part.toolCallId,
             input: legacyToolCallInput ?? part.input,
-            // @ts-expect-error Backcompat for AI SDK 4
-            ...part.experimental_providerMetadata,
+            // Backcompat for AI SDK 4
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ...(part as any).experimental_providerMetadata,
           };
         }
 
@@ -99,8 +106,9 @@ function convertCoreToSmith(
       if (toolCalls.length > 0) {
         data.additional_kwargs ??= {};
         data.additional_kwargs.tool_calls = toolCalls.map((part) => {
-          // @ts-expect-error Backcompat for AI SDK 4
-          const legacyToolCallInput = part.args;
+          // Backcompat for AI SDK 4
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const legacyToolCallInput = (part as any).args;
           return {
             id: part.toolCallId,
             type: "function",
@@ -126,8 +134,9 @@ function convertCoreToSmith(
           return {
             type: "text",
             text: part.text,
-            // @ts-expect-error Backcompat for AI SDK 4
-            ...part.experimental_providerMetadata,
+            // Backcompat for AI SDK 4
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ...(part as any).experimental_providerMetadata,
           };
         }
 
@@ -167,8 +176,9 @@ function convertCoreToSmith(
           return {
             type: "image_url",
             image_url: imageUrl,
-            // @ts-expect-error Backcompat for AI SDK 4
-            ...part.experimental_providerMetadata,
+            // Backcompat for AI SDK 4
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ...(part as any).experimental_providerMetadata,
           };
         }
 
@@ -185,8 +195,9 @@ function convertCoreToSmith(
 
   if (message.role === "tool") {
     const res = message.content.map((toolCall) => {
-      // @ts-expect-error Backcompat for AI SDK 4
-      const legacyToolCallResult = toolCall.result;
+      // Backcompat for AI SDK 4
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const legacyToolCallResult = (toolCall as any).result;
       return {
         type: "tool",
         data: {
@@ -284,7 +295,25 @@ interface MutableRunCreate {
   trace_id: string;
   dotted_order: string;
   parent_run_id: string | undefined;
+  start_time: string;
 }
+
+// Helper function to convert dotted order version of start time to ISO string
+export const parseStrippedIsoTime = (stripped: string): string => {
+  const year = stripped.slice(0, 4);
+  const month = stripped.slice(4, 6);
+  const day = stripped.slice(6, 8);
+  const hour = stripped.slice(9, 11); // Skip 'T'
+  const minute = stripped.slice(11, 13);
+  const second = stripped.slice(13, 15);
+  const ms = stripped.slice(15, 18); // milliseconds
+  const us = stripped.length >= 21 ? stripped.slice(18, 21) : "000"; // microseconds
+
+  // Create ISO string with microsecond precision only if microseconds are present
+  return us !== "000"
+    ? `${year}-${month}-${day}T${hour}:${minute}:${second}.${ms}${us}Z`
+    : `${year}-${month}-${day}T${hour}:${minute}:${second}.${ms}Z`;
+};
 
 function getMutableRunCreate(dotOrder: string): MutableRunCreate {
   const segments = dotOrder.split(".").map((i) => {
@@ -296,13 +325,15 @@ function getMutableRunCreate(dotOrder: string): MutableRunCreate {
   const parentRunId = segments.at(-2)?.runId;
 
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-  const runId = segments.at(-1)!.runId;
+  const lastSegment = segments.at(-1)!;
+  const startTime = parseStrippedIsoTime(lastSegment.startTime);
 
   return {
-    id: runId,
+    id: lastSegment.runId,
     trace_id: traceId,
     dotted_order: dotOrder,
     parent_run_id: parentRunId,
+    start_time: startTime,
   };
 }
 
@@ -900,6 +931,15 @@ export class AISDKExporter {
       const runId = uuid5(spanId, RUN_ID_NAMESPACE);
 
       let parentId = getParentSpanId(span);
+      if (LANGSMITH_IS_ROOT in span.attributes) {
+        parentId = undefined;
+      } else if (
+        LANGSMITH_TRACEABLE_PARENT_OTEL_SPAN_ID in span.attributes &&
+        typeof span.attributes[LANGSMITH_TRACEABLE_PARENT_OTEL_SPAN_ID] ===
+          "string"
+      ) {
+        parentId = span.attributes[LANGSMITH_TRACEABLE_PARENT_OTEL_SPAN_ID];
+      }
       let parentRunId = parentId
         ? uuid5(parentId, RUN_ID_NAMESPACE)
         : undefined;

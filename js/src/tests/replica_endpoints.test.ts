@@ -3,7 +3,7 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
 /* eslint-disable prefer-const */
 /* eslint-disable no-instanceof/no-instanceof */
-import { jest } from "@jest/globals";
+import { jest, describe } from "@jest/globals";
 import { Client } from "../client.js";
 import { RunTree } from "../run_trees.js";
 import { traceable } from "../traceable.js";
@@ -405,11 +405,19 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
 
       process.env.LANGSMITH_RUNS_ENDPOINTS = JSON.stringify(endpointsConfig);
 
-      const client = new Client({ autoBatchTracing: true });
+      const mockFetch = jest.fn<typeof fetch>().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: () => Promise.resolve(""),
+        json: () => Promise.resolve({}),
+      } as Response);
 
-      const batchCallSpy = jest
-        .spyOn((client as any).batchIngestCaller, "call")
-        .mockResolvedValue({ ok: true, text: () => "" });
+      const client = new Client({
+        autoBatchTracing: true,
+        fetchImplementation: mockFetch,
+      });
+
+      const batchCallSpy = mockFetch;
 
       jest.spyOn(client as any, "_getServerInfo").mockResolvedValue({
         version: "test",
@@ -437,7 +445,7 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
       const calls = batchCallSpy.mock.calls;
       const parsedBodies = await Promise.all(
         calls.map(async (call) => {
-          const requestParam = call[2] as any;
+          const requestParam = call[1] as any; // fetch calls have [url, init] format
           return parseMockRequestBody(requestParam?.body);
         })
       );
@@ -474,12 +482,15 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
 
       process.env.LANGSMITH_RUNS_ENDPOINTS = JSON.stringify(endpointsConfig);
 
-      const client = new Client({ autoBatchTracing: true });
+      const multipartCallSpy = jest.fn<typeof fetch>().mockResolvedValue({
+        ok: true,
+        text: () => Promise.resolve(""),
+      } as Response);
 
-      // Mock batchIngestCaller for multipart endpoint (same caller, different config)
-      const multipartCallSpy = jest
-        .spyOn((client as any).batchIngestCaller, "call")
-        .mockResolvedValue({ ok: true, text: () => "" });
+      const client = new Client({
+        autoBatchTracing: true,
+        fetchImplementation: multipartCallSpy,
+      });
 
       jest.spyOn(client as any, "_getServerInfo").mockResolvedValue({
         version: "test",
@@ -506,7 +517,7 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
       const calls = multipartCallSpy.mock.calls;
       const parsedBodies = await Promise.all(
         calls.map(async (call) => {
-          const requestParam = call[2] as any;
+          const requestParam = call[1] as any;
           return parseMockRequestBody(requestParam?.body);
         })
       );

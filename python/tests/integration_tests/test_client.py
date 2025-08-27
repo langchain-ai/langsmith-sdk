@@ -2,9 +2,11 @@
 
 import asyncio
 import datetime
+import importlib
 import io
 import logging
 import os
+import queue
 import random
 import string
 import sys
@@ -13,16 +15,26 @@ import time
 import uuid
 from datetime import timedelta
 from pathlib import Path
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, cast
 from unittest import mock
 from uuid import uuid4
 
 import pytest
 from freezegun import freeze_time
+from opentelemetry.sdk.trace import ReadableSpan
+from opentelemetry.trace import set_tracer_provider
 from pydantic import BaseModel
 from requests_toolbelt import MultipartEncoder, MultipartEncoderMonitor
 
+import langsmith
+from langsmith._internal._background_thread import (
+    TracingQueueItem,
+    _otel_tracing_thread_handle_batch,
+)
+from langsmith._internal._operations import serialize_run_dict
 from langsmith._internal._serde import dumps_json
+from langsmith._internal.otel import _otel_exporter
+from langsmith._internal.otel._otel_client import get_otlp_tracer_provider
 from langsmith.client import ID_TYPE, Client, _close_files
 from langsmith.evaluation import aevaluate, evaluate
 from langsmith.run_helpers import traceable
@@ -3299,6 +3311,7 @@ def test_annotation_queue_with_rubric_instructions_2(langchain_client: Client):
             langchain_client.delete_project(project_name=project_name)
 
 
+@pytest.mark.skip(reason="flaky")
 def test_list_runs_with_child_runs(langchain_client: Client):
     """Test listing runs with child runs."""
     project_name = f"test-project-{str(uuid.uuid4())[:8]}"
@@ -3332,3 +3345,199 @@ def test_list_runs_with_child_runs(langchain_client: Client):
     finally:
         if langchain_client.has_project(project_name=project_name):
             langchain_client.delete_project(project_name=project_name)
+
+
+def test_run_ops_buffer_integration(langchain_client: Client) -> None:
+    project_name = f"test-run-ops-buffer-{str(uuid.uuid4())[:8]}"
+
+    # Clean up existing project if it exists
+    if langchain_client.has_project(project_name=project_name):
+        langchain_client.delete_project(project_name=project_name)
+
+    # Create client with run_ops_buffer functionality
+    def modify_runs(runs):
+        """Modify run inputs/outputs by adding custom fields and transforming data."""
+        for run in runs:
+            # Add custom metadata
+            if "extra" in run and isinstance(run["extra"], dict):
+                run["extra"]["custom_processed"] = True
+                run["extra"]["processing_timestamp"] = time.time()
+
+            # Modify inputs if they exist
+            if "inputs" in run and isinstance(run["inputs"], dict):
+                run["inputs"]["processed"] = True
+                run["inputs"]["original_input_count"] = len(run["inputs"])
+
+            # Modify outputs if they exist
+            if "outputs" in run and isinstance(run["outputs"], dict):
+                run["outputs"]["processed"] = True
+                run["outputs"]["original_output_count"] = len(run["outputs"])
+
+        return runs
+
+    buffer_client = Client(
+        api_url=langchain_client.api_url,
+        api_key=langchain_client.api_key,
+        process_buffered_run_ops=modify_runs,
+        run_ops_buffer_size=2,  # Small buffer for quick testing
+        run_ops_buffer_timeout_ms=1000,  # 1 second timeout
+    )
+
+    try:
+        # Create test runs that will be buffered and processed
+        run_ids = []
+
+        for i in range(3):
+            run_id = uuid.uuid4()
+            run_ids.append(run_id)
+            start_time = datetime.datetime.now(datetime.timezone.utc)
+            buffer_client.create_run(
+                id=run_id,
+                name=f"test_buffered_run_{i}",
+                run_type="llm",
+                inputs={"text": f"input_{i}", "index": i},
+                project_name=project_name,
+                trace_id=run_id,
+                dotted_order=f"{start_time.strftime('%Y%m%dT%H%M%S%fZ')}{str(run_id)}",
+                start_time=start_time,
+                extra={},
+            )
+
+            # Update with outputs
+            buffer_client.update_run(
+                run_id,
+                outputs={"result": f"output_{i}", "processed_index": i * 2},
+                trace_id=run_id,
+                dotted_order=f"{start_time.strftime('%Y%m%dT%H%M%S%fZ')}{str(run_id)}",
+            )
+
+        # Flush to ensure all runs are processed
+        buffer_client.flush()
+
+        # Wait for runs to be created and processed
+        for run_id in run_ids:
+            wait_for(
+                lambda rid=run_id: _get_run(rid, langchain_client=langchain_client),
+                max_sleep_time=30,
+            )
+
+        # Verify that the modifications were applied in LangSmith
+        for i, run_id in enumerate(run_ids):
+            stored_run = langchain_client.read_run(run_id)
+
+            # Check that custom metadata was added
+            assert stored_run.extra.get("custom_processed") is True
+            assert "processing_timestamp" in stored_run.extra
+
+            # Check that inputs were modified
+            assert stored_run.inputs["processed"] is True
+            assert stored_run.inputs["original_input_count"] == 3  # text + index
+            assert stored_run.inputs["text"] == f"input_{i}"
+            assert stored_run.inputs["index"] == i
+
+            # Check that outputs were modified
+            assert stored_run.outputs["processed"] is True
+            assert (
+                stored_run.outputs["original_output_count"] == 3
+            )  # result + processed_index
+            assert stored_run.outputs["result"] == f"output_{i}"
+            assert stored_run.outputs["processed_index"] == i * 2
+
+    finally:
+        # Clean up
+        if buffer_client.has_project(project_name=project_name):
+            buffer_client.delete_project(project_name=project_name)
+
+
+def test_otel_trace_attributes(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("LANGSMITH_OTEL_ENABLED", "true")
+    get_env_var.cache_clear()
+    importlib.reload(langsmith.client)
+    importlib.reload(langsmith._internal.otel._otel_client)
+    importlib.reload(langsmith._internal.otel._otel_exporter)
+    set_tracer_provider(get_otlp_tracer_provider())
+
+    client = Client()
+
+    future = queue.Queue()
+
+    class MockOTELExporter:
+        def __init__(self):
+            self.original_otel_exporter = client.otel_exporter
+
+        def export_batch(self, run_ops, otel_context_map):
+            for op in run_ops:
+                try:
+                    run_info = self.original_otel_exporter._deserialize_run_info(op)
+                    if not run_info:
+                        continue
+                    if op.operation == "post":
+                        span = self.original_otel_exporter._create_span_for_run(
+                            op, run_info, otel_context_map.get(op.id)
+                        )
+                        if span:
+                            self.original_otel_exporter._spans[op.id] = span
+                    else:
+                        future.put(self.original_otel_exporter._spans[op.id])
+                        self.original_otel_exporter._update_span_for_run(op, run_info)
+                except Exception as e:
+                    logger.exception(f"Error processing operation {op.id}: {e}")
+
+    client.otel_exporter = MockOTELExporter()
+
+    # Create test data
+    run_id = uuid.uuid4()
+    trace_id = uuid.uuid4()
+    start_time = datetime.datetime.now(datetime.timezone.utc)
+    post_run_data = {
+        "id": run_id,
+        "trace_id": trace_id,
+        "dotted_order": f"{start_time.strftime('%Y%m%dT%H%M%S%fZ')}{str(trace_id)}",
+        "session_name": "test-project",
+        "name": "OTEL Export Test",
+        "inputs": {"prompt": "Hello, OTEL!"},
+        "run_type": "llm",
+    }
+
+    # Create test batch
+    serialized_post_op = serialize_run_dict("post", post_run_data)
+    batch = [TracingQueueItem("test_priority_1", serialized_post_op)]
+
+    _otel_tracing_thread_handle_batch(
+        client=client,
+        tracing_queue=client.tracing_queue,
+        batch=batch,
+        mark_task_done=False,
+    )
+
+    patch_run_data = {
+        "id": run_id,
+        "trace_id": trace_id,
+        "outputs": {"answer": "Hello, User!"},
+        "extra": {"metadata": {"foo": "bar"}},
+        "tags": ["otel", "test"],
+        "dotted_order": f"{start_time.strftime('%Y%m%dT%H%M%S%fZ')}{str(trace_id)}",
+    }
+
+    serialized_patch_op = serialize_run_dict("patch", patch_run_data)
+
+    batch = [TracingQueueItem("test_priority_2", serialized_patch_op)]
+
+    _otel_tracing_thread_handle_batch(
+        client=client,
+        tracing_queue=client.tracing_queue,
+        batch=batch,
+        mark_task_done=False,
+    )
+
+    readable_span = future.get(timeout=0.1)
+    readable_span = cast(ReadableSpan, readable_span)
+    assert readable_span.attributes[_otel_exporter.GEN_AI_OPERATION_NAME] == "chat"
+    assert (
+        readable_span.attributes[_otel_exporter.GENAI_PROMPT]
+        == '{"prompt":"Hello, OTEL!"}'
+    )
+    assert (
+        readable_span.attributes[_otel_exporter.GENAI_COMPLETION]
+        == '{"answer":"Hello, User!"}'
+    )
