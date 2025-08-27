@@ -85,6 +85,22 @@ export async function raiseForStatus(
     }
     return;
   }
+
+  if (response.status === 403) {
+    try {
+      const errorData = await response.json();
+      const errorCode = errorData?.error;
+      if (errorCode === "org_scoped_key_requires_workspace") {
+        throw new Error(
+          "This API key is org-scoped and requires workspace specification. " +
+            "Please provide 'workspaceId' parameter, " +
+            "or set LANGSMITH_WORKSPACE_ID environment variable."
+        );
+      }
+    } catch (e: any) {
+      throw new Error(`${response.status} ${response.statusText}`);
+    }
+  }
   errorBody = await response.text();
   const fullMessage = `Failed to ${context}. Received status [${response.status}]: ${response.statusText}. Server response: ${errorBody}`;
 

@@ -107,6 +107,10 @@ export interface ClientConfig {
    */
   debug?: boolean;
   /**
+   * The workspace ID. Required for org-scoped API keys.
+   */
+  workspaceId?: string;
+  /**
    * Custom fetch implementation. Useful for testing.
    */
   fetchImplementation?: typeof fetch;
@@ -603,6 +607,8 @@ export class Client implements LangSmithTracingClientInterface {
 
   private webUrl?: string;
 
+  private workspaceId?: string;
+
   private caller: AsyncCaller;
 
   private batchIngestCaller: AsyncCaller;
@@ -671,6 +677,9 @@ export class Client implements LangSmithTracingClientInterface {
     if (this.webUrl?.endsWith("/")) {
       this.webUrl = this.webUrl.slice(0, -1);
     }
+    this.workspaceId = trimQuotes(
+      config.workspaceId ?? getLangSmithEnvironmentVariable("WORKSPACE_ID")
+    );
     this.timeout_ms = config.timeout_ms ?? 90_000;
     this.caller = new AsyncCaller({
       ...(config.callerOptions ?? {}),
@@ -767,6 +776,9 @@ export class Client implements LangSmithTracingClientInterface {
     };
     if (this.apiKey) {
       headers["x-api-key"] = `${this.apiKey}`;
+    }
+    if (this.workspaceId) {
+      headers["x-tenant-id"] = this.workspaceId;
     }
     return headers;
   }
@@ -1192,7 +1204,7 @@ export class Client implements LangSmithTracingClientInterface {
 
   public async createRun(
     run: CreateRunParams,
-    options?: { apiKey?: string; apiUrl?: string }
+    options?: { apiKey?: string; apiUrl?: string; workspaceId?: string }
   ): Promise<void> {
     if (!this._filterForSampling([run]).length) {
       return;
@@ -1227,6 +1239,9 @@ export class Client implements LangSmithTracingClientInterface {
     const mergedRunCreateParam = mergeRuntimeEnvIntoRun(runCreate);
     if (options?.apiKey !== undefined) {
       headers["x-api-key"] = options.apiKey;
+    }
+    if (options?.workspaceId !== undefined) {
+      headers["x-tenant-id"] = options.workspaceId;
     }
     const body = serializePayloadForTracing(
       mergedRunCreateParam,
@@ -1725,7 +1740,7 @@ export class Client implements LangSmithTracingClientInterface {
   public async updateRun(
     runId: string,
     run: RunUpdate,
-    options?: { apiKey?: string; apiUrl?: string }
+    options?: { apiKey?: string; apiUrl?: string; workspaceId?: string }
   ): Promise<void> {
     assertUuid(runId);
     if (run.inputs) {
@@ -1779,6 +1794,9 @@ export class Client implements LangSmithTracingClientInterface {
     };
     if (options?.apiKey !== undefined) {
       headers["x-api-key"] = options.apiKey;
+    }
+    if (options?.workspaceId !== undefined) {
+      headers["x-tenant-id"] = options.workspaceId;
     }
     const body = serializePayloadForTracing(
       run,
