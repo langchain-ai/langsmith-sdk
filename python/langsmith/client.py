@@ -3641,9 +3641,10 @@ class Client:
         reference_dataset_id: Optional[ID_TYPE] = None,
         reference_dataset_name: Optional[str] = None,
         reference_free: Optional[bool] = None,
+        dataset_version: Optional[str] = None,
         limit: Optional[int] = None,
         metadata: Optional[dict[str, Any]] = None,
-    ) -> Iterator[ls_schemas.TracerSession]:
+    ) -> Iterator[ls_schemas.TracerSessionResult]:
         """List projects from the LangSmith API.
 
         Args:
@@ -3693,6 +3694,8 @@ class Client:
             params["reference_dataset"] = reference_dataset_id
         if reference_free is not None:
             params["reference_free"] = reference_free
+        if dataset_version is not None:
+            params["dataset_version"] = dataset_version
         if metadata is not None:
             params["metadata"] = json.dumps(metadata)
         for i, project in enumerate(
