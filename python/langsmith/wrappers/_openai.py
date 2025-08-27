@@ -183,7 +183,9 @@ def _create_usage_metadata(
     recognized_service_tier = (
         service_tier if service_tier in ["priority", "flex"] else None
     )
-    details_prefix = f"{recognized_service_tier}_" if recognized_service_tier else ""
+    service_tier_prefix = (
+        f"{recognized_service_tier}_" if recognized_service_tier else ""
+    )
 
     input_tokens = (
         oai_token_usage.get("prompt_tokens") or oai_token_usage.get("input_tokens") or 0
@@ -200,7 +202,7 @@ def _create_usage_metadata(
             or oai_token_usage.get("input_tokens_details")
             or {}
         ).get("audio_tokens"),
-        f"{details_prefix}cache_read": (
+        f"{service_tier_prefix}cache_read": (
             oai_token_usage.get("prompt_tokens_details")
             or oai_token_usage.get("input_tokens_details")
             or {}
@@ -212,7 +214,7 @@ def _create_usage_metadata(
             or oai_token_usage.get("output_tokens_details")
             or {}
         ).get("audio_tokens"),
-        f"{details_prefix}reasoning": (
+        f"{service_tier_prefix}reasoning": (
             oai_token_usage.get("completion_tokens_details")
             or oai_token_usage.get("output_tokens_details")
             or {}
@@ -224,10 +226,10 @@ def _create_usage_metadata(
         # service tier token count since service tier tokens are already
         # priced differently
         input_token_details[recognized_service_tier] = input_tokens - (
-            input_token_details.get(f"{details_prefix}cache_read") or 0
+            input_token_details.get(f"{service_tier_prefix}cache_read") or 0
         )
         output_token_details[recognized_service_tier] = output_tokens - (
-            output_token_details.get(f"{details_prefix}reasoning") or 0
+            output_token_details.get(f"{service_tier_prefix}reasoning") or 0
         )
 
     return UsageMetadata(

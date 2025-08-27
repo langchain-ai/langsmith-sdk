@@ -216,7 +216,7 @@ function processChatCompletion(outputs: Readonly<KVMap>): KVMap {
   )
     ? chatCompletion.service_tier
     : undefined;
-  const detailsPrefix = recognizedServiceTier
+  const serviceTierPrefix = recognizedServiceTier
     ? `${recognizedServiceTier}_`
     : "";
   // copy the original object, minus usage
@@ -228,7 +228,7 @@ function processChatCompletion(outputs: Readonly<KVMap>): KVMap {
         audio: usage.prompt_tokens_details?.audio_tokens,
       }),
       ...(usage.prompt_tokens_details?.cached_tokens !== null && {
-        [`${detailsPrefix}cache_read`]:
+        [`${serviceTierPrefix}cache_read`]:
           usage.prompt_tokens_details?.cached_tokens,
       }),
     };
@@ -237,7 +237,7 @@ function processChatCompletion(outputs: Readonly<KVMap>): KVMap {
         audio: usage.completion_tokens_details?.audio_tokens,
       }),
       ...(usage.completion_tokens_details?.reasoning_tokens !== null && {
-        [`${detailsPrefix}reasoning`]:
+        [`${serviceTierPrefix}reasoning`]:
           usage.completion_tokens_details?.reasoning_tokens,
       }),
     };
@@ -247,10 +247,10 @@ function processChatCompletion(outputs: Readonly<KVMap>): KVMap {
       // priced differently
       inputTokenDetails[recognizedServiceTier] =
         usage.prompt_tokens -
-        (inputTokenDetails[`${detailsPrefix}cache_read`] ?? 0);
+        (inputTokenDetails[`${serviceTierPrefix}cache_read`] ?? 0);
       outputTokenDetails[recognizedServiceTier] =
         usage.completion_tokens -
-        (outputTokenDetails[`${detailsPrefix}reasoning`] ?? 0);
+        (outputTokenDetails[`${serviceTierPrefix}reasoning`] ?? 0);
     }
     result.usage_metadata = {
       input_tokens: usage.prompt_tokens ?? 0,
