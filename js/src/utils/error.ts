@@ -74,16 +74,32 @@ export class LangSmithConflictError extends Error {
 export async function raiseForStatus(
   response: Response,
   context: string,
-  consume?: boolean
+  consumeOnSuccess?: boolean
 ): Promise<void> {
-  // consume the response body to release the connection
-  // https://undici.nodejs.org/#/?id=garbage-collection
   let errorBody;
   if (response.ok) {
-    if (consume) {
+    // consume the response body to release the connection
+    // https://undici.nodejs.org/#/?id=garbage-collection
+    if (consumeOnSuccess) {
       errorBody = await response.text();
     }
     return;
+  }
+
+  if (response.status === 403) {
+    try {
+      const errorData = await response.json();
+      const errorCode = errorData?.error;
+      if (errorCode === "org_scoped_key_requires_workspace") {
+        throw new Error(
+          "This API key is org-scoped and requires workspace specification. " +
+            "Please provide 'workspaceId' parameter, " +
+            "or set LANGSMITH_WORKSPACE_ID environment variable."
+        );
+      }
+    } catch (e: any) {
+      throw new Error(`${response.status} ${response.statusText}`);
+    }
   }
   errorBody = await response.text();
   const fullMessage = `Failed to ${context}. Received status [${response.status}]: ${response.statusText}. Server response: ${errorBody}`;
@@ -95,4 +111,25 @@ export async function raiseForStatus(
   const err = new Error(fullMessage);
   (err as any).status = response.status;
   throw err;
+}
+
+const ERR_CONFLICTING_ENDPOINTS = "ERR_CONFLICTING_ENDPOINTS";
+export class ConflictingEndpointsError extends Error {
+  readonly code = ERR_CONFLICTING_ENDPOINTS;
+  constructor() {
+    super(
+      "You cannot provide both LANGSMITH_ENDPOINT / LANGCHAIN_ENDPOINT " +
+        "and LANGSMITH_RUNS_ENDPOINTS."
+    );
+    this.name = "ConflictingEndpointsError"; // helpful in logs
+  }
+}
+export function isConflictingEndpointsError(
+  err: unknown
+): err is ConflictingEndpointsError {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    (err as Record<string, unknown>).code === ERR_CONFLICTING_ENDPOINTS
+  );
 }

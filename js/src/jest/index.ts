@@ -4,9 +4,12 @@
 import {
   expect as jestExpect,
   test as jestTest,
+  it as jestIt,
   describe as jestDescribe,
   beforeAll as jestBeforeAll,
   afterAll as jestAfterAll,
+  beforeEach as jestBeforeEach,
+  afterEach as jestAfterEach,
 } from "@jest/globals";
 import {
   toBeRelativeCloseTo,
@@ -101,16 +104,97 @@ declare global {
   }
 }
 
-const { test, it, describe, expect } = generateWrapperFromJestlikeMethods(
-  {
-    expect: jestExpect,
-    test: jestTest,
-    describe: jestDescribe,
-    beforeAll: jestBeforeAll,
-    afterAll: jestAfterAll,
-  },
-  process?.versions?.bun !== undefined ? "bun" : "jest"
-);
+/**
+ * Dynamically wrap original Jest imports.
+ *
+ * This may be necessary to ensure you are wrapping the correct
+ * Jest version if you are using a monorepo whose workspaces
+ * use multiple versions of Jest.
+ *
+ * @param originalJestMethods - The original Jest imports to wrap.
+ * @returns The wrapped Jest imports.
+ * See https://docs.smith.langchain.com/evaluation/how_to_guides/vitest_jest
+ * for more details.
+ */
+const wrapJest = (originalJestMethods: Record<string, unknown>) => {
+  if (typeof originalJestMethods !== "object" || originalJestMethods == null) {
+    throw new Error("originalJestMethods must be an non-null object.");
+  }
+  if (
+    !("expect" in originalJestMethods) ||
+    typeof originalJestMethods.expect !== "function"
+  ) {
+    throw new Error("Your passed object must contain a `expect` method.");
+  }
+  if (
+    !("it" in originalJestMethods) ||
+    typeof originalJestMethods.it !== "function"
+  ) {
+    throw new Error("Your passed object must contain a `it` method.");
+  }
+  if (
+    !("test" in originalJestMethods) ||
+    typeof originalJestMethods.test !== "function"
+  ) {
+    throw new Error("Your passed object must contain a `test` method.");
+  }
+  if (
+    !("describe" in originalJestMethods) ||
+    typeof originalJestMethods.describe !== "function"
+  ) {
+    throw new Error("Your passed object must contain a `describe` method.");
+  }
+  if (
+    !("beforeAll" in originalJestMethods) ||
+    typeof originalJestMethods.beforeAll !== "function"
+  ) {
+    throw new Error("Your passed object must contain a `beforeAll` method.");
+  }
+  if (
+    !("afterAll" in originalJestMethods) ||
+    typeof originalJestMethods.afterAll !== "function"
+  ) {
+    throw new Error("Your passed object must contain a `afterAll` method.");
+  }
+
+  const wrappedMethods = generateWrapperFromJestlikeMethods(
+    {
+      expect: originalJestMethods.expect,
+      it: originalJestMethods.it,
+      test: originalJestMethods.test,
+      describe: originalJestMethods.describe,
+      beforeAll: originalJestMethods.beforeAll,
+      afterAll: originalJestMethods.afterAll,
+      logFeedback,
+      logOutputs,
+      wrapEvaluator,
+    },
+    process?.versions?.bun !== undefined ? "bun" : "jest"
+  );
+
+  // Return the normal used LS methods for convenience
+  // so that you can do:
+  //
+  // const ls = wrapJest(jest);
+  // ls.logFeedback({ key: "quality", score: 0.7 });
+  return {
+    ...wrappedMethods,
+    logFeedback,
+    logOutputs,
+    wrapEvaluator,
+  };
+};
+
+const { test, it, describe, expect } = wrapJest({
+  expect: jestExpect,
+  it: jestIt,
+  test: jestTest,
+  describe: jestDescribe,
+  beforeAll: jestBeforeAll,
+  afterAll: jestAfterAll,
+  beforeEach: jestBeforeEach,
+  afterEach: jestAfterEach,
+});
 
 export {
   /**
@@ -415,6 +499,7 @@ export {
    */
   wrapEvaluator,
   type LangSmithJestlikeWrapperParams,
+  wrapJest,
 };
 
 export * from "../utils/jestlike/types.js";

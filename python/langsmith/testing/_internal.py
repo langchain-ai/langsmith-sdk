@@ -69,6 +69,7 @@ def test(
     output_keys: Optional[Sequence[str]] = None,
     client: Optional[ls_client.Client] = None,
     test_suite_name: Optional[str] = None,
+    cached_hosts: Optional[Sequence[str]] = None,
 ) -> Callable[[Callable], Callable]: ...
 
 
@@ -93,6 +94,10 @@ def test(*args: Any, **kwargs: Any) -> Callable:
         - test_suite_name (Optional[str]): The name of the test suite to which the
             test case belongs. If not provided, the test suite name will be determined
             based on the environment or the package name.
+        - cached_hosts (Optional[Sequence[str]]): A list of hosts or URL prefixes to
+            cache requests to during testing. If not provided, all requests will be
+            cached (default behavior). This is useful for caching only specific
+            API calls (e.g., ["api.openai.com"] or ["https://api.openai.com"]).
 
     Returns:
         Callable: The decorated test function.
@@ -169,6 +174,24 @@ def test(*args: Any, **kwargs: Any) -> Callable:
             @pytest.mark.langsmith
             def test_openai_says_hello():
                 # Traced code will be included in the test case
+                response = oai_client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {"role": "system", "content": "You are a helpful assistant."},
+                        {"role": "user", "content": "Say hello!"},
+                    ],
+                )
+                assert "hello" in response.choices[0].message.content.lower()
+
+        You can also specify which hosts to cache by using the `cached_hosts` parameter.
+        This is useful when you only want to cache specific API calls:
+
+        .. code-block:: python
+
+            @pytest.mark.langsmith(cached_hosts=["https://api.openai.com"])
+            def test_openai_with_selective_caching():
+                # Only OpenAI API calls will be cached, other API calls will not
+                # be cached
                 response = oai_client.chat.completions.create(
                     model="gpt-3.5-turbo",
                     messages=[
@@ -295,12 +318,29 @@ def test(*args: Any, **kwargs: Any) -> Callable:
             test_openai_says_hello()
             test_addition_with_multiple_inputs(1, 2, 3)
     """
+    cached_hosts = kwargs.pop("cached_hosts", None)
+    cache_dir = ls_utils.get_cache_dir(kwargs.pop("cache", None))
+
+    # Validate cached_hosts usage
+    if cached_hosts and not cache_dir:
+        raise ValueError(
+            "cached_hosts parameter requires caching to be enabled. "
+            "Please set the LANGSMITH_TEST_CACHE environment variable "
+            "to a cache directory path, "
+            "or pass a cache parameter to the test decorator. "
+            "Example: LANGSMITH_TEST_CACHE='tests/cassettes' "
+            "or @pytest.mark.langsmith(cache='tests/cassettes', cached_hosts=[...])"
+        )
+
     langtest_extra = _UTExtra(
         id=kwargs.pop("id", None),
         output_keys=kwargs.pop("output_keys", None),
         client=kwargs.pop("client", None),
         test_suite_name=kwargs.pop("test_suite_name", None),
-        cache=ls_utils.get_cache_dir(kwargs.pop("cache", None)),
+        cache=cache_dir,
+        metadata=kwargs.pop("metadata", None),
+        repetitions=kwargs.pop("repetitions", None),
+        cached_hosts=cached_hosts,
     )
     if kwargs:
         warnings.warn(f"Unexpected keyword arguments: {kwargs.keys()}")
@@ -312,6 +352,9 @@ def test(*args: Any, **kwargs: Any) -> Callable:
         )
 
     def decorator(func: Callable) -> Callable:
+        # Handle repetitions
+        repetitions = langtest_extra.get("repetitions", 1) or 1
+
         if inspect.iscoroutinefunction(func):
 
             @functools.wraps(func)
@@ -320,13 +363,17 @@ def test(*args: Any, **kwargs: Any) -> Callable:
             ):
                 if disable_tracking:
                     return await func(*test_args, **test_kwargs)
-                await _arun_test(
-                    func,
-                    *test_args,
-                    pytest_request=request,
-                    **test_kwargs,
-                    langtest_extra=langtest_extra,
-                )
+
+                # Run test multiple times for repetitions
+                for i in range(repetitions):
+                    repetition_extra = langtest_extra.copy()
+                    await _arun_test(
+                        func,
+                        *test_args,
+                        pytest_request=request,
+                        **test_kwargs,
+                        langtest_extra=repetition_extra,
+                    )
 
             return async_wrapper
 
@@ -334,13 +381,17 @@ def test(*args: Any, **kwargs: Any) -> Callable:
         def wrapper(*test_args: Any, request: Any = None, **test_kwargs: Any):
             if disable_tracking:
                 return func(*test_args, **test_kwargs)
-            _run_test(
-                func,
-                *test_args,
-                pytest_request=request,
-                **test_kwargs,
-                langtest_extra=langtest_extra,
-            )
+
+            # Run test multiple times for repetitions
+            for i in range(repetitions):
+                repetition_extra = langtest_extra.copy()
+                _run_test(
+                    func,
+                    *test_args,
+                    pytest_request=request,
+                    **test_kwargs,
+                    langtest_extra=repetition_extra,
+                )
 
         return wrapper
 
@@ -477,7 +528,7 @@ VT = TypeVar("VT", bound=Optional[dict])
 
 def _serde_example_values(values: VT) -> VT:
     if values is None:
-        return values
+        return cast(VT, values)
     bts = ls_client._dumps_json(values)
     return _orjson.loads(bts)
 
@@ -648,6 +699,7 @@ class _LangSmithTestSuite:
         example_id,
         outputs,
         reference_outputs,
+        metadata,
         pytest_plugin=None,
         pytest_nodeid=None,
     ) -> Future:
@@ -657,6 +709,7 @@ class _LangSmithTestSuite:
             example_id=example_id,
             outputs=outputs,
             reference_outputs=reference_outputs,
+            metadata=metadata,
             pytest_plugin=pytest_plugin,
             pytest_nodeid=pytest_nodeid,
         )
@@ -667,12 +720,18 @@ class _LangSmithTestSuite:
         example_id,
         outputs,
         reference_outputs,
+        metadata,
         pytest_plugin,
         pytest_nodeid,
     ) -> None:
         # TODO: remove this hack so that run durations are correct
         # Ensure example is fully updated
-        self.sync_example(example_id, inputs=run_tree.inputs, outputs=reference_outputs)
+        self.sync_example(
+            example_id,
+            inputs=run_tree.inputs,
+            outputs=reference_outputs,
+            metadata=metadata,
+        )
         run_tree.end(outputs=outputs)
         run_tree.patch()
 
@@ -683,6 +742,7 @@ class _TestCase:
         test_suite: _LangSmithTestSuite,
         example_id: uuid.UUID,
         run_id: uuid.UUID,
+        metadata: Optional[dict] = None,
         pytest_plugin: Any = None,
         pytest_nodeid: Any = None,
         inputs: Optional[dict] = None,
@@ -691,6 +751,7 @@ class _TestCase:
         self.test_suite = test_suite
         self.example_id = example_id
         self.run_id = run_id
+        self.metadata = metadata
         self.pytest_plugin = pytest_plugin
         self.pytest_nodeid = pytest_nodeid
         self.inputs = inputs
@@ -714,6 +775,7 @@ class _TestCase:
             self.example_id,
             inputs=inputs,
             outputs=outputs,
+            metadata=self.metadata,
             pytest_plugin=self.pytest_plugin,
             pytest_nodeid=self.pytest_nodeid,
         )
@@ -783,6 +845,7 @@ class _TestCase:
             self.example_id,
             outputs,
             reference_outputs=self._logged_reference_outputs,
+            metadata=self.metadata,
             pytest_plugin=self.pytest_plugin,
             pytest_nodeid=self.pytest_nodeid,
         )
@@ -797,14 +860,9 @@ class _UTExtra(TypedDict, total=False):
     output_keys: Optional[Sequence[str]]
     test_suite_name: Optional[str]
     cache: Optional[str]
-
-
-def _get_test_repr(func: Callable, sig: inspect.Signature) -> str:
-    name = getattr(func, "__name__", None) or ""
-    description = getattr(func, "__doc__", None) or ""
-    if description:
-        description = f" - {description.strip()}"
-    return f"{name}{sig}{description}"
+    metadata: Optional[dict]
+    repetitions: Optional[int]
+    cached_hosts: Optional[Sequence[str]]
 
 
 def _create_test_case(
@@ -816,6 +874,7 @@ def _create_test_case(
 ) -> _TestCase:
     client = langtest_extra["client"] or rt.get_cached_client()
     output_keys = langtest_extra["output_keys"]
+    metadata = langtest_extra["metadata"]
     signature = inspect.signature(func)
     inputs = rh._get_inputs_safe(signature, *args, **kwargs) or None
     outputs = None
@@ -850,6 +909,7 @@ def _create_test_case(
         test_suite,
         example_id,
         run_id=uuid.uuid4(),
+        metadata=metadata,
         inputs=inputs,
         reference_outputs=outputs,
         pytest_plugin=pytest_plugin,
@@ -881,6 +941,14 @@ def _run_test(
             run_id=test_case.run_id,
             reference_example_id=test_case.example_id,
             inputs=test_case.inputs,
+            metadata={
+                # Experiment run metadata is prefixed with "ls_example_" in
+                # the ingest backend, but we must reproduce this behavior here
+                # because the example may not have been created before the trace
+                # starts.
+                f"ls_example_{k}": v
+                for k, v in (test_case.metadata or {}).items()
+            },
             project_name=test_case.test_suite.name,
             exceptions_to_handle=(SkipException,),
             _end_on_exit=False,
@@ -918,10 +986,14 @@ def _run_test(
             "reference_example_id": str(test_case.example_id),
         },
     }
+    # Handle cached_hosts parameter
+    ignore_hosts = [test_case.test_suite.client.api_url]
+    allow_hosts = langtest_extra.get("cached_hosts") or None
+
     with (
         rh.tracing_context(**{**current_context, "metadata": metadata}),
         ls_utils.with_optional_cache(
-            cache_path, ignore_hosts=[test_case.test_suite.client.api_url]
+            cache_path, ignore_hosts=ignore_hosts, allow_hosts=allow_hosts
         ),
     ):
         _test()
@@ -950,6 +1022,14 @@ async def _arun_test(
             run_id=test_case.run_id,
             reference_example_id=test_case.example_id,
             inputs=test_case.inputs,
+            metadata={
+                # Experiment run metadata is prefixed with "ls_example_" in
+                # the ingest backend, but we must reproduce this behavior here
+                # because the example may not have been created before the trace
+                # starts.
+                f"ls_example_{k}": v
+                for k, v in (test_case.metadata or {}).items()
+            },
             project_name=test_case.test_suite.name,
             exceptions_to_handle=(SkipException,),
             _end_on_exit=False,
@@ -987,10 +1067,15 @@ async def _arun_test(
             "reference_example_id": str(test_case.example_id),
         },
     }
+    # Handle cached_hosts parameter
+    ignore_hosts = [test_case.test_suite.client.api_url]
+    cached_hosts = langtest_extra.get("cached_hosts")
+    allow_hosts = cached_hosts if cached_hosts else None
+
     with (
         rh.tracing_context(**{**current_context, "metadata": metadata}),
         ls_utils.with_optional_cache(
-            cache_path, ignore_hosts=[test_case.test_suite.client.api_url]
+            cache_path, ignore_hosts=ignore_hosts, allow_hosts=allow_hosts
         ),
     ):
         await _test()

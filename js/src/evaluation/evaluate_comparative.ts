@@ -134,6 +134,7 @@ export interface ComparisonEvaluationResults {
   results: ComparisonEvaluationResultRow[];
 }
 
+/** @deprecated Use `evaluate` and pass two experiments as targets. */
 export async function evaluateComparative(
   experiments:
     | Array<string>
@@ -404,5 +405,6 @@ export async function evaluateComparative(
   );
 
   const results: ComparisonEvaluationResultRow[] = await Promise.all(promises);
+  await client.awaitPendingTraceBatches();
   return { experimentName, results };
 }

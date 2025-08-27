@@ -1,7 +1,7 @@
 /* eslint-disable import/no-extraneous-dependencies */
 import { AsyncLocalStorage } from "node:async_hooks";
 
-import * as ls from "../../vitest/index.js";
+import * as ls from "../../vitest/index.mjs";
 
 const myEvaluator = () => {
   return { key: "accuracy", score: Math.random() };
@@ -32,7 +32,7 @@ ls.describe(
           },
         },
       ],
-      { iterations: 3, metadata: { something: "cool" } }
+      { repetitions: 3, metadata: { something: "cool" } }
     )("Does the thing", async ({ inputs, referenceOutputs }) => {
       const myApp = () => {
         return { bar: "bad" };
@@ -72,7 +72,7 @@ ls.describe(
           },
         },
       ],
-      { iterations: 3, metadata: { something: "cool" } }
+      { repetitions: 3, metadata: { something: "cool" } }
     )("Does the thing", async ({ inputs, referenceOutputs }) => {
       const myApp = () => {
         return { bar: "bad" };

@@ -220,6 +220,16 @@ async def test_create_feedback(async_client: AsyncClient):
         start_time=datetime.datetime.now(datetime.timezone.utc),
     )
 
+    # Wait for the project to be fully available before creating feedback
+    async def check_project_exists():
+        try:
+            await async_client.read_project(project_name=project_name)
+            return True
+        except ls_utils.LangSmithError:
+            return False
+
+    await wait_for(check_project_exists, timeout=10)
+
     feedback = await async_client.create_feedback(
         run_id=run_id,
         key="test_key",

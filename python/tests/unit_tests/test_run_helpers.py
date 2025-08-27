@@ -1494,6 +1494,7 @@ async def test_traceable_async_exception(auto_batch_tracing: bool):
 
 @pytest.mark.parametrize("auto_batch_tracing", [True, False])
 async def test_traceable_async_gen_exception(auto_batch_tracing: bool):
+    ls_utils.get_env_var.cache_clear()
     mock_client = _get_mock_client(
         auto_batch_tracing=auto_batch_tracing,
         info=ls_schemas.LangSmithInfo(
@@ -1534,6 +1535,7 @@ async def test_traceable_async_gen_exception(auto_batch_tracing: bool):
 
 @pytest.mark.parametrize("auto_batch_tracing", [True, False])
 async def test_traceable_gen_exception(auto_batch_tracing: bool):
+    ls_utils.get_env_var.cache_clear()
     mock_client = _get_mock_client(
         auto_batch_tracing=auto_batch_tracing,
         info=ls_schemas.LangSmithInfo(
@@ -1784,15 +1786,15 @@ def test_traceable_input_attachments():
                 break
             time.sleep(1)
 
-        # main run, inputs, outputs, events, att1, att2, anoutput
-        assert len(datas) == 7
-        # First 4 are type application/json (run, inputs, outputs, events)
+        # main run, inputs, outputs, events, extra, att1, att2, anoutput
+        assert len(datas) == 8
         trace_id = datas[0][0].split(".")[1]
-        _, (_, run_stuff) = next(
-            data for data in datas if data[0] == f"post.{trace_id}"
+
+        _, (_, extra_stuff) = next(
+            data for data in datas if data[0] == f"post.{trace_id}.extra"
         )
         assert (
-            json.loads(run_stuff)["extra"]["runtime"].get(
+            json.loads(extra_stuff)["runtime"].get(
                 "LANGSMITH_test_traceable_input_attachments"
             )
             == "aval"

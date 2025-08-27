@@ -6,27 +6,56 @@ import datetime
 import logging
 import uuid
 import warnings
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
-from langsmith import utils as ls_utils
+if TYPE_CHECKING:
+    try:
+        from opentelemetry.context.context import Context  # type: ignore[import]
+        from opentelemetry.trace import Span  # type: ignore[import]
+    except ImportError:
+        Context = Any  # type: ignore[assignment, misc]
+        Span = Any  # type: ignore[assignment, misc]
+
 from langsmith._internal import _orjson
 from langsmith._internal._operations import (
     SerializedRunOperation,
 )
+from langsmith._internal._otel_utils import (
+    get_otel_span_id_from_uuid,
+    get_otel_trace_id_from_uuid,
+)
 
-HAS_OTEL = False
-try:
-    if ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED")):
+
+def _import_otel_exporter():
+    """Dynamically import OTEL exporter modules when needed."""
+    try:
         from opentelemetry import trace  # type: ignore[import]
         from opentelemetry.context.context import Context  # type: ignore[import]
         from opentelemetry.trace import (  # type: ignore[import]
+            NonRecordingSpan,
             Span,
+            SpanContext,
+            TraceFlags,
+            TraceState,
             set_span_in_context,
         )
 
-        HAS_OTEL = True
-except ImportError:
-    pass
+        return (
+            trace,
+            Context,
+            NonRecordingSpan,
+            Span,
+            SpanContext,
+            TraceFlags,
+            TraceState,
+            set_span_in_context,
+        )
+    except ImportError as e:
+        warnings.warn(
+            f"OTEL_ENABLED is set but OpenTelemetry packages are not installed: {e}"
+        )
+        return None
+
 
 logger = logging.getLogger(__name__)
 
@@ -59,10 +88,6 @@ GEN_AI_USAGE_INPUT_TOKEN_DETAILS = "gen_ai.usage.input_token_details"
 GEN_AI_USAGE_OUTPUT_TOKEN_DETAILS = "gen_ai.usage.output_token_details"
 
 # LangSmith custom attributes
-LANGSMITH_RUN_ID = "langsmith.span.id"
-LANGSMITH_TRACE_ID = "langsmith.trace.id"
-LANGSMITH_DOTTED_ORDER = "langsmith.span.dotted_order"
-LANGSMITH_PARENT_RUN_ID = "langsmith.span.parent_id"
 LANGSMITH_SESSION_ID = "langsmith.trace.session_id"
 LANGSMITH_SESSION_NAME = "langsmith.trace.session_name"
 LANGSMITH_RUN_TYPE = "langsmith.span.kind"
@@ -93,7 +118,7 @@ def _get_operation_name(run_type: str) -> str:
 
 
 class OTELExporter:
-    __slots__ = ["_tracer", "_spans"]
+    __slots__ = ["_tracer", "_spans", "_otel_available", "_trace"]
     """OpenTelemetry exporter for LangSmith runs."""
 
     def __init__(self, tracer_provider=None):
@@ -103,15 +128,30 @@ class OTELExporter:
             tracer_provider: Optional tracer provider to use. If not provided,
                 the global tracer provider will be used.
         """
-        if not HAS_OTEL:
-            warnings.warn(
-                "OTEL_ENABLED is set but OpenTelemetry packages are not installed. "
-                "Install with `pip install langsmith[otel]`"
-            )
-            return
+        otel_imports = _import_otel_exporter()
+        if otel_imports is None:
+            self._tracer = None
+            self._spans = {}
+            self._otel_available = False
+            self._trace = None
+        else:
+            (
+                trace,
+                Context,
+                NonRecordingSpan,
+                Span,
+                SpanContext,
+                TraceFlags,
+                TraceState,
+                set_span_in_context,
+            ) = otel_imports
 
-        self._tracer = trace.get_tracer("langsmith", tracer_provider=tracer_provider)
-        self._spans = {}
+            self._tracer = trace.get_tracer(
+                "langsmith", tracer_provider=tracer_provider
+            )
+            self._spans = {}
+            self._otel_available = True
+            self._trace = trace
 
     def export_batch(
         self,
@@ -183,18 +223,56 @@ class OTELExporter:
             end_time = run_info.get("end_time")
             end_time_utc_nano = self._as_utc_nano(end_time)
 
-            # Start the span
+            # Create deterministic trace and span IDs to match user OpenTelemetry spans
+            trace_id_int = get_otel_trace_id_from_uuid(op.trace_id)
+            span_id_int = get_otel_span_id_from_uuid(op.id)
+
+            # Get OTEL imports for this operation
+            otel_imports = _import_otel_exporter()
+            if otel_imports is None:
+                return None
+            (
+                trace,
+                Context,
+                NonRecordingSpan,
+                Span,
+                SpanContext,
+                TraceFlags,
+                TraceState,
+                set_span_in_context,
+            ) = otel_imports
+
+            # Create SpanContext with deterministic IDs
+            span_context = SpanContext(
+                trace_id=trace_id_int,
+                span_id=span_id_int,
+                is_remote=False,
+                trace_flags=TraceFlags(TraceFlags.SAMPLED),
+                trace_state=TraceState(),
+            )
+
+            # Create NonRecordingSpan for context setting
+            non_recording_span = NonRecordingSpan(span_context)
+            deterministic_context = set_span_in_context(non_recording_span)
+
+            # Start the span with appropriate context
             parent_run_id = run_info.get("parent_run_id")
             if parent_run_id is not None and uuid.UUID(parent_run_id) in self._spans:
+                # Use the parent span context
                 span = self._tracer.start_span(
                     run_info.get("name"),
                     context=set_span_in_context(self._spans[uuid.UUID(parent_run_id)]),
                     start_time=start_time_utc_nano,
                 )
             else:
+                # For root spans, check if there's an existing OpenTelemetry context
+                # If so, inherit from it; otherwise use our deterministic context
+                current_context = (
+                    otel_context if otel_context else deterministic_context
+                )
                 span = self._tracer.start_span(
                     run_info.get("name"),
-                    context=otel_context,
+                    context=current_context,
                     start_time=start_time_utc_nano,
                 )
 
@@ -241,10 +319,10 @@ class OTELExporter:
             self._set_span_attributes(span, run_info, op)
             # Update status based on error
             if run_info.get("error"):
-                span.set_status(trace.StatusCode.ERROR)
+                span.set_status(self._trace.StatusCode.ERROR)
                 span.record_exception(Exception(run_info.get("error")))
             else:
-                span.set_status(trace.StatusCode.OK)
+                span.set_status(self._trace.StatusCode.OK)
 
             # End the span if end_time is present
             end_time = run_info.get("end_time")
@@ -289,7 +367,10 @@ class OTELExporter:
         return None
 
     def _set_span_attributes(
-        self, span: Span, run_info: dict, op: SerializedRunOperation
+        self,
+        span: Span,
+        run_info: dict,
+        op: SerializedRunOperation,
     ) -> None:
         """Set attributes on the span.
 
@@ -299,18 +380,6 @@ class OTELExporter:
             op: The serialized run operation.
         """
         # Set LangSmith-specific attributes
-        span.set_attribute(LANGSMITH_RUN_ID, str(op.id))
-        span.set_attribute(LANGSMITH_TRACE_ID, str(op.trace_id))
-
-        if run_info.get("dotted_order"):
-            span.set_attribute(
-                LANGSMITH_DOTTED_ORDER, str(run_info.get("dotted_order"))
-            )
-
-        if run_info.get("parent_run_id"):
-            span.set_attribute(
-                LANGSMITH_PARENT_RUN_ID, str(run_info.get("parent_run_id"))
-            )
         if run_info.get("run_type"):
             span.set_attribute(LANGSMITH_RUN_TYPE, str(run_info.get("run_type")))
 
@@ -326,8 +395,9 @@ class OTELExporter:
 
         # Set GenAI attributes according to OTEL semantic conventions
         # Set gen_ai.operation.name
-        operation_name = _get_operation_name(run_info.get("run_type", "chain"))
-        span.set_attribute(GEN_AI_OPERATION_NAME, operation_name)
+        if op.operation == "post":
+            operation_name = _get_operation_name(run_info.get("run_type", "chain"))
+            span.set_attribute(GEN_AI_OPERATION_NAME, operation_name)
 
         # Set gen_ai.system
         self._set_gen_ai_system(span, run_info)

@@ -94,9 +94,15 @@ from langsmith._internal._operations import (
 from langsmith._internal._serde import dumps_json as _dumps_json
 from langsmith.schemas import AttachmentInfo
 
-HAS_OTEL = False
-try:
-    if ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED")):
+
+def _check_otel_enabled() -> bool:
+    """Check if OTEL is enabled and imports are available."""
+    return ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED"))
+
+
+def _import_otel():
+    """Dynamically import OTEL modules when needed."""
+    try:
         from opentelemetry import trace as otel_trace  # type: ignore[import]
         from opentelemetry.trace import set_span_in_context  # type: ignore[import]
 
@@ -105,11 +111,12 @@ try:
         )
         from langsmith._internal.otel._otel_exporter import OTELExporter
 
-        HAS_OTEL = True
-except ImportError:
-    raise ImportError(
-        "To use OTEL tracing, you must install it with `pip install langsmith[otel]`"
-    )
+        return otel_trace, set_span_in_context, get_otlp_tracer_provider, OTELExporter
+    except ImportError:
+        raise ImportError(
+            "To use OTEL tracing, you must install it with `pip install langsmith[otel]`"
+        )
+
 
 try:
     from zoneinfo import ZoneInfo  # type: ignore[import-not-found]
@@ -132,6 +139,15 @@ if TYPE_CHECKING:
     from langchain_core.runnables import Runnable
 
     from langsmith import schemas
+
+    # OTEL imports for type hints
+    try:
+        from opentelemetry import trace as otel_trace  # type: ignore[import]
+
+        from langsmith._internal.otel._otel_exporter import OTELExporter
+    except ImportError:
+        otel_trace = Any  # type: ignore[assignment, misc]
+        OTELExporter = Any  # type: ignore[assignment, misc]
     from langsmith.evaluation import evaluator as ls_evaluator
     from langsmith.evaluation._arunner import (
         AEVALUATOR_T,
@@ -266,8 +282,10 @@ def _validate_api_key_if_hosted(api_url: str, api_key: Optional[str]) -> None:
     """
     # If the domain is langchain.com, raise error if no api_key
     if not api_key:
-        if _is_langchain_hosted(api_url) and not ls_utils.is_truish(
-            ls_utils.get_env_var("OTEL_ENABLED")
+        if (
+            _is_langchain_hosted(api_url)
+            and not ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED"))
+            and ls_utils.tracing_is_enabled()
         ):
             warnings.warn(
                 "API key must be provided when using hosted LangSmith API",
@@ -314,16 +332,13 @@ def _get_tracing_sampling_rate(
 
 
 def _get_write_api_urls(_write_api_urls: Optional[dict[str, str]]) -> dict[str, str]:
-    _write_api_urls = _write_api_urls or json.loads(
-        os.getenv("LANGSMITH_RUNS_ENDPOINTS", "{}")
-    )
+    # Note: LANGSMITH_RUNS_ENDPOINTS is now handled via replicas, not _write_api_urls
+    _write_api_urls = _write_api_urls or {}
     processed_write_api_urls = {}
     for url, api_key in _write_api_urls.items():
         processed_url = url.strip()
         if not processed_url:
-            raise ls_utils.LangSmithUserError(
-                "LangSmith runs API URL within LANGSMITH_RUNS_ENDPOINTS cannot be empty"
-            )
+            raise ls_utils.LangSmithUserError("LangSmith runs API URL cannot be empty")
         processed_url = processed_url.strip().strip('"').strip("'").rstrip("/")
         processed_api_key = api_key.strip().strip('"').strip("'")
         _validate_api_key_if_hosted(processed_url, processed_api_key)
@@ -402,6 +417,7 @@ class Client:
         "__weakref__",
         "api_url",
         "_api_key",
+        "_workspace_id",
         "_headers",
         "retry_config",
         "timeout_ms",
@@ -417,6 +433,10 @@ class Client:
         "_hide_inputs",
         "_hide_outputs",
         "_hide_metadata",
+        "_process_buffered_run_ops",
+        "_run_ops_buffer_size",
+        "_run_ops_buffer_timeout_ms",
+        "_run_ops_buffer_last_flush_time",
         "_info",
         "_write_api_urls",
         "_settings",
@@ -425,7 +445,11 @@ class Client:
         "compressed_traces",
         "_data_available_event",
         "_futures",
+        "_run_ops_buffer",
+        "_run_ops_buffer_lock",
         "otel_exporter",
+        "_otel_trace",
+        "_set_span_in_context",
     ]
 
     _api_key: Optional[str]
@@ -447,10 +471,17 @@ class Client:
         hide_inputs: Optional[Union[Callable[[dict], dict], bool]] = None,
         hide_outputs: Optional[Union[Callable[[dict], dict], bool]] = None,
         hide_metadata: Optional[Union[Callable[[dict], dict], bool]] = None,
+        process_buffered_run_ops: Optional[
+            Callable[[Sequence[dict]], Sequence[dict]]
+        ] = None,
+        run_ops_buffer_size: Optional[int] = None,
+        run_ops_buffer_timeout_ms: Optional[float] = None,
         info: Optional[Union[dict, ls_schemas.LangSmithInfo]] = None,
         api_urls: Optional[dict[str, str]] = None,
         otel_tracer_provider: Optional[TracerProvider] = None,
+        otel_enabled: Optional[bool] = None,
         tracing_sampling_rate: Optional[float] = None,
+        workspace_id: Optional[str] = None,
     ) -> None:
         """Initialize a Client instance.
 
@@ -478,6 +509,17 @@ class Client:
             hide_metadata (Optional[Union[Callable[[dict], dict], bool]]): Whether to hide run metadata when tracing with this client.
                 If True, hides the entire metadata. If a function, applied to
                 all run metadata when creating runs.
+            process_buffered_run_ops (Optional[Callable[[Sequence[dict]], Sequence[dict]]]): A function applied to buffered run operations
+                that allows for modification of the raw run dicts before they are converted to multipart and compressed.
+                This is useful specifically for high throughput tracing where you need to apply a rate-limited API or other
+                costly process to the runs before they are sent to the API. Note that the buffer will only flush automatically
+                when run_ops_buffer_size is reached or a new run is added to the buffer after run_ops_buffer_timeout_ms
+                has elapsed - it will not flush outside of these conditions unless you manually
+                call client.flush(), so be sure to do this before your code exits.
+            run_ops_buffer_size (Optional[int]): Maximum number of run operations to collect in the buffer before applying
+                process_buffered_run_ops and sending to the API. Required when process_buffered_run_ops is provided.
+            run_ops_buffer_timeout_ms (Optional[int]): Maximum time in milliseconds to wait before flushing the run ops buffer
+                when new runs are added. Defaults to 5000. Only used when process_buffered_run_ops is provided.
             info (Optional[ls_schemas.LangSmithInfo]): The information about the LangSmith API.
                 If not provided, it will be fetched from the API.
             api_urls (Optional[Dict[str, str]]): A dictionary of write API URLs and their corresponding API keys.
@@ -491,6 +533,7 @@ class Client:
                 overrides the LANGCHAIN_TRACING_SAMPLING_RATE environment variable.
                 Should be a float between 0 and 1, where 1 means trace everything
                 and 0 means trace nothing.
+            workspace_id (Optional[str]): The workspace ID. Required for org-scoped API keys.
 
         Raises:
             LangSmithUserError: If the API key is not provided when using the hosted service.
@@ -514,6 +557,9 @@ class Client:
         self._write_api_urls: Mapping[str, Optional[str]] = _get_write_api_urls(
             api_urls
         )
+        # Initialize workspace attribute first
+        self._workspace_id = ls_utils.get_workspace_id(workspace_id)
+        
         if self._write_api_urls:
             self.api_url = next(iter(self._write_api_urls))
             self.api_key = self._write_api_urls[self.api_url]
@@ -544,6 +590,8 @@ class Client:
         self.compressed_traces: Optional[CompressedTraces] = None
         self._data_available_event: Optional[threading.Event] = None
         self._futures: Optional[weakref.WeakSet[cf.Future]] = None
+        self._run_ops_buffer: list[tuple[str, dict]] = []
+        self._run_ops_buffer_lock = threading.Lock()
         self.otel_exporter: Optional[OTELExporter] = None
 
         # Initialize auto batching
@@ -589,6 +637,20 @@ class Client:
             if hide_metadata is not None
             else ls_utils.get_env_var("HIDE_METADATA") == "true"
         )
+        self._process_buffered_run_ops = process_buffered_run_ops
+        self._run_ops_buffer_size = run_ops_buffer_size
+        self._run_ops_buffer_timeout_ms = run_ops_buffer_timeout_ms or 5000
+        self._run_ops_buffer_last_flush_time = time.time()
+
+        # Validate that run_ops_buffer_size is provided when process_buffered_run_ops is used
+        if process_buffered_run_ops is not None and run_ops_buffer_size is None:
+            raise ValueError(
+                "run_ops_buffer_size must be provided when process_buffered_run_ops is specified"
+            )
+        if process_buffered_run_ops is None and run_ops_buffer_size is not None:
+            raise ValueError(
+                "process_buffered_run_ops must be provided when run_ops_buffer_size is specified"
+            )
 
         # To trigger this code, set the `LANGSMITH_USE_PYO3_CLIENT` env var to any value.
         self._pyo3_client = None
@@ -630,33 +692,48 @@ class Client:
 
         self._manual_cleanup = False
 
-        if ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED")):
-            if not HAS_OTEL:
-                warnings.warn(
-                    "LANGSMITH_OTEL_ENABLED is set but OpenTelemetry packages are not installed. "
-                    "Install with `pip install langsmith[otel]`"
-                )
-            existing_provider = otel_trace.get_tracer_provider()
-            tracer = existing_provider.get_tracer(__name__)
-            if otel_tracer_provider is None:
-                # Use existing global provider if available
-                if not (
-                    isinstance(existing_provider, otel_trace.ProxyTracerProvider)
-                    and hasattr(tracer, "_tracer")
-                    and isinstance(
-                        cast(
-                            otel_trace.ProxyTracer,
-                            tracer,
-                        )._tracer,
-                        otel_trace.NoOpTracer,
-                    )
-                ):
-                    otel_tracer_provider = cast(TracerProvider, existing_provider)
-                else:
-                    otel_tracer_provider = get_otlp_tracer_provider()
-                    otel_trace.set_tracer_provider(otel_tracer_provider)
+        if _check_otel_enabled() or otel_enabled:
+            try:
+                (
+                    otel_trace,
+                    set_span_in_context,
+                    get_otlp_tracer_provider,
+                    OTELExporter,
+                ) = _import_otel()
 
-            self.otel_exporter = OTELExporter(tracer_provider=otel_tracer_provider)
+                existing_provider = otel_trace.get_tracer_provider()
+                tracer = existing_provider.get_tracer(__name__)
+                if otel_tracer_provider is None:
+                    # Use existing global provider if available
+                    if not (
+                        isinstance(existing_provider, otel_trace.ProxyTracerProvider)
+                        and hasattr(tracer, "_tracer")
+                        and isinstance(
+                            cast(
+                                otel_trace.ProxyTracer,  # type: ignore[attr-defined, name-defined]
+                                tracer,
+                            )._tracer,
+                            otel_trace.NoOpTracer,
+                        )
+                    ):
+                        otel_tracer_provider = cast(TracerProvider, existing_provider)
+                    else:
+                        otel_tracer_provider = get_otlp_tracer_provider()
+                        otel_trace.set_tracer_provider(otel_tracer_provider)
+
+                self.otel_exporter = OTELExporter(tracer_provider=otel_tracer_provider)
+
+                # Store imports for later use
+                self._otel_trace = otel_trace
+                self._set_span_in_context = set_span_in_context
+
+            except ImportError:
+                warnings.warn(
+                    "LANGSMITH_OTEL_ENABLED is set but OpenTelemetry packages are not installed: Install with `pip install langsmith[otel]"
+                )
+                self.otel_exporter = None
+        else:
+            self.otel_exporter = None
 
     def _repr_html_(self) -> str:
         """Return an HTML representation of the instance with a link to the URL.
@@ -691,7 +768,14 @@ class Client:
         }
         if self.api_key:
             headers[X_API_KEY] = self.api_key
+        if self._workspace_id:
+            headers["X-Tenant-Id"] = self._workspace_id
         return headers
+
+    def _set_header_affecting_attr(self, attr_name: str, value: Any) -> None:
+        """Set attributes that affect headers and recalculate them."""
+        object.__setattr__(self, attr_name, value)
+        object.__setattr__(self, "_headers", self._compute_headers())
 
     @property
     def api_key(self) -> Optional[str]:
@@ -700,8 +784,16 @@ class Client:
 
     @api_key.setter
     def api_key(self, value: Optional[str]) -> None:
-        object.__setattr__(self, "_api_key", value)
-        object.__setattr__(self, "_headers", self._compute_headers())
+        self._set_header_affecting_attr("_api_key", value)
+
+    @property
+    def workspace_id(self) -> Optional[str]:
+        """Return the workspace ID used for API requests."""
+        return self._workspace_id
+
+    @workspace_id.setter
+    def workspace_id(self, value: Optional[str]) -> None:
+        self._set_header_affecting_attr("_workspace_id", value)
 
     @property
     def info(self) -> ls_schemas.LangSmithInfo:
@@ -884,6 +976,22 @@ class Client:
                         elif response.status_code == 409:
                             raise ls_utils.LangSmithConflictError(
                                 f"Conflict for {pathname}. {repr(e)}{_context}"
+                            )
+                        elif (response.status_code == 403):
+                            try:
+                                error_data = response.json()
+                                error_code = error_data.get("error", "")
+                                if error_code == "org_scoped_key_requires_workspace":
+                                    raise ls_utils.LangSmithUserError(
+                                        "This API key is org-scoped and requires workspace specification. "
+                                        "Please provide 'workspace_id' parameter, "
+                                        "or set LANGSMITH_WORKSPACE_ID environment variable."
+                                    )
+                            except (ValueError, KeyError):
+                                pass
+                            raise ls_utils.LangSmithError(
+                                f"Failed to {method} {pathname} in LangSmith"
+                                f" API. {repr(e)}"
                             )
                         else:
                             raise ls_utils.LangSmithError(
@@ -1284,11 +1392,11 @@ class Client:
         if patch:
             sampled = []
             for run in runs:
-                run_id = _as_uuid(run["id"])
-                if run_id not in self._filtered_post_uuids:
+                trace_id = _as_uuid(run["trace_id"])
+                if trace_id not in self._filtered_post_uuids:
                     sampled.append(run)
-                else:
-                    self._filtered_post_uuids.remove(run_id)
+                elif run["id"] == trace_id:
+                    self._filtered_post_uuids.remove(trace_id)
             return sampled
         else:
             sampled = []
@@ -1319,6 +1427,8 @@ class Client:
         project_name: Optional[str] = None,
         revision_id: Optional[str] = None,
         dangerously_allow_filesystem: bool = False,
+        api_key: Optional[str] = None,
+        api_url: Optional[str] = None,
         **kwargs: Any,
     ) -> None:
         """Persist a run to the LangSmith API.
@@ -1330,6 +1440,8 @@ class Client:
                 embedding, prompt, or parser.
             project_name (Optional[str]): The project name of the run.
             revision_id (Optional[Union[UUID, str]]): The revision ID of the run.
+            api_key (Optional[str]): The API key to use for this specific run.
+            api_url (Optional[str]): The API URL to use for this specific run.
             **kwargs (Any): Additional keyword arguments.
 
         Returns:
@@ -1390,7 +1502,25 @@ class Client:
                     raise ValueError(
                         "Must set dangerously_allow_filesystem=True to allow passing in Paths for attachments."
                     )
+        # If process_buffered_run_ops is enabled, collect run ops in batches
+        # before batching
+        if self._process_buffered_run_ops and not kwargs.get("is_run_ops_buffer_flush"):
+            with self._run_ops_buffer_lock:
+                self._run_ops_buffer.append(("post", run_create))
+                # Process batch when we have enough runs or enough time has passed
+                if self._should_flush_run_ops_buffer():
+                    self._flush_run_ops_buffer()
+                return
+        else:
+            self._create_run(run_create, api_key=api_key, api_url=api_url)
 
+    def _create_run(
+        self,
+        run_create: dict,
+        *,
+        api_key: Optional[str] = None,
+        api_url: Optional[str] = None,
+    ) -> None:
         if (
             # batch ingest requires trace_id and dotted_order to be set
             run_create.get("trace_id") is not None
@@ -1398,16 +1528,21 @@ class Client:
         ):
             if self._pyo3_client is not None:
                 self._pyo3_client.create_run(run_create)
-            elif self.compressed_traces is not None:
+            elif (
+                self.compressed_traces is not None
+                and api_key is None
+                and api_url is None
+            ):
                 if self._data_available_event is None:
                     raise ValueError(
                         "Run compression is enabled but threading event is not configured"
                     )
                 serialized_op = serialize_run_dict("post", run_create)
-                multipart_form, opened_files = (
-                    serialized_run_operation_to_multipart_parts_and_context(
-                        serialized_op
-                    )
+                (
+                    multipart_form,
+                    opened_files,
+                ) = serialized_run_operation_to_multipart_parts_and_context(
+                    serialized_op
                 )
                 logger.log(
                     5,
@@ -1432,35 +1567,51 @@ class Client:
                     serialized_op.trace_id,
                     serialized_op.id,
                 )
-                if HAS_OTEL:
+                if self.otel_exporter is not None:
                     self.tracing_queue.put(
                         TracingQueueItem(
                             run_create["dotted_order"],
                             serialized_op,
-                            otel_context=set_span_in_context(
-                                otel_trace.get_current_span()
+                            api_key=api_key,
+                            api_url=api_url,
+                            otel_context=self._set_span_in_context(
+                                self._otel_trace.get_current_span()
                             ),
                         )
                     )
                 else:
                     self.tracing_queue.put(
-                        TracingQueueItem(run_create["dotted_order"], serialized_op)
+                        TracingQueueItem(
+                            run_create["dotted_order"],
+                            serialized_op,
+                            api_key=api_key,
+                            api_url=api_url,
+                        )
                     )
             else:
                 # Neither Rust nor Python batch ingestion is configured,
                 # fall back to the non-batch approach.
-                self._create_run(run_create)
+                self._create_run_non_batch(run_create, api_key=api_key, api_url=api_url)
         else:
-            self._create_run(run_create)
+            self._create_run_non_batch(run_create, api_key=api_key, api_url=api_url)
 
-    def _create_run(self, run_create: dict):
+    def _create_run_non_batch(
+        self,
+        run_create: dict,
+        *,
+        api_key: Optional[str] = None,
+        api_url: Optional[str] = None,
+    ):
         errors = []
-        for api_url, api_key in self._write_api_urls.items():
-            headers = {**self._headers, X_API_KEY: api_key}
+        # If specific api_key/api_url provided, use those; otherwise use all configured endpoints
+        if api_key is not None or api_url is not None:
+            target_api_url = api_url or self.api_url
+            target_api_key = api_key or self.api_key
+            headers = {**self._headers, X_API_KEY: target_api_key}
             try:
                 self.request_with_retries(
                     "POST",
-                    f"{api_url}/runs",
+                    f"{target_api_url}/runs",
                     request_kwargs={
                         "data": _dumps_json(run_create),
                         "headers": headers,
@@ -1469,6 +1620,22 @@ class Client:
                 )
             except Exception as e:
                 errors.append(e)
+        else:
+            # Use all configured write API URLs
+            for write_api_url, write_api_key in self._write_api_urls.items():
+                headers = {**self._headers, X_API_KEY: write_api_key}
+                try:
+                    self.request_with_retries(
+                        "POST",
+                        f"{write_api_url}/runs",
+                        request_kwargs={
+                            "data": _dumps_json(run_create),
+                            "headers": headers,
+                        },
+                        to_ignore=(ls_utils.LangSmithConflictError,),
+                    )
+                except Exception as e:
+                    errors.append(e)
         if errors:
             if len(errors) > 1:
                 raise ls_utils.LangSmithExceptionGroup(exceptions=errors)
@@ -1502,9 +1669,59 @@ class Client:
             return metadata
         return self._hide_metadata(metadata)
 
+    def _should_flush_run_ops_buffer(self) -> bool:
+        """Check if the run ops buffer should be flushed based on size or time."""
+        if not self._run_ops_buffer:
+            return False
+
+        # Check size-based flushing
+        if (
+            self._run_ops_buffer_size is not None
+            and len(self._run_ops_buffer) >= self._run_ops_buffer_size
+        ):
+            return True
+
+        # Check time-based flushing
+        if self._run_ops_buffer_timeout_ms is not None:
+            time_since_last_flush = time.time() - self._run_ops_buffer_last_flush_time
+            if time_since_last_flush >= (self._run_ops_buffer_timeout_ms / 1000):
+                return True
+
+        return False
+
+    def _flush_run_ops_buffer(self) -> None:
+        """Process and flush run ops buffer in a background thread."""
+        if not self._run_ops_buffer:
+            return
+
+        # Copy the buffer contents and clear it immediately to avoid blocking
+        batch_to_process = list(self._run_ops_buffer)
+        self._run_ops_buffer.clear()
+        self._run_ops_buffer_last_flush_time = time.time()
+
+        # Submit the processing to processing thread pool
+        from langsmith._internal._background_thread import (
+            LANGSMITH_CLIENT_THREAD_POOL,
+            _process_buffered_run_ops_batch,
+        )
+
+        try:
+            future = LANGSMITH_CLIENT_THREAD_POOL.submit(
+                _process_buffered_run_ops_batch, self, batch_to_process
+            )
+            # Track the future if we have a futures set
+            if self._futures is not None:
+                self._futures.add(future)
+        except RuntimeError:
+            # Thread pool is shut down, process synchronously as fallback
+            _process_buffered_run_ops_batch(self, batch_to_process)
+
     def _batch_ingest_run_ops(
         self,
         ops: list[SerializedRunOperation],
+        *,
+        api_url: Optional[str] = None,
+        api_key: Optional[str] = None,
     ) -> None:
         ids_and_partial_body: dict[
             Literal["post", "patch"], list[tuple[str, bytes]]
@@ -1523,6 +1740,12 @@ class Client:
                     curr_dict["outputs"] = _orjson.Fragment(op.outputs)
                 if op.events:
                     curr_dict["events"] = _orjson.Fragment(op.events)
+                if op.extra:
+                    curr_dict["extra"] = _orjson.Fragment(op.extra)
+                if op.error:
+                    curr_dict["error"] = _orjson.Fragment(op.error)
+                if op.serialized:
+                    curr_dict["serialized"] = _orjson.Fragment(op.serialized)
                 if op.attachments:
                     logger.warning(
                         "Attachments are not supported when use_multipart_endpoint "
@@ -1557,6 +1780,8 @@ class Client:
                     self._post_batch_ingest_runs(
                         _orjson.dumps(body_chunks),
                         _context=f"\n{key}: {'; '.join(context_ids[key])}",
+                        api_url=api_url,
+                        api_key=api_key,
                     )
                     body_size = 0
                     body_chunks.clear()
@@ -1568,7 +1793,10 @@ class Client:
         if body_size:
             context = "; ".join(f"{k}: {'; '.join(v)}" for k, v in context_ids.items())
             self._post_batch_ingest_runs(
-                _orjson.dumps(body_chunks), _context="\n" + context
+                _orjson.dumps(body_chunks),
+                _context="\n" + context,
+                api_url=api_url,
+                api_key=api_key,
             )
 
     def batch_ingest_runs(
@@ -1699,6 +1927,13 @@ class Client:
         if not create_dicts and not update_dicts:
             return
 
+        # Apply process_buffered_run_ops function if provided
+        if self._process_buffered_run_ops:
+            if create_dicts:
+                create_dicts = list(self._process_buffered_run_ops(create_dicts))
+            if update_dicts:
+                update_dicts = list(self._process_buffered_run_ops(update_dicts))
+
         self._insert_runtime_env(create_dicts + update_dicts)
 
         # convert to serialized ops
@@ -1716,18 +1951,34 @@ class Client:
 
         self._batch_ingest_run_ops(serialized_ops)
 
-    def _post_batch_ingest_runs(self, body: bytes, *, _context: str):
-        for api_url, api_key in self._write_api_urls.items():
+    def _post_batch_ingest_runs(
+        self,
+        body: bytes,
+        *,
+        _context: str,
+        api_url: Optional[str] = None,
+        api_key: Optional[str] = None,
+    ):
+        # Use provided endpoint or fall back to all configured endpoints
+        endpoints: Mapping[str, Optional[str]]
+        if api_url is not None and api_key is not None:
+            endpoints = {api_url: api_key}
+        else:
+            endpoints = self._write_api_urls
+
+        for target_api_url, target_api_key in endpoints.items():
             try:
-                logger.debug(f"Sending batch ingest request with context: {_context}")
+                logger.debug(
+                    f"Sending batch ingest request to {target_api_url} with context: {_context}"
+                )
                 self.request_with_retries(
                     "POST",
-                    f"{api_url}/runs/batch",
+                    f"{target_api_url}/runs/batch",
                     request_kwargs={
                         "data": body,
                         "headers": {
                             **self._headers,
-                            X_API_KEY: api_key,
+                            X_API_KEY: target_api_key,
                         },
                     },
                     to_ignore=(ls_utils.LangSmithConflictError,),
@@ -1743,15 +1994,20 @@ class Client:
                     logger.warning(f"Failed to batch ingest runs: {repr(e)}")
 
     def _multipart_ingest_ops(
-        self, ops: list[Union[SerializedRunOperation, SerializedFeedbackOperation]]
+        self,
+        ops: list[Union[SerializedRunOperation, SerializedFeedbackOperation]],
+        *,
+        api_url: Optional[str] = None,
+        api_key: Optional[str] = None,
     ) -> None:
         parts: list[MultipartPartsAndContext] = []
         opened_files_dict: dict[str, io.BufferedReader] = {}
         for op in ops:
             if isinstance(op, SerializedRunOperation):
-                part, opened_files = (
-                    serialized_run_operation_to_multipart_parts_and_context(op)
-                )
+                (
+                    part,
+                    opened_files,
+                ) = serialized_run_operation_to_multipart_parts_and_context(op)
                 parts.append(part)
                 opened_files_dict.update(opened_files)
             elif isinstance(op, SerializedFeedbackOperation):
@@ -1763,7 +2019,9 @@ class Client:
         acc_multipart = join_multipart_parts_and_context(parts)
         if acc_multipart:
             try:
-                self._send_multipart_req(acc_multipart)
+                self._send_multipart_req(
+                    acc_multipart, api_url=api_url, api_key=api_key
+                )
             finally:
                 _close_files(list(opened_files_dict.values()))
 
@@ -1943,10 +2201,24 @@ class Client:
         # sent the runs in multipart requests
         self._multipart_ingest_ops(serialized_ops)
 
-    def _send_multipart_req(self, acc: MultipartPartsAndContext, *, attempts: int = 3):
+    def _send_multipart_req(
+        self,
+        acc: MultipartPartsAndContext,
+        *,
+        attempts: int = 3,
+        api_url: Optional[str] = None,
+        api_key: Optional[str] = None,
+    ):
         parts = acc.parts
         _context = acc.context
-        for api_url, api_key in self._write_api_urls.items():
+
+        # Use provided endpoint or fall back to all configured endpoints
+        if api_url is not None and api_key is not None:
+            endpoints: Mapping[str, str | None] = {api_url: api_key}
+        else:
+            endpoints = self._write_api_urls
+
+        for target_api_url, target_api_key in endpoints.items():
             for idx in range(1, attempts + 1):
                 try:
                     encoder = rqtb_multipart.MultipartEncoder(parts, boundary=_BOUNDARY)
@@ -1954,15 +2226,17 @@ class Client:
                         data = encoder.to_string()
                     else:
                         data = encoder
-                    logger.debug(f"Sending multipart request with context: {_context}")
+                    logger.debug(
+                        f"Sending multipart request to {target_api_url} with context: {_context}"
+                    )
                     self.request_with_retries(
                         "POST",
-                        f"{api_url}/runs/multipart",
+                        f"{target_api_url}/runs/multipart",
                         request_kwargs={
                             "data": data,
                             "headers": {
                                 **self._headers,
-                                X_API_KEY: api_key,
+                                X_API_KEY: target_api_key,
                                 "Content-Type": encoder.content_type,
                             },
                         },
@@ -2077,6 +2351,9 @@ class Client:
         tags: Optional[list[str]] = None,
         attachments: Optional[ls_schemas.Attachments] = None,
         dangerously_allow_filesystem: bool = False,
+        reference_example_id: str | uuid.UUID | None = None,
+        api_key: Optional[str] = None,
+        api_url: Optional[str] = None,
         **kwargs: Any,
     ) -> None:
         """Update a run in the LangSmith API.
@@ -2093,6 +2370,11 @@ class Client:
             tags (Optional[List[str]]): The tags for the run.
             attachments (Optional[Dict[str, Attachment]]): A dictionary of attachments to add to the run. The keys are the attachment names,
                 and the values are Attachment objects containing the data and mime type.
+            reference_example_id (Optional[Union[str, uuid.UUID]]): ID of the example
+                that was the source of the run inputs. Used for runs that were part of
+                an experiment.
+            api_key (Optional[str]): The API key to use for this specific run.
+            api_url (Optional[str]): The API URL to use for this specific run.
             **kwargs (Any): Kwargs are ignored.
 
         Returns:
@@ -2178,16 +2460,43 @@ class Client:
             self._insert_runtime_env([data])
             if metadata := data["extra"].get("metadata"):
                 data["extra"]["metadata"] = self._hide_run_metadata(metadata)
+        if reference_example_id is not None:
+            data["reference_example_id"] = reference_example_id
 
+        # If process_buffered_run_ops is enabled, collect runs in batches
+        if self._process_buffered_run_ops and not kwargs.get("is_run_ops_buffer_flush"):
+            with self._run_ops_buffer_lock:
+                self._run_ops_buffer.append(("patch", data))
+                # Process batch when we have enough runs or enough time has passed
+                if self._should_flush_run_ops_buffer():
+                    self._flush_run_ops_buffer()
+                return
+        else:
+            self._update_run(data, api_key=api_key, api_url=api_url)
+
+    def _update_run(
+        self,
+        run_update: dict,
+        *,
+        api_key: Optional[str] = None,
+        api_url: Optional[str] = None,
+    ):
+        use_multipart = (
+            (self.tracing_queue is not None or self.compressed_traces is not None)
+            # batch ingest requires trace_id and dotted_order to be set
+            and run_update["trace_id"] is not None
+            and run_update["dotted_order"] is not None
+        )
         if self._pyo3_client is not None:
-            self._pyo3_client.update_run(data)
+            self._pyo3_client.update_run(run_update)
         elif use_multipart:
-            serialized_op = serialize_run_dict(operation="patch", payload=data)
+            serialized_op = serialize_run_dict(operation="patch", payload=run_update)
             if self.compressed_traces is not None:
-                multipart_form, opened_files = (
-                    serialized_run_operation_to_multipart_parts_and_context(
-                        serialized_op
-                    )
+                (
+                    multipart_form,
+                    opened_files,
+                ) = serialized_run_operation_to_multipart_parts_and_context(
+                    serialized_op
                 )
                 logger.log(
                     5,
@@ -2214,38 +2523,70 @@ class Client:
                     serialized_op.trace_id,
                     serialized_op.id,
                 )
-                if HAS_OTEL:
+                if self.otel_exporter is not None:
                     self.tracing_queue.put(
                         TracingQueueItem(
-                            data["dotted_order"],
+                            run_update["dotted_order"],
                             serialized_op,
-                            otel_context=set_span_in_context(
-                                otel_trace.get_current_span()
+                            api_key=api_key,
+                            api_url=api_url,
+                            otel_context=self._set_span_in_context(
+                                self._otel_trace.get_current_span()
                             ),
                         )
                     )
                 else:
                     self.tracing_queue.put(
-                        TracingQueueItem(data["dotted_order"], serialized_op)
+                        TracingQueueItem(
+                            run_update["dotted_order"],
+                            serialized_op,
+                            api_key=api_key,
+                            api_url=api_url,
+                        )
                     )
         else:
-            self._update_run(data)
+            self._update_run_non_batch(run_update, api_key=api_key, api_url=api_url)
 
-    def _update_run(self, run_update: dict) -> None:
-        for api_url, api_key in self._write_api_urls.items():
+    def _update_run_non_batch(
+        self,
+        run_update: dict,
+        *,
+        api_key: Optional[str] = None,
+        api_url: Optional[str] = None,
+    ) -> None:
+        # If specific api_key/api_url provided, use those; otherwise use all configured endpoints
+        if api_key is not None or api_url is not None:
+            target_api_url = api_url or self.api_url
+            target_api_key = api_key or self.api_key
             headers = {
                 **self._headers,
-                X_API_KEY: api_key,
+                X_API_KEY: target_api_key,
             }
 
             self.request_with_retries(
                 "PATCH",
-                f"{api_url}/runs/{run_update['id']}",
+                f"{target_api_url}/runs/{run_update['id']}",
                 request_kwargs={
                     "data": _dumps_json(run_update),
                     "headers": headers,
                 },
             )
+        else:
+            # Use all configured write API URLs
+            for write_api_url, write_api_key in self._write_api_urls.items():
+                headers = {
+                    **self._headers,
+                    X_API_KEY: write_api_key,
+                }
+
+                self.request_with_retries(
+                    "PATCH",
+                    f"{write_api_url}/runs/{run_update['id']}",
+                    request_kwargs={
+                        "data": _dumps_json(run_update),
+                        "headers": headers,
+                    },
+                )
 
     def flush_compressed_traces(self, attempts: int = 3) -> None:
         """Force flush the currently buffered compressed runs."""
@@ -2259,21 +2600,22 @@ class Client:
 
         # Attempt to drain and send any remaining data
         from langsmith._internal._background_thread import (
-            HTTP_REQUEST_THREAD_POOL,
+            LANGSMITH_CLIENT_THREAD_POOL,
             _tracing_thread_drain_compressed_buffer,
         )
 
-        final_data_stream, compressed_traces_info = (
-            _tracing_thread_drain_compressed_buffer(
-                self, size_limit=1, size_limit_bytes=1
-            )
+        (
+            final_data_stream,
+            compressed_traces_info,
+        ) = _tracing_thread_drain_compressed_buffer(
+            self, size_limit=1, size_limit_bytes=1
         )
 
         if final_data_stream is not None:
             # We have data to send
             future = None
             try:
-                future = HTTP_REQUEST_THREAD_POOL.submit(
+                future = LANGSMITH_CLIENT_THREAD_POOL.submit(
                     self._send_compressed_multipart_req,
                     final_data_stream,
                     compressed_traces_info,
@@ -2295,6 +2637,11 @@ class Client:
 
     def flush(self) -> None:
         """Flush either queue or compressed buffer, depending on mode."""
+        # Flush any remaining batch items first
+        if self._process_buffered_run_ops:
+            with self._run_ops_buffer_lock:
+                if self._run_ops_buffer:
+                    self._flush_run_ops_buffer()
         if self.compressed_traces is not None:
             self.flush_compressed_traces()
         elif self.tracing_queue is not None:
@@ -2930,13 +3277,18 @@ class Client:
         )
 
     def list_shared_examples(
-        self, share_token: str, *, example_ids: Optional[list[ID_TYPE]] = None
-    ) -> list[ls_schemas.Example]:
+        self,
+        share_token: str,
+        *,
+        example_ids: Optional[list[ID_TYPE]] = None,
+        limit: Optional[int] = None,
+    ) -> Iterator[ls_schemas.Example]:
         """Get shared examples.
 
         Args:
             share_token (Union[UUID, str]): The share token or URL of the shared dataset.
             example_ids (Optional[List[UUID, str]], optional): The IDs of the examples to filter by. Defaults to None.
+            limit (Optional[int]): Maximum number of examples to return, by default None.
 
         Returns:
             List[ls_schemas.Example]: The list of shared examples.
@@ -2944,17 +3296,15 @@ class Client:
         params = {}
         if example_ids is not None:
             params["id"] = [str(id) for id in example_ids]
-        response = self.request_with_retries(
-            "GET",
-            f"/public/{_as_uuid(share_token, 'share_token')}/examples",
-            headers=self._headers,
-            params=params,
-        )
-        ls_utils.raise_for_status_with_text(response)
-        return [
-            ls_schemas.Example(**dataset, _host_url=self._host_url)
-            for dataset in response.json()
-        ]
+        for i, example in enumerate(
+            self._get_paginated_list(
+                f"/public/{_as_uuid(share_token, 'share_token')}/examples",
+                params=params,
+            )
+        ):
+            yield ls_schemas.Example(**example, _host_url=self._host_url)
+            if limit is not None and i + 1 >= limit:
+                break
 
     def list_shared_projects(
         self,
@@ -3251,8 +3601,13 @@ class Client:
                         {
                             f"feedback.{k}": v.get("avg")
                             for k, v in r.feedback_stats.items()
+                            if not (k == "note" and v.get("comments"))
                         }
                     )
+                    if r.feedback_stats.get("note") and (
+                        comments := r.feedback_stats["note"].get("comments")
+                    ):
+                        row["notes"] = comments
                 if r.reference_example_id:
                     example_ids.append(r.reference_example_id)
                 else:
@@ -4182,32 +4537,33 @@ class Client:
                 )
             )
 
-            inputsb = _dumps_json(example.inputs or {})
-
-            parts.append(
-                (
-                    f"{example_id}.inputs",
+            if example.inputs is not None:
+                inputsb = _dumps_json(example.inputs)
+                parts.append(
                     (
-                        None,
-                        inputsb,
-                        "application/json",
-                        {},
-                    ),
+                        f"{example_id}.inputs",
+                        (
+                            None,
+                            inputsb,
+                            "application/json",
+                            {},
+                        ),
+                    )
                 )
-            )
 
-            outputsb = _dumps_json(example.outputs or {})
-            parts.append(
-                (
-                    f"{example_id}.outputs",
+            if example.outputs is not None:
+                outputsb = _dumps_json(example.outputs)
+                parts.append(
                     (
-                        None,
-                        outputsb,
-                        "application/json",
-                        {},
-                    ),
+                        f"{example_id}.outputs",
+                        (
+                            None,
+                            outputsb,
+                            "application/json",
+                            {},
+                        ),
+                    )
                 )
-            )
 
             if example.attachments:
                 for name, attachment in example.attachments.items():
@@ -6988,8 +7344,8 @@ class Client:
             from langchain_core.load.dump import dumps
         except ImportError:
             raise ImportError(
-                "The client.create_commit function requires the langchain_core"
-                "package to run.\nInstall with `pip install langchain_core`"
+                "The client.create_commit function requires the langchain-core"
+                "package to run.\nInstall with `pip install langchain-core`"
             )
 
         json_object = dumps(object)
@@ -7179,7 +7535,7 @@ class Client:
     ) -> Any:
         """Pull a prompt and return it as a LangChain PromptTemplate.
 
-        This method requires `langchain_core`.
+        This method requires `langchain-core <https://pypi.org/project/langchain-core/>`__.
 
         Args:
             prompt_identifier (str): The identifier of the prompt.
@@ -7197,8 +7553,8 @@ class Client:
             from langchain_core.runnables.base import RunnableBinding, RunnableSequence
         except ImportError:
             raise ImportError(
-                "The client.pull_prompt function requires the langchain_core"
-                "package to run.\nInstall with `pip install langchain_core`"
+                "The client.pull_prompt function requires the langchain-core"
+                "package to run.\nInstall with `pip install langchain-core`"
             )
         try:
             from langchain_core._api import suppress_langchain_beta_warning
@@ -7403,6 +7759,7 @@ class Client:
         blocking: bool = True,
         experiment: Optional[EXPERIMENT_T] = None,
         upload_results: bool = True,
+        error_handling: Literal["log", "ignore"] = "log",
         **kwargs: Any,
     ) -> Union[ExperimentResults, ComparativeExperimentResults]:
         r"""Evaluate a target system on a given dataset.
@@ -7439,6 +7796,9 @@ class Client:
                 two-tuple fo experiments.
             upload_results (bool, default=True): Whether to upload the results to LangSmith.
                 Defaults to True.
+            error_handling (str, default="log"): How to handle individual run errors. 'log'
+                will trace the runs with the error message as part of the experiment,
+                'ignore' will not count the run as part of the experiment at all.
             **kwargs (Any): Additional keyword arguments to pass to the evaluator.
 
         Returns:
@@ -7638,6 +7998,7 @@ class Client:
             blocking=blocking,
             experiment=experiment,
             upload_results=upload_results,
+            error_handling=error_handling,
             **kwargs,
         )
 
@@ -7665,6 +8026,7 @@ class Client:
         blocking: bool = True,
         experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
         upload_results: bool = True,
+        error_handling: Literal["log", "ignore"] = "log",
         **kwargs: Any,
     ) -> AsyncExperimentResults:
         r"""Evaluate an async target system on a given dataset.
@@ -7698,6 +8060,9 @@ class Client:
                 usage only.
             upload_results (bool, default=True): Whether to upload the results to LangSmith.
                 Defaults to True.
+            error_handling (str, default="log"): How to handle individual run errors. 'log'
+                will trace the runs with the error message as part of the experiment,
+                'ignore' will not count the run as part of the experiment at all.
             **kwargs (Any): Additional keyword arguments to pass to the evaluator.
 
         Returns:
@@ -7879,6 +8244,7 @@ class Client:
             blocking=blocking,
             experiment=experiment,
             upload_results=upload_results,
+            error_handling=error_handling,
             **kwargs,
         )
 
@@ -8009,10 +8375,35 @@ def _dataset_examples_path(api_url: str, dataset_id: ID_TYPE) -> str:
 def _construct_url(api_url: str, pathname: str) -> str:
     if pathname.startswith("http"):
         return pathname
-    elif pathname.startswith("/"):
-        return api_url.rstrip("/") + pathname
+    if api_url.startswith("https://"):
+        http = "https://"
+        api_url = api_url[len("https://") :]
+    elif api_url.startswith("http://"):
+        http = "http://"
+        api_url = api_url[len("http://") :]
     else:
-        return api_url.rstrip("/") + "/" + pathname
+        raise ValueError(
+            f"api_url must start with 'http://' or 'https://'. Received {api_url=}"
+        )
+
+    api_parts = api_url.rstrip("/").split("/")
+    path_parts = pathname.lstrip("/").split("/")
+
+    if not api_parts:
+        raise ValueError(
+            "Must specify non-empty api_url or pathname must be a full url. "
+            f"Received {api_url=}, {pathname=}"
+        )
+    if not path_parts:
+        return api_url
+
+    if path_parts[0] == "api":
+        if api_parts[-1] == "api":
+            api_parts = api_parts[:-1]
+        elif api_parts[-2:] == ["api", "v1"]:
+            api_parts = api_parts[:-2]
+    parts = api_parts + path_parts
+    return http + "/".join(p for p in parts if p)
 
 
 def dump_model(model) -> dict[str, Any]:

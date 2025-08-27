@@ -15,6 +15,7 @@ interface BaseLLMSpanAttributes {
 
   "ai.usage.promptTokens": number;
   "ai.usage.completionTokens": number;
+  "ai.response.providerMetadata"?: string;
 
   "ai.telemetry.functionId"?: string;
   "resource.name"?: string;
@@ -42,7 +43,11 @@ type ToolCallSpan = TypedReadableSpan<
     "ai.operationId": "ai.toolCall";
     "ai.toolCall.name": string;
     "ai.toolCall.id": string;
-    "ai.toolCall.args": string;
+    "ai.toolCall.input"?: string;
+    "ai.toolCall.output"?: string;
+    /** @deprecated AI SDK 4 span */
+    "ai.toolCall.args"?: string;
+    /** @deprecated AI SDK 4 span */
     "ai.toolCall.result"?: string;
   }
 >;

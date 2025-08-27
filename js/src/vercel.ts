@@ -4,7 +4,8 @@ import type {
   ToolCallPart,
   generateText,
 } from "ai";
-import type { AISDKSpan } from "./vercel.types.js";
+import type { AISDKSpan } from "./utils/vercel.types.js";
+import { extractUsageMetadata } from "./utils/vercel.js";
 import { Client, RunTree } from "./index.js";
 import { KVMap, RunCreate } from "./schemas.js";
 import { v5 as uuid5 } from "uuid";
@@ -14,6 +15,10 @@ import {
   getEnvironmentVariable,
 } from "./utils/env.js";
 import { isTracingEnabled } from "./env.js";
+import {
+  LANGSMITH_IS_ROOT,
+  LANGSMITH_TRACEABLE_PARENT_OTEL_SPAN_ID,
+} from "./experimental/otel/constants.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-types
 type AnyString = string & {};
@@ -70,17 +75,24 @@ function convertCoreToSmith(
           return {
             type: "text",
             text: part.text,
-            ...part.experimental_providerMetadata,
+            // Backcompat for AI SDK 4
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ...(part as any).experimental_providerMetadata,
           };
         }
 
         if (part.type === "tool-call") {
+          // Backcompat for AI SDK 4
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const legacyToolCallInput = (part as any).args;
           return {
             type: "tool_use",
             name: part.toolName,
             id: part.toolCallId,
-            input: part.args,
-            ...part.experimental_providerMetadata,
+            input: legacyToolCallInput ?? part.input,
+            // Backcompat for AI SDK 4
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ...(part as any).experimental_providerMetadata,
           };
         }
 
@@ -94,13 +106,16 @@ function convertCoreToSmith(
       if (toolCalls.length > 0) {
         data.additional_kwargs ??= {};
         data.additional_kwargs.tool_calls = toolCalls.map((part) => {
+          // Backcompat for AI SDK 4
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const legacyToolCallInput = (part as any).args;
           return {
             id: part.toolCallId,
             type: "function",
             function: {
               name: part.toolName,
               id: part.toolCallId,
-              arguments: JSON.stringify(part.args),
+              arguments: JSON.stringify(legacyToolCallInput ?? part.input),
             },
           };
         });
@@ -119,7 +134,9 @@ function convertCoreToSmith(
           return {
             type: "text",
             text: part.text,
-            ...part.experimental_providerMetadata,
+            // Backcompat for AI SDK 4
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ...(part as any).experimental_providerMetadata,
           };
         }
 
@@ -159,7 +176,9 @@ function convertCoreToSmith(
           return {
             type: "image_url",
             image_url: imageUrl,
-            ...part.experimental_providerMetadata,
+            // Backcompat for AI SDK 4
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ...(part as any).experimental_providerMetadata,
           };
         }
 
@@ -176,10 +195,13 @@ function convertCoreToSmith(
 
   if (message.role === "tool") {
     const res = message.content.map((toolCall) => {
+      // Backcompat for AI SDK 4
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const legacyToolCallResult = (toolCall as any).result;
       return {
         type: "tool",
         data: {
-          content: JSON.stringify(toolCall.result),
+          content: JSON.stringify(legacyToolCallResult ?? toolCall.output),
           name: toolCall.toolName,
           tool_call_id: toolCall.toolCallId,
         },
@@ -273,7 +295,25 @@ interface MutableRunCreate {
   trace_id: string;
   dotted_order: string;
   parent_run_id: string | undefined;
+  start_time: string;
 }
+
+// Helper function to convert dotted order version of start time to ISO string
+export const parseStrippedIsoTime = (stripped: string): string => {
+  const year = stripped.slice(0, 4);
+  const month = stripped.slice(4, 6);
+  const day = stripped.slice(6, 8);
+  const hour = stripped.slice(9, 11); // Skip 'T'
+  const minute = stripped.slice(11, 13);
+  const second = stripped.slice(13, 15);
+  const ms = stripped.slice(15, 18); // milliseconds
+  const us = stripped.length >= 21 ? stripped.slice(18, 21) : "000"; // microseconds
+
+  // Create ISO string with microsecond precision only if microseconds are present
+  return us !== "000"
+    ? `${year}-${month}-${day}T${hour}:${minute}:${second}.${ms}${us}Z`
+    : `${year}-${month}-${day}T${hour}:${minute}:${second}.${ms}Z`;
+};
 
 function getMutableRunCreate(dotOrder: string): MutableRunCreate {
   const segments = dotOrder.split(".").map((i) => {
@@ -285,13 +325,15 @@ function getMutableRunCreate(dotOrder: string): MutableRunCreate {
   const parentRunId = segments.at(-2)?.runId;
 
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-  const runId = segments.at(-1)!.runId;
+  const lastSegment = segments.at(-1)!;
+  const startTime = parseStrippedIsoTime(lastSegment.startTime);
 
   return {
-    id: runId,
+    id: lastSegment.runId,
     trace_id: traceId,
     dotted_order: dotOrder,
     parent_run_id: parentRunId,
+    start_time: startTime,
   };
 }
 
@@ -666,22 +708,6 @@ export class AISDKExporter {
             };
           }
 
-          if (span.attributes["ai.usage.completionTokens"]) {
-            result ??= {};
-            result.llm_output ??= {};
-            result.llm_output.token_usage ??= {};
-            result.llm_output.token_usage["completion_tokens"] =
-              span.attributes["ai.usage.completionTokens"];
-          }
-
-          if (span.attributes["ai.usage.promptTokens"]) {
-            result ??= {};
-            result.llm_output ??= {};
-            result.llm_output.token_usage ??= {};
-            result.llm_output.token_usage["prompt_tokens"] =
-              span.attributes["ai.usage.promptTokens"];
-          }
-
           return result;
         })();
 
@@ -712,10 +738,19 @@ export class AISDKExporter {
           });
         }
 
+        const runType =
+          span.name === "ai.generateText" || span.name === "ai.streamText"
+            ? "chain"
+            : "llm";
+
+        const error = span.status?.code === 2 ? span.status.message : undefined;
+        const usageMetadata = extractUsageMetadata(span as KVMap);
+
         // TODO: add first_token_time
         return asRunCreate({
-          run_type: "llm",
+          run_type: runType,
           name: span.attributes["ai.model.provider"],
+          error,
           inputs,
           outputs,
           events,
@@ -723,6 +758,7 @@ export class AISDKExporter {
             invocation_params: invocationParams,
             batch_size: 1,
             metadata: {
+              usage_metadata: usageMetadata,
               ls_provider: span.attributes["ai.model.provider"]
                 .split(".")
                 .at(0),
@@ -736,23 +772,43 @@ export class AISDKExporter {
       }
 
       case "ai.toolCall": {
-        const args = tryJson(span.attributes["ai.toolCall.args"]);
+        const args = tryJson(
+          span.attributes["ai.toolCall.input"] ??
+            span.attributes["ai.toolCall.args"]
+        );
         let inputs: KVMap = { args };
 
         if (typeof args === "object" && args != null) {
           inputs = args;
         }
 
-        const output = tryJson(span.attributes["ai.toolCall.result"]);
+        const output = tryJson(
+          span.attributes["ai.toolCall.output"] ??
+            span.attributes["ai.toolCall.result"]
+        );
         let outputs: KVMap = { output };
 
         if (typeof output === "object" && output != null) {
           outputs = output;
         }
 
+        const error = span.status?.code === 2 ? span.status.message : undefined;
+
         return asRunCreate({
           run_type: "tool",
           name: span.attributes["ai.toolCall.name"],
+          error,
+          extra: error
+            ? {
+                metadata: {
+                  usage_metadata: {
+                    input_tokens: 0,
+                    output_tokens: 0,
+                    total_tokens: 0,
+                  },
+                },
+              }
+            : undefined,
           inputs,
           outputs,
         });
@@ -787,22 +843,6 @@ export class AISDKExporter {
             };
           }
 
-          if (span.attributes["ai.usage.completionTokens"]) {
-            result ??= {};
-            result.llm_output ??= {};
-            result.llm_output.token_usage ??= {};
-            result.llm_output.token_usage["completion_tokens"] =
-              span.attributes["ai.usage.completionTokens"];
-          }
-
-          if (span.attributes["ai.usage.promptTokens"]) {
-            result ??= {};
-            result.llm_output ??= {};
-            result.llm_output.token_usage ??= {};
-            result.llm_output.token_usage["prompt_tokens"] =
-              +span.attributes["ai.usage.promptTokens"];
-          }
-
           return result;
         })();
 
@@ -817,15 +857,25 @@ export class AISDKExporter {
           });
         }
 
+        const runType =
+          span.name === "ai.generateObject" || span.name === "ai.streamObject"
+            ? "chain"
+            : "llm";
+
+        const error = span.status?.code === 2 ? span.status.message : undefined;
+        const usageMetadata = extractUsageMetadata(span as KVMap);
+
         return asRunCreate({
-          run_type: "llm",
+          run_type: runType,
           name: span.attributes["ai.model.provider"],
+          error,
           inputs,
           outputs,
           events,
           extra: {
             batch_size: 1,
             metadata: {
+              usage_metadata: usageMetadata,
               ls_provider: span.attributes["ai.model.provider"]
                 .split(".")
                 .at(0),
@@ -881,6 +931,15 @@ export class AISDKExporter {
       const runId = uuid5(spanId, RUN_ID_NAMESPACE);
 
       let parentId = getParentSpanId(span);
+      if (LANGSMITH_IS_ROOT in span.attributes) {
+        parentId = undefined;
+      } else if (
+        LANGSMITH_TRACEABLE_PARENT_OTEL_SPAN_ID in span.attributes &&
+        typeof span.attributes[LANGSMITH_TRACEABLE_PARENT_OTEL_SPAN_ID] ===
+          "string"
+      ) {
+        parentId = span.attributes[LANGSMITH_TRACEABLE_PARENT_OTEL_SPAN_ID];
+      }
       let parentRunId = parentId
         ? uuid5(parentId, RUN_ID_NAMESPACE)
         : undefined;

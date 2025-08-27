@@ -372,11 +372,22 @@ export function generateWrapperFromJestlikeMethods(
           let commit;
           let dirty;
           try {
-            branch = execSync("git rev-parse --abbrev-ref HEAD")
+            branch = execSync("git rev-parse --abbrev-ref HEAD", {
+              stdio: ["ignore", "pipe", "ignore"],
+            })
               .toString()
               .trim();
-            commit = execSync("git rev-parse HEAD").toString().trim();
-            dirty = execSync("git status --porcelain").toString().trim() !== "";
+            commit = execSync("git rev-parse HEAD", {
+              stdio: ["ignore", "pipe", "ignore"],
+            })
+              .toString()
+              .trim();
+            dirty =
+              execSync("git status --porcelain", {
+                stdio: ["ignore", "pipe", "ignore"],
+              })
+                .toString()
+                .trim() !== "";
           } catch {
             return;
           }
@@ -466,7 +477,7 @@ export function generateWrapperFromJestlikeMethods(
         context.enableTestTracking = lsParams.config.enableTestTracking;
       }
       const { config, inputs, referenceOutputs, ...rest } = lsParams;
-      const totalRuns = config?.iterations ?? 1;
+      const totalRuns = config?.repetitions ?? config?.iterations ?? 1;
       for (let i = 0; i < totalRuns; i += 1) {
         const testUuid = v4().replace(/-/g, "").slice(0, 13);
         // Jest will not group tests under the same "describe" group if you await the test and
