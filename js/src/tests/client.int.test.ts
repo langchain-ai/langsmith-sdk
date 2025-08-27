@@ -764,8 +764,7 @@ test("list runs limit arg works", async () => {
   }
 });
 
-// TODO: Fix
-test.skip("Test run stats", async () => {
+test("Test run stats", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
   const stats = await client.getRunStats({
     projectNames: ["default"],
