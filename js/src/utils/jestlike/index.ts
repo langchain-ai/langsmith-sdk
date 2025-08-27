@@ -168,8 +168,12 @@ export function generateWrapperFromJestlikeMethods(
   function getExampleId(
     datasetId: string,
     inputs: Record<string, unknown>,
-    outputs?: Record<string, unknown>
+    outputs?: Record<string, unknown>,
+    providedId?: string
   ) {
+    if (providedId) {
+      return providedId;
+    }
     const identifier = JSON.stringify({
       datasetId,
       inputsHash: _objectHash(inputs),
@@ -629,7 +633,12 @@ export function generateWrapperFromJestlikeMethods(
                       )} while syncing to LangSmith. Please contact us for help.`
                   );
                 }
-                exampleId = getExampleId(dataset.id, inputs, referenceOutputs);
+                exampleId = getExampleId(
+                  dataset.id,
+                  inputs,
+                  referenceOutputs,
+                  lsParams.id
+                );
 
                 // TODO: Create or update the example in the background
                 // Currently run end time has to be after example modified time
