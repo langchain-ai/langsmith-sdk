@@ -2249,7 +2249,7 @@ export class Client implements LangSmithTracingClientInterface {
     const response = await this.caller.call(async () => {
       const res = await this._fetch(`${this.apiUrl}/runs/stats`, {
         method: "POST",
-        headers: this.headers,
+        headers: { ...this.headers, "Content-Type": "application/json" },
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
         body,
