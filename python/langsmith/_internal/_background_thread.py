@@ -129,9 +129,6 @@ def _tracing_thread_drain_compressed_buffer(
         if client.compressed_traces is None:
             return None, None
         with client.compressed_traces.lock:
-            client.compressed_traces.compressor_writer.flush()
-            current_size = client.compressed_traces.buffer.tell()
-
             pre_compressed_size = client.compressed_traces.uncompressed_size
 
             if size_limit is not None and size_limit <= 0:
@@ -141,7 +138,10 @@ def _tracing_thread_drain_compressed_buffer(
                     f"size_limit_bytes must be nonnegative; got {size_limit_bytes}"
                 )
 
-            if (size_limit_bytes is None or current_size < size_limit_bytes) and (
+            if (
+                size_limit_bytes is None
+                or pre_compressed_size < size_limit_bytes
+            ) and (
                 size_limit is None or client.compressed_traces.trace_count < size_limit
             ):
                 return None, None
@@ -151,6 +151,7 @@ def _tracing_thread_drain_compressed_buffer(
                 f"--{_BOUNDARY}--\r\n".encode()
             )
             client.compressed_traces.compressor_writer.close()
+            current_size = client.compressed_traces.buffer.tell()
 
             filled_buffer = client.compressed_traces.buffer
             filled_buffer.context = client.compressed_traces._context
