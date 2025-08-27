@@ -22,9 +22,7 @@ export const isWebWorker = () =>
 
 export const isJsDom = () =>
   (typeof window !== "undefined" && window.name === "nodejs") ||
-  (typeof navigator !== "undefined" &&
-    (navigator.userAgent.includes("Node.js") ||
-      navigator.userAgent.includes("jsdom")));
+  (typeof navigator !== "undefined" && navigator.userAgent.includes("jsdom"));
 
 // Supabase Edge Function provides a `Deno` global object
 // without `version` property
@@ -41,7 +39,10 @@ export const getEnv = () => {
   if (globalEnv) {
     return globalEnv;
   }
-  if (isBrowser()) {
+  // @ts-expect-error Bun types are not imported due to conflicts with Node types
+  if (typeof Bun !== "undefined") {
+    globalEnv = "bun";
+  } else if (isBrowser()) {
     globalEnv = "browser";
   } else if (isNode()) {
     globalEnv = "node";
@@ -265,4 +266,11 @@ export function getShas(): ICommitSHAs {
   }
   cachedCommitSHAs = shas;
   return shas;
+}
+
+export function getOtelEnabled(): boolean {
+  return (
+    getEnvironmentVariable("OTEL_ENABLED") === "true" ||
+    getLangSmithEnvironmentVariable("OTEL_ENABLED") === "true"
+  );
 }

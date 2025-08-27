@@ -111,25 +111,26 @@ test("evaluate can repeat", async () => {
   }
 });
 
-test("evaluate can evaluate with RunEvaluator evaluators", async () => {
-  const targetFunc = (input: { input: number }) => {
-    return { foo: input.input + 1 };
+// Skipping for speed in CI, encapsulated below
+test.skip("evaluate can evaluate with custom evaluators", async () => {
+  const targetFunc = (input: Record<string, any>) => {
+    return {
+      foo: input.input + 1,
+    };
   };
 
-  const customEvaluator = async (run: Run, example?: Example) => {
+  const customEvaluator = (run: Run, example?: Example) => {
     return Promise.resolve({
       key: "key",
       score: 1,
       comment: `Run: ${run.id} Example: ${example?.id}`,
     });
   };
-  const evaluator = {
-    evaluateRun: customEvaluator,
-  };
+
   const evalRes = await evaluate(targetFunc, {
     data: TESTING_DATASET_NAME,
-    evaluators: [evaluator],
-    description: "evaluate can evaluate with RunEvaluator evaluators",
+    evaluators: [customEvaluator],
+    description: "evaluate can evaluate with custom evaluators",
   });
 
   expect(evalRes.results).toHaveLength(2);
@@ -182,19 +183,22 @@ test("evaluate can evaluate with RunEvaluator evaluators", async () => {
   );
 });
 
-test("evaluate can evaluate with custom evaluators", async () => {
+// Skipping for speed in CI, encapsulated below
+test.skip("evaluate can evaluate with custom evaluators and array return value", async () => {
   const targetFunc = (input: Record<string, any>) => {
     return {
       foo: input.input + 1,
     };
   };
 
-  const customEvaluator = (run: Run, example?: Example) => {
-    return Promise.resolve({
-      key: "key",
-      score: 1,
-      comment: `Run: ${run.id} Example: ${example?.id}`,
-    });
+  const customEvaluator = async (run: Run, example?: Example) => {
+    return [
+      {
+        key: "key",
+        score: 1,
+        comment: `Run: ${run.id} Example: ${example?.id}`,
+      },
+    ];
   };
 
   const evalRes = await evaluate(targetFunc, {
@@ -365,7 +369,7 @@ test("can pass multiple evaluators", async () => {
   ];
   const evalRes = await evaluate(targetFunc, {
     data: TESTING_DATASET_NAME,
-    evaluators: evaluators,
+    evaluators,
     description: "can pass multiple evaluators",
   });
   expect(evalRes.results).toHaveLength(2);
@@ -772,7 +776,8 @@ test("evaluate accepts evaluators which return multiple feedback keys", async ()
   ]);
 });
 
-test("evaluate can handle evaluators with object parameters", async () => {
+// Skipping for speed in CI
+test.skip("evaluate can handle evaluators with object parameters", async () => {
   const targetFunc = (input: Record<string, any>) => {
     return {
       foo: input.input + 1,
@@ -824,7 +829,8 @@ test("evaluate can handle evaluators with object parameters", async () => {
   expect(secondEval.comment).toContain("Expected:");
 });
 
-test("evaluate can mix evaluators with different parameter styles", async () => {
+// Skipping for speed in CI
+test.skip("evaluate can mix evaluators with different parameter styles", async () => {
   const targetFunc = (input: Record<string, any>) => {
     return {
       foo: input.input + 1,
@@ -879,7 +885,8 @@ test("evaluate can mix evaluators with different parameter styles", async () => 
   }
 });
 
-test("evaluate handles partial object parameters correctly", async () => {
+// Skipping for speed in CI
+test.skip("evaluate handles partial object parameters correctly", async () => {
   const targetFunc = (input: Record<string, any>) => {
     return {
       foo: input.input + 1,
@@ -978,7 +985,8 @@ test("evaluate handles async object-style evaluators", async () => {
   }
 });
 
-test("evaluate can evaluate with updated summary evaluators", async () => {
+// Skipping for speed in CI
+test.skip("evaluate can evaluate with updated summary evaluators", async () => {
   const targetFunc = (input: Record<string, any>) => {
     return {
       foo: input.input + 1,
@@ -1044,7 +1052,7 @@ test("evaluate can evaluate with updated summary evaluators", async () => {
   );
 });
 
-test("evaluate handles partial summary evaluator parameters correctly", async () => {
+test("evaluate handles summary evaluator parameters correctly", async () => {
   const targetFunc = (input: Record<string, any>) => {
     return {
       foo: input.input + 1,

@@ -150,3 +150,120 @@ def test_nested_run_trees_from_dotted_order():
     assert grandparent_clone.id == grandparent.id
     assert grandparent_clone.parent_run_id is None
     assert grandparent_clone.dotted_order == grandparent.dotted_order
+
+
+def test_distributed_tracing_slice_parent_id():
+    """Test distributed tracing functionality with _slice_parent_id method."""
+    mock_client = MagicMock(spec=Client)
+
+    grandparent = RunTree(
+        name="Grandparent",
+        inputs={"text": "root"},
+        client=mock_client,
+    )
+    parent = grandparent.create_child(name="Parent")
+    child = parent.create_child(name="Child")
+
+    parent_id = str(parent.id)
+
+    child_dict = child._get_dicts_safe()
+
+    assert child_dict["parent_run_id"] == parent.id
+    assert child_dict["trace_id"] == grandparent.id
+    assert child_dict["dotted_order"] is not None
+
+    child._slice_parent_id(parent_id, child_dict)
+
+    assert child_dict.get("parent_run_id") is None
+    assert child_dict["trace_id"] == child.id
+
+    parsed_order = run_trees._parse_dotted_order(child_dict["dotted_order"])
+    assert len(parsed_order) == 1
+    assert parsed_order[0][1] == child.id
+
+
+def test_distributed_tracing_remap_for_project():
+    """Test distributed tracing with _remap_for_project method."""
+    mock_client = MagicMock(spec=Client)
+
+    grandparent = RunTree(
+        name="Grandparent",
+        inputs={"text": "root"},
+        client=mock_client,
+        session_name="original_project",
+    )
+    parent = grandparent.create_child(name="Parent")
+    child = parent.create_child(name="Child")
+
+    parent_id = str(parent.id)
+    run_trees._DISTRIBUTED_PARENT_ID.set(parent_id)
+
+    try:
+        updates = {"reroot": True}
+        remapped_dict = child._remap_for_project("child_project", updates)
+
+        assert remapped_dict.get("parent_run_id") is None
+        assert remapped_dict["session_name"] == "child_project"
+
+        parsed_order = run_trees._parse_dotted_order(remapped_dict["dotted_order"])
+        assert len(parsed_order) == 1
+
+        updates_no_dist = {"reroot": False}
+        remapped_dict_no_dist = child._remap_for_project(
+            "child_project_2", updates_no_dist
+        )
+        assert remapped_dict_no_dist.get("parent_run_id") is not None
+        remapped_dict_no_updates = child._remap_for_project("child_project_3", None)
+
+        assert remapped_dict_no_updates.get("parent_run_id") is not None
+
+    finally:
+        run_trees._DISTRIBUTED_PARENT_ID.set(None)
+
+
+def test_distributed_parent_id_from_headers():
+    """Test that _DISTRIBUTED_PARENT_ID is correctly set directly in from_headers()."""
+    mock_client = MagicMock(spec=Client)
+
+    # Create a hierarchy: grandparent -> parent -> child
+    grandparent = RunTree(
+        name="Grandparent",
+        inputs={"text": "grandparent"},
+        client=mock_client,
+        session_name="original_project",
+    )
+    parent = grandparent.create_child(name="Parent")
+    child = parent.create_child(name="Child")
+
+    headers = child.to_headers()
+
+    RunTree.from_headers(headers)
+
+    current_distributed_parent_id = run_trees._DISTRIBUTED_PARENT_ID.get()
+
+    new_run = RunTree(
+        name="NewRun",
+        inputs={"text": "new_run"},
+        client=mock_client,
+        session_name="child_project",
+    )
+
+    remapped_dict = new_run._remap_for_project("child_project", {"reroot": True})
+
+    assert remapped_dict.get("parent_run_id") is None, (
+        "Run should be rerooted with no parent"
+    )
+
+    parsed_order = run_trees._parse_dotted_order(remapped_dict["dotted_order"])
+    assert len(parsed_order) == 1, (
+        f"Expected 1 segment after rerooting, got {len(parsed_order)}"
+    )
+
+    assert remapped_dict["trace_id"] == new_run.id, (
+        "Trace ID should be the new run's ID after rerooting"
+    )
+
+    assert str(current_distributed_parent_id) == str(child.id), (
+        f"Distributed parent ID should be the immediate parent from headers! "
+        f"Expected {child.id}, got {current_distributed_parent_id}"
+    )

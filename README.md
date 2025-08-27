@@ -20,7 +20,7 @@ To get started with the Python SDK, [install the package](https://pypi.org/proje
 
 ```bash
 pip install -U langsmith
-export LANGSMITH_TRACING_V2=true
+export LANGSMITH_TRACING=true
 export LANGSMITH_API_KEY=ls_...
 ```
 
@@ -43,7 +43,7 @@ To get started with the JavaScript / TypeScript SDK, [install the package](https
 
 ```bash
 yarn add langsmith
-export LANGSMITH_TRACING_V2=true
+export LANGSMITH_TRACING=true
 export LANGSMITH_API_KEY=ls_...
 ```
 
@@ -87,4 +87,4 @@ For tutorials on how to get more value out of LangSmith, check out the [Langsmit
 
 ## Documentation
 
-To learn more about the LangSmith platform, check out the [docs](https://docs.smith.langchain.com/docs/)
+To learn more about the LangSmith platform, check out the [docs](https://docs.smith.langchain.com/)

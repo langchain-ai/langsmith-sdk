@@ -11,18 +11,17 @@ test("Should work with manually set API key", async () => {
   const key = process.env.LANGCHAIN_API_KEY;
   delete process.env.LANGCHAIN_API_KEY;
   try {
+    const callSpy = jest.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      text: () => Promise.resolve(""),
+    } as Response);
     const langchainClient = new Client({
       autoBatchTracing: true,
       callerOptions: { maxRetries: 0 },
       timeout_ms: 30_000,
       apiKey: key,
+      fetchImplementation: callSpy,
     });
-    const callSpy = jest
-      .spyOn((langchainClient as any).batchIngestCaller, "call")
-      .mockResolvedValue({
-        ok: true,
-        text: () => "",
-      });
     const projectName = "__test_persist_update_run_tree";
     const runTree = new RunTree({
       name: "Test Run Tree",
@@ -95,9 +94,11 @@ test("distributed", () => {
     name: "parent_1",
     id: "00000000-0000-0000-0000-00000000000",
     start_time: Date.parse("2021-05-03T00:00:00.000Z"),
+    project_name: "test_project",
   });
 
   const serialized = parent.toHeaders();
+  expect(serialized.baggage).toContain("test_project");
 
   const child2 = RunTree.fromHeaders(serialized)?.createChild({
     name: "child_2",
@@ -108,6 +109,7 @@ test("distributed", () => {
   expect(JSON.parse(JSON.stringify(child2))).toMatchObject({
     name: "child_2",
     run_type: "chain",
+    session_name: "test_project",
     dotted_order:
       "20210503T000000000001Z00000000-0000-0000-0000-00000000000.20210503T000001000002Z00000000-0000-0000-0000-00000000001",
   });

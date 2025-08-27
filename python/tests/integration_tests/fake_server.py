@@ -12,8 +12,7 @@ fake_app.add_middleware(TracingMiddleware)
 def fake_function():
     span = get_current_run_tree()
     assert span is not None
-    parent_run = span.parent_run
-    assert parent_run is not None
+    assert span.parent_dotted_order
     assert "did-propagate" in span.tags or []
     assert span.metadata["some-cool-value"] == 42
     assert span.session_name == "distributed-tracing"
@@ -24,8 +23,7 @@ def fake_function():
 def fake_function_two(foo: str):
     span = get_current_run_tree()
     assert span is not None
-    parent_run = span.parent_run
-    assert parent_run is not None
+    assert span.parent_dotted_order
     assert "did-propagate" in (span.tags or [])
     assert span.metadata["some-cool-value"] == 42
     assert span.session_name == "distributed-tracing"
@@ -36,8 +34,7 @@ def fake_function_two(foo: str):
 def fake_function_three(foo: str):
     span = get_current_run_tree()
     assert span is not None
-    parent_run = span.parent_run
-    assert parent_run is not None
+    assert span.parent_dotted_order
     assert "did-propagate" in (span.tags or [])
     assert span.metadata["some-cool-value"] == 42
     assert span.session_name == "distributed-tracing"

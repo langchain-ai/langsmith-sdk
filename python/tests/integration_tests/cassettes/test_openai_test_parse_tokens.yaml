@@ -1,0 +1,108 @@
+interactions:
+- request:
+    body: '{"messages": [{"role": "user", "content": "Check usage"}], "model": "gpt-3.5-turbo",
+      "stream": false}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '101'
+      content-type:
+      - application/json
+      host:
+      - api.openai.com
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - 'false'
+      x-stainless-helper-method:
+      - beta.chat.completions.parse
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 1.63.2
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.11.3
+    method: POST
+    uri: https://api.openai.com/v1/chat/completions
+  response:
+    body:
+      string: "{\n  \"id\": \"chatcmpl-B7RWOTqUNCzKTce2xIFNKegSqd0cn\",\n  \"object\":
+        \"chat.completion\",\n  \"created\": 1741113788,\n  \"model\": \"gpt-3.5-turbo-0125\",\n
+        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
+        \"assistant\",\n        \"content\": \"Could you please provide more context
+        or clarify what you mean by \\\"check usage\\\"?\",\n        \"refusal\":
+        null\n      },\n      \"logprobs\": null,\n      \"finish_reason\": \"stop\"\n
+        \   }\n  ],\n  \"usage\": {\n    \"prompt_tokens\": 9,\n    \"completion_tokens\":
+        17,\n    \"total_tokens\": 26,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\":
+        0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
+        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
+        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
+        \"default\",\n  \"system_fingerprint\": null\n}\n"
+    headers:
+      CF-RAY:
+      - 91b3847afd9041af-EWR
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Tue, 04 Mar 2025 18:43:09 GMT
+      Server:
+      - cloudflare
+      Set-Cookie:
+      - __cf_bm=jsUmttM7MQ98on792bH2Wox3yknJ4lPDALCnWAeqOq4-1741113789-1.0.1.1-rdlR6sIHYhcejr9AZGwzbVgLaZBDJ842o.DGr.I.Td9QZZCv1yejiI4CEt26pUs5j4AWjsJzQp4IX6PwXr4q1xB_Rh3J3R3NAj5oj7Cg_Ss;
+        path=/; expires=Tue, 04-Mar-25 19:13:09 GMT; domain=.api.openai.com; HttpOnly;
+        Secure; SameSite=None
+      - _cfuvid=GkEJxws5EAfgP67VCvXVEo6CC_RpKSD4iNJrtyAY2as-1741113789241-0.0.1.1-604800000;
+        path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '846'
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '435'
+      openai-version:
+      - '2020-10-01'
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      x-ratelimit-limit-requests:
+      - '10000'
+      x-ratelimit-limit-tokens:
+      - '50000000'
+      x-ratelimit-remaining-requests:
+      - '9999'
+      x-ratelimit-remaining-tokens:
+      - '49999980'
+      x-ratelimit-reset-requests:
+      - 6ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_cff0f4cc7d25a32c5b37089a06e04152
+    status:
+      code: 200
+      message: OK
+version: 1

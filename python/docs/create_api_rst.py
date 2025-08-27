@@ -7,9 +7,10 @@ import inspect
 import logging
 import os
 import sys
+from collections.abc import Sequence
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Literal, Sequence, TypedDict, Union
+from typing import Literal, TypedDict, Union
 
 import toml
 from pydantic import BaseModel
@@ -89,8 +90,8 @@ def _document_func_or_class(name: str) -> bool:
 
 
 def _load_module_members(module_path: str, namespace: str) -> ModuleMembers:
-    classes_: List[ClassInfo] = []
-    functions: List[FunctionInfo] = []
+    classes_: list[ClassInfo] = []
+    functions: list[FunctionInfo] = []
     module = importlib.import_module(module_path)
     for name, type_ in inspect.getmembers(module):
         if "evaluation" in module_path:
@@ -111,7 +112,9 @@ def _load_module_members(module_path: str, namespace: str) -> ModuleMembers:
                 else (
                     "enum"
                     if issubclass(type_, Enum)
-                    else "Pydantic" if issubclass(type_, BaseModel) else "Regular"
+                    else "Pydantic"
+                    if issubclass(type_, BaseModel)
+                    else "Regular"
                 )
             )
             classes_.append(
@@ -138,7 +141,7 @@ def _load_module_members(module_path: str, namespace: str) -> ModuleMembers:
 
 def _load_package_modules(
     package_directory: Union[str, Path],
-) -> Dict[str, ModuleMembers]:
+) -> dict[str, ModuleMembers]:
     package_path = Path(package_directory)
     modules_by_namespace = {}
     package_name = package_path.name
@@ -153,6 +156,8 @@ def _load_package_modules(
                 "_internal.py",
                 "_expect.py",
                 "_openai.py",
+                "_openai_agents.py",
+                "_anthropic.py",
                 "_expect.py",
             }:
                 continue
@@ -202,9 +207,9 @@ module_order = [
 
 def _construct_doc(
     package_namespace: str,
-    members_by_namespace: Dict[str, ModuleMembers],
+    members_by_namespace: dict[str, ModuleMembers],
     package_version: str,
-) -> List[tuple[str, str]]:
+) -> list[tuple[str, str]]:
     docs = []
     index_doc = f"""\
 :html_theme.sidebar_secondary.remove:
@@ -213,8 +218,8 @@ def _construct_doc(
 
 .. _{package_namespace}:
 
-{package_namespace.replace('_', '-')}: {package_version}
-{'=' * (len(package_namespace) + len(package_version) + 2)}
+{package_namespace.replace("_", "-")}: {package_version}
+{"=" * (len(package_namespace) + len(package_version) + 2)}
 
 .. automodule:: {package_namespace}
     :no-members:
@@ -239,7 +244,7 @@ def _construct_doc(
 .. _{package_namespace}_{module}:
 
 :mod:`{module}`
-{'=' * (len(module) + 7)}
+{"=" * (len(module) + 7)}
 
 .. automodule:: {package_namespace}.{module}
     :no-members:
@@ -362,7 +367,7 @@ def _get_package_version(package_dir: Path) -> str:
     try:
         with open(package_dir.parent / "pyproject.toml") as f:
             pyproject = toml.load(f)
-        return pyproject["tool"]["poetry"]["version"]
+        return pyproject["project"]["version"]
     except FileNotFoundError:
         print(f"pyproject.toml not found in {package_dir.parent}. Aborting the build.")
         sys.exit(1)
@@ -383,8 +388,10 @@ Here are quick links to some of the key classes and functions:
 | [Client](client/langsmith.client.Client) |  Synchronous client for interacting with the LangSmith API. |
 | [AsyncClient](async_client/langsmith.async_client.AsyncClient) | Asynchronous client for interacting with the LangSmith API. |
 | [traceable](run_helpers/langsmith.run_helpers.traceable) | Wrapper/decorator for tracing any function. |
-| [wrap_openai](wrappers/langsmith.wrappers._openai.wrap_openai) | Wrapper for OpenAI client, adds LangSmith tracing to all OpenAI calls. |
 | [@pytest.mark.langsmith](/testing/langsmith.testing._internal.test) | LangSmith pytest integration. |
+| [wrap_openai](wrappers/langsmith.wrappers._openai.wrap_openai) | Wrapper for OpenAI client, adds LangSmith tracing to all OpenAI calls. |
+| [wrap_anthropic](wrappers/langsmith.wrappers._anthropic.wrap_anthropic) | Wrapper for Anthropic client, adds LangSmith tracing to all Anthropic calls. |
+| [OpenAIAgentsTracingProcessor](wrappers/langsmith.wrappers._openai_agents.OpenAIAgentsTracingProcessor) | Tracer for OpenAI Agents. |
 
 ```{{toctree}}
 :maxdepth: 2

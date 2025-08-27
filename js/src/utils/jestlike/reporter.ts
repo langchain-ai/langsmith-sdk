@@ -6,7 +6,7 @@ import * as path from "node:path";
 import * as fs from "node:fs/promises";
 import { SimpleEvaluationResult } from "./types.js";
 import { ScoreType } from "../../schemas.js";
-import { STRIP_ANSI_REGEX, TEST_ID_DELIMITER } from "./index.js";
+import { STRIP_ANSI_REGEX, TEST_ID_DELIMITER } from "./constants.js";
 
 const FEEDBACK_COLLAPSE_THRESHOLD = 48;
 const MAX_TEST_PARAMS_LENGTH = 18;
@@ -30,11 +30,11 @@ function formatTestName(name: string, duration: number) {
 
 function getFormattedStatus(status: string) {
   const s = status.toLowerCase();
-  if (s === "pending") {
+  if (s === "pending" || s === "skipped") {
     return chalk.yellow("○ Skipped");
-  } else if (s === "passed") {
+  } else if (s.includes("pass")) {
     return chalk.green("✓ Passed");
-  } else if (s === "failed") {
+  } else if (s.includes("fail")) {
     return chalk.red("✕ Failed");
   } else {
     return status;
@@ -43,11 +43,11 @@ function getFormattedStatus(status: string) {
 
 function getColorParam(status: string) {
   const s = status.toLowerCase();
-  if (s === "pending") {
+  if (s === "pending" || s === "skipped") {
     return { color: "yellow" };
-  } else if (s === "passed") {
+  } else if (s.includes("pass")) {
     return { color: "grey" };
-  } else if (s === "failed") {
+  } else if (s.includes("fail")) {
     return { color: "red" };
   } else {
     return {};
@@ -75,7 +75,13 @@ function formatValue(value: unknown) {
 }
 
 export async function printReporterTable(
-  results: { title: string; duration: number; status: string }[],
+  testSuiteName: string,
+  results: {
+    title: string;
+    duration: number;
+    status: "pass" | "passed" | "fail" | "failed" | "pending" | "skipped";
+  }[],
+  testStatus: "pass" | "skip" | "fail",
   failureMessage?: string
 ) {
   const rows = [];
@@ -101,7 +107,7 @@ export async function printReporterTable(
         },
         getColorParam(status),
       ]);
-    } else if (status === "pending") {
+    } else if (status === "pending" || status === "skipped") {
       // Skipped
       rows.push([
         {
@@ -264,6 +270,14 @@ export async function printReporterTable(
   });
   for (const row of rows) {
     table.addRow(row[0], row[1]);
+  }
+  const testStatusColor = testStatus.includes("pass")
+    ? chalk.green
+    : testStatus.includes("fail")
+    ? chalk.red
+    : chalk.yellow;
+  if (testSuiteName) {
+    console.log(testStatusColor(`› ${testSuiteName}`));
   }
   if (failureMessage) {
     console.log(failureMessage);

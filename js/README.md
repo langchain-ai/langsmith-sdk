@@ -50,7 +50,7 @@ yarn add langchain
 Tracing can be activated by setting the following environment variables or by manually specifying the LangChainTracer.
 
 ```typescript
-process.env.LANGSMITH_TRACING_V2 = "true";
+process.env.LANGSMITH_TRACING = "true";
 process.env.LANGSMITH_ENDPOINT = "https://api.smith.langchain.com";
 // process.env.LANGSMITH_ENDPOINT = "https://eu.api.smith.langchain.com"; // If signed up in the EU region
 process.env.LANGSMITH_API_KEY = "<YOUR-LANGSMITH-API-KEY>";
@@ -82,7 +82,7 @@ or by directly specifying the connection information in the RunTree.
 1. **Copy the environment variables from the Settings Page and add them to your application.**
 
 ```shell
-export LANGSMITH_TRACING_V2="true";
+export LANGSMITH_TRACING="true";
 export LANGSMITH_API_KEY=<YOUR-LANGSMITH-API-KEY>
 # export LANGSMITH_PROJECT="My Project Name" #  Optional: "default" is used if not set
 # export LANGSMITH_ENDPOINT=https://api.smith.langchain.com # or your own server
@@ -102,7 +102,7 @@ is using the `wrapOpenAI` wrapper function available in LangSmith 0.1.3 and up.
 In order to use, you first need to set your LangSmith API key:
 
 ```shell
-export LANGSMITH_TRACING_V2="true";
+export LANGSMITH_TRACING="true";
 export LANGSMITH_API_KEY=<your-api-key>
 ```
 

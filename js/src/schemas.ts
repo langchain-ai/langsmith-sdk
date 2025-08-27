@@ -91,13 +91,13 @@ export interface BaseRun {
   name: string;
 
   /** The epoch time at which the run started, if available. */
-  start_time?: number;
+  start_time?: number | string;
 
   /** Specifies the type of run (tool, chain, llm, etc.). */
   run_type: string;
 
   /** The epoch time at which the run ended, if applicable. */
-  end_time?: number;
+  end_time?: number | string;
 
   /** Any additional metadata or settings for the run. */
   extra?: KVMap;
@@ -221,16 +221,18 @@ export interface RunCreate extends BaseRun {
 
 export interface RunUpdate {
   id?: string;
-  end_time?: number;
+  end_time?: number | string;
   extra?: KVMap;
   tags?: string[];
   error?: string;
+  serialized?: object;
   inputs?: KVMap;
   outputs?: KVMap;
   parent_run_id?: string;
   reference_example_id?: string;
   events?: KVMap[];
   session_id?: string;
+  session_name?: string;
   /** Unique ID assigned to every run within this nested trace. **/
   trace_id?: string;
 
@@ -255,13 +257,7 @@ export interface RunUpdate {
   attachments?: Attachments;
 }
 
-export interface ExampleCreate extends BaseExample {
-  id?: string;
-  created_at?: string;
-  split?: string | string[];
-}
-
-export interface ExampleUploadWithAttachments {
+export interface ExampleCreate {
   id?: string;
   inputs: KVMap;
   outputs?: KVMap;
@@ -269,9 +265,15 @@ export interface ExampleUploadWithAttachments {
   split?: string | string[];
   attachments?: Attachments;
   created_at?: string;
+  dataset_id?: string;
+  dataset_name?: string;
+  source_run_id?: string;
+  use_source_run_io?: boolean;
+  use_source_run_attachments?: string[];
 }
 
-export interface ExampleUpdateWithAttachments {
+export interface ExampleUploadWithAttachments extends ExampleCreate {}
+export interface ExampleUpdate {
   id: string;
   inputs?: KVMap;
   outputs?: KVMap;
@@ -279,7 +281,12 @@ export interface ExampleUpdateWithAttachments {
   split?: string | string[];
   attachments?: Attachments;
   attachments_operations?: KVMap;
+  dataset_id?: string;
 }
+
+export interface ExampleUpdateWithoutId extends Omit<ExampleUpdate, "id"> {}
+
+export interface ExampleUpdateWithAttachments extends ExampleUpdate {}
 
 export interface UploadExamplesResponse {
   count: number;
@@ -312,17 +319,7 @@ export interface RawExample extends BaseExample {
   attachment_urls?: Record<string, RawAttachmentInfo>;
 }
 
-export interface ExampleUpdate {
-  dataset_id?: string;
-  inputs?: KVMap;
-  outputs?: KVMap;
-  metadata?: KVMap;
-  split?: string | string[];
-}
-
-export interface ExampleUpdateWithId extends ExampleUpdate {
-  id: string;
-}
+export interface ExampleUpdateWithId extends ExampleUpdate {}
 
 export interface ExampleSearch extends BaseExample {
   id: string;
@@ -571,6 +568,11 @@ export interface AnnotationQueue {
   tenant_id: string;
 }
 
+export interface AnnotationQueueWithDetails extends AnnotationQueue {
+  /** The rubric instructions for the annotation queue. */
+  rubric_instructions?: string;
+}
+
 export interface RunWithAnnotationQueueInfo extends BaseRun {
   /** The last time this run was reviewed. */
   last_reviewed_time?: string;
@@ -656,4 +658,31 @@ export type UsageMetadata = {
    * Does *not* need to sum to full output token count. Does *not* need to have all keys.
    */
   output_token_details?: OutputTokenDetails;
+
+  /**
+   * The cost of the input tokens.
+   */
+  input_cost?: number;
+
+  /**
+   * The cost of the output tokens.
+   */
+  output_cost?: number;
+
+  /**
+   * The total cost of the tokens.
+   */
+  total_cost?: number;
+
+  /**
+   * The cost details of the input tokens.
+   */
+  input_cost_details?: Record<string, unknown>;
+
+  /**
+   * The cost details of the output tokens.
+   */
+  output_cost_details?: Record<string, unknown>;
 };
+
+export type ExtractedUsageMetadata = Partial<UsageMetadata>;

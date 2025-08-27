@@ -1,0 +1,296 @@
+interactions:
+- request:
+    body: '{"max_tokens_to_sample": 3, "model": "claude-2.1", "prompt": "Human: Say
+      ''Hi i''m Claude'' then stop.\n\nAssistant:", "stream": false, "temperature":
+      0}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '150'
+      content-type:
+      - application/json
+      host:
+      - api.anthropic.com
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - 'false'
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 0.47.1
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.11.3
+      x-stainless-timeout:
+      - '600'
+    method: POST
+    uri: https://api.anthropic.com/v1/complete
+  response:
+    body:
+      string: '{"type":"completion","id":"compl_01SeghZ3kCMeWqUfJjDNs5Sa","completion":"
+        Hi i''m","stop_reason":"max_tokens","model":"claude-2.1","stop":null,"log_id":"compl_01SeghZ3kCMeWqUfJjDNs5Sa"}'
+    headers:
+      CF-RAY:
+      - 91c69181cb5b67eb-SJC
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Fri, 07 Mar 2025 02:12:32 GMT
+      Server:
+      - cloudflare
+      Transfer-Encoding:
+      - chunked
+      X-Robots-Tag:
+      - none
+      anthropic-organization-id:
+      - 39635d3b-ebfd-4987-9921-b228d48174d6
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '184'
+      request-id:
+      - req_01DeH4SpKSNmKFMyy3jQWEoH
+      via:
+      - 1.1 google
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"max_tokens_to_sample": 3, "model": "claude-2.1", "prompt": "Human: Say
+      ''Hi i''m Claude'' then stop.\n\nAssistant:", "stream": false, "temperature":
+      0}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '150'
+      content-type:
+      - application/json
+      host:
+      - api.anthropic.com
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - 'false'
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 0.47.1
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.11.3
+      x-stainless-timeout:
+      - '600'
+    method: POST
+    uri: https://api.anthropic.com/v1/complete
+  response:
+    body:
+      string: '{"type":"completion","id":"compl_0148BL6br65EPKRGiqPbZPeX","completion":"
+        Hi i''m","stop_reason":"max_tokens","model":"claude-2.1","stop":null,"log_id":"compl_0148BL6br65EPKRGiqPbZPeX"}'
+    headers:
+      CF-RAY:
+      - 91c6918579427e27-SJC
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Fri, 07 Mar 2025 02:12:32 GMT
+      Server:
+      - cloudflare
+      Transfer-Encoding:
+      - chunked
+      X-Robots-Tag:
+      - none
+      anthropic-organization-id:
+      - 39635d3b-ebfd-4987-9921-b228d48174d6
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '184'
+      request-id:
+      - req_01Hjmj4LXisyWABhiCvUGfM5
+      via:
+      - 1.1 google
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"max_tokens_to_sample": 3, "model": "claude-2.1", "prompt": "Human: Say
+      ''Hi i''m Claude'' then stop.\n\nAssistant:", "stream": true, "temperature":
+      0}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '149'
+      content-type:
+      - application/json
+      host:
+      - api.anthropic.com
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - 'false'
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 0.47.1
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.11.3
+      x-stainless-timeout:
+      - '600'
+    method: POST
+    uri: https://api.anthropic.com/v1/complete
+  response:
+    body:
+      string: "event: completion\r\ndata: {\"type\":\"completion\",\"id\":\"compl_0165d3nuKrpMxcX7GRE293fk\",\"completion\":\"
+        Hi\",\"stop_reason\":null,\"model\":\"claude-2.1\",\"stop\":null,\"log_id\":\"compl_0165d3nuKrpMxcX7GRE293fk\"
+        \             }\r\n\r\nevent: completion\r\ndata: {\"type\":\"completion\",\"id\":\"compl_0165d3nuKrpMxcX7GRE293fk\",\"completion\":\"
+        i\",\"stop_reason\":null,\"model\":\"claude-2.1\",\"stop\":null,\"log_id\":\"compl_0165d3nuKrpMxcX7GRE293fk\"
+        }\r\n\r\nevent: ping\r\ndata: {\"type\": \"ping\"}\r\n\r\nevent: completion\r\ndata:
+        {\"type\":\"completion\",\"id\":\"compl_0165d3nuKrpMxcX7GRE293fk\",\"completion\":\"'m\",\"stop_reason\":\"max_tokens\",\"model\":\"claude-2.1\",\"stop\":null,\"log_id\":\"compl_0165d3nuKrpMxcX7GRE293fk\"
+        }\r\n\r\n"
+    headers:
+      CF-RAY:
+      - 91c6918fada715b2-SJC
+      Cache-Control:
+      - no-cache
+      Connection:
+      - keep-alive
+      Content-Type:
+      - text/event-stream; charset=utf-8
+      Date:
+      - Fri, 07 Mar 2025 02:12:34 GMT
+      Server:
+      - cloudflare
+      Transfer-Encoding:
+      - chunked
+      X-Robots-Tag:
+      - none
+      anthropic-organization-id:
+      - 39635d3b-ebfd-4987-9921-b228d48174d6
+      cf-cache-status:
+      - DYNAMIC
+      request-id:
+      - req_01K6enTzExM31ApxxmFmh5Td
+      via:
+      - 1.1 google
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"max_tokens_to_sample": 3, "model": "claude-2.1", "prompt": "Human: Say
+      ''Hi i''m Claude'' then stop.\n\nAssistant:", "stream": true, "temperature":
+      0}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '149'
+      content-type:
+      - application/json
+      host:
+      - api.anthropic.com
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - 'false'
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 0.47.1
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.11.3
+      x-stainless-timeout:
+      - '600'
+    method: POST
+    uri: https://api.anthropic.com/v1/complete
+  response:
+    body:
+      string: "event: completion\r\ndata: {\"type\":\"completion\",\"id\":\"compl_01577xzFGCofCZDgKU7xQgax\",\"completion\":\"
+        Hi\",\"stop_reason\":null,\"model\":\"claude-2.1\",\"stop\":null,\"log_id\":\"compl_01577xzFGCofCZDgKU7xQgax\"
+        \ }\r\n\r\nevent: completion\r\ndata: {\"type\":\"completion\",\"id\":\"compl_01577xzFGCofCZDgKU7xQgax\",\"completion\":\"
+        i\",\"stop_reason\":null,\"model\":\"claude-2.1\",\"stop\":null,\"log_id\":\"compl_01577xzFGCofCZDgKU7xQgax\"
+        \            }\r\n\r\nevent: ping\r\ndata: {\"type\": \"ping\"}\r\n\r\nevent:
+        completion\r\ndata: {\"type\":\"completion\",\"id\":\"compl_01577xzFGCofCZDgKU7xQgax\",\"completion\":\"'m\",\"stop_reason\":\"max_tokens\",\"model\":\"claude-2.1\",\"stop\":null,\"log_id\":\"compl_01577xzFGCofCZDgKU7xQgax\"
+        \           }\r\n\r\n"
+    headers:
+      CF-Cache-Status:
+      - DYNAMIC
+      CF-RAY:
+      - 91c695a01aa99464-SJC
+      Cache-Control:
+      - no-cache
+      Connection:
+      - keep-alive
+      Content-Type:
+      - text/event-stream; charset=utf-8
+      Date:
+      - Fri, 07 Mar 2025 02:15:20 GMT
+      Server:
+      - cloudflare
+      Transfer-Encoding:
+      - chunked
+      X-Robots-Tag:
+      - none
+      anthropic-organization-id:
+      - 39635d3b-ebfd-4987-9921-b228d48174d6
+      request-id:
+      - req_01TpkwA8dzZdX4x7qxRfjFbu
+      via:
+      - 1.1 google
+    status:
+      code: 200
+      message: OK
+version: 1

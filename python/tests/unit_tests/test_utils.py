@@ -113,7 +113,7 @@ def test_tracing_enabled():
         assert rt
         assert rt.parent_run_id is None
         assert "." not in rt.dotted_order
-        assert rt.parent_run is None
+        assert rt.parent_dotted_order is None
         return 1
 
     @traceable
@@ -409,3 +409,235 @@ def test_get_func_name():
     assert ls_utils._get_function_name(print) == "print"
 
     assert ls_utils._get_function_name("not_a_function") == "not_a_function"
+
+
+def test_get_host_url():
+    # If web_url is explicitly provided, it takes precedence over api_url.
+    assert (
+        ls_utils.get_host_url(
+            "https://my-custom-web.com", "https://api.smith.langchain.com"
+        )
+        == "https://my-custom-web.com"
+    )
+
+    # When web_url is None and api_url is localhost.
+    assert ls_utils.get_host_url(None, "http://localhost:5000") == "http://localhost"
+    # A port variation on localhost.
+    assert ls_utils.get_host_url(None, "http://127.0.0.1:8080") == "http://localhost", (
+        "Should recognize 127.x.x.x as localhost."
+    )
+
+    # If api_url path ends with /api, trimmed back to netloc.
+    assert (
+        ls_utils.get_host_url(None, "https://my-awesome-domain.com/api")
+        == "https://my-awesome-domain.com"
+    )
+
+    # If api_url path ends with /api/v1, trimmed back to netloc.
+    assert (
+        ls_utils.get_host_url(None, "https://my-other-domain.com/api/v1")
+        == "https://my-other-domain.com"
+    )
+
+    # If netloc begins with dev.
+    assert (
+        ls_utils.get_host_url(None, "https://dev.smith.langchain.com/api/v1")
+        == "https://dev.smith.langchain.com"
+    )
+
+    # If netloc begins with eu.
+    assert (
+        ls_utils.get_host_url(None, "https://eu.smith.langchain.com/api")
+        == "https://eu.smith.langchain.com"
+    )
+
+    # If netloc begins with beta.
+    assert (
+        ls_utils.get_host_url(None, "https://beta.smith.langchain.com")
+        == "https://beta.smith.langchain.com"
+    )
+
+    # If netloc begins with api.
+    assert (
+        ls_utils.get_host_url(None, "https://api.smith.langchain.com")
+        == "https://smith.langchain.com"
+    )
+
+    # Otherwise, returns https://smith.langchain.com for unknown host.
+    assert (
+        ls_utils.get_host_url(None, "https://unknownhost.com")
+        == "https://smith.langchain.com"
+    )
+
+
+class MockRequest:
+    """Mock request object for testing filter_request_headers"""
+
+    def __init__(self, url: str, headers: Optional[dict] = None):
+        self.url = url
+        self.headers = headers or {
+            "Authorization": "Bearer token",
+            "Content-Type": "application/json",
+        }
+
+
+def test_filter_request_headers():
+    # Test with no filtering - both ignore_hosts and allow_hosts are None
+    request = MockRequest("https://api.example.com/test")
+    result = ls_utils.filter_request_headers(request)
+
+    assert result is request
+
+
+def test_filter_request_headers_allow_hosts():
+    # Test allow_hosts functionality
+
+    # Test matching hostname (exact match)
+    request = MockRequest("https://api.example.com/test")
+    result = ls_utils.filter_request_headers(request, allow_hosts=["api.example.com"])
+    assert result is request
+
+    # Test matching full URL
+    request = MockRequest("https://api.example.com/test")
+    result = ls_utils.filter_request_headers(
+        request, allow_hosts=["https://api.example.com"]
+    )
+    assert result is request
+
+    # Test subdomain matching
+    request = MockRequest("https://sub.example.com/test")
+    result = ls_utils.filter_request_headers(request, allow_hosts=["example.com"])
+    assert result is request
+
+    # Test non-matching host - should return None
+    request = MockRequest("https://api.different.com/test")
+    result = ls_utils.filter_request_headers(request, allow_hosts=["api.example.com"])
+    assert result is None
+
+    # Test multiple allow hosts - matching first
+    request = MockRequest("https://api.first.com/test")
+    result = ls_utils.filter_request_headers(
+        request, allow_hosts=["api.first.com", "api.second.com"]
+    )
+    assert result is request
+
+    # Test multiple allow hosts - matching second
+    request = MockRequest("https://api.second.com/test")
+    result = ls_utils.filter_request_headers(
+        request, allow_hosts=["api.first.com", "api.second.com"]
+    )
+    assert result is request
+
+    # Test multiple allow hosts - not matching any
+    request = MockRequest("https://api.third.com/test")
+    result = ls_utils.filter_request_headers(
+        request, allow_hosts=["api.first.com", "api.second.com"]
+    )
+    assert result is None
+
+
+def test_filter_request_headers_url_parsing_error():
+    # Test URL parsing error handling
+    class BadRequest:
+        def __init__(self, bad_url: str):
+            self.url = bad_url
+            self.headers = {"Authorization": "Bearer token"}
+
+    # Mock urllib_parse.urlparse to raise an exception
+    with patch(
+        "langsmith.utils.urllib_parse.urlparse", side_effect=Exception("Parse error")
+    ):
+        request = BadRequest("not-a-valid-url")
+        result = ls_utils.filter_request_headers(request, allow_hosts=["example.com"])
+        assert result is None
+
+
+def test_filter_request_headers_hostname_none():
+    # Test when parsed_url.hostname is None
+    request = MockRequest("file:///local/path")  # This URL has no hostname
+    result = ls_utils.filter_request_headers(request, allow_hosts=["example.com"])
+    assert result is None
+
+
+def test_filter_request_headers_combined_ignore_and_allow():
+    # Test when both ignore_hosts and allow_hosts are provided
+    # ignore_hosts takes precedence (legacy behavior)
+
+    request = MockRequest("https://api.example.com/test")
+    result = ls_utils.filter_request_headers(
+        request,
+        ignore_hosts=["https://api.example.com"],
+        allow_hosts=["api.example.com"],
+    )
+    assert result is None  # Should be ignored despite being in allow_hosts
+
+
+def test_filter_request_headers_edge_cases():
+    # Test various edge cases
+
+    # Empty ignore_hosts list
+    request = MockRequest("https://api.example.com/test")
+    result = ls_utils.filter_request_headers(request, ignore_hosts=[])
+    assert result is request
+
+    # Empty allow_hosts list - empty list evaluates to False, so no filtering occurs
+    request = MockRequest("https://api.example.com/test")
+    result = ls_utils.filter_request_headers(request, allow_hosts=[])
+    assert result is request  # Empty list means no allow_hosts filtering
+
+    # HTTP vs HTTPS in allow_hosts
+    request = MockRequest("http://api.example.com/test")
+    result = ls_utils.filter_request_headers(
+        request, allow_hosts=["https://api.example.com"]
+    )
+    assert result is None  # Should not match different protocol
+
+    # Port numbers in URLs
+    request = MockRequest("https://api.example.com:8080/test")
+    result = ls_utils.filter_request_headers(request, allow_hosts=["api.example.com"])
+    assert result is request
+
+    # Subdomain with allow_hosts containing full URL
+    request = MockRequest("https://sub.example.com/test")
+    result = ls_utils.filter_request_headers(
+        request, allow_hosts=["https://example.com"]
+    )
+    assert result is None  # Full URL should not match subdomain
+
+
+def test_filter_request_headers_localhost():
+    # Test localhost with different ports
+
+    # Test localhost with port 8080
+    request = MockRequest("http://localhost:8080/test")
+    result = ls_utils.filter_request_headers(request, allow_hosts=["localhost"])
+    assert result is request
+
+    # Test 127.0.0.1 with port 3000
+    request = MockRequest("http://127.0.0.1:3000/api")
+    result = ls_utils.filter_request_headers(request, allow_hosts=["127.0.0.1"])
+    assert result is request
+
+    # Test localhost without port matching localhost with port
+    request = MockRequest("http://localhost/test")
+    result = ls_utils.filter_request_headers(request, allow_hosts=["localhost"])
+    assert result is request
+
+    # Test different localhost formats
+    request = MockRequest("https://127.0.0.1:5000/test")
+    result = ls_utils.filter_request_headers(request, allow_hosts=["localhost"])
+    assert result is None  # 127.0.0.1 doesn't match "localhost" string
+
+    # Test full URL matching for localhost with port
+    request = MockRequest("http://localhost:9000/test")
+    result = ls_utils.filter_request_headers(
+        request, allow_hosts=["http://localhost:9000"]
+    )
+    assert result is request
+
+    # Test port mismatch
+    request = MockRequest("http://localhost:8080/test")
+    result = ls_utils.filter_request_headers(
+        request, allow_hosts=["http://localhost:3000"]
+    )
+    assert result is None

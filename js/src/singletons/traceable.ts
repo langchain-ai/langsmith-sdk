@@ -1,10 +1,13 @@
-import { isRunTree, RunTree } from "../run_trees.js";
-import { TraceableFunction } from "./types.js";
+import type { RunTree } from "../run_trees.js";
+import type { ContextPlaceholder, TraceableFunction } from "./types.js";
 
 interface AsyncLocalStorageInterface {
-  getStore: () => RunTree | undefined;
+  getStore: () => RunTree | ContextPlaceholder | undefined;
 
-  run: (context: RunTree | undefined, fn: () => void) => void;
+  run: (
+    context: RunTree | ContextPlaceholder | undefined,
+    fn: () => void
+  ) => void;
 }
 
 class MockAsyncLocalStorage implements AsyncLocalStorageInterface {
@@ -12,7 +15,7 @@ class MockAsyncLocalStorage implements AsyncLocalStorageInterface {
     return undefined;
   }
 
-  run(_: RunTree | undefined, callback: () => void): void {
+  run(_: RunTree | ContextPlaceholder | undefined, callback: () => void): void {
     return callback();
   }
 }
@@ -45,20 +48,24 @@ export const AsyncLocalStorageProviderSingleton =
  *
  * @returns The run tree for the given context.
  */
-export const getCurrentRunTree = () => {
+export function getCurrentRunTree(): RunTree;
+
+export function getCurrentRunTree(permitAbsentRunTree: false): RunTree;
+
+export function getCurrentRunTree(
+  permitAbsentRunTree: boolean
+): RunTree | undefined;
+
+export function getCurrentRunTree(permitAbsentRunTree = false) {
   const runTree = AsyncLocalStorageProviderSingleton.getInstance().getStore();
-  if (!isRunTree(runTree)) {
+  if (!permitAbsentRunTree && runTree === undefined) {
     throw new Error(
-      [
-        "Could not get the current run tree.",
-        "",
-        "Please make sure you are calling this method within a traceable function and that tracing is enabled.",
-      ].join("\n")
+      "Could not get the current run tree.\n\nPlease make sure you are calling this method within a traceable function and that tracing is enabled."
     );
   }
 
   return runTree;
-};
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function withRunTree<Fn extends (...args: any[]) => any>(

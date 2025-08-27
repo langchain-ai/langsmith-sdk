@@ -258,9 +258,9 @@ async def test_aevaluate():
 
     final_runs = wait_for(check_run_count, max_sleep_time=60, sleep_time=2)
 
-    assert len(final_runs) == len(
-        all_examples
-    ), f"Expected {len(all_examples)} runs, but got {len(final_runs)}"
+    assert len(final_runs) == len(all_examples), (
+        f"Expected {len(all_examples)} runs, but got {len(final_runs)}"
+    )
 
     # Run it again with the existing project
     results2 = await aevaluate(
@@ -472,3 +472,79 @@ async def test_aevaluate_good_error():
             predict,
             data=(_ for _ in range(0)),
         )
+
+
+async def test_aevaluate_large_dataset_and_concurrency():
+    client = Client()
+    _ = client.clone_public_dataset(
+        "https://smith.langchain.com/public/2bbf4a10-c3d5-4868-9e96-400df97fed69/d"
+    )
+    dataset_name = "Evaluate Examples"
+
+    async def mock_chat_completion(*, messages):
+        await asyncio.sleep(1)
+        return {
+            "role": "assistant",
+            "content": "Still thinking...",
+        }
+
+    def simulate_conversation_turn(*, existing, model_response):
+        return existing + [
+            model_response,
+            {"role": "human", "content": "Think harder!"},
+        ]
+
+    # Will be traced by default
+    async def target(inputs: dict) -> dict:
+        messages = [
+            {
+                "role": "system",
+                "content": "Come up with a math equation that solves the puzzle.",
+            },
+            # This dataset has inputs as a dict with a "statement" key
+            {"role": "user", "content": "foo"},
+        ]
+        res = await mock_chat_completion(model="gpt-4o-mini", messages=messages)
+        messages = simulate_conversation_turn(existing=messages, model_response=res)
+
+        return {"equation": res}
+
+    async def mock_evaluator_chat_completion(*, model, messages):
+        await asyncio.sleep(2)
+        return {
+            "role": "assistant",
+            "content": str(0.5),
+        }
+
+    async def mock_correctness_evaluator(outputs: dict, reference_outputs: dict):
+        messages = [
+            {"role": "system", "content": "Assign a score to the following output."},
+            {
+                "role": "user",
+                "content": f"""
+Actual: {outputs["equation"]}
+""",
+            },
+        ]
+        res = await mock_evaluator_chat_completion(model="o3-mini", messages=messages)
+        return {
+            "key": "correctness",
+            "score": float(res["content"]),
+            "comment": "The answer was a good attempt, but incorrect.",
+        }
+
+    client = Client()
+
+    start = time.time()
+
+    await client.aevaluate(
+        target,
+        data=client.list_examples(dataset_name=dataset_name, as_of="test_version"),
+        evaluators=[
+            mock_correctness_evaluator,
+        ],
+        max_concurrency=3,
+    )
+
+    finish_time = time.time()
+    assert (finish_time - start) <= 8.5

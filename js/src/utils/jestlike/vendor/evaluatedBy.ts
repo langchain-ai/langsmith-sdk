@@ -1,4 +1,4 @@
-import { getCurrentRunTree, ROOT, traceable } from "../../../traceable.js";
+import { ROOT, traceable } from "../../../traceable.js";
 import {
   testWrapperAsyncLocalStorageInstance,
   _logTestFeedback,
@@ -29,15 +29,14 @@ function isEvaluationResult(x: unknown): x is SimpleEvaluationResult {
   );
 }
 
-export function wrapEvaluator<I>(
-  evaluator: (
-    input: I
-  ) => SimpleEvaluationResult | Promise<SimpleEvaluationResult>
-) {
+export function wrapEvaluator<
+  I,
+  O extends SimpleEvaluationResult | SimpleEvaluationResult[]
+>(evaluator: (input: I) => O | Promise<O>) {
   return async (
     input: I,
     config?: Partial<RunTreeConfig> & { runId?: string }
-  ): Promise<SimpleEvaluationResult> => {
+  ): Promise<O> => {
     const context = testWrapperAsyncLocalStorageInstance.getStore();
     if (context === undefined || context.currentExample === undefined) {
       throw new Error(
@@ -48,24 +47,31 @@ export function wrapEvaluator<I>(
         ].join("\n")
       );
     }
-    const evalRunId = config?.runId ?? config?.id ?? v4();
-    let evalResult;
-    let currentRunTree;
+    let evalRunId = config?.runId ?? config?.id ?? v4();
+    let evalResult: O;
     if (trackingEnabled(context)) {
-      currentRunTree = getCurrentRunTree();
       const wrappedEvaluator = traceable(
         async (_runTree: RunTree, params: I) => {
           return evaluator(params);
         },
         {
-          ...config,
           id: evalRunId,
           trace_id: evalRunId,
+          on_end: (runTree) => {
+            // If tracing with OTEL, setting run id manually does not work.
+            // Instead get it at the end of the run.
+            evalRunId = runTree.id;
+          },
           reference_example_id: context.currentExample.id,
           client: context.client,
           tracingEnabled: true,
           name: evaluator.name ?? "<evaluator>",
           project_name: "evaluators",
+          ...config,
+          extra: {
+            ...config?.extra,
+            ls_otel_root: true,
+          },
         }
       );
 
@@ -73,15 +79,23 @@ export function wrapEvaluator<I>(
     } else {
       evalResult = await evaluator(input);
     }
-    if (isEvaluationResult(evalResult)) {
-      _logTestFeedback({
-        exampleId: context?.currentExample?.id,
-        feedback: evalResult,
-        context,
-        runTree: currentRunTree,
-        client: context.client,
-        sourceRunId: evalRunId,
-      });
+    let normalizedResult;
+    if (!Array.isArray(evalResult)) {
+      normalizedResult = [evalResult];
+    } else {
+      normalizedResult = evalResult;
+    }
+    for (const result of normalizedResult) {
+      if (isEvaluationResult(result)) {
+        _logTestFeedback({
+          exampleId: context?.currentExample?.id,
+          feedback: result,
+          context,
+          runTree: context.testRootRunTree,
+          client: context.client,
+          sourceRunId: evalRunId,
+        });
+      }
     }
     return evalResult;
   };
@@ -108,5 +122,8 @@ export async function evaluatedBy(outputs: any, evaluator: SimpleEvaluator) {
     },
     { runId: evalRunId }
   );
+  if (Array.isArray(evalResult)) {
+    return evalResult.map((result) => result.score);
+  }
   return evalResult.score;
 }

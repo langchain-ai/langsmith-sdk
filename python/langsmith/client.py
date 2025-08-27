@@ -33,25 +33,16 @@ import typing
 import uuid
 import warnings
 import weakref
+from collections.abc import AsyncIterable, Iterable, Iterator, Mapping, Sequence
 from inspect import signature
 from pathlib import Path
 from queue import PriorityQueue
 from typing import (
     TYPE_CHECKING,
     Any,
-    AsyncIterable,
     Callable,
-    DefaultDict,
-    Dict,
-    Iterable,
-    Iterator,
-    List,
     Literal,
-    Mapping,
     Optional,
-    Sequence,
-    Tuple,
-    Type,
     Union,
     cast,
 )
@@ -103,6 +94,30 @@ from langsmith._internal._operations import (
 from langsmith._internal._serde import dumps_json as _dumps_json
 from langsmith.schemas import AttachmentInfo
 
+
+def _check_otel_enabled() -> bool:
+    """Check if OTEL is enabled and imports are available."""
+    return ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED"))
+
+
+def _import_otel():
+    """Dynamically import OTEL modules when needed."""
+    try:
+        from opentelemetry import trace as otel_trace  # type: ignore[import]
+        from opentelemetry.trace import set_span_in_context  # type: ignore[import]
+
+        from langsmith._internal.otel._otel_client import (
+            get_otlp_tracer_provider,
+        )
+        from langsmith._internal.otel._otel_exporter import OTELExporter
+
+        return otel_trace, set_span_in_context, get_otlp_tracer_provider, OTELExporter
+    except ImportError:
+        raise ImportError(
+            "To use OTEL tracing, you must install it with `pip install langsmith[otel]`"
+        )
+
+
 try:
     from zoneinfo import ZoneInfo  # type: ignore[import-not-found]
 except ImportError:
@@ -111,11 +126,28 @@ except ImportError:
         """Introduced in python 3.9."""
 
 
+try:
+    from opentelemetry.sdk.trace import TracerProvider  # type: ignore[import-not-found]
+except ImportError:
+
+    class TracerProvider:  # type: ignore[no-redef]
+        """Used for optional OTEL tracing."""
+
+
 if TYPE_CHECKING:
     import pandas as pd  # type: ignore
     from langchain_core.runnables import Runnable
 
     from langsmith import schemas
+
+    # OTEL imports for type hints
+    try:
+        from opentelemetry import trace as otel_trace  # type: ignore[import]
+
+        from langsmith._internal.otel._otel_exporter import OTELExporter
+    except ImportError:
+        otel_trace = Any  # type: ignore[assignment, misc]
+        OTELExporter = Any  # type: ignore[assignment, misc]
     from langsmith.evaluation import evaluator as ls_evaluator
     from langsmith.evaluation._arunner import (
         AEVALUATOR_T,
@@ -138,7 +170,7 @@ logger = logging.getLogger(__name__)
 _urllib3_logger = logging.getLogger("urllib3.connectionpool")
 
 X_API_KEY = "x-api-key"
-EMPTY_SEQ: tuple[Dict, ...] = ()
+EMPTY_SEQ: tuple[dict, ...] = ()
 URLLIB3_SUPPORTS_BLOCKSIZE = "key_blocksize" in signature(PoolKey).parameters
 
 
@@ -147,7 +179,7 @@ def _parse_token_or_url(
     api_url: str,
     num_parts: int = 2,
     kind: str = "dataset",
-) -> Tuple[str, str]:
+) -> tuple[str, str]:
     """Parse a public dataset URL or share token."""
     try:
         if isinstance(url_or_token, uuid.UUID) or uuid.UUID(url_or_token):
@@ -193,6 +225,7 @@ RUN_TYPE_T = Literal[
 ]
 
 
+@functools.lru_cache(maxsize=1)
 def _default_retry_config() -> Retry:
     """Get the default retry configuration.
 
@@ -249,22 +282,46 @@ def _validate_api_key_if_hosted(api_url: str, api_key: Optional[str]) -> None:
     """
     # If the domain is langchain.com, raise error if no api_key
     if not api_key:
-        if _is_langchain_hosted(api_url):
+        if (
+            _is_langchain_hosted(api_url)
+            and not ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED"))
+            and ls_utils.tracing_is_enabled()
+        ):
             warnings.warn(
                 "API key must be provided when using hosted LangSmith API",
                 ls_utils.LangSmithMissingAPIKeyWarning,
             )
 
 
-def _get_tracing_sampling_rate() -> float | None:
+def _format_feedback_score(score: Union[float, int, bool, None]):
+    """Format a feedback score by truncating numerical values to 4 decimal places.
+
+    Args:
+        score: The score to format, can be a number or any other type
+
+    Returns:
+        The formatted score
+    """
+    if isinstance(score, float):
+        # Truncate at 4 decimal places
+        return round(score, 4)
+    return score
+
+
+def _get_tracing_sampling_rate(
+    tracing_sampling_rate: Optional[float] = None,
+) -> float | None:
     """Get the tracing sampling rate.
 
     Returns:
         Optional[float]: The tracing sampling rate.
     """
-    sampling_rate_str = ls_utils.get_env_var("TRACING_SAMPLING_RATE")
-    if sampling_rate_str is None:
-        return None
+    if tracing_sampling_rate is None:
+        sampling_rate_str = ls_utils.get_env_var("TRACING_SAMPLING_RATE")
+        if not sampling_rate_str:
+            return None
+    else:
+        sampling_rate_str = str(tracing_sampling_rate)
     sampling_rate = float(sampling_rate_str)
     if sampling_rate < 0 or sampling_rate > 1:
         raise ls_utils.LangSmithUserError(
@@ -274,17 +331,14 @@ def _get_tracing_sampling_rate() -> float | None:
     return sampling_rate
 
 
-def _get_write_api_urls(_write_api_urls: Optional[Dict[str, str]]) -> Dict[str, str]:
-    _write_api_urls = _write_api_urls or json.loads(
-        os.getenv("LANGSMITH_RUNS_ENDPOINTS", "{}")
-    )
+def _get_write_api_urls(_write_api_urls: Optional[dict[str, str]]) -> dict[str, str]:
+    # Note: LANGSMITH_RUNS_ENDPOINTS is now handled via replicas, not _write_api_urls
+    _write_api_urls = _write_api_urls or {}
     processed_write_api_urls = {}
     for url, api_key in _write_api_urls.items():
         processed_url = url.strip()
         if not processed_url:
-            raise ls_utils.LangSmithUserError(
-                "LangSmith runs API URL within LANGSMITH_RUNS_ENDPOINTS cannot be empty"
-            )
+            raise ls_utils.LangSmithUserError("LangSmith runs API URL cannot be empty")
         processed_url = processed_url.strip().strip('"').strip("'").rstrip("/")
         processed_api_key = api_key.strip().strip('"').strip("'")
         _validate_api_key_if_hosted(processed_url, processed_api_key)
@@ -362,9 +416,12 @@ class Client:
     __slots__ = [
         "__weakref__",
         "api_url",
-        "api_key",
+        "_api_key",
+        "_workspace_id",
+        "_headers",
         "retry_config",
         "timeout_ms",
+        "_timeout",
         "session",
         "_get_data_type_cached",
         "_web_url",
@@ -375,6 +432,11 @@ class Client:
         "_anonymizer",
         "_hide_inputs",
         "_hide_outputs",
+        "_hide_metadata",
+        "_process_buffered_run_ops",
+        "_run_ops_buffer_size",
+        "_run_ops_buffer_timeout_ms",
+        "_run_ops_buffer_last_flush_time",
         "_info",
         "_write_api_urls",
         "_settings",
@@ -383,7 +445,17 @@ class Client:
         "compressed_traces",
         "_data_available_event",
         "_futures",
+        "_run_ops_buffer",
+        "_run_ops_buffer_lock",
+        "otel_exporter",
+        "_otel_trace",
+        "_set_span_in_context",
     ]
+
+    _api_key: Optional[str]
+    _headers: dict[str, str]
+    _timeout: tuple[float, float]
+    _manual_cleanup: bool
 
     def __init__(
         self,
@@ -391,15 +463,25 @@ class Client:
         *,
         api_key: Optional[str] = None,
         retry_config: Optional[Retry] = None,
-        timeout_ms: Optional[Union[int, Tuple[int, int]]] = None,
+        timeout_ms: Optional[Union[int, tuple[int, int]]] = None,
         web_url: Optional[str] = None,
         session: Optional[requests.Session] = None,
         auto_batch_tracing: bool = True,
         anonymizer: Optional[Callable[[dict], dict]] = None,
         hide_inputs: Optional[Union[Callable[[dict], dict], bool]] = None,
         hide_outputs: Optional[Union[Callable[[dict], dict], bool]] = None,
+        hide_metadata: Optional[Union[Callable[[dict], dict], bool]] = None,
+        process_buffered_run_ops: Optional[
+            Callable[[Sequence[dict]], Sequence[dict]]
+        ] = None,
+        run_ops_buffer_size: Optional[int] = None,
+        run_ops_buffer_timeout_ms: Optional[float] = None,
         info: Optional[Union[dict, ls_schemas.LangSmithInfo]] = None,
-        api_urls: Optional[Dict[str, str]] = None,
+        api_urls: Optional[dict[str, str]] = None,
+        otel_tracer_provider: Optional[TracerProvider] = None,
+        otel_enabled: Optional[bool] = None,
+        tracing_sampling_rate: Optional[float] = None,
+        workspace_id: Optional[str] = None,
     ) -> None:
         """Initialize a Client instance.
 
@@ -424,6 +506,20 @@ class Client:
             hide_outputs (Optional[Union[Callable[[dict], dict], bool]]): Whether to hide run outputs when tracing with this client.
                 If True, hides the entire outputs. If a function, applied to
                 all run outputs when creating runs.
+            hide_metadata (Optional[Union[Callable[[dict], dict], bool]]): Whether to hide run metadata when tracing with this client.
+                If True, hides the entire metadata. If a function, applied to
+                all run metadata when creating runs.
+            process_buffered_run_ops (Optional[Callable[[Sequence[dict]], Sequence[dict]]]): A function applied to buffered run operations
+                that allows for modification of the raw run dicts before they are converted to multipart and compressed.
+                This is useful specifically for high throughput tracing where you need to apply a rate-limited API or other
+                costly process to the runs before they are sent to the API. Note that the buffer will only flush automatically
+                when run_ops_buffer_size is reached or a new run is added to the buffer after run_ops_buffer_timeout_ms
+                has elapsed - it will not flush outside of these conditions unless you manually
+                call client.flush(), so be sure to do this before your code exits.
+            run_ops_buffer_size (Optional[int]): Maximum number of run operations to collect in the buffer before applying
+                process_buffered_run_ops and sending to the API. Required when process_buffered_run_ops is provided.
+            run_ops_buffer_timeout_ms (Optional[int]): Maximum time in milliseconds to wait before flushing the run ops buffer
+                when new runs are added. Defaults to 5000. Only used when process_buffered_run_ops is provided.
             info (Optional[ls_schemas.LangSmithInfo]): The information about the LangSmith API.
                 If not provided, it will be fetched from the API.
             api_urls (Optional[Dict[str, str]]): A dictionary of write API URLs and their corresponding API keys.
@@ -431,6 +527,13 @@ class Client:
                 URL in the dictionary. However, ONLY Runs are written (POST and PATCH)
                 to all URLs in the dictionary. Feedback, sessions, datasets, examples,
                 annotation queues and evaluation results are only written to the first.
+            otel_tracer_provider (Optional[TracerProvider]): Optional tracer provider for OpenTelemetry integration.
+                If not provided, a LangSmith-specific tracer provider will be used.
+            tracing_sampling_rate (Optional[float]): The sampling rate for tracing. If provided,
+                overrides the LANGCHAIN_TRACING_SAMPLING_RATE environment variable.
+                Should be a float between 0 and 1, where 1 means trace everything
+                and 0 means trace nothing.
+            workspace_id (Optional[str]): The workspace ID. Required for org-scoped API keys.
 
         Raises:
             LangSmithUserError: If the API key is not provided when using the hosted service.
@@ -449,14 +552,17 @@ class Client:
                 "and LANGSMITH_RUNS_ENDPOINTS."
             )
 
-        self.tracing_sample_rate = _get_tracing_sampling_rate()
+        self.tracing_sample_rate = _get_tracing_sampling_rate(tracing_sampling_rate)
         self._filtered_post_uuids: set[uuid.UUID] = set()
         self._write_api_urls: Mapping[str, Optional[str]] = _get_write_api_urls(
             api_urls
         )
+        # Initialize workspace attribute first
+        self._workspace_id = ls_utils.get_workspace_id(workspace_id)
+        
         if self._write_api_urls:
             self.api_url = next(iter(self._write_api_urls))
-            self.api_key: Optional[str] = self._write_api_urls[self.api_url]
+            self.api_key = self._write_api_urls[self.api_url]
         else:
             self.api_url = ls_utils.get_api_url(api_url)
             self.api_key = ls_utils.get_api_key(api_key)
@@ -468,6 +574,7 @@ class Client:
             if isinstance(timeout_ms, int)
             else (timeout_ms or (10_000, 90_001))
         )
+        self._timeout = (self.timeout_ms[0] / 1000, self.timeout_ms[1] / 1000)
         self._web_url = web_url
         self._tenant_id: Optional[uuid.UUID] = None
         # Create a session and register a finalizer to close it
@@ -482,7 +589,11 @@ class Client:
         atexit.register(close_session, session_)
         self.compressed_traces: Optional[CompressedTraces] = None
         self._data_available_event: Optional[threading.Event] = None
-        self._futures: Optional[set[cf.Future]] = None
+        self._futures: Optional[weakref.WeakSet[cf.Future]] = None
+        self._run_ops_buffer: list[tuple[str, dict]] = []
+        self._run_ops_buffer_lock = threading.Lock()
+        self.otel_exporter: Optional[OTELExporter] = None
+
         # Initialize auto batching
         if auto_batch_tracing:
             self.tracing_queue: Optional[PriorityQueue] = PriorityQueue()
@@ -521,6 +632,25 @@ class Client:
             if hide_outputs is not None
             else ls_utils.get_env_var("HIDE_OUTPUTS") == "true"
         )
+        self._hide_metadata = (
+            hide_metadata
+            if hide_metadata is not None
+            else ls_utils.get_env_var("HIDE_METADATA") == "true"
+        )
+        self._process_buffered_run_ops = process_buffered_run_ops
+        self._run_ops_buffer_size = run_ops_buffer_size
+        self._run_ops_buffer_timeout_ms = run_ops_buffer_timeout_ms or 5000
+        self._run_ops_buffer_last_flush_time = time.time()
+
+        # Validate that run_ops_buffer_size is provided when process_buffered_run_ops is used
+        if process_buffered_run_ops is not None and run_ops_buffer_size is None:
+            raise ValueError(
+                "run_ops_buffer_size must be provided when process_buffered_run_ops is specified"
+            )
+        if process_buffered_run_ops is None and run_ops_buffer_size is not None:
+            raise ValueError(
+                "process_buffered_run_ops must be provided when run_ops_buffer_size is specified"
+            )
 
         # To trigger this code, set the `LANGSMITH_USE_PYO3_CLIENT` env var to any value.
         self._pyo3_client = None
@@ -562,6 +692,49 @@ class Client:
 
         self._manual_cleanup = False
 
+        if _check_otel_enabled() or otel_enabled:
+            try:
+                (
+                    otel_trace,
+                    set_span_in_context,
+                    get_otlp_tracer_provider,
+                    OTELExporter,
+                ) = _import_otel()
+
+                existing_provider = otel_trace.get_tracer_provider()
+                tracer = existing_provider.get_tracer(__name__)
+                if otel_tracer_provider is None:
+                    # Use existing global provider if available
+                    if not (
+                        isinstance(existing_provider, otel_trace.ProxyTracerProvider)
+                        and hasattr(tracer, "_tracer")
+                        and isinstance(
+                            cast(
+                                otel_trace.ProxyTracer,  # type: ignore[attr-defined, name-defined]
+                                tracer,
+                            )._tracer,
+                            otel_trace.NoOpTracer,
+                        )
+                    ):
+                        otel_tracer_provider = cast(TracerProvider, existing_provider)
+                    else:
+                        otel_tracer_provider = get_otlp_tracer_provider()
+                        otel_trace.set_tracer_provider(otel_tracer_provider)
+
+                self.otel_exporter = OTELExporter(tracer_provider=otel_tracer_provider)
+
+                # Store imports for later use
+                self._otel_trace = otel_trace
+                self._set_span_in_context = set_span_in_context
+
+            except ImportError:
+                warnings.warn(
+                    "LANGSMITH_OTEL_ENABLED is set but OpenTelemetry packages are not installed: Install with `pip install langsmith[otel]"
+                )
+                self.otel_exporter = None
+        else:
+            self.otel_exporter = None
+
     def _repr_html_(self) -> str:
         """Return an HTML representation of the instance with a link to the URL.
 
@@ -588,20 +761,39 @@ class Client:
         """The web host url."""
         return ls_utils.get_host_url(self._web_url, self.api_url)
 
-    @property
-    def _headers(self) -> Dict[str, str]:
-        """Get the headers for the API request.
-
-        Returns:
-            Dict[str, str]: The headers for the API request.
-        """
+    def _compute_headers(self) -> dict[str, str]:
         headers = {
             "User-Agent": f"langsmith-py/{langsmith.__version__}",
             "Accept": "application/json",
         }
         if self.api_key:
             headers[X_API_KEY] = self.api_key
+        if self._workspace_id:
+            headers["X-Tenant-Id"] = self._workspace_id
         return headers
+
+    def _set_header_affecting_attr(self, attr_name: str, value: Any) -> None:
+        """Set attributes that affect headers and recalculate them."""
+        object.__setattr__(self, attr_name, value)
+        object.__setattr__(self, "_headers", self._compute_headers())
+
+    @property
+    def api_key(self) -> Optional[str]:
+        """Return the API key used for authentication."""
+        return self._api_key
+
+    @api_key.setter
+    def api_key(self, value: Optional[str]) -> None:
+        self._set_header_affecting_attr("_api_key", value)
+
+    @property
+    def workspace_id(self) -> Optional[str]:
+        """Return the workspace ID used for API requests."""
+        return self._workspace_id
+
+    @workspace_id.setter
+    def workspace_id(self, value: Optional[str]) -> None:
+        self._set_header_affecting_attr("_workspace_id", value)
 
     @property
     def info(self) -> ls_schemas.LangSmithInfo:
@@ -617,7 +809,7 @@ class Client:
                     "GET",
                     "/info",
                     headers={"Accept": "application/json"},
-                    timeout=(self.timeout_ms[0] / 1000, self.timeout_ms[1] / 1000),
+                    timeout=self._timeout,
                 )
                 ls_utils.raise_for_status_with_text(response)
                 self._info = ls_schemas.LangSmithInfo(**response.json())
@@ -666,8 +858,8 @@ class Client:
         *,
         request_kwargs: Optional[Mapping] = None,
         stop_after_attempt: int = 1,
-        retry_on: Optional[Sequence[Type[BaseException]]] = None,
-        to_ignore: Optional[Sequence[Type[BaseException]]] = None,
+        retry_on: Optional[Sequence[type[BaseException]]] = None,
+        to_ignore: Optional[Sequence[type[BaseException]]] = None,
         handle_response: Optional[Callable[[requests.Response, int], Any]] = None,
         _context: str = "",
         **kwargs: Any,
@@ -697,7 +889,7 @@ class Client:
         """
         request_kwargs = request_kwargs or {}
         request_kwargs = {
-            "timeout": (self.timeout_ms[0] / 1000, self.timeout_ms[1] / 1000),
+            "timeout": self._timeout,
             **request_kwargs,
             **kwargs,
             "headers": {
@@ -717,7 +909,7 @@ class Client:
             ls_utils.FilterLangSmithRetry(),
             ls_utils.FilterPoolFullWarning(host=str(self._host)),
         ]
-        retry_on_: Tuple[Type[BaseException], ...] = (
+        retry_on_: tuple[type[BaseException], ...] = (
             *(retry_on or ()),
             *(
                 ls_utils.LangSmithConnectionError,
@@ -725,7 +917,7 @@ class Client:
                 ls_utils.LangSmithAPIError,  # 500
             ),
         )
-        to_ignore_: Tuple[Type[BaseException], ...] = (*(to_ignore or ()),)
+        to_ignore_: tuple[type[BaseException], ...] = (*(to_ignore or ()),)
         response = None
         for idx in range(stop_after_attempt):
             try:
@@ -733,11 +925,7 @@ class Client:
                     with ls_utils.filter_logs(_urllib3_logger, logging_filters):
                         response = self.session.request(
                             method,
-                            (
-                                self.api_url + pathname
-                                if not pathname.startswith("http")
-                                else pathname
-                            ),
+                            _construct_url(self.api_url, pathname),
                             stream=False,
                             **request_kwargs,
                         )
@@ -787,7 +975,23 @@ class Client:
                             )
                         elif response.status_code == 409:
                             raise ls_utils.LangSmithConflictError(
-                                f"Conflict for {pathname}. {repr(e)}" f"{_context}"
+                                f"Conflict for {pathname}. {repr(e)}{_context}"
+                            )
+                        elif (response.status_code == 403):
+                            try:
+                                error_data = response.json()
+                                error_code = error_data.get("error", "")
+                                if error_code == "org_scoped_key_requires_workspace":
+                                    raise ls_utils.LangSmithUserError(
+                                        "This API key is org-scoped and requires workspace specification. "
+                                        "Please provide 'workspace_id' parameter, "
+                                        "or set LANGSMITH_WORKSPACE_ID environment variable."
+                                    )
+                            except (ValueError, KeyError):
+                                pass
+                            raise ls_utils.LangSmithError(
+                                f"Failed to {method} {pathname} in LangSmith"
+                                f" API. {repr(e)}"
                             )
                         else:
                             raise ls_utils.LangSmithError(
@@ -797,8 +1001,7 @@ class Client:
 
                     else:
                         raise ls_utils.LangSmithUserError(
-                            f"Failed to {method} {pathname} in LangSmith API."
-                            f" {repr(e)}"
+                            f"Failed to {method} {pathname} in LangSmith API. {repr(e)}"
                         )
                 except requests.ConnectionError as e:
                     recommendation = (
@@ -981,7 +1184,9 @@ class Client:
             ValueError: If the csv_file is not a string or tuple.
 
         Examples:
+
             .. code-block:: python
+
                 from langsmith import Client
                 import os
                 import pandas as pd
@@ -1015,7 +1220,7 @@ class Client:
 
     def upload_csv(
         self,
-        csv_file: Union[str, Tuple[str, io.BytesIO]],
+        csv_file: Union[str, tuple[str, io.BytesIO]],
         input_keys: Sequence[str],
         output_keys: Sequence[str],
         *,
@@ -1042,7 +1247,9 @@ class Client:
             ValueError: If the csv_file is not a string or tuple.
 
         Examples:
+
             .. code-block:: python
+
                 from langsmith import Client
                 import os
 
@@ -1135,6 +1342,13 @@ class Client:
             if copy:
                 run_create["outputs"] = ls_utils.deepish_copy(run_create["outputs"])
             run_create["outputs"] = self._hide_run_outputs(run_create["outputs"])
+        # Hide metadata in extra if present
+        if "extra" in run_create and isinstance(run_create["extra"], dict):
+            extra = run_create["extra"]
+            if "metadata" in extra and extra["metadata"] is not None:
+                if copy:
+                    extra["metadata"] = ls_utils.deepish_copy(extra["metadata"])
+                extra["metadata"] = self._hide_run_metadata(extra["metadata"])
         if not update and not run_create.get("start_time"):
             run_create["start_time"] = datetime.datetime.now(datetime.timezone.utc)
 
@@ -1164,6 +1378,11 @@ class Client:
                 {k: v for k, v in langchain_metadata.items() if k not in metadata}
             )
 
+    def _should_sample(self) -> bool:
+        if self.tracing_sample_rate is None:
+            return True
+        return random.random() < self.tracing_sample_rate
+
     def _filter_for_sampling(
         self, runs: Iterable[dict], *, patch: bool = False
     ) -> list[dict]:
@@ -1173,36 +1392,43 @@ class Client:
         if patch:
             sampled = []
             for run in runs:
-                run_id = _as_uuid(run["id"])
-                if run_id not in self._filtered_post_uuids:
+                trace_id = _as_uuid(run["trace_id"])
+                if trace_id not in self._filtered_post_uuids:
                     sampled.append(run)
-                else:
-                    self._filtered_post_uuids.remove(run_id)
+                elif run["id"] == trace_id:
+                    self._filtered_post_uuids.remove(trace_id)
             return sampled
         else:
             sampled = []
             for run in runs:
-                if (
-                    # Child run
-                    run["id"] != run.get("trace_id")
-                    # Whose trace is included
-                    and run.get("trace_id") not in self._filtered_post_uuids
-                    # Or a root that's randomly sampled
-                ) or random.random() < self.tracing_sample_rate:
-                    sampled.append(run)
+                trace_id = run.get("trace_id") or run["id"]
+
+                # If we've already made a decision about this trace, follow it
+                if trace_id in self._filtered_post_uuids:
+                    continue
+
+                # For new traces, apply sampling
+                if run["id"] == trace_id:
+                    if self._should_sample():
+                        sampled.append(run)
+                    else:
+                        self._filtered_post_uuids.add(trace_id)
                 else:
-                    self._filtered_post_uuids.add(_as_uuid(run["id"]))
+                    # Child runs follow their trace's sampling decision
+                    sampled.append(run)
             return sampled
 
     def create_run(
         self,
         name: str,
-        inputs: Dict[str, Any],
+        inputs: dict[str, Any],
         run_type: RUN_TYPE_T,
         *,
         project_name: Optional[str] = None,
         revision_id: Optional[str] = None,
         dangerously_allow_filesystem: bool = False,
+        api_key: Optional[str] = None,
+        api_url: Optional[str] = None,
         **kwargs: Any,
     ) -> None:
         """Persist a run to the LangSmith API.
@@ -1214,6 +1440,8 @@ class Client:
                 embedding, prompt, or parser.
             project_name (Optional[str]): The project name of the run.
             revision_id (Optional[Union[UUID, str]]): The revision ID of the run.
+            api_key (Optional[str]): The API key to use for this specific run.
+            api_url (Optional[str]): The API URL to use for this specific run.
             **kwargs (Any): Additional keyword arguments.
 
         Returns:
@@ -1223,7 +1451,9 @@ class Client:
             LangSmithUserError: If the API key is not provided when using the hosted service.
 
         Examples:
+
             .. code-block:: python
+
                 from langsmith import Client
                 import datetime
                 from uuid import uuid4
@@ -1272,7 +1502,25 @@ class Client:
                     raise ValueError(
                         "Must set dangerously_allow_filesystem=True to allow passing in Paths for attachments."
                     )
+        # If process_buffered_run_ops is enabled, collect run ops in batches
+        # before batching
+        if self._process_buffered_run_ops and not kwargs.get("is_run_ops_buffer_flush"):
+            with self._run_ops_buffer_lock:
+                self._run_ops_buffer.append(("post", run_create))
+                # Process batch when we have enough runs or enough time has passed
+                if self._should_flush_run_ops_buffer():
+                    self._flush_run_ops_buffer()
+                return
+        else:
+            self._create_run(run_create, api_key=api_key, api_url=api_url)
 
+    def _create_run(
+        self,
+        run_create: dict,
+        *,
+        api_key: Optional[str] = None,
+        api_url: Optional[str] = None,
+    ) -> None:
         if (
             # batch ingest requires trace_id and dotted_order to be set
             run_create.get("trace_id") is not None
@@ -1280,16 +1528,26 @@ class Client:
         ):
             if self._pyo3_client is not None:
                 self._pyo3_client.create_run(run_create)
-            elif self.compressed_traces is not None:
+            elif (
+                self.compressed_traces is not None
+                and api_key is None
+                and api_url is None
+            ):
                 if self._data_available_event is None:
                     raise ValueError(
                         "Run compression is enabled but threading event is not configured"
                     )
                 serialized_op = serialize_run_dict("post", run_create)
-                multipart_form, opened_files = (
-                    serialized_run_operation_to_multipart_parts_and_context(
-                        serialized_op
-                    )
+                (
+                    multipart_form,
+                    opened_files,
+                ) = serialized_run_operation_to_multipart_parts_and_context(
+                    serialized_op
+                )
+                logger.log(
+                    5,
+                    "Adding compressed multipart to queue with context: %s",
+                    multipart_form.context,
                 )
                 with self.compressed_traces.lock:
                     compress_multipart_parts_and_context(
@@ -1303,28 +1561,86 @@ class Client:
                 _close_files(list(opened_files.values()))
             elif self.tracing_queue is not None:
                 serialized_op = serialize_run_dict("post", run_create)
-                self.tracing_queue.put(
-                    TracingQueueItem(run_create["dotted_order"], serialized_op)
+                logger.log(
+                    5,
+                    "Adding to tracing queue: trace_id=%s, run_id=%s",
+                    serialized_op.trace_id,
+                    serialized_op.id,
                 )
+                if self.otel_exporter is not None:
+                    self.tracing_queue.put(
+                        TracingQueueItem(
+                            run_create["dotted_order"],
+                            serialized_op,
+                            api_key=api_key,
+                            api_url=api_url,
+                            otel_context=self._set_span_in_context(
+                                self._otel_trace.get_current_span()
+                            ),
+                        )
+                    )
+                else:
+                    self.tracing_queue.put(
+                        TracingQueueItem(
+                            run_create["dotted_order"],
+                            serialized_op,
+                            api_key=api_key,
+                            api_url=api_url,
+                        )
+                    )
             else:
                 # Neither Rust nor Python batch ingestion is configured,
                 # fall back to the non-batch approach.
-                self._create_run(run_create)
+                self._create_run_non_batch(run_create, api_key=api_key, api_url=api_url)
         else:
-            self._create_run(run_create)
+            self._create_run_non_batch(run_create, api_key=api_key, api_url=api_url)
 
-    def _create_run(self, run_create: dict):
-        for api_url, api_key in self._write_api_urls.items():
-            headers = {**self._headers, X_API_KEY: api_key}
-            self.request_with_retries(
-                "POST",
-                f"{api_url}/runs",
-                request_kwargs={
-                    "data": _dumps_json(run_create),
-                    "headers": headers,
-                },
-                to_ignore=(ls_utils.LangSmithConflictError,),
-            )
+    def _create_run_non_batch(
+        self,
+        run_create: dict,
+        *,
+        api_key: Optional[str] = None,
+        api_url: Optional[str] = None,
+    ):
+        errors = []
+        # If specific api_key/api_url provided, use those; otherwise use all configured endpoints
+        if api_key is not None or api_url is not None:
+            target_api_url = api_url or self.api_url
+            target_api_key = api_key or self.api_key
+            headers = {**self._headers, X_API_KEY: target_api_key}
+            try:
+                self.request_with_retries(
+                    "POST",
+                    f"{target_api_url}/runs",
+                    request_kwargs={
+                        "data": _dumps_json(run_create),
+                        "headers": headers,
+                    },
+                    to_ignore=(ls_utils.LangSmithConflictError,),
+                )
+            except Exception as e:
+                errors.append(e)
+        else:
+            # Use all configured write API URLs
+            for write_api_url, write_api_key in self._write_api_urls.items():
+                headers = {**self._headers, X_API_KEY: write_api_key}
+                try:
+                    self.request_with_retries(
+                        "POST",
+                        f"{write_api_url}/runs",
+                        request_kwargs={
+                            "data": _dumps_json(run_create),
+                            "headers": headers,
+                        },
+                        to_ignore=(ls_utils.LangSmithConflictError,),
+                    )
+                except Exception as e:
+                    errors.append(e)
+        if errors:
+            if len(errors) > 1:
+                raise ls_utils.LangSmithExceptionGroup(exceptions=errors)
+            else:
+                raise errors[0]
 
     def _hide_run_inputs(self, inputs: dict):
         if self._hide_inputs is True:
@@ -1346,9 +1662,66 @@ class Client:
             return outputs
         return self._hide_outputs(outputs)
 
+    def _hide_run_metadata(self, metadata: dict) -> dict:
+        if self._hide_metadata is True:
+            return {}
+        if self._hide_metadata is False:
+            return metadata
+        return self._hide_metadata(metadata)
+
+    def _should_flush_run_ops_buffer(self) -> bool:
+        """Check if the run ops buffer should be flushed based on size or time."""
+        if not self._run_ops_buffer:
+            return False
+
+        # Check size-based flushing
+        if (
+            self._run_ops_buffer_size is not None
+            and len(self._run_ops_buffer) >= self._run_ops_buffer_size
+        ):
+            return True
+
+        # Check time-based flushing
+        if self._run_ops_buffer_timeout_ms is not None:
+            time_since_last_flush = time.time() - self._run_ops_buffer_last_flush_time
+            if time_since_last_flush >= (self._run_ops_buffer_timeout_ms / 1000):
+                return True
+
+        return False
+
+    def _flush_run_ops_buffer(self) -> None:
+        """Process and flush run ops buffer in a background thread."""
+        if not self._run_ops_buffer:
+            return
+
+        # Copy the buffer contents and clear it immediately to avoid blocking
+        batch_to_process = list(self._run_ops_buffer)
+        self._run_ops_buffer.clear()
+        self._run_ops_buffer_last_flush_time = time.time()
+
+        # Submit the processing to processing thread pool
+        from langsmith._internal._background_thread import (
+            LANGSMITH_CLIENT_THREAD_POOL,
+            _process_buffered_run_ops_batch,
+        )
+
+        try:
+            future = LANGSMITH_CLIENT_THREAD_POOL.submit(
+                _process_buffered_run_ops_batch, self, batch_to_process
+            )
+            # Track the future if we have a futures set
+            if self._futures is not None:
+                self._futures.add(future)
+        except RuntimeError:
+            # Thread pool is shut down, process synchronously as fallback
+            _process_buffered_run_ops_batch(self, batch_to_process)
+
     def _batch_ingest_run_ops(
         self,
-        ops: List[SerializedRunOperation],
+        ops: list[SerializedRunOperation],
+        *,
+        api_url: Optional[str] = None,
+        api_key: Optional[str] = None,
     ) -> None:
         ids_and_partial_body: dict[
             Literal["post", "patch"], list[tuple[str, bytes]]
@@ -1367,6 +1740,12 @@ class Client:
                     curr_dict["outputs"] = _orjson.Fragment(op.outputs)
                 if op.events:
                     curr_dict["events"] = _orjson.Fragment(op.events)
+                if op.extra:
+                    curr_dict["extra"] = _orjson.Fragment(op.extra)
+                if op.error:
+                    curr_dict["error"] = _orjson.Fragment(op.error)
+                if op.serialized:
+                    curr_dict["serialized"] = _orjson.Fragment(op.serialized)
                 if op.attachments:
                     logger.warning(
                         "Attachments are not supported when use_multipart_endpoint "
@@ -1388,10 +1767,10 @@ class Client:
             "size_limit_bytes"
         ) or _SIZE_LIMIT_BYTES
 
-        body_chunks: DefaultDict[str, list] = collections.defaultdict(list)
-        context_ids: DefaultDict[str, list] = collections.defaultdict(list)
+        body_chunks: collections.defaultdict[str, list] = collections.defaultdict(list)
+        context_ids: collections.defaultdict[str, list] = collections.defaultdict(list)
         body_size = 0
-        for key in cast(List[Literal["post", "patch"]], ["post", "patch"]):
+        for key in cast(list[Literal["post", "patch"]], ["post", "patch"]):
             body_deque = collections.deque(ids_and_partial_body[key])
             while body_deque:
                 if (
@@ -1401,6 +1780,8 @@ class Client:
                     self._post_batch_ingest_runs(
                         _orjson.dumps(body_chunks),
                         _context=f"\n{key}: {'; '.join(context_ids[key])}",
+                        api_url=api_url,
+                        api_key=api_key,
                     )
                     body_size = 0
                     body_chunks.clear()
@@ -1412,16 +1793,19 @@ class Client:
         if body_size:
             context = "; ".join(f"{k}: {'; '.join(v)}" for k, v in context_ids.items())
             self._post_batch_ingest_runs(
-                _orjson.dumps(body_chunks), _context="\n" + context
+                _orjson.dumps(body_chunks),
+                _context="\n" + context,
+                api_url=api_url,
+                api_key=api_key,
             )
 
     def batch_ingest_runs(
         self,
         create: Optional[
-            Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict, Dict]]
+            Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict, dict]]
         ] = None,
         update: Optional[
-            Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict, Dict]]
+            Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict, dict]]
         ] = None,
         *,
         pre_sampled: bool = False,
@@ -1450,7 +1834,9 @@ class Client:
                 to be accepted by the API.
 
         Examples:
+
             .. code-block:: python
+
                 from langsmith import Client
                 import datetime
                 from uuid import uuid4
@@ -1541,11 +1927,18 @@ class Client:
         if not create_dicts and not update_dicts:
             return
 
+        # Apply process_buffered_run_ops function if provided
+        if self._process_buffered_run_ops:
+            if create_dicts:
+                create_dicts = list(self._process_buffered_run_ops(create_dicts))
+            if update_dicts:
+                update_dicts = list(self._process_buffered_run_ops(update_dicts))
+
         self._insert_runtime_env(create_dicts + update_dicts)
 
         # convert to serialized ops
         serialized_ops = cast(
-            List[SerializedRunOperation],
+            list[SerializedRunOperation],
             combine_serialized_queue_operations(
                 list(
                     itertools.chain(
@@ -1558,17 +1951,34 @@ class Client:
 
         self._batch_ingest_run_ops(serialized_ops)
 
-    def _post_batch_ingest_runs(self, body: bytes, *, _context: str):
-        for api_url, api_key in self._write_api_urls.items():
+    def _post_batch_ingest_runs(
+        self,
+        body: bytes,
+        *,
+        _context: str,
+        api_url: Optional[str] = None,
+        api_key: Optional[str] = None,
+    ):
+        # Use provided endpoint or fall back to all configured endpoints
+        endpoints: Mapping[str, Optional[str]]
+        if api_url is not None and api_key is not None:
+            endpoints = {api_url: api_key}
+        else:
+            endpoints = self._write_api_urls
+
+        for target_api_url, target_api_key in endpoints.items():
             try:
+                logger.debug(
+                    f"Sending batch ingest request to {target_api_url} with context: {_context}"
+                )
                 self.request_with_retries(
                     "POST",
-                    f"{api_url}/runs/batch",
+                    f"{target_api_url}/runs/batch",
                     request_kwargs={
                         "data": body,
                         "headers": {
                             **self._headers,
-                            X_API_KEY: api_key,
+                            X_API_KEY: target_api_key,
                         },
                     },
                     to_ignore=(ls_utils.LangSmithConflictError,),
@@ -1584,15 +1994,20 @@ class Client:
                     logger.warning(f"Failed to batch ingest runs: {repr(e)}")
 
     def _multipart_ingest_ops(
-        self, ops: list[Union[SerializedRunOperation, SerializedFeedbackOperation]]
+        self,
+        ops: list[Union[SerializedRunOperation, SerializedFeedbackOperation]],
+        *,
+        api_url: Optional[str] = None,
+        api_key: Optional[str] = None,
     ) -> None:
         parts: list[MultipartPartsAndContext] = []
-        opened_files_dict: Dict[str, io.BufferedReader] = {}
+        opened_files_dict: dict[str, io.BufferedReader] = {}
         for op in ops:
             if isinstance(op, SerializedRunOperation):
-                part, opened_files = (
-                    serialized_run_operation_to_multipart_parts_and_context(op)
-                )
+                (
+                    part,
+                    opened_files,
+                ) = serialized_run_operation_to_multipart_parts_and_context(op)
                 parts.append(part)
                 opened_files_dict.update(opened_files)
             elif isinstance(op, SerializedFeedbackOperation):
@@ -1604,17 +2019,19 @@ class Client:
         acc_multipart = join_multipart_parts_and_context(parts)
         if acc_multipart:
             try:
-                self._send_multipart_req(acc_multipart)
+                self._send_multipart_req(
+                    acc_multipart, api_url=api_url, api_key=api_key
+                )
             finally:
                 _close_files(list(opened_files_dict.values()))
 
     def multipart_ingest(
         self,
         create: Optional[
-            Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict, Dict]]
+            Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict, dict]]
         ] = None,
         update: Optional[
-            Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict, Dict]]
+            Sequence[Union[ls_schemas.Run, ls_schemas.RunLikeDict, dict]]
         ] = None,
         *,
         pre_sampled: bool = False,
@@ -1644,7 +2061,9 @@ class Client:
                 to be accepted by the API.
 
         Examples:
+
             .. code-block:: python
+
                 from langsmith import Client
                 import datetime
                 from uuid import uuid4
@@ -1782,10 +2201,24 @@ class Client:
         # sent the runs in multipart requests
         self._multipart_ingest_ops(serialized_ops)
 
-    def _send_multipart_req(self, acc: MultipartPartsAndContext, *, attempts: int = 3):
+    def _send_multipart_req(
+        self,
+        acc: MultipartPartsAndContext,
+        *,
+        attempts: int = 3,
+        api_url: Optional[str] = None,
+        api_key: Optional[str] = None,
+    ):
         parts = acc.parts
         _context = acc.context
-        for api_url, api_key in self._write_api_urls.items():
+
+        # Use provided endpoint or fall back to all configured endpoints
+        if api_url is not None and api_key is not None:
+            endpoints: Mapping[str, str | None] = {api_url: api_key}
+        else:
+            endpoints = self._write_api_urls
+
+        for target_api_url, target_api_key in endpoints.items():
             for idx in range(1, attempts + 1):
                 try:
                     encoder = rqtb_multipart.MultipartEncoder(parts, boundary=_BOUNDARY)
@@ -1793,14 +2226,17 @@ class Client:
                         data = encoder.to_string()
                     else:
                         data = encoder
+                    logger.debug(
+                        f"Sending multipart request to {target_api_url} with context: {_context}"
+                    )
                     self.request_with_retries(
                         "POST",
-                        f"{api_url}/runs/multipart",
+                        f"{target_api_url}/runs/multipart",
                         request_kwargs={
                             "data": data,
                             "headers": {
                                 **self._headers,
-                                X_API_KEY: api_key,
+                                X_API_KEY: target_api_key,
                                 "Content-Type": encoder.content_type,
                             },
                         },
@@ -1827,17 +2263,17 @@ class Client:
                     except Exception:
                         logger.warning(f"Failed to multipart ingest runs: {repr(e)}")
                     # do not retry by default
-                    return
+                    break
 
     def _send_compressed_multipart_req(
         self,
         data_stream: io.BytesIO,
-        compressed_traces_info: Optional[Tuple[int, int]],
+        compressed_traces_info: Optional[tuple[int, int]],
         *,
         attempts: int = 3,
     ):
         """Send a zstd-compressed multipart form data stream to the backend."""
-        _context: str = ""
+        _context: str = "; ".join(getattr(data_stream, "context", []))
 
         for api_url, api_key in self._write_api_urls.items():
             data_stream.seek(0)
@@ -1860,7 +2296,9 @@ class Client:
                             else ""
                         ),
                     }
-
+                    logger.debug(
+                        f"Sending compressed multipart request with context: {_context}"
+                    )
                     self.request_with_retries(
                         "POST",
                         f"{api_url}/runs/multipart",
@@ -1897,7 +2335,7 @@ class Client:
                             f"Failed to send compressed multipart ingest: {repr(e)}"
                         )
                     # Do not retry by default after unknown exceptions
-                    return
+                    break
 
     def update_run(
         self,
@@ -1906,13 +2344,16 @@ class Client:
         name: Optional[str] = None,
         end_time: Optional[datetime.datetime] = None,
         error: Optional[str] = None,
-        inputs: Optional[Dict] = None,
-        outputs: Optional[Dict] = None,
+        inputs: Optional[dict] = None,
+        outputs: Optional[dict] = None,
         events: Optional[Sequence[dict]] = None,
-        extra: Optional[Dict] = None,
-        tags: Optional[List[str]] = None,
+        extra: Optional[dict] = None,
+        tags: Optional[list[str]] = None,
         attachments: Optional[ls_schemas.Attachments] = None,
         dangerously_allow_filesystem: bool = False,
+        reference_example_id: str | uuid.UUID | None = None,
+        api_key: Optional[str] = None,
+        api_url: Optional[str] = None,
         **kwargs: Any,
     ) -> None:
         """Update a run in the LangSmith API.
@@ -1929,13 +2370,20 @@ class Client:
             tags (Optional[List[str]]): The tags for the run.
             attachments (Optional[Dict[str, Attachment]]): A dictionary of attachments to add to the run. The keys are the attachment names,
                 and the values are Attachment objects containing the data and mime type.
+            reference_example_id (Optional[Union[str, uuid.UUID]]): ID of the example
+                that was the source of the run inputs. Used for runs that were part of
+                an experiment.
+            api_key (Optional[str]): The API key to use for this specific run.
+            api_url (Optional[str]): The API URL to use for this specific run.
             **kwargs (Any): Kwargs are ignored.
 
         Returns:
             None
 
         Examples:
+
             .. code-block:: python
+
                 from langsmith import Client
                 import datetime
                 from uuid import uuid4
@@ -1964,7 +2412,7 @@ class Client:
                 # Update the run
                 client.update_run(run["id"], **run)
         """
-        data: Dict[str, Any] = {
+        data: dict[str, Any] = {
             "id": _as_uuid(run_id, "run_id"),
             "name": name,
             "trace_id": kwargs.pop("trace_id", None),
@@ -2010,16 +2458,50 @@ class Client:
             data["events"] = events
         if data["extra"]:
             self._insert_runtime_env([data])
+            if metadata := data["extra"].get("metadata"):
+                data["extra"]["metadata"] = self._hide_run_metadata(metadata)
+        if reference_example_id is not None:
+            data["reference_example_id"] = reference_example_id
 
+        # If process_buffered_run_ops is enabled, collect runs in batches
+        if self._process_buffered_run_ops and not kwargs.get("is_run_ops_buffer_flush"):
+            with self._run_ops_buffer_lock:
+                self._run_ops_buffer.append(("patch", data))
+                # Process batch when we have enough runs or enough time has passed
+                if self._should_flush_run_ops_buffer():
+                    self._flush_run_ops_buffer()
+                return
+        else:
+            self._update_run(data, api_key=api_key, api_url=api_url)
+
+    def _update_run(
+        self,
+        run_update: dict,
+        *,
+        api_key: Optional[str] = None,
+        api_url: Optional[str] = None,
+    ):
+        use_multipart = (
+            (self.tracing_queue is not None or self.compressed_traces is not None)
+            # batch ingest requires trace_id and dotted_order to be set
+            and run_update["trace_id"] is not None
+            and run_update["dotted_order"] is not None
+        )
         if self._pyo3_client is not None:
-            self._pyo3_client.update_run(data)
+            self._pyo3_client.update_run(run_update)
         elif use_multipart:
-            serialized_op = serialize_run_dict(operation="patch", payload=data)
+            serialized_op = serialize_run_dict(operation="patch", payload=run_update)
             if self.compressed_traces is not None:
-                multipart_form, opened_files = (
-                    serialized_run_operation_to_multipart_parts_and_context(
-                        serialized_op
-                    )
+                (
+                    multipart_form,
+                    opened_files,
+                ) = serialized_run_operation_to_multipart_parts_and_context(
+                    serialized_op
+                )
+                logger.log(
+                    5,
+                    "Adding compressed multipart to queue with context: %s",
+                    multipart_form.context,
                 )
                 with self.compressed_traces.lock:
                     if self._data_available_event is None:
@@ -2035,27 +2517,76 @@ class Client:
                     self._data_available_event.set()
                 _close_files(list(opened_files.values()))
             elif self.tracing_queue is not None:
-                self.tracing_queue.put(
-                    TracingQueueItem(data["dotted_order"], serialized_op)
+                logger.log(
+                    5,
+                    "Adding to tracing queue: trace_id=%s, run_id=%s",
+                    serialized_op.trace_id,
+                    serialized_op.id,
                 )
+                if self.otel_exporter is not None:
+                    self.tracing_queue.put(
+                        TracingQueueItem(
+                            run_update["dotted_order"],
+                            serialized_op,
+                            api_key=api_key,
+                            api_url=api_url,
+                            otel_context=self._set_span_in_context(
+                                self._otel_trace.get_current_span()
+                            ),
+                        )
+                    )
+                else:
+                    self.tracing_queue.put(
+                        TracingQueueItem(
+                            run_update["dotted_order"],
+                            serialized_op,
+                            api_key=api_key,
+                            api_url=api_url,
+                        )
+                    )
         else:
-            self._update_run(data)
+            self._update_run_non_batch(run_update, api_key=api_key, api_url=api_url)
 
-    def _update_run(self, run_update: dict) -> None:
-        for api_url, api_key in self._write_api_urls.items():
+    def _update_run_non_batch(
+        self,
+        run_update: dict,
+        *,
+        api_key: Optional[str] = None,
+        api_url: Optional[str] = None,
+    ) -> None:
+        # If specific api_key/api_url provided, use those; otherwise use all configured endpoints
+        if api_key is not None or api_url is not None:
+            target_api_url = api_url or self.api_url
+            target_api_key = api_key or self.api_key
             headers = {
                 **self._headers,
-                X_API_KEY: api_key,
+                X_API_KEY: target_api_key,
             }
 
             self.request_with_retries(
                 "PATCH",
-                f"{api_url}/runs/{run_update['id']}",
+                f"{target_api_url}/runs/{run_update['id']}",
                 request_kwargs={
                     "data": _dumps_json(run_update),
                     "headers": headers,
                 },
             )
+        else:
+            # Use all configured write API URLs
+            for write_api_url, write_api_key in self._write_api_urls.items():
+                headers = {
+                    **self._headers,
+                    X_API_KEY: write_api_key,
+                }
+
+                self.request_with_retries(
+                    "PATCH",
+                    f"{write_api_url}/runs/{run_update['id']}",
+                    request_kwargs={
+                        "data": _dumps_json(run_update),
+                        "headers": headers,
+                    },
+                )
 
     def flush_compressed_traces(self, attempts: int = 3) -> None:
         """Force flush the currently buffered compressed runs."""
@@ -2069,21 +2600,22 @@ class Client:
 
         # Attempt to drain and send any remaining data
         from langsmith._internal._background_thread import (
-            HTTP_REQUEST_THREAD_POOL,
+            LANGSMITH_CLIENT_THREAD_POOL,
             _tracing_thread_drain_compressed_buffer,
         )
 
-        final_data_stream, compressed_traces_info = (
-            _tracing_thread_drain_compressed_buffer(
-                self, size_limit=1, size_limit_bytes=1
-            )
+        (
+            final_data_stream,
+            compressed_traces_info,
+        ) = _tracing_thread_drain_compressed_buffer(
+            self, size_limit=1, size_limit_bytes=1
         )
 
         if final_data_stream is not None:
             # We have data to send
             future = None
             try:
-                future = HTTP_REQUEST_THREAD_POOL.submit(
+                future = LANGSMITH_CLIENT_THREAD_POOL.submit(
                     self._send_compressed_multipart_req,
                     final_data_stream,
                     compressed_traces_info,
@@ -2098,12 +2630,18 @@ class Client:
 
         # If we got a future, wait for it to complete
         if self._futures:
-            done, _ = cf.wait(self._futures)
+            futures = list(self._futures)
+            done, _ = cf.wait(futures)
             # Remove completed futures
             self._futures.difference_update(done)
 
     def flush(self) -> None:
         """Flush either queue or compressed buffer, depending on mode."""
+        # Flush any remaining batch items first
+        if self._process_buffered_run_ops:
+            with self._run_ops_buffer_lock:
+                if self._run_ops_buffer:
+                    self._flush_run_ops_buffer()
         if self.compressed_traces is not None:
             self.flush_compressed_traces()
         elif self.tracing_queue is not None:
@@ -2121,19 +2659,27 @@ class Client:
         Raises:
             LangSmithError: If a child run has no parent.
         """
-        child_runs = self.list_runs(id=run.child_run_ids)
-        treemap: DefaultDict[uuid.UUID, List[ls_schemas.Run]] = collections.defaultdict(
-            list
+        child_runs = self.list_runs(
+            is_root=False, session_id=run.session_id, trace_id=run.trace_id
         )
-        runs: Dict[uuid.UUID, ls_schemas.Run] = {}
+        treemap: collections.defaultdict[uuid.UUID, list[ls_schemas.Run]] = (
+            collections.defaultdict(list)
+        )
+        runs: dict[uuid.UUID, ls_schemas.Run] = {}
         for child_run in sorted(
             child_runs,
             key=lambda r: r.dotted_order,
         ):
             if child_run.parent_run_id is None:
                 raise ls_utils.LangSmithError(f"Child run {child_run.id} has no parent")
-            treemap[child_run.parent_run_id].append(child_run)
-            runs[child_run.id] = child_run
+
+            # Only track downstream children
+            if (
+                child_run.dotted_order.startswith(run.dotted_order)
+                and child_run.id != run.id
+            ):
+                treemap[child_run.parent_run_id].append(child_run)
+                runs[child_run.id] = child_run
         run.child_runs = treemap.pop(run.id, [])
         for run_id, children in treemap.items():
             runs[run_id].child_runs = children
@@ -2154,7 +2700,9 @@ class Client:
             Run: The run read from the LangSmith API.
 
         Examples:
+
             .. code-block:: python
+
                 from langsmith import Client
 
                 # Existing run
@@ -2172,7 +2720,8 @@ class Client:
         run = ls_schemas.Run(
             attachments=attachments, **response.json(), _host_url=self._host_url
         )
-        if load_child_runs and run.child_run_ids:
+
+        if load_child_runs:
             run = self._load_child_runs(run)
         return run
 
@@ -2300,7 +2849,6 @@ class Client:
             )
         default_select = [
             "app_path",
-            "child_run_ids",
             "completion_cost",
             "completion_tokens",
             "dotted_order",
@@ -2329,7 +2877,7 @@ class Client:
             "trace_id",
         ]
         select = select or default_select
-        body_query: Dict[str, Any] = {
+        body_query: dict[str, Any] = {
             "session": project_ids if project_ids else None,
             "run_type": run_type,
             "reference_example": (
@@ -2365,13 +2913,13 @@ class Client:
     def get_run_stats(
         self,
         *,
-        id: Optional[List[ID_TYPE]] = None,
+        id: Optional[list[ID_TYPE]] = None,
         trace: Optional[ID_TYPE] = None,
         parent_run: Optional[ID_TYPE] = None,
         run_type: Optional[str] = None,
-        project_names: Optional[List[str]] = None,
-        project_ids: Optional[List[ID_TYPE]] = None,
-        reference_example_ids: Optional[List[ID_TYPE]] = None,
+        project_names: Optional[list[str]] = None,
+        project_ids: Optional[list[ID_TYPE]] = None,
+        reference_example_ids: Optional[list[ID_TYPE]] = None,
         start_time: Optional[str] = None,
         end_time: Optional[str] = None,
         error: Optional[bool] = None,
@@ -2381,7 +2929,7 @@ class Client:
         tree_filter: Optional[str] = None,
         is_root: Optional[bool] = None,
         data_source_type: Optional[str] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Get aggregate statistics over queried runs.
 
         Takes in similar query parameters to `list_runs` and returns statistics
@@ -2589,7 +3137,7 @@ class Client:
         return ls_schemas.Run(**response.json(), _host_url=self._host_url)
 
     def list_shared_runs(
-        self, share_token: Union[ID_TYPE, str], run_ids: Optional[List[str]] = None
+        self, share_token: Union[ID_TYPE, str], run_ids: Optional[list[str]] = None
     ) -> Iterator[ls_schemas.Run]:
         """Get shared runs.
 
@@ -2729,13 +3277,18 @@ class Client:
         )
 
     def list_shared_examples(
-        self, share_token: str, *, example_ids: Optional[List[ID_TYPE]] = None
-    ) -> List[ls_schemas.Example]:
+        self,
+        share_token: str,
+        *,
+        example_ids: Optional[list[ID_TYPE]] = None,
+        limit: Optional[int] = None,
+    ) -> Iterator[ls_schemas.Example]:
         """Get shared examples.
 
         Args:
             share_token (Union[UUID, str]): The share token or URL of the shared dataset.
             example_ids (Optional[List[UUID, str]], optional): The IDs of the examples to filter by. Defaults to None.
+            limit (Optional[int]): Maximum number of examples to return, by default None.
 
         Returns:
             List[ls_schemas.Example]: The list of shared examples.
@@ -2743,23 +3296,21 @@ class Client:
         params = {}
         if example_ids is not None:
             params["id"] = [str(id) for id in example_ids]
-        response = self.request_with_retries(
-            "GET",
-            f"/public/{_as_uuid(share_token, 'share_token')}/examples",
-            headers=self._headers,
-            params=params,
-        )
-        ls_utils.raise_for_status_with_text(response)
-        return [
-            ls_schemas.Example(**dataset, _host_url=self._host_url)
-            for dataset in response.json()
-        ]
+        for i, example in enumerate(
+            self._get_paginated_list(
+                f"/public/{_as_uuid(share_token, 'share_token')}/examples",
+                params=params,
+            )
+        ):
+            yield ls_schemas.Example(**example, _host_url=self._host_url)
+            if limit is not None and i + 1 >= limit:
+                break
 
     def list_shared_projects(
         self,
         *,
         dataset_share_token: str,
-        project_ids: Optional[List[ID_TYPE]] = None,
+        project_ids: Optional[list[ID_TYPE]] = None,
         name: Optional[str] = None,
         name_contains: Optional[str] = None,
         limit: Optional[int] = None,
@@ -2815,7 +3366,7 @@ class Client:
         extra = project_extra
         if metadata:
             extra = {**(extra or {}), "metadata": metadata}
-        body: Dict[str, Any] = {
+        body: dict[str, Any] = {
             "name": project_name,
             "extra": extra,
             "description": description,
@@ -2869,7 +3420,7 @@ class Client:
         extra = project_extra
         if metadata:
             extra = {**(extra or {}), "metadata": metadata}
-        body: Dict[str, Any] = {
+        body: dict[str, Any] = {
             "name": name,
             "extra": extra,
             "description": description,
@@ -2932,7 +3483,7 @@ class Client:
             TracerSessionResult: The project.
         """
         path = "/sessions"
-        params: Dict[str, Any] = {"limit": 1}
+        params: dict[str, Any] = {"limit": 1}
         if project_id is not None:
             path += f"/{_as_uuid(project_id, 'project_id')}"
         elif project_name is not None:
@@ -2982,6 +3533,9 @@ class Client:
 
         Note: this will fetch whatever data exists in the DB. Results are not
         immediately available in the DB upon evaluation run completion.
+
+        Feedback score values will be returned as an average across all runs for
+        the experiment. Note that non-numeric feedback scores will be omitted.
 
         Args:
             project_id (Optional[Union[UUID, str]]): The ID of the project.
@@ -3047,8 +3601,13 @@ class Client:
                         {
                             f"feedback.{k}": v.get("avg")
                             for k, v in r.feedback_stats.items()
+                            if not (k == "note" and v.get("comments"))
                         }
                     )
+                    if r.feedback_stats.get("note") and (
+                        comments := r.feedback_stats["note"].get("comments")
+                    ):
+                        row["notes"] = comments
                 if r.reference_example_id:
                     example_ids.append(r.reference_example_id)
                 else:
@@ -3076,14 +3635,14 @@ class Client:
 
     def list_projects(
         self,
-        project_ids: Optional[List[ID_TYPE]] = None,
+        project_ids: Optional[list[ID_TYPE]] = None,
         name: Optional[str] = None,
         name_contains: Optional[str] = None,
         reference_dataset_id: Optional[ID_TYPE] = None,
         reference_dataset_name: Optional[str] = None,
         reference_free: Optional[bool] = None,
         limit: Optional[int] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: Optional[dict[str, Any]] = None,
     ) -> Iterator[ls_schemas.TracerSession]:
         """List projects from the LangSmith API.
 
@@ -3111,7 +3670,7 @@ class Client:
         Raises:
             ValueError: If both reference_dataset_id and reference_dataset_name are given.
         """
-        params: Dict[str, Any] = {
+        params: dict[str, Any] = {
             "limit": min(limit, 100) if limit is not None else 100
         }
         if project_ids is not None:
@@ -3178,9 +3737,9 @@ class Client:
         *,
         description: Optional[str] = None,
         data_type: ls_schemas.DataType = ls_schemas.DataType.kv,
-        inputs_schema: Optional[Dict[str, Any]] = None,
-        outputs_schema: Optional[Dict[str, Any]] = None,
-        transformations: Optional[List[ls_schemas.DatasetTransformation]] = None,
+        inputs_schema: Optional[dict[str, Any]] = None,
+        outputs_schema: Optional[dict[str, Any]] = None,
+        transformations: Optional[list[ls_schemas.DatasetTransformation]] = None,
         metadata: Optional[dict] = None,
     ) -> ls_schemas.Dataset:
         """Create a dataset in the LangSmith API.
@@ -3207,10 +3766,9 @@ class Client:
         Raises:
             requests.HTTPError: If the request to create the dataset fails.
         """
-        dataset: Dict[str, Any] = {
+        dataset: dict[str, Any] = {
             "name": dataset_name,
             "data_type": data_type.value,
-            "created_at": datetime.datetime.now().isoformat(),
             "transformations": transformations,
             "extra": {"metadata": metadata} if metadata else None,
         }
@@ -3279,7 +3837,7 @@ class Client:
             Dataset: The dataset.
         """
         path = "/datasets"
-        params: Dict[str, Any] = {"limit": 1}
+        params: dict[str, Any] = {"limit": 1}
         if dataset_id is not None:
             path += f"/{_as_uuid(dataset_id, 'dataset_id')}"
         elif dataset_name is not None:
@@ -3414,11 +3972,11 @@ class Client:
     def list_datasets(
         self,
         *,
-        dataset_ids: Optional[List[ID_TYPE]] = None,
+        dataset_ids: Optional[list[ID_TYPE]] = None,
         data_type: Optional[str] = None,
         dataset_name: Optional[str] = None,
         dataset_name_contains: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: Optional[dict[str, Any]] = None,
         limit: Optional[int] = None,
     ) -> Iterator[ls_schemas.Dataset]:
         """List the datasets on the LangSmith API.
@@ -3440,7 +3998,7 @@ class Client:
         Yields:
             The datasets.
         """
-        params: Dict[str, Any] = {
+        params: dict[str, Any] = {
             "limit": min(limit, 100) if limit is not None else 100
         }
         if dataset_ids is not None:
@@ -3752,7 +4310,7 @@ class Client:
     @ls_utils.xor_args(("dataset_id", "dataset_name"))
     def create_chat_example(
         self,
-        messages: List[Union[Mapping[str, Any], ls_schemas.BaseMessageLike]],
+        messages: list[Union[Mapping[str, Any], ls_schemas.BaseMessageLike]],
         generations: Optional[
             Union[Mapping[str, Any], ls_schemas.BaseMessageLike]
         ] = None,
@@ -3840,9 +4398,9 @@ class Client:
                     "Error converting LLM run inputs to prompt for run"
                     f" {run.id} with inputs {run.inputs}"
                 )
-            inputs: Dict[str, Any] = {"input": prompt}
+            inputs: dict[str, Any] = {"input": prompt}
             if not run.outputs:
-                outputs: Optional[Dict[str, Any]] = None
+                outputs: Optional[dict[str, Any]] = None
             else:
                 try:
                     generation = ls_utils.get_llm_generation_from_outputs(run.outputs)
@@ -3897,15 +4455,15 @@ class Client:
     def _prepare_multipart_data(
         self,
         examples: Union[
-            List[ls_schemas.ExampleUploadWithAttachments]
-            | List[ls_schemas.ExampleUpsertWithAttachments]
-            | List[ls_schemas.ExampleUpdateWithAttachments],
+            list[ls_schemas.ExampleCreate]
+            | list[ls_schemas.ExampleUpsertWithAttachments]
+            | list[ls_schemas.ExampleUpdate],
         ],
         include_dataset_id: bool = False,
         dangerously_allow_filesystem: bool = False,
-    ) -> tuple[Any, bytes, Dict[str, io.BufferedReader]]:
-        parts: List[MultipartPart] = []
-        opened_files_dict: Dict[str, io.BufferedReader] = {}
+    ) -> tuple[Any, bytes, dict[str, io.BufferedReader]]:
+        parts: list[MultipartPart] = []
+        opened_files_dict: dict[str, io.BufferedReader] = {}
         if include_dataset_id:
             if not isinstance(examples[0], ls_schemas.ExampleUpsertWithAttachments):
                 raise ValueError(
@@ -3916,28 +4474,50 @@ class Client:
 
         for example in examples:
             if (
-                not isinstance(example, ls_schemas.ExampleUploadWithAttachments)
+                not isinstance(example, ls_schemas.ExampleCreate)
                 and not isinstance(example, ls_schemas.ExampleUpsertWithAttachments)
-                and not isinstance(example, ls_schemas.ExampleUpdateWithAttachments)
+                and not isinstance(example, ls_schemas.ExampleUpdate)
             ):
                 raise ValueError(
-                    "The examples must be of type ExampleUploadWithAttachments"
+                    "The examples must be of type ExampleCreate"
                     " or ExampleUpsertWithAttachments"
-                    " or ExampleUpdateWithAttachments"
+                    " or ExampleUpdate"
                 )
             if example.id is not None:
                 example_id = str(example.id)
             else:
                 example_id = str(uuid.uuid4())
 
-            if isinstance(example, ls_schemas.ExampleUpdateWithAttachments):
+            if isinstance(example, ls_schemas.ExampleUpdate):
                 created_at = None
             else:
                 created_at = example.created_at
 
+            if isinstance(example, ls_schemas.ExampleCreate):
+                use_source_run_io = example.use_source_run_io
+                use_source_run_attachments = example.use_source_run_attachments
+                source_run_id = example.source_run_id
+            else:
+                use_source_run_io, use_source_run_attachments, source_run_id = (
+                    None,
+                    None,
+                    None,
+                )
+
             example_body = {
                 **({"dataset_id": dataset_id} if include_dataset_id else {}),
                 **({"created_at": created_at} if created_at is not None else {}),
+                **(
+                    {"use_source_run_io": use_source_run_io}
+                    if use_source_run_io
+                    else {}
+                ),
+                **(
+                    {"use_source_run_attachments": use_source_run_attachments}
+                    if use_source_run_attachments
+                    else {}
+                ),
+                **({"source_run_id": source_run_id} if source_run_id else {}),
             }
             if example.metadata is not None:
                 example_body["metadata"] = example.metadata
@@ -3957,21 +4537,21 @@ class Client:
                 )
             )
 
-            inputsb = _dumps_json(example.inputs)
-
-            parts.append(
-                (
-                    f"{example_id}.inputs",
+            if example.inputs is not None:
+                inputsb = _dumps_json(example.inputs)
+                parts.append(
                     (
-                        None,
-                        inputsb,
-                        "application/json",
-                        {},
-                    ),
+                        f"{example_id}.inputs",
+                        (
+                            None,
+                            inputsb,
+                            "application/json",
+                            {},
+                        ),
+                    )
                 )
-            )
 
-            if example.outputs:
+            if example.outputs is not None:
                 outputsb = _dumps_json(example.outputs)
                 parts.append(
                     (
@@ -3986,11 +4566,24 @@ class Client:
                 )
 
             if example.attachments:
-                for name, (mime_type, attachment_data) in example.attachments.items():
+                for name, attachment in example.attachments.items():
+                    if isinstance(attachment, dict):
+                        mime_type = attachment["mime_type"]
+                        attachment_data = attachment["data"]
+                    else:
+                        mime_type, attachment_data = attachment
                     if isinstance(attachment_data, Path):
                         if dangerously_allow_filesystem:
-                            file_size = os.path.getsize(attachment_data)
-                            file = open(attachment_data, "rb")
+                            try:
+                                file_size = os.path.getsize(attachment_data)
+                                file = open(attachment_data, "rb")
+                            except FileNotFoundError:
+                                logger.warning(
+                                    "Attachment file not found for example %s: %s",
+                                    example_id,
+                                    attachment_data,
+                                )
+                                continue
                             opened_files_dict[
                                 str(attachment_data) + str(uuid.uuid4())
                             ] = file
@@ -4024,7 +4617,7 @@ class Client:
                         )
 
             if (
-                isinstance(example, ls_schemas.ExampleUpdateWithAttachments)
+                isinstance(example, ls_schemas.ExampleUpdate)
                 and example.attachments_operations
             ):
                 attachments_operationsb = _dumps_json(example.attachments_operations)
@@ -4052,14 +4645,33 @@ class Client:
         self,
         *,
         dataset_id: ID_TYPE,
-        updates: Optional[List[ls_schemas.ExampleUpdateWithAttachments]] = None,
+        updates: Optional[list[ls_schemas.ExampleUpdate]] = None,
+        dangerously_allow_filesystem: bool = False,
+    ) -> ls_schemas.UpsertExamplesResponse:
+        """Update examples using multipart.
+
+        .. deprecated:: 0.3.9
+
+            Use Client.update_examples instead. Will be removed in 0.4.0.
+        """
+        return self._update_examples_multipart(
+            dataset_id=dataset_id,
+            updates=updates,
+            dangerously_allow_filesystem=dangerously_allow_filesystem,
+        )
+
+    def _update_examples_multipart(
+        self,
+        *,
+        dataset_id: ID_TYPE,
+        updates: Optional[list[ls_schemas.ExampleUpdate]] = None,
         dangerously_allow_filesystem: bool = False,
     ) -> ls_schemas.UpsertExamplesResponse:
         """Update examples using multipart.
 
         Args:
             dataset_id (Union[UUID, str]): The ID of the dataset to update.
-            updates (Optional[List[ExampleUpdateWithAttachments]]): The updates to apply to the examples.
+            updates (Optional[List[ExampleUpdate]]): The updates to apply to the examples.
 
         Raises:
             ValueError: If the multipart examples endpoint is not enabled.
@@ -4068,7 +4680,9 @@ class Client:
             "dataset_examples_multipart_enabled", False
         ):
             raise ValueError(
-                "Your LangSmith version does not allow using the multipart examples endpoint, please update to the latest version."
+                "Your LangSmith deployment does not allow using the latest examples "
+                "endpoints, please upgrade your deployment to the latest version or downgrade your SDK "
+                "to langsmith<0.3.9."
             )
         if updates is None:
             updates = []
@@ -4082,7 +4696,7 @@ class Client:
         try:
             response = self.request_with_retries(
                 "PATCH",
-                f"/v1/platform/datasets/{dataset_id}/examples",
+                _dataset_examples_path(self.api_url, dataset_id),
                 request_kwargs={
                     "data": data,
                     "headers": {
@@ -4100,14 +4714,34 @@ class Client:
         self,
         *,
         dataset_id: ID_TYPE,
-        uploads: Optional[List[ls_schemas.ExampleUploadWithAttachments]] = None,
+        uploads: Optional[list[ls_schemas.ExampleCreate]] = None,
+        dangerously_allow_filesystem: bool = False,
+    ) -> ls_schemas.UpsertExamplesResponse:
+        """Upload examples using multipart.
+
+        .. deprecated:: 0.3.9
+
+            Use Client.create_examples instead. Will be removed in 0.4.0.
+        """
+        return self._upload_examples_multipart(
+            dataset_id=dataset_id,
+            uploads=uploads,
+            dangerously_allow_filesystem=dangerously_allow_filesystem,
+        )
+
+    def _upload_examples_multipart(
+        self,
+        *,
+        dataset_id: ID_TYPE,
+        uploads: Optional[list[ls_schemas.ExampleCreate]] = None,
         dangerously_allow_filesystem: bool = False,
     ) -> ls_schemas.UpsertExamplesResponse:
         """Upload examples using multipart.
 
         Args:
             dataset_id (Union[UUID, str]): The ID of the dataset to upload to.
-            uploads (Optional[List[ExampleUploadWithAttachments]]): The examples to upload.
+            uploads (Optional[List[ExampleCreate]]): The examples to upload.
+            dangerously_allow_filesystem (bool): Whether to allow uploading files from the filesystem.
 
         Returns:
             ls_schemas.UpsertExamplesResponse: The count and ids of the successfully uploaded examples
@@ -4119,7 +4753,7 @@ class Client:
             "dataset_examples_multipart_enabled", False
         ):
             raise ValueError(
-                "Your LangSmith version does not allow using the multipart examples endpoint, please update to the latest version."
+                "Your LangSmith deployment does not allow using the multipart examples endpoint, please upgrade your deployment to the latest version."
             )
         if uploads is None:
             uploads = []
@@ -4132,7 +4766,7 @@ class Client:
         try:
             response = self.request_with_retries(
                 "POST",
-                f"/v1/platform/datasets/{dataset_id}/examples",
+                _dataset_examples_path(self.api_url, dataset_id),
                 request_kwargs={
                     "data": data,
                     "headers": {
@@ -4149,19 +4783,21 @@ class Client:
     def upsert_examples_multipart(
         self,
         *,
-        upserts: Optional[List[ls_schemas.ExampleUpsertWithAttachments]] = None,
+        upserts: Optional[list[ls_schemas.ExampleUpsertWithAttachments]] = None,
         dangerously_allow_filesystem: bool = False,
     ) -> ls_schemas.UpsertExamplesResponse:
         """Upsert examples.
 
-        .. deprecated:: 0.1.0
-           This method is deprecated. Use :func:`langsmith.upload_examples_multipart` instead.
-        """  # noqa: E501
+        .. deprecated:: 0.3.9
+
+            Use Client.create_examples and Client.update_examples instead. Will be
+            removed in 0.4.0.
+        """
         if not (self.info.instance_flags or {}).get(
             "examples_multipart_enabled", False
         ):
             raise ValueError(
-                "Your LangSmith version does not allow using the multipart examples endpoint, please update to the latest version."
+                "Your LangSmith deployment does not allow using the multipart examples endpoint, please upgrade your deployment to the latest version."
             )
         if upserts is None:
             upserts = []
@@ -4175,7 +4811,11 @@ class Client:
         try:
             response = self.request_with_retries(
                 "POST",
-                "/v1/platform/examples/multipart",
+                (
+                    "/v1/platform/examples/multipart"
+                    if self.api_url[-3:] != "/v1" and self.api_url[-4:] != "/v1/"
+                    else "/platform/examples/multipart"
+                ),
                 request_kwargs={
                     "data": data,
                     "headers": {
@@ -4189,108 +4829,191 @@ class Client:
             _close_files(list(opened_files_dict.values()))
         return response.json()
 
+    @ls_utils.xor_args(("dataset_id", "dataset_name"))
     def create_examples(
         self,
         *,
-        inputs: Sequence[Mapping[str, Any]],
-        outputs: Optional[Sequence[Optional[Mapping[str, Any]]]] = None,
-        metadata: Optional[Sequence[Optional[Mapping[str, Any]]]] = None,
-        splits: Optional[Sequence[Optional[str | List[str]]]] = None,
-        source_run_ids: Optional[Sequence[Optional[ID_TYPE]]] = None,
-        ids: Optional[Sequence[Optional[ID_TYPE]]] = None,
-        dataset_id: Optional[ID_TYPE] = None,
         dataset_name: Optional[str] = None,
+        dataset_id: Optional[ID_TYPE] = None,
+        examples: Optional[Sequence[ls_schemas.ExampleCreate | dict]] = None,
+        dangerously_allow_filesystem: bool = False,
         **kwargs: Any,
-    ) -> None:
+    ) -> ls_schemas.UpsertExamplesResponse | dict[str, Any]:
         """Create examples in a dataset.
 
         Args:
-            inputs (Sequence[Mapping[str, Any]]):
-                The input values for the examples.
-            outputs (Optional[Sequence[Optional[Mapping[str, Any]]]]):
-                The output values for the examples.
-            metadata (Optional[Sequence[Optional[Mapping[str, Any]]]]):
-                The metadata for the examples.
-            splits (Optional[Sequence[Optional[str | List[str]]]]):
-                The splits for the examples, which are divisions
-                of your dataset such as 'train', 'test', or 'validation'.
-            source_run_ids (Optional[Sequence[Optional[Union[UUID, str]]]]):
-                    The IDs of the source runs associated with the examples.
-            ids (Optional[Sequence[Union[UUID, str]]]):
-                The IDs of the examples.
-            dataset_id (Optional[Union[UUID, str]]):
-                The ID of the dataset to create the examples in.
-            dataset_name (Optional[str]):
-                The name of the dataset to create the examples in.
-            **kwargs: Any: Additional keyword arguments are ignored.
+            dataset_name (str | None):
+                The name of the dataset to create the examples in. Must specify exactly
+                one of dataset_name or dataset_id.
+            dataset_id (UUID | str | None):
+                The ID of the dataset to create the examples in. Must specify exactly
+                one of dataset_name or dataset_id
+            examples (Sequence[ExampleCreate | dict]):
+                The examples to create.
+            dangerously_allow_filesystem (bool):
+                Whether to allow uploading files from the filesystem.
+            **kwargs (Any): Legacy keyword args. Should not be specified if 'examples' is specified.
+
+                - inputs (Sequence[Mapping[str, Any]]): The input values for the examples.
+                - outputs (Optional[Sequence[Optional[Mapping[str, Any]]]]): The output values for the examples.
+                - metadata (Optional[Sequence[Optional[Mapping[str, Any]]]]): The metadata for the examples.
+                - splits (Optional[Sequence[Optional[str | List[str]]]]): The splits for the examples, which are divisions of your dataset such as 'train', 'test', or 'validation'.
+                - source_run_ids (Optional[Sequence[Optional[Union[UUID, str]]]]): The IDs of the source runs associated with the examples.
+                - ids (Optional[Sequence[Union[UUID, str]]]): The IDs of the examples.
 
         Raises:
-            ValueError: If neither dataset_id nor dataset_name is provided.
+            ValueError: If 'examples' and legacy args are both provided.
 
         Returns:
-            None
-        """
-        if dataset_id is None and dataset_name is None:
-            raise ValueError("Either dataset_id or dataset_name must be provided.")
+            The LangSmith JSON response. Includes 'count' and 'example_ids'.
 
-        if dataset_id is None:
+        .. versionchanged:: 0.3.11
+
+            Updated to take argument 'examples', a single list where each
+            element is the full example to create. This should be used instead of the
+            legacy 'inputs', 'outputs', etc. arguments which split each examples
+            attributes across arguments.
+
+            Updated to support creating examples with attachments.
+
+        Example:
+            .. code-block:: python
+
+                from langsmith import Client
+
+                client = Client()
+
+                dataset = client.create_dataset("agent-qa")
+
+                examples = [
+                    {
+                        "inputs": {"question": "what's an agent"},
+                        "outputs": {"answer": "an agent is..."},
+                        "metadata": {"difficulty": "easy"},
+                    },
+                    {
+                        "inputs": {
+                            "question": "can you explain the agent architecture in this diagram?"
+                        },
+                        "outputs": {"answer": "this diagram shows..."},
+                        "attachments": {"diagram": {"mime_type": "image/png", "data": b"..."}},
+                        "metadata": {"difficulty": "medium"},
+                    },
+                    # more examples...
+                ]
+
+                response = client.create_examples(dataset_name="agent-qa", examples=examples)
+                # -> {"example_ids": [...
+        """  # noqa: E501
+        if kwargs and examples:
+            kwarg_keys = ", ".join([f"'{k}'" for k in kwargs])
+            raise ValueError(
+                f"Cannot specify {kwarg_keys} when 'examples' is specified."
+            )
+
+        supported_kwargs = {
+            "inputs",
+            "outputs",
+            "metadata",
+            "splits",
+            "ids",
+            "source_run_ids",
+        }
+        if kwargs and (unsupported := set(kwargs).difference(supported_kwargs)):
+            raise ValueError(
+                f"Received unsupported keyword arguments: {tuple(unsupported)}."
+            )
+
+        if not (dataset_id or dataset_name):
+            raise ValueError("Either dataset_id or dataset_name must be provided.")
+        elif not dataset_id:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
 
-        sequence_args = {
-            "outputs": outputs,
-            "metadata": metadata,
-            "splits": splits,
-            "ids": ids,
-            "source_run_ids": source_run_ids,
-        }
-        # Since inputs are required, we will check against them
-        input_len = len(inputs)
-        for arg_name, arg_value in sequence_args.items():
-            if arg_value is not None and len(arg_value) != input_len:
-                raise ValueError(
-                    f"Length of {arg_name} ({len(arg_value)}) does not match"
-                    f" length of inputs ({input_len})"
-                )
-        examples = [
-            {
-                "inputs": in_,
-                "outputs": out_,
-                "dataset_id": dataset_id,
-                "metadata": metadata_,
-                "split": split_,
-                "id": id_ or str(uuid.uuid4()),
-                "source_run_id": source_run_id_,
-            }
-            for in_, out_, metadata_, split_, id_, source_run_id_ in zip(
-                inputs,
-                outputs or [None] * len(inputs),
-                metadata or [None] * len(inputs),
-                splits or [None] * len(inputs),
-                ids or [None] * len(inputs),
-                source_run_ids or [None] * len(inputs),
-            )
-        ]
+        if examples:
+            uploads = [
+                ls_schemas.ExampleCreate(**x) if isinstance(x, dict) else x
+                for x in examples
+            ]
 
-        response = self.request_with_retries(
-            "POST",
-            "/examples/bulk",
-            headers={**self._headers, "Content-Type": "application/json"},
-            data=_dumps_json(examples),
-        )
-        ls_utils.raise_for_status_with_text(response)
+        # For backwards compatibility
+        else:
+            inputs = kwargs.get("inputs")
+            if not inputs:
+                raise ValueError("Must specify either 'examples' or 'inputs.'")
+            # Since inputs are required, we will check against them
+            input_len = len(inputs)
+            for arg_name, arg_value in kwargs.items():
+                if arg_value is not None and len(arg_value) != input_len:
+                    raise ValueError(
+                        f"Length of {arg_name} ({len(arg_value)}) does not match"
+                        f" length of inputs ({input_len})"
+                    )
+            uploads = [
+                ls_schemas.ExampleCreate(
+                    **{
+                        "inputs": in_,
+                        "outputs": out_,
+                        "metadata": metadata_,
+                        "split": split_,
+                        "id": id_ or str(uuid.uuid4()),
+                        "source_run_id": source_run_id_,
+                    }
+                )
+                for in_, out_, metadata_, split_, id_, source_run_id_ in zip(
+                    inputs,
+                    kwargs.get("outputs") or (None for _ in range(input_len)),
+                    kwargs.get("metadata") or (None for _ in range(input_len)),
+                    kwargs.get("splits") or (None for _ in range(input_len)),
+                    kwargs.get("ids") or (None for _ in range(input_len)),
+                    kwargs.get("source_run_ids") or (None for _ in range(input_len)),
+                )
+            ]
+
+        if (self.info.instance_flags or {}).get(
+            "dataset_examples_multipart_enabled", False
+        ):
+            return self._upload_examples_multipart(
+                dataset_id=cast(uuid.UUID, dataset_id),
+                uploads=uploads,
+                dangerously_allow_filesystem=dangerously_allow_filesystem,
+            )
+        else:
+            for upload in uploads:
+                if getattr(upload, "attachments") is not None:
+                    upload.attachments = None
+                    warnings.warn(
+                        "Must upgrade your LangSmith version to use attachments."
+                    )
+            # fallback to old method
+            response = self.request_with_retries(
+                "POST",
+                "/examples/bulk",
+                headers={**self._headers, "Content-Type": "application/json"},
+                data=_dumps_json(
+                    [
+                        {**dump_model(upload), "dataset_id": str(dataset_id)}
+                        for upload in uploads
+                    ]
+                ),
+            )
+            ls_utils.raise_for_status_with_text(response)
+            return response.json()
 
     @ls_utils.xor_args(("dataset_id", "dataset_name"))
     def create_example(
         self,
-        inputs: Mapping[str, Any],
+        inputs: Optional[Mapping[str, Any]] = None,
         dataset_id: Optional[ID_TYPE] = None,
         dataset_name: Optional[str] = None,
         created_at: Optional[datetime.datetime] = None,
         outputs: Optional[Mapping[str, Any]] = None,
         metadata: Optional[Mapping[str, Any]] = None,
-        split: Optional[str | List[str]] = None,
+        split: Optional[str | list[str]] = None,
         example_id: Optional[ID_TYPE] = None,
         source_run_id: Optional[ID_TYPE] = None,
+        use_source_run_io: bool = False,
+        use_source_run_attachments: Optional[list[str]] = None,
+        attachments: Optional[ls_schemas.Attachments] = None,
     ) -> ls_schemas.Example:
         """Create a dataset example in the LangSmith API.
 
@@ -4319,37 +5042,71 @@ class Client:
                 example will be created.
             source_run_id (Optional[Union[UUID, str]]):
                 The ID of the source run associated with this example.
+            use_source_run_io (bool):
+                Whether to use the inputs, outputs, and attachments from the source run.
+            use_source_run_attachments (Optional[List[str]]):
+                Which attachments to use from the source run. If use_source_run_io
+                is True, all attachments will be used regardless of this param.
+            attachments (Optional[Attachments]):
+                The attachments for the example.
 
         Returns:
             Example: The created example.
         """
+        if inputs is None and not use_source_run_io:
+            raise ValueError("Must provide either inputs or use_source_run_io")
+
         if dataset_id is None:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
 
-        data = {
-            "inputs": inputs,
-            "outputs": outputs,
-            "dataset_id": dataset_id,
-            "metadata": metadata,
-            "split": split,
-            "source_run_id": source_run_id,
-        }
+        data = ls_schemas.ExampleCreate(
+            **{
+                "inputs": inputs,
+                "outputs": outputs,
+                "metadata": metadata,
+                "split": split,
+                "source_run_id": source_run_id,
+                "use_source_run_io": use_source_run_io,
+                "use_source_run_attachments": use_source_run_attachments,
+                "attachments": attachments,
+            }
+        )
         if created_at:
-            data["created_at"] = created_at.isoformat()
-        data["id"] = example_id or str(uuid.uuid4())
-        response = self.request_with_retries(
-            "POST",
-            "/examples",
-            headers={**self._headers, "Content-Type": "application/json"},
-            data=_dumps_json({k: v for k, v in data.items() if v is not None}),
+            data.created_at = created_at
+        data.id = (
+            (uuid.UUID(example_id) if isinstance(example_id, str) else example_id)
+            if example_id
+            else uuid.uuid4()
         )
-        ls_utils.raise_for_status_with_text(response)
-        result = response.json()
-        return ls_schemas.Example(
-            **result,
-            _host_url=self._host_url,
-            _tenant_id=self._get_optional_tenant_id(),
-        )
+
+        if (self.info.instance_flags or {}).get(
+            "dataset_examples_multipart_enabled", False
+        ):
+            self._upload_examples_multipart(dataset_id=dataset_id, uploads=[data])
+            return self.read_example(example_id=data.id)
+        else:
+            # fallback to old method
+            if getattr(data, "attachments") is not None:
+                data.attachments = None
+                warnings.warn("Must upgrade your LangSmith version to use attachments")
+            response = self.request_with_retries(
+                "POST",
+                "/examples",
+                headers={**self._headers, "Content-Type": "application/json"},
+                data=_dumps_json(
+                    {
+                        **{k: v for k, v in dump_model(data).items() if v is not None},
+                        "dataset_id": str(dataset_id),
+                    }
+                ),
+            )
+            ls_utils.raise_for_status_with_text(response)
+            result = response.json()
+            return ls_schemas.Example(
+                **result,
+                _host_url=self._host_url,
+                _tenant_id=self._get_optional_tenant_id(),
+            )
 
     def read_example(
         self, example_id: ID_TYPE, *, as_of: Optional[datetime.datetime] = None
@@ -4376,7 +5133,7 @@ class Client:
 
         example = response.json()
         attachments = _convert_stored_attachments_to_attachments_dict(
-            example, attachments_key="attachment_urls"
+            example, attachments_key="attachment_urls", api_url=self.api_url
         )
 
         return ls_schemas.Example(
@@ -4423,7 +5180,7 @@ class Client:
             offset (int, default=0): The offset to start from. Defaults to 0.
             limit (Optional[int]): The maximum number of examples to return.
             metadata (Optional[dict]): A dictionary of metadata to filter by.
-            filter (Optional[str]): A structured fileter string to apply to
+            filter (Optional[str]): A structured filter string to apply to
                 the examples.
             include_attachments (bool, default=False): Whether to include the
                 attachments in the response. Defaults to False.
@@ -4476,7 +5233,7 @@ class Client:
                     filter='and(not(has(metadata, \'{"foo": "bar"}\')), exists(metadata, "tenant_id"))',
                 )
         """
-        params: Dict[str, Any] = {
+        params: dict[str, Any] = {
             **kwargs,
             "offset": offset,
             "id": example_ids,
@@ -4503,7 +5260,7 @@ class Client:
             self._get_paginated_list("/examples", params=params)
         ):
             attachments = _convert_stored_attachments_to_attachments_dict(
-                example, attachments_key="attachment_urls"
+                example, attachments_key="attachment_urls", api_url=self.api_url
             )
 
             yield ls_schemas.Example(
@@ -4547,6 +5304,30 @@ class Client:
         )
         ls_utils.raise_for_status_with_text(resp)
 
+    @warn_beta
+    def sync_indexed_dataset(
+        self,
+        *,
+        dataset_id: ID_TYPE,
+        **kwargs: Any,
+    ) -> None:
+        """Sync dataset index. This already happens automatically every 5 minutes, but you can call this to force a sync.
+
+        Args:
+            dataset_id (Union[UUID, str]): The ID of the dataset to sync.
+
+        Returns:
+            None
+        """  # noqa: E501
+        dataset_id = _as_uuid(dataset_id, "dataset_id")
+        resp = self.request_with_retries(
+            "POST",
+            f"/datasets/{dataset_id}/index/sync",
+            headers=self._headers,
+            data=json.dumps({**kwargs}),
+        )
+        ls_utils.raise_for_status_with_text(resp)
+
     # NOTE: dataset_name arg explicitly not supported to avoid extra API calls.
     @warn_beta
     def similar_examples(
@@ -4558,7 +5339,7 @@ class Client:
         dataset_id: ID_TYPE,
         filter: Optional[str] = None,
         **kwargs: Any,
-    ) -> List[ls_schemas.ExampleSearch]:
+    ) -> list[ls_schemas.ExampleSearch]:
         r"""Retrieve the dataset examples whose inputs best match the current inputs.
 
         **Note**: Must have few-shot indexing enabled for the dataset. See
@@ -4652,13 +5433,14 @@ class Client:
         self,
         example_id: ID_TYPE,
         *,
-        inputs: Optional[Dict[str, Any]] = None,
+        inputs: Optional[dict[str, Any]] = None,
         outputs: Optional[Mapping[str, Any]] = None,
-        metadata: Optional[Dict] = None,
-        split: Optional[str | List[str]] = None,
+        metadata: Optional[dict] = None,
+        split: Optional[str | list[str]] = None,
         dataset_id: Optional[ID_TYPE] = None,
         attachments_operations: Optional[ls_schemas.AttachmentsOperations] = None,
-    ) -> Dict[str, Any]:
+        attachments: Optional[ls_schemas.Attachments] = None,
+    ) -> dict[str, Any]:
         """Update a specific example.
 
         Args:
@@ -4677,6 +5459,8 @@ class Client:
                 The ID of the dataset to update.
             attachments_operations (Optional[AttachmentsOperations]):
                 The attachments operations to perform.
+            attachments (Optional[Attachments]):
+                The attachments to add to the example.
 
         Returns:
             Dict[str, Any]: The updated example.
@@ -4686,119 +5470,269 @@ class Client:
                 "dataset_examples_multipart_enabled", False
             ):
                 raise ValueError(
-                    "Your LangSmith version does not allow using the attachment operations, please update to the latest version."
+                    "Your LangSmith deployment does not allow using the attachment operations, please upgrade your deployment to the latest version."
                 )
-        example = dict(
+        example_dict = dict(
             inputs=inputs,
             outputs=outputs,
-            dataset_id=dataset_id,
+            id=example_id,
             metadata=metadata,
             split=split,
             attachments_operations=attachments_operations,
+            attachments=attachments,
         )
-        example = {k: v for k, v in example.items() if v is not None}
-        response = self.request_with_retries(
-            "PATCH",
-            f"/examples/{_as_uuid(example_id, 'example_id')}",
-            headers={**self._headers, "Content-Type": "application/json"},
-            data=_dumps_json({k: v for k, v in example.items() if v is not None}),
+        example = ls_schemas.ExampleUpdate(
+            **{k: v for k, v in example_dict.items() if v is not None}
         )
-        ls_utils.raise_for_status_with_text(response)
-        return response.json()
+
+        if dataset_id is None:
+            dataset_id = self.read_example(example_id).dataset_id
+
+        if (self.info.instance_flags or {}).get(
+            "dataset_examples_multipart_enabled", False
+        ):
+            return dict(
+                self._update_examples_multipart(
+                    dataset_id=dataset_id, updates=[example]
+                )
+            )
+        else:
+            # fallback to old method
+            response = self.request_with_retries(
+                "PATCH",
+                f"/examples/{_as_uuid(example_id, 'example_id')}",
+                headers={**self._headers, "Content-Type": "application/json"},
+                data=_dumps_json(
+                    {
+                        **{
+                            k: v
+                            for k, v in dump_model(example).items()
+                            if v is not None
+                        },
+                        "dataset_id": str(dataset_id),
+                    }
+                ),
+            )
+            ls_utils.raise_for_status_with_text(response)
+            return response.json()
 
     def update_examples(
         self,
         *,
-        example_ids: Sequence[ID_TYPE],
-        inputs: Optional[Sequence[Optional[Dict[str, Any]]]] = None,
-        outputs: Optional[Sequence[Optional[Mapping[str, Any]]]] = None,
-        metadata: Optional[Sequence[Optional[Dict]]] = None,
-        splits: Optional[Sequence[Optional[str | List[str]]]] = None,
-        dataset_ids: Optional[Sequence[Optional[ID_TYPE]]] = None,
-        attachments_operations: Optional[
-            Sequence[Optional[ls_schemas.AttachmentsOperations]]
-        ] = None,
-    ) -> Dict[str, Any]:
+        dataset_name: str | None = None,
+        dataset_id: ID_TYPE | None = None,
+        updates: Optional[Sequence[ls_schemas.ExampleUpdate | dict]] = None,
+        dangerously_allow_filesystem: bool = False,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
         """Update multiple examples.
 
+         Examples are expected to all be part of the same dataset.
+
         Args:
-            example_ids (Sequence[Union[UUID, str]]):
-                The IDs of the examples to update.
-            inputs (Optional[Sequence[Optional[Dict[str, Any]]]):
-                The input values for the examples.
-            outputs (Optional[Sequence[Optional[Mapping[str, Any]]]]):
-                The output values for the examples.
-            metadata (Optional[Sequence[Optional[Mapping[str, Any]]]]):
-                The metadata for the examples.
-            splits (Optional[Sequence[Optional[str | List[str]]]]):
-                The splits for the examples, which are divisions
-                of your dataset such as 'train', 'test', or 'validation'.
-            dataset_ids (Optional[Sequence[Optional[Union[UUID, str]]]]):
-                The IDs of the datasets to move the examples to.
-            attachments_operations (Optional[Sequence[Optional[ls_schemas.AttachmentsOperations]]):
-                The operations to perform on the attachments.
+             dataset_name (str | None):
+                 The name of the dataset to update. Should specify exactly one of
+                 'dataset_name' or 'dataset_id'.
+             dataset_id (UUID | str | None):
+                 The ID of the dataset to update. Should specify exactly one of
+                 'dataset_name' or 'dataset_id'.
+             updates (Sequence[ExampleUpdate | dict] | None):
+                 The example updates. Overwrites any specified fields and does not
+                 update any unspecified fields.
+             dangerously_allow_filesystem (bool):
+                 Whether to allow using filesystem paths as attachments.
+             **kwargs (Any):
+                 Legacy keyword args. Should not be specified if 'updates' is specified.
+
+                 - example_ids (Sequence[UUID | str]): The IDs of the examples to update.
+                 - inputs (Sequence[dict | None] | None): The input values for the examples.
+                 - outputs (Sequence[dict | None] | None): The output values for the examples.
+                 - metadata (Sequence[dict | None] | None): The metadata for the examples.
+                 - splits (Sequence[str | list[str] | None] | None): The splits for the examples, which are divisions of your dataset such as 'train', 'test', or 'validation'.
+                 - attachments_operations (Sequence[AttachmentsOperations | None] | None): The operations to perform on the attachments.
+                 - dataset_ids (Sequence[UUID | str] | None): The IDs of the datasets to move the examples to.
 
         Returns:
-            Dict[str, Any]: The response from the server (specifies the number of examples updated).
-        """
-        if attachments_operations is not None:
-            if not (self.info.instance_flags or {}).get(
-                "dataset_examples_multipart_enabled", False
+             The LangSmith JSON response. Includes 'message', 'count', and 'example_ids'.
+
+         .. versionchanged:: 0.3.9
+
+             Updated to ...
+
+        Example:
+
+             .. code-block:: python
+
+                 from langsmith import Client
+
+                 client = Client()
+
+                 dataset = client.create_dataset("agent-qa")
+
+                 examples = [
+                     {
+                         "inputs": {"question": "what's an agent"},
+                         "outputs": {"answer": "an agent is..."},
+                         "metadata": {"difficulty": "easy"},
+                     },
+                     {
+                         "inputs": {
+                             "question": "can you explain the agent architecture in this diagram?"
+                         },
+                         "outputs": {"answer": "this diagram shows..."},
+                         "attachments": {"diagram": {"mime_type": "image/png", "data": b"..."}},
+                         "metadata": {"difficulty": "medium"},
+                     },
+                     # more examples...
+                 ]
+
+                 response = client.create_examples(dataset_name="agent-qa", examples=examples)
+                 example_ids = response["example_ids"]
+
+                 updates = [
+                     {
+                         "id": example_ids[0],
+                         "inputs": {"question": "what isn't an agent"},
+                         "outputs": {"answer": "an agent is not..."},
+                     },
+                     {
+                         "id": example_ids[1],
+                         "attachments_operations": [
+                             {"rename": {"diagram": "agent_diagram"}, "retain": []}
+                         ],
+                     },
+                 ]
+                 response = client.update_examples(dataset_name="agent-qa", updates=updates)
+                 # -> {"example_ids": [...
+        """  # noqa: E501
+        if kwargs and updates:
+            raise ValueError(
+                f"Must pass in either 'updates' or args {tuple(kwargs)}, not both."
+            )
+        if not (kwargs or updates):
+            raise ValueError("Please pass in a non-empty sequence for arg 'updates'.")
+
+        if dataset_name and dataset_id:
+            raise ValueError(
+                "Must pass in exactly one of 'dataset_name' or 'dataset_id'."
+            )
+        elif dataset_name:
+            dataset_id = self.read_dataset(dataset_name=dataset_name).id
+
+        if updates:
+            updates_obj = [
+                ls_schemas.ExampleUpdate(**x) if isinstance(x, dict) else x
+                for x in updates
+            ]
+
+            if not dataset_id:
+                if updates_obj[0].dataset_id:
+                    dataset_id = updates_obj[0].dataset_id
+                else:
+                    raise ValueError(
+                        "Must pass in (exactly) one of 'dataset_name' or 'dataset_id'."
+                    )
+
+        # For backwards compatibility
+        else:
+            example_ids = kwargs.get("example_ids", None)
+            if not example_ids:
+                raise ValueError(
+                    "Must pass in (exactly) one of 'updates' or 'example_ids'."
+                )
+            if not dataset_id:
+                if "dataset_ids" not in kwargs:
+                    # Assume all examples belong to same dataset
+                    dataset_id = self.read_example(example_ids[0]).dataset_id
+                elif len(set(kwargs["dataset_ids"])) > 1:
+                    raise ValueError("Dataset IDs must be the same for all examples")
+                elif not kwargs["dataset_ids"][0]:
+                    raise ValueError("If specified, dataset_ids must be non-null.")
+                else:
+                    dataset_id = kwargs["dataset_ids"][0]
+
+            multipart_enabled = (self.info.instance_flags or {}).get(
+                "dataset_examples_multipart_enabled"
+            )
+            if (
+                not multipart_enabled
+                and (kwargs.get("attachments_operations") or kwargs.get("attachments"))
+                is not None
             ):
                 raise ValueError(
-                    "Your LangSmith version does not allow using the attachment operations, please update to the latest version."
+                    "Your LangSmith deployment does not allow using the attachment "
+                    "operations, please upgrade your deployment to the latest version."
                 )
-        sequence_args = {
-            "inputs": inputs,
-            "outputs": outputs,
-            "metadata": metadata,
-            "splits": splits,
-            "dataset_ids": dataset_ids,
-            "attachments_operations": attachments_operations,
-        }
-        # Since inputs are required, we will check against them
-        examples_len = len(example_ids)
-        for arg_name, arg_value in sequence_args.items():
-            if arg_value is not None and len(arg_value) != examples_len:
-                raise ValueError(
-                    f"Length of {arg_name} ({len(arg_value)}) does not match"
-                    f" length of examples ({examples_len})"
+            # Since ids are required, we will check against them
+            examples_len = len(example_ids)
+            for arg_name, arg_value in kwargs.items():
+                if arg_value is not None and len(arg_value) != examples_len:
+                    raise ValueError(
+                        f"Length of {arg_name} ({len(arg_value)}) does not match"
+                        f" length of examples ({examples_len})"
+                    )
+            updates_obj = [
+                ls_schemas.ExampleUpdate(
+                    **{
+                        "id": id_,
+                        "inputs": in_,
+                        "outputs": out_,
+                        "dataset_id": dataset_id_,
+                        "metadata": metadata_,
+                        "split": split_,
+                        "attachments": attachments_,
+                        "attachments_operations": attachments_operations_,
+                    }
                 )
-        examples = [
-            {
-                "id": id_,
-                "inputs": in_,
-                "outputs": out_,
-                "dataset_id": dataset_id_,
-                "metadata": metadata_,
-                "split": split_,
-                "attachments_operations": attachments_operations_,
-            }
-            for id_, in_, out_, metadata_, split_, dataset_id_, attachments_operations_ in zip(
-                example_ids,
-                inputs or [None] * len(example_ids),
-                outputs or [None] * len(example_ids),
-                metadata or [None] * len(example_ids),
-                splits or [None] * len(example_ids),
-                dataset_ids or [None] * len(example_ids),
-                attachments_operations or [None] * len(example_ids),
+                for id_, in_, out_, metadata_, split_, dataset_id_, attachments_, attachments_operations_ in zip(
+                    example_ids,
+                    kwargs.get("inputs", (None for _ in range(examples_len))),
+                    kwargs.get("outputs", (None for _ in range(examples_len))),
+                    kwargs.get("metadata", (None for _ in range(examples_len))),
+                    kwargs.get("splits", (None for _ in range(examples_len))),
+                    kwargs.get("dataset_ids", (None for _ in range(examples_len))),
+                    kwargs.get("attachments", (None for _ in range(examples_len))),
+                    kwargs.get(
+                        "attachments_operations", (None for _ in range(examples_len))
+                    ),
+                )
+            ]
+
+        response: Any = None
+        if (self.info.instance_flags or {}).get(
+            "dataset_examples_multipart_enabled", False
+        ):
+            response = self._update_examples_multipart(
+                dataset_id=cast(uuid.UUID, dataset_id),
+                updates=updates_obj,
+                dangerously_allow_filesystem=dangerously_allow_filesystem,
             )
-        ]
-        response = self.request_with_retries(
-            "PATCH",
-            "/examples/bulk",
-            headers={**self._headers, "Content-Type": "application/json"},
-            data=(
-                _dumps_json(
-                    [
-                        {k: v for k, v in example.items() if v is not None}
-                        for example in examples
-                    ]
-                )
-            ),
-        )
-        ls_utils.raise_for_status_with_text(response)
-        return response.json()
+
+            return {
+                "message": f"{response.get('count', 0)} examples updated",
+                **response,
+            }
+        else:
+            # fallback to old method
+            response = self.request_with_retries(
+                "PATCH",
+                "/examples/bulk",
+                headers={**self._headers, "Content-Type": "application/json"},
+                data=(
+                    _dumps_json(
+                        [
+                            {
+                                k: v
+                                for k, v in dump_model(example).items()
+                                if v is not None
+                            }
+                            for example in updates_obj
+                        ]
+                    )
+                ),
+            )
+            ls_utils.raise_for_status_with_text(response)
+            return response.json()
 
     def delete_example(self, example_id: ID_TYPE) -> None:
         """Delete an example by ID.
@@ -4829,14 +5763,12 @@ class Client:
             "DELETE",
             "/examples",
             headers={**self._headers, "Content-Type": "application/json"},
-            data=_dumps_json(
-                {
-                    "ids": [
-                        str(_as_uuid(id_, f"example_ids[{i}]"))
-                        for i, id_ in enumerate(example_ids)
-                    ]
-                }
-            ),
+            params={
+                "example_ids": [
+                    str(_as_uuid(id_, f"example_ids[{i}]"))
+                    for i, id_ in enumerate(example_ids)
+                ]
+            },
         )
         ls_utils.raise_for_status_with_text(response)
 
@@ -4846,7 +5778,7 @@ class Client:
         dataset_id: Optional[ID_TYPE] = None,
         dataset_name: Optional[str] = None,
         as_of: Optional[Union[str, datetime.datetime]] = None,
-    ) -> List[str]:
+    ) -> list[str]:
         """Get the splits for a dataset.
 
         Args:
@@ -4883,7 +5815,7 @@ class Client:
         dataset_id: Optional[ID_TYPE] = None,
         dataset_name: Optional[str] = None,
         split_name: str,
-        example_ids: List[ID_TYPE],
+        example_ids: list[ID_TYPE],
         remove: bool = False,
     ) -> None:
         """Update the splits for a dataset.
@@ -4982,7 +5914,7 @@ class Client:
         ],
         *,
         fn_name: Optional[str] = None,
-    ) -> List[ls_evaluator.EvaluationResult]:
+    ) -> list[ls_evaluator.EvaluationResult]:
         from langsmith.evaluation import evaluator as ls_evaluator  # noqa: F811
 
         def _cast_result(
@@ -5019,7 +5951,7 @@ class Client:
         run: Union[ls_schemas.Run, ls_schemas.RunBase, str, uuid.UUID],
         evaluator: ls_evaluator.RunEvaluator,
         *,
-        source_info: Optional[Dict[str, Any]] = None,
+        source_info: Optional[dict[str, Any]] = None,
         reference_example: Optional[
             Union[ls_schemas.Example, str, dict, uuid.UUID]
         ] = None,
@@ -5064,11 +5996,11 @@ class Client:
             ls_evaluator.EvaluationResult, ls_evaluator.EvaluationResults, dict
         ],
         run: Optional[ls_schemas.Run] = None,
-        source_info: Optional[Dict[str, Any]] = None,
+        source_info: Optional[dict[str, Any]] = None,
         project_id: Optional[ID_TYPE] = None,
         *,
         _executor: Optional[cf.ThreadPoolExecutor] = None,
-    ) -> List[ls_evaluator.EvaluationResult]:
+    ) -> list[ls_evaluator.EvaluationResult]:
         results = self._select_eval_results(evaluator_response)
 
         def _submit_feedback(**kwargs):
@@ -5086,6 +6018,7 @@ class Client:
                 run_id_ = res.target_run_id
             elif run is not None:
                 run_id_ = run.id
+            error = res.extra.get("error", None) if res.extra is not None else None
 
             _submit_feedback(
                 run_id=run_id_,
@@ -5103,6 +6036,7 @@ class Client:
                 project_id=project_id,
                 extra=res.extra,
                 trace_id=run.trace_id if run else None,
+                error=error,
             )
         return results
 
@@ -5111,7 +6045,7 @@ class Client:
         run: Union[ls_schemas.Run, str, uuid.UUID],
         evaluator: ls_evaluator.RunEvaluator,
         *,
-        source_info: Optional[Dict[str, Any]] = None,
+        source_info: Optional[dict[str, Any]] = None,
         reference_example: Optional[
             Union[ls_schemas.Example, str, dict, uuid.UUID]
         ] = None,
@@ -5152,14 +6086,16 @@ class Client:
 
     def create_feedback(
         self,
-        run_id: Optional[ID_TYPE],
-        key: str,
+        # TODO: make run_id a kwarg and drop default value for 'key' in breaking release.
+        run_id: Optional[ID_TYPE] = None,
+        key: str = "unnamed",
         *,
         score: Union[float, int, bool, None] = None,
         value: Union[str, dict, None] = None,
+        trace_id: Optional[ID_TYPE] = None,
         correction: Union[dict, None] = None,
         comment: Union[str, None] = None,
-        source_info: Optional[Dict[str, Any]] = None,
+        source_info: Optional[dict[str, Any]] = None,
         feedback_source_type: Union[
             ls_schemas.FeedbackSourceType, str
         ] = ls_schemas.FeedbackSourceType.API,
@@ -5170,22 +6106,30 @@ class Client:
         project_id: Optional[ID_TYPE] = None,
         comparative_experiment_id: Optional[ID_TYPE] = None,
         feedback_group_id: Optional[ID_TYPE] = None,
-        extra: Optional[Dict] = None,
-        trace_id: Optional[ID_TYPE] = None,
+        extra: Optional[dict] = None,
+        error: Optional[bool] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
-        """Create a feedback in the LangSmith API.
+        """Create feedback for a run.
+
+        **NOTE**: To enable feedback to be batch uploaded in the background you must
+        specify trace_id. *We highly encourage this for latency-sensitive environments.*
 
         Args:
-            run_id (Optional[Union[UUID, str]]):
-                The ID of the run to provide feedback for. Either the run_id OR
-                the project_id must be provided.
             key (str):
-                The name of the metric or 'aspect' this feedback is about.
+                The name of the feedback metric.
             score (Optional[Union[float, int, bool]]):
                 The score to rate this run on the metric or aspect.
             value (Optional[Union[float, int, bool, str, dict]]):
                 The display value or non-numeric value for this feedback.
+            run_id (Optional[Union[UUID, str]]):
+                The ID of the run to provide feedback for. At least one of run_id,
+                trace_id, or project_id must be specified.
+            trace_id (Optional[Union[UUID, str]]):
+                The ID of the trace (i.e. root parent run) of the run to provide
+                feedback for (specified by run_id). If run_id and trace_id are the
+                same, only trace_id needs to be specified. **NOTE**: trace_id is
+                required feedback ingestion to be batched and backgrounded.
             correction (Optional[dict]):
                 The proper ground truth for this run.
             comment (Optional[str]):
@@ -5195,7 +6139,7 @@ class Client:
                 Information about the source of this feedback.
             feedback_source_type (Union[FeedbackSourceType, str]):
                 The type of feedback source, such as model (for model-generated feedback)
-                    or API.
+                or API.
             source_run_id (Optional[Union[UUID, str]]):
                 The ID of the run that generated this feedback, if a "model" type.
             feedback_id (Optional[Union[UUID, str]]):
@@ -5208,8 +6152,9 @@ class Client:
             stop_after_attempt (int, default=10):
                 The number of times to retry the request before giving up.
             project_id (Optional[Union[UUID, str]]):
-                The ID of the project_id to provide feedback on. One - and only one - of
-                this and run_id must be provided.
+                The ID of the project (or experiment) to provide feedback on. This is
+                used for creating summary metrics for experiments. Cannot specify
+                run_id or trace_id if project_id is specified, and vice versa.
             comparative_experiment_id (Optional[Union[UUID, str]]):
                 If this feedback was logged as a part of a comparative experiment, this
                 associates the feedback with that experiment.
@@ -5218,18 +6163,64 @@ class Client:
                 this is used to group feedback together.
             extra (Optional[Dict]):
                 Metadata for the feedback.
-            trace_id (Optional[Union[UUID, str]]):
-                The trace ID of the run to provide feedback for. Enables batch ingestion.
             **kwargs (Any):
                 Additional keyword arguments.
 
         Returns:
             Feedback: The created feedback object.
+
+        Example:
+            .. code-block:: python
+
+                from langsmith import trace, traceable, Client
+
+
+                @traceable
+                def foo(x):
+                    return {"y": x * 2}
+
+
+                @traceable
+                def bar(y):
+                    return {"z": y - 1}
+
+
+                client = Client()
+
+                inputs = {"x": 1}
+                with trace(name="foobar", inputs=inputs) as root_run:
+                    result = foo(**inputs)
+                    result = bar(**result)
+                    root_run.outputs = result
+                    trace_id = root_run.id
+                    child_runs = root_run.child_runs
+
+                # Provide feedback for a trace (a.k.a. a root run)
+                client.create_feedback(
+                    key="user_feedback",
+                    score=1,
+                    trace_id=trace_id,
+                )
+
+                # Provide feedback for a child run
+                foo_run_id = [run for run in child_runs if run.name == "foo"][0].id
+                client.create_feedback(
+                    key="correctness",
+                    score=0,
+                    run_id=foo_run_id,
+                    # trace_id= is optional but recommended to enable batched and backgrounded
+                    # feedback ingestion.
+                    trace_id=trace_id,
+                )
+
         """
+        run_id = run_id or trace_id
         if run_id is None and project_id is None:
-            raise ValueError("One of run_id and project_id must be provided")
+            raise ValueError("One of run_id, trace_id, or project_id  must be provided")
         if run_id is not None and project_id is not None:
-            raise ValueError("Only one of run_id and project_id must be provided")
+            raise ValueError(
+                "project_id cannot be provided if run_id or trace_id is provided"
+            )
         if kwargs:
             warnings.warn(
                 "The following arguments are no longer used in the create_feedback"
@@ -5275,7 +6266,7 @@ class Client:
                 run_id=_ensure_uuid(run_id, accept_null=True),
                 trace_id=_ensure_uuid(trace_id, accept_null=True),
                 key=key,
-                score=score,
+                score=_format_feedback_score(score),
                 value=value,
                 correction=correction,
                 comment=comment,
@@ -5289,6 +6280,7 @@ class Client:
                 ),
                 feedback_group_id=_ensure_uuid(feedback_group_id, accept_null=True),
                 extra=extra,
+                error=error,
             )
 
             use_multipart = (self.info.batch_ingest_config or {}).get(
@@ -5303,6 +6295,7 @@ class Client:
                     self.tracing_queue is not None or self.compressed_traces is not None
                 )
                 and feedback.trace_id is not None
+                and self.otel_exporter is None
             ):
                 serialized_op = serialize_feedback_dict(feedback)
                 if self.compressed_traces is not None:
@@ -5366,9 +6359,9 @@ class Client:
         Returns:
             None
         """
-        feedback_update: Dict[str, Any] = {}
+        feedback_update: dict[str, Any] = {}
         if score is not None:
-            feedback_update["score"] = score
+            feedback_update["score"] = _format_feedback_score(score)
         if value is not None:
             feedback_update["value"] = value
         if correction is not None:
@@ -5547,7 +6540,7 @@ class Client:
         Returns:
             FeedbackIngestToken: The pre-signed URL for uploading feedback data.
         """
-        body: Dict[str, Any] = {
+        body: dict[str, Any] = {
             "run_id": run_id,
             "feedback_key": feedback_key,
             "feedback_config": feedback_config,
@@ -5711,7 +6704,7 @@ class Client:
     def list_annotation_queues(
         self,
         *,
-        queue_ids: Optional[List[ID_TYPE]] = None,
+        queue_ids: Optional[list[ID_TYPE]] = None,
         name: Optional[str] = None,
         name_contains: Optional[str] = None,
         limit: Optional[int] = None,
@@ -5756,7 +6749,8 @@ class Client:
         name: str,
         description: Optional[str] = None,
         queue_id: Optional[ID_TYPE] = None,
-    ) -> ls_schemas.AnnotationQueue:
+        rubric_instructions: Optional[str] = None,
+    ) -> ls_schemas.AnnotationQueueWithDetails:
         """Create an annotation queue on the LangSmith API.
 
         Args:
@@ -5766,6 +6760,8 @@ class Client:
                 The description of the annotation queue.
             queue_id (Optional[Union[UUID, str]]):
                 The ID of the annotation queue.
+            rubric_instructions (Optional[str]):
+                The rubric instructions for the annotation queue.
 
         Returns:
             AnnotationQueue: The created annotation queue object.
@@ -5774,6 +6770,7 @@ class Client:
             "name": name,
             "description": description,
             "id": str(queue_id) if queue_id is not None else str(uuid.uuid4()),
+            "rubric_instructions": rubric_instructions,
         }
         response = self.request_with_retries(
             "POST",
@@ -5781,7 +6778,7 @@ class Client:
             json={k: v for k, v in body.items() if v is not None},
         )
         ls_utils.raise_for_status_with_text(response)
-        return ls_schemas.AnnotationQueue(
+        return ls_schemas.AnnotationQueueWithDetails(
             **response.json(),
         )
 
@@ -5794,11 +6791,22 @@ class Client:
         Returns:
             AnnotationQueue: The annotation queue object.
         """
-        # TODO: Replace when actual endpoint is added
-        return next(self.list_annotation_queues(queue_ids=[queue_id]))
+        base_url = f"/annotation-queues/{_as_uuid(queue_id, 'queue_id')}"
+        response = self.request_with_retries(
+            "GET",
+            f"{base_url}",
+            headers=self._headers,
+        )
+        ls_utils.raise_for_status_with_text(response)
+        return ls_schemas.AnnotationQueueWithDetails(**response.json())
 
     def update_annotation_queue(
-        self, queue_id: ID_TYPE, *, name: str, description: Optional[str] = None
+        self,
+        queue_id: ID_TYPE,
+        *,
+        name: str,
+        description: Optional[str] = None,
+        rubric_instructions: Optional[str] = None,
     ) -> None:
         """Update an annotation queue with the specified queue_id.
 
@@ -5806,6 +6814,8 @@ class Client:
             queue_id (Union[UUID, str]): The ID of the annotation queue to update.
             name (str): The new name for the annotation queue.
             description (Optional[str]): The new description for the
+                annotation queue. Defaults to None.
+            rubric_instructions (Optional[str]): The new rubric instructions for the
                 annotation queue. Defaults to None.
 
         Returns:
@@ -5817,6 +6827,7 @@ class Client:
             json={
                 "name": name,
                 "description": description,
+                "rubric_instructions": rubric_instructions,
             },
         )
         ls_utils.raise_for_status_with_text(response)
@@ -5838,7 +6849,7 @@ class Client:
         ls_utils.raise_for_status_with_text(response)
 
     def add_runs_to_annotation_queue(
-        self, queue_id: ID_TYPE, *, run_ids: List[ID_TYPE]
+        self, queue_id: ID_TYPE, *, run_ids: list[ID_TYPE]
     ) -> None:
         """Add runs to an annotation queue with the specified queue ID.
 
@@ -5909,7 +6920,7 @@ class Client:
         reference_dataset: Optional[ID_TYPE] = None,
         description: Optional[str] = None,
         created_at: Optional[datetime.datetime] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: Optional[dict[str, Any]] = None,
         id: Optional[ID_TYPE] = None,
     ) -> ls_schemas.ComparativeExperiment:
         """Create a comparative experiment on the LangSmith API.
@@ -5937,7 +6948,7 @@ class Client:
             ).reference_dataset_id
         if not reference_dataset:
             raise ValueError("A reference dataset is required.")
-        body: Dict[str, Any] = {
+        body: dict[str, Any] = {
             "id": id or str(uuid.uuid4()),
             "name": name,
             "experiment_ids": experiments,
@@ -5968,16 +6979,17 @@ class Client:
         evaluation: Optional[Any] = None,
         concurrency_level: int = 5,
         project_name: Optional[str] = None,
-        project_metadata: Optional[Dict[str, Any]] = None,
+        project_metadata: Optional[dict[str, Any]] = None,
         dataset_version: Optional[Union[datetime.datetime, str]] = None,
         verbose: bool = False,
-        input_mapper: Optional[Callable[[Dict], Any]] = None,
+        input_mapper: Optional[Callable[[dict], Any]] = None,
         revision_id: Optional[str] = None,
         **kwargs: Any,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Asynchronously run the Chain or language model on a dataset.
 
         .. deprecated:: 0.1.0
+
            This method is deprecated. Use :func:`langsmith.aevaluate` instead.
         """  # noqa: E501
         warnings.warn(
@@ -6016,16 +7028,17 @@ class Client:
         evaluation: Optional[Any] = None,
         concurrency_level: int = 5,
         project_name: Optional[str] = None,
-        project_metadata: Optional[Dict[str, Any]] = None,
+        project_metadata: Optional[dict[str, Any]] = None,
         dataset_version: Optional[Union[datetime.datetime, str]] = None,
         verbose: bool = False,
-        input_mapper: Optional[Callable[[Dict], Any]] = None,
+        input_mapper: Optional[Callable[[dict], Any]] = None,
         revision_id: Optional[str] = None,
         **kwargs: Any,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Run the Chain or language model on a dataset.
 
         .. deprecated:: 0.1.0
+
            This method is deprecated. Use :func:`langsmith.aevaluate` instead.
         """  # noqa: E501  # noqa: E501
         warnings.warn(
@@ -6102,7 +7115,7 @@ class Client:
 
     def _like_or_unlike_prompt(
         self, prompt_identifier: str, like: bool
-    ) -> Dict[str, int]:
+    ) -> dict[str, int]:
         """Like or unlike a prompt.
 
         Args:
@@ -6158,7 +7171,7 @@ class Client:
         prompt = self.get_prompt(prompt_identifier)
         return True if prompt else False
 
-    def like_prompt(self, prompt_identifier: str) -> Dict[str, int]:
+    def like_prompt(self, prompt_identifier: str) -> dict[str, int]:
         """Like a prompt.
 
         Args:
@@ -6170,7 +7183,7 @@ class Client:
         """
         return self._like_or_unlike_prompt(prompt_identifier, like=True)
 
-    def unlike_prompt(self, prompt_identifier: str) -> Dict[str, int]:
+    def unlike_prompt(self, prompt_identifier: str) -> dict[str, int]:
         """Unlike a prompt.
 
         Args:
@@ -6288,7 +7301,7 @@ class Client:
         if not self._current_tenant_is_owner(owner=owner):
             raise self._owner_conflict_error("create a prompt", owner)
 
-        json: Dict[str, Union[str, bool, Sequence[str]]] = {
+        json: dict[str, Union[str, bool, Sequence[str]]] = {
             "repo_handle": prompt_name,
             "description": description or "",
             "readme": readme or "",
@@ -6331,8 +7344,8 @@ class Client:
             from langchain_core.load.dump import dumps
         except ImportError:
             raise ImportError(
-                "The client.create_commit function requires the langchain_core"
-                "package to run.\nInstall with `pip install langchain_core`"
+                "The client.create_commit function requires the langchain-core"
+                "package to run.\nInstall with `pip install langchain-core`"
             )
 
         json_object = dumps(object)
@@ -6362,7 +7375,7 @@ class Client:
         tags: Optional[Sequence[str]] = None,
         is_public: Optional[bool] = None,
         is_archived: Optional[bool] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Update a prompt's metadata.
 
         To update the content of a prompt, use push_prompt or create_commit instead.
@@ -6391,7 +7404,7 @@ class Client:
                 "https://smith.langchain.com/prompts"
             )
 
-        json: Dict[str, Union[str, bool, Sequence[str]]] = {}
+        json: dict[str, Union[str, bool, Sequence[str]]] = {}
 
         if description is not None:
             json["description"] = description
@@ -6522,7 +7535,7 @@ class Client:
     ) -> Any:
         """Pull a prompt and return it as a LangChain PromptTemplate.
 
-        This method requires `langchain_core`.
+        This method requires `langchain-core <https://pypi.org/project/langchain-core/>`__.
 
         Args:
             prompt_identifier (str): The identifier of the prompt.
@@ -6540,8 +7553,8 @@ class Client:
             from langchain_core.runnables.base import RunnableBinding, RunnableSequence
         except ImportError:
             raise ImportError(
-                "The client.pull_prompt function requires the langchain_core"
-                "package to run.\nInstall with `pip install langchain_core`"
+                "The client.pull_prompt function requires the langchain-core"
+                "package to run.\nInstall with `pip install langchain-core`"
             )
         try:
             from langchain_core._api import suppress_langchain_beta_warning
@@ -6711,7 +7724,7 @@ class Client:
     @overload
     def evaluate(
         self,
-        target: Union[Tuple[EXPERIMENT_T, EXPERIMENT_T]],
+        target: Union[tuple[EXPERIMENT_T, EXPERIMENT_T]],
         /,
         data: Optional[DATA_T] = None,
         evaluators: Optional[Sequence[COMPARATIVE_EVALUATOR_T]] = None,
@@ -6730,7 +7743,7 @@ class Client:
     def evaluate(
         self,
         target: Union[
-            TARGET_T, Runnable, EXPERIMENT_T, Tuple[EXPERIMENT_T, EXPERIMENT_T]
+            TARGET_T, Runnable, EXPERIMENT_T, tuple[EXPERIMENT_T, EXPERIMENT_T]
         ],
         /,
         data: Optional[DATA_T] = None,
@@ -6746,6 +7759,7 @@ class Client:
         blocking: bool = True,
         experiment: Optional[EXPERIMENT_T] = None,
         upload_results: bool = True,
+        error_handling: Literal["log", "ignore"] = "log",
         **kwargs: Any,
     ) -> Union[ExperimentResults, ComparativeExperimentResults]:
         r"""Evaluate a target system on a given dataset.
@@ -6782,6 +7796,9 @@ class Client:
                 two-tuple fo experiments.
             upload_results (bool, default=True): Whether to upload the results to LangSmith.
                 Defaults to True.
+            error_handling (str, default="log"): How to handle individual run errors. 'log'
+                will trace the runs with the error message as part of the experiment,
+                'ignore' will not count the run as part of the experiment at all.
             **kwargs (Any): Additional keyword arguments to pass to the evaluator.
 
         Returns:
@@ -6981,6 +7998,7 @@ class Client:
             blocking=blocking,
             experiment=experiment,
             upload_results=upload_results,
+            error_handling=error_handling,
             **kwargs,
         )
 
@@ -7008,6 +8026,7 @@ class Client:
         blocking: bool = True,
         experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
         upload_results: bool = True,
+        error_handling: Literal["log", "ignore"] = "log",
         **kwargs: Any,
     ) -> AsyncExperimentResults:
         r"""Evaluate an async target system on a given dataset.
@@ -7041,6 +8060,9 @@ class Client:
                 usage only.
             upload_results (bool, default=True): Whether to upload the results to LangSmith.
                 Defaults to True.
+            error_handling (str, default="log"): How to handle individual run errors. 'log'
+                will trace the runs with the error message as part of the experiment,
+                'ignore' will not count the run as part of the experiment at all.
             **kwargs (Any): Additional keyword arguments to pass to the evaluator.
 
         Returns:
@@ -7222,13 +8244,14 @@ class Client:
             blocking=blocking,
             experiment=experiment,
             upload_results=upload_results,
+            error_handling=error_handling,
             **kwargs,
         )
 
 
 def convert_prompt_to_openai_format(
     messages: Any,
-    model_kwargs: Optional[Dict[str, Any]] = None,
+    model_kwargs: Optional[dict[str, Any]] = None,
 ) -> dict:
     """Convert a prompt to OpenAI format.
 
@@ -7267,7 +8290,7 @@ def convert_prompt_to_openai_format(
 
 def convert_prompt_to_anthropic_format(
     messages: Any,
-    model_kwargs: Optional[Dict[str, Any]] = None,
+    model_kwargs: Optional[dict[str, Any]] = None,
 ) -> dict:
     """Convert a prompt to Anthropic format.
 
@@ -7307,13 +8330,19 @@ def convert_prompt_to_anthropic_format(
 
 
 def _convert_stored_attachments_to_attachments_dict(
-    data: dict, *, attachments_key: str
+    data: dict, *, attachments_key: str, api_url: Optional[str] = None
 ) -> dict[str, AttachmentInfo]:
     """Convert attachments from the backend database format to the user facing format."""
     attachments_dict = {}
     if attachments_key in data and data[attachments_key]:
         for key, value in data[attachments_key].items():
-            response = requests.get(value["presigned_url"], stream=True)
+            if not key.startswith("attachment."):
+                continue
+            if api_url is not None:
+                full_url = _construct_url(api_url, value["presigned_url"])
+            else:
+                full_url = value["presigned_url"]
+            response = requests.get(full_url, stream=True)
             response.raise_for_status()
             reader = io.BytesIO(response.content)
             attachments_dict[key.removeprefix("attachment.")] = AttachmentInfo(
@@ -7326,7 +8355,7 @@ def _convert_stored_attachments_to_attachments_dict(
     return attachments_dict
 
 
-def _close_files(files: List[io.BufferedReader]) -> None:
+def _close_files(files: list[io.BufferedReader]) -> None:
     """Close all opened files used in multipart requests."""
     for file in files:
         try:
@@ -7334,3 +8363,54 @@ def _close_files(files: List[io.BufferedReader]) -> None:
         except Exception:
             logger.debug("Could not close file: %s", file.name)
             pass
+
+
+def _dataset_examples_path(api_url: str, dataset_id: ID_TYPE) -> str:
+    if api_url.rstrip("/").endswith("/v1"):
+        return f"/platform/datasets/{dataset_id}/examples"
+    else:
+        return f"/v1/platform/datasets/{dataset_id}/examples"
+
+
+def _construct_url(api_url: str, pathname: str) -> str:
+    if pathname.startswith("http"):
+        return pathname
+    if api_url.startswith("https://"):
+        http = "https://"
+        api_url = api_url[len("https://") :]
+    elif api_url.startswith("http://"):
+        http = "http://"
+        api_url = api_url[len("http://") :]
+    else:
+        raise ValueError(
+            f"api_url must start with 'http://' or 'https://'. Received {api_url=}"
+        )
+
+    api_parts = api_url.rstrip("/").split("/")
+    path_parts = pathname.lstrip("/").split("/")
+
+    if not api_parts:
+        raise ValueError(
+            "Must specify non-empty api_url or pathname must be a full url. "
+            f"Received {api_url=}, {pathname=}"
+        )
+    if not path_parts:
+        return api_url
+
+    if path_parts[0] == "api":
+        if api_parts[-1] == "api":
+            api_parts = api_parts[:-1]
+        elif api_parts[-2:] == ["api", "v1"]:
+            api_parts = api_parts[:-2]
+    parts = api_parts + path_parts
+    return http + "/".join(p for p in parts if p)
+
+
+def dump_model(model) -> dict[str, Any]:
+    """Dump model depending on pydantic version."""
+    if hasattr(model, "model_dump"):
+        return model.model_dump()
+    elif hasattr(model, "dict"):
+        return model.dict()
+    else:
+        raise TypeError("Unsupported model type")

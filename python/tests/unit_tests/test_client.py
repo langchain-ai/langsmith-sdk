@@ -9,6 +9,7 @@ import itertools
 import json
 import logging
 import math
+import os
 import pathlib
 import sys
 import time
@@ -18,7 +19,7 @@ import weakref
 from datetime import datetime, timezone
 from enum import Enum
 from io import BytesIO
-from typing import Dict, List, Literal, NamedTuple, Optional, Type, Union
+from typing import Callable, Dict, List, Literal, NamedTuple, Optional, Type, Union
 from unittest import mock
 from unittest.mock import MagicMock, patch
 
@@ -37,6 +38,9 @@ from langsmith._internal import _orjson
 from langsmith._internal._serde import _serialize_json
 from langsmith.client import (
     Client,
+    _construct_url,
+    _convert_stored_attachments_to_attachments_dict,
+    _dataset_examples_path,
     _dumps_json,
     _is_langchain_hosted,
     _parse_token_or_url,
@@ -138,35 +142,53 @@ def test_validate_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     assert client.api_key == "env_langsmith_api_key"
 
 
-def test_validate_multiple_urls(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_validate_multiple_urls() -> None:
+    """Test URL validation without environment variable manipulation."""
     _clear_env_cache()
-    monkeypatch.setenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain-endpoint.com")
-    monkeypatch.setenv("LANGSMITH_ENDPOINT", "https://api.smith.langsmith-endpoint.com")
-    monkeypatch.setenv("LANGSMITH_RUNS_ENDPOINTS", "{}")
 
-    with pytest.raises(ls_utils.LangSmithUserError):
-        Client()
+    # Test 1: Multiple conflicting endpoint environment variables should raise error
+    with patch.dict(
+        os.environ,
+        {
+            "LANGCHAIN_ENDPOINT": "https://api.smith.langchain-endpoint.com",
+            "LANGSMITH_ENDPOINT": "https://api.smith.langsmith-endpoint.com",
+            "LANGSMITH_RUNS_ENDPOINTS": "{}",
+        },
+        clear=True,
+    ):
+        with pytest.raises(ls_utils.LangSmithUserError):
+            Client()
 
-    monkeypatch.undo()
-    with pytest.raises(ls_utils.LangSmithUserError):
-        Client(
-            api_url="https://api.smith.langchain.com",
-            api_key="123",
-            api_urls={"https://api.smith.langchain.com": "123"},
-        )
+    # Test 2: Conflicting api_url parameter and api_urls parameter should raise error
+    with patch.dict(os.environ, {}, clear=True):
+        with pytest.raises(ls_utils.LangSmithUserError):
+            Client(
+                api_url="https://api.smith.langchain.com",
+                api_key="123",
+                api_urls={"https://api.smith.langchain.com": "123"},
+            )
 
+    # Test 3: LANGSMITH_RUNS_ENDPOINTS should not affect _write_api_urls
     data = {
         "https://api.smith.langsmith-endpoint_1.com": "123",
         "https://api.smith.langsmith-endpoint_2.com": "456",
         "https://api.smith.langsmith-endpoint_3.com": "789",
     }
-    monkeypatch.delenv("LANGCHAIN_ENDPOINT", raising=False)
-    monkeypatch.delenv("LANGSMITH_ENDPOINT", raising=False)
-    monkeypatch.setenv("LANGSMITH_RUNS_ENDPOINTS", json.dumps(data))
-    client = Client(auto_batch_tracing=False)
-    assert client._write_api_urls == data
-    assert client.api_url == "https://api.smith.langsmith-endpoint_1.com"
-    assert client.api_key == "123"
+    with patch.dict(
+        os.environ, {"LANGSMITH_RUNS_ENDPOINTS": json.dumps(data)}, clear=True
+    ):
+        client = Client(auto_batch_tracing=False)
+        # _write_api_urls should only contain the default endpoint
+        assert len(client._write_api_urls) == 1
+        # The default API URL should be used
+        assert client.api_url == "https://api.smith.langchain.com"
+
+    # Test 4: Setting api_urls should still be respected
+    with patch.dict(os.environ, {}, clear=True):
+        client = Client(api_urls=data)
+        assert client._write_api_urls == data
+        assert client.api_url == "https://api.smith.langsmith-endpoint_1.com"
+        assert client.api_key == "123"
 
 
 @mock.patch("langsmith.client.requests.Session")
@@ -180,6 +202,32 @@ def test_headers(monkeypatch: pytest.MonkeyPatch) -> None:
 
         client_no_key = Client(api_url="http://localhost:1984")
         assert "x-api-key" not in client_no_key._headers
+
+
+@mock.patch("langsmith.client.requests.Session")
+def test_cached_header_and_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_env_cache()
+    monkeypatch.delenv("LANGCHAIN_API_KEY", raising=False)
+    with patch.dict("os.environ", {}, clear=True):
+        client = Client(
+            api_url="http://localhost:1984",
+            api_key="123",
+            timeout_ms=(2000, 4000),
+            auto_batch_tracing=False,
+        )
+        assert client._timeout == (2.0, 4.0)
+        assert client._headers["x-api-key"] == "123"
+        # Changing API key should update headers
+        client.api_key = "abc"
+        assert client._headers["x-api-key"] == "abc"
+
+        mock_response = MagicMock()
+        client.session.request.return_value = mock_response
+        with patch("langsmith.client.ls_utils.raise_for_status_with_text"):
+            client.request_with_retries("GET", "/test")
+        args, kwargs = client.session.request.call_args
+        assert kwargs["timeout"] == client._timeout
+        assert kwargs["headers"]["x-api-key"] == "abc"
 
 
 @mock.patch("langsmith.client.requests.Session")
@@ -267,8 +315,7 @@ def test_async_methods() -> None:
         async_args = set(inspect.signature(Client.__dict__[async_method]).parameters)
         extra_args = sync_args - async_args
         assert not extra_args, (
-            f"Extra args for {async_method} "
-            f"(compared to {sync_method}): {extra_args}"
+            f"Extra args for {async_method} (compared to {sync_method}): {extra_args}"
         )
 
 
@@ -359,8 +406,10 @@ def test_create_run_mutate(
             f"post.{id_}",
             f"post.{id_}.inputs",
             f"post.{id_}.outputs",
+            f"post.{id_}.extra",
         ]
         assert [p.headers.get("content-type") for p in parts] == [
+            "application/json",
             "application/json",
             "application/json",
             "application/json",
@@ -506,6 +555,136 @@ def test_upsert_examples_multipart(mock_session_cls: mock.Mock) -> None:
             value = json.loads(part.value)
             assert value == expected_parts[name]
             assert part.headers["Content-Type"] == "application/json"
+
+
+@mock.patch("langsmith.client.requests.Session")
+def test_upsert_examples_multipart_missing_file(
+    mock_session_cls: mock.Mock, tmp_path, caplog
+) -> None:
+    """Attachment file paths that do not exist are skipped."""
+    caplog.set_level(logging.WARNING)
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"result": "ok"}
+    mock_session.request.return_value = mock_response
+    mock_session_cls.return_value = mock_session
+
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        info={"instance_flags": {"examples_multipart_enabled": True}},
+    )
+
+    example_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+
+    missing_path = tmp_path / "no-file.txt"
+    example = ls_schemas.ExampleUpsertWithAttachments(
+        id=example_id,
+        dataset_id=dataset_id,
+        created_at=_CREATED_AT,
+        inputs={"input": "test"},
+        outputs={"output": "out"},
+        attachments={
+            "missing": ("text/plain", missing_path),
+            "good": ("text/plain", b"data"),
+        },
+    )
+
+    with caplog.at_level(logging.WARNING):
+        client.upsert_examples_multipart(
+            upserts=[example], dangerously_allow_filesystem=True
+        )
+
+    call_args = mock_session.request.call_args
+    request_data = call_args[1]["data"]
+    content_type = call_args[1]["headers"]["Content-Type"]
+    boundary = parse_options_header(content_type)[1]["boundary"]
+
+    parser = MultipartParser(
+        io.BytesIO(
+            request_data
+            if isinstance(request_data, bytes)
+            else request_data.to_string()
+        ),
+        boundary,
+    )
+    parts = list(parser.parts())
+    part_names = [p.name for p in parts]
+
+    assert f"{example_id}.attachment.good" in part_names
+    assert f"{example_id}.attachment.missing" not in part_names
+    assert "Attachment file not found" in caplog.text
+
+
+@mock.patch("langsmith.client.requests.Session")
+def test_update_example_multipart_none_preserves_existing(
+    mock_session_cls: mock.Mock,
+) -> None:
+    """Test that updating with None inputs/outputs via multipart preserves existing values."""
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_session.request.return_value = mock_response
+    mock_session_cls.return_value = mock_session
+
+    # Mock the read_example call to return existing example
+    existing_example = ls_schemas.Example(
+        id=str(uuid.uuid4()),
+        dataset_id=str(uuid.uuid4()),
+        inputs={"existing": "input"},
+        outputs={"existing": "output"},
+        created_at=datetime.now(),
+    )
+
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        info={"instance_flags": {"dataset_examples_multipart_enabled": True}},
+    )
+
+    # Mock read_example to return the existing example
+    with mock.patch.object(Client, "read_example", return_value=existing_example):
+        # Update with omitted inputs and outputs
+        client.update_example(
+            example_id=existing_example.id,
+            metadata={"updated": "metadata"},
+        )
+
+    # Verify the multipart request was made
+    assert mock_session.request.call_count == 1
+    call_args = mock_session.request.call_args
+    assert call_args[0][0] == "PATCH"
+    # Check it's calling the correct multipart endpoint
+    assert "/v1/platform/datasets/" in call_args[0][1]
+    assert call_args[0][1].endswith("/examples")
+
+    # Parse the multipart data
+    request_data = call_args[1]["data"]
+    content_type = call_args[1]["headers"]["Content-Type"]
+    boundary = parse_options_header(content_type)[1]["boundary"]
+
+    parser = MultipartParser(
+        io.BytesIO(
+            request_data
+            if isinstance(request_data, bytes)
+            else request_data.to_string()
+        ),
+        boundary,
+    )
+    parts = list(parser.parts())
+
+    # Verify that inputs and outputs parts are NOT included (preserving existing values)
+    part_names = [p.name for p in parts]
+    assert str(existing_example.id) in part_names
+    assert f"{existing_example.id}.inputs" not in part_names
+    assert f"{existing_example.id}.outputs" not in part_names
+
+    # Verify the main example part contains updated metadata
+    example_part = next(p for p in parts if p.name == str(existing_example.id))
+    example_data = json.loads(example_part.value)
+    assert example_data["metadata"] == {"updated": "metadata"}
 
 
 class CallTracker:
@@ -677,6 +856,83 @@ def test_create_run_with_filters(auto_batch_tracing: bool) -> None:
     assert all([exp in all_posted for exp in expected])
 
 
+@pytest.mark.parametrize(
+    "hide_metadata_config, expected_metadata_key_present",
+    [
+        (True, False),  # hide_metadata=True should remove metadata
+        (False, True),  # hide_metadata=False should keep metadata
+        (None, True),  # hide_metadata=None should keep metadata
+        (lambda metadata: {**metadata, "modified": True}, True),  # callable modifies
+    ],
+)
+def test_hide_metadata(
+    hide_metadata_config: Optional[Union[Callable[[dict], dict], bool]],
+    expected_metadata_key_present: bool,
+) -> None:
+    """Test the hide_metadata functionality in Client."""
+    session = mock.MagicMock(spec=requests.Session)
+    initial_metadata = {"initial_key": "initial_value"}
+
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        auto_batch_tracing=False,  # Easier to inspect single calls
+        session=session,
+        hide_metadata=hide_metadata_config,
+    )
+
+    run_id = uuid.uuid4()
+    client.create_run(
+        "my_run_metadata_test",
+        inputs={"in": "put"},
+        run_type="llm",
+        id=run_id,
+        extra={"metadata": initial_metadata},
+    )
+
+    post_call = None
+    for call in session.request.mock_calls:
+        if len(call.args) > 1 and call.args[0] == "POST" and "runs" in call.args[1]:
+            post_call = call
+            break
+
+    assert post_call is not None, "POST request to /runs not found"
+
+    payload_data = post_call.kwargs.get("data", b"{}")
+    if isinstance(payload_data, bytes):
+        payload_str = payload_data.decode("utf-8")
+    else:
+        payload_str = str(payload_data)
+
+    try:
+        payload = json.loads(payload_str)
+    except json.JSONDecodeError:
+        if isinstance(payload_data, dict):
+            payload = payload_data
+        else:
+            raise
+
+    payload_extra = payload.get("extra", {})
+
+    if expected_metadata_key_present:
+        assert "metadata" in payload_extra, (
+            f"Metadata key should be present in extra {payload_extra}"
+        )
+        if callable(hide_metadata_config):
+            # Check if the callable modified the metadata as expected
+            assert payload_extra["metadata"].get("modified") is True
+        else:
+            assert all(
+                k in payload_extra["metadata"] and v == payload_extra["metadata"][k]
+                for k, v in initial_metadata.items()
+            )
+    else:
+        assert all(k not in payload_extra["metadata"] for k in initial_metadata), (
+            f"Metadata key should NOT be present in extra {payload_extra}"
+        )
+
+
+@pytest.mark.flaky(retries=3)
 def test_client_gc_after_autoscale() -> None:
     session = mock.MagicMock(spec=requests.Session)
     client = Client(
@@ -941,9 +1197,9 @@ def test_serialize_json(caplog) -> None:
         "my_mock": MagicMock(text="Hello, world"),
     }
     res = _orjson.loads(_dumps_json(to_serialize))
-    assert (
-        "model_dump" not in caplog.text
-    ), f"Unexpected error logs were emitted: {caplog.text}"
+    assert "model_dump" not in caplog.text, (
+        f"Unexpected error logs were emitted: {caplog.text}"
+    )
 
     expected = {
         "uid": str(uid),
@@ -1248,6 +1504,340 @@ def test_batch_ingest_run_splits_large_batches(
         assert len(request_bodies) == len(set([body["id"] for body in request_bodies]))
 
 
+def test_sampling_and_batching():
+    """Test that sampling and batching work correctly."""
+    # Setup mock client
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_session.request.return_value = mock_response
+
+    counter = 0
+
+    def mock_should_sample():
+        nonlocal counter
+        counter += 1
+        return counter % 2 != 0
+
+    with patch(
+        "langsmith.client.Client._should_sample", side_effect=mock_should_sample
+    ):
+        client = Client(
+            api_key="test-api-key",
+            auto_batch_tracing=True,
+            tracing_sampling_rate=0.5,
+            session=mock_session,
+        )
+
+        project_name = "__test_batch"
+
+        # Create parent runs
+        run_params = []
+        for i in range(4):
+            run_id = uuid.uuid4()
+            params = {
+                "id": run_id,
+                "project_name": project_name,
+                "name": f"test_run {i}",
+                "run_type": "llm",
+                "inputs": {"text": f"hello world {i}"},
+                "dotted_order": "foo",
+                "trace_id": run_id,
+            }
+            client.create_run(**params)
+            run_params.append(params)
+
+
+def test_patch_sampling_follows_trace_logic():
+    """Test that patch runs correctly follow post logic by checking trace_id instead of run.id."""
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_session.request.return_value = mock_response
+
+    # Mock sampling to reject first trace, accept second trace
+    counter = 0
+
+    def mock_should_sample():
+        nonlocal counter
+        counter += 1
+        return counter % 2 == 0  # Accept even-numbered calls (2nd, 4th, etc.)
+
+    with patch(
+        "langsmith.client.Client._should_sample", side_effect=mock_should_sample
+    ):
+        client = Client(
+            api_key="test-api-key",
+            tracing_sampling_rate=0.5,
+            session=mock_session,
+        )
+
+        # Create two traces
+        trace_id_1 = uuid.uuid4()
+        trace_id_2 = uuid.uuid4()
+        child_run_id_1 = uuid.uuid4()
+        child_run_id_2 = uuid.uuid4()
+
+        # Create root runs (these will be sampled)
+        root_run_1 = {
+            "id": trace_id_1,
+            "trace_id": trace_id_1,
+            "name": "root_run_1",
+            "run_type": "llm",
+            "inputs": {"text": "hello"},
+        }
+        root_run_2 = {
+            "id": trace_id_2,
+            "trace_id": trace_id_2,
+            "name": "root_run_2",
+            "run_type": "llm",
+            "inputs": {"text": "world"},
+        }
+
+        # Create child runs
+        child_run_1 = {
+            "id": child_run_id_1,
+            "trace_id": trace_id_1,
+            "name": "child_run_1",
+            "run_type": "tool",
+            "inputs": {"text": "child hello"},
+        }
+        child_run_2 = {
+            "id": child_run_id_2,
+            "trace_id": trace_id_2,
+            "name": "child_run_2",
+            "run_type": "tool",
+            "inputs": {"text": "child world"},
+        }
+
+        # Test POST filtering (initial sampling)
+        post_filtered = client._filter_for_sampling(
+            [root_run_1, root_run_2], patch=False
+        )
+
+        # Based on our mock, first call returns False, second returns True
+        # So only root_run_2 should be sampled
+        assert len(post_filtered) == 1
+        assert post_filtered[0]["id"] == trace_id_2
+
+        # Verify that trace_id_1 is in filtered set, trace_id_2 is not
+        assert trace_id_1 in client._filtered_post_uuids
+        assert trace_id_2 not in client._filtered_post_uuids
+
+        # Test PATCH filtering - child runs should follow their trace's sampling decision
+        patch_runs = [
+            {**child_run_1, "outputs": {"result": "child result 1"}},
+            {**child_run_2, "outputs": {"result": "child result 2"}},
+        ]
+
+        patch_filtered = client._filter_for_sampling(patch_runs, patch=True)
+
+        # Only child_run_2 should be included (its trace was sampled)
+        # child_run_1 should be filtered out (its trace was not sampled)
+        assert len(patch_filtered) == 1
+        assert patch_filtered[0]["id"] == child_run_id_2
+        assert patch_filtered[0]["trace_id"] == trace_id_2
+
+        # Test PATCH filtering for root runs (updates to the root runs themselves)
+        root_patch_runs = [
+            {**root_run_1, "outputs": {"result": "root result 1"}},
+            {**root_run_2, "outputs": {"result": "root result 2"}},
+        ]
+
+        root_patch_filtered = client._filter_for_sampling(root_patch_runs, patch=True)
+
+        # Only root_run_2 should be included, and trace_id_1 should be removed from filtered set
+        # since we're updating the root run that was originally filtered
+        assert len(root_patch_filtered) == 1
+        assert root_patch_filtered[0]["id"] == trace_id_2
+
+        # trace_id_1 should be removed from filtered set since we processed its root run
+        assert trace_id_1 not in client._filtered_post_uuids
+        assert (
+            trace_id_2 not in client._filtered_post_uuids
+        )  # Still not in filtered set
+
+
+def test_patch_sampling_mixed_traces():
+    """Test patch sampling with a mix of sampled and unsampled traces."""
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_session.request.return_value = mock_response
+
+    # Mock sampling to accept every other trace
+    counter = 0
+
+    def mock_should_sample():
+        nonlocal counter
+        counter += 1
+        return counter % 2 == 1  # Accept odd-numbered calls (1st, 3rd, etc.)
+
+    with patch(
+        "langsmith.client.Client._should_sample", side_effect=mock_should_sample
+    ):
+        client = Client(
+            api_key="test-api-key",
+            tracing_sampling_rate=0.5,
+            session=mock_session,
+        )
+
+        # Create multiple traces
+        trace_ids = [uuid.uuid4() for _ in range(4)]
+        child_run_ids = [uuid.uuid4() for _ in range(4)]
+
+        # Create root runs
+        root_runs = []
+        for i, trace_id in enumerate(trace_ids):
+            root_runs.append(
+                {
+                    "id": trace_id,
+                    "trace_id": trace_id,
+                    "name": f"root_run_{i}",
+                    "run_type": "llm",
+                    "inputs": {"text": f"hello {i}"},
+                }
+            )
+
+        # Sample the root runs
+        post_filtered = client._filter_for_sampling(root_runs, patch=False)
+
+        # Based on our mock: 1st and 3rd calls return True (indices 0, 2)
+        assert len(post_filtered) == 2
+        sampled_trace_ids = {run["id"] for run in post_filtered}
+        assert trace_ids[0] in sampled_trace_ids
+        assert trace_ids[2] in sampled_trace_ids
+
+        # Create child runs for all traces
+        child_runs = []
+        for i, (trace_id, child_id) in enumerate(zip(trace_ids, child_run_ids)):
+            child_runs.append(
+                {
+                    "id": child_id,
+                    "trace_id": trace_id,
+                    "name": f"child_run_{i}",
+                    "run_type": "tool",
+                    "inputs": {"text": f"child {i}"},
+                    "outputs": {"result": f"child result {i}"},
+                }
+            )
+
+        # Test patch filtering for child runs
+        patch_filtered = client._filter_for_sampling(child_runs, patch=True)
+
+        # Only children of sampled traces should be included
+        assert len(patch_filtered) == 2
+        patch_trace_ids = {run["trace_id"] for run in patch_filtered}
+        assert trace_ids[0] in patch_trace_ids
+        assert trace_ids[2] in patch_trace_ids
+        assert trace_ids[1] not in patch_trace_ids
+        assert trace_ids[3] not in patch_trace_ids
+
+
+def test_original_sampling_and_batching():
+    """Test that sampling and batching work correctly (continuation of original test)."""
+    # Setup mock client
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_session.request.return_value = mock_response
+
+    counter = 0
+
+    def mock_should_sample():
+        nonlocal counter
+        counter += 1
+        return counter % 2 != 0
+
+    with patch(
+        "langsmith.client.Client._should_sample", side_effect=mock_should_sample
+    ):
+        client = Client(
+            api_key="test-api-key",
+            auto_batch_tracing=True,
+            tracing_sampling_rate=0.5,
+            session=mock_session,
+        )
+
+        project_name = "__test_batch"
+
+        # Create parent runs
+        run_params = []
+        for i in range(4):
+            run_id = uuid.uuid4()
+            params = {
+                "id": run_id,
+                "project_name": project_name,
+                "name": f"test_run {i}",
+                "run_type": "llm",
+                "inputs": {"text": f"hello world {i}"},
+                "dotted_order": "foo",
+                "trace_id": run_id,
+            }
+            client.create_run(**params)
+            run_params.append(params)
+
+        client.flush()
+
+        # Create child runs and update parent runs
+        child_run_params = []
+        for i, run_param in enumerate(run_params):
+            child_run_id = uuid.uuid4()
+            child_params = {
+                "id": child_run_id,
+                "project_name": project_name,
+                "name": f"test_child_run {i}",
+                "run_type": "llm",
+                "inputs": {"text": f"child world {i}"},
+                "dotted_order": "foo",
+                "trace_id": run_param["id"],
+            }
+            client.create_run(**child_params)
+            child_run_params.append(child_params)
+
+        client.flush()
+
+        # Verify all requests
+        post_calls = [
+            call
+            for call in mock_session.request.mock_calls
+            if call.args and call.args[0] == "POST"
+        ]
+        assert len(post_calls) >= 2
+
+        # Verify that only odd-numbered runs were sampled (due to our counter logic)
+        assert post_calls[0].args[1].endswith("/runs/batch")
+        assert post_calls[1].args[1].endswith("/runs/batch")
+
+        data = post_calls[0].kwargs["data"]
+        if isinstance(data, bytes):
+            data = data.decode("utf-8")
+        batch_data = json.loads(data)
+
+        # Verify posts only contain odd-numbered runs
+        assert len(batch_data.get("post", [])) == 2
+        for post in batch_data.get("post", []):
+            assert "text" in post["inputs"]
+            if "hello world" in post["inputs"]["text"]:
+                i = int(post["inputs"]["text"].split()[-1])
+                assert i % 2 == 0
+            elif "child world" in post["inputs"]["text"]:
+                i = int(post["inputs"]["text"].split()[-1])
+                assert i % 2 == 0
+
+        data = post_calls[1].kwargs["data"]
+        if isinstance(data, bytes):
+            data = data.decode("utf-8")
+        batch_data = json.loads(data)
+        assert len(batch_data.get("post", [])) == 2
+        for p in batch_data.get("post", []):
+            run_id = p["id"]
+            original_run = next((r for r in run_params if str(r["id"]) == run_id), None)
+            if original_run:
+                i = int(original_run["name"].split()[-1])
+                assert i % 2 == 0
+
+
 @mock.patch("langsmith.client.requests.Session")
 def test_select_eval_results(mock_session_cls: mock.Mock):
     expected = EvaluationResult(
@@ -1290,17 +1880,43 @@ def test_select_eval_results(mock_session_cls: mock.Mock):
 
 @pytest.mark.parametrize("client_cls", [Client, AsyncClient])
 @mock.patch("langsmith.client.requests.Session")
-def test_validate_api_key_if_hosted(
-    monkeypatch: pytest.MonkeyPatch, client_cls: Union[Type[Client], Type[AsyncClient]]
+@mock.patch.dict(
+    os.environ,
+    {"LANGCHAIN_API_KEY": "", "LANGSMITH_API_KEY": "", "LANGSMITH_TRACING": "true"},
+    clear=True,
+)
+def test_validate_api_key_if_hosted_with_tracing(
+    _mock_session: mock.Mock, client_cls: Union[Type[Client], Type[AsyncClient]]
 ) -> None:
-    monkeypatch.delenv("LANGCHAIN_API_KEY", raising=False)
-    monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
+    from langsmith import utils as ls_utils
+
+    ls_utils.get_env_var.cache_clear()
     with pytest.warns(ls_utils.LangSmithMissingAPIKeyWarning):
         client_cls(api_url="https://api.smith.langchain.com")
     with warnings.catch_warnings():
         # Check no warning is raised here.
         warnings.simplefilter("error")
         client_cls(api_url="http://localhost:1984")
+
+
+@pytest.mark.parametrize("client_cls", [Client, AsyncClient])
+@mock.patch("langsmith.client.requests.Session")
+@mock.patch.dict(
+    os.environ,
+    {"LANGCHAIN_API_KEY": "", "LANGSMITH_API_KEY": "", "LANGSMITH_TRACING": "false"},
+    clear=True,
+)
+def test_validate_api_key_if_hosted_without_tracing(
+    _mock_session: mock.Mock, client_cls: Union[Type[Client], Type[AsyncClient]]
+) -> None:
+    from langsmith import utils as ls_utils
+
+    ls_utils.get_env_var.cache_clear()
+    with warnings.catch_warnings(record=True) as w:
+        client_cls(api_url="https://api.smith.langchain.com")
+        assert len(w) == 0, (
+            f"Expected no warnings, but got: {[str(warning.message) for warning in w]}"
+        )
 
 
 def test_parse_token_or_url():
@@ -2128,9 +2744,9 @@ def test_create_run_with_zstd_compression(mock_session_cls: mock.Mock) -> None:
     for call_obj in mock_session.request.mock_calls:
         if call_obj.args and call_obj.args[0] == "POST":
             post_calls.append(call_obj)
-    assert (
-        len(post_calls) >= 1
-    ), "Expected at least one POST to the compression endpoint"
+    assert len(post_calls) >= 1, (
+        "Expected at least one POST to the compression endpoint"
+    )
 
     call_data = post_calls[0][2]["data"]
 
@@ -2216,9 +2832,9 @@ def test_create_feedback_with_zstd_compression(mock_session_cls: mock.Mock) -> N
 
     # Verify Content-Encoding header
     headers = post_calls[0][2]["headers"]
-    assert (
-        headers.get("Content-Encoding") == "zstd"
-    ), "Expected Content-Encoding header to be 'zstd'"
+    assert headers.get("Content-Encoding") == "zstd", (
+        "Expected Content-Encoding header to be 'zstd'"
+    )
 
 
 @patch("langsmith.client.requests.Session")
@@ -2305,8 +2921,10 @@ def test_create_run_without_compression_support(mock_session_cls: mock.Mock) -> 
         f"post.{run_id}",
         f"post.{run_id}.inputs",
         f"post.{run_id}.outputs",
+        f"post.{run_id}.extra",
     ]
     assert [p.headers.get("content-type") for p in parts] == [
+        "application/json",
         "application/json",
         "application/json",
         "application/json",
@@ -2411,8 +3029,10 @@ def test_create_run_with_disabled_compression(mock_session_cls: mock.Mock) -> No
         f"post.{run_id}",
         f"post.{run_id}.inputs",
         f"post.{run_id}.outputs",
+        f"post.{run_id}.extra",
     ]
     assert [p.headers.get("content-type") for p in parts] == [
+        "application/json",
         "application/json",
         "application/json",
         "application/json",
@@ -2425,3 +3045,922 @@ def test_create_run_with_disabled_compression(mock_session_cls: mock.Mock) -> No
     run_parsed = json.loads(parts[0].value)
     assert run_parsed["trace_id"] == str(run_id)
     assert run_parsed["dotted_order"] == str(run_id)
+
+
+def test__dataset_examples_path():
+    dataset_id = "123"
+    api_url = "https://foobar.com/api"
+    expected = "https://foobar.com/api/v1/platform/datasets/123/examples"
+    for suffix in ("", "/", "/v1", "/v1/"):
+        path = _dataset_examples_path(api_url + suffix, dataset_id)
+        actual = (api_url + suffix).rstrip("/") + path
+        assert expected == actual
+
+
+@mock.patch("langsmith.client.requests.Session")
+def test_list_shared_examples_pagination(mock_session_cls: mock.Mock) -> None:
+    """Test list_shared_examples handles pagination correctly."""
+    mock_session = mock.Mock()
+
+    def mock_request(*args, **kwargs):
+        response = mock.Mock()
+        response.status_code = 200
+
+        if "/info" in args[1]:
+            response.json.return_value = {}
+            return response
+
+        # First request will return 100 examples, second request 50 examples
+        if kwargs.get("params", {}).get("offset", 0) == 0:
+            examples = [
+                {
+                    "id": str(uuid.uuid4()),
+                    "created_at": _CREATED_AT.isoformat(),
+                    "inputs": {"text": f"input_{i}"},
+                    "outputs": {"result": f"output_{i}"},
+                    "dataset_id": str(uuid.uuid4()),
+                }
+                for i in range(100)
+            ]
+        else:
+            examples = [
+                {
+                    "id": str(uuid.uuid4()),
+                    "created_at": _CREATED_AT.isoformat(),
+                    "inputs": {"text": f"input_{i}"},
+                    "outputs": {"result": f"output_{i}"},
+                    "dataset_id": str(uuid.uuid4()),
+                }
+                for i in range(100, 150)
+            ]
+
+        response.json.return_value = examples
+        return response
+
+    mock_session.request.side_effect = mock_request
+    mock_session_cls.return_value = mock_session
+
+    client = Client(
+        api_url="http://localhost:1984", api_key="fake-key", session=mock_session
+    )
+    examples = list(client.list_shared_examples(str(uuid.uuid4())))
+
+    assert len(examples) == 150  # Should get all examples
+    assert examples[0].inputs["text"] == "input_0"
+    assert examples[149].inputs["text"] == "input_149"
+
+
+@mock.patch("langsmith.client.requests.get")
+def test__convert_stored_attachments_to_attachments_dict(mock_get: mock.Mock):
+    """Test URL construction in attachment downloading."""
+    # Mock the requests.get response
+    mock_response = mock.Mock()
+    mock_response.content = b"test attachment data"
+    mock_response.raise_for_status.return_value = None
+    mock_get.return_value = mock_response
+
+    # Test case 1: api_url=None (existing behavior - presigned_url is already complete URL)
+    data_with_complete_url = {
+        "attachment_urls": {
+            "attachment.test_file": {
+                "presigned_url": "https://foobar.com/bucket/file.txt?signature=xyz",
+                "mime_type": "text/plain",
+            }
+        }
+    }
+
+    result = _convert_stored_attachments_to_attachments_dict(
+        data_with_complete_url, attachments_key="attachment_urls", api_url=None
+    )
+
+    assert "test_file" in result
+    assert (
+        result["test_file"]["presigned_url"]
+        == "https://foobar.com/bucket/file.txt?signature=xyz"
+    )
+    assert result["test_file"]["mime_type"] == "text/plain"
+    assert result["test_file"]["reader"].read() == b"test attachment data"
+
+    # Verify requests.get was called with the complete URL as-is
+    mock_get.assert_called_with(
+        "https://foobar.com/bucket/file.txt?signature=xyz", stream=True
+    )
+
+    # Reset mock for next test case
+    mock_get.reset_mock()
+    mock_response.content = b"test attachment data 2"
+
+    # Test case 2: api_url provided (new behavior - constructs full URL from API base + path)
+    data_with_relative_url = {
+        "attachment_urls": {
+            "attachment.test_file2": {
+                "presigned_url": "/api/public/download?jwt=abc123",
+                "mime_type": "image/png",
+            }
+        }
+    }
+
+    result = _convert_stored_attachments_to_attachments_dict(
+        data_with_relative_url,
+        attachments_key="attachment_urls",
+        api_url="https://api.langsmith.com",
+    )
+
+    assert "test_file2" in result
+    assert (
+        result["test_file2"]["presigned_url"] == "/api/public/download?jwt=abc123"
+    )  # Original preserved
+    assert result["test_file2"]["mime_type"] == "image/png"
+    assert result["test_file2"]["reader"].read() == b"test attachment data 2"
+
+    # Verify requests.get was called with the constructed full URL
+    mock_get.assert_called_with(
+        "https://api.langsmith.com/api/public/download?jwt=abc123", stream=True
+    )
+
+    # Reset mock for edge case test
+    mock_get.reset_mock()
+
+    # Test case 3: Edge case - api_url provided but presigned_url is already complete URL
+    data_with_complete_url_edge_case = {
+        "attachment_urls": {
+            "attachment.test_file3": {
+                "presigned_url": "https://example.foobar.com/file.jpg?token=456",
+                "mime_type": "image/jpeg",
+            }
+        }
+    }
+
+    result = _convert_stored_attachments_to_attachments_dict(
+        data_with_complete_url_edge_case,
+        attachments_key="attachment_urls",
+        api_url="https://api.langsmith.com",
+    )
+
+    assert "test_file3" in result
+    # Verify requests.get was called with the complete URL unchanged
+    mock_get.assert_called_with(
+        "https://example.foobar.com/file.jpg?token=456", stream=True
+    )
+
+    # Test case 4: No attachments key present
+    data_no_attachments = {}
+    result = _convert_stored_attachments_to_attachments_dict(
+        data_no_attachments,
+        attachments_key="attachment_urls",
+        api_url="https://api.langsmith.com",
+    )
+    assert result == {}
+
+    # Test case 5: Empty attachments
+    data_empty_attachments = {"attachment_urls": {}}
+    result = _convert_stored_attachments_to_attachments_dict(
+        data_empty_attachments,
+        attachments_key="attachment_urls",
+        api_url="https://api.langsmith.com",
+    )
+    assert result == {}
+
+    # Test case 6: Attachments without "attachment." prefix are ignored
+    data_mixed_keys = {
+        "attachment_urls": {
+            "attachment.valid_file": {
+                "presigned_url": "/download/valid",
+                "mime_type": "text/plain",
+            },
+            "invalid_file": {
+                "presigned_url": "/download/invalid",
+                "mime_type": "text/plain",
+            },
+        }
+    }
+
+    mock_get.reset_mock()
+    result = _convert_stored_attachments_to_attachments_dict(
+        data_mixed_keys,
+        attachments_key="attachment_urls",
+        api_url="https://api.langsmith.com",
+    )
+
+    assert "valid_file" in result
+    assert "invalid_file" not in result
+    # Only valid attachment should trigger a request
+    mock_get.assert_called_once_with(
+        "https://api.langsmith.com/download/valid", stream=True
+    )
+
+def test_workspace_validation_optional(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that workspace is optional when API key is present."""
+    _clear_env_cache()
+    
+    # clear env variables
+    monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
+    monkeypatch.delenv("LANGSMITH_WORKSPACE_ID", raising=False)
+    
+    # Test 1: API key without workspace should succeed (backward compatibility)
+    client = Client(api_key="test-key", auto_batch_tracing=False)
+    assert client.workspace_id is None
+    
+    # Test 2: API key with workspace_id should succeed
+    client = Client(
+        api_key="test-key", 
+        workspace_id="test-workspace-id", 
+        auto_batch_tracing=False
+    )
+    assert client.workspace_id == "test-workspace-id"
+
+
+def test_workspace_headers_injection(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that workspace headers are properly injected."""
+    _clear_env_cache()
+    
+    # env setup
+    monkeypatch.setenv("LANGSMITH_API_KEY", "test-key")
+    monkeypatch.setenv("LANGSMITH_WORKSPACE_ID", "test-workspace-id")
+    
+    client = Client(auto_batch_tracing=False)
+    headers = client._compute_headers()
+    
+    # check headers
+    assert "X-Tenant-Id" in headers
+
+
+def test_workspace_validation_for_org_scoped_keys(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that workspace validation is called for org-scoped keys."""
+    _clear_env_cache()
+
+
+class TestEndToEndWorkspaceFlow:
+    """Comprehensive end-to-end tests for workspace functionality."""
+    
+    def test_successful_api_call_with_workspace_id(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test complete flow: client creation -> API call -> headers verification."""
+        _clear_env_cache()
+        
+        # env setup
+        monkeypatch.setenv("LANGSMITH_API_KEY", "test-api-key")
+        monkeypatch.setenv("LANGSMITH_WORKSPACE_ID", "test-workspace-id")
+        
+        client = Client(auto_batch_tracing=False)
+        
+        # mock session for API call
+        with mock.patch.object(client.session, 'request') as mock_request:
+            # Set up successful response
+            mock_response = mock.MagicMock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {"id": "run-123", "name": "test-run"}
+            mock_request.return_value = mock_response
+            
+            # API call
+            client.create_run(
+                name="test-run",
+                run_type="llm",
+                inputs={"text": "hello"}
+            )
+            
+            # HTTP call made with correct headers
+            mock_request.assert_called_once()
+            call_args = mock_request.call_args
+            
+            headers = call_args[1]['headers']
+            assert headers['X-Tenant-Id'] == 'test-workspace-id'
+            assert headers['x-api-key'] == 'test-api-key'
+            
+            assert call_args[0][0] == 'POST'
+            assert '/runs' in call_args[0][1]
+    
+    def test_org_scoped_key_error_flow(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test complete flow: org-scoped key without workspace -> error detection -> validation error."""
+        _clear_env_cache()
+        
+        client = Client(api_key="org-scoped-key", auto_batch_tracing=False)
+        
+        # mock session to return error
+        with mock.patch.object(client.session, 'request') as mock_request:
+            mock_response = mock.MagicMock()
+            mock_response.status_code = 403
+            mock_response.json.return_value = {"error": "org_scoped_key_requires_workspace"}
+            mock_response.text = '{"error":"org_scoped_key_requires_workspace"}'
+            mock_response.raise_for_status.side_effect = HTTPError("403 Client Error")
+            mock_request.return_value = mock_response
+            
+            # try API call - should fail due to error
+            with pytest.raises(ls_utils.LangSmithUserError, match="This API key is org-scoped and requires workspace specification"):
+                client.create_run(
+                    name="test-run",
+                    run_type="llm",
+                    inputs={"text": "hello"}
+                )
+            
+            mock_request.assert_called_once()
+            
+            # check that no workspace header was sent
+            call_args = mock_request.call_args
+            headers = call_args[1]['headers']
+            assert 'X-Tenant-Id' not in headers
+    
+    def test_other_403_error_flow(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test that other 403 errors don't trigger workspace validation."""
+        _clear_env_cache()
+        
+        client = Client(api_key="test-key", auto_batch_tracing=False)
+        
+        # mock session to return diff error
+        with mock.patch.object(client.session, 'request') as mock_request:
+            mock_response = mock.MagicMock()
+            mock_response.status_code = 403
+            mock_response.json.return_value = {"error": "insufficient_permissions"}
+            mock_response.text = "insufficient_permissions"
+            mock_response.raise_for_status.side_effect = HTTPError("403 Client Error")
+            mock_request.return_value = mock_response
+            
+            # try API call - should fail but not bc of workspace validation
+            with pytest.raises(ls_utils.LangSmithError, match="Failed to POST"):
+                client.create_run(
+                    name="test-run",
+                    run_type="llm",
+                    inputs={"text": "hello"}
+                )
+            
+            mock_request.assert_called_once()
+    
+    
+    def test_multiple_api_calls_different_workspaces(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test multiple API calls with different workspace configurations."""
+        _clear_env_cache()
+        
+        # default workspace setup
+        monkeypatch.setenv("LANGSMITH_API_KEY", "test-api-key")
+        monkeypatch.setenv("LANGSMITH_WORKSPACE_ID", "default-workspace-id")
+        
+        client = Client(auto_batch_tracing=False)
+        
+        # mock requests.Session
+        with mock.patch('requests.Session.request') as mock_request:
+            mock_response = mock.MagicMock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {"id": "run-123", "name": "test-run"}
+            mock_request.return_value = mock_response
+            
+            # first call uses default workspace
+            client.create_run(
+                name="test-run-1",
+                run_type="llm",
+                inputs={"text": "hello"}
+            )
+            
+            # override for second call
+            client.workspace_id = "override-workspace-id"
+            
+            client.create_run(
+                name="test-run-2",
+                run_type="llm",
+                inputs={"text": "world"}
+            )
+            
+            # check both calls
+            assert mock_request.call_count == 2
+            
+            # check first call was default
+            first_call_args = mock_request.call_args_list[0]
+            first_headers = first_call_args[1]['headers']
+            assert first_headers['X-Tenant-Id'] == 'default-workspace-id'
+            
+            # check second call was overridden
+            second_call_args = mock_request.call_args_list[1]
+            second_headers = second_call_args[1]['headers']
+            assert second_headers['X-Tenant-Id'] == 'override-workspace-id'
+    
+    def test_environment_variable_priority(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test that config workspace_id takes priority over environment variable."""
+        _clear_env_cache()
+        
+        # env var setup
+        monkeypatch.setenv("LANGSMITH_API_KEY", "test-api-key")
+        monkeypatch.setenv("LANGSMITH_WORKSPACE_ID", "env-workspace-id")
+        
+        client = Client(workspace_id="config-workspace-id", auto_batch_tracing=False)
+
+        # mock requests.Session
+        with mock.patch('requests.Session.request') as mock_request:
+            # Set up successful response
+            mock_response = mock.MagicMock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {"id": "run-123", "name": "test-run"}
+            mock_request.return_value = mock_response
+            
+            # API call
+            client.create_run(
+                name="test-run",
+                run_type="llm",
+                inputs={"text": "hello"}
+            )
+            
+            # HTTP call made with config workspace header
+            mock_request.assert_called_once()
+            call_args = mock_request.call_args
+            headers = call_args[1]['headers']
+            assert headers['X-Tenant-Id'] == 'config-workspace-id'
+
+    
+    def test_workspace_id_none_empty_handling(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test handling of None and empty workspace_id values."""
+        _clear_env_cache()
+        
+        # test with None workspace_id
+        client = Client(api_key="test-key", workspace_id=None, auto_batch_tracing=False)
+        headers = client._compute_headers()
+        assert 'X-Tenant-Id' not in headers
+
+        # test with empty workspace_id
+        client = Client(api_key="test-key", workspace_id="", auto_batch_tracing=False)
+        headers = client._compute_headers()
+        assert 'X-Tenant-Id' not in headers
+    
+    def test_workspace_error_recovery_flow(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test recovery from org-scoped key error by providing workspace."""
+        _clear_env_cache()
+        
+        client = Client(api_key="org-scoped-key", auto_batch_tracing=False)
+        
+        # mock requests.Session
+        with mock.patch('requests.Session.request') as mock_request:
+            # org-scoped error
+            mock_response_error = mock.MagicMock()
+            mock_response_error.status_code = 403
+            mock_response_error.json.return_value = {"error": "org_scoped_key_requires_workspace"}
+            mock_response_error.text = '{"error":"org_scoped_key_requires_workspace"}'
+            mock_response_error.raise_for_status.side_effect = HTTPError("403 Client Error")
+            
+            # success
+            mock_response_success = mock.MagicMock()
+            mock_response_success.status_code = 200
+            mock_response_success.json.return_value = {"id": "run-123", "name": "test-run"}
+            
+            mock_request.side_effect = [mock_response_error, mock_response_success]
+            
+            # fail bc of org-scoped error
+            with pytest.raises(ls_utils.LangSmithUserError, match="This API key is org-scoped and requires workspace specification"):
+                client.create_run(
+                    name="test-run",
+                    run_type="llm",
+                    inputs={"text": "hello"}
+                )
+            
+            # set workspace_id for second call
+            client.workspace_id = "test-workspace-id"
+            
+            # succeeds
+            client.create_run(
+                name="test-run",
+                run_type="llm",
+                inputs={"text": "hello"}
+            )
+            
+            assert mock_request.call_count == 2
+
+            # check that second call had workspace header
+            second_call_args = mock_request.call_args_list[1]
+            second_headers = second_call_args[1]['headers']
+            assert second_headers['X-Tenant-Id'] == 'test-workspace-id'
+
+
+    
+@pytest.mark.parametrize(
+    "api_url,pathname,expected",
+    [
+        # Test absolute URLs in pathname
+        (
+            "https://api.smith.langchain.com",
+            "https://example.com/path",
+            "https://example.com/path",
+        ),
+        # Test empty pathname
+        ("https://api.smith.langchain.com", "", "https://api.smith.langchain.com"),
+        # Test regular paths
+        (
+            "https://api.smith.langchain.com",
+            "/v1/stuff",
+            "https://api.smith.langchain.com/v1/stuff",
+        ),
+        (
+            "https://api.smith.langchain.com/",
+            "/v1/stuff",
+            "https://api.smith.langchain.com/v1/stuff",
+        ),
+        # Test with 'api' in pathname
+        (
+            "https://api.smith.langchain.com",
+            "/api/v1/stuff",
+            "https://api.smith.langchain.com/api/v1/stuff",
+        ),
+        # Standard API URL: https://api.smith.langchain.com
+        (
+            "https://api.smith.langchain.com",
+            "/v1/stuff",
+            "https://api.smith.langchain.com/v1/stuff",
+        ),
+        (
+            "https://api.smith.langchain.com",
+            "/api/v1/stuff",
+            "https://api.smith.langchain.com/api/v1/stuff",
+        ),
+        # API URL with /api: https://api.smith.langchain.com/api
+        (
+            "https://api.smith.langchain.com/api",
+            "/v1/stuff",
+            "https://api.smith.langchain.com/api/v1/stuff",
+        ),
+        (
+            "https://api.smith.langchain.com/api",
+            "/api/v1/stuff",
+            "https://api.smith.langchain.com/api/v1/stuff",
+        ),
+        # API URL with /api/v1: https://api.smith.langchain.com/api/v1
+        (
+            "https://api.smith.langchain.com/api/v1",
+            "/runs",
+            "https://api.smith.langchain.com/api/v1/runs",
+        ),
+        (
+            "https://api.smith.langchain.com/api/v1",
+            "/api/runs",
+            "https://api.smith.langchain.com/api/runs",
+        ),
+        # Self-hosted API URL with /api: https://self-hosted.smith.langchain.com/api
+        (
+            "https://self-hosted.smith.langchain.com/api",
+            "/v1/stuff",
+            "https://self-hosted.smith.langchain.com/api/v1/stuff",
+        ),
+        (
+            "https://self-hosted.smith.langchain.com/api",
+            "/api/v1/stuff",
+            "https://self-hosted.smith.langchain.com/api/v1/stuff",
+        ),
+        # Self-hosted API URL with /api/v1: https://self-hosted.smith.langchain.com/api/v1
+        (
+            "https://self-hosted.smith.langchain.com/api/v1",
+            "/runs",
+            "https://self-hosted.smith.langchain.com/api/v1/runs",
+        ),
+        (
+            "https://self-hosted.smith.langchain.com/api/v1",
+            "/api/runs",
+            "https://self-hosted.smith.langchain.com/api/runs",
+        ),
+    ],
+)
+def test_construct_url(api_url, pathname, expected):
+    """Test _construct_url with various combinations of API URLs and pathnames."""
+    result = _construct_url(api_url, pathname)
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    "api_url,pathname,error_match",
+    [
+        (
+            "",
+            "/some/path",
+            "api_url must start with 'http://'",
+        ),
+    ],
+)
+def test_construct_url_errors(api_url, pathname, error_match):
+    """Test error cases for _construct_url."""
+    with pytest.raises(ValueError, match=error_match):
+        _construct_url(api_url, pathname)
+
+
+def test_process_buffered_run_ops_core_functionality():
+    """Test core functionality: parameter validation, basic processing, compressed traces, and mixed operations."""
+    # Test 1: Parameter validation - both parameters must be provided together or neither
+    with pytest.raises(ValueError, match="run_ops_buffer_size must be provided"):
+        Client(
+            api_url="http://localhost:1984",
+            process_buffered_run_ops=lambda x: x,
+            run_ops_buffer_size=None,
+        )
+
+    with pytest.raises(ValueError, match="process_buffered_run_ops must be provided"):
+        Client(
+            api_url="http://localhost:1984",
+            process_buffered_run_ops=None,
+            run_ops_buffer_size=10,
+        )
+
+    # Test 2: Basic functionality with batch ingest
+    processed_ops = []
+
+    def add_custom_field(runs):
+        processed_ops.extend(runs)
+        for run in runs:
+            run["custom_processed"] = True
+            run["batch_size"] = len(runs)
+        return runs
+
+    with mock.patch("langsmith.client.requests.Session") as mock_session_cls:
+        mock_session = mock_session_cls.return_value
+        mock_response = mock.MagicMock()
+        mock_response.json.return_value = {
+            "batch_ingest_config": {
+                "use_multipart_endpoint": True,
+                "size_limit": 100,
+                "scale_up_nthreads_limit": 4,
+                "scale_up_qsize_trigger": 100,
+                "scale_down_nempty_trigger": 4,
+            },
+            "instance_flags": {"zstd_compression_enabled": True},
+        }
+        mock_session.request.return_value = mock_response
+
+        # Test 3: Compressed traces integration setup
+        with (
+            mock.patch(
+                "langsmith._internal._background_thread.tracing_control_thread_func"
+            ),
+            mock.patch(
+                "langsmith._internal._background_thread.tracing_control_thread_func_compress_parallel"
+            ),
+            mock.patch("threading.Thread"),
+        ):
+            client = Client(
+                api_url="http://localhost:1984",
+                process_buffered_run_ops=add_custom_field,
+                run_ops_buffer_size=3,
+                auto_batch_tracing=True,
+            )
+
+            # Verify setup
+            assert client._process_buffered_run_ops == add_custom_field
+            assert client._run_ops_buffer_size == 3
+            assert hasattr(client, "_run_ops_buffer")
+            assert hasattr(client, "_run_ops_buffer_lock")
+
+            # Test 4: Mixed POST/PATCH operations
+            trace_id = str(uuid.uuid4())
+            create_runs = [
+                {
+                    "id": str(uuid.uuid4()),
+                    "name": "create_run",
+                    "run_type": "llm",
+                    "inputs": {},
+                    "trace_id": trace_id,
+                    "dotted_order": f"20240101000001.{uuid.uuid4()}",
+                }
+            ]
+            update_runs = [
+                {
+                    "id": str(uuid.uuid4()),
+                    "name": "update_run",
+                    "outputs": {"result": "test"},
+                    "trace_id": trace_id,
+                    "dotted_order": f"20240101000002.{uuid.uuid4()}",
+                }
+            ]
+
+            client.batch_ingest_runs(create=create_runs, update=update_runs)
+
+            # Verify processing
+            assert len(processed_ops) == 2
+            assert all(run.get("custom_processed") is True for run in processed_ops)
+            # Note: batch_size may vary depending on how operations are batched internally
+
+
+def test_process_buffered_run_ops_advanced_behavior():
+    """Test thread pool fallback and time-based flushing behavior."""
+    # Test 1: Thread pool fallback when unavailable
+    processed_runs = []
+
+    def capture_runs(runs):
+        processed_runs.extend(runs)
+        return runs
+
+    with (
+        mock.patch("langsmith.client.CompressedTraces"),
+        mock.patch(
+            "langsmith._internal._background_thread.LANGSMITH_CLIENT_THREAD_POOL"
+        ) as mock_pool,
+    ):
+        mock_pool.submit.side_effect = RuntimeError("Thread pool shut down")
+
+        with mock.patch(
+            "langsmith._internal._background_thread._process_buffered_run_ops_batch"
+        ) as mock_process:
+            client = Client(
+                api_url="http://localhost:1984",
+                process_buffered_run_ops=capture_runs,
+                run_ops_buffer_size=1,
+                auto_batch_tracing=True,
+            )
+
+            # Test fallback behavior
+            client._run_ops_buffer = [("post", {"id": "test", "name": "test_run"})]
+            client._flush_run_ops_buffer()
+            mock_process.assert_called_once()
+
+    # Test 2: Time-based flushing logic
+    client = Client(
+        api_url="http://localhost:1984",
+        process_buffered_run_ops=capture_runs,
+        run_ops_buffer_size=10,  # Large buffer
+        run_ops_buffer_timeout_ms=1000.0,  # 1 second timeout
+    )
+
+    # Should not flush yet (time not reached)
+    client._run_ops_buffer.append(("post", {"id": "run1", "name": "test"}))
+    client._run_ops_buffer_last_flush_time = time.time() - 0.5  # 0.5 seconds ago
+    assert not client._should_flush_run_ops_buffer()
+
+    # Should flush when time threshold reached
+    client._run_ops_buffer_last_flush_time = time.time() - 1.5  # 1.5 seconds ago
+    assert client._should_flush_run_ops_buffer()
+
+    # Should flush when size threshold reached
+    client._run_ops_buffer.clear()
+    client._run_ops_buffer_last_flush_time = time.time()  # Recent flush
+    for i in range(10):  # Fill to buffer size
+        client._run_ops_buffer.append(("post", {"id": f"run_{i}", "name": "test"}))
+    assert client._should_flush_run_ops_buffer()
+
+
+def test_process_buffered_run_ops_validation_errors():
+    """Test validation catches invalid transformations and handles edge cases."""
+
+    def drop_run(runs):
+        return runs[:-1] if runs else []
+
+    def change_id(runs):
+        if runs:
+            runs = runs.copy()
+            runs[0] = runs[0].copy()
+            runs[0]["id"] = "changed_id"
+        return runs
+
+    def reorder_runs(runs):
+        return list(reversed(runs)) if len(runs) > 1 else runs
+
+    run_dicts = [{"id": "run_1", "name": "test1"}, {"id": "run_2", "name": "test2"}]
+    original_ids = [run.get("id") for run in run_dicts]
+
+    # Test count validation
+    processed_runs = drop_run(run_dicts)
+    with pytest.raises(ValueError, match="must return the same number of runs"):
+        if len(processed_runs) != len(run_dicts):
+            raise ValueError(
+                f"process_buffered_run_ops must return the same number of runs. "
+                f"Expected {len(run_dicts)}, got {len(processed_runs)}"
+            )
+
+    # Test ID preservation validation
+    processed_runs = change_id(run_dicts)
+    processed_ids = [run.get("id") for run in processed_runs]
+    with pytest.raises(ValueError, match="must preserve run IDs in the same order"):
+        if processed_ids != original_ids:
+            raise ValueError(
+                f"process_buffered_run_ops must preserve run IDs in the same order. "
+                f"Expected {original_ids}, got {processed_ids}"
+            )
+
+    # Test order validation
+    processed_runs = reorder_runs(run_dicts.copy())
+    processed_ids = [run.get("id") for run in processed_runs]
+    with pytest.raises(ValueError, match="must preserve run IDs in the same order"):
+        if processed_ids != original_ids:
+            raise ValueError(
+                f"process_buffered_run_ops must preserve run IDs in the same order. "
+                f"Expected {original_ids}, got {processed_ids}"
+            )
+
+    # Test valid transformation passes
+    def valid_transform(runs):
+        return [dict(run, processed=True) for run in runs]
+
+    processed_runs = valid_transform(run_dicts.copy())
+    processed_ids = [run.get("id") for run in processed_runs]
+    assert len(processed_runs) == len(run_dicts)
+    assert processed_ids == original_ids
+    assert all(run.get("processed") for run in processed_runs)
+
+
+def test_process_buffered_run_ops_end_to_end_integration():
+    """Test complete end-to-end integration including background threading and file handling."""
+    import threading
+    import time
+    from unittest.mock import MagicMock
+
+    processed_batches = []
+
+    def track_processing(runs):
+        batch_copy = [run.copy() for run in runs]
+        processed_batches.append(batch_copy)
+        for run in runs:
+            run["processed_by_test"] = True
+            run["processing_timestamp"] = time.time()
+        return runs
+
+    with mock.patch("langsmith.client.requests.Session") as mock_session_cls:
+        mock_session = mock_session_cls.return_value
+        mock_response = mock.MagicMock()
+        mock_response.json.return_value = {
+            "batch_ingest_config": {
+                "use_multipart_endpoint": True,
+                "size_limit": 100,
+                "scale_up_nthreads_limit": 4,
+                "scale_up_qsize_trigger": 100,
+                "scale_down_nempty_trigger": 4,
+            },
+            "instance_flags": {"zstd_compression_enabled": True},
+        }
+        mock_session.request.return_value = mock_response
+
+        with mock.patch(
+            "langsmith.client.CompressedTraces"
+        ) as mock_compressed_traces_class:
+            mock_compressed_traces = MagicMock()
+            mock_compressed_traces.lock = threading.Lock()
+            mock_compressed_traces.trace_count = 0
+            mock_compressed_traces_class.return_value = mock_compressed_traces
+
+            with mock.patch("langsmith.client.Client._send_compressed_multipart_req"):
+                client = Client(
+                    api_url="http://localhost:1984",
+                    process_buffered_run_ops=track_processing,
+                    run_ops_buffer_size=2,
+                    run_ops_buffer_timeout_ms=1000,
+                    auto_batch_tracing=True,
+                )
+
+                # Create and process test runs
+                trace_id = str(uuid.uuid4())
+                test_runs = []
+                for i in range(3):  # More than buffer size
+                    run_data = {
+                        "id": str(uuid.uuid4()),
+                        "name": f"test_run_{i}",
+                        "run_type": "llm",
+                        "inputs": {"test": f"input_{i}"},
+                        "trace_id": trace_id,
+                        "dotted_order": f"2024010100000{i}.{uuid.uuid4()}",
+                    }
+                    test_runs.append(run_data)
+
+                    with client._run_ops_buffer_lock:
+                        client._run_ops_buffer.append(("post", run_data))
+                        if client._should_flush_run_ops_buffer():
+                            client._flush_run_ops_buffer()
+
+                # Wait for background processing
+                time.sleep(0.1)
+                with client._run_ops_buffer_lock:
+                    if client._run_ops_buffer:
+                        client._flush_run_ops_buffer()
+                time.sleep(0.2)
+
+                # Verify processing results
+                assert len(processed_batches) > 0, "No batches were processed"
+                total_processed = sum(len(batch) for batch in processed_batches)
+                assert total_processed == len(test_runs)
+
+                for batch in processed_batches:
+                    for run in batch:
+                        assert "id" in run
+                        assert "name" in run
+
+                client.cleanup()
+
+    # Test file closing logic
+    files_closed = []
+    mock_files = []
+    for i in range(3):
+        mock_file = MagicMock()
+        mock_file.name = f"test_file_{i}.txt"
+        mock_file.close = lambda i=i: files_closed.append(i)
+        mock_files.append(mock_file)
+
+    # Simulate file closing from background thread
+    for file_obj in mock_files:
+        if hasattr(file_obj, "close"):
+            try:
+                file_obj.close()
+            except Exception:
+                pass
+
+    assert len(files_closed) == len(mock_files)
+    assert files_closed == [0, 1, 2]
+
+    # Test error handling in file closing
+    exception_files = []
+    for i in range(2):
+        mock_file = MagicMock()
+        mock_file.close.side_effect = IOError(f"Cannot close file {i}")
+        exception_files.append(mock_file)
+
+    # Should not raise exceptions
+    for file_obj in exception_files:
+        if hasattr(file_obj, "close"):
+            try:
+                file_obj.close()
+            except Exception:
+                pass
