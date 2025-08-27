@@ -34,6 +34,8 @@ import type {
   LangSmithJestlikeWrapperParams,
   LangSmithJestlikeDescribeWrapper,
   LangSmithJestlikeDescribeWrapperConfig,
+  LangSmithJestlikeTestMetadata,
+  LangSmithJestlikeTestFunction,
 } from "./types.js";
 import { getEnvironmentVariable, isJsDom } from "../env.js";
 import {
@@ -465,9 +467,7 @@ export function generateWrapperFromJestlikeMethods(
     >(
       name: string,
       lsParams: LangSmithJestlikeWrapperParams<I, O>,
-      testFn: (
-        data: { inputs: I; referenceOutputs?: O } & Record<string, any>
-      ) => unknown | Promise<unknown>,
+      testFn: LangSmithJestlikeTestFunction<I, O>,
       timeout?: number
     ) {
       // Due to https://github.com/jestjs/jest/issues/13653,
@@ -524,8 +524,14 @@ export function generateWrapperFromJestlikeMethods(
                 "Dataset failed to initialize. Please check your LangSmith environment variables."
               );
             }
-            const { dataset, createdAt, project, client, experimentUrl } =
-              datasetSetupInfo.get(context.suiteUuid);
+            const {
+              dataset,
+              createdAt,
+              project,
+              client,
+              experimentUrl,
+              enableTestTracking,
+            } = datasetSetupInfo.get(context.suiteUuid);
             const testInput: I = inputs;
             const testOutput: O = referenceOutputs ?? ({} as O);
             const testFeedback: SimpleEvaluationResult[] = [];
@@ -572,7 +578,13 @@ export function generateWrapperFromJestlikeMethods(
                           ...rest,
                           inputs: testInput,
                           referenceOutputs: testOutput,
-                          repetition: i,
+                          testMetadata: {
+                            exampleId,
+                            experimentId: project?.id,
+                            datasetId: dataset?.id,
+                            testTrackingEnabled: trackingEnabled(testContext),
+                            repetition: i,
+                          },
                         }
                       )
                     );
@@ -768,12 +780,7 @@ export function generateWrapperFromJestlikeMethods(
       }
       return function (
         name: string,
-        fn: (
-          params: { id?: string; inputs: I; referenceOutputs?: O } & Record<
-            string,
-            any
-          >
-        ) => unknown | Promise<unknown>,
+        fn: LangSmithJestlikeTestFunction<I, O>,
         timeout?: number
       ) {
         for (let i = 0; i < table.length; i += 1) {
