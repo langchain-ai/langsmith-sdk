@@ -16,6 +16,7 @@ export type LangSmithJestlikeWrapperConfig = Partial<
 };
 
 export type LangSmithJestlikeWrapperParams<I, O> = {
+  id?: string;
   inputs: I;
   referenceOutputs?: O;
   config?: LangSmithJestlikeWrapperConfig;
