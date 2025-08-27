@@ -7,14 +7,23 @@ import {
   isRunTree,
   isRunnableConfigLike,
 } from "./run_trees.js";
-import { Attachments, InvocationParamsSchema, KVMap } from "./schemas.js";
+import {
+  Attachments,
+  InvocationParamsSchema,
+  KVMap,
+  ExtractedUsageMetadata,
+} from "./schemas.js";
 import { isTracingEnabled } from "./env.js";
 import {
   ROOT,
   AsyncLocalStorageProviderSingleton,
+  getCurrentRunTree,
 } from "./singletons/traceable.js";
 import { _LC_CONTEXT_VARIABLES_KEY } from "./singletons/constants.js";
-import { TraceableFunction } from "./singletons/types.js";
+import type {
+  TraceableFunction,
+  ContextPlaceholder,
+} from "./singletons/types.js";
 import {
   isKVMap,
   isReadableStream,
@@ -24,16 +33,95 @@ import {
   isGenerator,
   isPromiseMethod,
 } from "./utils/asserts.js";
+import { getOtelEnabled } from "./utils/env.js";
+import { __version__ } from "./index.js";
+import { getOTELTrace, getOTELContext } from "./singletons/otel.js";
+import { getUuidFromOtelSpanId } from "./experimental/otel/utils.js";
+import { OTELTracer } from "./experimental/otel/types.js";
+import {
+  LANGSMITH_REFERENCE_EXAMPLE_ID,
+  LANGSMITH_SESSION_NAME,
+  LANGSMITH_TRACEABLE,
+} from "./experimental/otel/constants.js";
 
 AsyncLocalStorageProviderSingleton.initializeGlobalInstance(
-  new AsyncLocalStorage<RunTree | undefined>()
+  new AsyncLocalStorage<RunTree | ContextPlaceholder | undefined>()
 );
+
+/**
+ * Create OpenTelemetry context manager from RunTree if OTEL is enabled.
+ */
+function maybeCreateOtelContext<T>(
+  runTree?: RunTree,
+  projectName?: string,
+  tracer?: OTELTracer
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): ((fn: (...args: any[]) => T) => T) | undefined {
+  if (!runTree || !getOtelEnabled()) {
+    return;
+  }
+
+  const otel_trace = getOTELTrace();
+
+  try {
+    const activeTraceId = otel_trace.getActiveSpan()?.spanContext()?.traceId;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (fn: (...args: any[]) => T) => {
+      const resolvedTracer =
+        tracer ?? otel_trace.getTracer("langsmith", __version__);
+      const attributes: KVMap = {
+        [LANGSMITH_TRACEABLE]: "true",
+      };
+      if (runTree.reference_example_id) {
+        attributes[LANGSMITH_REFERENCE_EXAMPLE_ID] =
+          runTree.reference_example_id;
+      }
+      if (projectName !== undefined) {
+        attributes[LANGSMITH_SESSION_NAME] = projectName;
+      }
+      const forceOTELRoot = runTree.extra?.ls_otel_root === true;
+      return resolvedTracer.startActiveSpan(
+        runTree.name,
+        {
+          attributes,
+          root: forceOTELRoot,
+        },
+        () => {
+          if (activeTraceId === undefined || forceOTELRoot) {
+            const otelSpanId = otel_trace
+              .getActiveSpan()
+              ?.spanContext()?.spanId;
+            if (otelSpanId) {
+              const langsmithTraceId = getUuidFromOtelSpanId(otelSpanId);
+              // Must refetch from our primary async local storage
+              const currentRunTree = getCurrentRunTree();
+              if (currentRunTree) {
+                // This is only for root runs to ensure that trace id
+                // and the root run id are returned correctly.
+                // This is important for things like leaving feedback on
+                // target function runs during evaluation.
+                currentRunTree.id = langsmithTraceId;
+                currentRunTree.trace_id = langsmithTraceId;
+              }
+            }
+          }
+          return fn();
+        }
+      );
+    };
+  } catch {
+    // Silent failure if OTEL setup is incomplete
+    return;
+  }
+}
 
 const runInputsToMap = (rawInputs: unknown[]) => {
   const firstInput = rawInputs[0];
   let inputs: KVMap;
 
-  if (firstInput == null) {
+  if (firstInput === null) {
+    inputs = { inputs: null };
+  } else if (firstInput === undefined) {
     inputs = {};
   } else if (rawInputs.length > 1) {
     inputs = { args: rawInputs };
@@ -60,28 +148,149 @@ const handleRunInputs = (
   }
 };
 
-const handleRunOutputs = (
-  rawOutputs: unknown,
-  processOutputs: (outputs: Readonly<KVMap>) => KVMap
-): KVMap => {
+const _extractUsage = (runData: {
+  runTree: RunTree;
+  outputs?: KVMap;
+}): ExtractedUsageMetadata | undefined => {
+  const usageMetadataFromMetadata = (runData.runTree.extra.metadata ?? {})
+    .usage_metadata;
+  return runData.outputs?.usage_metadata ?? usageMetadataFromMetadata;
+};
+
+function validateExtractedUsageMetadata(
+  data: Record<string, any>
+): ExtractedUsageMetadata {
+  const allowedKeys = new Set([
+    "input_tokens",
+    "output_tokens",
+    "total_tokens",
+    "input_token_details",
+    "output_token_details",
+    "input_cost",
+    "output_cost",
+    "total_cost",
+    "input_cost_details",
+    "output_cost_details",
+  ]);
+
+  const extraKeys = Object.keys(data).filter((key) => !allowedKeys.has(key));
+  if (extraKeys.length > 0) {
+    throw new Error(
+      `Unexpected keys in usage metadata: ${extraKeys.join(", ")}`
+    );
+  }
+
+  return data as ExtractedUsageMetadata;
+}
+
+async function handleEnd(params: {
+  runTree?: RunTree;
+  on_end?: (runTree: RunTree) => void;
+  postRunPromise?: Promise<void>;
+  excludeInputs?: boolean;
+}) {
+  const { runTree, on_end, postRunPromise, excludeInputs } = params;
+  const onEnd = on_end;
+  if (onEnd) {
+    if (!runTree) {
+      console.warn("Can not call 'on_end' if currentRunTree is undefined");
+    } else {
+      onEnd(runTree);
+    }
+  }
+  await postRunPromise;
+  await runTree?.patchRun({
+    excludeInputs,
+  });
+}
+
+const _populateUsageMetadata = (processedOutputs: KVMap, runTree?: RunTree) => {
+  if (runTree !== undefined) {
+    let usageMetadata: ExtractedUsageMetadata | undefined;
+    try {
+      usageMetadata = _extractUsage({ runTree, outputs: processedOutputs });
+    } catch (e) {
+      console.error("Error occurred while extracting usage metadata:", e);
+    }
+    if (usageMetadata !== undefined) {
+      runTree.extra.metadata = {
+        ...runTree.extra.metadata,
+        usage_metadata: validateExtractedUsageMetadata(usageMetadata),
+      };
+      processedOutputs.usage_metadata = usageMetadata;
+    }
+  }
+};
+
+function isAsyncFn(
+  fn: unknown
+): fn is (...args: unknown[]) => Promise<unknown> {
+  return (
+    fn != null &&
+    typeof fn === "function" &&
+    fn.constructor.name === "AsyncFunction"
+  );
+}
+
+// Note: This mutates the run tree
+async function handleRunOutputs(params: {
+  runTree?: RunTree;
+  rawOutputs: unknown;
+  processOutputsFn: (outputs: Readonly<KVMap>) => KVMap | Promise<KVMap>;
+  on_end?: (runTree: RunTree) => void;
+  postRunPromise?: Promise<void>;
+  excludeInputs?: boolean;
+}): Promise<void> {
+  const {
+    runTree,
+    rawOutputs,
+    processOutputsFn,
+    on_end,
+    postRunPromise,
+    excludeInputs,
+  } = params;
   let outputs: KVMap;
 
   if (isKVMap(rawOutputs)) {
-    outputs = rawOutputs;
+    outputs = { ...rawOutputs };
   } else {
     outputs = { outputs: rawOutputs };
   }
 
   try {
-    return processOutputs(outputs);
+    outputs = processOutputsFn(outputs);
+    // TODO: Investigate making this behavior for all returned promises
+    // on next minor bump.
+    if (isAsyncFn(processOutputsFn)) {
+      void outputs
+        .then(async (processedOutputs: KVMap) => {
+          _populateUsageMetadata(processedOutputs, runTree);
+          await runTree?.end(processedOutputs);
+        })
+        .catch(async (e: unknown) => {
+          console.error(
+            "Error occurred during processOutputs. Sending unprocessed outputs:",
+            e
+          );
+          await runTree?.end(outputs);
+        })
+        .finally(async () => {
+          await handleEnd({ runTree, postRunPromise, on_end, excludeInputs });
+        });
+      return;
+    }
   } catch (e) {
     console.error(
-      "Error occurred during processOutputs. Sending raw outputs:",
+      "Error occurred during processOutputs. Sending unprocessed outputs:",
       e
     );
-    return outputs;
   }
-};
+  _populateUsageMetadata(outputs, runTree);
+  await runTree?.end(outputs);
+  await handleEnd({ runTree, postRunPromise, on_end, excludeInputs });
+  return;
+}
+
 const handleRunAttachments = (
   rawInputs: unknown[],
   extractAttachments?: (
@@ -111,9 +320,9 @@ const getTracingRunTree = <Args extends unknown[]>(
   extractAttachments:
     | ((...args: Args) => [Attachments | undefined, KVMap])
     | undefined
-): RunTree | undefined => {
+): RunTree | ContextPlaceholder => {
   if (!isTracingEnabled(runTree.tracingEnabled)) {
-    return undefined;
+    return {};
   }
 
   const [attached, args] = handleRunAttachments(
@@ -193,7 +402,9 @@ const getSerializablePromise = <T = unknown>(arg: Promise<T>) => {
   return promiseProxy as Promise<T> & { toJSON: () => unknown };
 };
 
-const convertSerializableArg = (arg: unknown): unknown => {
+const convertSerializableArg = (
+  arg: unknown
+): { converted: unknown; deferredInput: boolean } => {
   if (isReadableStream(arg)) {
     const proxyState: unknown[] = [];
     const transform = new TransformStream({
@@ -207,7 +418,7 @@ const convertSerializableArg = (arg: unknown): unknown => {
 
     const pipeThrough = arg.pipeThrough(transform);
     Object.assign(pipeThrough, { toJSON: () => proxyState });
-    return pipeThrough;
+    return { converted: pipeThrough, deferredInput: true };
   }
 
   if (isAsyncIterable(arg)) {
@@ -217,7 +428,7 @@ const convertSerializableArg = (arg: unknown): unknown => {
       })[];
     } = { current: [] };
 
-    return new Proxy(arg, {
+    const converted = new Proxy(arg, {
       get(target, prop, receiver) {
         if (prop === Symbol.asyncIterator) {
           return () => {
@@ -273,12 +484,13 @@ const convertSerializableArg = (arg: unknown): unknown => {
         return Reflect.get(target, prop, receiver);
       },
     });
+    return { converted, deferredInput: true };
   }
 
   if (!Array.isArray(arg) && isIteratorLike(arg)) {
     const proxyState: Array<IteratorResult<unknown>> = [];
 
-    return new Proxy(arg, {
+    const converted = new Proxy(arg, {
       get(target, prop, receiver) {
         if (prop === "next" || prop === "return" || prop === "throw") {
           const bound = arg[prop]?.bind(arg);
@@ -287,7 +499,6 @@ const convertSerializableArg = (arg: unknown): unknown => {
               Exclude<Iterator<unknown>["next" | "return" | "throw"], undefined>
             >
           ) => {
-            // @ts-expect-error TS cannot infer the argument types for the bound function
             const next = bound?.(...args);
             if (next != null) proxyState.push(next);
             return next;
@@ -308,13 +519,66 @@ const convertSerializableArg = (arg: unknown): unknown => {
         return Reflect.get(target, prop, receiver);
       },
     });
+    return { converted, deferredInput: true };
   }
 
   if (isThenable(arg)) {
-    return getSerializablePromise(arg);
+    return { converted: getSerializablePromise(arg), deferredInput: true };
   }
 
-  return arg;
+  return { converted: arg, deferredInput: false };
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type TraceableConfig<Func extends (...args: any[]) => any> = Partial<
+  Omit<RunTreeConfig, "inputs" | "outputs">
+> & {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  aggregator?: (args: any[]) => any;
+  argsConfigPath?: [number] | [number, string];
+  tracer?: OTELTracer;
+  __finalTracedIteratorKey?: string;
+
+  /**
+   * Extract attachments from args and return remaining args.
+   * @param args Arguments of the traced function
+   * @returns Tuple of [Attachments, remaining args]
+   */
+  extractAttachments?: (
+    ...args: Parameters<Func>
+  ) => [Attachments | undefined, KVMap];
+
+  /**
+   * Extract invocation parameters from the arguments of the traced function.
+   * This is useful for LangSmith to properly track common metadata like
+   * provider, model name and temperature.
+   *
+   * @param args Arguments of the traced function
+   * @returns Key-value map of the invocation parameters, which will be merged with the existing metadata
+   */
+  getInvocationParams?: (
+    ...args: Parameters<Func>
+  ) => InvocationParamsSchema | undefined;
+
+  /**
+   * Apply transformations to the inputs before logging.
+   * This function should NOT mutate the inputs.
+   * `processInputs` is not inherited by nested traceable functions.
+   *
+   * @param inputs Key-value map of the function inputs.
+   * @returns Transformed key-value map
+   */
+  processInputs?: (inputs: Readonly<KVMap>) => KVMap;
+
+  /**
+   * Apply transformations to the outputs before logging.
+   * This function should NOT mutate the outputs.
+   * `processOutputs` is not inherited by nested traceable functions.
+   *
+   * @param outputs Key-value map of the function outputs
+   * @returns Transformed key-value map
+   */
+  processOutputs?: (outputs: Readonly<KVMap>) => KVMap | Promise<KVMap>;
 };
 
 /**
@@ -334,53 +598,7 @@ const convertSerializableArg = (arg: unknown): unknown => {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function traceable<Func extends (...args: any[]) => any>(
   wrappedFunc: Func,
-  config?: Partial<RunTreeConfig> & {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    aggregator?: (args: any[]) => any;
-    argsConfigPath?: [number] | [number, string];
-    __finalTracedIteratorKey?: string;
-
-    /**
-     * Extract attachments from args and return remaining args.
-     * @param args Arguments of the traced function
-     * @returns Tuple of [Attachments, remaining args]
-     */
-    extractAttachments?: (
-      ...args: Parameters<Func>
-    ) => [Attachments | undefined, KVMap];
-
-    /**
-     * Extract invocation parameters from the arguments of the traced function.
-     * This is useful for LangSmith to properly track common metadata like
-     * provider, model name and temperature.
-     *
-     * @param args Arguments of the traced function
-     * @returns Key-value map of the invocation parameters, which will be merged with the existing metadata
-     */
-    getInvocationParams?: (
-      ...args: Parameters<Func>
-    ) => InvocationParamsSchema | undefined;
-
-    /**
-     * Apply transformations to the inputs before logging.
-     * This function should NOT mutate the inputs.
-     * `processInputs` is not inherited by nested traceable functions.
-     *
-     * @param inputs Key-value map of the function inputs.
-     * @returns Transformed key-value map
-     */
-    processInputs?: (inputs: Readonly<KVMap>) => KVMap;
-
-    /**
-     * Apply transformations to the outputs before logging.
-     * This function should NOT mutate the outputs.
-     * `processOutputs` is not inherited by nested traceable functions.
-     *
-     * @param outputs Key-value map of the function outputs
-     * @returns Transformed key-value map
-     */
-    processOutputs?: (outputs: Readonly<KVMap>) => KVMap;
-  }
+  config?: TraceableConfig<Func>
 ) {
   type Inputs = Parameters<Func>;
   const {
@@ -455,12 +673,19 @@ export function traceable<Func extends (...args: any[]) => any>(
     const asyncLocalStorage = AsyncLocalStorageProviderSingleton.getInstance();
 
     // TODO: deal with possible nested promises and async iterables
-    const processedArgs = args as unknown as Inputs;
+    const processedArgs = args as Inputs;
+    let deferredInput = false;
     for (let i = 0; i < processedArgs.length; i++) {
-      processedArgs[i] = convertSerializableArg(processedArgs[i]);
+      const { converted, deferredInput: argDefersInput } =
+        convertSerializableArg(processedArgs[i]);
+      processedArgs[i] = converted;
+      deferredInput = deferredInput || argDefersInput;
     }
 
-    const [currentRunTree, rawInputs] = ((): [RunTree | undefined, Inputs] => {
+    const [currentContext, rawInputs] = ((): [
+      RunTree | ContextPlaceholder,
+      Inputs
+    ] => {
       const [firstArg, ...restArgs] = processedArgs;
 
       // used for handoff between LangChain.JS and traceable functions
@@ -506,17 +731,29 @@ export function traceable<Func extends (...args: any[]) => any>(
       // Node.JS uses AsyncLocalStorage (ALS) and AsyncResource
       // to allow storing context
       const prevRunFromStore = asyncLocalStorage.getStore();
+      let lc_contextVars;
+      // If a context var is set by LangChain outside of a traceable,
+      // it will be an object with a single property and we should copy
+      // context vars over into the new run tree.
+      if (
+        prevRunFromStore !== undefined &&
+        _LC_CONTEXT_VARIABLES_KEY in prevRunFromStore
+      ) {
+        lc_contextVars = prevRunFromStore[_LC_CONTEXT_VARIABLES_KEY];
+      }
       if (isRunTree(prevRunFromStore)) {
-        return [
-          getTracingRunTree(
-            prevRunFromStore.createChild(ensuredConfig),
-            processedArgs,
-            config?.getInvocationParams,
-            processInputsFn,
-            extractAttachmentsFn
-          ),
-          processedArgs as Inputs,
-        ];
+        const currentRunTree = getTracingRunTree(
+          prevRunFromStore.createChild(ensuredConfig),
+          processedArgs,
+          config?.getInvocationParams,
+          processInputsFn,
+          extractAttachmentsFn
+        );
+        if (lc_contextVars) {
+          ((currentRunTree ?? {}) as any)[_LC_CONTEXT_VARIABLES_KEY] =
+            lc_contextVars;
+        }
+        return [currentRunTree, processedArgs as Inputs];
       }
 
       const currentRunTree = getTracingRunTree(
@@ -526,21 +763,25 @@ export function traceable<Func extends (...args: any[]) => any>(
         processInputsFn,
         extractAttachmentsFn
       );
-      // If a context var is set by LangChain outside of a traceable,
-      // it will be an object with a single property and we should copy
-      // context vars over into the new run tree.
-      if (
-        prevRunFromStore !== undefined &&
-        _LC_CONTEXT_VARIABLES_KEY in prevRunFromStore
-      ) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (currentRunTree as any)[_LC_CONTEXT_VARIABLES_KEY] =
-          prevRunFromStore[_LC_CONTEXT_VARIABLES_KEY];
+      if (lc_contextVars) {
+        ((currentRunTree ?? {}) as any)[_LC_CONTEXT_VARIABLES_KEY] =
+          lc_contextVars;
       }
       return [currentRunTree, processedArgs as Inputs];
     })();
 
-    return asyncLocalStorage.run(currentRunTree, () => {
+    const currentRunTree = isRunTree(currentContext)
+      ? currentContext
+      : undefined;
+
+    const otelContextManager = maybeCreateOtelContext(
+      currentRunTree,
+      config?.project_name,
+      config?.tracer
+    );
+    const otel_context = getOTELContext();
+
+    const runWithContext = () => {
       const postRunPromise = currentRunTree?.postRun();
 
       async function handleChunks(chunks: unknown[]) {
@@ -562,20 +803,27 @@ export function traceable<Func extends (...args: any[]) => any>(
         const reader = stream.getReader();
         let finished = false;
         const chunks: unknown[] = [];
+        const capturedOtelContext = otel_context.active();
 
         const tappedStream = new ReadableStream({
           async start(controller) {
             // eslint-disable-next-line no-constant-condition
             while (true) {
               const result = await (snapshot
-                ? snapshot(() => reader.read())
-                : reader.read());
+                ? snapshot(() =>
+                    otel_context.with(capturedOtelContext, () => reader.read())
+                  )
+                : otel_context.with(capturedOtelContext, () => reader.read()));
               if (result.done) {
                 finished = true;
-                await currentRunTree?.end(
-                  handleRunOutputs(await handleChunks(chunks), processOutputsFn)
-                );
-                await handleEnd();
+                await handleRunOutputs({
+                  runTree: currentRunTree,
+                  rawOutputs: await handleChunks(chunks),
+                  processOutputsFn,
+                  on_end: config?.on_end,
+                  postRunPromise,
+                  excludeInputs: !deferredInput,
+                });
                 controller.close();
                 break;
               }
@@ -592,10 +840,14 @@ export function traceable<Func extends (...args: any[]) => any>(
           },
           async cancel(reason) {
             if (!finished) await currentRunTree?.end(undefined, "Cancelled");
-            await currentRunTree?.end(
-              handleRunOutputs(await handleChunks(chunks), processOutputsFn)
-            );
-            await handleEnd();
+            await handleRunOutputs({
+              runTree: currentRunTree,
+              rawOutputs: await handleChunks(chunks),
+              processOutputsFn,
+              on_end: config?.on_end,
+              postRunPromise,
+              excludeInputs: !deferredInput,
+            });
             return reader.cancel(reason);
           },
         });
@@ -609,11 +861,14 @@ export function traceable<Func extends (...args: any[]) => any>(
       ) {
         let finished = false;
         const chunks: unknown[] = [];
+        const capturedOtelContext = otel_context.active();
         try {
           while (true) {
             const { value, done } = await (snapshot
-              ? snapshot(() => iterator.next())
-              : iterator.next());
+              ? snapshot(() =>
+                  otel_context.with(capturedOtelContext, () => iterator.next())
+                )
+              : otel_context.with(capturedOtelContext, () => iterator.next()));
             if (done) {
               finished = true;
               break;
@@ -633,10 +888,14 @@ export function traceable<Func extends (...args: any[]) => any>(
           throw e;
         } finally {
           if (!finished) await currentRunTree?.end(undefined, "Cancelled");
-          await currentRunTree?.end(
-            handleRunOutputs(await handleChunks(chunks), processOutputsFn)
-          );
-          await handleEnd();
+          await handleRunOutputs({
+            runTree: currentRunTree,
+            rawOutputs: await handleChunks(chunks),
+            processOutputsFn,
+            on_end: config?.on_end,
+            postRunPromise,
+            excludeInputs: !deferredInput,
+          });
         }
       }
 
@@ -651,21 +910,6 @@ export function traceable<Func extends (...args: any[]) => any>(
         const wrappedIterator = wrapAsyncIteratorForTracing(iterator, snapshot);
         iterable[Symbol.asyncIterator] = () => wrappedIterator;
         return iterable;
-      }
-
-      async function handleEnd() {
-        const onEnd = config?.on_end;
-        if (onEnd) {
-          if (!currentRunTree) {
-            console.warn(
-              "Can not call 'on_end' if currentRunTree is undefined"
-            );
-          } else {
-            onEnd(currentRunTree);
-          }
-        }
-        await postRunPromise;
-        await currentRunTree?.patchRun();
       }
 
       function gatherAll(iterator: Iterator<unknown>) {
@@ -747,23 +991,27 @@ export function traceable<Func extends (...args: any[]) => any>(
                 const chunks = gatherAll(rawOutput);
 
                 try {
-                  await currentRunTree?.end(
-                    handleRunOutputs(
-                      await handleChunks(
-                        chunks.reduce<unknown[]>((memo, { value, done }) => {
-                          if (!done || typeof value !== "undefined") {
-                            memo.push(value);
-                          }
+                  await handleRunOutputs({
+                    runTree: currentRunTree,
+                    rawOutputs: await handleChunks(
+                      chunks.reduce<unknown[]>((memo, { value, done }) => {
+                        if (!done || typeof value !== "undefined") {
+                          memo.push(value);
+                        }
 
-                          return memo;
-                        }, [])
-                      ),
-                      processOutputsFn
-                    )
-                  );
-                  await handleEnd();
+                        return memo;
+                      }, [])
+                    ),
+                    processOutputsFn,
+                    on_end: config?.on_end,
+                    postRunPromise,
+                    excludeInputs: !deferredInput,
+                  });
                 } catch (e) {
-                  console.error("Error occurred during handleEnd:", e);
+                  console.error(
+                    "[LANGSMITH]: Error occurred while handling run outputs:",
+                    e
+                  );
                 }
 
                 return (function* () {
@@ -775,10 +1023,14 @@ export function traceable<Func extends (...args: any[]) => any>(
               }
 
               try {
-                await currentRunTree?.end(
-                  handleRunOutputs(rawOutput, processOutputsFn)
-                );
-                await handleEnd();
+                await handleRunOutputs({
+                  runTree: currentRunTree,
+                  rawOutputs: rawOutput,
+                  processOutputsFn,
+                  on_end: config?.on_end,
+                  postRunPromise,
+                  excludeInputs: !deferredInput,
+                });
               } finally {
                 // eslint-disable-next-line no-unsafe-finally
                 return rawOutput;
@@ -786,7 +1038,12 @@ export function traceable<Func extends (...args: any[]) => any>(
             },
             async (error: unknown) => {
               await currentRunTree?.end(undefined, String(error));
-              await handleEnd();
+              await handleEnd({
+                runTree: currentRunTree,
+                postRunPromise,
+                on_end: config?.on_end,
+                excludeInputs: !deferredInput,
+              });
               throw error;
             }
           )
@@ -805,7 +1062,16 @@ export function traceable<Func extends (...args: any[]) => any>(
           return Reflect.get(target, prop, receiver);
         },
       });
-    });
+    };
+
+    // Wrap with OTEL context if available, similar to Python's implementation
+    if (otelContextManager) {
+      return asyncLocalStorage.run(currentContext, () =>
+        otelContextManager(runWithContext)
+      );
+    } else {
+      return asyncLocalStorage.run(currentContext, runWithContext);
+    }
   };
 
   Object.defineProperty(traceableFunc, "langsmith:traceable", {

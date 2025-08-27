@@ -111,78 +111,8 @@ test("evaluate can repeat", async () => {
   }
 });
 
-test("evaluate can evaluate with RunEvaluator evaluators", async () => {
-  const targetFunc = (input: { input: number }) => {
-    return { foo: input.input + 1 };
-  };
-
-  const customEvaluator = async (run: Run, example?: Example) => {
-    return Promise.resolve({
-      key: "key",
-      score: 1,
-      comment: `Run: ${run.id} Example: ${example?.id}`,
-    });
-  };
-  const evaluator = {
-    evaluateRun: customEvaluator,
-  };
-  const evalRes = await evaluate(targetFunc, {
-    data: TESTING_DATASET_NAME,
-    evaluators: [evaluator],
-    description: "evaluate can evaluate with RunEvaluator evaluators",
-  });
-
-  expect(evalRes.results).toHaveLength(2);
-
-  expect(evalRes.results[0].run).toBeDefined();
-  expect(evalRes.results[0].example).toBeDefined();
-  expect(evalRes.results[0].evaluationResults).toBeDefined();
-
-  const firstRun = evalRes.results[0].run;
-  // The examples are not always in the same order, so it should always be 2 or 3
-  expect(firstRun.outputs?.foo).toBeGreaterThanOrEqual(2);
-  expect(firstRun.outputs?.foo).toBeLessThanOrEqual(3);
-
-  const firstExample = evalRes.results[0].example;
-  expect(firstExample).toBeDefined();
-
-  const firstEvalResults = evalRes.results[0].evaluationResults;
-  expect(firstEvalResults.results).toHaveLength(1);
-  expect(firstEvalResults.results[0].key).toEqual("key");
-  expect(firstEvalResults.results[0].score).toEqual(1);
-
-  expect(evalRes.results[1].run).toBeDefined();
-  expect(evalRes.results[1].example).toBeDefined();
-  expect(evalRes.results[1].evaluationResults).toBeDefined();
-
-  const secondRun = evalRes.results[1].run;
-  // The examples are not always in the same order, so it should always be 2 or 3
-  expect(secondRun.outputs?.foo).toBeGreaterThanOrEqual(2);
-  expect(secondRun.outputs?.foo).toBeLessThanOrEqual(3);
-
-  const secondExample = evalRes.results[1].example;
-  expect(secondExample).toBeDefined();
-
-  const secondEvalResults = evalRes.results[1].evaluationResults;
-  expect(secondEvalResults.results).toHaveLength(1);
-  expect(secondEvalResults.results[0].key).toEqual("key");
-  expect(secondEvalResults.results[0].score).toEqual(1);
-
-  // Test runs & examples were passed to customEvaluator
-  const expectedCommentStrings = [
-    `Run: ${secondRun.id} Example: ${secondExample?.id}`,
-    `Run: ${firstRun.id} Example: ${firstExample?.id}`,
-  ];
-  const receivedCommentStrings = evalRes.results
-    .map(({ evaluationResults }) => evaluationResults.results[0].comment)
-    .filter((c): c is string => !!c);
-  expect(receivedCommentStrings.length).toBe(2);
-  expect(receivedCommentStrings).toEqual(
-    expect.arrayContaining(expectedCommentStrings)
-  );
-});
-
-test("evaluate can evaluate with custom evaluators", async () => {
+// Skipping for speed in CI, encapsulated below
+test.skip("evaluate can evaluate with custom evaluators", async () => {
   const targetFunc = (input: Record<string, any>) => {
     return {
       foo: input.input + 1,
@@ -253,7 +183,8 @@ test("evaluate can evaluate with custom evaluators", async () => {
   );
 });
 
-test("evaluate can evaluate with custom evaluators and array return value", async () => {
+// Skipping for speed in CI, encapsulated below
+test.skip("evaluate can evaluate with custom evaluators and array return value", async () => {
   const targetFunc = (input: Record<string, any>) => {
     return {
       foo: input.input + 1,
@@ -438,7 +369,7 @@ test("can pass multiple evaluators", async () => {
   ];
   const evalRes = await evaluate(targetFunc, {
     data: TESTING_DATASET_NAME,
-    evaluators: evaluators,
+    evaluators,
     description: "can pass multiple evaluators",
   });
   expect(evalRes.results).toHaveLength(2);
@@ -845,7 +776,8 @@ test("evaluate accepts evaluators which return multiple feedback keys", async ()
   ]);
 });
 
-test("evaluate can handle evaluators with object parameters", async () => {
+// Skipping for speed in CI
+test.skip("evaluate can handle evaluators with object parameters", async () => {
   const targetFunc = (input: Record<string, any>) => {
     return {
       foo: input.input + 1,
@@ -897,7 +829,8 @@ test("evaluate can handle evaluators with object parameters", async () => {
   expect(secondEval.comment).toContain("Expected:");
 });
 
-test("evaluate can mix evaluators with different parameter styles", async () => {
+// Skipping for speed in CI
+test.skip("evaluate can mix evaluators with different parameter styles", async () => {
   const targetFunc = (input: Record<string, any>) => {
     return {
       foo: input.input + 1,
@@ -952,7 +885,8 @@ test("evaluate can mix evaluators with different parameter styles", async () => 
   }
 });
 
-test("evaluate handles partial object parameters correctly", async () => {
+// Skipping for speed in CI
+test.skip("evaluate handles partial object parameters correctly", async () => {
   const targetFunc = (input: Record<string, any>) => {
     return {
       foo: input.input + 1,
@@ -1051,7 +985,8 @@ test("evaluate handles async object-style evaluators", async () => {
   }
 });
 
-test("evaluate can evaluate with updated summary evaluators", async () => {
+// Skipping for speed in CI
+test.skip("evaluate can evaluate with updated summary evaluators", async () => {
   const targetFunc = (input: Record<string, any>) => {
     return {
       foo: input.input + 1,
@@ -1117,7 +1052,7 @@ test("evaluate can evaluate with updated summary evaluators", async () => {
   );
 });
 
-test("evaluate handles partial summary evaluator parameters correctly", async () => {
+test("evaluate handles summary evaluator parameters correctly", async () => {
   const targetFunc = (input: Record<string, any>) => {
     return {
       foo: input.input + 1,

@@ -1,5 +1,8 @@
 name: Integration Tests CI
 
+permissions:
+  contents: read
+
 on:
   push:
     branches:
@@ -55,7 +58,7 @@ jobs:
         needs.changed_files.outputs.python_changed == 'true'
       )) ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.run-python-tests == 'true')
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
@@ -64,7 +67,7 @@ jobs:
       run:
         working-directory: python
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Run Python ${{ matrix.test-type }}
         uses: ./.github/actions/python-integration-tests
         with:
@@ -85,13 +88,13 @@ jobs:
         needs.changed_files.outputs.js_changed == 'true'
       )) ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.run-js-tests == 'true')
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: js
     steps:
-      - uses: actions/checkout@v3
-      - name: Use Node.js 18.x
+      - uses: actions/checkout@v4
+      - name: Use Node.js 20.x
         uses: actions/setup-node@v3
         with:
           node-version: 20.x
@@ -116,13 +119,13 @@ jobs:
         needs.changed_files.outputs.js_changed == 'true'
       )) ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.run-js-tests == 'true')
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: js
     steps:
-      - uses: actions/checkout@v3
-      - name: Use Node.js 18.x
+      - uses: actions/checkout@v4
+      - name: Use Node.js 20.x
         uses: actions/setup-node@v3
         with:
           node-version: 20.x
@@ -136,3 +139,24 @@ jobs:
           node-version: 20.x
           langchain-api-key-beta: ${{ secrets.LANGSMITH_API_KEY_BETA }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+
+  bun-test:
+    name: Bun Integration Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: "js"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install dependencies
+        run: bun install
+      - name: Run Bun tests
+        run: bun test ./src/tests/bun/traceable.test.bun.ts
+        env:
+          LANGSMITH_TRACING: "true"
+          LANGSMITH_ENDPOINT: https://beta.api.smith.langchain.com
+          LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY_BETA }}

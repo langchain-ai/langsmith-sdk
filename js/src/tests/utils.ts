@@ -105,6 +105,44 @@ export async function waitUntilRunFound(
   );
 }
 
+export async function waitUntilRunFoundByMetaField(
+  client: Client,
+  projectName: string,
+  metaKey: string,
+  metaValue: string,
+  checkOutputs = false
+) {
+  return waitUntil(
+    async () => {
+      try {
+        const runs = await toArray(
+          client.listRuns({
+            filter: `and(eq(metadata_key, "${metaKey}"), eq(metadata_value, "${metaValue}"))`,
+            projectName,
+          })
+        );
+        if (runs.length === 0) {
+          return false;
+        }
+        const run = runs[0];
+        if (checkOutputs) {
+          return (
+            run.outputs !== null &&
+            run.outputs !== undefined &&
+            Object.keys(run.outputs).length !== 0
+          );
+        }
+        return true;
+      } catch (e) {
+        return false;
+      }
+    },
+    30_000,
+    5_000,
+    `Waiting for run with metadata.${metaKey} = "${metaValue}"`
+  );
+}
+
 export async function waitUntilProjectFound(
   client: Client,
   projectName: string

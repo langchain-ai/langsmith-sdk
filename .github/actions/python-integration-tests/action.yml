@@ -24,23 +24,19 @@ runs:
   using: "composite"
   steps:
     - name: Checkout
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
-    - name: Setup Python
-      uses: actions/setup-python@v4
+    - name: Install uv
+      uses: astral-sh/setup-uv@v6
       with:
         python-version: ${{ inputs.python-version }}
-        cache: "pip"
-
-    - name: Install poetry
-      run: pipx install poetry==1.4.2
-      shell: bash
-      working-directory: python
+        working-directory: python
+        enable-cache: true
 
     - name: Install dependencies
       run: |
-        poetry install --with dev
-        poetry run pip install -U langchain langchain-openai langchain-anthropic tiktoken rapidfuzz vcrpy numpy
+        uv sync --group dev
+        uv pip install langchain langchain-openai langchain-anthropic tiktoken rapidfuzz vcrpy numpy
       shell: bash
       working-directory: python
 

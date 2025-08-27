@@ -35,7 +35,7 @@ import type {
   LangSmithJestlikeDescribeWrapper,
   LangSmithJestlikeDescribeWrapperConfig,
 } from "./types.js";
-import { getEnvironmentVariable } from "../env.js";
+import { getEnvironmentVariable, isJsDom } from "../env.js";
 import {
   STRIP_ANSI_REGEX,
   TEST_ID_DELIMITER,
@@ -69,7 +69,7 @@ export function logFeedback(
     exampleId: context.currentExample.id,
     feedback: feedback,
     context,
-    runTree: trackingEnabled(context) ? getCurrentRunTree() : undefined,
+    runTree: context.testRootRunTree,
     client: context.client,
   });
 }
@@ -276,15 +276,39 @@ export function generateWrapperFromJestlikeMethods(
   }
 
   function wrapDescribeMethod(
-    method: (name: string, fn: () => void | Promise<void>) => void
+    method: (name: string, fn: () => void | Promise<void>) => void,
+    methodName: string
   ): LangSmithJestlikeDescribeWrapper {
+    if (isJsDom()) {
+      console.error(
+        `[LANGSMITH]: You seem to be using a jsdom environment. This is not supported and you may experience unexpected behavior. Please set the "environment" or "testEnvironment" field in your test config file to "node".`
+      );
+    }
     return function (
       testSuiteName: string,
       fn: () => void | Promise<void>,
       experimentConfig?: LangSmithJestlikeDescribeWrapperConfig
     ) {
+      if (typeof method !== "function") {
+        throw new Error(
+          `"${methodName}" is not supported by your test runner.`
+        );
+      }
+      if (testWrapperAsyncLocalStorageInstance.getStore() !== undefined) {
+        throw new Error(
+          [
+            `You seem to be nesting an ls.describe block named "${testSuiteName}" inside another ls.describe block.`,
+            "This is not supported because each ls.describe block corresponds to a LangSmith dataset.",
+            "To logically group tests, nest the native Jest or Vitest describe methods instead.",
+          ].join("\n")
+        );
+      }
       const client = experimentConfig?.client ?? DEFAULT_TEST_CLIENT;
       const suiteName = experimentConfig?.testSuiteName ?? testSuiteName;
+      let setupPromiseResolver;
+      const setupPromise = new Promise<void>((resolve) => {
+        setupPromiseResolver = resolve;
+      });
       return method(suiteName, () => {
         const startTime = new Date();
         const suiteUuid = v4();
@@ -321,11 +345,13 @@ export function generateWrapperFromJestlikeMethods(
             metadata: suiteMetadata,
           },
           enableTestTracking: experimentConfig?.enableTestTracking,
+          setupPromise,
         };
 
         beforeAll(async () => {
           const storageValue = await runDatasetSetup(context);
           datasetSetupInfo.set(suiteUuid, storageValue);
+          setupPromiseResolver!();
         });
 
         afterAll(async () => {
@@ -346,11 +372,22 @@ export function generateWrapperFromJestlikeMethods(
           let commit;
           let dirty;
           try {
-            branch = execSync("git rev-parse --abbrev-ref HEAD")
+            branch = execSync("git rev-parse --abbrev-ref HEAD", {
+              stdio: ["ignore", "pipe", "ignore"],
+            })
               .toString()
               .trim();
-            commit = execSync("git rev-parse HEAD").toString().trim();
-            dirty = execSync("git status --porcelain").toString().trim() !== "";
+            commit = execSync("git rev-parse HEAD", {
+              stdio: ["ignore", "pipe", "ignore"],
+            })
+              .toString()
+              .trim();
+            dirty =
+              execSync("git status --porcelain", {
+                stdio: ["ignore", "pipe", "ignore"],
+              })
+                .toString()
+                .trim() !== "";
           } catch {
             return;
           }
@@ -411,9 +448,10 @@ export function generateWrapperFromJestlikeMethods(
     };
   }
 
-  const lsDescribe = Object.assign(wrapDescribeMethod(describe), {
-    only: wrapDescribeMethod(describe.only),
-    skip: wrapDescribeMethod(describe.skip),
+  const lsDescribe = Object.assign(wrapDescribeMethod(describe, "describe"), {
+    only: wrapDescribeMethod(describe.only, "describe.only"),
+    skip: wrapDescribeMethod(describe.skip, "describe.skip"),
+    concurrent: wrapDescribeMethod(describe.concurrent, "describe.concurrent"),
   });
 
   function wrapTestMethod(method: (...args: any[]) => void) {
@@ -439,7 +477,7 @@ export function generateWrapperFromJestlikeMethods(
         context.enableTestTracking = lsParams.config.enableTestTracking;
       }
       const { config, inputs, referenceOutputs, ...rest } = lsParams;
-      const totalRuns = config?.iterations ?? 1;
+      const totalRuns = config?.repetitions ?? config?.iterations ?? 1;
       for (let i = 0; i < totalRuns; i += 1) {
         const testUuid = v4().replace(/-/g, "").slice(0, 13);
         // Jest will not group tests under the same "describe" group if you await the test and
@@ -453,7 +491,12 @@ export function generateWrapperFromJestlikeMethods(
           `${name}${
             totalRuns > 1 ? `, run ${i}` : ""
           }${TEST_ID_DELIMITER}${testUuid}`,
-          async () => {
+          async (...args: any[]) => {
+            // Jest will magically introspect args and pass a "done" callback if
+            // we use a non-spread parameter. To obtain and pass Vitest test context
+            // through into the test function, we must therefore refer to Vitest
+            // args using this signature
+            const jestlikeArgs = args[0];
             if (context === undefined) {
               throw new Error(
                 [
@@ -463,6 +506,11 @@ export function generateWrapperFromJestlikeMethods(
                 ].join("\n")
               );
             }
+            // Jest .concurrent is super buggy and doesn't wait for beforeAll to complete
+            // before running test functions, so we need to wait for the setup promise
+            // to resolve before we can continue.
+            // Seee https://github.com/jestjs/jest/issues/4281
+            await context.setupPromise;
             if (!datasetSetupInfo.get(context.suiteUuid)) {
               throw new Error(
                 "Dataset failed to initialize. Please check your LangSmith environment variables."
@@ -486,59 +534,79 @@ export function generateWrapperFromJestlikeMethods(
             };
             let exampleId: string;
             const runTestFn = async () => {
-              const testContext =
-                testWrapperAsyncLocalStorageInstance.getStore();
+              let testContext = testWrapperAsyncLocalStorageInstance.getStore();
               if (testContext === undefined) {
                 throw new Error(
                   "Could not identify test context. Please contact us for help."
                 );
               }
-              try {
-                const res = await testFn({
-                  ...rest,
-                  inputs: testInput,
-                  referenceOutputs: testOutput,
-                });
-                _logTestFeedback({
-                  exampleId,
-                  feedback: { key: "pass", score: true },
-                  context: testContext,
-                  runTree: trackingEnabled(testContext)
+              return testWrapperAsyncLocalStorageInstance.run(
+                {
+                  ...testContext,
+                  testRootRunTree: trackingEnabled(testContext)
                     ? getCurrentRunTree()
                     : undefined,
-                  client: testContext.client,
-                });
-                if (res != null) {
-                  if (loggedOutput !== undefined) {
-                    console.warn(
-                      `[WARN]: Returned value from test function will override output set by previous "logOutputs()" call.`
+                },
+                async () => {
+                  testContext = testWrapperAsyncLocalStorageInstance.getStore();
+                  if (testContext === undefined) {
+                    throw new Error(
+                      "Could not identify test context after setting test root run tree. Please contact us for help."
                     );
                   }
-                  loggedOutput =
-                    typeof res === "object"
-                      ? (res as Record<string, unknown>)
-                      : { result: res };
+                  try {
+                    const res = await testFn(
+                      Object.assign(
+                        typeof jestlikeArgs === "object" && jestlikeArgs != null
+                          ? jestlikeArgs
+                          : {},
+                        {
+                          ...rest,
+                          inputs: testInput,
+                          referenceOutputs: testOutput,
+                        }
+                      )
+                    );
+                    _logTestFeedback({
+                      exampleId,
+                      feedback: { key: "pass", score: true },
+                      context: testContext,
+                      runTree: testContext.testRootRunTree,
+                      client: testContext.client,
+                    });
+                    if (res != null) {
+                      if (loggedOutput !== undefined) {
+                        console.warn(
+                          `[WARN]: Returned value from test function will override output set by previous "logOutputs()" call.`
+                        );
+                      }
+                      loggedOutput =
+                        typeof res === "object"
+                          ? (res as Record<string, unknown>)
+                          : { result: res };
+                    }
+                    return loggedOutput;
+                  } catch (e: any) {
+                    _logTestFeedback({
+                      exampleId,
+                      feedback: { key: "pass", score: false },
+                      context: testContext,
+                      runTree: testContext.testRootRunTree,
+                      client: testContext.client,
+                    });
+                    const rawError = e;
+                    const strippedErrorMessage = e.message.replace(
+                      STRIP_ANSI_REGEX,
+                      ""
+                    );
+                    const langsmithFriendlyError = new Error(
+                      strippedErrorMessage
+                    );
+                    (langsmithFriendlyError as any).rawJestError = rawError;
+                    throw langsmithFriendlyError;
+                  }
                 }
-                return loggedOutput;
-              } catch (e: any) {
-                _logTestFeedback({
-                  exampleId,
-                  feedback: { key: "pass", score: false },
-                  context: testContext,
-                  runTree: trackingEnabled(testContext)
-                    ? getCurrentRunTree()
-                    : undefined,
-                  client: testContext.client,
-                });
-                const rawError = e;
-                const strippedErrorMessage = e.message.replace(
-                  STRIP_ANSI_REGEX,
-                  ""
-                );
-                const langsmithFriendlyError = new Error(strippedErrorMessage);
-                (langsmithFriendlyError as any).rawJestError = rawError;
-                throw langsmithFriendlyError;
-              }
+              );
             };
             try {
               if (trackingEnabled(context)) {
@@ -707,6 +775,17 @@ export function generateWrapperFromJestlikeMethods(
     return eachMethod;
   }
 
+  // Roughly mirrors: https://jestjs.io/docs/api#methods
+  const concurrentMethod = Object.assign(wrapTestMethod(test.concurrent), {
+    each: createEachMethod(test.concurrent),
+    only: Object.assign(wrapTestMethod(test.concurrent.only), {
+      each: createEachMethod(test.concurrent.only),
+    }),
+    skip: Object.assign(wrapTestMethod(test.concurrent.skip), {
+      each: createEachMethod(test.concurrent.skip),
+    }),
+  });
+
   const lsTest = Object.assign(wrapTestMethod(test), {
     only: Object.assign(wrapTestMethod(test.only), {
       each: createEachMethod(test.only),
@@ -714,6 +793,7 @@ export function generateWrapperFromJestlikeMethods(
     skip: Object.assign(wrapTestMethod(test.skip), {
       each: createEachMethod(test.skip),
     }),
+    concurrent: concurrentMethod,
     each: createEachMethod(test),
   });
 

@@ -1,4 +1,4 @@
-import { getCurrentRunTree, ROOT, traceable } from "../../../traceable.js";
+import { ROOT, traceable } from "../../../traceable.js";
 import {
   testWrapperAsyncLocalStorageInstance,
   _logTestFeedback,
@@ -47,11 +47,9 @@ export function wrapEvaluator<
         ].join("\n")
       );
     }
-    const evalRunId = config?.runId ?? config?.id ?? v4();
+    let evalRunId = config?.runId ?? config?.id ?? v4();
     let evalResult: O;
-    let currentRunTree;
     if (trackingEnabled(context)) {
-      currentRunTree = getCurrentRunTree();
       const wrappedEvaluator = traceable(
         async (_runTree: RunTree, params: I) => {
           return evaluator(params);
@@ -59,12 +57,21 @@ export function wrapEvaluator<
         {
           id: evalRunId,
           trace_id: evalRunId,
+          on_end: (runTree) => {
+            // If tracing with OTEL, setting run id manually does not work.
+            // Instead get it at the end of the run.
+            evalRunId = runTree.id;
+          },
           reference_example_id: context.currentExample.id,
           client: context.client,
           tracingEnabled: true,
           name: evaluator.name ?? "<evaluator>",
           project_name: "evaluators",
           ...config,
+          extra: {
+            ...config?.extra,
+            ls_otel_root: true,
+          },
         }
       );
 
@@ -84,7 +91,7 @@ export function wrapEvaluator<
           exampleId: context?.currentExample?.id,
           feedback: result,
           context,
-          runTree: currentRunTree,
+          runTree: context.testRootRunTree,
           client: context.client,
           sourceRunId: evalRunId,
         });

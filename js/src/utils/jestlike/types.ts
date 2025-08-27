@@ -9,7 +9,9 @@ export { type SimpleEvaluator };
 export type LangSmithJestlikeWrapperConfig = Partial<
   Omit<RunTreeConfig, "client">
 > & {
+  /** @deprecated Use `repetitions` instead. */
   iterations?: number;
+  repetitions?: number;
   enableTestTracking?: boolean;
 };
 

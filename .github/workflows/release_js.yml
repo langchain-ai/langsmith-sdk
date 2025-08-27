@@ -27,7 +27,7 @@ jobs:
       run:
         working-directory: "js"
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       # JS Build
       - name: Use Node.js 20.x
         uses: actions/setup-node@v3

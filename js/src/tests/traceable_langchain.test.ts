@@ -1,3 +1,4 @@
+/* eslint-disable no-process-env */
 import { traceable } from "../traceable.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 import { mockClient } from "./utils/mock_client.js";
@@ -9,6 +10,10 @@ import { BaseMessage, HumanMessage } from "@langchain/core/messages";
 import { awaitAllCallbacks } from "@langchain/core/callbacks/promises";
 import { RunnableTraceable, getLangchainCallbacks } from "../langchain.js";
 import { RunnableLambda } from "@langchain/core/runnables";
+import {
+  setContextVariable,
+  getContextVariable,
+} from "@langchain/core/context";
 
 describe("to langchain", () => {
   const llm = new FakeChatModel({});
@@ -38,6 +43,8 @@ describe("to langchain", () => {
 
     const result = await main({ text: "Hello world" });
     expect(result).toEqual("Hello world");
+
+    await awaitAllCallbacks();
 
     expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
       nodes: [
@@ -394,6 +401,83 @@ test("explicit nested", async () => {
       ["chain:7", "StrOutputParser:10"],
     ],
   });
+});
+
+describe("LangChain context variables", () => {
+  test.each(["true", "false"])(
+    "set and get context variables at top level with tracingEnabled=%s",
+    async (tracingEnabled) => {
+      process.env.LANGSMITH_TRACING = tracingEnabled;
+      const { client } = mockClient();
+      setContextVariable("foo", "bar");
+      expect(getContextVariable("foo")).toEqual("bar");
+
+      const main = traceable(
+        async () => {
+          expect(getContextVariable("foo")).toEqual("bar");
+          return "Something";
+        },
+        {
+          client,
+        }
+      );
+      await main();
+      await awaitAllCallbacks();
+    }
+  );
+
+  test.each(["true", "false"])(
+    "set and get context variables from runnable nested in traceable with tracingEnabled=%s",
+    async (tracingEnabled) => {
+      process.env.LANGSMITH_TRACING = tracingEnabled;
+      const { client } = mockClient();
+
+      const nested = RunnableLambda.from(async () => {
+        expect(getContextVariable("foo")).toEqual("baz");
+
+        return "Something";
+      });
+
+      const main = traceable(
+        async () => {
+          setContextVariable("foo", "baz");
+          expect(getContextVariable("foo")).toEqual("baz");
+          return nested.invoke({});
+        },
+        {
+          client,
+        }
+      );
+      await main();
+      await awaitAllCallbacks();
+    }
+  );
+
+  test.each(["true", "false"])(
+    "set and get context variables from traceable nested in runnable with tracingEnabled=%s",
+    async (tracingEnabled) => {
+      process.env.LANGSMITH_TRACING = tracingEnabled;
+      const { client } = mockClient();
+
+      const nested = traceable(
+        async () => {
+          expect(getContextVariable("foo")).toEqual("qux");
+          return "Something";
+        },
+        {
+          client,
+        }
+      );
+
+      const main = RunnableLambda.from(async () => {
+        setContextVariable("foo", "qux");
+        expect(getContextVariable("foo")).toEqual("qux");
+        return nested();
+      });
+      await main.invoke({});
+      await awaitAllCallbacks();
+    }
+  );
 });
 
 // skip until the @langchain/core 0.2.17 is out

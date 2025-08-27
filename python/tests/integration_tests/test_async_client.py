@@ -16,6 +16,7 @@ async def test_indexed_datasets():
         name: str  # type: ignore[annotation-unchecked]
         age: int  # type: ignore[annotation-unchecked]
 
+    dataset = None
     async with AsyncClient() as client:
         # Create a new dataset
         try:
@@ -43,8 +44,30 @@ async def test_indexed_datasets():
                 {"name": "Alice", "age": 30}, dataset_id=dataset.id, limit=1
             )
             assert examples[0].id == example.id
+
+            example2 = await client.create_example(
+                inputs={"name": "Bobby", "age": 30},
+                outputs={"hi": "there"},
+                dataset_id=dataset.id,
+            )
+
+            await client.sync_indexed_dataset(dataset_id=dataset.id)
+
+            async def check_similar_examples():
+                examples = await client.similar_examples(
+                    {"name": "Bobby", "age": 30}, dataset_id=dataset.id, limit=2
+                )
+                return len(examples) == 2
+
+            await wait_for(check_similar_examples, timeout=20)
+            examples = await client.similar_examples(
+                {"name": "Bobby", "age": 30}, dataset_id=dataset.id, limit=2
+            )
+            assert examples[0].id == example2.id
+            assert examples[1].id == example.id
         finally:
-            await client.delete_dataset(dataset_id=dataset.id)
+            if dataset:
+                await client.delete_dataset(dataset_id=dataset.id)
 
 
 # Helper function to wait for a condition
@@ -196,6 +219,16 @@ async def test_create_feedback(async_client: AsyncClient):
         id=run_id,
         start_time=datetime.datetime.now(datetime.timezone.utc),
     )
+
+    # Wait for the project to be fully available before creating feedback
+    async def check_project_exists():
+        try:
+            await async_client.read_project(project_name=project_name)
+            return True
+        except ls_utils.LangSmithError:
+            return False
+
+    await wait_for(check_project_exists, timeout=10)
 
     feedback = await async_client.create_feedback(
         run_id=run_id,
@@ -448,7 +481,7 @@ async def test_annotation_queue_runs(async_client: AsyncClient):
     )
 
     # Test that runs are deleted
-    with pytest.raises(ls_utils.LangSmithAPIError):
+    with pytest.raises(ls_utils.LangSmithNotFoundError):
         await async_client.get_run_from_annotation_queue(queue_id=queue.id, index=2)
 
     run_1 = await async_client.get_run_from_annotation_queue(queue_id=queue.id, index=0)

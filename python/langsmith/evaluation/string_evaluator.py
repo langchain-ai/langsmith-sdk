@@ -1,7 +1,7 @@
 """This module contains the StringEvaluator class."""
 
 import uuid
-from typing import Callable, Dict, Optional
+from typing import Callable, Optional
 
 from pydantic import BaseModel
 
@@ -20,7 +20,7 @@ class StringEvaluator(RunEvaluator, BaseModel):
     """The key in the run outputs to extra the prediction string."""
     answer_key: Optional[str] = "output"
     """The key in the example outputs the answer string."""
-    grading_function: Callable[[str, str, Optional[str]], Dict]
+    grading_function: Callable[[str, str, Optional[str]], dict]
     """Function that grades the run output against the example output."""
 
     def evaluate_run(
