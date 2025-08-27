@@ -14,13 +14,32 @@ const entrypoints = {
   "evaluation/langchain": "evaluation/langchain",
   schemas: "schemas",
   langchain: "langchain",
+  jest: "jest/index",
+  "jest/reporter": "jest/reporter",
   vercel: "vercel",
+  vitest: "vitest/index",
+  "vitest/reporter": "vitest/reporter",
   wrappers: "wrappers/index",
   anonymizer: "anonymizer/index",
   "wrappers/openai": "wrappers/openai",
   "wrappers/vercel": "wrappers/vercel",
   "singletons/traceable": "singletons/traceable",
+  "utils/jestlike": "utils/jestlike/index",
+  "experimental/otel/setup": "experimental/otel/setup",
+  "experimental/otel/exporter": "experimental/otel/exporter",
+  "experimental/otel/processor": "experimental/otel/processor",
+  "experimental/vercel": "experimental/vercel/index",
 };
+
+const defaultEntrypoints = [
+  "vitest/reporter"
+];
+
+// Easier to have mts files ignored by CJS build
+const hasMjs = [
+  "vitest/reporter",
+  "vitest",
+];
 
 const updateJsonFile = (relativePath, updateFunction) => {
   const contents = fs.readFileSync(relativePath).toString();
@@ -34,13 +53,25 @@ const generateFiles = () => {
       const nrOfDots = key.split("/").length - 1;
       const relativePath = "../".repeat(nrOfDots) || "./";
       const compiledPath = `${relativePath}dist/${value}.js`;
+      const modulePath = hasMjs.includes(key) ? `${relativePath}dist/${value}.mjs` : compiledPath;
+      if (defaultEntrypoints.includes(key)) {
+        return [
+          [
+            `${key}.cjs`,
+            `module.exports = require('${relativePath}dist/${value}.cjs').default;`,
+          ],
+          [`${key}.js`, `export { default } from '${modulePath}'`],
+          [`${key}.d.ts`, `export { default } from '${modulePath}'`],
+          [`${key}.d.cts`, `export { default } from '${compiledPath}'`],
+        ];
+      }
       return [
         [
           `${key}.cjs`,
           `module.exports = require('${relativePath}dist/${value}.cjs');`,
         ],
-        [`${key}.js`, `export * from '${compiledPath}'`],
-        [`${key}.d.ts`, `export * from '${compiledPath}'`],
+        [`${key}.js`, `export * from '${modulePath}'`],
+        [`${key}.d.ts`, `export * from '${modulePath}'`],
         [`${key}.d.cts`, `export * from '${compiledPath}'`],
       ];
     }

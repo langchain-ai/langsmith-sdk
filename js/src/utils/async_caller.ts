@@ -2,18 +2,12 @@ import pRetry from "p-retry";
 import PQueueMod from "p-queue";
 import { _getFetchImplementation } from "../singletons/fetch.js";
 
-const STATUS_NO_RETRY = [
-  400, // Bad Request
-  401, // Unauthorized
-  403, // Forbidden
-  404, // Not Found
-  405, // Method Not Allowed
-  406, // Not Acceptable
-  407, // Proxy Authentication Required
-  408, // Request Timeout
-];
-const STATUS_IGNORE = [
-  409, // Conflict
+const STATUS_RETRYABLE = [
+  429, // Too Many Requests
+  500, // Internal Server Error
+  502, // Bad Gateway
+  503, // Service Unavailable
+  504, // Gateway Timeout
 ];
 
 type ResponseCallback = (response?: Response) => Promise<boolean>;
@@ -31,6 +25,8 @@ export interface AsyncCallerParams {
   maxRetries?: number;
 
   onFailedResponseHook?: ResponseCallback;
+
+  debug?: boolean;
 }
 
 export interface AsyncCallerCallOptions {
@@ -94,34 +90,33 @@ export class AsyncCaller {
               }
             }),
           {
-            async onFailedAttempt(error) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            async onFailedAttempt(error: any) {
               if (
                 error.message.startsWith("Cancel") ||
                 error.message.startsWith("TimeoutError") ||
+                error.name === "TimeoutError" ||
                 error.message.startsWith("AbortError")
               ) {
                 throw error;
               }
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              if ((error as any)?.code === "ECONNABORTED") {
+              if (error?.code === "ECONNABORTED") {
                 throw error;
               }
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const response: Response | undefined = (error as any)?.response;
-              const status = response?.status;
-              if (status) {
-                if (STATUS_NO_RETRY.includes(+status)) {
-                  throw error;
-                } else if (STATUS_IGNORE.includes(+status)) {
+              const response: Response | undefined = error?.response;
+              if (onFailedResponseHook) {
+                const handled = await onFailedResponseHook(response);
+                if (handled) {
                   return;
                 }
-                if (onFailedResponseHook) {
-                  await onFailedResponseHook(response);
+              }
+              const status = response?.status ?? error?.status;
+              if (status) {
+                if (!STATUS_RETRYABLE.includes(+status)) {
+                  throw error;
                 }
               }
             },
-            // If needed we can change some of the defaults here,
-            // but they're quite sensible.
             retries: this.maxRetries,
             randomize: true,
           }
@@ -149,14 +144,5 @@ export class AsyncCaller {
       ]);
     }
     return this.call<A, T>(callable, ...args);
-  }
-
-  fetch(...args: Parameters<typeof fetch>): ReturnType<typeof fetch> {
-    return this.call(() =>
-      _getFetchImplementation()(...args).then(
-        (res: Awaited<ReturnType<typeof fetch>>) =>
-          res.ok ? res : Promise.reject(res)
-      )
-    );
   }
 }

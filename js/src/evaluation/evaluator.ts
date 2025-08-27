@@ -94,27 +94,33 @@ export type RunEvaluatorLike =
   | ((
       run: Run,
       example?: Example
-    ) => Promise<EvaluationResult | EvaluationResults>)
-  | ((run: Run, example?: Example) => EvaluationResult | EvaluationResults)
+    ) => Promise<EvaluationResult | EvaluationResult[] | EvaluationResults>)
+  | ((
+      run: Run,
+      example?: Example
+    ) => EvaluationResult | EvaluationResult[] | EvaluationResults)
   | ((
       run: Run,
       example: Example
-    ) => Promise<EvaluationResult | EvaluationResults>)
-  | ((run: Run, example: Example) => EvaluationResult | EvaluationResults)
+    ) => Promise<EvaluationResult | EvaluationResult[] | EvaluationResults>)
+  | ((
+      run: Run,
+      example: Example
+    ) => EvaluationResult | EvaluationResult[] | EvaluationResults)
   | ((args: {
       run: Run;
       example: Example;
       inputs: Record<string, any>;
       outputs: Record<string, any>;
       referenceOutputs?: Record<string, any>;
-    }) => EvaluationResult | EvaluationResults)
+    }) => EvaluationResult | EvaluationResult[] | EvaluationResults)
   | ((args: {
       run: Run;
       example: Example;
       inputs: Record<string, any>;
       outputs: Record<string, any>;
       referenceOutputs?: Record<string, any>;
-    }) => Promise<EvaluationResult | EvaluationResults>);
+    }) => Promise<EvaluationResult | EvaluationResult[] | EvaluationResults>);
 
 /**
  * Wraps an evaluator function + implements the RunEvaluator interface.
@@ -208,7 +214,7 @@ export class DynamicRunEvaluator<Func extends (...args: any[]) => any>
     example?: Example,
     options?: Partial<RunTreeConfig>
   ): Promise<EvaluationResult | EvaluationResults> {
-    const sourceRunId = uuidv4();
+    let sourceRunId = uuidv4();
     const metadata: Record<string, any> = {
       targetRunId: run.id,
     };
@@ -225,18 +231,22 @@ export class DynamicRunEvaluator<Func extends (...args: any[]) => any>
       {
         project_name: "evaluators",
         name: "evaluator",
-        id: sourceRunId,
+        on_end: (runTree) => {
+          // If tracing with OTEL, setting run id manually does not work.
+          // Instead get it at the end of the run.
+          sourceRunId = runTree.id;
+        },
         ...options,
       }
     );
 
-    const result = (await wrappedTraceableFunc(
+    const result = await wrappedTraceableFunc(
       // Pass data via `langSmithRunAndExample` key to avoid conflicts with other
       // inputs. This key is extracted in the wrapped function, with `run` and
       // `example` passed to evaluator function as arguments.
       { langSmithRunAndExample: { run, example } },
       { metadata }
-    )) as EvaluationResults | Record<string, any>;
+    );
 
     // Check the one required property of EvaluationResult since 'instanceof' is not possible
     if ("key" in result) {
@@ -244,6 +254,13 @@ export class DynamicRunEvaluator<Func extends (...args: any[]) => any>
         result.sourceRunId = sourceRunId;
       }
       return result as EvaluationResult;
+    }
+    if (Array.isArray(result)) {
+      return {
+        results: result.map((r) =>
+          this.coerceEvaluationResult(r, sourceRunId, false)
+        ),
+      };
     }
     if (typeof result !== "object") {
       throw new Error("Evaluator function must return an object.");

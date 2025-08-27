@@ -7,6 +7,7 @@ from typing import Any
 from unittest import mock
 
 import pytest
+from pydantic import BaseModel
 
 import langsmith
 from langsmith.wrappers import wrap_openai
@@ -381,13 +382,13 @@ def test_parse_sync_api():
     original_client = openai.Client()
     patched_client = wrap_openai(openai.Client(), tracing_extra={"client": ls_client})
 
-    messages = [{"role": "user", "content": "Say 'Foo' then stop."}]
+    messages = [{"role": "user", "content": "Say 'foo' then stop."}]
 
     original = original_client.beta.chat.completions.parse(
-        messages=messages, model="gpt-3.5-turbo"
+        messages=messages, model="gpt-3.5-turbo", temperature=0, seed=42, max_tokens=3
     )
     patched = patched_client.beta.chat.completions.parse(
-        messages=messages, model="gpt-3.5-turbo"
+        messages=messages, model="gpt-3.5-turbo", temperature=0, seed=42, max_tokens=3
     )
 
     assert type(original) is type(patched)
@@ -413,13 +414,13 @@ async def test_parse_async_api():
         openai.AsyncClient(), tracing_extra={"client": ls_client}
     )
 
-    messages = [{"role": "user", "content": "Say 'Foo' then stop."}]
+    messages = [{"role": "user", "content": "Say 'foo' then stop."}]
 
     original = await original_client.beta.chat.completions.parse(
-        messages=messages, model="gpt-3.5-turbo"
+        messages=messages, model="gpt-3.5-turbo", temperature=0, seed=42, max_tokens=3
     )
     patched = await patched_client.beta.chat.completions.parse(
-        messages=messages, model="gpt-3.5-turbo"
+        messages=messages, model="gpt-3.5-turbo", temperature=0, seed=42, max_tokens=3
     )
 
     assert type(original) is type(patched)
@@ -468,3 +469,308 @@ def test_parse_tokens():
         assert call[0][0].upper() in ["POST", "GET", "PATCH"]
 
     _collect_requests(mock_session, "test_parse_tokens")
+
+
+def test_responses_sync_api():
+    """Test that the sync responses methods can be traced without errors."""
+    import openai  # noqa
+
+    mock_session = mock.MagicMock()
+    ls_client = langsmith.Client(session=mock_session)
+
+    original_client = openai.Client()
+    patched_client = wrap_openai(openai.Client(), tracing_extra={"client": ls_client})
+
+    # Test create
+    original_create = original_client.responses.create(
+        input="Say 'foo' then stop.",
+        model="gpt-4o-mini",
+        temperature=0,
+        max_output_tokens=16,
+    )
+    patched_create = patched_client.responses.create(
+        input="Say 'foo' then stop.",
+        model="gpt-4o-mini",
+        temperature=0,
+        max_output_tokens=16,
+    )
+    assert type(original_create) is type(patched_create)
+    assert original_create.output_text.lower().strip(
+        " ."
+    ) == patched_create.output_text.lower().strip(" .")
+
+    # Test create(stream=True)
+    original_create_stream = original_client.responses.create(
+        input="Say 'foo' then stop.",
+        model="gpt-4o-mini",
+        temperature=0,
+        max_output_tokens=16,
+        stream=True,
+    )
+    patched_create_stream = patched_client.responses.create(
+        input="Say 'foo' then stop.",
+        model="gpt-4o-mini",
+        temperature=0,
+        max_output_tokens=16,
+        stream=True,
+    )
+    originals, patched = [], []
+    for original_event, patched_event in zip(
+        original_create_stream, patched_create_stream
+    ):
+        originals.append(original_event)
+        patched.append(patched_event)
+    assert len(originals) == len(patched)
+
+    class Format(BaseModel):
+        speech: str
+
+    # Test parse
+    original_parse = original_client.responses.parse(
+        input="Say 'foo' then stop.",
+        model="gpt-4o-mini",
+        temperature=0,
+        max_output_tokens=32,
+        text_format=Format,
+    )
+    patched_parse = patched_client.responses.parse(
+        input="Say 'foo' then stop.",
+        model="gpt-4o-mini",
+        temperature=0,
+        max_output_tokens=32,
+        text_format=Format,
+    )
+
+    assert isinstance(original_parse.output[0].content[0].parsed, Format)
+    assert isinstance(patched_parse.output[0].content[0].parsed, Format)
+    assert (
+        original_parse.output[0].content[0].parsed
+        == patched_parse.output[0].content[0].parsed
+    )
+
+    # Test stream
+    with original_client.responses.stream(
+        input="Say 'foo' then stop.",
+        model="gpt-4o-mini",
+        temperature=0,
+        max_output_tokens=16,
+    ) as original_stream:
+        for _ in original_stream:
+            pass
+        original_full = original_stream.get_final_response()
+    with patched_client.responses.stream(
+        input="Say 'foo' then stop.",
+        model="gpt-4o-mini",
+        temperature=0,
+        max_output_tokens=16,
+    ) as patched_stream:
+        for _ in patched_stream:
+            pass
+        patched_full = patched_stream.get_final_response()
+    original_chunks = list(original_stream)
+    patched_chunks = list(patched_stream)
+    assert len(original_chunks) == len(patched_chunks)
+    for orig, patched in zip(original_chunks, patched_chunks):
+        assert orig.output_text == patched.output_text
+    assert original_full.output_text == patched_full.output_text
+
+    time.sleep(0.1)
+    for call in mock_session.request.call_args_list:
+        assert call[0][0].upper() in ["POST", "GET", "PATCH"]
+
+    _collect_requests(mock_session, "test_responses_sync_api")
+
+
+@pytest.mark.asyncio
+async def test_responses_async_api():
+    """Test that the async responses methods can be traced without errors."""
+    import openai  # noqa
+
+    mock_session = mock.MagicMock()
+    ls_client = langsmith.Client(session=mock_session)
+
+    original_client = openai.AsyncClient()
+    patched_client = wrap_openai(
+        openai.AsyncClient(), tracing_extra={"client": ls_client}
+    )
+
+    # Test create
+    original_create = await original_client.responses.create(
+        input="Say 'foo' then stop.",
+        model="gpt-4o-mini",
+        temperature=0,
+        max_output_tokens=16,
+    )
+    patched_create = await patched_client.responses.create(
+        input="Say 'foo' then stop.",
+        model="gpt-4o-mini",
+        temperature=0,
+        max_output_tokens=16,
+    )
+    assert type(original_create) is type(patched_create)
+    assert original_create.output_text.lower().strip(
+        " ."
+    ) == patched_create.output_text.lower().strip(" .")
+
+    # Test stream
+    original_stream = await original_client.responses.create(
+        input="Say 'foo' then stop.",
+        model="gpt-4o-mini",
+        stream=True,
+        temperature=0,
+        max_output_tokens=16,
+    )
+    patched_stream = await patched_client.responses.create(
+        input="Say 'foo' then stop.",
+        model="gpt-4o-mini",
+        stream=True,
+        temperature=0,
+        max_output_tokens=16,
+    )
+    original_chunks = []
+    async for chunk in original_stream:
+        original_chunks.append(chunk)
+    patched_chunks = []
+    async for chunk in patched_stream:
+        patched_chunks.append(chunk)
+    assert len(original_chunks) == len(patched_chunks)
+    for orig, patched in zip(original_chunks, patched_chunks):
+        assert orig.type == patched.type
+
+    # Test parse
+    class Format(BaseModel):
+        speech: str
+
+    # Test parse
+    original_parse = await original_client.responses.parse(
+        input="Say 'foo' then stop.",
+        model="gpt-4o-mini",
+        temperature=0,
+        max_output_tokens=32,
+        text_format=Format,
+    )
+    patched_parse = await patched_client.responses.parse(
+        input="Say 'foo' then stop.",
+        model="gpt-4o-mini",
+        temperature=0,
+        max_output_tokens=32,
+        text_format=Format,
+    )
+
+    assert isinstance(original_parse.output[0].content[0].parsed, Format)
+    assert isinstance(patched_parse.output[0].content[0].parsed, Format)
+    assert (
+        original_parse.output[0].content[0].parsed
+        == patched_parse.output[0].content[0].parsed
+    )
+
+    # Test stream
+    original_chunks = []
+    patched_chunks = []
+    async with original_client.responses.stream(
+        model="gpt-4o-mini",
+        input=[{"role": "user", "content": "Say 'foo' then stop."}],
+        temperature=0,
+        max_output_tokens=16,
+    ) as original_stream:
+        async for chunk in original_stream:
+            original_chunks.append(chunk)
+        original_full = await original_stream.get_final_response()
+    async with patched_client.responses.stream(
+        model="gpt-4o-mini",
+        input=[{"role": "user", "content": "Say 'foo' then stop."}],
+        temperature=0,
+        max_output_tokens=16,
+    ) as patched_stream:
+        async for chunk in patched_stream:
+            patched_chunks.append(chunk)
+        patched_full = await patched_stream.get_final_response()
+    assert len(original_chunks) == len(patched_chunks)
+    for orig, patched in zip(original_chunks, patched_chunks):
+        assert orig.type == patched.type
+    assert original_full.output_text == patched_full.output_text
+
+    time.sleep(0.1)
+    for call in mock_session.request.call_args_list:
+        assert call[0][0].upper() in ["POST", "GET", "PATCH"]
+
+    _collect_requests(mock_session, "test_responses_sync_api")
+
+
+@pytest.mark.asyncio
+async def test_tool_call_chunking():
+    """Test that wrap_openai can reduce tool call chunks when streaming."""
+    import openai
+    from openai.types.chat import ChatCompletionChunk
+
+    mock_session = mock.MagicMock()
+    ls_client = langsmith.Client(session=mock_session)
+
+    client = wrap_openai(openai.AsyncClient(), tracing_extra={"client": ls_client})
+
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "description": "Get the current weather in a given city.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "location": {
+                            "type": "string",
+                            "description": "The city to get the weather for",
+                        }
+                    },
+                    "required": ["location"],
+                },
+            },
+        }
+    ]
+
+    # Simulate a user message
+    messages = [{"role": "user", "content": "What's the weather like in Paris?"}]
+
+    collect = Collect()
+    with langsmith.tracing_context(enabled=True):
+        chunks = await client.chat.completions.create(
+            model="gpt-4o",
+            messages=messages,
+            tools=tools,
+            tool_choice="auto",
+            stream=True,
+            langsmith_extra={"on_end": collect},
+        )
+
+        tool_call_chunks = []
+        tool_call_ids = set()
+        async for chunk in chunks:
+            assert isinstance(chunk, ChatCompletionChunk)
+            # Collect chunks that contain tool calls
+            for choice in chunk.choices:
+                if choice.delta.tool_calls:
+                    tool_call_chunks.append(chunk)
+                    for tool_call in choice.delta.tool_calls:
+                        if tool_call.id:
+                            tool_call_ids.add(tool_call.id)
+
+        # Verify that we have tool call chunks
+        assert len(tool_call_chunks) > 0
+        # Verify that there are tool call IDs
+        assert len(tool_call_ids) > 0
+
+        # Verify that the run has the expected data
+        assert collect.run
+        assert collect.run.outputs["choices"][0]["finish_reason"] == "tool_calls"
+        assert collect.run.outputs["choices"][0]["message"]["tool_calls"]
+        assert (
+            collect.run.outputs["choices"][0]["message"]["tool_calls"][0]["function"][
+                "name"
+            ]
+            == "get_weather"
+        )
+
+    # Allow time for background threads to complete
+    time.sleep(0.1)
+    for call in mock_session.request.call_args_list:
+        assert call[0][0].upper() in ["POST", "GET", "PATCH"]

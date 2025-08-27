@@ -1,11 +1,11 @@
 mod errors;
 mod run;
 
-pub mod async_enabled;
-pub mod blocking;
+mod streaming;
 
 pub use errors::TracingClientError;
 pub use run::{
-    Attachment, EventType, RunCommon, RunCreate, RunCreateExtended, RunEventBytes, RunIO,
-    RunUpdate, RunUpdateExtended, TimeValue,
+    Attachment, RunCommon, RunCreate, RunCreateExtended, RunIO, RunUpdate, RunUpdateExtended,
+    TimeValue,
 };
+pub use streaming::{ClientConfig, TracingClient};

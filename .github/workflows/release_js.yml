@@ -7,11 +7,18 @@ on:
     paths:
       - "js/package.json"
   workflow_dispatch:
+    inputs:
+      dangerous-non-main-release:
+        required: false
+        type: boolean
+        default: false
+        description: "Release from a non-main branch (danger!)"
+
 
 jobs:
   if_release:
     # Disallow publishing from branches that aren't `main`.
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || inputs.dangerous-non-main-release
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -20,7 +27,7 @@ jobs:
       run:
         working-directory: "js"
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       # JS Build
       - name: Use Node.js 20.x
         uses: actions/setup-node@v3

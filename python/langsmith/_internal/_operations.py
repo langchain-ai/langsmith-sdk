@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import itertools
 import logging
+import os
 import uuid
+from collections.abc import Iterable
+from io import BufferedReader
 from typing import Literal, Optional, Union, cast
 
 from langsmith import schemas as ls_schemas
 from langsmith._internal import _orjson
-from langsmith._internal._compressed_runs import CompressedRuns
+from langsmith._internal._compressed_traces import CompressedTraces
 from langsmith._internal._multipart import MultipartPart, MultipartPartsAndContext
 from langsmith._internal._serde import dumps_json as _dumps_json
 
@@ -26,6 +29,9 @@ class SerializedRunOperation:
     inputs: Optional[bytes]
     outputs: Optional[bytes]
     events: Optional[bytes]
+    extra: Optional[bytes]
+    error: Optional[bytes]
+    serialized: Optional[bytes]
     attachments: Optional[ls_schemas.Attachments]
 
     __slots__ = (
@@ -36,6 +42,9 @@ class SerializedRunOperation:
         "inputs",
         "outputs",
         "events",
+        "extra",
+        "error",
+        "serialized",
         "attachments",
     )
 
@@ -48,6 +57,9 @@ class SerializedRunOperation:
         inputs: Optional[bytes] = None,
         outputs: Optional[bytes] = None,
         events: Optional[bytes] = None,
+        extra: Optional[bytes] = None,
+        error: Optional[bytes] = None,
+        serialized: Optional[bytes] = None,
         attachments: Optional[ls_schemas.Attachments] = None,
     ) -> None:
         self.operation = operation
@@ -57,6 +69,9 @@ class SerializedRunOperation:
         self.inputs = inputs
         self.outputs = outputs
         self.events = events
+        self.extra = extra
+        self.error = error
+        self.serialized = serialized
         self.attachments = attachments
 
     def __eq__(self, other: object) -> bool:
@@ -68,6 +83,9 @@ class SerializedRunOperation:
             self.inputs,
             self.outputs,
             self.events,
+            self.extra,
+            self.error,
+            self.serialized,
             self.attachments,
         ) == (
             other.operation,
@@ -77,6 +95,9 @@ class SerializedRunOperation:
             other.inputs,
             other.outputs,
             other.events,
+            other.extra,
+            other.error,
+            other.serialized,
             other.attachments,
         )
 
@@ -130,6 +151,9 @@ def serialize_run_dict(
     inputs = payload.pop("inputs", None)
     outputs = payload.pop("outputs", None)
     events = payload.pop("events", None)
+    extra = payload.pop("extra", None)
+    error = payload.pop("error", None)
+    serialized = payload.pop("serialized", None)
     attachments = payload.pop("attachments", None)
     return SerializedRunOperation(
         operation=operation,
@@ -139,6 +163,9 @@ def serialize_run_dict(
         inputs=_dumps_json(inputs) if inputs is not None else None,
         outputs=_dumps_json(outputs) if outputs is not None else None,
         events=_dumps_json(events) if events is not None else None,
+        extra=_dumps_json(extra) if extra is not None else None,
+        error=_dumps_json(error) if error is not None else None,
+        serialized=_dumps_json(serialized) if serialized is not None else None,
         attachments=attachments if attachments is not None else None,
     )
 
@@ -182,6 +209,12 @@ def combine_serialized_queue_operations(
                 create_op.outputs = op.outputs
             if op.events is not None:
                 create_op.events = op.events
+            if op.extra is not None:
+                create_op.extra = op.extra
+            if op.error is not None:
+                create_op.error = op.error
+            if op.serialized is not None:
+                create_op.serialized = op.serialized
             if op.attachments is not None:
                 if create_op.attachments is None:
                     create_op.attachments = {}
@@ -212,9 +245,9 @@ def serialized_feedback_operation_to_multipart_parts_and_context(
 
 def serialized_run_operation_to_multipart_parts_and_context(
     op: SerializedRunOperation,
-) -> MultipartPartsAndContext:
+) -> tuple[MultipartPartsAndContext, dict[str, BufferedReader]]:
     acc_parts: list[MultipartPart] = []
-
+    opened_files_dict: dict[str, BufferedReader] = {}
     # this is main object, minus inputs/outputs/events/attachments
     acc_parts.append(
         (
@@ -231,6 +264,9 @@ def serialized_run_operation_to_multipart_parts_and_context(
         ("inputs", op.inputs),
         ("outputs", op.outputs),
         ("events", op.events),
+        ("extra", op.extra),
+        ("error", op.error),
+        ("serialized", op.serialized),
     ):
         if value is None:
             continue
@@ -247,7 +283,7 @@ def serialized_run_operation_to_multipart_parts_and_context(
             ),
         )
     if op.attachments:
-        for n, (content_type, valb) in op.attachments.items():
+        for n, (content_type, data_or_path) in op.attachments.items():
             if "." in n:
                 logger.warning(
                     f"Skipping logging of attachment '{n}' "
@@ -257,28 +293,49 @@ def serialized_run_operation_to_multipart_parts_and_context(
                 )
                 continue
 
-            acc_parts.append(
-                (
-                    f"attachment.{op.id}.{n}",
+            if isinstance(data_or_path, bytes):
+                acc_parts.append(
                     (
-                        None,
-                        valb,
-                        content_type,
-                        {"Content-Length": str(len(valb))},
-                    ),
+                        f"attachment.{op.id}.{n}",
+                        (
+                            None,
+                            data_or_path,
+                            content_type,
+                            {"Content-Length": str(len(data_or_path))},
+                        ),
+                    )
                 )
-            )
-    return MultipartPartsAndContext(
-        acc_parts,
-        f"trace={op.trace_id},id={op.id}",
+            else:
+                try:
+                    file_size = os.path.getsize(data_or_path)
+                    file = open(data_or_path, "rb")
+                except FileNotFoundError:
+                    logger.warning(
+                        "Attachment file not found for run %s: %s", op.id, data_or_path
+                    )
+                    continue
+                opened_files_dict[str(data_or_path) + str(uuid.uuid4())] = file
+                acc_parts.append(
+                    (
+                        f"attachment.{op.id}.{n}",
+                        (
+                            None,
+                            file,
+                            f"{content_type}; length={file_size}",
+                            {},
+                        ),
+                    )
+                )
+    return (
+        MultipartPartsAndContext(acc_parts, f"trace={op.trace_id},id={op.id}"),
+        opened_files_dict,
     )
 
 
-def compress_multipart_parts_and_context(
+def encode_multipart_parts_and_context(
     parts_and_context: MultipartPartsAndContext,
-    compressed_runs: CompressedRuns,
     boundary: str,
-) -> None:
+) -> Iterable[tuple[bytes, Union[bytes, BufferedReader]]]:
     for part_name, (filename, data, content_type, headers) in parts_and_context.parts:
         header_parts = [
             f"--{boundary}\r\n",
@@ -296,15 +353,29 @@ def compress_multipart_parts_and_context(
             ]
         )
 
-        compressed_runs.compressor_writer.write("".join(header_parts).encode())
+        yield ("".join(header_parts).encode(), data)
 
-        if isinstance(data, (bytes, bytearray)):
-            compressed_runs.uncompressed_size += len(data)
-            compressed_runs.compressor_writer.write(data)
-        else:
-            encoded_data = str(data).encode()
-            compressed_runs.uncompressed_size += len(encoded_data)
-            compressed_runs.compressor_writer.write(encoded_data)
 
-        # Write part terminator
-        compressed_runs.compressor_writer.write(b"\r\n")
+def compress_multipart_parts_and_context(
+    parts_and_context: MultipartPartsAndContext,
+    compressed_traces: CompressedTraces,
+    boundary: str,
+) -> None:
+    write = compressed_traces.compressor_writer.write
+
+    for headers, data in encode_multipart_parts_and_context(
+        parts_and_context, boundary
+    ):
+        write(headers)
+
+        # Normalise to bytes
+        if not isinstance(data, (bytes, bytearray)):
+            data = (
+                data.read() if isinstance(data, BufferedReader) else str(data).encode()
+            )
+
+        compressed_traces.uncompressed_size += len(data)
+        write(data)
+        write(b"\r\n")  # part terminator
+
+    compressed_traces._context.append(parts_and_context.context)

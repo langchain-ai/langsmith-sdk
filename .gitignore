@@ -160,4 +160,7 @@ cython_debug/
 .idea/
 .DS_Store
 
+# JS API refs
+js/_build/
+
 .envrc

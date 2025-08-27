@@ -79,6 +79,11 @@ _serialization_methods = [
 ]
 
 
+# IMPORTANT: This function is used from Rust code in `langsmith-pyo3` serialization,
+#            in order to handle serializing these tricky Python types *from Rust*.
+#            Do not cause this function to become inaccessible (e.g. by deleting
+#            or renaming it) without also fixing the corresponding Rust code found in:
+#               rust/crates/langsmith-pyo3/src/serialization/mod.rs
 def _serialize_json(obj: Any) -> Any:
     try:
         if isinstance(obj, (set, tuple)):
@@ -100,7 +105,7 @@ def _serialize_json(obj: Any) -> Any:
                         return str(response)
                     return response
                 except Exception as e:
-                    logger.error(
+                    logger.debug(
                         f"Failed to use {attr} to serialize {type(obj)} to"
                         f" JSON: {repr(e)}"
                     )
@@ -146,7 +151,7 @@ def dumps_json(obj: Any) -> bytes:
         logger.debug(f"Orjson serialization failed: {repr(e)}. Falling back to json.")
         result = json.dumps(
             obj,
-            default=_simple_default,
+            default=_serialize_json,
             ensure_ascii=True,
         ).encode("utf-8")
         try:

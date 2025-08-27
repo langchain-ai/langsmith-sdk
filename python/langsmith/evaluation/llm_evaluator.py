@@ -1,6 +1,6 @@
 """Contains the LLMEvaluator class for building LLM-as-a-judge evaluators."""
 
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union, cast
+from typing import Any, Callable, Optional, Union, cast
 
 from pydantic import BaseModel
 
@@ -13,7 +13,7 @@ class CategoricalScoreConfig(BaseModel):
     """Configuration for a categorical score."""
 
     key: str
-    choices: List[str]
+    choices: list[str]
     description: str
     include_explanation: bool = False
     explanation_description: Optional[str] = None
@@ -33,7 +33,7 @@ class ContinuousScoreConfig(BaseModel):
 def _create_score_json_schema(
     score_config: Union[CategoricalScoreConfig, ContinuousScoreConfig],
 ) -> dict:
-    properties: Dict[str, Any] = {}
+    properties: dict[str, Any] = {}
     if isinstance(score_config, CategoricalScoreConfig):
         properties["score"] = {
             "type": "string",
@@ -79,7 +79,7 @@ class LLMEvaluator(RunEvaluator):
     def __init__(
         self,
         *,
-        prompt_template: Union[str, List[Tuple[str, str]]],
+        prompt_template: Union[str, list[tuple[str, str]]],
         score_config: Union[CategoricalScoreConfig, ContinuousScoreConfig],
         map_variables: Optional[Callable[[Run, Optional[Example]], dict]] = None,
         model_name: str = "gpt-4o",
@@ -122,7 +122,7 @@ class LLMEvaluator(RunEvaluator):
         cls,
         model: Any,
         *,
-        prompt_template: Union[str, List[Tuple[str, str]]],
+        prompt_template: Union[str, list[tuple[str, str]]],
         score_config: Union[CategoricalScoreConfig, ContinuousScoreConfig],
         map_variables: Optional[Callable[[Run, Optional[Example]], dict]] = None,
     ):
@@ -149,7 +149,7 @@ class LLMEvaluator(RunEvaluator):
 
     def _initialize(
         self,
-        prompt_template: Union[str, List[Tuple[str, str]]],
+        prompt_template: Union[str, list[tuple[str, str]]],
         score_config: Union[CategoricalScoreConfig, ContinuousScoreConfig],
         map_variables: Optional[Callable[[Run, Optional[Example]], dict]],
         chat_model: Any,

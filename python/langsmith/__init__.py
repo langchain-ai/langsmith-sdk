@@ -1,11 +1,9 @@
 """LangSmith Client."""
 
-from importlib import metadata
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from langsmith._expect import expect
-    from langsmith._testing import test, unit
     from langsmith.async_client import AsyncClient
     from langsmith.client import Client
     from langsmith.evaluation import aevaluate, evaluate
@@ -18,16 +16,13 @@ if TYPE_CHECKING:
         tracing_context,
     )
     from langsmith.run_trees import RunTree
-    from langsmith.utils import (
-        ContextThreadPoolExecutor,
-    )
+    from langsmith.testing._internal import test, unit
+    from langsmith.utils import ContextThreadPoolExecutor
 
 # Avoid calling into importlib on every call to __version__
-version = ""
-try:
-    version = metadata.version(__package__)
-except metadata.PackageNotFoundError:
-    pass
+
+__version__ = "0.4.19"
+version = __version__  # for backwards compatibility
 
 
 def __getattr__(name: str) -> Any:
@@ -63,7 +58,7 @@ def __getattr__(name: str) -> Any:
         return traceable
 
     elif name == "test":
-        from langsmith._testing import test
+        from langsmith.testing._internal import test
 
         return test
 
@@ -97,22 +92,23 @@ def __getattr__(name: str) -> Any:
         from langsmith.run_helpers import get_tracing_context
 
         return get_tracing_context
-
     elif name == "get_current_run_tree":
         from langsmith.run_helpers import get_current_run_tree
 
         return get_current_run_tree
 
     elif name == "unit":
-        from langsmith._testing import unit
+        from langsmith.testing._internal import unit
 
         return unit
     elif name == "ContextThreadPoolExecutor":
-        from langsmith.utils import (
-            ContextThreadPoolExecutor,
-        )
+        from langsmith.utils import ContextThreadPoolExecutor
 
         return ContextThreadPoolExecutor
+    elif name == "configure":
+        from langsmith.run_trees import configure
+
+        return configure
 
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
