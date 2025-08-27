@@ -480,7 +480,11 @@ export function generateWrapperFromJestlikeMethods(
       ) {
         context.enableTestTracking = lsParams.config.enableTestTracking;
       }
-      const { config, inputs, referenceOutputs, ...rest } = lsParams;
+      const { id, config, inputs, ...rest } = lsParams;
+      let referenceOutputs: O | undefined = rest.referenceOutputs;
+      if (!referenceOutputs && "outputs" in rest) {
+        referenceOutputs = rest.outputs as O;
+      }
       const totalRuns = config?.repetitions ?? config?.iterations ?? 1;
       for (let i = 0; i < totalRuns; i += 1) {
         const testUuid = v4().replace(/-/g, "").slice(0, 13);
@@ -637,7 +641,7 @@ export function generateWrapperFromJestlikeMethods(
                   dataset.id,
                   inputs,
                   referenceOutputs,
-                  lsParams.id
+                  id
                 );
 
                 // TODO: Create or update the example in the background
@@ -746,7 +750,10 @@ export function generateWrapperFromJestlikeMethods(
 
   function createEachMethod(method: (...args: any[]) => void) {
     function eachMethod<I extends KVMap, O extends KVMap>(
-      table: ({ inputs: I; referenceOutputs?: O } & Record<string, any>)[],
+      table: ({ id?: string; inputs: I; referenceOutputs?: O } & Record<
+        string,
+        any
+      >)[],
       config?: LangSmithJestlikeWrapperConfig
     ) {
       const context = testWrapperAsyncLocalStorageInstance.getStore();
@@ -761,7 +768,10 @@ export function generateWrapperFromJestlikeMethods(
       return function (
         name: string,
         fn: (
-          params: { inputs: I; referenceOutputs?: O } & Record<string, any>
+          params: { id?: string; inputs: I; referenceOutputs?: O } & Record<
+            string,
+            any
+          >
         ) => unknown | Promise<unknown>,
         timeout?: number
       ) {
