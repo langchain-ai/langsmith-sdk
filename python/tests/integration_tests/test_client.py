@@ -2,9 +2,11 @@
 
 import asyncio
 import datetime
+import importlib
 import io
 import logging
 import os
+import queue
 import random
 import string
 import sys
@@ -13,16 +15,26 @@ import time
 import uuid
 from datetime import timedelta
 from pathlib import Path
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, cast
 from unittest import mock
 from uuid import uuid4
 
 import pytest
 from freezegun import freeze_time
+from opentelemetry.sdk.trace import ReadableSpan
+from opentelemetry.trace import set_tracer_provider
 from pydantic import BaseModel
 from requests_toolbelt import MultipartEncoder, MultipartEncoderMonitor
 
+import langsmith
+from langsmith._internal._background_thread import (
+    TracingQueueItem,
+    _otel_tracing_thread_handle_batch,
+)
+from langsmith._internal._operations import serialize_run_dict
 from langsmith._internal._serde import dumps_json
+from langsmith._internal.otel import _otel_exporter
+from langsmith._internal.otel._otel_client import get_otlp_tracer_provider
 from langsmith.client import ID_TYPE, Client, _close_files
 from langsmith.evaluation import aevaluate, evaluate
 from langsmith.run_helpers import traceable
@@ -3435,3 +3447,97 @@ def test_run_ops_buffer_integration(langchain_client: Client) -> None:
         # Clean up
         if buffer_client.has_project(project_name=project_name):
             buffer_client.delete_project(project_name=project_name)
+
+
+def test_otel_trace_attributes(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("LANGSMITH_OTEL_ENABLED", "true")
+    get_env_var.cache_clear()
+    importlib.reload(langsmith.client)
+    importlib.reload(langsmith._internal.otel._otel_client)
+    importlib.reload(langsmith._internal.otel._otel_exporter)
+    set_tracer_provider(get_otlp_tracer_provider())
+
+    client = Client()
+
+    future = queue.Queue()
+
+    class MockOTELExporter:
+        def __init__(self):
+            self.original_otel_exporter = client.otel_exporter
+
+        def export_batch(self, run_ops, otel_context_map):
+            for op in run_ops:
+                try:
+                    run_info = self.original_otel_exporter._deserialize_run_info(op)
+                    if not run_info:
+                        continue
+                    if op.operation == "post":
+                        span = self.original_otel_exporter._create_span_for_run(
+                            op, run_info, otel_context_map.get(op.id)
+                        )
+                        if span:
+                            self.original_otel_exporter._spans[op.id] = span
+                    else:
+                        future.put(self.original_otel_exporter._spans[op.id])
+                        self.original_otel_exporter._update_span_for_run(op, run_info)
+                except Exception as e:
+                    logger.exception(f"Error processing operation {op.id}: {e}")
+
+    client.otel_exporter = MockOTELExporter()
+
+    # Create test data
+    run_id = uuid.uuid4()
+    trace_id = uuid.uuid4()
+    start_time = datetime.datetime.now(datetime.timezone.utc)
+    post_run_data = {
+        "id": run_id,
+        "trace_id": trace_id,
+        "dotted_order": f"{start_time.strftime('%Y%m%dT%H%M%S%fZ')}{str(trace_id)}",
+        "session_name": "test-project",
+        "name": "OTEL Export Test",
+        "inputs": {"prompt": "Hello, OTEL!"},
+        "run_type": "llm",
+    }
+
+    # Create test batch
+    serialized_post_op = serialize_run_dict("post", post_run_data)
+    batch = [TracingQueueItem("test_priority_1", serialized_post_op)]
+
+    _otel_tracing_thread_handle_batch(
+        client=client,
+        tracing_queue=client.tracing_queue,
+        batch=batch,
+        mark_task_done=False,
+    )
+
+    patch_run_data = {
+        "id": run_id,
+        "trace_id": trace_id,
+        "outputs": {"answer": "Hello, User!"},
+        "extra": {"metadata": {"foo": "bar"}},
+        "tags": ["otel", "test"],
+        "dotted_order": f"{start_time.strftime('%Y%m%dT%H%M%S%fZ')}{str(trace_id)}",
+    }
+
+    serialized_patch_op = serialize_run_dict("patch", patch_run_data)
+
+    batch = [TracingQueueItem("test_priority_2", serialized_patch_op)]
+
+    _otel_tracing_thread_handle_batch(
+        client=client,
+        tracing_queue=client.tracing_queue,
+        batch=batch,
+        mark_task_done=False,
+    )
+
+    readable_span = future.get(timeout=0.1)
+    readable_span = cast(ReadableSpan, readable_span)
+    assert readable_span.attributes[_otel_exporter.GEN_AI_OPERATION_NAME] == "chat"
+    assert (
+        readable_span.attributes[_otel_exporter.GENAI_PROMPT]
+        == '{"prompt":"Hello, OTEL!"}'
+    )
+    assert (
+        readable_span.attributes[_otel_exporter.GENAI_COMPLETION]
+        == '{"answer":"Hello, User!"}'
+    )
