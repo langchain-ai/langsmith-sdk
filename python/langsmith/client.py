@@ -331,7 +331,7 @@ def _get_tracing_sampling_rate(
     return sampling_rate
 
 
-def _get_write_api_urls(_write_api_urls: Optional[dict[str, str]], workspace_id: Optional[str] = None) -> dict[str, str]:
+def _get_write_api_urls(_write_api_urls: Optional[dict[str, str]]) -> dict[str, str]:
     # Note: LANGSMITH_RUNS_ENDPOINTS is now handled via replicas, not _write_api_urls
     _write_api_urls = _write_api_urls or {}
     processed_write_api_urls = {}
@@ -555,7 +555,7 @@ class Client:
         self.tracing_sample_rate = _get_tracing_sampling_rate(tracing_sampling_rate)
         self._filtered_post_uuids: set[uuid.UUID] = set()
         self._write_api_urls: Mapping[str, Optional[str]] = _get_write_api_urls(
-            api_urls, workspace_id
+            api_urls
         )
         # Initialize workspace attribute first
         self._workspace_id = ls_utils.get_workspace_id(workspace_id)
