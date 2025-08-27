@@ -48,7 +48,10 @@ export function extractOutputTokenDetails(
       usage.reasoningTokens;
   }
   if (openAIServiceTier && typeof usage.outputTokens === "number") {
-    outputTokenDetails[openAIServiceTier] = usage.outputTokens;
+    // Avoid counting reasoning tokens towards the output token count
+    // since service tier tokens are already priced differently
+    outputTokenDetails[openAIServiceTier] =
+      usage.outputTokens - (usage.reasoningTokens ?? 0);
   }
   return outputTokenDetails;
 }
@@ -126,7 +129,10 @@ export function extractInputTokenDetails(
         providerMetadata.openai.cachedPromptTokens;
     }
     if (openAIServiceTier && typeof usage?.inputTokens === "number") {
-      inputTokenDetails[openAIServiceTier] = usage.inputTokens;
+      // Avoid counting cached input tokens towards the input token count
+      // since service tier tokens are already priced differently
+      inputTokenDetails[openAIServiceTier] =
+        usage.inputTokens - (usage.cachedInputTokens ?? 0);
     }
   }
   return inputTokenDetails;
