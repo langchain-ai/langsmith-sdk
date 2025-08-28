@@ -654,7 +654,7 @@ class _LangSmithTestSuite:
                 normalized_split = [normalized_split]
             if normalized_split and metadata:
                 metadata["dataset_split"] = normalized_split
-            existing_dataset_split = example.metadata.pop("dataset_split")
+            existing_dataset_split = (example.metadata or {}).pop("dataset_split")
             if (
                 (inputs != example.inputs)
                 or (outputs is not None and outputs != example.outputs)
