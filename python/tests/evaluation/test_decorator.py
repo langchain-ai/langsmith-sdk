@@ -180,6 +180,18 @@ def test_repetitions_parameter():
     assert result == 15
 
 
+@pytest.mark.langsmith(split="test_split")
+def test_split_parameter():
+    """Test that split parameter causes test to run multiple times."""
+    x = "test_split"
+    t.log_inputs({"split": x})
+
+    t.log_outputs({"foo": "foo"})
+    t.log_reference_outputs({"foo": "foo"})
+
+    assert x == "test_split"
+
+
 @pytest.mark.langsmith(repetitions=3)
 async def test_repetitions_parameter_async():
     """Test that repetitions parameter causes async test to run multiple times."""
