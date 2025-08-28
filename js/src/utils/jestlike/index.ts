@@ -96,7 +96,7 @@ export function logOutputs(output: Record<string, unknown>) {
   context.setLoggedOutput(output);
 }
 
-export function _objectHash(obj: KVMap, depth = 0): string {
+export function _objectHash(obj: KVMap | any[], depth = 0): string {
   // Prevent infinite recursion
   if (depth > 50) {
     throw new Error(
@@ -206,12 +206,20 @@ export function generateWrapperFromJestlikeMethods(
     let example;
     try {
       example = await client.readExample(exampleId);
+      const normalizedSplit = split
+        ? typeof split === "string"
+          ? [split]
+          : split
+        : undefined;
+      const { dataset_split, ...restMetadata } = example.metadata ?? {};
       if (
         _objectHash(example.inputs) !== _objectHash(inputs) ||
         _objectHash(example.outputs ?? {}) !== _objectHash(outputs ?? {}) ||
         example.dataset_id !== datasetId ||
-        example.split !== split ||
-        _objectHash(example.metadata ?? {}) !== _objectHash(metadata ?? {})
+        (normalizedSplit !== undefined &&
+          _objectHash(dataset_split ?? []) !==
+            _objectHash(normalizedSplit ?? [])) ||
+        _objectHash(restMetadata ?? {}) !== _objectHash(metadata ?? {})
       ) {
         await client.updateExample(exampleId, {
           inputs,
