@@ -189,7 +189,7 @@ export function generateWrapperFromJestlikeMethods(
     datasetId: string;
     inputs: Record<string, unknown>;
     outputs: Record<string, unknown>;
-    metadata: Record<string, unknown>;
+    metadata?: Record<string, unknown>;
     split?: string | string[];
     createdAt: string;
   }) {
@@ -219,7 +219,8 @@ export function generateWrapperFromJestlikeMethods(
         (normalizedSplit !== undefined &&
           _objectHash(dataset_split ?? []) !==
             _objectHash(normalizedSplit ?? [])) ||
-        _objectHash(restMetadata ?? {}) !== _objectHash(metadata ?? {})
+        (metadata !== undefined &&
+          _objectHash(restMetadata ?? {}) !== _objectHash(metadata ?? {}))
       ) {
         await client.updateExample(exampleId, {
           inputs,
@@ -678,7 +679,7 @@ export function generateWrapperFromJestlikeMethods(
                       datasetId: dataset.id,
                       inputs,
                       outputs: referenceOutputs ?? {},
-                      metadata: metadata ?? {},
+                      metadata,
                       split,
                       createdAt,
                     })
