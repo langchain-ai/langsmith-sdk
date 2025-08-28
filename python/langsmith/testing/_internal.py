@@ -649,12 +649,21 @@ class _LangSmithTestSuite:
                 created_at=self._experiment.start_time,
             )
         else:
+            normalized_split = split
+            if isinstance(normalized_split, str):
+                normalized_split = [normalized_split]
+            if normalized_split and metadata:
+                metadata["dataset_split"] = normalized_split
+            existing_dataset_split = example.metadata.pop("dataset_split")
             if (
                 (inputs != example.inputs)
                 or (outputs is not None and outputs != example.outputs)
                 or (metadata is not None and metadata != example.metadata)
                 or str(example.dataset_id) != str(self.id)
-                or example.split != split
+                or (
+                    normalized_split is not None
+                    and existing_dataset_split != normalized_split
+                )
             ):
                 self.client.update_example(
                     example_id=example.id,

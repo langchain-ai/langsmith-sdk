@@ -151,7 +151,7 @@ def test_metadata_parameter():
 
 
 @pytest.mark.langsmith(
-    metadata={"test_type": "metadata_test_async", "custom_key": "custom_value_async"}
+    metadata={"test_type": "metadata_test_asyncy", "custom_key": "custom_value_async"}
 )
 async def test_metadata_parameter_async():
     """Test that metadata parameter is properly passed to the decorator."""
