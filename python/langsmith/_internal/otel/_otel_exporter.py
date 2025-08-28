@@ -130,14 +130,14 @@ class OTELExporter:
     ]
     """OpenTelemetry exporter for LangSmith runs."""
 
-    def __init__(self, tracer_provider=None, max_spans=100000, span_ttl_seconds=3600):
+    def __init__(self, tracer_provider=None, max_spans=100000, span_ttl_seconds=5400):
         """Initialize the OTEL exporter.
 
         Args:
             tracer_provider: Optional tracer provider to use. If not provided,
                 the global tracer provider will be used.
             max_spans: Maximum number of spans to keep in memory (default: 100000)
-            span_ttl_seconds:TTL for incomplete traces in seconds (default: 7200s)
+            span_ttl_seconds:TTL for incomplete traces in seconds (default: 5400s)
         """
         otel_imports = _import_otel_exporter()
         if otel_imports is None:
