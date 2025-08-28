@@ -96,7 +96,7 @@ export function logOutputs(output: Record<string, unknown>) {
   context.setLoggedOutput(output);
 }
 
-export function _objectHash(obj: KVMap | any[], depth = 0): string {
+export function _objectHash(obj: KVMap | unknown[], depth = 0): string {
   // Prevent infinite recursion
   if (depth > 50) {
     throw new Error(
