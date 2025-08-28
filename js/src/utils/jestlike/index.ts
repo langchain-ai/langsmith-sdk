@@ -34,7 +34,6 @@ import type {
   LangSmithJestlikeWrapperParams,
   LangSmithJestlikeDescribeWrapper,
   LangSmithJestlikeDescribeWrapperConfig,
-  LangSmithJestlikeTestMetadata,
   LangSmithJestlikeTestFunction,
 } from "./types.js";
 import { getEnvironmentVariable, isJsDom } from "../env.js";
@@ -524,14 +523,8 @@ export function generateWrapperFromJestlikeMethods(
                 "Dataset failed to initialize. Please check your LangSmith environment variables."
               );
             }
-            const {
-              dataset,
-              createdAt,
-              project,
-              client,
-              experimentUrl,
-              enableTestTracking,
-            } = datasetSetupInfo.get(context.suiteUuid);
+            const { dataset, createdAt, project, client, experimentUrl } =
+              datasetSetupInfo.get(context.suiteUuid);
             const testInput: I = inputs;
             const testOutput: O = referenceOutputs ?? ({} as O);
             const testFeedback: SimpleEvaluationResult[] = [];
