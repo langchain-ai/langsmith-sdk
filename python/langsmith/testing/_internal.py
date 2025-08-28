@@ -654,6 +654,7 @@ class _LangSmithTestSuite:
                 or (outputs is not None and outputs != example.outputs)
                 or (metadata is not None and metadata != example.metadata)
                 or str(example.dataset_id) != str(self.id)
+                or example.split != split
             ):
                 self.client.update_example(
                     example_id=example.id,

@@ -1,6 +1,9 @@
-import { CreateProjectParams } from "../../client.js";
-import { EvaluationResult } from "../../evaluation/evaluator.js";
-import { Client } from "../../index.js";
+import type {
+  CreateProjectParams,
+  CreateExampleOptions,
+  Client,
+} from "../../client.js";
+import type { EvaluationResult } from "../../evaluation/evaluator.js";
 import type { RunTreeConfig } from "../../run_trees.js";
 import type { SimpleEvaluator } from "./vendor/evaluatedBy.js";
 
@@ -20,7 +23,7 @@ export type LangSmithJestlikeWrapperParams<I, O> = {
   inputs: I;
   referenceOutputs?: O;
   config?: LangSmithJestlikeWrapperConfig;
-};
+} & Pick<CreateExampleOptions, "split" | "metadata">;
 
 export type LangSmithJestlikeDescribeWrapperConfig = {
   client?: Client;
@@ -49,6 +52,7 @@ export type LangSmithJestlikeTestMetadata = {
   datasetId?: string;
   testTrackingEnabled: boolean;
   repetition: number;
+  split?: string | string[];
 };
 
 export type LangSmithJestlikeTestFunction<I, O> = (
