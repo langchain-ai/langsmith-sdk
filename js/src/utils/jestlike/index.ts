@@ -96,7 +96,7 @@ export function logOutputs(output: Record<string, unknown>) {
   context.setLoggedOutput(output);
 }
 
-export function _objectHash(obj: KVMap, depth = 0): string {
+export function _objectHash(obj: KVMap | unknown[], depth = 0): string {
   // Prevent infinite recursion
   if (depth > 50) {
     throw new Error(
@@ -190,6 +190,7 @@ export function generateWrapperFromJestlikeMethods(
     inputs: Record<string, unknown>;
     outputs: Record<string, unknown>;
     metadata: Record<string, unknown>;
+    split?: string | string[];
     createdAt: string;
   }) {
     const {
@@ -198,21 +199,33 @@ export function generateWrapperFromJestlikeMethods(
       inputs,
       outputs,
       metadata,
+      split,
       createdAt,
       datasetId,
     } = params;
     let example;
     try {
       example = await client.readExample(exampleId);
+      const normalizedSplit = split
+        ? typeof split === "string"
+          ? [split]
+          : split
+        : undefined;
+      const { dataset_split, ...restMetadata } = example.metadata ?? {};
       if (
         _objectHash(example.inputs) !== _objectHash(inputs) ||
         _objectHash(example.outputs ?? {}) !== _objectHash(outputs ?? {}) ||
-        example.dataset_id !== datasetId
+        example.dataset_id !== datasetId ||
+        (normalizedSplit !== undefined &&
+          _objectHash(dataset_split ?? []) !==
+            _objectHash(normalizedSplit ?? [])) ||
+        _objectHash(restMetadata ?? {}) !== _objectHash(metadata ?? {})
       ) {
         await client.updateExample(exampleId, {
           inputs,
           outputs,
           metadata,
+          split,
           dataset_id: datasetId,
         });
       }
@@ -222,6 +235,7 @@ export function generateWrapperFromJestlikeMethods(
           exampleId,
           datasetId,
           createdAt: new Date(createdAt ?? new Date()),
+          split,
           metadata,
         });
       } else {
@@ -479,7 +493,7 @@ export function generateWrapperFromJestlikeMethods(
       ) {
         context.enableTestTracking = lsParams.config.enableTestTracking;
       }
-      const { id, config, inputs, ...rest } = lsParams;
+      const { id, config, inputs, split, metadata, ...rest } = lsParams;
       let referenceOutputs: O | undefined = rest.referenceOutputs;
       if (!referenceOutputs && "outputs" in rest) {
         referenceOutputs = rest.outputs as O;
@@ -577,6 +591,7 @@ export function generateWrapperFromJestlikeMethods(
                             datasetId: dataset?.id,
                             testTrackingEnabled: trackingEnabled(testContext),
                             repetition: i,
+                            split,
                           },
                         }
                       )
@@ -663,7 +678,8 @@ export function generateWrapperFromJestlikeMethods(
                       datasetId: dataset.id,
                       inputs,
                       outputs: referenceOutputs ?? {},
-                      metadata: {},
+                      metadata: metadata ?? {},
+                      split,
                       createdAt,
                     })
                   );
