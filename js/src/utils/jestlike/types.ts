@@ -42,3 +42,20 @@ export type SimpleEvaluationResult = {
   score: NonNullable<EvaluationResult["score"]>;
   comment?: EvaluationResult["comment"];
 };
+
+export type LangSmithJestlikeTestMetadata = {
+  exampleId?: string;
+  experimentId?: string;
+  datasetId?: string;
+  testTrackingEnabled: boolean;
+  repetition: number;
+};
+
+export type LangSmithJestlikeTestFunction<I, O> = (
+  data: {
+    inputs: I;
+    referenceOutputs?: O;
+    testMetadata: LangSmithJestlikeTestMetadata;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } & Record<string, any>
+) => unknown | Promise<unknown>;

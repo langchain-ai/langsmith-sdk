@@ -34,6 +34,7 @@ import type {
   LangSmithJestlikeWrapperParams,
   LangSmithJestlikeDescribeWrapper,
   LangSmithJestlikeDescribeWrapperConfig,
+  LangSmithJestlikeTestFunction,
 } from "./types.js";
 import { getEnvironmentVariable, isJsDom } from "../env.js";
 import {
@@ -465,9 +466,7 @@ export function generateWrapperFromJestlikeMethods(
     >(
       name: string,
       lsParams: LangSmithJestlikeWrapperParams<I, O>,
-      testFn: (
-        data: { inputs: I; referenceOutputs?: O } & Record<string, any>
-      ) => unknown | Promise<unknown>,
+      testFn: LangSmithJestlikeTestFunction<I, O>,
       timeout?: number
     ) {
       // Due to https://github.com/jestjs/jest/issues/13653,
@@ -572,6 +571,13 @@ export function generateWrapperFromJestlikeMethods(
                           ...rest,
                           inputs: testInput,
                           referenceOutputs: testOutput,
+                          testMetadata: {
+                            exampleId,
+                            experimentId: project?.id,
+                            datasetId: dataset?.id,
+                            testTrackingEnabled: trackingEnabled(testContext),
+                            repetition: i,
+                          },
                         }
                       )
                     );
@@ -767,12 +773,7 @@ export function generateWrapperFromJestlikeMethods(
       }
       return function (
         name: string,
-        fn: (
-          params: { id?: string; inputs: I; referenceOutputs?: O } & Record<
-            string,
-            any
-          >
-        ) => unknown | Promise<unknown>,
+        fn: LangSmithJestlikeTestFunction<I, O>,
         timeout?: number
       ) {
         for (let i = 0; i < table.length; i += 1) {
