@@ -64,6 +64,7 @@ from langsmith import utils as ls_utils
 from langsmith._internal import _orjson
 from langsmith._internal._background_thread import (
     TracingQueueItem,
+    _calculate_serialized_size,
 )
 from langsmith._internal._background_thread import (
     tracing_control_thread_func as _tracing_control_thread_func,
@@ -1577,6 +1578,7 @@ class Client:
                         TracingQueueItem(
                             run_create["dotted_order"],
                             serialized_op,
+                            _calculate_serialized_size(serialized_op),
                             api_key=api_key,
                             api_url=api_url,
                             otel_context=self._set_span_in_context(
@@ -1589,6 +1591,7 @@ class Client:
                         TracingQueueItem(
                             run_create["dotted_order"],
                             serialized_op,
+                            _calculate_serialized_size(serialized_op),
                             api_key=api_key,
                             api_url=api_url,
                         )
@@ -2535,6 +2538,7 @@ class Client:
                         TracingQueueItem(
                             run_update["dotted_order"],
                             serialized_op,
+                            _calculate_serialized_size(serialized_op),
                             api_key=api_key,
                             api_url=api_url,
                             otel_context=self._set_span_in_context(
@@ -2547,6 +2551,7 @@ class Client:
                         TracingQueueItem(
                             run_update["dotted_order"],
                             serialized_op,
+                            _calculate_serialized_size(serialized_op),
                             api_key=api_key,
                             api_url=api_url,
                         )
@@ -6325,7 +6330,11 @@ class Client:
                             self._data_available_event.set()
                 elif self.tracing_queue is not None:
                     self.tracing_queue.put(
-                        TracingQueueItem(str(feedback.id), serialized_op)
+                        TracingQueueItem(
+                            str(feedback.id),
+                            serialized_op,
+                            _calculate_serialized_size(serialized_op),
+                        )
                     )
             else:
                 feedback_block = _dumps_json(feedback.dict(exclude_none=True))

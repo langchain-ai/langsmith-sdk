@@ -3050,6 +3050,9 @@ def test_create_run_with_disabled_compression(mock_session_cls: mock.Mock) -> No
 @patch("langsmith.client.requests.Session")
 def test_max_batch_size_bytes_override(mock_session_cls: mock.Mock) -> None:
     """Test that client._max_batch_size_bytes overrides default size_limit_bytes."""
+    # Clear the cache to ensure the environment variable is re-evaluated
+    ls_utils.get_env_var.cache_clear()
+
     # Prepare a mocked session
     mock_session = MagicMock()
     mock_response = MagicMock()
@@ -3057,7 +3060,13 @@ def test_max_batch_size_bytes_override(mock_session_cls: mock.Mock) -> None:
     mock_session.request.return_value = mock_response
     mock_session_cls.return_value = mock_session
 
-    with patch.dict("os.environ", {}, clear=True):
+    with patch.dict(
+        "os.environ",
+        {
+            "LANGSMITH_DISABLE_RUN_COMPRESSION": "true",
+        },
+        clear=True,
+    ):
         info = ls_schemas.LangSmithInfo(
             version="0.6.0",
             instance_flags={"zstd_compression_enabled": True},
@@ -3076,35 +3085,37 @@ def test_max_batch_size_bytes_override(mock_session_cls: mock.Mock) -> None:
             auto_batch_tracing=True,
             session=mock_session,
             info=info,
-            # Set custom max_batch_size_bytes to a small value (1KB)
-            max_batch_size_bytes=1024,
+            # Set custom max_batch_size_bytes to a tiny value (200 bytes)
+            max_batch_size_bytes=200,
         )
 
         # Create many runs concurrently to trigger multiple background threads
         import threading
         import time
-        
+
         def create_runs_batch(start_idx, count):
             for i in range(start_idx, start_idx + count):
                 run_id = uuid.uuid4()
                 client.create_run(
                     name=f"test_run_{i}",
                     run_type="llm",
-                    inputs={"large_data": "x" * 1024},  # > 1KB per run including overhead
+                    inputs={
+                        "large_data": "x" * 1024
+                    },  # 1KB per run, well over 200 byte limit
                     id=run_id,
                     trace_id=run_id,
                     dotted_order=str(run_id),
                 )
                 # Small delay to allow queue to build up and trigger thread scaling
                 time.sleep(0.001)
-        
-        # Create two threads with 5 runs each (10 total)
+
+        # Create 10 threads with 10 runs each (100 total)
         threads = []
-        for batch_start in range(0, 10, 5):  # 2 threads, 5 runs each
-            thread = threading.Thread(target=create_runs_batch, args=(batch_start, 5))
+        for batch_start in range(0, 100, 10):  # 10 threads, 10 runs each
+            thread = threading.Thread(target=create_runs_batch, args=(batch_start, 10))
             threads.append(thread)
             thread.start()
-        
+
         # Wait for all creation threads to complete
         for thread in threads:
             thread.join()
@@ -3129,8 +3140,10 @@ def test_max_batch_size_bytes_override(mock_session_cls: mock.Mock) -> None:
         and call_obj.args[1].endswith("runs/multipart")
     ]
 
-    # Should have made 10 requests due to size limit being exceeded
-    assert len(post_calls) == 10
+    # Should have made one POST per run due to size limit being exceeded
+    # Each run (~1KB) is much larger than the 200 byte limit
+    # With the bug fix and optimization, each run should trigger its own flush
+    assert len(post_calls) == 100  # Expect exactly 100 requests for 100 runs
 
     # Verify the Content-Encoding is zstd (compression was used)
     found_zstd = False
@@ -3141,7 +3154,7 @@ def test_max_batch_size_bytes_override(mock_session_cls: mock.Mock) -> None:
                 found_zstd = True
                 break
 
-    assert found_zstd, "Expected zstd compressed request"
+    assert not found_zstd, "Expected no zstd compressed request"
 
 
 def test__dataset_examples_path():

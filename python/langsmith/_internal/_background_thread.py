@@ -63,27 +63,31 @@ class TracingQueueItem:
     Attributes:
         priority (str): The priority of the item.
         item (Any): The item itself.
+        size (int): The serialized size of the item in bytes.
         otel_context (Optional[Context]): The OTEL context of the item.
     """
 
     priority: str
     item: Union[SerializedRunOperation, SerializedFeedbackOperation]
+    size: int
     api_url: Optional[str]
     api_key: Optional[str]
     otel_context: Optional[Context]
 
-    __slots__ = ("priority", "item", "api_key", "api_url", "otel_context")
+    __slots__ = ("priority", "item", "size", "api_key", "api_url", "otel_context")
 
     def __init__(
         self,
         priority: str,
         item: Union[SerializedRunOperation, SerializedFeedbackOperation],
+        size: int,
         api_key: Optional[str] = None,
         api_url: Optional[str] = None,
         otel_context: Optional[Context] = None,
     ) -> None:
         self.priority = priority
         self.item = item
+        self.size = size
         self.api_key = api_key
         self.api_url = api_url
         self.otel_context = otel_context
@@ -101,20 +105,70 @@ class TracingQueueItem:
         ) == (other.priority, other.item.__class__)
 
 
+def _calculate_serialized_size(
+    op: Union[SerializedRunOperation, SerializedFeedbackOperation],
+) -> int:
+    """Calculate actual serialized size of an operation."""
+    size = 0
+    if hasattr(op, "_none") and op._none:
+        size += len(op._none)
+    if hasattr(op, "inputs") and op.inputs:
+        size += len(op.inputs)
+    if hasattr(op, "outputs") and op.outputs:
+        size += len(op.outputs)
+    if hasattr(op, "events") and op.events:
+        size += len(op.events)
+    if hasattr(op, "extra") and op.extra:
+        size += len(op.extra)
+    if hasattr(op, "error") and op.error:
+        size += len(op.error)
+    if hasattr(op, "serialized") and op.serialized:
+        size += len(op.serialized)
+    if hasattr(op, "feedback") and op.feedback:
+        size += len(op.feedback)
+
+    return size
+
+
 def _tracing_thread_drain_queue(
-    tracing_queue: Queue, limit: int = 100, block: bool = True
+    tracing_queue: Queue, limit: int = 100, block: bool = True, max_size_bytes: int = 0
 ) -> list[TracingQueueItem]:
     next_batch: list[TracingQueueItem] = []
+    current_size = 0
+
     try:
         # wait 250ms for the first item, then
         # - drain the queue with a 50ms block timeout
-        # - stop draining if we hit the limit
+        # - stop draining if we hit either count or size limit
         # shorter drain timeout is used instead of non-blocking calls to
         # avoid creating too many small batches
         if item := tracing_queue.get(block=block, timeout=0.25):
             next_batch.append(item)
-        while item := tracing_queue.get(block=block, timeout=0.05):
+            if max_size_bytes > 0:
+                current_size += item.size
+                # If first item already exceeds limit, return just this item
+                if current_size > max_size_bytes:
+                    return next_batch
+
+        # Continue draining until we hit count limit OR size limit
+        while True:
+            try:
+                item = tracing_queue.get(block=block, timeout=0.05)
+            except Empty:
+                break
+
+            # Add the item first
             next_batch.append(item)
+
+            # Then check size limit AFTER adding the item
+            if max_size_bytes > 0:
+                current_size += item.size
+                # If we've exceeded size limit, stop here
+                # (item is included in this batch)
+                if current_size > max_size_bytes:
+                    break
+
+            # Check count limit AFTER adding the item
             if limit and len(next_batch) >= limit:
                 break
     except Empty:
@@ -634,7 +688,14 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
             new_thread.start()
 
         hybrid_otel_and_langsmith, is_otel_only = get_tracing_mode()
-        if next_batch := _tracing_thread_drain_queue(tracing_queue, limit=size_limit):
+        max_batch_size = (
+            getattr(client, "_max_batch_size_bytes", None)
+            or batch_ingest_config.get("size_limit_bytes")
+            or 0
+        )
+        if next_batch := _tracing_thread_drain_queue(
+            tracing_queue, limit=size_limit, max_size_bytes=max_batch_size
+        ):
             if hybrid_otel_and_langsmith:
                 # Hybrid mode: both OTEL and LangSmith
                 _hybrid_tracing_thread_handle_batch(
@@ -651,8 +712,13 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
 
     # drain the queue on exit - apply same logic
     hybrid_otel_and_langsmith, is_otel_only = get_tracing_mode()
+    max_batch_size = (
+        getattr(client, "_max_batch_size_bytes", None)
+        or batch_ingest_config.get("size_limit_bytes")
+        or 0
+    )
     while next_batch := _tracing_thread_drain_queue(
-        tracing_queue, limit=size_limit, block=False
+        tracing_queue, limit=size_limit, block=False, max_size_bytes=max_batch_size
     ):
         if hybrid_otel_and_langsmith:
             # Hybrid mode cleanup
@@ -845,7 +911,14 @@ def _tracing_sub_thread_func(
         and seen_successive_empty_queues
         <= batch_ingest_config["scale_down_nempty_trigger"]
     ):
-        if next_batch := _tracing_thread_drain_queue(tracing_queue, limit=size_limit):
+        max_batch_size = (
+            getattr(client, "_max_batch_size_bytes", None)
+            or batch_ingest_config.get("size_limit_bytes")
+            or 0
+        )
+        if next_batch := _tracing_thread_drain_queue(
+            tracing_queue, limit=size_limit, max_size_bytes=max_batch_size
+        ):
             seen_successive_empty_queues = 0
 
             hybrid_otel_and_langsmith, is_otel_only = get_tracing_mode()
@@ -867,8 +940,13 @@ def _tracing_sub_thread_func(
 
     # drain the queue on exit - apply same logic
     hybrid_otel_and_langsmith, is_otel_only = get_tracing_mode()
+    max_batch_size = (
+        getattr(client, "_max_batch_size_bytes", None)
+        or batch_ingest_config.get("size_limit_bytes")
+        or 0
+    )
     while next_batch := _tracing_thread_drain_queue(
-        tracing_queue, limit=size_limit, block=False
+        tracing_queue, limit=size_limit, block=False, max_size_bytes=max_batch_size
     ):
         if hybrid_otel_and_langsmith:
             # Hybrid mode cleanup
