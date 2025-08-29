@@ -42,7 +42,6 @@ const setUsageMetadataOnRunTree = (
   result: {
     usage?: LanguageModelV2Usage;
     providerMetadata?: SharedV2ProviderMetadata;
-    response?: Record<string, any>;
   },
   runTree: RunTree
 ) => {
