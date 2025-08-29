@@ -3080,17 +3080,34 @@ def test_max_batch_size_bytes_override(mock_session_cls: mock.Mock) -> None:
             max_batch_size_bytes=1024,
         )
 
-        # Create runs with large inputs that will exceed 1KB uncompressed
-        for i in range(2):
-            run_id = uuid.uuid4()
-            client.create_run(
-                name=f"test_run_{i}",
-                run_type="llm",
-                inputs={"large_data": "x" * 1000},  # 1KB per run, 2KB total > 1KB limit
-                id=run_id,
-                trace_id=run_id,
-                dotted_order=str(run_id),
-            )
+        # Create many runs concurrently to trigger multiple background threads
+        import threading
+        import time
+        
+        def create_runs_batch(start_idx, count):
+            for i in range(start_idx, start_idx + count):
+                run_id = uuid.uuid4()
+                client.create_run(
+                    name=f"test_run_{i}",
+                    run_type="llm",
+                    inputs={"large_data": "x" * 1024},  # > 1KB per run including overhead
+                    id=run_id,
+                    trace_id=run_id,
+                    dotted_order=str(run_id),
+                )
+                # Small delay to allow queue to build up and trigger thread scaling
+                time.sleep(0.001)
+        
+        # Create two threads with 5 runs each (10 total)
+        threads = []
+        for batch_start in range(0, 10, 5):  # 2 threads, 5 runs each
+            thread = threading.Thread(target=create_runs_batch, args=(batch_start, 5))
+            threads.append(thread)
+            thread.start()
+        
+        # Wait for all creation threads to complete
+        for thread in threads:
+            thread.join()
 
         # Let the background threads flush
         if client.tracing_queue:
@@ -3100,7 +3117,7 @@ def test_max_batch_size_bytes_override(mock_session_cls: mock.Mock) -> None:
                 fut.result()
 
     # Sleep for a time period less than the batch timeout
-    time.sleep(0.01)
+    time.sleep(0.1)
 
     # Verify that compressed multipart requests were made
     # The small size limit should have triggered multiple batches
@@ -3112,8 +3129,8 @@ def test_max_batch_size_bytes_override(mock_session_cls: mock.Mock) -> None:
         and call_obj.args[1].endswith("runs/multipart")
     ]
 
-    # Should have made at least one request due to size limit being exceeded
-    assert len(post_calls) >= 1
+    # Should have made 10 requests due to size limit being exceeded
+    assert len(post_calls) == 10
 
     # Verify the Content-Encoding is zstd (compression was used)
     found_zstd = False
