@@ -78,14 +78,16 @@ test("wrap generateText with flex service tier", async () => {
     (body) => body.parent_run_id != null
   );
   expect(childRunPatchBodies.length).toEqual(1);
+  const usageMetadata = childRunPatchBodies[0].extra.metadata.usage_metadata;
+  expect(usageMetadata.input_token_details.priority).toBeGreaterThan(1);
+  expect(usageMetadata.input_token_details.priority).toEqual(
+    usageMetadata.input_tokens
+  );
+  expect(usageMetadata.output_token_details.priority).toBeGreaterThan(1);
   expect(
-    childRunPatchBodies[0].extra.metadata.usage_metadata.input_token_details
-      .flex
-  ).toBeGreaterThan(1);
-  expect(
-    childRunPatchBodies[0].extra.metadata.usage_metadata.output_token_details
-      .flex
-  ).toBeGreaterThan(1);
+    usageMetadata.output_token_details.priority +
+      usageMetadata.output_token_details.priority_reasoning
+  ).toEqual(usageMetadata.output_tokens);
 });
 
 test("wrap streamText", async () => {
@@ -147,14 +149,16 @@ test("wrap streamText with service tier", async () => {
     (body) => body.parent_run_id != null
   );
   expect(childRunPatchBodies.length).toEqual(1);
+  const usageMetadata = childRunPatchBodies[0].extra.metadata.usage_metadata;
+  expect(usageMetadata.input_token_details.priority).toBeGreaterThan(1);
+  expect(usageMetadata.input_token_details.priority).toEqual(
+    usageMetadata.input_tokens
+  );
+  expect(usageMetadata.output_token_details.priority).toBeGreaterThan(1);
   expect(
-    childRunPatchBodies[0].extra.metadata.usage_metadata.input_token_details
-      .priority
-  ).toBeGreaterThan(1);
-  expect(
-    childRunPatchBodies[0].extra.metadata.usage_metadata.output_token_details
-      .priority
-  ).toBeGreaterThan(1);
+    usageMetadata.output_token_details.priority +
+      usageMetadata.output_token_details.priority_reasoning
+  ).toEqual(usageMetadata.output_tokens);
 });
 
 test("wrap generateObject", async () => {

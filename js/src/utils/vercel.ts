@@ -37,7 +37,8 @@ export function extractOutputTokenDetails(
     // Avoid counting reasoning tokens towards the output token count
     // since service tier tokens are already priced differently
     outputTokenDetails[openAIServiceTier] =
-      usage.outputTokens - (usage.reasoningTokens ?? 0);
+      usage.outputTokens -
+      (outputTokenDetails[`${outputTokenDetailsKeyPrefix}reasoning`] ?? 0);
   }
   return outputTokenDetails;
 }
@@ -119,7 +120,8 @@ export function extractInputTokenDetails(
       // Avoid counting cached input tokens towards the input token count
       // since service tier tokens are already priced differently
       inputTokenDetails[openAIServiceTier] =
-        usage.inputTokens - (usage.cachedInputTokens ?? 0);
+        usage.inputTokens -
+        (inputTokenDetails[`${outputTokenDetailsKeyPrefix}cache_read`] ?? 0);
     }
   }
   return inputTokenDetails;
