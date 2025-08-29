@@ -2853,7 +2853,7 @@ def test_create_run_without_compression_support(mock_session_cls: mock.Mock) -> 
             batch_ingest_config=ls_schemas.BatchIngestConfig(
                 use_multipart_endpoint=True,
                 size_limit=1,
-                size_limit_bytes=128,
+                size_limit_bytes=1024 * 1024 * 20,
                 scale_up_nthreads_limit=4,
                 scale_up_qsize_trigger=3,
                 scale_down_nempty_trigger=1,
