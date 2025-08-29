@@ -160,7 +160,7 @@ test("wrap streamText", async () => {
   expect(result.providerMetadata).toBeDefined();
 });
 
-test("wrap streamText with service tier", async () => {
+test.only("wrap streamText with service tier", async () => {
   const { client, callSpy } = mockClient();
 
   const result = streamText({

@@ -1,44 +1,30 @@
 import type { LanguageModelV2Usage } from "@ai-sdk/provider";
 import { KVMap } from "../schemas.js";
 
-function isOpenAIResponse(
-  aiSDKResponse: Record<string, unknown>
-): aiSDKResponse is Record<string, unknown> {
-  const providerMetadata =
-    "providerMetadata" in aiSDKResponse
-      ? (aiSDKResponse.providerMetadata as Record<string, unknown>)
-      : {};
-  return (
-    providerMetadata != null &&
-    typeof providerMetadata === "object" &&
-    "openai" in providerMetadata
-  );
-}
-
 function extractTraceableServiceTier(
-  aiSDKResponse: Record<string, unknown>
+  providerMetadata: Record<string, unknown>
 ): "priority" | "flex" | undefined {
   if (
-    isOpenAIResponse(aiSDKResponse) &&
-    aiSDKResponse.response != null &&
-    typeof aiSDKResponse.response === "object" &&
-    "body" in aiSDKResponse.response &&
-    aiSDKResponse.response.body != null &&
-    typeof aiSDKResponse.response.body === "object" &&
-    "service_tier" in aiSDKResponse.response.body &&
-    typeof aiSDKResponse.response.body.service_tier === "string" &&
-    ["priority", "flex"].includes(aiSDKResponse.response.body.service_tier)
+    providerMetadata?.openai != null &&
+    typeof providerMetadata.openai === "object"
   ) {
-    return aiSDKResponse.response.body.service_tier as "priority" | "flex";
+    const openai = providerMetadata.openai as Record<string, unknown>;
+    if (
+      openai.serviceTier != null &&
+      typeof openai.serviceTier === "string" &&
+      ["priority", "flex"].includes(openai.serviceTier)
+    ) {
+      return openai.serviceTier as "priority" | "flex";
+    }
   }
   return undefined;
 }
 
 export function extractOutputTokenDetails(
   usage: Partial<LanguageModelV2Usage>,
-  aiSDKResponse: Record<string, unknown> = {}
+  providerMetadata?: Record<string, unknown>
 ) {
-  const openAIServiceTier = extractTraceableServiceTier(aiSDKResponse);
+  const openAIServiceTier = extractTraceableServiceTier(providerMetadata ?? {});
   const outputTokenDetailsKeyPrefix = openAIServiceTier
     ? `${openAIServiceTier}_`
     : "";
@@ -57,14 +43,13 @@ export function extractOutputTokenDetails(
 }
 
 export function extractInputTokenDetails(
-  providerMetadata: Record<string, unknown>,
   usage?: Partial<LanguageModelV2Usage>,
-  aiSDKResponse?: Record<string, unknown>
+  providerMetadata?: Record<string, unknown>
 ) {
   const inputTokenDetails: Record<string, number> = {};
   if (
-    providerMetadata.anthropic != null &&
-    typeof providerMetadata.anthropic === "object"
+    providerMetadata?.anthropic != null &&
+    typeof providerMetadata?.anthropic === "object"
   ) {
     const anthropic = providerMetadata.anthropic as Record<string, unknown>;
     if (anthropic.usage != null && typeof anthropic.usage === "object") {
@@ -110,10 +95,12 @@ export function extractInputTokenDetails(
     }
     return inputTokenDetails;
   } else if (
-    providerMetadata.openai != null &&
-    typeof providerMetadata.openai === "object"
+    providerMetadata?.openai != null &&
+    typeof providerMetadata?.openai === "object"
   ) {
-    const openAIServiceTier = extractTraceableServiceTier(aiSDKResponse ?? {});
+    const openAIServiceTier = extractTraceableServiceTier(
+      providerMetadata ?? {}
+    );
     const outputTokenDetailsKeyPrefix = openAIServiceTier
       ? `${openAIServiceTier}_`
       : "";
@@ -181,10 +168,10 @@ export function extractUsageMetadata(span?: {
         span.attributes["ai.response.providerMetadata"]
       );
       usageMetadata.input_token_details = extractInputTokenDetails(
-        providerMetadata,
         typeof span.attributes["ai.usage.cachedInputTokens"] === "number"
           ? { cachedInputTokens: span.attributes["ai.usage.cachedInputTokens"] }
-          : undefined
+          : undefined,
+        providerMetadata
       );
       if (
         providerMetadata.anthropic != null &&

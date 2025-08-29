@@ -55,11 +55,13 @@ const setUsageMetadataOnRunTree = (
     total_tokens: result.usage?.totalTokens,
   };
   const inputTokenDetails = extractInputTokenDetails(
-    result.providerMetadata ?? {},
     result.usage,
-    result
+    result.providerMetadata ?? {}
   );
-  const outputTokenDetails = extractOutputTokenDetails(result.usage, result);
+  const outputTokenDetails = extractOutputTokenDetails(
+    result.usage,
+    result.providerMetadata
+  );
   runTree.extra = {
     ...runTree.extra,
     metadata: {
