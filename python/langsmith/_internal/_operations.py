@@ -74,6 +74,29 @@ class SerializedRunOperation:
         self.serialized = serialized
         self.attachments = attachments
 
+    def calculate_serialized_size(self) -> int:
+        """Calculate actual serialized size of this operation."""
+        size = 0
+        if self._none:
+            size += len(self._none)
+        if self.inputs:
+            size += len(self.inputs)
+        if self.outputs:
+            size += len(self.outputs)
+        if self.events:
+            size += len(self.events)
+        if self.extra:
+            size += len(self.extra)
+        if self.error:
+            size += len(self.error)
+        if self.serialized:
+            size += len(self.serialized)
+        if self.attachments:
+            for content_type, data_or_path in self.attachments.values():
+                if isinstance(data_or_path, bytes):
+                    size += len(data_or_path)
+        return size
+
     def __eq__(self, other: object) -> bool:
         return isinstance(other, SerializedRunOperation) and (
             self.operation,
@@ -113,6 +136,10 @@ class SerializedFeedbackOperation:
         self.id = id
         self.trace_id = trace_id
         self.feedback = feedback
+
+    def calculate_serialized_size(self) -> int:
+        """Calculate actual serialized size of this operation."""
+        return len(self.feedback)
 
     def __eq__(self, other: object) -> bool:
         return isinstance(other, SerializedFeedbackOperation) and (

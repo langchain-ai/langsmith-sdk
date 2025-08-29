@@ -105,31 +105,6 @@ class TracingQueueItem:
         ) == (other.priority, other.item.__class__)
 
 
-def _calculate_serialized_size(
-    op: Union[SerializedRunOperation, SerializedFeedbackOperation],
-) -> int:
-    """Calculate actual serialized size of an operation."""
-    size = 0
-    if hasattr(op, "_none") and op._none:
-        size += len(op._none)
-    if hasattr(op, "inputs") and op.inputs:
-        size += len(op.inputs)
-    if hasattr(op, "outputs") and op.outputs:
-        size += len(op.outputs)
-    if hasattr(op, "events") and op.events:
-        size += len(op.events)
-    if hasattr(op, "extra") and op.extra:
-        size += len(op.extra)
-    if hasattr(op, "error") and op.error:
-        size += len(op.error)
-    if hasattr(op, "serialized") and op.serialized:
-        size += len(op.serialized)
-    if hasattr(op, "feedback") and op.feedback:
-        size += len(op.feedback)
-
-    return size
-
-
 def _tracing_thread_drain_queue(
     tracing_queue: Queue, limit: int = 100, block: bool = True, max_size_bytes: int = 0
 ) -> list[TracingQueueItem]:
