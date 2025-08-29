@@ -2231,3 +2231,51 @@ test("passing null doesn't throw an error", async () => {
   expect(tree.data["i_traceable:0"].inputs).toEqual({ inputs: null });
   expect(tree.data["i_traceable:0"].outputs).toEqual({ outputs: null });
 });
+
+test("traceable with invalid properties in usage metadata", async () => {
+  const { client, callSpy } = mockClient();
+  const traceableLLM = traceable(
+    (_input: Record<string, unknown>) => {
+      return {
+        messages: [
+          {
+            role: "assistant",
+            content: "Hello, world!",
+          },
+        ],
+        usage_metadata: {
+          foo: "bar",
+          input_tokens: 10,
+          output_tokens: 10,
+          total_tokens: 20,
+        },
+      };
+    },
+    {
+      name: "extra_usage_metadata_run",
+      metadata: {
+        ls_provider: "anthropic",
+        ls_model_name: "claude-sonnet-4-20250514",
+      },
+      client,
+      run_type: "llm",
+      tracingEnabled: true,
+    }
+  );
+
+  await traceableLLM({});
+
+  await client.awaitPendingTraceBatches();
+
+  const tree = getAssumedTreeFromCalls(callSpy.mock.calls);
+  expect(tree.nodes).toEqual(["extra_usage_metadata_run:0"]);
+
+  expect(
+    tree.data["extra_usage_metadata_run:0"].extra?.metadata?.usage_metadata
+  ).toEqual({
+    foo: "bar",
+    input_tokens: 10,
+    output_tokens: 10,
+    total_tokens: 20,
+  });
+});
