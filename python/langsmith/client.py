@@ -6325,10 +6325,7 @@ class Client:
                             self._data_available_event.set()
                 elif self.tracing_queue is not None:
                     self.tracing_queue.put(
-                        TracingQueueItem(
-                            str(feedback.id),
-                            serialized_op,
-                        )
+                        TracingQueueItem(str(feedback.id), serialized_op)
                     )
             else:
                 feedback_block = _dumps_json(feedback.dict(exclude_none=True))
