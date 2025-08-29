@@ -131,6 +131,8 @@ def _tracing_thread_drain_compressed_buffer(
         with client.compressed_traces.lock:
             pre_compressed_size = client.compressed_traces.uncompressed_size
 
+            size_limit_bytes = client._max_batch_size_bytes or size_limit_bytes
+
             if size_limit is not None and size_limit <= 0:
                 raise ValueError(f"size_limit must be positive; got {size_limit}")
             if size_limit_bytes is not None and size_limit_bytes < 0:
@@ -692,7 +694,9 @@ def tracing_control_thread_func_compress_parallel(
 
     batch_ingest_config = _ensure_ingest_config(client.info)
     size_limit: int = batch_ingest_config["size_limit"]
-    size_limit_bytes = batch_ingest_config.get("size_limit_bytes", 20_971_520)
+    size_limit_bytes = client._max_batch_size_bytes or batch_ingest_config.get(
+        "size_limit_bytes", 20_971_520
+    )
     # One for this func, one for the parent thread, one for getrefcount,
     # one for _get_data_type_cached
     num_known_refs = 4
