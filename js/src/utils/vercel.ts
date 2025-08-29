@@ -21,7 +21,7 @@ function extractTraceableServiceTier(
 }
 
 export function extractOutputTokenDetails(
-  usage: Partial<LanguageModelV2Usage>,
+  usage?: Partial<LanguageModelV2Usage>,
   providerMetadata?: Record<string, unknown>
 ) {
   const openAIServiceTier = extractTraceableServiceTier(providerMetadata ?? {});
@@ -29,11 +29,11 @@ export function extractOutputTokenDetails(
     ? `${openAIServiceTier}_`
     : "";
   const outputTokenDetails: Record<string, number> = {};
-  if (typeof usage.reasoningTokens === "number") {
+  if (typeof usage?.reasoningTokens === "number") {
     outputTokenDetails[`${outputTokenDetailsKeyPrefix}reasoning`] =
       usage.reasoningTokens;
   }
-  if (openAIServiceTier && typeof usage.outputTokens === "number") {
+  if (openAIServiceTier && typeof usage?.outputTokens === "number") {
     // Avoid counting reasoning tokens towards the output token count
     // since service tier tokens are already priced differently
     outputTokenDetails[openAIServiceTier] =
