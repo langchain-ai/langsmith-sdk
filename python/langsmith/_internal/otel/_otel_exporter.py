@@ -17,6 +17,7 @@ if TYPE_CHECKING:
         Context = Any  # type: ignore[assignment, misc]
         Span = Any  # type: ignore[assignment, misc]
 
+from langsmith import utils as ls_utils
 from langsmith._internal import _orjson
 from langsmith._internal._operations import (
     SerializedRunOperation,
@@ -121,33 +122,36 @@ def _get_operation_name(run_type: str) -> str:
 class OTELExporter:
     __slots__ = [
         "_tracer",
-        "_spans",
-        "_span_timestamps",
+        "_span_info",
         "_otel_available",
         "_trace",
-        "_max_spans",
         "_span_ttl_seconds",
+        "_last_cleanup",
     ]
     """OpenTelemetry exporter for LangSmith runs."""
 
-    def __init__(self, tracer_provider=None, max_spans=100000, span_ttl_seconds=3600):
+    def __init__(self, tracer_provider=None, span_ttl_seconds=None):
         """Initialize the OTEL exporter.
 
         Args:
             tracer_provider: Optional tracer provider to use. If not provided,
                 the global tracer provider will be used.
-            max_spans: Maximum number of spans to keep in memory (default: 100000)
-            span_ttl_seconds:TTL for incomplete traces in seconds (default: 3600s)
+            span_ttl_seconds: TTL for incomplete traces in seconds. If None,
+                uses LANGSMITH_OTEL_SPAN_TTL_SECONDS env var (default: 3600s)
         """
+        # Set defaults from environment variables if not provided
+        if span_ttl_seconds is None:
+            span_ttl_seconds = int(
+                ls_utils.get_env_var("OTEL_SPAN_TTL_SECONDS", default="3600")
+            )
         otel_imports = _import_otel_exporter()
         if otel_imports is None:
             self._tracer = None
-            self._spans = {}
-            self._span_timestamps = {}
+            self._span_info = {}
             self._otel_available = False
             self._trace = None
-            self._max_spans = max_spans
             self._span_ttl_seconds = span_ttl_seconds
+            self._last_cleanup = 0.0
         else:
             (
                 trace,
@@ -163,12 +167,11 @@ class OTELExporter:
             self._tracer = trace.get_tracer(
                 "langsmith", tracer_provider=tracer_provider
             )
-            self._spans = {}
-            self._span_timestamps = {}
+            self._span_info = {}
             self._otel_available = True
             self._trace = trace
-            self._max_spans = max_spans
             self._span_ttl_seconds = span_ttl_seconds
+            self._last_cleanup = 0.0
 
     def export_batch(
         self,
@@ -193,8 +196,10 @@ class OTELExporter:
                         op, run_info, otel_context_map.get(op.id)
                     )
                     if span:
-                        self._spans[op.id] = span
-                        self._span_timestamps[op.id] = time.time()
+                        self._span_info[op.id] = {
+                            "span": span,
+                            "created_at": time.time(),
+                        }
                 else:
                     self._update_span_for_run(op, run_info)
             except Exception as e:
@@ -276,11 +281,15 @@ class OTELExporter:
 
             # Start the span with appropriate context
             parent_run_id = run_info.get("parent_run_id")
-            if parent_run_id is not None and uuid.UUID(parent_run_id) in self._spans:
+            if (
+                parent_run_id is not None
+                and uuid.UUID(parent_run_id) in self._span_info
+            ):
                 # Use the parent span context
+                parent_span = self._span_info[uuid.UUID(parent_run_id)]["span"]
                 span = self._tracer.start_span(
                     run_info.get("name"),
-                    context=set_span_in_context(self._spans[uuid.UUID(parent_run_id)]),
+                    context=set_span_in_context(parent_span),
                     start_time=start_time_utc_nano,
                 )
             else:
@@ -328,11 +337,11 @@ class OTELExporter:
         """
         try:
             # Get the span for this run
-            if op.id not in self._spans:
+            if op.id not in self._span_info:
                 logger.debug(f"No span found for run {op.id} during update")
                 return
 
-            span = self._spans[op.id]
+            span = self._span_info[op.id]["span"]
 
             # Update attributes
             self._set_span_attributes(span, run_info, op)
@@ -351,60 +360,54 @@ class OTELExporter:
                     span.end(end_time=end_time_utc_nano)
                 else:
                     span.end()
-                # Remove the span and timestamp from our dictionaries
-                del self._spans[op.id]
-                self._span_timestamps.pop(op.id, None)
+                # Remove the span info from our dictionary
+                del self._span_info[op.id]
 
         except Exception as e:
             logger.exception(f"Failed to update span for run {op.id}: {e}")
 
     def _cleanup_stale_spans(self) -> None:
-        """Clean up stale spans that have exceeded TTL or when over max_spans limit."""
-        if not self._spans:
+        """Clean up spans older than TTL threshold."""
+        if not self._span_info:
             return
 
         current_time = time.time()
-        spans_to_remove = []
 
-        # Find expired spans based on TTL
-        for span_id, timestamp in list(self._span_timestamps.items()):
-            if current_time - timestamp > self._span_ttl_seconds:
-                spans_to_remove.append(span_id)
+        # Only run cleanup every 10 seconds to reduce overhead
+        if current_time - self._last_cleanup < 10.0:
+            return
 
-        # If still over limit, remove oldest spans
-        if len(self._spans) - len(spans_to_remove) > self._max_spans:
-            # Get remaining spans sorted by age (oldest first)
-            remaining_spans = [
-                (span_id, ts)
-                for span_id, ts in self._span_timestamps.items()
-                if span_id not in spans_to_remove
-            ]
-            remaining_spans.sort(key=lambda x: x[1])
+        self._last_cleanup = current_time
+        cutoff_time = current_time - self._span_ttl_seconds
 
-            # Add excess spans to removal list
-            excess_count = len(remaining_spans) - self._max_spans
-            if excess_count > 0:
-                for span_id, _ in remaining_spans[:excess_count]:
-                    spans_to_remove.append(span_id)
+        # Remove spans older than TTL in one pass
+        stale_span_ids = [
+            span_id
+            for span_id, info in self._span_info.items()
+            if info["created_at"] < cutoff_time
+        ]
 
-        # Remove spans
-        for span_id in spans_to_remove:
+        for span_id in stale_span_ids:
             self._remove_span(span_id)
 
     def _remove_span(self, span_id: uuid.UUID) -> None:
-        """Remove a single span and clean up resources."""
-        if span_id not in self._spans:
+        """Remove a single span and clean up resources.
+
+        Note: We call span.end() here because spans in _span_info are orphaned -
+        they never received their patch operation and will never naturally complete.
+        Ending them gracefully is better than leaving them open indefinitely.
+        """
+        if span_id not in self._span_info:
             return
 
         try:
-            # End the span gracefully
-            span = self._spans[span_id]
+            # End the orphaned span gracefully
+            span = self._span_info[span_id]["span"]
             if hasattr(span, "end"):
                 span.end()
 
             # Remove from tracking
-            del self._spans[span_id]
-            self._span_timestamps.pop(span_id, None)
+            del self._span_info[span_id]
 
         except Exception as e:
             logger.debug(f"Error removing span {span_id}: {e}")
