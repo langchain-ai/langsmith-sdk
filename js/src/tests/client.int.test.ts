@@ -299,7 +299,9 @@ test("Test create feedback with source run", async () => {
     callerOptions: { maxRetries: 6 },
   });
   const projectName = "__test_create_feedback_with_source_run JS";
-  await deleteProject(langchainClient, projectName);
+  if (await langchainClient.hasProject({ projectName })) {
+    await deleteProject(langchainClient, projectName);
+  }
   const runId = uuidv4();
   await langchainClient.createRun({
     id: runId,
@@ -329,6 +331,20 @@ test("Test create feedback with source run", async () => {
     sourceRunId: runId2,
     feedbackSourceType: "app",
   });
+  await langchainClient.createFeedback(runId2, "test_feedback_2", {
+    score: 0.5,
+    feedbackSourceType: "app",
+  });
+  // Feedback creation is queued, give some processing time
+  await new Promise((resolve) => setTimeout(resolve, 5000));
+  const feedbacks = await toArray(
+    langchainClient.listFeedback({
+      runIds: [runId, runId2],
+    })
+  );
+  expect(feedbacks).toHaveLength(2);
+  expect(feedbacks.map((f) => f.run_id)).toContain(runId);
+  expect(feedbacks.map((f) => f.run_id)).toContain(runId2);
 }, 180_000);
 
 test("Test create run with masked inputs/outputs", async () => {
@@ -764,8 +780,7 @@ test("list runs limit arg works", async () => {
   }
 });
 
-// TODO: Fix
-test.skip("Test run stats", async () => {
+test("Test run stats", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });
   const stats = await client.getRunStats({
     projectNames: ["default"],

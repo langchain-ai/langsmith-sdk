@@ -153,6 +153,10 @@ ls.describe(
           referenceOutputs: {
             zwei: "deux",
           },
+          split: "test-split",
+          metadata: {
+            foo: "bar",
+          },
         },
       ],
       { repetitions: 3, metadata: { something: "cool" } }

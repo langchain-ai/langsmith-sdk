@@ -107,6 +107,10 @@ export interface ClientConfig {
    */
   debug?: boolean;
   /**
+   * The workspace ID. Required for org-scoped API keys.
+   */
+  workspaceId?: string;
+  /**
    * Custom fetch implementation. Useful for testing.
    */
   fetchImplementation?: typeof fetch;
@@ -603,6 +607,8 @@ export class Client implements LangSmithTracingClientInterface {
 
   private webUrl?: string;
 
+  private workspaceId?: string;
+
   private caller: AsyncCaller;
 
   private batchIngestCaller: AsyncCaller;
@@ -671,6 +677,9 @@ export class Client implements LangSmithTracingClientInterface {
     if (this.webUrl?.endsWith("/")) {
       this.webUrl = this.webUrl.slice(0, -1);
     }
+    this.workspaceId = trimQuotes(
+      config.workspaceId ?? getLangSmithEnvironmentVariable("WORKSPACE_ID")
+    );
     this.timeout_ms = config.timeout_ms ?? 90_000;
     this.caller = new AsyncCaller({
       ...(config.callerOptions ?? {}),
@@ -767,6 +776,9 @@ export class Client implements LangSmithTracingClientInterface {
     };
     if (this.apiKey) {
       headers["x-api-key"] = `${this.apiKey}`;
+    }
+    if (this.workspaceId) {
+      headers["x-tenant-id"] = this.workspaceId;
     }
     return headers;
   }
@@ -1192,7 +1204,7 @@ export class Client implements LangSmithTracingClientInterface {
 
   public async createRun(
     run: CreateRunParams,
-    options?: { apiKey?: string; apiUrl?: string }
+    options?: { apiKey?: string; apiUrl?: string; workspaceId?: string }
   ): Promise<void> {
     if (!this._filterForSampling([run]).length) {
       return;
@@ -1227,6 +1239,9 @@ export class Client implements LangSmithTracingClientInterface {
     const mergedRunCreateParam = mergeRuntimeEnvIntoRun(runCreate);
     if (options?.apiKey !== undefined) {
       headers["x-api-key"] = options.apiKey;
+    }
+    if (options?.workspaceId !== undefined) {
+      headers["x-tenant-id"] = options.workspaceId;
     }
     const body = serializePayloadForTracing(
       mergedRunCreateParam,
@@ -1725,7 +1740,7 @@ export class Client implements LangSmithTracingClientInterface {
   public async updateRun(
     runId: string,
     run: RunUpdate,
-    options?: { apiKey?: string; apiUrl?: string }
+    options?: { apiKey?: string; apiUrl?: string; workspaceId?: string }
   ): Promise<void> {
     assertUuid(runId);
     if (run.inputs) {
@@ -1779,6 +1794,9 @@ export class Client implements LangSmithTracingClientInterface {
     };
     if (options?.apiKey !== undefined) {
       headers["x-api-key"] = options.apiKey;
+    }
+    if (options?.workspaceId !== undefined) {
+      headers["x-tenant-id"] = options.workspaceId;
     }
     const body = serializePayloadForTracing(
       run,
@@ -2231,7 +2249,7 @@ export class Client implements LangSmithTracingClientInterface {
     const response = await this.caller.call(async () => {
       const res = await this._fetch(`${this.apiUrl}/runs/stats`, {
         method: "POST",
-        headers: this.headers,
+        headers: { ...this.headers, "Content-Type": "application/json" },
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
         body,
@@ -2728,6 +2746,7 @@ export class Client implements LangSmithTracingClientInterface {
     nameContains,
     referenceDatasetId,
     referenceDatasetName,
+    datasetVersion,
     referenceFree,
     metadata,
   }: {
@@ -2736,9 +2755,10 @@ export class Client implements LangSmithTracingClientInterface {
     nameContains?: string;
     referenceDatasetId?: string;
     referenceDatasetName?: string;
+    datasetVersion?: string;
     referenceFree?: boolean;
     metadata?: RecordStringAny;
-  } = {}): AsyncIterable<TracerSession> {
+  } = {}): AsyncIterable<TracerSessionResult> {
     const params = new URLSearchParams();
     if (projectIds !== undefined) {
       for (const projectId of projectIds) {
@@ -2759,13 +2779,16 @@ export class Client implements LangSmithTracingClientInterface {
       });
       params.append("reference_dataset", dataset.id);
     }
+    if (datasetVersion !== undefined) {
+      params.append("dataset_version", datasetVersion);
+    }
     if (referenceFree !== undefined) {
       params.append("reference_free", referenceFree.toString());
     }
     if (metadata !== undefined) {
       params.append("metadata", JSON.stringify(metadata));
     }
-    for await (const projects of this._getPaginated<TracerSession>(
+    for await (const projects of this._getPaginated<TracerSessionResult>(
       "/sessions",
       params
     )) {
@@ -4044,7 +4067,10 @@ export class Client implements LangSmithTracingClientInterface {
   } = {}): AsyncIterable<Feedback> {
     const queryParams = new URLSearchParams();
     if (runIds) {
-      queryParams.append("run", runIds.join(","));
+      for (const runId of runIds) {
+        assertUuid(runId);
+        queryParams.append("run", runId);
+      }
     }
     if (feedbackKeys) {
       for (const key of feedbackKeys) {

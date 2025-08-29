@@ -142,7 +142,8 @@ function _combineChatCompletionChoices(
   }
   return {
     index: choices[0].index,
-    finish_reason: reversedChoices.find((c) => c.finish_reason) || null,
+    finish_reason: (reversedChoices.find((c) => c.finish_reason) || null)
+      ?.finish_reason,
     message: message,
   };
 }
