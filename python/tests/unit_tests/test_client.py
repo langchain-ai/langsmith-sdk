@@ -3047,6 +3047,86 @@ def test_create_run_with_disabled_compression(mock_session_cls: mock.Mock) -> No
     assert run_parsed["dotted_order"] == str(run_id)
 
 
+@patch("langsmith.client.requests.Session")
+def test_max_batch_size_bytes_override(mock_session_cls: mock.Mock) -> None:
+    """Test that client._max_batch_size_bytes overrides default size_limit_bytes."""
+    # Prepare a mocked session
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_session.request.return_value = mock_response
+    mock_session_cls.return_value = mock_session
+
+    with patch.dict("os.environ", {}, clear=True):
+        info = ls_schemas.LangSmithInfo(
+            version="0.6.0",
+            instance_flags={"zstd_compression_enabled": True},
+            batch_ingest_config=ls_schemas.BatchIngestConfig(
+                use_multipart_endpoint=True,
+                size_limit=100,  # High limit so we trigger size_limit_bytes first
+                size_limit_bytes=20_971_520,  # Default 20MB - would normally not trigger
+                scale_up_nthreads_limit=4,
+                scale_up_qsize_trigger=3,
+                scale_down_nempty_trigger=1,
+            ),
+        )
+        client = Client(
+            api_url="http://localhost:1984",
+            api_key="123",
+            auto_batch_tracing=True,
+            session=mock_session,
+            info=info,
+            # Set custom max_batch_size_bytes to a small value (1KB)
+            max_batch_size_bytes=1024,
+        )
+
+        # Create runs with large inputs that will exceed 1KB uncompressed
+        for i in range(2):
+            run_id = uuid.uuid4()
+            client.create_run(
+                name=f"test_run_{i}",
+                run_type="llm",
+                inputs={"large_data": "x" * 1000},  # 1KB per run, 2KB total > 1KB limit
+                id=run_id,
+                trace_id=run_id,
+                dotted_order=str(run_id),
+            )
+
+        # Let the background threads flush
+        if client.tracing_queue:
+            client.tracing_queue.join()
+        if client._futures is not None:
+            for fut in client._futures:
+                fut.result()
+
+    # Sleep for a time period less than the batch timeout
+    time.sleep(0.01)
+
+    # Verify that compressed multipart requests were made
+    # The small size limit should have triggered multiple batches
+    post_calls = [
+        call_obj
+        for call_obj in mock_session.request.mock_calls
+        if call_obj.args
+        and call_obj.args[0] == "POST"
+        and call_obj.args[1].endswith("runs/multipart")
+    ]
+
+    # Should have made at least one request due to size limit being exceeded
+    assert len(post_calls) >= 1
+
+    # Verify the Content-Encoding is zstd (compression was used)
+    found_zstd = False
+    for call in post_calls:
+        if "headers" in call.kwargs:
+            headers = call.kwargs["headers"]
+            if headers.get("Content-Encoding") == "zstd":
+                found_zstd = True
+                break
+
+    assert found_zstd, "Expected zstd compressed request"
+
+
 def test__dataset_examples_path():
     dataset_id = "123"
     api_url = "https://foobar.com/api"
