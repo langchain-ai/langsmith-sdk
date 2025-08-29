@@ -861,7 +861,7 @@ const usageMetadataTestCases = [
   {
     description: "priority service tier",
     params: {
-      model: "gpt-4o-mini",
+      model: "gpt-5-nano",
       messages: [{ role: "user", content: "howdy" }],
       service_tier: "priority",
     },
@@ -871,7 +871,7 @@ const usageMetadataTestCases = [
   {
     description: "flex service tier",
     params: {
-      model: "gpt-4o-mini",
+      model: "gpt-5-nano",
       messages: [{ role: "user", content: "howdy" }],
       service_tier: "flex",
     },

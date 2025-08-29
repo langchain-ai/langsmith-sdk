@@ -79,14 +79,14 @@ test("wrap generateText with flex service tier", async () => {
   );
   expect(childRunPatchBodies.length).toEqual(1);
   const usageMetadata = childRunPatchBodies[0].extra.metadata.usage_metadata;
-  expect(usageMetadata.input_token_details.priority).toBeGreaterThan(1);
-  expect(usageMetadata.input_token_details.priority).toEqual(
+  expect(usageMetadata.input_token_details.flex).toBeGreaterThan(1);
+  expect(usageMetadata.input_token_details.flex).toEqual(
     usageMetadata.input_tokens
   );
-  expect(usageMetadata.output_token_details.priority).toBeGreaterThan(1);
+  expect(usageMetadata.output_token_details.flex).toBeGreaterThan(1);
   expect(
-    usageMetadata.output_token_details.priority +
-      usageMetadata.output_token_details.priority_reasoning
+    usageMetadata.output_token_details.flex +
+      usageMetadata.output_token_details.flex_reasoning
   ).toEqual(usageMetadata.output_tokens);
 });
 
@@ -132,7 +132,7 @@ test("wrap streamText with service tier", async () => {
     ],
     providerOptions: {
       openai: {
-        serviceTier: "priority",
+        serviceTier: "flex",
       },
       langsmith: createLangSmithProviderOptions({
         client,
@@ -150,14 +150,14 @@ test("wrap streamText with service tier", async () => {
   );
   expect(childRunPatchBodies.length).toEqual(1);
   const usageMetadata = childRunPatchBodies[0].extra.metadata.usage_metadata;
-  expect(usageMetadata.input_token_details.priority).toBeGreaterThan(1);
-  expect(usageMetadata.input_token_details.priority).toEqual(
+  expect(usageMetadata.input_token_details.flex).toBeGreaterThan(1);
+  expect(usageMetadata.input_token_details.flex).toEqual(
     usageMetadata.input_tokens
   );
-  expect(usageMetadata.output_token_details.priority).toBeGreaterThan(1);
+  expect(usageMetadata.output_token_details.flex).toBeGreaterThan(1);
   expect(
-    usageMetadata.output_token_details.priority +
-      usageMetadata.output_token_details.priority_reasoning
+    usageMetadata.output_token_details.flex +
+      usageMetadata.output_token_details.flex_reasoning
   ).toEqual(usageMetadata.output_tokens);
 });
 
