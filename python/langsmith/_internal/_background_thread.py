@@ -63,31 +63,27 @@ class TracingQueueItem:
     Attributes:
         priority (str): The priority of the item.
         item (Any): The item itself.
-        size (int): The serialized size of the item in bytes.
         otel_context (Optional[Context]): The OTEL context of the item.
     """
 
     priority: str
     item: Union[SerializedRunOperation, SerializedFeedbackOperation]
-    size: int
     api_url: Optional[str]
     api_key: Optional[str]
     otel_context: Optional[Context]
 
-    __slots__ = ("priority", "item", "size", "api_key", "api_url", "otel_context")
+    __slots__ = ("priority", "item", "api_key", "api_url", "otel_context")
 
     def __init__(
         self,
         priority: str,
         item: Union[SerializedRunOperation, SerializedFeedbackOperation],
-        size: int,
         api_key: Optional[str] = None,
         api_url: Optional[str] = None,
         otel_context: Optional[Context] = None,
     ) -> None:
         self.priority = priority
         self.item = item
-        self.size = size
         self.api_key = api_key
         self.api_url = api_url
         self.otel_context = otel_context
@@ -120,7 +116,7 @@ def _tracing_thread_drain_queue(
         if item := tracing_queue.get(block=block, timeout=0.25):
             next_batch.append(item)
             if max_size_bytes > 0:
-                current_size += item.size
+                current_size += item.item.calculate_serialized_size()
                 # If first item already exceeds limit, return just this item
                 if current_size > max_size_bytes:
                     return next_batch
@@ -137,7 +133,7 @@ def _tracing_thread_drain_queue(
 
             # Then check size limit AFTER adding the item
             if max_size_bytes > 0:
-                current_size += item.size
+                current_size += item.item.calculate_serialized_size()
                 # If we've exceeded size limit, stop here
                 # (item is included in this batch)
                 if current_size > max_size_bytes:

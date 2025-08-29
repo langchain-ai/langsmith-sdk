@@ -1577,7 +1577,6 @@ class Client:
                         TracingQueueItem(
                             run_create["dotted_order"],
                             serialized_op,
-                            serialized_op.calculate_serialized_size(),
                             api_key=api_key,
                             api_url=api_url,
                             otel_context=self._set_span_in_context(
@@ -1590,7 +1589,6 @@ class Client:
                         TracingQueueItem(
                             run_create["dotted_order"],
                             serialized_op,
-                            serialized_op.calculate_serialized_size(),
                             api_key=api_key,
                             api_url=api_url,
                         )
@@ -2537,7 +2535,6 @@ class Client:
                         TracingQueueItem(
                             run_update["dotted_order"],
                             serialized_op,
-                            serialized_op.calculate_serialized_size(),
                             api_key=api_key,
                             api_url=api_url,
                             otel_context=self._set_span_in_context(
@@ -2550,7 +2547,6 @@ class Client:
                         TracingQueueItem(
                             run_update["dotted_order"],
                             serialized_op,
-                            serialized_op.calculate_serialized_size(),
                             api_key=api_key,
                             api_url=api_url,
                         )
@@ -6332,7 +6328,6 @@ class Client:
                         TracingQueueItem(
                             str(feedback.id),
                             serialized_op,
-                            serialized_op.calculate_serialized_size(),
                         )
                     )
             else:

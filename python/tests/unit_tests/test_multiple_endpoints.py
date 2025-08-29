@@ -197,7 +197,6 @@ class TestLangsmithRunsEndpoints:
             TracingQueueItem(
                 "priority1",
                 serialized_op1,
-                serialized_op1.calculate_serialized_size(),
                 api_key="key1",
                 api_url="https://api1.com",
             ),
@@ -205,7 +204,6 @@ class TestLangsmithRunsEndpoints:
             TracingQueueItem(
                 "priority2",
                 serialized_op2,
-                serialized_op2.calculate_serialized_size(),
                 api_key="key1",
                 api_url="https://api1.com",
             ),
@@ -213,7 +211,6 @@ class TestLangsmithRunsEndpoints:
             TracingQueueItem(
                 "priority3",
                 serialized_op3,
-                serialized_op3.calculate_serialized_size(),
                 api_key="key2",
                 api_url="https://api2.com",
             ),
@@ -262,14 +259,12 @@ class TestLangsmithRunsEndpoints:
             TracingQueueItem(
                 "priority1",
                 serialized_op1,
-                serialized_op1.calculate_serialized_size(),
                 api_key="key1",
                 api_url="https://api1.com",
             ),
             TracingQueueItem(
                 "priority2",
                 serialized_op2,
-                serialized_op2.calculate_serialized_size(),
                 api_key="key2",
                 api_url="https://api2.com",
             ),
@@ -327,7 +322,6 @@ class TestLangsmithRunsEndpoints:
             TracingQueueItem(
                 "priority1",
                 serialized_op1,
-                serialized_op1.calculate_serialized_size(),
                 api_key="key1",
                 api_url="https://api1.com",
             ),
@@ -335,14 +329,12 @@ class TestLangsmithRunsEndpoints:
             TracingQueueItem(
                 "priority2",
                 serialized_op2,
-                serialized_op2.calculate_serialized_size(),
                 api_key=None,
                 api_url=None,
             ),
             TracingQueueItem(
                 "priority3",
                 serialized_op3,
-                serialized_op3.calculate_serialized_size(),
                 api_key="key2",
                 api_url="https://api2.com",
             ),
