@@ -271,16 +271,7 @@ test_cases = [
         "expect_usage_metadata": True,
         "check_reasoning_tokens": True,
     },
-    {
-        "description": "priority service tier",
-        "params": {
-            "model": "gpt-5-nano",
-            "messages": [{"role": "user", "content": "howdy"}],
-            "service_tier": "priority",
-        },
-        "expect_usage_metadata": True,
-        "check_service_tier": "priority",
-    },
+    # just test flex as priority can randomly downgrade
     {
         "description": "flex service tier",
         "params": {
