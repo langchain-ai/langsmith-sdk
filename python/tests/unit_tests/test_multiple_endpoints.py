@@ -195,15 +195,24 @@ class TestLangsmithRunsEndpoints:
 
         batch = [
             TracingQueueItem(
-                "priority1", serialized_op1, api_key="key1", api_url="https://api1.com"
+                "priority1",
+                serialized_op1,
+                api_key="key1",
+                api_url="https://api1.com",
             ),
             # Same endpoint
             TracingQueueItem(
-                "priority2", serialized_op2, api_key="key1", api_url="https://api1.com"
+                "priority2",
+                serialized_op2,
+                api_key="key1",
+                api_url="https://api1.com",
             ),
             # Different endpoint
             TracingQueueItem(
-                "priority3", serialized_op3, api_key="key2", api_url="https://api2.com"
+                "priority3",
+                serialized_op3,
+                api_key="key2",
+                api_url="https://api2.com",
             ),
         ]
 
@@ -248,10 +257,16 @@ class TestLangsmithRunsEndpoints:
 
         batch = [
             TracingQueueItem(
-                "priority1", serialized_op1, api_key="key1", api_url="https://api1.com"
+                "priority1",
+                serialized_op1,
+                api_key="key1",
+                api_url="https://api1.com",
             ),
             TracingQueueItem(
-                "priority2", serialized_op2, api_key="key2", api_url="https://api2.com"
+                "priority2",
+                serialized_op2,
+                api_key="key2",
+                api_url="https://api2.com",
             ),
         ]
 
@@ -305,12 +320,23 @@ class TestLangsmithRunsEndpoints:
 
         batch = [
             TracingQueueItem(
-                "priority1", serialized_op1, api_key="key1", api_url="https://api1.com"
+                "priority1",
+                serialized_op1,
+                api_key="key1",
+                api_url="https://api1.com",
             ),
             # Should use default
-            TracingQueueItem("priority2", serialized_op2, api_key=None, api_url=None),
             TracingQueueItem(
-                "priority3", serialized_op3, api_key="key2", api_url="https://api2.com"
+                "priority2",
+                serialized_op2,
+                api_key=None,
+                api_url=None,
+            ),
+            TracingQueueItem(
+                "priority3",
+                serialized_op3,
+                api_key="key2",
+                api_url="https://api2.com",
             ),
         ]
 
