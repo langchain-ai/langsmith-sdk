@@ -139,8 +139,7 @@ def _tracing_thread_drain_compressed_buffer(
                 )
 
             if (
-                size_limit_bytes is None
-                or pre_compressed_size < size_limit_bytes
+                size_limit_bytes is None or pre_compressed_size < size_limit_bytes
             ) and (
                 size_limit is None or client.compressed_traces.trace_count < size_limit
             ):

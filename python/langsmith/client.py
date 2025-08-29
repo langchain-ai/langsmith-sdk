@@ -559,7 +559,7 @@ class Client:
         )
         # Initialize workspace attribute first
         self._workspace_id = ls_utils.get_workspace_id(workspace_id)
-        
+
         if self._write_api_urls:
             self.api_url = next(iter(self._write_api_urls))
             self.api_key = self._write_api_urls[self.api_url]
@@ -977,7 +977,7 @@ class Client:
                             raise ls_utils.LangSmithConflictError(
                                 f"Conflict for {pathname}. {repr(e)}{_context}"
                             )
-                        elif (response.status_code == 403):
+                        elif response.status_code == 403:
                             try:
                                 error_data = response.json()
                                 error_code = error_data.get("error", "")
