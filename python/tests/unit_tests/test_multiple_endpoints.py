@@ -268,7 +268,11 @@ class TestLangsmithRunsEndpoints:
                 api_url="https://api1.com",
             ),
             TracingQueueItem(
-                "priority2", serialized_op2, api_key="key2", api_url="https://api2.com"
+                "priority2",
+                serialized_op2,
+                _calculate_serialized_size(serialized_op2),
+                api_key="key2",
+                api_url="https://api2.com",
             ),
         ]
 
@@ -329,7 +333,13 @@ class TestLangsmithRunsEndpoints:
                 api_url="https://api1.com",
             ),
             # Should use default
-            TracingQueueItem("priority2", serialized_op2, api_key=None, api_url=None),
+            TracingQueueItem(
+                "priority2",
+                serialized_op2,
+                _calculate_serialized_size(serialized_op2),
+                api_key=None,
+                api_url=None,
+            ),
             TracingQueueItem(
                 "priority3",
                 serialized_op3,
