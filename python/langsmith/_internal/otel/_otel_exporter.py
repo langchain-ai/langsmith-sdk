@@ -387,6 +387,9 @@ class OTELExporter:
             if info["created_at"] < cutoff_time
         ]
 
+        if stale_span_ids:
+            logger.debug(f"Cleaning up {len(stale_span_ids)} stale spans")
+
         for span_id in stale_span_ids:
             self._remove_span(span_id)
 
