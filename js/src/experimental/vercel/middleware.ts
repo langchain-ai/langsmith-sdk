@@ -55,7 +55,7 @@ const setUsageMetadataOnRunTree = (
   };
   const inputTokenDetails = extractInputTokenDetails(
     result.usage,
-    result.providerMetadata,
+    result.providerMetadata
   );
   const outputTokenDetails = extractOutputTokenDetails(
     result.usage,
