@@ -3481,7 +3481,9 @@ def test_otel_trace_attributes(monkeypatch: pytest.MonkeyPatch):
                                 "created_at": time.time(),
                             }
                     else:
-                        future.put(self.original_otel_exporter._span_info[op.id]["span"])
+                        future.put(
+                            self.original_otel_exporter._span_info[op.id]["span"]
+                        )
                         self.original_otel_exporter._update_span_for_run(op, run_info)
                 except Exception as e:
                     logger.exception(f"Error processing operation {op.id}: {e}")
