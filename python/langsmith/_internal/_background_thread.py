@@ -689,7 +689,7 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
 
         hybrid_otel_and_langsmith, is_otel_only = get_tracing_mode()
         max_batch_size = (
-            getattr(client, "_max_batch_size_bytes", None)
+            client._max_batch_size_bytes
             or batch_ingest_config.get("size_limit_bytes")
             or 0
         )
@@ -713,9 +713,7 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
     # drain the queue on exit - apply same logic
     hybrid_otel_and_langsmith, is_otel_only = get_tracing_mode()
     max_batch_size = (
-        getattr(client, "_max_batch_size_bytes", None)
-        or batch_ingest_config.get("size_limit_bytes")
-        or 0
+        client._max_batch_size_bytes or batch_ingest_config.get("size_limit_bytes") or 0
     )
     while next_batch := _tracing_thread_drain_queue(
         tracing_queue, limit=size_limit, block=False, max_size_bytes=max_batch_size
@@ -912,7 +910,7 @@ def _tracing_sub_thread_func(
         <= batch_ingest_config["scale_down_nempty_trigger"]
     ):
         max_batch_size = (
-            getattr(client, "_max_batch_size_bytes", None)
+            client._max_batch_size_bytes
             or batch_ingest_config.get("size_limit_bytes")
             or 0
         )
@@ -941,9 +939,7 @@ def _tracing_sub_thread_func(
     # drain the queue on exit - apply same logic
     hybrid_otel_and_langsmith, is_otel_only = get_tracing_mode()
     max_batch_size = (
-        getattr(client, "_max_batch_size_bytes", None)
-        or batch_ingest_config.get("size_limit_bytes")
-        or 0
+        client._max_batch_size_bytes or batch_ingest_config.get("size_limit_bytes") or 0
     )
     while next_batch := _tracing_thread_drain_queue(
         tracing_queue, limit=size_limit, block=False, max_size_bytes=max_batch_size
