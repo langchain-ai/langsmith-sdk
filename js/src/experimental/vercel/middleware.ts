@@ -40,8 +40,8 @@ const _formatTracedOutputs = (outputs: Record<string, unknown>) => {
 
 const setUsageMetadataOnRunTree = (
   result: {
-    usage?: LanguageModelV2Usage | null;
-    providerMetadata?: SharedV2ProviderMetadata | null;
+    usage?: LanguageModelV2Usage;
+    providerMetadata?: SharedV2ProviderMetadata;
   },
   runTree: RunTree
 ) => {
@@ -54,11 +54,12 @@ const setUsageMetadataOnRunTree = (
     total_tokens: result.usage?.totalTokens,
   };
   const inputTokenDetails = extractInputTokenDetails(
-    result.providerMetadata ?? {},
-    result.usage?.cachedInputTokens
+    result.usage,
+    result.providerMetadata
   );
   const outputTokenDetails = extractOutputTokenDetails(
-    result.usage?.reasoningTokens
+    result.usage,
+    result.providerMetadata
   );
   runTree.extra = {
     ...runTree.extra,
