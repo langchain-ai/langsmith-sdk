@@ -761,7 +761,7 @@ def evaluate_comparative(
         ...             "type": "function",
         ...             "function": {
         ...                 "name": "rank_preferences",
-        ...                 "description": "Saves the prefered response ('A' or 'B')",
+        ...                 "description": "Saves the preferred response ('A' or 'B')",
         ...                 "parameters": {
         ...                     "type": "object",
         ...                     "properties": {

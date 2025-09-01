@@ -342,7 +342,7 @@ impl LockGIL {
     fn bail(current: isize) {
         match current {
             GIL_LOCKED_DURING_TRAVERSE => panic!(
-                "Access to the GIL is prohibited while a __traverse__ implmentation is running."
+                "Access to the GIL is prohibited while a __traverse__ implementation is running."
             ),
             _ => panic!("Access to the GIL is currently prohibited."),
         }

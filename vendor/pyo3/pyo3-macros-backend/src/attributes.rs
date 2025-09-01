@@ -266,7 +266,7 @@ impl ToTokens for RenamingRuleLitStr {
     }
 }
 
-/// Text signatue can be either a literal string or opt-in/out
+/// Text signature can be either a literal string or opt-in/out
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TextSignatureAttributeValue {
     Str(LitStr),
