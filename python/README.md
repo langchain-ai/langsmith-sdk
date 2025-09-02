@@ -75,6 +75,7 @@ os.environ["LANGSMITH_ENDPOINT"] = "https://api.smith.langchain.com"
 # os.environ["LANGSMITH_ENDPOINT"] = "https://eu.api.smith.langchain.com" # If signed up in the EU region
 os.environ["LANGSMITH_API_KEY"] = "<YOUR-LANGSMITH-API-KEY>"
 # os.environ["LANGSMITH_PROJECT"] = "My Project Name" # Optional: "default" is used if not set
+# os.environ["LANGSMITH_WORKSPACE_ID"] = "<YOUR-WORKSPACE-ID>" # Required for org-scoped API keys
 ```
 
 > **Tip:** Projects are groups of traces. All runs are logged to a project. If not specified, the project is set to `default`.
