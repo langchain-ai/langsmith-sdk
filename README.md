@@ -22,6 +22,7 @@ To get started with the Python SDK, [install the package](https://pypi.org/proje
 pip install -U langsmith
 export LANGSMITH_TRACING=true
 export LANGSMITH_API_KEY=ls_...
+export LANGSMITH_WORKSPACE_ID=<your-workspace-id> # Required for org-scoped keys
 ```
 
 Then start tracing your app:
@@ -45,6 +46,7 @@ To get started with the JavaScript / TypeScript SDK, [install the package](https
 yarn add langsmith
 export LANGSMITH_TRACING=true
 export LANGSMITH_API_KEY=ls_...
+export LANGSMITH_WORKSPACE_ID=<your-workspace-id> # Required for org-scoped keys
 ```
 
 Then start tracing your app!

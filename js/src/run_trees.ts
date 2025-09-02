@@ -706,7 +706,7 @@ export class RunTree implements BaseRun {
 
   static fromHeaders(
     headers: Record<string, string | string[]> | HeadersLike,
-    inheritArgs?: RunTreeConfig
+    inheritArgs?: Partial<RunTreeConfig>
   ): RunTree | undefined {
     const rawHeaders: Record<string, string | string[] | null> =
       "get" in headers && typeof headers.get === "function"

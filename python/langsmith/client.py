@@ -3648,6 +3648,7 @@ class Client:
         reference_dataset_id: Optional[ID_TYPE] = None,
         reference_dataset_name: Optional[str] = None,
         reference_free: Optional[bool] = None,
+        include_stats: Optional[bool] = None,
         dataset_version: Optional[str] = None,
         limit: Optional[int] = None,
         metadata: Optional[dict[str, Any]] = None,
@@ -3701,6 +3702,8 @@ class Client:
             params["reference_dataset"] = reference_dataset_id
         if reference_free is not None:
             params["reference_free"] = reference_free
+        if include_stats is not None:
+            params["include_stats"] = include_stats
         if dataset_version is not None:
             params["dataset_version"] = dataset_version
         if metadata is not None:
