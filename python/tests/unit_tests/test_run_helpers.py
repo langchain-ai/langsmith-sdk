@@ -1844,6 +1844,7 @@ def test__get_inputs_and_attachments_safe_unhashable_default() -> None:
 
 def test_attachment_detection_with_string_annotations() -> None:
     """Test that string annotations are handled correctly."""
+
     # Create a function with string annotations manually
     def foo(bar: "Annotated[bytes, ls_schemas.Attachment]"):
         return "test"
