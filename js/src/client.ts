@@ -2746,6 +2746,7 @@ export class Client implements LangSmithTracingClientInterface {
     nameContains,
     referenceDatasetId,
     referenceDatasetName,
+    includeStats,
     datasetVersion,
     referenceFree,
     metadata,
@@ -2755,6 +2756,7 @@ export class Client implements LangSmithTracingClientInterface {
     nameContains?: string;
     referenceDatasetId?: string;
     referenceDatasetName?: string;
+    includeStats?: boolean;
     datasetVersion?: string;
     referenceFree?: boolean;
     metadata?: RecordStringAny;
@@ -2778,6 +2780,9 @@ export class Client implements LangSmithTracingClientInterface {
         datasetName: referenceDatasetName,
       });
       params.append("reference_dataset", dataset.id);
+    }
+    if (includeStats !== undefined) {
+      params.append("include_stats", includeStats.toString());
     }
     if (datasetVersion !== undefined) {
       params.append("dataset_version", datasetVersion);
