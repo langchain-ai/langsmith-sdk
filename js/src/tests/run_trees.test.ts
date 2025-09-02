@@ -3,6 +3,10 @@
 import { jest } from "@jest/globals";
 import { Client } from "../client.js";
 import { RunTree } from "../run_trees.js";
+import { getCurrentRunTree, withRunTree } from "../singletons/traceable.js";
+import { traceable } from "../traceable.js";
+import { mockClient } from "./utils/mock_client.js";
+import { getAssumedTreeFromCalls } from "./utils/tree.js";
 
 const _DATE = 1620000000000;
 Date.now = jest.fn(() => _DATE);
@@ -89,22 +93,31 @@ test("serializing run tree", () => {
   });
 });
 
-test("distributed", () => {
+test("distributed", async () => {
+  process.env.LANGCHAIN_TRACING = "true";
+  const { client, callSpy } = mockClient();
   const parent = new RunTree({
     name: "parent_1",
     id: "00000000-0000-0000-0000-00000000000",
     start_time: Date.parse("2021-05-03T00:00:00.000Z"),
     project_name: "test_project",
+    client,
   });
+
+  await parent.postRun();
 
   const serialized = parent.toHeaders();
   expect(serialized.baggage).toContain("test_project");
 
-  const child2 = RunTree.fromHeaders(serialized)?.createChild({
+  const child2 = RunTree.fromHeaders(serialized, {
+    client,
+  })?.createChild({
     name: "child_2",
     id: "00000000-0000-0000-0000-00000000001",
     start_time: Date.parse("2021-05-03T00:00:01.000Z"),
   });
+
+  await child2?.postRun();
 
   expect(JSON.parse(JSON.stringify(child2))).toMatchObject({
     name: "child_2",
@@ -112,6 +125,35 @@ test("distributed", () => {
     session_name: "test_project",
     dotted_order:
       "20210503T000000000001Z00000000-0000-0000-0000-00000000000.20210503T000001000002Z00000000-0000-0000-0000-00000000001",
+  });
+
+  const result = await withRunTree(child2!, () => {
+    return traceable(
+      () => {
+        const currentRunTree = getCurrentRunTree();
+        expect(currentRunTree.id).toBe("00000000-0000-0000-0000-00000000002");
+        expect(currentRunTree.dotted_order).toBe(
+          "20210503T000000000001Z00000000-0000-0000-0000-00000000000.20210503T000001000002Z00000000-0000-0000-0000-00000000001.20210503T000002000003Z00000000-0000-0000-0000-00000000002"
+        );
+        return "child2";
+      },
+      {
+        name: "grandchild_traceable",
+        client,
+        id: "00000000-0000-0000-0000-00000000002",
+        start_time: Date.parse("2021-05-03T00:00:02.000Z"),
+      }
+    )();
+  });
+
+  expect(result).toBe("child2");
+  await child2?.end();
+  await child2?.patchRun();
+  await parent.end();
+  await parent.patchRun();
+  await client.awaitPendingTraceBatches();
+  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+    nodes: ["parent_1:0", "child_2:1", "grandchild_traceable:2"],
   });
 });
 
