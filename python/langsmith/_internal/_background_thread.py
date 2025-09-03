@@ -40,7 +40,20 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("langsmith.client")
 
-HTTP_REQUEST_THREAD_POOL = cf.ThreadPoolExecutor(max_workers=cpu_count() * 3)
+LANGSMITH_CLIENT_THREAD_POOL = cf.ThreadPoolExecutor(max_workers=cpu_count() * 3)
+
+
+def _group_batch_by_api_endpoint(
+    batch: list[TracingQueueItem],
+) -> dict[tuple[Optional[str], Optional[str]], list[TracingQueueItem]]:
+    """Group batch items by (api_url, api_key) combination."""
+    from collections import defaultdict
+
+    grouped = defaultdict(list)
+    for item in batch:
+        key = (item.api_url, item.api_key)
+        grouped[key].append(item)
+    return grouped
 
 
 @functools.total_ordering
@@ -55,18 +68,24 @@ class TracingQueueItem:
 
     priority: str
     item: Union[SerializedRunOperation, SerializedFeedbackOperation]
+    api_url: Optional[str]
+    api_key: Optional[str]
     otel_context: Optional[Context]
 
-    __slots__ = ("priority", "item", "otel_context")
+    __slots__ = ("priority", "item", "api_key", "api_url", "otel_context")
 
     def __init__(
         self,
         priority: str,
         item: Union[SerializedRunOperation, SerializedFeedbackOperation],
+        api_key: Optional[str] = None,
+        api_url: Optional[str] = None,
         otel_context: Optional[Context] = None,
     ) -> None:
         self.priority = priority
         self.item = item
+        self.api_key = api_key
+        self.api_url = api_url
         self.otel_context = otel_context
 
     def __lt__(self, other: TracingQueueItem) -> bool:
@@ -83,19 +102,44 @@ class TracingQueueItem:
 
 
 def _tracing_thread_drain_queue(
-    tracing_queue: Queue, limit: int = 100, block: bool = True
+    tracing_queue: Queue, limit: int = 100, block: bool = True, max_size_bytes: int = 0
 ) -> list[TracingQueueItem]:
     next_batch: list[TracingQueueItem] = []
+    current_size = 0
+
     try:
         # wait 250ms for the first item, then
         # - drain the queue with a 50ms block timeout
-        # - stop draining if we hit the limit
+        # - stop draining if we hit either count or size limit
         # shorter drain timeout is used instead of non-blocking calls to
         # avoid creating too many small batches
         if item := tracing_queue.get(block=block, timeout=0.25):
             next_batch.append(item)
-        while item := tracing_queue.get(block=block, timeout=0.05):
+            if max_size_bytes > 0:
+                current_size += item.item.calculate_serialized_size()
+                # If first item already exceeds limit, return just this item
+                if current_size > max_size_bytes:
+                    return next_batch
+
+        # Continue draining until we hit count limit OR size limit
+        while True:
+            try:
+                item = tracing_queue.get(block=block, timeout=0.05)
+            except Empty:
+                break
+
+            # Add the item first
             next_batch.append(item)
+
+            # Then check size limit AFTER adding the item
+            if max_size_bytes > 0:
+                current_size += item.item.calculate_serialized_size()
+                # If we've exceeded size limit, stop here
+                # (item is included in this batch)
+                if current_size > max_size_bytes:
+                    break
+
+            # Check count limit AFTER adding the item
             if limit and len(next_batch) >= limit:
                 break
     except Empty:
@@ -110,10 +154,9 @@ def _tracing_thread_drain_compressed_buffer(
         if client.compressed_traces is None:
             return None, None
         with client.compressed_traces.lock:
-            client.compressed_traces.compressor_writer.flush()
-            current_size = client.compressed_traces.buffer.tell()
-
             pre_compressed_size = client.compressed_traces.uncompressed_size
+
+            size_limit_bytes = client._max_batch_size_bytes or size_limit_bytes
 
             if size_limit is not None and size_limit <= 0:
                 raise ValueError(f"size_limit must be positive; got {size_limit}")
@@ -122,7 +165,9 @@ def _tracing_thread_drain_compressed_buffer(
                     f"size_limit_bytes must be nonnegative; got {size_limit_bytes}"
                 )
 
-            if (size_limit_bytes is None or current_size < size_limit_bytes) and (
+            if (
+                size_limit_bytes is None or pre_compressed_size < size_limit_bytes
+            ) and (
                 size_limit is None or client.compressed_traces.trace_count < size_limit
             ):
                 return None, None
@@ -132,6 +177,7 @@ def _tracing_thread_drain_compressed_buffer(
                 f"--{_BOUNDARY}--\r\n".encode()
             )
             client.compressed_traces.compressor_writer.close()
+            current_size = client.compressed_traces.buffer.tell()
 
             filled_buffer = client.compressed_traces.buffer
             filled_buffer.context = client.compressed_traces._context
@@ -152,6 +198,56 @@ def _tracing_thread_drain_compressed_buffer(
         # exceptions are logged elsewhere, but we need to make sure the
         # background thread continues to run
         return None, None
+
+
+def _process_buffered_run_ops_batch(
+    client: Client, batch_to_process: list[tuple[str, dict]]
+) -> None:
+    """Process a batch of run operations asynchronously."""
+    try:
+        # Extract just the run dictionaries for process_buffered_run_ops
+        run_dicts = [run_data for _, run_data in batch_to_process]
+        original_ids = [run.get("id") for run in run_dicts]
+
+        # Apply process_buffered_run_ops transformation
+        if client._process_buffered_run_ops is None:
+            raise RuntimeError(
+                "process_buffered_run_ops should not be None when processing batch"
+            )
+        processed_runs = list(client._process_buffered_run_ops(run_dicts))
+
+        # Validate that the transformation preserves run count and IDs
+        if len(processed_runs) != len(run_dicts):
+            raise ValueError(
+                f"process_buffered_run_ops must return the same number of runs. "
+                f"Expected {len(run_dicts)}, got {len(processed_runs)}"
+            )
+
+        processed_ids = [run.get("id") for run in processed_runs]
+        if processed_ids != original_ids:
+            raise ValueError(
+                f"process_buffered_run_ops must preserve run IDs in the same order. "
+                f"Expected {original_ids}, got {processed_ids}"
+            )
+
+        # Process each run and add to compressed traces
+        for (operation, _), processed_run in zip(batch_to_process, processed_runs):
+            if operation == "post":
+                client._create_run(processed_run)
+            elif operation == "patch":
+                client._update_run(processed_run)
+
+        # Trigger data available event
+        if client._data_available_event:
+            client._data_available_event.set()
+    except Exception:
+        # Log errors but don't crash the background thread
+        logger.error(
+            "LangSmith buffered run ops processing error: Failed to process batch.\n"
+            "This does not affect your application's runtime.\n"
+            "Error details:",
+            exc_info=True,
+        )
 
 
 def _tracing_thread_handle_batch(
@@ -177,20 +273,37 @@ def _tracing_thread_handle_batch(
             If None, operations will be combined from the batch items.
     """
     try:
-        if ops is None:
-            ops = combine_serialized_queue_operations([item.item for item in batch])
+        # Group batch items by (api_url, api_key) combination
+        grouped_batches = _group_batch_by_api_endpoint(batch)
 
-        if use_multipart:
-            client._multipart_ingest_ops(ops)
-        else:
-            if any(isinstance(op, SerializedFeedbackOperation) for op in ops):
-                logger.warn(
-                    "Feedback operations are not supported in non-multipart mode"
+        for (api_url, api_key), group_batch in grouped_batches.items():
+            if not ops:
+                group_ops = combine_serialized_queue_operations(
+                    [item.item for item in group_batch]
                 )
-                ops = [
-                    op for op in ops if not isinstance(op, SerializedFeedbackOperation)
-                ]
-            client._batch_ingest_run_ops(cast(list[SerializedRunOperation], ops))
+            else:
+                group_ids = {item.item.id for item in group_batch}
+                group_ops = [op for op in ops if op.id in group_ids]
+
+            if use_multipart:
+                client._multipart_ingest_ops(
+                    group_ops, api_url=api_url, api_key=api_key
+                )
+            else:
+                if any(isinstance(op, SerializedFeedbackOperation) for op in group_ops):
+                    logger.warning(
+                        "Feedback operations are not supported in non-multipart mode"
+                    )
+                    group_ops = [
+                        op
+                        for op in group_ops
+                        if not isinstance(op, SerializedFeedbackOperation)
+                    ]
+                client._batch_ingest_run_ops(
+                    cast(list[SerializedRunOperation], group_ops),
+                    api_url=api_url,
+                    api_key=api_key,
+                )
 
     except Exception:
         logger.error(
@@ -546,7 +659,14 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
             new_thread.start()
 
         hybrid_otel_and_langsmith, is_otel_only = get_tracing_mode()
-        if next_batch := _tracing_thread_drain_queue(tracing_queue, limit=size_limit):
+        max_batch_size = (
+            client._max_batch_size_bytes
+            or batch_ingest_config.get("size_limit_bytes")
+            or 0
+        )
+        if next_batch := _tracing_thread_drain_queue(
+            tracing_queue, limit=size_limit, max_size_bytes=max_batch_size
+        ):
             if hybrid_otel_and_langsmith:
                 # Hybrid mode: both OTEL and LangSmith
                 _hybrid_tracing_thread_handle_batch(
@@ -563,8 +683,11 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
 
     # drain the queue on exit - apply same logic
     hybrid_otel_and_langsmith, is_otel_only = get_tracing_mode()
+    max_batch_size = (
+        client._max_batch_size_bytes or batch_ingest_config.get("size_limit_bytes") or 0
+    )
     while next_batch := _tracing_thread_drain_queue(
-        tracing_queue, limit=size_limit, block=False
+        tracing_queue, limit=size_limit, block=False, max_size_bytes=max_batch_size
     ):
         if hybrid_otel_and_langsmith:
             # Hybrid mode cleanup
@@ -606,7 +729,9 @@ def tracing_control_thread_func_compress_parallel(
 
     batch_ingest_config = _ensure_ingest_config(client.info)
     size_limit: int = batch_ingest_config["size_limit"]
-    size_limit_bytes = batch_ingest_config.get("size_limit_bytes", 20_971_520)
+    size_limit_bytes = client._max_batch_size_bytes or batch_ingest_config.get(
+        "size_limit_bytes", 20_971_520
+    )
     # One for this func, one for the parent thread, one for getrefcount,
     # one for _get_data_type_cached
     num_known_refs = 4
@@ -654,7 +779,7 @@ def tracing_control_thread_func_compress_parallel(
             # If we have data, submit the send request
             if data_stream is not None:
                 try:
-                    future = HTTP_REQUEST_THREAD_POOL.submit(
+                    future = LANGSMITH_CLIENT_THREAD_POOL.submit(
                         client._send_compressed_multipart_req,
                         data_stream,
                         compressed_traces_info,
@@ -679,7 +804,7 @@ def tracing_control_thread_func_compress_parallel(
                     try:
                         cf.wait(
                             [
-                                HTTP_REQUEST_THREAD_POOL.submit(
+                                LANGSMITH_CLIENT_THREAD_POOL.submit(
                                     client._send_compressed_multipart_req,
                                     data_stream,
                                     compressed_traces_info,
@@ -705,7 +830,7 @@ def tracing_control_thread_func_compress_parallel(
             try:
                 cf.wait(
                     [
-                        HTTP_REQUEST_THREAD_POOL.submit(
+                        LANGSMITH_CLIENT_THREAD_POOL.submit(
                             client._send_compressed_multipart_req,
                             final_data_stream,
                             compressed_traces_info,
@@ -755,7 +880,14 @@ def _tracing_sub_thread_func(
         and seen_successive_empty_queues
         <= batch_ingest_config["scale_down_nempty_trigger"]
     ):
-        if next_batch := _tracing_thread_drain_queue(tracing_queue, limit=size_limit):
+        max_batch_size = (
+            client._max_batch_size_bytes
+            or batch_ingest_config.get("size_limit_bytes")
+            or 0
+        )
+        if next_batch := _tracing_thread_drain_queue(
+            tracing_queue, limit=size_limit, max_size_bytes=max_batch_size
+        ):
             seen_successive_empty_queues = 0
 
             hybrid_otel_and_langsmith, is_otel_only = get_tracing_mode()
@@ -777,8 +909,11 @@ def _tracing_sub_thread_func(
 
     # drain the queue on exit - apply same logic
     hybrid_otel_and_langsmith, is_otel_only = get_tracing_mode()
+    max_batch_size = (
+        client._max_batch_size_bytes or batch_ingest_config.get("size_limit_bytes") or 0
+    )
     while next_batch := _tracing_thread_drain_queue(
-        tracing_queue, limit=size_limit, block=False
+        tracing_queue, limit=size_limit, block=False, max_size_bytes=max_batch_size
     ):
         if hybrid_otel_and_langsmith:
             # Hybrid mode cleanup

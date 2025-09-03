@@ -119,7 +119,9 @@ const runInputsToMap = (rawInputs: unknown[]) => {
   const firstInput = rawInputs[0];
   let inputs: KVMap;
 
-  if (firstInput == null) {
+  if (firstInput === null) {
+    inputs = { inputs: null };
+  } else if (firstInput === undefined) {
     inputs = {};
   } else if (rawInputs.length > 1) {
     inputs = { args: rawInputs };
@@ -155,38 +157,13 @@ const _extractUsage = (runData: {
   return runData.outputs?.usage_metadata ?? usageMetadataFromMetadata;
 };
 
-function validateExtractedUsageMetadata(
-  data: Record<string, any>
-): ExtractedUsageMetadata {
-  const allowedKeys = new Set([
-    "input_tokens",
-    "output_tokens",
-    "total_tokens",
-    "input_token_details",
-    "output_token_details",
-    "input_cost",
-    "output_cost",
-    "total_cost",
-    "input_cost_details",
-    "output_cost_details",
-  ]);
-
-  const extraKeys = Object.keys(data).filter((key) => !allowedKeys.has(key));
-  if (extraKeys.length > 0) {
-    throw new Error(
-      `Unexpected keys in usage metadata: ${extraKeys.join(", ")}`
-    );
-  }
-
-  return data as ExtractedUsageMetadata;
-}
-
 async function handleEnd(params: {
   runTree?: RunTree;
   on_end?: (runTree: RunTree) => void;
   postRunPromise?: Promise<void>;
+  excludeInputs?: boolean;
 }) {
-  const { runTree, on_end, postRunPromise } = params;
+  const { runTree, on_end, postRunPromise, excludeInputs } = params;
   const onEnd = on_end;
   if (onEnd) {
     if (!runTree) {
@@ -196,7 +173,9 @@ async function handleEnd(params: {
     }
   }
   await postRunPromise;
-  await runTree?.patchRun();
+  await runTree?.patchRun({
+    excludeInputs,
+  });
 }
 
 const _populateUsageMetadata = (processedOutputs: KVMap, runTree?: RunTree) => {
@@ -210,7 +189,7 @@ const _populateUsageMetadata = (processedOutputs: KVMap, runTree?: RunTree) => {
     if (usageMetadata !== undefined) {
       runTree.extra.metadata = {
         ...runTree.extra.metadata,
-        usage_metadata: validateExtractedUsageMetadata(usageMetadata),
+        usage_metadata: usageMetadata,
       };
       processedOutputs.usage_metadata = usageMetadata;
     }
@@ -234,9 +213,16 @@ async function handleRunOutputs(params: {
   processOutputsFn: (outputs: Readonly<KVMap>) => KVMap | Promise<KVMap>;
   on_end?: (runTree: RunTree) => void;
   postRunPromise?: Promise<void>;
+  excludeInputs?: boolean;
 }): Promise<void> {
-  const { runTree, rawOutputs, processOutputsFn, on_end, postRunPromise } =
-    params;
+  const {
+    runTree,
+    rawOutputs,
+    processOutputsFn,
+    on_end,
+    postRunPromise,
+    excludeInputs,
+  } = params;
   let outputs: KVMap;
 
   if (isKVMap(rawOutputs)) {
@@ -263,7 +249,7 @@ async function handleRunOutputs(params: {
           await runTree?.end(outputs);
         })
         .finally(async () => {
-          await handleEnd({ runTree, postRunPromise, on_end });
+          await handleEnd({ runTree, postRunPromise, on_end, excludeInputs });
         });
       return;
     }
@@ -275,7 +261,7 @@ async function handleRunOutputs(params: {
   }
   _populateUsageMetadata(outputs, runTree);
   await runTree?.end(outputs);
-  await handleEnd({ runTree, postRunPromise, on_end });
+  await handleEnd({ runTree, postRunPromise, on_end, excludeInputs });
   return;
 }
 
@@ -390,7 +376,9 @@ const getSerializablePromise = <T = unknown>(arg: Promise<T>) => {
   return promiseProxy as Promise<T> & { toJSON: () => unknown };
 };
 
-const convertSerializableArg = (arg: unknown): unknown => {
+const convertSerializableArg = (
+  arg: unknown
+): { converted: unknown; deferredInput: boolean } => {
   if (isReadableStream(arg)) {
     const proxyState: unknown[] = [];
     const transform = new TransformStream({
@@ -404,7 +392,7 @@ const convertSerializableArg = (arg: unknown): unknown => {
 
     const pipeThrough = arg.pipeThrough(transform);
     Object.assign(pipeThrough, { toJSON: () => proxyState });
-    return pipeThrough;
+    return { converted: pipeThrough, deferredInput: true };
   }
 
   if (isAsyncIterable(arg)) {
@@ -414,7 +402,7 @@ const convertSerializableArg = (arg: unknown): unknown => {
       })[];
     } = { current: [] };
 
-    return new Proxy(arg, {
+    const converted = new Proxy(arg, {
       get(target, prop, receiver) {
         if (prop === Symbol.asyncIterator) {
           return () => {
@@ -470,12 +458,13 @@ const convertSerializableArg = (arg: unknown): unknown => {
         return Reflect.get(target, prop, receiver);
       },
     });
+    return { converted, deferredInput: true };
   }
 
   if (!Array.isArray(arg) && isIteratorLike(arg)) {
     const proxyState: Array<IteratorResult<unknown>> = [];
 
-    return new Proxy(arg, {
+    const converted = new Proxy(arg, {
       get(target, prop, receiver) {
         if (prop === "next" || prop === "return" || prop === "throw") {
           const bound = arg[prop]?.bind(arg);
@@ -504,13 +493,14 @@ const convertSerializableArg = (arg: unknown): unknown => {
         return Reflect.get(target, prop, receiver);
       },
     });
+    return { converted, deferredInput: true };
   }
 
   if (isThenable(arg)) {
-    return getSerializablePromise(arg);
+    return { converted: getSerializablePromise(arg), deferredInput: true };
   }
 
-  return arg;
+  return { converted: arg, deferredInput: false };
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -657,9 +647,13 @@ export function traceable<Func extends (...args: any[]) => any>(
     const asyncLocalStorage = AsyncLocalStorageProviderSingleton.getInstance();
 
     // TODO: deal with possible nested promises and async iterables
-    const processedArgs = args as unknown as Inputs;
+    const processedArgs = args as Inputs;
+    let deferredInput = false;
     for (let i = 0; i < processedArgs.length; i++) {
-      processedArgs[i] = convertSerializableArg(processedArgs[i]);
+      const { converted, deferredInput: argDefersInput } =
+        convertSerializableArg(processedArgs[i]);
+      processedArgs[i] = converted;
+      deferredInput = deferredInput || argDefersInput;
     }
 
     const [currentContext, rawInputs] = ((): [
@@ -802,6 +796,7 @@ export function traceable<Func extends (...args: any[]) => any>(
                   processOutputsFn,
                   on_end: config?.on_end,
                   postRunPromise,
+                  excludeInputs: !deferredInput,
                 });
                 controller.close();
                 break;
@@ -825,6 +820,7 @@ export function traceable<Func extends (...args: any[]) => any>(
               processOutputsFn,
               on_end: config?.on_end,
               postRunPromise,
+              excludeInputs: !deferredInput,
             });
             return reader.cancel(reason);
           },
@@ -872,6 +868,7 @@ export function traceable<Func extends (...args: any[]) => any>(
             processOutputsFn,
             on_end: config?.on_end,
             postRunPromise,
+            excludeInputs: !deferredInput,
           });
         }
       }
@@ -982,6 +979,7 @@ export function traceable<Func extends (...args: any[]) => any>(
                     processOutputsFn,
                     on_end: config?.on_end,
                     postRunPromise,
+                    excludeInputs: !deferredInput,
                   });
                 } catch (e) {
                   console.error(
@@ -1005,6 +1003,7 @@ export function traceable<Func extends (...args: any[]) => any>(
                   processOutputsFn,
                   on_end: config?.on_end,
                   postRunPromise,
+                  excludeInputs: !deferredInput,
                 });
               } finally {
                 // eslint-disable-next-line no-unsafe-finally
@@ -1017,6 +1016,7 @@ export function traceable<Func extends (...args: any[]) => any>(
                 runTree: currentRunTree,
                 postRunPromise,
                 on_end: config?.on_end,
+                excludeInputs: !deferredInput,
               });
               throw error;
             }

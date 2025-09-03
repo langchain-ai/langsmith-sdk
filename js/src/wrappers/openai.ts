@@ -1,4 +1,4 @@
-import { OpenAI } from "openai";
+import type { OpenAI } from "openai";
 import type { APIPromise } from "openai";
 import type { RunTreeConfig } from "../index.js";
 import {
@@ -142,7 +142,8 @@ function _combineChatCompletionChoices(
   }
   return {
     index: choices[0].index,
-    finish_reason: reversedChoices.find((c) => c.finish_reason) || null,
+    finish_reason: (reversedChoices.find((c) => c.finish_reason) || null)
+      ?.finish_reason,
     message: message,
   };
 }
@@ -211,26 +212,47 @@ const textAggregator = (
 
 function processChatCompletion(outputs: Readonly<KVMap>): KVMap {
   const chatCompletion = outputs as OpenAI.ChatCompletion;
+  const recognizedServiceTier = ["priority", "flex"].includes(
+    chatCompletion.service_tier ?? ""
+  )
+    ? chatCompletion.service_tier
+    : undefined;
+  const serviceTierPrefix = recognizedServiceTier
+    ? `${recognizedServiceTier}_`
+    : "";
   // copy the original object, minus usage
   const result = { ...chatCompletion } as KVMap;
   const usage = chatCompletion.usage;
   if (usage) {
-    const inputTokenDetails = {
+    const inputTokenDetails: Record<string, number> = {
       ...(usage.prompt_tokens_details?.audio_tokens !== null && {
         audio: usage.prompt_tokens_details?.audio_tokens,
       }),
       ...(usage.prompt_tokens_details?.cached_tokens !== null && {
-        cache_read: usage.prompt_tokens_details?.cached_tokens,
+        [`${serviceTierPrefix}cache_read`]:
+          usage.prompt_tokens_details?.cached_tokens,
       }),
     };
-    const outputTokenDetails = {
+    const outputTokenDetails: Record<string, number> = {
       ...(usage.completion_tokens_details?.audio_tokens !== null && {
         audio: usage.completion_tokens_details?.audio_tokens,
       }),
       ...(usage.completion_tokens_details?.reasoning_tokens !== null && {
-        reasoning: usage.completion_tokens_details?.reasoning_tokens,
+        [`${serviceTierPrefix}reasoning`]:
+          usage.completion_tokens_details?.reasoning_tokens,
       }),
     };
+    if (recognizedServiceTier) {
+      // Avoid counting cache read and reasoning tokens towards the
+      // service tier token count since service tier tokens are already
+      // priced differently
+      inputTokenDetails[recognizedServiceTier] =
+        usage.prompt_tokens -
+        (inputTokenDetails[`${serviceTierPrefix}cache_read`] ?? 0);
+      outputTokenDetails[recognizedServiceTier] =
+        usage.completion_tokens -
+        (outputTokenDetails[`${serviceTierPrefix}reasoning`] ?? 0);
+    }
     result.usage_metadata = {
       input_tokens: usage.prompt_tokens ?? 0,
       output_tokens: usage.completion_tokens ?? 0,
@@ -289,6 +311,13 @@ export const wrapOpenAI = <T extends OpenAIType>(
     );
   }
 
+  // Attempt to determine if this is an Azure OpenAI client
+  const isAzureOpenAI = openai.constructor?.name === "AzureOpenAI";
+
+  const provider = isAzureOpenAI ? "azure" : "openai";
+  const chatName = isAzureOpenAI ? "AzureChatOpenAI" : "ChatOpenAI";
+  const completionsName = isAzureOpenAI ? "AzureOpenAI" : "OpenAI";
+
   // Some internal OpenAI methods call each other, so we need to preserve original
   // OpenAI methods.
   const tracedOpenAIClient = { ...openai };
@@ -296,7 +325,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
   const chatCompletionParseMetadata: TraceableConfig<
     typeof openai.chat.completions.create
   > = {
-    name: "ChatOpenAI",
+    name: chatName,
     run_type: "llm",
     aggregator: chatAggregator,
     argsConfigPath: [1, "langsmithExtra"],
@@ -310,7 +339,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
         undefined;
 
       return {
-        ls_provider: "openai",
+        ls_provider: provider,
         ls_model_type: "chat",
         ls_model_name: params.model,
         ls_max_tokens:
@@ -363,7 +392,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
   tracedOpenAIClient.completions = {
     ...openai.completions,
     create: traceable(openai.completions.create.bind(openai.completions), {
-      name: "OpenAI",
+      name: completionsName,
       run_type: "llm",
       aggregator: textAggregator,
       argsConfigPath: [1, "langsmithExtra"],
@@ -377,7 +406,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
           undefined;
 
         return {
-          ls_provider: "openai",
+          ls_provider: provider,
           ls_model_type: "llm",
           ls_model_name: params.model,
           ls_max_tokens: params.max_tokens ?? undefined,
@@ -409,7 +438,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
       tracedOpenAIClient.responses.create = traceable(
         openai.responses.create.bind(openai.responses),
         {
-          name: "ChatOpenAI",
+          name: chatName,
           run_type: "llm",
           aggregator: responsesAggregator,
           argsConfigPath: [1, "langsmithExtra"],
@@ -419,7 +448,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
             // Handle responses API parameters
             const params = payload as any;
             return {
-              ls_provider: "openai",
+              ls_provider: provider,
               ls_model_type: "llm",
               ls_model_name: params.model || "unknown",
             };

@@ -1,7 +1,13 @@
 import * as uuid from "uuid";
 import { Client } from "./client.js";
 import { isTracingEnabled } from "./env.js";
-import { Attachments, BaseRun, KVMap, RunCreate } from "./schemas.js";
+import {
+  Attachments,
+  BaseRun,
+  KVMap,
+  RunCreate,
+  RunUpdate,
+} from "./schemas.js";
 import {
   isConflictingEndpointsError,
   ConflictingEndpointsError,
@@ -116,6 +122,7 @@ type ProjectReplica = [string, KVMap | undefined];
 type WriteReplica = {
   apiUrl?: string;
   apiKey?: string;
+  workspaceId?: string;
   projectName?: string;
   updates?: KVMap | undefined;
   fromEnv?: boolean;
@@ -512,7 +519,8 @@ export class RunTree implements BaseRun {
     try {
       const runtimeEnv = getRuntimeEnvironment();
       if (this.replicas && this.replicas.length > 0) {
-        for (const { projectName, apiKey, apiUrl } of this.replicas) {
+        for (const { projectName, apiKey, apiUrl, workspaceId } of this
+          .replicas) {
           const runCreate = this._remapForProject(
             projectName ?? this.project_name,
             runtimeEnv,
@@ -521,6 +529,7 @@ export class RunTree implements BaseRun {
           await this.client.createRun(runCreate, {
             apiKey,
             apiUrl,
+            workspaceId,
           });
         }
       } else {
@@ -545,40 +554,44 @@ export class RunTree implements BaseRun {
     }
   }
 
-  async patchRun(): Promise<void> {
+  async patchRun(options?: { excludeInputs?: boolean }): Promise<void> {
     if (this.replicas && this.replicas.length > 0) {
-      for (const { projectName, apiKey, apiUrl, updates } of this.replicas) {
+      for (const { projectName, apiKey, apiUrl, workspaceId, updates } of this
+        .replicas) {
         const runData = this._remapForProject(projectName ?? this.project_name);
-        await this.client.updateRun(
-          runData.id,
-          {
-            inputs: runData.inputs,
-            outputs: runData.outputs,
-            error: runData.error,
-            parent_run_id: runData.parent_run_id,
-            session_name: runData.session_name,
-            reference_example_id: runData.reference_example_id,
-            end_time: runData.end_time,
-            dotted_order: runData.dotted_order,
-            trace_id: runData.trace_id,
-            events: runData.events,
-            tags: runData.tags,
-            extra: runData.extra,
-            attachments: this.attachments,
-            ...updates,
-          },
-          {
-            apiKey,
-            apiUrl,
-          }
-        );
+        const updatePayload: RunUpdate = {
+          id: runData.id,
+          outputs: runData.outputs,
+          error: runData.error,
+          parent_run_id: runData.parent_run_id,
+          session_name: runData.session_name,
+          reference_example_id: runData.reference_example_id,
+          end_time: runData.end_time,
+          dotted_order: runData.dotted_order,
+          trace_id: runData.trace_id,
+          events: runData.events,
+          tags: runData.tags,
+          extra: runData.extra,
+          attachments: this.attachments,
+          ...updates,
+        };
+        // Important that inputs is not a key in the run update
+        // if excluded because it will overwrite the run create if the
+        // two operations are merged during batching
+        if (!options?.excludeInputs) {
+          updatePayload.inputs = runData.inputs;
+        }
+        await this.client.updateRun(runData.id, updatePayload, {
+          apiKey,
+          apiUrl,
+          workspaceId,
+        });
       }
     } else {
       try {
-        const runUpdate = {
+        const runUpdate: RunUpdate = {
           end_time: this.end_time,
           error: this.error,
-          inputs: this.inputs,
           outputs: this.outputs,
           parent_run_id: this.parent_run?.id ?? this.parent_run_id,
           reference_example_id: this.reference_example_id,
@@ -590,6 +603,12 @@ export class RunTree implements BaseRun {
           attachments: this.attachments,
           session_name: this.project_name,
         };
+        // Important that inputs is not a key in the run update
+        // if excluded because it will overwrite the run create if the
+        // two operations are merged during batching
+        if (!options?.excludeInputs) {
+          runUpdate.inputs = this.inputs;
+        }
         await this.client.updateRun(this.id, runUpdate);
       } catch (error) {
         console.error(`Error in patchRun for run ${this.id}`, error);
@@ -687,7 +706,7 @@ export class RunTree implements BaseRun {
 
   static fromHeaders(
     headers: Record<string, string | string[]> | HeadersLike,
-    inheritArgs?: RunTreeConfig
+    inheritArgs?: Partial<RunTreeConfig>
   ): RunTree | undefined {
     const rawHeaders: Record<string, string | string[] | null> =
       "get" in headers && typeof headers.get === "function"
@@ -752,7 +771,7 @@ export class RunTree implements BaseRun {
 
 export function isRunTree(x?: unknown): x is RunTree {
   return (
-    x !== undefined &&
+    x != null &&
     typeof (x as RunTree).createChild === "function" &&
     typeof (x as RunTree).postRun === "function"
   );
@@ -795,7 +814,7 @@ export function isRunnableConfigLike(x?: unknown): x is RunnableConfigLike {
   // or an array with a LangChainTracerLike object within it
 
   return (
-    x !== undefined &&
+    x != null &&
     typeof (x as RunnableConfigLike).callbacks === "object" &&
     // Callback manager with a langchain tracer
     (containsLangChainTracerLike(

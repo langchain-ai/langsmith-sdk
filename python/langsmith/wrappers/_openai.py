@@ -59,7 +59,7 @@ def _strip_not_given(d: dict) -> dict:
         return d
 
 
-def _infer_invocation_params(model_type: str, kwargs: dict):
+def _infer_invocation_params(model_type: str, provider: str, kwargs: dict):
     stripped = _strip_not_given(kwargs)
 
     stop = stripped.get("stop")
@@ -67,7 +67,7 @@ def _infer_invocation_params(model_type: str, kwargs: dict):
         stop = [stop]
 
     return {
-        "ls_provider": "openai",
+        "ls_provider": provider,
         "ls_model_type": model_type,
         "ls_model_name": stripped.get("model"),
         "ls_temperature": stripped.get("temperature"),
@@ -177,7 +177,16 @@ def _reduce_completions(all_chunks: list[Completion]) -> dict:
     return d
 
 
-def _create_usage_metadata(oai_token_usage: dict) -> UsageMetadata:
+def _create_usage_metadata(
+    oai_token_usage: dict, service_tier: Optional[str] = None
+) -> UsageMetadata:
+    recognized_service_tier = (
+        service_tier if service_tier in ["priority", "flex"] else None
+    )
+    service_tier_prefix = (
+        f"{recognized_service_tier}_" if recognized_service_tier else ""
+    )
+
     input_tokens = (
         oai_token_usage.get("prompt_tokens") or oai_token_usage.get("input_tokens") or 0
     )
@@ -193,7 +202,7 @@ def _create_usage_metadata(oai_token_usage: dict) -> UsageMetadata:
             or oai_token_usage.get("input_tokens_details")
             or {}
         ).get("audio_tokens"),
-        "cache_read": (
+        f"{service_tier_prefix}cache_read": (
             oai_token_usage.get("prompt_tokens_details")
             or oai_token_usage.get("input_tokens_details")
             or {}
@@ -205,12 +214,24 @@ def _create_usage_metadata(oai_token_usage: dict) -> UsageMetadata:
             or oai_token_usage.get("output_tokens_details")
             or {}
         ).get("audio_tokens"),
-        "reasoning": (
+        f"{service_tier_prefix}reasoning": (
             oai_token_usage.get("completion_tokens_details")
             or oai_token_usage.get("output_tokens_details")
             or {}
         ).get("reasoning_tokens"),
     }
+
+    if recognized_service_tier:
+        # Avoid counting cache read and reasoning tokens towards the
+        # service tier token count since service tier tokens are already
+        # priced differently
+        input_token_details[recognized_service_tier] = input_tokens - (
+            input_token_details.get(f"{service_tier_prefix}cache_read") or 0
+        )
+        output_token_details[recognized_service_tier] = output_tokens - (
+            output_token_details.get(f"{service_tier_prefix}reasoning") or 0
+        )
+
     return UsageMetadata(
         input_tokens=input_tokens,
         output_tokens=output_tokens,
@@ -229,7 +250,9 @@ def _process_chat_completion(outputs: Any):
         rdict = outputs.model_dump()
         oai_token_usage = rdict.pop("usage", None)
         rdict["usage_metadata"] = (
-            _create_usage_metadata(oai_token_usage) if oai_token_usage else None
+            _create_usage_metadata(oai_token_usage, rdict.get("service_tier"))
+            if oai_token_usage
+            else None
         )
         return rdict
     except BaseException as e:
@@ -393,13 +416,26 @@ def wrap_openai(
     """  # noqa: E501
     tracing_extra = tracing_extra or {}
 
+    ls_provider = "openai"
+    try:
+        from openai import AsyncAzureOpenAI, AzureOpenAI
+
+        if isinstance(client, AzureOpenAI) or isinstance(client, AsyncAzureOpenAI):
+            ls_provider = "azure"
+            chat_name = "AzureChatOpenAI"
+            completions_name = "AzureOpenAI"
+    except ImportError:
+        pass
+
     # First wrap the create methods - these handle non-streaming cases
     client.chat.completions.create = _get_wrapper(  # type: ignore[method-assign]
         client.chat.completions.create,
         chat_name,
         _reduce_chat,
         tracing_extra=tracing_extra,
-        invocation_params_fn=functools.partial(_infer_invocation_params, "chat"),
+        invocation_params_fn=functools.partial(
+            _infer_invocation_params, "chat", ls_provider
+        ),
         process_outputs=_process_chat_completion,
     )
 
@@ -408,7 +444,9 @@ def wrap_openai(
         completions_name,
         _reduce_completions,
         tracing_extra=tracing_extra,
-        invocation_params_fn=functools.partial(_infer_invocation_params, "llm"),
+        invocation_params_fn=functools.partial(
+            _infer_invocation_params, "llm", ls_provider
+        ),
     )
 
     # Wrap beta.chat.completions.parse if it exists
@@ -423,7 +461,9 @@ def wrap_openai(
             chat_name,
             _process_chat_completion,
             tracing_extra=tracing_extra,
-            invocation_params_fn=functools.partial(_infer_invocation_params, "chat"),
+            invocation_params_fn=functools.partial(
+                _infer_invocation_params, "chat", ls_provider
+            ),
         )
 
     # For the responses API: "client.responses.create(**kwargs)"
@@ -436,7 +476,7 @@ def wrap_openai(
                 process_outputs=_process_responses_api_output,
                 tracing_extra=tracing_extra,
                 invocation_params_fn=functools.partial(
-                    _infer_invocation_params, "chat"
+                    _infer_invocation_params, "chat", ls_provider
                 ),
             )
         if hasattr(client.responses, "parse"):
@@ -446,7 +486,7 @@ def wrap_openai(
                 _process_responses_api_output,
                 tracing_extra=tracing_extra,
                 invocation_params_fn=functools.partial(
-                    _infer_invocation_params, "chat"
+                    _infer_invocation_params, "chat", ls_provider
                 ),
             )
 
@@ -458,7 +498,9 @@ def _process_responses_api_output(response: Any) -> dict:
         try:
             output = response.model_dump(exclude_none=True, mode="json")
             if usage := output.pop("usage", None):
-                output["usage_metadata"] = _create_usage_metadata(usage)
+                output["usage_metadata"] = _create_usage_metadata(
+                    usage, output.get("service_tier")
+                )
             return output
         except Exception:
             return {"output": response}

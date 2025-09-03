@@ -34,6 +34,7 @@ from typing import (
     TypeVar,
     Union,
     cast,
+    get_type_hints,
     overload,
     runtime_checkable,
 )
@@ -190,7 +191,7 @@ def ensure_traceable(
     metadata: Optional[Mapping[str, Any]] = None,
     tags: Optional[list[str]] = None,
     client: Optional[ls_client.Client] = None,
-    reduce_fn: Optional[Callable[[Sequence], dict]] = None,
+    reduce_fn: Optional[Callable[[Sequence], Union[dict, str]]] = None,
     project_name: Optional[str] = None,
     process_inputs: Optional[Callable[[dict], dict]] = None,
     process_outputs: Optional[Callable[..., dict]] = None,
@@ -311,7 +312,7 @@ def traceable(
     metadata: Optional[Mapping[str, Any]] = None,
     tags: Optional[list[str]] = None,
     client: Optional[ls_client.Client] = None,
-    reduce_fn: Optional[Callable[[Sequence], dict]] = None,
+    reduce_fn: Optional[Callable[[Sequence], Union[dict, str]]] = None,
     project_name: Optional[str] = None,
     process_inputs: Optional[Callable[[dict], dict]] = None,
     process_outputs: Optional[Callable[..., dict]] = None,
@@ -1502,7 +1503,9 @@ def _setup_run(
     metadata_.update(metadata or {})
     metadata_["ls_method"] = "traceable"
     extra_inner["metadata"] = metadata_
-    inputs, attachments = _get_inputs_and_attachments_safe(signature, *args, **kwargs)
+    inputs, attachments = _get_inputs_and_attachments_safe(
+        signature, *args, func=func, **kwargs
+    )
     invocation_params_fn = container_input.get("invocation_params_fn")
     if invocation_params_fn:
         try:
@@ -1619,38 +1622,69 @@ def _get_inputs_safe(
         return {"args": args, "kwargs": kwargs}
 
 
-def _is_attachment(param: inspect.Parameter) -> bool:
-    return param.annotation == schemas.Attachment or (
+def _is_attachment(param: inspect.Parameter, func: Optional[Callable] = None) -> bool:
+    if param.annotation == schemas.Attachment or (
         get_origin(param.annotation) == Annotated
         and any(arg == schemas.Attachment for arg in get_args(param.annotation))
-    )
+    ):
+        return True
+
+    # try resolving stringified annotations
+    if func is not None and isinstance(param.annotation, str):
+        try:
+            # include_extras=True preserves annotated metadata
+            type_hints = get_type_hints(func, include_extras=True)
+            resolved_annotation = type_hints.get(param.name)
+            if resolved_annotation is not None:
+                return resolved_annotation == schemas.Attachment or (
+                    get_origin(resolved_annotation) == Annotated
+                    and any(
+                        arg == schemas.Attachment
+                        for arg in get_args(resolved_annotation)
+                    )
+                )
+        except (NameError, TypeError, AttributeError):
+            pass
+
+    return False
 
 
-def _attachment_args_helper(signature: inspect.Signature) -> set[str]:
+def _attachment_args_helper(
+    signature: inspect.Signature, func: Optional[Callable] = None
+) -> set[str]:
     return {
-        name for name, param in signature.parameters.items() if _is_attachment(param)
+        name
+        for name, param in signature.parameters.items()
+        if _is_attachment(param, func)
     }
 
 
 @functools.lru_cache(maxsize=1000)
-def _cached_attachment_args(signature: inspect.Signature) -> set[str]:
-    return _attachment_args_helper(signature)
+def _cached_attachment_args(
+    signature: inspect.Signature, func: Optional[Callable] = None
+) -> set[str]:
+    return _attachment_args_helper(signature, func)
 
 
-def _attachment_args(signature: inspect.Signature) -> set[str]:
+def _attachment_args(
+    signature: inspect.Signature, func: Optional[Callable] = None
+) -> set[str]:
     # Caching signatures fails if there's unhashable default values.
     try:
-        return _cached_attachment_args(signature)
+        return _cached_attachment_args(signature, func)
     except TypeError:
-        return _attachment_args_helper(signature)
+        return _attachment_args_helper(signature, func)
 
 
 def _get_inputs_and_attachments_safe(
-    signature: inspect.Signature, *args: Any, **kwargs: Any
+    signature: inspect.Signature,
+    *args: Any,
+    func: Optional[Callable] = None,
+    **kwargs: Any,
 ) -> tuple[dict, schemas.Attachments]:
     try:
         inferred = _get_inputs(signature, *args, **kwargs)
-        attachment_args = _attachment_args(signature)
+        attachment_args = _attachment_args(signature, func)
         if attachment_args:
             inputs, attachments = {}, {}
             for k, v in inferred.items():

@@ -8,8 +8,12 @@ import { fileURLToPath } from "url";
 import path from "path";
 
 import { Client } from "../../../index.js";
-import { wrapAISDK } from "../../../experimental/vercel/index.js";
+import {
+  createLangSmithProviderOptions,
+  wrapAISDK,
+} from "../../../experimental/vercel/index.js";
 import { waitUntilRunFound } from "../../utils.js";
+import { mockClient } from "../../utils/mock_client.js";
 
 const { tool, stepCountIs } = ai;
 
@@ -41,6 +45,51 @@ test("wrap generateText", async () => {
   expect(result.providerMetadata).toBeDefined();
 });
 
+test("wrap generateText with flex service tier", async () => {
+  const { client, callSpy } = mockClient();
+
+  const result = await generateText({
+    model: openai("gpt-5-mini"),
+    messages: [
+      {
+        role: "user",
+        content: "What color is the sky in one word?",
+      },
+    ],
+    providerOptions: {
+      openai: {
+        serviceTier: "flex",
+      },
+      langsmith: createLangSmithProviderOptions({
+        client,
+      }),
+    },
+  });
+  expect(result.text).toBeDefined();
+  expect(result.text.length).toBeGreaterThan(0);
+  expect(result.usage).toBeDefined();
+  expect(result.providerMetadata).toBeDefined();
+  const patchBodies = await Promise.all(
+    callSpy.mock.calls
+      .filter((call) => call[1]!.method === "PATCH")
+      .map((call) => new Response(call[1]!.body).json())
+  );
+  const childRunPatchBodies = patchBodies.filter(
+    (body) => body.parent_run_id != null
+  );
+  expect(childRunPatchBodies.length).toEqual(1);
+  const usageMetadata = childRunPatchBodies[0].extra.metadata.usage_metadata;
+  expect(usageMetadata.input_token_details.flex).toBeGreaterThan(1);
+  expect(usageMetadata.input_token_details.flex).toEqual(
+    usageMetadata.input_tokens
+  );
+  expect(usageMetadata.output_token_details.flex).toBeGreaterThan(1);
+  expect(
+    usageMetadata.output_token_details.flex +
+      usageMetadata.output_token_details.flex_reasoning
+  ).toEqual(usageMetadata.output_tokens);
+});
+
 test("wrap streamText", async () => {
   const result = await streamText({
     model: openai("gpt-5-nano"),
@@ -68,6 +117,48 @@ test("wrap streamText", async () => {
   expect(total.length).toBeGreaterThan(0);
   expect(result.usage).toBeDefined();
   expect(result.providerMetadata).toBeDefined();
+});
+
+test("wrap streamText with service tier", async () => {
+  const { client, callSpy } = mockClient();
+
+  const result = streamText({
+    model: openai("gpt-5-mini"),
+    messages: [
+      {
+        role: "user",
+        content: "What color is the sky in one word?",
+      },
+    ],
+    providerOptions: {
+      openai: {
+        serviceTier: "flex",
+      },
+      langsmith: createLangSmithProviderOptions({
+        client,
+      }),
+    },
+  });
+  await result.consumeStream();
+  const patchBodies = await Promise.all(
+    callSpy.mock.calls
+      .filter((call) => call[1]!.method === "PATCH")
+      .map((call) => new Response(call[1]!.body).json())
+  );
+  const childRunPatchBodies = patchBodies.filter(
+    (body) => body.parent_run_id != null
+  );
+  expect(childRunPatchBodies.length).toEqual(1);
+  const usageMetadata = childRunPatchBodies[0].extra.metadata.usage_metadata;
+  expect(usageMetadata.input_token_details.flex).toBeGreaterThan(1);
+  expect(usageMetadata.input_token_details.flex).toEqual(
+    usageMetadata.input_tokens
+  );
+  expect(usageMetadata.output_token_details.flex).toBeGreaterThan(1);
+  expect(
+    usageMetadata.output_token_details.flex +
+      usageMetadata.output_token_details.flex_reasoning
+  ).toEqual(usageMetadata.output_tokens);
 });
 
 test("wrap generateObject", async () => {
@@ -218,4 +309,51 @@ test("image and file data normalization", async () => {
   expect(result.text.length).toBeGreaterThan(0);
   expect(result.usage).toBeDefined();
   expect(result.providerMetadata).toBeDefined();
+});
+
+test("process inputs and outputs", async () => {
+  const lsConfig = createLangSmithProviderOptions<typeof ai.generateText>({
+    processInputs: (inputs) => {
+      const { messages } = inputs;
+      return {
+        messages: messages?.map((message) => ({
+          providerMetadata: message.providerOptions,
+          role: "assistant",
+          content: "REDACTED",
+        })),
+        prompt: "REDACTED",
+      };
+    },
+    processOutputs: (outputs) => {
+      return {
+        providerMetadata: outputs.providerMetadata,
+        role: "assistant",
+        content: "REDACTED",
+      };
+    },
+    processChildLLMRunInputs: (inputs) => {
+      const { prompt } = inputs;
+      return {
+        messages: prompt.map((message) => ({
+          ...message,
+          content: "REDACTED CHILD INPUTS",
+        })),
+      };
+    },
+    processChildLLMRunOutputs: (outputs) => {
+      return {
+        providerMetadata: outputs.providerMetadata,
+        content: "REDACTED CHILD OUTPUTS",
+        role: "assistant",
+      };
+    },
+  });
+  const { text } = await generateText({
+    model: openai("gpt-5-nano"),
+    prompt: "What is the capital of France?",
+    providerOptions: {
+      langsmith: lsConfig,
+    },
+  });
+  expect(text).not.toContain("REDACTED");
 });
