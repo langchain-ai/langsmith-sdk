@@ -23,11 +23,13 @@ import {
 // eslint-disable-next-line @typescript-eslint/ban-types
 type AnyString = string & {};
 
+/** @deprecated Use `wrapAISDK` from `langsmith/experimental/vercel` instead. */
 export type AITelemetrySettings = Exclude<
   Parameters<typeof generateText>[0]["experimental_telemetry"],
   undefined
 >;
 
+/** @deprecated Use `wrapAISDK` from `langsmith/experimental/vercel` instead. */
 export interface TelemetrySettings extends AITelemetrySettings {
   /** ID of the run sent to LangSmith */
   runId?: string;
@@ -419,6 +421,7 @@ function getParentSpanId(span: AISDKSpan): string | undefined {
 }
 
 /**
+ * @deprecated Use `wrapAISDK` from `langsmith/experimental/vercel` instead.
  * OpenTelemetry trace exporter for Vercel AI SDK.
  *
  * @example
