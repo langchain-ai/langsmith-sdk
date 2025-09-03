@@ -212,26 +212,47 @@ const textAggregator = (
 
 function processChatCompletion(outputs: Readonly<KVMap>): KVMap {
   const chatCompletion = outputs as OpenAI.ChatCompletion;
+  const recognizedServiceTier = ["priority", "flex"].includes(
+    chatCompletion.service_tier ?? ""
+  )
+    ? chatCompletion.service_tier
+    : undefined;
+  const serviceTierPrefix = recognizedServiceTier
+    ? `${recognizedServiceTier}_`
+    : "";
   // copy the original object, minus usage
   const result = { ...chatCompletion } as KVMap;
   const usage = chatCompletion.usage;
   if (usage) {
-    const inputTokenDetails = {
+    const inputTokenDetails: Record<string, number> = {
       ...(usage.prompt_tokens_details?.audio_tokens !== null && {
         audio: usage.prompt_tokens_details?.audio_tokens,
       }),
       ...(usage.prompt_tokens_details?.cached_tokens !== null && {
-        cache_read: usage.prompt_tokens_details?.cached_tokens,
+        [`${serviceTierPrefix}cache_read`]:
+          usage.prompt_tokens_details?.cached_tokens,
       }),
     };
-    const outputTokenDetails = {
+    const outputTokenDetails: Record<string, number> = {
       ...(usage.completion_tokens_details?.audio_tokens !== null && {
         audio: usage.completion_tokens_details?.audio_tokens,
       }),
       ...(usage.completion_tokens_details?.reasoning_tokens !== null && {
-        reasoning: usage.completion_tokens_details?.reasoning_tokens,
+        [`${serviceTierPrefix}reasoning`]:
+          usage.completion_tokens_details?.reasoning_tokens,
       }),
     };
+    if (recognizedServiceTier) {
+      // Avoid counting cache read and reasoning tokens towards the
+      // service tier token count since service tier tokens are already
+      // priced differently
+      inputTokenDetails[recognizedServiceTier] =
+        usage.prompt_tokens -
+        (inputTokenDetails[`${serviceTierPrefix}cache_read`] ?? 0);
+      outputTokenDetails[recognizedServiceTier] =
+        usage.completion_tokens -
+        (outputTokenDetails[`${serviceTierPrefix}reasoning`] ?? 0);
+    }
     result.usage_metadata = {
       input_tokens: usage.prompt_tokens ?? 0,
       output_tokens: usage.completion_tokens ?? 0,
