@@ -498,7 +498,9 @@ def _process_responses_api_output(response: Any) -> dict:
         try:
             output = response.model_dump(exclude_none=True, mode="json")
             if usage := output.pop("usage", None):
-                output["usage_metadata"] = _create_usage_metadata(usage)
+                output["usage_metadata"] = _create_usage_metadata(
+                    usage, output.get("service_tier")
+                )
             return output
         except Exception:
             return {"output": response}
