@@ -644,7 +644,9 @@ class RunTree(ls_schemas.RunBase):
         if not self.end_time:
             self.end()
         attachments = {
-            a: v for a, v in self.attachments.items() if isinstance(v, tuple)
+            a: v
+            for a, v in self.attachments.items()
+            if isinstance(v, (tuple, ls_schemas.Attachment))
         }
         try:
             # Avoid loading the same attachment twice
