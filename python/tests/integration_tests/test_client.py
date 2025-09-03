@@ -770,7 +770,7 @@ def test_list_datasets(langchain_client: Client) -> None:
 
         # Test datasets without metadata return empty metadata
         assert dataset2.metadata is None  # dataset2 has no metadata
-        
+
         datasets = list(
             langchain_client.list_datasets(dataset_ids=[dataset1.id, dataset2.id])
         )
