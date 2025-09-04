@@ -247,10 +247,10 @@ if HAVE_AGENTS:
                         trace_id=run["trace_id"],
                         parent_run_id=run["parent_run_id"],
                         dotted_order=run["dotted_order"],
-                        project_name=self._project_name,
                         inputs=self._first_response_inputs.pop(trace.trace_id, {}),
                         outputs=self._last_response_outputs.pop(trace.trace_id, {}),
                         extra={"metadata": metadata},
+                        project_name=self._project_name,
                     )
                 except Exception as e:
                     logger.exception(f"Error updating trace run: {e}")
@@ -299,10 +299,10 @@ if HAVE_AGENTS:
                     run_type=run_type,
                     id=span_run_id,
                     trace_id=trace_id,
-                    project_name=self._project_name,
                     parent_run_id=parent_run["id"],
                     dotted_order=dotted_order,
                     inputs=extracted.get("inputs", {}),
+                    project_name=self._project_name,
                 )
                 if span.started_at:
                     run_data["start_time"] = datetime.fromisoformat(span.started_at)
@@ -330,6 +330,7 @@ if HAVE_AGENTS:
                     outputs=outputs,
                     inputs=inputs,
                     extra=extracted,
+                    project_name=self._project_name,
                 )
                 if span.ended_at:
                     run_data["end_time"] = datetime.fromisoformat(span.ended_at)
