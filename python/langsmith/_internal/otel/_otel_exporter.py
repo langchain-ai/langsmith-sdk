@@ -207,9 +207,7 @@ class OTELExporter:
                             )
                         else:
                             # Span ended in _create_span_for_run (had end_time)
-                            logger.debug(
-                                "completed span (not tracked - already ended)"
-                            )
+                            logger.debug("completed span (not tracked - already ended)")
                 else:
                     self._update_span_for_run(op, run_info)
             except Exception as e:
