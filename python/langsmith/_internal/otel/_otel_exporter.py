@@ -9,7 +9,6 @@ import uuid
 import warnings
 from typing import TYPE_CHECKING, Any, Optional
 
-
 if TYPE_CHECKING:
     try:
         from opentelemetry.context.context import Context  # type: ignore[import]
@@ -209,7 +208,7 @@ class OTELExporter:
                         else:
                             # Span was already ended in _create_span_for_run (had end_time)
                             logger.debug(
-                                f"Created and completed span (not tracked - already ended)"
+                                "Created and completed span (not tracked - already ended)"
                             )
                 else:
                     self._update_span_for_run(op, run_info)
@@ -376,7 +375,7 @@ class OTELExporter:
                 logger.debug(f"Completed span, remaining spans: {len(self._span_info)}")
             else:
                 # Span exists but no end_time - this is normal for ongoing operations
-                logger.debug(f"Updated span (no end_time yet)")
+                logger.debug("Updated span (no end_time yet)")
 
         except Exception as e:
             logger.exception(f"Failed to update span for run {op.id}: {e}")
