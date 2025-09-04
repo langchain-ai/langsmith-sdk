@@ -203,12 +203,12 @@ class OTELExporter:
                                 "created_at": time.time(),
                             }
                             logger.debug(
-                                f"Created active span, total spans: {len(self._span_info)}"
+                                f"Created active span, total: {len(self._span_info)}"
                             )
                         else:
                             # Span was already ended in _create_span_for_run (had end_time)
                             logger.debug(
-                                "Created and completed span (not tracked - already ended)"
+                                "completed span (not tracked - already ended)"
                             )
                 else:
                     self._update_span_for_run(op, run_info)
