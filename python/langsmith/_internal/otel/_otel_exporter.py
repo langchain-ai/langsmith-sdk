@@ -404,7 +404,7 @@ class OTELExporter:
 
         if stale_span_ids:
             logger.info(
-                f"🧹 OTEL Cleanup: Removing {len(stale_span_ids)} stale spans (>{self._span_ttl_seconds}s old)"
+                f" LangSmith OTEL Cleanup: Removing {len(stale_span_ids)} stale spans (>{self._span_ttl_seconds}s old)"
             )
 
             for span_id in stale_span_ids:
