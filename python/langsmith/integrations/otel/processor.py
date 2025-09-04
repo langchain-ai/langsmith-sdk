@@ -1,7 +1,7 @@
 import logging
 import os
 import warnings
-from typing import Dict, Optional
+from typing import Optional
 from urllib.parse import urljoin
 
 try:
@@ -21,6 +21,7 @@ except ImportError:
         """Mock otlp span exporter class."""
 
         def __init__(self, *args, **kwargs):
+            """Mock init method."""
             raise ImportError(
                 "OpenTelemetry packages are not installed. "
                 "Install optional OpenTelemetry dependencies with: pip install langsmith[otel]"
@@ -30,6 +31,7 @@ except ImportError:
         """Mock batch span processor class."""
 
         def __init__(self, *args, **kwargs):
+            """Mock init method."""
             raise ImportError(
                 "OpenTelemetry packages are not installed. "
                 "Install optional OpenTelemetry dependencies with: pip install langsmith[otel]"
@@ -40,6 +42,7 @@ except ImportError:
 
         @staticmethod
         def get_tracer_provider():
+            """Mock get tracer provider method."""
             raise ImportError(
                 "OpenTelemetry packages are not installed. "
                 "Install optional OpenTelemetry dependencies with: pip install langsmith[otel]"
@@ -65,7 +68,7 @@ class OtelExporter(OTLPSpanExporter):
         url: Optional[str] = None,
         api_key: Optional[str] = None,
         project: Optional[str] = None,
-        headers: Optional[Dict[str, str]] = None,
+        headers: Optional[dict[str, str]] = None,
         **kwargs,
     ):
         """Initialize the OtelExporter.
@@ -127,20 +130,20 @@ class OtelSpanProcessor:
         api_key: Optional[str] = None,
         project: Optional[str] = None,
         url: Optional[str] = None,
-        headers: Optional[Dict[str, str]] = None,
+        headers: Optional[dict[str, str]] = None,
         SpanProcessor: Optional[type] = None,
     ):
-        """Initialize the LangSmithSpanProcessor.
+        """Initialize the OtelSpanProcessor.
 
         Args:
             api_key: LangSmith API key. Defaults to LANGSMITH_API_KEY env var.
             project: Project identifier. Defaults to LANGSMITH_PROJECT env var.
             url: Base URL for LangSmith API. Defaults to LANGSMITH_URL env var or https://api.smith.langchain.com.
             headers: Additional headers to include in requests.
-            SpanProcessor: Optional span processor class (BatchSpanProcessor or SimpleSpanProcessor). Defaults to BatchSpanProcessor.
+            SpanProcessor: Optional span processor class. Defaults to BatchSpanProcessor.
         """
         # Create the exporter
-        # Convert api_url to the full endpoint URL that OtelExporter expects
+        # Convert url to the full endpoint URL that OtelExporter expects
         exporter_url = None
         if url:
             exporter_url = f"{url.rstrip('/')}/otel/v1/traces"
@@ -170,7 +173,7 @@ class OtelSpanProcessor:
         self._processor.on_end(span)
 
     def shutdown(self):
-        """Shutdown the inner processor."""
+        """Shutdown processor."""
         self._processor.shutdown()
 
     def force_flush(self, timeout_millis=30000):
@@ -179,10 +182,10 @@ class OtelSpanProcessor:
 
     @property
     def exporter(self):
-        """Access to the underlying OtelExporter."""
+        """The underlying OtelExporter."""
         return self._exporter
 
     @property
     def processor(self):
-        """Access to the underlying span processor."""
+        """The underlying span processor."""
         return self._processor

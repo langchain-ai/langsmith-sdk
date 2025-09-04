@@ -1,3 +1,5 @@
+"""OpenTelemetry integration for LangSmith."""
+
 import logging
 import os
 from typing import Optional, cast
@@ -16,7 +18,7 @@ def initialize_otel(
     try:
         from opentelemetry import trace
         from opentelemetry.sdk.trace import TracerProvider
-        from opentelemetry.trace import ProxyTracerProvider, NoOpTracer, ProxyTracer
+        from opentelemetry.trace import NoOpTracer, ProxyTracer, ProxyTracerProvider
 
         existing_provider = cast(TracerProvider, trace.get_tracer_provider())
         tracer = existing_provider.get_tracer(__name__)
@@ -44,7 +46,7 @@ def initialize_otel(
         if not api_key:
             return False
 
-        from langsmith.otel import OtelSpanProcessor
+        from .processor import OtelSpanProcessor
 
         project_name = project_name or os.environ.get("LANGSMITH_PROJECT")
 
