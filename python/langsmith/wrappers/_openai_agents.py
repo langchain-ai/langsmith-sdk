@@ -299,6 +299,7 @@ if HAVE_AGENTS:
                     run_type=run_type,
                     id=span_run_id,
                     trace_id=trace_id,
+                    project_name=self._project_name,
                     parent_run_id=parent_run["id"],
                     dotted_order=dotted_order,
                     inputs=extracted.get("inputs", {}),
