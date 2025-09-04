@@ -1,3 +1,5 @@
+"""OpenTelemetry span processor and exporter for LangSmith."""
+
 import logging
 import os
 import warnings
@@ -12,7 +14,8 @@ try:
 except ImportError:
     warnings.warn(
         "OpenTelemetry packages are not installed. "
-        "Install optional OpenTelemetry dependencies with: pip install langsmith[otel]",
+        "Install optional OpenTelemetry dependencies with: "
+        "pip install langsmith[otel]",
         UserWarning,
         stacklevel=2,
     )
@@ -24,7 +27,8 @@ except ImportError:
             """Mock init method."""
             raise ImportError(
                 "OpenTelemetry packages are not installed. "
-                "Install optional OpenTelemetry dependencies with: pip install langsmith[otel]"
+                "Install optional OpenTelemetry dependencies with: "
+                "pip install langsmith[otel]"
             )
 
     class BatchSpanProcessor:  # type: ignore[no-redef]
@@ -34,7 +38,8 @@ except ImportError:
             """Mock init method."""
             raise ImportError(
                 "OpenTelemetry packages are not installed. "
-                "Install optional OpenTelemetry dependencies with: pip install langsmith[otel]"
+                "Install optional OpenTelemetry dependencies with: "
+                "pip install langsmith[otel]"
             )
 
     class trace:
@@ -45,7 +50,8 @@ except ImportError:
             """Mock get tracer provider method."""
             raise ImportError(
                 "OpenTelemetry packages are not installed. "
-                "Install optional OpenTelemetry dependencies with: pip install langsmith[otel]"
+                "Install optional OpenTelemetry dependencies with: "
+                "pip install langsmith[otel]"
             )
 
     OTEL_AVAILABLE = False
@@ -76,7 +82,8 @@ class OtelExporter(OTLPSpanExporter):
         Args:
             url: OTLP endpoint URL. Defaults to {LANGSMITH_URL}/otel/v1/traces.
             api_key: LangSmith API key. Defaults to LANGSMITH_API_KEY env var.
-            parent: Parent identifier (e.g., "project_name:test"). Defaults to LANGSMITH_PARENT env var.
+            parent: Parent identifier (e.g., "project_name:test").
+                Defaults to LANGSMITH_PARENT env var.
             headers: Additional headers to include in requests.
             **kwargs: Additional arguments passed to OTLPSpanExporter.
         """
@@ -91,14 +98,16 @@ class OtelExporter(OTLPSpanExporter):
 
         if not api_key:
             raise ValueError(
-                "API key is required. Provide it via api_key parameter or LANGSMITH_API_KEY environment variable."
+                "API key is required. Provide it via api_key parameter or "
+                "LANGSMITH_API_KEY environment variable."
             )
 
         if not project:
             project = "default"
             logging.info(
-                "No project specified, using default."
-                "Configure with LANGSMITH_PROJECT environment variable or project parameter."
+                "No project specified, using default. "
+                "Configure with LANGSMITH_PROJECT environment variable or "
+                "project parameter."
             )
 
         exporter_headers = {
@@ -138,9 +147,11 @@ class OtelSpanProcessor:
         Args:
             api_key: LangSmith API key. Defaults to LANGSMITH_API_KEY env var.
             project: Project identifier. Defaults to LANGSMITH_PROJECT env var.
-            url: Base URL for LangSmith API. Defaults to LANGSMITH_URL env var or https://api.smith.langchain.com.
+            url: Base URL for LangSmith API. Defaults to LANGSMITH_URL env var
+                or https://api.smith.langchain.com.
             headers: Additional headers to include in requests.
-            SpanProcessor: Optional span processor class. Defaults to BatchSpanProcessor.
+            SpanProcessor: Optional span processor class.
+                Defaults to BatchSpanProcessor.
         """
         # Create the exporter
         # Convert url to the full endpoint URL that OtelExporter expects
@@ -156,7 +167,8 @@ class OtelSpanProcessor:
         if not OTEL_AVAILABLE:
             raise ImportError(
                 "OpenTelemetry packages are not installed. "
-                "Install optional OpenTelemetry dependencies with: pip install langsmith[otel]"
+                "Install optional OpenTelemetry dependencies with: "
+                "pip install langsmith[otel]"
             )
 
         if SpanProcessor is None:

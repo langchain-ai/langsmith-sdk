@@ -6,10 +6,10 @@ from typing import Optional, cast
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["initialize_otel"]
+__all__ = ["init"]
 
 
-def initialize_otel(
+def init(
     api_key: Optional[str] = None,
     project_name: Optional[str] = None,
     SpanProcessor: Optional[type] = None,
