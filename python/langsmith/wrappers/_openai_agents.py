@@ -247,6 +247,7 @@ if HAVE_AGENTS:
                         trace_id=run["trace_id"],
                         parent_run_id=run["parent_run_id"],
                         dotted_order=run["dotted_order"],
+                        project_name=self._project_name,
                         inputs=self._first_response_inputs.pop(trace.trace_id, {}),
                         outputs=self._last_response_outputs.pop(trace.trace_id, {}),
                         extra={"metadata": metadata},
