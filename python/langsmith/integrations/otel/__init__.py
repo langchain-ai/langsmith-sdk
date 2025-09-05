@@ -6,24 +6,34 @@ from typing import Optional, cast
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["init"]
+__all__ = ["configure"]
 
 
-def init(
+def configure(
     api_key: Optional[str] = None,
     project_name: Optional[str] = None,
     SpanProcessor: Optional[type] = None,
 ) -> bool:
-    """Initialize OpenTelemetry with LangSmith as the TracerProvider.
+    """Configure OpenTelemetry with LangSmith as the TracerProvider.
 
-    WARNING: This function is ONLY for when LangSmith is your ONLY OpenTelemetry source.
-    It sets the global TracerProvider, which can only be done ONCE per application.
+    Initializes OpenTelemetry with LangSmith as the primary and only TracerProvider.
 
-    This function will FAIL if OpenTelemetry is already initialized with another
+    Usage:
+        >>> from langsmith.integrations.otel import configure
+        >>> configure(api_key="your-api-key", project_name="your-project")
+
+        Using environment variables:
+        >>> # Set LANGSMITH_API_KEY and LANGSMITH_PROJECT
+        >>> configure()  # Will use env vars
+
+    WARNING: This function is only for when LangSmith is your ONLY OpenTelemetry source.
+    It sets the global TracerProvider, which can only be done once per application.
+
+    This function will fail if OpenTelemetry is already initialized with another
     TracerProvider (you cannot override an existing TracerProvider).
 
     If you already have OpenTelemetry set up with other tools, use OtelSpanProcessor
-    directly to ADD LangSmith to your existing setup:
+    directly to add LangSmith to your existing setup:
 
     Example for adding LangSmith to existing OTEL setup:
         from opentelemetry import trace
@@ -45,7 +55,7 @@ def init(
         SpanProcessor: Span processor class to use. Defaults to BatchSpanProcessor.
 
     Returns:
-        True if initialization succeeded, False if TracerProvider already exists.
+        True if configuration succeeded, False if TracerProvider already exists.
     """
     try:
         from opentelemetry import trace
