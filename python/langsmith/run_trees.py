@@ -25,6 +25,7 @@ import contextvars
 import threading
 import urllib.parse
 
+import langsmith._internal._context as _context
 from langsmith import schemas as ls_schemas
 from langsmith import utils
 from langsmith.client import ID_TYPE, RUN_TYPE_T, Client, _dumps_json, _ensure_uuid
@@ -48,7 +49,6 @@ LANGSMITH_PROJECT = sys.intern(f"{LANGSMITH_PREFIX}project")
 LANGSMITH_REPLICAS = sys.intern(f"{LANGSMITH_PREFIX}replicas")
 OVERRIDE_OUTPUTS = sys.intern("__omit_auto_outputs")
 NOT_PROVIDED = cast(None, object())
-_CLIENT: Optional[Client] = None
 _LOCK = threading.Lock()
 
 # Context variables
@@ -147,21 +147,17 @@ def configure(
         if client is not _SENTINEL:
             _CLIENT = client
         if enabled is not _SENTINEL:
-            from langsmith.run_helpers import _TRACING_ENABLED
-
-            _TRACING_ENABLED.set(enabled)
+            _context._TRACING_ENABLED.set(enabled)
+            _context._GLOBAL_TRACING_ENABLED = enabled
         if project_name is not _SENTINEL:
-            from langsmith.run_helpers import _PROJECT_NAME
-
-            _PROJECT_NAME.set(project_name)
+            _context._PROJECT_NAME.set(project_name)
+            _context._GLOBAL_PROJECT_NAME = project_name
         if tags is not _SENTINEL:
-            from langsmith.run_helpers import _TAGS
-
-            _TAGS.set(tags)
+            _context._TAGS.set(tags)
+            _context._GLOBAL_TAGS = tags
         if metadata is not _SENTINEL:
-            from langsmith.run_helpers import _METADATA
-
-            _METADATA.set(metadata)
+            _context._METADATA.set(metadata)
+            _context._GLOBAL_METADATA = metadata
 
 
 def validate_extracted_usage_metadata(
@@ -1129,4 +1125,5 @@ def _create_current_dotted_order(
     return st.strftime("%Y%m%dT%H%M%S%fZ") + str(id_)
 
 
+_CLIENT: Optional[Client] = _context._GLOBAL_CLIENT
 __all__ = ["RunTree", "RunTree"]

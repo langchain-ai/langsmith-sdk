@@ -41,6 +41,7 @@ from typing import (
 
 from typing_extensions import ParamSpec, TypeGuard, get_args, get_origin
 
+import langsmith._internal._context as _context
 from langsmith import client as ls_client
 from langsmith import run_trees, schemas, utils
 from langsmith._internal import _aiter as aitertools
@@ -53,25 +54,13 @@ if TYPE_CHECKING:
     from langchain_core.runnables import Runnable
 
 LOGGER = logging.getLogger(__name__)
-_PARENT_RUN_TREE = contextvars.ContextVar[Optional[run_trees.RunTree]](
-    "_PARENT_RUN_TREE", default=None
-)
-_PROJECT_NAME = contextvars.ContextVar[Optional[str]]("_PROJECT_NAME", default=None)
-_TAGS = contextvars.ContextVar[Optional[list[str]]]("_TAGS", default=None)
-_METADATA = contextvars.ContextVar[Optional[dict[str, Any]]]("_METADATA", default=None)
-
-
-_TRACING_ENABLED = contextvars.ContextVar[Optional[Union[bool, Literal["local"]]]](
-    "_TRACING_ENABLED", default=None
-)
-_CLIENT = contextvars.ContextVar[Optional[ls_client.Client]]("_CLIENT", default=None)
 _CONTEXT_KEYS: dict[str, contextvars.ContextVar] = {
-    "parent": _PARENT_RUN_TREE,
-    "project_name": _PROJECT_NAME,
-    "tags": _TAGS,
-    "metadata": _METADATA,
-    "enabled": _TRACING_ENABLED,
-    "client": _CLIENT,
+    "parent": _context._PARENT_RUN_TREE,
+    "project_name": _context._PROJECT_NAME,
+    "tags": _context._TAGS,
+    "metadata": _context._METADATA,
+    "enabled": _context._TRACING_ENABLED,
+    "client": _context._CLIENT,
     "replicas": run_trees._REPLICAS,
     "distributed_parent_id": run_trees._DISTRIBUTED_PARENT_ID,
 }
@@ -83,7 +72,7 @@ _OTEL_AVAILABLE: Optional[bool] = None
 
 def get_current_run_tree() -> Optional[run_trees.RunTree]:
     """Get the current run tree."""
-    return _PARENT_RUN_TREE.get()
+    return _context._PARENT_RUN_TREE.get()
 
 
 def get_tracing_context(
@@ -92,12 +81,12 @@ def get_tracing_context(
     """Get the current tracing context."""
     if context is None:
         return {
-            "parent": _PARENT_RUN_TREE.get(),
-            "project_name": _PROJECT_NAME.get(),
-            "tags": _TAGS.get(),
-            "metadata": _METADATA.get(),
-            "enabled": _TRACING_ENABLED.get(),
-            "client": _CLIENT.get(),
+            "parent": _context._PARENT_RUN_TREE.get(),
+            "project_name": _context._PROJECT_NAME.get(),
+            "tags": _context._TAGS.get(),
+            "metadata": _context._METADATA.get(),
+            "enabled": _context._TRACING_ENABLED.get(),
+            "client": _context._CLIENT.get(),
             "replicas": run_trees._REPLICAS.get(),
             "distributed_parent_id": run_trees._DISTRIBUTED_PARENT_ID.get(),
         }
@@ -995,8 +984,8 @@ class trace:
         self.old_ctx = get_tracing_context()
         enabled = utils.tracing_is_enabled(self.old_ctx)
 
-        outer_tags = _TAGS.get()
-        outer_metadata = _METADATA.get()
+        outer_tags = _context._TAGS.get() or _context._GLOBAL_TAGS
+        outer_metadata = _context._METADATA.get() or _context._GLOBAL_METADATA
         client_ = self.client or self.old_ctx.get("client")
         parent_run_ = _get_parent_run(
             {
@@ -1049,11 +1038,11 @@ class trace:
         if enabled is True:
             self.new_run.post()
         if enabled:
-            _TAGS.set(tags_)
-            _METADATA.set(metadata)
-            _PARENT_RUN_TREE.set(self.new_run)
-            _PROJECT_NAME.set(project_name_)
-            _CLIENT.set(client_)
+            _context._TAGS.set(tags_)
+            _context._METADATA.set(metadata)
+            _context._PARENT_RUN_TREE.set(self.new_run)
+            _context._PROJECT_NAME.set(project_name_)
+            _context._CLIENT.set(client_)
 
         return self.new_run
 
@@ -1161,8 +1150,10 @@ def _get_project_name(project_name: Optional[str]) -> Optional[str]:
     prt = _PARENT_RUN_TREE.get()
     return (
         # Maintain tree consistency first
-        _PROJECT_NAME.get()
+        _context._PROJECT_NAME.get()
         or (prt.session_name if prt else None)
+        # Global fallback configured via ls.configure(...)
+        or _context._GLOBAL_PROJECT_NAME
         # fallback to the default for the environment
         or utils.get_tracer_project()
     )
@@ -1453,14 +1444,14 @@ def _setup_run(
     dangerously_allow_filesystem = container_input.get(
         "dangerously_allow_filesystem", False
     )
-    outer_project = _PROJECT_NAME.get()
+    outer_project = _context._PROJECT_NAME.get()
     langsmith_extra = langsmith_extra or LangSmithExtra()
     name = langsmith_extra.get("name") or container_input.get("name")
-    client_ = langsmith_extra.get("client", client) or _CLIENT.get()
+    client_ = langsmith_extra.get("client", client) or _context._CLIENT.get()
     parent_run_ = _get_parent_run(
         {**langsmith_extra, "client": client_}, kwargs.get("config")
     )
-    project_cv = _PROJECT_NAME.get()
+    project_cv = _context._PROJECT_NAME.get()
     selected_project = (
         project_cv  # From parent trace
         or (
@@ -1468,6 +1459,7 @@ def _setup_run(
         )  # from parent run attempt 2 (not managed by traceable)
         or langsmith_extra.get("project_name")  # at invocation time
         or container_input["project_name"]  # at decorator time
+        or _context._GLOBAL_PROJECT_NAME  # global fallback from ls.configure
         or utils.get_tracer_project()  # default
     )
     reference_example_id = langsmith_extra.get("reference_example_id")
@@ -1492,14 +1484,14 @@ def _setup_run(
     signature = inspect.signature(func)
     name_ = name or utils._get_function_name(func)
     extra_inner = _collect_extra(extra_outer, langsmith_extra)
-    outer_metadata = _METADATA.get()
-    outer_tags = _TAGS.get()
+    outer_metadata = _context._METADATA.get() or _context._GLOBAL_METADATA
+    outer_tags = _context._TAGS.get() or _context._GLOBAL_TAGS
     context = copy_context()
     metadata_ = {
         **(langsmith_extra.get("metadata") or {}),
         **(outer_metadata or {}),
     }
-    context.run(_METADATA.set, metadata_)
+    context.run(_context._METADATA.set, metadata_)
     metadata_.update(metadata or {})
     metadata_["ls_method"] = "traceable"
     extra_inner["metadata"] = metadata_
@@ -1523,7 +1515,7 @@ def _setup_run(
         except BaseException as e:
             LOGGER.error(f"Failed to filter inputs for {name_}: {e}")
     tags_ = (langsmith_extra.get("tags") or []) + (outer_tags or [])
-    context.run(_TAGS.set, tags_)
+    context.run(_context._TAGS.set, tags_)
     tags_ += tags or []
     if parent_run_ is not None:
         new_run = parent_run_.create_child(
@@ -1568,7 +1560,7 @@ def _setup_run(
         context=context,
         _token_event_logged=False,
     )
-    context.run(_PROJECT_NAME.set, response_container["project_name"])
+    context.run(_context._PROJECT_NAME.set, response_container["project_name"])
     context.run(_PARENT_RUN_TREE.set, response_container["new_run"])
     return response_container
 
@@ -2081,3 +2073,12 @@ def _maybe_create_otel_context(run_tree: Optional[run_trees.RunTree]):
 
     non_recording_span = NonRecordingSpan(span_context)
     return use_span(non_recording_span)
+
+
+# For backwards compatibility
+_PROJECT_NAME = _context._PROJECT_NAME
+_TAGS = _context._TAGS
+_METADATA = _context._METADATA
+_TRACING_ENABLED = _context._TRACING_ENABLED
+_CLIENT = _context._CLIENT
+_PARENT_RUN_TREE = _context._PARENT_RUN_TREE
