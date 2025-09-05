@@ -1514,41 +1514,14 @@ class AsyncClient:
             )
 
         try:
-            from langchain_core.load.dump import dumps
-            from langchain_core.language_models.base import BaseLanguageModel
-            from langchain_core.output_parsers import BaseOutputParser
-            from langchain_core.prompts.structured import StructuredPrompt
-            from langchain_core.runnables.base import RunnableBinding, RunnableSequence
+            from langchain_core.load import dumps
         except ImportError:
             raise ImportError(
                 "The client.create_commit function requires the langchain-core"
                 "package to run.\nInstall with `pip install langchain-core`"
             )
 
-        # Transform 3-step RunnableSequence back to 2-step for structured prompts
-        # See pull_prompt for the forward transformation
-        chain_to_push = object
-        if (
-            isinstance(object, RunnableSequence)
-            and isinstance(object.steps[1], RunnableBinding)
-            and len(object.steps) in (2, 3)
-        ):
-            prompt = object.first
-            runnable_binding = object.steps[1]
-            if isinstance(prompt, StructuredPrompt):
-                kwargs_from_structured_prompt = (prompt | runnable_binding.bound).first.structured_output_kwargs
-                runnable_binding.kwargs = {k: v for k, v in runnable_binding.kwargs.items() if k not in kwargs_from_structured_prompt}
-                kwargs_from_structured_prompt = (prompt | runnable_binding.bound).first.structured_output_kwargs
-                runnable_binding.kwargs = {k: v for k, v in runnable_binding.kwargs.items() if k not in kwargs_from_structured_prompt}
-                chain_to_push = RunnableSequence(prompt, runnable_binding)
-
-            elif isinstance(prompt, ChatPromptTemplate) and "ls_structured_output_format" in runnable_binding.kwargs:
-                structured_kwargs = runnable_binding.kwargs["ls_structured_output_format"]
-                prompt = StructuredPrompt(messages=prompt.messages, schema_=structured_kwargs["schema"]["function"], structured_output_kwargs=structured_kwargs["kwargs"])
-                kwargs_from_structured_prompt = (prompt | runnable_binding.bound).first.structured_output_kwargs
-                runnable_binding.kwargs = {k: v for k, v in runnable_binding.kwargs.items() if k not in kwargs_from_structured_prompt}
-                chain_to_push = RunnableSequence(prompt, runnable_binding)
-
+        chain_to_push = ls_client.prep_obj_for_push(object)
         json_object = dumps(chain_to_push)
         manifest_dict = json.loads(json_object)
 

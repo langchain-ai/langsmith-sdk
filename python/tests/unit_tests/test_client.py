@@ -1944,7 +1944,7 @@ _PROMPT_COMMITS = [
         "tools",
         {
             "owner": "-",
-            "repo": "tweet-generator-example-with-tools",
+            "repo": "tweet-generator-example",
             "commit_hash": "b862ce708ffeb932331a9345ea2a2fe6a76d62cf83e9aab834c24bb12bd516c9",
             "manifest": {
                 "lc": 1,
@@ -1960,7 +1960,7 @@ _PROMPT_COMMITS = [
                             "metadata": {
                                 "lc_hub_owner": "-",
                                 "lc_hub_repo": "tweet-generator-example",
-                                "lc_hub_commit_hash": "c39837bd8d010da739d6d4adc7f2dca2f2461521661a393d37606f5c696109a5",
+                                "lc_hub_commit_hash": "b862ce708ffeb932331a9345ea2a2fe6a76d62cf83e9aab834c24bb12bd516c9",
                             },
                             "messages": [
                                 {
@@ -1975,6 +1975,7 @@ _PROMPT_COMMITS = [
                                     "kwargs": {
                                         "prompt": {
                                             "lc": 1,
+                                            "name": "PromptTemplate",
                                             "type": "constructor",
                                             "id": [
                                                 "langchain",
@@ -2002,6 +2003,7 @@ _PROMPT_COMMITS = [
                                     "kwargs": {
                                         "prompt": {
                                             "lc": 1,
+                                            "name": "PromptTemplate",
                                             "type": "constructor",
                                             "id": [
                                                 "langchain",
@@ -2019,16 +2021,18 @@ _PROMPT_COMMITS = [
                                 },
                             ],
                         },
-                        "name": "StructuredPrompt",
+                        "name": "ChatPromptTemplate",
                     },
                     "last": {
                         "lc": 1,
                         "type": "constructor",
                         "id": ["langchain", "schema", "runnable", "RunnableBinding"],
+                        "name": "ChatAnthropic",
                         "kwargs": {
                             "bound": {
                                 "lc": 1,
                                 "type": "constructor",
+                                "name": "ChatAnthropic",
                                 "id": [
                                     "langchain",
                                     "chat_models",
@@ -2036,10 +2040,13 @@ _PROMPT_COMMITS = [
                                     "ChatAnthropic",
                                 ],
                                 "kwargs": {
-                                    "temperature": 1,
+                                    "temperature": 1.0,
                                     "max_tokens": 1024,
-                                    "top_p": 1,
+                                    "top_p": 1.0,
                                     "top_k": -1,
+                                    "stream_usage": True,
+                                    "max_retries": 2,
+                                    "anthropic_api_url": "https://api.anthropic.com",
                                     "anthropic_api_key": {
                                         "id": ["ANTHROPIC_API_KEY"],
                                         "lc": 1,
@@ -2086,6 +2093,7 @@ _PROMPT_COMMITS = [
                                     },
                                 ]
                             },
+                            "config": {},
                         },
                     },
                 },
@@ -2117,9 +2125,9 @@ _PROMPT_COMMITS = [
                         "kwargs": {
                             "input_variables": ["topic"],
                             "metadata": {
-                                "lc_hub_owner": "langchain-ai",
+                                "lc_hub_owner": "-",
                                 "lc_hub_repo": "tweet-generator-example",
-                                "lc_hub_commit_hash": "7c32ca78a2831b6b3a3904eb5704b48a0730e93f29afb0853cfaefc42dc09f9c",
+                                "lc_hub_commit_hash": "e8da7f9e80471ace9b96c4f8fd55a215020126521f1da8f66130604c101fc522",
                             },
                             "messages": [
                                 {
@@ -2134,6 +2142,7 @@ _PROMPT_COMMITS = [
                                     "kwargs": {
                                         "prompt": {
                                             "lc": 1,
+                                            "name": "PromptTemplate",
                                             "type": "constructor",
                                             "id": [
                                                 "langchain",
@@ -2161,6 +2170,7 @@ _PROMPT_COMMITS = [
                                     "kwargs": {
                                         "prompt": {
                                             "lc": 1,
+                                            "name": "PromptTemplate",
                                             "type": "constructor",
                                             "id": [
                                                 "langchain",
@@ -2195,11 +2205,13 @@ _PROMPT_COMMITS = [
                     "last": {
                         "lc": 1,
                         "type": "constructor",
+                        "name": "ChatAnthropic",
                         "id": ["langchain", "schema", "runnable", "RunnableBinding"],
                         "kwargs": {
                             "bound": {
                                 "lc": 1,
                                 "type": "constructor",
+                                "name": "ChatAnthropic",
                                 "id": [
                                     "langchain",
                                     "chat_models",
@@ -2207,9 +2219,12 @@ _PROMPT_COMMITS = [
                                     "ChatAnthropic",
                                 ],
                                 "kwargs": {
-                                    "temperature": 1,
+                                    "temperature": 1.0,
+                                    "stream_usage": True,
+                                    "anthropic_api_url": "https://api.anthropic.com",
                                     "max_tokens": 1024,
-                                    "top_p": 1,
+                                    "max_retries": 2,
+                                    "top_p": 1.0,
                                     "top_k": -1,
                                     "anthropic_api_key": {
                                         "id": ["ANTHROPIC_API_KEY"],
@@ -2219,7 +2234,7 @@ _PROMPT_COMMITS = [
                                     "model": "claude-3-5-sonnet-20240620",
                                 },
                             },
-                            "kwargs": {},
+                            "config": {},
                         },
                     },
                 },
@@ -2243,7 +2258,13 @@ _PROMPT_COMMITS = [
                         "lc": 1,
                         "type": "constructor",
                         "id": ["langchain", "prompts", "chat", "ChatPromptTemplate"],
+                        "name": "ChatPromptTemplate",
                         "kwargs": {
+                            "metadata": {
+                                "lc_hub_owner": "-",
+                                "lc_hub_repo": "tweet-generator-example-with-nothing",
+                                "lc_hub_commit_hash": "06c657373bdfcadec0d4d0933416b2c11f1b283ef3d1ca5dfb35dd6ed28b9f78",
+                            },
                             "messages": [
                                 {
                                     "lc": 1,
@@ -2257,6 +2278,7 @@ _PROMPT_COMMITS = [
                                     "kwargs": {
                                         "prompt": {
                                             "lc": 1,
+                                            "name": "PromptTemplate",
                                             "type": "constructor",
                                             "id": [
                                                 "langchain",
@@ -2284,6 +2306,7 @@ _PROMPT_COMMITS = [
                                     "kwargs": {
                                         "prompt": {
                                             "lc": 1,
+                                            "name": "PromptTemplate",
                                             "type": "constructor",
                                             "id": [
                                                 "langchain",
@@ -2307,10 +2330,12 @@ _PROMPT_COMMITS = [
                         "lc": 1,
                         "type": "constructor",
                         "id": ["langchain", "schema", "runnable", "RunnableBinding"],
+                        "name": "ChatOpenAI",
                         "kwargs": {
                             "bound": {
                                 "lc": 1,
                                 "type": "constructor",
+                                "name": "ChatOpenAI",
                                 "id": [
                                     "langchain",
                                     "chat_models",
@@ -2323,10 +2348,11 @@ _PROMPT_COMMITS = [
                                         "lc": 1,
                                         "type": "secret",
                                     },
-                                    "model": "gpt-4o-mini",
+                                    "model_name": "gpt-4o-mini",
+                                    "output_version": "v0",
                                 },
                             },
-                            "kwargs": {},
+                            "config": {},
                         },
                     },
                 },
@@ -2349,8 +2375,14 @@ _PROMPT_COMMITS = [
                     "first": {
                         "lc": 1,
                         "type": "constructor",
+                        "name": "ChatPromptTemplate",
                         "id": ["langchain", "prompts", "chat", "ChatPromptTemplate"],
                         "kwargs": {
+                            "metadata": {
+                                "lc_hub_owner": "-",
+                                "lc_hub_repo": "tweet-generator-example-with-nothing",
+                                "lc_hub_commit_hash": "06c657373bdfcadec0d4d0933416b2c11f1b283ef3d1ca5dfb35dd6ed28b9f78",
+                            },
                             "messages": [
                                 {
                                     "lc": 1,
@@ -2364,6 +2396,7 @@ _PROMPT_COMMITS = [
                                     "kwargs": {
                                         "prompt": {
                                             "lc": 1,
+                                            "name": "PromptTemplate",
                                             "type": "constructor",
                                             "id": [
                                                 "langchain",
@@ -2391,6 +2424,7 @@ _PROMPT_COMMITS = [
                                     "kwargs": {
                                         "prompt": {
                                             "lc": 1,
+                                            "name": "PromptTemplate",
                                             "type": "constructor",
                                             "id": [
                                                 "langchain",
@@ -2413,11 +2447,13 @@ _PROMPT_COMMITS = [
                     "last": {
                         "lc": 1,
                         "type": "constructor",
+                        "name": "ChatAnthropic",
                         "id": ["langchain", "schema", "runnable", "RunnableBinding"],
                         "kwargs": {
                             "bound": {
                                 "lc": 1,
                                 "type": "constructor",
+                                "name": "ChatAnthropic",
                                 "id": [
                                     "langchain",
                                     "chat_models",
@@ -2430,10 +2466,14 @@ _PROMPT_COMMITS = [
                                         "lc": 1,
                                         "type": "secret",
                                     },
+                                    "anthropic_api_url": "https://api.anthropic.com",
+                                    "max_retries": 2,
+                                    "max_tokens": 1024,
                                     "model": "claude-3-haiku-20240307",
+                                    "stream_usage": True,
                                 },
                             },
-                            "kwargs": {},
+                            "config": {},
                         },
                     },
                 },
@@ -2446,7 +2486,7 @@ _PROMPT_COMMITS = [
         "tools",
         {
             "owner": "-",
-            "repo": "tweet-generator-example-with-tools",
+            "repo": "tweet-generator-example",
             "commit_hash": "b862ce708ffeb932331a9345ea2a2fe6a76d62cf83e9aab834c24bb12bd516c9",
             "manifest": {
                 "lc": 1,
@@ -2457,7 +2497,7 @@ _PROMPT_COMMITS = [
                     "metadata": {
                         "lc_hub_owner": "-",
                         "lc_hub_repo": "tweet-generator-example",
-                        "lc_hub_commit_hash": "c39837bd8d010da739d6d4adc7f2dca2f2461521661a393d37606f5c696109a5",
+                        "lc_hub_commit_hash": "b862ce708ffeb932331a9345ea2a2fe6a76d62cf83e9aab834c24bb12bd516c9",
                     },
                     "messages": [
                         {
@@ -2472,6 +2512,7 @@ _PROMPT_COMMITS = [
                             "kwargs": {
                                 "prompt": {
                                     "lc": 1,
+                                    "name": "PromptTemplate",
                                     "type": "constructor",
                                     "id": [
                                         "langchain",
@@ -2499,6 +2540,7 @@ _PROMPT_COMMITS = [
                             "kwargs": {
                                 "prompt": {
                                     "lc": 1,
+                                    "name": "PromptTemplate",
                                     "type": "constructor",
                                     "id": [
                                         "langchain",
@@ -2516,7 +2558,7 @@ _PROMPT_COMMITS = [
                         },
                     ],
                 },
-                "name": "StructuredPrompt",
+                "name": "ChatPromptTemplate",
             },
             "examples": [],
         },
@@ -2535,9 +2577,9 @@ _PROMPT_COMMITS = [
                 "kwargs": {
                     "input_variables": ["topic"],
                     "metadata": {
-                        "lc_hub_owner": "langchain-ai",
+                        "lc_hub_owner": "-",
                         "lc_hub_repo": "tweet-generator-example",
-                        "lc_hub_commit_hash": "7c32ca78a2831b6b3a3904eb5704b48a0730e93f29afb0853cfaefc42dc09f9c",
+                        "lc_hub_commit_hash": "e8da7f9e80471ace9b96c4f8fd55a215020126521f1da8f66130604c101fc522",
                     },
                     "messages": [
                         {
@@ -2552,6 +2594,7 @@ _PROMPT_COMMITS = [
                             "kwargs": {
                                 "prompt": {
                                     "lc": 1,
+                                    "name": "PromptTemplate",
                                     "type": "constructor",
                                     "id": [
                                         "langchain",
@@ -2579,6 +2622,7 @@ _PROMPT_COMMITS = [
                             "kwargs": {
                                 "prompt": {
                                     "lc": 1,
+                                    "name": "PromptTemplate",
                                     "type": "constructor",
                                     "id": [
                                         "langchain",
@@ -2624,7 +2668,13 @@ _PROMPT_COMMITS = [
                 "lc": 1,
                 "type": "constructor",
                 "id": ["langchain", "prompts", "chat", "ChatPromptTemplate"],
+                "name": "ChatPromptTemplate",
                 "kwargs": {
+                    "metadata": {
+                        "lc_hub_owner": "-",
+                        "lc_hub_repo": "tweet-generator-example-with-nothing",
+                        "lc_hub_commit_hash": "06c657373bdfcadec0d4d0933416b2c11f1b283ef3d1ca5dfb35dd6ed28b9f78",
+                    },
                     "messages": [
                         {
                             "lc": 1,
@@ -2638,6 +2688,7 @@ _PROMPT_COMMITS = [
                             "kwargs": {
                                 "prompt": {
                                     "lc": 1,
+                                    "name": "PromptTemplate",
                                     "type": "constructor",
                                     "id": [
                                         "langchain",
@@ -2665,6 +2716,7 @@ _PROMPT_COMMITS = [
                             "kwargs": {
                                 "prompt": {
                                     "lc": 1,
+                                    "name": "PromptTemplate",
                                     "type": "constructor",
                                     "id": [
                                         "langchain",
@@ -2760,15 +2812,11 @@ def test_pull_and_push_prompt(
     manifest_data: dict,
 ):
     """Test that pulling a prompt and then pushing it results in the same manifest structure."""
-    try:
-        from langchain_core.prompts import ChatPromptTemplate
-        from langchain_core.prompts.structured import StructuredPrompt
-        from langchain_core.runnables import RunnableSequence
-    except ImportError:
-        pytest.skip("Skipping test that requires langchain")
+    from langchain_core.load import dumpd, dumps
 
     # Create a mock session for pull_prompt and push_prompt
     mock_session = mock.Mock()
+
     def mock_request(method, url, **kwargs):
         if method == "GET" and "/commits/" in url:
             return mock.Mock(json=lambda: manifest_data)
@@ -2776,7 +2824,7 @@ def test_pull_and_push_prompt(
             return mock.Mock(json=lambda: {"commit": {"commit_hash": "new_hash"}})
         else:
             return mock.Mock(json=lambda: {})
-    
+
     mock_session.request.side_effect = mock_request
 
     # Create a client with Info pre-created and version >= 0.6
@@ -2795,15 +2843,19 @@ def test_pull_and_push_prompt(
         display_name="Test Tenant",
         created_at=datetime.now(),
     )
-    
-    with mock.patch('langsmith.client.Client._prompt_exists', return_value=True), \
-         mock.patch('langsmith.client.Client._get_latest_commit_hash', return_value="parent_hash"), \
-         mock.patch('langsmith.client.Client._get_settings', return_value=mock_settings):
 
+    with (
+        mock.patch("langsmith.client.Client._prompt_exists", return_value=True),
+        mock.patch(
+            "langsmith.client.Client._get_latest_commit_hash",
+            return_value="parent_hash",
+        ),
+        mock.patch("langsmith.client.Client._get_settings", return_value=mock_settings),
+    ):
         with mock.patch.dict(
             "os.environ",
             {
-                "ANTHROPIC_API_KEY": "test_anthropic_key", 
+                "ANTHROPIC_API_KEY": "test_anthropic_key",
                 "OPENAI_API_KEY": "test_openai_key",
                 "LANGSMITH_API_KEY": "fake_api_key",
                 "LANGSMITH_ENDPOINT": "http://localhost:1984",
@@ -2816,50 +2868,52 @@ def test_pull_and_push_prompt(
             )
 
             # Capture the dumps call when pushing
-            pushing_manifest = None
+            pushed_manifest = None
 
-            # Import the real dumps function outside the mock context
-            from langchain_core.load.dump import dumps as real_dumps
-            
             def capture_dumps(obj):
-                nonlocal pushing_manifest
-                pushing_manifest = obj
+                nonlocal pushed_manifest
+                pushed_manifest = dumpd(obj)
                 # Call the real dumps function
-                return real_dumps(obj)
+                return dumps(obj)
 
-            with mock.patch('langchain_core.load.dump.dumps', side_effect=capture_dumps):
+            with mock.patch("langchain_core.load.dumps", side_effect=capture_dumps):
                 # Push the pulled prompt back
                 client.push_prompt(
-                    prompt_identifier=manifest_data["repo"],
-                    object=pulled_prompt
+                    prompt_identifier=manifest_data["repo"], object=pulled_prompt
                 )
 
             # Verify the captured manifest structure
-            assert pushing_manifest is not None
+            assert pushed_manifest is not None
 
             # Convert the captured manifest back to a JSON dict for comparison
-            captured_json = json.loads(real_dumps(pushing_manifest))
             original_manifest = manifest_data["manifest"]
 
             # The key test: the pushed structure should match the original manifest structure
-            # This verifies that our reverse transformation in push_prompt correctly undoes 
+            # This verifies that our reverse transformation in push_prompt correctly undoes
             # the expansion that pull_prompt does
-            assert captured_json["id"] == original_manifest["id"]
-            assert captured_json["type"] == original_manifest["type"]
+            assert pushed_manifest["id"] == original_manifest["id"]
+            assert pushed_manifest["type"] == original_manifest["type"]
 
             # For RunnableSequence, verify the structure is preserved
+            assert original_manifest["kwargs"] == pushed_manifest["kwargs"]
             if "RunnableSequence" in original_manifest["id"]:
                 # Should have the same top-level structure (first and last)
-                assert "kwargs" in captured_json
+                assert "kwargs" in pushed_manifest
                 assert "kwargs" in original_manifest
                 # Both should have 'first' and 'last' (2-step structure)
-                assert "first" in captured_json["kwargs"]
+                assert "first" in pushed_manifest["kwargs"]
                 assert "first" in original_manifest["kwargs"]
-                assert captured_json["kwargs"]["first"]["id"] == original_manifest["kwargs"]["first"]["id"]
-                assert "last" in captured_json["kwargs"]
+                assert (
+                    pushed_manifest["kwargs"]["first"]["id"]
+                    == original_manifest["kwargs"]["first"]["id"]
+                )
+                assert "last" in pushed_manifest["kwargs"]
                 assert "last" in original_manifest["kwargs"]
-                assert captured_json["kwargs"]["last"]["id"] == original_manifest["kwargs"]["last"]["id"]
-                assert "middle" not in captured_json["kwargs"]
+                assert (
+                    pushed_manifest["kwargs"]["last"]["id"]
+                    == original_manifest["kwargs"]["last"]["id"]
+                )
+                assert "middle" not in pushed_manifest["kwargs"]
 
 
 def test_evaluate_methods() -> None:
