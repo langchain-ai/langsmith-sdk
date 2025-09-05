@@ -2894,26 +2894,7 @@ def test_pull_and_push_prompt(
             assert pushed_manifest["id"] == original_manifest["id"]
             assert pushed_manifest["type"] == original_manifest["type"]
 
-            # For RunnableSequence, verify the structure is preserved
             assert original_manifest["kwargs"] == pushed_manifest["kwargs"]
-            if "RunnableSequence" in original_manifest["id"]:
-                # Should have the same top-level structure (first and last)
-                assert "kwargs" in pushed_manifest
-                assert "kwargs" in original_manifest
-                # Both should have 'first' and 'last' (2-step structure)
-                assert "first" in pushed_manifest["kwargs"]
-                assert "first" in original_manifest["kwargs"]
-                assert (
-                    pushed_manifest["kwargs"]["first"]["id"]
-                    == original_manifest["kwargs"]["first"]["id"]
-                )
-                assert "last" in pushed_manifest["kwargs"]
-                assert "last" in original_manifest["kwargs"]
-                assert (
-                    pushed_manifest["kwargs"]["last"]["id"]
-                    == original_manifest["kwargs"]["last"]["id"]
-                )
-                assert "middle" not in pushed_manifest["kwargs"]
 
 
 def test_evaluate_methods() -> None:
