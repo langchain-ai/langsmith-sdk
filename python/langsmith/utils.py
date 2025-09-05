@@ -98,6 +98,8 @@ class LangSmithMissingAPIKeyWarning(LangSmithWarning):
 
 def tracing_is_enabled(ctx: Optional[dict] = None) -> Union[bool, Literal["local"]]:
     """Return True if tracing is enabled."""
+    # Access global fallbacks via context module to avoid stale references.
+    import langsmith._internal._context as _context
     from langsmith.run_helpers import get_current_run_tree, get_tracing_context
 
     tc = ctx or get_tracing_context()
@@ -110,6 +112,9 @@ def tracing_is_enabled(ctx: Optional[dict] = None) -> Union[bool, Literal["local
     # Next check if we're mid-trace
     if get_current_run_tree():
         return True
+    # If a global fallback was configured, use it next.
+    if _context._GLOBAL_TRACING_ENABLED is not None:
+        return _context._GLOBAL_TRACING_ENABLED
     # Finally, check the global environment
     var_result = get_env_var("TRACING_V2", default=get_env_var("TRACING", default=""))
     return var_result == "true"
