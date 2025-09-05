@@ -94,6 +94,9 @@ dev = [
     "opentelemetry-api>=1.34.1",
     "bump2version>=1.0.1",
     "openai-agents>=0.2.4",
+    "langchain-core>=0.3.75",
+    "langchain-openai>=0.3.32",
+    "langchain-anthropic>=0.3.19",
 ]
 
 # Linting dependencies
