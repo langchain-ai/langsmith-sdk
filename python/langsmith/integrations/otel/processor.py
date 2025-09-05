@@ -124,14 +124,32 @@ class OtelExporter(OTLPSpanExporter):
 
 
 class OtelSpanProcessor:
-    """A convenient all-in-one span processor for LangSmith OpenTelemetry integration.
+    """A span processor for adding LangSmith to OpenTelemetry setups.
 
     This class combines the OtelExporter and BatchSpanProcessor
-    into a single easy-to-use processor that can be directly added to a TracerProvider.
+    into a single processor that can be added to any TracerProvider.
 
-    Example:
-        > processor = OtelSpanProcessor()
-        > provider.add_span_processor(processor)
+    Use this when:
+    1. You already have OpenTelemetry initialized with other tools
+    2. You want to add LangSmith alongside existing OTEL exporters
+
+    Examples:
+        # Fresh OpenTelemetry setup (LangSmith only):
+        from langsmith.integrations.otel import init
+        init(api_key="your-key", project="your-project")
+
+        # Add LangSmith to existing OpenTelemetry setup:
+        from opentelemetry import trace
+        from langsmith.integrations.otel.processor import OtelSpanProcessor
+
+        # Get your existing TracerProvider (already set by other tools)
+        provider = trace.get_tracer_provider()
+
+        # Add LangSmith processor alongside existing processors
+        langsmith_processor = OtelSpanProcessor(
+            project="your-project",
+        )
+        provider.add_span_processor(langsmith_processor)
     """
 
     def __init__(

@@ -14,7 +14,39 @@ def init(
     project_name: Optional[str] = None,
     SpanProcessor: Optional[type] = None,
 ) -> bool:
-    """Initialize the Otel span processor for LangSmith."""
+    """Initialize OpenTelemetry with LangSmith as the TracerProvider.
+
+    WARNING: This function is ONLY for when LangSmith is your ONLY OpenTelemetry source.
+    It sets the global TracerProvider, which can only be done ONCE per application.
+
+    This function will FAIL if OpenTelemetry is already initialized with another
+    TracerProvider (you cannot override an existing TracerProvider).
+
+    If you already have OpenTelemetry set up with other tools, use OtelSpanProcessor
+    directly to ADD LangSmith to your existing setup:
+
+    Example for adding LangSmith to existing OTEL setup:
+        from opentelemetry import trace
+        from langsmith.integrations.otel.processor import OtelSpanProcessor
+
+        # Use your existing provider (already initialized)
+        provider = trace.get_tracer_provider()
+
+        # Add LangSmith processor to existing provider
+        langsmith_processor = OtelSpanProcessor(
+            api_key="your-api-key",
+            project="your-project"
+        )
+        provider.add_span_processor(langsmith_processor)
+
+    Args:
+        api_key: LangSmith API key. Defaults to LANGSMITH_API_KEY env var.
+        project_name: Project name. Defaults to LANGSMITH_PROJECT env var.
+        SpanProcessor: Span processor class to use. Defaults to BatchSpanProcessor.
+
+    Returns:
+        True if initialization succeeded, False if TracerProvider already exists.
+    """
     try:
         from opentelemetry import trace
         from opentelemetry.sdk.trace import TracerProvider
@@ -23,7 +55,8 @@ def init(
         existing_provider = cast(TracerProvider, trace.get_tracer_provider())
         tracer = existing_provider.get_tracer(__name__)
 
-        # check if otel is already initialized
+        # Check if OpenTelemetry is in its default uninitialized state
+        # (ProxyTracerProvider with NoOpTracer means no real TracerProvider was set)
         if (
             isinstance(existing_provider, ProxyTracerProvider)
             and hasattr(tracer, "_tracer")
@@ -35,12 +68,16 @@ def init(
                 NoOpTracer,
             )
         ):
+            # Safe to set TracerProvider since none exists yet
             provider = TracerProvider()
             trace.set_tracer_provider(provider)
         else:
             logger.warning(
-                "Otel is already initialized, skipping LangSmith initialization"
+                "OpenTelemetry TracerProvider is already set. "
+                "Cannot override existing TracerProvider. Use OtelSpanProcessor "
+                "directly to add LangSmith to your existing provider instead."
             )
+            return False
 
         api_key = api_key or os.environ.get("LANGSMITH_API_KEY")
         if not api_key:
