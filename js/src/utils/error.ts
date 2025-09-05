@@ -109,6 +109,7 @@ export async function raiseForStatus(
   if (errorBody === undefined) {
     try {
       errorBody = await response.text();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       errorBody = "Empty";
     }
