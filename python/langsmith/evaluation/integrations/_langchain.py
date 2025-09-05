@@ -7,9 +7,13 @@ from langsmith.run_helpers import traceable
 from langsmith.schemas import Example, Run
 
 if TYPE_CHECKING:
-    from langchain.evaluation.schema import StringEvaluator
+    from langchain.evaluation.schema import (  # type: ignore[import-not-found]
+        StringEvaluator,
+    )
 
-    from langsmith.evaluation.evaluator import RunEvaluator
+    from langsmith.evaluation.evaluator import (  # type: ignore[import-not-found]
+        RunEvaluator,
+    )
 
 
 class SingleEvaluatorInput(TypedDict):
@@ -160,7 +164,9 @@ class LangChainStringEvaluator:
         if isinstance(evaluator, StringEvaluator):
             self.evaluator = evaluator
         elif isinstance(evaluator, str):
-            from langchain.evaluation import load_evaluator  # noqa: F811
+            from langchain.evaluation import (  # type: ignore[import-not-found]
+                load_evaluator,  # noqa: F811
+            )
 
             self.evaluator = load_evaluator(evaluator, **(config or {}))  # type: ignore[assignment, arg-type]
         else:

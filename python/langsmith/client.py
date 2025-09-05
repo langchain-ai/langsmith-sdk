@@ -7012,7 +7012,9 @@ class Client:
             DeprecationWarning,
         )
         try:
-            from langchain.smith import arun_on_dataset as _arun_on_dataset
+            from langchain.smith import (  # type: ignore[import-not-found]
+                arun_on_dataset as _arun_on_dataset,
+            )
         except ImportError:
             raise ImportError(
                 "The client.arun_on_dataset function requires the langchain"
@@ -8468,7 +8470,7 @@ def prep_obj_for_push(obj: Any) -> Any:
 
         # have a sequence like: StructuredPrompt | RunnableBinding(bound=ChatModel)
         if isinstance(prompt, StructuredPrompt):
-            structured_kwargs = (prompt | model).steps[1].kwargs
+            structured_kwargs = (prompt | model).steps[0].kwargs  # type: ignore[attr-defined]
             # remove the kwargs that are bound by with_structured_output()
             bound_model.kwargs = {
                 k: v for k, v in model_kwargs.items() if k not in structured_kwargs
