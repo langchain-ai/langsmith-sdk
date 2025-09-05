@@ -1880,17 +1880,43 @@ def test_select_eval_results(mock_session_cls: mock.Mock):
 
 @pytest.mark.parametrize("client_cls", [Client, AsyncClient])
 @mock.patch("langsmith.client.requests.Session")
-def test_validate_api_key_if_hosted(
-    monkeypatch: pytest.MonkeyPatch, client_cls: Union[Type[Client], Type[AsyncClient]]
+@mock.patch.dict(
+    os.environ,
+    {"LANGCHAIN_API_KEY": "", "LANGSMITH_API_KEY": "", "LANGSMITH_TRACING": "true"},
+    clear=True,
+)
+def test_validate_api_key_if_hosted_with_tracing(
+    _mock_session: mock.Mock, client_cls: Union[Type[Client], Type[AsyncClient]]
 ) -> None:
-    monkeypatch.delenv("LANGCHAIN_API_KEY", raising=False)
-    monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
+    from langsmith import utils as ls_utils
+
+    ls_utils.get_env_var.cache_clear()
     with pytest.warns(ls_utils.LangSmithMissingAPIKeyWarning):
         client_cls(api_url="https://api.smith.langchain.com")
     with warnings.catch_warnings():
         # Check no warning is raised here.
         warnings.simplefilter("error")
         client_cls(api_url="http://localhost:1984")
+
+
+@pytest.mark.parametrize("client_cls", [Client, AsyncClient])
+@mock.patch("langsmith.client.requests.Session")
+@mock.patch.dict(
+    os.environ,
+    {"LANGCHAIN_API_KEY": "", "LANGSMITH_API_KEY": "", "LANGSMITH_TRACING": "false"},
+    clear=True,
+)
+def test_validate_api_key_if_hosted_without_tracing(
+    _mock_session: mock.Mock, client_cls: Union[Type[Client], Type[AsyncClient]]
+) -> None:
+    from langsmith import utils as ls_utils
+
+    ls_utils.get_env_var.cache_clear()
+    with warnings.catch_warnings(record=True) as w:
+        client_cls(api_url="https://api.smith.langchain.com")
+        assert len(w) == 0, (
+            f"Expected no warnings, but got: {[str(warning.message) for warning in w]}"
+        )
 
 
 def test_parse_token_or_url():
@@ -3078,7 +3104,7 @@ def test_create_run_without_compression_support(mock_session_cls: mock.Mock) -> 
             batch_ingest_config=ls_schemas.BatchIngestConfig(
                 use_multipart_endpoint=True,
                 size_limit=1,
-                size_limit_bytes=128,
+                size_limit_bytes=1024 * 1024 * 20,
                 scale_up_nthreads_limit=4,
                 scale_up_qsize_trigger=3,
                 scale_down_nempty_trigger=1,
@@ -3186,7 +3212,7 @@ def test_create_run_with_disabled_compression(mock_session_cls: mock.Mock) -> No
             batch_ingest_config=ls_schemas.BatchIngestConfig(
                 use_multipart_endpoint=True,
                 size_limit=1,
-                size_limit_bytes=128,
+                size_limit_bytes=1024 * 1024 * 20,
                 scale_up_nthreads_limit=4,
                 scale_up_qsize_trigger=3,
                 scale_down_nempty_trigger=1,
@@ -3270,6 +3296,116 @@ def test_create_run_with_disabled_compression(mock_session_cls: mock.Mock) -> No
     run_parsed = json.loads(parts[0].value)
     assert run_parsed["trace_id"] == str(run_id)
     assert run_parsed["dotted_order"] == str(run_id)
+
+
+@patch("langsmith.client.requests.Session")
+def test_max_batch_size_bytes_override(mock_session_cls: mock.Mock) -> None:
+    """Test that client._max_batch_size_bytes overrides default size_limit_bytes."""
+    # Clear the cache to ensure the environment variable is re-evaluated
+    ls_utils.get_env_var.cache_clear()
+
+    # Prepare a mocked session
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_session.request.return_value = mock_response
+    mock_session_cls.return_value = mock_session
+
+    with patch.dict(
+        "os.environ",
+        {
+            "LANGSMITH_DISABLE_RUN_COMPRESSION": "true",
+        },
+        clear=True,
+    ):
+        info = ls_schemas.LangSmithInfo(
+            version="0.6.0",
+            instance_flags={"zstd_compression_enabled": True},
+            batch_ingest_config=ls_schemas.BatchIngestConfig(
+                use_multipart_endpoint=True,
+                size_limit=100,  # High limit so we trigger size_limit_bytes first
+                size_limit_bytes=20_971_520,  # Default 20MB - would normally not trigger
+                scale_up_nthreads_limit=4,
+                scale_up_qsize_trigger=3,
+                scale_down_nempty_trigger=1,
+            ),
+        )
+        client = Client(
+            api_url="http://localhost:1984",
+            api_key="123",
+            auto_batch_tracing=True,
+            session=mock_session,
+            info=info,
+            # Set custom max_batch_size_bytes to a tiny value (200 bytes)
+            max_batch_size_bytes=200,
+        )
+
+        # Create many runs concurrently to trigger multiple background threads
+        import threading
+        import time
+
+        def create_runs_batch(start_idx, count):
+            for i in range(start_idx, start_idx + count):
+                run_id = uuid.uuid4()
+                client.create_run(
+                    name=f"test_run_{i}",
+                    run_type="llm",
+                    inputs={
+                        "large_data": "x" * 1024
+                    },  # 1KB per run, well over 200 byte limit
+                    id=run_id,
+                    trace_id=run_id,
+                    dotted_order=str(run_id),
+                )
+                # Small delay to allow queue to build up and trigger thread scaling
+                time.sleep(0.001)
+
+        # Create 10 threads with 10 runs each (100 total)
+        threads = []
+        for batch_start in range(0, 100, 10):  # 10 threads, 10 runs each
+            thread = threading.Thread(target=create_runs_batch, args=(batch_start, 10))
+            threads.append(thread)
+            thread.start()
+
+        # Wait for all creation threads to complete
+        for thread in threads:
+            thread.join()
+
+        # Let the background threads flush
+        if client.tracing_queue:
+            client.tracing_queue.join()
+        if client._futures is not None:
+            for fut in client._futures:
+                fut.result()
+
+    # Sleep for a time period less than the batch timeout
+    time.sleep(0.1)
+
+    # Verify that compressed multipart requests were made
+    # The small size limit should have triggered multiple batches
+    post_calls = [
+        call_obj
+        for call_obj in mock_session.request.mock_calls
+        if call_obj.args
+        and call_obj.args[0] == "POST"
+        and call_obj.args[1].endswith("runs/multipart")
+    ]
+
+    # Should have made one POST per run due to size limit being exceeded
+    # Each run (~1KB) is much larger than the 200 byte limit
+    # With the bug fix and optimization, each run should trigger its own flush
+    assert len(post_calls) == 100  # Expect exactly 100 requests for 100 runs
+
+    # Verify the Content-Encoding is zstd (compression was used)
+    found_zstd = False
+    for call in post_calls:
+        if "headers" in call.kwargs:
+            headers = call.kwargs["headers"]
+            if headers.get("Content-Encoding") == "zstd":
+                found_zstd = True
+                break
+
+    assert not found_zstd, "Expected no zstd compressed request"
 
 
 def test__dataset_examples_path():
@@ -3473,6 +3609,283 @@ def test__convert_stored_attachments_to_attachments_dict(mock_get: mock.Mock):
     mock_get.assert_called_once_with(
         "https://api.langsmith.com/download/valid", stream=True
     )
+
+
+def test_workspace_validation_optional(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that workspace is optional when API key is present."""
+    _clear_env_cache()
+
+    # clear env variables
+    monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
+    monkeypatch.delenv("LANGSMITH_WORKSPACE_ID", raising=False)
+
+    # Test 1: API key without workspace should succeed (backward compatibility)
+    client = Client(api_key="test-key", auto_batch_tracing=False)
+    assert client.workspace_id is None
+
+    # Test 2: API key with workspace_id should succeed
+    client = Client(
+        api_key="test-key", workspace_id="test-workspace-id", auto_batch_tracing=False
+    )
+    assert client.workspace_id == "test-workspace-id"
+
+
+def test_workspace_headers_injection(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that workspace headers are properly injected."""
+    _clear_env_cache()
+
+    # env setup
+    monkeypatch.setenv("LANGSMITH_API_KEY", "test-key")
+    monkeypatch.setenv("LANGSMITH_WORKSPACE_ID", "test-workspace-id")
+
+    client = Client(auto_batch_tracing=False)
+    headers = client._compute_headers()
+
+    # check headers
+    assert "X-Tenant-Id" in headers
+
+
+def test_workspace_validation_for_org_scoped_keys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test that workspace validation is called for org-scoped keys."""
+    _clear_env_cache()
+
+
+class TestEndToEndWorkspaceFlow:
+    """Comprehensive end-to-end tests for workspace functionality."""
+
+    def test_successful_api_call_with_workspace_id(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test complete flow: client creation -> API call -> headers verification."""
+        _clear_env_cache()
+
+        # env setup
+        monkeypatch.setenv("LANGSMITH_API_KEY", "test-api-key")
+        monkeypatch.setenv("LANGSMITH_WORKSPACE_ID", "test-workspace-id")
+
+        client = Client(auto_batch_tracing=False)
+
+        # mock session for API call
+        with mock.patch.object(client.session, "request") as mock_request:
+            # Set up successful response
+            mock_response = mock.MagicMock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {"id": "run-123", "name": "test-run"}
+            mock_request.return_value = mock_response
+
+            # API call
+            client.create_run(name="test-run", run_type="llm", inputs={"text": "hello"})
+
+            # HTTP call made with correct headers
+            mock_request.assert_called_once()
+            call_args = mock_request.call_args
+
+            headers = call_args[1]["headers"]
+            assert headers["X-Tenant-Id"] == "test-workspace-id"
+            assert headers["x-api-key"] == "test-api-key"
+
+            assert call_args[0][0] == "POST"
+            assert "/runs" in call_args[0][1]
+
+    def test_org_scoped_key_error_flow(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test complete flow: org-scoped key without workspace -> error detection -> validation error."""
+        _clear_env_cache()
+
+        client = Client(api_key="org-scoped-key", auto_batch_tracing=False)
+
+        # mock session to return error
+        with mock.patch.object(client.session, "request") as mock_request:
+            mock_response = mock.MagicMock()
+            mock_response.status_code = 403
+            mock_response.json.return_value = {
+                "error": "org_scoped_key_requires_workspace"
+            }
+            mock_response.text = '{"error":"org_scoped_key_requires_workspace"}'
+            mock_response.raise_for_status.side_effect = HTTPError("403 Client Error")
+            mock_request.return_value = mock_response
+
+            # try API call - should fail due to error
+            with pytest.raises(
+                ls_utils.LangSmithUserError,
+                match="This API key is org-scoped and requires workspace specification",
+            ):
+                client.create_run(
+                    name="test-run", run_type="llm", inputs={"text": "hello"}
+                )
+
+            mock_request.assert_called_once()
+
+            # check that no workspace header was sent
+            call_args = mock_request.call_args
+            headers = call_args[1]["headers"]
+            assert "X-Tenant-Id" not in headers
+
+    def test_other_403_error_flow(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test that other 403 errors don't trigger workspace validation."""
+        _clear_env_cache()
+
+        client = Client(api_key="test-key", auto_batch_tracing=False)
+
+        # mock session to return diff error
+        with mock.patch.object(client.session, "request") as mock_request:
+            mock_response = mock.MagicMock()
+            mock_response.status_code = 403
+            mock_response.json.return_value = {"error": "insufficient_permissions"}
+            mock_response.text = "insufficient_permissions"
+            mock_response.raise_for_status.side_effect = HTTPError("403 Client Error")
+            mock_request.return_value = mock_response
+
+            # try API call - should fail but not bc of workspace validation
+            with pytest.raises(ls_utils.LangSmithError, match="Failed to POST"):
+                client.create_run(
+                    name="test-run", run_type="llm", inputs={"text": "hello"}
+                )
+
+            mock_request.assert_called_once()
+
+    def test_multiple_api_calls_different_workspaces(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test multiple API calls with different workspace configurations."""
+        _clear_env_cache()
+
+        # default workspace setup
+        monkeypatch.setenv("LANGSMITH_API_KEY", "test-api-key")
+        monkeypatch.setenv("LANGSMITH_WORKSPACE_ID", "default-workspace-id")
+
+        client = Client(auto_batch_tracing=False)
+
+        # mock requests.Session
+        with mock.patch("requests.Session.request") as mock_request:
+            mock_response = mock.MagicMock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {"id": "run-123", "name": "test-run"}
+            mock_request.return_value = mock_response
+
+            # first call uses default workspace
+            client.create_run(
+                name="test-run-1", run_type="llm", inputs={"text": "hello"}
+            )
+
+            # override for second call
+            client.workspace_id = "override-workspace-id"
+
+            client.create_run(
+                name="test-run-2", run_type="llm", inputs={"text": "world"}
+            )
+
+            # check both calls
+            assert mock_request.call_count == 2
+
+            # check first call was default
+            first_call_args = mock_request.call_args_list[0]
+            first_headers = first_call_args[1]["headers"]
+            assert first_headers["X-Tenant-Id"] == "default-workspace-id"
+
+            # check second call was overridden
+            second_call_args = mock_request.call_args_list[1]
+            second_headers = second_call_args[1]["headers"]
+            assert second_headers["X-Tenant-Id"] == "override-workspace-id"
+
+    def test_environment_variable_priority(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test that config workspace_id takes priority over environment variable."""
+        _clear_env_cache()
+
+        # env var setup
+        monkeypatch.setenv("LANGSMITH_API_KEY", "test-api-key")
+        monkeypatch.setenv("LANGSMITH_WORKSPACE_ID", "env-workspace-id")
+
+        client = Client(workspace_id="config-workspace-id", auto_batch_tracing=False)
+
+        # mock requests.Session
+        with mock.patch("requests.Session.request") as mock_request:
+            # Set up successful response
+            mock_response = mock.MagicMock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {"id": "run-123", "name": "test-run"}
+            mock_request.return_value = mock_response
+
+            # API call
+            client.create_run(name="test-run", run_type="llm", inputs={"text": "hello"})
+
+            # HTTP call made with config workspace header
+            mock_request.assert_called_once()
+            call_args = mock_request.call_args
+            headers = call_args[1]["headers"]
+            assert headers["X-Tenant-Id"] == "config-workspace-id"
+
+    def test_workspace_id_none_empty_handling(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test handling of None and empty workspace_id values."""
+        _clear_env_cache()
+
+        # test with None workspace_id
+        client = Client(api_key="test-key", workspace_id=None, auto_batch_tracing=False)
+        headers = client._compute_headers()
+        assert "X-Tenant-Id" not in headers
+
+        # test with empty workspace_id
+        client = Client(api_key="test-key", workspace_id="", auto_batch_tracing=False)
+        headers = client._compute_headers()
+        assert "X-Tenant-Id" not in headers
+
+    def test_workspace_error_recovery_flow(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test recovery from org-scoped key error by providing workspace."""
+        _clear_env_cache()
+
+        client = Client(api_key="org-scoped-key", auto_batch_tracing=False)
+
+        # mock requests.Session
+        with mock.patch("requests.Session.request") as mock_request:
+            # org-scoped error
+            mock_response_error = mock.MagicMock()
+            mock_response_error.status_code = 403
+            mock_response_error.json.return_value = {
+                "error": "org_scoped_key_requires_workspace"
+            }
+            mock_response_error.text = '{"error":"org_scoped_key_requires_workspace"}'
+            mock_response_error.raise_for_status.side_effect = HTTPError(
+                "403 Client Error"
+            )
+
+            # success
+            mock_response_success = mock.MagicMock()
+            mock_response_success.status_code = 200
+            mock_response_success.json.return_value = {
+                "id": "run-123",
+                "name": "test-run",
+            }
+
+            mock_request.side_effect = [mock_response_error, mock_response_success]
+
+            # fail bc of org-scoped error
+            with pytest.raises(
+                ls_utils.LangSmithUserError,
+                match="This API key is org-scoped and requires workspace specification",
+            ):
+                client.create_run(
+                    name="test-run", run_type="llm", inputs={"text": "hello"}
+                )
+
+            # set workspace_id for second call
+            client.workspace_id = "test-workspace-id"
+
+            # succeeds
+            client.create_run(name="test-run", run_type="llm", inputs={"text": "hello"})
+
+            assert mock_request.call_count == 2
+
+            # check that second call had workspace header
+            second_call_args = mock_request.call_args_list[1]
+            second_headers = second_call_args[1]["headers"]
+            assert second_headers["X-Tenant-Id"] == "test-workspace-id"
 
 
 @pytest.mark.parametrize(

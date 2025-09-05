@@ -1,6 +1,6 @@
 {
   "name": "langsmith",
-  "version": "0.3.62",
+  "version": "0.3.67",
   "description": "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform.",
   "packageManager": "yarn@1.22.19",
   "files": [
@@ -149,12 +149,12 @@
   },
   "devDependencies": {
     "@ai-sdk/anthropic": "^2.0.1",
-    "@ai-sdk/openai": "^2.0.10",
+    "@ai-sdk/openai": "^2.0.23",
     "@babel/preset-env": "^7.22.4",
     "@faker-js/faker": "^8.4.1",
     "@jest/globals": "^29.5.0",
     "@jest/reporters": "^29.7.0",
-    "@langchain/core": "^0.3.61",
+    "@langchain/core": "^0.3.72",
     "@langchain/langgraph": "^0.3.6",
     "@langchain/openai": "^0.5.16",
     "@opentelemetry/api": "^1.9.0",

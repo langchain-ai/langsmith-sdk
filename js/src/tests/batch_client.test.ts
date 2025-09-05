@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable prefer-const */
 /* eslint-disable no-process-env */
-import { jest } from "@jest/globals";
+import { jest, describe } from "@jest/globals";
 import { v4 as uuidv4 } from "uuid";
 import { Client, mergeRuntimeEnvIntoRun } from "../client.js";
 import { convertToDottedOrderFormat } from "../run_trees.js";
@@ -52,18 +52,6 @@ const parseMockRequestBody = async (
     } catch (e) {
       parsedValue = value;
     }
-    // if (method === "attachment") {
-    //   for (const item of reconstructedBody.post) {
-    //     if (item.id === id) {
-    //       if (item.attachments === undefined) {
-    //         item.attachments = [];
-    //       }
-
-    //       item[type] = parsedValue;
-    //     }
-    //   }
-    //   return;
-    // }
     if (!(method in reconstructedBody)) {
       throw new Error(`${method} must be "post" or "patch"`);
     }
@@ -104,17 +92,63 @@ describe.each(ENDPOINT_TYPES)(
       endpointType === "batch"
         ? "https://api.smith.langchain.com/runs/batch"
         : "https://api.smith.langchain.com/runs/multipart";
-    it("should create a batched run with the given input", async () => {
+
+    let testClients: any[] = [];
+
+    const createClient = (
+      config: any,
+      mockFetch?: jest.MockedFunction<typeof fetch>
+    ) => {
       const client = new Client({
-        apiKey: "test-api-key",
-        autoBatchTracing: true,
+        ...config,
+        fetchImplementation: mockFetch,
       });
-      const callSpy = jest
-        .spyOn((client as any).batchIngestCaller, "call")
-        .mockResolvedValue({
+      testClients.push(client);
+      return client;
+    };
+
+    const createMockFetch = (callsArray: any[]) => {
+      return jest.fn((...args: any[]) => {
+        // Only count calls to batch/multipart endpoints, not info calls
+        if (args[0]?.includes("/runs/")) {
+          callsArray.push(args);
+        }
+        return Promise.resolve({
           ok: true,
-          text: () => "",
-        });
+          text: () => Promise.resolve(""),
+        } as Response);
+      });
+    };
+
+    afterEach(async () => {
+      // Clean up all clients created during the test
+      for (const client of testClients) {
+        try {
+          await client.awaitPendingTraceBatches();
+        } catch (e) {
+          // Ignore cleanup errors
+        }
+      }
+      testClients = [];
+
+      // Wait for any pending async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      jest.clearAllMocks();
+      jest.clearAllTimers();
+      jest.useRealTimers();
+    });
+
+    it("should create a batched run with the given input", async () => {
+      const calls: any[] = [];
+      const mockFetch = createMockFetch(calls);
+
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          autoBatchTracing: true,
+        },
+        mockFetch
+      );
       jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
         return {
           version: "foo",
@@ -141,7 +175,8 @@ describe.each(ENDPOINT_TYPES)(
 
       await new Promise((resolve) => setTimeout(resolve, 300));
 
-      const calledRequestParam: any = callSpy.mock.calls[0][2];
+      const calledRequestParam: any = calls[0][1];
+      expect(calls[0][0]).toBe(expectedTraceURL);
       expect(await parseMockRequestBody(calledRequestParam?.body)).toEqual({
         post: [
           expect.objectContaining({
@@ -156,31 +191,21 @@ describe.each(ENDPOINT_TYPES)(
         ],
         patch: [],
       });
-
-      expect(callSpy).toHaveBeenCalledWith(
-        expect.any(Function),
-        expectedTraceURL,
-        expect.objectContaining({
-          body: expect.any(
-            endpointType === "batch" ? Uint8Array : ReadableStream
-          ),
-        })
-      );
     });
 
     it("should hide inputs and outputs", async () => {
-      const client = new Client({
-        apiKey: "test-api-key",
-        autoBatchTracing: true,
-        hideInputs: () => ({ hidden: "inputs" }),
-        hideOutputs: () => ({ hidden: "outputs" }),
-      });
-      const callSpy = jest
-        .spyOn((client as any).batchIngestCaller, "call")
-        .mockResolvedValue({
-          ok: true,
-          text: () => "",
-        });
+      const calls: any[] = [];
+      const mockFetch = createMockFetch(calls);
+
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          autoBatchTracing: true,
+          hideInputs: () => ({ hidden: "inputs" }),
+          hideOutputs: () => ({ hidden: "outputs" }),
+        },
+        mockFetch
+      );
       jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
         return {
           version: "foo",
@@ -208,7 +233,8 @@ describe.each(ENDPOINT_TYPES)(
 
       await new Promise((resolve) => setTimeout(resolve, 300));
 
-      const calledRequestParam: any = callSpy.mock.calls[0][2];
+      const calledRequestParam: any = calls[0][1];
+      expect(calls[0][0]).toBe(expectedTraceURL);
       expect(await parseMockRequestBody(calledRequestParam?.body)).toEqual({
         post: [
           expect.objectContaining({
@@ -226,31 +252,21 @@ describe.each(ENDPOINT_TYPES)(
         ],
         patch: [],
       });
-
-      expect(callSpy).toHaveBeenCalledWith(
-        expect.any(Function),
-        expectedTraceURL,
-        expect.objectContaining({
-          body: expect.any(
-            endpointType === "batch" ? Uint8Array : ReadableStream
-          ),
-        })
-      );
     });
 
     it("should hide inputs and outputs with an async function", async () => {
-      const client = new Client({
-        apiKey: "test-api-key",
-        autoBatchTracing: true,
-        hideInputs: async () => ({ hidden: "inputs" }),
-        hideOutputs: async () => ({ hidden: "outputs" }),
-      });
-      const callSpy = jest
-        .spyOn((client as any).batchIngestCaller, "call")
-        .mockResolvedValue({
-          ok: true,
-          text: () => "",
-        });
+      const calls: any[] = [];
+      const mockFetch = createMockFetch(calls);
+
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          autoBatchTracing: true,
+          hideInputs: async () => ({ hidden: "inputs" }),
+          hideOutputs: async () => ({ hidden: "outputs" }),
+        },
+        mockFetch
+      );
       jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
         return {
           version: "foo",
@@ -278,7 +294,8 @@ describe.each(ENDPOINT_TYPES)(
 
       await new Promise((resolve) => setTimeout(resolve, 300));
 
-      const calledRequestParam: any = callSpy.mock.calls[0][2];
+      const calledRequestParam: any = calls[0][1];
+      expect(calls[0][0]).toBe(expectedTraceURL);
       expect(await parseMockRequestBody(calledRequestParam?.body)).toEqual({
         post: [
           expect.objectContaining({
@@ -296,31 +313,22 @@ describe.each(ENDPOINT_TYPES)(
         ],
         patch: [],
       });
-
-      expect(callSpy).toHaveBeenCalledWith(
-        expect.any(Function),
-        expectedTraceURL,
-        expect.objectContaining({
-          body: expect.any(
-            endpointType === "batch" ? Uint8Array : ReadableStream
-          ),
-        })
-      );
     });
 
     it("should not throw an error if fetch fails for batch requests", async () => {
-      const client = new Client({
-        apiKey: "test-api-key",
-        autoBatchTracing: true,
-      });
-      jest.spyOn((client as any).caller, "call").mockImplementation(() => {
+      const calls: any[] = [];
+      const mockFetch = jest.fn((...args: any[]) => {
+        calls.push(args);
         throw new Error("Totally expected mock error");
       });
-      jest
-        .spyOn((client as any).batchIngestCaller, "call")
-        .mockImplementation(() => {
-          throw new Error("Totally expected mock error");
-        });
+
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          autoBatchTracing: true,
+        },
+        mockFetch
+      );
       jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
         return {
           version: "foo",
@@ -350,16 +358,16 @@ describe.each(ENDPOINT_TYPES)(
     });
 
     it("Create + update batching should merge into a single call", async () => {
-      const client = new Client({
-        apiKey: "test-api-key",
-        autoBatchTracing: true,
-      });
-      const callSpy = jest
-        .spyOn((client as any).batchIngestCaller, "call")
-        .mockResolvedValue({
-          ok: true,
-          text: () => "",
-        });
+      const calls: any[] = [];
+      const mockFetch = createMockFetch(calls);
+
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          autoBatchTracing: true,
+        },
+        mockFetch
+      );
       jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
         return {
           version: "foo",
@@ -395,7 +403,8 @@ describe.each(ENDPOINT_TYPES)(
 
       await client.awaitPendingTraceBatches();
 
-      const calledRequestParam: any = callSpy.mock.calls[0][2];
+      const calledRequestParam: any = calls[0][1];
+      expect(calls[0][0]).toBe(expectedTraceURL);
       expect(await parseMockRequestBody(calledRequestParam?.body)).toEqual({
         post: [
           expect.objectContaining({
@@ -414,29 +423,19 @@ describe.each(ENDPOINT_TYPES)(
         ],
         patch: [],
       });
-
-      expect(callSpy).toHaveBeenCalledWith(
-        expect.any(Function),
-        expectedTraceURL,
-        expect.objectContaining({
-          body: expect.any(
-            endpointType === "batch" ? Uint8Array : ReadableStream
-          ),
-        })
-      );
     });
 
     it("server info fetch should retry even if initial call fails", async () => {
-      const client = new Client({
-        apiKey: "test-api-key",
-        autoBatchTracing: true,
-      });
-      const callSpy = jest
-        .spyOn((client as any).batchIngestCaller, "call")
-        .mockResolvedValue({
-          ok: true,
-          text: () => "",
-        });
+      const calls: any[] = [];
+      const mockFetch = createMockFetch(calls);
+
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          autoBatchTracing: true,
+        },
+        mockFetch
+      );
       let serverInfoFailedOnce = false;
       jest.spyOn(client as any, "_getServerInfo").mockImplementationOnce(() => {
         serverInfoFailedOnce = true;
@@ -479,7 +478,8 @@ describe.each(ENDPOINT_TYPES)(
 
       expect(serverInfoFailedOnce).toBe(true);
 
-      const calledRequestParam: any = callSpy.mock.calls[0][2];
+      const calledRequestParam: any = calls[0][1];
+      expect(calls[0][0]).toBe(expectedTraceURL);
       expect(await parseMockRequestBody(calledRequestParam?.body)).toEqual({
         post: [
           expect.objectContaining({
@@ -498,30 +498,20 @@ describe.each(ENDPOINT_TYPES)(
         ],
         patch: [],
       });
-
-      expect(callSpy).toHaveBeenCalledWith(
-        expect.any(Function),
-        expectedTraceURL,
-        expect.objectContaining({
-          body: expect.any(
-            endpointType === "batch" ? Uint8Array : ReadableStream
-          ),
-        })
-      );
     });
 
     it("should immediately trigger a batch on root run end if blockOnRootRunFinalization is set", async () => {
-      const client = new Client({
-        apiKey: "test-api-key",
-        autoBatchTracing: true,
-        blockOnRootRunFinalization: true,
-      });
-      const callSpy = jest
-        .spyOn((client as any).batchIngestCaller, "call")
-        .mockResolvedValue({
-          ok: true,
-          text: () => "",
-        });
+      const calls: any[] = [];
+      const mockFetch = createMockFetch(calls);
+
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          autoBatchTracing: true,
+          blockOnRootRunFinalization: true,
+        },
+        mockFetch
+      );
       jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
         return {
           version: "foo",
@@ -578,9 +568,12 @@ describe.each(ENDPOINT_TYPES)(
 
       await new Promise((resolve) => setTimeout(resolve, 300));
 
-      const calledRequestParam: any = callSpy.mock.calls[0][2];
-      const calledRequestParam2: any = callSpy.mock.calls[1][2];
-      const calledRequestParam3: any = callSpy.mock.calls[2][2];
+      const calledRequestParam: any = calls[0][1];
+      const calledRequestParam2: any = calls[1][1];
+      const calledRequestParam3: any = calls[2][1];
+      expect(calls[0][0]).toBe(expectedTraceURL);
+      expect(calls[1][0]).toBe(expectedTraceURL);
+      expect(calls[2][0]).toBe(expectedTraceURL);
       expect(await parseMockRequestBody(calledRequestParam?.body)).toEqual({
         post: [
           expect.objectContaining({
@@ -624,20 +617,23 @@ describe.each(ENDPOINT_TYPES)(
         ],
         patch: [],
       });
+
+      // Clean up any pending batches
+      await client.awaitPendingTraceBatches();
     });
 
     it("should not trigger a batch on root run end and instead batch call with previous batch if blockOnRootRunFinalization is false", async () => {
-      const client = new Client({
-        apiKey: "test-api-key",
-        autoBatchTracing: true,
-        blockOnRootRunFinalization: false,
-      });
-      const callSpy = jest
-        .spyOn((client as any).batchIngestCaller, "call")
-        .mockResolvedValue({
-          ok: true,
-          text: () => "",
-        });
+      const calls: any[] = [];
+      const mockFetch = createMockFetch(calls);
+
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          autoBatchTracing: true,
+          blockOnRootRunFinalization: false,
+        },
+        mockFetch
+      );
       jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
         return {
           version: "foo",
@@ -699,9 +695,11 @@ describe.each(ENDPOINT_TYPES)(
       await client.awaitPendingTraceBatches();
       expect((client as any).autoBatchQueue.items.length).toBe(0);
 
-      expect(callSpy.mock.calls.length).toEqual(2);
-      const calledRequestParam: any = callSpy.mock.calls[0][2];
-      const calledRequestParam2: any = callSpy.mock.calls[1][2];
+      expect(calls.length).toEqual(2);
+      const calledRequestParam: any = calls[0][1];
+      const calledRequestParam2: any = calls[1][1];
+      expect(calls[0][0]).toBe(expectedTraceURL);
+      expect(calls[1][0]).toBe(expectedTraceURL);
       expect(await parseMockRequestBody(calledRequestParam?.body)).toEqual({
         post: [
           expect.objectContaining({
@@ -741,20 +739,23 @@ describe.each(ENDPOINT_TYPES)(
           }),
         ],
       });
+
+      // Clean up any pending batches
+      await client.awaitPendingTraceBatches();
     });
 
     it("should send traces above the batch size and see even batches", async () => {
-      const client = new Client({
-        apiKey: "test-api-key",
-        batchSizeBytesLimit: 10000,
-        autoBatchTracing: true,
-      });
-      const callSpy = jest
-        .spyOn((client as any).batchIngestCaller, "call")
-        .mockResolvedValue({
-          ok: true,
-          text: () => "",
-        });
+      const calls: any[] = [];
+      const mockFetch = createMockFetch(calls);
+
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          batchSizeBytesLimit: 10000,
+          autoBatchTracing: true,
+        },
+        mockFetch
+      );
       jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
         return {
           version: "foo",
@@ -791,8 +792,10 @@ describe.each(ENDPOINT_TYPES)(
 
       await new Promise((resolve) => setTimeout(resolve, 10));
 
-      const calledRequestParam: any = callSpy.mock.calls[0][2];
-      const calledRequestParam2: any = callSpy.mock.calls[1][2];
+      const calledRequestParam: any = calls[0][1];
+      const calledRequestParam2: any = calls[1][1];
+      expect(calls[0][0]).toBe(expectedTraceURL);
+      expect(calls[1][0]).toBe(expectedTraceURL);
 
       const firstBatchBody = await parseMockRequestBody(
         calledRequestParam?.body
@@ -838,22 +841,22 @@ describe.each(ENDPOINT_TYPES)(
     });
 
     it("should sample and see proper batching", async () => {
-      const client = new Client({
-        apiKey: "test-api-key",
-        autoBatchTracing: true,
-        tracingSamplingRate: 0.5,
-      });
+      const calls: any[] = [];
+      const mockFetch = createMockFetch(calls);
+
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          autoBatchTracing: true,
+          tracingSamplingRate: 0.5,
+        },
+        mockFetch
+      );
       let counter = 0;
       jest.spyOn(client as any, "_shouldSample").mockImplementation(() => {
         counter += 1;
         return counter % 2 !== 0;
       });
-      const callSpy = jest
-        .spyOn((client as any).batchIngestCaller, "call")
-        .mockResolvedValue({
-          ok: true,
-          text: () => "",
-        });
       jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
         return {
           version: "foo",
@@ -886,7 +889,8 @@ describe.each(ENDPOINT_TYPES)(
 
       await client.awaitPendingTraceBatches();
 
-      const calledRequestParam: any = callSpy.mock.calls[0][2];
+      const calledRequestParam: any = calls[0][1];
+      expect(calls[0][0]).toBe(expectedTraceURL);
       const batchBody = await parseMockRequestBody(calledRequestParam?.body);
 
       const childRunParams = await Promise.all(
@@ -918,7 +922,8 @@ describe.each(ENDPOINT_TYPES)(
 
       await client.awaitPendingTraceBatches();
 
-      const calledRequestParam2: any = callSpy.mock.calls[1][2];
+      const calledRequestParam2: any = calls[1][1];
+      expect(calls[1][0]).toBe(expectedTraceURL);
 
       const batchBody2 = await parseMockRequestBody(calledRequestParam2?.body);
 
@@ -975,18 +980,18 @@ describe.each(ENDPOINT_TYPES)(
     });
 
     it("should flush traces in batches with manualFlushMode enabled", async () => {
-      const client = new Client({
-        apiKey: "test-api-key",
-        batchSizeBytesLimit: 10000,
-        autoBatchTracing: true,
-        manualFlushMode: true,
-      });
-      const callSpy = jest
-        .spyOn((client as any).batchIngestCaller, "call")
-        .mockResolvedValue({
-          ok: true,
-          text: () => "",
-        });
+      const calls: any[] = [];
+      const mockFetch = createMockFetch(calls);
+
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          batchSizeBytesLimit: 10000,
+          autoBatchTracing: true,
+          manualFlushMode: true,
+        },
+        mockFetch
+      );
       jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
         return {
           version: "foo",
@@ -1023,14 +1028,16 @@ describe.each(ENDPOINT_TYPES)(
 
       await new Promise((resolve) => setTimeout(resolve, 500));
 
-      expect(callSpy.mock.calls.length).toBe(0);
+      expect(calls.length).toBe(0);
 
       await client.flush();
 
-      expect(callSpy.mock.calls.length).toBe(2);
+      expect(calls.length).toBe(2);
 
-      const calledRequestParam: any = callSpy.mock.calls[0][2];
-      const calledRequestParam2: any = callSpy.mock.calls[1][2];
+      const calledRequestParam: any = calls[0][1];
+      const calledRequestParam2: any = calls[1][1];
+      expect(calls[0][0]).toBe(expectedTraceURL);
+      expect(calls[1][0]).toBe(expectedTraceURL);
 
       const firstBatchBody = await parseMockRequestBody(
         calledRequestParam?.body
@@ -1076,17 +1083,17 @@ describe.each(ENDPOINT_TYPES)(
     });
 
     it("a very low batch size limit should be equivalent to single calls", async () => {
-      const client = new Client({
-        apiKey: "test-api-key",
-        batchSizeBytesLimit: 1,
-        autoBatchTracing: true,
-      });
-      const callSpy = jest
-        .spyOn((client as any).batchIngestCaller, "call")
-        .mockResolvedValue({
-          ok: true,
-          text: () => "",
-        });
+      const calls: any[] = [];
+      const mockFetch = createMockFetch(calls);
+
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          batchSizeBytesLimit: 1,
+          autoBatchTracing: true,
+        },
+        mockFetch
+      );
       jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
         return {
           version: "foo",
@@ -1120,12 +1127,16 @@ describe.each(ENDPOINT_TYPES)(
 
       await new Promise((resolve) => setTimeout(resolve, 300));
 
-      expect(callSpy.mock.calls.length).toEqual(4);
+      expect(calls.length).toEqual(4);
 
-      const calledRequestParam: any = callSpy.mock.calls[0][2];
-      const calledRequestParam2: any = callSpy.mock.calls[1][2];
-      const calledRequestParam3: any = callSpy.mock.calls[2][2];
-      const calledRequestParam4: any = callSpy.mock.calls[3][2];
+      const calledRequestParam: any = calls[0][1];
+      const calledRequestParam2: any = calls[1][1];
+      const calledRequestParam3: any = calls[2][1];
+      const calledRequestParam4: any = calls[3][1];
+      expect(calls[0][0]).toBe(expectedTraceURL);
+      expect(calls[1][0]).toBe(expectedTraceURL);
+      expect(calls[2][0]).toBe(expectedTraceURL);
+      expect(calls[3][0]).toBe(expectedTraceURL);
 
       // Queue should drain as soon as byte size limit of 1 is reached,
       // sending each call individually
@@ -1187,16 +1198,16 @@ describe.each(ENDPOINT_TYPES)(
     });
 
     it("Use batch endpoint if info call fails", async () => {
-      const client = new Client({
-        apiKey: "test-api-key",
-        autoBatchTracing: true,
-      });
-      const callSpy = jest
-        .spyOn((client as any).batchIngestCaller, "call")
-        .mockResolvedValue({
-          ok: true,
-          text: () => "",
-        });
+      const calls: any[] = [];
+      const mockFetch = createMockFetch(calls);
+
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          autoBatchTracing: true,
+        },
+        mockFetch
+      );
       jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
         throw new Error("Totally expected mock error");
       });
@@ -1219,7 +1230,7 @@ describe.each(ENDPOINT_TYPES)(
 
       await client.awaitPendingTraceBatches();
 
-      const calledRequestParam: any = callSpy.mock.calls[0][2];
+      const calledRequestParam: any = calls[0][1];
 
       expect(
         await parseMockRequestBody(calledRequestParam?.body)
@@ -1239,27 +1250,23 @@ describe.each(ENDPOINT_TYPES)(
         ],
         patch: [],
       });
+      // When server info fails, client falls back to batch endpoint regardless of test type
+      expect(calls[0][0]).toBe("https://api.smith.langchain.com/runs/batch");
 
-      expect(callSpy).toHaveBeenCalledWith(
-        expect.any(Function),
-        "https://api.smith.langchain.com/runs/batch",
-        expect.objectContaining({
-          body: expect.any(Uint8Array),
-        })
-      );
+      expect(calls.length).toBe(1);
     });
 
     it("Should handle circular values", async () => {
-      const client = new Client({
-        apiKey: "test-api-key",
-        autoBatchTracing: true,
-      });
-      const callSpy = jest
-        .spyOn((client as any).batchIngestCaller, "call")
-        .mockResolvedValue({
-          ok: true,
-          text: () => "",
-        });
+      const calls: any[] = [];
+      const mockFetch = createMockFetch(calls);
+
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          autoBatchTracing: true,
+        },
+        mockFetch
+      );
       jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
         return {
           version: "foo",
@@ -1299,7 +1306,7 @@ describe.each(ENDPOINT_TYPES)(
 
       await client.awaitPendingTraceBatches();
 
-      const calledRequestParam: any = callSpy.mock.calls[0][2];
+      const calledRequestParam: any = calls[0][1];
       expect(await parseMockRequestBody(calledRequestParam?.body)).toEqual({
         post: [
           expect.objectContaining({
@@ -1332,16 +1339,217 @@ describe.each(ENDPOINT_TYPES)(
         ],
         patch: [],
       });
+      expect(calls[0][0]).toBe(expectedTraceURL);
 
-      expect(callSpy).toHaveBeenCalledWith(
-        expect.any(Function),
-        expectedTraceURL,
-        expect.objectContaining({
-          body: expect.any(
-            endpointType === "batch" ? Uint8Array : ReadableStream
-          ),
-        })
+      expect(calls.length).toBe(1);
+    });
+
+    it("should retry multipart requests on 5xx errors", async () => {
+      const calls: any[] = [];
+      let callCount = 0;
+
+      const mockFetch = jest.fn((...args: any[]) => {
+        callCount++;
+        // Only count calls to multipart endpoints, not info calls
+        if (args[0]?.includes("/runs/")) {
+          calls.push(args);
+
+          // Fail first two attempts with 500, succeed on third
+          if (callCount <= 2) {
+            return Promise.resolve({
+              ok: false,
+              status: 500,
+              statusText: "Internal Server Error",
+              text: () => Promise.resolve("Server error"),
+            } as Response);
+          }
+        }
+
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: () => Promise.resolve(""),
+        } as Response);
+      });
+
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          autoBatchTracing: true,
+        },
+        mockFetch
       );
+
+      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
+        return {
+          version: "foo",
+          batch_ingest_config: { ...extraBatchIngestConfig },
+          instance_flags: { ...extraInstanceFlags },
+        };
+      });
+
+      const projectName = "__test_batch";
+      const runId = uuidv4();
+      const { dottedOrder } = convertToDottedOrderFormat(
+        new Date().getTime() / 1000,
+        runId
+      );
+
+      await client.createRun({
+        id: runId,
+        project_name: projectName,
+        name: "test_run",
+        run_type: "llm",
+        inputs: { text: "hello world" },
+        trace_id: runId,
+        dotted_order: dottedOrder,
+      });
+
+      await client.awaitPendingTraceBatches();
+
+      // Should have made 3 calls (2 failures + 1 success)
+      expect(calls.length).toBe(3);
+      expect(calls[0][0]).toBe(expectedTraceURL);
+      expect(calls[1][0]).toBe(expectedTraceURL);
+      expect(calls[2][0]).toBe(expectedTraceURL);
+    });
+
+    it("should not retry multipart requests on 422 errors", async () => {
+      const calls: any[] = [];
+
+      const mockFetch = jest.fn((...args: any[]) => {
+        // Only count calls to multipart endpoints, not info calls
+        if (args[0]?.includes("/runs/")) {
+          calls.push(args);
+
+          // Always return 422 (should not retry)
+          return Promise.resolve({
+            ok: false,
+            status: 422,
+            statusText: "Unprocessable Entity",
+            text: () => Promise.resolve("Validation error"),
+          } as Response);
+        }
+
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: () => Promise.resolve(""),
+        } as Response);
+      });
+
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          autoBatchTracing: true,
+        },
+        mockFetch
+      );
+
+      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
+        return {
+          version: "foo",
+          batch_ingest_config: { ...extraBatchIngestConfig },
+          instance_flags: { ...extraInstanceFlags },
+        };
+      });
+
+      const projectName = "__test_batch";
+      const runId = uuidv4();
+      const { dottedOrder } = convertToDottedOrderFormat(
+        new Date().getTime() / 1000,
+        runId
+      );
+
+      await client.createRun({
+        id: runId,
+        project_name: projectName,
+        name: "test_run",
+        run_type: "llm",
+        inputs: { text: "hello world" },
+        trace_id: runId,
+        dotted_order: dottedOrder,
+      });
+
+      // Wait for batch processing to complete (and fail)
+      await client.awaitPendingTraceBatches();
+
+      // Should have made only 1 call (no retries for 422)
+      expect(calls.length).toBe(1);
+      expect(calls[0][0]).toBe(expectedTraceURL);
+    });
+
+    it("should retry multipart requests on 429 errors", async () => {
+      const calls: any[] = [];
+      let callCount = 0;
+
+      const mockFetch = jest.fn((...args: any[]) => {
+        callCount++;
+        // Only count calls to multipart endpoints, not info calls
+        if (args[0]?.includes("/runs/")) {
+          calls.push(args);
+
+          // Fail first two attempts with 429, succeed on third
+          if (callCount <= 2) {
+            return Promise.resolve({
+              ok: false,
+              status: 429,
+              statusText: "Too Many Requests",
+              text: () => Promise.resolve("Rate limited"),
+              headers: {
+                get: (name: string) => (name === "retry-after" ? "1" : null),
+              },
+            } as Response);
+          }
+        }
+
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: () => Promise.resolve(""),
+        } as Response);
+      });
+
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          autoBatchTracing: true,
+        },
+        mockFetch
+      );
+
+      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
+        return {
+          version: "foo",
+          batch_ingest_config: { ...extraBatchIngestConfig },
+          instance_flags: { ...extraInstanceFlags },
+        };
+      });
+
+      const projectName = "__test_batch";
+      const runId = uuidv4();
+      const { dottedOrder } = convertToDottedOrderFormat(
+        new Date().getTime() / 1000,
+        runId
+      );
+
+      await client.createRun({
+        id: runId,
+        project_name: projectName,
+        name: "test_run",
+        run_type: "llm",
+        inputs: { text: "hello world" },
+        trace_id: runId,
+        dotted_order: dottedOrder,
+      });
+
+      await client.awaitPendingTraceBatches();
+
+      // Should have made 3 calls (2 failures + 1 success)
+      expect(calls.length).toBe(3);
+      expect(calls[0][0]).toBe(expectedTraceURL);
+      expect(calls[1][0]).toBe(expectedTraceURL);
+      expect(calls[2][0]).toBe(expectedTraceURL);
     });
   }
 );

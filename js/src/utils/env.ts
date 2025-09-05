@@ -39,7 +39,10 @@ export const getEnv = () => {
   if (globalEnv) {
     return globalEnv;
   }
-  if (isBrowser()) {
+  // @ts-expect-error Bun types are not imported due to conflicts with Node types
+  if (typeof Bun !== "undefined") {
+    globalEnv = "bun";
+  } else if (isBrowser()) {
     globalEnv = "browser";
   } else if (isNode()) {
     globalEnv = "node";

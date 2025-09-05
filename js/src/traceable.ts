@@ -119,7 +119,9 @@ const runInputsToMap = (rawInputs: unknown[]) => {
   const firstInput = rawInputs[0];
   let inputs: KVMap;
 
-  if (firstInput == null) {
+  if (firstInput === null) {
+    inputs = { inputs: null };
+  } else if (firstInput === undefined) {
     inputs = {};
   } else if (rawInputs.length > 1) {
     inputs = { args: rawInputs };
@@ -155,32 +157,6 @@ const _extractUsage = (runData: {
   return runData.outputs?.usage_metadata ?? usageMetadataFromMetadata;
 };
 
-function validateExtractedUsageMetadata(
-  data: Record<string, any>
-): ExtractedUsageMetadata {
-  const allowedKeys = new Set([
-    "input_tokens",
-    "output_tokens",
-    "total_tokens",
-    "input_token_details",
-    "output_token_details",
-    "input_cost",
-    "output_cost",
-    "total_cost",
-    "input_cost_details",
-    "output_cost_details",
-  ]);
-
-  const extraKeys = Object.keys(data).filter((key) => !allowedKeys.has(key));
-  if (extraKeys.length > 0) {
-    throw new Error(
-      `Unexpected keys in usage metadata: ${extraKeys.join(", ")}`
-    );
-  }
-
-  return data as ExtractedUsageMetadata;
-}
-
 async function handleEnd(params: {
   runTree?: RunTree;
   on_end?: (runTree: RunTree) => void;
@@ -213,7 +189,7 @@ const _populateUsageMetadata = (processedOutputs: KVMap, runTree?: RunTree) => {
     if (usageMetadata !== undefined) {
       runTree.extra.metadata = {
         ...runTree.extra.metadata,
-        usage_metadata: validateExtractedUsageMetadata(usageMetadata),
+        usage_metadata: usageMetadata,
       };
       processedOutputs.usage_metadata = usageMetadata;
     }
@@ -671,7 +647,7 @@ export function traceable<Func extends (...args: any[]) => any>(
     const asyncLocalStorage = AsyncLocalStorageProviderSingleton.getInstance();
 
     // TODO: deal with possible nested promises and async iterables
-    const processedArgs = args as unknown as Inputs;
+    const processedArgs = args as Inputs;
     let deferredInput = false;
     for (let i = 0; i < processedArgs.length; i++) {
       const { converted, deferredInput: argDefersInput } =

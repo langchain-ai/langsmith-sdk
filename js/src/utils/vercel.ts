@@ -1,21 +1,56 @@
+import type { LanguageModelV2Usage } from "@ai-sdk/provider";
 import { KVMap } from "../schemas.js";
 
-export function extractOutputTokenDetails(reasoningTokens?: number) {
+function extractTraceableServiceTier(
+  providerMetadata: Record<string, unknown>
+): "priority" | "flex" | undefined {
+  if (
+    providerMetadata?.openai != null &&
+    typeof providerMetadata.openai === "object"
+  ) {
+    const openai = providerMetadata.openai as Record<string, unknown>;
+    if (
+      openai.serviceTier != null &&
+      typeof openai.serviceTier === "string" &&
+      ["priority", "flex"].includes(openai.serviceTier)
+    ) {
+      return openai.serviceTier as "priority" | "flex";
+    }
+  }
+  return undefined;
+}
+
+export function extractOutputTokenDetails(
+  usage?: Partial<LanguageModelV2Usage>,
+  providerMetadata?: Record<string, unknown>
+) {
+  const openAIServiceTier = extractTraceableServiceTier(providerMetadata ?? {});
+  const outputTokenDetailsKeyPrefix = openAIServiceTier
+    ? `${openAIServiceTier}_`
+    : "";
   const outputTokenDetails: Record<string, number> = {};
-  if (typeof reasoningTokens === "number") {
-    outputTokenDetails.reasoning = reasoningTokens;
+  if (typeof usage?.reasoningTokens === "number") {
+    outputTokenDetails[`${outputTokenDetailsKeyPrefix}reasoning`] =
+      usage.reasoningTokens;
+  }
+  if (openAIServiceTier && typeof usage?.outputTokens === "number") {
+    // Avoid counting reasoning tokens towards the output token count
+    // since service tier tokens are already priced differently
+    outputTokenDetails[openAIServiceTier] =
+      usage.outputTokens -
+      (outputTokenDetails[`${outputTokenDetailsKeyPrefix}reasoning`] ?? 0);
   }
   return outputTokenDetails;
 }
 
 export function extractInputTokenDetails(
-  providerMetadata: Record<string, unknown>,
-  cachedTokenUsage?: number
+  usage?: Partial<LanguageModelV2Usage>,
+  providerMetadata?: Record<string, unknown>
 ) {
   const inputTokenDetails: Record<string, number> = {};
   if (
-    providerMetadata.anthropic != null &&
-    typeof providerMetadata.anthropic === "object"
+    providerMetadata?.anthropic != null &&
+    typeof providerMetadata?.anthropic === "object"
   ) {
     const anthropic = providerMetadata.anthropic as Record<string, unknown>;
     if (anthropic.usage != null && typeof anthropic.usage === "object") {
@@ -61,17 +96,32 @@ export function extractInputTokenDetails(
     }
     return inputTokenDetails;
   } else if (
-    providerMetadata.openai != null &&
-    typeof providerMetadata.openai === "object"
+    providerMetadata?.openai != null &&
+    typeof providerMetadata?.openai === "object"
   ) {
-    const openai = providerMetadata.openai as Record<string, unknown>;
-    if (
-      openai.cachedPromptTokens != null &&
-      typeof openai.cachedPromptTokens === "number"
+    const openAIServiceTier = extractTraceableServiceTier(
+      providerMetadata ?? {}
+    );
+    const outputTokenDetailsKeyPrefix = openAIServiceTier
+      ? `${openAIServiceTier}_`
+      : "";
+    if (typeof usage?.cachedInputTokens === "number") {
+      inputTokenDetails[`${outputTokenDetailsKeyPrefix}cache_read`] =
+        usage.cachedInputTokens;
+    } else if (
+      "cachedPromptTokens" in providerMetadata.openai &&
+      providerMetadata.openai.cachedPromptTokens != null &&
+      typeof providerMetadata.openai.cachedPromptTokens === "number"
     ) {
-      inputTokenDetails.cache_read = openai.cachedPromptTokens;
-    } else if (typeof cachedTokenUsage === "number") {
-      inputTokenDetails.cache_read = cachedTokenUsage;
+      inputTokenDetails[`${outputTokenDetailsKeyPrefix}cache_read`] =
+        providerMetadata.openai.cachedPromptTokens;
+    }
+    if (openAIServiceTier && typeof usage?.inputTokens === "number") {
+      // Avoid counting cached input tokens towards the input token count
+      // since service tier tokens are already priced differently
+      inputTokenDetails[openAIServiceTier] =
+        usage.inputTokens -
+        (inputTokenDetails[`${outputTokenDetailsKeyPrefix}cache_read`] ?? 0);
     }
   }
   return inputTokenDetails;
@@ -120,10 +170,10 @@ export function extractUsageMetadata(span?: {
         span.attributes["ai.response.providerMetadata"]
       );
       usageMetadata.input_token_details = extractInputTokenDetails(
-        providerMetadata,
         typeof span.attributes["ai.usage.cachedInputTokens"] === "number"
-          ? span.attributes["ai.usage.cachedInputTokens"]
-          : undefined
+          ? { cachedInputTokens: span.attributes["ai.usage.cachedInputTokens"] }
+          : undefined,
+        providerMetadata
       );
       if (
         providerMetadata.anthropic != null &&

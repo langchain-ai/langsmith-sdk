@@ -283,6 +283,7 @@ class Dataset(DatasetBase):
     inputs_schema: Optional[dict[str, Any]] = None
     outputs_schema: Optional[dict[str, Any]] = None
     transformations: Optional[list[DatasetTransformation]] = None
+    metadata: Optional[dict[str, Any]] = None
     _host_url: Optional[str] = PrivateAttr(default=None)
     _tenant_id: Optional[UUID] = PrivateAttr(default=None)
     _public_path: Optional[str] = PrivateAttr(default=None)

@@ -122,6 +122,7 @@ type ProjectReplica = [string, KVMap | undefined];
 type WriteReplica = {
   apiUrl?: string;
   apiKey?: string;
+  workspaceId?: string;
   projectName?: string;
   updates?: KVMap | undefined;
   fromEnv?: boolean;
@@ -518,7 +519,8 @@ export class RunTree implements BaseRun {
     try {
       const runtimeEnv = getRuntimeEnvironment();
       if (this.replicas && this.replicas.length > 0) {
-        for (const { projectName, apiKey, apiUrl } of this.replicas) {
+        for (const { projectName, apiKey, apiUrl, workspaceId } of this
+          .replicas) {
           const runCreate = this._remapForProject(
             projectName ?? this.project_name,
             runtimeEnv,
@@ -527,6 +529,7 @@ export class RunTree implements BaseRun {
           await this.client.createRun(runCreate, {
             apiKey,
             apiUrl,
+            workspaceId,
           });
         }
       } else {
@@ -553,7 +556,8 @@ export class RunTree implements BaseRun {
 
   async patchRun(options?: { excludeInputs?: boolean }): Promise<void> {
     if (this.replicas && this.replicas.length > 0) {
-      for (const { projectName, apiKey, apiUrl, updates } of this.replicas) {
+      for (const { projectName, apiKey, apiUrl, workspaceId, updates } of this
+        .replicas) {
         const runData = this._remapForProject(projectName ?? this.project_name);
         const updatePayload: RunUpdate = {
           id: runData.id,
@@ -580,6 +584,7 @@ export class RunTree implements BaseRun {
         await this.client.updateRun(runData.id, updatePayload, {
           apiKey,
           apiUrl,
+          workspaceId,
         });
       }
     } else {
@@ -701,7 +706,7 @@ export class RunTree implements BaseRun {
 
   static fromHeaders(
     headers: Record<string, string | string[]> | HeadersLike,
-    inheritArgs?: RunTreeConfig
+    inheritArgs?: Partial<RunTreeConfig>
   ): RunTree | undefined {
     const rawHeaders: Record<string, string | string[] | null> =
       "get" in headers && typeof headers.get === "function"
@@ -766,7 +771,7 @@ export class RunTree implements BaseRun {
 
 export function isRunTree(x?: unknown): x is RunTree {
   return (
-    x !== undefined &&
+    x != null &&
     typeof (x as RunTree).createChild === "function" &&
     typeof (x as RunTree).postRun === "function"
   );
@@ -809,7 +814,7 @@ export function isRunnableConfigLike(x?: unknown): x is RunnableConfigLike {
   // or an array with a LangChainTracerLike object within it
 
   return (
-    x !== undefined &&
+    x != null &&
     typeof (x as RunnableConfigLike).callbacks === "object" &&
     // Callback manager with a langchain tracer
     (containsLangChainTracerLike(

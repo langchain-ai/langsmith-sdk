@@ -4,6 +4,7 @@ from typing import Optional, TypedDict
 from uuid import uuid4
 
 from langsmith import run_trees as rt
+from langsmith.run_helpers import get_current_run_tree
 
 try:
     from agents import tracing  # type: ignore[import]
@@ -173,6 +174,8 @@ if HAVE_AGENTS:
             self._runs: dict[str, RunData] = {}
 
         def on_trace_start(self, trace: tracing.Trace) -> None:
+            current_run_tree = get_current_run_tree()
+
             if self._name:
                 run_name = self._name
             elif trace.name:
@@ -183,16 +186,27 @@ if HAVE_AGENTS:
 
             start_time = datetime.now(timezone.utc)
 
+            # Use LangSmith parent run tree if available, else create new trace
+            if current_run_tree is not None:
+                trace_id = str(current_run_tree.trace_id)
+                parent_run_id = str(current_run_tree.id)
+                parent_dotted_order = current_run_tree.dotted_order
+            else:
+                trace_id = trace_run_id
+                parent_run_id = None
+                parent_dotted_order = None
+
             dotted_order = agent_utils.ensure_dotted_order(
                 start_time=start_time,
                 run_id=trace_run_id,
+                parent_dotted_order=parent_dotted_order,
             )
             self._runs[trace.trace_id] = RunData(
                 id=trace_run_id,
-                trace_id=trace_run_id,
+                trace_id=trace_id,
                 start_time=start_time,
                 dotted_order=dotted_order,
-                parent_run_id=None,
+                parent_run_id=parent_run_id,
             )
 
             run_extra = {"metadata": self._metadata or {}}
@@ -207,7 +221,8 @@ if HAVE_AGENTS:
                     inputs={},
                     run_type="chain",
                     id=trace_run_id,
-                    trace_id=trace_run_id,
+                    trace_id=trace_id,
+                    parent_run_id=parent_run_id,
                     dotted_order=dotted_order,
                     start_time=start_time,
                     revision_id=None,
@@ -230,10 +245,12 @@ if HAVE_AGENTS:
                     self.client.update_run(
                         run_id=run["id"],
                         trace_id=run["trace_id"],
+                        parent_run_id=run["parent_run_id"],
                         dotted_order=run["dotted_order"],
                         inputs=self._first_response_inputs.pop(trace.trace_id, {}),
                         outputs=self._last_response_outputs.pop(trace.trace_id, {}),
                         extra={"metadata": metadata},
+                        project_name=self._project_name,
                     )
                 except Exception as e:
                     logger.exception(f"Error updating trace run: {e}")
@@ -285,6 +302,7 @@ if HAVE_AGENTS:
                     parent_run_id=parent_run["id"],
                     dotted_order=dotted_order,
                     inputs=extracted.get("inputs", {}),
+                    project_name=self._project_name,
                 )
                 if span.started_at:
                     run_data["start_time"] = datetime.fromisoformat(span.started_at)
@@ -312,6 +330,7 @@ if HAVE_AGENTS:
                     outputs=outputs,
                     inputs=inputs,
                     extra=extracted,
+                    project_name=self._project_name,
                 )
                 if span.ended_at:
                     run_data["end_time"] = datetime.fromisoformat(span.ended_at)

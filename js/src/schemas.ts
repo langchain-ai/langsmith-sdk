@@ -606,7 +606,7 @@ export type InputTokenDetails = {
    * Since there was a cache miss, the cache was created from these tokens.
    */
   cache_creation?: number;
-};
+} & Record<string, number>;
 
 /**
  * Breakdown of output token counts.
@@ -626,7 +626,7 @@ export type OutputTokenDetails = {
    * OpenAI's o1 models) that are not returned as part of model output.
    */
   reasoning?: number;
-};
+} & Record<string, number>;
 
 /**
  * Usage metadata for a message, such as token counts.

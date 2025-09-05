@@ -151,7 +151,7 @@ def test_metadata_parameter():
 
 
 @pytest.mark.langsmith(
-    metadata={"test_type": "metadata_test_async", "custom_key": "custom_value_async"}
+    metadata={"test_type": "metadata_test_asyncy", "custom_key": "custom_value_async"}
 )
 async def test_metadata_parameter_async():
     """Test that metadata parameter is properly passed to the decorator."""
@@ -178,6 +178,18 @@ def test_repetitions_parameter():
     t.log_reference_outputs({"sum": 15})
 
     assert result == 15
+
+
+@pytest.mark.langsmith(split="test_split")
+def test_split_parameter():
+    """Test that split parameter causes test to run multiple times."""
+    x = "test_split"
+    t.log_inputs({"split": x})
+
+    t.log_outputs({"foo": "foo"})
+    t.log_reference_outputs({"foo": "foo"})
+
+    assert x == "test_split"
 
 
 @pytest.mark.langsmith(repetitions=3)

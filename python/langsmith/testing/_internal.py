@@ -69,6 +69,9 @@ def test(
     output_keys: Optional[Sequence[str]] = None,
     client: Optional[ls_client.Client] = None,
     test_suite_name: Optional[str] = None,
+    metadata: Optional[dict] = None,
+    repetitions: Optional[int] = None,
+    split: Optional[Union[str | list[str]]] = None,
     cached_hosts: Optional[Sequence[str]] = None,
 ) -> Callable[[Callable], Callable]: ...
 
@@ -340,6 +343,7 @@ def test(*args: Any, **kwargs: Any) -> Callable:
         cache=cache_dir,
         metadata=kwargs.pop("metadata", None),
         repetitions=kwargs.pop("repetitions", None),
+        split=kwargs.pop("split", None),
         cached_hosts=cached_hosts,
     )
     if kwargs:
@@ -620,6 +624,7 @@ class _LangSmithTestSuite:
         inputs: Optional[dict] = None,
         outputs: Optional[dict] = None,
         metadata: Optional[dict] = None,
+        split: Optional[Union[str, list[str]]] = None,
         pytest_plugin=None,
         pytest_nodeid=None,
     ) -> None:
@@ -640,20 +645,32 @@ class _LangSmithTestSuite:
                 outputs=outputs,
                 dataset_id=self.id,
                 metadata=metadata,
+                split=split,
                 created_at=self._experiment.start_time,
             )
         else:
+            normalized_split = split
+            if isinstance(normalized_split, str):
+                normalized_split = [normalized_split]
+            if normalized_split and metadata:
+                metadata["dataset_split"] = normalized_split
+            existing_dataset_split = (example.metadata or {}).pop("dataset_split")
             if (
                 (inputs != example.inputs)
                 or (outputs is not None and outputs != example.outputs)
                 or (metadata is not None and metadata != example.metadata)
                 or str(example.dataset_id) != str(self.id)
+                or (
+                    normalized_split is not None
+                    and existing_dataset_split != normalized_split
+                )
             ):
                 self.client.update_example(
                     example_id=example.id,
                     inputs=inputs,
                     outputs=outputs,
                     metadata=metadata,
+                    split=split,
                     dataset_id=self.id,
                 )
                 example = self.client.read_example(example_id=example.id)
@@ -700,6 +717,7 @@ class _LangSmithTestSuite:
         outputs,
         reference_outputs,
         metadata,
+        split,
         pytest_plugin=None,
         pytest_nodeid=None,
     ) -> Future:
@@ -710,6 +728,7 @@ class _LangSmithTestSuite:
             outputs=outputs,
             reference_outputs=reference_outputs,
             metadata=metadata,
+            split=split,
             pytest_plugin=pytest_plugin,
             pytest_nodeid=pytest_nodeid,
         )
@@ -721,6 +740,7 @@ class _LangSmithTestSuite:
         outputs,
         reference_outputs,
         metadata,
+        split,
         pytest_plugin,
         pytest_nodeid,
     ) -> None:
@@ -730,6 +750,7 @@ class _LangSmithTestSuite:
             example_id,
             inputs=run_tree.inputs,
             outputs=reference_outputs,
+            split=split,
             metadata=metadata,
         )
         run_tree.end(outputs=outputs)
@@ -743,6 +764,7 @@ class _TestCase:
         example_id: uuid.UUID,
         run_id: uuid.UUID,
         metadata: Optional[dict] = None,
+        split: Optional[Union[str, list[str]]] = None,
         pytest_plugin: Any = None,
         pytest_nodeid: Any = None,
         inputs: Optional[dict] = None,
@@ -752,6 +774,7 @@ class _TestCase:
         self.example_id = example_id
         self.run_id = run_id
         self.metadata = metadata
+        self.split = split
         self.pytest_plugin = pytest_plugin
         self.pytest_nodeid = pytest_nodeid
         self.inputs = inputs
@@ -769,13 +792,18 @@ class _TestCase:
                 self.log_reference_outputs(reference_outputs)
 
     def sync_example(
-        self, *, inputs: Optional[dict] = None, outputs: Optional[dict] = None
+        self,
+        *,
+        inputs: Optional[dict] = None,
+        outputs: Optional[dict] = None,
+        split: Optional[Union[str, list[str]]] = None,
     ) -> None:
         self.test_suite.sync_example(
             self.example_id,
             inputs=inputs,
             outputs=outputs,
             metadata=self.metadata,
+            split=split,
             pytest_plugin=self.pytest_plugin,
             pytest_nodeid=self.pytest_nodeid,
         )
@@ -846,6 +874,7 @@ class _TestCase:
             outputs,
             reference_outputs=self._logged_reference_outputs,
             metadata=self.metadata,
+            split=self.split,
             pytest_plugin=self.pytest_plugin,
             pytest_nodeid=self.pytest_nodeid,
         )
@@ -862,6 +891,7 @@ class _UTExtra(TypedDict, total=False):
     cache: Optional[str]
     metadata: Optional[dict]
     repetitions: Optional[int]
+    split: Optional[Union[str, list[str]]]
     cached_hosts: Optional[Sequence[str]]
 
 
@@ -875,6 +905,7 @@ def _create_test_case(
     client = langtest_extra["client"] or rt.get_cached_client()
     output_keys = langtest_extra["output_keys"]
     metadata = langtest_extra["metadata"]
+    split = langtest_extra["split"]
     signature = inspect.signature(func)
     inputs = rh._get_inputs_safe(signature, *args, **kwargs) or None
     outputs = None
@@ -910,6 +941,7 @@ def _create_test_case(
         example_id,
         run_id=uuid.uuid4(),
         metadata=metadata,
+        split=split,
         inputs=inputs,
         reference_outputs=outputs,
         pytest_plugin=pytest_plugin,

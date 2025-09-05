@@ -1,9 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable no-process-env */
-import { jest } from "@jest/globals";
-import { OpenAI } from "openai";
+import { AzureOpenAI, OpenAI } from "openai";
 import { wrapOpenAI } from "../wrappers/index.js";
-import { Client } from "../client.js";
 import { mockClient } from "./utils/mock_client.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 import { zodResponseFormat } from "openai/helpers/zod";
@@ -27,13 +25,13 @@ test("wrapOpenAI should return type compatible with OpenAI", async () => {
 });
 
 test("chat.completions", async () => {
-  const client = new Client({ autoBatchTracing: false });
-  const callSpy = jest
-    .spyOn((client as any).caller, "call")
-    .mockResolvedValue({ ok: true, text: () => "" });
+  const { client, callSpy } = mockClient();
 
   const originalClient = new OpenAI();
-  const patchedClient = wrapOpenAI(new OpenAI(), { client });
+  const patchedClient = wrapOpenAI(new OpenAI(), {
+    client,
+    tracingEnabled: true,
+  });
 
   // invoke
   const original = await originalClient.chat.completions.create({
@@ -94,14 +92,15 @@ test("chat.completions", async () => {
   }
 
   expect(patchedChoices).toEqual(originalChoices);
+
   expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
 
   // Verify token events were logged
   const patchCalls = callSpy.mock.calls.filter(
-    (call) => (call[2] as any).method === "PATCH"
+    (call) => (call[1] as any).method === "PATCH"
   );
   const lastPatchCall = patchCalls[patchCalls.length - 1];
-  const body = parseRequestBody((lastPatchCall[2] as any).body);
+  const body = parseRequestBody((lastPatchCall[1] as any).body);
 
   expect(body.events).toBeDefined();
   const tokenEvents = body.events.filter(
@@ -116,7 +115,7 @@ test("chat.completions", async () => {
   });
 
   for (const call of callSpy.mock.calls) {
-    expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);
+    expect(["POST", "PATCH"]).toContain((call[1] as any)["method"]);
   }
   callSpy.mockClear();
 
@@ -135,7 +134,7 @@ test("chat.completions", async () => {
 
   expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
   for (const call of callSpy.mock.calls) {
-    expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);
+    expect(["POST", "PATCH"]).toContain((call[1] as any)["method"]);
   }
   callSpy.mockClear();
 
@@ -167,20 +166,19 @@ test("chat.completions", async () => {
   expect(patchedChoices2).toEqual(originalChoices);
   expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
   for (const call of callSpy.mock.calls) {
-    expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);
+    expect(["POST", "PATCH"]).toContain((call[1] as any)["method"]);
   }
   callSpy.mockClear();
 });
 
 test("chat completions with tool calling", async () => {
-  const client = new Client({ autoBatchTracing: false });
-  const callSpy = jest
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .spyOn((client as any).caller, "call")
-    .mockResolvedValue({ ok: true, text: () => "" });
+  const { client, callSpy } = mockClient();
 
   const originalClient = new OpenAI();
-  const patchedClient = wrapOpenAI(new OpenAI(), { client });
+  const patchedClient = wrapOpenAI(new OpenAI(), {
+    client,
+    tracingEnabled: true,
+  });
   const removeToolCallId = (
     choices:
       | OpenAI.ChatCompletion.Choice[]
@@ -308,10 +306,10 @@ test("chat completions with tool calling", async () => {
 
   // Verify token events were logged for tool calling stream
   const patchCalls = callSpy.mock.calls.filter(
-    (call) => (call[2] as any).method === "PATCH"
+    (call) => (call[1] as any).method === "PATCH"
   );
   const lastPatchCall = patchCalls[patchCalls.length - 1];
-  const body = parseRequestBody((lastPatchCall[2] as any).body);
+  const body = parseRequestBody((lastPatchCall[1] as any).body);
 
   expect(body.events).toBeDefined();
   const tokenEvents = body.events.filter(
@@ -327,7 +325,7 @@ test("chat completions with tool calling", async () => {
 
   for (const call of callSpy.mock.calls) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);
+    expect(["POST", "PATCH"]).toContain((call[1] as any)["method"]);
   }
   callSpy.mockClear();
 
@@ -368,8 +366,8 @@ test("chat completions with tool calling", async () => {
   expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
   for (const call of callSpy.mock.calls) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);
-    const body = parseRequestBody((call[2] as any).body);
+    expect(["POST", "PATCH"]).toContain((call[1] as any)["method"]);
+    const body = parseRequestBody((call[1] as any).body);
     expect(body.extra.metadata).toMatchObject({
       thing1: "thing2",
       ls_model_name: "gpt-4.1-nano",
@@ -382,13 +380,12 @@ test("chat completions with tool calling", async () => {
 });
 
 test("completions", async () => {
-  const client = new Client({ autoBatchTracing: false });
-  const callSpy = jest
-    .spyOn((client as any).caller, "call")
-    .mockResolvedValue({ ok: true, text: () => "" });
-
+  const { client, callSpy } = mockClient();
   const originalClient = new OpenAI();
-  const patchedClient = wrapOpenAI(new OpenAI(), { client });
+  const patchedClient = wrapOpenAI(new OpenAI(), {
+    client,
+    tracingEnabled: true,
+  });
 
   const prompt = `Say 'Hi I'm ChatGPT' then stop.`;
 
@@ -445,7 +442,7 @@ test("completions", async () => {
   expect(patchedChoices).toEqual(originalChoices);
   expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
   for (const call of callSpy.mock.calls) {
-    expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);
+    expect(["POST", "PATCH"]).toContain((call[1] as any)["method"]);
   }
 
   const patchedStream2 = await patchedClient.completions.create(
@@ -476,7 +473,7 @@ test("completions", async () => {
   expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
   for (const call of callSpy.mock.calls) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);
+    expect(["POST", "PATCH"]).toContain((call[1] as any)["method"]);
   }
 });
 
@@ -528,6 +525,7 @@ test("chat extra name", async () => {
 
   const openai = wrapOpenAI(new OpenAI(), {
     client,
+    tracingEnabled: true,
   });
 
   await openai.chat.completions.create(
@@ -593,6 +591,7 @@ test("chat.completions.parse", async () => {
 
   const openai = wrapOpenAI(new OpenAI(), {
     client,
+    tracingEnabled: true,
   });
 
   await openai.chat.completions.parse({
@@ -614,8 +613,8 @@ test("chat.completions.parse", async () => {
 
   for (const call of callSpy.mock.calls) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);
-    const body = parseRequestBody((call[2] as any).body);
+    expect(["POST", "PATCH"]).toContain((call[1] as any)["method"]);
+    const body = parseRequestBody((call[1] as any).body);
     expect(body.extra.metadata).toMatchObject({
       ls_model_name: "gpt-4.1-nano",
       ls_model_type: "chat",
@@ -631,6 +630,7 @@ test("responses.create and retrieve workflow", async () => {
 
   const openai = wrapOpenAI(new OpenAI(), {
     client,
+    tracingEnabled: true,
   });
 
   // Create a response (this should be traced)
@@ -649,7 +649,7 @@ test("responses.create and retrieve workflow", async () => {
 
   // Verify that create was traced
   const createCalls = callSpy.mock.calls.filter(
-    (call) => (call[2] as any).method === "POST"
+    (call) => (call[1] as any).method === "POST"
   );
   expect(createCalls.length).toBeGreaterThanOrEqual(1);
 
@@ -666,7 +666,7 @@ test("responses.create and retrieve workflow", async () => {
 
   // Verify the create call had proper metadata
   for (const call of createCalls) {
-    const body = parseRequestBody((call[2] as any).body);
+    const body = parseRequestBody((call[1] as any).body);
     expect(body.extra.metadata).toMatchObject({
       ls_model_name: "gpt-4.1-nano",
       ls_model_type: "llm",
@@ -682,6 +682,7 @@ test("responses.create streaming", async () => {
 
   const openai = wrapOpenAI(new OpenAI(), {
     client,
+    tracingEnabled: true,
   });
 
   const stream = await openai.responses.create({
@@ -705,10 +706,10 @@ test("responses.create streaming", async () => {
 
   // Verify token events were logged
   const patchCalls = callSpy.mock.calls.filter(
-    (call) => (call[2] as any).method === "PATCH"
+    (call) => (call[1] as any).method === "PATCH"
   );
   const lastPatchCall = patchCalls[patchCalls.length - 1];
-  const body = parseRequestBody((lastPatchCall[2] as any).body);
+  const body = parseRequestBody((lastPatchCall[1] as any).body);
 
   expect(body.events).toBeDefined();
   const tokenEvents = body.events.filter(
@@ -718,8 +719,8 @@ test("responses.create streaming", async () => {
 
   for (const call of callSpy.mock.calls) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect(["POST", "PATCH"]).toContain((call[2] as any)["method"]);
-    const body = parseRequestBody((call[2] as any).body);
+    expect(["POST", "PATCH"]).toContain((call[1] as any)["method"]);
+    const body = parseRequestBody((call[1] as any).body);
     expect(body.extra.metadata).toMatchObject({
       ls_model_name: "gpt-4.1-nano",
       ls_model_type: "llm",
@@ -760,6 +761,7 @@ test("chat.completions other methods (untraced)", async () => {
 
   const openai = wrapOpenAI(new OpenAI(), {
     client,
+    tracingEnabled: true,
   });
 
   // Test that all chat.completions methods exist and are preserved
@@ -788,6 +790,7 @@ test("beta methods preserved", async () => {
 
   const openai = wrapOpenAI(new OpenAI(), {
     client,
+    tracingEnabled: true,
   });
 
   // Test that beta namespace is preserved
@@ -855,11 +858,65 @@ const usageMetadataTestCases = [
     expectUsageMetadata: true,
     checkReasoningTokens: true,
   },
+  // just test flex as priority can randomly downgrade
+  {
+    description: "flex service tier",
+    params: {
+      model: "gpt-5-nano",
+      messages: [{ role: "user", content: "howdy" }],
+      service_tier: "flex",
+    },
+    expectUsageMetadata: true,
+    checkServiceTier: "flex",
+  },
 ];
+
+test("Azure OpenAI provider detection", async () => {
+  if (!process.env.AZURE_OPENAI_API_KEY) {
+    return;
+  }
+  const { client, callSpy } = mockClient();
+
+  const azureClient = new AzureOpenAI({
+    apiKey: process.env.AZURE_OPENAI_API_KEY,
+    apiVersion: process.env.AZURE_OPENAI_API_VERSION,
+    endpoint: process.env.AZURE_OPENAI_ENDPOINT,
+  });
+
+  const patchedClient = wrapOpenAI(azureClient, {
+    client,
+    tracingEnabled: true,
+  });
+
+  await patchedClient.chat.completions.create({
+    messages: [{ role: "user", content: "Say 'hello'" }],
+    temperature: 0,
+    seed: 42,
+    model: "gpt-4o-mini",
+  });
+
+  expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
+
+  // Check that the provider is set to "azure_openai" in the request
+  for (const call of callSpy.mock.calls) {
+    const body = parseRequestBody((call[1] as any).body);
+    if (body.extra && body.extra.metadata) {
+      expect(body.extra.metadata.ls_provider).toBe("azure");
+    }
+  }
+
+  callSpy.mockClear();
+});
 
 describe("Usage Metadata Tests", () => {
   usageMetadataTestCases.forEach(
-    ({ description, params, expectUsageMetadata, checkReasoningTokens }) => {
+    ({
+      description,
+      params,
+      expectUsageMetadata,
+      checkReasoningTokens,
+      checkServiceTier,
+    }) => {
       it(`should handle ${description}`, async () => {
         const { client, callSpy } = mockClient();
         const openai = wrapOpenAI(new OpenAI(), {
@@ -889,7 +946,7 @@ describe("Usage Metadata Tests", () => {
         let usageMetadata: UsageMetadata | undefined;
         const requestBodies: any = {};
         for (const call of callSpy.mock.calls) {
-          const request = call[2] as any;
+          const request = call[1] as any;
           const requestBody = parseRequestBody(request.body);
           if (request.method === "POST") {
             requestBodies["post"] = [requestBody];
@@ -922,6 +979,23 @@ describe("Usage Metadata Tests", () => {
             expect(usageMetadata!.output_token_details!.reasoning).toEqual(
               oaiUsage!.completion_tokens_details?.reasoning_tokens
             );
+          }
+
+          if (checkServiceTier) {
+            expect(usageMetadata!.input_token_details).not.toBeUndefined();
+            expect(usageMetadata!.output_token_details).not.toBeUndefined();
+            expect(
+              usageMetadata?.input_token_details?.[checkServiceTier]
+            ).not.toBeUndefined();
+            expect(
+              usageMetadata?.output_token_details?.[checkServiceTier]
+            ).not.toBeUndefined();
+            expect(
+              usageMetadata?.input_token_details?.[checkServiceTier]
+            ).toBeGreaterThan(0);
+            expect(
+              usageMetadata?.output_token_details?.[checkServiceTier]
+            ).toBeGreaterThan(0);
           }
         } else {
           expect(usageMetadata).toBeUndefined();

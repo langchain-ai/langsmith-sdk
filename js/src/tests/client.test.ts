@@ -482,4 +482,217 @@ describe("Client", () => {
       expect(patchTraceIds.has(traceIds[3])).toBe(false);
     });
   });
+
+  describe("Workspace Support", () => {
+    // eslint-disable-next-line no-process-env
+    const originalEnv = process.env;
+
+    beforeEach(() => {
+      jest.resetModules();
+      // eslint-disable-next-line no-process-env
+      process.env = { ...originalEnv };
+    });
+
+    afterEach(() => {
+      // eslint-disable-next-line no-process-env
+      process.env = originalEnv;
+    });
+
+    it("should read workspaceId from environment variable", () => {
+      // eslint-disable-next-line no-process-env
+      process.env.LANGSMITH_WORKSPACE_ID = "env-workspace-id";
+      const client = new Client();
+      expect((client as any).workspaceId).toBe("env-workspace-id");
+    });
+
+    it("should prioritize config over environment variable", () => {
+      // eslint-disable-next-line no-process-env
+      process.env.LANGSMITH_WORKSPACE_ID = "env-workspace-id";
+      const client = new Client({ workspaceId: "config-workspace-id" });
+      expect((client as any).workspaceId).toBe("config-workspace-id");
+    });
+
+    describe("E2E Workspace Tests", () => {
+      it("should include workspace ID in headers when making API calls", async () => {
+        // set env vars
+        // eslint-disable-next-line no-process-env
+        process.env.LANGSMITH_API_KEY = "test-api-key";
+        // eslint-disable-next-line no-process-env
+        process.env.LANGSMITH_WORKSPACE_ID = "test-workspace-id";
+
+        // Create mock fetch function
+        const mockFetch = jest.fn().mockImplementation(async () => ({
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          json: async () => ({ id: "run-123", name: "test-run" }),
+          text: async () => '{"id":"run-123","name":"test-run"}',
+        }));
+
+        const client = new Client({
+          fetchImplementation: mockFetch as any,
+        });
+
+        // API call
+        await client.createRun({
+          name: "test-run",
+          run_type: "llm",
+          inputs: { text: "hello" },
+        });
+
+        // Verify the call was made with correct headers
+        expect(mockFetch).toHaveBeenCalledWith(
+          expect.stringContaining("/runs"),
+          expect.objectContaining({
+            method: "POST",
+            headers: expect.objectContaining({
+              "x-tenant-id": "test-workspace-id",
+              "x-api-key": "test-api-key",
+            }),
+          })
+        );
+
+        // eslint-disable-next-line no-process-env
+        delete process.env.LANGSMITH_API_KEY;
+        // eslint-disable-next-line no-process-env
+        delete process.env.LANGSMITH_WORKSPACE_ID;
+      });
+
+      it("should handle org-scoped key error and throw workspace validation error", async () => {
+        // Create mock fetch function that returns 403 with org-scoped error
+        const mockFetch = jest.fn().mockImplementation(async () => ({
+          ok: false,
+          status: 403,
+          statusText: "Forbidden",
+          json: async () => ({ error: "org_scoped_key_requires_workspace" }),
+          text: async () => '{"error":"org_scoped_key_requires_workspace"}',
+        }));
+
+        const client = new Client({
+          apiKey: "org-scoped-key",
+          fetchImplementation: mockFetch as any,
+        });
+
+        // call API without workspace - should fail with workspace validation error
+        await expect(
+          client.createRun({
+            name: "test-run",
+            run_type: "llm",
+            inputs: { text: "hello" },
+          })
+        ).rejects.toThrow("403 Forbidden");
+
+        expect(mockFetch).toHaveBeenCalled();
+      });
+
+      it("should handle other 403 errors without throwing workspace validation error", async () => {
+        // Create mock fetch function that returns 403 with different error
+        const mockFetch = jest.fn().mockImplementation(async () => ({
+          ok: false,
+          status: 403,
+          statusText: "Forbidden",
+          json: async () => ({ error: "insufficient_permissions" }),
+          text: async () => '{"error":"insufficient_permissions"}',
+        }));
+
+        const client = new Client({
+          apiKey: "test-key",
+          fetchImplementation: mockFetch as any,
+        });
+
+        // call API - should fail with regular error
+        await expect(
+          client.createRun({
+            name: "test-run",
+            run_type: "llm",
+            inputs: { text: "hello" },
+          })
+        ).rejects.toThrow("Failed to create run");
+
+        expect(mockFetch).toHaveBeenCalled();
+      });
+
+      it("should work correctly when workspace is provided in options", async () => {
+        // Create mock fetch function
+        const mockFetch = jest.fn().mockImplementation(async () => ({
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          json: async () => ({ id: "run-123", name: "test-run" }),
+          text: async () => '{"id":"run-123","name":"test-run"}',
+        }));
+
+        const client = new Client({
+          apiKey: "org-scoped-key",
+          fetchImplementation: mockFetch as any,
+        });
+
+        // call with workspace ID in options should succeed
+        await client.createRun(
+          {
+            name: "test-run",
+            run_type: "llm",
+            inputs: { text: "hello" },
+          },
+          { workspaceId: "test-workspace-id" }
+        );
+
+        // check call was made with correct headers
+        expect(mockFetch).toHaveBeenCalledWith(
+          expect.stringContaining("/runs"),
+          expect.objectContaining({
+            method: "POST",
+            headers: expect.objectContaining({
+              "x-tenant-id": "test-workspace-id",
+            }),
+          })
+        );
+      });
+
+      it("should handle multiple API calls with different workspace configurations", async () => {
+        // Create mock fetch function
+        const mockFetch = jest.fn().mockImplementation(async () => ({
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          json: async () => ({ id: "run-123", name: "test-run" }),
+          text: async () => '{"id":"run-123","name":"test-run"}',
+        }));
+
+        const client = new Client({
+          apiKey: "test-api-key",
+          workspaceId: "default-workspace-id",
+          fetchImplementation: mockFetch as any,
+        });
+
+        // first call uses default workspace
+        await client.createRun({
+          name: "test-run",
+          run_type: "llm",
+          inputs: { text: "hello" },
+        });
+
+        // second call overrides workspace
+        await client.updateRun(
+          "550e8400-e29b-41d4-a716-446655440000",
+          {
+            outputs: { result: "updated" },
+          },
+          { workspaceId: "override-workspace-id" }
+        );
+
+        expect(mockFetch).toHaveBeenCalledTimes(2);
+
+        const firstCall = mockFetch.mock.calls[0];
+        const secondCall = mockFetch.mock.calls[1];
+
+        expect((firstCall[1] as any).headers["x-tenant-id"]).toBe(
+          "default-workspace-id"
+        );
+        expect((secondCall[1] as any).headers["x-tenant-id"]).toBe(
+          "override-workspace-id"
+        );
+      });
+    });
+  });
 });

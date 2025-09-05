@@ -94,9 +94,15 @@ from langsmith._internal._operations import (
 from langsmith._internal._serde import dumps_json as _dumps_json
 from langsmith.schemas import AttachmentInfo
 
-HAS_OTEL = False
-try:
-    if ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED")):
+
+def _check_otel_enabled() -> bool:
+    """Check if OTEL is enabled and imports are available."""
+    return ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED"))
+
+
+def _import_otel():
+    """Dynamically import OTEL modules when needed."""
+    try:
         from opentelemetry import trace as otel_trace  # type: ignore[import]
         from opentelemetry.trace import set_span_in_context  # type: ignore[import]
 
@@ -105,11 +111,12 @@ try:
         )
         from langsmith._internal.otel._otel_exporter import OTELExporter
 
-        HAS_OTEL = True
-except ImportError:
-    raise ImportError(
-        "To use OTEL tracing, you must install it with `pip install langsmith[otel]`"
-    )
+        return otel_trace, set_span_in_context, get_otlp_tracer_provider, OTELExporter
+    except ImportError:
+        raise ImportError(
+            "To use OTEL tracing, you must install it with `pip install langsmith[otel]`"
+        )
+
 
 try:
     from zoneinfo import ZoneInfo  # type: ignore[import-not-found]
@@ -132,6 +139,15 @@ if TYPE_CHECKING:
     from langchain_core.runnables import Runnable
 
     from langsmith import schemas
+
+    # OTEL imports for type hints
+    try:
+        from opentelemetry import trace as otel_trace  # type: ignore[import]
+
+        from langsmith._internal.otel._otel_exporter import OTELExporter
+    except ImportError:
+        otel_trace = Any  # type: ignore[assignment, misc]
+        OTELExporter = Any  # type: ignore[assignment, misc]
     from langsmith.evaluation import evaluator as ls_evaluator
     from langsmith.evaluation._arunner import (
         AEVALUATOR_T,
@@ -266,8 +282,10 @@ def _validate_api_key_if_hosted(api_url: str, api_key: Optional[str]) -> None:
     """
     # If the domain is langchain.com, raise error if no api_key
     if not api_key:
-        if _is_langchain_hosted(api_url) and not ls_utils.is_truish(
-            ls_utils.get_env_var("OTEL_ENABLED")
+        if (
+            _is_langchain_hosted(api_url)
+            and not ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED"))
+            and ls_utils.tracing_is_enabled()
         ):
             warnings.warn(
                 "API key must be provided when using hosted LangSmith API",
@@ -399,6 +417,7 @@ class Client:
         "__weakref__",
         "api_url",
         "_api_key",
+        "_workspace_id",
         "_headers",
         "retry_config",
         "timeout_ms",
@@ -429,6 +448,9 @@ class Client:
         "_run_ops_buffer",
         "_run_ops_buffer_lock",
         "otel_exporter",
+        "_otel_trace",
+        "_set_span_in_context",
+        "_max_batch_size_bytes",
     ]
 
     _api_key: Optional[str]
@@ -458,7 +480,10 @@ class Client:
         info: Optional[Union[dict, ls_schemas.LangSmithInfo]] = None,
         api_urls: Optional[dict[str, str]] = None,
         otel_tracer_provider: Optional[TracerProvider] = None,
+        otel_enabled: Optional[bool] = None,
         tracing_sampling_rate: Optional[float] = None,
+        workspace_id: Optional[str] = None,
+        max_batch_size_bytes: Optional[int] = None,
     ) -> None:
         """Initialize a Client instance.
 
@@ -510,6 +535,9 @@ class Client:
                 overrides the LANGCHAIN_TRACING_SAMPLING_RATE environment variable.
                 Should be a float between 0 and 1, where 1 means trace everything
                 and 0 means trace nothing.
+            workspace_id (Optional[str]): The workspace ID. Required for org-scoped API keys.
+            max_batch_size_bytes (Optional[int]): The maximum size of a batch of runs in bytes.
+                If not provided, the default is set by the server.
 
         Raises:
             LangSmithUserError: If the API key is not provided when using the hosted service.
@@ -533,6 +561,9 @@ class Client:
         self._write_api_urls: Mapping[str, Optional[str]] = _get_write_api_urls(
             api_urls
         )
+        # Initialize workspace attribute first
+        self._workspace_id = ls_utils.get_workspace_id(workspace_id)
+
         if self._write_api_urls:
             self.api_url = next(iter(self._write_api_urls))
             self.api_key = self._write_api_urls[self.api_url]
@@ -566,6 +597,7 @@ class Client:
         self._run_ops_buffer: list[tuple[str, dict]] = []
         self._run_ops_buffer_lock = threading.Lock()
         self.otel_exporter: Optional[OTELExporter] = None
+        self._max_batch_size_bytes = max_batch_size_bytes
 
         # Initialize auto batching
         if auto_batch_tracing:
@@ -665,33 +697,48 @@ class Client:
 
         self._manual_cleanup = False
 
-        if ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED")):
-            if not HAS_OTEL:
-                warnings.warn(
-                    "LANGSMITH_OTEL_ENABLED is set but OpenTelemetry packages are not installed. "
-                    "Install with `pip install langsmith[otel]`"
-                )
-            existing_provider = otel_trace.get_tracer_provider()
-            tracer = existing_provider.get_tracer(__name__)
-            if otel_tracer_provider is None:
-                # Use existing global provider if available
-                if not (
-                    isinstance(existing_provider, otel_trace.ProxyTracerProvider)
-                    and hasattr(tracer, "_tracer")
-                    and isinstance(
-                        cast(
-                            otel_trace.ProxyTracer,
-                            tracer,
-                        )._tracer,
-                        otel_trace.NoOpTracer,
-                    )
-                ):
-                    otel_tracer_provider = cast(TracerProvider, existing_provider)
-                else:
-                    otel_tracer_provider = get_otlp_tracer_provider()
-                    otel_trace.set_tracer_provider(otel_tracer_provider)
+        if _check_otel_enabled() or otel_enabled:
+            try:
+                (
+                    otel_trace,
+                    set_span_in_context,
+                    get_otlp_tracer_provider,
+                    OTELExporter,
+                ) = _import_otel()
 
-            self.otel_exporter = OTELExporter(tracer_provider=otel_tracer_provider)
+                existing_provider = otel_trace.get_tracer_provider()
+                tracer = existing_provider.get_tracer(__name__)
+                if otel_tracer_provider is None:
+                    # Use existing global provider if available
+                    if not (
+                        isinstance(existing_provider, otel_trace.ProxyTracerProvider)
+                        and hasattr(tracer, "_tracer")
+                        and isinstance(
+                            cast(
+                                otel_trace.ProxyTracer,  # type: ignore[attr-defined, name-defined]
+                                tracer,
+                            )._tracer,
+                            otel_trace.NoOpTracer,
+                        )
+                    ):
+                        otel_tracer_provider = cast(TracerProvider, existing_provider)
+                    else:
+                        otel_tracer_provider = get_otlp_tracer_provider()
+                        otel_trace.set_tracer_provider(otel_tracer_provider)
+
+                self.otel_exporter = OTELExporter(tracer_provider=otel_tracer_provider)
+
+                # Store imports for later use
+                self._otel_trace = otel_trace
+                self._set_span_in_context = set_span_in_context
+
+            except ImportError:
+                warnings.warn(
+                    "LANGSMITH_OTEL_ENABLED is set but OpenTelemetry packages are not installed: Install with `pip install langsmith[otel]"
+                )
+                self.otel_exporter = None
+        else:
+            self.otel_exporter = None
 
     def _repr_html_(self) -> str:
         """Return an HTML representation of the instance with a link to the URL.
@@ -726,7 +773,14 @@ class Client:
         }
         if self.api_key:
             headers[X_API_KEY] = self.api_key
+        if self._workspace_id:
+            headers["X-Tenant-Id"] = self._workspace_id
         return headers
+
+    def _set_header_affecting_attr(self, attr_name: str, value: Any) -> None:
+        """Set attributes that affect headers and recalculate them."""
+        object.__setattr__(self, attr_name, value)
+        object.__setattr__(self, "_headers", self._compute_headers())
 
     @property
     def api_key(self) -> Optional[str]:
@@ -735,8 +789,16 @@ class Client:
 
     @api_key.setter
     def api_key(self, value: Optional[str]) -> None:
-        object.__setattr__(self, "_api_key", value)
-        object.__setattr__(self, "_headers", self._compute_headers())
+        self._set_header_affecting_attr("_api_key", value)
+
+    @property
+    def workspace_id(self) -> Optional[str]:
+        """Return the workspace ID used for API requests."""
+        return self._workspace_id
+
+    @workspace_id.setter
+    def workspace_id(self, value: Optional[str]) -> None:
+        self._set_header_affecting_attr("_workspace_id", value)
 
     @property
     def info(self) -> ls_schemas.LangSmithInfo:
@@ -783,7 +845,7 @@ class Client:
         bic = info.batch_ingest_config
         if not bic:
             return None
-        size_limit = bic.get("size_limit_bytes")
+        size_limit = self._max_batch_size_bytes or bic.get("size_limit_bytes")
         if size_limit is None:
             return None
         if content_length > size_limit:
@@ -919,6 +981,22 @@ class Client:
                         elif response.status_code == 409:
                             raise ls_utils.LangSmithConflictError(
                                 f"Conflict for {pathname}. {repr(e)}{_context}"
+                            )
+                        elif response.status_code == 403:
+                            try:
+                                error_data = response.json()
+                                error_code = error_data.get("error", "")
+                                if error_code == "org_scoped_key_requires_workspace":
+                                    raise ls_utils.LangSmithUserError(
+                                        "This API key is org-scoped and requires workspace specification. "
+                                        "Please provide 'workspace_id' parameter, "
+                                        "or set LANGSMITH_WORKSPACE_ID environment variable."
+                                    )
+                            except (ValueError, KeyError):
+                                pass
+                            raise ls_utils.LangSmithError(
+                                f"Failed to {method} {pathname} in LangSmith"
+                                f" API. {repr(e)}"
                             )
                         else:
                             raise ls_utils.LangSmithError(
@@ -1494,15 +1572,15 @@ class Client:
                     serialized_op.trace_id,
                     serialized_op.id,
                 )
-                if HAS_OTEL:
+                if self.otel_exporter is not None:
                     self.tracing_queue.put(
                         TracingQueueItem(
                             run_create["dotted_order"],
                             serialized_op,
                             api_key=api_key,
                             api_url=api_url,
-                            otel_context=set_span_in_context(
-                                otel_trace.get_current_span()
+                            otel_context=self._set_span_in_context(
+                                self._otel_trace.get_current_span()
                             ),
                         )
                     )
@@ -1690,9 +1768,11 @@ class Client:
 
         # send the requests in batches
         info = self.info
-        size_limit_bytes = (info.batch_ingest_config or {}).get(
-            "size_limit_bytes"
-        ) or _SIZE_LIMIT_BYTES
+        size_limit_bytes = (
+            self._max_batch_size_bytes
+            or (info.batch_ingest_config or {}).get("size_limit_bytes")
+            or _SIZE_LIMIT_BYTES
+        )
 
         body_chunks: collections.defaultdict[str, list] = collections.defaultdict(list)
         context_ids: collections.defaultdict[str, list] = collections.defaultdict(list)
@@ -2450,15 +2530,15 @@ class Client:
                     serialized_op.trace_id,
                     serialized_op.id,
                 )
-                if HAS_OTEL:
+                if self.otel_exporter is not None:
                     self.tracing_queue.put(
                         TracingQueueItem(
                             run_update["dotted_order"],
                             serialized_op,
                             api_key=api_key,
                             api_url=api_url,
-                            otel_context=set_span_in_context(
-                                otel_trace.get_current_span()
+                            otel_context=self._set_span_in_context(
+                                self._otel_trace.get_current_span()
                             ),
                         )
                     )
@@ -3568,9 +3648,11 @@ class Client:
         reference_dataset_id: Optional[ID_TYPE] = None,
         reference_dataset_name: Optional[str] = None,
         reference_free: Optional[bool] = None,
+        include_stats: Optional[bool] = None,
+        dataset_version: Optional[str] = None,
         limit: Optional[int] = None,
         metadata: Optional[dict[str, Any]] = None,
-    ) -> Iterator[ls_schemas.TracerSession]:
+    ) -> Iterator[ls_schemas.TracerSessionResult]:
         """List projects from the LangSmith API.
 
         Args:
@@ -3620,12 +3702,16 @@ class Client:
             params["reference_dataset"] = reference_dataset_id
         if reference_free is not None:
             params["reference_free"] = reference_free
+        if include_stats is not None:
+            params["include_stats"] = include_stats
+        if dataset_version is not None:
+            params["dataset_version"] = dataset_version
         if metadata is not None:
             params["metadata"] = json.dumps(metadata)
         for i, project in enumerate(
             self._get_paginated_list("/sessions", params=params)
         ):
-            yield ls_schemas.TracerSession(**project, _host_url=self._host_url)
+            yield ls_schemas.TracerSessionResult(**project, _host_url=self._host_url)
             if limit is not None and i + 1 >= limit:
                 break
 
