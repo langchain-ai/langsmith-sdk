@@ -848,7 +848,7 @@ export class Client implements LangSmithTracingClientInterface {
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
       });
-      await raiseForStatus(res, `Failed to fetch ${path}`);
+      await raiseForStatus(res, `fetch ${path}`);
       return res;
     });
     return response;
@@ -881,7 +881,7 @@ export class Client implements LangSmithTracingClientInterface {
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
         });
-        await raiseForStatus(res, `Failed to fetch ${path}`);
+        await raiseForStatus(res, `fetch ${path}`);
         return res;
       });
       const items: T[] = transform
@@ -917,7 +917,7 @@ export class Client implements LangSmithTracingClientInterface {
           ...this.fetchOptions,
           body,
         });
-        await raiseForStatus(res, `Failed to fetch ${path}`);
+        await raiseForStatus(res, `fetch ${path}`);
         return res;
       });
       const responseBody = await response.json();
