@@ -114,7 +114,7 @@ export async function raiseForStatus(
     }
   }
 
-  const fullMessage = `Failed to ${context}. Received status [${response.status}]: ${response.statusText}. Server response: ${errorBody}`;
+  const fullMessage = `Failed to ${context}. Received status [${response.status}]: ${response.statusText}. Message: ${errorBody}`;
 
   if (response.status === 409) {
     throw new LangSmithConflictError(fullMessage);
