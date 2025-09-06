@@ -3,6 +3,7 @@
 import logging
 import os
 from typing import Optional, cast
+from langsmith import utils as ls_utils
 
 logger = logging.getLogger(__name__)
 
@@ -89,13 +90,13 @@ def configure(
             )
             return False
 
-        api_key = api_key or os.environ.get("LANGSMITH_API_KEY")
+        api_key = api_key or ls_utils.get_api_key(None)
         if not api_key:
             return False
 
         from .processor import OtelSpanProcessor
 
-        project_name = project_name or os.environ.get("LANGSMITH_PROJECT")
+        project_name = project_name or ls_utils.get_tracer_project()
 
         processor = OtelSpanProcessor(
             api_key=api_key, project=project_name, SpanProcessor=SpanProcessor

@@ -6,6 +6,8 @@ import warnings
 from typing import Optional
 from urllib.parse import urljoin
 
+from langsmith import utils as ls_utils
+
 try:
     from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -65,7 +67,7 @@ class OtelExporter(OTLPSpanExporter):
 
     Environment Variables:
     - LANGSMITH_API_KEY: Your LangSmith API key.
-    - LANGSMITH_URL: Base URL for LangSmith API (defaults to https://api.smith.langchain.com).
+    - LANGSMITH_ENDPOINT: Base URL for LangSmith API (defaults to https://api.smith.langchain.com).
     - LANGSMITH_PROJECT: Project identifier.
     """
 
@@ -80,20 +82,20 @@ class OtelExporter(OTLPSpanExporter):
         """Initialize the OtelExporter.
 
         Args:
-            url: OTLP endpoint URL. Defaults to {LANGSMITH_URL}/otel/v1/traces.
+            url: OTLP endpoint URL. Defaults to {LANGSMITH_ENDPOINT}/otel/v1/traces.
             api_key: LangSmith API key. Defaults to LANGSMITH_API_KEY env var.
             parent: Parent identifier (e.g., "project_name:test").
                 Defaults to LANGSMITH_PARENT env var.
             headers: Additional headers to include in requests.
             **kwargs: Additional arguments passed to OTLPSpanExporter.
         """
-        base_url = os.environ.get("LANGSMITH_URL", "https://api.smith.langchain.com")
+        base_url = ls_utils.get_api_url(None)
         # Ensure base_url ends with / for proper joining
         if not base_url.endswith("/"):
             base_url += "/"
         endpoint = url or urljoin(base_url, "otel/v1/traces")
-        api_key = api_key or os.environ.get("LANGSMITH_API_KEY")
-        project = project or os.environ.get("LANGSMITH_PROJECT")
+        api_key = api_key or ls_utils.get_api_key(None)
+        project = project or ls_utils.get_tracer_project()
         headers = headers or {}
 
         if not api_key:
@@ -165,7 +167,7 @@ class OtelSpanProcessor:
         Args:
             api_key: LangSmith API key. Defaults to LANGSMITH_API_KEY env var.
             project: Project identifier. Defaults to LANGSMITH_PROJECT env var.
-            url: Base URL for LangSmith API. Defaults to LANGSMITH_URL env var
+            url: Base URL for LangSmith API. Defaults to LANGSMITH_ENDPOINT env var
                 or https://api.smith.langchain.com.
             headers: Additional headers to include in requests.
             SpanProcessor: Optional span processor class.
