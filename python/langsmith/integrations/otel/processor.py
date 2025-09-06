@@ -62,9 +62,6 @@ except ImportError:
 class OtelExporter(OTLPSpanExporter):
     """A subclass of OTLPSpanExporter configured for LangSmith.
 
-    For most use cases, consider using the Processor class instead, which provides
-    a more convenient all-in-one interface.
-
     Environment Variables:
     - LANGSMITH_API_KEY: Your LangSmith API key.
     - LANGSMITH_ENDPOINT: Base URL for LangSmith API (defaults to https://api.smith.langchain.com).
@@ -137,8 +134,8 @@ class OtelSpanProcessor:
 
     Examples:
         # Fresh OpenTelemetry setup (LangSmith only):
-        from langsmith.integrations.otel import init
-        init(api_key="your-key", project="your-project")
+        from langsmith.integrations.otel import configure
+        configure(api_key="your-key", project="your-project")
 
         # Add LangSmith to existing OpenTelemetry setup:
         from opentelemetry import trace
