@@ -1,7 +1,6 @@
 """OpenTelemetry span processor and exporter for LangSmith."""
 
 import logging
-import os
 import warnings
 from typing import Optional
 from urllib.parse import urljoin

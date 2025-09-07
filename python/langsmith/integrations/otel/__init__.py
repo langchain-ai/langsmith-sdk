@@ -1,13 +1,15 @@
 """OpenTelemetry integration for LangSmith."""
 
 import logging
-import os
 from typing import Optional, cast
+
 from langsmith import utils as ls_utils
+
+from .processor import OtelExporter, OtelSpanProcessor
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["configure"]
+__all__ = ["configure", "OtelSpanProcessor", "OtelExporter"]
 
 
 def configure(
@@ -21,11 +23,13 @@ def configure(
 
     Usage:
         >>> from langsmith.integrations.otel import configure
-        >>> configure(api_key="your-api-key", project_name="your-project")
+        >>> configure(  # doctest: +SKIP
+        ...     api_key="your-api-key", project_name="your-project"
+        ... )
 
         Using environment variables:
         >>> # Set LANGSMITH_API_KEY and LANGSMITH_PROJECT
-        >>> configure()  # Will use env vars
+        >>> configure()  # Will use env vars  # doctest: +SKIP
 
     WARNING: This function is only for when LangSmith is your ONLY OpenTelemetry source.
     It sets the global TracerProvider, which can only be done once per application.
@@ -93,8 +97,6 @@ def configure(
         api_key = api_key or ls_utils.get_api_key(None)
         if not api_key:
             return False
-
-        from .processor import OtelSpanProcessor
 
         project_name = project_name or ls_utils.get_tracer_project()
 
