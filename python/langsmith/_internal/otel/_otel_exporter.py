@@ -196,10 +196,18 @@ class OTELExporter:
                         op, run_info, otel_context_map.get(op.id)
                     )
                     if span:
-                        self._span_info[op.id] = {
-                            "span": span,
-                            "created_at": time.time(),
-                        }
+                        # Only store spans that are still active (not already ended)
+                        if hasattr(span, "is_recording") and span.is_recording():
+                            self._span_info[op.id] = {
+                                "span": span,
+                                "created_at": time.time(),
+                            }
+                            logger.debug(
+                                f"Created active span, total: {len(self._span_info)}"
+                            )
+                        else:
+                            # Span ended in _create_span_for_run (had end_time)
+                            logger.debug("completed span (not tracked - already ended)")
                 else:
                     self._update_span_for_run(op, run_info)
             except Exception as e:
@@ -362,6 +370,10 @@ class OTELExporter:
                     span.end()
                 # Remove the span info from our dictionary
                 del self._span_info[op.id]
+                logger.debug(f"Completed span, remaining spans: {len(self._span_info)}")
+            else:
+                # Span exists but no end_time - this is normal for ongoing operations
+                logger.debug("Updated span (no end_time yet)")
 
         except Exception as e:
             logger.exception(f"Failed to update span for run {op.id}: {e}")
@@ -388,10 +400,12 @@ class OTELExporter:
         ]
 
         if stale_span_ids:
-            logger.debug(f"Cleaning up {len(stale_span_ids)} stale spans")
+            logger.info(
+                f" LangSmith OTEL Cleanup: Removing {len(stale_span_ids)} stale spans"
+            )
 
-        for span_id in stale_span_ids:
-            self._remove_span(span_id)
+            for span_id in stale_span_ids:
+                self._remove_span(span_id)
 
     def _remove_span(self, span_id: uuid.UUID) -> None:
         """Remove a single span and clean up resources.
@@ -406,14 +420,29 @@ class OTELExporter:
         try:
             # End the orphaned span gracefully
             span = self._span_info[span_id]["span"]
-            if hasattr(span, "end"):
-                span.end()
 
-            # Remove from tracking
+            # Check if span is still active before ending it
+            if (
+                hasattr(span, "end")
+                and hasattr(span, "is_recording")
+                and span.is_recording()
+            ):
+                span.end()
+                logger.debug(f"Ended orphaned span {span_id}")
+            elif hasattr(span, "end"):
+                # Span already ended, just log it
+                logger.debug(f"Span {span_id} already ended, skipping end() call")
+
+            # Remove from tracking regardless
             del self._span_info[span_id]
 
         except Exception as e:
             logger.debug(f"Error removing span {span_id}: {e}")
+            # Still try to remove from tracking even if ending failed
+            try:
+                del self._span_info[span_id]
+            except KeyError:
+                pass
 
     def _extract_model_name(self, run_info: dict) -> Optional[str]:
         """Extract model name from run info.

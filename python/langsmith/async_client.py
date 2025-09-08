@@ -1514,14 +1514,15 @@ class AsyncClient:
             )
 
         try:
-            from langchain_core.load.dump import dumps
+            from langchain_core.load import dumps
         except ImportError:
             raise ImportError(
                 "The client.create_commit function requires the langchain-core"
                 "package to run.\nInstall with `pip install langchain-core`"
             )
 
-        json_object = dumps(object)
+        chain_to_push = ls_client.prep_obj_for_push(object)
+        json_object = dumps(chain_to_push)
         manifest_dict = json.loads(json_object)
 
         owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
@@ -1776,6 +1777,9 @@ class AsyncClient:
                     "lc_hub_commit_hash": prompt_object.commit_hash,
                 }
             )
+
+        # Transform 2-step RunnableSequence to 3-step for structured prompts
+        # See create_commit for the reverse transformation when pushing a prompt
         if (
             include_model
             and isinstance(prompt, RunnableSequence)

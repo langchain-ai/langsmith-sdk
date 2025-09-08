@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "langsmith"
-version = "0.4.23"
+version = "0.4.26"
 description = "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform."
 authors = [
     {name = "LangChain", email = "support@langchain.dev"},
@@ -14,7 +14,7 @@ readme = "README.md"
 requires-python = ">=3.9"
 keywords = [
     "langsmith",
-    "langchain", 
+    "langchain",
     "llm",
     "nlp",
     "language",
@@ -45,7 +45,7 @@ langsmith_pyo3 = ["langsmith-pyo3>=0.1.0rc2"]
 # Enabled via `pip install langsmith[otel]`
 otel = [
     "opentelemetry-sdk>=1.30.0",
-    "opentelemetry-api>=1.30.0", 
+    "opentelemetry-api>=1.30.0",
     "opentelemetry-exporter-otlp-proto-http>=1.30.0",
 ]
 
@@ -94,6 +94,9 @@ dev = [
     "opentelemetry-api>=1.34.1",
     "bump2version>=1.0.1",
     "openai-agents>=0.2.4",
+    "langchain-core>=0.3.75",
+    "langchain-openai>=0.3.32",
+    "langchain-anthropic>=0.3.19",
 ]
 
 # Linting dependencies

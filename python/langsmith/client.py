@@ -7012,7 +7012,9 @@ class Client:
             DeprecationWarning,
         )
         try:
-            from langchain.smith import arun_on_dataset as _arun_on_dataset
+            from langchain.smith import (  # type: ignore[import-not-found]
+                arun_on_dataset as _arun_on_dataset,
+            )
         except ImportError:
             raise ImportError(
                 "The client.arun_on_dataset function requires the langchain"
@@ -7354,14 +7356,14 @@ class Client:
             )
 
         try:
-            from langchain_core.load.dump import dumps
+            from langchain_core.load import dumps
         except ImportError:
             raise ImportError(
                 "The client.create_commit function requires the langchain-core"
                 "package to run.\nInstall with `pip install langchain-core`"
             )
 
-        json_object = dumps(object)
+        json_object = dumps(prep_obj_for_push(object))
         manifest_dict = json.loads(json_object)
 
         owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
@@ -7376,7 +7378,6 @@ class Client:
         )
 
         commit_hash = response.json()["commit"]["commit_hash"]
-
         return self._get_prompt_url(f"{prompt_owner_and_name}:{commit_hash}")
 
     def update_prompt(
@@ -7612,6 +7613,9 @@ class Client:
                     "lc_hub_commit_hash": prompt_object.commit_hash,
                 }
             )
+
+        # Transform 2-step RunnableSequence to 3-step for structured prompts
+        # See create_commit for the reverse transformation
         if (
             include_model
             and isinstance(prompt, RunnableSequence)
@@ -8427,3 +8431,52 @@ def dump_model(model) -> dict[str, Any]:
         return model.dict()
     else:
         raise TypeError("Unsupported model type")
+
+
+def prep_obj_for_push(obj: Any) -> Any:
+    """Format the object so its Prompt Hub compatible."""
+    try:
+        from langchain_core.prompts import ChatPromptTemplate
+        from langchain_core.prompts.structured import StructuredPrompt
+        from langchain_core.runnables import RunnableBinding, RunnableSequence
+    except ImportError:
+        raise ImportError(
+            "The client.create_commit function requires the langchain-core"
+            "package to run.\nInstall with `pip install langchain-core`"
+        )
+
+    # Transform 3-step RunnableSequence back to 2-step for structured prompts
+    # See pull_prompt for the forward transformation
+    chain_to_push = obj
+    if (
+        isinstance(obj, RunnableSequence)
+        and isinstance(obj.first, ChatPromptTemplate)
+        and isinstance(obj.steps[1], RunnableBinding)
+        and 2 <= len(obj.steps) <= 3
+    ):
+        prompt = obj.first
+        bound_model = obj.steps[1]
+        model = bound_model.bound
+        model_kwargs = bound_model.kwargs
+
+        # have a sequence like:
+        # ChatPromptTemplate | ChatModel.with_structured_output()
+        if (
+            not isinstance(prompt, StructuredPrompt)
+            and "ls_structured_output_format" in bound_model.kwargs
+        ):
+            output_format = bound_model.kwargs["ls_structured_output_format"]
+            prompt = StructuredPrompt(messages=prompt.messages, **output_format)
+
+        # have a sequence like: StructuredPrompt | RunnableBinding(bound=ChatModel)
+        if isinstance(prompt, StructuredPrompt):
+            structured_kwargs = (prompt | model).steps[1].kwargs  # type: ignore[attr-defined]
+            # remove the kwargs that are bound by with_structured_output()
+            bound_model.kwargs = {
+                k: v for k, v in model_kwargs.items() if k not in structured_kwargs
+            }
+            # Can't pipe with | syntax bc StructuredPrompt defines special piping
+            # behavior that'll cause bound_model.with_structured_output to be
+            # called.
+            chain_to_push = RunnableSequence(prompt, bound_model)
+    return chain_to_push

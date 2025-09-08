@@ -580,7 +580,7 @@ describe("Client", () => {
             run_type: "llm",
             inputs: { text: "hello" },
           })
-        ).rejects.toThrow("403 Forbidden");
+        ).rejects.toThrow("[403]: Forbidden");
 
         expect(mockFetch).toHaveBeenCalled();
       });
