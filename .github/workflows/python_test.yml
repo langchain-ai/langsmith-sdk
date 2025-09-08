@@ -14,7 +14,7 @@ on:
 
 jobs:
   format:
-    name: Check formatting
+    name: Lint 
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -30,6 +30,8 @@ jobs:
         run: uv sync --group dev --group lint
       - name: Check formatting
         run: uv run ruff format --check
+      - name: Lint
+        run: make lint
 
   build_and_test:
     runs-on: ubuntu-22.04
@@ -40,6 +42,7 @@ jobs:
           - "3.10"
           - "3.11"
           - "3.12"
+          - "3.13"
     defaults:
       run:
         working-directory: python
@@ -55,13 +58,11 @@ jobs:
       - name: Install dependencies
         run: |
           uv sync --group dev --group lint
-          uv pip install langchain langchain-core langchain_anthropic langchain_openai
+          uv pip install langchain 
       - name: Build ${{ matrix.python-version }}
         run: uv build
       - name: Check version alignment
         run: make check-version
-      - name: Lint ${{ matrix.python-version }}
-        run: make lint
       - name: Run Unit tests ${{ matrix.python-version }}
         run: make tests
         shell: bash

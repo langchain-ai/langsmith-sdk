@@ -104,7 +104,9 @@ class LLMEvaluator(RunEvaluator):
                 for the evaluation. Defaults to "openai".
         """
         try:
-            from langchain.chat_models import init_chat_model
+            from langchain.chat_models import (  # type: ignore[import-not-found]
+                init_chat_model,
+            )
         except ImportError as e:
             raise ImportError(
                 "LLMEvaluator requires langchain to be installed. "

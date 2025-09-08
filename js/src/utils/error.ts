@@ -91,24 +91,38 @@ export async function raiseForStatus(
       const errorData = await response.json();
       const errorCode = errorData?.error;
       if (errorCode === "org_scoped_key_requires_workspace") {
-        throw new Error(
+        errorBody =
           "This API key is org-scoped and requires workspace specification. " +
-            "Please provide 'workspaceId' parameter, " +
-            "or set LANGSMITH_WORKSPACE_ID environment variable."
-        );
+          "Please provide 'workspaceId' parameter, " +
+          "or set LANGSMITH_WORKSPACE_ID environment variable.";
       }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
-      throw new Error(`${response.status} ${response.statusText}`);
+      const errorWithStatus = new Error(
+        `${response.status} ${response.statusText}`
+      );
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (errorWithStatus as any).status = response?.status;
+      throw errorWithStatus;
     }
   }
-  errorBody = await response.text();
-  const fullMessage = `Failed to ${context}. Received status [${response.status}]: ${response.statusText}. Server response: ${errorBody}`;
+  if (errorBody === undefined) {
+    try {
+      errorBody = await response.text();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (e: any) {
+      errorBody = "";
+    }
+  }
+
+  const fullMessage = `Failed to ${context}. Received status [${response.status}]: ${response.statusText}. Message: ${errorBody}`;
 
   if (response.status === 409) {
     throw new LangSmithConflictError(fullMessage);
   }
 
   const err = new Error(fullMessage);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (err as any).status = response.status;
   throw err;
 }
