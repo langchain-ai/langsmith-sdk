@@ -2498,7 +2498,11 @@ class Client:
             self._pyo3_client.update_run(run_update)
         elif use_multipart:
             serialized_op = serialize_run_dict(operation="patch", payload=run_update)
-            if self.compressed_traces is not None:
+            if (
+                self.compressed_traces is not None
+                and api_key is None
+                and api_url is None
+            ):
                 (
                     multipart_form,
                     opened_files,
