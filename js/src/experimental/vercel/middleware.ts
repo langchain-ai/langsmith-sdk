@@ -51,10 +51,10 @@ const setUsageMetadataOnRunTree = (
   // Shim for AI SDK 4
   const inputTokens =
     result.usage?.inputTokens ??
-    (result.usage as Record<string, number>)?.promptTokens;
+    (result.usage as Record<string, number | undefined>)?.promptTokens;
   const outputTokens =
     result.usage?.outputTokens ??
-    (result.usage as Record<string, number>)?.completionTokens;
+    (result.usage as Record<string, number | undefined>)?.completionTokens;
   let totalTokens = result.usage?.totalTokens;
   if (
     typeof totalTokens !== "number" &&
