@@ -176,6 +176,22 @@ export const convertMessageToTracedFormat = (
       return part;
     });
     formattedMessage.content = newContent;
+  } else if (message.content == null && "text" in message) {
+    // AI SDK 4 shim
+    formattedMessage.content = message.text ?? "";
+    if (
+      "toolCalls" in message &&
+      Array.isArray(message.toolCalls) &&
+      !("tool_calls" in formattedMessage)
+    ) {
+      formattedMessage.tool_calls = message.toolCalls.map((toolCall) => {
+        return {
+          id: toolCall.toolCallId,
+          type: "function",
+          function: { name: toolCall.toolName, arguments: toolCall.args },
+        };
+      });
+    }
   }
   return formattedMessage;
 };

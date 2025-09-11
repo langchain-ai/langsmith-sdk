@@ -500,7 +500,7 @@ const wrapAISDK = <
             }
             const { content } = lastStep;
             return convertMessageToTracedFormat({
-              content,
+              content: content ?? outputs.outputs.text,
               role: "assistant",
             });
           } else {
@@ -657,8 +657,22 @@ const wrapAISDK = <
           if (outputs.outputs == null || typeof outputs.outputs !== "object") {
             return outputs;
           }
-          const content = await outputs.outputs.content;
-          if (content == null || typeof content !== "object") {
+          let content;
+          if ("content" in outputs.outputs && outputs.outputs.content != null) {
+            content = await outputs.outputs.content;
+          } else if (
+            "textPromise" in outputs.outputs &&
+            outputs.outputs.textPromise != null
+          ) {
+            // AI SDK 4 shim
+            content = await outputs.outputs.text;
+          } else {
+            return outputs;
+          }
+          if (
+            content == null ||
+            !["object", "string"].includes(typeof content)
+          ) {
             return outputs;
           }
           return convertMessageToTracedFormat({
