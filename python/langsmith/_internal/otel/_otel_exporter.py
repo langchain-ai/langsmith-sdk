@@ -224,10 +224,7 @@ class OTELExporter:
             failed.
         """
         try:
-            run_info = _orjson.loads(op._none)
-
-            # convert run_info to a Run Schema
-            return run_info
+            return op.deserialize_run_info()
         except Exception as e:
             logger.exception(f"Failed to deserialize run info for {op.id}: {e}")
             return None

@@ -96,6 +96,20 @@ class SerializedRunOperation:
                 if isinstance(data_or_path, bytes):
                     size += len(data_or_path)
         return size
+    
+    def deserialize_run_info(self) -> dict:
+        """Deserialize the main run info (_none and extra, error and serialized)."""
+        run_info = _orjson.loads(self._none)
+        if self.extra is not None:
+            run_info["extra"] = _orjson.loads(self.extra)
+        
+        if self.error is not None:
+            run_info["error"] = _orjson.loads(self.error)
+        
+        if self.serialized is not None:
+            run_info["serialized"] = _orjson.loads(self.serialized)
+
+        return run_info
 
     def __eq__(self, other: object) -> bool:
         return isinstance(other, SerializedRunOperation) and (
