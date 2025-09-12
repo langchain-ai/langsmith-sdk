@@ -69,6 +69,7 @@ test("wrap generateText with flex service tier", async () => {
   expect(result.text.length).toBeGreaterThan(0);
   expect(result.usage).toBeDefined();
   expect(result.providerMetadata).toBeDefined();
+  await client.awaitPendingTraceBatches();
   const patchBodies = await Promise.all(
     callSpy.mock.calls
       .filter((call) => call[1]!.method === "PATCH")

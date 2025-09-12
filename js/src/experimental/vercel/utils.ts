@@ -139,15 +139,18 @@ export const convertMessageToTracedFormat = (
         }
       ) as ToolCallPart[];
       const toolCalls = toolCallBlocks.map((block) => {
+        // AI SDK 4 shim
+        let toolArgs =
+          block.input ?? (("args" in block && block.args) || undefined);
+        if (typeof toolArgs !== "string") {
+          toolArgs = JSON.stringify(toolArgs);
+        }
         return {
           id: block.toolCallId,
           type: "function",
           function: {
             name: block.toolName,
-            arguments:
-              typeof block.input !== "string"
-                ? JSON.stringify(block.input)
-                : block.input,
+            arguments: toolArgs,
           },
         };
       });
@@ -176,6 +179,22 @@ export const convertMessageToTracedFormat = (
       return part;
     });
     formattedMessage.content = newContent;
+  } else if (message.content == null && "text" in message) {
+    // AI SDK 4 shim
+    formattedMessage.content = message.text ?? "";
+    if (
+      "toolCalls" in message &&
+      Array.isArray(message.toolCalls) &&
+      !("tool_calls" in formattedMessage)
+    ) {
+      formattedMessage.tool_calls = message.toolCalls.map((toolCall) => {
+        return {
+          id: toolCall.toolCallId,
+          type: "function",
+          function: { name: toolCall.toolName, arguments: toolCall.args },
+        };
+      });
+    }
   }
   return formattedMessage;
 };
