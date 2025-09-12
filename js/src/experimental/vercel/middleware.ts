@@ -48,10 +48,25 @@ const setUsageMetadataOnRunTree = (
   if (result.usage == null || typeof result.usage !== "object") {
     return;
   }
+  // Shim for AI SDK 4
+  const inputTokens =
+    result.usage?.inputTokens ??
+    (result.usage as Record<string, number | undefined>)?.promptTokens;
+  const outputTokens =
+    result.usage?.outputTokens ??
+    (result.usage as Record<string, number | undefined>)?.completionTokens;
+  let totalTokens = result.usage?.totalTokens;
+  if (
+    typeof totalTokens !== "number" &&
+    typeof inputTokens === "number" &&
+    typeof outputTokens === "number"
+  ) {
+    totalTokens = inputTokens + outputTokens;
+  }
   const langsmithUsage = {
-    input_tokens: result.usage?.inputTokens,
-    output_tokens: result.usage?.outputTokens,
-    total_tokens: result.usage?.totalTokens,
+    input_tokens: inputTokens,
+    output_tokens: outputTokens,
+    total_tokens: totalTokens,
   };
   const inputTokenDetails = extractInputTokenDetails(
     result.usage,
@@ -201,19 +216,37 @@ export function LangSmithMiddleware(config?: {
               const output = chunks.reduce(
                 (aggregated: AggregatedDoStreamOutput, chunk) => {
                   if (chunk.type === "text-delta") {
-                    if (chunk.delta == null) {
+                    if (chunk.delta != null) {
+                      return {
+                        ...aggregated,
+                        content: aggregated.content + chunk.delta,
+                      };
+                    } else if (
+                      "textDelta" in chunk &&
+                      chunk.textDelta != null
+                    ) {
+                      // AI SDK 4 shim
+                      return {
+                        ...aggregated,
+                        content: aggregated.content + chunk.textDelta,
+                      };
+                    } else {
                       return aggregated;
                     }
-                    return {
-                      ...aggregated,
-                      content: aggregated.content + chunk.delta,
-                    };
                   } else if (chunk.type === "tool-call") {
                     const matchingToolCall = aggregated.tool_calls.find(
                       (call) => call.id === chunk.toolCallId
                     );
                     if (matchingToolCall != null) {
                       return aggregated;
+                    }
+                    let chunkArgs = chunk.input;
+                    if (
+                      chunkArgs == null &&
+                      "args" in chunk &&
+                      typeof chunk.args === "string"
+                    ) {
+                      chunkArgs = chunk.args;
                     }
                     return {
                       ...aggregated,
@@ -224,7 +257,7 @@ export function LangSmithMiddleware(config?: {
                           type: "function" as const,
                           function: {
                             name: chunk.toolName,
-                            arguments: chunk.input,
+                            arguments: chunkArgs,
                           },
                         },
                       ],
