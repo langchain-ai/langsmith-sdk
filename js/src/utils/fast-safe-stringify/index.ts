@@ -56,7 +56,7 @@ function createDefaultReplacer(userReplacer?) {
       }
     }
 
-    const original = this[key];
+    const original = this[key] as unknown;
     if (
       typeof original === "object" &&
       original != null &&
