@@ -58,6 +58,8 @@ function createDefaultReplacer(userReplacer?) {
 
     const original = this[key];
     if (
+      typeof original === "object" &&
+      original != null &&
       "toSerialized" in original &&
       typeof original.toSerialized === "function"
     ) {
