@@ -20,7 +20,7 @@ const { tool, stepCountIs } = ai;
 const { generateText, streamText, generateObject, streamObject } =
   wrapAISDK(ai);
 
-test.only("wrap generateText", async () => {
+test("wrap generateText", async () => {
   const result = await generateText({
     model: openai("gpt-5-nano"),
     messages: [
@@ -32,13 +32,12 @@ test.only("wrap generateText", async () => {
     tools: {
       listOrders: tool({
         description: "list all orders",
-        parameters: z.object({ userId: z.string() }),
+        inputSchema: z.object({ userId: z.string() }),
         execute: async ({ userId }) =>
           `User ${userId} has the following orders: 1`,
       }),
     },
-    // stopWhen: stepCountIs(10),
-    maxSteps: 10,
+    stopWhen: stepCountIs(10),
   });
   expect(result.text).toBeDefined();
   expect(result.text.length).toBeGreaterThan(0);
