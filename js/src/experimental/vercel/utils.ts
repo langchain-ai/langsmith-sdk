@@ -139,15 +139,18 @@ export const convertMessageToTracedFormat = (
         }
       ) as ToolCallPart[];
       const toolCalls = toolCallBlocks.map((block) => {
+        // AI SDK 4 shim
+        let toolArgs =
+          block.input ?? (("args" in block && block.args) || undefined);
+        if (typeof toolArgs !== "string") {
+          toolArgs = JSON.stringify(toolArgs);
+        }
         return {
           id: block.toolCallId,
           type: "function",
           function: {
             name: block.toolName,
-            arguments:
-              typeof block.input !== "string"
-                ? JSON.stringify(block.input)
-                : block.input,
+            arguments: toolArgs,
           },
         };
       });
