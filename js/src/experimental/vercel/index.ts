@@ -661,8 +661,8 @@ const wrapAISDK = <
           if ("content" in outputs.outputs && outputs.outputs.content != null) {
             content = await outputs.outputs.content;
           } else if (
-            "textPromise" in outputs.outputs &&
-            outputs.outputs.textPromise != null
+            "text" in outputs.outputs &&
+            outputs.outputs.text != null
           ) {
             // AI SDK 4 shim
             content = await outputs.outputs.text;
