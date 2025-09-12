@@ -37,11 +37,6 @@ function serializeWellKnownTypes(val) {
         name: val.name,
         message: val.message,
       };
-    } else if (
-      "toSerialized" in val &&
-      typeof val.toSerialized === "function"
-    ) {
-      return val.toSerialized();
     }
   } else if (typeof val === "bigint") {
     return val.toString();
@@ -61,8 +56,16 @@ function createDefaultReplacer(userReplacer?) {
       }
     }
 
+    const original = this[key];
+    if (
+      "toSerialized" in original &&
+      typeof original.toSerialized === "function"
+    ) {
+      return original.toSerialized();
+    }
+
     // Fall back to our well-known type handling
-    return serializeWellKnownTypes(this[key]);
+    return serializeWellKnownTypes(value);
   };
 }
 
