@@ -65,7 +65,7 @@ function createDefaultReplacer(userReplacer?) {
     }
 
     // Fall back to our well-known type handling
-    return serializeWellKnownTypes(value);
+    return serializeWellKnownTypes(val);
   };
 }
 
