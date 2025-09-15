@@ -3672,6 +3672,10 @@ class Client:
                 The name of the reference dataset to filter by, by default None
             reference_free (Optional[bool]):
                 Whether to filter for only projects not associated with a dataset.
+            include_stats (Optional[bool]):
+                Whether to include statistics in the response.
+            dataset_version (Optional[str]):
+                The version of the dataset to filter by.
             limit (Optional[int]):
                 The maximum number of projects to return, by default None
             metadata (Optional[Dict[str, Any]]):
@@ -3718,6 +3722,48 @@ class Client:
             yield ls_schemas.TracerSessionResult(**project, _host_url=self._host_url)
             if limit is not None and i + 1 >= limit:
                 break
+
+    def list_experiments(
+        self,
+        *,
+        dataset_id: Optional[ID_TYPE] = None,
+        dataset_name: Optional[str] = None,
+        dataset_version: Optional[str] = None,
+        limit: Optional[int] = None,
+        metadata: Optional[dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> Iterator[ls_schemas.TracerSessionResult]:
+        """List experiments for a given dataset.
+
+        This is a convenience wrapper around list_projects, with some
+        additional defaults set, since experiments are tracing projects
+        with a reference_dataset_id associating them with a dataset.
+
+        Args:
+            dataset_id (Optional[ID_TYPE]): The ID of the dataset to filter by.
+            dataset_name (Optional[str]): The name of the dataset to filter by.
+            dataset_version (Optional[str]): The version of the dataset to filter by.
+            limit (Optional[int]): The maximum number of experiments to return.
+            metadata (Optional[dict[str, Any]]): Additional metadata to filter by.
+            **kwargs (Any): Additional keyword arguments are passed to list_projects.
+
+        Yields:
+            The experiments.
+
+        Raises:
+            ValueError: If both dataset_id and dataset_name are given.
+
+        """
+        yield from self.list_projects(
+            reference_dataset_id=dataset_id,
+            reference_dataset_name=dataset_name,
+            dataset_version=dataset_version,
+            limit=limit,
+            metadata=metadata,
+            include_stats=True,
+            reference_free=False,
+            **kwargs,
+        )
 
     @ls_utils.xor_args(("project_name", "project_id"))
     def delete_project(
