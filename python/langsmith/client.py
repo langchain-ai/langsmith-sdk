@@ -12,6 +12,7 @@ For detailed API documentation, visit: https://docs.smith.langchain.com/.
 
 from __future__ import annotations
 
+from ast import List
 import atexit
 import collections
 import concurrent.futures as cf
@@ -90,6 +91,7 @@ from langsmith._internal._operations import (
     serialize_run_dict,
     serialized_feedback_operation_to_multipart_parts_and_context,
     serialized_run_operation_to_multipart_parts_and_context,
+    simple_combine_for_otel,
 )
 from langsmith._internal._serde import dumps_json as _dumps_json
 from langsmith.schemas import AttachmentInfo
@@ -1090,7 +1092,8 @@ class Client:
         )
 
     def _get_paginated_list(
-        self, path: str, *, params: Optional[dict] = None
+        self, path: str, *, params: Optional[dict] = None,
+        request_method: Literal["GET", "POST"] = "GET",
     ) -> Iterator[dict]:
         """Get a paginated list of items.
 
@@ -1107,11 +1110,12 @@ class Client:
         while True:
             params_["offset"] = offset
             response = self.request_with_retries(
-                "GET",
+                request_method,
                 path,
                 params=params_,
             )
             items = response.json()
+            # breakpoint()
             if not items:
                 break
             yield from items
@@ -8268,6 +8272,58 @@ class Client:
             error_handling=error_handling,
             **kwargs,
         )
+
+    def get_experiment(
+        self,
+        dataset_id: str, 
+        session_ids: list[uuid.UUID], 
+        format: Literal["json", "csv"] = "json",
+        preview: bool = False,
+        comparative_experiment_id: Optional[uuid.UUID] = None,
+        filters: dict[uuid.UUID, list[str]] | None = None,
+        limit: Optional[int] = None,
+        ) -> Iterable[schemas.ExampleWithRuns]:
+
+        offset = 0
+        _results_count = 0
+
+        while True:
+            remaining = (limit - _results_count) if limit else None
+            batch_limit = min(100, remaining) if remaining else 100  # cap the limit at 100 per batch due to the api limit
+            body = {
+                "session_ids": session_ids,
+                "offset": offset,
+                "limit": batch_limit,
+                "preview": preview,
+                "comparative_experiment_id": comparative_experiment_id,
+                "filters": filters,
+            }
+            response= self.request_with_retries("POST", f"/datasets/{dataset_id}/runs",  request_kwargs={"data": _dumps_json(body)})
+
+            # breakpoint()
+            results = response.json()
+            breakpoint()
+            if not results:
+                break
+
+            for result in results:
+                _results_count += 1
+                if 'runs' in result and result['runs']:
+                    run = result['runs'][0]
+                    result['total_cost'] = run.get('total_cost')
+                    result['total_tokens'] = run.get('total_tokens')
+                    result['status'] = run.get('status')
+                    if run.get('end_time') and run.get('start_time'):
+                        end_time = datetime.fromisoformat(run['end_time'].replace('Z', '+00:00')) if isinstance(run['end_time'], str) else run['end_time']
+                        start_time = datetime.fromisoformat(run['start_time'].replace('Z', '+00:00')) if isinstance(run['start_time'], str) else run['start_time']
+                        result['latency_in_seconds'] = (end_time - start_time).total_seconds()
+                breakpoint()
+                yield result
+
+            if len(results) < batch_limit:
+              break
+            
+            offset += len(results)
 
 
 def convert_prompt_to_openai_format(
