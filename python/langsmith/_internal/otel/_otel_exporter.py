@@ -196,18 +196,10 @@ class OTELExporter:
                         op, run_info, otel_context_map.get(op.id)
                     )
                     if span:
-                        # Only store spans that are still active (not already ended)
-                        if hasattr(span, "is_recording") and span.is_recording():
-                            self._span_info[op.id] = {
-                                "span": span,
-                                "created_at": time.time(),
-                            }
-                            logger.debug(
-                                f"Created active span, total: {len(self._span_info)}"
-                            )
-                        else:
-                            # Span ended in _create_span_for_run (had end_time)
-                            logger.debug("completed span (not tracked - already ended)")
+                        self._span_info[op.id] = {
+                            "span": span,
+                            "created_at": time.time(),
+                        }
                 else:
                     self._update_span_for_run(op, run_info)
             except Exception as e:
