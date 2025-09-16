@@ -8362,7 +8362,7 @@ class Client:
             >>> print(f"Total cost: {experiment_results['stats'].total_cost}")
             >>> print(f"P50 latency: {experiment_results['stats'].latency_p50}")
             >>> # Stream through individual examples with extracted metrics
-            >>> for example in experiment_results["examples"]:
+            >>> for example in experiment_results["examples_with_runs"]:
             ...     print(f"Example {example['id']}")
             ...     print(f"  Cost: {example.get('total_cost')}")
             ...     print(f"  Status: {example.get('status')}")
@@ -8392,7 +8392,7 @@ class Client:
 
         # Return results container with stats and examples iterator
         return ls_schemas.ExperimentResults(
-            stats=projects[0], examples=_get_examples_iterator()
+            stats=projects[0], examples_with_runs=_get_examples_iterator()
         )
 
 

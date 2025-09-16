@@ -3574,7 +3574,7 @@ def test_get_experiment_results(langchain_client: Client) -> None:
     dataset_name = "__test_evaluate_attachments" + uuid4().hex[:4]
     dataset = _create_dataset(langchain_client, dataset_name)
 
-    # 2. Create example with attachments
+    # Create example with attachments
     example = ExampleCreate(
         inputs={"question": "What is shown in the image?"},
         outputs={"answer": "test image"},
@@ -3632,7 +3632,7 @@ def test_get_experiment_results(langchain_client: Client) -> None:
     assert stats.run_count > 0
 
     # Test that we get examples iterator
-    examples_list = list(experiment_results["examples"])
+    examples_list = list(experiment_results["examples_with_runs"])
     assert len(examples_list) > 0
 
     # Test that examples have extracted run metrics
@@ -3646,7 +3646,7 @@ def test_get_experiment_results(langchain_client: Client) -> None:
     limited_results = langchain_client.get_experiment_results(
         dataset_id=dataset.id, session_id=session_id, limit=1
     )
-    limited_examples = list(limited_results["examples"])
+    limited_examples = list(limited_results["examples_with_runs"])
     assert len(limited_examples) == 1
 
     # Test stats are the same regardless of limit (since stats come from project)

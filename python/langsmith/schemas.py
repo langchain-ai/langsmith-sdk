@@ -1275,4 +1275,4 @@ class ExperimentResults(TypedDict):
     """Results container for experiment data with stats and examples."""
 
     stats: TracerSessionResult
-    examples: Iterator[ExampleWithRuns]
+    examples_with_runs: Iterator[ExampleWithRuns]
