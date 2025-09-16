@@ -89,7 +89,7 @@ from langsmith._internal._operations import (
     serialize_feedback_dict,
     serialize_run_dict,
     serialized_feedback_operation_to_multipart_parts_and_context,
-    serialized_run_operation_to_multipart_parts_and_context
+    serialized_run_operation_to_multipart_parts_and_context,
 )
 from langsmith._internal._serde import dumps_json as _dumps_json
 from langsmith.schemas import AttachmentInfo
@@ -8325,7 +8325,7 @@ class Client:
 
             offset += len(batch)
 
-    def get_experiment(
+    def get_experiment_results(
         self,
         dataset_id: str,
         session_id: uuid.UUID,
@@ -8353,7 +8353,7 @@ class Client:
         Example:
             >>> import uuid
             >>> client = Client()
-            >>> experiment_results = client.get_experiment(
+            >>> experiment_results = client.get_experiment_results(
             ...     dataset_id="f01ffa03-5a25-4163-a6a3-66b6af72378f",
             ...     session_id=uuid.UUID("037ae90f-f297-4926-b93c-37d8abf6899f"),
             ... )

@@ -3569,8 +3569,8 @@ def test_otel_trace_attributes(monkeypatch: pytest.MonkeyPatch):
     )
 
 
-def test_get_experiment(langchain_client: Client) -> None:
-    """Test evaluating examples with attachments."""
+def test_get_experiment_results(langchain_client: Client) -> None:
+    """Test get_experiment_results method with evaluation data."""
     dataset_name = "__test_evaluate_attachments" + uuid4().hex[:4]
     dataset = _create_dataset(langchain_client, dataset_name)
 
@@ -3620,8 +3620,8 @@ def test_get_experiment(langchain_client: Client) -> None:
     # Extract session ID from the evaluation results
     session_id = results[0]["experiment_id"]
 
-    # Test get_experiment method
-    experiment_results = langchain_client.get_experiment(
+    # Test get_experiment_results method
+    experiment_results = langchain_client.get_experiment_results(
         dataset_id=dataset.id, session_id=session_id
     )
 
@@ -3643,7 +3643,7 @@ def test_get_experiment(langchain_client: Client) -> None:
     assert "runs" in first_example  # Original runs data still present
 
     # Test with limit parameter
-    limited_results = langchain_client.get_experiment(
+    limited_results = langchain_client.get_experiment_results(
         dataset_id=dataset.id, session_id=session_id, limit=1
     )
     limited_examples = list(limited_results["examples"])
