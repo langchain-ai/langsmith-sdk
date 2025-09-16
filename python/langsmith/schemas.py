@@ -1263,15 +1263,17 @@ class UpsertExamplesResponse(TypedDict):
     example_ids: list[str]
     """The ids of the examples that were upserted."""
 
+
 class ExampleWithRuns(Example):
     """Example with runs."""
 
     runs: list[Run] = Field(default_factory=list)
-    
+
     """The runs of the example."""
 
 
 class ExperimentResults(TypedDict):
-    """Results container for experiment data with stats and examples. """
+    """Results container for experiment data with stats and examples."""
+
     stats: TracerSessionResult
     examples: Iterator[ExampleWithRuns]
