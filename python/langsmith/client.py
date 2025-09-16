@@ -3655,6 +3655,7 @@ class Client:
         include_stats: Optional[bool] = None,
         dataset_version: Optional[str] = None,
         limit: Optional[int] = None,
+        offset: Optional[int] = None,
         metadata: Optional[dict[str, Any]] = None,
     ) -> Iterator[ls_schemas.TracerSessionResult]:
         """List projects from the LangSmith API.
@@ -3678,6 +3679,8 @@ class Client:
                 The version of the dataset to filter by.
             limit (Optional[int]):
                 The maximum number of projects to return, by default None
+            offset (Optional[int]):
+                The offset to start from.
             metadata (Optional[Dict[str, Any]]):
                 Metadata to filter by.
 
@@ -3688,7 +3691,8 @@ class Client:
             ValueError: If both reference_dataset_id and reference_dataset_name are given.
         """
         params: dict[str, Any] = {
-            "limit": min(limit, 100) if limit is not None else 100
+            "limit": min(limit, 100) if limit is not None else 100,
+            "offset": offset,
         }
         if project_ids is not None:
             params["id"] = project_ids
@@ -3730,6 +3734,7 @@ class Client:
         dataset_name: Optional[str] = None,
         dataset_version: Optional[str] = None,
         limit: Optional[int] = None,
+        offset: Optional[int] = None,
         metadata: Optional[dict[str, Any]] = None,
         **kwargs: Any,
     ) -> Iterator[ls_schemas.TracerSessionResult]:
@@ -3744,6 +3749,7 @@ class Client:
             dataset_name (Optional[str]): The name of the dataset to filter by.
             dataset_version (Optional[str]): The version of the dataset to filter by.
             limit (Optional[int]): The maximum number of experiments to return.
+            offset (Optional[int]): The offset to start from.
             metadata (Optional[dict[str, Any]]): Additional metadata to filter by.
             **kwargs (Any): Additional keyword arguments are passed to list_projects.
 
@@ -3759,6 +3765,7 @@ class Client:
             reference_dataset_name=dataset_name,
             dataset_version=dataset_version,
             limit=limit,
+            offset=offset,
             metadata=metadata,
             include_stats=True,
             reference_free=False,
