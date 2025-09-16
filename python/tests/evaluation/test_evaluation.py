@@ -7,7 +7,7 @@ from typing import Callable, Sequence, Tuple, TypeVar
 
 import pytest
 
-from langsmith import Client, aevaluate, evaluate, expect, test
+from langsmith import Client, aevaluate, aevaluate_existing, evaluate, expect, test
 from langsmith.evaluation import EvaluationResult, EvaluationResults
 from langsmith.schemas import Example, Run
 
@@ -548,3 +548,40 @@ Actual: {outputs["equation"]}
 
     finish_time = time.time()
     assert (finish_time - start) <= 8.5
+
+
+async def test_aevaluate_existing():
+    async def always_quarter(inputs: dict, outputs: dict) -> float:
+        await asyncio.sleep(0.5)
+        return {"key": "arbitrary", "score": 0.25}
+
+    async def always_half(inputs: dict, outputs: dict) -> float:
+        await asyncio.sleep(0.5)
+        return {"key": "arbitrary", "score": 0.5}
+
+    client = Client()
+
+    async def target_fn(inputs: dict) -> dict:
+        await asyncio.sleep(0.5)
+        return {"output": "Yes"}
+
+    params = {
+        "data": "ac1a2d4e-abfc-4db8-97c1-1097924dc7c6",
+        "client": client,
+        "experiment_prefix": "test_thingy",
+        "blocking": True,
+        "evaluators": [always_quarter],
+    }
+
+    results = await aevaluate(target_fn, **params)
+
+    experiment = next(client.list_projects(name=results.experiment_name))
+    experiment_id = experiment.id
+
+    await aevaluate_existing(
+        experiment_id,
+        evaluators=[always_half],
+        max_concurrency=1,
+        client=client,
+        blocking=True,
+    )

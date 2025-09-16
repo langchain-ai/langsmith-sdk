@@ -1230,8 +1230,61 @@ class AsyncExperimentResults:
     def __repr__(self) -> str:
         return f"<AsyncExperimentResults {self.experiment_name}>"
 
-    async def wait(self) -> None:
+    async def wait(self, timeout: float = 30.0) -> None:
+        """Wait for the experiment to complete and for runs to be available.
+
+        Args:
+            timeout: Maximum time to wait in seconds (default: 30.0)
+        """
+        import time
+
         await self._task
+        experiment = self._manager._get_experiment()
+
+        if not experiment:
+            return
+
+        # Wait for runs to be available with exponential backoff
+        start_time = time.time()
+        delay = 1.0
+        max_delay = 10.0
+
+        # Wait for some runs to be available
+        while time.time() - start_time < timeout:
+            try:
+                project = next(
+                    self._manager.client.list_projects(
+                        project_ids=[experiment.id],
+                        limit=1,
+                        include_stats=True,
+                    )
+                )
+                if project.run_count > 0:
+                    break
+            except Exception:
+                break
+
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, max_delay)
+
+        # Wait for pending runs to complete
+        delay = 1.0
+        max_delay = 10.0
+
+        while time.time() - start_time < timeout:
+            try:
+                pending_run = next(
+                    self._manager.client.list_runs(
+                        project_id=experiment.id, filter='eq(status,"pending")', limit=1
+                    )
+                )
+                if pending_run is None:
+                    break
+            except Exception:
+                break
+
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, max_delay)
 
 
 async def _aforward(
