@@ -8370,7 +8370,7 @@ class Client:
         """
 
         def _get_examples_iterator():
-            """Generator function to yield examples with runs."""
+            """Yield examples with runs."""
             for batch in self._paginate_dataset_runs(
                 dataset_id=dataset_id,
                 session_id=session_id,

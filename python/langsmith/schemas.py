@@ -5,9 +5,9 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from enum import Enum
+from collections.abc import Iterator
 from typing import (
     Any,
-    Iterator,
     NamedTuple,
     Optional,
     Protocol,
