@@ -7,6 +7,7 @@ import concurrent.futures as cf
 import io
 import logging
 import pathlib
+import time
 import uuid
 from collections.abc import AsyncIterable, AsyncIterator, Awaitable, Iterable, Sequence
 from typing import (
@@ -1236,8 +1237,6 @@ class AsyncExperimentResults:
         Args:
             timeout: Maximum time to wait in seconds (default: 30.0)
         """
-        import time
-
         await self._task
         experiment = self._manager._get_experiment()
 
