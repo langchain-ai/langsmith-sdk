@@ -12,7 +12,6 @@ For detailed API documentation, visit: https://docs.smith.langchain.com/.
 
 from __future__ import annotations
 
-from ast import List
 import atexit
 import collections
 import concurrent.futures as cf
@@ -90,8 +89,7 @@ from langsmith._internal._operations import (
     serialize_feedback_dict,
     serialize_run_dict,
     serialized_feedback_operation_to_multipart_parts_and_context,
-    serialized_run_operation_to_multipart_parts_and_context,
-    simple_combine_for_otel,
+    serialized_run_operation_to_multipart_parts_and_context
 )
 from langsmith._internal._serde import dumps_json as _dumps_json
 from langsmith.schemas import AttachmentInfo
