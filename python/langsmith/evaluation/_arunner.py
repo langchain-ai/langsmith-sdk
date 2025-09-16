@@ -1259,7 +1259,7 @@ class AsyncExperimentResults:
                         include_stats=True,
                     )
                 )
-                if project.run_count > 0:
+                if project and project.run_count > 0:
                     break
             except Exception:
                 break
