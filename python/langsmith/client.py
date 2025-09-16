@@ -8273,57 +8273,137 @@ class Client:
             **kwargs,
         )
 
-    def get_experiment(
+    def _paginate_dataset_runs(
         self,
-        dataset_id: str, 
-        session_ids: list[uuid.UUID], 
-        format: Literal["json", "csv"] = "json",
+        dataset_id: str,
+        session_id: uuid.UUID,
         preview: bool = False,
         comparative_experiment_id: Optional[uuid.UUID] = None,
         filters: dict[uuid.UUID, list[str]] | None = None,
-        limit: Optional[int] = None,
-        ) -> Iterable[schemas.ExampleWithRuns]:
-
+        limit: Optional[int] = None
+    ) -> Iterator[list[dict]]:
+        """Paginate through dataset runs and yield batches.
+        
+        Args:
+            dataset_id: Dataset UUID to fetch runs for
+            session_id: Session UUID to filter runs by
+            preview: Whether to return preview data only
+            comparative_experiment_id: Optional comparative experiment UUID
+            filters: Optional filters to apply
+            limit: Maximum total number of results to return
+            
+        Yields:
+            Batches of run results as lists of dictionaries
+        """
         offset = 0
-        _results_count = 0
+        results_count = 0
 
         while True:
-            remaining = (limit - _results_count) if limit else None
-            batch_limit = min(100, remaining) if remaining else 100  # cap the limit at 100 per batch due to the api limit
+            remaining = (limit - results_count) if limit else None
+            batch_limit = min(100, remaining) if remaining else 100
+            
             body = {
-                "session_ids": session_ids,
+                "session_ids": [session_id],
                 "offset": offset,
                 "limit": batch_limit,
                 "preview": preview,
                 "comparative_experiment_id": comparative_experiment_id,
                 "filters": filters,
             }
-            response= self.request_with_retries("POST", f"/datasets/{dataset_id}/runs",  request_kwargs={"data": _dumps_json(body)})
-
-            # breakpoint()
-            results = response.json()
-            breakpoint()
-            if not results:
-                break
-
-            for result in results:
-                _results_count += 1
-                if 'runs' in result and result['runs']:
-                    run = result['runs'][0]
-                    result['total_cost'] = run.get('total_cost')
-                    result['total_tokens'] = run.get('total_tokens')
-                    result['status'] = run.get('status')
-                    if run.get('end_time') and run.get('start_time'):
-                        end_time = datetime.fromisoformat(run['end_time'].replace('Z', '+00:00')) if isinstance(run['end_time'], str) else run['end_time']
-                        start_time = datetime.fromisoformat(run['start_time'].replace('Z', '+00:00')) if isinstance(run['start_time'], str) else run['start_time']
-                        result['latency_in_seconds'] = (end_time - start_time).total_seconds()
-                breakpoint()
-                yield result
-
-            if len(results) < batch_limit:
-              break
             
-            offset += len(results)
+            response = self.request_with_retries(
+                "POST", 
+                f"/datasets/{dataset_id}/runs",  
+                request_kwargs={"data": _dumps_json(body)}
+            )
+            
+            batch = response.json()
+            if not batch:
+                break
+                
+            yield batch
+            results_count += len(batch)
+            
+            if len(batch) < batch_limit or (limit and results_count >= limit):
+                break
+                
+            offset += len(batch)
+
+    def get_experiment(
+        self,
+        dataset_id: str, 
+        session_id: uuid.UUID, 
+        format: Literal["json", "csv"] = "json",
+        preview: bool = False,
+        comparative_experiment_id: Optional[uuid.UUID] = None,
+        filters: dict[uuid.UUID, list[str]] | None = None,
+        limit: Optional[int] = None,
+        ) -> ls_schemas.ExperimentResults:
+        """Get experiment results with stats and streaming examples.
+        
+        Args:
+            dataset_id: Dataset UUID to get experiment data for
+            session_id: Experiment session UUID 
+            format: Output format (currently unused, defaults to "json")
+            preview: Whether to return preview data only
+            comparative_experiment_id: Optional comparative experiment UUID
+            filters: Optional filters to apply to results
+            limit: Maximum number of examples to return
+            
+        Returns:
+            ExperimentResults containing project stats and iterator of examples with runs
+            
+        Raises:
+            ValueError: If project not found for the given session_id
+            
+        Example:
+            >>> import uuid
+            >>> client = Client()
+            >>> experiment_results = client.get_experiment(
+            ...     dataset_id="f01ffa03-5a25-4163-a6a3-66b6af72378f",
+            ...     session_id=uuid.UUID("037ae90f-f297-4926-b93c-37d8abf6899f")
+            ... )
+            >>> 
+            >>> # Access aggregated experiment stats
+            >>> print(f"Total runs: {experiment_results['stats'].run_count}")
+            >>> print(f"Total cost: {experiment_results['stats'].total_cost}")
+            >>> print(f"P50 latency: {experiment_results['stats'].latency_p50}")
+            >>> 
+            >>> # Stream through individual examples with extracted metrics
+            >>> for example in experiment_results['examples']:
+            ...     print(f"Example {example['id']}")
+            ...     print(f"  Cost: {example.get('total_cost')}")
+            ...     print(f"  Status: {example.get('status')}")
+            ...     print(f"  Tokens: {example.get('total_tokens')}")
+        """
+        
+        def _get_examples_with_runs_iterator():
+            """Generator function to yield examples with runs."""
+            for batch in self._paginate_dataset_runs(
+                dataset_id=dataset_id,
+                session_id=session_id,
+                preview=preview,
+                comparative_experiment_id=comparative_experiment_id,
+                filters=filters,
+                limit=limit
+            ):
+                for result in batch:
+                    yield _extract_run_metrics_from_example(result)
+        
+        # Get project stats
+        projects = list(self.list_projects(
+            project_ids=[session_id], 
+            include_stats=True
+        ))
+        
+        if not projects:
+            raise ValueError(f"Project not found for session_id: {session_id}")
+            
+        # Return results container with stats and examples iterator
+        return ls_schemas.ExperimentResults(
+            stats=projects[0],
+            examples=_get_examples_with_runs_iterator()
+        )
 
 
 def convert_prompt_to_openai_format(
@@ -8363,6 +8443,31 @@ def convert_prompt_to_openai_format(
         return openai._get_request_payload(messages, stop=stop, **model_kwargs)
     except Exception as e:
         raise ls_utils.LangSmithError(f"Error converting to OpenAI format: {e}")
+
+
+def _extract_run_metrics_from_example(result: dict) -> dict:
+    """Extract metrics from the first run in an example and add to result.
+    
+    Args:
+        result: Example result dictionary containing runs
+        
+    Returns:
+        The same result dictionary with extracted metrics added:
+        - total_cost: Total cost from first run
+        - total_tokens: Total tokens from first run  
+        - status: Status from first run
+        - latency_in_seconds: Calculated latency from first run
+    """
+    if 'runs' in result and result['runs']:
+        run = result['runs'][0]
+        result['total_cost'] = run.get('total_cost')
+        result['total_tokens'] = run.get('total_tokens')
+        result['status'] = run.get('status')
+        if run.get('end_time') and run.get('start_time'):
+            end_time = datetime.datetime.fromisoformat(run['end_time'].replace('Z', '+00:00')) if isinstance(run['end_time'], str) else run['end_time']
+            start_time = datetime.datetime.fromisoformat(run['start_time'].replace('Z', '+00:00')) if isinstance(run['start_time'], str) else run['start_time']
+            result['latency_in_seconds'] = (end_time - start_time).total_seconds()
+    return result
 
 
 def convert_prompt_to_anthropic_format(
