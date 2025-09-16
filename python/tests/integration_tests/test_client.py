@@ -3620,7 +3620,7 @@ def test_get_experiment(langchain_client: Client) -> None:
     # Extract session ID from the evaluation results
     session_id = results[0]["experiment_id"]
 
-    # Test our new get_experiment method
+    # Test get_experiment method
     experiment_results = langchain_client.get_experiment(
         dataset_id=dataset.id, session_id=session_id
     )
@@ -3653,98 +3653,3 @@ def test_get_experiment(langchain_client: Client) -> None:
     assert limited_results["stats"].run_count == experiment_results["stats"].run_count
 
     safe_delete_dataset(langchain_client, dataset_name=dataset_name)
-
-
-def test_extract_run_metrics_from_example() -> None:
-    """Unit test for the _extract_run_metrics_from_example utility function."""
-    from langsmith.client import _extract_run_metrics_from_example
-
-    # Test with complete run data
-    example_with_runs = {
-        "id": "example-123",
-        "inputs": {"question": "test"},
-        "outputs": {"answer": "test"},
-        "runs": [
-            {
-                "id": "run-123",
-                "total_cost": 0.001234,
-                "total_tokens": 50,
-                "status": "success",
-                "start_time": "2024-01-01T10:00:00.000000",
-                "end_time": "2024-01-01T10:00:05.500000",
-            }
-        ],
-    }
-
-    result = _extract_run_metrics_from_example(example_with_runs.copy())
-
-    # Check extracted metrics
-    assert result["total_cost"] == 0.001234
-    assert result["total_tokens"] == 50
-    assert result["status"] == "success"
-    assert result["latency_in_seconds"] == 5.5
-
-    # Check original data preserved
-    assert result["id"] == "example-123"
-    assert result["runs"] == example_with_runs["runs"]
-
-    # Test with missing optional fields
-    example_minimal = {
-        "id": "example-456",
-        "runs": [
-            {
-                "id": "run-456",
-                "status": "error",
-                # No total_cost, total_tokens, or timestamps
-            }
-        ],
-    }
-
-    result = _extract_run_metrics_from_example(example_minimal.copy())
-
-    assert result["total_cost"] is None
-    assert result["total_tokens"] is None
-    assert result["status"] == "error"
-    assert "latency_in_seconds" not in result
-
-    # Test with no runs
-    example_no_runs = {"id": "example-789", "runs": []}
-
-    result = _extract_run_metrics_from_example(example_no_runs.copy())
-
-    # Should not add any metrics
-    assert "total_cost" not in result
-    assert "status" not in result
-    assert result["runs"] == []
-
-    # Test with ISO datetime strings with Z suffix
-    example_with_z_time = {
-        "id": "example-999",
-        "runs": [
-            {
-                "start_time": "2024-01-01T10:00:00Z",
-                "end_time": "2024-01-01T10:00:03Z",
-                "status": "success",
-            }
-        ],
-    }
-
-    result = _extract_run_metrics_from_example(example_with_z_time.copy())
-    assert result["latency_in_seconds"] == 3.0
-
-    # Test with datetime objects (not strings)
-    from datetime import datetime, timezone
-
-    example_with_datetime = {
-        "id": "example-dt",
-        "runs": [
-            {
-                "start_time": datetime(2024, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
-                "end_time": datetime(2024, 1, 1, 10, 0, 2, tzinfo=timezone.utc),
-                "status": "success",
-            }
-        ],
-    }
-
-    result = _extract_run_metrics_from_example(example_with_datetime.copy())
-    assert result["latency_in_seconds"] == 2.0

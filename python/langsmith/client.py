@@ -1092,11 +1092,7 @@ class Client:
         )
 
     def _get_paginated_list(
-        self,
-        path: str,
-        *,
-        params: Optional[dict] = None,
-        request_method: Literal["GET", "POST"] = "GET",
+        self, path: str, *, params: Optional[dict] = None
     ) -> Iterator[dict]:
         """Get a paginated list of items.
 
@@ -1113,12 +1109,11 @@ class Client:
         while True:
             params_["offset"] = offset
             response = self.request_with_retries(
-                request_method,
+                "GET",
                 path,
                 params=params_,
             )
             items = response.json()
-            # breakpoint()
             if not items:
                 break
             yield from items
@@ -8345,7 +8340,7 @@ class Client:
 
         Args:
             dataset_id: Dataset UUID to get experiment data for
-            session_id: Experiment session UUID
+            session_id: Experiment session UUID, also called project_id, can find in the url of the LS experiment page
             preview: Whether to return preview data only
             comparative_experiment_id: Optional comparative experiment UUID
             filters: Optional filters to apply to results
