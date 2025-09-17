@@ -7,13 +7,20 @@ permissions:
 
 on:
   push:
-    branches:
-      - main
+    branches: ["main"]
+    paths:
+      - ".github/**"
+      - "js/**"
   pull_request:
-    branches:
-      - main
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    paths:
+      - ".github/**"
+      - "js/**"
   workflow_dispatch:
+    inputs:
+      run_integration_tests:
+        description: "Run integration tests"
+        default: "false"
+        options: ["true", "false"]
 
 jobs:
   format:
@@ -78,7 +85,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        node-version: [20.x, "22.4.1"]
+        node-version: [20.x, 20.x, "22.4.1"]
         # See Node.js release schedule at https://nodejs.org/en/about/releases/
         include:
           - os: windows-latest
@@ -105,36 +112,5 @@ jobs:
         run: yarn run check-version
       - name: Test
         run: yarn run test
-
-  vitest:
-    name: Vitest tests
-    strategy:
-      matrix:
-        os: [ubuntu-latest]
-        node-version: [20.x, "22.4.1"]
-        # See Node.js release schedule at https://nodejs.org/en/about/releases/
-        include:
-          - os: windows-latest
-            node-version: 20.x
-          - os: macos-latest
-            node-version: 20.x
-    runs-on: ${{ matrix.os }}
-    defaults:
-      run:
-        working-directory: "js"
-    steps:
-      - uses: actions/checkout@v4
-      - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v3
-        with:
-          node-version: ${{ matrix.node-version }}
-          cache: "yarn"
-          cache-dependency-path: "js/yarn.lock"
-      - name: Install dependencies
-        run: yarn install --immutable
-      - name: Build
-        run: yarn run build
-      - name: Check version
-        run: yarn run check-version
       - name: Test: Vitest
         run: yarn run test:vitest
