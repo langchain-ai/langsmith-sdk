@@ -641,7 +641,7 @@ class ExperimentResults:
         if self._thread:
             self._thread.join()
 
-        experiment = self._manager._get_experiment()
+        experiment = self._manager._experiment
         if not experiment:
             return
 

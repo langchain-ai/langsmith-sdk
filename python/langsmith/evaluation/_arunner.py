@@ -1238,8 +1238,7 @@ class AsyncExperimentResults:
             timeout: Maximum time to wait in seconds (default: 30.0)
         """
         await self._task
-        experiment = self._manager._get_experiment()
-
+        experiment = self._manager._experiment
         if not experiment:
             return
 
