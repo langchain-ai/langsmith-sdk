@@ -8271,7 +8271,7 @@ class Client:
 
     def _paginate_dataset_runs(
         self,
-        dataset_id: str,
+        dataset_id: ID_TYPE,
         session_id: uuid.UUID,
         preview: bool = False,
         comparative_experiment_id: Optional[uuid.UUID] = None,
@@ -8282,7 +8282,7 @@ class Client:
 
         Args:
             dataset_id: Dataset UUID to fetch runs for
-            session_id: Session UUID to filter runs by
+            session_id: Session UUID to filter runs by, same as project_id
             preview: Whether to return preview data only
             comparative_experiment_id: Optional comparative experiment UUID
             filters: Optional filters to apply
@@ -8329,27 +8329,25 @@ class Client:
 
     def get_experiment_results(
         self,
-        dataset_id: str,
-        session_id: uuid.UUID,
+        project_id: uuid.UUID,
         preview: bool = False,
         comparative_experiment_id: Optional[uuid.UUID] = None,
         filters: dict[uuid.UUID, list[str]] | None = None,
         limit: Optional[int] = None,
     ) -> ls_schemas.ExperimentResults:
-        """Get experiment results with stats and streaming examples.
+        """Get results for an experiment, including experiment session aggregated stats and experiment runs for each dataset example.
 
         Args:
-            dataset_id: Dataset UUID to get experiment data for
-            session_id: Experiment session UUID, also called project_id, can find in the url of the LS experiment page
+            project_id: Experiment's tracing project id, also called session_id, can be found in the url of the LS experiment page
             preview: Whether to return lightweight preview data only. When True,
                 fetches inputs_preview/outputs_preview summaries instead of full inputs/outputs from S3 storage.
                 Faster and less bandwidth.
             comparative_experiment_id: Optional comparative experiment UUID for pairwise comparison experiment results.
             filters: Optional filters to apply to results
-            limit: Maximum number of examples to return
+            limit: Maximum number of results to return
 
         Returns:
-            ExperimentResults containing stats and experiment_runs iterator
+            ExperimentResults that has stats (TracerSessionResult) and iterator of experiment_runs (ExampleWithRuns)
 
         Raises:
             ValueError: If project not found for the given session_id
@@ -8361,8 +8359,7 @@ class Client:
             ...     session_id="037ae90f-f297-4926-b93c-37d8abf6899f",
             ... )
             >>> for example in results["experiment_runs"]:
-            ...     if example.runs:
-            ...         print(example.runs[0])
+            ...     print(example.dict())
 
             >>> # Access aggregated experiment stats
             >>> print(f"Total runs: {results['stats'].run_count}")
@@ -8370,12 +8367,21 @@ class Client:
             >>> print(f"P50 latency: {results['stats'].latency_p50}")
 
         """
+        # Get aggregated stats for the experiment project/session
+        project_stats = list(
+            self.list_projects(project_ids=[project_id], include_stats=True)
+        )
+
+        if not project_stats:
+            raise ValueError(f"Project not found for project_id: {project_id}")
+
+        dataset_id = project_stats[0].reference_dataset_id
 
         def _get_dataset_runs_iterator():
-            """Yield examples with runs."""
+            """Yield examples with corresponding experiment runs."""
             for batch in self._paginate_dataset_runs(
                 dataset_id=dataset_id,
-                session_id=session_id,
+                session_id=project_id,
                 preview=preview,
                 comparative_experiment_id=comparative_experiment_id,
                 filters=filters,
@@ -8383,15 +8389,6 @@ class Client:
             ):
                 yield from batch
 
-        # Get aggregated stats for the experiment project/session
-        project_stats = list(
-            self.list_projects(project_ids=[session_id], include_stats=True)
-        )
-
-        if not project_stats:
-            raise ValueError(f"Project not found for session_id: {session_id}")
-
-        # Return results container with stats and examples iterator
         return ls_schemas.ExperimentResults(
             stats=project_stats[0], experiment_runs=_get_dataset_runs_iterator()
         )

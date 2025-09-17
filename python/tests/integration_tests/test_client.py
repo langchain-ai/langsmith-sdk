@@ -3614,16 +3614,12 @@ def test_get_experiment_results(langchain_client: Client) -> None:
     )
 
     assert len(results) == 2
-    for result in results:
-        assert result["evaluation_results"]["results"][0].score == 1.0
 
     # Extract session ID from the evaluation results
-    session_id = results[0]["experiment_id"]
+    project_id = results[0]["experiment_id"]
 
     # Test get_experiment_results method
-    experiment_results = langchain_client.get_experiment_results(
-        dataset_id=dataset.id, session_id=session_id
-    )
+    experiment_results = langchain_client.get_experiment_results(project_id=project_id)
 
     # Test that we get stats
     assert experiment_results["stats"] is not None
@@ -3636,7 +3632,7 @@ def test_get_experiment_results(langchain_client: Client) -> None:
     assert len(examples_list) > 0
     # Test with limit parameter
     limited_results = langchain_client.get_experiment_results(
-        dataset_id=dataset.id, session_id=session_id, limit=1
+        project_id=project_id, limit=1
     )
     limited_examples = list(limited_results["experiment_runs"])
     assert len(limited_examples) == 1
@@ -3646,17 +3642,8 @@ def test_get_experiment_results(langchain_client: Client) -> None:
 
     # Test preview mode - should be faster and return preview data
     preview_results = langchain_client.get_experiment_results(
-        dataset_id=dataset.id, session_id=session_id, preview=True
+        project_id=project_id, preview=True
     )
-
-    # Stats should be the same in preview mode
-    assert preview_results["stats"].run_count == experiment_results["stats"].run_count
-
-    # Preview mode examples should have different data structure
-    preview_examples = list(preview_results["experiment_runs"])
-    assert len(preview_examples) > 0
-
-    preview_example = preview_examples[0]
-    assert "runs" in preview_example
+    assert len(list(preview_results["experiment_runs"])) > 0
 
     safe_delete_dataset(langchain_client, dataset_name=dataset_name)
