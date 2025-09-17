@@ -1391,7 +1391,6 @@ class _ExperimentManager(_ExperimentManagerMixin):
             outputs=example.outputs,
             metadata=example.metadata,
             modified_at=example.modified_at,
-            runs=example.runs,
             source_run_id=example.source_run_id,
             attachments=new_attachments,
             _host_url=example._host_url,
