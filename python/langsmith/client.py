@@ -92,7 +92,7 @@ from langsmith._internal._operations import (
     serialized_run_operation_to_multipart_parts_and_context,
 )
 from langsmith._internal._serde import dumps_json as _dumps_json
-from langsmith.schemas import AttachmentInfo
+from langsmith.schemas import AttachmentInfo, ExampleWithRuns
 
 
 def _check_otel_enabled() -> bool:
@@ -8277,7 +8277,7 @@ class Client:
         comparative_experiment_id: Optional[uuid.UUID] = None,
         filters: dict[uuid.UUID, list[str]] | None = None,
         limit: Optional[int] = None,
-    ) -> Iterator[list[dict]]:
+    ) -> Iterator[list[ExampleWithRuns]]:
         """Paginate through dataset runs and yield batches.
 
         Args:
@@ -8289,7 +8289,7 @@ class Client:
             limit: Maximum total number of results to return
 
         Yields:
-            Batches of run results as lists of dictionaries
+            Batches of run results as lists of ExampleWithRuns instances
         """
         offset = 0
         results_count = 0
@@ -8317,7 +8317,9 @@ class Client:
             if not batch:
                 break
 
-            yield batch
+            # Transform raw dictionaries to ExampleWithRuns instances
+            examples_batch = [ls_schemas.ExampleWithRuns(**result) for result in batch]
+            yield examples_batch
             results_count += len(batch)
 
             if len(batch) < batch_limit or (limit and results_count >= limit):
@@ -8339,37 +8341,37 @@ class Client:
         Args:
             dataset_id: Dataset UUID to get experiment data for
             session_id: Experiment session UUID, also called project_id, can find in the url of the LS experiment page
-            preview: Whether to return preview data only
-            comparative_experiment_id: Optional comparative experiment UUID
+            preview: Whether to return lightweight preview data only. When True,
+                fetches inputs_preview/outputs_preview summaries instead of full inputs/outputs from S3 storage.
+                Faster and less bandwidth.
+            comparative_experiment_id: Optional comparative experiment UUID for pairwise comparison experiment results.
             filters: Optional filters to apply to results
             limit: Maximum number of examples to return
 
         Returns:
-            ExperimentResults containing project stats and iterator of examples with runs
+            ExperimentResults containing stats and experiment_runs iterator
 
         Raises:
             ValueError: If project not found for the given session_id
 
         Example:
-            >>> import uuid
             >>> client = Client()
-            >>> experiment_results = client.get_experiment_results(
+            >>> results = client.get_experiment_results(
             ...     dataset_id="f01ffa03-5a25-4163-a6a3-66b6af72378f",
-            ...     session_id=uuid.UUID("037ae90f-f297-4926-b93c-37d8abf6899f"),
+            ...     session_id="037ae90f-f297-4926-b93c-37d8abf6899f"
             ... )
+            >>> for example in results["experiment_runs"]:
+            ...     if example.runs:
+            ...         print(example.runs[0])
+
             >>> # Access aggregated experiment stats
-            >>> print(f"Total runs: {experiment_results['stats'].run_count}")
-            >>> print(f"Total cost: {experiment_results['stats'].total_cost}")
-            >>> print(f"P50 latency: {experiment_results['stats'].latency_p50}")
-            >>> # Stream through individual examples with extracted metrics
-            >>> for example in experiment_results["examples_with_runs"]:
-            ...     print(f"Example {example['id']}")
-            ...     print(f"  Cost: {example.get('total_cost')}")
-            ...     print(f"  Status: {example.get('status')}")
-            ...     print(f"  Tokens: {example.get('total_tokens')}")
+            >>> print(f"Total runs: {results['stats'].run_count}")
+            >>> print(f"Total cost: {results['stats'].total_cost}")
+            >>> print(f"P50 latency: {results['stats'].latency_p50}")
+
         """
 
-        def _get_examples_iterator():
+        def _get_dataset_runs_iterator():
             """Yield examples with runs."""
             for batch in self._paginate_dataset_runs(
                 dataset_id=dataset_id,
@@ -8379,20 +8381,20 @@ class Client:
                 filters=filters,
                 limit=limit,
             ):
-                for result in batch:
-                    yield _extract_run_metrics_from_example(result)
+                for example in batch:
+                    yield example
 
-        # Get project stats
-        projects = list(
+        # Get aggregated stats for the experiment project/session
+        project_stats = list(
             self.list_projects(project_ids=[session_id], include_stats=True)
         )
 
-        if not projects:
+        if not project_stats:
             raise ValueError(f"Project not found for session_id: {session_id}")
 
         # Return results container with stats and examples iterator
         return ls_schemas.ExperimentResults(
-            stats=projects[0], examples_with_runs=_get_examples_iterator()
+            stats=project_stats[0], experiment_runs=_get_dataset_runs_iterator()
         )
 
 
@@ -8433,41 +8435,6 @@ def convert_prompt_to_openai_format(
         return openai._get_request_payload(messages, stop=stop, **model_kwargs)
     except Exception as e:
         raise ls_utils.LangSmithError(f"Error converting to OpenAI format: {e}")
-
-
-def _extract_run_metrics_from_example(result: dict) -> dict:
-    """Extract metrics from the first run in an example and add to result.
-
-    Args:
-        result: Example result dictionary containing runs
-
-    Returns:
-        The same result dictionary with extracted metrics added:
-        - total_cost: Total cost from first run
-        - total_tokens: Total tokens from first run
-        - status: Status from first run
-        - latency_in_seconds: Calculated latency from first run
-    """
-    if "runs" in result and result["runs"]:
-        run = result["runs"][0]
-        result["total_cost"] = run.get("total_cost")
-        result["total_tokens"] = run.get("total_tokens")
-        result["status"] = run.get("status")
-        if run.get("end_time") and run.get("start_time"):
-            end_time = (
-                datetime.datetime.fromisoformat(run["end_time"].replace("Z", "+00:00"))
-                if isinstance(run["end_time"], str)
-                else run["end_time"]
-            )
-            start_time = (
-                datetime.datetime.fromisoformat(
-                    run["start_time"].replace("Z", "+00:00")
-                )
-                if isinstance(run["start_time"], str)
-                else run["start_time"]
-            )
-            result["latency_in_seconds"] = (end_time - start_time).total_seconds()
-    return result
 
 
 def convert_prompt_to_anthropic_format(

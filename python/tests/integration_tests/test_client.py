@@ -3632,24 +3632,38 @@ def test_get_experiment_results(langchain_client: Client) -> None:
     assert stats.run_count > 0
 
     # Test that we get examples iterator
-    examples_list = list(experiment_results["examples_with_runs"])
+    examples_list = list(experiment_results["experiment_runs"])
     assert len(examples_list) > 0
-
-    # Test that examples have extracted run metrics
-    first_example = examples_list[0]
-    assert "total_cost" in first_example
-    assert "status" in first_example
-    assert "total_tokens" in first_example
-    assert "runs" in first_example  # Original runs data still present
-
     # Test with limit parameter
     limited_results = langchain_client.get_experiment_results(
         dataset_id=dataset.id, session_id=session_id, limit=1
     )
-    limited_examples = list(limited_results["examples_with_runs"])
+    limited_examples = list(limited_results["experiment_runs"])
     assert len(limited_examples) == 1
 
     # Test stats are the same regardless of limit (since stats come from project)
     assert limited_results["stats"].run_count == experiment_results["stats"].run_count
+
+    # Test preview mode - should be faster and return preview data
+    preview_results = langchain_client.get_experiment_results(
+        dataset_id=dataset.id, session_id=session_id, preview=True
+    )
+
+    # Stats should be the same in preview mode
+    assert preview_results["stats"].run_count == experiment_results["stats"].run_count
+
+    # Preview mode examples should have different data structure
+    preview_examples = list(preview_results["experiment_runs"])
+    assert len(preview_examples) > 0
+
+    preview_example = preview_examples[0]
+    assert "runs" in preview_example
+
+    if preview_example["runs"]:
+        preview_run = preview_example["runs"][0]
+        # In preview mode, we should have preview fields available
+        # Note: The exact behavior may vary based on the data, but we can check structure
+        assert isinstance(preview_run, dict)
+        # Preview may have inputs_preview/outputs_preview fields
 
     safe_delete_dataset(langchain_client, dataset_name=dataset_name)
