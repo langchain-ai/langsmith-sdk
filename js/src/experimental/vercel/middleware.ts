@@ -120,7 +120,7 @@ export function LangSmithMiddleware(config?: {
     ) => Record<string, unknown>;
     processOutputs?: (
       outputs: Record<string, unknown>
-    ) => Record<string, unknown>;
+    ) => Record<string, unknown> | Promise<Record<string, unknown>>;
   };
 }): LanguageModelV2Middleware {
   const { name, modelId, lsConfig } = config ?? {};
@@ -283,7 +283,7 @@ export function LangSmithMiddleware(config?: {
               );
               const outputFormatter =
                 lsConfig?.processOutputs ?? convertMessageToTracedFormat;
-              const formattedOutputs = outputFormatter(output);
+              const formattedOutputs = await outputFormatter(output);
               await runTree?.end(formattedOutputs);
             } catch (error: any) {
               await runTree?.end(undefined, error.message ?? String(error));

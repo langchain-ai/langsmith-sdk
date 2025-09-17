@@ -651,34 +651,37 @@ const wrapAISDK = <
           return inputFormatter(inputs);
         },
         processOutputs: async (outputs) => {
-          if (resolvedLsConfig?.processOutputs) {
-            return resolvedLsConfig.processOutputs(outputs);
-          }
-          if (outputs.outputs == null || typeof outputs.outputs !== "object") {
+          try {
+            if (resolvedLsConfig?.processOutputs) {
+              return resolvedLsConfig.processOutputs(outputs);
+            }
+            if (
+              outputs.outputs == null ||
+              typeof outputs.outputs !== "object"
+            ) {
+              return outputs;
+            }
+            // Important: Even accessing this property creates a promise.
+            // This must be awaited.
+            let content = await outputs.outputs.content;
+            if (content == null) {
+              // AI SDK 4 shim
+              content = await outputs.outputs.text;
+            }
+            if (
+              content == null ||
+              !["object", "string"].includes(typeof content)
+            ) {
+              return outputs;
+            }
+            return convertMessageToTracedFormat({
+              content,
+              role: "assistant",
+            });
+          } catch (e: unknown) {
+            // Handle parsing failures without a log
             return outputs;
           }
-          let content;
-          if ("content" in outputs.outputs && outputs.outputs.content != null) {
-            content = await outputs.outputs.content;
-          } else if (
-            "text" in outputs.outputs &&
-            outputs.outputs.text != null
-          ) {
-            // AI SDK 4 shim
-            content = await outputs.outputs.text;
-          } else {
-            return outputs;
-          }
-          if (
-            content == null ||
-            !["object", "string"].includes(typeof content)
-          ) {
-            return outputs;
-          }
-          return convertMessageToTracedFormat({
-            content,
-            role: "assistant",
-          });
         },
       }
     ) as (...args: Parameters<StreamTextType>) => ReturnType<StreamTextType>;
@@ -745,17 +748,25 @@ const wrapAISDK = <
           return inputFormatter(inputs);
         },
         processOutputs: async (outputs) => {
-          if (resolvedLsConfig?.processOutputs) {
-            return resolvedLsConfig.processOutputs(outputs);
-          }
-          if (outputs.outputs == null || typeof outputs.outputs !== "object") {
+          try {
+            if (resolvedLsConfig?.processOutputs) {
+              return resolvedLsConfig.processOutputs(outputs);
+            }
+            if (
+              outputs.outputs == null ||
+              typeof outputs.outputs !== "object"
+            ) {
+              return outputs;
+            }
+            const object = await outputs.outputs.object;
+            if (object == null || typeof object !== "object") {
+              return outputs;
+            }
+            return object;
+          } catch (e: unknown) {
+            // Handle parsing failures without a log
             return outputs;
           }
-          const object = await outputs.outputs.object;
-          if (object == null || typeof object !== "object") {
-            return outputs;
-          }
-          return object;
         },
       }
     ) as (

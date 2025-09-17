@@ -1,9 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable no-process-env */
+/* eslint-disable import/no-extraneous-dependencies */
 import { MockLanguageModelV2 } from "ai/test";
 import * as ai from "ai";
 import { simulateReadableStream, APICallError } from "ai";
 import { z } from "zod";
+import { describe, it, beforeEach, expect } from "vitest";
 import {
   createLangSmithProviderOptions,
   wrapAISDK,
@@ -832,6 +834,90 @@ describe("wrapAISDK", () => {
       expect(
         parentSuccessCall.body.extra.metadata.usage_metadata.total_tokens
       ).toBe(15);
+    });
+
+    it("should handle stream cancellation with abortController", async () => {
+      const wrappedMethods = wrapAISDK(
+        {
+          wrapLanguageModel: ai.wrapLanguageModel,
+          generateText: ai.generateText,
+          streamText: ai.streamText,
+          generateObject: ai.generateObject,
+          streamObject: ai.streamObject,
+        },
+        { client: mockClient as any }
+      );
+
+      const abortController = new AbortController();
+
+      const mockLangModel = new MockLanguageModelV2({
+        modelId: "abort-test-model",
+        doStream: async () => ({
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "text-start", id: "text-1" },
+              { type: "text-delta", id: "text-1", delta: "Lorem" },
+              { type: "text-delta", id: "text-1", delta: " ipsum" },
+              { type: "text-delta", id: "text-1", delta: " dolor" },
+              { type: "text-delta", id: "text-1", delta: " sit" },
+              { type: "text-delta", id: "text-1", delta: " amet" },
+              { type: "text-delta", id: "text-1", delta: " consectetur" },
+              { type: "text-delta", id: "text-1", delta: " adipiscing" },
+              { type: "text-delta", id: "text-1", delta: " elit" },
+              { type: "text-end", id: "text-1" },
+              {
+                type: "finish",
+                finishReason: "stop",
+                usage: {
+                  inputTokens: 5,
+                  outputTokens: 8,
+                  totalTokens: 13,
+                },
+              },
+            ],
+          }),
+        }),
+      });
+
+      const result = wrappedMethods.streamText({
+        model: mockLangModel,
+        prompt: "Tell me a lorem ipsum poem",
+        abortSignal: abortController.signal,
+      });
+
+      // Consume stream and abort after a few chunks
+      let chunkCount = 0;
+      let fullText = "";
+
+      for await (const textPart of result.textStream) {
+        fullText += textPart;
+        chunkCount++;
+
+        if (chunkCount > 5) {
+          abortController.abort();
+          break;
+        }
+      }
+
+      expect(chunkCount).toBeGreaterThan(5);
+      expect(fullText).toBeTruthy();
+
+      // Add delay for async operations
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Verify HTTP requests were made even with cancellation
+      expect(mockHttpRequests.length).toBeGreaterThan(0);
+
+      const createRunCall = mockHttpRequests.find(
+        (req) =>
+          req.type === "createRun" &&
+          req.body.extra.metadata.ai_sdk_method === "ai.streamText"
+      );
+      expect(createRunCall).toBeDefined();
+      expect(createRunCall.body.inputs).toHaveProperty(
+        "prompt",
+        "Tell me a lorem ipsum poem"
+      );
     });
   });
 

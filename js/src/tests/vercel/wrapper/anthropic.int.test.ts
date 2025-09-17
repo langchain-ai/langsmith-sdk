@@ -11,8 +11,8 @@ const { generateText, streamText, generateObject, streamObject } =
   wrapAISDK(ai);
 
 // No Anthropic key in CI
-describe.skip("anthropic", () => {
-  test("wrap generateText", async () => {
+describe("anthropic", () => {
+  test.skip("wrap generateText", async () => {
     const result = await generateText({
       model: anthropic("claude-3-5-haiku-latest"),
       messages: [
@@ -37,7 +37,7 @@ describe.skip("anthropic", () => {
     expect(result.providerMetadata).toBeDefined();
   });
 
-  test("wrap streamText", async () => {
+  test.skip("wrap streamText", async () => {
     const result = await streamText({
       model: anthropic("claude-3-5-haiku-latest"),
       messages: [
@@ -66,7 +66,7 @@ describe.skip("anthropic", () => {
     expect(result.providerMetadata).toBeDefined();
   });
 
-  test("wrap generateObject", async () => {
+  test.skip("wrap generateObject", async () => {
     const schema = z.object({
       color: z.string(),
     });
@@ -86,7 +86,7 @@ describe.skip("anthropic", () => {
     expect(result.providerMetadata).toBeDefined();
   });
 
-  test("wrap streamObject", async () => {
+  test.skip("wrap streamObject", async () => {
     const schema = z.object({
       color: z.string(),
     });
@@ -108,5 +108,37 @@ describe.skip("anthropic", () => {
     expect(schema.parse(chunks.at(-1))).toBeDefined();
     expect(result.usage).toBeDefined();
     expect(result.providerMetadata).toBeDefined();
+  });
+
+  test.skip("stream cancellation with abortController should finish normally", async () => {
+    const abortController = new AbortController();
+
+    const result = streamText({
+      model: anthropic("claude-3-5-haiku-latest"),
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "tell me lorem ipsum poem",
+            },
+          ],
+        },
+      ],
+      abortSignal: abortController.signal,
+    });
+
+    let i = 0;
+    for await (const p of result.fullStream) {
+      if (p.type === "text-delta") {
+        console.log(p.text);
+
+        if (i++ > 5) {
+          abortController.abort();
+          console.log("aborted");
+        }
+      }
+    }
   });
 });
