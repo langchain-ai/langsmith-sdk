@@ -6,15 +6,14 @@ permissions:
   contents: read
 
 on:
+  push:
+    branches:
+      - main
   pull_request:
     branches:
       - main
+    types: [opened, synchronize, reopened, labeled, unlabeled]
   workflow_dispatch:
-    inputs:
-      run_integration_tests:
-        description: "Run integration tests"
-        default: "false"
-        options: ["true", "false"]
 
 jobs:
   format:
