@@ -9,7 +9,15 @@ from typing import Callable, Sequence, Tuple, TypeVar
 
 import pytest
 
-from langsmith import Client, aevaluate, aevaluate_existing, evaluate, expect, test
+from langsmith import (
+    Client,
+    aevaluate,
+    aevaluate_existing,
+    evaluate,
+    evaluate_existing,
+    expect,
+    test,
+)
 from langsmith.evaluation import EvaluationResult, EvaluationResults
 from langsmith.schemas import Example, Run
 
@@ -572,12 +580,9 @@ Actual: {outputs["equation"]}
     assert (finish_time - start) <= 8.5
 
 
-def test_evaluate_existing():
-    """Sync version of test_aevaluate_existing to test enhanced wait() method."""
-    from langsmith.evaluation import evaluate, evaluate_existing
-
+def test_evaluate_blocking():
     client = Client()
-    ds_name = "__test_dataset_for_evaluate_existing"
+    ds_name = "__test_dataset_for_evaluate_blocking"
     if not client.has_dataset(dataset_name=ds_name):
         safe_delete_dataset(client, dataset_name=ds_name)
         client.create_dataset(dataset_name=ds_name)
@@ -608,7 +613,7 @@ def test_evaluate_existing():
         }
 
         results = evaluate(target_fn, **params)
-        results.wait()  # Test the enhanced wait method
+        results.wait()
 
         experiment = next(client.list_projects(name=results.experiment_name))
         experiment_id = experiment.id
@@ -623,9 +628,9 @@ def test_evaluate_existing():
         safe_delete_dataset(client, dataset_name=ds_name)
 
 
-async def test_aevaluate_existing():
+async def test_aevaluate_blocking():
     client = Client()
-    ds_name = "__test_dataset_for_aevaluate_existing"
+    ds_name = "__test_dataset_for_aevaluate_blocking"
     if not client.has_dataset(dataset_name=ds_name):
         safe_delete_dataset(client, dataset_name=ds_name)
         client.create_dataset(dataset_name=ds_name)
