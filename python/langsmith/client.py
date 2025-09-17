@@ -8381,8 +8381,7 @@ class Client:
                 filters=filters,
                 limit=limit,
             ):
-                for run in batch:
-                    yield run
+                yield from batch
 
         # Get aggregated stats for the experiment project/session
         project_stats = list(
