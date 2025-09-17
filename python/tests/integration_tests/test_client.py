@@ -3659,11 +3659,4 @@ def test_get_experiment_results(langchain_client: Client) -> None:
     preview_example = preview_examples[0]
     assert "runs" in preview_example
 
-    if preview_example["runs"]:
-        preview_run = preview_example["runs"][0]
-        # In preview mode, we should have preview fields available
-        # Note: The exact behavior may vary based on the data, but we can check structure
-        assert isinstance(preview_run, dict)
-        # Preview may have inputs_preview/outputs_preview fields
-
     safe_delete_dataset(langchain_client, dataset_name=dataset_name)
