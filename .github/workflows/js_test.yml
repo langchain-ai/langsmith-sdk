@@ -110,3 +110,5 @@ jobs:
         run: yarn run check-version
       - name: Test
         run: yarn run test
+      - name: Test: Vitest
+        run: yarn run test:vitest

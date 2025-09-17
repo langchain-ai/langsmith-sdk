@@ -246,10 +246,18 @@ async function handleRunOutputs(params: {
             "Error occurred during processOutputs. Sending unprocessed outputs:",
             e
           );
-          await runTree?.end(outputs);
+          try {
+            await runTree?.end(outputs);
+          } catch (e) {
+            console.error("Error occurred during runTree?.end.", e);
+          }
         })
         .finally(async () => {
-          await handleEnd({ runTree, postRunPromise, on_end, excludeInputs });
+          try {
+            await handleEnd({ runTree, postRunPromise, on_end, excludeInputs });
+          } catch (e) {
+            console.error("Error occurred during handleEnd.", e);
+          }
         });
       return;
     }
