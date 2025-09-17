@@ -631,14 +631,62 @@ class ExperimentResults:
     def __repr__(self) -> str:
         return f"<ExperimentResults {self.experiment_name}>"
 
-    def wait(self) -> None:
-        """Wait for the evaluation runner to complete.
+    def wait(self, timeout: float = 30.0) -> None:
+        """Wait for the evaluation runner to complete and for runs to be available.
 
-        This method blocks the current thread until the evaluation runner has
-        finished its execution.
+        Args:
+            timeout: Maximum time to wait in seconds (default: 30.0)
         """
+        import time
+
         if self._thread:
             self._thread.join()
+
+        experiment = self._manager._get_experiment()
+        if not experiment:
+            return
+
+        # Wait for runs to be available with exponential backoff
+        start_time = time.time()
+        delay = 1.0
+        max_delay = 10.0
+
+        # Wait for some runs to be available
+        while time.time() - start_time < timeout:
+            try:
+                project = next(
+                    self._manager.client.list_projects(
+                        project_ids=[experiment.id],
+                        limit=1,
+                        include_stats=True,
+                    )
+                )
+                if project and project.run_count > 0:
+                    break
+            except Exception:
+                break
+
+            time.sleep(delay)
+            delay = min(delay * 2, max_delay)
+
+        # Wait for pending runs to complete
+        delay = 1.0
+        max_delay = 10.0
+
+        while time.time() - start_time < timeout:
+            try:
+                pending_run = next(
+                    self._manager.client.list_runs(
+                        project_id=experiment.id, filter='eq(status,"pending")', limit=1
+                    )
+                )
+                if pending_run is None:
+                    break
+            except Exception:
+                break
+
+            time.sleep(delay)
+            delay = min(delay * 2, max_delay)
 
 
 ## Public API for Comparison Experiments

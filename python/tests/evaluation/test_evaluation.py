@@ -1,7 +1,9 @@
 import asyncio
 import functools
 import logging
+import threading
 import time
+
 from contextlib import contextmanager
 from typing import Callable, Sequence, Tuple, TypeVar
 
@@ -12,6 +14,26 @@ from langsmith.evaluation import EvaluationResult, EvaluationResults
 from langsmith.schemas import Example, Run
 
 T = TypeVar("T")
+
+logger = logging.getLogger(__name__)
+
+# Global lock to prevent parallel dataset deletions that can cause deadlocks
+_dataset_deletion_lock = threading.Lock()
+
+
+def safe_delete_dataset(
+    client: Client, dataset_id: str = None, dataset_name: str = None
+):
+    """Delete a dataset with thread safety to prevent deadlocks in parallel tests."""
+    with _dataset_deletion_lock:
+        try:
+            if dataset_id:
+                client.delete_dataset(dataset_id=dataset_id)
+            elif dataset_name:
+                client.delete_dataset(dataset_name=dataset_name)
+        except Exception as e:
+            # Log the error but don't fail the test - dataset might already be deleted
+            logger.warning(f"Failed to delete dataset: {e}")
 
 
 @contextmanager
@@ -550,38 +572,99 @@ Actual: {outputs["equation"]}
     assert (finish_time - start) <= 8.5
 
 
-async def test_aevaluate_existing():
-    async def always_quarter(inputs: dict, outputs: dict) -> float:
-        await asyncio.sleep(0.5)
-        return {"key": "arbitrary", "score": 0.25}
-
-    async def always_half(inputs: dict, outputs: dict) -> float:
-        await asyncio.sleep(0.5)
-        return {"key": "arbitrary", "score": 0.5}
+def test_evaluate_existing():
+    """Sync version of test_aevaluate_existing to test enhanced wait() method."""
+    from langsmith.evaluation import evaluate, evaluate_existing
 
     client = Client()
+    ds_name = "__test_dataset_for_evaluate_existing"
+    if not client.has_dataset(dataset_name=ds_name):
+        safe_delete_dataset(client, dataset_name=ds_name)
+        client.create_dataset(dataset_name=ds_name)
+        client.create_example(
+            dataset_name=ds_name, inputs={"foo": "bar"}, outputs={"foo": "bar"}
+        )
 
-    async def target_fn(inputs: dict) -> dict:
-        await asyncio.sleep(0.5)
-        return {"output": "Yes"}
+    try:
 
-    params = {
-        "data": "ac1a2d4e-abfc-4db8-97c1-1097924dc7c6",
-        "client": client,
-        "experiment_prefix": "test_thingy",
-        "blocking": True,
-        "evaluators": [always_quarter],
-    }
+        def always_quarter(run: Run, example: Example) -> dict:
+            time.sleep(0.5)
+            return {"key": "arbitrary", "score": 0.25}
 
-    results = await aevaluate(target_fn, **params)
+        def always_half(run: Run, example: Example) -> dict:
+            time.sleep(0.5)
+            return {"key": "arbitrary", "score": 0.5}
 
-    experiment = next(client.list_projects(name=results.experiment_name))
-    experiment_id = experiment.id
+        def target_fn(inputs: dict) -> dict:
+            time.sleep(0.5)
+            return {"output": "Yes"}
 
-    await aevaluate_existing(
-        experiment_id,
-        evaluators=[always_half],
-        max_concurrency=1,
-        client=client,
-        blocking=True,
-    )
+        params = {
+            "data": ds_name,
+            "client": client,
+            "experiment_prefix": "test_thingy",
+            "evaluators": [always_quarter],
+            "blocking": True,
+        }
+
+        results = evaluate(target_fn, **params)
+        results.wait()  # Test the enhanced wait method
+
+        experiment = next(client.list_projects(name=results.experiment_name))
+        experiment_id = experiment.id
+
+        evaluate_existing(
+            experiment_id,
+            evaluators=[always_half],
+            max_concurrency=1,
+            client=client,
+        )
+    finally:
+        safe_delete_dataset(client, dataset_name=ds_name)
+
+
+async def test_aevaluate_existing():
+    client = Client()
+    ds_name = "__test_dataset_for_aevaluate_existing"
+    if not client.has_dataset(dataset_name=ds_name):
+        safe_delete_dataset(client, dataset_name=ds_name)
+        client.create_dataset(dataset_name=ds_name)
+        client.create_example(
+            dataset_name=ds_name, inputs={"foo": "bar"}, outputs={"foo": "bar"}
+        )
+
+    try:
+
+        async def always_quarter(inputs: dict, outputs: dict) -> float:
+            await asyncio.sleep(0.5)
+            return {"key": "arbitrary", "score": 0.25}
+
+        async def always_half(inputs: dict, outputs: dict) -> float:
+            await asyncio.sleep(0.5)
+            return {"key": "arbitrary", "score": 0.5}
+
+        async def target_fn(inputs: dict) -> dict:
+            await asyncio.sleep(0.5)
+            return {"output": "Yes"}
+
+        params = {
+            "data": ds_name,
+            "client": client,
+            "experiment_prefix": "test_thingy",
+            "blocking": True,
+            "evaluators": [always_quarter],
+        }
+
+        results = await aevaluate(target_fn, **params)
+
+        experiment = next(client.list_projects(name=results.experiment_name))
+        experiment_id = experiment.id
+
+        await aevaluate_existing(
+            experiment_id,
+            evaluators=[always_half],
+            max_concurrency=1,
+            client=client,
+        )
+    finally:
+        safe_delete_dataset(client, dataset_name=ds_name)
