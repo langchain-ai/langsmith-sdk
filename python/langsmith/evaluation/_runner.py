@@ -15,6 +15,7 @@ import queue
 import random
 import textwrap
 import threading
+import time
 import uuid
 from collections.abc import Awaitable, Generator, Iterable, Iterator, Sequence
 from contextvars import copy_context
@@ -637,8 +638,6 @@ class ExperimentResults:
         Args:
             timeout: Maximum time to wait in seconds (default: 30.0)
         """
-        import time
-
         if self._thread:
             self._thread.join()
 
