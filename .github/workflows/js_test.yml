@@ -11,6 +11,11 @@ on:
       - ".github/**"
       - "js/**"
   workflow_dispatch:
+    inputs:
+      run_integration_tests:
+        description: "Run integration tests"
+        default: "false"
+        options: ["true", "false"]
 
 jobs:
   format:
@@ -75,7 +80,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        node-version: [20.x, 20.x, "22.4.1"]
+        node-version: [20.x, "22.4.1"]
         # See Node.js release schedule at https://nodejs.org/en/about/releases/
         include:
           - os: windows-latest
@@ -104,8 +109,18 @@ jobs:
         run: yarn run test
 
   vitest:
-    name: Vitest
-    runs-on: ubuntu-latest
+    name: Vitest tests
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        node-version: [20.x, "22.4.1"]
+        # See Node.js release schedule at https://nodejs.org/en/about/releases/
+        include:
+          - os: windows-latest
+            node-version: 20.x
+          - os: macos-latest
+            node-version: 20.x
+    runs-on: ${{ matrix.os }}
     defaults:
       run:
         working-directory: "js"
