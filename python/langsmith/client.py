@@ -8358,7 +8358,7 @@ class Client:
             >>> client = Client()
             >>> results = client.get_experiment_results(
             ...     dataset_id="f01ffa03-5a25-4163-a6a3-66b6af72378f",
-            ...     session_id="037ae90f-f297-4926-b93c-37d8abf6899f"
+            ...     session_id="037ae90f-f297-4926-b93c-37d8abf6899f",
             ... )
             >>> for example in results["experiment_runs"]:
             ...     if example.runs:
@@ -8381,8 +8381,8 @@ class Client:
                 filters=filters,
                 limit=limit,
             ):
-                for example in batch:
-                    yield example
+                for run in batch:
+                    yield run
 
         # Get aggregated stats for the experiment project/session
         project_stats = list(
