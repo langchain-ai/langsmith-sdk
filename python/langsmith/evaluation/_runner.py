@@ -660,7 +660,11 @@ class ExperimentResults:
                         include_stats=True,
                     )
                 )
-                if project and project.run_count > 0:
+                if (
+                    project is not None
+                    and project.run_count is not None
+                    and project.run_count > 0
+                ):
                     break
             except Exception:
                 break
