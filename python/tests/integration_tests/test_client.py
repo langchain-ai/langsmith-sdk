@@ -3615,11 +3615,10 @@ def test_get_experiment_results(langchain_client: Client) -> None:
 
     assert len(results) == 2
 
-    # Extract session ID from the evaluation results
-    project_id = results[0]["experiment_id"]
+    experiment_name = results.experiment_name
 
     # Test get_experiment_results method
-    experiment_results = langchain_client.get_experiment_results(project_id=project_id)
+    experiment_results = langchain_client.get_experiment_results(name=experiment_name)
 
     # Test that we get stats
     assert experiment_results["stats"] is not None
@@ -3632,7 +3631,7 @@ def test_get_experiment_results(langchain_client: Client) -> None:
     assert len(examples_list) > 0
     # Test with limit parameter
     limited_results = langchain_client.get_experiment_results(
-        project_id=project_id, limit=1
+        name=experiment_name, limit=1
     )
     limited_examples = list(limited_results["examples_with_runs"])
     assert len(limited_examples) == 1
@@ -3642,7 +3641,7 @@ def test_get_experiment_results(langchain_client: Client) -> None:
 
     # Test preview mode - should be faster and return preview data
     preview_results = langchain_client.get_experiment_results(
-        project_id=project_id, preview=True
+        name=experiment_name, preview=True
     )
     assert len(list(preview_results["examples_with_runs"])) > 0
 
