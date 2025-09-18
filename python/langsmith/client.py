@@ -5938,13 +5938,13 @@ class Client:
             single_result: Union[ls_evaluator.EvaluationResult, dict],
         ) -> ls_evaluator.EvaluationResult:
             if isinstance(single_result, dict):
-                return ls_evaluator.EvaluationResult(
-                    **{
-                        "key": fn_name,
-                        "comment": single_result.get("reasoning"),
-                        **single_result,
-                    }
-                )
+                merged_result: dict[str, Any] = {**single_result}
+                if "reasoning" in merged_result and "comment" not in merged_result:
+                    merged_result["comment"] = merged_result["reasoning"]
+                merged_result.pop("reasoning", None)
+                if fn_name is not None and merged_result.get("key") is None:
+                    merged_result["key"] = fn_name
+                return ls_evaluator.EvaluationResult(**merged_result)
             return single_result
 
         def _is_eval_results(results: Any) -> TypeGuard[ls_evaluator.EvaluationResults]:
