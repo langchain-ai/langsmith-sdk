@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from enum import Enum
@@ -158,7 +159,6 @@ class Example(ExampleBase):
     )
     dataset_id: UUID = Field(default=UUID("00000000-0000-0000-0000-000000000000"))
     modified_at: Optional[datetime] = Field(default=None)
-    runs: list[Run] = Field(default_factory=list)
     source_run_id: Optional[UUID] = None
     attachments: Optional[dict[str, AttachmentInfo]] = Field(default=None)
     """Dictionary with attachment names as keys and a tuple of the S3 url
@@ -1261,3 +1261,18 @@ class UpsertExamplesResponse(TypedDict):
     """The number of examples that were upserted."""
     example_ids: list[str]
     """The ids of the examples that were upserted."""
+
+
+class ExampleWithRuns(Example):
+    """Example with runs."""
+
+    runs: list[Run] = Field(default_factory=list)
+
+    """The runs of the example."""
+
+
+class ExperimentResults(TypedDict):
+    """Results container for experiment data with stats and examples."""
+
+    stats: TracerSessionResult
+    examples_with_runs: Iterator[ExampleWithRuns]

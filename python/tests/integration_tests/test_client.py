@@ -3567,3 +3567,83 @@ def test_otel_trace_attributes(monkeypatch: pytest.MonkeyPatch):
         readable_span.attributes[_otel_exporter.GENAI_COMPLETION]
         == '{"answer":"Hello, User!"}'
     )
+
+
+def test_get_experiment_results(langchain_client: Client) -> None:
+    """Test get_experiment_results method with evaluation data."""
+    dataset_name = "__test_evaluate_attachments" + uuid4().hex[:4]
+    dataset = _create_dataset(langchain_client, dataset_name)
+
+    # Create example with attachments
+    example = ExampleCreate(
+        inputs={"question": "What is shown in the image?"},
+        outputs={"answer": "test image"},
+        attachments={
+            "image": ("image/png", b"fake image data for testing"),
+        },
+    )
+
+    langchain_client.upload_examples_multipart(dataset_id=dataset.id, uploads=[example])
+
+    def target(inputs: Dict[str, Any], attachments: Dict[str, Any]) -> Dict[str, Any]:
+        # Verify we receive the attachment data
+        assert "image" in attachments
+        assert "presigned_url" in attachments["image"]
+        image_data = attachments["image"]["reader"]
+        assert image_data.read() == b"fake image data for testing"
+        return {"answer": "test image"}
+
+    def evaluator(
+        outputs: dict, reference_outputs: dict, attachments: dict
+    ) -> Dict[str, Any]:
+        assert "image" in attachments
+        assert "presigned_url" in attachments["image"]
+        image_data = attachments["image"]["reader"]
+        assert image_data.read() == b"fake image data for testing"
+        return {
+            "score": float(
+                reference_outputs.get("answer") == outputs.get("answer")  # type: ignore
+            )
+        }
+
+    results = langchain_client.evaluate(
+        target,
+        data=dataset_name,
+        evaluators=[evaluator],
+        num_repetitions=2,
+    )
+
+    assert len(results) == 2
+
+    experiment_name = results.experiment_name
+
+    time.sleep(10)
+    # Test get_experiment_results method
+    experiment_results = langchain_client.get_experiment_results(name=experiment_name)
+
+    # Test that we get stats
+    assert experiment_results["stats"] is not None
+    stats = experiment_results["stats"]
+    assert hasattr(stats, "run_count")
+    assert stats.run_count > 0
+
+    # Test that we get examples iterator
+    examples_list = list(experiment_results["examples_with_runs"])
+    assert len(examples_list) > 0
+    # Test with limit parameter
+    limited_results = langchain_client.get_experiment_results(
+        name=experiment_name, limit=1
+    )
+    limited_examples = list(limited_results["examples_with_runs"])
+    assert len(limited_examples) == 1
+
+    # Test stats are the same regardless of limit (since stats come from project)
+    assert limited_results["stats"].run_count == experiment_results["stats"].run_count
+
+    # Test preview mode - should be faster and return preview data
+    preview_results = langchain_client.get_experiment_results(
+        name=experiment_name, preview=True
+    )
+    assert len(list(preview_results["examples_with_runs"])) > 0
+
+    safe_delete_dataset(langchain_client, dataset_name=dataset_name)

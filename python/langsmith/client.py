@@ -92,7 +92,7 @@ from langsmith._internal._operations import (
     serialized_run_operation_to_multipart_parts_and_context,
 )
 from langsmith._internal._serde import dumps_json as _dumps_json
-from langsmith.schemas import AttachmentInfo
+from langsmith.schemas import AttachmentInfo, ExampleWithRuns
 
 
 def _check_otel_enabled() -> bool:
@@ -8267,6 +8267,142 @@ class Client:
             upload_results=upload_results,
             error_handling=error_handling,
             **kwargs,
+        )
+
+    def _paginate_examples_with_runs(
+        self,
+        dataset_id: ID_TYPE,
+        session_id: uuid.UUID,
+        preview: bool = False,
+        comparative_experiment_id: Optional[uuid.UUID] = None,
+        filters: dict[uuid.UUID, list[str]] | None = None,
+        limit: Optional[int] = None,
+    ) -> Iterator[list[ExampleWithRuns]]:
+        """Paginate through examples with runs and yield batches.
+
+        Args:
+            dataset_id: Dataset UUID to fetch examples with runs
+            session_id: Session UUID to filter runs by, same as project_id
+            preview: Whether to return preview data only
+            comparative_experiment_id: Optional comparative experiment UUID
+            filters: Optional filters to apply
+            limit: Maximum total number of results to return
+
+        Yields:
+            Batches of run results as lists of ExampleWithRuns instances
+        """
+        offset = 0
+        results_count = 0
+
+        while True:
+            remaining = (limit - results_count) if limit else None
+            batch_limit = min(100, remaining) if remaining else 100
+
+            body = {
+                "session_ids": [session_id],
+                "offset": offset,
+                "limit": batch_limit,
+                "preview": preview,
+                "comparative_experiment_id": comparative_experiment_id,
+                "filters": filters,
+            }
+
+            response = self.request_with_retries(
+                "POST",
+                f"/datasets/{dataset_id}/runs",
+                request_kwargs={"data": _dumps_json(body)},
+            )
+
+            batch = response.json()
+            if not batch:
+                break
+
+            # Transform raw dictionaries to ExampleWithRuns instances
+            examples_batch = [ls_schemas.ExampleWithRuns(**result) for result in batch]
+            yield examples_batch
+            results_count += len(batch)
+
+            if len(batch) < batch_limit or (limit and results_count >= limit):
+                break
+
+            offset += len(batch)
+
+    def get_experiment_results(
+        self,
+        name: Optional[str] = None,
+        project_id: Optional[uuid.UUID] = None,
+        preview: bool = False,
+        comparative_experiment_id: Optional[uuid.UUID] = None,
+        filters: dict[uuid.UUID, list[str]] | None = None,
+        limit: Optional[int] = None,
+    ) -> ls_schemas.ExperimentResults:
+        """Get results for an experiment, including experiment session aggregated stats and experiment runs for each dataset example.
+
+        Experiment results may not be available immediately after the experiment is created.
+
+        Args:
+            name: The experiment name.
+            project_id: Experiment's tracing project id, also called session_id, can be found in the url of the LS experiment page
+            preview: Whether to return lightweight preview data only. When True,
+                fetches inputs_preview/outputs_preview summaries instead of full inputs/outputs from S3 storage.
+                Faster and less bandwidth.
+            comparative_experiment_id: Optional comparative experiment UUID for pairwise comparison experiment results.
+            filters: Optional filters to apply to results
+            limit: Maximum number of results to return
+
+        Returns:
+            ExperimentResults that has stats (TracerSessionResult) and iterator of examples_with_runs (ExampleWithRuns)
+
+        Raises:
+            ValueError: If project not found for the given session_id
+
+        Example:
+            >>> client = Client()
+            >>> results = client.get_experiment_results(
+            ...     project_id="037ae90f-f297-4926-b93c-37d8abf6899f",
+            ... )
+            >>> for example_with_runs in results["examples_with_runs"]:
+            ...     print(example_with_runs.dict())
+
+            >>> # Access aggregated experiment stats
+            >>> print(f"Total runs: {results['stats'].run_count}")
+            >>> print(f"Total cost: {results['stats'].total_cost}")
+            >>> print(f"P50 latency: {results['stats'].latency_p50}")
+
+        """
+        if name and not project_id:
+            projects = list(self.list_projects(name=name))
+            if not projects:
+                raise ValueError(f"No experiment found with name: '{name}'")
+            project_id = projects[0].id
+
+        # Get aggregated stats for the experiment project/session
+        project_stats = list(
+            self.list_projects(
+                project_ids=[cast(uuid.UUID, project_id)], include_stats=True
+            )
+        )
+
+        if not project_stats:
+            raise ValueError(f"No experiment found with project_id: '{project_id}'")
+
+        dataset_id = project_stats[0].reference_dataset_id
+
+        def _get_examples_with_runs_iterator():
+            """Yield examples with corresponding experiment runs."""
+            for batch in self._paginate_examples_with_runs(
+                dataset_id=dataset_id,
+                session_id=project_id,
+                preview=preview,
+                comparative_experiment_id=comparative_experiment_id,
+                filters=filters,
+                limit=limit,
+            ):
+                yield from batch
+
+        return ls_schemas.ExperimentResults(
+            stats=project_stats[0],
+            examples_with_runs=_get_examples_with_runs_iterator(),
         )
 
 
