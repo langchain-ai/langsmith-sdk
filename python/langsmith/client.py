@@ -8383,6 +8383,9 @@ class Client:
             )
         )
 
+        if not project_stats:
+            raise ValueError(f"No experiment found with project_id: '{project_id}'")
+
         dataset_id = project_stats[0].reference_dataset_id
 
         def _get_examples_with_runs_iterator():

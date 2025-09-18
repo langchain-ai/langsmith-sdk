@@ -3617,6 +3617,7 @@ def test_get_experiment_results(langchain_client: Client) -> None:
 
     experiment_name = results.experiment_name
 
+    time.sleep(10)
     # Test get_experiment_results method
     experiment_results = langchain_client.get_experiment_results(name=experiment_name)
 
