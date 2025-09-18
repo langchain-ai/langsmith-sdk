@@ -8337,7 +8337,7 @@ class Client:
         limit: Optional[int] = None,
     ) -> ls_schemas.ExperimentResults:
         """Get results for an experiment, including experiment session aggregated stats and experiment runs for each dataset example.
-
+        
         Experiment results may not be available immediately after the experiment is created.
 
         Args:
@@ -8371,15 +8371,15 @@ class Client:
 
         """
         if name and not project_id:
-            project_id = next(self.list_projects(name=name)).id
+            projects = list(self.list_projects(name=name))
+            if not projects:
+                raise ValueError(f"No experiment found with name: '{name}'")
+            project_id = projects[0].id
 
         # Get aggregated stats for the experiment project/session
         project_stats = list(
             self.list_projects(project_ids=[project_id], include_stats=True)
         )
-
-        if not project_stats:
-            raise ValueError(f"Project not found for project_id: {project_id}")
 
         dataset_id = project_stats[0].reference_dataset_id
 
