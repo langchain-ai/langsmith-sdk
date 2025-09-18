@@ -2,28 +2,20 @@
 
 from __future__ import annotations
 
+import contextvars
 import functools
 import json
 import logging
 import sys
+import threading
+import urllib.parse
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from typing import Any, Optional, Union, cast
 from uuid import NAMESPACE_DNS, UUID, uuid4, uuid5
 
+from pydantic import ConfigDict, Field, model_validator
 from typing_extensions import TypedDict
-
-try:
-    from pydantic.v1 import Field, root_validator  # type: ignore[import]
-except ImportError:
-    from pydantic import (  # type: ignore[assignment, no-redef]
-        Field,
-        root_validator,
-    )
-
-import contextvars
-import threading
-import urllib.parse
 
 import langsmith._internal._context as _context
 from langsmith import schemas as ls_schemas
@@ -195,7 +187,7 @@ class RunTree(ls_schemas.RunBase):
     parent_dotted_order: Optional[str] = Field(default=None, exclude=True)
     child_runs: list[RunTree] = Field(
         default_factory=list,
-        exclude={"__all__": {"parent_run_id"}},
+        exclude=cast(Any, {"__all__": {"parent_run_id"}}),
     )
     session_name: str = Field(
         default_factory=lambda: utils.get_tracer_project() or "default",
@@ -220,15 +212,14 @@ class RunTree(ls_schemas.RunBase):
         description="Projects to replicate this run to with optional updates.",
     )
 
-    class Config:
-        """Pydantic model configuration."""
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+        populate_by_name=True,
+        extra="ignore",
+    )
 
-        arbitrary_types_allowed = True
-        allow_population_by_field_name = True
-        extra = "ignore"
-
-    @root_validator(pre=True)
-    def infer_defaults(cls, values: dict) -> dict:
+    @model_validator(mode="before")
+    def infer_defaults(cls, values: dict[str, Any]) -> dict[str, Any]:
         """Assign name to the run."""
         if values.get("name") is None and values.get("serialized") is not None:
             if "name" in values["serialized"]:
@@ -268,21 +259,19 @@ class RunTree(ls_schemas.RunBase):
         values["replicas"] = _ensure_write_replicas(values["replicas"])
         return values
 
-    @root_validator(pre=False)
-    def ensure_dotted_order(cls, values: dict) -> dict:
+    @model_validator(mode="after")
+    def ensure_dotted_order(self) -> RunTree:
         """Ensure the dotted order of the run."""
-        current_dotted_order = values.get("dotted_order")
+        current_dotted_order = self.dotted_order
         if current_dotted_order and current_dotted_order.strip():
-            return values
-        current_dotted_order = _create_current_dotted_order(
-            values["start_time"], values["id"]
-        )
-        parent_dotted_order = values.get("parent_dotted_order")
+            return self
+        current_dotted_order = _create_current_dotted_order(self.start_time, self.id)
+        parent_dotted_order = self.parent_dotted_order
         if parent_dotted_order is not None:
-            values["dotted_order"] = parent_dotted_order + "." + current_dotted_order
+            self.dotted_order = parent_dotted_order + "." + current_dotted_order
         else:
-            values["dotted_order"] = current_dotted_order
-        return values
+            self.dotted_order = current_dotted_order
+        return self
 
     @property
     def client(self) -> Client:
