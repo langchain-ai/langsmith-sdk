@@ -8269,7 +8269,7 @@ class Client:
             **kwargs,
         )
 
-    def _paginate_dataset_runs(
+    def _paginate_examples_with_runs(
         self,
         dataset_id: ID_TYPE,
         session_id: uuid.UUID,
@@ -8278,10 +8278,10 @@ class Client:
         filters: dict[uuid.UUID, list[str]] | None = None,
         limit: Optional[int] = None,
     ) -> Iterator[list[ExampleWithRuns]]:
-        """Paginate through dataset runs and yield batches.
+        """Paginate through examples with runs and yield batches.
 
         Args:
-            dataset_id: Dataset UUID to fetch runs for
+            dataset_id: Dataset UUID to fetch examples with runs
             session_id: Session UUID to filter runs by, same as project_id
             preview: Whether to return preview data only
             comparative_experiment_id: Optional comparative experiment UUID
@@ -8347,7 +8347,7 @@ class Client:
             limit: Maximum number of results to return
 
         Returns:
-            ExperimentResults that has stats (TracerSessionResult) and iterator of experiment_runs (ExampleWithRuns)
+            ExperimentResults that has stats (TracerSessionResult) and iterator of examples_with_runs (ExampleWithRuns)
 
         Raises:
             ValueError: If project not found for the given session_id
@@ -8358,8 +8358,8 @@ class Client:
             ...     dataset_id="f01ffa03-5a25-4163-a6a3-66b6af72378f",
             ...     session_id="037ae90f-f297-4926-b93c-37d8abf6899f",
             ... )
-            >>> for example in results["experiment_runs"]:
-            ...     print(example.dict())
+            >>> for example_with_runs in results["examples_with_runs"]:
+            ...     print(example_with_runs.dict())
 
             >>> # Access aggregated experiment stats
             >>> print(f"Total runs: {results['stats'].run_count}")
@@ -8377,9 +8377,9 @@ class Client:
 
         dataset_id = project_stats[0].reference_dataset_id
 
-        def _get_dataset_runs_iterator():
+        def _get_examples_with_runs_iterator():
             """Yield examples with corresponding experiment runs."""
-            for batch in self._paginate_dataset_runs(
+            for batch in self._paginate_examples_with_runs(
                 dataset_id=dataset_id,
                 session_id=project_id,
                 preview=preview,
@@ -8390,7 +8390,7 @@ class Client:
                 yield from batch
 
         return ls_schemas.ExperimentResults(
-            stats=project_stats[0], experiment_runs=_get_dataset_runs_iterator()
+            stats=project_stats[0], examples_with_runs=_get_examples_with_runs_iterator()
         )
 
 

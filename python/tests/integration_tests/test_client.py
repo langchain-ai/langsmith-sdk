@@ -3628,13 +3628,13 @@ def test_get_experiment_results(langchain_client: Client) -> None:
     assert stats.run_count > 0
 
     # Test that we get examples iterator
-    examples_list = list(experiment_results["experiment_runs"])
+    examples_list = list(experiment_results["examples_with_runs"])
     assert len(examples_list) > 0
     # Test with limit parameter
     limited_results = langchain_client.get_experiment_results(
         project_id=project_id, limit=1
     )
-    limited_examples = list(limited_results["experiment_runs"])
+    limited_examples = list(limited_results["examples_with_runs"])
     assert len(limited_examples) == 1
 
     # Test stats are the same regardless of limit (since stats come from project)
@@ -3644,6 +3644,6 @@ def test_get_experiment_results(langchain_client: Client) -> None:
     preview_results = langchain_client.get_experiment_results(
         project_id=project_id, preview=True
     )
-    assert len(list(preview_results["experiment_runs"])) > 0
+    assert len(list(preview_results["examples_with_runs"])) > 0
 
     safe_delete_dataset(langchain_client, dataset_name=dataset_name)
