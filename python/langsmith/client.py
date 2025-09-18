@@ -8368,7 +8368,7 @@ class Client:
             >>> print(f"P50 latency: {results['stats'].latency_p50}")
 
         """
-        
+
         if name and not project_id:
             project_id = next(self.list_projects(name=name)).id
 
@@ -8395,7 +8395,8 @@ class Client:
                 yield from batch
 
         return ls_schemas.ExperimentResults(
-            stats=project_stats[0], examples_with_runs=_get_examples_with_runs_iterator()
+            stats=project_stats[0],
+            examples_with_runs=_get_examples_with_runs_iterator(),
         )
 
 
