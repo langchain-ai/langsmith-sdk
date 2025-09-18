@@ -8329,7 +8329,8 @@ class Client:
 
     def get_experiment_results(
         self,
-        project_id: uuid.UUID,
+        name: Optional[str] = None,
+        project_id: Optional[uuid.UUID] = None,
         preview: bool = False,
         comparative_experiment_id: Optional[uuid.UUID] = None,
         filters: dict[uuid.UUID, list[str]] | None = None,
@@ -8338,6 +8339,7 @@ class Client:
         """Get results for an experiment, including experiment session aggregated stats and experiment runs for each dataset example.
 
         Args:
+            name: The experiment name.
             project_id: Experiment's tracing project id, also called session_id, can be found in the url of the LS experiment page
             preview: Whether to return lightweight preview data only. When True,
                 fetches inputs_preview/outputs_preview summaries instead of full inputs/outputs from S3 storage.
@@ -8355,8 +8357,7 @@ class Client:
         Example:
             >>> client = Client()
             >>> results = client.get_experiment_results(
-            ...     dataset_id="f01ffa03-5a25-4163-a6a3-66b6af72378f",
-            ...     session_id="037ae90f-f297-4926-b93c-37d8abf6899f",
+            ...     project_id="037ae90f-f297-4926-b93c-37d8abf6899f",
             ... )
             >>> for example_with_runs in results["examples_with_runs"]:
             ...     print(example_with_runs.dict())
@@ -8367,6 +8368,10 @@ class Client:
             >>> print(f"P50 latency: {results['stats'].latency_p50}")
 
         """
+        
+        if name and not project_id:
+            project_id = next(self.list_projects(name=name)).id
+
         # Get aggregated stats for the experiment project/session
         project_stats = list(
             self.list_projects(project_ids=[project_id], include_stats=True)
