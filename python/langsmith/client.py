@@ -8337,6 +8337,7 @@ class Client:
         limit: Optional[int] = None,
     ) -> ls_schemas.ExperimentResults:
         """Get results for an experiment, including experiment session aggregated stats and experiment runs for each dataset example.
+        
         Experiment results may not be available immediately after the experiment is created.
 
         Args:
@@ -8369,7 +8370,6 @@ class Client:
             >>> print(f"P50 latency: {results['stats'].latency_p50}")
 
         """
-
         if name and not project_id:
             project_id = next(self.list_projects(name=name)).id
 
