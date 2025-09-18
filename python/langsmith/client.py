@@ -8378,7 +8378,7 @@ class Client:
 
         # Get aggregated stats for the experiment project/session
         project_stats = list(
-            self.list_projects(project_ids=[project_id], include_stats=True) # type: ignore
+            self.list_projects(project_ids=[cast(uuid.UUID, project_id)], include_stats=True)
         )
 
         dataset_id = project_stats[0].reference_dataset_id
