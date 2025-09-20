@@ -630,6 +630,9 @@ class RunTree(ls_schemas.RunBase):
         if not exclude_child_runs:
             for child_run in self.child_runs:
                 child_run.post(exclude_child_runs=False)
+        else:
+            # Clear child_runs
+            self.child_runs.clear()
 
     def patch(self, *, exclude_inputs: bool = False) -> None:
         """Patch the run tree to the API in a background thread.
