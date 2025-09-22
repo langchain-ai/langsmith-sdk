@@ -502,7 +502,6 @@ class RunTree(ls_schemas.RunBase):
             attachments=attachments or {},  # type: ignore
             dangerously_allow_filesystem=self.dangerously_allow_filesystem,
         )
-        self.child_runs.append(run)
         return run
 
     def _get_dicts_safe(self):
