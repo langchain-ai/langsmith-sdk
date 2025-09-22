@@ -484,7 +484,7 @@ def _is_using_internal_otlp_provider(client: Client) -> bool:
     try:
         # Use OpenTelemetry's standard API to get the global TracerProvider
         # Check if OTEL is available
-        if not ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED")):
+        if not ls_utils.is_env_var_truish("OTEL_ENABLED"):
             return False
 
         # Get the global TracerProvider and check its resource attributes
@@ -560,8 +560,8 @@ def get_tracing_mode() -> tuple[bool, bool]:
               true and OTEL_ONLY is not set to true
             - is_otel_only: True if only OTEL tracing is enabled
     """
-    otel_enabled = ls_utils.is_truish(ls_utils.get_env_var("OTEL_ENABLED"))
-    otel_only = ls_utils.is_truish(ls_utils.get_env_var("OTEL_ONLY"))
+    otel_enabled = ls_utils.is_env_var_truish("OTEL_ENABLED")
+    otel_only = ls_utils.is_env_var_truish("OTEL_ONLY")
 
     # If OTEL is not enabled, neither mode should be active
     if not otel_enabled:
@@ -591,7 +591,7 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
 
     # Disable compression if explicitly set or if using OpenTelemetry
     disable_compression = (
-        ls_utils.is_truish(ls_utils.get_env_var("DISABLE_RUN_COMPRESSION"))
+        ls_utils.is_env_var_truish("DISABLE_RUN_COMPRESSION")
         or client.otel_exporter is not None
     )
     if not disable_compression and use_multipart:
