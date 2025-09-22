@@ -368,6 +368,9 @@ def is_base_message_like(obj: object) -> bool:
         ]
     )
 
+def is_env_var_truish(value: Optional[str]) -> bool:
+    """Check if the given environment variable is truish."""
+    return is_truish(get_env_var(value))
 
 @functools.lru_cache(maxsize=100)
 def get_env_var(
