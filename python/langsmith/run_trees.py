@@ -502,6 +502,8 @@ class RunTree(ls_schemas.RunBase):
             attachments=attachments or {},  # type: ignore
             dangerously_allow_filesystem=self.dangerously_allow_filesystem,
         )
+        if not utils.is_truish(utils.get_env_var("EXCLUDE_CHILD_RUNS")):
+            self.child_runs.append(run)
         return run
 
     def _get_dicts_safe(self):
@@ -629,7 +631,7 @@ class RunTree(ls_schemas.RunBase):
         if not exclude_child_runs:
             for child_run in self.child_runs:
                 child_run.post(exclude_child_runs=False)
-        else:
+        elif utils.is_truish(utils.get_env_var("EXCLUDE_CHILD_RUNS")):
             # Clear child_runs
             self.child_runs.clear()
 
