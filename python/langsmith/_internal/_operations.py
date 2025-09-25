@@ -287,6 +287,37 @@ def serialized_feedback_operation_to_multipart_parts_and_context(
 def serialized_run_operation_to_multipart_parts_and_context(
     op: SerializedRunOperation,
 ) -> tuple[MultipartPartsAndContext, dict[str, BufferedReader]]:
+    # Extract debug information for logging
+    run_info = _orjson.loads(op._none)
+    run_name = run_info.get("name", "Unknown")
+
+    # Calculate total size and input size
+    total_size = op.calculate_serialized_size()
+    input_size = len(op.inputs) if op.inputs else 0
+
+    # Extract input dict keys if inputs exist
+    input_keys = []
+    if op.inputs:
+        try:
+            inputs_dict = _orjson.loads(op.inputs)
+            if isinstance(inputs_dict, dict):
+                input_keys = list(inputs_dict.keys())
+            else:
+                # Handle non-dict inputs (list, string, number, etc.)
+                input_keys = [f"<non_dict_type:{type(inputs_dict).__name__}>"]
+        except Exception as e:
+            input_keys = [f"<parse_error:{type(e).__name__}>"]
+
+    # Log debug information
+    logger.debug(
+        "Serializing multipart form - run_id=%s, run_name=%s, total_size=%d bytes, input_size=%d bytes, input_keys=%s",
+        op.id,
+        run_name,
+        total_size,
+        input_size,
+        input_keys,
+    )
+
     acc_parts: list[MultipartPart] = []
     opened_files_dict: dict[str, BufferedReader] = {}
     # this is main object, minus inputs/outputs/events/attachments
