@@ -2,6 +2,7 @@ import asyncio
 import json
 from unittest import mock
 from uuid import uuid4
+
 import pytest
 from agents import Agent, Runner, set_trace_processors
 
@@ -83,7 +84,6 @@ async def test_openai_agents_tracing_processor():
 
 @pytest.mark.xfail(reason="Flaky test - may fail intermittently")
 async def test_openai_agents_with_evaluate():
-    """Test that OpenAIAgentsTracingProcessor correctly traces agent runs with a client."""
     client = langsmith.Client()
 
     processor = OpenAIAgentsTracingProcessor(client=client)
