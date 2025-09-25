@@ -96,6 +96,7 @@ if HAVE_AGENTS:
         start_time: datetime
         dotted_order: str
         parent_run_id: Optional[str]
+        project_name: Optional[str]
 
     class OpenAIAgentsTracingProcessor(tracing.TracingProcessor):  # type: ignore[no-redef]
         """Tracing processor for the `OpenAI Agents SDK <https://openai.github.io/openai-agents-python/>`_.
@@ -187,10 +188,12 @@ if HAVE_AGENTS:
             start_time = datetime.now(timezone.utc)
 
             # Use LangSmith parent run tree if available, else create new trace
+            project_name = self._project_name
             if current_run_tree is not None:
                 trace_id = str(current_run_tree.trace_id)
                 parent_run_id = str(current_run_tree.id)
                 parent_dotted_order = current_run_tree.dotted_order
+                project_name = self._project_name or current_run_tree.session_name
             else:
                 trace_id = trace_run_id
                 parent_run_id = None
@@ -207,6 +210,7 @@ if HAVE_AGENTS:
                 start_time=start_time,
                 dotted_order=dotted_order,
                 parent_run_id=parent_run_id,
+                project_name=project_name,
             )
 
             run_extra = {"metadata": self._metadata or {}}
@@ -228,7 +232,7 @@ if HAVE_AGENTS:
                     revision_id=None,
                     extra=run_extra,
                     tags=self._tags,
-                    project_name=self._project_name,
+                    project_name=project_name,
                 )
 
                 self.client.create_run(**run_data)
@@ -250,7 +254,7 @@ if HAVE_AGENTS:
                         inputs=self._first_response_inputs.pop(trace.trace_id, {}),
                         outputs=self._last_response_outputs.pop(trace.trace_id, {}),
                         extra={"metadata": metadata},
-                        project_name=self._project_name,
+                        project_name=run["project_name"],
                     )
                 except Exception as e:
                     logger.exception(f"Error updating trace run: {e}")
@@ -287,6 +291,7 @@ if HAVE_AGENTS:
                 start_time=span_start_time,
                 dotted_order=dotted_order,
                 parent_run_id=parent_run["id"],
+                project_name=parent_run["project_name"],
             )
 
             run_name = agent_utils.get_run_name(span)
@@ -302,7 +307,7 @@ if HAVE_AGENTS:
                     parent_run_id=parent_run["id"],
                     dotted_order=dotted_order,
                     inputs=extracted.get("inputs", {}),
-                    project_name=self._project_name,
+                    project_name=parent_run["project_name"],
                 )
                 if span.started_at:
                     run_data["start_time"] = datetime.fromisoformat(span.started_at)
@@ -330,7 +335,7 @@ if HAVE_AGENTS:
                     outputs=outputs,
                     inputs=inputs,
                     extra=extracted,
-                    project_name=self._project_name,
+                    project_name=run["project_name"],
                 )
                 if span.ended_at:
                     run_data["end_time"] = datetime.fromisoformat(span.ended_at)
