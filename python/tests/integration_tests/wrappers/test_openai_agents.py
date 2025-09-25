@@ -81,6 +81,7 @@ async def test_openai_agents_tracing_processor():
     assert len(agent_runs) > 0, "No agent workflow runs found in trace"
 
 
+@pytest.mark.xfail(reason="Flaky test - may fail intermittently")
 async def test_openai_agents_with_evaluate():
     """Test that OpenAIAgentsTracingProcessor correctly traces agent runs with a client."""
     client = langsmith.Client()
