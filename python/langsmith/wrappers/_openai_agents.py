@@ -188,6 +188,7 @@ if HAVE_AGENTS:
             start_time = datetime.now(timezone.utc)
 
             # Use LangSmith parent run tree if available, else create new trace
+            project_name = self._project_name
             if current_run_tree is not None:
                 trace_id = str(current_run_tree.trace_id)
                 parent_run_id = str(current_run_tree.id)
@@ -197,7 +198,6 @@ if HAVE_AGENTS:
                 trace_id = trace_run_id
                 parent_run_id = None
                 parent_dotted_order = None
-                project_name = self._project_name
 
             dotted_order = agent_utils.ensure_dotted_order(
                 start_time=start_time,
