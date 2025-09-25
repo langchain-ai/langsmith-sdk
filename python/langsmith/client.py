@@ -8357,17 +8357,19 @@ class Client:
             ValueError: If project not found for the given session_id
 
         Example:
-            >>> client = Client()
-            >>> results = client.get_experiment_results(
-            ...     project_id="037ae90f-f297-4926-b93c-37d8abf6899f",
-            ... )
-            >>> for example_with_runs in results["examples_with_runs"]:
-            ...     print(example_with_runs.dict())
+            .. code-block:: python
 
-            >>> # Access aggregated experiment stats
-            >>> print(f"Total runs: {results['stats'].run_count}")
-            >>> print(f"Total cost: {results['stats'].total_cost}")
-            >>> print(f"P50 latency: {results['stats'].latency_p50}")
+                client = Client()
+                results = client.get_experiment_results(
+                    project_id="037ae90f-f297-4926-b93c-37d8abf6899f",
+                )
+                for example_with_runs in results["examples_with_runs"]:
+                    print(example_with_runs.dict())
+
+                # Access aggregated experiment stats
+                print(f"Total runs: {results['stats'].run_count}")
+                print(f"Total cost: {results['stats'].total_cost}")
+                print(f"P50 latency: {results['stats'].latency_p50}")
 
         """
         if name and not project_id:
