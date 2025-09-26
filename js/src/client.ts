@@ -558,10 +558,13 @@ export class AutoBatchQueue {
     return itemPromise;
   }
 
-  pop(
-    upToSizeBytes: number,
-    upToSize: number
-  ): [AutoBatchQueueItem[], () => void] {
+  pop({
+    upToSizeBytes,
+    upToSize,
+  }: {
+    upToSizeBytes: number;
+    upToSize: number;
+  }): [AutoBatchQueueItem[], () => void] {
     if (upToSizeBytes < 1) {
       throw new Error("Number of bytes to pop off may not be less than 1.");
     }
@@ -1033,16 +1036,20 @@ export class Client implements LangSmithTracingClientInterface {
     );
   }
 
-  private drainAutoBatchQueue(
-    batchSizeLimit: number,
-    batchSizeLimitBytes: number
-  ) {
+  private drainAutoBatchQueue({
+    batchSizeLimitBytes,
+    batchSizeLimit,
+  }: {
+    batchSizeLimitBytes: number;
+    batchSizeLimit: number;
+  }) {
     const promises = [];
     while (this.autoBatchQueue.items.length > 0) {
-      const [batch, done] = this.autoBatchQueue.pop(
-        batchSizeLimit,
-        batchSizeLimitBytes
-      );
+      const [batch, done] = this.autoBatchQueue.pop({
+        upToSizeBytes: batchSizeLimitBytes,
+        upToSize: batchSizeLimit,
+      });
+      console.log("batch", batch?.length);
       if (!batch.length) {
         done();
         break;
@@ -1151,12 +1158,18 @@ export class Client implements LangSmithTracingClientInterface {
       this.autoBatchQueue.sizeBytes > sizeLimitBytes ||
       this.autoBatchQueue.items.length > sizeLimit
     ) {
-      void this.drainAutoBatchQueue(sizeLimitBytes, sizeLimit);
+      void this.drainAutoBatchQueue({
+        batchSizeLimitBytes: sizeLimitBytes,
+        batchSizeLimit: sizeLimit,
+      });
     }
     if (this.autoBatchQueue.items.length > 0) {
       this.autoBatchTimeout = setTimeout(() => {
         this.autoBatchTimeout = undefined;
-        void this.drainAutoBatchQueue(sizeLimitBytes, sizeLimit);
+        void this.drainAutoBatchQueue({
+          batchSizeLimitBytes: sizeLimitBytes,
+          batchSizeLimit: sizeLimit,
+        });
       }, this.autoBatchAggregationDelayMs);
     }
     return itemPromise;
@@ -1223,7 +1236,10 @@ export class Client implements LangSmithTracingClientInterface {
   public async flush() {
     const sizeLimitBytes = await this._getBatchSizeLimitBytes();
     const sizeLimit = await this._getBatchSizeLimit();
-    await this.drainAutoBatchQueue(sizeLimit, sizeLimitBytes);
+    await this.drainAutoBatchQueue({
+      batchSizeLimitBytes: sizeLimitBytes,
+      batchSizeLimit: sizeLimit,
+    });
   }
 
   private _cloneCurrentOTELContext() {
