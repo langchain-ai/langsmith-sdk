@@ -1049,7 +1049,6 @@ export class Client implements LangSmithTracingClientInterface {
         upToSizeBytes: batchSizeLimitBytes,
         upToSize: batchSizeLimit,
       });
-      console.log("batch", batch?.length);
       if (!batch.length) {
         done();
         break;
