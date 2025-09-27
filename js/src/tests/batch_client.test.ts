@@ -840,6 +840,101 @@ describe.each(ENDPOINT_TYPES)(
       });
     });
 
+    it("should send more traces than the size limit and see even batches", async () => {
+      const calls: any[] = [];
+      const mockFetch = createMockFetch(calls);
+
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          batchSizeBytesLimit: 1000000,
+          batchSizeLimit: 5,
+          autoBatchTracing: true,
+        },
+        mockFetch
+      );
+      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
+        return {
+          version: "foo",
+          batch_ingest_config: { ...extraBatchIngestConfig },
+          instance_flags: { ...extraInstanceFlags },
+        };
+      });
+      const projectName = "__test_batch";
+
+      const runIds = await Promise.all(
+        [...Array(9)].map(async (_, i) => {
+          const runId = uuidv4();
+          const { dottedOrder } = convertToDottedOrderFormat(
+            new Date().getTime() / 1000,
+            runId
+          );
+          const params = mergeRuntimeEnvIntoRun({
+            id: runId,
+            project_name: projectName,
+            name: "test_run " + i,
+            run_type: "llm",
+            inputs: { text: "hello world " + i },
+            trace_id: runId,
+            dotted_order: dottedOrder,
+          } as RunCreate);
+          await client.createRun(params);
+          return runId;
+        })
+      );
+
+      await client.awaitPendingTraceBatches();
+
+      expect(calls.length).toBe(2);
+
+      const calledRequestParam: any = calls[0][1];
+      const calledRequestParam2: any = calls[1][1];
+      expect(calls[0][0]).toBe(expectedTraceURL);
+      expect(calls[1][0]).toBe(expectedTraceURL);
+
+      const firstBatchBody = await parseMockRequestBody(
+        calledRequestParam?.body
+      );
+      const secondBatchBody = await parseMockRequestBody(
+        calledRequestParam2?.body
+      );
+
+      const initialBatchBody =
+        firstBatchBody.post.length === 5 ? firstBatchBody : secondBatchBody;
+      const followupBatchBody =
+        firstBatchBody.post.length === 5 ? secondBatchBody : firstBatchBody;
+
+      // Queue should drain as soon as size limit is reached,
+      // sending both batches
+      expect(initialBatchBody).toEqual({
+        post: runIds.slice(0, 5).map((runId, i) =>
+          expect.objectContaining({
+            id: runId,
+            run_type: "llm",
+            inputs: {
+              text: expect.stringContaining("hello world " + i),
+            },
+            trace_id: runId,
+          })
+        ),
+        patch: [],
+      });
+
+      expect(followupBatchBody).toEqual({
+        post: runIds.slice(5).map((runId, i) =>
+          expect.objectContaining({
+            id: runId,
+            run_type: "llm",
+            inputs: {
+              text: expect.stringContaining("hello world " + (i + 5)),
+            },
+            trace_id: runId,
+          })
+        ),
+        patch: [],
+      });
+    });
+
     it("should sample and see proper batching", async () => {
       const calls: any[] = [];
       const mockFetch = createMockFetch(calls);

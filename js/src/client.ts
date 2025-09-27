@@ -92,7 +92,10 @@ export interface ClientConfig {
   hideInputs?: boolean | ((inputs: KVMap) => KVMap | Promise<KVMap>);
   hideOutputs?: boolean | ((outputs: KVMap) => KVMap | Promise<KVMap>);
   autoBatchTracing?: boolean;
+  /** Maximum size of a batch of runs in bytes. */
   batchSizeBytesLimit?: number;
+  /** Maximum number of operations to batch in a single request. */
+  batchSizeLimit?: number;
   blockOnRootRunFinalization?: boolean;
   traceBatchConcurrency?: number;
   fetchOptions?: RequestInit;
@@ -555,7 +558,13 @@ export class AutoBatchQueue {
     return itemPromise;
   }
 
-  pop(upToSizeBytes: number): [AutoBatchQueueItem[], () => void] {
+  pop({
+    upToSizeBytes,
+    upToSize,
+  }: {
+    upToSizeBytes: number;
+    upToSize: number;
+  }): [AutoBatchQueueItem[], () => void] {
     if (upToSizeBytes < 1) {
       throw new Error("Number of bytes to pop off may not be less than 1.");
     }
@@ -564,7 +573,8 @@ export class AutoBatchQueue {
     // Pop items until we reach or exceed the size limit
     while (
       poppedSizeBytes + (this.peek()?.size ?? 0) < upToSizeBytes &&
-      this.items.length > 0
+      this.items.length > 0 &&
+      popped.length < upToSize
     ) {
       const item = this.items.shift();
       if (item) {
@@ -597,6 +607,9 @@ export class AutoBatchQueue {
 export const DEFAULT_UNCOMPRESSED_BATCH_SIZE_LIMIT_BYTES = 24 * 1024 * 1024;
 
 const SERVER_INFO_REQUEST_TIMEOUT_MS = 10000;
+
+/** Maximum number of operations to batch in a single request. */
+const DEFAULT_BATCH_SIZE_LIMIT = 100;
 
 const DEFAULT_API_URL = "https://api.smith.langchain.com";
 
@@ -634,6 +647,8 @@ export class Client implements LangSmithTracingClientInterface {
   private autoBatchAggregationDelayMs = 250;
 
   private batchSizeBytesLimit?: number;
+
+  private batchSizeLimit?: number;
 
   private fetchOptions: RequestInit;
 
@@ -710,6 +725,7 @@ export class Client implements LangSmithTracingClientInterface {
     this.blockOnRootRunFinalization =
       config.blockOnRootRunFinalization ?? this.blockOnRootRunFinalization;
     this.batchSizeBytesLimit = config.batchSizeBytesLimit;
+    this.batchSizeLimit = config.batchSizeLimit;
     this.fetchOptions = config.fetchOptions || {};
     this.manualFlushMode = config.manualFlushMode ?? this.manualFlushMode;
     if (getOtelEnabled()) {
@@ -1001,6 +1017,18 @@ export class Client implements LangSmithTracingClientInterface {
     );
   }
 
+  /**
+   * Get the maximum number of operations to batch in a single request.
+   */
+  private async _getBatchSizeLimit(): Promise<number> {
+    const serverInfo = await this._ensureServerInfo();
+    return (
+      this.batchSizeLimit ??
+      serverInfo.batch_ingest_config?.size_limit ??
+      DEFAULT_BATCH_SIZE_LIMIT
+    );
+  }
+
   private async _getDatasetExamplesMultiPartSupport(): Promise<boolean> {
     const serverInfo = await this._ensureServerInfo();
     return (
@@ -1008,10 +1036,20 @@ export class Client implements LangSmithTracingClientInterface {
     );
   }
 
-  private drainAutoBatchQueue(batchSizeLimit: number) {
+  private drainAutoBatchQueue({
+    batchSizeLimitBytes,
+    batchSizeLimit,
+  }: {
+    batchSizeLimitBytes: number;
+    batchSizeLimit: number;
+  }) {
     const promises = [];
     while (this.autoBatchQueue.items.length > 0) {
-      const [batch, done] = this.autoBatchQueue.pop(batchSizeLimit);
+      const [batch, done] = this.autoBatchQueue.pop({
+        upToSizeBytes: batchSizeLimitBytes,
+        upToSize: batchSizeLimit,
+      });
+      console.log("batch", batch?.length);
       if (!batch.length) {
         done();
         break;
@@ -1115,13 +1153,23 @@ export class Client implements LangSmithTracingClientInterface {
       return itemPromise;
     }
     const sizeLimitBytes = await this._getBatchSizeLimitBytes();
-    if (this.autoBatchQueue.sizeBytes > sizeLimitBytes) {
-      void this.drainAutoBatchQueue(sizeLimitBytes);
+    const sizeLimit = await this._getBatchSizeLimit();
+    if (
+      this.autoBatchQueue.sizeBytes > sizeLimitBytes ||
+      this.autoBatchQueue.items.length > sizeLimit
+    ) {
+      void this.drainAutoBatchQueue({
+        batchSizeLimitBytes: sizeLimitBytes,
+        batchSizeLimit: sizeLimit,
+      });
     }
     if (this.autoBatchQueue.items.length > 0) {
       this.autoBatchTimeout = setTimeout(() => {
         this.autoBatchTimeout = undefined;
-        void this.drainAutoBatchQueue(sizeLimitBytes);
+        void this.drainAutoBatchQueue({
+          batchSizeLimitBytes: sizeLimitBytes,
+          batchSizeLimit: sizeLimit,
+        });
       }, this.autoBatchAggregationDelayMs);
     }
     return itemPromise;
@@ -1187,7 +1235,11 @@ export class Client implements LangSmithTracingClientInterface {
    */
   public async flush() {
     const sizeLimitBytes = await this._getBatchSizeLimitBytes();
-    await this.drainAutoBatchQueue(sizeLimitBytes);
+    const sizeLimit = await this._getBatchSizeLimit();
+    await this.drainAutoBatchQueue({
+      batchSizeLimitBytes: sizeLimitBytes,
+      batchSizeLimit: sizeLimit,
+    });
   }
 
   private _cloneCurrentOTELContext() {
