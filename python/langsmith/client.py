@@ -8372,28 +8372,17 @@ class Client:
                 print(f"P50 latency: {results['stats'].latency_p50}")
 
         """
-        if name and not project_id:
-            projects = list(self.list_projects(name=name))
-            if not projects:
-                raise ValueError(f"No experiment found with name: '{name}'")
-            project_id = projects[0].id
-
-        # Get aggregated stats for the experiment project/session
-        project_stats = list(
-            self.list_projects(
-                project_ids=[cast(uuid.UUID, project_id)], include_stats=True
-            )
+        project = self.read_project(
+            project_name=name, project_id=project_id, include_stats=True
         )
 
-        if not project_stats:
+        if not project:
             raise ValueError(f"No experiment found with project_id: '{project_id}'")
-
-        dataset_id = project_stats[0].reference_dataset_id
 
         def _get_examples_with_runs_iterator():
             """Yield examples with corresponding experiment runs."""
             for batch in self._paginate_examples_with_runs(
-                dataset_id=dataset_id,
+                dataset_id=project.reference_dataset_id,
                 session_id=project_id,
                 preview=preview,
                 comparative_experiment_id=comparative_experiment_id,
@@ -8402,8 +8391,29 @@ class Client:
             ):
                 yield from batch
 
+        run_stats = {
+            "run_count": project.run_count,
+            "latency_p50": project.latency_p50,
+            "latency_p99": project.latency_p99,
+            "total_tokens": project.total_tokens,
+            "prompt_tokens": project.prompt_tokens,
+            "completion_tokens": project.completion_tokens,
+            "last_run_start_time": project.last_run_start_time,
+            "run_facets": project.run_facets,
+            "total_cost": project.total_cost,
+            "prompt_cost": project.prompt_cost,
+            "completion_cost": project.completion_cost,
+            "first_token_p50": project.first_token_p50,
+            "first_token_p99": project.first_token_p99,
+            "error_rate": project.error_rate,
+        }
+        feedback_stats = {
+            **(project.feedback_stats or {}),
+            **(project.session_feedback_stats or {}),
+        }
         return ls_schemas.ExperimentResults(
-            stats=project_stats[0],
+            feedback_stats=feedback_stats,
+            run_stats=run_stats,
             examples_with_runs=_get_examples_with_runs_iterator(),
         )
 
