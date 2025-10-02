@@ -4854,6 +4854,7 @@ class Client:
         dataset_id: Optional[ID_TYPE] = None,
         examples: Optional[Sequence[ls_schemas.ExampleCreate | dict]] = None,
         dangerously_allow_filesystem: bool = False,
+        batch_size: int = 200,
         **kwargs: Any,
     ) -> ls_schemas.UpsertExamplesResponse | dict[str, Any]:
         """Create examples in a dataset.
@@ -4869,6 +4870,8 @@ class Client:
                 The examples to create.
             dangerously_allow_filesystem (bool):
                 Whether to allow uploading files from the filesystem.
+            batch_size (int):
+                upload examples in batches of this size, default is 200.
             **kwargs (Any): Legacy keyword args. Should not be specified if 'examples' is specified.
 
                 - inputs (Sequence[Mapping[str, Any]]): The input values for the examples.
@@ -4986,35 +4989,53 @@ class Client:
                 )
             ]
 
-        if (self.info.instance_flags or {}).get(
-            "dataset_examples_multipart_enabled", False
-        ):
-            return self._upload_examples_multipart(
-                dataset_id=cast(uuid.UUID, dataset_id),
-                uploads=uploads,
-                dangerously_allow_filesystem=dangerously_allow_filesystem,
-            )
-        else:
-            for upload in uploads:
-                if getattr(upload, "attachments") is not None:
-                    upload.attachments = None
-                    warnings.warn(
-                        "Must upgrade your LangSmith version to use attachments."
-                    )
-            # fallback to old method
-            response = self.request_with_retries(
-                "POST",
-                "/examples/bulk",
-                headers={**self._headers, "Content-Type": "application/json"},
-                data=_dumps_json(
-                    [
+        if not uploads:
+            return ls_schemas.UpsertExamplesResponse(example_ids=[], count=0)
+        
+        # Batch large uploads for memory efficiency 
+        all_example_ids = []
+        total_count = 0
+        
+        for i in range(0, len(uploads), batch_size):
+            batch = uploads[i:i + batch_size]
+            
+            if (self.info.instance_flags or {}).get(
+                "dataset_examples_multipart_enabled", False
+            ):
+                response = self._upload_examples_multipart(
+                    dataset_id=cast(uuid.UUID, dataset_id),
+                    uploads=batch,
+                    dangerously_allow_filesystem=dangerously_allow_filesystem,
+                )
+                all_example_ids.extend(response.example_ids or [])
+                total_count += response.count or 0
+            else:
+                # Strip attachments for legacy endpoint
+                for upload in batch:
+                    if getattr(upload, "attachments") is not None:
+                        upload.attachments = None
+                        warnings.warn(
+                            "Must upgrade your LangSmith version to use attachments."
+                        )
+                
+                response = self.request_with_retries(
+                    "POST",
+                    "/examples/bulk",
+                    headers={**self._headers, "Content-Type": "application/json"},
+                    data=_dumps_json([
                         {**dump_model(upload), "dataset_id": str(dataset_id)}
-                        for upload in uploads
-                    ]
-                ),
-            )
-            ls_utils.raise_for_status_with_text(response)
-            return response.json()
+                        for upload in batch
+                    ]),
+                )
+                ls_utils.raise_for_status_with_text(response)
+                response_data = response.json()
+                all_example_ids.extend(response_data.get("example_ids", []))
+                total_count += response_data.get("count", 0)
+        
+        return ls_schemas.UpsertExamplesResponse(
+            example_ids=all_example_ids,
+            count=total_count,
+        )
 
     @ls_utils.xor_args(("dataset_id", "dataset_name"))
     def create_example(
@@ -5768,24 +5789,30 @@ class Client:
         )
         ls_utils.raise_for_status_with_text(response)
 
-    def delete_examples(self, example_ids: Sequence[ID_TYPE]) -> None:
+    def delete_examples(self, example_ids: Sequence[ID_TYPE], hard_delete: bool = False) -> None:
         """Delete multiple examples by ID.
 
         Parameters
         ----------
         example_ids : Sequence[ID_TYPE]
             The IDs of the examples to delete.
+        hard_delete : bool, optional
+            Whether to permanently delete the examples. Default is False.
         """
+        params = {
+            "example_ids": [
+                str(_as_uuid(id_, f"example_ids[{i}]"))
+                for i, id_ in enumerate(example_ids)
+            ]
+        }
+        if hard_delete:
+            params["hard_delete"] = hard_delete
+        
         response = self.request_with_retries(
             "DELETE",
-            "/examples",
-            headers={**self._headers, "Content-Type": "application/json"},
-            params={
-                "example_ids": [
-                    str(_as_uuid(id_, f"example_ids[{i}]"))
-                    for i, id_ in enumerate(example_ids)
-                ]
-            },
+            "/api/v1/examples",
+            headers=self._headers,
+            params=params,
         )
         ls_utils.raise_for_status_with_text(response)
 
@@ -8372,7 +8399,9 @@ class Client:
                 print(f"P50 latency: {results['stats'].latency_p50}")
 
         """
-        if name and not project_id:
+        if not (name or project_id):
+            raise ValueError("Either name or project_id must be provided.")
+        elif not project_id:
             projects = list(self.list_projects(name=name))
             if not projects:
                 raise ValueError(f"No experiment found with name: '{name}'")
