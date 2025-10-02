@@ -5,6 +5,7 @@ import contextlib
 import contextvars
 import datetime
 import functools
+import hashlib
 import importlib
 import inspect
 import logging
@@ -51,9 +52,18 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# UUID5 namespace used for generating consistent example IDs
+UUID5_NAMESPACE = uuid.UUID("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
 
 T = TypeVar("T")
 U = TypeVar("U")
+
+
+def _object_hash(obj: Any) -> str:
+    """Hash an object to generate a consistent hash string."""
+    # Use the existing serialization infrastructure with consistent ordering
+    serialized = _stringify(obj)
+    return hashlib.sha256(serialized.encode()).hexdigest()
 
 
 @overload
@@ -483,20 +493,14 @@ def _start_experiment(
 
 
 def _get_example_id(
-    func: Callable, inputs: Optional[dict], suite_id: uuid.UUID
-) -> tuple[uuid.UUID, str]:
-    try:
-        file_path = str(Path(inspect.getfile(func)).relative_to(Path.cwd()))
-    except ValueError:
-        # Fall back to module name if file path is not available
-        file_path = func.__module__
-    identifier = f"{suite_id}{file_path}::{func.__name__}"
-    # If parametrized test, need to add inputs to identifier:
-    if hasattr(func, "pytestmark") and any(
-        m.name == "parametrize" for m in func.pytestmark
-    ):
-        identifier += _stringify(inputs)
-    return uuid.uuid5(uuid.NAMESPACE_DNS, identifier), identifier[len(str(suite_id)) :]
+    dataset_id: str,
+    inputs: dict,
+    outputs: Optional[dict] = None,
+) -> uuid.UUID:
+    """Generate example ID based on inputs, outputs, and dataset ID."""
+    identifier_obj = (dataset_id, _object_hash(inputs), _object_hash(outputs or {}))
+    identifier = _stringify(identifier_obj)
+    return uuid.uuid5(UUID5_NAMESPACE, identifier)
 
 
 def _end_tests(test_suite: _LangSmithTestSuite):
@@ -753,7 +757,8 @@ class _LangSmithTestSuite:
             split=split,
             metadata=metadata,
         )
-        run_tree.end(outputs=outputs)
+        run_tree.reference_example_id = example_id
+        run_tree.end(outputs=outputs, metadata={"reference_example_id": example_id})
         run_tree.patch()
 
 
@@ -868,9 +873,14 @@ class _TestCase:
     def end_run(self, run_tree, outputs: Any) -> None:
         if not (outputs is None or isinstance(outputs, dict)):
             outputs = {"output": outputs}
+        example_id = self.example_id or _get_example_id(
+            dataset_id=str(self.test_suite.id),
+            inputs=self.inputs or {},
+            outputs=outputs,
+        )
         self.test_suite.end_run(
             run_tree,
-            self.example_id,
+            example_id,
             outputs,
             reference_outputs=self._logged_reference_outputs,
             metadata=self.metadata,
@@ -922,8 +932,6 @@ def _create_test_case(
     test_suite = _LangSmithTestSuite.from_test(
         client, func, langtest_extra.get("test_suite_name")
     )
-    example_id, example_name = _get_example_id(func, inputs, test_suite.id)
-    example_id = langtest_extra["id"] or example_id
     pytest_plugin = (
         pytest_request.config.pluginmanager.get_plugin("langsmith_output_plugin")
         if pytest_request
@@ -938,7 +946,7 @@ def _create_test_case(
         )
     test_case = _TestCase(
         test_suite,
-        example_id,
+        example_id=langtest_extra["id"],
         run_id=uuid.uuid4(),
         metadata=metadata,
         split=split,
@@ -971,7 +979,6 @@ def _run_test(
         with rh.trace(
             name=getattr(func, "__name__", "Test"),
             run_id=test_case.run_id,
-            reference_example_id=test_case.example_id,
             inputs=test_case.inputs,
             metadata={
                 # Experiment run metadata is prefixed with "ls_example_" in
@@ -1015,7 +1022,6 @@ def _run_test(
         **(current_context["metadata"] or {}),
         **{
             "experiment": test_case.test_suite.experiment.name,
-            "reference_example_id": str(test_case.example_id),
         },
     }
     # Handle cached_hosts parameter
