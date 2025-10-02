@@ -766,8 +766,8 @@ class _TestCase:
     def __init__(
         self,
         test_suite: _LangSmithTestSuite,
-        example_id: uuid.UUID,
         run_id: uuid.UUID,
+        example_id: Optional[uuid.UUID] = None,
         metadata: Optional[dict] = None,
         split: Optional[Union[str, list[str]]] = None,
         pytest_plugin: Any = None,
@@ -795,23 +795,6 @@ class _TestCase:
                 self.log_inputs(inputs)
             if reference_outputs:
                 self.log_reference_outputs(reference_outputs)
-
-    def sync_example(
-        self,
-        *,
-        inputs: Optional[dict] = None,
-        outputs: Optional[dict] = None,
-        split: Optional[Union[str, list[str]]] = None,
-    ) -> None:
-        self.test_suite.sync_example(
-            self.example_id,
-            inputs=inputs,
-            outputs=outputs,
-            metadata=self.metadata,
-            split=split,
-            pytest_plugin=self.pytest_plugin,
-            pytest_nodeid=self.pytest_nodeid,
-        )
 
     def submit_feedback(self, *args, **kwargs: Any):
         self.test_suite._submit_feedback(
@@ -946,8 +929,8 @@ def _create_test_case(
         )
     test_case = _TestCase(
         test_suite,
-        example_id=langtest_extra["id"],
         run_id=uuid.uuid4(),
+        example_id=langtest_extra["id"],
         metadata=metadata,
         split=split,
         inputs=inputs,
