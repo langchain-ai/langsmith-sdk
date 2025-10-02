@@ -2583,32 +2583,33 @@ def test_create_examples_batching(parameterized_multipart_client: Client) -> Non
     """Test create_examples batching with large numbers of examples."""
     dataset_name = "__test_batching_" + uuid4().hex[:4]
     dataset = _create_dataset(parameterized_multipart_client, dataset_name)
-    
+
     # Test batching with 250 examples (> default batch_size=200)
     examples = [
-        {"inputs": {"q": f"Q{i}"}, "outputs": {"a": f"A{i}"}}
-        for i in range(250)
+        {"inputs": {"q": f"Q{i}"}, "outputs": {"a": f"A{i}"}} for i in range(250)
     ]
-    
+
     result = parameterized_multipart_client.create_examples(
         dataset_id=dataset.id, examples=examples, batch_size=100
     )
-    
+
     assert result["count"] == 250
     assert len(result["example_ids"]) == 250
-    
+
     # Verify examples exist
     listed = list(parameterized_multipart_client.list_examples(dataset_id=dataset.id))
     assert len(listed) == 250
-    
+
     safe_delete_dataset(parameterized_multipart_client, dataset_id=dataset.id)
 
 
-def test_create_examples_large_multipart_batching(parameterized_multipart_client: Client) -> None:
+def test_create_examples_large_multipart_batching(
+    parameterized_multipart_client: Client,
+) -> None:
     """Test create_examples batching with large multipart payloads."""
     dataset_name = "__test_large_multipart_" + uuid4().hex[:4]
     dataset = _create_dataset(parameterized_multipart_client, dataset_name)
-    
+
     # Create examples with large attachments to simulate >20MB payload
     large_data = b"x" * 500_000  # 500KB per attachment
     examples = [
@@ -2618,23 +2619,27 @@ def test_create_examples_large_multipart_batching(parameterized_multipart_client
             "attachments": {
                 f"image_{i}": ("image/png", large_data),
                 f"doc_{i}": ("text/plain", large_data),
-            }
+            },
         }
         for i in range(50)  # ~50MB total payload
     ]
-    
+
     result = parameterized_multipart_client.create_examples(
-        dataset_id=dataset.id, examples=examples, batch_size=15  # Force small batches
+        dataset_id=dataset.id,
+        examples=examples,
+        batch_size=15,  # Force small batches
     )
-    
+
     assert result["count"] == 50
     assert len(result["example_ids"]) == 50
-    
+
     # Verify attachments were uploaded
-    first_example = parameterized_multipart_client.read_example(result["example_ids"][0])
-    if hasattr(first_example, 'attachments') and first_example.attachments:
+    first_example = parameterized_multipart_client.read_example(
+        result["example_ids"][0]
+    )
+    if hasattr(first_example, "attachments") and first_example.attachments:
         assert len(first_example.attachments) == 2
-    
+
     safe_delete_dataset(parameterized_multipart_client, dataset_id=dataset.id)
 
 

@@ -4991,14 +4991,14 @@ class Client:
 
         if not uploads:
             return ls_schemas.UpsertExamplesResponse(example_ids=[], count=0)
-        
-        # Batch large uploads for memory efficiency 
+
+        # Batch large uploads for memory efficiency
         all_example_ids = []
         total_count = 0
-        
+
         for i in range(0, len(uploads), batch_size):
-            batch = uploads[i:i + batch_size]
-            
+            batch = uploads[i : i + batch_size]
+
             if (self.info.instance_flags or {}).get(
                 "dataset_examples_multipart_enabled", False
             ):
@@ -5017,21 +5017,23 @@ class Client:
                         warnings.warn(
                             "Must upgrade your LangSmith version to use attachments."
                         )
-                
+
                 response = self.request_with_retries(
                     "POST",
                     "/examples/bulk",
                     headers={**self._headers, "Content-Type": "application/json"},
-                    data=_dumps_json([
-                        {**dump_model(upload), "dataset_id": str(dataset_id)}
-                        for upload in batch
-                    ]),
+                    data=_dumps_json(
+                        [
+                            {**dump_model(upload), "dataset_id": str(dataset_id)}
+                            for upload in batch
+                        ]
+                    ),
                 )
                 ls_utils.raise_for_status_with_text(response)
                 response_data = response.json()
                 all_example_ids.extend(response_data.get("example_ids", []))
                 total_count += response_data.get("count", 0)
-        
+
         return ls_schemas.UpsertExamplesResponse(
             example_ids=all_example_ids,
             count=total_count,
@@ -5789,7 +5791,9 @@ class Client:
         )
         ls_utils.raise_for_status_with_text(response)
 
-    def delete_examples(self, example_ids: Sequence[ID_TYPE], hard_delete: bool = False) -> None:
+    def delete_examples(
+        self, example_ids: Sequence[ID_TYPE], hard_delete: bool = False
+    ) -> None:
         """Delete multiple examples by ID.
 
         Parameters
@@ -5807,7 +5811,7 @@ class Client:
         }
         if hard_delete:
             params["hard_delete"] = hard_delete
-        
+
         response = self.request_with_retries(
             "DELETE",
             "/api/v1/examples",
