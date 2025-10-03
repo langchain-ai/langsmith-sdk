@@ -3783,11 +3783,17 @@ class Client:
         Raises:
             requests.HTTPError: If the request to create the dataset fails.
         """
+        metadata = {"runtime": ls_env.get_runtime_environment(), **(metadata or {})}
         dataset: dict[str, Any] = {
             "name": dataset_name,
             "data_type": data_type.value,
             "transformations": transformations,
-            "extra": {"metadata": metadata} if metadata else None,
+            "extra": {
+                "metadata": {
+                    "runtime": ls_env.get_runtime_environment(),
+                    **(metadata or {}),
+                }
+            },
         }
         if description is not None:
             dataset["description"] = description
@@ -3806,8 +3812,10 @@ class Client:
         )
         ls_utils.raise_for_status_with_text(response)
 
+        json_response = response.json()
+        json_response["metadata"] = json_response.get("metadata") or metadata
         return ls_schemas.Dataset(
-            **response.json(),
+            **json_response,
             _host_url=self._host_url,
             _tenant_id=self._get_optional_tenant_id(),
         )

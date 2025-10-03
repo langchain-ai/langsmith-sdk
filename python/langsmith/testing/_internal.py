@@ -503,6 +503,23 @@ def _get_example_id(
     return uuid.uuid5(UUID5_NAMESPACE, identifier)
 
 
+def _get_example_id_legacy(
+    func: Callable, inputs: Optional[dict], suite_id: uuid.UUID
+) -> tuple[uuid.UUID, str]:
+    try:
+        file_path = str(Path(inspect.getfile(func)).relative_to(Path.cwd()))
+    except ValueError:
+        # Fall back to module name if file path is not available
+        file_path = func.__module__
+    identifier = f"{suite_id}{file_path}::{func.__name__}"
+    # If parametrized test, need to add inputs to identifier:
+    if hasattr(func, "pytestmark") and any(
+        m.name == "parametrize" for m in func.pytestmark
+    ):
+        identifier += _stringify(inputs)
+    return uuid.uuid5(uuid.NAMESPACE_DNS, identifier), identifier[len(str(suite_id)) :]
+
+
 def _end_tests(test_suite: _LangSmithTestSuite):
     git_info = ls_env.get_git_info() or {}
     test_suite.shutdown()
@@ -915,6 +932,19 @@ def _create_test_case(
     test_suite = _LangSmithTestSuite.from_test(
         client, func, langtest_extra.get("test_suite_name")
     )
+    example_id = langtest_extra["id"]
+    dataset_sdk_version = (
+        test_suite._dataset.metadata
+        and test_suite._dataset.metadata.get("runtime")
+        and test_suite._dataset.metadata.get("runtime", {}).get("sdk_version")
+    )
+    if not dataset_sdk_version or not ls_utils.is_version_greater_or_equal(
+        dataset_sdk_version, "0.4.33"
+    ):
+        legacy_example_id, example_name = _get_example_id_legacy(
+            func, inputs, test_suite.id
+        )
+        example_id = example_id or legacy_example_id
     pytest_plugin = (
         pytest_request.config.pluginmanager.get_plugin("langsmith_output_plugin")
         if pytest_request
@@ -930,7 +960,7 @@ def _create_test_case(
     test_case = _TestCase(
         test_suite,
         run_id=uuid.uuid4(),
-        example_id=langtest_extra["id"],
+        example_id=example_id,
         metadata=metadata,
         split=split,
         inputs=inputs,
