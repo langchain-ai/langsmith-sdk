@@ -5,6 +5,7 @@ import contextlib
 import contextvars
 import datetime
 import functools
+import hashlib
 import importlib
 import inspect
 import logging
@@ -51,9 +52,18 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# UUID5 namespace used for generating consistent example IDs
+UUID5_NAMESPACE = uuid.UUID("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
 
 T = TypeVar("T")
 U = TypeVar("U")
+
+
+def _object_hash(obj: Any) -> str:
+    """Hash an object to generate a consistent hash string."""
+    # Use the existing serialization infrastructure with consistent ordering
+    serialized = _stringify(obj)
+    return hashlib.sha256(serialized.encode()).hexdigest()
 
 
 @overload
@@ -483,6 +493,17 @@ def _start_experiment(
 
 
 def _get_example_id(
+    dataset_id: str,
+    inputs: dict,
+    outputs: Optional[dict] = None,
+) -> uuid.UUID:
+    """Generate example ID based on inputs, outputs, and dataset ID."""
+    identifier_obj = (dataset_id, _object_hash(inputs), _object_hash(outputs or {}))
+    identifier = _stringify(identifier_obj)
+    return uuid.uuid5(UUID5_NAMESPACE, identifier)
+
+
+def _get_example_id_legacy(
     func: Callable, inputs: Optional[dict], suite_id: uuid.UUID
 ) -> tuple[uuid.UUID, str]:
     try:
@@ -753,7 +774,8 @@ class _LangSmithTestSuite:
             split=split,
             metadata=metadata,
         )
-        run_tree.end(outputs=outputs)
+        run_tree.reference_example_id = example_id
+        run_tree.end(outputs=outputs, metadata={"reference_example_id": example_id})
         run_tree.patch()
 
 
@@ -761,8 +783,8 @@ class _TestCase:
     def __init__(
         self,
         test_suite: _LangSmithTestSuite,
-        example_id: uuid.UUID,
         run_id: uuid.UUID,
+        example_id: Optional[uuid.UUID] = None,
         metadata: Optional[dict] = None,
         split: Optional[Union[str, list[str]]] = None,
         pytest_plugin: Any = None,
@@ -790,23 +812,6 @@ class _TestCase:
                 self.log_inputs(inputs)
             if reference_outputs:
                 self.log_reference_outputs(reference_outputs)
-
-    def sync_example(
-        self,
-        *,
-        inputs: Optional[dict] = None,
-        outputs: Optional[dict] = None,
-        split: Optional[Union[str, list[str]]] = None,
-    ) -> None:
-        self.test_suite.sync_example(
-            self.example_id,
-            inputs=inputs,
-            outputs=outputs,
-            metadata=self.metadata,
-            split=split,
-            pytest_plugin=self.pytest_plugin,
-            pytest_nodeid=self.pytest_nodeid,
-        )
 
     def submit_feedback(self, *args, **kwargs: Any):
         self.test_suite._submit_feedback(
@@ -868,9 +873,14 @@ class _TestCase:
     def end_run(self, run_tree, outputs: Any) -> None:
         if not (outputs is None or isinstance(outputs, dict)):
             outputs = {"output": outputs}
+        example_id = self.example_id or _get_example_id(
+            dataset_id=str(self.test_suite.id),
+            inputs=self.inputs or {},
+            outputs=outputs,
+        )
         self.test_suite.end_run(
             run_tree,
-            self.example_id,
+            example_id,
             outputs,
             reference_outputs=self._logged_reference_outputs,
             metadata=self.metadata,
@@ -922,8 +932,19 @@ def _create_test_case(
     test_suite = _LangSmithTestSuite.from_test(
         client, func, langtest_extra.get("test_suite_name")
     )
-    example_id, example_name = _get_example_id(func, inputs, test_suite.id)
-    example_id = langtest_extra["id"] or example_id
+    example_id = langtest_extra["id"]
+    dataset_sdk_version = (
+        test_suite._dataset.metadata
+        and test_suite._dataset.metadata.get("runtime")
+        and test_suite._dataset.metadata.get("runtime", {}).get("sdk_version")
+    )
+    if not dataset_sdk_version or not ls_utils.is_version_greater_or_equal(
+        dataset_sdk_version, "0.4.33"
+    ):
+        legacy_example_id, example_name = _get_example_id_legacy(
+            func, inputs, test_suite.id
+        )
+        example_id = example_id or legacy_example_id
     pytest_plugin = (
         pytest_request.config.pluginmanager.get_plugin("langsmith_output_plugin")
         if pytest_request
@@ -938,8 +959,8 @@ def _create_test_case(
         )
     test_case = _TestCase(
         test_suite,
-        example_id,
         run_id=uuid.uuid4(),
+        example_id=example_id,
         metadata=metadata,
         split=split,
         inputs=inputs,
@@ -971,7 +992,6 @@ def _run_test(
         with rh.trace(
             name=getattr(func, "__name__", "Test"),
             run_id=test_case.run_id,
-            reference_example_id=test_case.example_id,
             inputs=test_case.inputs,
             metadata={
                 # Experiment run metadata is prefixed with "ls_example_" in
@@ -1015,7 +1035,6 @@ def _run_test(
         **(current_context["metadata"] or {}),
         **{
             "experiment": test_case.test_suite.experiment.name,
-            "reference_example_id": str(test_case.example_id),
         },
     }
     # Handle cached_hosts parameter
