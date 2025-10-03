@@ -27,6 +27,7 @@ from pydantic import BaseModel
 from requests_toolbelt import MultipartEncoder, MultipartEncoderMonitor
 
 import langsmith
+from langsmith import env as ls_env
 from langsmith._internal._background_thread import (
     TracingQueueItem,
     _otel_tracing_thread_handle_batch,
@@ -763,6 +764,7 @@ def test_dataset_schema_validation(langchain_client: Client) -> None:
     assert read_dataset.metadata == {
         "dataset_metadata_k1": "v1",
         "dataset_metadata_k2": "v2",
+        "runtime": ls_env.get_runtime_environment(),
     }
 
     safe_delete_dataset(langchain_client, dataset_id=dataset.id)

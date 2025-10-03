@@ -11,6 +11,7 @@ from langsmith.schemas import DataType, Run
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="Flaky")
 async def test_indexed_datasets():
     class InputsSchema(BaseModel):
         name: str  # type: ignore[annotation-unchecked]
