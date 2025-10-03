@@ -814,11 +814,17 @@ def test_list_datasets(langchain_client: Client) -> None:
 
         # Test metadata property
         dataset_with_metadata = next(d for d in datasets if d.id == dataset1.id)
-        assert dataset_with_metadata.metadata == {"foo": "barqux"}
+        assert dataset_with_metadata.metadata == {
+            "foo": "barqux",
+            "runtime": ls_env.get_runtime_environment(),
+        }
 
         # Test read_dataset also includes metadata
         read_dataset = langchain_client.read_dataset(dataset_id=dataset1.id)
-        assert read_dataset.metadata == {"foo": "barqux"}
+        assert read_dataset.metadata == {
+            "foo": "barqux",
+            "runtime": ls_env.get_runtime_environment(),
+        }
 
     finally:
         # Delete datasets
