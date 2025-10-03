@@ -2590,7 +2590,7 @@ def test_create_examples_batching(parameterized_multipart_client: Client) -> Non
     ]
 
     result = parameterized_multipart_client.create_examples(
-        dataset_id=dataset.id, examples=examples, batch_size=100
+        dataset_id=dataset.id, examples=examples
     )
 
     assert result["count"] == 250
@@ -2625,9 +2625,7 @@ def test_create_examples_large_multipart_batching(
     ]
 
     result = parameterized_multipart_client.create_examples(
-        dataset_id=dataset.id,
-        examples=examples,
-        batch_size=15,  # Force small batches
+        dataset_id=dataset.id, examples=examples
     )
 
     assert result["count"] == 50
