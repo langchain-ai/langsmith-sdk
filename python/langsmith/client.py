@@ -4746,6 +4746,81 @@ class Client:
             dangerously_allow_filesystem=dangerously_allow_filesystem,
         )
 
+    def _estimate_example_size(self, example: ls_schemas.ExampleCreate) -> int:
+        """Estimate the size of an example in bytes for batching purposes."""
+        size = 1000  # Base overhead for JSON structure and boundaries
+
+        # Estimate JSON parts
+        if example.inputs:
+            size += len(_dumps_json(example.inputs))
+        if example.outputs:
+            size += len(_dumps_json(example.outputs))
+        if example.metadata:
+            size += len(_dumps_json(example.metadata))
+
+        # Estimate attachments (largest contributor)
+        if example.attachments:
+            for _, attachment in example.attachments.items():
+                if isinstance(attachment, dict):
+                    attachment_data = attachment["data"]
+                else:
+                    _, attachment_data = attachment
+
+                if isinstance(attachment_data, Path):
+                    try:
+                        size += os.path.getsize(attachment_data)
+                    except (FileNotFoundError, OSError):
+                        size += 1_000_000  # 1MB fallback estimate
+                else:
+                    size += len(attachment_data)
+                size += 200  # Multipart headers overhead per attachment
+
+        return size
+
+    def _batch_examples_by_size_and_count(
+        self,
+        examples: list[ls_schemas.ExampleCreate],
+        max_batch_size_bytes: int = 20_000_000,  # 20MB limit
+        max_batch_count: int = 200,
+    ) -> list[list[ls_schemas.ExampleCreate]]:
+        """Batch examples by both size and count limits."""
+        batches = []
+        current_batch = []
+        current_size = 0
+
+        for example in examples:
+            example_size = self._estimate_example_size(example)
+
+            # Handle oversized single examples
+            if example_size > max_batch_size_bytes:
+                # Flush current batch first
+                if current_batch:
+                    batches.append(current_batch)
+                    current_batch = []
+                    current_size = 0
+                # Put oversized example in its own batch
+                batches.append([example])
+                continue
+
+            # Check if adding this example would exceed limits
+            size_exceeded = current_size + example_size > max_batch_size_bytes
+            count_exceeded = len(current_batch) >= max_batch_count
+
+            # Start new batch if current batch would be too large
+            if current_batch and (size_exceeded or count_exceeded):
+                batches.append(current_batch)
+                current_batch = [example]
+                current_size = example_size
+            else:
+                current_batch.append(example)
+                current_size += example_size
+
+        # Add final batch
+        if current_batch:
+            batches.append(current_batch)
+
+        return batches
+
     def _upload_examples_multipart(
         self,
         *,
@@ -4986,35 +5061,56 @@ class Client:
                 )
             ]
 
-        if (self.info.instance_flags or {}).get(
-            "dataset_examples_multipart_enabled", False
-        ):
-            return self._upload_examples_multipart(
-                dataset_id=cast(uuid.UUID, dataset_id),
-                uploads=uploads,
-                dangerously_allow_filesystem=dangerously_allow_filesystem,
-            )
-        else:
-            for upload in uploads:
-                if getattr(upload, "attachments") is not None:
-                    upload.attachments = None
-                    warnings.warn(
-                        "Must upgrade your LangSmith version to use attachments."
-                    )
-            # fallback to old method
-            response = self.request_with_retries(
-                "POST",
-                "/examples/bulk",
-                headers={**self._headers, "Content-Type": "application/json"},
-                data=_dumps_json(
-                    [
-                        {**dump_model(upload), "dataset_id": str(dataset_id)}
-                        for upload in uploads
-                    ]
-                ),
-            )
-            ls_utils.raise_for_status_with_text(response)
-            return response.json()
+        if not uploads:
+            return ls_schemas.UpsertExamplesResponse(example_ids=[], count=0)
+
+        # Batch uploads by size and count for optimal performance
+        all_example_ids = []
+        total_count = 0
+
+        # Use size-aware batching to prevent payload limit errors
+        batches = self._batch_examples_by_size_and_count(uploads)
+
+        for batch in batches:
+            if (self.info.instance_flags or {}).get(
+                "dataset_examples_multipart_enabled", False
+            ):
+                response = self._upload_examples_multipart(
+                    dataset_id=cast(uuid.UUID, dataset_id),
+                    uploads=batch,
+                    dangerously_allow_filesystem=dangerously_allow_filesystem,
+                )
+                all_example_ids.extend(response.example_ids or [])
+                total_count += response.count or 0
+            else:
+                # Strip attachments for legacy endpoint
+                for upload in batch:
+                    if getattr(upload, "attachments") is not None:
+                        upload.attachments = None
+                        warnings.warn(
+                            "Must upgrade your LangSmith version to use attachments."
+                        )
+
+                response = self.request_with_retries(
+                    "POST",
+                    "/examples/bulk",
+                    headers={**self._headers, "Content-Type": "application/json"},
+                    data=_dumps_json(
+                        [
+                            {**dump_model(upload), "dataset_id": str(dataset_id)}
+                            for upload in batch
+                        ]
+                    ),
+                )
+                ls_utils.raise_for_status_with_text(response)
+                response_data = response.json()
+                all_example_ids.extend(response_data.get("example_ids", []))
+                total_count += response_data.get("count", 0)
+
+        return ls_schemas.UpsertExamplesResponse(
+            example_ids=all_example_ids,
+            count=total_count,
+        )
 
     @ls_utils.xor_args(("dataset_id", "dataset_name"))
     def create_example(
@@ -5768,24 +5864,32 @@ class Client:
         )
         ls_utils.raise_for_status_with_text(response)
 
-    def delete_examples(self, example_ids: Sequence[ID_TYPE]) -> None:
+    def delete_examples(
+        self, example_ids: Sequence[ID_TYPE], hard_delete: bool = False
+    ) -> None:
         """Delete multiple examples by ID.
 
         Parameters
         ----------
         example_ids : Sequence[ID_TYPE]
             The IDs of the examples to delete.
+        hard_delete : bool, optional
+            Whether to permanently delete the examples. Default is False.
         """
+        params = {
+            "example_ids": [
+                str(_as_uuid(id_, f"example_ids[{i}]"))
+                for i, id_ in enumerate(example_ids)
+            ]
+        }
+        if hard_delete:
+            params["hard_delete"] = hard_delete
+
         response = self.request_with_retries(
             "DELETE",
-            "/examples",
-            headers={**self._headers, "Content-Type": "application/json"},
-            params={
-                "example_ids": [
-                    str(_as_uuid(id_, f"example_ids[{i}]"))
-                    for i, id_ in enumerate(example_ids)
-                ]
-            },
+            "/api/v1/examples",
+            headers=self._headers,
+            params=params,
         )
         ls_utils.raise_for_status_with_text(response)
 
@@ -8372,7 +8476,9 @@ class Client:
                 print(f"P50 latency: {results['stats'].latency_p50}")
 
         """
-        if name and not project_id:
+        if not (name or project_id):
+            raise ValueError("Either name or project_id must be provided.")
+        elif not project_id:
             projects = list(self.list_projects(name=name))
             if not projects:
                 raise ValueError(f"No experiment found with name: '{name}'")
