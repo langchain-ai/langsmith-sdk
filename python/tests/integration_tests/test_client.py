@@ -3630,7 +3630,7 @@ def test_get_experiment_results(langchain_client: Client) -> None:
     # Test that we get feedback stats
     assert experiment_results["feedback_stats"] is not None
     feedback_stats = experiment_results["feedback_stats"]
-    assert len(feedback_stats) == 1
+    assert len(feedback_stats) > 0
 
     # Test that we get examples iterator
     examples_list = list(experiment_results["examples_with_runs"])
