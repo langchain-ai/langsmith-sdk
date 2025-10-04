@@ -1275,6 +1275,7 @@ class ExampleWithRuns(Example):
 
 class ExperimentRunStats(TypedDict):
     """Run statistics for an experiment."""
+
     run_count: Optional[int]
     """The number of runs in the project."""
     latency_p50: Optional[timedelta]
@@ -1306,7 +1307,11 @@ class ExperimentRunStats(TypedDict):
 
 
 class ExperimentResults(TypedDict):
-    """Results container for experiment data with stats and examples."""
+    """Results container for experiment data with stats and examples.
+
+    Breaking change in v0.4.32:
+        The 'stats' field has been split into 'feedback_stats' and 'run_stats'.
+    """
 
     feedback_stats: dict
     """Feedback statistics for the experiment."""
