@@ -3621,11 +3621,16 @@ def test_get_experiment_results(langchain_client: Client) -> None:
     # Test get_experiment_results method
     experiment_results = langchain_client.get_experiment_results(name=experiment_name)
 
-    # Test that we get stats
-    assert experiment_results["stats"] is not None
-    stats = experiment_results["stats"]
-    assert hasattr(stats, "run_count")
-    assert stats.run_count > 0
+    # Test that we get run stats
+    assert experiment_results["run_stats"] is not None
+    run_stats = experiment_results["run_stats"]
+    assert hasattr(run_stats, "run_count")
+    assert run_stats.run_count > 0
+
+    # Test that we get feedback stats
+    assert experiment_results["feedback_stats"] is not None
+    feedback_stats = experiment_results["feedback_stats"]
+    assert len(feedback_stats) > 0
 
     # Test that we get examples iterator
     examples_list = list(experiment_results["examples_with_runs"])
@@ -3638,7 +3643,10 @@ def test_get_experiment_results(langchain_client: Client) -> None:
     assert len(limited_examples) == 1
 
     # Test stats are the same regardless of limit (since stats come from project)
-    assert limited_results["stats"].run_count == experiment_results["stats"].run_count
+    assert (
+        limited_results["run_stats"].run_count
+        == experiment_results["run_stats"].run_count
+    )
 
     # Test preview mode - should be faster and return preview data
     preview_results = langchain_client.get_experiment_results(

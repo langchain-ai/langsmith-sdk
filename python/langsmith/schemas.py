@@ -799,6 +799,8 @@ class TracerSessionResult(TracerSession):
     """The start time of the last run in the project."""
     feedback_stats: Optional[dict[str, Any]]
     """Feedback stats for the project."""
+    session_feedback_stats: Optional[dict[str, Any]]
+    """Summary feedback stats for the project."""
     run_facets: Optional[list[dict[str, Any]]]
     """Facets for the runs in the project."""
     total_cost: Optional[Decimal]
@@ -1271,8 +1273,48 @@ class ExampleWithRuns(Example):
     """The runs of the example."""
 
 
-class ExperimentResults(TypedDict):
-    """Results container for experiment data with stats and examples."""
+class ExperimentRunStats(TypedDict):
+    """Run statistics for an experiment."""
 
-    stats: TracerSessionResult
+    run_count: Optional[int]
+    """The number of runs in the project."""
+    latency_p50: Optional[timedelta]
+    """The median (50th percentile) latency for the project."""
+    latency_p99: Optional[timedelta]
+    """The 99th percentile latency for the project."""
+    total_tokens: Optional[int]
+    """The total number of tokens consumed in the project."""
+    prompt_tokens: Optional[int]
+    """The total number of prompt tokens consumed in the project."""
+    completion_tokens: Optional[int]
+    """The total number of completion tokens consumed in the project."""
+    last_run_start_time: Optional[datetime]
+    """The start time of the last run in the project."""
+    run_facets: Optional[list[dict[str, Any]]]
+    """Facets for the runs in the project."""
+    total_cost: Optional[Decimal]
+    """The total estimated LLM cost associated with the completion tokens."""
+    prompt_cost: Optional[Decimal]
+    """The estimated cost associated with the prompt (input) tokens."""
+    completion_cost: Optional[Decimal]
+    """The estimated cost associated with the completion tokens."""
+    first_token_p50: Optional[timedelta]
+    """The median (50th percentile) time to process the first token."""
+    first_token_p99: Optional[timedelta]
+    """The 99th percentile time to process the first token."""
+    error_rate: Optional[float]
+    """The error rate for the project."""
+
+
+class ExperimentResults(TypedDict):
+    """Results container for experiment data with stats and examples.
+
+    Breaking change in v0.4.32:
+        The 'stats' field has been split into 'feedback_stats' and 'run_stats'.
+    """
+
+    feedback_stats: dict
+    """Feedback statistics for the experiment."""
+    run_stats: ExperimentRunStats
+    """Run statistics (latency, token count, etc.)."""
     examples_with_runs: Iterator[ExampleWithRuns]
