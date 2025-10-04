@@ -8351,7 +8351,10 @@ class Client:
             limit: Maximum number of results to return
 
         Returns:
-            ExperimentResults that has stats (TracerSessionResult) and iterator of examples_with_runs (ExampleWithRuns)
+            ExperimentResults with:
+                - feedback_stats: Combined feedback statistics including session-level feedback
+                - run_stats: Aggregated run statistics (latency, tokens, cost, etc.)
+                - examples_with_runs: Iterator of ExampleWithRuns
 
         Raises:
             ValueError: If project not found for the given session_id
@@ -8366,10 +8369,13 @@ class Client:
                 for example_with_runs in results["examples_with_runs"]:
                     print(example_with_runs.dict())
 
-                # Access aggregated experiment stats
-                print(f"Total runs: {results['stats'].run_count}")
-                print(f"Total cost: {results['stats'].total_cost}")
-                print(f"P50 latency: {results['stats'].latency_p50}")
+                # Access aggregated experiment statistics
+                print(f"Total runs: {results['run_stats']['run_count']}")
+                print(f"Total cost: {results['run_stats']['total_cost']}")
+                print(f"P50 latency: {results['run_stats']['latency_p50']}")
+
+                # Access feedback statistics
+                print(f"Feedback stats: {results['feedback_stats']}")
 
         """
         project = self.read_project(
@@ -8383,7 +8389,7 @@ class Client:
             """Yield examples with corresponding experiment runs."""
             for batch in self._paginate_examples_with_runs(
                 dataset_id=project.reference_dataset_id,
-                session_id=project_id,
+                session_id=project.id,
                 preview=preview,
                 comparative_experiment_id=comparative_experiment_id,
                 filters=filters,
