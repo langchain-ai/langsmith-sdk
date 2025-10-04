@@ -8397,7 +8397,7 @@ class Client:
             ):
                 yield from batch
 
-        run_stats = {
+        run_stats: ls_schemas.ExperimentRunStats = {
             "run_count": project.run_count,
             "latency_p50": project.latency_p50,
             "latency_p99": project.latency_p99,
