@@ -45,6 +45,47 @@ test("wrap generateText", async () => {
   expect(result.providerMetadata).toBeDefined();
 });
 
+test("wrap generateText with tool class", async () => {
+  class MyTool {
+    inputSchema: z.ZodSchema;
+    description: string;
+
+    constructor(inputSchema: z.ZodSchema, description: string) {
+      this.inputSchema = inputSchema;
+      this.description = description;
+    }
+
+    async execute() {
+      return this.helperMethod();
+    }
+
+    helperMethod() {
+      return `User has the following orders: 1`;
+    }
+  }
+
+  const result = await generateText({
+    model: openai("gpt-5-nano"),
+    messages: [
+      {
+        role: "user",
+        content: "What are my orders? My user ID is 123. Always use tools.",
+      },
+    ],
+    tools: {
+      listOrders: new MyTool(
+        z.object({ userId: z.string() }),
+        "list all orders"
+      ),
+    },
+    stopWhen: stepCountIs(10),
+  });
+  expect(result.text).toBeDefined();
+  expect(result.text.length).toBeGreaterThan(0);
+  expect(result.usage).toBeDefined();
+  expect(result.providerMetadata).toBeDefined();
+});
+
 test("wrap generateText with flex service tier", async () => {
   const { client, callSpy } = mockClient();
 

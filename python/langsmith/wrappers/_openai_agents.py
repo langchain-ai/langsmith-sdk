@@ -97,6 +97,7 @@ if HAVE_AGENTS:
         dotted_order: str
         parent_run_id: Optional[str]
         project_name: Optional[str]
+        name: Optional[str]
 
     class OpenAIAgentsTracingProcessor(tracing.TracingProcessor):  # type: ignore[no-redef]
         """Tracing processor for the `OpenAI Agents SDK <https://openai.github.io/openai-agents-python/>`_.
@@ -211,6 +212,7 @@ if HAVE_AGENTS:
                 dotted_order=dotted_order,
                 parent_run_id=parent_run_id,
                 project_name=project_name,
+                name=run_name,
             )
 
             run_extra = {"metadata": self._metadata or {}}
@@ -285,6 +287,20 @@ if HAVE_AGENTS:
                 run_id=span_run_id,
                 parent_dotted_order=parent_run["dotted_order"] if parent_run else None,
             )
+            run_name = agent_utils.get_run_name(span)
+            if isinstance(span.span_data, tracing.ResponseSpanData):
+                parent_name = parent_run.get("name")
+                raw_span_name = getattr(span, "name", None) or getattr(
+                    span.span_data, "name", None
+                )
+                span_name = str(raw_span_name) if raw_span_name else run_name
+                if parent_name:
+                    run_name = f"{parent_name} {span_name}".strip()
+                else:
+                    run_name = span_name
+            run_type = agent_utils.get_run_type(span)
+            extracted = agent_utils.extract_span_data(span)
+
             self._runs[span.span_id] = RunData(
                 id=span_run_id,
                 trace_id=trace_id,
@@ -292,11 +308,8 @@ if HAVE_AGENTS:
                 dotted_order=dotted_order,
                 parent_run_id=parent_run["id"],
                 project_name=parent_run["project_name"],
+                name=run_name,
             )
-
-            run_name = agent_utils.get_run_name(span)
-            run_type = agent_utils.get_run_type(span)
-            extracted = agent_utils.extract_span_data(span)
 
             try:
                 run_data: dict = dict(
