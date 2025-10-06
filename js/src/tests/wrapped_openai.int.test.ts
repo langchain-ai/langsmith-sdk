@@ -374,6 +374,7 @@ test("chat completions with tool calling", async () => {
       ls_model_type: "chat",
       ls_provider: "openai",
       ls_temperature: 0,
+      openai_base_url: expect.any(String),
     });
   }
   callSpy.mockClear();
@@ -620,6 +621,7 @@ test("chat.completions.parse", async () => {
       ls_model_type: "chat",
       ls_provider: "openai",
       ls_temperature: 0,
+      openai_base_url: expect.any(String),
     });
   }
   callSpy.mockClear();
@@ -671,6 +673,7 @@ test("responses.create and retrieve workflow", async () => {
       ls_model_name: "gpt-4.1-nano",
       ls_model_type: "llm",
       ls_provider: "openai",
+      openai_base_url: expect.any(String),
     });
   }
 
@@ -725,6 +728,7 @@ test("responses.create streaming", async () => {
       ls_model_name: "gpt-4.1-nano",
       ls_model_type: "llm",
       ls_provider: "openai",
+      openai_base_url: expect.any(String),
     });
   }
   callSpy.mockClear();

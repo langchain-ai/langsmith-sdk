@@ -59,7 +59,7 @@ def _strip_not_given(d: dict) -> dict:
         return d
 
 
-def _infer_invocation_params(model_type: str, provider: str, kwargs: dict):
+def _infer_invocation_params(model_type: str, provider: str, base_url: str, kwargs: dict):
     stripped = _strip_not_given(kwargs)
 
     stop = stripped.get("stop")
@@ -75,6 +75,7 @@ def _infer_invocation_params(model_type: str, provider: str, kwargs: dict):
         or stripped.get("max_completion_tokens")
         or stripped.get("max_output_tokens"),
         "ls_stop": stop,
+        "openai_base_url": base_url,
     }
 
 
@@ -434,7 +435,7 @@ def wrap_openai(
         _reduce_chat,
         tracing_extra=tracing_extra,
         invocation_params_fn=functools.partial(
-            _infer_invocation_params, "chat", ls_provider
+            _infer_invocation_params, "chat", ls_provider, client.base_url
         ),
         process_outputs=_process_chat_completion,
     )
@@ -445,7 +446,7 @@ def wrap_openai(
         _reduce_completions,
         tracing_extra=tracing_extra,
         invocation_params_fn=functools.partial(
-            _infer_invocation_params, "llm", ls_provider
+            _infer_invocation_params, "llm", ls_provider, client.base_url
         ),
     )
 
@@ -462,7 +463,7 @@ def wrap_openai(
             _process_chat_completion,
             tracing_extra=tracing_extra,
             invocation_params_fn=functools.partial(
-                _infer_invocation_params, "chat", ls_provider
+                _infer_invocation_params, "chat", ls_provider, client.base_url
             ),
         )
 
@@ -478,7 +479,7 @@ def wrap_openai(
             _process_chat_completion,
             tracing_extra=tracing_extra,
             invocation_params_fn=functools.partial(
-                _infer_invocation_params, "chat", ls_provider
+                _infer_invocation_params, "chat", ls_provider, client.base_url
             ),
         )
 
@@ -492,7 +493,7 @@ def wrap_openai(
                 process_outputs=_process_responses_api_output,
                 tracing_extra=tracing_extra,
                 invocation_params_fn=functools.partial(
-                    _infer_invocation_params, "chat", ls_provider
+                    _infer_invocation_params, "chat", ls_provider, client.base_url
                 ),
             )
         if hasattr(client.responses, "parse"):
@@ -502,7 +503,7 @@ def wrap_openai(
                 _process_responses_api_output,
                 tracing_extra=tracing_extra,
                 invocation_params_fn=functools.partial(
-                    _infer_invocation_params, "chat", ls_provider
+                    _infer_invocation_params, "chat", ls_provider, client.base_url
                 ),
             )
 

@@ -346,6 +346,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
           params.max_completion_tokens ?? params.max_tokens ?? undefined,
         ls_temperature: params.temperature ?? undefined,
         ls_stop,
+        openai_base_url: (openai as any).baseURL,
       };
     },
     processOutputs: processChatCompletion,
@@ -412,6 +413,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
           ls_max_tokens: params.max_tokens ?? undefined,
           ls_temperature: params.temperature ?? undefined,
           ls_stop,
+          openai_base_url: (openai as any).baseURL,
         };
       },
       ...options,
@@ -451,6 +453,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
               ls_provider: provider,
               ls_model_type: "llm",
               ls_model_name: params.model || "unknown",
+              openai_base_url: (openai as any).baseURL,
             };
           },
           processOutputs: processChatCompletion,
