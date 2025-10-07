@@ -318,6 +318,8 @@ export const wrapOpenAI = <T extends OpenAIType>(
   const chatName = isAzureOpenAI ? "AzureChatOpenAI" : "ChatOpenAI";
   const completionsName = isAzureOpenAI ? "AzureOpenAI" : "OpenAI";
 
+  const baseURL = (openai as any).baseURL;
+
   // Some internal OpenAI methods call each other, so we need to preserve original
   // OpenAI methods.
   const tracedOpenAIClient = { ...openai };
@@ -346,6 +348,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
           params.max_completion_tokens ?? params.max_tokens ?? undefined,
         ls_temperature: params.temperature ?? undefined,
         ls_stop,
+        ...(baseURL && { openai_base_url: baseURL }),
       };
     },
     processOutputs: processChatCompletion,
@@ -412,6 +415,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
           ls_max_tokens: params.max_tokens ?? undefined,
           ls_temperature: params.temperature ?? undefined,
           ls_stop,
+          ...(baseURL && { openai_base_url: baseURL }),
         };
       },
       ...options,
@@ -451,6 +455,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
               ls_provider: provider,
               ls_model_type: "llm",
               ls_model_name: params.model || "unknown",
+              ...(baseURL && { openai_base_url: baseURL }),
             };
           },
           processOutputs: processChatCompletion,

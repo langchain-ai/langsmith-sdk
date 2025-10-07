@@ -815,3 +815,32 @@ async def test_tool_call_chunking():
     time.sleep(0.1)
     for call in mock_session.request.call_args_list:
         assert call[0][0].upper() in ["POST", "GET", "PATCH"]
+
+
+def test_openai_base_url_in_metadata():
+    """Test that openai_base_url is captured in metadata."""
+    import openai
+
+    mock_session = mock.MagicMock()
+    client = langsmith.Client(session=mock_session)
+    patched_client = wrap_openai(openai.Client(), tracing_extra={"client": client})
+
+    collect = Collect()
+    with langsmith.tracing_context(enabled=True):
+        patched_client.chat.completions.create(
+            messages=[{"role": "user", "content": "Say 'foo'"}],
+            model="gpt-4o-mini",
+            langsmith_extra={"on_end": collect},
+        )
+
+    time.sleep(0.1)
+    for call in mock_session.request.call_args_list:
+        if json_bytes := call.kwargs.get("data"):
+            data = json.loads(json_bytes.decode("utf-8"))
+            for event in [*data.get("post", []), *data.get("patch", [])]:
+                metadata = event.get("extra", {}).get("metadata", {})
+                if base_url := metadata.get("openai_base_url"):
+                    assert "api.openai.com" in base_url
+                    return
+
+    raise AssertionError("openai_base_url not found in metadata")
