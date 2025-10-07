@@ -27,6 +27,7 @@ from pydantic import BaseModel
 from requests_toolbelt import MultipartEncoder, MultipartEncoderMonitor
 
 import langsmith
+from langsmith import env as ls_env
 from langsmith._internal._background_thread import (
     TracingQueueItem,
     _otel_tracing_thread_handle_batch,
@@ -763,6 +764,7 @@ def test_dataset_schema_validation(langchain_client: Client) -> None:
     assert read_dataset.metadata == {
         "dataset_metadata_k1": "v1",
         "dataset_metadata_k2": "v2",
+        "runtime": ls_env.get_runtime_environment(),
     }
 
     safe_delete_dataset(langchain_client, dataset_id=dataset.id)
@@ -812,11 +814,17 @@ def test_list_datasets(langchain_client: Client) -> None:
 
         # Test metadata property
         dataset_with_metadata = next(d for d in datasets if d.id == dataset1.id)
-        assert dataset_with_metadata.metadata == {"foo": "barqux"}
+        assert dataset_with_metadata.metadata == {
+            "foo": "barqux",
+            "runtime": ls_env.get_runtime_environment(),
+        }
 
         # Test read_dataset also includes metadata
         read_dataset = langchain_client.read_dataset(dataset_id=dataset1.id)
-        assert read_dataset.metadata == {"foo": "barqux"}
+        assert read_dataset.metadata == {
+            "foo": "barqux",
+            "runtime": ls_env.get_runtime_environment(),
+        }
 
     finally:
         # Delete datasets

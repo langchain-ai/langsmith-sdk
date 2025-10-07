@@ -25,6 +25,9 @@ def test__get_id():
     def foo(x: Foo):
         return x
 
-    suite_id = uuid.UUID("4e32bff6-5762-4906-8d74-ee2bd0f1d234")
+    dataset_id = "4e32bff6-5762-4906-8d74-ee2bd0f1d234"
+    inputs = {"x": Foo(1, 2)}
+    outputs = {"y": Foo(3, 4)}
 
-    _get_example_id(foo, {"x": Foo(1, 2)}, suite_id)
+    result = _get_example_id(dataset_id, inputs, outputs)
+    assert isinstance(result, uuid.UUID)
