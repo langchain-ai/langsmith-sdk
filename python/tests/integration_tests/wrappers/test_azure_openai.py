@@ -34,14 +34,14 @@ def test_chat_sync_api(stream: bool):
     )
     messages = [{"role": "user", "content": "Say 'foo'"}]
     original = original_client.chat.completions.create(
-        messages=messages,  # noqa: [arg-type]
+        messages=messages,  # noqa: arg-type
         stream=stream,
         temperature=0,
         seed=42,
         model="gpt-4o-mini",
     )
     patched = patched_client.chat.completions.create(
-        messages=messages,  # noqa: [arg-type]
+        messages=messages,  # noqa: arg-type
         stream=stream,
         temperature=0,
         seed=42,
