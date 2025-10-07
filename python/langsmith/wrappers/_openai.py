@@ -39,17 +39,13 @@ def _get_omit_types() -> tuple[type, ...]:
     """Get NotGiven/Omit sentinel types used by OpenAI SDK."""
     types = []
     try:
-        from openai._types import NotGiven
+        from openai._types import NotGiven, Omit
 
         types.append(NotGiven)
-    except ImportError:
-        pass
-    try:
-        from openai._types import Omit
-
         types.append(Omit)
     except ImportError:
         pass
+
     return tuple(types)
 
 
