@@ -16,6 +16,9 @@ inputs:
   anthropic-api-key:
     description: "Anthropic API key"
     required: false
+  google-api-key:
+    description: "Google API key"
+    required: false
   test-type:
     description: "Type of test to run (integration, doctest, evals, or all)"
     required: false
@@ -48,6 +51,7 @@ runs:
         LANGSMITH_API_KEY: ${{ inputs.langchain-api-key-beta }}
         OPENAI_API_KEY: ${{ inputs.openai-api-key }}
         ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+        GOOGLE_API_KEY: ${{ inputs.google-api-key }}
         LANGSMITH_TEST_CACHE: tests/cassettes
       run: make integration_tests_fast
       shell: bash
@@ -61,6 +65,7 @@ runs:
         LANGSMITH_API_KEY: ${{ inputs.langchain-api-key-prod }}
         OPENAI_API_KEY: ${{ inputs.openai-api-key }}
         ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+        GOOGLE_API_KEY: ${{ inputs.google-api-key }}
         LANGSMITH_TEST_CACHE: tests/cassettes
       run: make doctest
       shell: bash
@@ -74,6 +79,7 @@ runs:
           LANGSMITH_API_KEY: ${{ inputs.langchain-api-key-beta }}
           OPENAI_API_KEY: ${{ inputs.openai-api-key }}
           ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+          GOOGLE_API_KEY: ${{ inputs.google-api-key }}
           LANGSMITH_TEST_CACHE: tests/cassettes
       run: make evals
       shell: bash
