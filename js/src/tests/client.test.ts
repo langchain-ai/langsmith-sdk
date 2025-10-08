@@ -186,8 +186,8 @@ describe("Client", () => {
 
       expect(envVars).toMatchObject({
         LANGCHAIN_REVISION_ID: "test_revision_id",
-        LANGCHAIN_API_KEY: "fake_api_key",
-        LANGCHAIN_OTHER_KEY: "test_other_key",
+        LANGCHAIN_API_KEY: "fa********ey",
+        LANGCHAIN_OTHER_KEY: "te**********ey",
         LANGCHAIN_ENDPOINT: "https://example.com",
         LANGCHAIN_OTHER_NON_SENSITIVE_METADATA: "test_some_metadata",
       });
