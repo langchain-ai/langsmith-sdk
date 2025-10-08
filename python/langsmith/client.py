@@ -4758,7 +4758,6 @@ class Client:
         """Estimate the size of an example in bytes for batching purposes."""
         size = 1000  # Base overhead for JSON structure and boundaries
 
-        # Estimate JSON parts
         if example.inputs:
             size += len(_dumps_json(example.inputs))
         if example.outputs:
@@ -4766,7 +4765,7 @@ class Client:
         if example.metadata:
             size += len(_dumps_json(example.metadata))
 
-        # Estimate attachments (largest contributor)
+        # Estimate attachments
         if example.attachments:
             for _, attachment in example.attachments.items():
                 if isinstance(attachment, dict):
@@ -4785,13 +4784,12 @@ class Client:
 
         return size
 
-    def _batch_examples_by_size_and_count(
+    def _batch_examples_by_size(
         self,
         examples: list[ls_schemas.ExampleCreate],
-        max_batch_size_bytes: int = 20_000_000,  # 20MB limit
-        max_batch_count: int = 200,
+        max_batch_size_bytes: int = 20_000_000,  # 20MB limit per batch
     ) -> list[list[ls_schemas.ExampleCreate]]:
-        """Batch examples by both size and count limits."""
+        """Batch examples by size limits."""
         batches = []
         current_batch = []
         current_size = 0
@@ -4806,16 +4804,14 @@ class Client:
                     batches.append(current_batch)
                     current_batch = []
                     current_size = 0
-                # Put oversized example in its own batch
+                # oversized example
                 batches.append([example])
                 continue
 
-            # Check if adding this example would exceed limits
             size_exceeded = current_size + example_size > max_batch_size_bytes
-            count_exceeded = len(current_batch) >= max_batch_count
-
-            # Start new batch if current batch would be too large
-            if current_batch and (size_exceeded or count_exceeded):
+            
+            # new batch
+            if current_batch and size_exceeded:
                 batches.append(current_batch)
                 current_batch = [example]
                 current_size = example_size
@@ -4823,7 +4819,7 @@ class Client:
                 current_batch.append(example)
                 current_size += example_size
 
-        # Add final batch
+        # final batch
         if current_batch:
             batches.append(current_batch)
 
@@ -5088,8 +5084,8 @@ class Client:
                     uploads=batch,
                     dangerously_allow_filesystem=dangerously_allow_filesystem,
                 )
-                all_example_ids.extend(response.example_ids or [])
-                total_count += response.count or 0
+                all_example_ids.extend(response["example_ids"] or [])
+                total_count += response["count"] or 0
             else:
                 # Strip attachments for legacy endpoint
                 for upload in batch:
