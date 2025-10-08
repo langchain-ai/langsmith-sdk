@@ -12,7 +12,7 @@ import { getDefaultRevisionId, getGitInfo } from "../utils/_git.js";
 import { assertUuid } from "../utils/_uuid.js";
 import { AsyncCaller } from "../utils/async_caller.js";
 import { atee } from "../utils/atee.js";
-import { getLangChainEnvVarsMetadata } from "../utils/env.js";
+import { getLangSmithEnvVarsMetadata } from "../utils/env.js";
 import { printErrorStackTrace } from "../utils/error.js";
 import { randomName } from "./_random_name.js";
 import {
@@ -374,7 +374,7 @@ export class _ExperimentManager {
     let metadata = args.metadata || {};
     if (!("revision_id" in metadata)) {
       metadata = {
-        revision_id: getLangChainEnvVarsMetadata().revision_id,
+        revision_id: getLangSmithEnvVarsMetadata().revision_id,
         ...metadata,
       };
     }
