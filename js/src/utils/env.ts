@@ -146,7 +146,19 @@ export function getLangSmithEnvironmentVariables(): Record<string, string> {
           (key.startsWith("LANGCHAIN_") || key.startsWith("LANGSMITH_")) &&
           value != null
         ) {
-          envVars[key] = value;
+          if (
+            (key.toLowerCase().includes("key") ||
+              key.toLowerCase().includes("secret") ||
+              key.toLowerCase().includes("token")) &&
+            typeof value === "string"
+          ) {
+            envVars[key] =
+              value.slice(0, 2) +
+              "*".repeat(value.length - 4) +
+              value.slice(-2);
+          } else {
+            envVars[key] = value;
+          }
         }
       }
     }
