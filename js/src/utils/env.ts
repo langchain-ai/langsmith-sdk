@@ -86,13 +86,12 @@ export function getRuntimeEnvironment(): RuntimeEnvironment {
 }
 
 /**
- * Retrieves the LangChain-specific metadata from the current runtime environment.
+ * Retrieves the LangSmith-specific metadata from the current runtime environment.
  *
- * @param cachedEnvVars - Optional pre-cached LangChain environment variables to avoid re-scanning process.env
  * @returns {Record<string, string>}
- *  - A record of LangChain-specific metadata environment variables.
+ *  - A record of LangSmith-specific metadata environment variables.
  */
-export function getLangChainEnvVarsMetadata(): Record<string, string> {
+export function getLangSmithEnvVarsMetadata(): Record<string, string> {
   const allEnvVars = getLangSmithEnvironmentVariables();
   const envVars: Record<string, string> = {};
   const excluded = [

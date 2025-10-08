@@ -58,7 +58,7 @@ import {
 } from "./utils/messages.js";
 import {
   getEnvironmentVariable,
-  getLangChainEnvVarsMetadata,
+  getLangSmithEnvVarsMetadata,
   getLangSmithEnvironmentVariable,
   getRuntimeEnvironment,
   getOtelEnabled,
@@ -426,7 +426,7 @@ export function mergeRuntimeEnvIntoRun<T extends RunCreate | RunUpdate>(
   cachedEnvVars?: Record<string, string>
 ): T {
   const runtimeEnv = getRuntimeEnvironment();
-  const envVars = cachedEnvVars ?? getLangChainEnvVarsMetadata();
+  const envVars = cachedEnvVars ?? getLangSmithEnvVarsMetadata();
   const extra = run.extra ?? {};
   const metadata = extra.metadata;
   run.extra = {
@@ -734,8 +734,8 @@ export class Client implements LangSmithTracingClientInterface {
     if (getOtelEnabled()) {
       this.langSmithToOTELTranslator = new LangSmithToOTELTranslator();
     }
-    // Cache LangChain env vars once during construction to avoid repeatedly scanning process.env
-    this.cachedLSEnvVarsForMetadata = getLangChainEnvVarsMetadata();
+    // Cache metadata env vars once during construction to avoid repeatedly scanning process.env
+    this.cachedLSEnvVarsForMetadata = getLangSmithEnvVarsMetadata();
   }
 
   public static getDefaultClientConfig(): {

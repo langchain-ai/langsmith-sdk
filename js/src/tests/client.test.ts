@@ -3,7 +3,7 @@ import { jest } from "@jest/globals";
 import { Client } from "../client.js";
 import {
   getLangSmithEnvironmentVariables,
-  getLangChainEnvVarsMetadata,
+  getLangSmithEnvVarsMetadata,
 } from "../utils/env.js";
 import {
   isVersionGreaterOrEqual,
@@ -182,7 +182,7 @@ describe("Client", () => {
       process.env.SOME_RANDOM_THING = "random";
 
       const envVars = getLangSmithEnvironmentVariables();
-      const langchainMetadataEnvVars = getLangChainEnvVarsMetadata();
+      const langchainMetadataEnvVars = getLangSmithEnvVarsMetadata();
 
       expect(envVars).toMatchObject({
         LANGCHAIN_REVISION_ID: "test_revision_id",
