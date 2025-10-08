@@ -2,8 +2,7 @@
 import { jest } from "@jest/globals";
 import { Client } from "../client.js";
 import {
-  getEnvironmentVariables,
-  getLangChainEnvVars,
+  getLangSmithEnvironmentVariables,
   getLangChainEnvVarsMetadata,
 } from "../utils/env.js";
 import {
@@ -182,8 +181,7 @@ describe("Client", () => {
       // eslint-disable-next-line no-process-env
       process.env.SOME_RANDOM_THING = "random";
 
-      const envVars = getEnvironmentVariables();
-      const langchainEnvVars = getLangChainEnvVars();
+      const envVars = getLangSmithEnvironmentVariables();
       const langchainMetadataEnvVars = getLangChainEnvVarsMetadata();
 
       expect(envVars).toMatchObject({
@@ -191,17 +189,9 @@ describe("Client", () => {
         LANGCHAIN_API_KEY: "fake_api_key",
         LANGCHAIN_OTHER_KEY: "test_other_key",
         LANGCHAIN_ENDPOINT: "https://example.com",
-        SOME_RANDOM_THING: "random",
         LANGCHAIN_OTHER_NON_SENSITIVE_METADATA: "test_some_metadata",
       });
-      expect(langchainEnvVars).toMatchObject({
-        LANGCHAIN_REVISION_ID: "test_revision_id",
-        LANGCHAIN_API_KEY: "fa********ey",
-        LANGCHAIN_OTHER_KEY: "te**********ey",
-        LANGCHAIN_ENDPOINT: "https://example.com",
-        LANGCHAIN_OTHER_NON_SENSITIVE_METADATA: "test_some_metadata",
-      });
-      expect(langchainEnvVars).not.toHaveProperty("SOME_RANDOM_THING");
+      expect(envVars).not.toHaveProperty("SOME_RANDOM_THING");
 
       delete langchainMetadataEnvVars.LANGSMITH_TRACING;
       expect(langchainMetadataEnvVars).toEqual({

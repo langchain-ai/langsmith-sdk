@@ -86,46 +86,14 @@ export function getRuntimeEnvironment(): RuntimeEnvironment {
 }
 
 /**
- * Retrieves the LangChain-specific environment variables from the current runtime environment.
- * Sensitive keys (containing the word "key", "token", or "secret") have their values redacted for security.
- *
- * @returns {Record<string, string>}
- *  - A record of LangChain-specific environment variables.
- */
-export function getLangChainEnvVars(): Record<string, string> {
-  const allEnvVars = getEnvironmentVariables() || {};
-  const envVars: Record<string, string> = {};
-
-  for (const [key, value] of Object.entries(allEnvVars)) {
-    if (key.startsWith("LANGCHAIN_") && typeof value === "string") {
-      envVars[key] = value;
-    }
-  }
-
-  for (const key in envVars) {
-    if (
-      (key.toLowerCase().includes("key") ||
-        key.toLowerCase().includes("secret") ||
-        key.toLowerCase().includes("token")) &&
-      typeof envVars[key] === "string"
-    ) {
-      const value = envVars[key];
-      envVars[key] =
-        value.slice(0, 2) + "*".repeat(value.length - 4) + value.slice(-2);
-    }
-  }
-
-  return envVars;
-}
-
-/**
  * Retrieves the LangChain-specific metadata from the current runtime environment.
  *
+ * @param cachedEnvVars - Optional pre-cached LangChain environment variables to avoid re-scanning process.env
  * @returns {Record<string, string>}
  *  - A record of LangChain-specific metadata environment variables.
  */
 export function getLangChainEnvVarsMetadata(): Record<string, string> {
-  const allEnvVars = getEnvironmentVariables() || {};
+  const allEnvVars = getLangSmithEnvironmentVariables();
   const envVars: Record<string, string> = {};
   const excluded = [
     "LANGCHAIN_API_KEY",
@@ -142,7 +110,6 @@ export function getLangChainEnvVarsMetadata(): Record<string, string> {
 
   for (const [key, value] of Object.entries(allEnvVars)) {
     if (
-      (key.startsWith("LANGCHAIN_") || key.startsWith("LANGSMITH_")) &&
       typeof value === "string" &&
       !excluded.includes(key) &&
       !key.toLowerCase().includes("key") &&
@@ -161,36 +128,34 @@ export function getLangChainEnvVarsMetadata(): Record<string, string> {
 }
 
 /**
- * Retrieves the environment variables from the current runtime environment.
+ * Retrieves only the LangChain/LangSmith-prefixed environment variables from the current runtime environment.
+ * This is more efficient than copying all environment variables.
  *
- * This function is designed to operate in a variety of JS environments,
- * including Node.js, Deno, browsers, etc.
- *
- * @returns {Record<string, string> | undefined}
- *  - A record of environment variables if available.
- *  - `undefined` if the environment does not support or allows access to environment variables.
+ * @returns {Record<string, string>}
+ *  - A record of LangChain/LangSmith environment variables.
  */
-export function getEnvironmentVariables(): Record<string, string> | undefined {
+export function getLangSmithEnvironmentVariables(): Record<string, string> {
+  const envVars: Record<string, string> = {};
+
   try {
     // Check for Node.js environment
     // eslint-disable-next-line no-process-env
     if (typeof process !== "undefined" && process.env) {
       // eslint-disable-next-line no-process-env
-      return Object.entries(process.env).reduce(
-        (acc: { [key: string]: string }, [key, value]) => {
-          acc[key] = String(value);
-          return acc;
-        },
-        {}
-      );
+      for (const [key, value] of Object.entries(process.env)) {
+        if (
+          (key.startsWith("LANGCHAIN_") || key.startsWith("LANGSMITH_")) &&
+          value != null
+        ) {
+          envVars[key] = value;
+        }
+      }
     }
-    // For browsers and other environments, we may not have direct access to env variables
-    // Return undefined or any other fallback as required.
-    return undefined;
   } catch (e) {
     // Catch any errors that might occur while trying to access environment variables
-    return undefined;
   }
+
+  return envVars;
 }
 
 export function getEnvironmentVariable(name: string): string | undefined {
