@@ -35,24 +35,29 @@ logger = logging.getLogger(__name__)
 
 
 @functools.lru_cache
-def _get_not_given() -> Optional[type]:
+def _get_omit_types() -> tuple[type, ...]:
+    """Get NotGiven/Omit sentinel types used by OpenAI SDK."""
+    types = []
     try:
-        from openai._types import NotGiven
+        from openai._types import NotGiven, Omit
 
-        return NotGiven
+        types.append(NotGiven)
+        types.append(Omit)
     except ImportError:
-        return None
+        pass
+
+    return tuple(types)
 
 
 def _strip_not_given(d: dict) -> dict:
     try:
-        not_given = _get_not_given()
-        if not_given is None:
+        omit_types = _get_omit_types()
+        if not omit_types:
             return d
         return {
             k: v
             for k, v in d.items()
-            if not (isinstance(v, not_given) or (k.startswith("extra_") and v is None))
+            if not (isinstance(v, omit_types) or (k.startswith("extra_") and v is None))
         }
     except Exception as e:
         logger.error(f"Error stripping NotGiven: {e}")
@@ -458,6 +463,22 @@ def wrap_openai(
     ):
         client.beta.chat.completions.parse = _get_parse_wrapper(  # type: ignore[method-assign]
             client.beta.chat.completions.parse,  # type: ignore
+            chat_name,
+            _process_chat_completion,
+            tracing_extra=tracing_extra,
+            invocation_params_fn=functools.partial(
+                _infer_invocation_params, "chat", ls_provider
+            ),
+        )
+
+    # Wrap chat.completions.parse if it exists
+    if (
+        hasattr(client, "chat")
+        and hasattr(client.chat, "completions")
+        and hasattr(client.chat.completions, "parse")
+    ):
+        client.chat.completions.parse = _get_parse_wrapper(  # type: ignore[method-assign]
+            client.chat.completions.parse,  # type: ignore
             chat_name,
             _process_chat_completion,
             tracing_extra=tracing_extra,

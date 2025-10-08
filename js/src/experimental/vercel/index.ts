@@ -20,7 +20,10 @@ const _wrapTools = (
   const wrappedTools: Record<string, any> = {};
   if (tools) {
     for (const [key, tool] of Object.entries(tools)) {
-      wrappedTools[key] = { ...(tool as Record<string, unknown>) };
+      wrappedTools[key] = Object.assign(
+        Object.create(Object.getPrototypeOf(tool)),
+        tool
+      );
       if (
         wrappedTools[key] != null &&
         typeof wrappedTools[key] === "object" &&

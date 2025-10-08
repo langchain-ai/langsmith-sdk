@@ -3783,11 +3783,17 @@ class Client:
         Raises:
             requests.HTTPError: If the request to create the dataset fails.
         """
+        metadata = {"runtime": ls_env.get_runtime_environment(), **(metadata or {})}
         dataset: dict[str, Any] = {
             "name": dataset_name,
             "data_type": data_type.value,
             "transformations": transformations,
-            "extra": {"metadata": metadata} if metadata else None,
+            "extra": {
+                "metadata": {
+                    "runtime": ls_env.get_runtime_environment(),
+                    **(metadata or {}),
+                }
+            },
         }
         if description is not None:
             dataset["description"] = description
@@ -3806,8 +3812,10 @@ class Client:
         )
         ls_utils.raise_for_status_with_text(response)
 
+        json_response = response.json()
+        json_response["metadata"] = json_response.get("metadata") or metadata
         return ls_schemas.Dataset(
-            **response.json(),
+            **json_response,
             _host_url=self._host_url,
             _tenant_id=self._get_optional_tenant_id(),
         )
@@ -8455,7 +8463,10 @@ class Client:
             limit: Maximum number of results to return
 
         Returns:
-            ExperimentResults that has stats (TracerSessionResult) and iterator of examples_with_runs (ExampleWithRuns)
+            ExperimentResults with:
+                - feedback_stats: Combined feedback statistics including session-level feedback
+                - run_stats: Aggregated run statistics (latency, tokens, cost, etc.)
+                - examples_with_runs: Iterator of ExampleWithRuns
 
         Raises:
             ValueError: If project not found for the given session_id
@@ -8470,37 +8481,27 @@ class Client:
                 for example_with_runs in results["examples_with_runs"]:
                     print(example_with_runs.dict())
 
-                # Access aggregated experiment stats
-                print(f"Total runs: {results['stats'].run_count}")
-                print(f"Total cost: {results['stats'].total_cost}")
-                print(f"P50 latency: {results['stats'].latency_p50}")
+                # Access aggregated experiment statistics
+                print(f"Total runs: {results['run_stats']['run_count']}")
+                print(f"Total cost: {results['run_stats']['total_cost']}")
+                print(f"P50 latency: {results['run_stats']['latency_p50']}")
+
+                # Access feedback statistics
+                print(f"Feedback stats: {results['feedback_stats']}")
 
         """
-        if not (name or project_id):
-            raise ValueError("Either name or project_id must be provided.")
-        elif not project_id:
-            projects = list(self.list_projects(name=name))
-            if not projects:
-                raise ValueError(f"No experiment found with name: '{name}'")
-            project_id = projects[0].id
-
-        # Get aggregated stats for the experiment project/session
-        project_stats = list(
-            self.list_projects(
-                project_ids=[cast(uuid.UUID, project_id)], include_stats=True
-            )
+        project = self.read_project(
+            project_name=name, project_id=project_id, include_stats=True
         )
 
-        if not project_stats:
+        if not project:
             raise ValueError(f"No experiment found with project_id: '{project_id}'")
-
-        dataset_id = project_stats[0].reference_dataset_id
 
         def _get_examples_with_runs_iterator():
             """Yield examples with corresponding experiment runs."""
             for batch in self._paginate_examples_with_runs(
-                dataset_id=dataset_id,
-                session_id=project_id,
+                dataset_id=project.reference_dataset_id,
+                session_id=project.id,
                 preview=preview,
                 comparative_experiment_id=comparative_experiment_id,
                 filters=filters,
@@ -8508,8 +8509,29 @@ class Client:
             ):
                 yield from batch
 
+        run_stats: ls_schemas.ExperimentRunStats = {
+            "run_count": project.run_count,
+            "latency_p50": project.latency_p50,
+            "latency_p99": project.latency_p99,
+            "total_tokens": project.total_tokens,
+            "prompt_tokens": project.prompt_tokens,
+            "completion_tokens": project.completion_tokens,
+            "last_run_start_time": project.last_run_start_time,
+            "run_facets": project.run_facets,
+            "total_cost": project.total_cost,
+            "prompt_cost": project.prompt_cost,
+            "completion_cost": project.completion_cost,
+            "first_token_p50": project.first_token_p50,
+            "first_token_p99": project.first_token_p99,
+            "error_rate": project.error_rate,
+        }
+        feedback_stats = {
+            **(project.feedback_stats or {}),
+            **(project.session_feedback_stats or {}),
+        }
         return ls_schemas.ExperimentResults(
-            stats=project_stats[0],
+            feedback_stats=feedback_stats,
+            run_stats=run_stats,
             examples_with_runs=_get_examples_with_runs_iterator(),
         )
 

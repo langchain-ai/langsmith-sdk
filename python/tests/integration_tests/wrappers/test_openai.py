@@ -23,14 +23,14 @@ def test_chat_sync_api(stream: bool):
     patched_client = wrap_openai(openai.Client(), tracing_extra={"client": client})
     messages = [{"role": "user", "content": "Say 'foo'"}]
     original = original_client.chat.completions.create(
-        messages=messages,  # noqa: [arg-type]
+        messages=messages,  # noqa: arg-type
         stream=stream,
         temperature=0,
         seed=42,
         model="gpt-3.5-turbo",
     )
     patched = patched_client.chat.completions.create(
-        messages=messages,  # noqa: [arg-type]
+        messages=messages,  # noqa: arg-type
         stream=stream,
         temperature=0,
         seed=42,
@@ -407,13 +407,23 @@ def test_parse_sync_api():
 
     messages = [{"role": "user", "content": "Say 'foo' then stop."}]
 
-    original = original_client.beta.chat.completions.parse(
+    # beta parse
+    original_beta = original_client.beta.chat.completions.parse(
         messages=messages, model="gpt-3.5-turbo", temperature=0, seed=42, max_tokens=3
     )
-    patched = patched_client.beta.chat.completions.parse(
+    patched_beta = patched_client.beta.chat.completions.parse(
+        messages=messages, model="gpt-3.5-turbo", temperature=0, seed=42, max_tokens=3
+    )
+    # chat parse
+    original = original_client.chat.completions.parse(
+        messages=messages, model="gpt-3.5-turbo", temperature=0, seed=42, max_tokens=3
+    )
+    patched = patched_client.chat.completions.parse(
         messages=messages, model="gpt-3.5-turbo", temperature=0, seed=42, max_tokens=3
     )
 
+    assert type(original_beta) is type(patched_beta)
+    assert original_beta.choices == patched_beta.choices
     assert type(original) is type(patched)
     assert original.choices == patched.choices
 
@@ -439,15 +449,23 @@ async def test_parse_async_api():
 
     messages = [{"role": "user", "content": "Say 'foo' then stop."}]
 
-    original = await original_client.beta.chat.completions.parse(
+    original_beta = await original_client.beta.chat.completions.parse(
         messages=messages, model="gpt-3.5-turbo", temperature=0, seed=42, max_tokens=3
     )
-    patched = await patched_client.beta.chat.completions.parse(
+    patched_beta = await patched_client.beta.chat.completions.parse(
+        messages=messages, model="gpt-3.5-turbo", temperature=0, seed=42, max_tokens=3
+    )
+    original = await original_client.chat.completions.parse(
+        messages=messages, model="gpt-3.5-turbo", temperature=0, seed=42, max_tokens=3
+    )
+    patched = await patched_client.chat.completions.parse(
         messages=messages, model="gpt-3.5-turbo", temperature=0, seed=42, max_tokens=3
     )
 
-    assert type(original) is type(patched)
+    assert type(original_beta) is type(patched_beta)
+    assert original_beta.choices == patched_beta.choices
     assert original.choices == patched.choices
+    assert type(original) is type(patched)
 
     time.sleep(0.1)
     for call in mock_session.request.call_args_list:

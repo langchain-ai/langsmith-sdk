@@ -27,6 +27,7 @@ from pydantic import BaseModel
 from requests_toolbelt import MultipartEncoder, MultipartEncoderMonitor
 
 import langsmith
+from langsmith import env as ls_env
 from langsmith._internal._background_thread import (
     TracingQueueItem,
     _otel_tracing_thread_handle_batch,
@@ -763,6 +764,7 @@ def test_dataset_schema_validation(langchain_client: Client) -> None:
     assert read_dataset.metadata == {
         "dataset_metadata_k1": "v1",
         "dataset_metadata_k2": "v2",
+        "runtime": ls_env.get_runtime_environment(),
     }
 
     safe_delete_dataset(langchain_client, dataset_id=dataset.id)
@@ -812,11 +814,17 @@ def test_list_datasets(langchain_client: Client) -> None:
 
         # Test metadata property
         dataset_with_metadata = next(d for d in datasets if d.id == dataset1.id)
-        assert dataset_with_metadata.metadata == {"foo": "barqux"}
+        assert dataset_with_metadata.metadata == {
+            "foo": "barqux",
+            "runtime": ls_env.get_runtime_environment(),
+        }
 
         # Test read_dataset also includes metadata
         read_dataset = langchain_client.read_dataset(dataset_id=dataset1.id)
-        assert read_dataset.metadata == {"foo": "barqux"}
+        assert read_dataset.metadata == {
+            "foo": "barqux",
+            "runtime": ls_env.get_runtime_environment(),
+        }
 
     finally:
         # Delete datasets
@@ -3683,11 +3691,16 @@ def test_get_experiment_results(langchain_client: Client) -> None:
     # Test get_experiment_results method
     experiment_results = langchain_client.get_experiment_results(name=experiment_name)
 
-    # Test that we get stats
-    assert experiment_results["stats"] is not None
-    stats = experiment_results["stats"]
-    assert hasattr(stats, "run_count")
-    assert stats.run_count > 0
+    # Test that we get run stats
+    assert experiment_results["run_stats"] is not None
+    run_stats = experiment_results["run_stats"]
+    assert hasattr(run_stats, "run_count")
+    assert run_stats.run_count > 0
+
+    # Test that we get feedback stats
+    assert experiment_results["feedback_stats"] is not None
+    feedback_stats = experiment_results["feedback_stats"]
+    assert len(feedback_stats) > 0
 
     # Test that we get examples iterator
     examples_list = list(experiment_results["examples_with_runs"])
@@ -3700,7 +3713,10 @@ def test_get_experiment_results(langchain_client: Client) -> None:
     assert len(limited_examples) == 1
 
     # Test stats are the same regardless of limit (since stats come from project)
-    assert limited_results["stats"].run_count == experiment_results["stats"].run_count
+    assert (
+        limited_results["run_stats"].run_count
+        == experiment_results["run_stats"].run_count
+    )
 
     # Test preview mode - should be faster and return preview data
     preview_results = langchain_client.get_experiment_results(
