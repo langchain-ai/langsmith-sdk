@@ -5927,32 +5927,24 @@ class Client:
         )
         ls_utils.raise_for_status_with_text(response)
 
-    def delete_examples(
-        self, example_ids: Sequence[ID_TYPE], hard_delete: bool = False
-    ) -> None:
+    def delete_examples(self, example_ids: Sequence[ID_TYPE]) -> None:
         """Delete multiple examples by ID.
 
         Parameters
         ----------
         example_ids : Sequence[ID_TYPE]
             The IDs of the examples to delete.
-        hard_delete : bool, optional
-            Whether to permanently delete the examples. Default is False.
         """
-        params: dict[str, Any] = {
-            "example_ids": [
-                str(_as_uuid(id_, f"example_ids[{i}]"))
-                for i, id_ in enumerate(example_ids)
-            ]
-        }
-        if hard_delete:
-            params["hard_delete"] = hard_delete
-
         response = self.request_with_retries(
             "DELETE",
-            "/api/v1/examples",
-            headers=self._headers,
-            params=params,
+            "/examples",
+            headers={**self._headers, "Content-Type": "application/json"},
+            params={
+                "example_ids": [
+                    str(_as_uuid(id_, f"example_ids[{i}]"))
+                    for i, id_ in enumerate(example_ids)
+                ]
+            },
         )
         ls_utils.raise_for_status_with_text(response)
 
