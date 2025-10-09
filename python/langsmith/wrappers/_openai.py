@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 @functools.lru_cache
 def _get_omit_types() -> tuple[type, ...]:
     """Get NotGiven/Omit sentinel types used by OpenAI SDK."""
-    types = []
+    types: list[type[Any]] = []
     try:
         from openai._types import NotGiven, Omit
 
