@@ -4793,7 +4793,7 @@ class Client:
     ) -> list[list[ls_schemas.ExampleCreate]]:
         """Batch examples by size limits."""
         batches = []
-        current_batch = []
+        current_batch: list[ls_schemas.ExampleCreate] = []
         current_size = 0
 
         for example in examples:
@@ -5939,7 +5939,7 @@ class Client:
         hard_delete : bool, optional
             Whether to permanently delete the examples. Default is False.
         """
-        params = {
+        params: dict[str, Any] = {
             "example_ids": [
                 str(_as_uuid(id_, f"example_ids[{i}]"))
                 for i, id_ in enumerate(example_ids)
