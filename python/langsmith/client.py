@@ -5077,15 +5077,9 @@ class Client:
         # Use size-aware batching to prevent payload limit errors
         batches = self._batch_examples_by_size(uploads)
 
-        # sequential upload
-        if len(batches) <= 1 or max_concurrency <= 1:
-            return self._upload_examples_batches_sequential(
-                batches, dataset_id, dangerously_allow_filesystem
-            )
-        else:
-            return self._upload_examples_batches_parallel(
-                batches, dataset_id, dangerously_allow_filesystem, max_concurrency
-            )
+        return self._upload_examples_batches_parallel(
+            batches, dataset_id, dangerously_allow_filesystem, max_concurrency
+        )
 
     def _upload_examples_batches_parallel(
         self, batches, dataset_id, dangerously_allow_filesystem, max_concurrency
@@ -5155,25 +5149,6 @@ class Client:
                 "example_ids": response_data.get("example_ids", []),
                 "count": response_data.get("count", 0),
             }
-
-    def _upload_examples_batches_sequential(
-        self, batches, dataset_id, dangerously_allow_filesystem
-    ):
-        # Batch uploads by size and count for optimal performance
-        all_example_ids = []
-        total_count = 0
-
-        for batch in batches:
-            response = self._upload_single_batch(
-                batch, dataset_id, dangerously_allow_filesystem
-            )
-            all_example_ids.extend(response.get("example_ids", []))
-            total_count += response.get("count", 0)
-
-        return ls_schemas.UpsertExamplesResponse(
-            example_ids=all_example_ids,
-            count=total_count,
-        )
 
     @ls_utils.xor_args(("dataset_id", "dataset_name"))
     def create_example(
