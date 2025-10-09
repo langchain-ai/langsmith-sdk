@@ -96,8 +96,6 @@ if HAVE_AGENTS:
             "outputs": parse_io(span_data.output, "output"),
         }
 
-
-
     def _extract_generation_span_data(
         span_data: tracing.GenerationSpanData,
     ) -> dict[str, Any]:
@@ -112,9 +110,7 @@ if HAVE_AGENTS:
         if span_data.usage:
             if "metadata" not in data:
                 data["metadata"] = {}
-            data["metadata"]["usage_metadata"] = _create_usage_metadata(
-                span_data.usage
-            )
+            data["metadata"]["usage_metadata"] = _create_usage_metadata(span_data.usage)
         return data
 
     def _extract_response_span_data(
