@@ -39,6 +39,7 @@ from pathlib import Path
 from queue import PriorityQueue
 from typing import (
     TYPE_CHECKING,
+    Annotated,
     Any,
     Callable,
     Literal,
@@ -48,6 +49,7 @@ from typing import (
 )
 from urllib import parse as urllib_parse
 
+from pydantic import Field
 import requests
 from requests import adapters as requests_adapters
 from requests_toolbelt import (  # type: ignore[import-untyped]
@@ -4809,7 +4811,7 @@ class Client:
                 continue
 
             size_exceeded = current_size + example_size > max_batch_size_bytes
-            
+
             # new batch
             if current_batch and size_exceeded:
                 batches.append(current_batch)
@@ -4933,6 +4935,7 @@ class Client:
         dataset_id: Optional[ID_TYPE] = None,
         examples: Optional[Sequence[ls_schemas.ExampleCreate | dict]] = None,
         dangerously_allow_filesystem: bool = False,
+        max_concurrency: Annotated[int, Field(ge=1, le=3)] = 1,
         **kwargs: Any,
     ) -> ls_schemas.UpsertExamplesResponse | dict[str, Any]:
         """Create examples in a dataset.
@@ -5001,6 +5004,9 @@ class Client:
                 response = client.create_examples(dataset_name="agent-qa", examples=examples)
                 # -> {"example_ids": [...
         """  # noqa: E501
+        if not 1 <= max_concurrency <= 3:
+            raise ValueError("max_concurrency must be between 1 and 3")
+
         if kwargs and examples:
             kwarg_keys = ", ".join([f"'{k}'" for k in kwargs])
             raise ValueError(
@@ -5068,48 +5074,101 @@ class Client:
         if not uploads:
             return ls_schemas.UpsertExamplesResponse(example_ids=[], count=0)
 
+        # Use size-aware batching to prevent payload limit errors
+        batches = self._batch_examples_by_size(uploads)
+
+        # sequential upload
+        if len(batches) <= 1 or max_concurrency <= 1:
+            return self._upload_examples_batches_sequential(
+                batches, dataset_id, dangerously_allow_filesystem
+            )
+        else:
+            return self._upload_examples_batches_parallel(
+                batches, dataset_id, dangerously_allow_filesystem, max_concurrency
+            )
+
+    def _upload_examples_batches_parallel(
+        self, batches, dataset_id, dangerously_allow_filesystem, max_concurrency
+    ):
+        all_examples_ids = []
+        total_count = 0
+        from langsmith.utils import ContextThreadPoolExecutor
+
+        with ContextThreadPoolExecutor(max_workers=max_concurrency) as executor:
+            # submit all batch uploads to thread pool
+            futures = [
+                executor.submit(
+                    self._upload_single_batch,
+                    batch,
+                    dataset_id,
+                    dangerously_allow_filesystem,
+                )
+                for batch in batches
+            ]
+            # collect results as they complete
+            for future in cf.as_completed(futures):
+                response = future.result()
+                all_examples_ids.extend(response.get("example_ids", []))
+                total_count += response.get("count", 0)
+
+        return ls_schemas.UpsertExamplesResponse(
+            example_ids=all_examples_ids, count=total_count
+        )
+
+    def _upload_single_batch(self, batch, dataset_id, dangerously_allow_filesystem):
+        """Upload a single batch of examples (used by both sequential and parallel)."""
+        if (self.info.instance_flags or {}).get(
+            "dataset_examples_multipart_enabled", False
+        ):
+            response = self._upload_examples_multipart(
+                dataset_id=cast(uuid.UUID, dataset_id),
+                uploads=batch,  # batch is a list of ExampleCreate objects
+                dangerously_allow_filesystem=dangerously_allow_filesystem,
+            )
+            return {
+                "example_ids": response.get("example_ids", []),
+                "count": response.get("count", 0),
+            }
+        else:
+            # Strip attachments for legacy endpoint
+            for upload in batch:
+                if getattr(upload, "attachments") is not None:
+                    upload.attachments = None
+                    warnings.warn(
+                        "Must upgrade your LangSmith version to use attachments."
+                    )
+
+            response = self.request_with_retries(
+                "POST",
+                "/examples/bulk",
+                headers={**self._headers, "Content-Type": "application/json"},
+                data=_dumps_json(
+                    [
+                        {**dump_model(upload), "dataset_id": str(dataset_id)}
+                        for upload in batch
+                    ]
+                ),
+            )
+            ls_utils.raise_for_status_with_text(response)
+            response_data = response.json()
+            return {
+                "example_ids": response_data.get("example_ids", []),
+                "count": response_data.get("count", 0),
+            }
+
+    def _upload_examples_batches_sequential(
+        self, batches, dataset_id, dangerously_allow_filesystem
+    ):
         # Batch uploads by size and count for optimal performance
         all_example_ids = []
         total_count = 0
 
-        # Use size-aware batching to prevent payload limit errors
-        batches = self._batch_examples_by_size_and_count(uploads)
-
         for batch in batches:
-            if (self.info.instance_flags or {}).get(
-                "dataset_examples_multipart_enabled", False
-            ):
-                response = self._upload_examples_multipart(
-                    dataset_id=cast(uuid.UUID, dataset_id),
-                    uploads=batch,
-                    dangerously_allow_filesystem=dangerously_allow_filesystem,
-                )
-                all_example_ids.extend(response["example_ids"] or [])
-                total_count += response["count"] or 0
-            else:
-                # Strip attachments for legacy endpoint
-                for upload in batch:
-                    if getattr(upload, "attachments") is not None:
-                        upload.attachments = None
-                        warnings.warn(
-                            "Must upgrade your LangSmith version to use attachments."
-                        )
-
-                response = self.request_with_retries(
-                    "POST",
-                    "/examples/bulk",
-                    headers={**self._headers, "Content-Type": "application/json"},
-                    data=_dumps_json(
-                        [
-                            {**dump_model(upload), "dataset_id": str(dataset_id)}
-                            for upload in batch
-                        ]
-                    ),
-                )
-                ls_utils.raise_for_status_with_text(response)
-                response_data = response.json()
-                all_example_ids.extend(response_data.get("example_ids", []))
-                total_count += response_data.get("count", 0)
+            response = self._upload_single_batch(
+                batch, dataset_id, dangerously_allow_filesystem
+            )
+            all_example_ids.extend(response.get("example_ids", []))
+            total_count += response.get("count", 0)
 
         return ls_schemas.UpsertExamplesResponse(
             example_ids=all_example_ids,

@@ -2618,8 +2618,8 @@ def test_create_examples_large_multipart_batching(
     dataset_name = "__test_large_multipart_" + uuid4().hex[:4]
     dataset = _create_dataset(parameterized_multipart_client, dataset_name)
 
-    # Create examples with large attachments to simulate >20MB payload
-    large_data = b"x" * 500_000  # 500KB per attachment
+    # Create examples with large attachments to simulate >100MB payload
+    large_data = b"x" * 5_000_000  # 5MB per attachment
     examples = [
         {
             "inputs": {"question": f"What's in image {i}?"},
@@ -2629,15 +2629,15 @@ def test_create_examples_large_multipart_batching(
                 f"doc_{i}": ("text/plain", large_data),
             },
         }
-        for i in range(50)  # ~50MB total payload
+        for i in range(20)  # ~100MB total payload
     ]
 
     result = parameterized_multipart_client.create_examples(
         dataset_id=dataset.id, examples=examples
     )
 
-    assert result["count"] == 50
-    assert len(result["example_ids"]) == 50
+    assert result["count"] == 20
+    assert len(result["example_ids"]) == 20
 
     # Verify attachments were uploaded
     first_example = parameterized_multipart_client.read_example(
@@ -2647,6 +2647,113 @@ def test_create_examples_large_multipart_batching(
         assert len(first_example.attachments) == 2
 
     safe_delete_dataset(parameterized_multipart_client, dataset_id=dataset.id)
+
+
+def test_create_examples_large_multipart_batching_parallel(
+    parameterized_multipart_client: Client,
+) -> None:
+    """Test create_examples batching with large multipart payloads in parallel."""
+    dataset_name = "__test_large_multipart_" + uuid4().hex[:4]
+    dataset = _create_dataset(parameterized_multipart_client, dataset_name)
+
+    # Create examples with large attachments to simulate >100MB payload
+    large_data = b"x" * 5_000_000  # 5MB per attachment
+    examples = [
+        {
+            "inputs": {"question": f"What's in image {i}?"},
+            "outputs": {"answer": f"Image {i} content"},
+            "attachments": {
+                f"image_{i}": ("image/png", large_data),
+                f"doc_{i}": ("text/plain", large_data),
+            },
+        }
+        for i in range(20)  # ~100MB total payload
+    ]
+
+    result = parameterized_multipart_client.create_examples(
+        dataset_id=dataset.id, examples=examples, max_concurrency=3
+    )
+
+    assert result["count"] == 20
+    assert len(result["example_ids"]) == 20
+
+    # Verify attachments were uploaded
+    first_example = parameterized_multipart_client.read_example(
+        result["example_ids"][0]
+    )
+    if hasattr(first_example, "attachments") and first_example.attachments:
+        assert len(first_example.attachments) == 2
+
+    safe_delete_dataset(parameterized_multipart_client, dataset_id=dataset.id)
+
+
+def test_create_examples_invalid_max_concurrency(
+    parameterized_multipart_client: Client,
+) -> None:
+    """Test that invalid max_concurrency values raise errors."""
+    dataset_name = "__test_invalid_concurrency_" + uuid4().hex[:4]
+    dataset = _create_dataset(parameterized_multipart_client, dataset_name)
+    examples = [{"inputs": {"q": "Q1"}, "outputs": {"a": "A1"}}]
+
+    # Test max_concurrency < 1
+    with pytest.raises(ValueError, match="max_concurrency must be between 1 and 3"):
+        parameterized_multipart_client.create_examples(
+            dataset_id=dataset.id, examples=examples, max_concurrency=0
+        )
+
+    # Test max_concurrency > 3
+    with pytest.raises(ValueError, match="max_concurrency must be between 1 and 3"):
+        parameterized_multipart_client.create_examples(
+            dataset_id=dataset.id, examples=examples, max_concurrency=4
+        )
+
+    safe_delete_dataset(parameterized_multipart_client, dataset_id=dataset.id)
+
+
+def test_create_examples_boundary_concurrency(
+    parameterized_multipart_client: Client,
+) -> None:
+    """Test max_concurrency boundary values (1 and 3)."""
+    dataset_name = "__test_boundary_" + uuid4().hex[:4]
+    dataset = _create_dataset(parameterized_multipart_client, dataset_name)
+    examples = [
+        {"inputs": {"q": f"Q{i}"}, "outputs": {"a": f"A{i}"}} for i in range(50)
+    ]
+
+    # Test min value (sequential)
+    result1 = parameterized_multipart_client.create_examples(
+        dataset_id=dataset.id, examples=examples, max_concurrency=1
+    )
+    assert result1["count"] == 50
+    assert len(result1["example_ids"]) == 50
+
+    # Test max value (max parallelism)
+    examples2 = [
+        {"inputs": {"q": f"Q{i}_2"}, "outputs": {"a": f"A{i}_2"}} for i in range(50)
+    ]
+    result2 = parameterized_multipart_client.create_examples(
+        dataset_id=dataset.id, examples=examples2, max_concurrency=3
+    )
+    assert result2["count"] == 50
+    assert len(result2["example_ids"]) == 50
+
+    # Verify all examples exist
+    listed = list(parameterized_multipart_client.list_examples(dataset_id=dataset.id))
+    assert len(listed) == 100
+
+    safe_delete_dataset(parameterized_multipart_client, dataset_id=dataset.id)
+
+
+def test_create_examples_empty_list(parameterized_multipart_client: Client) -> None:
+    """Test create_examples with empty list."""
+    dataset_name = "__test_empty_" + uuid4().hex[:4]
+    dataset = _create_dataset(parameterized_multipart_client, dataset_name)
+
+    # Test max_concurrency > 3
+    with pytest.raises(ValueError, match="Must specify either 'examples' or 'inputs.'"):
+        parameterized_multipart_client.create_examples(
+            dataset_id=dataset.id, examples=[]
+        )
 
 
 @pytest.mark.xfail(reason="Need to wait for backend changes to go endpoint")
