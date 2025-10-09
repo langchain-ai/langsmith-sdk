@@ -49,8 +49,8 @@ from typing import (
 )
 from urllib import parse as urllib_parse
 
-from pydantic import Field
 import requests
+from pydantic import Field
 from requests import adapters as requests_adapters
 from requests_toolbelt import (  # type: ignore[import-untyped]
     multipart as rqtb_multipart,
