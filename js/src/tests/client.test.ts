@@ -711,7 +711,7 @@ describe("Client", () => {
         projectId: "00000000-0000-0000-0000-000000000000",
         select: ["id", "name", "child_run_ids"],
       })) {
-        runs1.push(run);
+        runs.push(run);
       }
 
       expect(consoleWarnSpy).toHaveBeenCalledWith(
