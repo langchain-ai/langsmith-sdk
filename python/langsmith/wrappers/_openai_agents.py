@@ -358,6 +358,12 @@ if HAVE_AGENTS:
                         self._first_response_inputs.get(span.trace_id) or inputs
                     )
                     self._last_response_outputs[span.trace_id] = outputs
+                elif isinstance(span.span_data, tracing.GenerationSpanData):
+                    # Use generation spans as fallback if no response spans exist
+                    self._first_response_inputs[span.trace_id] = (
+                        self._first_response_inputs.get(span.trace_id) or inputs
+                    )
+                    self._last_response_outputs[span.trace_id] = outputs
 
                 self.client.update_run(**run_data)
 

@@ -130,16 +130,27 @@ if HAVE_AGENTS:
     def _extract_generation_span_data(
         span_data: tracing.GenerationSpanData,
     ) -> dict[str, Any]:
+        # If array, return the first element directly
+        output_data = span_data.output
+        if isinstance(output_data, list) and len(output_data) > 0:
+            outputs = output_data[0]
+        elif isinstance(output_data, list) and len(output_data) == 0:
+            outputs = {}
+        else:
+            outputs = parse_io(output_data, "output")
+
         data = {
             "inputs": parse_io(span_data.input, "input"),
-            "outputs": parse_io(span_data.output, "output"),
+            "outputs": outputs,
             "invocation_params": {
                 "model": span_data.model,
                 "model_config": span_data.model_config,
             },
         }
         if span_data.usage:
-            data["outputs"]["usage_metadata"] = _extract_usage_metadata(span_data.usage)
+            if "metadata" not in data:
+                data["metadata"] = {}
+            data["metadata"]["usage_metadata"] = _extract_usage_metadata(span_data.usage)
         return data
 
     def _extract_response_span_data(
@@ -158,21 +169,13 @@ if HAVE_AGENTS:
             }
         if span_data.response is not None:
             response = span_data.response.model_dump(exclude_none=True, mode="json")
-            data["outputs"] = {"output": response.pop("output", [])}
-            if usage := response.pop("usage", None):
-                # tokens -> token
-                if "output_tokens_details" in usage:
-                    usage["output_token_details"] = usage.pop("output_tokens_details")
-                    usage["output_token_details"]["reasoning"] = usage[
-                        "output_token_details"
-                    ].pop("reasoning_tokens", 0)
-                if "input_tokens_details" in usage:
-                    usage["input_token_details"] = usage.pop("input_tokens_details")
-                    usage["input_token_details"]["cache_read"] = usage[
-                        "input_token_details"
-                    ].pop("cached_tokens", 0)
-                data["outputs"]["usage_metadata"] = usage
-
+            output_data = response.pop("output", [])
+            if isinstance(output_data, list) and len(output_data) > 0:
+                data["outputs"] = output_data[0]
+            elif isinstance(output_data, list) and len(output_data) == 0:
+                data["outputs"] = {}
+            else:
+                data["outputs"] = output_data
             data["invocation_params"] = {
                 k: v
                 for k, v in response.items()
@@ -207,6 +210,20 @@ if HAVE_AGENTS:
                     "ls_provider": "openai",
                 }
             )
+            # Add usage_metadata to metadata
+            if usage := response.pop("usage", None):
+                # tokens -> token
+                if "output_tokens_details" in usage:
+                    usage["output_token_details"] = usage.pop("output_tokens_details")
+                    usage["output_token_details"]["reasoning"] = usage[
+                        "output_token_details"
+                    ].pop("reasoning_tokens", 0)
+                if "input_tokens_details" in usage:
+                    usage["input_token_details"] = usage.pop("input_tokens_details")
+                    usage["input_token_details"]["cache_read"] = usage[
+                        "input_token_details"
+                    ].pop("cached_tokens", 0)
+                metadata["usage_metadata"] = usage
             data["metadata"] = metadata
 
         return data
