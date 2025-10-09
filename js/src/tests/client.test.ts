@@ -705,23 +705,29 @@ describe("Client", () => {
         fetchImplementation: mockFetch as any,
       });
 
-
       // Test that warning is issued when child_run_ids is in select
-      for await (const _run of client.listRuns({
+      const runs = [];
+      for await (const run of client.listRuns({
         projectId: "00000000-0000-0000-0000-000000000000",
         select: ["id", "name", "child_run_ids"],
-      })) { }
+      })) {
+        runs1.push(run);
+      }
 
       expect(consoleWarnSpy).toHaveBeenCalledWith(
-        expect.stringMatching("Deprecated: 'child_run_ids' in the listRuns select parameter is deprecated and will be removed in a future version.")
+        expect.stringMatching(
+          "Deprecated: 'child_run_ids' in the listRuns select parameter is deprecated and will be removed in a future version."
+        )
       );
       consoleWarnSpy.mockClear();
 
       // Test that no warning is issued when child_run_ids is not in select
-      for await (const _run of client.listRuns({
+      for await (const run of client.listRuns({
         projectId: "00000000-0000-0000-0000-000000000000",
         select: ["id", "name"],
-      })) { }
+      })) {
+        runs.push(run);
+      }
 
       expect(consoleWarnSpy).not.toHaveBeenCalled();
       consoleWarnSpy.mockRestore();
