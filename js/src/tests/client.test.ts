@@ -707,7 +707,7 @@ describe("Client", () => {
 
 
       // Test that warning is issued when child_run_ids is in select
-      for await (const run of client.listRuns({
+      for await (const _run of client.listRuns({
         projectId: "00000000-0000-0000-0000-000000000000",
         select: ["id", "name", "child_run_ids"],
       })) { }
@@ -718,7 +718,7 @@ describe("Client", () => {
       consoleWarnSpy.mockClear();
 
       // Test that no warning is issued when child_run_ids is not in select
-      for await (const run of client.listRuns({
+      for await (const _run of client.listRuns({
         projectId: "00000000-0000-0000-0000-000000000000",
         select: ["id", "name"],
       })) { }

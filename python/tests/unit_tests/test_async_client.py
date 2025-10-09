@@ -2,9 +2,9 @@
 
 import warnings
 from unittest import mock
+from uuid import uuid4
 
 import pytest
-from uuid import uuid4
 
 from langsmith import AsyncClient
 
@@ -14,8 +14,6 @@ from langsmith import AsyncClient
 async def test_list_runs_child_run_ids_deprecation_warning(
     mock_client_cls: mock.Mock,
 ) -> None:
-    """Test that using child_run_ids in select parameter raises a deprecation warning."""
-
     mock_httpx_client = mock.AsyncMock()
     mock_client_cls.return_value = mock_httpx_client
 
