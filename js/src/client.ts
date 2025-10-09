@@ -58,7 +58,7 @@ import {
 } from "./utils/messages.js";
 import {
   getEnvironmentVariable,
-  getLangChainEnvVarsMetadata,
+  getLangSmithEnvVarsMetadata,
   getLangSmithEnvironmentVariable,
   getRuntimeEnvironment,
   getOtelEnabled,
@@ -422,10 +422,11 @@ type Thread = {
 };
 
 export function mergeRuntimeEnvIntoRun<T extends RunCreate | RunUpdate>(
-  run: T
+  run: T,
+  cachedEnvVars?: Record<string, string>
 ): T {
   const runtimeEnv = getRuntimeEnvironment();
-  const envVars = getLangChainEnvVarsMetadata();
+  const envVars = cachedEnvVars ?? getLangSmithEnvVarsMetadata();
   const extra = run.extra ?? {};
   const metadata = extra.metadata;
   run.extra = {
@@ -670,6 +671,8 @@ export class Client implements LangSmithTracingClientInterface {
 
   private fetchImplementation?: typeof fetch;
 
+  private cachedLSEnvVarsForMetadata?: Record<string, string>;
+
   private get _fetch(): typeof fetch {
     return this.fetchImplementation || _getFetchImplementation(this.debug);
   }
@@ -731,6 +734,8 @@ export class Client implements LangSmithTracingClientInterface {
     if (getOtelEnabled()) {
       this.langSmithToOTELTranslator = new LangSmithToOTELTranslator();
     }
+    // Cache metadata env vars once during construction to avoid repeatedly scanning process.env
+    this.cachedLSEnvVarsForMetadata = getLangSmithEnvVarsMetadata();
   }
 
   public static getDefaultClientConfig(): {
@@ -1145,7 +1150,10 @@ export class Client implements LangSmithTracingClientInterface {
   private async processRunOperation(item: AutoBatchQueueItem) {
     clearTimeout(this.autoBatchTimeout);
     this.autoBatchTimeout = undefined;
-    item.item = mergeRuntimeEnvIntoRun(item.item as RunCreate);
+    item.item = mergeRuntimeEnvIntoRun(
+      item.item as RunCreate,
+      this.cachedLSEnvVarsForMetadata
+    );
     const itemPromise = this.autoBatchQueue.push(item);
     if (this.manualFlushMode) {
       // Rely on manual flushing in serverless environments
@@ -1287,7 +1295,10 @@ export class Client implements LangSmithTracingClientInterface {
       }).catch(console.error);
       return;
     }
-    const mergedRunCreateParam = mergeRuntimeEnvIntoRun(runCreate);
+    const mergedRunCreateParam = mergeRuntimeEnvIntoRun(
+      runCreate,
+      this.cachedLSEnvVarsForMetadata
+    );
     if (options?.apiKey !== undefined) {
       headers["x-api-key"] = options.apiKey;
     }
