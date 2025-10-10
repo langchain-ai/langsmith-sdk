@@ -8513,18 +8513,20 @@ class Client:
                 - run_stats: Aggregated run statistics (latency, tokens, cost, etc.)
                 - examples_with_runs: Iterator of ExampleWithRuns
 
-            DataFrame (when response_format="DataFrame") with flattened columns:
-                - example_id: (index) The example ID
-                - input.*: Input fields from the run
-                - outputs.*: Output fields from the run
-                - reference.*: Reference example outputs
-                - feedback.*: Feedback scores (averaged)
-                - execution_time: Run duration in seconds
-                - error: Error message if any
-                - id: Run ID
-                - notes: Notes from feedback if available
+            DataFrame (when response_format="DataFrame") with the following columns:
+                - example_id: UUID of the example
+                - run_id: UUID of the run
+                - inputs: Dict of run inputs (not flattened)
+                - outputs: Dict of run outputs (not flattened)
+                - reference_outputs: Dict of example reference outputs (when available)
+                - latency: Run duration in seconds (float or None)
+                - tokens: Total tokens (int or None)
+                - total_cost: Decimal/float or None
+                - error: Error message or None
+                - feedback.*: Feedback scores (averaged, dynamic columns when available)
+                - notes: Notes from feedback (when available)
 
-                Also, Experiment-level metadata is available via DataFrame attributes:
+                Experiment-level metadata is available via DataFrame attributes:
                     - df.attrs["feedback_stats"]: Combined feedback statistics including
                     session-level feedback
                     - df.attrs["run_stats"]: Aggregated run statistics (latency, tokens,
@@ -8557,6 +8559,14 @@ class Client:
                     response_format="DataFrame",
                 )
                 print(df.head())
+
+                # Access experiment-level stats from DataFrame
+                print(f"Total runs: {df.attrs['run_stats']['run_count']}")
+                print(f"P50 latency: {df.attrs['run_stats']['latency_p50']}")
+
+                # Work with the DataFrame
+                print(f"Average latency: {df['latency'].mean()}")
+                print(f"Errors: {df[df['error'].notna()]}")
 
         """
         project = self.read_project(
@@ -8606,6 +8616,17 @@ class Client:
         )
         # BETA: DataFrame response format
         if response_format == "DataFrame":
+            try:
+                import pandas as pd  # noqa: F401
+            except ImportError as exc:
+                warnings.warn(
+                    "Pandas is not installed. Install it via `pip install pandas`.",
+                    category=UserWarning,
+                    stacklevel=2,
+                )
+                raise ImportError(
+                    "Pandas is required for DataFrame responses. Install with `pip install pandas`."
+                ) from exc
             return self._convert_experiment_results_to_dataframe(experiment_results)
 
         return experiment_results
