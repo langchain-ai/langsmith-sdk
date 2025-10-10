@@ -7,6 +7,7 @@ import contextlib
 import datetime
 import json
 import uuid
+import warnings
 from collections.abc import AsyncGenerator, AsyncIterator, Mapping, Sequence
 from typing import (
     Any,
@@ -411,6 +412,12 @@ class AsyncClient:
                 *[self.read_project(project_name=name) for name in project_name]
             )
             project_ids.extend([project.id for project in projects])
+
+        if select and "child_run_ids" in select:
+            warnings.warn(
+                "The child_run_ids field is deprecated and will be removed in following versions",
+                DeprecationWarning,
+            )
 
         body_query: dict[str, Any] = {
             "session": project_ids if project_ids else None,

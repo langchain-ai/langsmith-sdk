@@ -2887,7 +2887,15 @@ class Client:
             "total_tokens",
             "trace_id",
         ]
+
         select = select or default_select
+
+        if "child_run_ids" in select:
+            warnings.warn(
+                "The child_run_ids field is deprecated and will be removed in following versions",
+                DeprecationWarning,
+            )
+
         body_query: dict[str, Any] = {
             "session": project_ids if project_ids else None,
             "run_type": run_type,
