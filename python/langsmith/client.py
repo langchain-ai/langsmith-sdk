@@ -3571,7 +3571,17 @@ class Client:
         )
         from concurrent.futures import ThreadPoolExecutor, as_completed  # type: ignore
 
-        import pandas as pd  # type: ignore
+        try:
+            import pandas as pd  # type: ignore
+        except ImportError as exc:  # pragma: no cover - environment dependent
+            warnings.warn(
+                "Pandas is not installed. Install it via `pip install pandas`.",
+                category=UserWarning,
+                stacklevel=3,
+            )
+            raise ImportError(
+                "Pandas is required for DataFrame responses. Install with `pip install pandas`."
+            ) from exc
 
         runs = self.list_runs(
             project_id=project_id,
@@ -8346,6 +8356,103 @@ class Client:
 
             offset += len(batch)
 
+    def _convert_experiment_results_to_dataframe(
+        self, experiment_results: ls_schemas.ExperimentResults
+    ) -> pd.DataFrame:
+        """Return a run-level DataFrame; each row represents a single experiment run.
+
+        This format mirrors the "Download CSV" export from the Experiment UI.
+
+        Args:
+            experiment_results: The ExperimentResults to convert.
+
+        Returns:
+            A pandas DataFrame where 'inputs', 'outputs', and 'reference' are dict
+            columns. Experiment-level metadata is
+            available via DataFrame attributes:
+                - df.attrs["feedback_stats"]: Combined feedback statistics including
+                  session-level feedback
+                - df.attrs["run_stats"]: Aggregated run statistics (latency, tokens,
+                  cost, etc.)
+            Required columns:
+                - example_id: UUID of the example
+                - run_id: UUID of the run
+                - inputs: Dict of run inputs
+                - outputs: Dict of run outputs
+                - latency: Seconds (float) or None
+                - tokens: Total tokens (int) or None
+                - total_cost: Decimal/float or None
+                - error: Error message or None
+            Optional columns:
+                - reference_outputs: Dict of example reference outputs (present when available)
+                - notes: Freeform text extracted from feedback.com/notes when available
+                - feedback.*: Feedback scores (present when available)
+        """
+        import pandas as pd  # type: ignore
+
+        results: list[dict] = []
+
+        for example_with_runs in experiment_results["examples_with_runs"]:
+            for run in example_with_runs.runs:
+                row = {
+                    "example_id": example_with_runs.id,
+                    "inputs": run.inputs or {},
+                    "outputs": run.outputs or {},
+                    "latency": (
+                        (run.end_time - run.start_time).total_seconds()
+                        if run.end_time and run.start_time
+                        else None
+                    ),
+                    "tokens": getattr(run, "total_tokens", None),
+                    "total_cost": getattr(run, "total_cost", None),
+                    "error": run.error,
+                    "run_id": run.id,
+                }
+
+                if run.feedback_stats:
+                    row.update(
+                        {
+                            f"feedback.{k}": v.get("avg")
+                            for k, v in run.feedback_stats.items()
+                            if not (k == "note" and v.get("comments"))
+                        }
+                    )
+                    if run.feedback_stats.get("note") and (
+                        comments := run.feedback_stats["note"].get("comments")
+                    ):
+                        row["notes"] = comments
+
+                if example_with_runs.outputs:
+                    row["reference_outputs"] = example_with_runs.outputs
+
+                results.append(row)
+
+        if not results:
+            df = pd.DataFrame(
+                columns=[
+                    "example_id",
+                    "inputs",
+                    "outputs",
+                    "reference_outputs",
+                    "latency",
+                    "tokens",
+                    "total_cost",
+                    "error",
+                    "run_id",
+                ]
+            )
+            df.attrs["feedback_stats"] = experiment_results["feedback_stats"]
+            df.attrs["run_stats"] = experiment_results["run_stats"]
+            return df
+
+        df = pd.DataFrame(results)
+
+        # Attach experiment-level stats as DataFrame attributes
+        df.attrs["feedback_stats"] = experiment_results["feedback_stats"]
+        df.attrs["run_stats"] = experiment_results["run_stats"]
+        return df
+
+    @overload
     def get_experiment_results(
         self,
         name: Optional[str] = None,
@@ -8354,7 +8461,33 @@ class Client:
         comparative_experiment_id: Optional[uuid.UUID] = None,
         filters: dict[uuid.UUID, list[str]] | None = None,
         limit: Optional[int] = None,
-    ) -> ls_schemas.ExperimentResults:
+        response_format: Literal["ExperimentResults"] = "ExperimentResults",
+    ) -> ls_schemas.ExperimentResults: ...
+
+    @overload
+    def get_experiment_results(
+        self,
+        name: Optional[str] = None,
+        project_id: Optional[uuid.UUID] = None,
+        preview: bool = False,
+        comparative_experiment_id: Optional[uuid.UUID] = None,
+        filters: dict[uuid.UUID, list[str]] | None = None,
+        limit: Optional[int] = None,
+        response_format: Literal["DataFrame"] = ...,
+    ) -> pd.DataFrame: ...
+
+    def get_experiment_results(
+        self,
+        name: Optional[str] = None,
+        project_id: Optional[uuid.UUID] = None,
+        preview: bool = False,
+        comparative_experiment_id: Optional[uuid.UUID] = None,
+        filters: dict[uuid.UUID, list[str]] | None = None,
+        limit: Optional[int] = None,
+        response_format: Literal[
+            "ExperimentResults", "DataFrame"
+        ] = "ExperimentResults",
+    ) -> ls_schemas.ExperimentResults | pd.DataFrame:
         """Get results for an experiment, including experiment session aggregated stats and experiment runs for each dataset example.
 
         Experiment results may not be available immediately after the experiment is created.
@@ -8368,12 +8501,35 @@ class Client:
             comparative_experiment_id: Optional comparative experiment UUID for pairwise comparison experiment results.
             filters: Optional filters to apply to results
             limit: Maximum number of results to return
+            response_format: Format of the response. Either "ExperimentResults" (default) for structured TypedDict
+                or "DataFrame" for a flattened pandas DataFrame.
+                When "DataFrame", experiment-level metadata is available in df.attrs:
+                  - df.attrs["feedback_stats"]: Combined feedback statistics
+                  - df.attrs["run_stats"]: Aggregated run statistics
 
         Returns:
-            ExperimentResults with:
+            ExperimentResults (when response_format="ExperimentResults") with:
                 - feedback_stats: Combined feedback statistics including session-level feedback
                 - run_stats: Aggregated run statistics (latency, tokens, cost, etc.)
                 - examples_with_runs: Iterator of ExampleWithRuns
+
+            DataFrame (when response_format="DataFrame") with flattened columns:
+                - example_id: (index) The example ID
+                - input.*: Input fields from the run
+                - outputs.*: Output fields from the run
+                - reference.*: Reference example outputs
+                - feedback.*: Feedback scores (averaged)
+                - execution_time: Run duration in seconds
+                - error: Error message if any
+                - id: Run ID
+                - notes: Notes from feedback if available
+
+                Also, Experiment-level metadata is available via DataFrame attributes:
+                    - df.attrs["feedback_stats"]: Combined feedback statistics including
+                    session-level feedback
+                    - df.attrs["run_stats"]: Aggregated run statistics (latency, tokens,
+                    cost, etc.)
+
 
         Raises:
             ValueError: If project not found for the given session_id
@@ -8382,6 +8538,8 @@ class Client:
             .. code-block:: python
 
                 client = Client()
+
+                # Get structured results
                 results = client.get_experiment_results(
                     project_id="037ae90f-f297-4926-b93c-37d8abf6899f",
                 )
@@ -8393,8 +8551,12 @@ class Client:
                 print(f"Total cost: {results['run_stats']['total_cost']}")
                 print(f"P50 latency: {results['run_stats']['latency_p50']}")
 
-                # Access feedback statistics
-                print(f"Feedback stats: {results['feedback_stats']}")
+                # Get DataFrame format
+                df = client.get_experiment_results(
+                    project_id="037ae90f-f297-4926-b93c-37d8abf6899f",
+                    response_format="DataFrame",
+                )
+                print(df.head())
 
         """
         project = self.read_project(
@@ -8436,11 +8598,17 @@ class Client:
             **(project.feedback_stats or {}),
             **(project.session_feedback_stats or {}),
         }
-        return ls_schemas.ExperimentResults(
+
+        experiment_results = ls_schemas.ExperimentResults(
             feedback_stats=feedback_stats,
             run_stats=run_stats,
             examples_with_runs=_get_examples_with_runs_iterator(),
         )
+        # BETA: DataFrame response format
+        if response_format == "DataFrame":
+            return self._convert_experiment_results_to_dataframe(experiment_results)
+
+        return experiment_results
 
 
 def convert_prompt_to_openai_format(
