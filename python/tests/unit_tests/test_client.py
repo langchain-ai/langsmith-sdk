@@ -4355,11 +4355,14 @@ def test_list_runs_child_run_ids_deprecation_warning(
         list(client.list_runs(project_id=uuid.uuid4(), select=["id", "name"]))
 
 
-def test_get_test_results_deprecation_warning(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test deprecation warning"""
-    client = Client(api_key="test", api_url="http:/localhost:1984")
+@mock.patch.dict(sys.modules, {"pandas": mock.MagicMock()})
+@mock.patch("langsmith.client.Client.list_runs")
+def test_get_test_results_deprecation_warning(mock_list_runs: mock.Mock) -> None:
+    """Test that get_test_results raises a deprecation warning."""
+    # Mock list_runs to return an empty iterator
+    mock_list_runs.return_value = iter([])
 
-    monkeypatch.setattr(client, "list_runs", lambda **kwargs: [])
+    client = Client(api_key="test", api_url="http://localhost:1984")
 
     # Test that the deprecation warning is raised
     with pytest.warns(DeprecationWarning, match="get_test_results is deprecated"):
