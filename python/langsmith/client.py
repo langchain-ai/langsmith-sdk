@@ -3564,7 +3564,10 @@ class Client:
             pd.DataFrame: A dataframe containing the test results.
         """
         warnings.warn(
-            "Function get_test_results is in beta.", UserWarning, stacklevel=2
+            "Function get_test_results is deprecated and will be removed in a future version. "
+            "Use get_experiment_results instead.",
+            DeprecationWarning,
+            stacklevel=2,
         )
         from concurrent.futures import ThreadPoolExecutor, as_completed  # type: ignore
 

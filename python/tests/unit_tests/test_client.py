@@ -4353,3 +4353,14 @@ def test_list_runs_child_run_ids_deprecation_warning(
     with warnings.catch_warnings():
         warnings.simplefilter("error", DeprecationWarning)
         list(client.list_runs(project_id=uuid.uuid4(), select=["id", "name"]))
+
+
+def test_get_test_results_deprecation_warning(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test deprecation warning"""
+    client = Client(api_key="test", api_url="http:/localhost:1984")
+
+    monkeypatch.setattr(client, "list_runs", lambda **kwargs: [])
+
+    # Test that the deprecation warning is raised
+    with pytest.warns(DeprecationWarning, match="get_test_results is deprecated"):
+        client.get_test_results(project_name="test-project")
