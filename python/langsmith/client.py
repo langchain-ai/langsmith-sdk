@@ -828,6 +828,8 @@ class Client:
                     f"Failed to get info from {self.api_url}: {repr(e)}",
                 )
                 self._info = ls_schemas.LangSmithInfo()
+        elif self._info is None:
+            self._info = ls_schemas.LangSmithInfo()
         return self._info
 
     def _get_settings(self) -> ls_schemas.LangSmithSettings:
