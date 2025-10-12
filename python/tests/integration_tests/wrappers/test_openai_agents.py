@@ -4,10 +4,10 @@ from unittest import mock
 from uuid import uuid4
 
 import pytest
-from agents import Agent, Runner, set_trace_processors
+from agents import Agent, Runner, set_trace_processors, function_tool
 
 import langsmith
-from langsmith.wrappers import OpenAIAgentsTracingProcessor
+from langsmith.wrappers import OpenAIAgentsTracingProcessor, wrap_openai
 from tests.integration_tests.test_client import safe_delete_dataset
 
 
@@ -162,3 +162,178 @@ async def test_openai_agents_with_evaluate():
         assert run.child_runs[0].child_runs[0].name == "Captain Obvious"
     finally:
         safe_delete_dataset(client, dataset_name=dataset_name)
+
+
+@pytest.mark.asyncio
+async def test_wrap_openai_nests_under_agent_trace():
+    """Test that wrap_openai calls from function tools nest under agent traces."""
+    mock_session = mock.MagicMock()
+    client = langsmith.Client(session=mock_session)
+
+    try:
+        import openai
+
+        openai_client = wrap_openai(openai.OpenAI(api_key="test-key"))
+    except ImportError:
+        pytest.skip("openai package not installed")
+
+    # Create a function tool that uses wrap_openai
+    @function_tool
+    def call_openai_helper(query: str) -> str:
+        """A helper function that calls OpenAI using wrap_openai."""
+        try:
+            response = openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": query}],
+            )
+            return response.choices[0].message.content or "No response"
+        except Exception as e:
+            return f"Error: {e}"
+
+    # Set up the tracing processor
+    processor = OpenAIAgentsTracingProcessor(client=client)
+    set_trace_processors([processor])
+
+    agent = Agent(
+        name="Test Agent",
+        instructions="You are a helpful assistant.",
+        tools=[call_openai_helper],
+    )
+
+    # Run the agent
+    try:
+        await Runner.run(
+            agent, "Use the call_openai_helper tool to answer: What is 2+2?"
+        )
+    except Exception:
+        pass
+
+    await asyncio.sleep(0.5)
+
+    collected_requests = _collect_trace_requests(mock_session)
+
+    all_events = [
+        *collected_requests.get("post", []),
+        *collected_requests.get("patch", []),
+    ]
+
+    assert len(all_events) > 0, "No trace events were recorded"
+
+    runs_by_id = {event["id"]: event for event in all_events if "id" in event}
+
+    agent_runs = [
+        event for event in all_events if event.get("name") == "Agent workflow"
+    ]
+    assert len(agent_runs) > 0, "No agent workflow runs found"
+
+    chat_runs = [event for event in all_events if "ChatOpenAI" in event.get("name", "")]
+
+    if chat_runs:
+        for chat_run in chat_runs:
+            assert chat_run.get("parent_run_id") is not None, (
+                "ChatOpenAI run should have a parent"
+            )
+
+            current_id = chat_run.get("parent_run_id")
+            found_agent = False
+            depth = 0
+            max_depth = 10
+
+            while current_id and depth < max_depth:
+                parent_run = runs_by_id.get(current_id)
+                if not parent_run:
+                    break
+
+                if parent_run.get("name") == "Agent workflow":
+                    found_agent = True
+                    break
+
+                current_id = parent_run.get("parent_run_id")
+                depth += 1
+
+            assert found_agent, "ChatOpenAI run should be nested under Agent workflow"
+
+    trace_ids = {event.get("trace_id") for event in all_events if "trace_id" in event}
+    assert len(trace_ids) <= 2, (
+        f"Expected at most 2 trace_ids (one for the trace, possibly one for root), "
+        f"but found {len(trace_ids)}: {trace_ids}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_traceable_decorator_nests_under_agent_trace():
+    """Test that @traceable decorated functions nest under agent traces."""
+    mock_session = mock.MagicMock()
+    client = langsmith.Client(session=mock_session)
+
+    @langsmith.traceable
+    def helper_function(x: int, y: int) -> int:
+        return x + y
+
+    @function_tool
+    def calculate_sum(a: int, b: int) -> str:
+        result = helper_function(a, b)
+        return f"The sum is {result}"
+
+    processor = OpenAIAgentsTracingProcessor(client=client)
+    set_trace_processors([processor])
+
+    agent = Agent(
+        name="Calculator Agent",
+        instructions="You are a calculator.",
+        tools=[calculate_sum],
+    )
+
+    try:
+        await Runner.run(agent, "Calculate 5 + 3")
+    except Exception:
+        pass
+
+    await asyncio.sleep(0.5)
+
+    collected_requests = _collect_trace_requests(mock_session)
+
+    all_events = [
+        *collected_requests.get("post", []),
+        *collected_requests.get("patch", []),
+    ]
+
+    assert len(all_events) > 0, "No trace events were recorded"
+
+    runs_by_id = {event["id"]: event for event in all_events if "id" in event}
+
+    agent_runs = [
+        event for event in all_events if event.get("name") == "Agent workflow"
+    ]
+    assert len(agent_runs) > 0, "No agent workflow runs found"
+
+    helper_runs = [
+        event for event in all_events if event.get("name") == "helper_function"
+    ]
+
+    if helper_runs:
+        for helper_run in helper_runs:
+            assert helper_run.get("parent_run_id") is not None, (
+                "helper_function run should have a parent"
+            )
+
+            current_id = helper_run.get("parent_run_id")
+            found_agent = False
+            depth = 0
+            max_depth = 10
+
+            while current_id and depth < max_depth:
+                parent_run = runs_by_id.get(current_id)
+                if not parent_run:
+                    break
+
+                if parent_run.get("name") == "Agent workflow":
+                    found_agent = True
+                    break
+
+                current_id = parent_run.get("parent_run_id")
+                depth += 1
+
+            assert found_agent, (
+                "helper_function run should be nested under Agent workflow"
+            )
