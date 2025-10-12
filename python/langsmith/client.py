@@ -808,28 +808,34 @@ class Client:
             ls_schemas.LangSmithInfo: The information about the LangSmith API, or None if the API is
                 not available.
         """
-        if self._info is None and (
-            not (
-                ls_utils.is_env_var_truish("OTEL_ENABLED")
-                and ls_utils.is_env_var_truish("OTEL_ONLY")
-            )
-        ):
-            try:
-                response = self.request_with_retries(
-                    "GET",
-                    "/info",
-                    headers={"Accept": "application/json"},
-                    timeout=self._timeout,
-                )
-                ls_utils.raise_for_status_with_text(response)
-                self._info = ls_schemas.LangSmithInfo(**response.json())
-            except BaseException as e:
-                logger.warning(
-                    f"Failed to get info from {self.api_url}: {repr(e)}",
-                )
-                self._info = ls_schemas.LangSmithInfo()
-        elif self._info is None:
+        if self._info is not None:
+            return self._info
+
+        # Skip API call when using OTEL-only mode
+        otel_only_mode = ls_utils.is_env_var_truish(
+            "OTEL_ENABLED"
+        ) and ls_utils.is_env_var_truish("OTEL_ONLY")
+
+        if otel_only_mode:
             self._info = ls_schemas.LangSmithInfo()
+            return self._info
+
+        # Fetch info from API
+        try:
+            response = self.request_with_retries(
+                "GET",
+                "/info",
+                headers={"Accept": "application/json"},
+                timeout=self._timeout,
+            )
+            ls_utils.raise_for_status_with_text(response)
+            self._info = ls_schemas.LangSmithInfo(**response.json())
+        except BaseException as e:
+            logger.warning(
+                f"Failed to get info from {self.api_url}: {repr(e)}",
+            )
+            self._info = ls_schemas.LangSmithInfo()
+
         return self._info
 
     def _get_settings(self) -> ls_schemas.LangSmithSettings:
