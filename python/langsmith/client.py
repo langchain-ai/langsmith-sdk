@@ -808,7 +808,9 @@ class Client:
             ls_schemas.LangSmithInfo: The information about the LangSmith API, or None if the API is
                 not available.
         """
-        if self._info is None:
+        if self._info is None and (
+            not (ls_utils.is_env_var_truish("OTEL_ENABLED") and ls_utils.is_env_var_truish("OTEL_ONLY"))
+        ):
             try:
                 response = self.request_with_retries(
                     "GET",
