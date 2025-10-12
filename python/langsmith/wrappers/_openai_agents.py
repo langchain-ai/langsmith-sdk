@@ -190,7 +190,6 @@ if HAVE_AGENTS:
                 run_extra["metadata"]["thread_id"] = trace_dict["group_id"]
 
             try:
-                # Create RunTree (either as child or root)
                 if current_run_tree is not None:
                     # Nest under existing trace
                     new_run = current_run_tree.create_child(
@@ -202,7 +201,6 @@ if HAVE_AGENTS:
                     )
                 else:
                     # Create new root trace
-                    # Build kwargs, only include project_name if explicitly set
                     run_kwargs = {
                         "name": run_name,
                         "run_type": "chain",
@@ -215,14 +213,11 @@ if HAVE_AGENTS:
                         run_kwargs["project_name"] = self._project_name
                     new_run = rt.RunTree(**run_kwargs)
 
-                # Post to LangSmith
                 new_run.post()
 
-                # Set context so child operations can nest
                 ctx = copy_context()
                 ctx.run(_context._PARENT_RUN_TREE.set, new_run)
 
-                # Store for later
                 self._runs[trace.trace_id] = RunData(
                     run_tree=new_run,
                     context=ctx,
