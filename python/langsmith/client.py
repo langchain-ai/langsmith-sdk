@@ -809,7 +809,10 @@ class Client:
                 not available.
         """
         if self._info is None and (
-            not (ls_utils.is_env_var_truish("OTEL_ENABLED") and ls_utils.is_env_var_truish("OTEL_ONLY"))
+            not (
+                ls_utils.is_env_var_truish("OTEL_ENABLED")
+                and ls_utils.is_env_var_truish("OTEL_ONLY")
+            )
         ):
             try:
                 response = self.request_with_retries(
