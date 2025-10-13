@@ -4,7 +4,7 @@ from unittest import mock
 from uuid import uuid4
 
 import pytest
-from agents import Agent, Runner, set_trace_processors, function_tool
+from agents import Agent, Runner, function_tool, set_trace_processors
 
 import langsmith
 from langsmith.wrappers import OpenAIAgentsTracingProcessor, wrap_openai
