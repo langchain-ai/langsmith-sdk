@@ -92,9 +92,6 @@ logger = logging.getLogger(__name__)
 
 if HAVE_AGENTS:
 
-    class RunData(TypedDict):
-        run_tree: rt.RunTree
-
     class OpenAIAgentsTracingProcessor(tracing.TracingProcessor):  # type: ignore[no-redef]
         """Tracing processor for the `OpenAI Agents SDK <https://openai.github.io/openai-agents-python/>`_.
 
@@ -169,7 +166,7 @@ if HAVE_AGENTS:
             self._first_response_inputs: dict = {}
             self._last_response_outputs: dict = {}
 
-            self._runs: dict[str, RunData] = {}
+            self._runs: dict[str, rt.RunTree] = {}
 
         def on_trace_start(self, trace: tracing.Trace) -> None:
             current_run_tree = get_current_run_tree()
@@ -217,9 +214,7 @@ if HAVE_AGENTS:
                 ctx = copy_context()
                 ctx.run(_context._PARENT_RUN_TREE.set, new_run)
 
-                self._runs[trace.trace_id] = RunData(
-                    run_tree=new_run,
-                )
+                self._runs[trace.trace_id] = new_run
             except Exception as e:
                 logger.exception(f"Error creating trace run: {e}")
 
@@ -300,9 +295,7 @@ if HAVE_AGENTS:
                 ctx.run(_context._PARENT_RUN_TREE.set, child_run)
 
                 # Store for later
-                self._runs[span.span_id] = RunData(
-                    run_tree=child_run,
-                )
+                self._runs[span.span_id] = child_run
             except Exception as e:
                 logger.exception(f"Error creating span run: {e}")
 
