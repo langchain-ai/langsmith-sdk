@@ -94,7 +94,6 @@ if HAVE_AGENTS:
 
     class RunData(TypedDict):
         run_tree: rt.RunTree
-        context: contextvars.Context
 
     class OpenAIAgentsTracingProcessor(tracing.TracingProcessor):  # type: ignore[no-redef]
         """Tracing processor for the `OpenAI Agents SDK <https://openai.github.io/openai-agents-python/>`_.
@@ -220,7 +219,6 @@ if HAVE_AGENTS:
 
                 self._runs[trace.trace_id] = RunData(
                     run_tree=new_run,
-                    context=ctx,
                 )
             except Exception as e:
                 logger.exception(f"Error creating trace run: {e}")
@@ -304,7 +302,6 @@ if HAVE_AGENTS:
                 # Store for later
                 self._runs[span.span_id] = RunData(
                     run_tree=child_run,
-                    context=ctx,
                 )
             except Exception as e:
                 logger.exception(f"Error creating span run: {e}")
