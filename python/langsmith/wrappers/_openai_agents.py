@@ -1,8 +1,6 @@
-import contextvars
 import logging
-from contextvars import copy_context
 from datetime import datetime
-from typing import Optional, TypedDict
+from typing import Optional
 
 from langsmith import run_trees as rt
 from langsmith._internal import _context
@@ -210,20 +208,16 @@ if HAVE_AGENTS:
                     new_run = rt.RunTree(**run_kwargs)
 
                 new_run.post()
-
-                ctx = copy_context()
-                ctx.run(_context._PARENT_RUN_TREE.set, new_run)
-
+                _context._PARENT_RUN_TREE.set(new_run)
                 self._runs[trace.trace_id] = new_run
             except Exception as e:
                 logger.exception(f"Error creating trace run: {e}")
 
         def on_trace_end(self, trace: tracing.Trace) -> None:
-            run_data = self._runs.pop(trace.trace_id, None)
-            if not run_data:
+            run = self._runs.pop(trace.trace_id, None)
+            if not run:
                 return
 
-            run = run_data["run_tree"]
             trace_dict = trace.export() or {}
             metadata = {**(trace_dict.get("metadata") or {}), **(self._metadata or {})}
 
@@ -245,19 +239,17 @@ if HAVE_AGENTS:
 
         def on_span_start(self, span: tracing.Span) -> None:
             # Find parent run
-            parent_data = (
+            parent_run = (
                 self._runs.get(span.parent_id)
                 if span.parent_id
                 else self._runs.get(span.trace_id)
             )
 
-            if parent_data is None:
+            if parent_run is None:
                 logger.warning(
                     f"No trace info found for span, skipping: {span.span_id}"
                 )
                 return
-
-            parent_run = parent_data["run_tree"]
 
             # Extract span data
             run_name = agent_utils.get_run_name(span)
@@ -287,24 +279,16 @@ if HAVE_AGENTS:
                     else None,
                 )
 
-                # Post to LangSmith
                 child_run.post()
-
-                # Set context for this span
-                ctx = copy_context()
-                ctx.run(_context._PARENT_RUN_TREE.set, child_run)
-
-                # Store for later
+                _context._PARENT_RUN_TREE.set(child_run)
                 self._runs[span.span_id] = child_run
             except Exception as e:
                 logger.exception(f"Error creating span run: {e}")
 
         def on_span_end(self, span: tracing.Span) -> None:
-            run_data = self._runs.pop(span.span_id, None)
-            if not run_data:
+            run = self._runs.pop(span.span_id, None)
+            if not run:
                 return
-
-            run = run_data["run_tree"]
 
             try:
                 # Extract outputs and metadata
