@@ -625,7 +625,7 @@ test("chat.completions.parse", async () => {
   callSpy.mockClear();
 });
 
-test("responses.create and retrieve workflow", async () => {
+test.only("responses.create and retrieve workflow", async () => {
   const { client, callSpy } = mockClient();
 
   const openai = wrapOpenAI(new OpenAI(), {
@@ -673,11 +673,21 @@ test("responses.create and retrieve workflow", async () => {
       ls_provider: "openai",
     });
   }
+  const updateCalls = callSpy.mock.calls.filter(
+    (call) => (call[1] as any).method === "PATCH"
+  );
+  for (const call of updateCalls) {
+    const body = parseRequestBody((call[1] as any).body);
+    expect(body.outputs.usage_metadata).toBeDefined();
+    expect(body.outputs.usage_metadata.input_tokens).toBeGreaterThan(0);
+    expect(body.outputs.usage_metadata.output_tokens).toBeGreaterThan(0);
+    expect(body.outputs.usage_metadata.total_tokens).toBeGreaterThan(0);
+  }
 
   callSpy.mockClear();
 });
 
-test("responses.create streaming", async () => {
+test.only("responses.create streaming", async () => {
   const { client, callSpy } = mockClient();
 
   const openai = wrapOpenAI(new OpenAI(), {
@@ -726,6 +736,13 @@ test("responses.create streaming", async () => {
       ls_model_type: "llm",
       ls_provider: "openai",
     });
+  }
+  for (const call of patchCalls) {
+    const body = parseRequestBody((call[1] as any).body);
+    expect(body.outputs.usage_metadata).toBeDefined();
+    expect(body.outputs.usage_metadata.input_tokens).toBeGreaterThan(0);
+    expect(body.outputs.usage_metadata.output_tokens).toBeGreaterThan(0);
+    expect(body.outputs.usage_metadata.total_tokens).toBeGreaterThan(0);
   }
   callSpy.mockClear();
 });
