@@ -1,9 +1,9 @@
 import logging
-from datetime import datetime, timezone
-from typing import Optional, TypedDict
-from uuid import uuid4
+from datetime import datetime
+from typing import Optional
 
 from langsmith import run_trees as rt
+from langsmith._internal import _context
 from langsmith.run_helpers import get_current_run_tree
 
 try:
@@ -90,15 +90,6 @@ logger = logging.getLogger(__name__)
 
 if HAVE_AGENTS:
 
-    class RunData(TypedDict):
-        id: str
-        trace_id: str
-        start_time: datetime
-        dotted_order: str
-        parent_run_id: Optional[str]
-        project_name: Optional[str]
-        name: Optional[str]
-
     class OpenAIAgentsTracingProcessor(tracing.TracingProcessor):  # type: ignore[no-redef]
         """Tracing processor for the `OpenAI Agents SDK <https://openai.github.io/openai-agents-python/>`_.
 
@@ -173,95 +164,81 @@ if HAVE_AGENTS:
             self._first_response_inputs: dict = {}
             self._last_response_outputs: dict = {}
 
-            self._runs: dict[str, RunData] = {}
+            self._runs: dict[str, rt.RunTree] = {}
 
         def on_trace_start(self, trace: tracing.Trace) -> None:
             current_run_tree = get_current_run_tree()
 
+            # Determine run name
             if self._name:
                 run_name = self._name
             elif trace.name:
                 run_name = trace.name
             else:
                 run_name = "Agent workflow"
-            trace_run_id = str(uuid4())
 
-            start_time = datetime.now(timezone.utc)
-
-            # Use LangSmith parent run tree if available, else create new trace
-            project_name = self._project_name
-            if current_run_tree is not None:
-                trace_id = str(current_run_tree.trace_id)
-                parent_run_id = str(current_run_tree.id)
-                parent_dotted_order = current_run_tree.dotted_order
-                project_name = self._project_name or current_run_tree.session_name
-            else:
-                trace_id = trace_run_id
-                parent_run_id = None
-                parent_dotted_order = None
-
-            dotted_order = agent_utils.ensure_dotted_order(
-                start_time=start_time,
-                run_id=trace_run_id,
-                parent_dotted_order=parent_dotted_order,
-            )
-            self._runs[trace.trace_id] = RunData(
-                id=trace_run_id,
-                trace_id=trace_id,
-                start_time=start_time,
-                dotted_order=dotted_order,
-                parent_run_id=parent_run_id,
-                project_name=project_name,
-                name=run_name,
-            )
-
+            # Build metadata
             run_extra = {"metadata": self._metadata or {}}
-
             trace_dict = trace.export() or {}
             if trace_dict.get("group_id") is not None:
                 run_extra["metadata"]["thread_id"] = trace_dict["group_id"]
 
             try:
-                run_data: dict = dict(
-                    name=run_name,
-                    inputs={},
-                    run_type="chain",
-                    id=trace_run_id,
-                    trace_id=trace_id,
-                    parent_run_id=parent_run_id,
-                    dotted_order=dotted_order,
-                    start_time=start_time,
-                    revision_id=None,
-                    extra=run_extra,
-                    tags=self._tags,
-                    project_name=project_name,
-                )
+                if current_run_tree is not None:
+                    # Nest under existing trace
+                    new_run = current_run_tree.create_child(
+                        name=run_name,
+                        run_type="chain",
+                        inputs={},
+                        extra=run_extra,
+                        tags=self._tags,
+                    )
+                else:
+                    # Create new root trace
+                    run_kwargs = {
+                        "name": run_name,
+                        "run_type": "chain",
+                        "inputs": {},
+                        "extra": run_extra,
+                        "tags": self._tags,
+                        "client": self.client,
+                    }
+                    if self._project_name is not None:
+                        run_kwargs["project_name"] = self._project_name
+                    new_run = rt.RunTree(**run_kwargs)  # type: ignore[arg-type]
 
-                self.client.create_run(**run_data)
+                new_run.post()
+                _context._PARENT_RUN_TREE.set(new_run)
+                self._runs[trace.trace_id] = new_run
             except Exception as e:
                 logger.exception(f"Error creating trace run: {e}")
 
         def on_trace_end(self, trace: tracing.Trace) -> None:
             run = self._runs.pop(trace.trace_id, None)
+            if not run:
+                return
+
             trace_dict = trace.export() or {}
             metadata = {**(trace_dict.get("metadata") or {}), **(self._metadata or {})}
 
-            if run:
-                try:
-                    self.client.update_run(
-                        run_id=run["id"],
-                        trace_id=run["trace_id"],
-                        parent_run_id=run["parent_run_id"],
-                        dotted_order=run["dotted_order"],
-                        inputs=self._first_response_inputs.pop(trace.trace_id, {}),
-                        outputs=self._last_response_outputs.pop(trace.trace_id, {}),
-                        extra={"metadata": metadata},
-                        project_name=run["project_name"],
-                    )
-                except Exception as e:
-                    logger.exception(f"Error updating trace run: {e}")
+            try:
+                # Update run with final inputs/outputs
+                run.inputs = self._first_response_inputs.pop(trace.trace_id, {})
+                run.outputs = self._last_response_outputs.pop(trace.trace_id, {})
+
+                # Update metadata
+                if "metadata" not in run.extra:
+                    run.extra["metadata"] = {}
+                run.extra["metadata"].update(metadata)
+
+                # End and patch
+                run.end()
+                run.patch()
+            except Exception as e:
+                logger.exception(f"Error updating trace run: {e}")
 
         def on_span_start(self, span: tracing.Span) -> None:
+            # Find parent run
             parent_run = (
                 self._runs.get(span.parent_id)
                 if span.parent_id
@@ -274,22 +251,10 @@ if HAVE_AGENTS:
                 )
                 return
 
-            trace_id = parent_run["trace_id"]
-
-            span_run_id = str(uuid4())
-            span_start_time = (
-                datetime.fromisoformat(span.started_at)
-                if span.started_at
-                else datetime.now(timezone.utc)
-            )
-            dotted_order = agent_utils.ensure_dotted_order(
-                start_time=span_start_time,
-                run_id=span_run_id,
-                parent_dotted_order=parent_run["dotted_order"] if parent_run else None,
-            )
+            # Extract span data
             run_name = agent_utils.get_run_name(span)
             if isinstance(span.span_data, tracing.ResponseSpanData):
-                parent_name = parent_run.get("name")
+                parent_name = parent_run.name
                 raw_span_name = getattr(span, "name", None) or getattr(
                     span.span_data, "name", None
                 )
@@ -298,61 +263,61 @@ if HAVE_AGENTS:
                     run_name = f"{parent_name} {span_name}".strip()
                 else:
                     run_name = span_name
+
             run_type = agent_utils.get_run_type(span)
             extracted = agent_utils.extract_span_data(span)
 
-            self._runs[span.span_id] = RunData(
-                id=span_run_id,
-                trace_id=trace_id,
-                start_time=span_start_time,
-                dotted_order=dotted_order,
-                parent_run_id=parent_run["id"],
-                project_name=parent_run["project_name"],
-                name=run_name,
-            )
-
             try:
-                run_data: dict = dict(
+                # Create child run
+                child_run = parent_run.create_child(
                     name=run_name,
                     run_type=run_type,
-                    id=span_run_id,
-                    trace_id=trace_id,
-                    parent_run_id=parent_run["id"],
-                    dotted_order=dotted_order,
                     inputs=extracted.get("inputs", {}),
-                    project_name=parent_run["project_name"],
+                    extra=extracted,
+                    start_time=datetime.fromisoformat(span.started_at)
+                    if span.started_at
+                    else None,
                 )
-                if span.started_at:
-                    run_data["start_time"] = datetime.fromisoformat(span.started_at)
-                self.client.create_run(**run_data)
+
+                child_run.post()
+                _context._PARENT_RUN_TREE.set(child_run)
+                self._runs[span.span_id] = child_run
             except Exception as e:
                 logger.exception(f"Error creating span run: {e}")
 
         def on_span_end(self, span: tracing.Span) -> None:
             run = self._runs.pop(span.span_id, None)
-            if run:
+            if not run:
+                return
+
+            try:
+                # Extract outputs and metadata
                 extracted = agent_utils.extract_span_data(span)
-                metadata = extracted.get("metadata", {})
-                metadata["openai_parent_id"] = span.parent_id
-                metadata["openai_trace_id"] = span.trace_id
-                metadata["openai_span_id"] = span.span_id
-                extracted["metadata"] = metadata
                 outputs = extracted.pop("outputs", {})
                 inputs = extracted.pop("inputs", {})
-                run_data: dict = dict(
-                    run_id=run["id"],
-                    trace_id=run["trace_id"],
-                    dotted_order=run["dotted_order"],
-                    parent_run_id=run["parent_run_id"],
-                    error=str(span.error) if span.error else None,
-                    outputs=outputs,
-                    inputs=inputs,
-                    extra=extracted,
-                    project_name=run["project_name"],
-                )
-                if span.ended_at:
-                    run_data["end_time"] = datetime.fromisoformat(span.ended_at)
 
+                # Update run
+                run.outputs = outputs
+                if inputs:
+                    run.inputs = inputs
+                if error := span.error:
+                    run.error = str(error)
+
+                # Add OpenAI metadata
+                if "metadata" not in run.extra:
+                    run.extra["metadata"] = {}
+                run.extra["metadata"].update(
+                    {
+                        "openai_parent_id": span.parent_id,
+                        "openai_trace_id": span.trace_id,
+                        "openai_span_id": span.span_id,
+                    }
+                )
+                # Merge any additional metadata from extracted
+                if metadata := extracted.get("metadata"):
+                    run.extra["metadata"].update(metadata)
+
+                # Track first/last response inputs/outputs for trace
                 if isinstance(span.span_data, tracing.ResponseSpanData):
                     self._first_response_inputs[span.trace_id] = (
                         self._first_response_inputs.get(span.trace_id) or inputs
@@ -365,7 +330,15 @@ if HAVE_AGENTS:
                     )
                     self._last_response_outputs[span.trace_id] = outputs
 
-                self.client.update_run(**run_data)
+                # End and patch
+                if span.ended_at:
+                    run.end_time = datetime.fromisoformat(span.ended_at)
+                else:
+                    run.end()
+
+                run.patch()
+            except Exception as e:
+                logger.exception(f"Error updating span run: {e}")
 
         def shutdown(self) -> None:
             self.client.flush()
