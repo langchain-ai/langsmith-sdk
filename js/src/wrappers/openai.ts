@@ -230,13 +230,13 @@ function processChatCompletion(outputs: KVMap): KVMap {
     : "";
   // copy the original object, minus usage
   const result = { ...openAICompletion } as KVMap;
-  if (openAICompletion.usage) {
+  const usage = openAICompletion.usage;
+  if (usage) {
     let inputTokens = 0;
     let outputTokens = 0;
     let totalTokens = 0;
     let inputTokenDetails: Record<string, number> = {};
     let outputTokenDetails: Record<string, number> = {};
-    const usage = openAICompletion.usage;
     if (isChatCompletionUsage(usage)) {
       inputTokens = usage.prompt_tokens ?? 0;
       outputTokens = usage.completion_tokens ?? 0;
