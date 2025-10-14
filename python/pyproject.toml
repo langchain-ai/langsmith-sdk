@@ -97,6 +97,7 @@ dev = [
     "langchain-core>=0.3.75",
     "langchain-openai>=0.3.32",
     "langchain-anthropic>=0.3.19",
+    "pandas>=2.3.3",
 ]
 
 # Linting dependencies

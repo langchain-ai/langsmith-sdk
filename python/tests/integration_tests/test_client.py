@@ -782,8 +782,9 @@ def test_list_datasets(langchain_client: Client) -> None:
         assert dataset1.url is not None
         assert dataset2.url is not None
 
-        # Test datasets without metadata return empty metadata
-        assert dataset2.metadata is None  # dataset2 has no metadata
+        # Dataset2 has no user-provided metadata, only automatic runtime metadata
+        assert dataset2.metadata is not None
+        assert "runtime" in dataset2.metadata  # Auto-populated runtime metadata
 
         datasets = list(
             langchain_client.list_datasets(dataset_ids=[dataset1.id, dataset2.id])
@@ -3661,5 +3662,30 @@ def test_get_experiment_results(langchain_client: Client) -> None:
         name=experiment_name, preview=True
     )
     assert len(list(preview_results["examples_with_runs"])) > 0
+
+    # DataFrame response format (beta): ensure basic shape and metadata
+    import pandas as pd  # type: ignore
+
+    df = langchain_client.get_experiment_results(
+        name=experiment_name,
+        response_format="DataFrame",
+    )
+    assert isinstance(df, pd.DataFrame)
+    assert len(df) >= 1
+    # Required columns and dict columns
+    assert "example_id" in df.columns
+    # Run identifier column
+    assert "run_id" in df.columns
+    assert "inputs" in df.columns and "outputs" in df.columns
+    # Latency and usage/cost columns
+    assert "latency" in df.columns
+    assert "tokens" in df.columns
+    assert "total_cost" in df.columns
+    if "reference_outputs" in df.columns and len(df) > 0:
+        ref0 = df.loc[df.index[0], "reference_outputs"]
+        assert isinstance(ref0, dict) or pd.isna(ref0)
+
+    # Experiment-level metadata attached to attrs
+    assert "feedback_stats" in df.attrs and "run_stats" in df.attrs
 
     safe_delete_dataset(langchain_client, dataset_name=dataset_name)
