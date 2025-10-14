@@ -205,7 +205,7 @@ if HAVE_AGENTS:
                     }
                     if self._project_name is not None:
                         run_kwargs["project_name"] = self._project_name
-                    new_run = rt.RunTree(**run_kwargs)
+                    new_run = rt.RunTree(**run_kwargs)  # type: ignore[arg-type]
 
                 new_run.post()
                 _context._PARENT_RUN_TREE.set(new_run)
