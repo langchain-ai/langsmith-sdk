@@ -625,7 +625,7 @@ test("chat.completions.parse", async () => {
   callSpy.mockClear();
 });
 
-test.only("responses.create and retrieve workflow", async () => {
+test("responses.create and retrieve workflow", async () => {
   const { client, callSpy } = mockClient();
 
   const openai = wrapOpenAI(new OpenAI(), {
@@ -687,7 +687,7 @@ test.only("responses.create and retrieve workflow", async () => {
   callSpy.mockClear();
 });
 
-test.only("responses.create streaming", async () => {
+test("responses.create streaming", async () => {
   const { client, callSpy } = mockClient();
 
   const openai = wrapOpenAI(new OpenAI(), {
