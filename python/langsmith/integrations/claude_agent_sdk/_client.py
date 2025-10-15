@@ -146,14 +146,19 @@ def instrument_claude_client(original_class: Any) -> Any:
 
             # Add system_prompt to inputs if available
             if hasattr(self, "options") and self.options:
-                if hasattr(self.options, "system_prompt") and self.options.system_prompt:
+                if (
+                    hasattr(self.options, "system_prompt")
+                    and self.options.system_prompt
+                ):
                     system_prompt = self.options.system_prompt
                     if isinstance(system_prompt, str):
                         trace_inputs["system"] = system_prompt
                     elif isinstance(system_prompt, dict):
                         # Handle SystemPromptPreset format
                         if system_prompt.get("type") == "preset":
-                            preset_text = f"preset: {system_prompt.get('preset', 'claude_code')}"
+                            preset_text = (
+                                f"preset: {system_prompt.get('preset', 'claude_code')}"
+                            )
                             if "append" in system_prompt:
                                 preset_text += f"\nappend: {system_prompt['append']}"
                             trace_inputs["system"] = preset_text
@@ -200,7 +205,10 @@ def instrument_claude_client(original_class: Any) -> Any:
                             if hasattr(msg, "usage"):
                                 usage = extract_usage_from_result_message(msg)
                                 # Add total_cost to usage_metadata if available
-                                if hasattr(msg, "total_cost_usd") and msg.total_cost_usd is not None:
+                                if (
+                                    hasattr(msg, "total_cost_usd")
+                                    and msg.total_cost_usd is not None
+                                ):
                                     usage["total_cost"] = msg.total_cost_usd
                                 tracker.add_usage(usage)
 
@@ -211,7 +219,9 @@ def instrument_claude_client(original_class: Any) -> Any:
                                     "num_turns": getattr(msg, "num_turns", None),
                                     "session_id": getattr(msg, "session_id", None),
                                     "duration_ms": getattr(msg, "duration_ms", None),
-                                    "duration_api_ms": getattr(msg, "duration_api_ms", None),
+                                    "duration_api_ms": getattr(
+                                        msg, "duration_api_ms", None
+                                    ),
                                     "is_error": getattr(msg, "is_error", None),
                                 }.items()
                                 if v is not None

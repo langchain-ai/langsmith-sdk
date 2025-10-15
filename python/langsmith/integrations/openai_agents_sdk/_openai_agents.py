@@ -18,7 +18,9 @@ try:
     if not all(hasattr(tracing, name) for name in required):
         raise ImportError("The `agents` package is not installed.")
 
-    import _openai_agent_utils as agent_utils
+    from langsmith.integrations.openai_agents_sdk import (
+        _openai_agent_utils as agent_utils,
+    )
 
     HAVE_AGENTS = True
 except ImportError:
