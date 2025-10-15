@@ -9,7 +9,7 @@ from langsmith.run_helpers import get_current_run_tree, trace
 logger = logging.getLogger(__name__)
 
 # Thread-local store for passing the parent run tree into tool handlers.
-# Python's stdlib ThreadPoolExecutor by default breaks tracing.
+# Claude's async event loop by default breaks tracing.
 # contextvars start empty within new threads. The parent run tree is threaded
 # via thread-local as a fallback when context propagation isn't available.
 _thread_local = threading.local()
