@@ -43,7 +43,7 @@ def configure_claude_agent_sdk(
         >>> from langsmith.integrations.claude_agents_sdk import (
         ...     configure_claude_agent_sdk,
         ... )
-        >>> configure_claude_agent_sdk(project_name="my-project")
+        >>> configure_claude_agent_sdk(project_name="my-project", tags=["production"])
         >>> # Now use claude_agent_sdk as normal - tracing is automatic
     """
     try:
