@@ -52,6 +52,9 @@ otel = [
 # Enabled via `pip install langsmith[openai-agents]`
 openai-agents = ["openai-agents>=0.0.3"]
 
+# Enabled via `pip install langsmith[claude-agent-sdk]`
+claude-agent-sdk = ["claude-agent-sdk>=0.1.0; python_version>='3.10'"]
+
 # Enabled via `pip install langsmith[pytest]`
 pytest = ["pytest>=7.0.0", "rich>=13.9.4", "vcrpy>=7.0.0"]
 
@@ -94,6 +97,7 @@ dev = [
     "opentelemetry-api>=1.34.1",
     "bump2version>=1.0.1",
     "openai-agents>=0.2.4",
+    "claude-agent-sdk>=0.1.0; python_version>='3.10'",
     "langchain-core>=0.3.75",
     "langchain-openai>=0.3.32",
     "langchain-anthropic>=0.3.19",
