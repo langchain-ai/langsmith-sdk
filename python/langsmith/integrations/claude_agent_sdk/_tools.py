@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 # Thread-local store for passing the parent run tree into tool handlers.
 # Claude's async event loop by default breaks tracing.
-# contextvars start empty within new threads. The parent run tree is threaded
+# contextvars start empty within new anyio threads. The parent run tree is threaded
 # via thread-local as a fallback when context propagation isn't available.
 _thread_local = threading.local()
 
