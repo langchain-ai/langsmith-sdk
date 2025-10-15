@@ -20,6 +20,14 @@ def flatten_content_blocks(content: Any) -> Any:
                     "text": getattr(block, "text", ""),
                 }
             )
+        elif block_type == "ThinkingBlock":
+            result.append(
+                {
+                    "type": "thinking",
+                    "thinking": getattr(block, "thinking", ""),
+                    "signature": getattr(block, "signature", ""),
+                }
+            )
         elif block_type == "ToolUseBlock":
             result.append(
                 {

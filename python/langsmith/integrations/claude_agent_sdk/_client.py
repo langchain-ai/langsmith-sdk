@@ -120,28 +120,58 @@ def begin_llm_run_from_assistant_messages(
 def instrument_claude_client(original_class: Any) -> Any:
     """Wrap ClaudeSDKClient to trace both query() and receive_response()."""
 
-    class TracedClaudeSDKClient:
+    class TracedClaudeSDKClient(original_class):
         def __init__(self, *args: Any, **kwargs: Any):
-            self._client = original_class(*args, **kwargs)
+            super().__init__(*args, **kwargs)
             self._prompt: Optional[str] = None
             self._start_time: Optional[float] = None
-
-        def __getattr__(self, name: str) -> Any:
-            return getattr(self._client, name)
 
         async def query(self, *args: Any, **kwargs: Any) -> Any:
             """Capture prompt and timestamp when query starts."""
             self._start_time = time.time()
             self._prompt = str(kwargs.get("prompt") or (args[0] if args else ""))
-            return await self._client.query(*args, **kwargs)
+            return await super().query(*args, **kwargs)
 
         async def receive_response(self) -> AsyncGenerator[Any, None]:
             """Intercept message stream and record chain run activity."""
-            messages = self._client.receive_response()
+            messages = super().receive_response()
+
+            # Capture configuration in inputs and metadata
+            trace_inputs: dict[str, Any] = {}
+            trace_metadata = {}
+
+            # Add prompt to inputs
+            if self._prompt:
+                trace_inputs["prompt"] = self._prompt
+
+            # Add system_prompt to inputs if available
+            if hasattr(self, "options") and self.options:
+                if hasattr(self.options, "system_prompt") and self.options.system_prompt:
+                    system_prompt = self.options.system_prompt
+                    if isinstance(system_prompt, str):
+                        trace_inputs["system"] = system_prompt
+                    elif isinstance(system_prompt, dict):
+                        # Handle SystemPromptPreset format
+                        if system_prompt.get("type") == "preset":
+                            preset_text = f"preset: {system_prompt.get('preset', 'claude_code')}"
+                            if "append" in system_prompt:
+                                preset_text += f"\nappend: {system_prompt['append']}"
+                            trace_inputs["system"] = preset_text
+                        else:
+                            trace_inputs["system"] = system_prompt
+
+                # Add other config to metadata
+                for attr in ["model", "permission_mode", "max_turns"]:
+                    if hasattr(self.options, attr):
+                        val = getattr(self.options, attr)
+                        if val is not None:
+                            trace_metadata[attr] = val
+
             async with trace(
                 name=TRACE_CHAIN_NAME,
                 run_type="chain",
-                inputs={"prompt": self._prompt} if self._prompt else None,
+                inputs=trace_inputs,
+                metadata=trace_metadata,
             ) as run:
                 set_parent_run_tree(run)
                 tracker = TurnLifecycle(self._start_time)
@@ -166,15 +196,23 @@ def instrument_claude_client(original_class: Any) -> Any:
                                 )
                             tracker.mark_next_start()
                         elif msg_type == "ResultMessage":
+                            # Add usage metrics including cost
                             if hasattr(msg, "usage"):
-                                tracker.add_usage(
-                                    extract_usage_from_result_message(msg)
-                                )
+                                usage = extract_usage_from_result_message(msg)
+                                # Add total_cost to usage_metadata if available
+                                if hasattr(msg, "total_cost_usd") and msg.total_cost_usd is not None:
+                                    usage["total_cost"] = msg.total_cost_usd
+                                tracker.add_usage(usage)
+
+                            # Add conversation-level metadata
                             meta = {
                                 k: v
                                 for k, v in {
                                     "num_turns": getattr(msg, "num_turns", None),
                                     "session_id": getattr(msg, "session_id", None),
+                                    "duration_ms": getattr(msg, "duration_ms", None),
+                                    "duration_api_ms": getattr(msg, "duration_api_ms", None),
+                                    "is_error": getattr(msg, "is_error", None),
                                 }.items()
                                 if v is not None
                             }
@@ -189,10 +227,10 @@ def instrument_claude_client(original_class: Any) -> Any:
                     clear_parent_run_tree()
 
         async def __aenter__(self) -> "TracedClaudeSDKClient":
-            await self._client.__aenter__()
+            await super().__aenter__()
             return self
 
         async def __aexit__(self, *args: Any) -> None:
-            await self._client.__aexit__(*args)
+            await super().__aexit__(*args)
 
     return TracedClaudeSDKClient
