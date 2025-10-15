@@ -31,10 +31,15 @@ if HAVE_AGENTS:
             Dict: The parsed data as a dictionary
         """
         if isinstance(data, list):
-            if len(data) > 0:
-                return data[0]
-            else:
+            if len(data) == 0:
                 return {}
+            # Check if this is a list of output blocks (reasoning, message, etc.)
+            if len(data) > 0 and isinstance(data[0], dict):
+                if "type" in data[0]:
+                    return {default_key: data}
+                elif len(data) == 1:
+                    return data[0]
+            return {default_key: data}
         elif isinstance(data, dict):
             data_ = data
         elif isinstance(data, str):
