@@ -514,8 +514,24 @@ def wrap_openai(
     return client
 
 
-def _process_responses_api_output(response: Any) -> dict:
+def _process_responses_api_output(response: Any) -> Any:
     if response:
+        # Check if this is a Stream object - if so, return it as-is
+        # When streaming, the reduce_fn will consume the stream and call this function
+        # again on the completed response object
+        try:
+            from openai import Stream
+            from openai.lib.streaming import AsyncStream
+
+            if isinstance(response, (Stream, AsyncStream)):
+                # Return the stream as-is so reduce_fn can consume it
+                # reduce_fn (_reduce_response_events) will call this function
+                # again on the completed response
+                return response
+        except ImportError:
+            pass
+
+        # Process non-stream response objects
         try:
             output = response.model_dump(exclude_none=True, mode="json")
             if usage := output.pop("usage", None):
@@ -524,5 +540,5 @@ def _process_responses_api_output(response: Any) -> dict:
                 )
             return output
         except Exception:
-            return {"output": response}
+            return response
     return {}
