@@ -4,14 +4,14 @@ from datetime import datetime, timezone
 from typing import Any, Literal, Optional
 from uuid import uuid4
 
-from langsmith.schemas import InputTokenDetails, OutputTokenDetails, UsageMetadata
-
 try:
     from agents import tracing  # type: ignore[import]
 
     HAVE_AGENTS = True
 except ImportError:
     HAVE_AGENTS = False
+
+from langsmith.wrappers._openai import _create_usage_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,17 @@ if HAVE_AGENTS:
         Returns:
             Dict: The parsed data as a dictionary
         """
-        if isinstance(data, dict):
+        if isinstance(data, list):
+            if len(data) == 0:
+                return {}
+            # Check if this is a list of output blocks (reasoning, message, etc.)
+            if len(data) > 0 and isinstance(data[0], dict):
+                if "type" in data[0]:
+                    return {default_key: data}
+                elif len(data) == 1:
+                    return data[0]
+            return {default_key: data}
+        elif isinstance(data, dict):
             data_ = data
         elif isinstance(data, str):
             try:
@@ -91,42 +101,6 @@ if HAVE_AGENTS:
             "outputs": parse_io(span_data.output, "output"),
         }
 
-    def _extract_usage_metadata(usage: dict[str, Any]) -> UsageMetadata:
-        """Extract standardized usage metadata.
-
-        Supports both older OpenAI chat completions format
-        (prompt_tokens/completion_tokens) and newer format (input_tokens/output_tokens).
-
-        Token details follow new OpenAI format only:
-        - input_tokens_details: cached_tokens
-        - output_tokens_details: reasoning_tokens
-        """
-        input_tokens = usage.get("input_tokens") or usage.get("prompt_tokens") or 0
-        output_tokens = (
-            usage.get("output_tokens") or usage.get("completion_tokens") or 0
-        )
-        total_tokens = usage.get("total_tokens") or (input_tokens + output_tokens)
-
-        # Handle input token details (new format only)
-        input_token_details: dict = {}
-        if input_details := usage.get("input_tokens_details"):
-            if cached_tokens := input_details.get("cached_tokens"):
-                input_token_details["cache_read"] = cached_tokens
-
-        # Handle output token details (new format only)
-        output_token_details: dict = {}
-        if output_details := usage.get("output_tokens_details"):
-            if reasoning_tokens := output_details.get("reasoning_tokens"):
-                output_token_details["reasoning"] = reasoning_tokens
-
-        return UsageMetadata(
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            total_tokens=total_tokens,
-            input_token_details=InputTokenDetails(**input_token_details),
-            output_token_details=OutputTokenDetails(**output_token_details),
-        )
-
     def _extract_generation_span_data(
         span_data: tracing.GenerationSpanData,
     ) -> dict[str, Any]:
@@ -139,7 +113,9 @@ if HAVE_AGENTS:
             },
         }
         if span_data.usage:
-            data["outputs"]["usage_metadata"] = _extract_usage_metadata(span_data.usage)
+            if "metadata" not in data:
+                data["metadata"] = {}
+            data["metadata"]["usage_metadata"] = _create_usage_metadata(span_data.usage)
         return data
 
     def _extract_response_span_data(
@@ -158,21 +134,8 @@ if HAVE_AGENTS:
             }
         if span_data.response is not None:
             response = span_data.response.model_dump(exclude_none=True, mode="json")
-            data["outputs"] = {"output": response.pop("output", [])}
-            if usage := response.pop("usage", None):
-                # tokens -> token
-                if "output_tokens_details" in usage:
-                    usage["output_token_details"] = usage.pop("output_tokens_details")
-                    usage["output_token_details"]["reasoning"] = usage[
-                        "output_token_details"
-                    ].pop("reasoning_tokens", 0)
-                if "input_tokens_details" in usage:
-                    usage["input_token_details"] = usage.pop("input_tokens_details")
-                    usage["input_token_details"]["cache_read"] = usage[
-                        "input_token_details"
-                    ].pop("cached_tokens", 0)
-                data["outputs"]["usage_metadata"] = usage
-
+            output_data = response.pop("output", [])
+            data["outputs"] = parse_io(output_data, "output")
             data["invocation_params"] = {
                 k: v
                 for k, v in response.items()
@@ -207,6 +170,8 @@ if HAVE_AGENTS:
                     "ls_provider": "openai",
                 }
             )
+            if usage := response.pop("usage", None):
+                metadata["usage_metadata"] = _create_usage_metadata(usage)
             data["metadata"] = metadata
 
         return data

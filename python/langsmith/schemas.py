@@ -424,7 +424,7 @@ class Run(RunBase):
     session_id: Optional[UUID] = None
     """The project ID this run belongs to."""
     child_run_ids: Optional[list[UUID]] = None
-    """The child run IDs of this run."""
+    """Deprecated: The child run IDs of this run."""
     child_runs: Optional[list[Run]] = None
     """The child runs of this run, if instructed to load using the client
     These are not populated by default, as it is a heavier query to make."""

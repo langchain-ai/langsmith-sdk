@@ -227,6 +227,9 @@ interface ListRunsParams {
   treeFilter?: string;
   /**
    * The values to include in the response.
+   *
+   * Note: The 'child_run_ids' value is deprecated and will be removed in a future version.
+   * This field is no longer populated by the API.
    */
   select?: string[];
 }
@@ -2140,6 +2143,12 @@ export class Client implements LangSmithTracingClientInterface {
       is_root: isRoot,
       order,
     };
+
+    if (body.select.includes("child_run_ids")) {
+      warnOnce(
+        "Deprecated: 'child_run_ids' in the listRuns select parameter is deprecated and will be removed in a future version."
+      );
+    }
 
     let runsYielded = 0;
     for await (const runs of this._getCursorPaginatedList<Run>(
