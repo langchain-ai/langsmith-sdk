@@ -1385,7 +1385,7 @@ def _get_parent_run(
         return None
     if isinstance(parent, run_trees.RunTree):
         return parent
-    if isinstance(parent, dict):
+    if isinstance(parent, Mapping):
         return run_trees.RunTree.from_headers(
             parent,
             client=langsmith_extra.get("client"),
