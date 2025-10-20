@@ -801,7 +801,7 @@ async def test_usage_metadata_async(langchain_client: Client):
 async def test_langchain_trace_to_multiple_projects(langchain_client: Client):
     """Test tracing LangChain components to multiple projects."""
     try:
-        from langchain.schema.runnable import RunnableLambda
+        from langchain_core.runnables import RunnableLambda
     except ImportError:
         pytest.skip("Skipping test that requires langchain")
 
