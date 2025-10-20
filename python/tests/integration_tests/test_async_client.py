@@ -148,7 +148,7 @@ async def test_list_runs(async_client: AsyncClient):
         ]
         return len(runs) == 3
 
-    await wait_for(check_runs)
+    await wait_for(check_runs, timeout=20)
 
     runs = [
         run
