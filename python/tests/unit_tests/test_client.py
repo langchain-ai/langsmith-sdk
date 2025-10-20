@@ -2374,6 +2374,7 @@ _PROMPT_COMMITS = [
                                         "lc": 1,
                                         "type": "secret",
                                     },
+                                    "stream_usage": True,
                                     "model_name": "gpt-4o-mini",
                                     "output_version": "v0",
                                 },
