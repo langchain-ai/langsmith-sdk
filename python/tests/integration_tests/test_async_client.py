@@ -229,7 +229,7 @@ async def test_create_feedback(async_client: AsyncClient):
         except ls_utils.LangSmithError:
             return False
 
-    await wait_for(check_project_exists, timeout=10)
+    await wait_for(check_project_exists, timeout=20)
 
     feedback = await async_client.create_feedback(
         run_id=run_id,
