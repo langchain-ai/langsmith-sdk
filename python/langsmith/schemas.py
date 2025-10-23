@@ -1318,3 +1318,21 @@ class ExperimentResults(TypedDict):
     run_stats: ExperimentRunStats
     """Run statistics (latency, token count, etc.)."""
     examples_with_runs: Iterator[ExampleWithRuns]
+
+
+class InsightsReport(BaseModel):
+    id: UUID | str
+    name: str
+    status: str
+    error: str | None = None
+    session_id: UUID | str
+    host_url: str
+    tenant_id: UUID | str
+
+
+    @property
+    def link(self) -> str:
+        return f"{self.host_url}/o/{str(self.tenant_id)}/projects/p/{str(self.session_id)}?tab=4&clusterJobId={str(self.id)}"
+
+    def _repr_html_(self) -> str:
+        return f'<a href="{self.link}", target="_blank" rel="noopener">InsightsReport(\'{self.name}\')</a>'
