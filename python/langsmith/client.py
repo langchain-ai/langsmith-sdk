@@ -174,7 +174,7 @@ _urllib3_logger = logging.getLogger("urllib3.connectionpool")
 X_API_KEY = "x-api-key"
 EMPTY_SEQ: tuple[dict, ...] = ()
 URLLIB3_SUPPORTS_BLOCKSIZE = "key_blocksize" in signature(PoolKey).parameters
-
+DEFAULT_INSTRUCTIONS = "How are people using my agent? What are they asking about?"
 
 def _parse_token_or_url(
     url_or_token: Union[str, uuid.UUID],
@@ -8579,7 +8579,6 @@ class Client:
         )
 
 
-    DEFAULT_INSTRUCTIONS = "How are people using my agent? What are they asking about?"
     def generate_insights(
         self,
         chat_histories: list[list[dict]],
