@@ -11,8 +11,6 @@ try:
 except ImportError:
     HAVE_AGENTS = False
 
-from langsmith.wrappers._openai import _create_usage_metadata
-
 logger = logging.getLogger(__name__)
 
 RunTypeT = Literal["tool", "chain", "llm", "retriever", "embedding", "prompt", "parser"]
@@ -113,6 +111,8 @@ if HAVE_AGENTS:
             },
         }
         if span_data.usage:
+            from langsmith.wrappers._openai import _create_usage_metadata
+
             if "metadata" not in data:
                 data["metadata"] = {}
             data["metadata"]["usage_metadata"] = _create_usage_metadata(span_data.usage)
@@ -171,6 +171,8 @@ if HAVE_AGENTS:
                 }
             )
             if usage := response.pop("usage", None):
+                from langsmith.wrappers._openai import _create_usage_metadata
+
                 metadata["usage_metadata"] = _create_usage_metadata(usage)
             data["metadata"] = metadata
 
