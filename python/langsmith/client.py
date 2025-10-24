@@ -8640,10 +8640,8 @@ class Client:
             resp_json = response.json()
             if resp_json["status"] == "success":
                 job = ls_schemas.InsightsReport(
-                    name=resp_json["name"],
-                    status=resp_json["status"],
+                    **resp_json,
                     session_id=session_id,
-                    id=job_id,
                     tenant_id=self._get_tenant_id(),
                     host_url=self._host_url,
                 )
@@ -8655,7 +8653,7 @@ class Client:
             elif resp_json["status"] == "error":
                 raise ValueError(f"Failed to generate insights: {resp_json['error']}")
             elif verbose:
-                print("Polling time: %s", i * rate)  # noqa: T201
+                print(f"Polling time: {i * rate}")  # noqa: T201
             time.sleep(rate)
         raise TimeoutError("Insights still pending")
 
