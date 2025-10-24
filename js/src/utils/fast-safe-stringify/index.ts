@@ -56,6 +56,16 @@ function createDefaultReplacer(userReplacer?) {
       }
     }
 
+    const original = this[key] as unknown;
+    if (
+      typeof original === "object" &&
+      original != null &&
+      "toSerialized" in original &&
+      typeof original.toSerialized === "function"
+    ) {
+      return original.toSerialized();
+    }
+
     // Fall back to our well-known type handling
     return serializeWellKnownTypes(val);
   };
