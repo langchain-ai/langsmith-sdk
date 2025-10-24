@@ -3833,12 +3833,22 @@ def test_get_experiment_results(langchain_client: Client) -> None:
 
     safe_delete_dataset(langchain_client, dataset_name=dataset_name)
 
+
 def test_create_insights_job(langchain_client: Client) -> None:
     chat_histories = [
-        [{"role": "user", "content": "buy me a coffee"}, {"role": "assistant", "content": "i dont wanna"}],
         [
-            {"role": "user", "content": "how are you?"}, 
-            {"role": "assistant", "content": None, "tool_calls": [{"name": "existential_crisis", "args": {"trigger": "how am i"}}]},
+            {"role": "user", "content": "buy me a coffee"},
+            {"role": "assistant", "content": "i dont wanna"},
+        ],
+        [
+            {"role": "user", "content": "how are you?"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {"name": "existential_crisis", "args": {"trigger": "how am i"}}
+                ],
+            },
             {"role": "tool", "content": "you are panicking"},
             {"role": "assitant", "content": "i am panicking"},
         ],
@@ -3850,8 +3860,10 @@ def test_create_insights_job(langchain_client: Client) -> None:
     assert insights_job["status"] in ["queued", "running", "success"]
     try:
         uuid.UUID(insights_job["session_id"])
-    except:
-        raise AssertionError(f'Invalid session ID, not a UUID: {insights_job["session_id"]}')
+    except Exception:
+        raise AssertionError(
+            f"Invalid session ID, not a UUID: {insights_job['session_id']}"
+        )
 
     def check_runs():
         runs = list(langchain_client.list_runs(project_id=insights_job["session_id"]))
@@ -3868,4 +3880,3 @@ def test_create_insights_job(langchain_client: Client) -> None:
         assert match.run_type == "chain"
         assert match.name == "trace"
         assert str(match.session_id) == insights_job["session_id"]
-    

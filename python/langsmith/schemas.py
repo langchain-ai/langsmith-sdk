@@ -1321,6 +1321,8 @@ class ExperimentResults(TypedDict):
 
 
 class InsightsReport(BaseModel):
+    """An Insights Report created by the Insights Agent over a tracing project."""
+
     id: UUID | str
     name: str
     status: str
@@ -1329,9 +1331,9 @@ class InsightsReport(BaseModel):
     host_url: str
     tenant_id: UUID | str
 
-
     @property
     def link(self) -> str:
+        """URL to view this Insights Report in LangSmith UI."""
         return f"{self.host_url}/o/{str(self.tenant_id)}/projects/p/{str(self.session_id)}?tab=4&clusterJobId={str(self.id)}"
 
     def _repr_html_(self) -> str:

@@ -176,6 +176,7 @@ EMPTY_SEQ: tuple[dict, ...] = ()
 URLLIB3_SUPPORTS_BLOCKSIZE = "key_blocksize" in signature(PoolKey).parameters
 DEFAULT_INSTRUCTIONS = "How are people using my agent? What are they asking about?"
 
+
 def _parse_token_or_url(
     url_or_token: Union[str, uuid.UUID],
     api_url: str,
@@ -8578,7 +8579,6 @@ class Client:
             examples_with_runs=_get_examples_with_runs_iterator(),
         )
 
-
     def generate_insights(
         self,
         chat_histories: list[list[dict]],
@@ -8586,7 +8586,7 @@ class Client:
         instructions: str = DEFAULT_INSTRUCTIONS,
         name: str | None = None,
         openai_api_key: str | None = None,
-    ) -> dict:
+    ) -> ls_schemas.InsightsReport:
         """Generate insights over your agent traces.
 
         Args:
@@ -8613,8 +8613,10 @@ class Client:
         ls_utils.raise_for_status_with_text(response)
         res = response.json()
         res["session_id"] = str(project.id)
-        job = ls_schemas.InsightsReport(**res, tenant_id=self._get_tenant_id(), host_url=self._host_url)
-        print(
+        job = ls_schemas.InsightsReport(
+            **res, tenant_id=self._get_tenant_id(), host_url=self._host_url
+        )
+        print(  # noqa: T201
             f"Insights report created! It might take up to 30 minutes to complete. Once the report is completed, you'll be able to see results here: {job.link}"
         )
         return job
@@ -8628,7 +8630,7 @@ class Client:
         timeout: int = 30 * 60,
         verbose: bool = False,
     ) -> ls_schemas.InsightsReport:
-        """Repeatedly checks the status of an insights report and prints a message when complete"""
+        """Repeatedly checks the status of an insights report and prints a message when complete."""
         max_tries = max(1, timeout // rate)
         for i in range(max_tries):
             response = self.request_with_retries(
@@ -8637,21 +8639,23 @@ class Client:
             ls_utils.raise_for_status_with_text(response)
             resp_json = response.json()
             if resp_json["status"] == "success":
-                workspace_id = self._get_tenant_id()
-                url = f"https://smith.langchain.com/o/{workspace_id}/projects/p/{session_id}?tab=4&clusterJobId={job_id}"
-                print(
-                    "Insights report completed! View the results at %s",
-                    url,
+                job = ls_schemas.InsightsReport(
+                    name=resp_json["name"],
+                    status=resp_json["status"],
+                    session_id=session_id,
+                    id=job_id,
+                    tenant_id=self._get_tenant_id(),
+                    host_url=self._host_url,
                 )
-                return {
-                    "name": resp_json["name"],
-                    "status": resp_json["status"],
-                    "url": url,
-                }
+                print(  # noqa: T201
+                    "Insights report completed! View the results at %s",
+                    job.link,
+                )
+                return job
             elif resp_json["status"] == "error":
                 raise ValueError(f"Failed to generate insights: {resp_json['error']}")
             elif verbose:
-                print("Polling time: %s", i * rate)
+                print("Polling time: %s", i * rate)  # noqa: T201
             time.sleep(rate)
         raise TimeoutError("Insights still pending")
 
