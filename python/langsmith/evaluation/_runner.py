@@ -16,21 +16,14 @@ import random
 import textwrap
 import threading
 import uuid
+from collections.abc import Awaitable, Generator, Iterable, Iterator, Sequence
 from contextvars import copy_context
 from typing import (
     TYPE_CHECKING,
     Any,
-    Awaitable,
     Callable,
-    DefaultDict,
-    Dict,
-    Generator,
-    Iterable,
-    Iterator,
-    List,
+    Literal,
     Optional,
-    Sequence,
-    Tuple,
     TypeVar,
     Union,
     cast,
@@ -113,7 +106,7 @@ def evaluate(
 
 @overload
 def evaluate(
-    target: Union[Tuple[EXPERIMENT_T, EXPERIMENT_T]],
+    target: Union[tuple[EXPERIMENT_T, EXPERIMENT_T]],
     /,
     data: Optional[DATA_T] = None,
     evaluators: Optional[Sequence[COMPARATIVE_EVALUATOR_T]] = None,
@@ -132,7 +125,7 @@ def evaluate(
 
 
 def evaluate(
-    target: Union[TARGET_T, Runnable, EXPERIMENT_T, Tuple[EXPERIMENT_T, EXPERIMENT_T]],
+    target: Union[TARGET_T, Runnable, EXPERIMENT_T, tuple[EXPERIMENT_T, EXPERIMENT_T]],
     /,
     data: Optional[DATA_T] = None,
     evaluators: Optional[
@@ -148,6 +141,7 @@ def evaluate(
     blocking: bool = True,
     experiment: Optional[EXPERIMENT_T] = None,
     upload_results: bool = True,
+    error_handling: Literal["log", "ignore"] = "log",
     **kwargs: Any,
 ) -> Union[ExperimentResults, ComparativeExperimentResults]:
     r"""Evaluate a target system on a given dataset.
@@ -190,6 +184,9 @@ def evaluate(
         randomize_order (bool): Whether to randomize the order of the outputs for each
             evaluation. Default is False. Should only be specified when target is a
             two-tuple of existing experiments.
+        error_handling (str, default="log"): How to handle individual run errors. 'log'
+            will trace the runs with the error message as part of the experiment,
+            'ignore' will not count the run as part of the experiment at all.
 
     Returns:
         ExperimentResults: If target is a function, Runnable, or existing experiment.
@@ -437,6 +434,7 @@ def evaluate(
             blocking=blocking,
             experiment=experiment,
             upload_results=upload_results,
+            error_handling=error_handling,
         )
 
 
@@ -478,19 +476,11 @@ def evaluate_existing(
             Requires the 'langsmith[vcr]' package to be installed.
 
     Examples:
-        >>> from langsmith.evaluation import evaluate, evaluate_existing
-        >>> dataset_name = "Evaluate Examples"
-        >>> def predict(inputs: dict) -> dict:
-        ...     # This can be any function or just an API call to your app.
-        ...     return {"output": "Yes"}
-        >>> # First run inference on the dataset
-        ... results = evaluate(
-        ...     predict,
-        ...     data=dataset_name,
-        ... )  # doctest: +ELLIPSIS
-        View the evaluation results for experiment:...
-        >>> # Then apply evaluators to the experiment
-        ... def accuracy(run: Run, example: Example):
+        Define your evaluators
+
+        >>> from typing import Sequence
+        >>> from langsmith.schemas import Example, Run
+        >>> def accuracy(run: Run, example: Example):
         ...     # Row-level evaluator for accuracy.
         ...     pred = run.outputs["output"]
         ...     expected = example.outputs["answer"]
@@ -504,15 +494,40 @@ def evaluate_existing(
         ...     tp = sum([p == e for p, e in zip(predictions, expected) if p == "yes"])
         ...     fp = sum([p == "yes" and e == "no" for p, e in zip(predictions, expected)])
         ...     return {"score": tp / (tp + fp)}
-        >>> experiment_name = (
-        ...     results.experiment_name
-        ... )  # Can use the returned experiment name
-        >>> experiment_name = "My Experiment:64e6e91"  # Or manually specify
+
+        Load the experiment and run the evaluation.
+
+        >>> import uuid
+        >>> from langsmith import Client
+        >>> from langsmith.evaluation import evaluate, evaluate_existing
+        >>> client = Client()
+        >>> dataset_name = "__doctest_evaluate_existing_" + uuid.uuid4().hex[:8]
+        >>> dataset = client.create_dataset(dataset_name)
+        >>> example = client.create_example(
+        ...     inputs={"question": "What is 2+2?"},
+        ...     outputs={"answer": "4"},
+        ...     dataset_id=dataset.id,
+        ... )
+        >>> def predict(inputs: dict) -> dict:
+        ...     return {"output": "4"}
+        >>> # First run inference on the dataset
+        ... results = evaluate(
+        ...     predict, data=dataset_name, experiment_prefix="doctest_experiment"
+        ... )  # doctest: +ELLIPSIS
+        View the evaluation results for experiment:...
+        >>> experiment_id = results.experiment_name
+        >>> # Wait for the experiment to be fully processed and check if we have results
+        >>> len(results) > 0
+        True
+        >>> import time
+        >>> time.sleep(2)
         >>> results = evaluate_existing(
-        ...     experiment_name,
+        ...     experiment_id,
+        ...     evaluators=[accuracy],
         ...     summary_evaluators=[precision],
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
+        >>> client.delete_dataset(dataset_id=dataset.id)
     """  # noqa: E501
     client = client or rt.get_cached_client(timeout_ms=(20_000, 90_001))
     project = _load_experiment(experiment, client)
@@ -552,7 +567,7 @@ class ExperimentResults:
 
     def __init__(self, experiment_manager: _ExperimentManager, blocking: bool = True):
         self._manager = experiment_manager
-        self._results: List[ExperimentResultRow] = []
+        self._results: list[ExperimentResultRow] = []
         self._queue: queue.Queue[ExperimentResultRow] = queue.Queue()
         self._processing_complete = threading.Event()
         if not blocking:
@@ -639,7 +654,7 @@ COMPARATIVE_EVALUATOR_T = Callable[
 
 
 def evaluate_comparative(
-    experiments: Tuple[EXPERIMENT_T, EXPERIMENT_T],
+    experiments: tuple[EXPERIMENT_T, EXPERIMENT_T],
     /,
     evaluators: Sequence[COMPARATIVE_EVALUATOR_T],
     experiment_prefix: Optional[str] = None,
@@ -738,9 +753,9 @@ def evaluate_comparative(
         ...     assert len(runs) == 2  # Comparing 2 systems
         ...     assert isinstance(example, schemas.Example)
         ...     assert all(run.reference_example_id == example.id for run in runs)
-        ...     pred_a = runs[0].outputs["output"]
-        ...     pred_b = runs[1].outputs["output"]
-        ...     ground_truth = example.outputs["answer"]
+        ...     pred_a = runs[0].outputs["output"] if runs[0].outputs else ""
+        ...     pred_b = runs[1].outputs["output"] if runs[1].outputs else ""
+        ...     ground_truth = example.outputs["answer"] if example.outputs else ""
         ...     tools = [
         ...         {
         ...             "type": "function",
@@ -804,8 +819,8 @@ def evaluate_comparative(
         ...     assert len(runs) == 2  # Comparing 2 systems
         ...     assert isinstance(example, schemas.Example)
         ...     assert all(run.reference_example_id == example.id for run in runs)
-        ...     pred_a = runs[0].outputs["output"]
-        ...     pred_b = runs[1].outputs["output"]
+        ...     pred_a = runs[0].outputs["output"] if runs[0].outputs else ""
+        ...     pred_b = runs[1].outputs["output"] if runs[1].outputs else ""
         ...     if len(pred_a) > len(pred_b):
         ...         return {
         ...             "key": "length_difference",
@@ -866,7 +881,7 @@ def evaluate_comparative(
     )
     _print_comparative_experiment_start(
         cast(
-            Tuple[schemas.TracerSessionResult, schemas.TracerSessionResult],
+            tuple[schemas.TracerSessionResult, schemas.TracerSessionResult],
             tuple(projects),
         ),
         comparative_experiment,
@@ -899,7 +914,7 @@ def evaluate_comparative(
             example_ids=example_ids_batch,
         ):
             data[e.id] = e
-    runs_dict: Dict[uuid.UUID, List[schemas.Run]] = collections.defaultdict(list)
+    runs_dict: dict[uuid.UUID, list[schemas.Run]] = collections.defaultdict(list)
     for runs_list in runs:
         for run in runs_list:
             if run.reference_example_id in data:
@@ -985,7 +1000,7 @@ class ComparativeExperimentResults:
     def __init__(
         self,
         results: dict,
-        examples: Optional[Dict[uuid.UUID, schemas.Example]] = None,
+        examples: Optional[dict[uuid.UUID, schemas.Example]] = None,
     ):
         self._results = results
         self._examples = examples
@@ -1006,7 +1021,7 @@ class ComparativeExperimentResults:
 
 
 def _print_comparative_experiment_start(
-    experiments: Tuple[schemas.TracerSession, schemas.TracerSession],
+    experiments: tuple[schemas.TracerSession, schemas.TracerSession],
     comparative_experiment: schemas.ComparativeExperiment,
 ) -> None:
     url = experiments[0].url or experiments[1].url
@@ -1043,15 +1058,12 @@ def _evaluate(
     blocking: bool = True,
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]] = None,
     upload_results: bool = True,
+    error_handling: Literal["log", "ignore"] = "log",
 ) -> ExperimentResults:
     # Initialize the experiment manager.
     client = client or rt.get_cached_client()
     runs = None if _is_callable(target) else cast(Iterable[schemas.Run], target)
-    experiment_, runs = _resolve_experiment(
-        experiment,
-        runs,
-        client,
-    )
+    experiment_, runs = _resolve_experiment(experiment, runs, client)
 
     manager = _ExperimentManager(
         data,
@@ -1063,14 +1075,14 @@ def _evaluate(
         # If provided, we don't need to create a new experiment.
         runs=runs,
         # Create or resolve the experiment.
-        include_attachments=_include_attachments(target)
-        or _evaluators_include_attachments(evaluators) > 0,
+        include_attachments=_include_attachments(target, evaluators),
         upload_results=upload_results,
+        error_handling=error_handling,
     ).start()
-    cache_dir = ls_utils.get_cache_dir(None)
-    cache_path = (
-        pathlib.Path(cache_dir) / f"{manager.dataset_id}.yaml" if cache_dir else None
-    )
+    if cache_dir := ls_utils.get_cache_dir(None):
+        cache_path = pathlib.Path(cache_dir) / f"{manager.dataset_id}.yaml"
+    else:
+        cache_path = None
     with ls_utils.with_optional_cache(cache_path, ignore_hosts=[client.api_url]):
         if _is_callable(target):
             # Add predictions to the experiment.
@@ -1113,7 +1125,7 @@ def _load_traces(
     project: Union[str, uuid.UUID, schemas.TracerSession],
     client: langsmith.Client,
     load_nested: bool = False,
-) -> List[schemas.Run]:
+) -> list[schemas.Run]:
     """Load nested traces for a given project."""
     is_root = None if load_nested else True
     if isinstance(project, schemas.TracerSession):
@@ -1125,7 +1137,9 @@ def _load_traces(
     if not load_nested:
         return list(runs)
 
-    treemap: DefaultDict[uuid.UUID, List[schemas.Run]] = collections.defaultdict(list)
+    treemap: collections.defaultdict[uuid.UUID, list[schemas.Run]] = (
+        collections.defaultdict(list)
+    )
     results = []
     all_runs = {}
     for run in runs:
@@ -1141,7 +1155,7 @@ def _load_traces(
 
 def _load_examples_map(
     client: langsmith.Client, project: schemas.TracerSession
-) -> Dict[uuid.UUID, schemas.Example]:
+) -> dict[uuid.UUID, schemas.Example]:
     return {
         e.id: e
         for e in client.list_examples(
@@ -1317,6 +1331,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         reuse_attachments: bool = False,
         upload_results: bool = True,
         attachment_raw_data_dict: Optional[dict] = None,
+        error_handling: Literal["log", "ignore"] = "log",
     ):
         super().__init__(
             experiment=experiment,
@@ -1334,6 +1349,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         self._reuse_attachments = reuse_attachments
         self._upload_results = upload_results
         self._attachment_raw_data_dict = attachment_raw_data_dict
+        self._error_handling = error_handling
 
     def _reset_example_attachment_readers(
         self, example: schemas.Example
@@ -1375,7 +1391,6 @@ class _ExperimentManager(_ExperimentManagerMixin):
             outputs=example.outputs,
             metadata=example.metadata,
             modified_at=example.modified_at,
-            runs=example.runs,
             source_run_id=example.source_run_id,
             attachments=new_attachments,
             _host_url=example._host_url,
@@ -1430,7 +1445,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
     def runs(self) -> Iterable[schemas.Run]:
         if self._runs is None:
             raise ValueError(
-                "Runs not provided in this experiment." " Please predict first."
+                "Runs not provided in this experiment. Please predict first."
             )
         self._runs, runs_iter = itertools.tee(self._runs)
         return runs_iter
@@ -1440,18 +1455,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         project = self._get_project(first_example) if self._upload_results else None
         self._print_experiment_start(project, first_example)
         self._metadata["num_repetitions"] = self._num_repetitions
-        return self.__class__(
-            self.examples,
-            experiment=project,
-            metadata=self._metadata,
-            client=self.client,
-            runs=self._runs,
-            evaluation_results=self._evaluation_results,
-            include_attachments=self._include_attachments,
-            reuse_attachments=self._reuse_attachments,
-            upload_results=self._upload_results,
-            attachment_raw_data_dict=self._attachment_raw_data_dict,
-        )
+        return self._copy(self.examples, experiment=project)
 
     def with_predictions(
         self,
@@ -1465,18 +1469,11 @@ class _ExperimentManager(_ExperimentManagerMixin):
             self._predict,
             target,
             max_concurrency=max_concurrency,
-            include_attachments=_include_attachments(target),
+            include_attachments=_target_include_attachments(target),
         )
         r1, r2 = itertools.tee(_experiment_results, 2)
-        return _ExperimentManager(
-            (pred["example"] for pred in r1),
-            experiment=self._experiment,
-            metadata=self._metadata,
-            client=self.client,
-            runs=(pred["run"] for pred in r2),
-            upload_results=self._upload_results,
-            # TODO: Can't do multiple prediction rounds rn.
-            include_attachments=self._include_attachments,
+        return self._copy(
+            (pred["example"] for pred in r1), runs=(pred["run"] for pred in r2)
         )
 
     def with_evaluators(
@@ -1499,16 +1496,10 @@ class _ExperimentManager(_ExperimentManagerMixin):
         # Split the generator into three so the manager
         # can consume each value individually.
         r1, r2, r3 = itertools.tee(experiment_results, 3)
-        return _ExperimentManager(
+        return self._copy(
             (result["example"] for result in r1),
-            experiment=self._experiment,
-            metadata=self._metadata,
-            client=self.client,
             runs=(result["run"] for result in r2),
             evaluation_results=(result["evaluation_results"] for result in r3),
-            summary_results=self._summary_results,
-            include_attachments=self._include_attachments,
-            upload_results=self._upload_results,
         )
 
     def with_summary_evaluators(
@@ -1521,16 +1512,8 @@ class _ExperimentManager(_ExperimentManagerMixin):
         aggregate_feedback_gen = context.run(
             self._apply_summary_evaluators, wrapped_evaluators
         )
-        return _ExperimentManager(
-            self.examples,
-            experiment=self._experiment,
-            metadata=self._metadata,
-            client=self.client,
-            runs=self.runs,
-            evaluation_results=self._evaluation_results,
-            summary_results=aggregate_feedback_gen,
-            include_attachments=self._include_attachments,
-            upload_results=self._upload_results,
+        return self._copy(
+            self.examples, runs=self.runs, summary_results=aggregate_feedback_gen
         )
 
     def get_results(self) -> Iterable[ExperimentResultRow]:
@@ -1544,7 +1527,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                 evaluation_results=evaluation_results,
             )
 
-    def get_summary_scores(self) -> Dict[str, List[dict]]:
+    def get_summary_scores(self) -> dict[str, list[dict]]:
         """If summary_evaluators were applied, consume and return the results."""
         if self._summary_results is None:
             return {"results": []}
@@ -1579,6 +1562,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                     self.client,
                     self._upload_results,
                     include_attachments,
+                    self._error_handling,
                 )
 
         else:
@@ -1593,6 +1577,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         self.client,
                         self._upload_results,
                         include_attachments,
+                        self._error_handling,
                     )
                     for example in self.examples
                 ]
@@ -1829,6 +1814,25 @@ class _ExperimentManager(_ExperimentManagerMixin):
             },
         )
 
+    def _copy(self, *args: Any, **kwargs: Any) -> _ExperimentManager:
+        default_args = (self._data,)
+        default_kwargs = {
+            "experiment": self._experiment,
+            "metadata": self._metadata,
+            "runs": self._runs,
+            "client": self.client,
+            "evaluation_results": self._evaluation_results,
+            "summary_results": self._summary_results,
+            "include_attachments": self._include_attachments,
+            "reuse_attachments": self._reuse_attachments,
+            "upload_results": self._upload_results,
+            "attachment_raw_data_dict": self._attachment_raw_data_dict,
+            "error_handling": self._error_handling,
+        }
+        full_args = list(args) + list(default_args[len(args) :])
+        full_kwargs = {**default_kwargs, **kwargs}
+        return self.__class__(*full_args, **full_kwargs)
+
 
 def _resolve_evaluators(
     evaluators: Sequence[Union[EVALUATOR_T, RunEvaluator, AEVALUATOR_T]],
@@ -1846,7 +1850,7 @@ def _resolve_evaluators(
 
 def _wrap_summary_evaluators(
     evaluators: Sequence[SUMMARY_EVALUATOR_T],
-) -> List[SUMMARY_EVALUATOR_T]:
+) -> list[SUMMARY_EVALUATOR_T]:
     def _wrap(evaluator: SUMMARY_EVALUATOR_T) -> SUMMARY_EVALUATOR_T:
         eval_name = getattr(evaluator, "__name__", "BatchEvaluator")
         evaluator = _normalize_summary_evaluator(evaluator)
@@ -1886,6 +1890,7 @@ def _forward(
     client: langsmith.Client,
     upload_results: bool,
     include_attachments: bool = False,
+    error_handling: Literal["log", "ignore"] = "log",
 ) -> _ForwardResults:
     run: Optional[schemas.RunBase] = None
 
@@ -1893,29 +1898,30 @@ def _forward(
         nonlocal run
         run = r
 
+    def _set_reference_example_id(r: rt.RunTree) -> None:
+        r.reference_example_id = example.id
+
+    example_version = (example.modified_at or example.created_at).isoformat()
+    langsmith_extra = rh.LangSmithExtra(
+        on_end=_get_run,
+        project_name=experiment_name,
+        metadata={**metadata, "example_version": example_version},
+        client=client,
+    )
+    if error_handling == "log":
+        langsmith_extra["reference_example_id"] = example.id
+    elif error_handling == "ignore":
+        # Only set the reference_example_id if the run succeeds.
+        langsmith_extra["_on_success"] = _set_reference_example_id
+    else:
+        raise ValueError(f"Unrecognized error_handling value: {error_handling=}")
+
     with rh.tracing_context(enabled="local" if not upload_results else True):
-        example_version = (
-            example.modified_at.isoformat()
-            if example.modified_at
-            else example.created_at.isoformat()
-        )
-        langsmith_extra = rh.LangSmithExtra(
-            reference_example_id=example.id,
-            on_end=_get_run,
-            project_name=experiment_name,
-            metadata={**metadata, "example_version": example_version},
-            client=client,
-        )
         try:
-            args = (
-                (example.inputs, example.attachments)
-                if include_attachments
-                else (example.inputs,)
-            )
-            fn(
-                *args,
-                langsmith_extra=langsmith_extra,
-            )
+            arg_names = _get_target_args(fn)
+            args = [getattr(example, argn) for argn in arg_names]
+            fn(*args, langsmith_extra=langsmith_extra)
+            # Reset attachment readers if attachments were used.
             if include_attachments and example.attachments is not None:
                 for attachment in example.attachments:
                     reader = example.attachments[attachment]["reader"]
@@ -1987,31 +1993,41 @@ def _ensure_traceable(
     return fn
 
 
-def _evaluators_include_attachments(
-    evaluators: Optional[Sequence[Union[EVALUATOR_T, AEVALUATOR_T]]],
-) -> int:
+def _include_attachments(target: Any, evaluators: Optional[Sequence]) -> bool:
+    return _target_include_attachments(target) or bool(
+        _evaluators_include_attachments(evaluators)
+    )
+
+
+def _evaluators_include_attachments(evaluators: Optional[Sequence]) -> int:
     if evaluators is None:
         return 0
 
-    def evaluator_uses_attachments(evaluator: Any) -> bool:
-        if not callable(evaluator):
-            return False
-        sig = inspect.signature(evaluator)
-        params = list(sig.parameters.values())
-        positional_params = [
-            p for p in params if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
-        ]
-        return any(p.name == "attachments" for p in positional_params)
-
-    return sum(evaluator_uses_attachments(e) for e in evaluators)
+    return sum(_evaluator_uses_attachments(e) for e in evaluators)
 
 
-def _include_attachments(
-    target: Any,
-) -> bool:
-    """Whether the target function accepts attachments."""
-    if _is_langchain_runnable(target) or not callable(target):
+def _evaluator_uses_attachments(evaluator: Any) -> bool:
+    if not callable(evaluator):
         return False
+    sig = inspect.signature(evaluator)
+    params = list(sig.parameters.values())
+    positional_params = [
+        p for p in params if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+    ]
+    return any(p.name == "attachments" for p in positional_params)
+
+
+def _target_include_attachments(target: Any) -> bool:
+    """Whether the target function accepts attachments."""
+    return "attachments" in _get_target_args(target)
+
+
+def _get_target_args(target: Any) -> list[str]:
+    """Whether the target function accepts attachments."""
+    if not callable(target):
+        return []
+    if _is_langchain_runnable(target):
+        return ["inputs"]
     # Check function signature
     sig = inspect.signature(target)
     params = list(sig.parameters.values())
@@ -2024,28 +2040,34 @@ def _include_attachments(
         raise ValueError(
             "Target function must accept at least one positional argument (inputs)."
         )
-    elif len(positional_no_default) > 2:
+    elif len(positional_no_default) > 3:
         raise ValueError(
-            "Target function must accept at most two "
-            "arguments without default values: (inputs, attachments)."
+            "Target function must accept at most three "
+            "arguments without default values: (inputs, attachments, metadata)."
         )
-    elif len(positional_no_default) == 2:
-        if [p.name for p in positional_no_default] != ["inputs", "attachments"]:
-            raise ValueError(
-                "When passing 2 positional arguments, they must be named "
-                "'inputs' and 'attachments', respectively. Received: "
-                f"{[p.name for p in positional_no_default]}"
-            )
-        return True
+    elif len(positional_no_default) > 1 and {
+        p.name for p in positional_no_default
+    }.difference(["inputs", "attachments", "metadata"]):
+        raise ValueError(
+            "When passing multiple positional arguments without default values, they "
+            "must be named 'inputs', 'attachments', or 'metadata'. Received: "
+            f"{[p.name for p in positional_no_default]}"
+        )
     else:
-        return [p.name for p in positional_params[:2]] == ["inputs", "attachments"]
+        args = []
+        for p in positional_params[:3]:
+            if p.name in {"inputs", "attachments", "metadata"}:
+                args.append(p.name)
+            else:
+                break
+        return args or ["inputs"]
 
 
 def _resolve_experiment(
     experiment: Optional[Union[schemas.TracerSession, str, uuid.UUID]],
     runs: Optional[Iterable[schemas.Run]],
     client: langsmith.Client,
-) -> Tuple[
+) -> tuple[
     Optional[Union[schemas.TracerSession, str]], Optional[Iterable[schemas.Run]]
 ]:
     # TODO: Remove this, handle outside the manager

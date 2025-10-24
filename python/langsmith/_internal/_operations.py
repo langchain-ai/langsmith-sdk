@@ -4,8 +4,9 @@ import itertools
 import logging
 import os
 import uuid
+from collections.abc import Iterable
 from io import BufferedReader
-from typing import Dict, Iterable, Literal, Optional, Tuple, Union, cast
+from typing import Literal, Optional, Union, cast
 
 from langsmith import schemas as ls_schemas
 from langsmith._internal import _orjson
@@ -28,6 +29,9 @@ class SerializedRunOperation:
     inputs: Optional[bytes]
     outputs: Optional[bytes]
     events: Optional[bytes]
+    extra: Optional[bytes]
+    error: Optional[bytes]
+    serialized: Optional[bytes]
     attachments: Optional[ls_schemas.Attachments]
 
     __slots__ = (
@@ -38,6 +42,9 @@ class SerializedRunOperation:
         "inputs",
         "outputs",
         "events",
+        "extra",
+        "error",
+        "serialized",
         "attachments",
     )
 
@@ -50,6 +57,9 @@ class SerializedRunOperation:
         inputs: Optional[bytes] = None,
         outputs: Optional[bytes] = None,
         events: Optional[bytes] = None,
+        extra: Optional[bytes] = None,
+        error: Optional[bytes] = None,
+        serialized: Optional[bytes] = None,
         attachments: Optional[ls_schemas.Attachments] = None,
     ) -> None:
         self.operation = operation
@@ -59,7 +69,47 @@ class SerializedRunOperation:
         self.inputs = inputs
         self.outputs = outputs
         self.events = events
+        self.extra = extra
+        self.error = error
+        self.serialized = serialized
         self.attachments = attachments
+
+    def calculate_serialized_size(self) -> int:
+        """Calculate actual serialized size of this operation."""
+        size = 0
+        if self._none:
+            size += len(self._none)
+        if self.inputs:
+            size += len(self.inputs)
+        if self.outputs:
+            size += len(self.outputs)
+        if self.events:
+            size += len(self.events)
+        if self.extra:
+            size += len(self.extra)
+        if self.error:
+            size += len(self.error)
+        if self.serialized:
+            size += len(self.serialized)
+        if self.attachments:
+            for content_type, data_or_path in self.attachments.values():
+                if isinstance(data_or_path, bytes):
+                    size += len(data_or_path)
+        return size
+
+    def deserialize_run_info(self) -> dict:
+        """Deserialize the main run info (_none and extra, error and serialized)."""
+        run_info = _orjson.loads(self._none)
+        if self.extra is not None:
+            run_info["extra"] = _orjson.loads(self.extra)
+
+        if self.error is not None:
+            run_info["error"] = _orjson.loads(self.error)
+
+        if self.serialized is not None:
+            run_info["serialized"] = _orjson.loads(self.serialized)
+
+        return run_info
 
     def __eq__(self, other: object) -> bool:
         return isinstance(other, SerializedRunOperation) and (
@@ -70,6 +120,9 @@ class SerializedRunOperation:
             self.inputs,
             self.outputs,
             self.events,
+            self.extra,
+            self.error,
+            self.serialized,
             self.attachments,
         ) == (
             other.operation,
@@ -79,6 +132,9 @@ class SerializedRunOperation:
             other.inputs,
             other.outputs,
             other.events,
+            other.extra,
+            other.error,
+            other.serialized,
             other.attachments,
         )
 
@@ -94,6 +150,10 @@ class SerializedFeedbackOperation:
         self.id = id
         self.trace_id = trace_id
         self.feedback = feedback
+
+    def calculate_serialized_size(self) -> int:
+        """Calculate actual serialized size of this operation."""
+        return len(self.feedback)
 
     def __eq__(self, other: object) -> bool:
         return isinstance(other, SerializedFeedbackOperation) and (
@@ -132,6 +192,9 @@ def serialize_run_dict(
     inputs = payload.pop("inputs", None)
     outputs = payload.pop("outputs", None)
     events = payload.pop("events", None)
+    extra = payload.pop("extra", None)
+    error = payload.pop("error", None)
+    serialized = payload.pop("serialized", None)
     attachments = payload.pop("attachments", None)
     return SerializedRunOperation(
         operation=operation,
@@ -141,6 +204,9 @@ def serialize_run_dict(
         inputs=_dumps_json(inputs) if inputs is not None else None,
         outputs=_dumps_json(outputs) if outputs is not None else None,
         events=_dumps_json(events) if events is not None else None,
+        extra=_dumps_json(extra) if extra is not None else None,
+        error=_dumps_json(error) if error is not None else None,
+        serialized=_dumps_json(serialized) if serialized is not None else None,
         attachments=attachments if attachments is not None else None,
     )
 
@@ -184,6 +250,12 @@ def combine_serialized_queue_operations(
                 create_op.outputs = op.outputs
             if op.events is not None:
                 create_op.events = op.events
+            if op.extra is not None:
+                create_op.extra = op.extra
+            if op.error is not None:
+                create_op.error = op.error
+            if op.serialized is not None:
+                create_op.serialized = op.serialized
             if op.attachments is not None:
                 if create_op.attachments is None:
                     create_op.attachments = {}
@@ -214,9 +286,9 @@ def serialized_feedback_operation_to_multipart_parts_and_context(
 
 def serialized_run_operation_to_multipart_parts_and_context(
     op: SerializedRunOperation,
-) -> tuple[MultipartPartsAndContext, Dict[str, BufferedReader]]:
+) -> tuple[MultipartPartsAndContext, dict[str, BufferedReader]]:
     acc_parts: list[MultipartPart] = []
-    opened_files_dict: Dict[str, BufferedReader] = {}
+    opened_files_dict: dict[str, BufferedReader] = {}
     # this is main object, minus inputs/outputs/events/attachments
     acc_parts.append(
         (
@@ -233,6 +305,9 @@ def serialized_run_operation_to_multipart_parts_and_context(
         ("inputs", op.inputs),
         ("outputs", op.outputs),
         ("events", op.events),
+        ("extra", op.extra),
+        ("error", op.error),
+        ("serialized", op.serialized),
     ):
         if value is None:
             continue
@@ -272,8 +347,14 @@ def serialized_run_operation_to_multipart_parts_and_context(
                     )
                 )
             else:
-                file_size = os.path.getsize(data_or_path)
-                file = open(data_or_path, "rb")
+                try:
+                    file_size = os.path.getsize(data_or_path)
+                    file = open(data_or_path, "rb")
+                except FileNotFoundError:
+                    logger.warning(
+                        "Attachment file not found for run %s: %s", op.id, data_or_path
+                    )
+                    continue
                 opened_files_dict[str(data_or_path) + str(uuid.uuid4())] = file
                 acc_parts.append(
                     (
@@ -295,7 +376,7 @@ def serialized_run_operation_to_multipart_parts_and_context(
 def encode_multipart_parts_and_context(
     parts_and_context: MultipartPartsAndContext,
     boundary: str,
-) -> Iterable[Tuple[bytes, Union[bytes, BufferedReader]]]:
+) -> Iterable[tuple[bytes, Union[bytes, BufferedReader]]]:
     for part_name, (filename, data, content_type, headers) in parts_and_context.parts:
         header_parts = [
             f"--{boundary}\r\n",
@@ -321,21 +402,21 @@ def compress_multipart_parts_and_context(
     compressed_traces: CompressedTraces,
     boundary: str,
 ) -> None:
+    write = compressed_traces.compressor_writer.write
+
     for headers, data in encode_multipart_parts_and_context(
         parts_and_context, boundary
     ):
-        compressed_traces.compressor_writer.write(headers)
+        write(headers)
 
-        if isinstance(data, (bytes, bytearray)):
-            compressed_traces.uncompressed_size += len(data)
-            compressed_traces.compressor_writer.write(data)
-        else:
-            if isinstance(data, BufferedReader):
-                encoded_data = data.read()
-            else:
-                encoded_data = str(data).encode()
-            compressed_traces.uncompressed_size += len(encoded_data)
-            compressed_traces.compressor_writer.write(encoded_data)
+        # Normalise to bytes
+        if not isinstance(data, (bytes, bytearray)):
+            data = (
+                data.read() if isinstance(data, BufferedReader) else str(data).encode()
+            )
 
-        # Write part terminator
-        compressed_traces.compressor_writer.write(b"\r\n")
+        compressed_traces.uncompressed_size += len(data)
+        write(data)
+        write(b"\r\n")  # part terminator
+
+    compressed_traces._context.append(parts_and_context.context)

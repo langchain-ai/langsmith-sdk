@@ -91,13 +91,13 @@ export interface BaseRun {
   name: string;
 
   /** The epoch time at which the run started, if available. */
-  start_time?: number;
+  start_time?: number | string;
 
   /** Specifies the type of run (tool, chain, llm, etc.). */
   run_type: string;
 
   /** The epoch time at which the run ended, if applicable. */
-  end_time?: number;
+  end_time?: number | string;
 
   /** Any additional metadata or settings for the run. */
   extra?: KVMap;
@@ -221,16 +221,18 @@ export interface RunCreate extends BaseRun {
 
 export interface RunUpdate {
   id?: string;
-  end_time?: number;
+  end_time?: number | string;
   extra?: KVMap;
   tags?: string[];
   error?: string;
+  serialized?: object;
   inputs?: KVMap;
   outputs?: KVMap;
   parent_run_id?: string;
   reference_example_id?: string;
   events?: KVMap[];
   session_id?: string;
+  session_name?: string;
   /** Unique ID assigned to every run within this nested trace. **/
   trace_id?: string;
 
@@ -566,6 +568,11 @@ export interface AnnotationQueue {
   tenant_id: string;
 }
 
+export interface AnnotationQueueWithDetails extends AnnotationQueue {
+  /** The rubric instructions for the annotation queue. */
+  rubric_instructions?: string;
+}
+
 export interface RunWithAnnotationQueueInfo extends BaseRun {
   /** The last time this run was reviewed. */
   last_reviewed_time?: string;
@@ -599,7 +606,7 @@ export type InputTokenDetails = {
    * Since there was a cache miss, the cache was created from these tokens.
    */
   cache_creation?: number;
-};
+} & Record<string, number>;
 
 /**
  * Breakdown of output token counts.
@@ -619,7 +626,7 @@ export type OutputTokenDetails = {
    * OpenAI's o1 models) that are not returned as part of model output.
    */
   reasoning?: number;
-};
+} & Record<string, number>;
 
 /**
  * Usage metadata for a message, such as token counts.
@@ -651,4 +658,31 @@ export type UsageMetadata = {
    * Does *not* need to sum to full output token count. Does *not* need to have all keys.
    */
   output_token_details?: OutputTokenDetails;
+
+  /**
+   * The cost of the input tokens.
+   */
+  input_cost?: number;
+
+  /**
+   * The cost of the output tokens.
+   */
+  output_cost?: number;
+
+  /**
+   * The total cost of the tokens.
+   */
+  total_cost?: number;
+
+  /**
+   * The cost details of the input tokens.
+   */
+  input_cost_details?: Record<string, unknown>;
+
+  /**
+   * The cost details of the output tokens.
+   */
+  output_cost_details?: Record<string, unknown>;
 };
+
+export type ExtractedUsageMetadata = Partial<UsageMetadata>;

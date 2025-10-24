@@ -261,3 +261,7 @@ if os.environ.get("READTHEDOCS", "") == "True":
 
 master_doc = "index"
 templates_path = ["templates"]
+
+# If a signature’s length in characters exceeds this threshold,
+# each parameter within the signature will be displayed on an individual logical line
+maximum_signature_line_length = 60

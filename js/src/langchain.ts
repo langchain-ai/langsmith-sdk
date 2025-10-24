@@ -108,6 +108,7 @@ type AnyTraceableFunction = TraceableFunction<(...any: any[]) => any>;
 /**
  * RunnableTraceable is a Runnable that wraps a traceable function.
  * This allows adding Langsmith traced functions into LangChain sequences.
+ * @deprecated Wrap or pass directly instead.
  */
 export class RunnableTraceable<RunInput, RunOutput> extends Runnable<
   RunInput,
@@ -134,6 +135,9 @@ export class RunnableTraceable<RunInput, RunOutput> extends Runnable<
   async invoke(input: RunInput, options?: Partial<RunnableConfig>) {
     const [config] = this._getOptionsList(options ?? {}, 1);
     const callbacks = await getCallbackManagerForConfig(config);
+    // Avoid start time ties - this is old, deprecated code used only in tests
+    // and recent perf improvements have made this necessary.
+    await new Promise((resolve) => setImmediate(resolve));
 
     return (await this.func(
       patchConfig(config, { callbacks }),

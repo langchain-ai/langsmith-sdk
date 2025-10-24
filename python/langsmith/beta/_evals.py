@@ -7,7 +7,8 @@ import collections
 import datetime
 import itertools
 import uuid
-from typing import DefaultDict, List, Optional, Sequence, Tuple, TypeVar
+from collections.abc import Sequence
+from typing import Optional, TypeVar
 
 import langsmith.run_trees as rt
 import langsmith.schemas as ls_schemas
@@ -38,7 +39,7 @@ def _convert_ids(run_dict: dict, id_map: dict):
     return run_dict
 
 
-def _convert_root_run(root: ls_schemas.Run, run_to_example_map: dict) -> List[dict]:
+def _convert_root_run(root: ls_schemas.Run, run_to_example_map: dict) -> list[dict]:
     """Convert the root run and its child runs to a list of dictionaries.
 
     Parameters:
@@ -174,10 +175,10 @@ def convert_runs_to_test(
     return project
 
 
-def _load_nested_traces(project_name: str, client: Client) -> List[ls_schemas.Run]:
+def _load_nested_traces(project_name: str, client: Client) -> list[ls_schemas.Run]:
     runs = client.list_runs(project_name=project_name)
-    treemap: DefaultDict[uuid.UUID, List[ls_schemas.Run]] = collections.defaultdict(
-        list
+    treemap: collections.defaultdict[uuid.UUID, list[ls_schemas.Run]] = (
+        collections.defaultdict(list)
     )
     results = []
     all_runs = {}
@@ -196,7 +197,7 @@ T = TypeVar("T")
 U = TypeVar("U")
 
 
-def _outer_product(list1: List[T], list2: List[U]) -> List[Tuple[T, U]]:
+def _outer_product(list1: list[T], list2: list[U]) -> list[tuple[T, U]]:
     return list(itertools.product(list1, list2))
 
 
@@ -223,7 +224,7 @@ def compute_test_metrics(
     """
     from langsmith import ContextThreadPoolExecutor
 
-    evaluators_: List[ls_eval.RunEvaluator] = []
+    evaluators_: list[ls_eval.RunEvaluator] = []
     for func in evaluators:
         if isinstance(func, ls_eval.RunEvaluator):
             evaluators_.append(func)

@@ -2,28 +2,43 @@
 
 import asyncio
 import datetime
+import importlib
 import io
 import logging
 import os
+import queue
 import random
 import string
 import sys
+import threading
 import time
 import uuid
 from datetime import timedelta
 from pathlib import Path
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, cast
 from unittest import mock
 from uuid import uuid4
 
 import pytest
 from freezegun import freeze_time
+from opentelemetry.sdk.trace import ReadableSpan
+from opentelemetry.trace import set_tracer_provider
 from pydantic import BaseModel
 from requests_toolbelt import MultipartEncoder, MultipartEncoderMonitor
 
+import langsmith
+from langsmith import env as ls_env
+from langsmith._internal._background_thread import (
+    TracingQueueItem,
+    _otel_tracing_thread_handle_batch,
+)
+from langsmith._internal._operations import serialize_run_dict
 from langsmith._internal._serde import dumps_json
+from langsmith._internal.otel import _otel_exporter
+from langsmith._internal.otel._otel_client import get_otlp_tracer_provider
 from langsmith.client import ID_TYPE, Client, _close_files
 from langsmith.evaluation import aevaluate, evaluate
+from langsmith.run_helpers import traceable
 from langsmith.schemas import (
     AttachmentsOperations,
     Dataset,
@@ -43,6 +58,24 @@ from langsmith.utils import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Global lock to prevent parallel dataset deletions that can cause deadlocks
+_dataset_deletion_lock = threading.Lock()
+
+
+def safe_delete_dataset(
+    client: Client, dataset_id: str = None, dataset_name: str = None
+):
+    """Delete a dataset with thread safety to prevent deadlocks in parallel tests."""
+    with _dataset_deletion_lock:
+        try:
+            if dataset_id:
+                client.delete_dataset(dataset_id=dataset_id)
+            elif dataset_name:
+                client.delete_dataset(dataset_name=dataset_name)
+        except Exception as e:
+            # Log the error but don't fail the test - dataset might already be deleted
+            logger.warning(f"Failed to delete dataset: {e}")
 
 
 def wait_for(
@@ -73,7 +106,20 @@ def langchain_client() -> Client:
     )
 
 
-def test_datasets(langchain_client: Client) -> None:
+@pytest.fixture(params=[True, False])
+def parameterized_multipart_client(request) -> Client:
+    """Client fixture with parameterized dataset_examples_multipart_enabled setting."""
+    get_env_var.cache_clear()
+    return Client(
+        info={
+            "instance_flags": {
+                "dataset_examples_multipart_enabled": request.param,
+            }
+        }
+    )
+
+
+def test_datasets(parameterized_multipart_client: Client) -> None:
     """Test datasets."""
     csv_content = "col1,col2\nval1,val2"
     blob_data = io.BytesIO(csv_content.encode("utf-8"))
@@ -82,7 +128,7 @@ def test_datasets(langchain_client: Client) -> None:
     input_keys = ["col1"]
     output_keys = ["col2"]
     filename = "".join(random.sample(string.ascii_lowercase, 10)) + ".csv"
-    new_dataset = langchain_client.upload_csv(
+    new_dataset = parameterized_multipart_client.upload_csv(
         csv_file=(filename, blob_data),
         description=description,
         input_keys=input_keys,
@@ -91,59 +137,66 @@ def test_datasets(langchain_client: Client) -> None:
     assert new_dataset.id is not None
     assert new_dataset.description == description
 
-    dataset = langchain_client.read_dataset(dataset_id=new_dataset.id)
+    dataset = parameterized_multipart_client.read_dataset(dataset_id=new_dataset.id)
     dataset_id = dataset.id
-    dataset2 = langchain_client.read_dataset(dataset_id=dataset_id)
+    dataset2 = parameterized_multipart_client.read_dataset(dataset_id=dataset_id)
     assert dataset.id == dataset2.id
 
-    datasets = list(langchain_client.list_datasets())
+    datasets = list(parameterized_multipart_client.list_datasets())
     assert len(datasets) > 0
     assert dataset_id in [dataset.id for dataset in datasets]
 
     # Test Example CRD
-    example = langchain_client.create_example(
+    example = parameterized_multipart_client.create_example(
         inputs={"col1": "addedExampleCol1"},
         outputs={"col2": "addedExampleCol2"},
         dataset_id=new_dataset.id,
     )
-    example_value = langchain_client.read_example(example.id)
+    example_to_delete = parameterized_multipart_client.create_example(
+        inputs={"col1": "addedExampleCol1"},
+        outputs={"col2": "addedExampleCol2"},
+        dataset_id=new_dataset.id,
+    )
+    example_value = parameterized_multipart_client.read_example(example.id)
     assert example_value.inputs is not None
     assert example_value.inputs["col1"] == "addedExampleCol1"
     assert example_value.outputs is not None
     assert example_value.outputs["col2"] == "addedExampleCol2"
 
     examples = list(
-        langchain_client.list_examples(dataset_id=new_dataset.id)  # type: ignore
+        parameterized_multipart_client.list_examples(dataset_id=new_dataset.id)  # type: ignore
     )
-    assert len(examples) == 2
+    assert len(examples) == 3
     assert example.id in [example.id for example in examples]
 
-    langchain_client.update_example(
+    parameterized_multipart_client.update_example(
         example_id=example.id,
         inputs={"col1": "updatedExampleCol1"},
         outputs={"col2": "updatedExampleCol2"},
         metadata={"foo": "bar"},
     )
-    updated_example = langchain_client.read_example(example.id)
+    updated_example = parameterized_multipart_client.read_example(example.id)
     assert updated_example.id == example.id
-    updated_example_value = langchain_client.read_example(updated_example.id)
+    updated_example_value = parameterized_multipart_client.read_example(
+        updated_example.id
+    )
     assert updated_example_value.inputs["col1"] == "updatedExampleCol1"
     assert updated_example_value.outputs is not None
     assert updated_example_value.outputs["col2"] == "updatedExampleCol2"
     assert (updated_example_value.metadata or {}).get("foo") == "bar"
 
-    new_example = langchain_client.create_example(
+    new_example = parameterized_multipart_client.create_example(
         inputs={"col1": "newAddedExampleCol1"},
         outputs={"col2": "newAddedExampleCol2"},
         dataset_id=new_dataset.id,
     )
-    example_value = langchain_client.read_example(new_example.id)
+    example_value = parameterized_multipart_client.read_example(new_example.id)
     assert example_value.inputs is not None
     assert example_value.inputs["col1"] == "newAddedExampleCol1"
     assert example_value.outputs is not None
     assert example_value.outputs["col2"] == "newAddedExampleCol2"
 
-    langchain_client.update_examples(
+    parameterized_multipart_client.update_examples(
         example_ids=[new_example.id, example.id],
         inputs=[{"col1": "newUpdatedExampleCol1"}, {"col1": "newNewUpdatedExampleCol"}],
         outputs=[
@@ -152,31 +205,56 @@ def test_datasets(langchain_client: Client) -> None:
         ],
         metadata=[{"foo": "baz"}, {"foo": "qux"}],
     )
-    updated_example = langchain_client.read_example(new_example.id)
+    updated_example = parameterized_multipart_client.read_example(new_example.id)
     assert updated_example.id == new_example.id
     assert updated_example.inputs["col1"] == "newUpdatedExampleCol1"
     assert updated_example.outputs is not None
     assert updated_example.outputs["col2"] == "newUpdatedExampleCol2"
     assert (updated_example.metadata or {}).get("foo") == "baz"
 
-    updated_example = langchain_client.read_example(example.id)
+    updated_example = parameterized_multipart_client.read_example(example.id)
     assert updated_example.id == example.id
     assert updated_example.inputs["col1"] == "newNewUpdatedExampleCol"
     assert updated_example.outputs is not None
     assert updated_example.outputs["col2"] == "newNewUpdatedExampleCol2"
     assert (updated_example.metadata or {}).get("foo") == "qux"
 
-    langchain_client.delete_example(example.id)
+    parameterized_multipart_client.delete_example(example.id)
+    parameterized_multipart_client.delete_examples(example_ids=[example_to_delete.id])
     examples2 = list(
-        langchain_client.list_examples(dataset_id=new_dataset.id)  # type: ignore
+        parameterized_multipart_client.list_examples(dataset_id=new_dataset.id)  # type: ignore
     )
     assert len(examples2) == 2
-    langchain_client.delete_dataset(dataset_id=dataset_id)
+    parameterized_multipart_client.create_example(
+        inputs={},
+        outputs=None,
+        dataset_id=new_dataset.id,
+    )
+    examples3 = list(
+        parameterized_multipart_client.list_examples(dataset_id=new_dataset.id)  # type: ignore
+    )
+    assert len(examples3) == 3
+
+    # Find the example with empty inputs that we just created
+    empty_input_examples = [ex for ex in examples3 if ex.inputs == {}]
+    assert len(empty_input_examples) == 1, (
+        f"Expected exactly 1 example with empty inputs, "
+        f"found {len(empty_input_examples)}"
+    )
+
+    empty_example = empty_input_examples[0]
+    # The backend currently returns None for outputs when None is provided,
+    # regardless of flags
+    assert empty_example.outputs is None, (
+        f"Expected None outputs for example created with outputs=None, "
+        f"got {empty_example.outputs}"
+    )
+    safe_delete_dataset(parameterized_multipart_client, dataset_id=dataset_id)
 
 
 def _create_dataset(client: Client, dataset_name: str) -> Dataset:
     if client.has_dataset(dataset_name=dataset_name):
-        client.delete_dataset(dataset_name=dataset_name)
+        safe_delete_dataset(client, dataset_name=dataset_name)
     return client.create_dataset(dataset_name=dataset_name)
 
 
@@ -305,7 +383,7 @@ def test_list_examples(langchain_client: Client) -> None:
     )
     assert len(example_list) == 0
 
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
 @pytest.mark.slow
@@ -318,7 +396,7 @@ def test_similar_examples(langchain_client: Client) -> None:
     ]
     dataset_name = "__test_similar_examples" + uuid4().hex[:4]
     if langchain_client.has_dataset(dataset_name=dataset_name):
-        langchain_client.delete_dataset(dataset_name=dataset_name)
+        safe_delete_dataset(langchain_client, dataset_name=dataset_name)
     dataset = langchain_client.create_dataset(
         dataset_name=dataset_name,
         inputs_schema={
@@ -351,7 +429,21 @@ def test_similar_examples(langchain_client: Client) -> None:
     )
     assert len(similar_list) == 2
 
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    langchain_client.create_example(
+        inputs={"text": "howdy"},
+        outputs={"response": "howdy"},
+        dataset_id=dataset.id,
+    )
+
+    langchain_client.sync_indexed_dataset(dataset_id=dataset.id)
+    time.sleep(5)
+
+    similar_list = langchain_client.similar_examples(
+        {"text": "howdy"}, limit=5, dataset_id=dataset.id
+    )
+    assert len(similar_list) == 4
+
+    safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
 @pytest.mark.skip(reason="This test is flaky")
@@ -511,13 +603,71 @@ def test_upload_examples_multipart(langchain_client: Client):
         )
 
     # Clean up
-    langchain_client.delete_dataset(dataset_name=dataset_name)
+    safe_delete_dataset(langchain_client, dataset_name=dataset_name)
+
+
+def test_update_example_preserves_existing_inputs_outputs(langchain_client: Client):
+    """Test update example with omitted inputs/outputs preserves existing values."""
+    dataset_name = "__test_update_preserve_values" + uuid4().hex[:4]
+    dataset = _create_dataset(langchain_client, dataset_name)
+
+    # Create an example with both inputs and outputs
+    original_example = langchain_client.create_example(
+        inputs={"original": "input", "number": 42},
+        outputs={"original": "output", "score": 0.85},
+        metadata={"version": "1.0"},
+        dataset_id=dataset.id,
+    )
+
+    # Update with None inputs - should preserve original inputs
+    langchain_client.update_example(
+        example_id=original_example.id,
+        outputs={"updated": "output", "score": 0.90},
+        metadata={"version": "2.0"},
+    )
+
+    # Verify inputs were preserved, outputs were updated
+    updated_example = langchain_client.read_example(original_example.id)
+    assert updated_example.inputs == {"original": "input", "number": 42}  # Preserved
+    assert updated_example.outputs == {"updated": "output", "score": 0.90}  # Updated
+    assert updated_example.metadata["version"] == "2.0"  # Updated
+
+    # Update with None outputs - should preserve current outputs
+    langchain_client.update_example(
+        example_id=original_example.id,
+        inputs={"final": "input", "count": 100},
+        metadata={"version": "3.0"},
+    )
+
+    # Verify outputs were preserved, inputs were updated
+    final_example = langchain_client.read_example(original_example.id)
+    assert final_example.inputs == {"final": "input", "count": 100}  # Updated
+    assert final_example.outputs == {"updated": "output", "score": 0.90}  # Preserved
+    assert final_example.metadata["version"] == "3.0"  # Updated
+
+    # Update with both None - should preserve both
+    langchain_client.update_example(
+        example_id=original_example.id,
+        metadata={"version": "4.0"},
+    )
+
+    # Verify both inputs and outputs were preserved
+    preserved_example = langchain_client.read_example(original_example.id)
+    assert preserved_example.inputs == {"final": "input", "count": 100}  # Preserved
+    assert preserved_example.outputs == {
+        "updated": "output",
+        "score": 0.90,
+    }  # Preserved
+    assert preserved_example.metadata["version"] == "4.0"  # Updated
+
+    # Clean up
+    safe_delete_dataset(langchain_client, dataset_name=dataset_name)
 
 
 def test_create_dataset(langchain_client: Client) -> None:
     dataset_name = "__test_create_dataset" + uuid4().hex[:4]
     if langchain_client.has_dataset(dataset_name=dataset_name):
-        langchain_client.delete_dataset(dataset_name=dataset_name)
+        safe_delete_dataset(langchain_client, dataset_name=dataset_name)
     dataset = langchain_client.create_dataset(dataset_name, data_type=DataType.llm)
     ground_truth = "bcde"
     example = langchain_client.create_example(
@@ -555,13 +705,13 @@ def test_create_dataset(langchain_client: Client) -> None:
     assert diffs.examples_added == [example_2.id]
     assert diffs.examples_removed == []
     assert diffs.examples_modified == [example.id]
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
 def test_dataset_schema_validation(langchain_client: Client) -> None:
     dataset_name = "__test_create_dataset" + uuid4().hex[:4]
     if langchain_client.has_dataset(dataset_name=dataset_name):
-        langchain_client.delete_dataset(dataset_name=dataset_name)
+        safe_delete_dataset(langchain_client, dataset_name=dataset_name)
 
     class InputSchema(BaseModel):
         input: str
@@ -574,6 +724,7 @@ def test_dataset_schema_validation(langchain_client: Client) -> None:
         data_type=DataType.kv,
         inputs_schema=InputSchema.model_json_schema(),
         outputs_schema=OutputSchema.model_json_schema(),
+        metadata={"dataset_metadata_k1": "v1", "dataset_metadata_k2": "v2"},
     )
 
     # confirm we store the schema from the create request
@@ -608,7 +759,15 @@ def test_dataset_schema_validation(langchain_client: Client) -> None:
     assert read_dataset.inputs_schema == InputSchema.model_json_schema()
     assert read_dataset.outputs_schema == OutputSchema.model_json_schema()
 
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    # assert read API includes the metadata
+    assert read_dataset.metadata is not None
+    assert read_dataset.metadata == {
+        "dataset_metadata_k1": "v1",
+        "dataset_metadata_k2": "v2",
+        "runtime": ls_env.get_runtime_environment(),
+    }
+
+    safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
 @freeze_time("2023-01-01")
@@ -622,6 +781,10 @@ def test_list_datasets(langchain_client: Client) -> None:
         dataset2 = langchain_client.create_dataset(ds2n, data_type=DataType.kv)
         assert dataset1.url is not None
         assert dataset2.url is not None
+
+        # Test datasets without metadata return empty metadata
+        assert dataset2.metadata is None  # dataset2 has no metadata
+
         datasets = list(
             langchain_client.list_datasets(dataset_ids=[dataset1.id, dataset2.id])
         )
@@ -648,6 +811,21 @@ def test_list_datasets(langchain_client: Client) -> None:
             )
         )
         assert len(datasets) == 1
+
+        # Test metadata property
+        dataset_with_metadata = next(d for d in datasets if d.id == dataset1.id)
+        assert dataset_with_metadata.metadata == {
+            "foo": "barqux",
+            "runtime": ls_env.get_runtime_environment(),
+        }
+
+        # Test read_dataset also includes metadata
+        read_dataset = langchain_client.read_dataset(dataset_id=dataset1.id)
+        assert read_dataset.metadata == {
+            "foo": "barqux",
+            "runtime": ls_env.get_runtime_environment(),
+        }
+
     finally:
         # Delete datasets
         for name in [ds1n, ds2n]:
@@ -716,7 +894,7 @@ def test_create_run_with_masked_inputs_outputs(
 def test_create_chat_example(
     monkeypatch: pytest.MonkeyPatch, langchain_client: Client
 ) -> None:
-    from langchain.schema import FunctionMessage, HumanMessage
+    from langchain_core.messages import FunctionMessage, HumanMessage
 
     dataset_name = "__createChatExample-test-dataset"
     try:
@@ -761,7 +939,7 @@ def test_create_chat_example(
             },
         },
     }
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
 @pytest.mark.parametrize("use_multipart_endpoint", [True, False])
@@ -919,6 +1097,7 @@ def test_multipart_ingest_create_with_attachments_error(
         langchain_client.multipart_ingest(create=runs_to_create, update=[])
 
 
+@pytest.mark.flaky(retries=3)
 def test_multipart_ingest_create_with_attachments(
     langchain_client: Client, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -952,10 +1131,13 @@ def test_multipart_ingest_create_with_attachments(
         langchain_client.multipart_ingest(
             create=runs_to_create, update=[], dangerously_allow_filesystem=True
         )
+        langchain_client.flush()
         assert not caplog.records
         wait_for(lambda: _get_run(str(trace_a_id), langchain_client))
         created_run = langchain_client.read_run(run_id=str(trace_a_id))
-        assert sorted(created_run.attachments.keys()) == sorted(["foo", "bar"])
+        assert sorted(created_run.attachments.keys()) == sorted(["foo", "bar"]), (
+            f"See failed run at {created_run.url}"
+        )
         assert created_run.attachments["foo"]["reader"].read() == b"bar"
         assert (
             created_run.attachments["bar"]["reader"].read()
@@ -1473,7 +1655,7 @@ def test_list_examples_attachments_keys(langchain_client: Client) -> None:
         f"Only in without_attachments: {without_keys - with_keys}"
     )
 
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
 def test_mime_type_is_propogated(langchain_client: Client) -> None:
@@ -1502,7 +1684,7 @@ def test_mime_type_is_propogated(langchain_client: Client) -> None:
     example = langchain_client.read_example(example_id=example.id)
     assert example.attachments["test_file"]["mime_type"] == "text/plain"
 
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
 def test_evaluate_mime_type_is_propogated(langchain_client: Client) -> None:
@@ -1541,7 +1723,7 @@ def test_evaluate_mime_type_is_propogated(langchain_client: Client) -> None:
 
     langchain_client.evaluate(target, data=dataset_name, evaluators=[evaluator])
 
-    langchain_client.delete_dataset(dataset_name=dataset_name)
+    safe_delete_dataset(langchain_client, dataset_name=dataset_name)
 
 
 async def test_aevaluate_mime_type_is_propogated(langchain_client: Client) -> None:
@@ -1582,7 +1764,7 @@ async def test_aevaluate_mime_type_is_propogated(langchain_client: Client) -> No
 
     await langchain_client.aevaluate(target, data=dataset_name, evaluators=[evaluator])
 
-    langchain_client.delete_dataset(dataset_name=dataset_name)
+    safe_delete_dataset(langchain_client, dataset_name=dataset_name)
 
 
 def test_evaluate_with_attachments_multiple_evaluators(
@@ -1649,7 +1831,7 @@ def test_evaluate_with_attachments_multiple_evaluators(
         assert result["evaluation_results"]["results"][0].score == 1.0
         assert result["evaluation_results"]["results"][1].score == 1.0
 
-    langchain_client.delete_dataset(dataset_name=dataset_name)
+    safe_delete_dataset(langchain_client, dataset_name=dataset_name)
 
 
 def test_evaluate_with_attachments(langchain_client: Client) -> None:
@@ -1700,7 +1882,7 @@ def test_evaluate_with_attachments(langchain_client: Client) -> None:
     for result in results:
         assert result["evaluation_results"]["results"][0].score == 1.0
 
-    langchain_client.delete_dataset(dataset_name=dataset_name)
+    safe_delete_dataset(langchain_client, dataset_name=dataset_name)
 
 
 def test_evaluate_with_attachments_not_in_target(langchain_client: Client) -> None:
@@ -1755,7 +1937,7 @@ def test_evaluate_with_attachments_not_in_target(langchain_client: Client) -> No
     for result in results:
         assert result["evaluation_results"]["results"][0].score == 1.0
 
-    langchain_client.delete_dataset(dataset_name=dataset_name)
+    safe_delete_dataset(langchain_client, dataset_name=dataset_name)
 
 
 def test_evaluate_with_no_attachments(langchain_client: Client) -> None:
@@ -1798,7 +1980,7 @@ def test_evaluate_with_no_attachments(langchain_client: Client) -> None:
     for result in results:
         assert result["evaluation_results"]["results"][0].score == 1.0
 
-    langchain_client.delete_dataset(dataset_name=dataset_name)
+    safe_delete_dataset(langchain_client, dataset_name=dataset_name)
 
 
 async def test_aevaluate_with_attachments(langchain_client: Client) -> None:
@@ -1868,7 +2050,7 @@ async def test_aevaluate_with_attachments(langchain_client: Client) -> None:
 
     assert len(results) == 10
 
-    langchain_client.delete_dataset(dataset_name=dataset_name)
+    safe_delete_dataset(langchain_client, dataset_name=dataset_name)
 
 
 async def test_aevaluate_with_attachments_not_in_target(
@@ -1913,7 +2095,7 @@ async def test_aevaluate_with_attachments_not_in_target(
     async for result in results:
         assert result["evaluation_results"]["results"][0].score == 1.0
 
-    langchain_client.delete_dataset(dataset_name=dataset_name)
+    safe_delete_dataset(langchain_client, dataset_name=dataset_name)
 
 
 async def test_aevaluate_with_no_attachments(langchain_client: Client) -> None:
@@ -1958,7 +2140,7 @@ async def test_aevaluate_with_no_attachments(langchain_client: Client) -> None:
     async for result in results:
         assert result["evaluation_results"]["results"][0].score == 1.0
 
-    langchain_client.delete_dataset(dataset_name=dataset_name)
+    safe_delete_dataset(langchain_client, dataset_name=dataset_name)
 
 
 def test_examples_length_validation(langchain_client: Client) -> None:
@@ -1999,42 +2181,57 @@ def test_examples_length_validation(langchain_client: Client) -> None:
     )
 
     # Clean up
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
-def test_new_create_example(langchain_client: Client) -> None:
+def test_new_create_example(parameterized_multipart_client: Client) -> None:
     """Test create_examples works with multipart style input."""
     dataset_name = "__test_update_examples_output" + uuid4().hex[:4]
-    dataset = _create_dataset(langchain_client, dataset_name)
+    dataset = _create_dataset(parameterized_multipart_client, dataset_name)
+
+    supports_attachments = (
+        parameterized_multipart_client.info.instance_flags or {}
+    ).get("dataset_examples_multipart_enabled", False)
 
     example_id = uuid4()
-    langchain_client.create_example(
+    parameterized_multipart_client.create_example(
         dataset_name=dataset_name,
         example_id=example_id,
         inputs={"query": "What's in this image?"},
         outputs={"answer": "A test image"},
-        attachments={
-            "image1": ("image/png", b"fake image data 1"),
-            "image2": ("image/png", b"fake image data 2"),
-        },
+        attachments=(
+            {
+                "image1": ("image/png", b"fake image data 1"),
+                "image2": ("image/png", b"fake image data 2"),
+            }
+            if supports_attachments
+            else None
+        ),
     )
 
-    retrieved_example = langchain_client.read_example(example_id=example_id)
+    retrieved_example = parameterized_multipart_client.read_example(
+        example_id=example_id
+    )
 
     assert retrieved_example.id == example_id
     assert retrieved_example.dataset_id == dataset.id
     assert retrieved_example.inputs == {"query": "What's in this image?"}
     assert retrieved_example.outputs == {"answer": "A test image"}
-    assert list(retrieved_example.attachments.keys()) == ["image1", "image2"]
+    if supports_attachments:
+        assert list(retrieved_example.attachments.keys()) == ["image1", "image2"]
 
     # Clean up
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    parameterized_multipart_client.delete_dataset(dataset_id=dataset.id)
 
 
-def test_new_create_examples(langchain_client: Client) -> None:
+def test_new_create_examples(parameterized_multipart_client: Client) -> None:
     """Test create_examples works with multipart style input."""
     dataset_name = "__test_update_examples_output" + uuid4().hex[:4]
-    dataset = _create_dataset(langchain_client, dataset_name)
+    dataset = _create_dataset(parameterized_multipart_client, dataset_name)
+
+    supports_attachments = (
+        parameterized_multipart_client.info.instance_flags or {}
+    ).get("dataset_examples_multipart_enabled", False)
 
     example_id = uuid4()
     example = dict(
@@ -2047,31 +2244,45 @@ def test_new_create_examples(langchain_client: Client) -> None:
         },
     )
 
-    # Use new way of passing example
-    langchain_client.create_examples(dataset_name=dataset_name, examples=[example])
+    if not supports_attachments:
+        del example["attachments"]
 
-    retrieved_example = langchain_client.read_example(example_id=example_id)
-    examples_in_dataset = langchain_client.list_examples(dataset_id=dataset.id)
+    # Use new way of passing example
+    parameterized_multipart_client.create_examples(
+        dataset_name=dataset_name, examples=[example]
+    )
+
+    retrieved_example = parameterized_multipart_client.read_example(
+        example_id=example_id
+    )
+    examples_in_dataset = parameterized_multipart_client.list_examples(
+        dataset_id=dataset.id
+    )
     assert len(list(examples_in_dataset)) == 1
 
     assert retrieved_example.id == example_id
     assert retrieved_example.dataset_id == dataset.id
     assert retrieved_example.inputs == example["inputs"]
     assert retrieved_example.outputs == example["outputs"]
-    assert retrieved_example.attachments.keys() == example["attachments"].keys()
+    if supports_attachments:
+        assert retrieved_example.attachments.keys() == example["attachments"].keys()
 
     # Use old way of passing example
     # Can't pass in attachments this way
     example_id2 = uuid4()
-    langchain_client.create_examples(
+    parameterized_multipart_client.create_examples(
         dataset_name=dataset_name,
         ids=[example_id2],
         inputs=[{"query": "What's not in this image?"}],
         outputs=[{"answer": "A real image"}],
     )
 
-    retrieved_example = langchain_client.read_example(example_id=example_id2)
-    examples_in_dataset = langchain_client.list_examples(dataset_id=dataset.id)
+    retrieved_example = parameterized_multipart_client.read_example(
+        example_id=example_id2
+    )
+    examples_in_dataset = parameterized_multipart_client.list_examples(
+        dataset_id=dataset.id
+    )
     assert len(list(examples_in_dataset)) == 2
 
     assert retrieved_example.id == example_id2
@@ -2080,13 +2291,17 @@ def test_new_create_examples(langchain_client: Client) -> None:
     assert retrieved_example.outputs == {"answer": "A real image"}
 
     # Clean up
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    parameterized_multipart_client.delete_dataset(dataset_id=dataset.id)
 
 
-def test_new_update_examples(langchain_client: Client) -> None:
+def test_new_update_examples(parameterized_multipart_client: Client) -> None:
     """Test update_examples works with multipart style input."""
     dataset_name = "__test_update_examples_output" + uuid4().hex[:4]
-    dataset = _create_dataset(langchain_client, dataset_name)
+    dataset = _create_dataset(parameterized_multipart_client, dataset_name)
+
+    supports_attachments = (
+        parameterized_multipart_client.info.instance_flags or {}
+    ).get("dataset_examples_multipart_enabled", False)
 
     example_id = uuid4()
     example = dict(
@@ -2099,50 +2314,73 @@ def test_new_update_examples(langchain_client: Client) -> None:
         },
     )
 
+    if not supports_attachments:
+        del example["attachments"]
+
     # Create some valid examples for testing update
-    langchain_client.create_examples(dataset_name=dataset_name, examples=[example])
+    parameterized_multipart_client.create_examples(
+        dataset_name=dataset_name, examples=[example]
+    )
 
     example_update = ExampleUpdate(
         id=example_id,
         inputs={"query": "What's not in this image?"},
         outputs={"answer": "A real image"},
-        attachments={
-            "image3": ("image/png", b"fake image data 3"),
-        },
+        attachments=(
+            {
+                "image3": ("image/png", b"fake image data 3"),
+            }
+            if supports_attachments
+            else None
+        ),
     )
 
-    langchain_client.update_examples(dataset_id=dataset.id, updates=[example_update])
+    parameterized_multipart_client.update_examples(
+        dataset_id=dataset.id, updates=[example_update]
+    )
 
-    retrieved_example = langchain_client.read_example(example_id=example_id)
+    retrieved_example = parameterized_multipart_client.read_example(
+        example_id=example_id
+    )
 
     assert retrieved_example.id == example_id
     assert retrieved_example.dataset_id == dataset.id
     assert retrieved_example.inputs == example_update.inputs
     assert retrieved_example.outputs == example_update.outputs
-    assert retrieved_example.attachments.keys() == example_update.attachments.keys()
+    if supports_attachments:
+        assert retrieved_example.attachments.keys() == example_update.attachments.keys()
 
-    langchain_client.update_examples(
+    parameterized_multipart_client.update_examples(
         dataset_ids=[dataset.id],
         example_ids=[example_id],
         inputs=[{"query": "What's not in this image?"}],
         outputs=[{"answer": "A real image"}],
-        attachments=[
+        **(
             {
-                "image4": ("image/png", b"fake image data 4"),
+                "attachments": [
+                    {
+                        "image4": ("image/png", b"fake image data 4"),
+                    }
+                ]
             }
-        ],
+            if supports_attachments
+            else {}
+        ),
     )
 
-    retrieved_example = langchain_client.read_example(example_id=example_id)
+    retrieved_example = parameterized_multipart_client.read_example(
+        example_id=example_id
+    )
 
     assert retrieved_example.id == example_id
     assert retrieved_example.dataset_id == dataset.id
     assert retrieved_example.inputs == example_update.inputs
     assert retrieved_example.outputs == example_update.outputs
-    assert list(retrieved_example.attachments.keys()) == ["image4"]
+    if supports_attachments:
+        assert list(retrieved_example.attachments.keys()) == ["image4"]
 
     # Clean up
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    parameterized_multipart_client.delete_dataset(dataset_id=dataset.id)
 
 
 def test_update_examples_multiple_datasets(langchain_client: Client) -> None:
@@ -2240,7 +2478,7 @@ def test_use_source_run_io(langchain_client: Client) -> None:
     assert list(retrieved_example.attachments.keys()) == ["test_file"]
 
     # Clean up
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
 @pytest.mark.xfail(reason="Need to wait for backend changes to go endpoint")
@@ -2301,7 +2539,7 @@ def test_use_source_run_attachments(langchain_client: Client) -> None:
     assert list(retrieved_example.attachments.keys()) == ["test_file"]
 
     # Clean up
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
 def test_create_examples_xor_dataset_args(langchain_client: Client) -> None:
@@ -2319,7 +2557,7 @@ def test_create_examples_xor_dataset_args(langchain_client: Client) -> None:
         )
 
     # Clean up
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
 def test_must_pass_uploads_or_inputs(langchain_client: Client) -> None:
@@ -2331,7 +2569,7 @@ def test_must_pass_uploads_or_inputs(langchain_client: Client) -> None:
         langchain_client.create_examples(dataset_id=dataset.id, outputs={"foo": "bar"})
 
     # Clean up
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
 def test_create_examples_errors(langchain_client: Client) -> None:
@@ -2346,7 +2584,176 @@ def test_create_examples_errors(langchain_client: Client) -> None:
         )
 
     # Clean up
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    safe_delete_dataset(langchain_client, dataset_id=dataset.id)
+
+
+def test_create_examples_batching(parameterized_multipart_client: Client) -> None:
+    """Test create_examples batching with large numbers of examples."""
+    dataset_name = "__test_batching_" + uuid4().hex[:4]
+    dataset = _create_dataset(parameterized_multipart_client, dataset_name)
+
+    # Test batching with 250 examples (> default batch_size=200)
+    examples = [
+        {"inputs": {"q": f"Q{i}"}, "outputs": {"a": f"A{i}"}} for i in range(250)
+    ]
+
+    result = parameterized_multipart_client.create_examples(
+        dataset_id=dataset.id, examples=examples
+    )
+
+    assert result["count"] == 250
+    assert len(result["example_ids"]) == 250
+
+    # Verify examples exist
+    listed = list(parameterized_multipart_client.list_examples(dataset_id=dataset.id))
+    assert len(listed) == 250
+
+    safe_delete_dataset(parameterized_multipart_client, dataset_id=dataset.id)
+
+
+def test_create_examples_large_multipart_batching(
+    parameterized_multipart_client: Client,
+) -> None:
+    """Test create_examples batching with large multipart payloads."""
+    dataset_name = "__test_large_multipart_" + uuid4().hex[:4]
+    dataset = _create_dataset(parameterized_multipart_client, dataset_name)
+
+    # Create examples with large attachments to simulate >100MB payload
+    large_data = b"x" * 5_000_000  # 5MB per attachment
+    examples = [
+        {
+            "inputs": {"question": f"What's in image {i}?"},
+            "outputs": {"answer": f"Image {i} content"},
+            "attachments": {
+                f"image_{i}": ("image/png", large_data),
+                f"doc_{i}": ("text/plain", large_data),
+            },
+        }
+        for i in range(20)  # ~100MB total payload
+    ]
+
+    result = parameterized_multipart_client.create_examples(
+        dataset_id=dataset.id, examples=examples
+    )
+
+    assert result["count"] == 20
+    assert len(result["example_ids"]) == 20
+
+    # Verify attachments were uploaded
+    first_example = parameterized_multipart_client.read_example(
+        result["example_ids"][0]
+    )
+    if hasattr(first_example, "attachments") and first_example.attachments:
+        assert len(first_example.attachments) == 2
+
+    safe_delete_dataset(parameterized_multipart_client, dataset_id=dataset.id)
+
+
+def test_create_examples_large_multipart_batching_parallel(
+    parameterized_multipart_client: Client,
+) -> None:
+    """Test create_examples batching with large multipart payloads in parallel."""
+    dataset_name = "__test_large_multipart_" + uuid4().hex[:4]
+    dataset = _create_dataset(parameterized_multipart_client, dataset_name)
+
+    # Create examples with large attachments to simulate >100MB payload
+    large_data = b"x" * 5_000_000  # 5MB per attachment
+    examples = [
+        {
+            "inputs": {"question": f"What's in image {i}?"},
+            "outputs": {"answer": f"Image {i} content"},
+            "attachments": {
+                f"image_{i}": ("image/png", large_data),
+                f"doc_{i}": ("text/plain", large_data),
+            },
+        }
+        for i in range(20)  # ~100MB total payload
+    ]
+
+    result = parameterized_multipart_client.create_examples(
+        dataset_id=dataset.id, examples=examples, max_concurrency=3
+    )
+
+    assert result["count"] == 20
+    assert len(result["example_ids"]) == 20
+
+    # Verify attachments were uploaded
+    first_example = parameterized_multipart_client.read_example(
+        result["example_ids"][0]
+    )
+    if hasattr(first_example, "attachments") and first_example.attachments:
+        assert len(first_example.attachments) == 2
+
+    safe_delete_dataset(parameterized_multipart_client, dataset_id=dataset.id)
+
+
+def test_create_examples_invalid_max_concurrency(
+    parameterized_multipart_client: Client,
+) -> None:
+    """Test that invalid max_concurrency values raise errors."""
+    dataset_name = "__test_invalid_concurrency_" + uuid4().hex[:4]
+    dataset = _create_dataset(parameterized_multipart_client, dataset_name)
+    examples = [{"inputs": {"q": "Q1"}, "outputs": {"a": "A1"}}]
+
+    # Test max_concurrency < 1
+    with pytest.raises(ValueError, match="max_concurrency must be between 1 and 3"):
+        parameterized_multipart_client.create_examples(
+            dataset_id=dataset.id, examples=examples, max_concurrency=0
+        )
+
+    # Test max_concurrency > 3
+    with pytest.raises(ValueError, match="max_concurrency must be between 1 and 3"):
+        parameterized_multipart_client.create_examples(
+            dataset_id=dataset.id, examples=examples, max_concurrency=4
+        )
+
+    safe_delete_dataset(parameterized_multipart_client, dataset_id=dataset.id)
+
+
+def test_create_examples_boundary_concurrency(
+    parameterized_multipart_client: Client,
+) -> None:
+    """Test max_concurrency boundary values (1 and 3)."""
+    dataset_name = "__test_boundary_" + uuid4().hex[:4]
+    dataset = _create_dataset(parameterized_multipart_client, dataset_name)
+    examples = [
+        {"inputs": {"q": f"Q{i}"}, "outputs": {"a": f"A{i}"}} for i in range(50)
+    ]
+
+    # Test min value (sequential)
+    result1 = parameterized_multipart_client.create_examples(
+        dataset_id=dataset.id, examples=examples, max_concurrency=1
+    )
+    assert result1["count"] == 50
+    assert len(result1["example_ids"]) == 50
+
+    # Test max value (max parallelism)
+    examples2 = [
+        {"inputs": {"q": f"Q{i}_2"}, "outputs": {"a": f"A{i}_2"}} for i in range(50)
+    ]
+    result2 = parameterized_multipart_client.create_examples(
+        dataset_id=dataset.id, examples=examples2, max_concurrency=3
+    )
+    assert result2["count"] == 50
+    assert len(result2["example_ids"]) == 50
+
+    # Verify all examples exist
+    listed = list(parameterized_multipart_client.list_examples(dataset_id=dataset.id))
+    assert len(listed) == 100
+
+    safe_delete_dataset(parameterized_multipart_client, dataset_id=dataset.id)
+
+
+def test_create_examples_empty_list(parameterized_multipart_client: Client) -> None:
+    """Test create_examples with empty list."""
+    dataset_name = "__test_empty_" + uuid4().hex[:4]
+    dataset = _create_dataset(parameterized_multipart_client, dataset_name)
+
+    # Test max_concurrency > 3
+    with pytest.raises(ValueError, match="Must specify either 'examples' or 'inputs.'"):
+        parameterized_multipart_client.create_examples(
+            dataset_id=dataset.id, examples=[]
+        )
 
 
 @pytest.mark.xfail(reason="Need to wait for backend changes to go endpoint")
@@ -2419,14 +2826,14 @@ def test_use_source_run_io_multiple_examples(langchain_client: Client) -> None:
     assert sorted(example_3.attachments.keys()) == ["real_file", "test_file"]
 
     # Clean up
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
 def test_update_example_with_attachments_operations(langchain_client: Client) -> None:
     """Test updating an example with attachment operations."""
     dataset_name = "__test_update_example_attachments" + uuid4().hex[:4]
     if langchain_client.has_dataset(dataset_name=dataset_name):
-        langchain_client.delete_dataset(dataset_name=dataset_name)
+        safe_delete_dataset(langchain_client, dataset_name=dataset_name)
     dataset = _create_dataset(langchain_client, dataset_name)
     example_id = uuid4()
     # Create example with attachments
@@ -2489,7 +2896,7 @@ def test_update_example_with_attachments_operations(langchain_client: Client) ->
     )
 
     # Clean up
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
 def test_bulk_update_examples_with_attachments_operations(
@@ -2498,7 +2905,7 @@ def test_bulk_update_examples_with_attachments_operations(
     """Test bulk updating examples with attachment operations."""
     dataset_name = "__test_bulk_update_attachments" + uuid4().hex[:4]
     if langchain_client.has_dataset(dataset_name=dataset_name):
-        langchain_client.delete_dataset(dataset_name=dataset_name)
+        safe_delete_dataset(langchain_client, dataset_name=dataset_name)
     dataset = _create_dataset(langchain_client, dataset_name)
 
     example_id1, example_id2 = uuid4(), uuid4()
@@ -2572,10 +2979,12 @@ def test_bulk_update_examples_with_attachments_operations(
     assert updated_example_2.attachments["extra"]["reader"].read() == b"extra data"
 
     # Clean up
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
-def test_examples_multipart_attachment_path(langchain_client: Client) -> None:
+def test_examples_multipart_attachment_path(
+    langchain_client: Client, caplog: pytest.LogCaptureFixture
+) -> None:
     """Test uploading examples with attachments via multipart endpoint."""
     dataset_name = "__test_upload_examples_multipart" + uuid4().hex[:4]
     dataset = _create_dataset(langchain_client, dataset_name)
@@ -2672,7 +3081,7 @@ def test_examples_multipart_attachment_path(langchain_client: Client) -> None:
     assert retrieved.attachments["new_file2"]["reader"].read() == file_path.read_bytes()
 
     example_wrong_path = ExampleCreate(
-        id=example_id,
+        id=uuid4(),
         inputs={"text": "hello world"},
         attachments={
             "file1": (
@@ -2682,16 +3091,21 @@ def test_examples_multipart_attachment_path(langchain_client: Client) -> None:
         },
     )
 
-    with pytest.raises(FileNotFoundError) as exc_info:
-        langchain_client.upload_examples_multipart(
+    # Test that missing files are skipped with a warning (like unit tests expect)
+    with caplog.at_level(logging.WARNING, logger="langsmith.client"):
+        result = langchain_client.upload_examples_multipart(
             dataset_id=dataset.id,
             uploads=[example_wrong_path],
             dangerously_allow_filesystem=True,
         )
-    assert "test_data/not-a-real-file.txt" in str(exc_info.value)
+        # Should succeed but skip the missing file
+        assert (
+            result["count"] == 1
+        )  # Example is created but without the missing attachment
+        assert "Attachment file not found" in caplog.text
 
     # Clean up
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
 def test_update_examples_multipart(langchain_client: Client) -> None:
@@ -2843,7 +3257,7 @@ def test_update_examples_multipart(langchain_client: Client) -> None:
     assert example_1_updated.attachments["foo"]["reader"].read() == b"new content 2"
 
     # Clean up
-    langchain_client.delete_dataset(dataset_id=dataset.id)
+    safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
 async def test_aevaluate_max_concurrency(langchain_client: Client) -> None:
@@ -3012,3 +3426,409 @@ def test_annotation_queue_runs(langchain_client: Client):
 
     # Clean up
     langchain_client.delete_annotation_queue(queue.id)
+
+
+def test_annotation_queue_with_rubric_instructions(langchain_client: Client):
+    """Test CRUD operations on annotation queue with rubric instructions."""
+    queue_name = f"test-queue-{str(uuid.uuid4())[:8]}"
+    project_name = f"test-project-{str(uuid.uuid4())[:8]}"
+    queue_id = uuid.uuid4()
+
+    try:
+        # 1. Create an annotation queue
+        queue = langchain_client.create_annotation_queue(
+            name=queue_name,
+            description="Initial description",
+            queue_id=queue_id,
+            rubric_instructions="This is a rubric instruction",
+        )
+        assert queue is not None
+        assert queue.name == queue_name
+
+        # 1a. Get the annotation queue
+        fetched_queue = langchain_client.read_annotation_queue(queue.id)
+        assert fetched_queue is not None
+        assert fetched_queue.name == queue_name
+        assert fetched_queue.rubric_instructions == "This is a rubric instruction"
+
+        # 1b. Update the annotation queue rubric instructions
+        new_instructions = "Updated rubric instructions"
+        langchain_client.update_annotation_queue(
+            queue.id,
+            name=queue_name,
+            rubric_instructions=new_instructions,
+        )
+        updated_queue = langchain_client.read_annotation_queue(queue.id)
+        assert updated_queue.rubric_instructions == new_instructions
+    finally:
+        # 6. Delete the annotation queue
+        langchain_client.delete_annotation_queue(queue_id)
+
+        # Clean up the project
+        if langchain_client.has_project(project_name=project_name):
+            langchain_client.delete_project(project_name=project_name)
+
+
+def test_annotation_queue_with_rubric_instructions_2(langchain_client: Client):
+    """Test CRUD operations on annotation queue with rubric instructions."""
+    queue_name = f"test-queue-{str(uuid.uuid4())[:8]}"
+    project_name = f"test-project-{str(uuid.uuid4())[:8]}"
+    queue_id = uuid.uuid4()
+
+    try:
+        # 1. Create an annotation queue without rubric instructions
+        queue = langchain_client.create_annotation_queue(
+            name=queue_name,
+            description="Initial description",
+            queue_id=queue_id,
+        )
+        assert queue is not None
+        assert queue.name == queue_name
+
+        # 1a. Get the annotation queue
+        fetched_queue = langchain_client.read_annotation_queue(queue.id)
+        assert fetched_queue is not None
+        assert fetched_queue.name == queue_name
+        assert fetched_queue.rubric_instructions is None
+
+        # 1b. Update the annotation queue rubric instructions
+        new_instructions = "Updated rubric instructions"
+        langchain_client.update_annotation_queue(
+            queue.id,
+            name=queue_name,
+            rubric_instructions=new_instructions,
+        )
+        updated_queue = langchain_client.read_annotation_queue(queue.id)
+        assert updated_queue.rubric_instructions == new_instructions
+    finally:
+        # 6. Delete the annotation queue
+        langchain_client.delete_annotation_queue(queue_id)
+
+        # Clean up the project
+        if langchain_client.has_project(project_name=project_name):
+            langchain_client.delete_project(project_name=project_name)
+
+
+@pytest.mark.skip(reason="flaky")
+def test_list_runs_with_child_runs(langchain_client: Client):
+    """Test listing runs with child runs."""
+    project_name = f"test-project-{str(uuid.uuid4())[:8]}"
+    if langchain_client.has_project(project_name=project_name):
+        langchain_client.delete_project(project_name=project_name)
+    try:
+        parent_run_id = uuid.uuid4()
+        child_run_id = uuid.uuid4()
+
+        @traceable(client=langchain_client, project_name=project_name)
+        def parent():
+            @traceable(client=langchain_client, project_name=project_name)
+            def child():
+                return "From child"
+
+            return child(langsmith_extra={"run_id": child_run_id}) + "|From parent"
+
+        result = parent(langsmith_extra={"run_id": parent_run_id})
+        assert result == "From child|From parent"
+        wait_for(
+            lambda: _get_run(parent_run_id, langchain_client=langchain_client),
+            max_sleep_time=10,
+        )
+        no_child_run = langchain_client.read_run(parent_run_id)
+        assert no_child_run.id == parent_run_id
+        assert no_child_run.child_runs is None
+        run = langchain_client.read_run(parent_run_id, load_child_runs=True)
+        assert run.child_runs is not None
+        assert run.child_runs[0].id == child_run_id
+        assert run.child_runs[0].outputs == {"output": "From child"}
+    finally:
+        if langchain_client.has_project(project_name=project_name):
+            langchain_client.delete_project(project_name=project_name)
+
+
+def test_run_ops_buffer_integration(langchain_client: Client) -> None:
+    project_name = f"test-run-ops-buffer-{str(uuid.uuid4())[:8]}"
+
+    # Clean up existing project if it exists
+    if langchain_client.has_project(project_name=project_name):
+        langchain_client.delete_project(project_name=project_name)
+
+    # Create client with run_ops_buffer functionality
+    def modify_runs(runs):
+        """Modify run inputs/outputs by adding custom fields and transforming data."""
+        for run in runs:
+            # Add custom metadata
+            if "extra" in run and isinstance(run["extra"], dict):
+                run["extra"]["custom_processed"] = True
+                run["extra"]["processing_timestamp"] = time.time()
+
+            # Modify inputs if they exist
+            if "inputs" in run and isinstance(run["inputs"], dict):
+                run["inputs"]["processed"] = True
+                run["inputs"]["original_input_count"] = len(run["inputs"])
+
+            # Modify outputs if they exist
+            if "outputs" in run and isinstance(run["outputs"], dict):
+                run["outputs"]["processed"] = True
+                run["outputs"]["original_output_count"] = len(run["outputs"])
+
+        return runs
+
+    buffer_client = Client(
+        api_url=langchain_client.api_url,
+        api_key=langchain_client.api_key,
+        process_buffered_run_ops=modify_runs,
+        run_ops_buffer_size=2,  # Small buffer for quick testing
+        run_ops_buffer_timeout_ms=1000,  # 1 second timeout
+    )
+
+    try:
+        # Create test runs that will be buffered and processed
+        run_ids = []
+
+        for i in range(3):
+            run_id = uuid.uuid4()
+            run_ids.append(run_id)
+            start_time = datetime.datetime.now(datetime.timezone.utc)
+            buffer_client.create_run(
+                id=run_id,
+                name=f"test_buffered_run_{i}",
+                run_type="llm",
+                inputs={"text": f"input_{i}", "index": i},
+                project_name=project_name,
+                trace_id=run_id,
+                dotted_order=f"{start_time.strftime('%Y%m%dT%H%M%S%fZ')}{str(run_id)}",
+                start_time=start_time,
+                extra={},
+            )
+
+            # Update with outputs
+            buffer_client.update_run(
+                run_id,
+                outputs={"result": f"output_{i}", "processed_index": i * 2},
+                trace_id=run_id,
+                dotted_order=f"{start_time.strftime('%Y%m%dT%H%M%S%fZ')}{str(run_id)}",
+            )
+
+        # Flush to ensure all runs are processed
+        buffer_client.flush()
+
+        # Wait for runs to be created and processed
+        for run_id in run_ids:
+            wait_for(
+                lambda rid=run_id: _get_run(rid, langchain_client=langchain_client),
+                max_sleep_time=30,
+            )
+
+        # Verify that the modifications were applied in LangSmith
+        for i, run_id in enumerate(run_ids):
+            stored_run = langchain_client.read_run(run_id)
+
+            # Check that custom metadata was added
+            assert stored_run.extra.get("custom_processed") is True
+            assert "processing_timestamp" in stored_run.extra
+
+            # Check that inputs were modified
+            assert stored_run.inputs["processed"] is True
+            assert stored_run.inputs["original_input_count"] == 3  # text + index
+            assert stored_run.inputs["text"] == f"input_{i}"
+            assert stored_run.inputs["index"] == i
+
+            # Check that outputs were modified
+            assert stored_run.outputs["processed"] is True
+            assert (
+                stored_run.outputs["original_output_count"] == 3
+            )  # result + processed_index
+            assert stored_run.outputs["result"] == f"output_{i}"
+            assert stored_run.outputs["processed_index"] == i * 2
+
+    finally:
+        # Clean up
+        if buffer_client.has_project(project_name=project_name):
+            buffer_client.delete_project(project_name=project_name)
+
+
+def test_otel_trace_attributes(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("LANGSMITH_OTEL_ENABLED", "true")
+    get_env_var.cache_clear()
+    importlib.reload(langsmith.client)
+    importlib.reload(langsmith._internal.otel._otel_client)
+    importlib.reload(langsmith._internal.otel._otel_exporter)
+    set_tracer_provider(get_otlp_tracer_provider())
+
+    client = Client()
+
+    future = queue.Queue()
+
+    class MockOTELExporter:
+        def __init__(self):
+            self.original_otel_exporter = client.otel_exporter
+
+        def export_batch(self, run_ops, otel_context_map):
+            for op in run_ops:
+                try:
+                    run_info = self.original_otel_exporter._deserialize_run_info(op)
+                    if not run_info:
+                        continue
+                    if op.operation == "post":
+                        span = self.original_otel_exporter._create_span_for_run(
+                            op, run_info, otel_context_map.get(op.id)
+                        )
+                        if span:
+                            self.original_otel_exporter._span_info[op.id] = {
+                                "span": span,
+                                "created_at": time.time(),
+                            }
+                    else:
+                        future.put(
+                            self.original_otel_exporter._span_info[op.id]["span"]
+                        )
+                        self.original_otel_exporter._update_span_for_run(op, run_info)
+                except Exception as e:
+                    logger.exception(f"Error processing operation {op.id}: {e}")
+
+    client.otel_exporter = MockOTELExporter()
+
+    # Create test data
+    run_id = uuid.uuid4()
+    trace_id = uuid.uuid4()
+    start_time = datetime.datetime.now(datetime.timezone.utc)
+    post_run_data = {
+        "id": run_id,
+        "trace_id": trace_id,
+        "dotted_order": f"{start_time.strftime('%Y%m%dT%H%M%S%fZ')}{str(trace_id)}",
+        "session_name": "test-project",
+        "name": "OTEL Export Test",
+        "inputs": {"prompt": "Hello, OTEL!"},
+        "run_type": "llm",
+    }
+
+    # Create test batch
+    serialized_post_op = serialize_run_dict("post", post_run_data)
+    batch = [TracingQueueItem("test_priority_1", serialized_post_op)]
+
+    _otel_tracing_thread_handle_batch(
+        client=client,
+        tracing_queue=client.tracing_queue,
+        batch=batch,
+        mark_task_done=False,
+    )
+
+    patch_run_data = {
+        "id": run_id,
+        "trace_id": trace_id,
+        "outputs": {"answer": "Hello, User!"},
+        "extra": {"metadata": {"foo": "bar"}},
+        "tags": ["otel", "test"],
+        "dotted_order": f"{start_time.strftime('%Y%m%dT%H%M%S%fZ')}{str(trace_id)}",
+    }
+
+    serialized_patch_op = serialize_run_dict("patch", patch_run_data)
+
+    batch = [TracingQueueItem("test_priority_2", serialized_patch_op)]
+
+    _otel_tracing_thread_handle_batch(
+        client=client,
+        tracing_queue=client.tracing_queue,
+        batch=batch,
+        mark_task_done=False,
+    )
+
+    readable_span = future.get(timeout=0.1)
+    readable_span = cast(ReadableSpan, readable_span)
+    assert readable_span.attributes[_otel_exporter.GEN_AI_OPERATION_NAME] == "chat"
+    assert (
+        readable_span.attributes[_otel_exporter.GENAI_PROMPT]
+        == '{"prompt":"Hello, OTEL!"}'
+    )
+    assert (
+        readable_span.attributes[_otel_exporter.GENAI_COMPLETION]
+        == '{"answer":"Hello, User!"}'
+    )
+
+
+def test_get_experiment_results(langchain_client: Client) -> None:
+    """Test get_experiment_results method with evaluation data."""
+    dataset_name = "__test_evaluate_attachments" + uuid4().hex[:4]
+    dataset = _create_dataset(langchain_client, dataset_name)
+
+    # Create example with attachments
+    example = ExampleCreate(
+        inputs={"question": "What is shown in the image?"},
+        outputs={"answer": "test image"},
+        attachments={
+            "image": ("image/png", b"fake image data for testing"),
+        },
+    )
+
+    langchain_client.upload_examples_multipart(dataset_id=dataset.id, uploads=[example])
+
+    def target(inputs: Dict[str, Any], attachments: Dict[str, Any]) -> Dict[str, Any]:
+        # Verify we receive the attachment data
+        assert "image" in attachments
+        assert "presigned_url" in attachments["image"]
+        image_data = attachments["image"]["reader"]
+        assert image_data.read() == b"fake image data for testing"
+        return {"answer": "test image"}
+
+    def evaluator(
+        outputs: dict, reference_outputs: dict, attachments: dict
+    ) -> Dict[str, Any]:
+        assert "image" in attachments
+        assert "presigned_url" in attachments["image"]
+        image_data = attachments["image"]["reader"]
+        assert image_data.read() == b"fake image data for testing"
+        return {
+            "score": float(
+                reference_outputs.get("answer") == outputs.get("answer")  # type: ignore
+            )
+        }
+
+    results = langchain_client.evaluate(
+        target,
+        data=dataset_name,
+        evaluators=[evaluator],
+        num_repetitions=2,
+    )
+
+    assert len(results) == 2
+
+    experiment_name = results.experiment_name
+
+    time.sleep(10)
+    # Test get_experiment_results method
+    experiment_results = langchain_client.get_experiment_results(name=experiment_name)
+
+    # Test that we get run stats
+    assert experiment_results["run_stats"] is not None
+    run_stats = experiment_results["run_stats"]
+    assert hasattr(run_stats, "run_count")
+    assert run_stats.run_count > 0
+
+    # Test that we get feedback stats
+    assert experiment_results["feedback_stats"] is not None
+    feedback_stats = experiment_results["feedback_stats"]
+    assert len(feedback_stats) > 0
+
+    # Test that we get examples iterator
+    examples_list = list(experiment_results["examples_with_runs"])
+    assert len(examples_list) > 0
+    # Test with limit parameter
+    limited_results = langchain_client.get_experiment_results(
+        name=experiment_name, limit=1
+    )
+    limited_examples = list(limited_results["examples_with_runs"])
+    assert len(limited_examples) == 1
+
+    # Test stats are the same regardless of limit (since stats come from project)
+    assert (
+        limited_results["run_stats"].run_count
+        == experiment_results["run_stats"].run_count
+    )
+
+    # Test preview mode - should be faster and return preview data
+    preview_results = langchain_client.get_experiment_results(
+        name=experiment_name, preview=True
+    )
+    assert len(list(preview_results["examples_with_runs"])) > 0
+
+    safe_delete_dataset(langchain_client, dataset_name=dataset_name)

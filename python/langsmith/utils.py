@@ -15,20 +15,13 @@ import subprocess
 import sys
 import threading
 import traceback
+from collections.abc import Generator, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import (
     Any,
     Callable,
-    Dict,
-    Generator,
-    Iterable,
-    Iterator,
-    List,
     Literal,
-    Mapping,
     Optional,
-    Sequence,
-    Tuple,
     TypeVar,
     Union,
     cast,
@@ -81,6 +74,17 @@ class LangSmithConnectionError(LangSmithError):
     """Couldn't connect to the LangSmith API."""
 
 
+class LangSmithExceptionGroup(LangSmithError):
+    """Port of ExceptionGroup for Py < 3.11."""
+
+    def __init__(
+        self, *args: Any, exceptions: Sequence[Exception], **kwargs: Any
+    ) -> None:
+        """Initialize."""
+        super().__init__(*args, **kwargs)
+        self.exceptions = exceptions
+
+
 ## Warning classes
 
 
@@ -94,6 +98,8 @@ class LangSmithMissingAPIKeyWarning(LangSmithWarning):
 
 def tracing_is_enabled(ctx: Optional[dict] = None) -> Union[bool, Literal["local"]]:
     """Return True if tracing is enabled."""
+    # Access global fallbacks via context module to avoid stale references.
+    import langsmith._internal._context as _context
     from langsmith.run_helpers import get_current_run_tree, get_tracing_context
 
     tc = ctx or get_tracing_context()
@@ -106,6 +112,9 @@ def tracing_is_enabled(ctx: Optional[dict] = None) -> Union[bool, Literal["local
     # Next check if we're mid-trace
     if get_current_run_tree():
         return True
+    # If a global fallback was configured, use it next.
+    if _context._GLOBAL_TRACING_ENABLED is not None:
+        return _context._GLOBAL_TRACING_ENABLED
     # Finally, check the global environment
     var_result = get_env_var("TRACING_V2", default=get_env_var("TRACING", default=""))
     return var_result == "true"
@@ -116,7 +125,7 @@ def test_tracking_is_disabled() -> bool:
     return get_env_var("TEST_TRACKING", default="") == "false"
 
 
-def xor_args(*arg_groups: Tuple[str, ...]) -> Callable:
+def xor_args(*arg_groups: tuple[str, ...]) -> Callable:
     """Validate specified keyword args are mutually exclusive."""
 
     def decorator(func: Callable) -> Callable:
@@ -150,6 +159,12 @@ def raise_for_status_with_text(
         response.raise_for_status()
     except requests.HTTPError as e:
         raise requests.HTTPError(str(e), response.text) from e  # type: ignore[call-arg]
+    except httpx.HTTPStatusError as e:
+        raise httpx.HTTPStatusError(
+            f"{str(e)}: {response.text}",
+            request=response.request,  # type: ignore[arg-type]
+            response=response,  # type: ignore[arg-type]
+        ) from e
 
 
 def get_enum_value(enu: Union[enum.Enum, str]) -> str:
@@ -203,14 +218,14 @@ def _get_message_fields(message: Mapping[str, Any]) -> Mapping[str, Any]:
         return message["data"]
 
 
-def _convert_message(message: Mapping[str, Any]) -> Dict[str, Any]:
+def _convert_message(message: Mapping[str, Any]) -> dict[str, Any]:
     """Extract message from a message object."""
     message_type = _get_message_type(message)
     message_data = _get_message_fields(message)
     return {"type": message_type, "data": message_data}
 
 
-def get_messages_from_inputs(inputs: Mapping[str, Any]) -> List[Dict[str, Any]]:
+def get_messages_from_inputs(inputs: Mapping[str, Any]) -> list[dict[str, Any]]:
     """Extract messages from the given inputs dictionary.
 
     Args:
@@ -230,7 +245,7 @@ def get_messages_from_inputs(inputs: Mapping[str, Any]) -> List[Dict[str, Any]]:
     raise ValueError(f"Could not find message(s) in run with inputs {inputs}.")
 
 
-def get_message_generation_from_outputs(outputs: Mapping[str, Any]) -> Dict[str, Any]:
+def get_message_generation_from_outputs(outputs: Mapping[str, Any]) -> dict[str, Any]:
     """Retrieve the message generation from the given outputs.
 
     Args:
@@ -298,7 +313,7 @@ def get_llm_generation_from_outputs(outputs: Mapping[str, Any]) -> str:
 
 
 @functools.lru_cache(maxsize=1)
-def get_docker_compose_command() -> List[str]:
+def get_docker_compose_command() -> list[str]:
     """Get the correct docker compose command for this system."""
     try:
         subprocess.check_call(
@@ -326,7 +341,7 @@ def get_docker_compose_command() -> List[str]:
 
 def convert_langchain_message(message: ls_schemas.BaseMessageLike) -> dict:
     """Convert a LangChain message to an example."""
-    converted: Dict[str, Any] = {
+    converted: dict[str, Any] = {
         "type": message.type,
         "data": {"content": message.content},
     }
@@ -354,12 +369,17 @@ def is_base_message_like(obj: object) -> bool:
     )
 
 
+def is_env_var_truish(value: Optional[str]) -> bool:
+    """Check if the given environment variable is truish."""
+    return is_truish(get_env_var(value))
+
+
 @functools.lru_cache(maxsize=100)
 def get_env_var(
     name: str,
     default: Optional[str] = None,
     *,
-    namespaces: Tuple = ("LANGSMITH", "LANGCHAIN"),
+    namespaces: tuple = ("LANGSMITH", "LANGCHAIN"),
 ) -> Optional[str]:
     """Retrieve an environment variable from a list of namespaces.
 
@@ -481,9 +501,47 @@ def get_cache_dir(cache: Optional[str]) -> Optional[str]:
     return get_env_var("TEST_CACHE", default=None)
 
 
+def filter_request_headers(
+    request: Any,
+    *,
+    ignore_hosts: Optional[Sequence[str]] = None,
+    allow_hosts: Optional[Sequence[str]] = None,
+) -> Any:
+    """Filter request headers based on ignore_hosts and allow_hosts."""
+    # Legacy behavior
+    if ignore_hosts and any(request.url.startswith(host) for host in ignore_hosts):
+        return None
+
+    if allow_hosts:
+        try:
+            parsed_url = urllib_parse.urlparse(request.url)
+        except Exception:
+            # If URL parsing fails, don't cache to be safe
+            return None
+        request_host = parsed_url.hostname or ""
+        # Check if request matches any allowed host
+        host_matches = any(
+            # Handle both full URLs (https://api.openai.com)
+            # and hostnames (api.openai.com)
+            (
+                request.url.startswith(host)
+                if host.startswith(("http://", "https://"))
+                else request_host == host or request_host.endswith(f".{host}")
+            )
+            for host in allow_hosts
+        )
+        if not host_matches:
+            return None
+
+    request.headers = {}
+    return request
+
+
 @contextlib.contextmanager
 def with_cache(
-    path: Union[str, pathlib.Path], ignore_hosts: Optional[Sequence[str]] = None
+    path: Union[str, pathlib.Path],
+    ignore_hosts: Optional[Sequence[str]] = None,
+    allow_hosts: Optional[Sequence[str]] = None,
 ) -> Generator[None, None, None]:
     """Use a cache for requests."""
     try:
@@ -497,12 +555,6 @@ def with_cache(
     from langsmith._internal import _patch as patch_urllib3
 
     patch_urllib3.patch_urllib3()
-
-    def _filter_request_headers(request: Any) -> Any:
-        if ignore_hosts and any(request.url.startswith(host) for host in ignore_hosts):
-            return None
-        request.headers = {}
-        return request
 
     cache_dir, cache_file = os.path.split(path)
 
@@ -518,7 +570,9 @@ def with_cache(
         record_mode="new_episodes",
         match_on=["uri", "method", "path", "body"],
         filter_headers=["authorization", "Set-Cookie"],
-        before_record_request=_filter_request_headers,
+        before_record_request=lambda request: filter_request_headers(
+            request, ignore_hosts=ignore_hosts, allow_hosts=allow_hosts
+        ),
     )
     with ls_vcr.use_cassette(cache_file):
         yield
@@ -528,10 +582,11 @@ def with_cache(
 def with_optional_cache(
     path: Optional[Union[str, pathlib.Path]],
     ignore_hosts: Optional[Sequence[str]] = None,
+    allow_hosts: Optional[Sequence[str]] = None,
 ) -> Generator[None, None, None]:
     """Use a cache for requests."""
     if path is not None:
-        with with_cache(path, ignore_hosts):
+        with with_cache(path, ignore_hosts, allow_hosts):
             yield
     else:
         yield
@@ -548,7 +603,7 @@ T = TypeVar("T")
 
 
 def _middle_copy(
-    val: T, memo: Dict[int, Any], max_depth: int = 4, _depth: int = 0
+    val: T, memo: dict[int, Any], max_depth: int = 4, _depth: int = 0
 ) -> T:
     cls = type(val)
 
@@ -586,7 +641,7 @@ def deepish_copy(val: T) -> T:
     Returns:
         The deep copied value.
     """
-    memo: Dict[int, Any] = {}
+    memo: dict[int, Any] = {}
     try:
         return copy.deepcopy(val, memo)
     except BaseException as e:
@@ -607,7 +662,7 @@ def is_version_greater_or_equal(current_version: str, target_version: str) -> bo
     return current >= target
 
 
-def parse_prompt_identifier(identifier: str) -> Tuple[str, str, str]:
+def parse_prompt_identifier(identifier: str) -> tuple[str, str, str]:
     """Parse a string in the format of owner/name:hash, name:hash, owner/name, or name.
 
     Args:
@@ -738,6 +793,18 @@ def get_api_key(api_key: Optional[str]) -> Optional[str]:
     return api_key_.strip().strip('"').strip("'")
 
 
+def get_workspace_id(workspace_id: Optional[str]) -> Optional[str]:
+    """Get workspace ID."""
+    workspace_id_ = (
+        workspace_id
+        if workspace_id is not None
+        else get_env_var("WORKSPACE_ID", default=None)
+    )
+    if workspace_id_ is None or not workspace_id_.strip():
+        return None
+    return workspace_id_.strip().strip('"').strip("'")
+
+
 def _is_localhost(url: str) -> bool:
     """Check if the URL is localhost.
 
@@ -811,4 +878,6 @@ def is_truish(val: Any) -> bool:
     Returns:
         bool: True if the value is truish, False otherwise.
     """
-    return val is True or val == "true" or val == "True" or val == "TRUE" or val == "1"
+    if isinstance(val, str):
+        return val.lower() == "true" or val == "1"
+    return bool(val)

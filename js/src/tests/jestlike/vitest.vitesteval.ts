@@ -1,8 +1,8 @@
 /* eslint-disable import/no-extraneous-dependencies */
 import { AsyncLocalStorage } from "node:async_hooks";
 
-import * as ls from "../../vitest/index.js";
-import { type SimpleEvaluator } from "../../vitest/index.js";
+import * as ls from "../../vitest/index.mjs";
+import { type SimpleEvaluator } from "../../vitest/index.mjs";
 
 const myEvaluator: SimpleEvaluator = (params) => {
   const { referenceOutputs, outputs } = params;
@@ -57,7 +57,7 @@ ls.describe(
       {
         inputs: { foo: "bar" },
         referenceOutputs: { foo: "bar" },
-        config: { iterations: 3 },
+        config: { repetitions: 3 },
       },
       async ({ inputs: _inputs, referenceOutputs: _referenceOutputs }) => {
         const myApp = () => {
@@ -88,7 +88,7 @@ ls.describe(
       }
     );
 
-    ls.test.each(
+    ls.test.concurrent.each(
       [
         {
           inputs: {
@@ -107,7 +107,7 @@ ls.describe(
           },
         },
       ],
-      { iterations: 3, metadata: { something: "cool" } }
+      { repetitions: 3, metadata: { something: "cool" } }
     )(
       "Does the thing",
       async ({ inputs: _inputs, referenceOutputs: _outputs }) => {

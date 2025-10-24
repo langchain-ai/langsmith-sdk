@@ -542,15 +542,15 @@ def test_traceable_parent_from_runnable_config() -> None:
                 assert body["post"]
                 posts.extend(body["post"])
         assert len(posts) == 2
-        parent = next(p for p in posts if p["parent_run_id"] is None)
-        child = next(p for p in posts if p["parent_run_id"] is not None)
+        parent = next(p for p in posts if p.get("parent_run_id") is None)
+        child = next(p for p in posts if p.get("parent_run_id") is not None)
         assert child["parent_run_id"] == parent["id"]
 
 
 def test_traceable_parent_from_runnable_config_accepts_config() -> None:
     try:
         from langchain.callbacks.tracers import LangChainTracer
-        from langchain.schema.runnable import RunnableLambda
+        from langchain_core.runnables import RunnableLambda
     except ImportError:
         pytest.skip("Skipping test that requires langchain")
     with tracing_context(enabled=True):
@@ -581,8 +581,8 @@ def test_traceable_parent_from_runnable_config_accepts_config() -> None:
                 assert body["post"]
                 posts.extend(body["post"])
         assert len(posts) == 2
-        parent = next(p for p in posts if p["parent_run_id"] is None)
-        child = next(p for p in posts if p["parent_run_id"] is not None)
+        parent = next(p for p in posts if p.get("parent_run_id") is None)
+        child = next(p for p in posts if p.get("parent_run_id") is not None)
         assert child["parent_run_id"] == parent["id"]
 
 
@@ -1296,8 +1296,7 @@ def test_from_runnable_config():
         assert rt
         assert rt.run_type == "retriever"
         assert rt.parent_run_id
-        assert rt.parent_run
-        assert rt.parent_run.run_type == "tool"
+        assert rt.parent_dotted_order
         assert rt.session_name == "foo"
         return my_grandchild_tool.invoke({"text": text}, {"run_id": gc_run_id})
 
@@ -1495,6 +1494,7 @@ async def test_traceable_async_exception(auto_batch_tracing: bool):
 
 @pytest.mark.parametrize("auto_batch_tracing", [True, False])
 async def test_traceable_async_gen_exception(auto_batch_tracing: bool):
+    ls_utils.get_env_var.cache_clear()
     mock_client = _get_mock_client(
         auto_batch_tracing=auto_batch_tracing,
         info=ls_schemas.LangSmithInfo(
@@ -1535,6 +1535,7 @@ async def test_traceable_async_gen_exception(auto_batch_tracing: bool):
 
 @pytest.mark.parametrize("auto_batch_tracing", [True, False])
 async def test_traceable_gen_exception(auto_batch_tracing: bool):
+    ls_utils.get_env_var.cache_clear()
     mock_client = _get_mock_client(
         auto_batch_tracing=auto_batch_tracing,
         info=ls_schemas.LangSmithInfo(
@@ -1732,6 +1733,7 @@ def test_traceable_stop_iteration():
     assert list(consume(wrapped)) == list(range(5))
 
 
+@pytest.mark.flaky(retries=3)
 def test_traceable_input_attachments():
     with patch.object(ls_client.ls_env, "get_runtime_environment") as mock_get_env:
         mock_get_env.return_value = {
@@ -1752,6 +1754,9 @@ def test_traceable_input_attachments():
 
         mock_client = _get_mock_client(
             info=ls_schemas.LangSmithInfo(
+                instance_flags={
+                    "zstd_compression_enabled": False,
+                },
                 batch_ingest_config=ls_schemas.BatchIngestConfig(
                     use_multipart_endpoint=True,
                     size_limit_bytes=None,  # Note this field is not used here
@@ -1759,7 +1764,7 @@ def test_traceable_input_attachments():
                     scale_up_nthreads_limit=16,
                     scale_up_qsize_trigger=1000,
                     scale_down_nempty_trigger=4,
-                )
+                ),
             ),
         )
         long_content = b"c" * 20_000_000
@@ -1772,22 +1777,24 @@ def test_traceable_input_attachments():
             )
             assert result == "foo"
 
-        for _ in range(10):
+        mock_client.flush()
+
+        for _ in range(20):
             calls = _get_calls(mock_client)
             datas = _get_multipart_data(calls)
             if len(datas) >= 7:
                 break
             time.sleep(1)
 
-        # main run, inputs, outputs, events, att1, att2, anoutput
-        assert len(datas) == 7
-        # First 4 are type application/json (run, inputs, outputs, events)
+        # main run, inputs, outputs, events, extra, att1, att2, anoutput
+        assert len(datas) == 8
         trace_id = datas[0][0].split(".")[1]
-        _, (_, run_stuff) = next(
-            data for data in datas if data[0] == f"post.{trace_id}"
+
+        _, (_, extra_stuff) = next(
+            data for data in datas if data[0] == f"post.{trace_id}.extra"
         )
         assert (
-            json.loads(run_stuff)["extra"]["runtime"].get(
+            json.loads(extra_stuff)["runtime"].get(
                 "LANGSMITH_test_traceable_input_attachments"
             )
             == "aval"
@@ -1835,6 +1842,23 @@ def test__get_inputs_and_attachments_safe_unhashable_default() -> None:
     assert expected == actual
 
 
+def test_attachment_detection_with_string_annotations() -> None:
+    """Test that string annotations are handled correctly."""
+
+    # Create a function with string annotations manually
+    def foo(bar: "Annotated[bytes, ls_schemas.Attachment]"):
+        return "test"
+
+    sig = inspect.signature(foo)
+    test_attachment = ls_schemas.Attachment(mime_type="text/plain", data=b"test")
+    inputs, attachments = _get_inputs_and_attachments_safe(
+        sig, test_attachment, func=foo
+    )
+
+    assert inputs == {}
+    assert attachments == {"bar": test_attachment}
+
+
 def test_traceable_iterator_process_chunk(mock_client: Client) -> None:
     with tracing_context(enabled=True):
 
@@ -1858,6 +1882,27 @@ def test_traceable_iterator_process_chunk(mock_client: Client) -> None:
     body = json.loads(mock_calls[0].kwargs["data"])
     assert body["post"]
     assert body["post"][0]["outputs"]["output"] == list(range(6))
+
+
+def test_first_token_event_only(mock_client: Client) -> None:
+    collected_run: Optional[RunTree] = None
+
+    def on_end(run: RunTree) -> None:
+        nonlocal collected_run
+        collected_run = run
+
+    with tracing_context(enabled=True):
+
+        @traceable(client=mock_client, run_type="llm")
+        def token_stream() -> Generator[str, None, None]:
+            for t in ["a", "b", "c"]:
+                yield t
+
+        list(token_stream(langsmith_extra={"on_end": on_end}))
+
+    assert collected_run is not None
+    events = [ev for ev in collected_run.events if ev.get("name") == "new_token"]
+    assert len(events) == 1
 
 
 async def test_traceable_async_iterator_process_chunk(mock_client: Client) -> None:

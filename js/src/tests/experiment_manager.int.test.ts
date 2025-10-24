@@ -29,7 +29,7 @@ describe("experiment manager", () => {
   test("can recover from collisions", async () => {
     const client = new Client();
     const ds = await client.readDataset({ datasetName: TESTING_DATASET_NAME });
-    const manager = await new _ExperimentManager({
+    const manager = new _ExperimentManager({
       data: TESTING_DATASET_NAME,
       client,
       numRepetitions: 1,

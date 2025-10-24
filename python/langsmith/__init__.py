@@ -1,6 +1,5 @@
 """LangSmith Client."""
 
-from importlib import metadata
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -18,16 +17,12 @@ if TYPE_CHECKING:
     )
     from langsmith.run_trees import RunTree
     from langsmith.testing._internal import test, unit
-    from langsmith.utils import (
-        ContextThreadPoolExecutor,
-    )
+    from langsmith.utils import ContextThreadPoolExecutor
 
 # Avoid calling into importlib on every call to __version__
-version = ""
-try:
-    version = metadata.version(__package__)
-except metadata.PackageNotFoundError:
-    pass
+
+__version__ = "0.4.38"
+version = __version__  # for backwards compatibility
 
 
 def __getattr__(name: str) -> Any:
@@ -97,7 +92,6 @@ def __getattr__(name: str) -> Any:
         from langsmith.run_helpers import get_tracing_context
 
         return get_tracing_context
-
     elif name == "get_current_run_tree":
         from langsmith.run_helpers import get_current_run_tree
 
@@ -108,11 +102,13 @@ def __getattr__(name: str) -> Any:
 
         return unit
     elif name == "ContextThreadPoolExecutor":
-        from langsmith.utils import (
-            ContextThreadPoolExecutor,
-        )
+        from langsmith.utils import ContextThreadPoolExecutor
 
         return ContextThreadPoolExecutor
+    elif name == "configure":
+        from langsmith.run_trees import configure
+
+        return configure
 
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 

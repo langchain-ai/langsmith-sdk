@@ -2,16 +2,12 @@ from __future__ import annotations
 
 import functools
 import logging
+from collections.abc import AsyncIterator, Mapping, Sequence
 from typing import (
     TYPE_CHECKING,
     Any,
-    AsyncIterator,
     Callable,
-    List,
-    Mapping,
     Optional,
-    Sequence,
-    Type,
     TypeVar,
     Union,
 )
@@ -33,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 @functools.lru_cache
-def _get_not_given() -> Optional[Type]:
+def _get_not_given() -> Optional[type]:
     try:
         from anthropic._types import NotGiven
 
@@ -146,7 +142,7 @@ def _create_usage_metadata(anthropic_token_usage: dict) -> UsageMetadata:
     )
 
 
-def _reduce_completions(all_chunks: List[Completion]) -> dict:
+def _reduce_completions(all_chunks: list[Completion]) -> dict:
     all_content = []
     for chunk in all_chunks:
         content = chunk.completion
@@ -402,7 +398,7 @@ def _get_stream_wrapper(
 
 class TracingExtra(TypedDict, total=False):
     metadata: Optional[Mapping[str, Any]]
-    tags: Optional[List[str]]
+    tags: Optional[list[str]]
     client: Optional[ls_client.Client]
 
 

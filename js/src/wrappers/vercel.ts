@@ -3,6 +3,7 @@ import { traceable } from "../traceable.js";
 import { _wrapClient } from "./generic.js";
 
 /**
+ * @deprecated Use `wrapAISDK` from `langsmith/experimental/vercel` instead.
  * Wrap a Vercel AI SDK model, enabling automatic LangSmith tracing.
  * After wrapping a model, you can use it with the Vercel AI SDK Core
  * methods as normal.

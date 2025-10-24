@@ -2,17 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from enum import Enum
 from typing import (
     Any,
-    Dict,
-    List,
     NamedTuple,
     Optional,
     Protocol,
-    Tuple,
     Union,
     runtime_checkable,
 )
@@ -44,7 +42,7 @@ from pathlib import Path
 from typing_extensions import Literal
 
 SCORE_TYPE = Union[StrictBool, StrictInt, StrictFloat, None]
-VALUE_TYPE = Union[Dict, str, None]
+VALUE_TYPE = Union[dict, str, None]
 
 
 class Attachment(NamedTuple):
@@ -69,7 +67,7 @@ class Attachment(NamedTuple):
     data: Union[bytes, Path]
 
 
-Attachments = Dict[str, Union[Tuple[str, bytes], Attachment, Tuple[str, Path]]]
+Attachments = dict[str, Union[tuple[str, bytes], Attachment, tuple[str, Path]]]
 """Attachments associated with the run. 
 Each entry is a tuple of (mime_type, bytes), or (mime_type, file_path)"""
 
@@ -95,9 +93,9 @@ class ExampleBase(BaseModel):
     """Example base model."""
 
     dataset_id: UUID
-    inputs: Optional[Dict[str, Any]] = Field(default=None)
-    outputs: Optional[Dict[str, Any]] = Field(default=None)
-    metadata: Optional[Dict[str, Any]] = Field(default=None)
+    inputs: Optional[dict[str, Any]] = Field(default=None)
+    outputs: Optional[dict[str, Any]] = Field(default=None)
+    metadata: Optional[dict[str, Any]] = Field(default=None)
 
     class Config:
         """Configuration class for the schema."""
@@ -112,7 +110,7 @@ class _AttachmentDict(TypedDict):
 
 
 _AttachmentLike = Union[
-    Attachment, _AttachmentDict, Tuple[str, bytes], Tuple[str, Path]
+    Attachment, _AttachmentDict, tuple[str, bytes], tuple[str, Path]
 ]
 
 
@@ -121,13 +119,13 @@ class ExampleCreate(BaseModel):
 
     id: Optional[UUID]
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    inputs: Optional[Dict[str, Any]] = Field(default=None)
-    outputs: Optional[Dict[str, Any]] = Field(default=None)
-    metadata: Optional[Dict[str, Any]] = Field(default=None)
-    split: Optional[Union[str, List[str]]] = None
+    inputs: Optional[dict[str, Any]] = Field(default=None)
+    outputs: Optional[dict[str, Any]] = Field(default=None)
+    metadata: Optional[dict[str, Any]] = Field(default=None)
+    split: Optional[Union[str, list[str]]] = None
     attachments: Optional[dict[str, _AttachmentLike]] = None
     use_source_run_io: bool = False
-    use_source_run_attachments: Optional[List[str]] = None
+    use_source_run_attachments: Optional[list[str]] = None
     source_run_id: Optional[UUID] = None
 
     def __init__(self, **data):
@@ -161,9 +159,8 @@ class Example(ExampleBase):
     )
     dataset_id: UUID = Field(default=UUID("00000000-0000-0000-0000-000000000000"))
     modified_at: Optional[datetime] = Field(default=None)
-    runs: List[Run] = Field(default_factory=list)
     source_run_id: Optional[UUID] = None
-    attachments: Optional[Dict[str, AttachmentInfo]] = Field(default=None)
+    attachments: Optional[dict[str, AttachmentInfo]] = Field(default=None)
     """Dictionary with attachment names as keys and a tuple of the S3 url
     and a reader of the data for the file."""
     _host_url: Optional[str] = PrivateAttr(default=None)
@@ -204,10 +201,10 @@ class ExampleSearch(ExampleBase):
 class AttachmentsOperations(BaseModel):
     """Operations to perform on attachments."""
 
-    rename: Dict[str, str] = Field(
+    rename: dict[str, str] = Field(
         default_factory=dict, description="Mapping of old attachment names to new names"
     )
-    retain: List[str] = Field(
+    retain: list[str] = Field(
         default_factory=list, description="List of attachment names to keep"
     )
 
@@ -217,10 +214,10 @@ class ExampleUpdate(BaseModel):
 
     id: UUID
     dataset_id: Optional[UUID] = None
-    inputs: Optional[Dict[str, Any]] = Field(default=None)
-    outputs: Optional[Dict[str, Any]] = Field(default=None)
-    metadata: Optional[Dict[str, Any]] = Field(default=None)
-    split: Optional[Union[str, List[str]]] = None
+    inputs: Optional[dict[str, Any]] = Field(default=None)
+    outputs: Optional[dict[str, Any]] = Field(default=None)
+    metadata: Optional[dict[str, Any]] = Field(default=None)
+    split: Optional[Union[str, list[str]]] = None
     attachments: Optional[Attachments] = None
     attachments_operations: Optional[AttachmentsOperations] = None
 
@@ -270,7 +267,7 @@ DatasetTransformationType = Literal[
 class DatasetTransformation(TypedDict, total=False):
     """Schema for dataset transformations."""
 
-    path: List[str]
+    path: list[str]
     transformation_type: Union[DatasetTransformationType, str]
 
 
@@ -283,9 +280,10 @@ class Dataset(DatasetBase):
     example_count: Optional[int] = None
     session_count: Optional[int] = None
     last_session_start_time: Optional[datetime] = None
-    inputs_schema: Optional[Dict[str, Any]] = None
-    outputs_schema: Optional[Dict[str, Any]] = None
-    transformations: Optional[List[DatasetTransformation]] = None
+    inputs_schema: Optional[dict[str, Any]] = None
+    outputs_schema: Optional[dict[str, Any]] = None
+    transformations: Optional[list[DatasetTransformation]] = None
+    metadata: Optional[dict[str, Any]] = None
     _host_url: Optional[str] = PrivateAttr(default=None)
     _tenant_id: Optional[UUID] = PrivateAttr(default=None)
     _public_path: Optional[str] = PrivateAttr(default=None)
@@ -324,7 +322,7 @@ class Dataset(DatasetBase):
 class DatasetVersion(BaseModel):
     """Class representing a dataset version."""
 
-    tags: Optional[List[str]] = None
+    tags: Optional[list[str]] = None
     as_of: datetime
 
 
@@ -366,7 +364,7 @@ class RunBase(BaseModel):
     serialized: Optional[dict] = None
     """Serialized object that executed the run for potential reuse."""
 
-    events: Optional[List[Dict]] = None
+    events: Optional[list[dict]] = None
     """List of events associated with the run, like
     start and end events."""
 
@@ -382,10 +380,10 @@ class RunBase(BaseModel):
     parent_run_id: Optional[UUID] = None
     """Identifier for a parent run, if this run is a sub-run."""
 
-    tags: Optional[List[str]] = None
+    tags: Optional[list[str]] = None
     """Tags for categorizing or annotating the run."""
 
-    attachments: Union[Attachments, Dict[str, AttachmentInfo]] = Field(
+    attachments: Union[Attachments, dict[str, AttachmentInfo]] = Field(
         default_factory=dict
     )
     """Attachments associated with the run.
@@ -403,6 +401,13 @@ class RunBase(BaseModel):
         """Retrieve the revision ID (if any)."""
         return self.metadata.get("revision_id")
 
+    @property
+    def latency(self) -> Optional[float]:
+        """Latency in seconds."""
+        if self.end_time is None:
+            return None
+        return (self.end_time - self.start_time).total_seconds()
+
     def __repr__(self):
         """Return a string representation of the RunBase object."""
         return f"{self.__class__}(id={self.id}, name='{self.name}', run_type='{self.run_type}')"
@@ -418,12 +423,12 @@ class Run(RunBase):
 
     session_id: Optional[UUID] = None
     """The project ID this run belongs to."""
-    child_run_ids: Optional[List[UUID]] = None
-    """The child run IDs of this run."""
-    child_runs: Optional[List[Run]] = None
+    child_run_ids: Optional[list[UUID]] = None
+    """Deprecated: The child run IDs of this run."""
+    child_runs: Optional[list[Run]] = None
     """The child runs of this run, if instructed to load using the client
     These are not populated by default, as it is a heavier query to make."""
-    feedback_stats: Optional[Dict[str, Any]] = None
+    feedback_stats: Optional[dict[str, Any]] = None
     """Feedback stats for this run."""
     app_path: Optional[str] = None
     """Relative URL path of this run within the app."""
@@ -437,6 +442,16 @@ class Run(RunBase):
     """Number of tokens generated as output."""
     total_tokens: Optional[int] = None
     """Total tokens for prompt and completion."""
+    prompt_token_details: Optional[dict[str, int]] = None
+    """Breakdown of prompt (input) token counts.
+
+    Does *not* need to sum to full prompt token count.
+    """
+    completion_token_details: Optional[dict[str, int]] = None
+    """Breakdown of completion (output) token counts.
+
+    Does *not* need to sum to full completion token count.
+    """
     first_token_time: Optional[datetime] = None
     """Time the first token was processed."""
     total_cost: Optional[Decimal] = None
@@ -445,8 +460,17 @@ class Run(RunBase):
     """The estimated cost associated with the prompt (input) tokens."""
     completion_cost: Optional[Decimal] = None
     """The estimated cost associated with the completion tokens."""
+    prompt_cost_details: Optional[dict[str, Decimal]] = None
+    """Breakdown of prompt (input) token costs.
 
-    parent_run_ids: Optional[List[UUID]] = None
+    Does *not* need to sum to full prompt token cost.
+    """
+    completion_cost_details: Optional[dict[str, Decimal]] = None
+    """Breakdown of completion (output) token costs.
+
+    Does *not* need to sum to full completion token cost.
+    """
+    parent_run_ids: Optional[list[UUID]] = None
     """List of parent run IDs."""
     trace_id: UUID
     """Unique ID assigned to every run within this nested trace."""
@@ -483,6 +507,46 @@ class Run(RunBase):
             return f"{self._host_url}{self.app_path}"
         return None
 
+    @property
+    def input_tokens(self) -> int | None:
+        """Alias for prompt_tokens."""
+        return self.prompt_tokens
+
+    @property
+    def output_tokens(self) -> int | None:
+        """Alias for completion_tokens."""
+        return self.completion_tokens
+
+    @property
+    def input_cost(self) -> Decimal | None:
+        """Alias for prompt_cost."""
+        return self.prompt_cost
+
+    @property
+    def output_cost(self) -> Decimal | None:
+        """Alias for completion_cost."""
+        return self.completion_cost
+
+    @property
+    def input_token_details(self) -> dict[str, int] | None:
+        """Alias for prompt_token_details."""
+        return self.prompt_token_details
+
+    @property
+    def output_token_details(self) -> dict[str, int] | None:
+        """Alias for output_token_details."""
+        return self.completion_token_details
+
+    @property
+    def input_cost_details(self) -> dict[str, Decimal] | None:
+        """Alias for prompt_cost_details."""
+        return self.prompt_cost_details
+
+    @property
+    def output_cost_details(self) -> dict[str, Decimal] | None:
+        """Alias for completion_cost_details."""
+        return self.completion_cost_details
+
 
 class RunTypeEnum(str, Enum):
     """(Deprecated) Enum for run types. Use string directly."""
@@ -510,8 +574,8 @@ class RunLikeDict(TypedDict, total=False):
     serialized: Optional[dict]
     parent_run_id: Optional[UUID]
     manifest_id: Optional[UUID]
-    events: Optional[List[dict]]
-    tags: Optional[List[str]]
+    events: Optional[list[dict]]
+    tags: Optional[list[str]]
     inputs_s3_urls: Optional[dict]
     outputs_s3_urls: Optional[dict]
     id: Optional[UUID]
@@ -543,7 +607,7 @@ class FeedbackSourceBase(BaseModel):
 
     type: str
     """The type of the feedback source."""
-    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    metadata: Optional[dict[str, Any]] = Field(default_factory=dict)
     """Additional metadata for the feedback source."""
     user_id: Optional[Union[UUID, str]] = None
     """The user ID associated with the feedback source."""
@@ -605,7 +669,7 @@ class FeedbackBase(BaseModel):
     """For preference scoring, this group ID is shared across feedbacks for each
 
     run in the group that was being compared."""
-    extra: Optional[Dict] = None
+    extra: Optional[dict] = None
     """The metadata of the feedback."""
 
     class Config:
@@ -632,7 +696,7 @@ class FeedbackConfig(TypedDict, total=False):
     """The minimum value for continuous feedback."""
     max: Optional[float]
     """The maximum value for continuous feedback."""
-    categories: Optional[List[FeedbackCategory]]
+    categories: Optional[list[FeedbackCategory]]
     """If feedback is categorical, this defines the valid categories the server will accept.
     Not applicable to continuous or freeform feedback types."""  # noqa
 
@@ -675,7 +739,7 @@ class TracerSession(BaseModel):
     """The description of the project."""
     name: Optional[str] = None
     """The name of the session."""
-    extra: Optional[Dict[str, Any]] = None
+    extra: Optional[dict[str, Any]] = None
     """Extra metadata for the project."""
     tenant_id: UUID
     """The tenant ID this project belongs to."""
@@ -706,7 +770,7 @@ class TracerSession(BaseModel):
         return self.extra["metadata"]
 
     @property
-    def tags(self) -> List[str]:
+    def tags(self) -> list[str]:
         """Retrieve the tags (if any)."""
         if self.extra is None or "tags" not in self.extra:
             return []
@@ -733,9 +797,11 @@ class TracerSessionResult(TracerSession):
     """The total number of completion tokens consumed in the project."""
     last_run_start_time: Optional[datetime]
     """The start time of the last run in the project."""
-    feedback_stats: Optional[Dict[str, Any]]
+    feedback_stats: Optional[dict[str, Any]]
     """Feedback stats for the project."""
-    run_facets: Optional[List[Dict[str, Any]]]
+    session_feedback_stats: Optional[dict[str, Any]]
+    """Summary feedback stats for the project."""
+    run_facets: Optional[list[dict[str, Any]]]
     """Facets for the runs in the project."""
     total_cost: Optional[Decimal]
     """The total estimated LLM cost associated with the completion tokens."""
@@ -757,7 +823,7 @@ class BaseMessageLike(Protocol):
 
     content: str
     """The content of the message."""
-    additional_kwargs: Dict[Any, Any]
+    additional_kwargs: dict[Any, Any]
     """Additional keyword arguments associated with the message."""
 
     @property
@@ -793,6 +859,13 @@ class AnnotationQueue(BaseModel):
     """The ID of the tenant associated with the annotation queue."""
 
 
+class AnnotationQueueWithDetails(AnnotationQueue):
+    """Represents an annotation queue with details."""
+
+    rubric_instructions: Optional[str] = None
+    """The rubric instructions for the annotation queue."""
+
+
 class BatchIngestConfig(TypedDict, total=False):
     """Configuration for batch ingestion."""
 
@@ -819,7 +892,7 @@ class LangSmithInfo(BaseModel):
     """The time the license will expire."""
     batch_ingest_config: Optional[BatchIngestConfig] = None
     """The instance flags."""
-    instance_flags: Optional[Dict[str, Any]] = None
+    instance_flags: Optional[dict[str, Any]] = None
 
 
 Example.update_forward_refs()
@@ -855,7 +928,7 @@ class RunEvent(TypedDict, total=False):
     """Type of event."""
     time: Union[datetime, str]
     """Time of the event."""
-    kwargs: Optional[Dict[str, Any]]
+    kwargs: Optional[dict[str, Any]]
     """Additional metadata for the event."""
 
 
@@ -873,11 +946,11 @@ class TimeDeltaInput(TypedDict, total=False):
 class DatasetDiffInfo(BaseModel):
     """Represents the difference information between two datasets."""
 
-    examples_modified: List[UUID]
+    examples_modified: list[UUID]
     """A list of UUIDs representing the modified examples."""
-    examples_added: List[UUID]
+    examples_added: list[UUID]
     """A list of UUIDs representing the added examples."""
-    examples_removed: List[UUID]
+    examples_removed: list[UUID]
     """A list of UUIDs representing the removed examples."""
 
 
@@ -902,11 +975,11 @@ class ComparativeExperiment(BaseModel):
     """The timestamp when the comparative experiment was last modified."""
     reference_dataset_id: UUID
     """The identifier of the reference dataset used in this experiment."""
-    extra: Optional[Dict[str, Any]] = None
+    extra: Optional[dict[str, Any]] = None
     """Optional additional information about the experiment."""
-    experiments_info: Optional[List[dict]] = None
+    experiments_info: Optional[list[dict]] = None
     """Optional list of dictionaries containing information about individual experiments."""
-    feedback_stats: Optional[Dict[str, Any]] = None
+    feedback_stats: Optional[dict[str, Any]] = None
     """Optional dictionary containing feedback statistics for the experiment."""
 
     @property
@@ -926,9 +999,9 @@ class PromptCommit(BaseModel):
     """The name of the prompt."""
     commit_hash: str
     """The commit hash of the prompt."""
-    manifest: Dict[str, Any]
+    manifest: dict[str, Any]
     """The manifest of the prompt."""
-    examples: List[dict]
+    examples: list[dict]
     """The list of examples."""
 
 
@@ -962,7 +1035,7 @@ class ListedPromptCommit(BaseModel):
     updated_at: Optional[datetime] = None
     """The optional timestamp when the commit was last updated."""
 
-    example_run_ids: Optional[List[UUID]] = Field(default_factory=list)
+    example_run_ids: Optional[list[UUID]] = Field(default_factory=list)
     """A list of example run identifiers associated with this commit."""
 
     num_downloads: Optional[int] = 0
@@ -996,7 +1069,7 @@ class Prompt(BaseModel):
     """Whether the prompt is public."""
     is_archived: bool
     """Whether the prompt is archived."""
-    tags: List[str]
+    tags: list[str]
     """The tags associated with the prompt."""
     original_repo_id: Optional[str] = None
     """The ID of the original prompt, if forked."""
@@ -1027,7 +1100,7 @@ class Prompt(BaseModel):
 class ListPromptsResponse(BaseModel):
     """A list of prompts with metadata."""
 
-    repos: List[Prompt]
+    repos: list[Prompt]
     """The list of prompts."""
     total: int
     """The total number of prompts."""
@@ -1083,6 +1156,43 @@ class OutputTokenDetails(TypedDict, total=False):
     """
 
 
+class InputCostDetails(TypedDict, total=False):
+    """Breakdown of input token costs.
+
+    Does *not* need to sum to full input cost. Does *not* need to have all keys.
+    """
+
+    audio: float
+    """Cost of audio input tokens."""
+    cache_creation: float
+    """Cost of input tokens that were cached and there was a cache miss.
+
+    Since there was a cache miss, the cache was created from these tokens.
+    """
+    cache_read: float
+    """Cost of input tokens that were cached and there was a cache hit.
+
+    Since there was a cache hit, the tokens were read from the cache. More precisely,
+    the model state given these tokens was read from the cache.
+    """
+
+
+class OutputCostDetails(TypedDict, total=False):
+    """Breakdown of output token costs.
+
+    Does *not* need to sum to full output cost. Does *not* need to have all keys.
+    """
+
+    audio: float
+    """Cost of audio output tokens."""
+    reasoning: float
+    """Cost of reasoning output tokens.
+
+    Tokens generated by the model in a chain of thought process (i.e. by OpenAI's o1
+    models) that are not returned as part of model output.
+    """
+
+
 class UsageMetadata(TypedDict):
     """Usage metadata for a message, such as token counts.
 
@@ -1105,6 +1215,45 @@ class UsageMetadata(TypedDict):
 
     Does *not* need to sum to full output token count. Does *not* need to have all keys.
     """
+    input_cost: NotRequired[float]
+    """The cost of the input tokens."""
+    output_cost: NotRequired[float]
+    """The cost of the output tokens."""
+    total_cost: NotRequired[float]
+    """The total cost of the tokens."""
+    input_cost_details: NotRequired[InputCostDetails]
+    """The cost details of the input tokens."""
+    output_cost_details: NotRequired[OutputCostDetails]
+    """The cost details of the output tokens."""
+
+
+class ExtractedUsageMetadata(TypedDict, total=False):
+    """Usage metadata dictionary extracted from a run.
+
+    Should be the same as UsageMetadata, but does not require all
+    keys to be present.
+    """
+
+    input_tokens: int
+    """The number of tokens used for the prompt."""
+    output_tokens: int
+    """The number of tokens generated as output."""
+    total_tokens: int
+    """The total number of tokens used."""
+    input_token_details: InputTokenDetails
+    """The details of the input tokens."""
+    output_token_details: OutputTokenDetails
+    """The details of the output tokens."""
+    input_cost: float
+    """The cost of the input tokens."""
+    output_cost: float
+    """The cost of the output tokens."""
+    total_cost: float
+    """The total cost of the tokens."""
+    input_cost_details: InputCostDetails
+    """The cost details of the input tokens."""
+    output_cost_details: OutputCostDetails
+    """The cost details of the output tokens."""
 
 
 class UpsertExamplesResponse(TypedDict):
@@ -1112,5 +1261,60 @@ class UpsertExamplesResponse(TypedDict):
 
     count: int
     """The number of examples that were upserted."""
-    example_ids: List[str]
+    example_ids: list[str]
     """The ids of the examples that were upserted."""
+
+
+class ExampleWithRuns(Example):
+    """Example with runs."""
+
+    runs: list[Run] = Field(default_factory=list)
+
+    """The runs of the example."""
+
+
+class ExperimentRunStats(TypedDict):
+    """Run statistics for an experiment."""
+
+    run_count: Optional[int]
+    """The number of runs in the project."""
+    latency_p50: Optional[timedelta]
+    """The median (50th percentile) latency for the project."""
+    latency_p99: Optional[timedelta]
+    """The 99th percentile latency for the project."""
+    total_tokens: Optional[int]
+    """The total number of tokens consumed in the project."""
+    prompt_tokens: Optional[int]
+    """The total number of prompt tokens consumed in the project."""
+    completion_tokens: Optional[int]
+    """The total number of completion tokens consumed in the project."""
+    last_run_start_time: Optional[datetime]
+    """The start time of the last run in the project."""
+    run_facets: Optional[list[dict[str, Any]]]
+    """Facets for the runs in the project."""
+    total_cost: Optional[Decimal]
+    """The total estimated LLM cost associated with the completion tokens."""
+    prompt_cost: Optional[Decimal]
+    """The estimated cost associated with the prompt (input) tokens."""
+    completion_cost: Optional[Decimal]
+    """The estimated cost associated with the completion tokens."""
+    first_token_p50: Optional[timedelta]
+    """The median (50th percentile) time to process the first token."""
+    first_token_p99: Optional[timedelta]
+    """The 99th percentile time to process the first token."""
+    error_rate: Optional[float]
+    """The error rate for the project."""
+
+
+class ExperimentResults(TypedDict):
+    """Results container for experiment data with stats and examples.
+
+    Breaking change in v0.4.32:
+        The 'stats' field has been split into 'feedback_stats' and 'run_stats'.
+    """
+
+    feedback_stats: dict
+    """Feedback statistics for the experiment."""
+    run_stats: ExperimentRunStats
+    """Run statistics (latency, token count, etc.)."""
+    examples_with_runs: Iterator[ExampleWithRuns]

@@ -4,44 +4,64 @@ on:
   push:
     branches: [main]
     paths:
+      - ".github/**"
       - "python/**"
   pull_request:
     paths:
+      - ".github/**"
       - "python/**"
   workflow_dispatch:
 
-env:
-  POETRY_VERSION: "1.4.2"
-
 jobs:
+  format:
+    name: Lint 
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: "python"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync --group dev --group lint
+      - name: Check formatting
+        run: uv run ruff format --check
+      - name: Lint
+        run: make lint
+
   build_and_test:
     runs-on: ubuntu-22.04
     strategy:
       matrix:
         python-version:
-          - "3.9"
           - "3.10"
           - "3.11"
           - "3.12"
+          - "3.13"
     defaults:
       run:
         working-directory: python
     steps:
-      - uses: actions/checkout@v3
-      - name: Set up Python ${{ matrix.python-version }} + Poetry ${{ env.POETRY_VERSION }}
-        uses: "./.github/actions/poetry_setup"
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
         with:
           python-version: ${{ matrix.python-version }}
-          poetry-version: ${{ env.POETRY_VERSION }}
-          cache-key: build-and-test
+          enable-cache: true
+
       - name: Install dependencies
         run: |
-          poetry install --with dev,lint
-          poetry run pip install -U langchain langchain-core langchain_anthropic langchain_openai
+          uv sync --group dev --group lint
+          uv pip install langchain 
       - name: Build ${{ matrix.python-version }}
-        run: poetry build
-      - name: Lint ${{ matrix.python-version }}
-        run: make lint
+        run: uv build
+      - name: Check version alignment
+        run: make check-version
       - name: Run Unit tests ${{ matrix.python-version }}
         run: make tests
         shell: bash

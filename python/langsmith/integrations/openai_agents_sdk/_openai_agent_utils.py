@@ -1,6 +1,8 @@
 import json
 import logging
-from typing import Any, Dict, Literal
+from datetime import datetime, timezone
+from typing import Any, Literal, Optional
+from uuid import uuid4
 
 try:
     from agents import tracing  # type: ignore[import]
@@ -15,7 +17,7 @@ RunTypeT = Literal["tool", "chain", "llm", "retriever", "embedding", "prompt", "
 
 if HAVE_AGENTS:
 
-    def parse_io(data: Any, default_key: str = "output") -> Dict:
+    def parse_io(data: Any, default_key: str = "output") -> dict:
         """Parse inputs or outputs into a dictionary format.
 
         Args:
@@ -26,7 +28,17 @@ if HAVE_AGENTS:
         Returns:
             Dict: The parsed data as a dictionary
         """
-        if isinstance(data, dict):
+        if isinstance(data, list):
+            if len(data) == 0:
+                return {}
+            # Check if this is a list of output blocks (reasoning, message, etc.)
+            if len(data) > 0 and isinstance(data[0], dict):
+                if "type" in data[0]:
+                    return {default_key: data}
+                elif len(data) == 1:
+                    return data[0]
+            return {default_key: data}
+        elif isinstance(data, dict):
             data_ = data
         elif isinstance(data, str):
             try:
@@ -81,7 +93,7 @@ if HAVE_AGENTS:
 
     def _extract_function_span_data(
         span_data: tracing.FunctionSpanData,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         return {
             "inputs": parse_io(span_data.input, "input"),
             "outputs": parse_io(span_data.output, "output"),
@@ -89,7 +101,7 @@ if HAVE_AGENTS:
 
     def _extract_generation_span_data(
         span_data: tracing.GenerationSpanData,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         data = {
             "inputs": parse_io(span_data.input, "input"),
             "outputs": parse_io(span_data.output, "output"),
@@ -99,39 +111,31 @@ if HAVE_AGENTS:
             },
         }
         if span_data.usage:
-            data["outputs"]["usage_metadata"] = {
-                "total_tokens": span_data.usage.get("total_tokens"),
-                "input_tokens": span_data.usage.get("prompt_tokens"),
-                "output_tokens": span_data.usage.get("completion_tokens"),
-            }
+            from langsmith.wrappers._openai import _create_usage_metadata
+
+            if "metadata" not in data:
+                data["metadata"] = {}
+            data["metadata"]["usage_metadata"] = _create_usage_metadata(span_data.usage)
         return data
 
     def _extract_response_span_data(
         span_data: tracing.ResponseSpanData,
-    ) -> Dict[str, Any]:
-        data: Dict[str, Any] = {}
+    ) -> dict[str, Any]:
+        data: dict[str, Any] = {}
         if span_data.input is not None:
             data["inputs"] = {
                 "input": span_data.input,
-                "instructions": span_data.response.instructions,
+                "instructions": (
+                    span_data.response.instructions
+                    if span_data.response is not None
+                    and span_data.response.instructions
+                    else ""
+                ),
             }
         if span_data.response is not None:
             response = span_data.response.model_dump(exclude_none=True, mode="json")
-            data["outputs"] = {"output": response.pop("output", [])}
-            if usage := response.pop("usage", None):
-                # tokens -> token
-                if "output_tokens_details" in usage:
-                    usage["output_token_details"] = usage.pop("output_tokens_details")
-                    usage["output_token_details"]["reasoning"] = usage[
-                        "output_token_details"
-                    ].pop("reasoning_tokens", 0)
-                if "input_tokens_details" in usage:
-                    usage["input_token_details"] = usage.pop("input_tokens_details")
-                    usage["input_token_details"]["cache_read"] = usage[
-                        "input_token_details"
-                    ].pop("cached_tokens", 0)
-                data["outputs"]["usage_metadata"] = usage
-
+            output_data = response.pop("output", [])
+            data["outputs"] = parse_io(output_data, "output")
             data["invocation_params"] = {
                 k: v
                 for k, v in response.items()
@@ -166,11 +170,15 @@ if HAVE_AGENTS:
                     "ls_provider": "openai",
                 }
             )
+            if usage := response.pop("usage", None):
+                from langsmith.wrappers._openai import _create_usage_metadata
+
+                metadata["usage_metadata"] = _create_usage_metadata(usage)
             data["metadata"] = metadata
 
         return data
 
-    def _extract_agent_span_data(span_data: tracing.AgentSpanData) -> Dict[str, Any]:
+    def _extract_agent_span_data(span_data: tracing.AgentSpanData) -> dict[str, Any]:
         return {
             "invocation_params": {
                 "tools": span_data.tools,
@@ -183,7 +191,7 @@ if HAVE_AGENTS:
 
     def _extract_handoff_span_data(
         span_data: tracing.HandoffSpanData,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         return {
             "inputs": {
                 "from_agent": span_data.from_agent,
@@ -193,14 +201,14 @@ if HAVE_AGENTS:
 
     def _extract_guardrail_span_data(
         span_data: tracing.GuardrailSpanData,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         return {"metadata": {"triggered": span_data.triggered}}
 
-    def _extract_custom_span_data(span_data: tracing.CustomSpanData) -> Dict[str, Any]:
+    def _extract_custom_span_data(span_data: tracing.CustomSpanData) -> dict[str, Any]:
         return {"metadata": span_data.data}
 
-    def extract_span_data(span: tracing.Span) -> Dict[str, Any]:
-        data: Dict[str, Any] = {}
+    def extract_span_data(span: tracing.Span) -> dict[str, Any]:
+        data: dict[str, Any] = {}
 
         if isinstance(span.span_data, tracing.FunctionSpanData):
             data.update(_extract_function_span_data(span.span_data))
@@ -220,3 +228,16 @@ if HAVE_AGENTS:
             return {}
 
         return data
+
+    def ensure_dotted_order(
+        start_time: Optional[datetime],
+        run_id: Optional[str],
+        parent_dotted_order: Optional[str] = None,
+    ) -> str:
+        """Create a dotted order from a start time and run id."""
+        st = start_time or datetime.now(timezone.utc)
+        id_ = run_id or str(uuid4())
+        current_dotted_order = st.strftime("%Y%m%dT%H%M%S%fZ") + id_
+        if parent_dotted_order is not None:
+            return parent_dotted_order + "." + current_dotted_order
+        return current_dotted_order

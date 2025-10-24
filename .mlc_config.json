@@ -1,0 +1,8 @@
+{
+  "aliveStatusCodes": [429, 200],
+  "ignorePatterns": [
+    {
+      "pattern": "^https://www\\.npmjs\\.com/"
+    }
+  ]
+}

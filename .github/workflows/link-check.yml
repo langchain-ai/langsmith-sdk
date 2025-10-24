@@ -23,3 +23,4 @@ jobs:
           # Do not check the `vendor/` directory.
           folder-path: .github,js,openapi,python,rust
           file-path: ./README.md
+          config-file: .mlc_config.json

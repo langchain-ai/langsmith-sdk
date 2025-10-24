@@ -23,14 +23,14 @@ def test_chat_sync_api(stream: bool):
     patched_client = wrap_openai(openai.Client(), tracing_extra={"client": client})
     messages = [{"role": "user", "content": "Say 'foo'"}]
     original = original_client.chat.completions.create(
-        messages=messages,  # noqa: [arg-type]
+        messages=messages,  # noqa: arg-type
         stream=stream,
         temperature=0,
         seed=42,
         model="gpt-3.5-turbo",
     )
     patched = patched_client.chat.completions.create(
-        messages=messages,  # noqa: [arg-type]
+        messages=messages,  # noqa: arg-type
         stream=stream,
         temperature=0,
         seed=42,
@@ -271,6 +271,17 @@ test_cases = [
         "expect_usage_metadata": True,
         "check_reasoning_tokens": True,
     },
+    # just test flex as priority can randomly downgrade
+    {
+        "description": "flex service tier",
+        "params": {
+            "model": "gpt-5-nano",
+            "messages": [{"role": "user", "content": "howdy"}],
+            "service_tier": "flex",
+        },
+        "expect_usage_metadata": True,
+        "check_service_tier": "flex",
+    },
 ]
 
 
@@ -310,6 +321,12 @@ def test_wrap_openai_chat_tokens(test_case):
                     usage_metadata["output_token_details"]["reasoning"]
                     == oai_usage.completion_tokens_details.reasoning_tokens
                 )
+            if test_case.get("check_service_tier"):
+                service_tier = test_case["check_service_tier"]
+                assert service_tier in usage_metadata["input_token_details"]
+                assert service_tier in usage_metadata["output_token_details"]
+                assert usage_metadata["input_token_details"][service_tier] > 0
+                assert usage_metadata["output_token_details"][service_tier] > 0
         else:
             assert collect.run.outputs.get("usage_metadata") is None
             assert collect.run.outputs.get("usage") is None
@@ -360,6 +377,12 @@ async def test_wrap_openai_chat_async_tokens(test_case):
                     usage_metadata["output_token_details"]["reasoning"]
                     == oai_usage.completion_tokens_details.reasoning_tokens
                 )
+            if test_case.get("check_service_tier"):
+                service_tier = test_case["check_service_tier"]
+                assert service_tier in usage_metadata["input_token_details"]
+                assert service_tier in usage_metadata["output_token_details"]
+                assert usage_metadata["input_token_details"][service_tier] > 0
+                assert usage_metadata["output_token_details"][service_tier] > 0
         else:
             assert collect.run.outputs.get("usage_metadata") is None
             assert collect.run.outputs.get("usage") is None
@@ -384,13 +407,23 @@ def test_parse_sync_api():
 
     messages = [{"role": "user", "content": "Say 'foo' then stop."}]
 
-    original = original_client.beta.chat.completions.parse(
+    # beta parse
+    original_beta = original_client.beta.chat.completions.parse(
         messages=messages, model="gpt-3.5-turbo", temperature=0, seed=42, max_tokens=3
     )
-    patched = patched_client.beta.chat.completions.parse(
+    patched_beta = patched_client.beta.chat.completions.parse(
+        messages=messages, model="gpt-3.5-turbo", temperature=0, seed=42, max_tokens=3
+    )
+    # chat parse
+    original = original_client.chat.completions.parse(
+        messages=messages, model="gpt-3.5-turbo", temperature=0, seed=42, max_tokens=3
+    )
+    patched = patched_client.chat.completions.parse(
         messages=messages, model="gpt-3.5-turbo", temperature=0, seed=42, max_tokens=3
     )
 
+    assert type(original_beta) is type(patched_beta)
+    assert original_beta.choices == patched_beta.choices
     assert type(original) is type(patched)
     assert original.choices == patched.choices
 
@@ -416,15 +449,23 @@ async def test_parse_async_api():
 
     messages = [{"role": "user", "content": "Say 'foo' then stop."}]
 
-    original = await original_client.beta.chat.completions.parse(
+    original_beta = await original_client.beta.chat.completions.parse(
         messages=messages, model="gpt-3.5-turbo", temperature=0, seed=42, max_tokens=3
     )
-    patched = await patched_client.beta.chat.completions.parse(
+    patched_beta = await patched_client.beta.chat.completions.parse(
+        messages=messages, model="gpt-3.5-turbo", temperature=0, seed=42, max_tokens=3
+    )
+    original = await original_client.chat.completions.parse(
+        messages=messages, model="gpt-3.5-turbo", temperature=0, seed=42, max_tokens=3
+    )
+    patched = await patched_client.chat.completions.parse(
         messages=messages, model="gpt-3.5-turbo", temperature=0, seed=42, max_tokens=3
     )
 
-    assert type(original) is type(patched)
+    assert type(original_beta) is type(patched_beta)
+    assert original_beta.choices == patched_beta.choices
     assert original.choices == patched.choices
+    assert type(original) is type(patched)
 
     time.sleep(0.1)
     for call in mock_session.request.call_args_list:
@@ -695,3 +736,82 @@ async def test_responses_async_api():
         assert call[0][0].upper() in ["POST", "GET", "PATCH"]
 
     _collect_requests(mock_session, "test_responses_sync_api")
+
+
+@pytest.mark.asyncio
+async def test_tool_call_chunking():
+    """Test that wrap_openai can reduce tool call chunks when streaming."""
+    import openai
+    from openai.types.chat import ChatCompletionChunk
+
+    mock_session = mock.MagicMock()
+    ls_client = langsmith.Client(session=mock_session)
+
+    client = wrap_openai(openai.AsyncClient(), tracing_extra={"client": ls_client})
+
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "description": "Get the current weather in a given city.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "location": {
+                            "type": "string",
+                            "description": "The city to get the weather for",
+                        }
+                    },
+                    "required": ["location"],
+                },
+            },
+        }
+    ]
+
+    # Simulate a user message
+    messages = [{"role": "user", "content": "What's the weather like in Paris?"}]
+
+    collect = Collect()
+    with langsmith.tracing_context(enabled=True):
+        chunks = await client.chat.completions.create(
+            model="gpt-4o",
+            messages=messages,
+            tools=tools,
+            tool_choice="auto",
+            stream=True,
+            langsmith_extra={"on_end": collect},
+        )
+
+        tool_call_chunks = []
+        tool_call_ids = set()
+        async for chunk in chunks:
+            assert isinstance(chunk, ChatCompletionChunk)
+            # Collect chunks that contain tool calls
+            for choice in chunk.choices:
+                if choice.delta.tool_calls:
+                    tool_call_chunks.append(chunk)
+                    for tool_call in choice.delta.tool_calls:
+                        if tool_call.id:
+                            tool_call_ids.add(tool_call.id)
+
+        # Verify that we have tool call chunks
+        assert len(tool_call_chunks) > 0
+        # Verify that there are tool call IDs
+        assert len(tool_call_ids) > 0
+
+        # Verify that the run has the expected data
+        assert collect.run
+        assert collect.run.outputs["choices"][0]["finish_reason"] == "tool_calls"
+        assert collect.run.outputs["choices"][0]["message"]["tool_calls"]
+        assert (
+            collect.run.outputs["choices"][0]["message"]["tool_calls"][0]["function"][
+                "name"
+            ]
+            == "get_weather"
+        )
+
+    # Allow time for background threads to complete
+    time.sleep(0.1)
+    for call in mock_session.request.call_args_list:
+        assert call[0][0].upper() in ["POST", "GET", "PATCH"]

@@ -15,6 +15,7 @@ interface BaseLLMSpanAttributes {
 
   "ai.usage.promptTokens": number;
   "ai.usage.completionTokens": number;
+  "ai.response.providerMetadata"?: string;
 
   "ai.telemetry.functionId"?: string;
   "resource.name"?: string;
@@ -42,7 +43,11 @@ type ToolCallSpan = TypedReadableSpan<
     "ai.operationId": "ai.toolCall";
     "ai.toolCall.name": string;
     "ai.toolCall.id": string;
-    "ai.toolCall.args": string;
+    "ai.toolCall.input"?: string;
+    "ai.toolCall.output"?: string;
+    /** @deprecated AI SDK 4 span */
+    "ai.toolCall.args"?: string;
+    /** @deprecated AI SDK 4 span */
     "ai.toolCall.result"?: string;
   }
 >;
@@ -67,6 +72,7 @@ type DoGenerateTextSpan = TypedReadableSpan<
     "ai.operationId": "ai.generateText.doGenerate";
     "ai.prompt.format": string;
     "ai.prompt.messages": string;
+    "ai.prompt.tools": string[];
     "ai.response.text": string;
     "ai.response.toolCalls": string;
     "ai.response.finishReason": string;
@@ -93,6 +99,7 @@ type DoStreamTextSpan = TypedReadableSpan<
     "ai.operationId": "ai.streamText.doStream";
     "ai.prompt.format": string;
     "ai.prompt.messages": string;
+    "ai.prompt.tools": string[];
     "ai.response.text": string;
     "ai.response.toolCalls": string;
     "ai.response.msToFirstChunk": number;

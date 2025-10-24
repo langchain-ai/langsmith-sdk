@@ -173,8 +173,7 @@ async def test_evaluate() -> None:
         prompt_template=[
             (
                 "system",
-                "Is the output accurate with respect to the context and "
-                "question? Y/N",
+                "Is the output accurate with respect to the context and question? Y/N",
             ),
             ("human", "Context: {context}\nQuestion: {question}\nOutput: {output}"),
         ],

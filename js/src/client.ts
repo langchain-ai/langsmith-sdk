@@ -1,5 +1,14 @@
 import * as uuid from "uuid";
-
+import type { OTELContext } from "./experimental/otel/types.js";
+import {
+  LangSmithToOTELTranslator,
+  SerializedRunOperation,
+} from "./experimental/otel/translator.js";
+import {
+  getDefaultOTLPTracerComponents,
+  getOTELTrace,
+  getOTELContext,
+} from "./singletons/otel.js";
 import { AsyncCaller, AsyncCallerParams } from "./utils/async_caller.js";
 import {
   ComparativeExperiment,
@@ -41,6 +50,7 @@ import {
   AttachmentInfo,
   AttachmentData,
   DatasetVersion,
+  AnnotationQueueWithDetails,
 } from "./schemas.js";
 import {
   convertLangChainMessageToExample,
@@ -48,9 +58,11 @@ import {
 } from "./utils/messages.js";
 import {
   getEnvironmentVariable,
-  getLangChainEnvVarsMetadata,
+  getLangSmithEnvVarsMetadata,
   getLangSmithEnvironmentVariable,
   getRuntimeEnvironment,
+  getOtelEnabled,
+  getEnv,
 } from "./utils/env.js";
 
 import {
@@ -63,7 +75,10 @@ import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
 import { parsePromptIdentifier } from "./utils/prompts.js";
 import { raiseForStatus } from "./utils/error.js";
-import { _getFetchImplementation } from "./singletons/fetch.js";
+import {
+  _globalFetchImplementationIsNodeFetch,
+  _getFetchImplementation,
+} from "./singletons/fetch.js";
 
 import { serialize as serializePayloadForTracing } from "./utils/fast-safe-stringify/index.js";
 
@@ -73,11 +88,14 @@ export interface ClientConfig {
   callerOptions?: AsyncCallerParams;
   timeout_ms?: number;
   webUrl?: string;
-  anonymizer?: (values: KVMap) => KVMap;
-  hideInputs?: boolean | ((inputs: KVMap) => KVMap);
-  hideOutputs?: boolean | ((outputs: KVMap) => KVMap);
+  anonymizer?: (values: KVMap) => KVMap | Promise<KVMap>;
+  hideInputs?: boolean | ((inputs: KVMap) => KVMap | Promise<KVMap>);
+  hideOutputs?: boolean | ((outputs: KVMap) => KVMap | Promise<KVMap>);
   autoBatchTracing?: boolean;
+  /** Maximum size of a batch of runs in bytes. */
   batchSizeBytesLimit?: number;
+  /** Maximum number of operations to batch in a single request. */
+  batchSizeLimit?: number;
   blockOnRootRunFinalization?: boolean;
   traceBatchConcurrency?: number;
   fetchOptions?: RequestInit;
@@ -87,6 +105,18 @@ export interface ClientConfig {
    */
   manualFlushMode?: boolean;
   tracingSamplingRate?: number;
+  /**
+   * Enable debug mode for the client. If set, all sent HTTP requests will be logged.
+   */
+  debug?: boolean;
+  /**
+   * The workspace ID. Required for org-scoped API keys.
+   */
+  workspaceId?: string;
+  /**
+   * Custom fetch implementation. Useful for testing.
+   */
+  fetchImplementation?: typeof fetch;
 }
 
 /**
@@ -121,6 +151,11 @@ interface ListRunsParams {
    * The ID of the parent run to filter by.
    */
   parentRunId?: string;
+
+  /**
+   * The order by run start date
+   */
+  order?: "asc" | "desc";
 
   /**
    * The ID of the reference example to filter by.
@@ -192,8 +227,69 @@ interface ListRunsParams {
   treeFilter?: string;
   /**
    * The values to include in the response.
+   *
+   * Note: The 'child_run_ids' value is deprecated and will be removed in a future version.
+   * This field is no longer populated by the API.
    */
   select?: string[];
+}
+
+interface GroupRunsParams {
+  /**
+   * The ID or IDs of the project(s) to filter by.
+   */
+  projectId?: string;
+
+  /**
+   * The ID or IDs of the project(s) to filter by.
+   */
+  projectName?: string;
+
+  /**
+   * @example "conversation"
+   */
+  groupBy: string;
+
+  /**
+   * The filter string to apply.
+   *
+   * Run Filtering:
+   * Listing runs with query params is useful for simple queries, but doesn't support many common needs, such as filtering by metadata, tags, or other fields.
+   * LangSmith supports a filter query language to permit more complex filtering operations when fetching runs. This guide will provide a high level overview of the grammar as well as a few examples of when it can be useful.
+   * If you'd prefer a more visual guide, you can get a taste of the language by viewing the table of runs on any of your projects' pages. We provide some recommended filters to get you started that you can copy and use the SDK.
+   *
+   * Grammar:
+   * The filtering grammar is based on common comparators on fields in the run object. Supported comparators include:
+   * - gte (greater than or equal to)
+   * - gt (greater than)
+   * - lte (less than or equal to)
+   * - lt (less than)
+   * - eq (equal to)
+   * - neq (not equal to)
+   * - has (check if run contains a tag or metadata json blob)
+   * - search (search for a substring in a string field)
+   */
+  filter?: string;
+
+  /**
+   * The start time to filter by.
+   */
+  startTime?: Date;
+
+  /**
+   * The end time to filter by.
+   */
+  endTime?: Date;
+
+  /**
+   * The maximum number of runs to retrieve.
+   */
+  limit?: number;
+
+  /**
+   * The maximum number of runs to retrieve.
+   */
+  offset?: number;
 }
 
 interface UploadCSVParams {
@@ -237,8 +333,8 @@ interface CreateRunParams {
   inputs: KVMap;
   run_type: string;
   id?: string;
-  start_time?: number;
-  end_time?: number;
+  start_time?: number | string;
+  end_time?: number | string;
   extra?: KVMap;
   error?: string;
   serialized?: object;
@@ -302,6 +398,9 @@ export type CreateProjectParams = {
 type AutoBatchQueueItem = {
   action: "create" | "update";
   item: RunCreate | RunUpdate;
+  otelContext?: OTELContext;
+  apiKey?: string;
+  apiUrl?: string;
 };
 
 type MultipartPart = {
@@ -309,9 +408,28 @@ type MultipartPart = {
   payload: Blob;
 };
 
-export function mergeRuntimeEnvIntoRunCreate(run: RunCreate) {
+type Thread = {
+  filter: string;
+  count: number;
+  total_tokens: number;
+  total_cost: number | null;
+  min_start_time: string;
+  max_start_time: string;
+  latency_p50: number;
+  latency_p99: number;
+  feedback_stats: any | null;
+  group_key: string;
+  first_inputs: string;
+  last_outputs: string;
+  last_error: string | null;
+};
+
+export function mergeRuntimeEnvIntoRun<T extends RunCreate | RunUpdate>(
+  run: T,
+  cachedEnvVars?: Record<string, string>
+): T {
   const runtimeEnv = getRuntimeEnvironment();
-  const envVars = getLangChainEnvVarsMetadata();
+  const envVars = cachedEnvVars ?? getLangSmithEnvVarsMetadata();
   const extra = run.extra ?? {};
   const metadata = extra.metadata;
   run.extra = {
@@ -322,8 +440,12 @@ export function mergeRuntimeEnvIntoRunCreate(run: RunCreate) {
     },
     metadata: {
       ...envVars,
-      ...(envVars.revision_id || run.revision_id
-        ? { revision_id: run.revision_id ?? envVars.revision_id }
+      ...(envVars.revision_id || ("revision_id" in run && run.revision_id)
+        ? {
+            revision_id:
+              ("revision_id" in run ? run.revision_id : undefined) ??
+              envVars.revision_id,
+          }
         : {}),
       ...metadata,
     },
@@ -377,7 +499,7 @@ function trimQuotes(str?: string): string | undefined {
 const handle429 = async (response?: Response) => {
   if (response?.status === 429) {
     const retryAfter =
-      parseInt(response.headers.get("retry-after") ?? "30", 10) * 1000;
+      parseInt(response.headers.get("retry-after") ?? "10", 10) * 1000;
     if (retryAfter > 0) {
       await new Promise((resolve) => setTimeout(resolve, retryAfter));
       // Return directly after calling this check
@@ -400,9 +522,12 @@ export class AutoBatchQueue {
   items: {
     action: "create" | "update";
     payload: RunCreate | RunUpdate;
+    otelContext?: OTELContext;
     itemPromiseResolve: () => void;
     itemPromise: Promise<void>;
     size: number;
+    apiKey?: string;
+    apiUrl?: string;
   }[] = [];
 
   sizeBytes = 0;
@@ -418,10 +543,16 @@ export class AutoBatchQueue {
       // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/Promise
       itemPromiseResolve = resolve;
     });
-    const size = serializePayloadForTracing(item.item).length;
+    const size = serializePayloadForTracing(
+      item.item,
+      `Serializing run with id: ${item.item.id}`
+    ).length;
     this.items.push({
       action: item.action,
       payload: item.item,
+      otelContext: item.otelContext,
+      apiKey: item.apiKey,
+      apiUrl: item.apiUrl,
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       itemPromiseResolve: itemPromiseResolve!,
       itemPromise,
@@ -431,7 +562,13 @@ export class AutoBatchQueue {
     return itemPromise;
   }
 
-  pop(upToSizeBytes: number): [AutoBatchQueueItem[], () => void] {
+  pop({
+    upToSizeBytes,
+    upToSize,
+  }: {
+    upToSizeBytes: number;
+    upToSize: number;
+  }): [AutoBatchQueueItem[], () => void] {
     if (upToSizeBytes < 1) {
       throw new Error("Number of bytes to pop off may not be less than 1.");
     }
@@ -440,7 +577,8 @@ export class AutoBatchQueue {
     // Pop items until we reach or exceed the size limit
     while (
       poppedSizeBytes + (this.peek()?.size ?? 0) < upToSizeBytes &&
-      this.items.length > 0
+      this.items.length > 0 &&
+      popped.length < upToSize
     ) {
       const item = this.items.shift();
       if (item) {
@@ -458,16 +596,26 @@ export class AutoBatchQueue {
       this.sizeBytes -= item.size;
     }
     return [
-      popped.map((it) => ({ action: it.action, item: it.payload })),
+      popped.map((it) => ({
+        action: it.action,
+        item: it.payload,
+        otelContext: it.otelContext,
+        apiKey: it.apiKey,
+        apiUrl: it.apiUrl,
+      })),
       () => popped.forEach((it) => it.itemPromiseResolve()),
     ];
   }
 }
 
-// 20 MB
-export const DEFAULT_BATCH_SIZE_LIMIT_BYTES = 20_971_520;
+export const DEFAULT_UNCOMPRESSED_BATCH_SIZE_LIMIT_BYTES = 24 * 1024 * 1024;
 
-const SERVER_INFO_REQUEST_TIMEOUT = 2500;
+const SERVER_INFO_REQUEST_TIMEOUT_MS = 10000;
+
+/** Maximum number of operations to batch in a single request. */
+const DEFAULT_BATCH_SIZE_LIMIT = 100;
+
+const DEFAULT_API_URL = "https://api.smith.langchain.com";
 
 export class Client implements LangSmithTracingClientInterface {
   private apiKey?: string;
@@ -475,6 +623,8 @@ export class Client implements LangSmithTracingClientInterface {
   private apiUrl: string;
 
   private webUrl?: string;
+
+  private workspaceId?: string;
 
   private caller: AsyncCaller;
 
@@ -484,9 +634,9 @@ export class Client implements LangSmithTracingClientInterface {
 
   private _tenantId: string | null = null;
 
-  private hideInputs?: boolean | ((inputs: KVMap) => KVMap);
+  private hideInputs?: boolean | ((inputs: KVMap) => KVMap | Promise<KVMap>);
 
-  private hideOutputs?: boolean | ((outputs: KVMap) => KVMap);
+  private hideOutputs?: boolean | ((outputs: KVMap) => KVMap | Promise<KVMap>);
 
   private tracingSampleRate?: number;
 
@@ -501,6 +651,8 @@ export class Client implements LangSmithTracingClientInterface {
   private autoBatchAggregationDelayMs = 250;
 
   private batchSizeBytesLimit?: number;
+
+  private batchSizeLimit?: number;
 
   private fetchOptions: RequestInit;
 
@@ -518,6 +670,20 @@ export class Client implements LangSmithTracingClientInterface {
 
   private manualFlushMode = false;
 
+  private langSmithToOTELTranslator?: LangSmithToOTELTranslator;
+
+  private fetchImplementation?: typeof fetch;
+
+  private cachedLSEnvVarsForMetadata?: Record<string, string>;
+
+  private get _fetch(): typeof fetch {
+    return this.fetchImplementation || _getFetchImplementation(this.debug);
+  }
+
+  private multipartStreamingDisabled = false;
+
+  debug = getEnvironmentVariable("LANGSMITH_DEBUG") === "true";
+
   constructor(config: ClientConfig = {}) {
     const defaultConfig = Client.getDefaultClientConfig();
 
@@ -526,23 +692,34 @@ export class Client implements LangSmithTracingClientInterface {
     if (this.apiUrl.endsWith("/")) {
       this.apiUrl = this.apiUrl.slice(0, -1);
     }
+
     this.apiKey = trimQuotes(config.apiKey ?? defaultConfig.apiKey);
     this.webUrl = trimQuotes(config.webUrl ?? defaultConfig.webUrl);
     if (this.webUrl?.endsWith("/")) {
       this.webUrl = this.webUrl.slice(0, -1);
     }
+    this.workspaceId = trimQuotes(
+      config.workspaceId ?? getLangSmithEnvironmentVariable("WORKSPACE_ID")
+    );
     this.timeout_ms = config.timeout_ms ?? 90_000;
-    this.caller = new AsyncCaller(config.callerOptions ?? {});
+    this.caller = new AsyncCaller({
+      ...(config.callerOptions ?? {}),
+      maxRetries: 4,
+      debug: config.debug ?? this.debug,
+    });
     this.traceBatchConcurrency =
       config.traceBatchConcurrency ?? this.traceBatchConcurrency;
     if (this.traceBatchConcurrency < 1) {
       throw new Error("Trace batch concurrency must be positive.");
     }
+    this.debug = config.debug ?? this.debug;
+    this.fetchImplementation = config.fetchImplementation;
     this.batchIngestCaller = new AsyncCaller({
       maxRetries: 2,
       maxConcurrency: this.traceBatchConcurrency,
       ...(config.callerOptions ?? {}),
       onFailedResponseHook: handle429,
+      debug: config.debug ?? this.debug,
     });
 
     this.hideInputs =
@@ -554,8 +731,14 @@ export class Client implements LangSmithTracingClientInterface {
     this.blockOnRootRunFinalization =
       config.blockOnRootRunFinalization ?? this.blockOnRootRunFinalization;
     this.batchSizeBytesLimit = config.batchSizeBytesLimit;
+    this.batchSizeLimit = config.batchSizeLimit;
     this.fetchOptions = config.fetchOptions || {};
     this.manualFlushMode = config.manualFlushMode ?? this.manualFlushMode;
+    if (getOtelEnabled()) {
+      this.langSmithToOTELTranslator = new LangSmithToOTELTranslator();
+    }
+    // Cache metadata env vars once during construction to avoid repeatedly scanning process.env
+    this.cachedLSEnvVarsForMetadata = getLangSmithEnvVarsMetadata();
   }
 
   public static getDefaultClientConfig(): {
@@ -567,8 +750,7 @@ export class Client implements LangSmithTracingClientInterface {
   } {
     const apiKey = getLangSmithEnvironmentVariable("API_KEY");
     const apiUrl =
-      getLangSmithEnvironmentVariable("ENDPOINT") ??
-      "https://api.smith.langchain.com";
+      getLangSmithEnvironmentVariable("ENDPOINT") ?? DEFAULT_API_URL;
     const hideInputs =
       getLangSmithEnvironmentVariable("HIDE_INPUTS") === "true";
     const hideOutputs =
@@ -619,10 +801,20 @@ export class Client implements LangSmithTracingClientInterface {
     if (this.apiKey) {
       headers["x-api-key"] = `${this.apiKey}`;
     }
+    if (this.workspaceId) {
+      headers["x-tenant-id"] = this.workspaceId;
+    }
     return headers;
   }
 
-  private processInputs(inputs: KVMap): KVMap {
+  private _getPlatformEndpointPath(path: string): string {
+    // Check if apiUrl already ends with /v1 or /v1/ to avoid double /v1/v1/ paths
+    const needsV1Prefix =
+      this.apiUrl.slice(-3) !== "/v1" && this.apiUrl.slice(-4) !== "/v1/";
+    return needsV1Prefix ? `/v1/platform/${path}` : `/platform/${path}`;
+  }
+
+  private async processInputs(inputs: KVMap): Promise<KVMap> {
     if (this.hideInputs === false) {
       return inputs;
     }
@@ -635,7 +827,7 @@ export class Client implements LangSmithTracingClientInterface {
     return inputs;
   }
 
-  private processOutputs(outputs: KVMap): KVMap {
+  private async processOutputs(outputs: KVMap): Promise<KVMap> {
     if (this.hideOutputs === false) {
       return outputs;
     }
@@ -648,17 +840,21 @@ export class Client implements LangSmithTracingClientInterface {
     return outputs;
   }
 
-  private prepareRunCreateOrUpdateInputs(run: RunUpdate): RunUpdate;
-  private prepareRunCreateOrUpdateInputs(run: RunCreate): RunCreate;
-  private prepareRunCreateOrUpdateInputs(
+  private async prepareRunCreateOrUpdateInputs(
+    run: RunUpdate
+  ): Promise<RunUpdate>;
+  private async prepareRunCreateOrUpdateInputs(
+    run: RunCreate
+  ): Promise<RunCreate>;
+  private async prepareRunCreateOrUpdateInputs(
     run: RunCreate | RunUpdate
-  ): RunCreate | RunUpdate {
+  ): Promise<RunCreate | RunUpdate> {
     const runParams = { ...run };
     if (runParams.inputs !== undefined) {
-      runParams.inputs = this.processInputs(runParams.inputs);
+      runParams.inputs = await this.processInputs(runParams.inputs);
     }
     if (runParams.outputs !== undefined) {
-      runParams.outputs = this.processOutputs(runParams.outputs);
+      runParams.outputs = await this.processOutputs(runParams.outputs);
     }
     return runParams;
   }
@@ -669,13 +865,16 @@ export class Client implements LangSmithTracingClientInterface {
   ): Promise<Response> {
     const paramsString = queryParams?.toString() ?? "";
     const url = `${this.apiUrl}${path}?${paramsString}`;
-    const response = await this.caller.call(_getFetchImplementation(), url, {
-      method: "GET",
-      headers: this.headers,
-      signal: AbortSignal.timeout(this.timeout_ms),
-      ...this.fetchOptions,
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(url, {
+        method: "GET",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+      });
+      await raiseForStatus(res, `fetch ${path}`);
+      return res;
     });
-    await raiseForStatus(response, `Failed to fetch ${path}`);
     return response;
   }
 
@@ -699,13 +898,16 @@ export class Client implements LangSmithTracingClientInterface {
       queryParams.set("limit", String(limit));
 
       const url = `${this.apiUrl}${path}?${queryParams}`;
-      const response = await this.caller.call(_getFetchImplementation(), url, {
-        method: "GET",
-        headers: this.headers,
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
+      const response = await this.caller.call(async () => {
+        const res = await this._fetch(url, {
+          method: "GET",
+          headers: this.headers,
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+        });
+        await raiseForStatus(res, `fetch ${path}`);
+        return res;
       });
-      await raiseForStatus(response, `Failed to fetch ${path}`);
       const items: T[] = transform
         ? transform(await response.json())
         : await response.json();
@@ -730,17 +932,18 @@ export class Client implements LangSmithTracingClientInterface {
   ): AsyncIterable<T[]> {
     const bodyParams = body ? { ...body } : {};
     while (true) {
-      const response = await this.caller.call(
-        _getFetchImplementation(),
-        `${this.apiUrl}${path}`,
-        {
+      const body = JSON.stringify(bodyParams);
+      const response = await this.caller.call(async () => {
+        const res = await this._fetch(`${this.apiUrl}${path}`, {
           method: requestMethod,
           headers: { ...this.headers, "Content-Type": "application/json" },
           signal: AbortSignal.timeout(this.timeout_ms),
           ...this.fetchOptions,
-          body: JSON.stringify(bodyParams),
-        }
-      );
+          body,
+        });
+        await raiseForStatus(res, `fetch ${path}`);
+        return res;
+      });
       const responseBody = await response.json();
       if (!responseBody) {
         break;
@@ -779,10 +982,10 @@ export class Client implements LangSmithTracingClientInterface {
     if (patch) {
       const sampled = [];
       for (const run of runs) {
-        if (!this.filteredPostUuids.has(run.id)) {
+        if (!this.filteredPostUuids.has(run.trace_id)) {
           sampled.push(run);
-        } else {
-          this.filteredPostUuids.delete(run.id);
+        } else if (run.id === run.trace_id) {
+          this.filteredPostUuids.delete(run.trace_id);
         }
       }
       return sampled;
@@ -818,89 +1021,190 @@ export class Client implements LangSmithTracingClientInterface {
     return (
       this.batchSizeBytesLimit ??
       serverInfo.batch_ingest_config?.size_limit_bytes ??
-      DEFAULT_BATCH_SIZE_LIMIT_BYTES
+      DEFAULT_UNCOMPRESSED_BATCH_SIZE_LIMIT_BYTES
     );
   }
 
-  private async _getMultiPartSupport(): Promise<boolean> {
+  /**
+   * Get the maximum number of operations to batch in a single request.
+   */
+  private async _getBatchSizeLimit(): Promise<number> {
+    const serverInfo = await this._ensureServerInfo();
+    return (
+      this.batchSizeLimit ??
+      serverInfo.batch_ingest_config?.size_limit ??
+      DEFAULT_BATCH_SIZE_LIMIT
+    );
+  }
+
+  private async _getDatasetExamplesMultiPartSupport(): Promise<boolean> {
     const serverInfo = await this._ensureServerInfo();
     return (
       serverInfo.instance_flags?.dataset_examples_multipart_enabled ?? false
     );
   }
 
-  private drainAutoBatchQueue(batchSizeLimit: number) {
+  private drainAutoBatchQueue({
+    batchSizeLimitBytes,
+    batchSizeLimit,
+  }: {
+    batchSizeLimitBytes: number;
+    batchSizeLimit: number;
+  }) {
     const promises = [];
     while (this.autoBatchQueue.items.length > 0) {
-      const [batch, done] = this.autoBatchQueue.pop(batchSizeLimit);
+      const [batch, done] = this.autoBatchQueue.pop({
+        upToSizeBytes: batchSizeLimitBytes,
+        upToSize: batchSizeLimit,
+      });
       if (!batch.length) {
         done();
         break;
       }
-      const batchPromise = this._processBatch(batch, done).catch(console.error);
-      promises.push(batchPromise);
+      const batchesByDestination = batch.reduce((acc, item) => {
+        const apiUrl = item.apiUrl ?? this.apiUrl;
+        const apiKey = item.apiKey ?? this.apiKey;
+        const isDefault =
+          item.apiKey === this.apiKey && item.apiUrl === this.apiUrl;
+        const batchKey = isDefault ? "default" : `${apiUrl}|${apiKey}`;
+        if (!acc[batchKey]) {
+          acc[batchKey] = [];
+        }
+        acc[batchKey].push(item);
+        return acc;
+      }, {} as Record<string, AutoBatchQueueItem[]>);
+
+      const batchPromises = [];
+      for (const [batchKey, batch] of Object.entries(batchesByDestination)) {
+        const batchPromise = this._processBatch(batch, {
+          apiUrl: batchKey === "default" ? undefined : batchKey.split("|")[0],
+          apiKey: batchKey === "default" ? undefined : batchKey.split("|")[1],
+        });
+        batchPromises.push(batchPromise);
+      }
+
+      // Wait for all batches to complete, then call the overall done callback
+      const allBatchesPromise = Promise.all(batchPromises).finally(done);
+      promises.push(allBatchesPromise);
     }
     return Promise.all(promises);
   }
 
-  private async _processBatch(batch: AutoBatchQueueItem[], done: () => void) {
+  private async _processBatch(
+    batch: AutoBatchQueueItem[],
+    options?: { apiKey?: string; apiUrl?: string }
+  ) {
     if (!batch.length) {
-      done();
       return;
     }
     try {
-      const ingestParams = {
-        runCreates: batch
-          .filter((item) => item.action === "create")
-          .map((item) => item.item) as RunCreate[],
-        runUpdates: batch
-          .filter((item) => item.action === "update")
-          .map((item) => item.item) as RunUpdate[],
-      };
-      const serverInfo = await this._ensureServerInfo();
-      if (serverInfo?.batch_ingest_config?.use_multipart_endpoint) {
-        await this.multipartIngestRuns(ingestParams);
+      if (this.langSmithToOTELTranslator !== undefined) {
+        this._sendBatchToOTELTranslator(batch);
       } else {
-        await this.batchIngestRuns(ingestParams);
+        const ingestParams = {
+          runCreates: batch
+            .filter((item) => item.action === "create")
+            .map((item) => item.item) as RunCreate[],
+          runUpdates: batch
+            .filter((item) => item.action === "update")
+            .map((item) => item.item) as RunUpdate[],
+        };
+        const serverInfo = await this._ensureServerInfo();
+        if (serverInfo?.batch_ingest_config?.use_multipart_endpoint) {
+          const useGzip = serverInfo?.instance_flags?.gzip_body_enabled;
+          await this.multipartIngestRuns(ingestParams, { ...options, useGzip });
+        } else {
+          await this.batchIngestRuns(ingestParams, options);
+        }
       }
-    } finally {
-      done();
+    } catch (e) {
+      console.error("Error exporting batch:", e);
+    }
+  }
+
+  private _sendBatchToOTELTranslator(batch: AutoBatchQueueItem[]) {
+    if (this.langSmithToOTELTranslator !== undefined) {
+      const otelContextMap = new Map<string, OTELContext>();
+      const operations: SerializedRunOperation[] = [];
+      for (const item of batch) {
+        if (item.item.id && item.otelContext) {
+          otelContextMap.set(item.item.id, item.otelContext);
+          if (item.action === "create") {
+            operations.push({
+              operation: "post",
+              id: item.item.id,
+              trace_id: item.item.trace_id ?? item.item.id,
+              run: item.item as RunCreate,
+            });
+          } else {
+            operations.push({
+              operation: "patch",
+              id: item.item.id,
+              trace_id: item.item.trace_id ?? item.item.id,
+              run: item.item as RunUpdate,
+            });
+          }
+        }
+      }
+      this.langSmithToOTELTranslator.exportBatch(operations, otelContextMap);
     }
   }
 
   private async processRunOperation(item: AutoBatchQueueItem) {
     clearTimeout(this.autoBatchTimeout);
     this.autoBatchTimeout = undefined;
-    if (item.action === "create") {
-      item.item = mergeRuntimeEnvIntoRunCreate(item.item as RunCreate);
-    }
+    item.item = mergeRuntimeEnvIntoRun(
+      item.item as RunCreate,
+      this.cachedLSEnvVarsForMetadata
+    );
     const itemPromise = this.autoBatchQueue.push(item);
     if (this.manualFlushMode) {
       // Rely on manual flushing in serverless environments
       return itemPromise;
     }
     const sizeLimitBytes = await this._getBatchSizeLimitBytes();
-    if (this.autoBatchQueue.sizeBytes > sizeLimitBytes) {
-      void this.drainAutoBatchQueue(sizeLimitBytes);
+    const sizeLimit = await this._getBatchSizeLimit();
+    if (
+      this.autoBatchQueue.sizeBytes > sizeLimitBytes ||
+      this.autoBatchQueue.items.length > sizeLimit
+    ) {
+      void this.drainAutoBatchQueue({
+        batchSizeLimitBytes: sizeLimitBytes,
+        batchSizeLimit: sizeLimit,
+      });
     }
     if (this.autoBatchQueue.items.length > 0) {
       this.autoBatchTimeout = setTimeout(() => {
         this.autoBatchTimeout = undefined;
-        void this.drainAutoBatchQueue(sizeLimitBytes);
+        void this.drainAutoBatchQueue({
+          batchSizeLimitBytes: sizeLimitBytes,
+          batchSizeLimit: sizeLimit,
+        });
       }, this.autoBatchAggregationDelayMs);
     }
     return itemPromise;
   }
 
   protected async _getServerInfo() {
-    const response = await _getFetchImplementation()(`${this.apiUrl}/info`, {
-      method: "GET",
-      headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(SERVER_INFO_REQUEST_TIMEOUT),
-      ...this.fetchOptions,
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(`${this.apiUrl}/info`, {
+        method: "GET",
+        headers: { Accept: "application/json" },
+        signal: AbortSignal.timeout(SERVER_INFO_REQUEST_TIMEOUT_MS),
+        ...this.fetchOptions,
+      });
+      await raiseForStatus(res, "get server info");
+      return res;
     });
-    await raiseForStatus(response, "get server info");
-    return response.json();
+    const json = await response.json();
+    if (this.debug) {
+      console.log(
+        "\n=== LangSmith Server Configuration ===\n" +
+          JSON.stringify(json, null, 2) +
+          "\n"
+      );
+    }
+    return json;
   }
 
   protected async _ensureServerInfo() {
@@ -909,9 +1213,11 @@ export class Client implements LangSmithTracingClientInterface {
         if (this._serverInfo === undefined) {
           try {
             this._serverInfo = await this._getServerInfo();
-          } catch (e) {
+          } catch (e: any) {
             console.warn(
-              `[WARNING]: LangSmith failed to fetch info on supported operations. Falling back to batch operations and default limits.`
+              `[LANGSMITH]: Failed to fetch info on supported operations. Falling back to batch operations and default limits. Info: ${
+                e.status ?? "Unspecified status code"
+              } ${e.message}`
             );
           }
         }
@@ -939,18 +1245,40 @@ export class Client implements LangSmithTracingClientInterface {
    */
   public async flush() {
     const sizeLimitBytes = await this._getBatchSizeLimitBytes();
-    await this.drainAutoBatchQueue(sizeLimitBytes);
+    const sizeLimit = await this._getBatchSizeLimit();
+    await this.drainAutoBatchQueue({
+      batchSizeLimitBytes: sizeLimitBytes,
+      batchSizeLimit: sizeLimit,
+    });
   }
 
-  public async createRun(run: CreateRunParams): Promise<void> {
+  private _cloneCurrentOTELContext() {
+    const otel_trace = getOTELTrace();
+    const otel_context = getOTELContext();
+    if (this.langSmithToOTELTranslator !== undefined) {
+      const currentSpan = otel_trace.getActiveSpan();
+      if (currentSpan) {
+        return otel_trace.setSpan(otel_context.active(), currentSpan);
+      }
+    }
+    return undefined;
+  }
+
+  public async createRun(
+    run: CreateRunParams,
+    options?: { apiKey?: string; apiUrl?: string; workspaceId?: string }
+  ): Promise<void> {
     if (!this._filterForSampling([run]).length) {
       return;
     }
-    const headers = { ...this.headers, "Content-Type": "application/json" };
+    const headers: Record<string, string> = {
+      ...this.headers,
+      "Content-Type": "application/json",
+    };
     const session_name = run.project_name;
     delete run.project_name;
 
-    const runCreate: RunCreate = this.prepareRunCreateOrUpdateInputs({
+    const runCreate: RunCreate = await this.prepareRunCreateOrUpdateInputs({
       session_name,
       ...run,
       start_time: run.start_time ?? Date.now(),
@@ -960,50 +1288,70 @@ export class Client implements LangSmithTracingClientInterface {
       runCreate.trace_id !== undefined &&
       runCreate.dotted_order !== undefined
     ) {
+      const otelContext = this._cloneCurrentOTELContext();
       void this.processRunOperation({
         action: "create",
         item: runCreate,
+        otelContext,
+        apiKey: options?.apiKey,
+        apiUrl: options?.apiUrl,
       }).catch(console.error);
       return;
     }
-    const mergedRunCreateParam = mergeRuntimeEnvIntoRunCreate(runCreate);
-
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/runs`,
-      {
+    const mergedRunCreateParam = mergeRuntimeEnvIntoRun(
+      runCreate,
+      this.cachedLSEnvVarsForMetadata
+    );
+    if (options?.apiKey !== undefined) {
+      headers["x-api-key"] = options.apiKey;
+    }
+    if (options?.workspaceId !== undefined) {
+      headers["x-tenant-id"] = options.workspaceId;
+    }
+    const body = serializePayloadForTracing(
+      mergedRunCreateParam,
+      `Creating run with id: ${mergedRunCreateParam.id}`
+    );
+    await this.caller.call(async () => {
+      const res = await this._fetch(`${options?.apiUrl ?? this.apiUrl}/runs`, {
         method: "POST",
         headers,
-        body: serializePayloadForTracing(mergedRunCreateParam),
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
-      }
-    );
-    await raiseForStatus(response, "create run", true);
+        body,
+      });
+      await raiseForStatus(res, "create run", true);
+      return res;
+    });
   }
 
   /**
    * Batch ingest/upsert multiple runs in the Langsmith system.
    * @param runs
    */
-  public async batchIngestRuns({
-    runCreates,
-    runUpdates,
-  }: {
-    runCreates?: RunCreate[];
-    runUpdates?: RunUpdate[];
-  }) {
+  public async batchIngestRuns(
+    {
+      runCreates,
+      runUpdates,
+    }: {
+      runCreates?: RunCreate[];
+      runUpdates?: RunUpdate[];
+    },
+    options?: { apiKey?: string; apiUrl?: string }
+  ) {
     if (runCreates === undefined && runUpdates === undefined) {
       return;
     }
-    let preparedCreateParams =
+    let preparedCreateParams = await Promise.all(
       runCreates?.map((create) =>
         this.prepareRunCreateOrUpdateInputs(create)
-      ) ?? [];
-    let preparedUpdateParams =
+      ) ?? []
+    );
+    let preparedUpdateParams = await Promise.all(
       runUpdates?.map((update) =>
         this.prepareRunCreateOrUpdateInputs(update)
-      ) ?? [];
+      ) ?? []
+    );
 
     if (preparedCreateParams.length > 0 && preparedUpdateParams.length > 0) {
       const createById = preparedCreateParams.reduce(
@@ -1052,41 +1400,62 @@ export class Client implements LangSmithTracingClientInterface {
       }
     }
     if (batchChunks.post.length > 0 || batchChunks.patch.length > 0) {
-      await this._postBatchIngestRuns(serializePayloadForTracing(batchChunks));
+      const runIds = batchChunks.post
+        .map((item) => item.id)
+        .concat(batchChunks.patch.map((item) => item.id))
+        .join(",");
+      await this._postBatchIngestRuns(
+        serializePayloadForTracing(
+          batchChunks,
+          `Ingesting runs with ids: ${runIds}`
+        ),
+        options
+      );
     }
   }
 
-  private async _postBatchIngestRuns(body: Uint8Array) {
-    const headers = {
+  private async _postBatchIngestRuns(
+    body: Uint8Array,
+    options?: { apiKey?: string; apiUrl?: string }
+  ) {
+    const headers: Record<string, string> = {
       ...this.headers,
       "Content-Type": "application/json",
       Accept: "application/json",
     };
-    const response = await this.batchIngestCaller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/runs/batch`,
-      {
-        method: "POST",
-        headers,
-        body: body,
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
-      }
-    );
-    await raiseForStatus(response, "batch create run", true);
+    if (options?.apiKey !== undefined) {
+      headers["x-api-key"] = options.apiKey;
+    }
+    await this.batchIngestCaller.call(async () => {
+      const res = await this._fetch(
+        `${options?.apiUrl ?? this.apiUrl}/runs/batch`,
+        {
+          method: "POST",
+          headers,
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+          body,
+        }
+      );
+      await raiseForStatus(res, "batch create run", true);
+      return res;
+    });
   }
 
   /**
    * Batch ingest/upsert multiple runs in the Langsmith system.
    * @param runs
    */
-  public async multipartIngestRuns({
-    runCreates,
-    runUpdates,
-  }: {
-    runCreates?: RunCreate[];
-    runUpdates?: RunUpdate[];
-  }) {
+  public async multipartIngestRuns(
+    {
+      runCreates,
+      runUpdates,
+    }: {
+      runCreates?: RunCreate[];
+      runUpdates?: RunUpdate[];
+    },
+    options?: { apiKey?: string; apiUrl?: string; useGzip?: boolean }
+  ) {
     if (runCreates === undefined && runUpdates === undefined) {
       return;
     }
@@ -1095,7 +1464,7 @@ export class Client implements LangSmithTracingClientInterface {
     let preparedCreateParams = [];
 
     for (const create of runCreates ?? []) {
-      const preparedCreate = this.prepareRunCreateOrUpdateInputs(create);
+      const preparedCreate = await this.prepareRunCreateOrUpdateInputs(create);
       if (
         preparedCreate.id !== undefined &&
         preparedCreate.attachments !== undefined
@@ -1107,7 +1476,9 @@ export class Client implements LangSmithTracingClientInterface {
     }
     let preparedUpdateParams = [];
     for (const update of runUpdates ?? []) {
-      preparedUpdateParams.push(this.prepareRunCreateOrUpdateInputs(update));
+      preparedUpdateParams.push(
+        await this.prepareRunCreateOrUpdateInputs(update)
+      );
     }
 
     // require trace_id and dotted_order
@@ -1172,11 +1543,22 @@ export class Client implements LangSmithTracingClientInterface {
     ]) {
       for (const originalPayload of payloads) {
         // collect fields to be sent as separate parts
-        const { inputs, outputs, events, attachments, ...payload } =
-          originalPayload;
-        const fields = { inputs, outputs, events };
+        const {
+          inputs,
+          outputs,
+          events,
+          extra,
+          error,
+          serialized,
+          attachments,
+          ...payload
+        } = originalPayload;
+        const fields = { inputs, outputs, events, extra, error, serialized };
         // encode the main run payload
-        const stringifiedPayload = serializePayloadForTracing(payload);
+        const stringifiedPayload = serializePayloadForTracing(
+          payload,
+          `Serializing for multipart ingestion of run with id: ${payload.id}`
+        );
         accumulatedParts.push({
           name: `${method}.${payload.id}`,
           payload: new Blob([stringifiedPayload], {
@@ -1188,7 +1570,10 @@ export class Client implements LangSmithTracingClientInterface {
           if (value === undefined) {
             continue;
           }
-          const stringifiedValue = serializePayloadForTracing(value);
+          const stringifiedValue = serializePayloadForTracing(
+            value,
+            `Serializing ${key} for multipart ingestion of run with id: ${payload.id}`
+          );
           accumulatedParts.push({
             name: `${method}.${payload.id}.${key}`,
             payload: new Blob([stringifiedValue], {
@@ -1235,68 +1620,200 @@ export class Client implements LangSmithTracingClientInterface {
     }
     await this._sendMultipartRequest(
       accumulatedParts,
-      accumulatedContext.join("; ")
+      accumulatedContext.join("; "),
+      options
     );
   }
 
-  private async _sendMultipartRequest(parts: MultipartPart[], context: string) {
-    try {
-      // Create multipart form data manually using Blobs
-      const boundary =
-        "----LangSmithFormBoundary" + Math.random().toString(36).slice(2);
-      const chunks: Blob[] = [];
+  private async _createNodeFetchBody(parts: MultipartPart[], boundary: string) {
+    // Create multipart form data manually using Blobs
+    const chunks: Blob[] = [];
 
-      for (const part of parts) {
-        // Add field boundary
-        chunks.push(new Blob([`--${boundary}\r\n`]));
-        chunks.push(
-          new Blob([
-            `Content-Disposition: form-data; name="${part.name}"\r\n`,
-            `Content-Type: ${part.payload.type}\r\n\r\n`,
-          ])
+    for (const part of parts) {
+      // Add field boundary
+      chunks.push(new Blob([`--${boundary}\r\n`]));
+      chunks.push(
+        new Blob([
+          `Content-Disposition: form-data; name="${part.name}"\r\n`,
+          `Content-Type: ${part.payload.type}\r\n\r\n`,
+        ])
+      );
+      chunks.push(part.payload);
+      chunks.push(new Blob(["\r\n"]));
+    }
+
+    // Add final boundary
+    chunks.push(new Blob([`--${boundary}--\r\n`]));
+
+    // Combine all chunks into a single Blob
+    const body = new Blob(chunks);
+
+    // Convert Blob to ArrayBuffer for compatibility
+    const arrayBuffer = await body.arrayBuffer();
+    return arrayBuffer;
+  }
+
+  private async _createMultipartStream(
+    parts: MultipartPart[],
+    boundary: string
+  ) {
+    const encoder = new TextEncoder();
+    // Create a ReadableStream for streaming the multipart data
+    // Only do special handling if we're using node-fetch
+    const stream = new ReadableStream({
+      async start(controller) {
+        // Helper function to write a chunk to the stream
+        const writeChunk = async (chunk: string | Blob) => {
+          if (typeof chunk === "string") {
+            controller.enqueue(encoder.encode(chunk));
+          } else {
+            controller.enqueue(chunk);
+          }
+        };
+
+        // Write each part to the stream
+        for (const part of parts) {
+          // Write boundary and headers
+          await writeChunk(`--${boundary}\r\n`);
+          await writeChunk(
+            `Content-Disposition: form-data; name="${part.name}"\r\n`
+          );
+          await writeChunk(`Content-Type: ${part.payload.type}\r\n\r\n`);
+
+          // Write the payload
+          const payloadStream = part.payload.stream();
+          const reader = payloadStream.getReader();
+
+          try {
+            let result;
+            while (!(result = await reader.read()).done) {
+              controller.enqueue(result.value);
+            }
+          } finally {
+            reader.releaseLock();
+          }
+
+          await writeChunk("\r\n");
+        }
+
+        // Write final boundary
+        await writeChunk(`--${boundary}--\r\n`);
+        controller.close();
+      },
+    });
+    return stream;
+  }
+
+  private async _sendMultipartRequest(
+    parts: MultipartPart[],
+    context: string,
+    options?: { apiKey?: string; apiUrl?: string; useGzip?: boolean }
+  ) {
+    // Create multipart form data boundary
+    const boundary =
+      "----LangSmithFormBoundary" + Math.random().toString(36).slice(2);
+
+    const isNodeFetch = _globalFetchImplementationIsNodeFetch();
+    const buildBuffered = () => this._createNodeFetchBody(parts, boundary);
+    const buildStream = () => this._createMultipartStream(parts, boundary);
+
+    const sendWithRetry = async (
+      bodyFactory: () => Promise<BodyInit>
+    ): Promise<Response> => {
+      return this.batchIngestCaller.call(async () => {
+        const body = await bodyFactory();
+        const headers: Record<string, string> = {
+          ...this.headers,
+          "Content-Type": `multipart/form-data; boundary=${boundary}`,
+        };
+        if (options?.apiKey !== undefined) {
+          headers["x-api-key"] = options.apiKey;
+        }
+
+        let transformedBody = body;
+        if (
+          options?.useGzip &&
+          typeof body === "object" &&
+          "pipeThrough" in body
+        ) {
+          transformedBody = body.pipeThrough(new CompressionStream("gzip"));
+          headers["Content-Encoding"] = "gzip";
+        }
+
+        const response = await this._fetch(
+          `${options?.apiUrl ?? this.apiUrl}/runs/multipart`,
+          {
+            method: "POST",
+            headers,
+            body: transformedBody,
+            duplex: "half",
+            signal: AbortSignal.timeout(this.timeout_ms),
+            ...this.fetchOptions,
+          } as RequestInit
         );
-        chunks.push(part.payload);
-        chunks.push(new Blob(["\r\n"]));
+
+        await raiseForStatus(
+          response,
+          `Failed to send multipart request`,
+          true
+        );
+
+        return response;
+      });
+    };
+
+    try {
+      let res: Response;
+      let streamedAttempt = false;
+
+      // attempt stream only if not disabled and not using node-fetch or Bun
+      if (
+        !isNodeFetch &&
+        !this.multipartStreamingDisabled &&
+        getEnv() !== "bun"
+      ) {
+        streamedAttempt = true;
+        res = await sendWithRetry(buildStream);
+      } else {
+        res = await sendWithRetry(buildBuffered);
       }
 
-      // Add final boundary
-      chunks.push(new Blob([`--${boundary}--\r\n`]));
-
-      // Combine all chunks into a single Blob
-      const body = new Blob(chunks);
-
-      // Convert Blob to ArrayBuffer for compatibility
-      const arrayBuffer = await body.arrayBuffer();
-
-      const res = await this.batchIngestCaller.call(
-        _getFetchImplementation(),
-        `${this.apiUrl}/runs/multipart`,
-        {
-          method: "POST",
-          headers: {
-            ...this.headers,
-            "Content-Type": `multipart/form-data; boundary=${boundary}`,
-          },
-          body: arrayBuffer,
-          signal: AbortSignal.timeout(this.timeout_ms),
-          ...this.fetchOptions,
-        }
-      );
-      await raiseForStatus(res, "ingest multipart runs", true);
+      // if stream fails, fallback to buffered body
+      if (
+        (!this.multipartStreamingDisabled || streamedAttempt) &&
+        res.status === 422 &&
+        (options?.apiUrl ?? this.apiUrl) !== DEFAULT_API_URL
+      ) {
+        console.warn(
+          `Streaming multipart upload to ${
+            options?.apiUrl ?? this.apiUrl
+          }/runs/multipart failed. ` +
+            `This usually means the host does not support chunked uploads. ` +
+            `Retrying with a buffered upload for operation "${context}".`
+        );
+        // Disable streaming for future requests
+        this.multipartStreamingDisabled = true;
+        // retry with fully-buffered body
+        res = await sendWithRetry(buildBuffered);
+      }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       console.warn(`${e.message.trim()}\n\nContext: ${context}`);
     }
   }
 
-  public async updateRun(runId: string, run: RunUpdate): Promise<void> {
+  public async updateRun(
+    runId: string,
+    run: RunUpdate,
+    options?: { apiKey?: string; apiUrl?: string; workspaceId?: string }
+  ): Promise<void> {
     assertUuid(runId);
     if (run.inputs) {
-      run.inputs = this.processInputs(run.inputs);
+      run.inputs = await this.processInputs(run.inputs);
     }
 
     if (run.outputs) {
-      run.outputs = this.processOutputs(run.outputs);
+      run.outputs = await this.processOutputs(run.outputs);
     }
     // TODO: Untangle types
     const data: UpdateRunParams = { ...run, id: runId };
@@ -1308,6 +1825,7 @@ export class Client implements LangSmithTracingClientInterface {
       data.trace_id !== undefined &&
       data.dotted_order !== undefined
     ) {
+      const otelContext = this._cloneCurrentOTELContext();
       if (
         run.end_time !== undefined &&
         data.parent_run_id === undefined &&
@@ -1316,30 +1834,53 @@ export class Client implements LangSmithTracingClientInterface {
       ) {
         // Trigger batches as soon as a root trace ends and wait to ensure trace finishes
         // in serverless environments.
-        await this.processRunOperation({ action: "update", item: data }).catch(
-          console.error
-        );
+        await this.processRunOperation({
+          action: "update",
+          item: data,
+          otelContext,
+          apiKey: options?.apiKey,
+          apiUrl: options?.apiUrl,
+        }).catch(console.error);
         return;
       } else {
-        void this.processRunOperation({ action: "update", item: data }).catch(
-          console.error
-        );
+        void this.processRunOperation({
+          action: "update",
+          item: data,
+          otelContext,
+          apiKey: options?.apiKey,
+          apiUrl: options?.apiUrl,
+        }).catch(console.error);
       }
       return;
     }
-    const headers = { ...this.headers, "Content-Type": "application/json" };
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/runs/${runId}`,
-      {
-        method: "PATCH",
-        headers,
-        body: serializePayloadForTracing(run),
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
-      }
+    const headers: Record<string, string> = {
+      ...this.headers,
+      "Content-Type": "application/json",
+    };
+    if (options?.apiKey !== undefined) {
+      headers["x-api-key"] = options.apiKey;
+    }
+    if (options?.workspaceId !== undefined) {
+      headers["x-tenant-id"] = options.workspaceId;
+    }
+    const body = serializePayloadForTracing(
+      run,
+      `Serializing payload to update run with id: ${runId}`
     );
-    await raiseForStatus(response, "update run", true);
+    await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${options?.apiUrl ?? this.apiUrl}/runs/${runId}`,
+        {
+          method: "PATCH",
+          headers,
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+          body,
+        }
+      );
+      await raiseForStatus(res, "update run", true);
+      return res;
+    });
   }
 
   public async readRun(
@@ -1348,7 +1889,7 @@ export class Client implements LangSmithTracingClientInterface {
   ): Promise<Run> {
     assertUuid(runId);
     let run = await this._get<Run>(`/runs/${runId}`);
-    if (loadChildRuns && run.child_run_ids) {
+    if (loadChildRuns) {
       run = await this._loadChildRuns(run);
     }
     return run;
@@ -1396,7 +1937,13 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   private async _loadChildRuns(run: Run): Promise<Run> {
-    const childRuns = await toArray(this.listRuns({ id: run.child_run_ids }));
+    const childRuns = await toArray(
+      this.listRuns({
+        isRoot: false,
+        projectId: run.session_id,
+        traceId: run.trace_id,
+      })
+    );
     const treemap: { [key: string]: Run[] } = {};
     const runs: { [key: string]: Run } = {};
     // TODO: make dotted order required when the migration finishes
@@ -1410,11 +1957,16 @@ export class Client implements LangSmithTracingClientInterface {
       ) {
         throw new Error(`Child run ${childRun.id} has no parent`);
       }
-      if (!(childRun.parent_run_id in treemap)) {
-        treemap[childRun.parent_run_id] = [];
+      if (
+        childRun.dotted_order?.startsWith(run.dotted_order ?? "") &&
+        childRun.id !== run.id
+      ) {
+        if (!(childRun.parent_run_id in treemap)) {
+          treemap[childRun.parent_run_id] = [];
+        }
+        treemap[childRun.parent_run_id].push(childRun);
+        runs[childRun.id] = childRun;
       }
-      treemap[childRun.parent_run_id].push(childRun);
-      runs[childRun.id] = childRun;
     }
     run.child_runs = treemap[run.id] || [];
     for (const runId in treemap) {
@@ -1526,6 +2078,7 @@ export class Client implements LangSmithTracingClientInterface {
       treeFilter,
       limit,
       select,
+      order,
     } = props;
     let projectIds: string[] = [];
     if (projectId) {
@@ -1544,7 +2097,6 @@ export class Client implements LangSmithTracingClientInterface {
     }
     const default_select = [
       "app_path",
-      "child_run_ids",
       "completion_cost",
       "completion_tokens",
       "dotted_order",
@@ -1589,7 +2141,14 @@ export class Client implements LangSmithTracingClientInterface {
       trace: traceId,
       select: select ? select : default_select,
       is_root: isRoot,
+      order,
     };
+
+    if (body.select.includes("child_run_ids")) {
+      warnOnce(
+        "Deprecated: 'child_run_ids' in the listRuns select parameter is deprecated and will be removed in a future version."
+      );
+    }
 
     let runsYielded = 0;
     for await (const runs of this._getCursorPaginatedList<Run>(
@@ -1609,6 +2168,77 @@ export class Client implements LangSmithTracingClientInterface {
         yield* runs;
       } else {
         yield* runs;
+      }
+    }
+  }
+
+  public async *listGroupRuns(props: GroupRunsParams): AsyncIterable<Thread> {
+    const {
+      projectId,
+      projectName,
+      groupBy,
+      filter,
+      startTime,
+      endTime,
+      limit,
+      offset,
+    } = props;
+
+    const sessionId = projectId || (await this.readProject({ projectName })).id;
+
+    const baseBody = {
+      session_id: sessionId,
+      group_by: groupBy,
+      filter,
+      start_time: startTime ? startTime.toISOString() : null,
+      end_time: endTime ? endTime.toISOString() : null,
+      limit: Number(limit) || 100,
+    };
+
+    let currentOffset = Number(offset) || 0;
+
+    const path = "/runs/group";
+    const url = `${this.apiUrl}${path}`;
+
+    while (true) {
+      const currentBody = {
+        ...baseBody,
+        offset: currentOffset,
+      };
+
+      // Remove undefined values from the payload
+      const filteredPayload = Object.fromEntries(
+        Object.entries(currentBody).filter(([_, value]) => value !== undefined)
+      );
+
+      const body = JSON.stringify(filteredPayload);
+
+      const response = await this.caller.call(async () => {
+        const res = await this._fetch(url, {
+          method: "POST",
+          headers: { ...this.headers, "Content-Type": "application/json" },
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+          body,
+        });
+        await raiseForStatus(res, `Failed to fetch ${path}`);
+        return res;
+      });
+
+      const items: { groups: Thread[]; total: number } = await response.json();
+      const { groups, total } = items;
+
+      if (groups.length === 0) {
+        break;
+      }
+
+      for (const thread of groups) {
+        yield thread;
+      }
+      currentOffset += groups.length;
+
+      if (currentOffset >= total) {
+        break;
       }
     }
   }
@@ -1685,17 +2315,19 @@ export class Client implements LangSmithTracingClientInterface {
       Object.entries(payload).filter(([_, value]) => value !== undefined)
     );
 
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/runs/stats`,
-      {
+    const body = JSON.stringify(filteredPayload);
+
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(`${this.apiUrl}/runs/stats`, {
         method: "POST",
-        headers: this.headers,
-        body: JSON.stringify(filteredPayload),
+        headers: { ...this.headers, "Content-Type": "application/json" },
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
-      }
-    );
+        body,
+      });
+      await raiseForStatus(res, "get run stats");
+      return res;
+    });
 
     const result = await response.json();
     return result;
@@ -1710,17 +2342,18 @@ export class Client implements LangSmithTracingClientInterface {
       share_token: shareId || uuid.v4(),
     };
     assertUuid(runId);
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/runs/${runId}/share`,
-      {
+    const body = JSON.stringify(data);
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(`${this.apiUrl}/runs/${runId}/share`, {
         method: "PUT",
         headers: this.headers,
-        body: JSON.stringify(data),
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
-      }
-    );
+        body,
+      });
+      await raiseForStatus(res, "share run");
+      return res;
+    });
     const result = await response.json();
     if (result === null || !("share_token" in result)) {
       throw new Error("Invalid response from server");
@@ -1730,31 +2363,30 @@ export class Client implements LangSmithTracingClientInterface {
 
   public async unshareRun(runId: string): Promise<void> {
     assertUuid(runId);
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/runs/${runId}/share`,
-      {
+    await this.caller.call(async () => {
+      const res = await this._fetch(`${this.apiUrl}/runs/${runId}/share`, {
         method: "DELETE",
         headers: this.headers,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
-      }
-    );
-    await raiseForStatus(response, "unshare run", true);
+      });
+      await raiseForStatus(res, "unshare run", true);
+      return res;
+    });
   }
 
   public async readRunSharedLink(runId: string): Promise<string | undefined> {
     assertUuid(runId);
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/runs/${runId}/share`,
-      {
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(`${this.apiUrl}/runs/${runId}/share`, {
         method: "GET",
         headers: this.headers,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
-      }
-    );
+      });
+      await raiseForStatus(res, "read run shared link");
+      return res;
+    });
     const result = await response.json();
     if (result === null || !("share_token" in result)) {
       return undefined;
@@ -1779,16 +2411,19 @@ export class Client implements LangSmithTracingClientInterface {
       }
     }
     assertUuid(shareToken);
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/public/${shareToken}/runs${queryParams}`,
-      {
-        method: "GET",
-        headers: this.headers,
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
-      }
-    );
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${this.apiUrl}/public/${shareToken}/runs${queryParams}`,
+        {
+          method: "GET",
+          headers: this.headers,
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+        }
+      );
+      await raiseForStatus(res, "list shared runs");
+      return res;
+    });
     const runs = await response.json();
     return runs as Run[];
   }
@@ -1805,16 +2440,19 @@ export class Client implements LangSmithTracingClientInterface {
       datasetId = dataset.id;
     }
     assertUuid(datasetId);
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/datasets/${datasetId}/share`,
-      {
-        method: "GET",
-        headers: this.headers,
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
-      }
-    );
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${this.apiUrl}/datasets/${datasetId}/share`,
+        {
+          method: "GET",
+          headers: this.headers,
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+        }
+      );
+      await raiseForStatus(res, "read dataset shared schema");
+      return res;
+    });
     const shareSchema = await response.json();
     shareSchema.url = `${this.getHostUrl()}/public/${
       shareSchema.share_token
@@ -1837,17 +2475,21 @@ export class Client implements LangSmithTracingClientInterface {
       dataset_id: datasetId,
     };
     assertUuid(datasetId);
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/datasets/${datasetId}/share`,
-      {
-        method: "PUT",
-        headers: this.headers,
-        body: JSON.stringify(data),
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
-      }
-    );
+    const body = JSON.stringify(data);
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${this.apiUrl}/datasets/${datasetId}/share`,
+        {
+          method: "PUT",
+          headers: this.headers,
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+          body,
+        }
+      );
+      await raiseForStatus(res, "share dataset");
+      return res;
+    });
     const shareSchema = await response.json();
     shareSchema.url = `${this.getHostUrl()}/public/${
       shareSchema.share_token
@@ -1857,31 +2499,36 @@ export class Client implements LangSmithTracingClientInterface {
 
   public async unshareDataset(datasetId: string): Promise<void> {
     assertUuid(datasetId);
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/datasets/${datasetId}/share`,
-      {
-        method: "DELETE",
-        headers: this.headers,
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
-      }
-    );
-    await raiseForStatus(response, "unshare dataset", true);
+    await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${this.apiUrl}/datasets/${datasetId}/share`,
+        {
+          method: "DELETE",
+          headers: this.headers,
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+        }
+      );
+      await raiseForStatus(res, "unshare dataset", true);
+      return res;
+    });
   }
 
   public async readSharedDataset(shareToken: string): Promise<Dataset> {
     assertUuid(shareToken);
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/public/${shareToken}/datasets`,
-      {
-        method: "GET",
-        headers: this.headers,
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
-      }
-    );
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${this.apiUrl}/public/${shareToken}/datasets`,
+        {
+          method: "GET",
+          headers: this.headers,
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+        }
+      );
+      await raiseForStatus(res, "read shared dataset");
+      return res;
+    });
     const dataset = await response.json();
     return dataset as Dataset;
   }
@@ -1912,23 +2559,30 @@ export class Client implements LangSmithTracingClientInterface {
       }
     });
 
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/public/${shareToken}/examples?${urlParams.toString()}`,
-      {
-        method: "GET",
-        headers: this.headers,
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
-      }
-    );
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${this.apiUrl}/public/${shareToken}/examples?${urlParams.toString()}`,
+        {
+          method: "GET",
+          headers: this.headers,
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+        }
+      );
+      await raiseForStatus(res, "list shared examples");
+      return res;
+    });
     const result = await response.json();
     if (!response.ok) {
       if ("detail" in result) {
         throw new Error(
           `Failed to list shared examples.\nStatus: ${
             response.status
-          }\nMessage: ${result.detail.join("\n")}`
+          }\nMessage: ${
+            Array.isArray(result.detail)
+              ? result.detail.join("\n")
+              : "Unspecified error"
+          }`
         );
       }
       throw new Error(
@@ -1963,18 +2617,18 @@ export class Client implements LangSmithTracingClientInterface {
     if (referenceDatasetId !== null) {
       body["reference_dataset_id"] = referenceDatasetId;
     }
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      endpoint,
-      {
+    const serializedBody = JSON.stringify(body);
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(endpoint, {
         method: "POST",
         headers: { ...this.headers, "Content-Type": "application/json" },
-        body: JSON.stringify(body),
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
-      }
-    );
-    await raiseForStatus(response, "create project");
+        body: serializedBody,
+      });
+      await raiseForStatus(res, "create project");
+      return res;
+    });
     const result = await response.json();
     return result as TracerSession;
   }
@@ -2000,24 +2654,23 @@ export class Client implements LangSmithTracingClientInterface {
     if (metadata) {
       extra = { ...(extra || {}), metadata };
     }
-    const body: RecordStringAny = {
+    const body = JSON.stringify({
       name,
       extra,
       description,
       end_time: endTime ? new Date(endTime).toISOString() : null,
-    };
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      endpoint,
-      {
+    });
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(endpoint, {
         method: "PATCH",
         headers: { ...this.headers, "Content-Type": "application/json" },
-        body: JSON.stringify(body),
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
-      }
-    );
-    await raiseForStatus(response, "update project");
+        body,
+      });
+      await raiseForStatus(res, "update project");
+      return res;
+    });
     const result = await response.json();
     return result as TracerSession;
   }
@@ -2042,16 +2695,16 @@ export class Client implements LangSmithTracingClientInterface {
     } else {
       throw new Error("Must provide projectName or projectId");
     }
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}${path}?${params}`,
-      {
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(`${this.apiUrl}${path}?${params}`, {
         method: "GET",
         headers: this.headers,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
-      }
-    );
+      });
+      await raiseForStatus(res, "has project");
+      return res;
+    });
     // consume the response body to release the connection
     // https://undici.nodejs.org/#/?id=garbage-collection
     try {
@@ -2164,6 +2817,8 @@ export class Client implements LangSmithTracingClientInterface {
     nameContains,
     referenceDatasetId,
     referenceDatasetName,
+    includeStats,
+    datasetVersion,
     referenceFree,
     metadata,
   }: {
@@ -2172,9 +2827,11 @@ export class Client implements LangSmithTracingClientInterface {
     nameContains?: string;
     referenceDatasetId?: string;
     referenceDatasetName?: string;
+    includeStats?: boolean;
+    datasetVersion?: string;
     referenceFree?: boolean;
     metadata?: RecordStringAny;
-  } = {}): AsyncIterable<TracerSession> {
+  } = {}): AsyncIterable<TracerSessionResult> {
     const params = new URLSearchParams();
     if (projectIds !== undefined) {
       for (const projectId of projectIds) {
@@ -2195,13 +2852,19 @@ export class Client implements LangSmithTracingClientInterface {
       });
       params.append("reference_dataset", dataset.id);
     }
+    if (includeStats !== undefined) {
+      params.append("include_stats", includeStats.toString());
+    }
+    if (datasetVersion !== undefined) {
+      params.append("dataset_version", datasetVersion);
+    }
     if (referenceFree !== undefined) {
       params.append("reference_free", referenceFree.toString());
     }
     if (metadata !== undefined) {
       params.append("metadata", JSON.stringify(metadata));
     }
-    for await (const projects of this._getPaginated<TracerSession>(
+    for await (const projects of this._getPaginated<TracerSessionResult>(
       "/sessions",
       params
     )) {
@@ -2227,21 +2890,20 @@ export class Client implements LangSmithTracingClientInterface {
       projectId_ = projectId;
     }
     assertUuid(projectId_);
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/sessions/${projectId_}`,
-      {
+    await this.caller.call(async () => {
+      const res = await this._fetch(`${this.apiUrl}/sessions/${projectId_}`, {
         method: "DELETE",
         headers: this.headers,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
-      }
-    );
-    await raiseForStatus(
-      response,
-      `delete session ${projectId_} (${projectName})`,
-      true
-    );
+      });
+      await raiseForStatus(
+        res,
+        `delete session ${projectId_} (${projectName})`,
+        true
+      );
+      return res;
+    });
   }
 
   public async uploadCsv({
@@ -2273,14 +2935,17 @@ export class Client implements LangSmithTracingClientInterface {
       formData.append("name", name);
     }
 
-    const response = await this.caller.call(_getFetchImplementation(), url, {
-      method: "POST",
-      headers: this.headers,
-      body: formData,
-      signal: AbortSignal.timeout(this.timeout_ms),
-      ...this.fetchOptions,
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(url, {
+        method: "POST",
+        headers: this.headers,
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+        body: formData,
+      });
+      await raiseForStatus(res, "upload CSV");
+      return res;
     });
-    await raiseForStatus(response, "upload CSV");
 
     const result = await response.json();
     return result as Dataset;
@@ -2316,18 +2981,18 @@ export class Client implements LangSmithTracingClientInterface {
     if (outputsSchema) {
       body.outputs_schema_definition = outputsSchema;
     }
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/datasets`,
-      {
+    const serializedBody = JSON.stringify(body);
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(`${this.apiUrl}/datasets`, {
         method: "POST",
         headers: { ...this.headers, "Content-Type": "application/json" },
-        body: JSON.stringify(body),
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
-      }
-    );
-    await raiseForStatus(response, "create dataset");
+        body: serializedBody,
+      });
+      await raiseForStatus(res, "create dataset");
+      return res;
+    });
     const result = await response.json();
     return result as Dataset;
   }
@@ -2342,12 +3007,12 @@ export class Client implements LangSmithTracingClientInterface {
     let path = "/datasets";
     // limit to 1 result
     const params = new URLSearchParams({ limit: "1" });
-    if (datasetId !== undefined && datasetName !== undefined) {
+    if (datasetId && datasetName) {
       throw new Error("Must provide either datasetName or datasetId, not both");
-    } else if (datasetId !== undefined) {
+    } else if (datasetId) {
       assertUuid(datasetId);
       path += `/${datasetId}`;
-    } else if (datasetName !== undefined) {
+    } else if (datasetName) {
       params.append("name", datasetName);
     } else {
       throw new Error("Must provide datasetName or datasetId");
@@ -2508,18 +3173,18 @@ export class Client implements LangSmithTracingClientInterface {
       datasetId ?? (await this.readDataset({ datasetName })).id;
     assertUuid(_datasetId);
 
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/datasets/${_datasetId}`,
-      {
+    const body = JSON.stringify(update);
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(`${this.apiUrl}/datasets/${_datasetId}`, {
         method: "PATCH",
         headers: { ...this.headers, "Content-Type": "application/json" },
-        body: JSON.stringify(update),
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
-      }
-    );
-    await raiseForStatus(response, "update dataset");
+        body,
+      });
+      await raiseForStatus(res, "update dataset");
+      return res;
+    });
     return (await response.json()) as Dataset;
   }
 
@@ -2553,21 +3218,24 @@ export class Client implements LangSmithTracingClientInterface {
       datasetId ?? (await this.readDataset({ datasetName })).id;
     assertUuid(_datasetId);
 
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/datasets/${_datasetId}/tags`,
-      {
-        method: "PUT",
-        headers: { ...this.headers, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          as_of: typeof asOf === "string" ? asOf : asOf.toISOString(),
-          tag,
-        }),
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
-      }
-    );
-    await raiseForStatus(response, "update dataset tags");
+    const body = JSON.stringify({
+      as_of: typeof asOf === "string" ? asOf : asOf.toISOString(),
+      tag,
+    });
+    await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${this.apiUrl}/datasets/${_datasetId}/tags`,
+        {
+          method: "PUT",
+          headers: { ...this.headers, "Content-Type": "application/json" },
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+          body,
+        }
+      );
+      await raiseForStatus(res, "update dataset tags", true);
+      return res;
+    });
   }
 
   public async deleteDataset({
@@ -2591,19 +3259,16 @@ export class Client implements LangSmithTracingClientInterface {
     } else {
       throw new Error("Must provide datasetName or datasetId");
     }
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      this.apiUrl + path,
-      {
+    await this.caller.call(async () => {
+      const res = await this._fetch(this.apiUrl + path, {
         method: "DELETE",
         headers: this.headers,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
-      }
-    );
-    await raiseForStatus(response, `delete ${path}`);
-
-    await response.json();
+      });
+      await raiseForStatus(res, `delete ${path}`, true);
+      return res;
+    });
   }
 
   public async indexDataset({
@@ -2629,18 +3294,21 @@ export class Client implements LangSmithTracingClientInterface {
     const data = {
       tag: tag,
     };
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/datasets/${datasetId_}/index`,
-      {
-        method: "POST",
-        headers: { ...this.headers, "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
-      }
-    );
-    await raiseForStatus(response, "index dataset");
+    const body = JSON.stringify(data);
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${this.apiUrl}/datasets/${datasetId_}/index`,
+        {
+          method: "POST",
+          headers: { ...this.headers, "Content-Type": "application/json" },
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+          body,
+        }
+      );
+      await raiseForStatus(res, "index dataset");
+      return res;
+    });
     await response.json();
   }
 
@@ -2694,18 +3362,21 @@ export class Client implements LangSmithTracingClientInterface {
     }
 
     assertUuid(datasetId);
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/datasets/${datasetId}/search`,
-      {
-        method: "POST",
-        headers: { ...this.headers, "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
-      }
-    );
-    await raiseForStatus(response, "fetch similar examples");
+    const body = JSON.stringify(data);
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${this.apiUrl}/datasets/${datasetId}/search`,
+        {
+          headers: { ...this.headers, "Content-Type": "application/json" },
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+          method: "POST",
+          body,
+        }
+      );
+      await raiseForStatus(res, "fetch similar examples");
+      return res;
+    });
     const result = await response.json();
     return result["examples"] as ExampleSearch[];
   }
@@ -3045,18 +3716,16 @@ export class Client implements LangSmithTracingClientInterface {
   public async deleteExample(exampleId: string): Promise<void> {
     assertUuid(exampleId);
     const path = `/examples/${exampleId}`;
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      this.apiUrl + path,
-      {
+    await this.caller.call(async () => {
+      const res = await this._fetch(this.apiUrl + path, {
         method: "DELETE",
         headers: this.headers,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
-      }
-    );
-    await raiseForStatus(response, `delete ${path}`);
-    await response.json();
+      });
+      await raiseForStatus(res, `delete ${path}`, true);
+      return res;
+    });
   }
 
   /**
@@ -3161,20 +3830,21 @@ export class Client implements LangSmithTracingClientInterface {
       params.append("tag", tag);
     }
 
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${
-        this.apiUrl
-      }/datasets/${resolvedDatasetId}/version?${params.toString()}`,
-      {
-        method: "GET",
-        headers: { ...this.headers },
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
-      }
-    );
-
-    await raiseForStatus(response, "read dataset version");
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${
+          this.apiUrl
+        }/datasets/${resolvedDatasetId}/version?${params.toString()}`,
+        {
+          method: "GET",
+          headers: { ...this.headers },
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+        }
+      );
+      await raiseForStatus(res, "read dataset version");
+      return res;
+    });
 
     return await response.json();
   }
@@ -3255,19 +3925,21 @@ export class Client implements LangSmithTracingClientInterface {
       remove,
     };
 
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/datasets/${datasetId_}/splits`,
-      {
-        method: "PUT",
-        headers: { ...this.headers, "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
-      }
-    );
-
-    await raiseForStatus(response, "update dataset splits", true);
+    const body = JSON.stringify(data);
+    await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${this.apiUrl}/datasets/${datasetId_}/splits`,
+        {
+          method: "PUT",
+          headers: { ...this.headers, "Content-Type": "application/json" },
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+          body,
+        }
+      );
+      await raiseForStatus(res, "update dataset splits", true);
+      return res;
+    });
   }
 
   /**
@@ -3380,15 +4052,19 @@ export class Client implements LangSmithTracingClientInterface {
       feedbackConfig,
       session_id: projectId,
     };
+    const body = JSON.stringify(feedback);
     const url = `${this.apiUrl}/feedback`;
-    const response = await this.caller.call(_getFetchImplementation(), url, {
-      method: "POST",
-      headers: { ...this.headers, "Content-Type": "application/json" },
-      body: JSON.stringify(feedback),
-      signal: AbortSignal.timeout(this.timeout_ms),
-      ...this.fetchOptions,
+    await this.caller.call(async () => {
+      const res = await this._fetch(url, {
+        method: "POST",
+        headers: { ...this.headers, "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(this.timeout_ms),
+        ...this.fetchOptions,
+        body,
+      });
+      await raiseForStatus(res, "create feedback", true);
+      return res;
     });
-    await raiseForStatus(response, "create feedback", true);
     return feedback as Feedback;
   }
 
@@ -3420,18 +4096,18 @@ export class Client implements LangSmithTracingClientInterface {
       feedbackUpdate["comment"] = comment;
     }
     assertUuid(feedbackId);
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/feedback/${feedbackId}`,
-      {
+    const body = JSON.stringify(feedbackUpdate);
+    await this.caller.call(async () => {
+      const res = await this._fetch(`${this.apiUrl}/feedback/${feedbackId}`, {
         method: "PATCH",
         headers: { ...this.headers, "Content-Type": "application/json" },
-        body: JSON.stringify(feedbackUpdate),
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
-      }
-    );
-    await raiseForStatus(response, "update feedback", true);
+        body,
+      });
+      await raiseForStatus(res, "update feedback", true);
+      return res;
+    });
   }
 
   public async readFeedback(feedbackId: string): Promise<Feedback> {
@@ -3444,18 +4120,16 @@ export class Client implements LangSmithTracingClientInterface {
   public async deleteFeedback(feedbackId: string): Promise<void> {
     assertUuid(feedbackId);
     const path = `/feedback/${feedbackId}`;
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      this.apiUrl + path,
-      {
+    await this.caller.call(async () => {
+      const res = await this._fetch(this.apiUrl + path, {
         method: "DELETE",
         headers: this.headers,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
-      }
-    );
-    await raiseForStatus(response, `delete ${path}`);
-    await response.json();
+      });
+      await raiseForStatus(res, `delete ${path}`, true);
+      return res;
+    });
   }
 
   public async *listFeedback({
@@ -3469,7 +4143,10 @@ export class Client implements LangSmithTracingClientInterface {
   } = {}): AsyncIterable<Feedback> {
     const queryParams = new URLSearchParams();
     if (runIds) {
-      queryParams.append("run", runIds.join(","));
+      for (const runId of runIds) {
+        assertUuid(runId);
+        queryParams.append("run", runId);
+      }
     }
     if (feedbackKeys) {
       for (const key of feedbackKeys) {
@@ -3532,19 +4209,20 @@ export class Client implements LangSmithTracingClientInterface {
       };
     }
 
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/feedback/tokens`,
-      {
+    const serializedBody = JSON.stringify(body);
+
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(`${this.apiUrl}/feedback/tokens`, {
         method: "POST",
         headers: { ...this.headers, "Content-Type": "application/json" },
-        body: JSON.stringify(body),
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
-      }
-    );
-    const result = await response.json();
-    return result as FeedbackIngestToken;
+        body: serializedBody,
+      });
+      await raiseForStatus(res, "create presigned feedback token");
+      return res;
+    });
+    return await response.json();
   }
 
   public async createComparativeExperiment({
@@ -3592,18 +4270,20 @@ export class Client implements LangSmithTracingClientInterface {
 
     if (metadata) body.extra["metadata"] = metadata;
 
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/datasets/comparative`,
-      {
+    const serializedBody = JSON.stringify(body);
+
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(`${this.apiUrl}/datasets/comparative`, {
         method: "POST",
         headers: { ...this.headers, "Content-Type": "application/json" },
-        body: JSON.stringify(body),
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
-      }
-    );
-    return await response.json();
+        body: serializedBody,
+      });
+      await raiseForStatus(res, "create comparative experiment");
+      return res;
+    });
+    return response.json();
   }
 
   /**
@@ -3755,48 +4435,57 @@ export class Client implements LangSmithTracingClientInterface {
     name: string;
     description?: string;
     queueId?: string;
-  }): Promise<AnnotationQueue> {
-    const { name, description, queueId } = options;
+    rubricInstructions?: string;
+  }): Promise<AnnotationQueueWithDetails> {
+    const { name, description, queueId, rubricInstructions } = options;
     const body = {
       name,
       description,
       id: queueId || uuid.v4(),
+      rubric_instructions: rubricInstructions,
     };
 
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/annotation-queues`,
-      {
+    const serializedBody = JSON.stringify(
+      Object.fromEntries(
+        Object.entries(body).filter(([_, v]) => v !== undefined)
+      )
+    );
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(`${this.apiUrl}/annotation-queues`, {
         method: "POST",
         headers: { ...this.headers, "Content-Type": "application/json" },
-        body: JSON.stringify(
-          Object.fromEntries(
-            Object.entries(body).filter(([_, v]) => v !== undefined)
-          )
-        ),
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
-      }
-    );
-    await raiseForStatus(response, "create annotation queue");
-    const data = await response.json();
-    return data as AnnotationQueue;
+        body: serializedBody,
+      });
+      await raiseForStatus(res, "create annotation queue");
+      return res;
+    });
+    return response.json();
   }
 
   /**
    * Read an annotation queue with the specified queue ID.
    * @param queueId - The ID of the annotation queue to read
-   * @returns The AnnotationQueue object
+   * @returns The AnnotationQueueWithDetails object
    */
-  public async readAnnotationQueue(queueId: string): Promise<AnnotationQueue> {
-    // TODO: Replace when actual endpoint is added
-    const queueIteratorResult = await this.listAnnotationQueues({
-      queueIds: [queueId],
-    }).next();
-    if (queueIteratorResult.done) {
-      throw new Error(`Annotation queue with ID ${queueId} not found`);
-    }
-    return queueIteratorResult.value;
+  public async readAnnotationQueue(
+    queueId: string
+  ): Promise<AnnotationQueueWithDetails> {
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${this.apiUrl}/annotation-queues/${assertUuid(queueId, "queueId")}`,
+        {
+          method: "GET",
+          headers: this.headers,
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+        }
+      );
+      await raiseForStatus(res, "read annotation queue");
+      return res;
+    });
+    return response.json();
   }
 
   /**
@@ -3811,21 +4500,29 @@ export class Client implements LangSmithTracingClientInterface {
     options: {
       name: string;
       description?: string;
+      rubricInstructions?: string;
     }
   ): Promise<void> {
-    const { name, description } = options;
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/annotation-queues/${assertUuid(queueId, "queueId")}`,
-      {
-        method: "PATCH",
-        headers: { ...this.headers, "Content-Type": "application/json" },
-        body: JSON.stringify({ name, description }),
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
-      }
-    );
-    await raiseForStatus(response, "update annotation queue");
+    const { name, description, rubricInstructions } = options;
+    const body = JSON.stringify({
+      name,
+      description,
+      rubric_instructions: rubricInstructions,
+    });
+    await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${this.apiUrl}/annotation-queues/${assertUuid(queueId, "queueId")}`,
+        {
+          method: "PATCH",
+          headers: { ...this.headers, "Content-Type": "application/json" },
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+          body,
+        }
+      );
+      await raiseForStatus(res, "update annotation queue", true);
+      return res;
+    });
   }
 
   /**
@@ -3833,17 +4530,19 @@ export class Client implements LangSmithTracingClientInterface {
    * @param queueId - The ID of the annotation queue to delete
    */
   public async deleteAnnotationQueue(queueId: string): Promise<void> {
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/annotation-queues/${assertUuid(queueId, "queueId")}`,
-      {
-        method: "DELETE",
-        headers: { ...this.headers, Accept: "application/json" },
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
-      }
-    );
-    await raiseForStatus(response, "delete annotation queue");
+    await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${this.apiUrl}/annotation-queues/${assertUuid(queueId, "queueId")}`,
+        {
+          method: "DELETE",
+          headers: { ...this.headers, Accept: "application/json" },
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+        }
+      );
+      await raiseForStatus(res, "delete annotation queue", true);
+      return res;
+    });
   }
 
   /**
@@ -3855,20 +4554,26 @@ export class Client implements LangSmithTracingClientInterface {
     queueId: string,
     runIds: string[]
   ): Promise<void> {
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/annotation-queues/${assertUuid(queueId, "queueId")}/runs`,
-      {
-        method: "POST",
-        headers: { ...this.headers, "Content-Type": "application/json" },
-        body: JSON.stringify(
-          runIds.map((id, i) => assertUuid(id, `runIds[${i}]`).toString())
-        ),
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
-      }
+    const body = JSON.stringify(
+      runIds.map((id, i) => assertUuid(id, `runIds[${i}]`).toString())
     );
-    await raiseForStatus(response, "add runs to annotation queue");
+    await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${this.apiUrl}/annotation-queues/${assertUuid(
+          queueId,
+          "queueId"
+        )}/runs`,
+        {
+          method: "POST",
+          headers: { ...this.headers, "Content-Type": "application/json" },
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+          body,
+        }
+      );
+      await raiseForStatus(res, "add runs to annotation queue", true);
+      return res;
+    });
   }
 
   /**
@@ -3883,19 +4588,17 @@ export class Client implements LangSmithTracingClientInterface {
     index: number
   ): Promise<RunWithAnnotationQueueInfo> {
     const baseUrl = `/annotation-queues/${assertUuid(queueId, "queueId")}/run`;
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}${baseUrl}/${index}`,
-      {
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(`${this.apiUrl}${baseUrl}/${index}`, {
         method: "GET",
         headers: this.headers,
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
-      }
-    );
-
-    await raiseForStatus(response, "get run from annotation queue");
-    return await response.json();
+      });
+      await raiseForStatus(res, "get run from annotation queue");
+      return res;
+    });
+    return response.json();
   }
 
   /**
@@ -3907,20 +4610,22 @@ export class Client implements LangSmithTracingClientInterface {
     queueId: string,
     queueRunId: string
   ): Promise<void> {
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/annotation-queues/${assertUuid(
-        queueId,
-        "queueId"
-      )}/runs/${assertUuid(queueRunId, "queueRunId")}`,
-      {
-        method: "DELETE",
-        headers: { ...this.headers, Accept: "application/json" },
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
-      }
-    );
-    await raiseForStatus(response, "delete run from annotation queue");
+    await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${this.apiUrl}/annotation-queues/${assertUuid(
+          queueId,
+          "queueId"
+        )}/runs/${assertUuid(queueRunId, "queueRunId")}`,
+        {
+          method: "DELETE",
+          headers: { ...this.headers, Accept: "application/json" },
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+        }
+      );
+      await raiseForStatus(res, "delete run from annotation queue", true);
+      return res;
+    });
   }
 
   /**
@@ -3930,18 +4635,23 @@ export class Client implements LangSmithTracingClientInterface {
   public async getSizeFromAnnotationQueue(
     queueId: string
   ): Promise<{ size: number }> {
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/annotation-queues/${assertUuid(queueId, "queueId")}/size`,
-      {
-        method: "GET",
-        headers: this.headers,
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
-      }
-    );
-    await raiseForStatus(response, "get size from annotation queue");
-    return await response.json();
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${this.apiUrl}/annotation-queues/${assertUuid(
+          queueId,
+          "queueId"
+        )}/size`,
+        {
+          method: "GET",
+          headers: this.headers,
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+        }
+      );
+      await raiseForStatus(res, "get size from annotation queue");
+      return res;
+    });
+    return response.json();
   }
 
   protected async _currentTenantIsOwner(owner: string): Promise<boolean> {
@@ -3964,31 +4674,21 @@ export class Client implements LangSmithTracingClientInterface {
   protected async _getLatestCommitHash(
     promptOwnerAndName: string
   ): Promise<string | undefined> {
-    const res = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/commits/${promptOwnerAndName}/?limit=${1}&offset=${0}`,
-      {
-        method: "GET",
-        headers: this.headers,
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
-      }
-    );
-
-    const json = await res.json();
-    if (!res.ok) {
-      const detail =
-        typeof json.detail === "string"
-          ? json.detail
-          : JSON.stringify(json.detail);
-      const error = new Error(
-        `Error ${res.status}: ${res.statusText}\n${detail}`
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${this.apiUrl}/commits/${promptOwnerAndName}/?limit=${1}&offset=${0}`,
+        {
+          method: "GET",
+          headers: this.headers,
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+        }
       );
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (error as any).statusCode = res.status;
-      throw error;
-    }
+      await raiseForStatus(res, "get latest commit hash");
+      return res;
+    });
 
+    const json = await response.json();
     if (json.commits.length === 0) {
       return undefined;
     }
@@ -4001,20 +4701,22 @@ export class Client implements LangSmithTracingClientInterface {
     like: boolean
   ): Promise<LikePromptResponse> {
     const [owner, promptName, _] = parsePromptIdentifier(promptIdentifier);
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/likes/${owner}/${promptName}`,
-      {
-        method: "POST",
-        body: JSON.stringify({ like: like }),
-        headers: { ...this.headers, "Content-Type": "application/json" },
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
-      }
-    );
-    await raiseForStatus(response, `${like ? "like" : "unlike"} prompt`);
-
-    return await response.json();
+    const body = JSON.stringify({ like: like });
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${this.apiUrl}/likes/${owner}/${promptName}`,
+        {
+          method: "POST",
+          headers: { ...this.headers, "Content-Type": "application/json" },
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+          body,
+        }
+      );
+      await raiseForStatus(res, `${like ? "like" : "unlike"} prompt`);
+      return res;
+    });
+    return response.json();
   }
 
   protected async _getPromptUrl(promptIdentifier: string): Promise<string> {
@@ -4106,24 +4808,25 @@ export class Client implements LangSmithTracingClientInterface {
 
   public async getPrompt(promptIdentifier: string): Promise<Prompt | null> {
     const [owner, promptName, _] = parsePromptIdentifier(promptIdentifier);
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/repos/${owner}/${promptName}`,
-      {
-        method: "GET",
-        headers: this.headers,
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${this.apiUrl}/repos/${owner}/${promptName}`,
+        {
+          method: "GET",
+          headers: this.headers,
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+        }
+      );
+
+      if (res?.status === 404) {
+        return null;
       }
-    );
-
-    if (response.status === 404) {
-      return null;
-    }
-    await raiseForStatus(response, "get prompt");
-
-    const result = await response.json();
-    if (result.repo) {
+      await raiseForStatus(res, "get prompt");
+      return res;
+    });
+    const result = await response?.json();
+    if (result?.repo) {
       return result.repo as Prompt;
     } else {
       return null;
@@ -4143,7 +4846,7 @@ export class Client implements LangSmithTracingClientInterface {
     if (options?.isPublic && !settings.tenant_handle) {
       throw new Error(
         `Cannot create a public prompt without first\n
-        creating a LangChain Hub handle. 
+        creating a LangChain Hub handle.
         You can add a handle by creating a public prompt at:\n
         https://smith.langchain.com/prompts`
       );
@@ -4162,20 +4865,18 @@ export class Client implements LangSmithTracingClientInterface {
       is_public: !!options?.isPublic,
     };
 
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/repos/`,
-      {
+    const body = JSON.stringify(data);
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(`${this.apiUrl}/repos/`, {
         method: "POST",
         headers: { ...this.headers, "Content-Type": "application/json" },
-        body: JSON.stringify(data),
         signal: AbortSignal.timeout(this.timeout_ms),
         ...this.fetchOptions,
-      }
-    );
-
-    await raiseForStatus(response, "create prompt");
-
+        body,
+      });
+      await raiseForStatus(res, "create prompt");
+      return res;
+    });
     const { repo } = await response.json();
     return repo as Prompt;
   }
@@ -4202,20 +4903,22 @@ export class Client implements LangSmithTracingClientInterface {
       parent_commit: resolvedParentCommitHash,
     };
 
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/commits/${owner}/${promptName}`,
-      {
-        method: "POST",
-        headers: { ...this.headers, "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
-      }
-    );
+    const body = JSON.stringify(payload);
 
-    await raiseForStatus(response, "create commit");
-
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${this.apiUrl}/commits/${owner}/${promptName}`,
+        {
+          method: "POST",
+          headers: { ...this.headers, "Content-Type": "application/json" },
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+          body,
+        }
+      );
+      await raiseForStatus(res, "create commit");
+      return res;
+    });
     const result = await response.json();
     return this._getPromptUrl(
       `${owner}/${promptName}${
@@ -4240,9 +4943,9 @@ export class Client implements LangSmithTracingClientInterface {
     datasetId: string,
     updates: ExampleUpdate[] = []
   ): Promise<UpdateExamplesResponse> {
-    if (!(await this._getMultiPartSupport())) {
+    if (!(await this._getDatasetExamplesMultiPartSupport())) {
       throw new Error(
-        "Your LangSmith version does not allow using the multipart examples endpoint, please update to the latest version."
+        "Your LangSmith deployment does not allow using the multipart examples endpoint, please upgrade your deployment to the latest version."
       );
     }
     const formData = new FormData();
@@ -4257,7 +4960,10 @@ export class Client implements LangSmithTracingClientInterface {
       };
 
       // Add main example data
-      const stringifiedExample = serializePayloadForTracing(exampleBody);
+      const stringifiedExample = serializePayloadForTracing(
+        exampleBody,
+        `Serializing body for example with id: ${exampleId}`
+      );
       const exampleBlob = new Blob([stringifiedExample], {
         type: "application/json",
       });
@@ -4265,7 +4971,10 @@ export class Client implements LangSmithTracingClientInterface {
 
       // Add inputs if present
       if (example.inputs) {
-        const stringifiedInputs = serializePayloadForTracing(example.inputs);
+        const stringifiedInputs = serializePayloadForTracing(
+          example.inputs,
+          `Serializing inputs for example with id: ${exampleId}`
+        );
         const inputsBlob = new Blob([stringifiedInputs], {
           type: "application/json",
         });
@@ -4274,7 +4983,10 @@ export class Client implements LangSmithTracingClientInterface {
 
       // Add outputs if present
       if (example.outputs) {
-        const stringifiedOutputs = serializePayloadForTracing(example.outputs);
+        const stringifiedOutputs = serializePayloadForTracing(
+          example.outputs,
+          `Serializing outputs whle updating example with id: ${exampleId}`
+        );
         const outputsBlob = new Blob([stringifiedOutputs], {
           type: "application/json",
         });
@@ -4302,7 +5014,8 @@ export class Client implements LangSmithTracingClientInterface {
 
       if (example.attachments_operations) {
         const stringifiedAttachmentsOperations = serializePayloadForTracing(
-          example.attachments_operations
+          example.attachments_operations,
+          `Serializing attachments while updating example with id: ${exampleId}`
         );
         const attachmentsOperationsBlob = new Blob(
           [stringifiedAttachmentsOperations],
@@ -4318,17 +5031,23 @@ export class Client implements LangSmithTracingClientInterface {
     }
 
     const datasetIdToUse = datasetId ?? updates[0]?.dataset_id;
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/v1/platform/datasets/${datasetIdToUse}/examples`,
-      {
-        method: "PATCH",
-        headers: this.headers,
-        body: formData,
-      }
-    );
-    const result = await response.json();
-    return result;
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${this.apiUrl}${this._getPlatformEndpointPath(
+          `datasets/${datasetIdToUse}/examples`
+        )}`,
+        {
+          method: "PATCH",
+          headers: this.headers,
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+          body: formData,
+        }
+      );
+      await raiseForStatus(res, "update examples");
+      return res;
+    });
+    return response.json();
   }
 
   /**
@@ -4348,9 +5067,9 @@ export class Client implements LangSmithTracingClientInterface {
     datasetId: string,
     uploads: ExampleCreate[] = []
   ): Promise<UploadExamplesResponse> {
-    if (!(await this._getMultiPartSupport())) {
+    if (!(await this._getDatasetExamplesMultiPartSupport())) {
       throw new Error(
-        "Your LangSmith version does not allow using the multipart examples endpoint, please update to the latest version."
+        "Your LangSmith deployment does not allow using the multipart examples endpoint, please upgrade your deployment to the latest version."
       );
     }
     const formData = new FormData();
@@ -4373,7 +5092,10 @@ export class Client implements LangSmithTracingClientInterface {
       };
 
       // Add main example data
-      const stringifiedExample = serializePayloadForTracing(exampleBody);
+      const stringifiedExample = serializePayloadForTracing(
+        exampleBody,
+        `Serializing body for uploaded example with id: ${exampleId}`
+      );
       const exampleBlob = new Blob([stringifiedExample], {
         type: "application/json",
       });
@@ -4381,7 +5103,10 @@ export class Client implements LangSmithTracingClientInterface {
 
       // Add inputs if present
       if (example.inputs) {
-        const stringifiedInputs = serializePayloadForTracing(example.inputs);
+        const stringifiedInputs = serializePayloadForTracing(
+          example.inputs,
+          `Serializing inputs for uploaded example with id: ${exampleId}`
+        );
         const inputsBlob = new Blob([stringifiedInputs], {
           type: "application/json",
         });
@@ -4390,7 +5115,10 @@ export class Client implements LangSmithTracingClientInterface {
 
       // Add outputs if present
       if (example.outputs) {
-        const stringifiedOutputs = serializePayloadForTracing(example.outputs);
+        const stringifiedOutputs = serializePayloadForTracing(
+          example.outputs,
+          `Serializing outputs for uploaded example with id: ${exampleId}`
+        );
         const outputsBlob = new Blob([stringifiedOutputs], {
           type: "application/json",
         });
@@ -4417,17 +5145,23 @@ export class Client implements LangSmithTracingClientInterface {
       }
     }
 
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/v1/platform/datasets/${datasetId}/examples`,
-      {
-        method: "POST",
-        headers: this.headers,
-        body: formData,
-      }
-    );
-    const result = await response.json();
-    return result;
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${this.apiUrl}${this._getPlatformEndpointPath(
+          `datasets/${datasetId}/examples`
+        )}`,
+        {
+          method: "POST",
+          headers: this.headers,
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+          body: formData,
+        }
+      );
+      await raiseForStatus(res, "upload examples");
+      return res;
+    });
+    return response.json();
   }
 
   public async updatePrompt(
@@ -4464,23 +5198,24 @@ export class Client implements LangSmithTracingClientInterface {
       throw new Error("No valid update options provided");
     }
 
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/repos/${owner}/${promptName}`,
-      {
-        method: "PATCH",
-        body: JSON.stringify(payload),
-        headers: {
-          ...this.headers,
-          "Content-Type": "application/json",
-        },
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
-      }
-    );
-
-    await raiseForStatus(response, "update prompt");
-
+    const body = JSON.stringify(payload);
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${this.apiUrl}/repos/${owner}/${promptName}`,
+        {
+          method: "PATCH",
+          headers: {
+            ...this.headers,
+            "Content-Type": "application/json",
+          },
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+          body,
+        }
+      );
+      await raiseForStatus(res, "update prompt");
+      return res;
+    });
     return response.json();
   }
 
@@ -4495,18 +5230,20 @@ export class Client implements LangSmithTracingClientInterface {
       throw await this._ownerConflictError("delete a prompt", owner);
     }
 
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/repos/${owner}/${promptName}`,
-      {
-        method: "DELETE",
-        headers: this.headers,
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
-      }
-    );
-
-    return await response.json();
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${this.apiUrl}/repos/${owner}/${promptName}`,
+        {
+          method: "DELETE",
+          headers: this.headers,
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+        }
+      );
+      await raiseForStatus(res, "delete prompt");
+      return res;
+    });
+    return response.json();
   }
 
   public async pullPromptCommit(
@@ -4517,20 +5254,21 @@ export class Client implements LangSmithTracingClientInterface {
   ): Promise<PromptCommit> {
     const [owner, promptName, commitHash] =
       parsePromptIdentifier(promptIdentifier);
-    const response = await this.caller.call(
-      _getFetchImplementation(),
-      `${this.apiUrl}/commits/${owner}/${promptName}/${commitHash}${
-        options?.includeModel ? "?include_model=true" : ""
-      }`,
-      {
-        method: "GET",
-        headers: this.headers,
-        signal: AbortSignal.timeout(this.timeout_ms),
-        ...this.fetchOptions,
-      }
-    );
-
-    await raiseForStatus(response, "pull prompt commit");
+    const response = await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${this.apiUrl}/commits/${owner}/${promptName}/${commitHash}${
+          options?.includeModel ? "?include_model=true" : ""
+        }`,
+        {
+          method: "GET",
+          headers: this.headers,
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+        }
+      );
+      await raiseForStatus(res, "pull prompt commit");
+      return res;
+    });
 
     const result = await response.json();
 
@@ -4603,8 +5341,8 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   /**
-   * Clone a public dataset to your own langsmith tenant. 
-   * This operation is idempotent. If you already have a dataset with the given name, 
+   * Clone a public dataset to your own langsmith tenant.
+   * This operation is idempotent. If you already have a dataset with the given name,
    * this function will do nothing.
 
    * @param {string} tokenOrUrl The token of the public dataset to clone.
@@ -4724,17 +5462,20 @@ export class Client implements LangSmithTracingClientInterface {
    *
    * @returns A promise that resolves once all currently pending traces have sent.
    */
-  public awaitPendingTraceBatches() {
+  public async awaitPendingTraceBatches() {
     if (this.manualFlushMode) {
       console.warn(
         "[WARNING]: When tracing in manual flush mode, you must call `await client.flush()` manually to submit trace batches."
       );
       return Promise.resolve();
     }
-    return Promise.all([
+    await Promise.all([
       ...this.autoBatchQueue.items.map(({ itemPromise }) => itemPromise),
       this.batchIngestCaller.queue.onIdle(),
     ]);
+    if (this.langSmithToOTELTranslator !== undefined) {
+      await getDefaultOTLPTracerComponents()?.DEFAULT_LANGSMITH_SPAN_PROCESSOR?.forceFlush();
+    }
   }
 }
 

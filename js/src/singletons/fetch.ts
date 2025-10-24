@@ -1,3 +1,5 @@
+import { getLangSmithEnvironmentVariable } from "../utils/env.js";
+
 // Wrap the default fetch call due to issues with illegal invocations
 // in some environments:
 // https://stackoverflow.com/questions/69876859/why-does-bind-fix-failed-to-execute-fetch-on-window-illegal-invocation-err
@@ -18,12 +20,41 @@ export const overrideFetchImplementation = (fetch: (...args: any[]) => any) => {
   (globalThis as any)[LANGSMITH_FETCH_IMPLEMENTATION_KEY] = fetch;
 };
 
+export const clearFetchImplementation = () => {
+  delete (globalThis as any)[LANGSMITH_FETCH_IMPLEMENTATION_KEY];
+};
+
+export const _globalFetchImplementationIsNodeFetch = () => {
+  const fetchImpl = (globalThis as any)[LANGSMITH_FETCH_IMPLEMENTATION_KEY];
+  if (!fetchImpl) return false;
+
+  // Check if the implementation has node-fetch specific properties
+  return (
+    typeof fetchImpl === "function" &&
+    "Headers" in fetchImpl &&
+    "Request" in fetchImpl &&
+    "Response" in fetchImpl
+  );
+};
+
 /**
  * @internal
  */
-export const _getFetchImplementation: () => (...args: any[]) => any = () => {
-  return (
-    (globalThis as any)[LANGSMITH_FETCH_IMPLEMENTATION_KEY] ??
-    DEFAULT_FETCH_IMPLEMENTATION
-  );
+export const _getFetchImplementation: (
+  debug?: boolean
+) => (...args: any[]) => any = (debug?: boolean) => {
+  return async (...args: any[]) => {
+    if (debug || getLangSmithEnvironmentVariable("DEBUG") === "true") {
+      const [url, options] = args;
+      console.log(`→ ${options?.method || "GET"} ${url}`);
+    }
+    const res = await (
+      (globalThis as any)[LANGSMITH_FETCH_IMPLEMENTATION_KEY] ??
+      DEFAULT_FETCH_IMPLEMENTATION
+    )(...args);
+    if (debug || getLangSmithEnvironmentVariable("DEBUG") === "true") {
+      console.log(`← ${res.status} ${res.statusText} ${res.url}`);
+    }
+    return res;
+  };
 };

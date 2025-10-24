@@ -8,90 +8,84 @@ import { Run } from "../schemas.js";
 import { traceable } from "../traceable.js";
 import { toArray, waitUntil } from "./utils.js";
 
-test.concurrent(
-  "Test handoff between run tree and LangChain code.",
-  async () => {
-    const projectName = `__test_handoff ${uuidv4()}`;
+test("Test handoff between run tree and LangChain code.", async () => {
+  const projectName = `__test_handoff ${uuidv4()}`;
 
-    // Define a new graph
-    const workflow = new MessageGraph();
+  // Define a new graph
+  const workflow = new MessageGraph();
 
-    const addValueTraceable = traceable(
-      (msg: BaseMessage) => {
-        return new HumanMessage({ content: msg.content + " world" });
+  const addValueTraceable = traceable(
+    (msg: BaseMessage) => {
+      return new HumanMessage({ content: msg.content + " world" });
+    },
+    {
+      name: "add_negligible_value",
+    }
+  );
+
+  const myFunc = async (messages: BaseMessage[], config?: RunnableConfig) => {
+    const runnableConfig = config ?? { callbacks: [] };
+    const newMsg = await addValueTraceable(
+      runnableConfig,
+      messages[0] as HumanMessage
+    );
+    return [newMsg];
+  };
+
+  // Define the two nodes we will cycle between
+  workflow
+    .addNode(
+      "agent",
+      new RunnableLambda({
+        func: async () => new HumanMessage({ content: "Hello!" }),
+      })
+    )
+    .addNode("action", new RunnableLambda({ func: myFunc }))
+    .addEdge("__start__", "agent")
+    .addEdge("agent", "action")
+    .addEdge("action", "__end__");
+
+  const app = workflow.compile();
+  const tracer = new LangChainTracer({ projectName });
+  const client = new Client({
+    callerOptions: { maxRetries: 3 },
+    timeout_ms: 30_000,
+  });
+  try {
+    const runId = uuidv4();
+    const result = await app.invoke([new HumanMessage({ content: "Hello!" })], {
+      callbacks: [tracer],
+      runId,
+    });
+    expect(result[result.length - 1].content).toEqual("Hello! world");
+
+    // First wait until at least one trace is found in the project
+    const getNestedFunction = (): Promise<Run[]> =>
+      toArray(
+        client.listRuns({
+          projectName,
+          filter: "eq(name, 'add_negligible_value')",
+        })
+      );
+    await waitUntil(
+      async () => {
+        const traces = await getNestedFunction();
+        return traces.length > 0;
       },
-      {
-        name: "add_negligible_value",
-      }
+      120_000,
+      10
     );
 
-    const myFunc = async (messages: BaseMessage[], config?: RunnableConfig) => {
-      const runnableConfig = config ?? { callbacks: [] };
-      const newMsg = await addValueTraceable(
-        runnableConfig,
-        messages[0] as HumanMessage
-      );
-      return [newMsg];
-    };
-
-    // Define the two nodes we will cycle between
-    workflow
-      .addNode(
-        "agent",
-        new RunnableLambda({
-          func: async () => new HumanMessage({ content: "Hello!" }),
-        })
-      )
-      .addNode("action", new RunnableLambda({ func: myFunc }))
-      .addEdge("__start__", "agent")
-      .addEdge("agent", "action")
-      .addEdge("action", "__end__");
-
-    const app = workflow.compile();
-    const tracer = new LangChainTracer({ projectName });
-    const client = new Client({
-      callerOptions: { maxRetries: 3 },
-      timeout_ms: 30_000,
-    });
-    try {
-      const runId = uuidv4();
-      const result = await app.invoke(
-        [new HumanMessage({ content: "Hello!" })],
-        {
-          callbacks: [tracer],
-          runId,
-        }
-      );
-      expect(result[result.length - 1].content).toEqual("Hello! world");
-
-      // First wait until at least one trace is found in the project
-      const getNestedFunction = (): Promise<Run[]> =>
-        toArray(
-          client.listRuns({
-            projectName,
-            filter: "eq(name, 'add_negligible_value')",
-          })
-        );
-      await waitUntil(
-        async () => {
-          const traces = await getNestedFunction();
-          return traces.length > 0;
-        },
-        120_000,
-        10
-      );
-
-      const traces = await getNestedFunction();
-      expect(traces.length).toEqual(1);
-      const trace = traces[0];
-      expect(trace.name).toEqual("add_negligible_value");
-      expect(trace.parent_run_id).not.toBeNull();
-      expect(trace.trace_id).toEqual(runId);
-    } catch (e) {
-      console.error(e);
-      throw e;
-    } finally {
-      await client.deleteProject({ projectName });
-    }
+    const traces = await getNestedFunction();
+    expect(traces.length).toEqual(1);
+    const trace = traces[0];
+    expect(trace.name).toEqual("add_negligible_value");
+    expect(trace.parent_run_id).not.toBeNull();
+    expect(trace.trace_id).toEqual(runId);
+  } catch (e) {
+    console.error(e);
+    throw e;
+  } finally {
+    await client.deleteProject({ projectName });
   }
-);
+});

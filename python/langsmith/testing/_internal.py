@@ -5,6 +5,7 @@ import contextlib
 import contextvars
 import datetime
 import functools
+import hashlib
 import importlib
 import inspect
 import logging
@@ -13,15 +14,13 @@ import threading
 import time
 import uuid
 import warnings
+from collections.abc import Generator, Sequence
 from concurrent.futures import Future
 from pathlib import Path
 from typing import (
     Any,
     Callable,
-    Generator,
     Optional,
-    Sequence,
-    Tuple,
     TypeVar,
     Union,
     cast,
@@ -53,9 +52,18 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# UUID5 namespace used for generating consistent example IDs
+UUID5_NAMESPACE = uuid.UUID("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
 
 T = TypeVar("T")
 U = TypeVar("U")
+
+
+def _object_hash(obj: Any) -> str:
+    """Hash an object to generate a consistent hash string."""
+    # Use the existing serialization infrastructure with consistent ordering
+    serialized = _stringify(obj)
+    return hashlib.sha256(serialized.encode()).hexdigest()
 
 
 @overload
@@ -71,6 +79,10 @@ def test(
     output_keys: Optional[Sequence[str]] = None,
     client: Optional[ls_client.Client] = None,
     test_suite_name: Optional[str] = None,
+    metadata: Optional[dict] = None,
+    repetitions: Optional[int] = None,
+    split: Optional[Union[str | list[str]]] = None,
+    cached_hosts: Optional[Sequence[str]] = None,
 ) -> Callable[[Callable], Callable]: ...
 
 
@@ -95,6 +107,10 @@ def test(*args: Any, **kwargs: Any) -> Callable:
         - test_suite_name (Optional[str]): The name of the test suite to which the
             test case belongs. If not provided, the test suite name will be determined
             based on the environment or the package name.
+        - cached_hosts (Optional[Sequence[str]]): A list of hosts or URL prefixes to
+            cache requests to during testing. If not provided, all requests will be
+            cached (default behavior). This is useful for caching only specific
+            API calls (e.g., ["api.openai.com"] or ["https://api.openai.com"]).
 
     Returns:
         Callable: The decorated test function.
@@ -171,6 +187,24 @@ def test(*args: Any, **kwargs: Any) -> Callable:
             @pytest.mark.langsmith
             def test_openai_says_hello():
                 # Traced code will be included in the test case
+                response = oai_client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {"role": "system", "content": "You are a helpful assistant."},
+                        {"role": "user", "content": "Say hello!"},
+                    ],
+                )
+                assert "hello" in response.choices[0].message.content.lower()
+
+        You can also specify which hosts to cache by using the `cached_hosts` parameter.
+        This is useful when you only want to cache specific API calls:
+
+        .. code-block:: python
+
+            @pytest.mark.langsmith(cached_hosts=["https://api.openai.com"])
+            def test_openai_with_selective_caching():
+                # Only OpenAI API calls will be cached, other API calls will not
+                # be cached
                 response = oai_client.chat.completions.create(
                     model="gpt-3.5-turbo",
                     messages=[
@@ -297,12 +331,30 @@ def test(*args: Any, **kwargs: Any) -> Callable:
             test_openai_says_hello()
             test_addition_with_multiple_inputs(1, 2, 3)
     """
+    cached_hosts = kwargs.pop("cached_hosts", None)
+    cache_dir = ls_utils.get_cache_dir(kwargs.pop("cache", None))
+
+    # Validate cached_hosts usage
+    if cached_hosts and not cache_dir:
+        raise ValueError(
+            "cached_hosts parameter requires caching to be enabled. "
+            "Please set the LANGSMITH_TEST_CACHE environment variable "
+            "to a cache directory path, "
+            "or pass a cache parameter to the test decorator. "
+            "Example: LANGSMITH_TEST_CACHE='tests/cassettes' "
+            "or @pytest.mark.langsmith(cache='tests/cassettes', cached_hosts=[...])"
+        )
+
     langtest_extra = _UTExtra(
         id=kwargs.pop("id", None),
         output_keys=kwargs.pop("output_keys", None),
         client=kwargs.pop("client", None),
         test_suite_name=kwargs.pop("test_suite_name", None),
-        cache=ls_utils.get_cache_dir(kwargs.pop("cache", None)),
+        cache=cache_dir,
+        metadata=kwargs.pop("metadata", None),
+        repetitions=kwargs.pop("repetitions", None),
+        split=kwargs.pop("split", None),
+        cached_hosts=cached_hosts,
     )
     if kwargs:
         warnings.warn(f"Unexpected keyword arguments: {kwargs.keys()}")
@@ -314,6 +366,9 @@ def test(*args: Any, **kwargs: Any) -> Callable:
         )
 
     def decorator(func: Callable) -> Callable:
+        # Handle repetitions
+        repetitions = langtest_extra.get("repetitions", 1) or 1
+
         if inspect.iscoroutinefunction(func):
 
             @functools.wraps(func)
@@ -322,13 +377,17 @@ def test(*args: Any, **kwargs: Any) -> Callable:
             ):
                 if disable_tracking:
                     return await func(*test_args, **test_kwargs)
-                await _arun_test(
-                    func,
-                    *test_args,
-                    pytest_request=request,
-                    **test_kwargs,
-                    langtest_extra=langtest_extra,
-                )
+
+                # Run test multiple times for repetitions
+                for i in range(repetitions):
+                    repetition_extra = langtest_extra.copy()
+                    await _arun_test(
+                        func,
+                        *test_args,
+                        pytest_request=request,
+                        **test_kwargs,
+                        langtest_extra=repetition_extra,
+                    )
 
             return async_wrapper
 
@@ -336,13 +395,17 @@ def test(*args: Any, **kwargs: Any) -> Callable:
         def wrapper(*test_args: Any, request: Any = None, **test_kwargs: Any):
             if disable_tracking:
                 return func(*test_args, **test_kwargs)
-            _run_test(
-                func,
-                *test_args,
-                pytest_request=request,
-                **test_kwargs,
-                langtest_extra=langtest_extra,
-            )
+
+            # Run test multiple times for repetitions
+            for i in range(repetitions):
+                repetition_extra = langtest_extra.copy()
+                _run_test(
+                    func,
+                    *test_args,
+                    pytest_request=request,
+                    **test_kwargs,
+                    langtest_extra=repetition_extra,
+                )
 
         return wrapper
 
@@ -430,8 +493,19 @@ def _start_experiment(
 
 
 def _get_example_id(
+    dataset_id: str,
+    inputs: dict,
+    outputs: Optional[dict] = None,
+) -> uuid.UUID:
+    """Generate example ID based on inputs, outputs, and dataset ID."""
+    identifier_obj = (dataset_id, _object_hash(inputs), _object_hash(outputs or {}))
+    identifier = _stringify(identifier_obj)
+    return uuid.uuid5(UUID5_NAMESPACE, identifier)
+
+
+def _get_example_id_legacy(
     func: Callable, inputs: Optional[dict], suite_id: uuid.UUID
-) -> Tuple[uuid.UUID, str]:
+) -> tuple[uuid.UUID, str]:
     try:
         file_path = str(Path(inspect.getfile(func)).relative_to(Path.cwd()))
     except ValueError:
@@ -464,13 +538,13 @@ def _end_tests(test_suite: _LangSmithTestSuite):
         test_suite.client.update_dataset_tag(
             dataset_id=dataset_id,
             as_of=dataset_version,
-            tag=f'git:commit:{git_info["commit"]}',
+            tag=f"git:commit:{git_info['commit']}",
         )
     if dataset_version and git_info["branch"] is not None:
         test_suite.client.update_dataset_tag(
             dataset_id=dataset_id,
             as_of=dataset_version,
-            tag=f'git:branch:{git_info["branch"]}',
+            tag=f"git:branch:{git_info['branch']}",
         )
 
 
@@ -479,7 +553,7 @@ VT = TypeVar("VT", bound=Optional[dict])
 
 def _serde_example_values(values: VT) -> VT:
     if values is None:
-        return values
+        return cast(VT, values)
     bts = ls_client._dumps_json(values)
     return _orjson.loads(bts)
 
@@ -560,7 +634,9 @@ class _LangSmithTestSuite:
         self._executor.submit(self._submit_result, run_id, score)
 
     def _submit_result(self, run_id: uuid.UUID, score: Optional[int]) -> None:
-        self.client.create_feedback(run_id, key="pass", score=score)
+        # trace_id will always be run_id here because the feedback is on the root
+        # test run
+        self.client.create_feedback(run_id, key="pass", score=score, trace_id=run_id)
 
     def sync_example(
         self,
@@ -569,9 +645,11 @@ class _LangSmithTestSuite:
         inputs: Optional[dict] = None,
         outputs: Optional[dict] = None,
         metadata: Optional[dict] = None,
+        split: Optional[Union[str, list[str]]] = None,
         pytest_plugin=None,
         pytest_nodeid=None,
     ) -> None:
+        inputs = inputs or {}
         if pytest_plugin and pytest_nodeid:
             update = {"inputs": inputs, "reference_outputs": outputs}
             update = {k: v for k, v in update.items() if v is not None}
@@ -588,20 +666,32 @@ class _LangSmithTestSuite:
                 outputs=outputs,
                 dataset_id=self.id,
                 metadata=metadata,
+                split=split,
                 created_at=self._experiment.start_time,
             )
         else:
+            normalized_split = split
+            if isinstance(normalized_split, str):
+                normalized_split = [normalized_split]
+            if normalized_split and metadata:
+                metadata["dataset_split"] = normalized_split
+            existing_dataset_split = (example.metadata or {}).pop("dataset_split")
             if (
-                (inputs is not None and inputs != example.inputs)
+                (inputs != example.inputs)
                 or (outputs is not None and outputs != example.outputs)
                 or (metadata is not None and metadata != example.metadata)
                 or str(example.dataset_id) != str(self.id)
+                or (
+                    normalized_split is not None
+                    and existing_dataset_split != normalized_split
+                )
             ):
                 self.client.update_example(
                     example_id=example.id,
                     inputs=inputs,
                     outputs=outputs,
                     metadata=metadata,
+                    split=split,
                     dataset_id=self.id,
                 )
                 example = self.client.read_example(example_id=example.id)
@@ -634,7 +724,9 @@ class _LangSmithTestSuite:
             )
 
     def _create_feedback(self, run_id: ID_TYPE, feedback: dict, **kwargs: Any) -> None:
-        self.client.create_feedback(run_id, **feedback, **kwargs)
+        # trace_id will always be run_id here because the feedback is on the root
+        # test run
+        self.client.create_feedback(run_id, **feedback, **kwargs, trace_id=run_id)
 
     def shutdown(self):
         self._executor.shutdown()
@@ -645,6 +737,8 @@ class _LangSmithTestSuite:
         example_id,
         outputs,
         reference_outputs,
+        metadata,
+        split,
         pytest_plugin=None,
         pytest_nodeid=None,
     ) -> Future:
@@ -654,6 +748,8 @@ class _LangSmithTestSuite:
             example_id=example_id,
             outputs=outputs,
             reference_outputs=reference_outputs,
+            metadata=metadata,
+            split=split,
             pytest_plugin=pytest_plugin,
             pytest_nodeid=pytest_nodeid,
         )
@@ -664,13 +760,22 @@ class _LangSmithTestSuite:
         example_id,
         outputs,
         reference_outputs,
+        metadata,
+        split,
         pytest_plugin,
         pytest_nodeid,
     ) -> None:
         # TODO: remove this hack so that run durations are correct
         # Ensure example is fully updated
-        self.sync_example(example_id, inputs=run_tree.inputs, outputs=reference_outputs)
-        run_tree.end(outputs=outputs)
+        self.sync_example(
+            example_id,
+            inputs=run_tree.inputs,
+            outputs=reference_outputs,
+            split=split,
+            metadata=metadata,
+        )
+        run_tree.reference_example_id = example_id
+        run_tree.end(outputs=outputs, metadata={"reference_example_id": example_id})
         run_tree.patch()
 
 
@@ -678,8 +783,10 @@ class _TestCase:
     def __init__(
         self,
         test_suite: _LangSmithTestSuite,
-        example_id: uuid.UUID,
         run_id: uuid.UUID,
+        example_id: Optional[uuid.UUID] = None,
+        metadata: Optional[dict] = None,
+        split: Optional[Union[str, list[str]]] = None,
         pytest_plugin: Any = None,
         pytest_nodeid: Any = None,
         inputs: Optional[dict] = None,
@@ -688,11 +795,14 @@ class _TestCase:
         self.test_suite = test_suite
         self.example_id = example_id
         self.run_id = run_id
+        self.metadata = metadata
+        self.split = split
         self.pytest_plugin = pytest_plugin
         self.pytest_nodeid = pytest_nodeid
-        self._logged_reference_outputs: Optional[dict] = None
         self.inputs = inputs
         self.reference_outputs = reference_outputs
+        self._logged_reference_outputs: Optional[dict] = None
+        self._logged_outputs: Optional[dict] = None
 
         if pytest_plugin and pytest_nodeid:
             pytest_plugin.add_process_to_test_suite(
@@ -702,17 +812,6 @@ class _TestCase:
                 self.log_inputs(inputs)
             if reference_outputs:
                 self.log_reference_outputs(reference_outputs)
-
-    def sync_example(
-        self, *, inputs: Optional[dict] = None, outputs: Optional[dict] = None
-    ) -> None:
-        self.test_suite.sync_example(
-            self.example_id,
-            inputs=inputs,
-            outputs=outputs,
-            pytest_plugin=self.pytest_plugin,
-            pytest_nodeid=self.pytest_nodeid,
-        )
 
     def submit_feedback(self, *args, **kwargs: Any):
         self.test_suite._submit_feedback(
@@ -733,6 +832,7 @@ class _TestCase:
             )
 
     def log_outputs(self, outputs: dict) -> None:
+        self._logged_outputs = outputs
         if self.pytest_plugin and self.pytest_nodeid:
             self.pytest_plugin.update_process_status(
                 self.pytest_nodeid, {"outputs": outputs}
@@ -773,11 +873,18 @@ class _TestCase:
     def end_run(self, run_tree, outputs: Any) -> None:
         if not (outputs is None or isinstance(outputs, dict)):
             outputs = {"output": outputs}
+        example_id = self.example_id or _get_example_id(
+            dataset_id=str(self.test_suite.id),
+            inputs=self.inputs or {},
+            outputs=outputs,
+        )
         self.test_suite.end_run(
             run_tree,
-            self.example_id,
+            example_id,
             outputs,
             reference_outputs=self._logged_reference_outputs,
+            metadata=self.metadata,
+            split=self.split,
             pytest_plugin=self.pytest_plugin,
             pytest_nodeid=self.pytest_nodeid,
         )
@@ -792,14 +899,10 @@ class _UTExtra(TypedDict, total=False):
     output_keys: Optional[Sequence[str]]
     test_suite_name: Optional[str]
     cache: Optional[str]
-
-
-def _get_test_repr(func: Callable, sig: inspect.Signature) -> str:
-    name = getattr(func, "__name__", None) or ""
-    description = getattr(func, "__doc__", None) or ""
-    if description:
-        description = f" - {description.strip()}"
-    return f"{name}{sig}{description}"
+    metadata: Optional[dict]
+    repetitions: Optional[int]
+    split: Optional[Union[str, list[str]]]
+    cached_hosts: Optional[Sequence[str]]
 
 
 def _create_test_case(
@@ -811,6 +914,8 @@ def _create_test_case(
 ) -> _TestCase:
     client = langtest_extra["client"] or rt.get_cached_client()
     output_keys = langtest_extra["output_keys"]
+    metadata = langtest_extra["metadata"]
+    split = langtest_extra["split"]
     signature = inspect.signature(func)
     inputs = rh._get_inputs_safe(signature, *args, **kwargs) or None
     outputs = None
@@ -827,8 +932,19 @@ def _create_test_case(
     test_suite = _LangSmithTestSuite.from_test(
         client, func, langtest_extra.get("test_suite_name")
     )
-    example_id, example_name = _get_example_id(func, inputs, test_suite.id)
-    example_id = langtest_extra["id"] or example_id
+    example_id = langtest_extra["id"]
+    dataset_sdk_version = (
+        test_suite._dataset.metadata
+        and test_suite._dataset.metadata.get("runtime")
+        and test_suite._dataset.metadata.get("runtime", {}).get("sdk_version")
+    )
+    if not dataset_sdk_version or not ls_utils.is_version_greater_or_equal(
+        dataset_sdk_version, "0.4.33"
+    ):
+        legacy_example_id, example_name = _get_example_id_legacy(
+            func, inputs, test_suite.id
+        )
+        example_id = example_id or legacy_example_id
     pytest_plugin = (
         pytest_request.config.pluginmanager.get_plugin("langsmith_output_plugin")
         if pytest_request
@@ -843,8 +959,10 @@ def _create_test_case(
         )
     test_case = _TestCase(
         test_suite,
-        example_id,
         run_id=uuid.uuid4(),
+        example_id=example_id,
+        metadata=metadata,
+        split=split,
         inputs=inputs,
         reference_outputs=outputs,
         pytest_plugin=pytest_plugin,
@@ -874,8 +992,15 @@ def _run_test(
         with rh.trace(
             name=getattr(func, "__name__", "Test"),
             run_id=test_case.run_id,
-            reference_example_id=test_case.example_id,
             inputs=test_case.inputs,
+            metadata={
+                # Experiment run metadata is prefixed with "ls_example_" in
+                # the ingest backend, but we must reproduce this behavior here
+                # because the example may not have been created before the trace
+                # starts.
+                f"ls_example_{k}": v
+                for k, v in (test_case.metadata or {}).items()
+            },
             project_name=test_case.test_suite.name,
             exceptions_to_handle=(SkipException,),
             _end_on_exit=False,
@@ -910,13 +1035,17 @@ def _run_test(
         **(current_context["metadata"] or {}),
         **{
             "experiment": test_case.test_suite.experiment.name,
-            "reference_example_id": str(test_case.example_id),
         },
     }
-    with rh.tracing_context(
-        **{**current_context, "metadata": metadata}
-    ), ls_utils.with_optional_cache(
-        cache_path, ignore_hosts=[test_case.test_suite.client.api_url]
+    # Handle cached_hosts parameter
+    ignore_hosts = [test_case.test_suite.client.api_url]
+    allow_hosts = langtest_extra.get("cached_hosts") or None
+
+    with (
+        rh.tracing_context(**{**current_context, "metadata": metadata}),
+        ls_utils.with_optional_cache(
+            cache_path, ignore_hosts=ignore_hosts, allow_hosts=allow_hosts
+        ),
     ):
         _test()
 
@@ -944,6 +1073,14 @@ async def _arun_test(
             run_id=test_case.run_id,
             reference_example_id=test_case.example_id,
             inputs=test_case.inputs,
+            metadata={
+                # Experiment run metadata is prefixed with "ls_example_" in
+                # the ingest backend, but we must reproduce this behavior here
+                # because the example may not have been created before the trace
+                # starts.
+                f"ls_example_{k}": v
+                for k, v in (test_case.metadata or {}).items()
+            },
             project_name=test_case.test_suite.name,
             exceptions_to_handle=(SkipException,),
             _end_on_exit=False,
@@ -981,10 +1118,16 @@ async def _arun_test(
             "reference_example_id": str(test_case.example_id),
         },
     }
-    with rh.tracing_context(
-        **{**current_context, "metadata": metadata}
-    ), ls_utils.with_optional_cache(
-        cache_path, ignore_hosts=[test_case.test_suite.client.api_url]
+    # Handle cached_hosts parameter
+    ignore_hosts = [test_case.test_suite.client.api_url]
+    cached_hosts = langtest_extra.get("cached_hosts")
+    allow_hosts = cached_hosts if cached_hosts else None
+
+    with (
+        rh.tracing_context(**{**current_context, "metadata": metadata}),
+        ls_utils.with_optional_cache(
+            cache_path, ignore_hosts=ignore_hosts, allow_hosts=allow_hosts
+        ),
     ):
         await _test()
 
@@ -1019,9 +1162,7 @@ def log_inputs(inputs: dict, /) -> None:
                 assert foo(x, y) == 2
     """
     if ls_utils.test_tracking_is_disabled():
-        logger.info(
-            "LANGSMITH_TEST_TRACKING is set to 'false'." " Skipping log_inputs."
-        )
+        logger.info("LANGSMITH_TEST_TRACKING is set to 'false'. Skipping log_inputs.")
         return
     run_tree = rh.get_current_run_tree()
     test_case = _TEST_CASE.get()
@@ -1063,9 +1204,7 @@ def log_outputs(outputs: dict, /) -> None:
                 assert result == 2
     """
     if ls_utils.test_tracking_is_disabled():
-        logger.info(
-            "LANGSMITH_TEST_TRACKING is set to 'false'." " Skipping log_outputs."
-        )
+        logger.info("LANGSMITH_TEST_TRACKING is set to 'false'. Skipping log_outputs.")
         return
     run_tree = rh.get_current_run_tree()
     test_case = _TEST_CASE.get()
@@ -1076,6 +1215,7 @@ def log_outputs(outputs: dict, /) -> None:
             "LANGSMITH_TRACING environment variable to 'true')."
         )
         raise ValueError(msg)
+    outputs = _dumpd(outputs)
     run_tree.add_outputs(outputs)
     test_case.log_outputs(outputs)
 
@@ -1108,8 +1248,7 @@ def log_reference_outputs(reference_outputs: dict, /) -> None:
     """
     if ls_utils.test_tracking_is_disabled():
         logger.info(
-            "LANGSMITH_TEST_TRACKING is set to 'false'."
-            " Skipping log_reference_outputs."
+            "LANGSMITH_TEST_TRACKING is set to 'false'. Skipping log_reference_outputs."
         )
         return
     test_case = _TEST_CASE.get()
@@ -1162,9 +1301,7 @@ def log_feedback(
                 assert result == expected
     """
     if ls_utils.test_tracking_is_disabled():
-        logger.info(
-            "LANGSMITH_TEST_TRACKING is set to 'false'." " Skipping log_feedback."
-        )
+        logger.info("LANGSMITH_TEST_TRACKING is set to 'false'. Skipping log_feedback.")
         return
     if feedback and any((key, score, value)):
         msg = "Must specify one of 'feedback' and ('key', 'score', 'value'), not both."
@@ -1268,14 +1405,11 @@ def trace_feedback(
                 assert "hello" in response.choices[0].message.content.lower()
     """  # noqa: E501
     if ls_utils.test_tracking_is_disabled():
-        logger.info(
-            "LANGSMITH_TEST_TRACKING is set to 'false'." " Skipping log_feedback."
-        )
+        logger.info("LANGSMITH_TEST_TRACKING is set to 'false'. Skipping log_feedback.")
         yield None
         return
-    parent_run = rh.get_current_run_tree()
     test_case = _TEST_CASE.get()
-    if not parent_run or not test_case:
+    if not test_case:
         msg = (
             "trace_feedback should only be called within a pytest test decorated with "
             "@pytest.mark.langsmith, and with tracing enabled (by setting the "
@@ -1285,11 +1419,11 @@ def trace_feedback(
     metadata = {
         "experiment": test_case.test_suite.experiment.name,
         "reference_example_id": test_case.example_id,
-        "reference_run_id": parent_run.id,
+        "reference_run_id": test_case.run_id,
     }
     with rh.trace(
         name=name,
-        inputs=parent_run.outputs,
+        inputs=test_case._logged_outputs,
         parent="ignore",
         project_name="evaluators",
         metadata=metadata,
@@ -1302,3 +1436,25 @@ def _stringify(x: Any) -> str:
         return dumps_json(x).decode("utf-8", errors="surrogateescape")
     except Exception:
         return str(x)
+
+
+def _dumpd(x: Any) -> Any:
+    """Serialize LangChain Serializable objects."""
+    dumpd = _get_langchain_dumpd()
+    if not dumpd:
+        return x
+    try:
+        serialized = dumpd(x)
+        return serialized
+    except Exception:
+        return x
+
+
+@functools.lru_cache
+def _get_langchain_dumpd() -> Optional[Callable]:
+    try:
+        from langchain_core.load import dumpd
+
+        return dumpd
+    except ImportError:
+        return None

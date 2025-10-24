@@ -4,7 +4,8 @@ import type {
   ToolCallPart,
   generateText,
 } from "ai";
-import type { AISDKSpan } from "./vercel.types.js";
+import type { AISDKSpan } from "./utils/vercel.types.js";
+import { extractUsageMetadata } from "./utils/vercel.js";
 import { Client, RunTree } from "./index.js";
 import { KVMap, RunCreate } from "./schemas.js";
 import { v5 as uuid5 } from "uuid";
@@ -14,15 +15,21 @@ import {
   getEnvironmentVariable,
 } from "./utils/env.js";
 import { isTracingEnabled } from "./env.js";
+import {
+  LANGSMITH_IS_ROOT,
+  LANGSMITH_TRACEABLE_PARENT_OTEL_SPAN_ID,
+} from "./experimental/otel/constants.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-types
 type AnyString = string & {};
 
+/** @deprecated Use `wrapAISDK` from `langsmith/experimental/vercel` instead. */
 export type AITelemetrySettings = Exclude<
   Parameters<typeof generateText>[0]["experimental_telemetry"],
   undefined
 >;
 
+/** @deprecated Use `wrapAISDK` from `langsmith/experimental/vercel` instead. */
 export interface TelemetrySettings extends AITelemetrySettings {
   /** ID of the run sent to LangSmith */
   runId?: string;
@@ -70,17 +77,24 @@ function convertCoreToSmith(
           return {
             type: "text",
             text: part.text,
-            ...part.experimental_providerMetadata,
+            // Backcompat for AI SDK 4
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ...(part as any).experimental_providerMetadata,
           };
         }
 
         if (part.type === "tool-call") {
+          // Backcompat for AI SDK 4
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const legacyToolCallInput = (part as any).args;
           return {
             type: "tool_use",
             name: part.toolName,
             id: part.toolCallId,
-            input: part.args,
-            ...part.experimental_providerMetadata,
+            input: legacyToolCallInput ?? part.input,
+            // Backcompat for AI SDK 4
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ...(part as any).experimental_providerMetadata,
           };
         }
 
@@ -94,13 +108,16 @@ function convertCoreToSmith(
       if (toolCalls.length > 0) {
         data.additional_kwargs ??= {};
         data.additional_kwargs.tool_calls = toolCalls.map((part) => {
+          // Backcompat for AI SDK 4
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const legacyToolCallInput = (part as any).args;
           return {
             id: part.toolCallId,
             type: "function",
             function: {
               name: part.toolName,
               id: part.toolCallId,
-              arguments: JSON.stringify(part.args),
+              arguments: JSON.stringify(legacyToolCallInput ?? part.input),
             },
           };
         });
@@ -119,15 +136,51 @@ function convertCoreToSmith(
           return {
             type: "text",
             text: part.text,
-            ...part.experimental_providerMetadata,
+            // Backcompat for AI SDK 4
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ...(part as any).experimental_providerMetadata,
           };
         }
 
         if (part.type === "image") {
+          let imageUrl = part.image;
+          if (typeof imageUrl !== "string") {
+            let uint8Array;
+            if (
+              imageUrl != null &&
+              typeof imageUrl === "object" &&
+              "type" in imageUrl &&
+              "data" in imageUrl
+            ) {
+              // Typing is wrong here if a buffer is passed in
+              uint8Array = new Uint8Array(imageUrl.data as Uint8Array);
+            } else if (
+              imageUrl != null &&
+              typeof imageUrl === "object" &&
+              Object.keys(imageUrl).every((key) => !isNaN(Number(key)))
+            ) {
+              // ArrayBuffers get turned into objects with numeric keys for some reason
+              uint8Array = new Uint8Array(
+                Array.from({
+                  ...imageUrl,
+                  length: Object.keys(imageUrl).length,
+                })
+              );
+            }
+            if (uint8Array) {
+              let binary = "";
+              for (let i = 0; i < uint8Array.length; i++) {
+                binary += String.fromCharCode(uint8Array[i]);
+              }
+              imageUrl = btoa(binary);
+            }
+          }
           return {
             type: "image_url",
-            image_url: part.image,
-            ...part.experimental_providerMetadata,
+            image_url: imageUrl,
+            // Backcompat for AI SDK 4
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ...(part as any).experimental_providerMetadata,
           };
         }
 
@@ -144,10 +197,13 @@ function convertCoreToSmith(
 
   if (message.role === "tool") {
     const res = message.content.map((toolCall) => {
+      // Backcompat for AI SDK 4
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const legacyToolCallResult = (toolCall as any).result;
       return {
         type: "tool",
         data: {
-          content: JSON.stringify(toolCall.result),
+          content: JSON.stringify(legacyToolCallResult ?? toolCall.output),
           name: toolCall.toolName,
           tool_call_id: toolCall.toolCallId,
         },
@@ -241,7 +297,25 @@ interface MutableRunCreate {
   trace_id: string;
   dotted_order: string;
   parent_run_id: string | undefined;
+  start_time: string;
 }
+
+// Helper function to convert dotted order version of start time to ISO string
+export const parseStrippedIsoTime = (stripped: string): string => {
+  const year = stripped.slice(0, 4);
+  const month = stripped.slice(4, 6);
+  const day = stripped.slice(6, 8);
+  const hour = stripped.slice(9, 11); // Skip 'T'
+  const minute = stripped.slice(11, 13);
+  const second = stripped.slice(13, 15);
+  const ms = stripped.slice(15, 18); // milliseconds
+  const us = stripped.length >= 21 ? stripped.slice(18, 21) : "000"; // microseconds
+
+  // Create ISO string with microsecond precision only if microseconds are present
+  return us !== "000"
+    ? `${year}-${month}-${day}T${hour}:${minute}:${second}.${ms}${us}Z`
+    : `${year}-${month}-${day}T${hour}:${minute}:${second}.${ms}Z`;
+};
 
 function getMutableRunCreate(dotOrder: string): MutableRunCreate {
   const segments = dotOrder.split(".").map((i) => {
@@ -253,13 +327,15 @@ function getMutableRunCreate(dotOrder: string): MutableRunCreate {
   const parentRunId = segments.at(-2)?.runId;
 
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-  const runId = segments.at(-1)!.runId;
+  const lastSegment = segments.at(-1)!;
+  const startTime = parseStrippedIsoTime(lastSegment.startTime);
 
   return {
-    id: runId,
+    id: lastSegment.runId,
     trace_id: traceId,
     dotted_order: dotOrder,
     parent_run_id: parentRunId,
+    start_time: startTime,
   };
 }
 
@@ -271,12 +347,18 @@ function convertToTimestamp([seconds, nanoseconds]: [
   return Number(String(seconds) + ms);
 }
 
-function sortByHr(
-  a: [seconds: number, nanoseconds: number],
-  b: [seconds: number, nanoseconds: number]
-): number {
-  if (a[0] !== b[0]) return Math.sign(a[0] - b[0]);
-  return Math.sign(a[1] - b[1]);
+function sortByHr(a: AISDKSpan, b: AISDKSpan): number {
+  if (a.startTime[0] !== b.startTime[0]) {
+    return Math.sign(a.startTime[0] - b.startTime[0]);
+  } else if (a.startTime[1] !== b.startTime[1]) {
+    return Math.sign(a.startTime[1] - b.startTime[1]);
+  } else if (getParentSpanId(a) === b.spanContext().spanId) {
+    return -1;
+  } else if (getParentSpanId(b) === a.spanContext().spanId) {
+    return 1;
+  } else {
+    return 0;
+  }
 }
 
 const ROOT = "$";
@@ -330,7 +412,16 @@ type InteropType =
   | { type: "user"; userRunId: string }
   | undefined;
 
+function getParentSpanId(span: AISDKSpan): string | undefined {
+  // Backcompat shim to support OTEL 1.x and 2.x
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (
+    (span as any).parentSpanId ?? span.parentSpanContext?.spanId ?? undefined
+  );
+}
+
 /**
+ * @deprecated Use `wrapAISDK` from `langsmith/experimental/vercel` instead.
  * OpenTelemetry trace exporter for Vercel AI SDK.
  *
  * @example
@@ -380,13 +471,26 @@ export class AISDKExporter {
       relativeExecutionOrder: Record<string, number>;
     }
   > = {};
+  private seenSpanInfo: Record<
+    string,
+    { span: AISDKSpan; dotOrder: string; sent: boolean; projectName?: string }
+  > = {};
+
+  private pendingSpans: Record<string, AISDKSpan> = {};
 
   private debug: boolean;
 
-  constructor(args?: { client?: Client; debug?: boolean }) {
+  private projectName?: string;
+
+  constructor(args?: {
+    client?: Client;
+    debug?: boolean;
+    projectName?: string;
+  }) {
     this.client = args?.client ?? new Client();
     this.debug =
       args?.debug ?? getEnvironmentVariable("OTEL_LOG_LEVEL") === "DEBUG";
+    this.projectName = args?.projectName;
 
     this.logDebug("creating exporter", { tracingEnabled: isTracingEnabled() });
   }
@@ -438,8 +542,15 @@ export class AISDKExporter {
   };
 
   /** @internal */
-  protected parseInteropFromMetadata(span: AISDKSpan): InteropType {
+  protected parseInteropFromMetadata(
+    span: AISDKSpan,
+    parentSpan?: AISDKSpan
+  ): InteropType {
     if (!this.isRootRun(span)) return undefined;
+
+    if (parentSpan?.name === "ai.toolCall") {
+      return undefined;
+    }
 
     const userTraceId = this.getSpanAttributeKey(
       span,
@@ -473,7 +584,10 @@ export class AISDKExporter {
   }
 
   /** @internal */
-  protected getRunCreate(span: AISDKSpan): RunCreate | undefined {
+  protected getRunCreate(
+    span: AISDKSpan,
+    projectName?: string
+  ): RunCreate | undefined {
     const asRunCreate = (rawConfig: RunCreate) => {
       const aiMetadata = Object.keys(span.attributes)
         .filter(
@@ -521,6 +635,8 @@ export class AISDKExporter {
           },
         },
         session_name:
+          projectName ??
+          this.projectName ??
           getLangSmithEnvironmentVariable("PROJECT") ??
           getLangSmithEnvironmentVariable("SESSION"),
         start_time: Math.min(parsedStart, parsedEnd),
@@ -595,23 +711,23 @@ export class AISDKExporter {
             };
           }
 
-          if (span.attributes["ai.usage.completionTokens"]) {
-            result ??= {};
-            result.llm_output ??= {};
-            result.llm_output.token_usage ??= {};
-            result.llm_output.token_usage["completion_tokens"] =
-              span.attributes["ai.usage.completionTokens"];
-          }
-
-          if (span.attributes["ai.usage.promptTokens"]) {
-            result ??= {};
-            result.llm_output ??= {};
-            result.llm_output.token_usage ??= {};
-            result.llm_output.token_usage["prompt_tokens"] =
-              span.attributes["ai.usage.promptTokens"];
-          }
-
           return result;
+        })();
+
+        const invocationParams = ((): KVMap | undefined => {
+          if ("ai.prompt.tools" in span.attributes) {
+            return {
+              tools: span.attributes["ai.prompt.tools"].flatMap((tool) => {
+                try {
+                  return JSON.parse(tool);
+                } catch {
+                  // pass
+                }
+                return [];
+              }),
+            };
+          }
+          return {};
         })();
 
         const events: KVMap[] = [];
@@ -625,16 +741,27 @@ export class AISDKExporter {
           });
         }
 
+        const runType =
+          span.name === "ai.generateText" || span.name === "ai.streamText"
+            ? "chain"
+            : "llm";
+
+        const error = span.status?.code === 2 ? span.status.message : undefined;
+        const usageMetadata = extractUsageMetadata(span as KVMap);
+
         // TODO: add first_token_time
         return asRunCreate({
-          run_type: "llm",
+          run_type: runType,
           name: span.attributes["ai.model.provider"],
+          error,
           inputs,
           outputs,
           events,
           extra: {
+            invocation_params: invocationParams,
             batch_size: 1,
             metadata: {
+              usage_metadata: usageMetadata,
               ls_provider: span.attributes["ai.model.provider"]
                 .split(".")
                 .at(0),
@@ -648,23 +775,43 @@ export class AISDKExporter {
       }
 
       case "ai.toolCall": {
-        const args = tryJson(span.attributes["ai.toolCall.args"]);
+        const args = tryJson(
+          span.attributes["ai.toolCall.input"] ??
+            span.attributes["ai.toolCall.args"]
+        );
         let inputs: KVMap = { args };
 
         if (typeof args === "object" && args != null) {
           inputs = args;
         }
 
-        const output = tryJson(span.attributes["ai.toolCall.result"]);
+        const output = tryJson(
+          span.attributes["ai.toolCall.output"] ??
+            span.attributes["ai.toolCall.result"]
+        );
         let outputs: KVMap = { output };
 
         if (typeof output === "object" && output != null) {
           outputs = output;
         }
 
+        const error = span.status?.code === 2 ? span.status.message : undefined;
+
         return asRunCreate({
           run_type: "tool",
           name: span.attributes["ai.toolCall.name"],
+          error,
+          extra: error
+            ? {
+                metadata: {
+                  usage_metadata: {
+                    input_tokens: 0,
+                    output_tokens: 0,
+                    total_tokens: 0,
+                  },
+                },
+              }
+            : undefined,
           inputs,
           outputs,
         });
@@ -699,22 +846,6 @@ export class AISDKExporter {
             };
           }
 
-          if (span.attributes["ai.usage.completionTokens"]) {
-            result ??= {};
-            result.llm_output ??= {};
-            result.llm_output.token_usage ??= {};
-            result.llm_output.token_usage["completion_tokens"] =
-              span.attributes["ai.usage.completionTokens"];
-          }
-
-          if (span.attributes["ai.usage.promptTokens"]) {
-            result ??= {};
-            result.llm_output ??= {};
-            result.llm_output.token_usage ??= {};
-            result.llm_output.token_usage["prompt_tokens"] =
-              +span.attributes["ai.usage.promptTokens"];
-          }
-
           return result;
         })();
 
@@ -729,15 +860,25 @@ export class AISDKExporter {
           });
         }
 
+        const runType =
+          span.name === "ai.generateObject" || span.name === "ai.streamObject"
+            ? "chain"
+            : "llm";
+
+        const error = span.status?.code === 2 ? span.status.message : undefined;
+        const usageMetadata = extractUsageMetadata(span as KVMap);
+
         return asRunCreate({
-          run_type: "llm",
+          run_type: runType,
           name: span.attributes["ai.model.provider"],
+          error,
           inputs,
           outputs,
           events,
           extra: {
             batch_size: 1,
             metadata: {
+              usage_metadata: usageMetadata,
               ls_provider: span.attributes["ai.model.provider"]
                 .split(".")
                 .at(0),
@@ -774,44 +915,105 @@ export class AISDKExporter {
     }
   }
 
-  export(
+  _export(
     spans: unknown[],
     resultCallback: (result: { code: 0 | 1; error?: Error }) => void
   ): void {
     this.logDebug("exporting spans", spans);
 
     const typedSpans = (spans as AISDKSpan[])
+      .concat(Object.values(this.pendingSpans))
       .slice()
-      .sort((a, b) => sortByHr(a.startTime, b.startTime));
-
+      // Parent spans should go before child spans in the final order,
+      // but may have the same exact start time as their children.
+      // They will end earlier, so break ties by end time.
+      // TODO: Figure out why this happens.
+      .sort((a, b) => sortByHr(a, b));
     for (const span of typedSpans) {
       const { traceId, spanId } = span.spanContext();
-      const parentId = span.parentSpanId ?? undefined;
+      const runId = uuid5(spanId, RUN_ID_NAMESPACE);
+
+      let parentId = getParentSpanId(span);
+      if (LANGSMITH_IS_ROOT in span.attributes) {
+        parentId = undefined;
+      } else if (
+        LANGSMITH_TRACEABLE_PARENT_OTEL_SPAN_ID in span.attributes &&
+        typeof span.attributes[LANGSMITH_TRACEABLE_PARENT_OTEL_SPAN_ID] ===
+          "string"
+      ) {
+        parentId = span.attributes[LANGSMITH_TRACEABLE_PARENT_OTEL_SPAN_ID];
+      }
+      let parentRunId = parentId
+        ? uuid5(parentId, RUN_ID_NAMESPACE)
+        : undefined;
+      let parentSpanInfo = parentRunId
+        ? this.seenSpanInfo[parentRunId]
+        : undefined;
+
+      // Unrelated, untraced spans should behave as passthroughs from LangSmith's perspective.
+      while (
+        parentSpanInfo != null &&
+        this.getRunCreate(parentSpanInfo.span) == null
+      ) {
+        parentId = getParentSpanId(parentSpanInfo.span);
+        if (parentId == null) {
+          break;
+        }
+        parentRunId = parentId ? uuid5(parentId, RUN_ID_NAMESPACE) : undefined;
+        parentSpanInfo = parentRunId
+          ? this.seenSpanInfo[parentRunId]
+          : undefined;
+      }
+
+      // Export may be called in any order, so we need to queue any spans with missing parents
+      // for retry later in order to determine whether their parents are tool calls
+      // and should not be reparented below.
+      if (parentRunId !== undefined && parentSpanInfo === undefined) {
+        this.pendingSpans[spanId] = span;
+        continue;
+      } else {
+        delete this.pendingSpans[spanId];
+      }
+
       this.traceByMap[traceId] ??= {
         childMap: {},
         nodeMap: {},
         relativeExecutionOrder: {},
       };
 
-      const runId = uuid5(spanId, RUN_ID_NAMESPACE);
-      const parentRunId = parentId
-        ? uuid5(parentId, RUN_ID_NAMESPACE)
-        : undefined;
-
       const traceMap = this.traceByMap[traceId];
-      const run = this.getRunCreate(span);
 
       traceMap.relativeExecutionOrder[parentRunId ?? ROOT] ??= -1;
       traceMap.relativeExecutionOrder[parentRunId ?? ROOT] += 1;
+
+      const interop = this.parseInteropFromMetadata(span, parentSpanInfo?.span);
+
+      const projectName =
+        (interop?.type === "traceable"
+          ? interop.parentRunTree.project_name
+          : undefined) ?? parentSpanInfo?.projectName;
+      const run = this.getRunCreate(span, projectName);
 
       traceMap.nodeMap[runId] ??= {
         id: runId,
         startTime: span.startTime,
         run,
         sent: false,
-        interop: this.parseInteropFromMetadata(span),
+        interop,
         executionOrder: traceMap.relativeExecutionOrder[parentRunId ?? ROOT],
       };
+
+      if (this.seenSpanInfo[runId] == null) {
+        this.seenSpanInfo[runId] = {
+          span,
+          dotOrder: joinDotOrder(
+            parentSpanInfo?.dotOrder,
+            getDotOrder(traceMap.nodeMap[runId])
+          ),
+          projectName,
+          sent: false,
+        };
+      }
 
       if (this.debug) console.log(`[${span.name}] ${runId}`, run);
       traceMap.childMap[parentRunId ?? ROOT] ??= [];
@@ -822,79 +1024,79 @@ export class AISDKExporter {
     const actions: PostProcessAction[] = [];
 
     for (const traceId of Object.keys(this.traceByMap)) {
-      type QueueItem = { dotOrder: string; item: RunTask };
       const traceMap = this.traceByMap[traceId];
-
-      const queue: QueueItem[] =
-        traceMap.childMap[ROOT]?.map((item) => ({
-          item,
-          dotOrder: getDotOrder(item),
-        })) ?? [];
+      const queue: RunTask[] = Object.keys(traceMap.childMap)
+        .map((runId) => {
+          if (runId === ROOT) {
+            return traceMap.childMap[runId];
+          }
+          return [];
+        })
+        .flat();
 
       const seen = new Set<string>();
       while (queue.length) {
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         const task = queue.shift()!;
-        if (seen.has(task.item.id)) continue;
+        if (seen.has(task.id)) continue;
 
-        if (!task.item.sent) {
-          if (task.item.run != null) {
-            if (task.item.interop?.type === "user") {
+        let taskDotOrder = this.seenSpanInfo[task.id].dotOrder;
+        if (!task.sent) {
+          if (task.run != null) {
+            if (task.interop?.type === "user") {
               actions.push({
                 type: "rename",
-                sourceRunId: task.item.id,
-                targetRunId: task.item.interop.userRunId,
+                sourceRunId: task.id,
+                targetRunId: task.interop.userRunId,
               });
             }
 
-            if (task.item.interop?.type === "traceable") {
+            if (task.interop?.type === "traceable") {
               actions.push({
                 type: "reparent",
-                runId: task.item.id,
-                parentDotOrder: task.item.interop.parentRunTree.dotted_order,
+                runId: task.id,
+                parentDotOrder: task.interop.parentRunTree.dotted_order,
               });
             }
 
-            let dotOrder = task.dotOrder;
             for (const action of actions) {
               if (action.type === "delete") {
-                dotOrder = removeDotOrder(dotOrder, action.runId);
+                taskDotOrder = removeDotOrder(taskDotOrder, action.runId);
               }
 
               if (action.type === "reparent") {
-                dotOrder = reparentDotOrder(
-                  dotOrder,
+                taskDotOrder = reparentDotOrder(
+                  taskDotOrder,
                   action.runId,
                   action.parentDotOrder
                 );
               }
 
               if (action.type === "rename") {
-                dotOrder = dotOrder.replace(
+                taskDotOrder = taskDotOrder.replace(
                   action.sourceRunId,
                   action.targetRunId
                 );
               }
             }
 
-            sampled.push({
-              ...task.item.run,
-              ...getMutableRunCreate(dotOrder),
-            });
+            this.seenSpanInfo[task.id].dotOrder = taskDotOrder;
+            if (!this.seenSpanInfo[task.id].sent) {
+              sampled.push({
+                ...task.run,
+                ...getMutableRunCreate(taskDotOrder),
+              });
+            }
+            this.seenSpanInfo[task.id].sent = true;
           } else {
-            actions.push({ type: "delete", runId: task.item.id });
+            actions.push({ type: "delete", runId: task.id });
           }
 
-          task.item.sent = true;
+          task.sent = true;
         }
 
-        const children = traceMap.childMap[task.item.id] ?? [];
-        queue.push(
-          ...children.map((item) => ({
-            item,
-            dotOrder: joinDotOrder(task.dotOrder, getDotOrder(item)),
-          }))
-        );
+        const children = traceMap.childMap[task.id] ?? [];
+        queue.push(...children);
       }
     }
 
@@ -903,6 +1105,20 @@ export class AISDKExporter {
       () => resultCallback({ code: 0 }),
       (error) => resultCallback({ code: 1, error })
     );
+  }
+
+  export(
+    spans: unknown[],
+    resultCallback: (result: { code: 0 | 1; error?: Error }) => void
+  ): void {
+    this._export(spans, (result) => {
+      if (result.code === 0) {
+        // Empty export to try flushing pending spans to rule out any trace order shenanigans
+        this._export([], resultCallback);
+      } else {
+        resultCallback(result);
+      }
+    });
   }
 
   async shutdown(): Promise<void> {
@@ -919,11 +1135,14 @@ export class AISDKExporter {
       );
     }
 
-    await this.client?.awaitPendingTraceBatches();
+    await this.forceFlush();
   }
 
-  async forceFlush?(): Promise<void> {
-    await this.client?.awaitPendingTraceBatches();
+  async forceFlush(): Promise<void> {
+    await new Promise((resolve) => {
+      this.export([], resolve);
+    });
+    await this.client.awaitPendingTraceBatches();
   }
 
   protected logDebug(...args: Parameters<typeof console.debug>): void {

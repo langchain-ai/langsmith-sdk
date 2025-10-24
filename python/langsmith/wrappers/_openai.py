@@ -8,11 +8,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    DefaultDict,
-    Dict,
-    List,
     Optional,
-    Type,
     TypeVar,
     Union,
 )
@@ -39,31 +35,36 @@ logger = logging.getLogger(__name__)
 
 
 @functools.lru_cache
-def _get_not_given() -> Optional[Type]:
+def _get_omit_types() -> tuple[type, ...]:
+    """Get NotGiven/Omit sentinel types used by OpenAI SDK."""
+    types: list[type[Any]] = []
     try:
-        from openai._types import NotGiven
+        from openai._types import NotGiven, Omit
 
-        return NotGiven
+        types.append(NotGiven)
+        types.append(Omit)
     except ImportError:
-        return None
+        pass
+
+    return tuple(types)
 
 
 def _strip_not_given(d: dict) -> dict:
     try:
-        not_given = _get_not_given()
-        if not_given is None:
+        omit_types = _get_omit_types()
+        if not omit_types:
             return d
         return {
             k: v
             for k, v in d.items()
-            if not (isinstance(v, not_given) or (k.startswith("extra_") and v is None))
+            if not (isinstance(v, omit_types) or (k.startswith("extra_") and v is None))
         }
     except Exception as e:
         logger.error(f"Error stripping NotGiven: {e}")
         return d
 
 
-def _infer_invocation_params(model_type: str, kwargs: dict):
+def _infer_invocation_params(model_type: str, provider: str, kwargs: dict):
     stripped = _strip_not_given(kwargs)
 
     stop = stripped.get("stop")
@@ -71,7 +72,7 @@ def _infer_invocation_params(model_type: str, kwargs: dict):
         stop = [stop]
 
     return {
-        "ls_provider": "openai",
+        "ls_provider": provider,
         "ls_model_type": model_type,
         "ls_model_name": stripped.get("model"),
         "ls_temperature": stripped.get("temperature"),
@@ -82,9 +83,9 @@ def _infer_invocation_params(model_type: str, kwargs: dict):
     }
 
 
-def _reduce_choices(choices: List[Choice]) -> dict:
+def _reduce_choices(choices: list[Choice]) -> dict:
     reversed_choices = list(reversed(choices))
-    message: Dict[str, Any] = {
+    message: dict[str, Any] = {
         "role": "assistant",
         "content": "",
     }
@@ -92,9 +93,9 @@ def _reduce_choices(choices: List[Choice]) -> dict:
         if hasattr(c, "delta") and getattr(c.delta, "role", None):
             message["role"] = c.delta.role
             break
-    tool_calls: DefaultDict[int, List[ChoiceDeltaToolCall]] = defaultdict(list)
+    tool_calls: defaultdict[int, list[ChoiceDeltaToolCall]] = defaultdict(list)
     for c in choices:
-        if hasattr(c, "delta") and getattr(c.delta, "content", None):
+        if hasattr(c, "delta"):
             if getattr(c.delta, "content", None):
                 message["content"] += c.delta.content
             if getattr(c.delta, "function_call", None):
@@ -110,30 +111,26 @@ def _reduce_choices(choices: List[Choice]) -> dict:
                 tool_calls_list = c.delta.tool_calls
                 if tool_calls_list is not None:
                     for tool_call in tool_calls_list:
-                        tool_calls[c.index].append(tool_call)
+                        tool_calls[tool_call.index].append(tool_call)
     if tool_calls:
-        message["tool_calls"] = [None for _ in tool_calls.keys()]
+        message["tool_calls"] = [None for _ in range(max(tool_calls.keys()) + 1)]
         for index, tool_call_chunks in tool_calls.items():
             message["tool_calls"][index] = {
                 "index": index,
                 "id": next((c.id for c in tool_call_chunks if c.id), None),
                 "type": next((c.type for c in tool_call_chunks if c.type), None),
+                "function": {"name": "", "arguments": ""},
             }
             for chunk in tool_call_chunks:
                 if getattr(chunk, "function", None):
-                    if not message["tool_calls"][index].get("function"):
-                        message["tool_calls"][index]["function"] = {
-                            "name": "",
-                            "arguments": "",
-                        }
                     name_ = getattr(chunk.function, "name", None)
                     if name_:
-                        fn_ = message["tool_calls"][index]["function"]
-                        fn_["name"] += name_
+                        message["tool_calls"][index]["function"]["name"] += name_
                     arguments_ = getattr(chunk.function, "arguments", None)
                     if arguments_:
-                        fn_ = message["tool_calls"][index]["function"]
-                        fn_["arguments"] += arguments_
+                        message["tool_calls"][index]["function"]["arguments"] += (
+                            arguments_
+                        )
     return {
         "index": getattr(choices[0], "index", 0) if choices else 0,
         "finish_reason": next(
@@ -148,8 +145,8 @@ def _reduce_choices(choices: List[Choice]) -> dict:
     }
 
 
-def _reduce_chat(all_chunks: List[ChatCompletionChunk]) -> dict:
-    choices_by_index: DefaultDict[int, List[Choice]] = defaultdict(list)
+def _reduce_chat(all_chunks: list[ChatCompletionChunk]) -> dict:
+    choices_by_index: defaultdict[int, list[Choice]] = defaultdict(list)
     for chunk in all_chunks:
         for choice in chunk.choices:
             choices_by_index[choice.index].append(choice)
@@ -169,7 +166,7 @@ def _reduce_chat(all_chunks: List[ChatCompletionChunk]) -> dict:
     return d
 
 
-def _reduce_completions(all_chunks: List[Completion]) -> dict:
+def _reduce_completions(all_chunks: list[Completion]) -> dict:
     all_content = []
     for chunk in all_chunks:
         content = chunk.choices[0].text
@@ -185,7 +182,16 @@ def _reduce_completions(all_chunks: List[Completion]) -> dict:
     return d
 
 
-def _create_usage_metadata(oai_token_usage: dict) -> UsageMetadata:
+def _create_usage_metadata(
+    oai_token_usage: dict, service_tier: Optional[str] = None
+) -> UsageMetadata:
+    recognized_service_tier = (
+        service_tier if service_tier in ["priority", "flex"] else None
+    )
+    service_tier_prefix = (
+        f"{recognized_service_tier}_" if recognized_service_tier else ""
+    )
+
     input_tokens = (
         oai_token_usage.get("prompt_tokens") or oai_token_usage.get("input_tokens") or 0
     )
@@ -201,7 +207,7 @@ def _create_usage_metadata(oai_token_usage: dict) -> UsageMetadata:
             or oai_token_usage.get("input_tokens_details")
             or {}
         ).get("audio_tokens"),
-        "cache_read": (
+        f"{service_tier_prefix}cache_read": (
             oai_token_usage.get("prompt_tokens_details")
             or oai_token_usage.get("input_tokens_details")
             or {}
@@ -213,12 +219,24 @@ def _create_usage_metadata(oai_token_usage: dict) -> UsageMetadata:
             or oai_token_usage.get("output_tokens_details")
             or {}
         ).get("audio_tokens"),
-        "reasoning": (
+        f"{service_tier_prefix}reasoning": (
             oai_token_usage.get("completion_tokens_details")
             or oai_token_usage.get("output_tokens_details")
             or {}
         ).get("reasoning_tokens"),
     }
+
+    if recognized_service_tier:
+        # Avoid counting cache read and reasoning tokens towards the
+        # service tier token count since service tier tokens are already
+        # priced differently
+        input_token_details[recognized_service_tier] = input_tokens - (
+            input_token_details.get(f"{service_tier_prefix}cache_read") or 0
+        )
+        output_token_details[recognized_service_tier] = output_tokens - (
+            output_token_details.get(f"{service_tier_prefix}reasoning") or 0
+        )
+
     return UsageMetadata(
         input_tokens=input_tokens,
         output_tokens=output_tokens,
@@ -237,7 +255,9 @@ def _process_chat_completion(outputs: Any):
         rdict = outputs.model_dump()
         oai_token_usage = rdict.pop("usage", None)
         rdict["usage_metadata"] = (
-            _create_usage_metadata(oai_token_usage) if oai_token_usage else None
+            _create_usage_metadata(oai_token_usage, rdict.get("service_tier"))
+            if oai_token_usage
+            else None
         )
         return rdict
     except BaseException as e:
@@ -334,7 +354,7 @@ def _reduce_response_events(events: list[ResponseStreamEvent]) -> dict:
 
 class TracingExtra(TypedDict, total=False):
     metadata: Optional[Mapping[str, Any]]
-    tags: Optional[List[str]]
+    tags: Optional[list[str]]
     client: Optional[ls_client.Client]
 
 
@@ -401,13 +421,26 @@ def wrap_openai(
     """  # noqa: E501
     tracing_extra = tracing_extra or {}
 
+    ls_provider = "openai"
+    try:
+        from openai import AsyncAzureOpenAI, AzureOpenAI
+
+        if isinstance(client, AzureOpenAI) or isinstance(client, AsyncAzureOpenAI):
+            ls_provider = "azure"
+            chat_name = "AzureChatOpenAI"
+            completions_name = "AzureOpenAI"
+    except ImportError:
+        pass
+
     # First wrap the create methods - these handle non-streaming cases
     client.chat.completions.create = _get_wrapper(  # type: ignore[method-assign]
         client.chat.completions.create,
         chat_name,
         _reduce_chat,
         tracing_extra=tracing_extra,
-        invocation_params_fn=functools.partial(_infer_invocation_params, "chat"),
+        invocation_params_fn=functools.partial(
+            _infer_invocation_params, "chat", ls_provider
+        ),
         process_outputs=_process_chat_completion,
     )
 
@@ -416,7 +449,9 @@ def wrap_openai(
         completions_name,
         _reduce_completions,
         tracing_extra=tracing_extra,
-        invocation_params_fn=functools.partial(_infer_invocation_params, "llm"),
+        invocation_params_fn=functools.partial(
+            _infer_invocation_params, "llm", ls_provider
+        ),
     )
 
     # Wrap beta.chat.completions.parse if it exists
@@ -431,7 +466,25 @@ def wrap_openai(
             chat_name,
             _process_chat_completion,
             tracing_extra=tracing_extra,
-            invocation_params_fn=functools.partial(_infer_invocation_params, "chat"),
+            invocation_params_fn=functools.partial(
+                _infer_invocation_params, "chat", ls_provider
+            ),
+        )
+
+    # Wrap chat.completions.parse if it exists
+    if (
+        hasattr(client, "chat")
+        and hasattr(client.chat, "completions")
+        and hasattr(client.chat.completions, "parse")
+    ):
+        client.chat.completions.parse = _get_parse_wrapper(  # type: ignore[method-assign]
+            client.chat.completions.parse,  # type: ignore
+            chat_name,
+            _process_chat_completion,
+            tracing_extra=tracing_extra,
+            invocation_params_fn=functools.partial(
+                _infer_invocation_params, "chat", ls_provider
+            ),
         )
 
     # For the responses API: "client.responses.create(**kwargs)"
@@ -444,7 +497,7 @@ def wrap_openai(
                 process_outputs=_process_responses_api_output,
                 tracing_extra=tracing_extra,
                 invocation_params_fn=functools.partial(
-                    _infer_invocation_params, "chat"
+                    _infer_invocation_params, "chat", ls_provider
                 ),
             )
         if hasattr(client.responses, "parse"):
@@ -454,7 +507,7 @@ def wrap_openai(
                 _process_responses_api_output,
                 tracing_extra=tracing_extra,
                 invocation_params_fn=functools.partial(
-                    _infer_invocation_params, "chat"
+                    _infer_invocation_params, "chat", ls_provider
                 ),
             )
 
@@ -466,7 +519,9 @@ def _process_responses_api_output(response: Any) -> dict:
         try:
             output = response.model_dump(exclude_none=True, mode="json")
             if usage := output.pop("usage", None):
-                output["usage_metadata"] = _create_usage_metadata(usage)
+                output["usage_metadata"] = _create_usage_metadata(
+                    usage, output.get("service_tier")
+                )
             return output
         except Exception:
             return {"output": response}

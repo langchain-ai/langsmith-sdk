@@ -20,6 +20,8 @@ export type TestWrapperAsyncLocalStorageData = {
   client: Client;
   suiteUuid: string;
   suiteName: string;
+  testRootRunTree?: RunTree;
+  setupPromise?: Promise<void>;
 };
 
 export const testWrapperAsyncLocalStorageInstance =
