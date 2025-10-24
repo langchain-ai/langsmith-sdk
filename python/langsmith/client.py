@@ -174,6 +174,7 @@ _urllib3_logger = logging.getLogger("urllib3.connectionpool")
 X_API_KEY = "x-api-key"
 EMPTY_SEQ: tuple[dict, ...] = ()
 URLLIB3_SUPPORTS_BLOCKSIZE = "key_blocksize" in signature(PoolKey).parameters
+DEFAULT_INSTRUCTIONS = "How are people using my agent? What are they asking about?"
 
 
 def _parse_token_or_url(
@@ -8577,6 +8578,131 @@ class Client:
             run_stats=run_stats,
             examples_with_runs=_get_examples_with_runs_iterator(),
         )
+
+    def generate_insights(
+        self,
+        chat_histories: list[list[dict]],
+        *,
+        instructions: str = DEFAULT_INSTRUCTIONS,
+        name: str | None = None,
+        openai_api_key: str | None = None,
+    ) -> ls_schemas.InsightsReport:
+        """Generate insights over your agent traces.
+
+        Args:
+            chat_histories: A list of chat histories. Each chat history should be a list of messages.
+                We recommend formatting these as OpenAI messages with a "role" and "content" key.
+            instructions: Instructions for the Insights agent.
+                Should focus on what your agent does and what types of insights you want to generate.
+            name: Name for the generated Insights report.
+            openai_api_key: OpenAI API key to use. Only needed if you have not already stored this in LangSmith.
+        """
+        self._ensure_openai_api_key(openai_api_key)
+        project = self._ingest_insights_runs(chat_histories, name)
+        config = {
+            "name": name,
+            "user_context": {
+                "how are your agent traces structured?": "The run.outputs.messages field contains a chat history between the user and the agent. this is all the context you need.",
+                "what would you like to learn about your agent?": instructions,
+            },
+            "last_n_hours": 24,
+        }
+        response = self.request_with_retries(
+            "POST", f"/sessions/{project.id}/insights", json=config
+        )
+        ls_utils.raise_for_status_with_text(response)
+        res = response.json()
+        res["session_id"] = str(project.id)
+        job = ls_schemas.InsightsReport(
+            **res, tenant_id=self._get_tenant_id(), host_url=self._host_url
+        )
+        print(  # noqa: T201
+            f"Insights report created! It might take up to 30 minutes to complete. Once the report is completed, you'll be able to see results here: {job.link}"
+        )
+        return job
+
+    def poll_insights(
+        self,
+        session_id: str,
+        job_id: str,
+        *,
+        rate: int = 30,
+        timeout: int = 30 * 60,
+        verbose: bool = False,
+    ) -> ls_schemas.InsightsReport:
+        """Repeatedly checks the status of an insights report and prints a message when complete."""
+        max_tries = max(1, timeout // rate)
+        for i in range(max_tries):
+            response = self.request_with_retries(
+                "GET", f"/sessions/{session_id}/insights/{job_id}"
+            )
+            ls_utils.raise_for_status_with_text(response)
+            resp_json = response.json()
+            if resp_json["status"] == "success":
+                job = ls_schemas.InsightsReport(
+                    **resp_json,
+                    session_id=session_id,
+                    tenant_id=self._get_tenant_id(),
+                    host_url=self._host_url,
+                )
+                print(  # noqa: T201
+                    "Insights report completed! View the results at %s",
+                    job.link,
+                )
+                return job
+            elif resp_json["status"] == "error":
+                raise ValueError(f"Failed to generate insights: {resp_json['error']}")
+            elif verbose:
+                print(f"Polling time: {i * rate}")  # noqa: T201
+            time.sleep(rate)
+        raise TimeoutError("Insights still pending")
+
+    def _ensure_openai_api_key(self, openai_api_key: str | None) -> None:
+        response = self.request_with_retries("GET", "/workspaces/current/secrets")
+        ls_utils.raise_for_status_with_text(response)
+        if any(s.get("key") == "OPENAI_API_KEY" for s in response.json()):
+            return
+        openai_api_key = openai_api_key or os.environ.get("OPENAI_API_KEY")
+        if not openai_api_key:
+            raise ValueError(
+                "Please specify OpenAI API key. Note, this will be securely stored in LangSmith."
+            )
+        response = self.request_with_retries(
+            "POST",
+            "/workspaces/current/secrets",
+            json=[{"key": "OPENAI_API_KEY", "value": openai_api_key}],
+        )
+        ls_utils.raise_for_status_with_text(response)
+
+    def _ingest_insights_runs(self, data: list, name: str | None):
+        if len(data) > 1000:
+            warnings.warn(
+                "Can only generate insights over 1000 data. Truncating to first 1000."
+            )
+            data = data[:1000]
+        now = datetime.datetime.now(datetime.timezone.utc)
+        project = self.create_project(
+            name or ("insights-" + now.isoformat()),
+        )
+        run_ids = [str(uuid.uuid4()) for _ in range(len(data))]
+        runs = [
+            {
+                "inputs": {"messages": x[:1]},
+                "outputs": {"messages": x},
+                "id": run_id,
+                "trace_id": run_id,
+                "dotted_order": f"{now.strftime('%Y%m%dT%H%M%S%fZ')}{str(run_id)}",
+                "start_time": now - datetime.timedelta(minutes=1),
+                "end_time": now,
+                "run_type": "chain",
+                "session_id": project.id,
+                "name": "trace",
+            }
+            for run_id, x in zip(run_ids, data)
+        ]
+        self.batch_ingest_runs(create=runs)
+        self.flush()
+        return project
 
 
 def convert_prompt_to_openai_format(
