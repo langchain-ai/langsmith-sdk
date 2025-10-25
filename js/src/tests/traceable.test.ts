@@ -1150,22 +1150,32 @@ test("traceable continues execution when client throws error", async () => {
 test("traceable with processInputs", async () => {
   const { client, callSpy } = mockClient();
 
-  const processInputs = jest.fn((inputs: Readonly<KVMap>) => {
+  type FuncInputs = { username: string; password: string };
+
+  const processInputs = jest.fn((inputs: FuncInputs) => {
     return { ...inputs, password: "****" };
   });
 
-  const func = traceable(
-    async function func(input: { username: string; password: string }) {
-      // The function should receive the original inputs
-      expect(input.password).toBe("secret");
-      return `Welcome, ${input.username}`;
+  const originalFunc = async function func(input: FuncInputs) {
+    // The function should receive the original inputs
+    expect(input.password).toBe("secret");
+    return `Welcome, ${input.username}`;
+  };
+
+  let func = traceable(originalFunc, {
+    client,
+    tracingEnabled: true,
+    // @ts-expect-error - Should infer inputs as FuncInputs
+    processInputs: (inputs: { foo: string }) => {
+      return { ...inputs, password: "****" };
     },
-    {
-      client,
-      tracingEnabled: true,
-      processInputs,
-    }
-  );
+  });
+
+  func = traceable(originalFunc, {
+    client,
+    tracingEnabled: true,
+    processInputs,
+  });
 
   await func({ username: "user1", password: "secret" });
 
@@ -1192,20 +1202,28 @@ test("traceable with processInputs", async () => {
 test("traceable with processOutputs", async () => {
   const { client, callSpy } = mockClient();
 
-  const processOutputs = jest.fn((_outputs: Readonly<KVMap>) => {
+  const processOutputs = jest.fn((_outputs: { outputs: string }) => {
     return { outputs: "Modified Output" };
   });
 
-  const func = traceable(
-    async function func(input: string) {
-      return `Original Output for ${input}`;
+  const originalFunc = async function (input: string) {
+    return `Original Output for ${input}`;
+  };
+
+  let func = traceable(originalFunc, {
+    client,
+    tracingEnabled: true,
+    // @ts-expect-error - Should infer outputs as a nested object for simple string return values
+    processOutputs: (outputs: string) => {
+      return outputs;
     },
-    {
-      client,
-      tracingEnabled: true,
-      processOutputs,
-    }
-  );
+  });
+
+  func = traceable(originalFunc, {
+    client,
+    tracingEnabled: true,
+    processOutputs,
+  });
 
   const result = await func("test");
 
@@ -1224,6 +1242,112 @@ test("traceable with processOutputs", async () => {
       },
     },
   });
+});
+
+test("traceable process inputs/process outputs type inference", async () => {
+  const { client } = mockClient();
+
+  const funcWithMultipleArgs = async (a: string, b: number, c: boolean) => {
+    return { a, b, c };
+  };
+
+  traceable(funcWithMultipleArgs, {
+    client,
+    processInputs: (inputs) => {
+      // @ts-expect-error - Should infer several inputs as an array
+      inputs.a;
+      inputs.args[0];
+      if (
+        typeof inputs.args[0] !== "string" ||
+        typeof inputs.args[1] !== "number" ||
+        typeof inputs.args[2] !== "boolean"
+      ) {
+        throw new Error("Invalid inputs");
+      }
+      return {};
+    },
+    processOutputs: (outputs) => {
+      // @ts-expect-error - Should infer object return values unchanged
+      outputs.outputs;
+      if (
+        typeof outputs.a !== "string" ||
+        typeof outputs.b !== "number" ||
+        typeof outputs.c !== "boolean"
+      ) {
+        throw new Error("Invalid outputs");
+      }
+      return {};
+    },
+  })("a", 1, true);
+
+  const funcWithArrayInputAndReturn = async (a: string[]) => {
+    a.slice(0, 1);
+    return ["a", "b", "c"];
+  };
+
+  traceable(funcWithArrayInputAndReturn, {
+    client,
+    processInputs: (inputs) => {
+      inputs.input[0];
+      return {};
+    },
+    processOutputs: (outputs) => {
+      // @ts-expect-error - Should wrap string return values as { outputs: string }
+      outputs.slice;
+      outputs.outputs.slice(0, 1);
+      return {};
+    },
+  })(["a", "b", "c"]);
+
+  const funcWithStringInputAndReturn = async (a: string) => {
+    a.slice(0, 1);
+    return "b";
+  };
+
+  traceable(funcWithStringInputAndReturn, {
+    client,
+    processInputs: (inputs) => {
+      // @ts-expect-error - Should infer string input as { input: string }
+      inputs.slice;
+      if (typeof inputs.input !== "string") {
+        throw new Error("Invalid inputs");
+      }
+      return {};
+    },
+    processOutputs: (outputs) => {
+      // @ts-expect-error - Should infer string return value as { outputs: string }
+      outputs.slice;
+      if (typeof outputs.outputs !== "string") {
+        throw new Error("Invalid outputs");
+      }
+      return {};
+    },
+  })("a");
+
+  const funcWithObjectInputAndReturn = async (a: { b: string }) => {
+    a.b.slice(0, 1);
+    return { b: "b" };
+  };
+
+  traceable(funcWithObjectInputAndReturn, {
+    client,
+    processInputs: (inputs) => {
+      // @ts-expect-error - Should infer object input directly
+      inputs.slice;
+      if (typeof inputs.b !== "string") {
+        throw new Error("Invalid inputs");
+      }
+      return { b: inputs.b };
+    },
+    processOutputs: (outputs) => {
+      // @ts-expect-error - Should infer object return value directly
+      outputs.slice;
+      if (typeof outputs.b !== "string") {
+        throw new Error("Invalid outputs");
+      }
+      return { b: outputs.b };
+    },
+  })({ b: "a" });
 });
 
 test("traceable with processInputs throwing error does not affect invocation", async () => {
