@@ -1251,7 +1251,7 @@ test("traceable process inputs/process outputs type inference", async () => {
     return { a, b, c };
   };
 
-  traceable(funcWithMultipleArgs, {
+  await traceable(funcWithMultipleArgs, {
     client,
     processInputs: (inputs) => {
       // @ts-expect-error - Should infer several inputs as an array
@@ -1285,7 +1285,7 @@ test("traceable process inputs/process outputs type inference", async () => {
     return ["a", "b", "c"];
   };
 
-  traceable(funcWithArrayInputAndReturn, {
+  await traceable(funcWithArrayInputAndReturn, {
     client,
     processInputs: (inputs) => {
       inputs.input[0];
@@ -1304,7 +1304,7 @@ test("traceable process inputs/process outputs type inference", async () => {
     return "b";
   };
 
-  traceable(funcWithStringInputAndReturn, {
+  await traceable(funcWithStringInputAndReturn, {
     client,
     processInputs: (inputs) => {
       // @ts-expect-error - Should infer string input as { input: string }
@@ -1329,7 +1329,7 @@ test("traceable process inputs/process outputs type inference", async () => {
     return { b: "b" };
   };
 
-  traceable(funcWithObjectInputAndReturn, {
+  await traceable(funcWithObjectInputAndReturn, {
     client,
     processInputs: (inputs) => {
       // @ts-expect-error - Should infer object input directly
