@@ -134,11 +134,11 @@ const runInputsToMap = (rawInputs: unknown[]) => {
 };
 
 const handleRunInputs = <Args extends unknown[]>(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   inputs: any,
   processInputs: (inputs: Readonly<ProcessInputs<Args>>) => KVMap
 ): KVMap => {
   try {
-    console.log(inputs);
     return processInputs(inputs);
   } catch (e) {
     console.error(
@@ -226,6 +226,7 @@ async function handleRunOutputs<Return>(params: {
     postRunPromise,
     excludeInputs,
   } = params;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let outputs: any;
 
   if (isKVMap(rawOutputs)) {
