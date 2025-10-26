@@ -1233,10 +1233,10 @@ test("traceable with processOutputs", async () => {
   expect(result).toBe("Original Output for test");
   // Verify that the tracing data shows the modified output
   expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
-    nodes: ["func:0"],
+    nodes: ["originalFunc:0"],
     edges: [],
     data: {
-      "func:0": {
+      "originalFunc:0": {
         inputs: { input: "test" },
         outputs: { outputs: "Modified Output" },
       },
