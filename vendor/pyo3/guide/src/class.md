@@ -55,7 +55,7 @@ enum HttpResponse {
 }
 
 // PyO3 also supports enums with Struct and Tuple variants
-// These complex enums have sligtly different behavior from the simple enums above
+// These complex enums have slightly different behavior from the simple enums above
 // They are meant to work with instance checks and match statement patterns
 // The variants can be mixed and matched
 // Struct variants have named fields while tuple enums generate generic names for fields in order _0, _1, _2, ...
