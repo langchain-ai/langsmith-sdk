@@ -1348,6 +1348,82 @@ test("traceable process inputs/process outputs type inference", async () => {
       return { b: outputs.b };
     },
   })({ b: "a" });
+
+  const funcWithIteratorInputAndReturn = function* (a: Iterable<string>) {
+    for (const item of a) {
+      yield item;
+    }
+  };
+
+  const tracedIteratorFunc = traceable(funcWithIteratorInputAndReturn, {
+    client,
+    processInputs: (inputs) => {
+      // @ts-expect-error - Should infer nested input
+      inputs.slice;
+      inputs.input.slice(0, 1);
+      if (!Array.isArray(inputs.input)) {
+        throw new Error("Invalid inputs");
+      }
+      return {};
+    },
+    processOutputs: (outputs) => {
+      // @ts-expect-error - Should infer nested return value
+      outputs.slice;
+      outputs.outputs.slice(0, 1);
+      if (!Array.isArray(outputs.outputs)) {
+        throw new Error("Invalid outputs");
+      }
+      return {};
+    },
+  });
+  const chunks = [];
+  for (const value of await tracedIteratorFunc(["a", "b", "c"])) {
+    chunks.push(value);
+  }
+  expect(chunks).toEqual(["a", "b", "c"]);
+
+  const funcWithAsyncIteratorInputAndReturn = async function* (
+    a: AsyncIterable<string>
+  ) {
+    for await (const item of a) {
+      yield item;
+    }
+  };
+
+  const tracedAsyncIteratorFunc = traceable(
+    funcWithAsyncIteratorInputAndReturn,
+    {
+      client,
+      processInputs: (inputs) => {
+        // @ts-expect-error - Should infer nested input
+        inputs.slice;
+        inputs.input.slice(0, 1);
+        if (!Array.isArray(inputs.input)) {
+          throw new Error("Invalid inputs");
+        }
+        return {};
+      },
+      processOutputs: (outputs) => {
+        // @ts-expect-error - Should infer nested return value
+        outputs.slice;
+        outputs.outputs.slice(0, 1);
+        if (!Array.isArray(outputs.outputs)) {
+          throw new Error("Invalid outputs");
+        }
+        return {};
+      },
+    }
+  );
+  const inputAsyncIterable = (async function* () {
+    yield "d";
+    yield "e";
+    yield "f";
+  })();
+  const chunks2 = [];
+  for await (const value of tracedAsyncIteratorFunc(inputAsyncIterable)) {
+    chunks2.push(value);
+  }
+  expect(chunks2).toEqual(["d", "e", "f"]);
 });
 
 test("traceable with processInputs throwing error does not affect invocation", async () => {

@@ -519,15 +519,15 @@ export type ProcessInputs<Args extends unknown[]> = Args extends []
   ? Record<string, never>
   : Args extends [infer Input]
   ? Input extends KVMap
-    ? Input extends Array<unknown>
-      ? { input: Input }
+    ? Input extends Iterable<infer Item> | AsyncIterable<infer Item>
+      ? { input: Array<Item> }
       : Input
     : { input: Input }
   : { args: Args };
 
 export type ProcessOutputs<ReturnValue> = ReturnValue extends KVMap
-  ? ReturnValue extends Array<unknown>
-    ? { outputs: ReturnValue }
+  ? ReturnValue extends Iterable<infer Item> | AsyncIterable<infer Item>
+    ? { outputs: Array<Item> }
     : ReturnValue
   : { outputs: ReturnValue };
 
