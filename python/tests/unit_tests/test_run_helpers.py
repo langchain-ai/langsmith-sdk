@@ -550,7 +550,7 @@ def test_traceable_parent_from_runnable_config() -> None:
 def test_traceable_parent_from_runnable_config_accepts_config() -> None:
     try:
         from langchain.callbacks.tracers import LangChainTracer
-        from langchain.schema.runnable import RunnableLambda
+        from langchain_core.runnables import RunnableLambda
     except ImportError:
         pytest.skip("Skipping test that requires langchain")
     with tracing_context(enabled=True):

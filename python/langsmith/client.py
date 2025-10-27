@@ -5168,8 +5168,8 @@ class Client:
             ls_utils.raise_for_status_with_text(response)
             response_data = response.json()
             return {
-                "example_ids": response_data.get("example_ids", []),
-                "count": response_data.get("count", 0),
+                "example_ids": [data["id"] for data in response_data],
+                "count": len(response_data),
             }
 
     @ls_utils.xor_args(("dataset_id", "dataset_name"))

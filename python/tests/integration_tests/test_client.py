@@ -894,7 +894,7 @@ def test_create_run_with_masked_inputs_outputs(
 def test_create_chat_example(
     monkeypatch: pytest.MonkeyPatch, langchain_client: Client
 ) -> None:
-    from langchain.schema import FunctionMessage, HumanMessage
+    from langchain_core.messages import FunctionMessage, HumanMessage
 
     dataset_name = "__createChatExample-test-dataset"
     try:

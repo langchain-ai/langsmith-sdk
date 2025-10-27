@@ -133,9 +133,10 @@ const runInputsToMap = (rawInputs: unknown[]) => {
   return inputs;
 };
 
-const handleRunInputs = (
-  inputs: KVMap,
-  processInputs: (inputs: Readonly<KVMap>) => KVMap
+const handleRunInputs = <Args extends unknown[]>(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  inputs: any,
+  processInputs: (inputs: Readonly<ProcessInputs<Args>>) => KVMap
 ): KVMap => {
   try {
     return processInputs(inputs);
@@ -207,10 +208,12 @@ function isAsyncFn(
 }
 
 // Note: This mutates the run tree
-async function handleRunOutputs(params: {
+async function handleRunOutputs<Return>(params: {
   runTree?: RunTree;
   rawOutputs: unknown;
-  processOutputsFn: (outputs: Readonly<KVMap>) => KVMap | Promise<KVMap>;
+  processOutputsFn: (
+    outputs: Readonly<ProcessOutputs<Return>>
+  ) => KVMap | Promise<KVMap>;
   on_end?: (runTree: RunTree) => void;
   postRunPromise?: Promise<void>;
   excludeInputs?: boolean;
@@ -223,7 +226,8 @@ async function handleRunOutputs(params: {
     postRunPromise,
     excludeInputs,
   } = params;
-  let outputs: KVMap;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let outputs: any;
 
   if (isKVMap(rawOutputs)) {
     outputs = { ...rawOutputs };
@@ -298,7 +302,7 @@ const getTracingRunTree = <Args extends unknown[]>(
   getInvocationParams:
     | ((...args: Args) => InvocationParamsSchema | undefined)
     | undefined,
-  processInputs: (inputs: Readonly<KVMap>) => KVMap,
+  processInputs: (inputs: Readonly<ProcessInputs<Args>>) => KVMap,
   extractAttachments:
     | ((...args: Args) => [Attachments | undefined, KVMap])
     | undefined
@@ -314,7 +318,7 @@ const getTracingRunTree = <Args extends unknown[]>(
       | undefined
   );
   runTree.attachments = attached;
-  runTree.inputs = handleRunInputs(args, processInputs);
+  runTree.inputs = handleRunInputs<Args>(args, processInputs);
 
   const invocationParams = getInvocationParams?.(...inputs);
   if (invocationParams != null) {
@@ -511,6 +515,22 @@ const convertSerializableArg = (
   return { converted: arg, deferredInput: false };
 };
 
+export type ProcessInputs<Args extends unknown[]> = Args extends []
+  ? Record<string, never>
+  : Args extends [infer Input]
+  ? Input extends KVMap
+    ? Input extends Iterable<infer Item> | AsyncIterable<infer Item>
+      ? { input: Array<Item> }
+      : Input
+    : { input: Input }
+  : { args: Args };
+
+export type ProcessOutputs<ReturnValue> = ReturnValue extends KVMap
+  ? ReturnValue extends Iterable<infer Item> | AsyncIterable<infer Item>
+    ? { outputs: Array<Item> }
+    : ReturnValue
+  : { outputs: ReturnValue };
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type TraceableConfig<Func extends (...args: any[]) => any> = Partial<
   Omit<RunTreeConfig, "inputs" | "outputs">
@@ -547,20 +567,34 @@ export type TraceableConfig<Func extends (...args: any[]) => any> = Partial<
    * This function should NOT mutate the inputs.
    * `processInputs` is not inherited by nested traceable functions.
    *
+   * The input to this function is determined as follows based on the
+   * arguments passed to the wrapped function:
+   * - If called with one argument that is an object, it will be the unchanged argument
+   * - If called with one argument that is not an object, it will be `{ input: arg }`
+   * - If called with multiple arguments, it will be `{ args: [...arguments] }`
+   * - If called with no arguments, it will be an empty object `{}`
+   *
    * @param inputs Key-value map of the function inputs.
    * @returns Transformed key-value map
    */
-  processInputs?: (inputs: Readonly<KVMap>) => KVMap;
+  processInputs?: (inputs: Readonly<ProcessInputs<Parameters<Func>>>) => KVMap;
 
   /**
    * Apply transformations to the outputs before logging.
    * This function should NOT mutate the outputs.
    * `processOutputs` is not inherited by nested traceable functions.
    *
+   * The input to this function is determined as follows based on the
+   * return value of the wrapped function:
+   * - If the return value is an object, it will be the unchanged return value
+   * - If the return value is not an object, it will wrapped as `{ outputs: returnValue }`
+   *
    * @param outputs Key-value map of the function outputs
    * @returns Transformed key-value map
    */
-  processOutputs?: (outputs: Readonly<KVMap>) => KVMap | Promise<KVMap>;
+  processOutputs?: (
+    outputs: Readonly<ProcessOutputs<Awaited<ReturnType<Func>>>>
+  ) => KVMap | Promise<KVMap>;
 };
 
 /**

@@ -20,4 +20,4 @@ export { overrideFetchImplementation } from "./singletons/fetch.js";
 export { getDefaultProjectName } from "./utils/project.js";
 
 // Update using yarn bump-version
-export const __version__ = "0.3.74";
+export const __version__ = "0.3.75";
