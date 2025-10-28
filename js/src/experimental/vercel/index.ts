@@ -210,7 +210,9 @@ export type WrapAISDKConfig<
    * @param outputs.raw - Raw outputs from the AI SDK.
    * @returns A single combined key-value map of processed outputs.
    */
-  processOutputs?: (outputs: Awaited<ReturnType<T>>) => Record<string, unknown>;
+  processOutputs?: (
+    outputs: Awaited<ReturnType<T>>
+  ) => Record<string, unknown> | Promise<Record<string, unknown>>;
   /**
    * Apply transformations to AI SDK child LLM run inputs before logging.
    * This function should NOT mutate the inputs.
@@ -329,7 +331,11 @@ const _extractChildRunConfig = (lsConfig?: WrapAISDKConfig) => {
 const _resolveConfigs = (
   baseLsConfig?: WrapAISDKConfig,
   runtimeLsConfig?: WrapAISDKConfig
-) => {
+): {
+  resolvedLsConfig: WrapAISDKConfig;
+  resolvedChildLLMRunConfig: WrapAISDKConfig;
+  resolvedToolConfig: WrapAISDKConfig;
+} => {
   const baseChildRunConfig = _extractChildRunConfig(baseLsConfig);
   const runtimeChildLLMRunConfig = _extractChildRunConfig(runtimeLsConfig);
   const resolvedLsConfig = _mergeConfig(baseLsConfig, runtimeLsConfig);
@@ -488,9 +494,12 @@ const wrapAISDK = <
             resolvedLsConfig?.processInputs ?? _formatTracedInputs;
           return inputFormatter(inputs);
         },
-        processOutputs: (outputs) => {
+        processOutputs: async (outputs) => {
           if (resolvedLsConfig?.processOutputs) {
-            return resolvedLsConfig.processOutputs(outputs);
+            const processedOutputs = await resolvedLsConfig.processOutputs(
+              outputs
+            );
+            return processedOutputs;
           }
           if (outputs.outputs == null || typeof outputs.outputs !== "object") {
             return outputs;
@@ -579,9 +588,12 @@ const wrapAISDK = <
             resolvedLsConfig?.processInputs ?? _formatTracedInputs;
           return inputFormatter(inputs);
         },
-        processOutputs: (outputs) => {
+        processOutputs: async (outputs) => {
           if (resolvedLsConfig?.processOutputs) {
-            return resolvedLsConfig.processOutputs(outputs);
+            const processedOutputs = await resolvedLsConfig.processOutputs(
+              outputs
+            );
+            return processedOutputs;
           }
           if (outputs.outputs == null || typeof outputs.outputs !== "object") {
             return outputs;
@@ -656,7 +668,10 @@ const wrapAISDK = <
         processOutputs: async (outputs) => {
           try {
             if (resolvedLsConfig?.processOutputs) {
-              return resolvedLsConfig.processOutputs(outputs);
+              const processedOutputs = await resolvedLsConfig.processOutputs(
+                outputs
+              );
+              return processedOutputs;
             }
             if (
               outputs.outputs == null ||
@@ -753,7 +768,10 @@ const wrapAISDK = <
         processOutputs: async (outputs) => {
           try {
             if (resolvedLsConfig?.processOutputs) {
-              return resolvedLsConfig.processOutputs(outputs);
+              const processedOutputs = await resolvedLsConfig.processOutputs(
+                outputs
+              );
+              return processedOutputs;
             }
             if (
               outputs.outputs == null ||
