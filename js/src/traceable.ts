@@ -19,7 +19,10 @@ import {
   AsyncLocalStorageProviderSingleton,
   getCurrentRunTree,
 } from "./singletons/traceable.js";
-import { _LC_CONTEXT_VARIABLES_KEY } from "./singletons/constants.js";
+import {
+  _LC_CHILD_RUN_END_PROMISES_KEY,
+  _LC_CONTEXT_VARIABLES_KEY,
+} from "./singletons/constants.js";
 import type {
   TraceableFunction,
   ContextPlaceholder,
@@ -160,18 +163,14 @@ const _extractUsage = (runData: {
 
 async function handleEnd(params: {
   runTree?: RunTree;
-  on_end?: (runTree: RunTree) => void;
+  on_end: (runTree?: RunTree) => void;
   postRunPromise?: Promise<void>;
   excludeInputs?: boolean;
 }) {
   const { runTree, on_end, postRunPromise, excludeInputs } = params;
   const onEnd = on_end;
   if (onEnd) {
-    if (!runTree) {
-      console.warn("Can not call 'on_end' if currentRunTree is undefined");
-    } else {
-      onEnd(runTree);
-    }
+    onEnd(runTree);
   }
   await postRunPromise;
   await runTree?.patchRun({
@@ -214,7 +213,7 @@ async function handleRunOutputs<Return>(params: {
   processOutputsFn: (
     outputs: Readonly<ProcessOutputs<Return>>
   ) => KVMap | Promise<KVMap>;
-  on_end?: (runTree: RunTree) => void;
+  on_end: (runTree?: RunTree) => void;
   postRunPromise?: Promise<void>;
   excludeInputs?: boolean;
 }): Promise<void> {
@@ -235,6 +234,10 @@ async function handleRunOutputs<Return>(params: {
     outputs = { outputs: rawOutputs };
   }
 
+  const childRunEndPromises = isRunTree(runTree)
+    ? Promise.all((runTree.extra as any)[_LC_CHILD_RUN_END_PROMISES_KEY] ?? [])
+    : Promise.resolve();
+
   try {
     outputs = processOutputsFn(outputs);
     // TODO: Investigate making this behavior for all returned promises
@@ -243,6 +246,7 @@ async function handleRunOutputs<Return>(params: {
       void outputs
         .then(async (processedOutputs: KVMap) => {
           _populateUsageMetadata(processedOutputs, runTree);
+          await childRunEndPromises;
           await runTree?.end(processedOutputs);
         })
         .catch(async (e: unknown) => {
@@ -251,6 +255,7 @@ async function handleRunOutputs<Return>(params: {
             e
           );
           try {
+            await childRunEndPromises;
             await runTree?.end(outputs);
           } catch (e) {
             console.error("Error occurred during runTree?.end.", e);
@@ -272,8 +277,17 @@ async function handleRunOutputs<Return>(params: {
     );
   }
   _populateUsageMetadata(outputs, runTree);
-  await runTree?.end(outputs);
-  await handleEnd({ runTree, postRunPromise, on_end, excludeInputs });
+  void childRunEndPromises
+    .then(async () => {
+      await runTree?.end(outputs);
+      await handleEnd({ runTree, postRunPromise, on_end, excludeInputs });
+    })
+    .catch((e) => {
+      console.error(
+        "Error occurred during childRunEndPromises.then. This should never happen.",
+        e
+      );
+    });
   return;
 }
 
@@ -686,6 +700,20 @@ export function traceable<Func extends (...args: any[]) => any>(
       };
     }
 
+    let runEndedPromiseResolver: () => void;
+    const runEndedPromise = new Promise<void>((resolve) => {
+      runEndedPromiseResolver = resolve;
+    });
+    const on_end = (runTree?: RunTree) => {
+      if (config?.on_end) {
+        if (!runTree) {
+          console.warn("Can not call 'on_end' if currentRunTree is undefined");
+        } else {
+          config.on_end(runTree);
+        }
+      }
+      runEndedPromiseResolver();
+    };
     const asyncLocalStorage = AsyncLocalStorageProviderSingleton.getInstance();
 
     // TODO: deal with possible nested promises and async iterables
@@ -758,6 +786,18 @@ export function traceable<Func extends (...args: any[]) => any>(
         lc_contextVars = prevRunFromStore[_LC_CONTEXT_VARIABLES_KEY];
       }
       if (isRunTree(prevRunFromStore)) {
+        if (
+          _LC_CHILD_RUN_END_PROMISES_KEY in prevRunFromStore.extra &&
+          Array.isArray(prevRunFromStore.extra[_LC_CHILD_RUN_END_PROMISES_KEY])
+        ) {
+          prevRunFromStore.extra[_LC_CHILD_RUN_END_PROMISES_KEY].push(
+            runEndedPromise
+          );
+        } else {
+          (prevRunFromStore.extra as any)[_LC_CHILD_RUN_END_PROMISES_KEY] = [
+            runEndedPromise,
+          ];
+        }
         const currentRunTree = getTracingRunTree(
           prevRunFromStore.createChild(ensuredConfig),
           processedArgs,
@@ -836,7 +876,7 @@ export function traceable<Func extends (...args: any[]) => any>(
                   runTree: currentRunTree,
                   rawOutputs: await handleChunks(chunks),
                   processOutputsFn,
-                  on_end: config?.on_end,
+                  on_end,
                   postRunPromise,
                   excludeInputs: !deferredInput,
                 });
@@ -860,7 +900,7 @@ export function traceable<Func extends (...args: any[]) => any>(
               runTree: currentRunTree,
               rawOutputs: await handleChunks(chunks),
               processOutputsFn,
-              on_end: config?.on_end,
+              on_end,
               postRunPromise,
               excludeInputs: !deferredInput,
             });
@@ -908,7 +948,7 @@ export function traceable<Func extends (...args: any[]) => any>(
             runTree: currentRunTree,
             rawOutputs: await handleChunks(chunks),
             processOutputsFn,
-            on_end: config?.on_end,
+            on_end,
             postRunPromise,
             excludeInputs: !deferredInput,
           });
@@ -1019,7 +1059,7 @@ export function traceable<Func extends (...args: any[]) => any>(
                       }, [])
                     ),
                     processOutputsFn,
-                    on_end: config?.on_end,
+                    on_end,
                     postRunPromise,
                     excludeInputs: !deferredInput,
                   });
@@ -1043,7 +1083,7 @@ export function traceable<Func extends (...args: any[]) => any>(
                   runTree: currentRunTree,
                   rawOutputs: rawOutput,
                   processOutputsFn,
-                  on_end: config?.on_end,
+                  on_end,
                   postRunPromise,
                   excludeInputs: !deferredInput,
                 });
@@ -1053,11 +1093,18 @@ export function traceable<Func extends (...args: any[]) => any>(
               }
             },
             async (error: unknown) => {
+              if (isRunTree(currentRunTree)) {
+                await Promise.all(
+                  (currentRunTree.extra as any)[
+                    _LC_CHILD_RUN_END_PROMISES_KEY
+                  ] ?? []
+                );
+              }
               await currentRunTree?.end(undefined, String(error));
               await handleEnd({
                 runTree: currentRunTree,
                 postRunPromise,
-                on_end: config?.on_end,
+                on_end,
                 excludeInputs: !deferredInput,
               });
               throw error;
