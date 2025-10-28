@@ -82,6 +82,8 @@ describe("wrapAISDK", () => {
         prompt: "Test prompt",
       });
 
+      await new Promise((resolve) => setTimeout(resolve, 1));
+
       // Verify HTTP requests were made to LangSmith in correct order
       expect(mockHttpRequests.length).toBe(4); // 2 createRun + 2 updateRun
 
@@ -145,6 +147,8 @@ describe("wrapAISDK", () => {
         model: mockLangModel,
         prompt: "Test with metadata",
       });
+
+      await new Promise((resolve) => setTimeout(resolve, 1));
 
       // Verify custom metadata was applied in HTTP requests
       expect(mockHttpRequests.length).toBe(4); // 2 createRun + 2 updateRun
@@ -379,6 +383,8 @@ describe("wrapAISDK", () => {
       });
 
       expect(result.object).toEqual({ name: "John", age: 30 });
+
+      await new Promise((resolve) => setTimeout(resolve, 1));
 
       // Verify HTTP requests were made for generateObject
       expect(mockHttpRequests.length).toBe(4); // 2 createRun + 2 updateRun
@@ -1067,6 +1073,9 @@ describe("wrapAISDK", () => {
           langsmith: lsConfig,
         },
       });
+
+      await new Promise((resolve) => setTimeout(resolve, 1));
+
       expect(mockHttpRequests).toHaveLength(4);
       // Verify merged config was used in trace
       const createRunCall = mockHttpRequests.find(
@@ -1151,6 +1160,8 @@ describe("wrapAISDK", () => {
         model: modelWithConfig,
         prompt: "Test config",
       });
+
+      await new Promise((resolve) => setTimeout(resolve, 1));
 
       // Verify the trace was created with proper model name
       expect(mockHttpRequests.length).toBe(4); // 2 createRun + 2 updateRun
