@@ -234,9 +234,12 @@ async function handleRunOutputs<Return>(params: {
     outputs = { outputs: rawOutputs };
   }
 
-  const childRunEndPromises = isRunTree(runTree)
-    ? Promise.all((runTree.extra as any)[_LC_CHILD_RUN_END_PROMISES_KEY] ?? [])
-    : Promise.resolve();
+  const childRunEndPromises =
+    isRunTree(runTree) &&
+    _LC_CHILD_RUN_END_PROMISES_KEY in runTree &&
+    Array.isArray(runTree[_LC_CHILD_RUN_END_PROMISES_KEY])
+      ? Promise.all(runTree[_LC_CHILD_RUN_END_PROMISES_KEY] ?? [])
+      : Promise.resolve();
 
   try {
     outputs = processOutputsFn(outputs);
@@ -791,14 +794,15 @@ export function traceable<Func extends (...args: any[]) => any>(
       }
       if (isRunTree(prevRunFromStore)) {
         if (
-          _LC_CHILD_RUN_END_PROMISES_KEY in prevRunFromStore.extra &&
-          Array.isArray(prevRunFromStore.extra[_LC_CHILD_RUN_END_PROMISES_KEY])
+          _LC_CHILD_RUN_END_PROMISES_KEY in prevRunFromStore &&
+          Array.isArray(prevRunFromStore[_LC_CHILD_RUN_END_PROMISES_KEY])
         ) {
-          prevRunFromStore.extra[_LC_CHILD_RUN_END_PROMISES_KEY].push(
+          prevRunFromStore[_LC_CHILD_RUN_END_PROMISES_KEY].push(
             runEndedPromise
           );
         } else {
-          (prevRunFromStore.extra as any)[_LC_CHILD_RUN_END_PROMISES_KEY] = [
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (prevRunFromStore as any)[_LC_CHILD_RUN_END_PROMISES_KEY] = [
             runEndedPromise,
           ];
         }
@@ -1097,11 +1101,13 @@ export function traceable<Func extends (...args: any[]) => any>(
               }
             },
             async (error: unknown) => {
-              if (isRunTree(currentRunTree)) {
+              if (
+                isRunTree(currentRunTree) &&
+                _LC_CHILD_RUN_END_PROMISES_KEY in currentRunTree &&
+                Array.isArray(currentRunTree[_LC_CHILD_RUN_END_PROMISES_KEY])
+              ) {
                 await Promise.all(
-                  (currentRunTree.extra as any)[
-                    _LC_CHILD_RUN_END_PROMISES_KEY
-                  ] ?? []
+                  currentRunTree[_LC_CHILD_RUN_END_PROMISES_KEY] ?? []
                 );
               }
               await currentRunTree?.end(undefined, String(error));
