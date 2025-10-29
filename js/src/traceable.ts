@@ -279,8 +279,12 @@ async function handleRunOutputs<Return>(params: {
   _populateUsageMetadata(outputs, runTree);
   void childRunEndPromises
     .then(async () => {
-      await runTree?.end(outputs);
-      await handleEnd({ runTree, postRunPromise, on_end, excludeInputs });
+      try {
+        await runTree?.end(outputs);
+        await handleEnd({ runTree, postRunPromise, on_end, excludeInputs });
+      } catch (e) {
+        console.error(e);
+      }
     })
     .catch((e) => {
       console.error(
