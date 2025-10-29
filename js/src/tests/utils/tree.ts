@@ -1,6 +1,12 @@
 import { Run } from "../../schemas.js";
+import { Client } from "../../client.js";
 
-export function getAssumedTreeFromCalls(calls: unknown[][]) {
+export async function getAssumedTreeFromCalls(
+  calls: unknown[][],
+  client: Client
+) {
+  await client.awaitPendingTraceBatches();
+
   const edges: Array<[string, string]> = [];
 
   const nodeMap: Record<string, Run> = {};

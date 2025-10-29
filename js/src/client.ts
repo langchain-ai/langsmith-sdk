@@ -5469,6 +5469,21 @@ export class Client implements LangSmithTracingClientInterface {
       );
       return Promise.resolve();
     }
+    /**
+     * traceables use a backgrounded promise before updating runs to avoid blocking
+     * and to allow waiting for child runs to end. Waiting a small amount of time
+     * here ensures that they are able to enqueue their run operation before we await
+     * queued run operations below:
+     *
+     * ```ts
+     * const run = await traceable(async () => {
+     *   return "Hello, world!";
+     * }, { client })();
+     *
+     * await client.awaitPendingTraceBatches();
+     * ```
+     */
+    await new Promise((resolve) => setTimeout(resolve, 1));
     await Promise.all([
       ...this.autoBatchQueue.items.map(({ itemPromise }) => itemPromise),
       this.batchIngestCaller.queue.onIdle(),
