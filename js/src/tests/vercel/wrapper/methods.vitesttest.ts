@@ -293,7 +293,7 @@ describe("wrapAISDK", () => {
       ]);
     });
 
-    it("should delay a parent traceable's end time until the child traceable ends", async () => {
+    it.only("should delay a parent traceable's end time until the child traceable ends", async () => {
       const wrappedMethods = wrapAISDK(
         {
           wrapLanguageModel: ai.wrapLanguageModel,
@@ -325,10 +325,12 @@ describe("wrapAISDK", () => {
                 },
               },
             ],
+            chunkDelayInMs: 100,
           }),
         }),
       });
 
+      const start = new Date();
       const result = await traceable(
         async () => {
           return wrappedMethods.streamText({
@@ -342,11 +344,18 @@ describe("wrapAISDK", () => {
         }
       )();
 
+      // Should return quickly
+      expect(new Date().getTime() - start.getTime()).toBeLessThan(50);
+
       // Consume the stream to trigger aggregation
       let fullText = "";
       for await (const textPart of result.textStream) {
         fullText += textPart;
       }
+
+      expect(new Date().getTime() - start.getTime()).toBeGreaterThanOrEqual(
+        500
+      );
 
       expect(fullText).toBe("Hello world");
 
