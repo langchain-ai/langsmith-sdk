@@ -293,7 +293,7 @@ describe("wrapAISDK", () => {
       ]);
     });
 
-    it.only("should delay a parent traceable's end time until the child traceable ends", async () => {
+    it("should delay a parent traceable's end time until the child traceable ends", async () => {
       const wrappedMethods = wrapAISDK(
         {
           wrapLanguageModel: ai.wrapLanguageModel,
