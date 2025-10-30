@@ -83,6 +83,7 @@ def _infer_invocation_params(model_type: str, provider: str, kwargs: dict):
         "prediction",
         "presence_penalty",
         "prompt_cache_key",
+        "reasoning",
         "response_format",
         "seed",
         "service_tier",
