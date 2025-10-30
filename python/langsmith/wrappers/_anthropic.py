@@ -60,6 +60,21 @@ def _infer_ls_params(kwargs: dict):
     if stop and isinstance(stop, str):
         stop = [stop]
 
+    # Keys that are already extracted above or are top-level input/output keys
+    top_level_keys = {
+        "model",
+        "temperature",
+        "messages",
+        "max_tokens",
+        "stop",
+        "tools",
+        "tool_choice",
+        "system",
+    }
+
+    # Remaining parameters not captured in specific fields
+    invocation_params = {k: v for k, v in stripped.items() if k not in top_level_keys}
+
     return {
         "ls_provider": "anthropic",
         "ls_model_type": "chat",
@@ -67,6 +82,7 @@ def _infer_ls_params(kwargs: dict):
         "ls_temperature": stripped.get("temperature", None),
         "ls_max_tokens": stripped.get("max_tokens", None),
         "ls_stop": stop,
+        "ls_invocation_params": invocation_params,
     }
 
 

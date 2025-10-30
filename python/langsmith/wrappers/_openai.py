@@ -71,6 +71,24 @@ def _infer_invocation_params(model_type: str, provider: str, kwargs: dict):
     if stop and isinstance(stop, str):
         stop = [stop]
 
+    # Keys that are already extracted above
+    top_level_keys = {
+        "model",
+        "temperature",
+        "messages",
+        "inputs",
+        "max_tokens",
+        "max_completion_tokens",
+        "max_output_tokens",
+        "stop",
+        "tools",
+        "functions",
+        "tool_choice",
+    }
+
+    # Remaining parameters not captured in specific fields
+    invocation_params = {k: v for k, v in stripped.items() if k not in top_level_keys}
+
     return {
         "ls_provider": provider,
         "ls_model_type": model_type,
@@ -80,6 +98,7 @@ def _infer_invocation_params(model_type: str, provider: str, kwargs: dict):
         or stripped.get("max_completion_tokens")
         or stripped.get("max_output_tokens"),
         "ls_stop": stop,
+        "ls_invocation_params": invocation_params,
     }
 
 
