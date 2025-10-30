@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 @functools.lru_cache
-def _get_not_given() -> Optional[type]:
+def _get_not_given() -> Optional[tuple[type, ...]]:
     try:
         from anthropic._types import NotGiven, Omit
 
