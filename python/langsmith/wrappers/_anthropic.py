@@ -31,17 +31,21 @@ logger = logging.getLogger(__name__)
 @functools.lru_cache
 def _get_not_given() -> Optional[type]:
     try:
-        from anthropic._types import NotGiven
+        from anthropic._types import NotGiven, Omit
 
-        return NotGiven
+        return (NotGiven, Omit)
     except ImportError:
         return None
 
 
 def _strip_not_given(d: dict) -> dict:
     try:
-        if (not_given := _get_not_given()) is not None:
-            d = {k: v for k, v in d.items() if not isinstance(v, not_given)}
+        if not_given := _get_not_given():
+            d = {
+                k: v
+                for k, v in d.items()
+                if not any(isinstance(v, t) for t in not_given)
+            }
     except Exception as e:
         logger.error(f"Error stripping NotGiven: {e}")
 
