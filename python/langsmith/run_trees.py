@@ -673,6 +673,8 @@ class RunTree(ls_schemas.RunBase):
                 self.client.update_run(
                     name=run_dict["name"],
                     run_id=run_dict["id"],
+                    run_type=run_dict.get("run_type"),
+                    start_time=run_dict.get("start_time"),
                     inputs=None if exclude_inputs else run_dict["inputs"],
                     outputs=run_dict["outputs"],
                     error=run_dict.get("error"),
@@ -693,6 +695,8 @@ class RunTree(ls_schemas.RunBase):
             self.client.update_run(
                 name=self.name,
                 run_id=self.id,
+                run_type=self.run_type,
+                start_time=self.start_time,
                 inputs=(
                     None
                     if exclude_inputs
