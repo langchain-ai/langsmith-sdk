@@ -71,23 +71,34 @@ def _infer_invocation_params(model_type: str, provider: str, kwargs: dict):
     if stop and isinstance(stop, str):
         stop = [stop]
 
-    # Keys that are already extracted above
-    top_level_keys = {
-        "model",
-        "temperature",
-        "messages",
-        "inputs",
-        "max_tokens",
-        "max_completion_tokens",
-        "max_output_tokens",
-        "stop",
-        "tools",
-        "functions",
-        "tool_choice",
+    # Allowlist of safe invocation parameters to include
+    # Only include known, non-sensitive parameters
+    allowed_invocation_keys = {
+        "frequency_penalty",
+        "n",
+        "logit_bias",
+        "logprobs",
+        "modalities",
+        "parallel_tool_calls",
+        "prediction",
+        "presence_penalty",
+        "prompt_cache_key",
+        "response_format",
+        "seed",
+        "service_tier",
+        "stream_options",
+        "top_logprobs",
+        "top_p",
+        "truncation",
+        "user",
+        "verbosity",
+        "web_search_options",
     }
 
-    # Remaining parameters not captured in specific fields
-    invocation_params = {k: v for k, v in stripped.items() if k not in top_level_keys}
+    # Only include allowlisted parameters
+    invocation_params = {
+        k: v for k, v in stripped.items() if k in allowed_invocation_keys
+    }
 
     return {
         "ls_provider": provider,

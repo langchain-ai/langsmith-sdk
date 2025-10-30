@@ -60,20 +60,21 @@ def _infer_ls_params(kwargs: dict):
     if stop and isinstance(stop, str):
         stop = [stop]
 
-    # Keys that are already extracted above or are top-level input/output keys
-    top_level_keys = {
-        "model",
-        "temperature",
-        "messages",
-        "max_tokens",
-        "stop",
-        "tools",
-        "tool_choice",
-        "system",
+    # Allowlist of safe invocation parameters to include
+    # Only include known, non-sensitive parameters
+    allowed_invocation_keys = {
+        "mcp_servers",
+        "service_tier",
+        "top_k",
+        "top_p",
+        "stream",
+        "thinking",
     }
 
-    # Remaining parameters not captured in specific fields
-    invocation_params = {k: v for k, v in stripped.items() if k not in top_level_keys}
+    # Only include allowlisted parameters
+    invocation_params = {
+        k: v for k, v in stripped.items() if k in allowed_invocation_keys
+    }
 
     return {
         "ls_provider": "anthropic",
