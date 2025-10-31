@@ -677,7 +677,7 @@ wheels = [
 
 [[package]]
 name = "langsmith"
-version = "0.4.39rc0"
+version = "0.4.39rc1"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
