@@ -71,6 +71,37 @@ def _infer_invocation_params(model_type: str, provider: str, kwargs: dict):
     if stop and isinstance(stop, str):
         stop = [stop]
 
+    # Allowlist of safe invocation parameters to include
+    # Only include known, non-sensitive parameters
+    allowed_invocation_keys = {
+        "frequency_penalty",
+        "n",
+        "logit_bias",
+        "logprobs",
+        "modalities",
+        "parallel_tool_calls",
+        "prediction",
+        "presence_penalty",
+        "prompt_cache_key",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "service_tier",
+        "stream_options",
+        "top_logprobs",
+        "top_p",
+        "truncation",
+        "user",
+        "verbosity",
+        "web_search_options",
+    }
+
+    # Only include allowlisted parameters
+    invocation_params = {
+        k: v for k, v in stripped.items() if k in allowed_invocation_keys
+    }
+
     return {
         "ls_provider": provider,
         "ls_model_type": model_type,
@@ -80,6 +111,7 @@ def _infer_invocation_params(model_type: str, provider: str, kwargs: dict):
         or stripped.get("max_completion_tokens")
         or stripped.get("max_output_tokens"),
         "ls_stop": stop,
+        "ls_invocation_params": invocation_params,
     }
 
 
