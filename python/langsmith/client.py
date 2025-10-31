@@ -2253,7 +2253,7 @@ class Client:
                     )
                     self.request_with_retries(
                         "POST",
-                        f"{target_api_url}/runs/multipart",
+                        f"{target_api_url}/v2/runs/multipart",
                         request_kwargs={
                             "data": data,
                             "headers": {
@@ -2323,7 +2323,7 @@ class Client:
                     )
                     self.request_with_retries(
                         "POST",
-                        f"{api_url}/runs/multipart",
+                        f"{api_url}/v2/runs/multipart",
                         request_kwargs={
                             "data": data_stream,
                             "headers": headers,
@@ -6463,7 +6463,7 @@ class Client:
             )
 
             use_multipart = (self.info.batch_ingest_config or {}).get(
-                "use_multipart_endpoint", False
+                "use_multipart_endpoint", True
             )
 
             if (
