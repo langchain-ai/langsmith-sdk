@@ -733,7 +733,7 @@ test("responses.create streaming", async () => {
     const body = parseRequestBody((call[1] as any).body);
     expect(body.extra.metadata).toMatchObject({
       ls_model_name: "gpt-4.1-nano",
-      ls_model_type: "llm",
+      ls_model_type: "chat",
       ls_provider: "openai",
     });
   }
@@ -771,14 +771,6 @@ test("responses.parse", async () => {
       ),
     },
   });
-  console.log(
-    zodTextFormat(
-      z.object({
-        response: z.string(),
-      }),
-      "response"
-    )
-  );
   expect(response).toBeDefined();
   expect(response.output_parsed).toBeDefined();
   expect(typeof response.output_parsed?.response).toBe("string");
