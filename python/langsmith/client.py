@@ -8619,14 +8619,41 @@ class Client:
                 stored this in LangSmith as a workspace secret.
             anthropic_api_key: Anthropic API key to use. Only needed if you have not
                 already stored this in LangSmith as a workspace secret.
+
+        Examples:
+
+            .. code-block:: python
+
+                import os
+                from langsmith import Client
+
+                client = client()
+
+                chat_histories = [
+                    [
+                        {"role": "user", "content": "how are you"},
+                        {"role": "assistant", "content": "good!"},
+                    ],
+                    [
+                        {"role": "user", "content": "do you like art"},
+                        {"role": "assistant", "content": "only Tarkovsky"},
+                    ],
+                ]
+
+                report = client.generate_insights(
+                    chat_histories=chat_histories,
+                    name="Conversation Topics",
+                    instructions="What are the high-level topics of conversations users are having with the assistant?",
+                    openai_api_key=os.environ["OPENAI_API_KEY"],
+                )
+
+                # client.poll_insights(report)
         """
         model = self._ensure_insights_api_key(
             openai_api_key=openai_api_key,
             anthropic_api_key=anthropic_api_key,
             model=model,
         )
-        if model != "openai":
-            raise ValueError(model)
         project = self._ingest_insights_runs(chat_histories, name)
         config = {
             "name": name,
@@ -8644,7 +8671,7 @@ class Client:
         res = response.json()
         report = ls_schemas.InsightsReport(
             **res,
-            session_id=project.id,
+            project_id=project.id,
             tenant_id=self._get_tenant_id(),
             host_url=self._host_url,
         )
@@ -8655,38 +8682,45 @@ class Client:
         )
         return report
 
+    @warn_beta
     def poll_insights(
         self,
         *,
-        id: str | uuid.UUID | None = None,
-        session_id: str | uuid.UUID | None = None,
         report: ls_schemas.InsightsReport | None = None,
+        id: str | uuid.UUID | None = None,
+        project_id: str | uuid.UUID | None = None,
         rate: int = 30,
         timeout: int = 30 * 60,
         verbose: bool = False,
     ) -> ls_schemas.InsightsReport:
-        """Poll the status of an insights report."""
-        if not (id and session_id) or report:
-            raise ValueError("Must specify ('id' and 'session_id') or 'report'.")
-        elif (id or session_id) and report:
+        """Poll the status of an Insights report.
+
+        Args:
+            report: THe InsightsReport.
+            id: The Insights report ID. Should only specify if 'report' is not specified.
+            project_id: The Tracing project ID. Should only specify if 'report' is not specified.
+        """
+        if not ((id and project_id) or report):
+            raise ValueError("Must specify ('id' and 'project_id') or 'report'.")
+        elif (id or project_id) and report:
             raise ValueError(
-                "Must specify exactly one of ('id' and 'session_id') or 'report'."
+                "Must specify exactly one of ('id' and 'project_id') or 'report'."
             )
         elif report:
             id = report.id
-            session_id = report.session_id
+            project_id = report.project_id
 
         max_tries = max(1, timeout // rate)
         for i in range(max_tries):
             response = self.request_with_retries(
-                "GET", f"/sessions/{session_id}/insights/{id}"
+                "GET", f"/sessions/{project_id}/insights/{id}"
             )
             ls_utils.raise_for_status_with_text(response)
             resp_json = response.json()
             if resp_json["status"] == "success":
                 job = ls_schemas.InsightsReport(
                     **resp_json,
-                    session_id=session_id,
+                    project_id=project_id,  # type: ignore[arg-type]
                     tenant_id=self._get_tenant_id(),
                     host_url=self._host_url,
                 )
@@ -8747,7 +8781,8 @@ class Client:
             data = data[:1000]
         now = datetime.datetime.now(datetime.timezone.utc)
         project = self.create_project(
-            name or ("insights-" + now.isoformat()),
+            name
+            or ("insights " + datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
         )
         run_ids = [str(uuid.uuid4()) for _ in range(len(data))]
         runs = [
@@ -8757,7 +8792,7 @@ class Client:
                 "id": run_id,
                 "trace_id": run_id,
                 "dotted_order": f"{now.strftime('%Y%m%dT%H%M%S%fZ')}{str(run_id)}",
-                "start_time": now - datetime.timedelta(minutes=1),
+                "start_time": now - datetime.timedelta(seconds=1),
                 "end_time": now,
                 "run_type": "chain",
                 "session_id": project.id,
