@@ -4,7 +4,7 @@ import { AzureOpenAI, OpenAI } from "openai";
 import { wrapOpenAI } from "../wrappers/index.js";
 import { mockClient } from "./utils/mock_client.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
-import { zodResponseFormat } from "openai/helpers/zod";
+import { zodResponseFormat, zodTextFormat } from "openai/helpers/zod";
 import { z } from "zod";
 import { UsageMetadata } from "../schemas.js";
 import fs from "fs";
@@ -669,7 +669,7 @@ test("responses.create and retrieve workflow", async () => {
     const body = parseRequestBody((call[1] as any).body);
     expect(body.extra.metadata).toMatchObject({
       ls_model_name: "gpt-4.1-nano",
-      ls_model_type: "llm",
+      ls_model_type: "chat",
       ls_provider: "openai",
     });
   }
@@ -743,6 +743,54 @@ test("responses.create streaming", async () => {
     expect(body.outputs.usage_metadata.input_tokens).toBeGreaterThan(0);
     expect(body.outputs.usage_metadata.output_tokens).toBeGreaterThan(0);
     expect(body.outputs.usage_metadata.total_tokens).toBeGreaterThan(0);
+  }
+  callSpy.mockClear();
+});
+
+test.only("responses.parse", async () => {
+  const { client, callSpy } = mockClient();
+  const openai = wrapOpenAI(new OpenAI(), {
+    client,
+    tracingEnabled: true,
+  });
+
+  const response = await openai.responses.parse({
+    model: "gpt-4.1-nano",
+    input: [
+      {
+        role: "user",
+        content: [{ type: "input_text", text: "Say hello" }],
+      },
+    ],
+    text: {
+      format: zodTextFormat(
+        z.object({
+          response: z.string(),
+        }),
+        "response"
+      ),
+    },
+  });
+  console.log(
+    zodTextFormat(
+      z.object({
+        response: z.string(),
+      }),
+      "response"
+    )
+  );
+  expect(response).toBeDefined();
+  expect(response.output_parsed).toBeDefined();
+  expect(typeof response.output_parsed?.response).toBe("string");
+  for (const call of callSpy.mock.calls) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(["POST", "PATCH"]).toContain((call[1] as any)["method"]);
+    const body = parseRequestBody((call[1] as any).body);
+    expect(body.extra.metadata).toMatchObject({
+      ls_model_name: "gpt-4.1-nano",
+      ls_model_type: "chat",
+      ls_provider: "openai",
+    });
   }
   callSpy.mockClear();
 });
