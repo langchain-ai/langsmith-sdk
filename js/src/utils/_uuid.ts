@@ -3,6 +3,9 @@ const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 import { v7 as uuidv7 } from "uuid";
+import { warnOnce } from "./warn.js";
+
+let UUID7_WARNING_EMITTED = false;
 
 export function assertUuid(str: string, which?: string): string {
   // Use relaxed regex validation instead of strict uuid.validate()
@@ -55,13 +58,14 @@ export function getUuidVersion(uuidStr: string): number | null {
  * @param uuidStr - The UUID string to check
  * @param idType - The type of ID (e.g., "run_id", "trace_id") for the warning message
  */
-export function warnIfNotUuidV7(uuidStr: string, idType: string): void {
+export function warnIfNotUuidV7(uuidStr: string, _idType: string): void {
   const version = getUuidVersion(uuidStr);
-  if (version !== null && version !== 7) {
-    console.warn(
-      `LangSmith now uses UUID v7 for ${idType}. The provided ${idType} ` +
-        `'${uuidStr}' is UUID v${version}. ` +
+  if (version !== null && version !== 7 && !UUID7_WARNING_EMITTED) {
+    UUID7_WARNING_EMITTED = true;
+    warnOnce(
+      `LangSmith now uses UUID v7 for run and trace identifiers. ` +
         `Please migrate to using UUID v7. ` +
+        `Use { uuid7, uuidFromTime } from 'langsmith'. ` +
         `Future versions will require UUID v7.`
     );
   }

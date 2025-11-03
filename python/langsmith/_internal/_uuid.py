@@ -113,6 +113,9 @@ def is_uuid_v7(uuid_obj: uuid.UUID) -> bool:
     return uuid_obj.version == 7
 
 
+_UUID_V7_WARNING_EMITTED = False
+
+
 def warn_if_not_uuid_v7(uuid_obj: uuid.UUID, id_type: str) -> None:
     """Warn if a UUID is not version 7.
 
@@ -120,12 +123,18 @@ def warn_if_not_uuid_v7(uuid_obj: uuid.UUID, id_type: str) -> None:
         uuid_obj: The UUID to check.
         id_type: The type of ID (e.g., "run_id", "trace_id") for the warning message.
     """
-    if not is_uuid_v7(uuid_obj):
+    global _UUID_V7_WARNING_EMITTED
+    if not is_uuid_v7(uuid_obj) and not _UUID_V7_WARNING_EMITTED:
+        _UUID_V7_WARNING_EMITTED = True
         warnings.warn(
-            f"LangSmith now uses UUID v7 for {id_type}. The provided {id_type} "
-            f"'{uuid_obj}' is UUID v{uuid_obj.version}. "
-            f"Please migrate to using UUID v7. "
-            f"Future versions will require UUID v7.",
+            (
+                f"LangSmith now uses UUID v7 for {id_type}. The provided {id_type} "
+                f"'{uuid_obj}' is UUID v{uuid_obj.version}. "
+                "Please migrate to using UUID v7. "
+                "Future versions will require UUID v7. "
+                "Use 'from langsmith.uuid import uuid7, uuid7_from_datetime' "
+                "to generate UUID v7."
+            ),
             UserWarning,
             stacklevel=3,
         )
