@@ -1,6 +1,8 @@
 import datetime
-from typing import Any, Optional
+from typing import Any
+from unittest.mock import MagicMock
 
+from langsmith.client import Client
 from langsmith.run_helpers import traceable
 from langsmith.run_trees import RunTree
 
@@ -50,36 +52,8 @@ def test_run_tree_default_uuidv7_and_start_time_match() -> None:
     assert id_ms == start_ms
 
 
-class _DummyClient:
-    def __init__(self) -> None:
-        self.last_create: Optional[dict[str, Any]] = None
-        self.last_update: Optional[dict[str, Any]] = None
-
-    # create_run is called with a full run dict via **kwargs
-    def create_run(self, **kwargs: Any) -> None:  # type: ignore[no-untyped-def]
-        self.last_create = kwargs
-
-    # update_run is called with explicit kwargs
-    def update_run(
-        self,
-        *,
-        run_id,
-        name=None,
-        run_type=None,
-        start_time=None,
-        **kwargs,
-    ):  # type: ignore[no-untyped-def]
-        self.last_update = {
-            "run_id": run_id,
-            "name": name,
-            "run_type": run_type,
-            "start_time": start_time,
-            **kwargs,
-        }
-
-
 def test_post_and_patch_include_run_type_and_start_time() -> None:
-    client = _DummyClient()
+    client = MagicMock(spec=Client)
     fixed_start = datetime.datetime(
         2024, 6, 7, 8, 9, 10, 123000, tzinfo=datetime.timezone.utc
     )
@@ -94,12 +68,14 @@ def test_post_and_patch_include_run_type_and_start_time() -> None:
 
     # Post should include run_type and start_time
     rt.post()
-    assert client.last_create is not None
-    assert client.last_create["run_type"] == "llm"
-    assert client.last_create["start_time"] == fixed_start
+    assert client.create_run.called
+    _, create_kwargs = client.create_run.call_args
+    assert create_kwargs["run_type"] == "llm"
+    assert create_kwargs["start_time"] == fixed_start
 
     # Patch should include run_type and start_time
     rt.patch()
-    assert client.last_update is not None
-    assert client.last_update["run_type"] == "llm"
-    assert client.last_update["start_time"] == fixed_start
+    assert client.update_run.called
+    _, update_kwargs = client.update_run.call_args
+    assert update_kwargs["run_type"] == "llm"
+    assert update_kwargs["start_time"] == fixed_start

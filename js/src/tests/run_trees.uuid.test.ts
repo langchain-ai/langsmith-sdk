@@ -1,6 +1,8 @@
+import { jest } from "@jest/globals";
 import { RunTree } from "../run_trees.js";
 import { traceable } from "../traceable.js";
 import { getUuidVersion } from "../utils/_uuid.js";
+import { mockClient } from "./utils/mock_client.js";
 
 function uuidV7Ms(uuidStr: string): number {
   // Remove dashes to parse
@@ -10,22 +12,11 @@ function uuidV7Ms(uuidStr: string): number {
   return parseInt(tsHex, 16);
 }
 
-class FakeClient {
-  public creates: any[] = [];
-  public updates: any[] = [];
-
-  async createRun(payload: any): Promise<void> {
-    this.creates.push(payload);
-  }
-
-  async updateRun(_id: string, payload: any): Promise<void> {
-    this.updates.push(payload);
-  }
-}
-
 test("traceable produces UUIDv7 and start_time matches run id", async () => {
   const fixedMs = 1_700_000_123_456; // deterministic timestamp in ms
-  const client = new FakeClient();
+  const { client } = mockClient();
+  const createSpy = jest.spyOn(client, "createRun");
+  const updateSpy = jest.spyOn(client, "updateRun");
 
   const fn = traceable((x: number) => x + 1, {
     name: "traceable-v7",
@@ -38,17 +29,19 @@ test("traceable produces UUIDv7 and start_time matches run id", async () => {
   const out = await fn(1);
   expect(out).toBe(2);
   // Ensure post and patch include run_type and start_time
-  expect(client.creates.length).toBeGreaterThan(0);
-  expect(client.creates[0].run_type).toBe("chain");
-  expect(client.creates[0].start_time).toBeDefined();
+  expect(createSpy).toHaveBeenCalled();
+  const createdArg = createSpy.mock.calls[0][0];
+  expect(createdArg.run_type).toBe("chain");
+  expect(createdArg.start_time).toBeDefined();
 
   // patch happens after end
-  expect(client.updates.length).toBeGreaterThan(0);
-  expect(client.updates[0].run_type).toBe("chain");
-  expect(client.updates[0].start_time).toBeDefined();
+  expect(updateSpy).toHaveBeenCalled();
+  const updatedArg = updateSpy.mock.calls[0][1];
+  expect(updatedArg.run_type).toBe("chain");
+  expect(updatedArg.start_time).toBeDefined();
 
   // UUID version v7
-  const createdId: string = client.creates[0].id;
+  const createdId: string = createdArg.id;
   expect(getUuidVersion(createdId)).toBe(7);
   // start_time encoded in v7 should match provided ms
   expect(uuidV7Ms(createdId)).toBe(fixedMs);
@@ -56,26 +49,30 @@ test("traceable produces UUIDv7 and start_time matches run id", async () => {
 
 test("RunTree default/regular behavior uses UUIDv7 and start_time matches id; post/patch include fields", async () => {
   const fixedMs = 1_700_111_222_333;
-  const client = new FakeClient();
+  const { client } = mockClient();
+  const createSpy2 = jest.spyOn(client, "createRun");
+  const updateSpy2 = jest.spyOn(client, "updateRun");
 
   const rt = new RunTree({
     name: "regular-v7",
     run_type: "tool",
     start_time: fixedMs,
-    client: client as any,
+    client,
     tracingEnabled: true,
   });
 
   await rt.postRun();
   await rt.patchRun();
 
-  expect(client.creates.length).toBe(1);
-  expect(client.creates[0].run_type).toBe("tool");
-  expect(client.creates[0].start_time).toBeDefined();
+  expect(createSpy2).toHaveBeenCalledTimes(1);
+  const createdArg2 = createSpy2.mock.calls[0][0];
+  expect(createdArg2.run_type).toBe("tool");
+  expect(createdArg2.start_time).toBeDefined();
 
-  expect(client.updates.length).toBe(1);
-  expect(client.updates[0].run_type).toBe("tool");
-  expect(client.updates[0].start_time).toBeDefined();
+  expect(updateSpy2).toHaveBeenCalledTimes(1);
+  const updatedArg2 = updateSpy2.mock.calls[0][1];
+  expect(updatedArg2.run_type).toBe("tool");
+  expect(updatedArg2.start_time).toBeDefined();
 
   // v7 id and encoded time
   expect(getUuidVersion(rt.id)).toBe(7);
