@@ -69,6 +69,30 @@ type PatchedOpenAIClient<T extends OpenAIType> = T & {
   };
 };
 
+const TRACED_INVOCATION_KEYS = [
+  "frequency_penalty",
+  "n",
+  "logit_bias",
+  "logprobs",
+  "modalities",
+  "parallel_tool_calls",
+  "prediction",
+  "presence_penalty",
+  "prompt_cache_key",
+  "reasoning",
+  "reasoning_effort",
+  "response_format",
+  "seed",
+  "service_tier",
+  "stream_options",
+  "top_logprobs",
+  "top_p",
+  "truncation",
+  "user",
+  "verbosity",
+  "web_search_options",
+];
+
 function _combineChatCompletionChoices(
   choices: OpenAI.ChatCompletionChunk.Choice[]
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -374,34 +398,9 @@ export const wrapOpenAI = <T extends OpenAIType>(
         (typeof params.stop === "string" ? [params.stop] : params.stop) ??
         undefined;
 
-      // Allowlist of safe invocation parameters to include
-      const allowedInvocationKeys = new Set([
-        "frequency_penalty",
-        "n",
-        "logit_bias",
-        "logprobs",
-        "modalities",
-        "parallel_tool_calls",
-        "prediction",
-        "presence_penalty",
-        "prompt_cache_key",
-        "reasoning",
-        "reasoning_effort",
-        "response_format",
-        "seed",
-        "service_tier",
-        "stream_options",
-        "top_logprobs",
-        "top_p",
-        "truncation",
-        "user",
-        "verbosity",
-        "web_search_options",
-      ]);
-
       const ls_invocation_params: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(params)) {
-        if (allowedInvocationKeys.has(key)) {
+        if (TRACED_INVOCATION_KEYS.includes(key)) {
           ls_invocation_params[key] = value;
         }
       }
@@ -474,34 +473,9 @@ export const wrapOpenAI = <T extends OpenAIType>(
           (typeof params.stop === "string" ? [params.stop] : params.stop) ??
           undefined;
 
-        // Allowlist of safe invocation parameters to include
-        const allowedInvocationKeys = new Set([
-          "frequency_penalty",
-          "n",
-          "logit_bias",
-          "logprobs",
-          "modalities",
-          "parallel_tool_calls",
-          "prediction",
-          "presence_penalty",
-          "prompt_cache_key",
-          "reasoning",
-          "reasoning_effort",
-          "response_format",
-          "seed",
-          "service_tier",
-          "stream_options",
-          "top_logprobs",
-          "top_p",
-          "truncation",
-          "user",
-          "verbosity",
-          "web_search_options",
-        ]);
-
         const ls_invocation_params: Record<string, unknown> = {};
         for (const [key, value] of Object.entries(params)) {
-          if (allowedInvocationKeys.has(key)) {
+          if (TRACED_INVOCATION_KEYS.includes(key)) {
             ls_invocation_params[key] = value;
           }
         }
