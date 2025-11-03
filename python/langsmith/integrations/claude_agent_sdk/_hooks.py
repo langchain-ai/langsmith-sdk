@@ -100,16 +100,12 @@ async def post_tool_use_hook(
 
         tool_run, start_time = run_info
 
-        outputs = {}
-        if tool_response:
-            if isinstance(tool_response, dict):
-                content = tool_response.get("content")
-                if content:
-                    outputs = {"content": content}
-                else:
-                    outputs = tool_response
-            else:
-                outputs = {"output": str(tool_response)}
+        if isinstance(tool_response, dict):
+            outputs = tool_response
+        elif isinstance(tool_response, list):
+            outputs = {"content": tool_response}
+        else:
+            outputs = {"output": str(tool_response)} if tool_response else {}
 
         # Check if the tool execution was an error
         is_error = False
