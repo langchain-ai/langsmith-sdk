@@ -1,9 +1,6 @@
 """Hook-based tool tracing for Claude Agent SDK.
 
-This module provides hook handlers that trace ALL tool calls (built-in, external MCP,
-and SDK MCP) by intercepting PreToolUse and PostToolUse events. This approach works
-across all LLM providers (Anthropic, Vertex AI, Kimi, etc.) because it doesn't rely
-on async context propagation - it uses explicit tool_use_id correlation instead.
+This module provides hook handlers that traces tool calls by intercepting PreToolUse and PostToolUse events.
 """
 
 import logging
@@ -103,8 +100,18 @@ async def post_tool_use_hook(
 
         tool_run, start_time = run_info
 
-        outputs = tool_response if tool_response else {}
+        outputs = {}
+        if tool_response:
+            if isinstance(tool_response, dict):
+                content = tool_response.get("content")
+                if content:
+                    outputs = {"content": content}
+                else:
+                    outputs = tool_response
+            else:
+                outputs = {"output": str(tool_response)}
 
+        # Check if the tool execution was an error
         is_error = False
         if isinstance(tool_response, dict):
             is_error = tool_response.get("is_error", False)
