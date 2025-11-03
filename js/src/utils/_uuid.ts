@@ -24,8 +24,13 @@ export function assertUuid(str: string, which?: string): string {
  * @returns A UUID v7 string
  */
 export function uuidFromTime(timestamp: number | string): string {
-  const msecs = typeof timestamp === "string" ? Date.parse(timestamp) : timestamp;
-  return uuidv7({ msecs });
+  const msecs =
+    typeof timestamp === "string" ? Date.parse(timestamp) : timestamp;
+  // Work around uuid@10 behavior where providing only { msecs }
+  // may not set the internal timestamp used for stringification.
+  // Providing a seq ensures the implementation updates its internal state
+  // and encodes the provided milliseconds into the UUID bytes.
+  return uuidv7({ msecs, seq: 0 });
 }
 
 /**
