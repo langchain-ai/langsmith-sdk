@@ -1,7 +1,6 @@
 import json
 import logging
-from datetime import datetime, timezone
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 try:
     from agents import tracing  # type: ignore[import]

@@ -9,7 +9,6 @@ import datetime
 import functools
 import inspect
 import logging
-import uuid
 import warnings
 from collections.abc import (
     AsyncGenerator,
@@ -42,7 +41,6 @@ from typing import (
 from typing_extensions import ParamSpec, TypeGuard, get_args, get_origin
 
 import langsmith._internal._context as _context
-from langsmith._internal._uuid import uuid7
 from langsmith import client as ls_client
 from langsmith import run_trees, schemas, utils
 from langsmith._internal import _aiter as aitertools

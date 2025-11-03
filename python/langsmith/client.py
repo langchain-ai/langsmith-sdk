@@ -64,7 +64,6 @@ from langsmith import env as ls_env
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._internal import _orjson
-from langsmith._internal._uuid import uuid7
 from langsmith._internal._background_thread import (
     TracingQueueItem,
 )
@@ -95,6 +94,7 @@ from langsmith._internal._operations import (
     serialized_run_operation_to_multipart_parts_and_context,
 )
 from langsmith._internal._serde import dumps_json as _dumps_json
+from langsmith._internal._uuid import uuid7
 from langsmith.schemas import AttachmentInfo, ExampleWithRuns
 
 

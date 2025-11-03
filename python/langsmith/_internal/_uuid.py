@@ -39,7 +39,7 @@ def uuid7(nanoseconds: int | None = None) -> uuid.UUID:
     UUIDv7 objects feature monotonicity within a millisecond.
 
     Args:
-        nanoseconds: Optional timestamp in nanoseconds. If not provided, uses current time.
+        nanoseconds: Optional ns since epoch timestamp. If not provided, uses current time.
     """
     # --- 48 ---   -- 4 --   --- 12 ---   -- 2 --   --- 30 ---   - 32 -
     # unix_ts_ms | version | counter_hi | variant | counter_lo | random

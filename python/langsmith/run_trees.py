@@ -11,10 +11,9 @@ from datetime import datetime, timezone
 from typing import Any, Optional, Union, cast
 from uuid import UUID
 
-from langsmith._internal._uuid import uuid7, warn_if_not_uuid_v7
-
-
 from typing_extensions import TypedDict
+
+from langsmith._internal._uuid import uuid7, warn_if_not_uuid_v7
 
 try:
     from pydantic.v1 import Field, root_validator  # type: ignore[import]
