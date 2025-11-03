@@ -8,6 +8,7 @@ from typing import Any, Optional
 
 from langsmith.run_helpers import get_current_run_tree, trace
 
+from ._hooks import clear_active_tool_runs, post_tool_use_hook, pre_tool_use_hook
 from ._messages import (
     build_llm_input,
     extract_usage_from_result_message,
@@ -117,11 +118,58 @@ def begin_llm_run_from_assistant_messages(
     return final_content, llm_run
 
 
+def _inject_tracing_hooks(options: Any) -> None:
+    """Inject LangSmith tracing hooks into ClaudeAgentOptions.
+
+    This adds PreToolUse and PostToolUse hooks to capture ALL tool calls
+    (built-in, external MCP, and SDK MCP). The hooks work across all LLM
+    providers (Anthropic, Vertex AI, Kimi, etc.) because they use explicit
+    tool_use_id correlation instead of relying on async context propagation.
+
+    Args:
+        options: ClaudeAgentOptions instance to modify
+    """
+    if not hasattr(options, "hooks"):
+        return
+
+    # Initialize hooks dict if not present
+    if options.hooks is None:
+        options.hooks = {}
+
+    # Add PreToolUse hook if not already set
+    if "PreToolUse" not in options.hooks:
+        options.hooks["PreToolUse"] = []
+
+    # Add PostToolUse hook if not already set
+    if "PostToolUse" not in options.hooks:
+        options.hooks["PostToolUse"] = []
+
+    try:
+        from claude_agent_sdk import HookMatcher  # type: ignore[import-not-found]
+
+        langsmith_pre_matcher = HookMatcher(matcher=None, hooks=[pre_tool_use_hook])
+        langsmith_post_matcher = HookMatcher(matcher=None, hooks=[post_tool_use_hook])
+
+        options.hooks["PreToolUse"].insert(0, langsmith_pre_matcher)
+        options.hooks["PostToolUse"].insert(0, langsmith_post_matcher)
+
+        logger.debug("Injected LangSmith tracing hooks into ClaudeAgentOptions")
+    except ImportError:
+        logger.warning("Failed to import HookMatcher from claude_agent_sdk")
+    except Exception as e:
+        logger.warning(f"Failed to inject tracing hooks: {e}")
+
+
 def instrument_claude_client(original_class: Any) -> Any:
     """Wrap ClaudeSDKClient to trace both query() and receive_response()."""
 
     class TracedClaudeSDKClient(original_class):
         def __init__(self, *args: Any, **kwargs: Any):
+            # Inject LangSmith tracing hooks into options before initialization
+            options = kwargs.get("options") or (args[0] if args else None)
+            if options:
+                _inject_tracing_hooks(options)
+
             super().__init__(*args, **kwargs)
             self._prompt: Optional[str] = None
             self._start_time: Optional[float] = None
@@ -235,6 +283,7 @@ def instrument_claude_client(original_class: Any) -> Any:
                 finally:
                     tracker.close()
                     clear_parent_run_tree()
+                    clear_active_tool_runs()
 
         async def __aenter__(self) -> "TracedClaudeSDKClient":
             await super().__aenter__()
