@@ -372,6 +372,38 @@ export const wrapOpenAI = <T extends OpenAIType>(
         (typeof params.stop === "string" ? [params.stop] : params.stop) ??
         undefined;
 
+      // Allowlist of safe invocation parameters to include
+      const allowedInvocationKeys = new Set([
+        "frequency_penalty",
+        "n",
+        "logit_bias",
+        "logprobs",
+        "modalities",
+        "parallel_tool_calls",
+        "prediction",
+        "presence_penalty",
+        "prompt_cache_key",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "service_tier",
+        "stream_options",
+        "top_logprobs",
+        "top_p",
+        "truncation",
+        "user",
+        "verbosity",
+        "web_search_options",
+      ]);
+
+      const ls_invocation_params: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(params)) {
+        if (allowedInvocationKeys.has(key)) {
+          ls_invocation_params[key] = value;
+        }
+      }
+
       return {
         ls_provider: provider,
         ls_model_type: "chat",
@@ -380,6 +412,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
           params.max_completion_tokens ?? params.max_tokens ?? undefined,
         ls_temperature: params.temperature ?? undefined,
         ls_stop,
+        ls_invocation_params,
       };
     },
     processOutputs: processChatCompletion,
@@ -439,6 +472,38 @@ export const wrapOpenAI = <T extends OpenAIType>(
           (typeof params.stop === "string" ? [params.stop] : params.stop) ??
           undefined;
 
+        // Allowlist of safe invocation parameters to include
+        const allowedInvocationKeys = new Set([
+          "frequency_penalty",
+          "n",
+          "logit_bias",
+          "logprobs",
+          "modalities",
+          "parallel_tool_calls",
+          "prediction",
+          "presence_penalty",
+          "prompt_cache_key",
+          "reasoning",
+          "reasoning_effort",
+          "response_format",
+          "seed",
+          "service_tier",
+          "stream_options",
+          "top_logprobs",
+          "top_p",
+          "truncation",
+          "user",
+          "verbosity",
+          "web_search_options",
+        ]);
+
+        const ls_invocation_params: Record<string, unknown> = {};
+        for (const [key, value] of Object.entries(params)) {
+          if (allowedInvocationKeys.has(key)) {
+            ls_invocation_params[key] = value;
+          }
+        }
+
         return {
           ls_provider: provider,
           ls_model_type: "llm",
@@ -446,6 +511,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
           ls_max_tokens: params.max_tokens ?? undefined,
           ls_temperature: params.temperature ?? undefined,
           ls_stop,
+          ls_invocation_params,
         };
       },
       ...options,

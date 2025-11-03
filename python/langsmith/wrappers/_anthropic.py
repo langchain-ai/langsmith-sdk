@@ -29,19 +29,23 @@ logger = logging.getLogger(__name__)
 
 
 @functools.lru_cache
-def _get_not_given() -> Optional[type]:
+def _get_not_given() -> Optional[tuple[type, ...]]:
     try:
-        from anthropic._types import NotGiven
+        from anthropic._types import NotGiven, Omit
 
-        return NotGiven
+        return (NotGiven, Omit)
     except ImportError:
         return None
 
 
 def _strip_not_given(d: dict) -> dict:
     try:
-        if (not_given := _get_not_given()) is not None:
-            d = {k: v for k, v in d.items() if not isinstance(v, not_given)}
+        if not_given := _get_not_given():
+            d = {
+                k: v
+                for k, v in d.items()
+                if not any(isinstance(v, t) for t in not_given)
+            }
     except Exception as e:
         logger.error(f"Error stripping NotGiven: {e}")
 
@@ -60,6 +64,22 @@ def _infer_ls_params(kwargs: dict):
     if stop and isinstance(stop, str):
         stop = [stop]
 
+    # Allowlist of safe invocation parameters to include
+    # Only include known, non-sensitive parameters
+    allowed_invocation_keys = {
+        "mcp_servers",
+        "service_tier",
+        "top_k",
+        "top_p",
+        "stream",
+        "thinking",
+    }
+
+    # Only include allowlisted parameters
+    invocation_params = {
+        k: v for k, v in stripped.items() if k in allowed_invocation_keys
+    }
+
     return {
         "ls_provider": "anthropic",
         "ls_model_type": "chat",
@@ -67,6 +87,7 @@ def _infer_ls_params(kwargs: dict):
         "ls_temperature": stripped.get("temperature", None),
         "ls_max_tokens": stripped.get("max_tokens", None),
         "ls_stop": stop,
+        "ls_invocation_params": invocation_params,
     }
 
 
