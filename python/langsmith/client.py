@@ -8647,7 +8647,7 @@ class Client:
                     openai_api_key=os.environ["OPENAI_API_KEY"],
                 )
 
-                # client.poll_insights(report)
+                # client.poll_insights(report=report)
         """
         model = self._ensure_insights_api_key(
             openai_api_key=openai_api_key,
