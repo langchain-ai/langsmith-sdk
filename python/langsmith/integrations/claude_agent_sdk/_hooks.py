@@ -1,16 +1,24 @@
 """Hook-based tool tracing for Claude Agent SDK.
 
-This module provides hook handlers that traces tool calls by intercepting PreToolUse and PostToolUse events.
+This module provides hook handlers that traces tool calls by intercepting
+PreToolUse and PostToolUse events.
 """
 
 import logging
 import time
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from langsmith.run_helpers import get_current_run_tree
 
 from ._tools import get_parent_run_tree
+
+if TYPE_CHECKING:
+    from claude_agent_sdk import (
+        HookContext,
+        HookInput,
+        HookJSONOutput,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -20,11 +28,11 @@ _active_tool_runs: dict[str, tuple[Any, float]] = {}
 
 
 async def pre_tool_use_hook(
-    input_data: dict[str, Any],
+    input_data: "HookInput",
     tool_use_id: Optional[str],
-    context: dict[str, Any],
-) -> dict[str, Any]:
-    """Hook called before tool execution starts.
+    context: "HookContext",
+) -> "HookJSONOutput":
+    """Trace tool execution before it starts.
 
     Args:
         input_data: Contains tool_name, tool_input, session_id
@@ -38,7 +46,7 @@ async def pre_tool_use_hook(
         logger.debug("PreToolUse hook called without tool_use_id, skipping trace")
         return {}
 
-    tool_name = input_data.get("tool_name", "unknown_tool")
+    tool_name: str = str(input_data.get("tool_name", "unknown_tool"))
     tool_input = input_data.get("tool_input", {})
 
     try:
@@ -71,11 +79,11 @@ async def pre_tool_use_hook(
 
 
 async def post_tool_use_hook(
-    input_data: dict[str, Any],
+    input_data: "HookInput",
     tool_use_id: Optional[str],
-    context: dict[str, Any],
-) -> dict[str, Any]:
-    """Hook called after tool execution completes.
+    context: "HookContext",
+) -> "HookJSONOutput":
+    """Trace tool execution after it completes.
 
     Args:
         input_data: Contains tool_name, tool_input, tool_response, session_id, etc.
@@ -89,7 +97,7 @@ async def post_tool_use_hook(
         logger.debug("PostToolUse hook called without tool_use_id, skipping trace")
         return {}
 
-    tool_name = input_data.get("tool_name", "unknown_tool")
+    tool_name: str = str(input_data.get("tool_name", "unknown_tool"))
     tool_response = input_data.get("tool_response")
 
     try:
@@ -126,7 +134,8 @@ async def post_tool_use_hook(
 
         duration_ms = (time.time() - start_time) * 1000
         logger.debug(
-            f"Completed tool trace for {tool_name} (id={tool_use_id}, duration={duration_ms:.2f}ms)"
+            f"Completed tool trace for {tool_name} "
+            f"(id={tool_use_id}, duration={duration_ms:.2f}ms)"
         )
 
     except Exception as e:
