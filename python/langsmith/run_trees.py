@@ -9,7 +9,10 @@ import sys
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from typing import Any, Optional, Union, cast
-from uuid import NAMESPACE_DNS, UUID, uuid4, uuid5
+from uuid import UUID
+
+from langsmith._internal._uuid import uuid7, warn_if_not_uuid_v7
+
 
 from typing_extensions import TypedDict
 
@@ -187,7 +190,7 @@ class RunTree(ls_schemas.RunBase):
     """Run Schema with back-references for posting runs."""
 
     name: str
-    id: UUID = Field(default_factory=uuid4)
+    id: UUID = Field(default_factory=uuid7)
     run_type: str = Field(default="chain")
     start_time: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     # Note: no longer set.
@@ -248,12 +251,24 @@ class RunTree(ls_schemas.RunBase):
             values["parent_run_id"] = parent_run.id
             values["parent_dotted_order"] = parent_run.dotted_order
         if "id" not in values:
-            values["id"] = uuid4()
+            # Generate UUID from start_time if available
+            if "start_time" in values and values["start_time"] is not None:
+                start_time = values["start_time"]
+                timestamp_ns = int(start_time.timestamp() * 1_000_000_000)
+                values["id"] = uuid7(timestamp_ns)
+            else:
+                values["id"] = uuid7()
+        else:
+            warn_if_not_uuid_v7(values["id"], "run_id")
         if "trace_id" not in values:
             if parent_run is not None:
                 values["trace_id"] = parent_run.trace_id
             else:
                 values["trace_id"] = values["id"]
+        else:
+            warn_if_not_uuid_v7(values["trace_id"], "trace_id")
+        if values.get("parent_run_id"):
+            warn_if_not_uuid_v7(values["parent_run_id"], "parent_run_id")
         cast(dict, values.setdefault("extra", {}))
         if values.get("events") is None:
             values["events"] = []
@@ -268,21 +283,6 @@ class RunTree(ls_schemas.RunBase):
         values["replicas"] = _ensure_write_replicas(values["replicas"])
         return values
 
-    @root_validator(pre=False)
-    def ensure_dotted_order(cls, values: dict) -> dict:
-        """Ensure the dotted order of the run."""
-        current_dotted_order = values.get("dotted_order")
-        if current_dotted_order and current_dotted_order.strip():
-            return values
-        current_dotted_order = _create_current_dotted_order(
-            values["start_time"], values["id"]
-        )
-        parent_dotted_order = values.get("parent_dotted_order")
-        if parent_dotted_order is not None:
-            values["dotted_order"] = parent_dotted_order + "." + current_dotted_order
-        else:
-            values["dotted_order"] = current_dotted_order
-        return values
 
     @property
     def client(self) -> Client:
@@ -552,54 +552,17 @@ class RunTree(ls_schemas.RunBase):
     def _remap_for_project(
         self, project_name: str, updates: Optional[dict] = None
     ) -> dict:
-        """Rewrites ids/dotted_order for a given project with optional updates."""
+        """Get run dict for a given project with optional updates."""
         run_dict = self._get_dicts_safe()
-        if project_name == self.session_name:
-            return run_dict
 
         if updates and updates.get("reroot", False):
             distributed_parent_id = _DISTRIBUTED_PARENT_ID.get()
-
             if distributed_parent_id:
                 self._slice_parent_id(distributed_parent_id, run_dict)
 
-        old_id = run_dict["id"]
-        new_id = uuid5(NAMESPACE_DNS, f"{old_id}:{project_name}")
-        # trace id
-        old_trace = run_dict.get("trace_id")
-        if old_trace:
-            new_trace = uuid5(NAMESPACE_DNS, f"{old_trace}:{project_name}")
-        else:
-            new_trace = None
-        # parent id
-        parent = run_dict.get("parent_run_id")
-        if parent:
-            new_parent = uuid5(NAMESPACE_DNS, f"{parent}:{project_name}")
-        else:
-            new_parent = None
-        # dotted order
-        if run_dict.get("dotted_order"):
-            segs = run_dict["dotted_order"].split(".")
-            rebuilt = []
-            for part in segs[:-1]:
-                repl = uuid5(
-                    NAMESPACE_DNS, f"{part[-TIMESTAMP_LENGTH:]}:{project_name}"
-                )
-                rebuilt.append(part[:-TIMESTAMP_LENGTH] + str(repl))
-            rebuilt.append(segs[-1][:-TIMESTAMP_LENGTH] + str(new_id))
-            dotted = ".".join(rebuilt)
-        else:
-            dotted = None
         dup = utils.deepish_copy(run_dict)
-        dup.update(
-            {
-                "id": new_id,
-                "trace_id": new_trace,
-                "parent_run_id": new_parent,
-                "dotted_order": dotted,
-                "session_name": project_name,
-            }
-        )
+        dup["session_name"] = project_name
+
         if updates:
             dup.update(updates)
         return dup
@@ -1122,15 +1085,6 @@ def _parse_dotted_order(dotted_order: str) -> list[tuple[datetime, UUID]]:
         )
         for part in parts
     ]
-
-
-def _create_current_dotted_order(
-    start_time: Optional[datetime], run_id: Optional[UUID]
-) -> str:
-    """Create the current dotted order."""
-    st = start_time or datetime.now(timezone.utc)
-    id_ = run_id or uuid4()
-    return st.strftime("%Y%m%dT%H%M%S%fZ") + str(id_)
 
 
 _CLIENT: Optional[Client] = _context._GLOBAL_CLIENT

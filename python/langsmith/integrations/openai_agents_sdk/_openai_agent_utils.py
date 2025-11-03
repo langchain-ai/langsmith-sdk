@@ -2,7 +2,6 @@ import json
 import logging
 from datetime import datetime, timezone
 from typing import Any, Literal, Optional
-from uuid import uuid4
 
 try:
     from agents import tracing  # type: ignore[import]
@@ -229,15 +228,3 @@ if HAVE_AGENTS:
 
         return data
 
-    def ensure_dotted_order(
-        start_time: Optional[datetime],
-        run_id: Optional[str],
-        parent_dotted_order: Optional[str] = None,
-    ) -> str:
-        """Create a dotted order from a start time and run id."""
-        st = start_time or datetime.now(timezone.utc)
-        id_ = run_id or str(uuid4())
-        current_dotted_order = st.strftime("%Y%m%dT%H%M%S%fZ") + id_
-        if parent_dotted_order is not None:
-            return parent_dotted_order + "." + current_dotted_order
-        return current_dotted_order

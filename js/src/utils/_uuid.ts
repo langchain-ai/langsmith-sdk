@@ -1,11 +1,7 @@
-// Relaxed UUID validation regex (allows any valid UUID format including nil UUIDs)
-const UUID_REGEX =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { validate as uuidValidate, v7 as uuidv7 } from "uuid";
 
 export function assertUuid(str: string, which?: string): string {
-  // Use relaxed regex validation instead of strict uuid.validate()
-  // This allows edge cases like nil UUIDs or test UUIDs that might not pass strict validation
-  if (!UUID_REGEX.test(str)) {
+  if (!uuidValidate(str)) {
     const msg =
       which !== undefined
         ? `Invalid UUID for ${which}: ${str}`
@@ -13,4 +9,49 @@ export function assertUuid(str: string, which?: string): string {
     throw new Error(msg);
   }
   return str;
+}
+
+/**
+ * Generate a UUID v7 from a timestamp.
+ *
+ * @param timestamp - The timestamp in milliseconds
+ * @returns A UUID v7 string
+ */
+export function uuidFromTime(timestamp: number | string): string {
+  const msecs = typeof timestamp === "string" ? Date.parse(timestamp) : timestamp;
+  return uuidv7({ msecs });
+}
+
+/**
+ * Get the version of a UUID string.
+ * @param uuidStr - The UUID string to check
+ * @returns The version number (1-7) or null if invalid
+ */
+export function getUuidVersion(uuidStr: string): number | null {
+  if (!uuidValidate(uuidStr)) {
+    return null;
+  }
+
+  // Version is in bits 48-51
+  // Format: xxxxxxxx-xxxx-Vxxx-xxxx-xxxxxxxxxxxx
+  const versionChar = uuidStr[14];
+  return parseInt(versionChar, 16);
+}
+
+/**
+ * Warn if a UUID is not version 7.
+ *
+ * @param uuidStr - The UUID string to check
+ * @param idType - The type of ID (e.g., "run_id", "trace_id") for the warning message
+ */
+export function warnIfNotUuidV7(uuidStr: string, idType: string): void {
+  const version = getUuidVersion(uuidStr);
+  if (version !== null && version !== 7) {
+    console.warn(
+      `LangSmith now uses UUID v7 for ${idType}. The provided ${idType} ` +
+        `'${uuidStr}' is UUID v${version}. ` +
+        `Please migrate to using UUID v7. ` +
+        `Future versions will require UUID v7.`
+    );
+  }
 }

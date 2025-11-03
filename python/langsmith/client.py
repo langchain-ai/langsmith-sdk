@@ -64,6 +64,7 @@ from langsmith import env as ls_env
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._internal import _orjson
+from langsmith._internal._uuid import uuid7
 from langsmith._internal._background_thread import (
     TracingQueueItem,
 )
@@ -373,7 +374,7 @@ def _ensure_uuid(value: Optional[Union[str, uuid.UUID]], *, accept_null: bool = 
     if value is None:
         if accept_null:
             return None
-        return uuid.uuid4()
+        return uuid7()
     return _as_uuid(value)
 
 
