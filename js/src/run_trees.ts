@@ -528,6 +528,9 @@ export class RunTree implements BaseRun {
         const runData = this._remapForProject(projectName ?? this.project_name);
         const updatePayload: RunUpdate = {
           id: runData.id,
+          name: runData.name,
+          run_type: runData.run_type,
+          start_time: runData.start_time,
           outputs: runData.outputs,
           error: runData.error,
           parent_run_id: runData.parent_run_id,
@@ -557,6 +560,9 @@ export class RunTree implements BaseRun {
     } else {
       try {
         const runUpdate: RunUpdate = {
+          name: this.name,
+          run_type: this.run_type,
+          start_time: this._serialized_start_time ?? this.start_time,
           end_time: this.end_time,
           error: this.error,
           outputs: this.outputs,
