@@ -227,4 +227,3 @@ if HAVE_AGENTS:
             return {}
 
         return data
-

@@ -1547,7 +1547,7 @@ def _setup_run(
         # Only pass id if user explicitly provided one
         if id_ is not None:
             run_tree_kwargs["id"] = ls_client._ensure_uuid(id_)
-        new_run = run_trees.RunTree(**run_tree_kwargs)
+        new_run = run_trees.RunTree(**cast(Any, run_tree_kwargs))
     if utils.tracing_is_enabled() is True:
         try:
             new_run.post()

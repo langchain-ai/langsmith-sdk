@@ -283,7 +283,6 @@ class RunTree(ls_schemas.RunBase):
         values["replicas"] = _ensure_write_replicas(values["replicas"])
         return values
 
-
     @property
     def client(self) -> Client:
         """Return the client."""
@@ -658,7 +657,7 @@ class RunTree(ls_schemas.RunBase):
             self.client.update_run(
                 name=self.name,
                 run_id=self.id,
-                run_type=self.run_type,
+                run_type=cast(RUN_TYPE_T, self.run_type),
                 start_time=self.start_time,
                 inputs=(
                     None
