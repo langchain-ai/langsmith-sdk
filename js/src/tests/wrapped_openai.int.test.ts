@@ -747,7 +747,7 @@ test("responses.create streaming", async () => {
   callSpy.mockClear();
 });
 
-test.only("responses.parse", async () => {
+test("responses.parse", async () => {
   const { client, callSpy } = mockClient();
   const openai = wrapOpenAI(new OpenAI(), {
     client,
