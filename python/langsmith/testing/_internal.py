@@ -14,6 +14,8 @@ import threading
 import time
 import uuid
 import warnings
+
+from langsmith._uuid import uuid7
 from collections.abc import Generator, Sequence
 from concurrent.futures import Future
 from pathlib import Path
@@ -292,7 +294,7 @@ def test(*args: Any, **kwargs: Any) -> Callable:
             import pytest
             import uuid
 
-            example_id = uuid.uuid4()
+            example_id = uuid7()
 
 
             @pytest.mark.langsmith(id=str(example_id))
@@ -426,7 +428,7 @@ def _get_experiment_name(test_suite_name: str) -> str:
         id_name = test_suite_name + os.environ["PYTEST_XDIST_TESTRUNUID"]
         id_ = str(uuid.uuid5(uuid.NAMESPACE_DNS, id_name).hex[:8])
     else:
-        id_ = str(uuid.uuid4().hex[:8])
+        id_ = str(uuid7().hex[:8])
 
     if os.environ.get("LANGSMITH_EXPERIMENT"):
         prefix = os.environ["LANGSMITH_EXPERIMENT"]
@@ -959,7 +961,7 @@ def _create_test_case(
         )
     test_case = _TestCase(
         test_suite,
-        run_id=uuid.uuid4(),
+        run_id=uuid7(),
         example_id=example_id,
         metadata=metadata,
         split=split,

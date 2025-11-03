@@ -8,6 +8,8 @@ import datetime
 import itertools
 import uuid
 from collections.abc import Sequence
+
+from langsmith._uuid import uuid7
 from typing import Optional, TypeVar
 
 import langsmith.run_trees as rt
@@ -50,13 +52,13 @@ def _convert_root_run(root: ls_schemas.Run, run_to_example_map: dict) -> list[di
     - List[dict]: The list of converted run dictionaries.
     """
     runs_ = [root]
-    trace_id = uuid.uuid4()
+    trace_id = uuid7()
     id_map = {root.trace_id: trace_id}
     results = []
     while runs_:
         src = runs_.pop()
         src_dict = src.dict(exclude={"parent_run_ids", "child_run_ids", "session_id"})
-        id_map[src_dict["id"]] = id_map.get(src_dict["id"], uuid.uuid4())
+        id_map[src_dict["id"]] = id_map.get(src_dict["id"], uuid7())
         src_dict["id"] = id_map[src_dict["id"]]
         src_dict["trace_id"] = id_map[src_dict["trace_id"]]
         if src.child_runs:
@@ -140,7 +142,7 @@ def convert_runs_to_test(
             client.read_run(r.id, load_child_runs=load_child_runs) for r in runs
         ]
 
-    test_project_name = test_project_name or f"prod-baseline-{uuid.uuid4().hex[:6]}"
+    test_project_name = test_project_name or f"prod-baseline-{uuid7().hex[:6]}"
 
     examples = list(client.list_examples(dataset_name=dataset_name))
     run_to_example_map = {e.source_run_id: e.id for e in examples}

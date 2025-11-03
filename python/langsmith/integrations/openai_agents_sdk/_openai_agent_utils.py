@@ -2,7 +2,7 @@ import json
 import logging
 from datetime import datetime, timezone
 from typing import Any, Literal, Optional
-from uuid import uuid4
+from langsmith._uuid import uuid7 as uuid4
 
 try:
     from agents import tracing  # type: ignore[import]

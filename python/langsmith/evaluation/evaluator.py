@@ -6,6 +6,8 @@ import asyncio
 import inspect
 import uuid
 from abc import abstractmethod
+
+from langsmith._uuid import uuid7
 from collections.abc import Awaitable, Sequence
 from typing import (
     Any,
@@ -344,7 +346,7 @@ class DynamicRunEvaluator(RunEvaluator):
             else:
                 return running_loop.run_until_complete(self.aevaluate_run(run, example))
         if evaluator_run_id is None:
-            evaluator_run_id = uuid.uuid4()
+            evaluator_run_id = uuid7()
         metadata: dict[str, Any] = {"target_run_id": run.id}
         if getattr(run, "session_id", None):
             metadata["experiment"] = str(run.session_id)
@@ -377,7 +379,7 @@ class DynamicRunEvaluator(RunEvaluator):
         if not hasattr(self, "afunc"):
             return await super().aevaluate_run(run, example)
         if evaluator_run_id is None:
-            evaluator_run_id = uuid.uuid4()
+            evaluator_run_id = uuid7()
         metadata: dict[str, Any] = {"target_run_id": run.id}
         if getattr(run, "session_id", None):
             metadata["experiment"] = str(run.session_id)
@@ -529,7 +531,7 @@ class DynamicComparisonRunEvaluator:
                 return running_loop.run_until_complete(
                     self.acompare_runs(runs, example)
                 )
-        source_run_id = uuid.uuid4()
+        source_run_id = uuid7()
         tags = self._get_tags(runs)
         # TODO: Add metadata for the "comparison experiment" here
         result = self.func(
@@ -557,7 +559,7 @@ class DynamicComparisonRunEvaluator:
         """
         if not hasattr(self, "afunc"):
             return self.compare_runs(runs, example)
-        source_run_id = uuid.uuid4()
+        source_run_id = uuid7()
         tags = self._get_tags(runs)
         # TODO: Add metadata for the "comparison experiment" here
         result = await self.afunc(

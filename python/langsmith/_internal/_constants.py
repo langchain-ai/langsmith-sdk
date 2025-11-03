@@ -1,8 +1,10 @@
 import uuid
 
+from langsmith._uuid import uuid7
+
 _SIZE_LIMIT_BYTES = 20_971_520  # 20MB by default
 _AUTO_SCALE_UP_QSIZE_TRIGGER = 200
 _AUTO_SCALE_UP_NTHREADS_LIMIT = 32
 _AUTO_SCALE_DOWN_NEMPTY_TRIGGER = 4
 _BLOCKSIZE_BYTES = 1024 * 1024  # 1MB
-_BOUNDARY = uuid.uuid4().hex
+_BOUNDARY = uuid7().hex

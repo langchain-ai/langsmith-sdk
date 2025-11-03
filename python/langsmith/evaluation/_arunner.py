@@ -9,6 +9,8 @@ import logging
 import pathlib
 import uuid
 from collections.abc import AsyncIterable, AsyncIterator, Awaitable, Iterable, Sequence
+
+from langsmith._uuid import uuid7
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -394,7 +396,7 @@ async def aevaluate_existing(
         >>> import uuid
         >>> from langsmith import Client, aevaluate, aevaluate_existing
         >>> client = Client()
-        >>> dataset_name = "__doctest_aevaluate_existing_" + uuid.uuid4().hex[:8]
+        >>> dataset_name = "__doctest_aevaluate_existing_" + uuid7().hex[:8]
         >>> dataset = client.create_dataset(dataset_name)
         >>> example = client.create_example(
         ...     inputs={"question": "What is 2+2?"},
@@ -982,7 +984,7 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
             eval_results = current_results["evaluation_results"]
 
             async def _run_single_evaluator(evaluator: RunEvaluator):
-                evaluator_run_id = uuid.uuid4()
+                evaluator_run_id = uuid7()
                 try:
                     evaluator_response = await evaluator.aevaluate_run(  # type: ignore[call-arg]
                         run=run,

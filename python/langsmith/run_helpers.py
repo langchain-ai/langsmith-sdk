@@ -11,6 +11,8 @@ import inspect
 import logging
 import uuid
 import warnings
+
+from langsmith._uuid import uuid7
 from collections.abc import (
     AsyncGenerator,
     AsyncIterator,
@@ -1480,7 +1482,7 @@ def _setup_run(
             context=copy_context(),
             _token_event_logged=False,
         )
-    id_ = id_ or str(uuid.uuid4())
+    id_ = id_ or str(uuid7())
     signature = inspect.signature(func)
     name_ = name or utils._get_function_name(func)
     extra_inner = _collect_extra(extra_outer, langsmith_extra)

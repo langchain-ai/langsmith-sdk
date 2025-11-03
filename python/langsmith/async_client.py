@@ -9,6 +9,8 @@ import json
 import uuid
 import warnings
 from collections.abc import AsyncGenerator, AsyncIterator, Mapping, Sequence
+
+from langsmith._uuid import uuid7
 from typing import (
     Any,
     Literal,
@@ -212,7 +214,7 @@ class AsyncClient:
         """Create a run."""
         run_create = {
             "name": name,
-            "id": kwargs.get("id") or uuid.uuid4(),
+            "id": kwargs.get("id") or uuid7(),
             "inputs": inputs,
             "run_type": run_type,
             "session_name": project_name or ls_utils.get_tracer_project(),
@@ -469,7 +471,7 @@ class AsyncClient:
         run_id_ = ls_client._as_uuid(run_id, "run_id")
         data = {
             "run_id": str(run_id_),
-            "share_token": str(share_id or uuid.uuid4()),
+            "share_token": str(share_id or uuid7()),
         }
         response = await self._arequest_with_retries(
             "PUT",
@@ -802,7 +804,7 @@ class AsyncClient:
             "run_id": run_id,
             "feedback_key": feedback_key,
             "feedback_config": feedback_config,
-            "id": feedback_id or str(uuid.uuid4()),
+            "id": feedback_id or str(uuid7()),
         }
         if expiration is None:
             body["expires_in"] = ls_schemas.TimeDeltaInput(
@@ -953,7 +955,7 @@ class AsyncClient:
         body = {
             "name": name,
             "description": description,
-            "id": str(queue_id) if queue_id is not None else str(uuid.uuid4()),
+            "id": str(queue_id) if queue_id is not None else str(uuid7()),
         }
         response = await self._arequest_with_retries(
             "POST",

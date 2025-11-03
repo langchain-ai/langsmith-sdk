@@ -2339,7 +2339,7 @@ export class Client implements LangSmithTracingClientInterface {
   ): Promise<string> {
     const data = {
       run_id: runId,
-      share_token: shareId || uuid.v4(),
+      share_token: shareId || uuid.v7(),
     };
     assertUuid(runId);
     const body = JSON.stringify(data);
@@ -3440,7 +3440,7 @@ export class Client implements LangSmithTracingClientInterface {
 
     const response = await this._uploadExamplesMultipart(datasetId_, [data]);
     const example = await this.readExample(
-      response.example_ids?.[0] ?? uuid.v4()
+      response.example_ids?.[0] ?? uuid.v7()
     );
     return example;
   }
@@ -4040,7 +4040,7 @@ export class Client implements LangSmithTracingClientInterface {
       assertUuid(feedback_source.metadata["__run"].run_id);
     }
     const feedback: FeedbackCreate = {
-      id: feedbackId ?? uuid.v4(),
+      id: feedbackId ?? uuid.v7(),
       run_id: runId,
       key,
       score: _formatFeedbackScore(score),
@@ -4441,7 +4441,7 @@ export class Client implements LangSmithTracingClientInterface {
     const body = {
       name,
       description,
-      id: queueId || uuid.v4(),
+      id: queueId || uuid.v7(),
       rubric_instructions: rubricInstructions,
     };
 
@@ -5075,7 +5075,7 @@ export class Client implements LangSmithTracingClientInterface {
     const formData = new FormData();
 
     for (const example of uploads) {
-      const exampleId = (example.id ?? uuid.v4()).toString();
+      const exampleId = (example.id ?? uuid.v7()).toString();
 
       // Prepare the main example body
       const exampleBody = {

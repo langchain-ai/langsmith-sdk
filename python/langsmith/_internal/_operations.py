@@ -5,6 +5,8 @@ import logging
 import os
 import uuid
 from collections.abc import Iterable
+
+from langsmith._uuid import uuid7
 from io import BufferedReader
 from typing import Literal, Optional, Union, cast
 
@@ -171,11 +173,11 @@ def serialize_feedback_dict(
     else:
         feedback_create = cast(dict, feedback)
     if "id" not in feedback_create:
-        feedback_create["id"] = uuid.uuid4()
+        feedback_create["id"] = uuid7()
     elif isinstance(feedback_create["id"], str):
         feedback_create["id"] = uuid.UUID(feedback_create["id"])
     if "trace_id" not in feedback_create:
-        feedback_create["trace_id"] = uuid.uuid4()
+        feedback_create["trace_id"] = uuid7()
     elif isinstance(feedback_create["trace_id"], str):
         feedback_create["trace_id"] = uuid.UUID(feedback_create["trace_id"])
 
@@ -355,7 +357,7 @@ def serialized_run_operation_to_multipart_parts_and_context(
                         "Attachment file not found for run %s: %s", op.id, data_or_path
                     )
                     continue
-                opened_files_dict[str(data_or_path) + str(uuid.uuid4())] = file
+                opened_files_dict[str(data_or_path) + str(uuid7())] = file
                 acc_parts.append(
                     (
                         f"attachment.{op.id}.{n}",

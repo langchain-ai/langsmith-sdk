@@ -17,6 +17,8 @@ import textwrap
 import threading
 import uuid
 from collections.abc import Awaitable, Generator, Iterable, Iterator, Sequence
+
+from langsmith._uuid import uuid7
 from contextvars import copy_context
 from typing import (
     TYPE_CHECKING,
@@ -501,7 +503,7 @@ def evaluate_existing(
         >>> from langsmith import Client
         >>> from langsmith.evaluation import evaluate, evaluate_existing
         >>> client = Client()
-        >>> dataset_name = "__doctest_evaluate_existing_" + uuid.uuid4().hex[:8]
+        >>> dataset_name = "__doctest_evaluate_existing_" + uuid7().hex[:8]
         >>> dataset = client.create_dataset(dataset_name)
         >>> example = client.create_example(
         ...     inputs={"question": "What is 2+2?"},
@@ -867,11 +869,11 @@ def evaluate_comparative(
     if experiment_prefix is None:
         experiment_names = [p.name for p in projects if p.name is not None]
         experiment_name = (
-            " vs. ".join(experiment_names) + "-" + str(uuid.uuid4().hex[:4])
+            " vs. ".join(experiment_names) + "-" + str(uuid7().hex[:4])
         )
     else:
-        experiment_name = experiment_prefix + "-" + str(uuid.uuid4().hex[:8])
-    comparative_experiment_id = uuid.uuid4()
+        experiment_name = experiment_prefix + "-" + str(uuid7().hex[:8])
+    comparative_experiment_id = uuid7()
     comparative_experiment = client.create_comparative_experiment(
         experiment_name,
         experiments=experiment_ids,
@@ -929,7 +931,7 @@ def evaluate_comparative(
         comparator: DynamicComparisonRunEvaluator,
         executor: cf.Executor,
     ) -> ComparisonEvaluationResult:
-        feedback_group_id = uuid.uuid4()
+        feedback_group_id = uuid7()
         if randomize_order:
             random.shuffle(runs_list)
         with rh.tracing_context(project_name="evaluators", client=client):
@@ -1193,7 +1195,7 @@ class _ExperimentManagerMixin:
         if experiment is None:
             self._experiment_name = _get_random_name()
         elif isinstance(experiment, str):
-            self._experiment_name = experiment + "-" + str(uuid.uuid4().hex[:8])
+            self._experiment_name = experiment + "-" + str(uuid7().hex[:8])
         else:
             self._experiment_name = cast(str, experiment.name)
             self._experiment = experiment
@@ -1252,7 +1254,7 @@ class _ExperimentManagerMixin:
                     metadata=metadata,
                 )
             except ls_utils.LangSmithConflictError:
-                self._experiment_name = f"{starting_name}-{str(uuid.uuid4().hex[:6])}"
+                self._experiment_name = f"{starting_name}-{str(uuid7().hex[:6])}"
         raise ValueError(
             f"Could not find a unique experiment name in {num_attempts} attempts."
             " Please try again with a different experiment name."
@@ -1614,7 +1616,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             example = current_results["example"]
             eval_results = current_results["evaluation_results"]
             for evaluator in evaluators:
-                evaluator_run_id = uuid.uuid4()
+                evaluator_run_id = uuid7()
                 try:
                     evaluator_response = evaluator.evaluate_run(  # type: ignore[call-arg]
                         run=run,

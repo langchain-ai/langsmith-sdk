@@ -21,6 +21,7 @@ import {
 import { getDefaultProjectName } from "./utils/project.js";
 import { getLangSmithEnvironmentVariable } from "./utils/env.js";
 import { warnOnce } from "./utils/warn.js";
+import { warnIfNotUuidV7 } from "./utils/_uuid.js";
 
 function stripNonAlphanumeric(input: string) {
   return input.replace(/[-:.]/g, "");
@@ -246,13 +247,25 @@ export class RunTree implements BaseRun {
     };
     config.extra = { ...config.extra, metadata: dedupedMetadata };
     Object.assign(this, { ...defaultConfig, ...config, client });
+
+    if (config.id) {
+      warnIfNotUuidV7(config.id, "run_id");
+    }
+
     if (!this.trace_id) {
       if (this.parent_run) {
         this.trace_id = this.parent_run.trace_id ?? this.id;
       } else {
         this.trace_id = this.id;
       }
+    } else if (config.trace_id) {
+      warnIfNotUuidV7(config.trace_id, "trace_id");
     }
+
+    if (config.parent_run_id) {
+      warnIfNotUuidV7(config.parent_run_id, "parent_run_id");
+    }
+
     this.replicas = _ensureWriteReplicas(this.replicas);
 
     this.execution_order ??= 1;
@@ -290,7 +303,7 @@ export class RunTree implements BaseRun {
 
   private static getDefaultConfig(): object {
     return {
-      id: uuid.v4(),
+      id: uuid.v7(),
       run_type: "chain",
       project_name: getDefaultProjectName(),
       child_runs: [],
@@ -456,63 +469,11 @@ export class RunTree implements BaseRun {
     excludeChildRuns = true
   ): RunCreate & { id: string } {
     const baseRun = this._convertToCreate(this, runtimeEnv, excludeChildRuns);
-    if (projectName === this.project_name) {
-      return baseRun;
-    }
 
-    // Create a deterministic UUID mapping for this project
-    const createRemappedId = (originalId: string): string => {
-      return uuid.v5(`${originalId}:${projectName}`, uuid.v5.DNS);
-    };
-
-    // Remap the current run's ID
-    const newId = createRemappedId(baseRun.id);
-
-    const newTraceId = baseRun.trace_id
-      ? createRemappedId(baseRun.trace_id)
-      : undefined;
-
-    const newParentRunId = baseRun.parent_run_id
-      ? createRemappedId(baseRun.parent_run_id)
-      : undefined;
-
-    let newDottedOrder: string | undefined;
-    if (baseRun.dotted_order) {
-      const segments = _parseDottedOrder(baseRun.dotted_order);
-      const rebuilt: string[] = [];
-
-      // Process all segments except the last one
-      for (let i = 0; i < segments.length - 1; i++) {
-        const [timestamp, segmentId] = segments[i];
-        const remappedId = createRemappedId(segmentId);
-        rebuilt.push(
-          timestamp.toISOString().replace(/[-:]/g, "").replace(".", "") +
-            remappedId
-        );
-      }
-
-      // Process the last segment with the new run ID
-      const [lastTimestamp] = segments[segments.length - 1];
-      rebuilt.push(
-        lastTimestamp.toISOString().replace(/[-:]/g, "").replace(".", "") +
-          newId
-      );
-
-      newDottedOrder = rebuilt.join(".");
-    } else {
-      newDottedOrder = undefined;
-    }
-
-    const remappedRun = {
+    return {
       ...baseRun,
-      id: newId,
-      trace_id: newTraceId,
-      parent_run_id: newParentRunId,
-      dotted_order: newDottedOrder,
       session_name: projectName,
     };
-
-    return remappedRun;
   }
 
   async postRun(excludeChildRuns = true): Promise<void> {

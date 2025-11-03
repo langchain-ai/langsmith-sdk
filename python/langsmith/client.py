@@ -32,6 +32,8 @@ import traceback
 import typing
 import uuid
 import warnings
+
+from langsmith._uuid import uuid7
 import weakref
 from collections.abc import AsyncIterable, Iterable, Iterator, Mapping, Sequence
 from inspect import signature
@@ -373,7 +375,7 @@ def _ensure_uuid(value: Optional[Union[str, uuid.UUID]], *, accept_null: bool = 
     if value is None:
         if accept_null:
             return None
-        return uuid.uuid4()
+        return uuid7()
     return _as_uuid(value)
 
 
