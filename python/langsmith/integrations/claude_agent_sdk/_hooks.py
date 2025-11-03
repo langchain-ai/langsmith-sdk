@@ -95,7 +95,9 @@ async def post_tool_use_hook(
     try:
         run_info = _active_tool_runs.pop(tool_use_id, None)
         if not run_info:
-            logger.debug(f"No matching PreToolUse found for {tool_name} (id={tool_use_id})")
+            logger.debug(
+                f"No matching PreToolUse found for {tool_name} (id={tool_use_id})"
+            )
             return {}
 
         tool_run, start_time = run_info
@@ -123,7 +125,9 @@ async def post_tool_use_hook(
             logger.warning(f"Failed to patch tool run for {tool_name}: {e}")
 
         duration_ms = (time.time() - start_time) * 1000
-        logger.debug(f"Completed tool trace for {tool_name} (id={tool_use_id}, duration={duration_ms:.2f}ms)")
+        logger.debug(
+            f"Completed tool trace for {tool_name} (id={tool_use_id}, duration={duration_ms:.2f}ms)"
+        )
 
     except Exception as e:
         logger.warning(f"Error in PostToolUse hook for {tool_name}: {e}", exc_info=True)
