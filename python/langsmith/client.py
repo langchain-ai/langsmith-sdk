@@ -96,6 +96,9 @@ from langsmith._internal._operations import (
 from langsmith._internal._serde import dumps_json as _dumps_json
 from langsmith.schemas import AttachmentInfo, ExampleWithRuns
 
+_OPENAI_API_KEY = "OPENAI_API_KEY"
+_ANTHROPIC_API_KEY = "ANTHROPIC_API_KEY"
+
 
 def _check_otel_enabled() -> bool:
     """Check if OTEL is enabled and imports are available."""
@@ -8579,62 +8582,104 @@ class Client:
             examples_with_runs=_get_examples_with_runs_iterator(),
         )
 
+    @warn_beta
     def generate_insights(
         self,
-        chat_histories: list[list[dict]],
         *,
+        chat_histories: list[list[dict]],
         instructions: str = DEFAULT_INSTRUCTIONS,
         name: str | None = None,
+        model: Literal["openai", "anthropic"] | None = None,
         openai_api_key: str | None = None,
+        anthropic_api_key: str | None = None,
     ) -> ls_schemas.InsightsReport:
-        """Generate insights over your agent traces.
+        """Generate Insights over your agent chat histories.
+
+        **NOTE**:
+            - Only available to Plus and higher tier LangSmith users.
+            - Insights Agent uses user's model API key. The cost of the report
+                grows linearly with the number of chat histories you upload and the
+                size of each history. For more see:
+                https://docs.langchain.com/langsmith/insights
+            - This method will upload your chat histories as traces to LangSmith.
+            - If you pass in a model API key this will be set as a workspace secret
+                meaning it will be usedin for evaluators and the playground.
 
         Args:
-            chat_histories: A list of chat histories. Each chat history should be a list of messages.
-                We recommend formatting these as OpenAI messages with a "role" and "content" key.
-            instructions: Instructions for the Insights agent.
-                Should focus on what your agent does and what types of insights you want to generate.
+            chat_histories: A list of chat histories. Each chat history should be a
+                list of messages. We recommend formatting these as OpenAI messages with
+                a "role" and "content" key. Max length 1000 items.
+            instructions: Instructions for the Insights agent. Should focus on what
+                your agent does and what types of insights you
+                want to generate.
             name: Name for the generated Insights report.
-            openai_api_key: OpenAI API key to use. Only needed if you have not already stored this in LangSmith.
+            model: Whether to use OpenAI or Anthropic models. This will impact the
+                cost of generating the Insights Report.
+            openai_api_key: OpenAI API key to use. Only needed if you have not already
+                stored this in LangSmith as a workspace secret.
+            anthropic_api_key: Anthropic API key to use. Only needed if you have not
+                already stored this in LangSmith as a workspace secret.
         """
-        self._ensure_openai_api_key(openai_api_key)
+        model = self._ensure_insights_api_key(
+            openai_api_key=openai_api_key,
+            anthropic_api_key=anthropic_api_key,
+            model=model,
+        )
+        if model != "openai":
+            raise ValueError(model)
         project = self._ingest_insights_runs(chat_histories, name)
         config = {
             "name": name,
             "user_context": {
-                "how are your agent traces structured?": "The run.outputs.messages field contains a chat history between the user and the agent. this is all the context you need.",
-                "what would you like to learn about your agent?": instructions,
+                "How are your agent traces structured?": "The run.outputs.messages field contains a chat history between the user and the agent. This is all the context you need.",
+                "What would you like to learn about your agent?": instructions,
             },
-            "last_n_hours": 24,
+            "last_n_hours": 1,
+            "model": model,
         }
         response = self.request_with_retries(
             "POST", f"/sessions/{project.id}/insights", json=config
         )
         ls_utils.raise_for_status_with_text(response)
         res = response.json()
-        res["session_id"] = str(project.id)
-        job = ls_schemas.InsightsReport(
-            **res, tenant_id=self._get_tenant_id(), host_url=self._host_url
+        report = ls_schemas.InsightsReport(
+            **res,
+            session_id=project.id,
+            tenant_id=self._get_tenant_id(),
+            host_url=self._host_url,
         )
         print(  # noqa: T201
-            f"Insights report created! It might take up to 30 minutes to complete. Once the report is completed, you'll be able to see results here: {job.link}"
+            "The Insights Agent is running! This can take up to 30 minutes to complete."
+            " Once the report is completed, you'll be able to see results here: "
+            f"{report.link}"
         )
-        return job
+        return report
 
     def poll_insights(
         self,
-        session_id: str,
-        job_id: str,
         *,
+        id: str | uuid.UUID | None = None,
+        session_id: str | uuid.UUID | None = None,
+        report: ls_schemas.InsightsReport | None = None,
         rate: int = 30,
         timeout: int = 30 * 60,
         verbose: bool = False,
     ) -> ls_schemas.InsightsReport:
-        """Repeatedly checks the status of an insights report and prints a message when complete."""
+        """Poll the status of an insights report."""
+        if not (id and session_id) or report:
+            raise ValueError("Must specify ('id' and 'session_id') or 'report'.")
+        elif (id or session_id) and report:
+            raise ValueError(
+                "Must specify exactly one of ('id' and 'session_id') or 'report'."
+            )
+        elif report:
+            id = report.id
+            session_id = report.session_id
+
         max_tries = max(1, timeout // rate)
         for i in range(max_tries):
             response = self.request_with_retries(
-                "GET", f"/sessions/{session_id}/insights/{job_id}"
+                "GET", f"/sessions/{session_id}/insights/{id}"
             )
             ls_utils.raise_for_status_with_text(response)
             resp_json = response.json()
@@ -8657,22 +8702,42 @@ class Client:
             time.sleep(rate)
         raise TimeoutError("Insights still pending")
 
-    def _ensure_openai_api_key(self, openai_api_key: str | None) -> None:
+    def _ensure_insights_api_key(
+        self,
+        *,
+        openai_api_key: str | None = None,
+        anthropic_api_key: str | None = None,
+        model: Literal["openai", "anthropic"] | None = None,
+    ) -> Literal["openai", "anthropic"]:
         response = self.request_with_retries("GET", "/workspaces/current/secrets")
         ls_utils.raise_for_status_with_text(response)
-        if any(s.get("key") == "OPENAI_API_KEY" for s in response.json()):
-            return
-        openai_api_key = openai_api_key or os.environ.get("OPENAI_API_KEY")
-        if not openai_api_key:
-            raise ValueError(
-                "Please specify OpenAI API key. Note, this will be securely stored in LangSmith."
-            )
+        workspace_keys = {s.get("key") for s in response.json()}
+        target_keys = set()
+        if model in (None, "openai"):
+            target_keys.add(_OPENAI_API_KEY)
+        if model in (None, "anthropic"):
+            target_keys.add(_ANTHROPIC_API_KEY)
+
+        if existing_keys := workspace_keys.intersection(target_keys):
+            return "openai" if _OPENAI_API_KEY in existing_keys else "anthropic"
+        elif model == "openai":
+            api_key = openai_api_key
+            api_var = _OPENAI_API_KEY
+        elif model == "anthropic":
+            api_key = anthropic_api_key
+            api_var = _ANTHROPIC_API_KEY
+        elif openai_api_key or anthropic_api_key:
+            api_key = openai_api_key or anthropic_api_key
+            api_var = _OPENAI_API_KEY if openai_api_key else _ANTHROPIC_API_KEY
+        else:
+            raise ValueError("Must specify openai_api_key or anthropic_api_key.")
         response = self.request_with_retries(
             "POST",
             "/workspaces/current/secrets",
-            json=[{"key": "OPENAI_API_KEY", "value": openai_api_key}],
+            json=[{"key": api_var, "value": api_key}],
         )
         ls_utils.raise_for_status_with_text(response)
+        return "openai" if api_var == _OPENAI_API_KEY else "anthropic"
 
     def _ingest_insights_runs(self, data: list, name: str | None):
         if len(data) > 1000:
