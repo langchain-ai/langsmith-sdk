@@ -1,4 +1,3 @@
-import * as uuid from "uuid";
 import { Client } from "./client.js";
 import { isTracingEnabled } from "./env.js";
 import {
@@ -796,36 +795,6 @@ export function isRunnableConfigLike(x?: unknown): x is RunnableConfigLike {
       // Or it's an array with a LangChainTracerLike object within it
       containsLangChainTracerLike((x as RunnableConfigLike).callbacks))
   );
-}
-
-function _parseDottedOrder(dottedOrder: string): [Date, string][] {
-  const parts = dottedOrder.split(".");
-  return parts.map((part) => {
-    const timestampStr = part.slice(0, -36);
-    const uuidStr = part.slice(-36);
-
-    // Parse timestamp: "%Y%m%dT%H%M%S%fZ" format
-    // Example: "20231215T143045123456Z"
-    const year = parseInt(timestampStr.slice(0, 4));
-    const month = parseInt(timestampStr.slice(4, 6)) - 1; // JS months are 0-indexed
-    const day = parseInt(timestampStr.slice(6, 8));
-    const hour = parseInt(timestampStr.slice(9, 11));
-    const minute = parseInt(timestampStr.slice(11, 13));
-    const second = parseInt(timestampStr.slice(13, 15));
-    const microsecond = parseInt(timestampStr.slice(15, 21));
-
-    const timestamp = new Date(
-      year,
-      month,
-      day,
-      hour,
-      minute,
-      second,
-      microsecond / 1000
-    );
-
-    return [timestamp, uuidStr] as [Date, string];
-  });
 }
 
 function _getWriteReplicasFromEnv(): WriteReplica[] {
