@@ -2479,3 +2479,60 @@ test("traceable with invalid properties in usage metadata", async () => {
     total_tokens: 20,
   });
 });
+
+test("traceable should ignore undefined id", async () => {
+  const { client, callSpy } = mockClient();
+  const traceableLLM = traceable(
+    (_input: Record<string, unknown>) => {
+      return {
+        messages: [
+          {
+            role: "assistant",
+            content: "Hello, world!",
+          },
+        ],
+        usage_metadata: {
+          foo: "bar",
+          input_tokens: 10,
+          output_tokens: 10,
+          total_tokens: 20,
+        },
+      };
+    },
+    {
+      // simulate bad spread
+      id: undefined,
+      dotted_order: undefined,
+      trace_id: undefined,
+      name: "extra_usage_metadata_run",
+      start_time: Date.now(),
+      metadata: {
+        ls_provider: "anthropic",
+        ls_model_name: "claude-sonnet-4-20250514",
+      },
+      client,
+      run_type: "llm",
+      tracingEnabled: true,
+    }
+  );
+
+  await traceableLLM({});
+
+  await client.awaitPendingTraceBatches();
+
+  expect(callSpy.mock.calls).toHaveLength(2);
+  const tree = getAssumedTreeFromCalls(callSpy.mock.calls);
+  console.log(tree);
+  expect(tree.nodes).toEqual(["extra_usage_metadata_run:0"]);
+  expect(tree.data["extra_usage_metadata_run:0"].id).toBeDefined();
+  expect(tree.data["extra_usage_metadata_run:0"].dotted_order).toBeDefined();
+  expect(tree.data["extra_usage_metadata_run:0"].trace_id).toBeDefined();
+  expect(tree.data["extra_usage_metadata_run:0"].id).toEqual(
+    tree.data["extra_usage_metadata_run:0"].trace_id
+  );
+  expect(
+    tree.data["extra_usage_metadata_run:0"].dotted_order?.includes(
+      tree.data["extra_usage_metadata_run:0"].id
+    )
+  ).toBe(true);
+});
