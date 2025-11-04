@@ -1037,7 +1037,9 @@ describe("wrapAISDK", () => {
           };
         },
         processOutputs: (outputs) => {
-          const originalTracedMessage = { ...outputs };
+          // @ts-expect-error - outputs is wrapped one level deep
+          outputs.content;
+          const originalTracedMessage = { ...outputs.outputs };
           return {
             ...originalTracedMessage,
             content: "REDACTED",
@@ -1053,8 +1055,10 @@ describe("wrapAISDK", () => {
           };
         },
         processChildLLMRunOutputs: (outputs) => {
+          // @ts-expect-error - no wrapping for child outputs
+          outputs.outputs;
           return {
-            providerMetadata: outputs.providerMetadata,
+            ...outputs,
             content: "REDACTED CHILD OUTPUTS",
             role: "assistant",
           };

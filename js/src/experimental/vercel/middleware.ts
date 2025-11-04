@@ -23,7 +23,10 @@ const _formatTracedInputs = (params: LanguageModelV2CallOptions) => {
     return params;
   }
   if (Array.isArray(prompt)) {
-    return { ...rest, messages: prompt.map(convertMessageToTracedFormat) };
+    return {
+      ...rest,
+      messages: prompt.map((message) => convertMessageToTracedFormat(message)),
+    };
   }
   return rest;
 };
@@ -33,11 +36,9 @@ const _formatTracedOutputs = (outputs: Record<string, unknown>) => {
   if (formattedOutputs.role == null) {
     formattedOutputs.role = formattedOutputs.type ?? "assistant";
   }
-  return {
-    message: convertMessageToTracedFormat(
-      formattedOutputs as LanguageModelV2Message
-    ),
-  };
+  return convertMessageToTracedFormat(
+    formattedOutputs as LanguageModelV2Message
+  );
 };
 
 const setUsageMetadataOnRunTree = (
@@ -284,7 +285,7 @@ export function LangSmithMiddleware(config?: {
                 }
               );
               const outputFormatter =
-                lsConfig?.processOutputs ?? _formatTracedOutputs;
+                lsConfig?.processOutputs ?? convertMessageToTracedFormat;
               const formattedOutputs = await outputFormatter(output);
               await runTree?.end(formattedOutputs);
             } catch (error: any) {
