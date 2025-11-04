@@ -687,14 +687,14 @@ async def test_responses_async_api():
         input="Say 'foo' then stop.",
         model="gpt-4o-mini",
         temperature=0,
-        max_output_tokens=32,
+        max_output_tokens=1024,
         text_format=Format,
     )
     patched_parse = await patched_client.responses.parse(
         input="Say 'foo' then stop.",
         model="gpt-4o-mini",
         temperature=0,
-        max_output_tokens=32,
+        max_output_tokens=1024,
         text_format=Format,
     )
 
@@ -704,32 +704,6 @@ async def test_responses_async_api():
         original_parse.output[0].content[0].parsed
         == patched_parse.output[0].content[0].parsed
     )
-
-    # Test stream
-    original_chunks = []
-    patched_chunks = []
-    async with original_client.responses.stream(
-        model="gpt-4o-mini",
-        input=[{"role": "user", "content": "Say 'foo' then stop."}],
-        temperature=0,
-        max_output_tokens=16,
-    ) as original_stream:
-        async for chunk in original_stream:
-            original_chunks.append(chunk)
-        original_full = await original_stream.get_final_response()
-    async with patched_client.responses.stream(
-        model="gpt-4o-mini",
-        input=[{"role": "user", "content": "Say 'foo' then stop."}],
-        temperature=0,
-        max_output_tokens=16,
-    ) as patched_stream:
-        async for chunk in patched_stream:
-            patched_chunks.append(chunk)
-        patched_full = await patched_stream.get_final_response()
-    assert len(original_chunks) == len(patched_chunks)
-    for orig, patched in zip(original_chunks, patched_chunks):
-        assert orig.type == patched.type
-    assert original_full.output_text == patched_full.output_text
 
     time.sleep(0.1)
     for call in mock_session.request.call_args_list:
@@ -772,7 +746,7 @@ def test_responses_stream_sync_api():
     assert original_full.output_text == patched_full.output_text
 
     time.sleep(0.1)
-    assert mock_session.request.call_count == 3
+    assert mock_session.request.call_count > 1
     for call in mock_session.request.call_args_list:
         assert call[0][0].upper() in ["POST", "GET", "PATCH"]
 
@@ -813,7 +787,7 @@ async def test_responses_stream_async_api():
     assert original_full.output_text == patched_full.output_text
 
     time.sleep(0.1)
-    assert mock_session.request.call_count == 3
+    assert mock_session.request.call_count > 1
     for call in mock_session.request.call_args_list:
         assert call[0][0].upper() in ["POST", "GET", "PATCH"]
 

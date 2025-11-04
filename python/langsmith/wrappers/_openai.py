@@ -73,10 +73,12 @@ def _process_inputs(d: dict) -> dict:
         text_format = d["text_format"]
         if hasattr(text_format, "model_json_schema"):
             try:
-                d["text_format"] = text_format.model_json_schema()
+                return {
+                    **d,
+                    "text_format": text_format.model_json_schema(),
+                }
             except Exception:
                 pass
-
     return d
 
 
@@ -339,7 +341,6 @@ def _get_wrapper(
 
     @functools.wraps(original_create)
     async def acreate(*args, **kwargs):
-        kwargs = _process_inputs(kwargs)
         decorator = run_helpers.traceable(
             name=name,
             run_type="llm",
@@ -378,7 +379,6 @@ def _get_parse_wrapper(
 
     @functools.wraps(original_parse)
     async def aparse(*args, **kwargs):
-        kwargs = _process_inputs(kwargs)
         decorator = run_helpers.traceable(
             name=name,
             run_type="llm",
