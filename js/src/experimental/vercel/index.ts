@@ -310,6 +310,13 @@ export type WrapAISDKConfig<
       ? AggregatedDoStreamOutput
       : Awaited<ReturnType<LanguageModelV2["doGenerate"]>>
   ) => Record<string, unknown>;
+
+  /**
+   * Whether to include additional fields such as intermediate steps in traced
+   * output messages.
+   * @default false
+   */
+  traceResponseMetadata?: boolean;
 };
 
 const _extractChildRunConfig = (lsConfig?: WrapAISDKConfig) => {
@@ -530,7 +537,7 @@ const wrapAISDK = <
                 content: content ?? outputs.outputs.text,
                 role: "assistant",
               },
-              { steps }
+              resolvedLsConfig?.traceResponseMetadata ? { steps } : undefined
             );
           } else {
             return outputs;
@@ -715,12 +722,15 @@ const wrapAISDK = <
             ) {
               return outputs;
             }
-            let responseMetadata: Record<string, unknown> = {};
-            try {
-              const steps = await outputs.outputs.steps;
-              responseMetadata = { steps };
-            } catch (e: unknown) {
-              // Do nothing if step parsing fails
+            let responseMetadata: Record<string, unknown> | undefined =
+              undefined;
+            if (resolvedLsConfig?.traceResponseMetadata) {
+              try {
+                const steps = await outputs.outputs.steps;
+                responseMetadata = { steps };
+              } catch (e: unknown) {
+                // Do nothing if step parsing fails
+              }
             }
             return convertMessageToTracedFormat(
               {
