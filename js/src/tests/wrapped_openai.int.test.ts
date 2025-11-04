@@ -774,6 +774,7 @@ test("responses.parse", async () => {
   expect(response).toBeDefined();
   expect(response.output_parsed).toBeDefined();
   expect(typeof response.output_parsed?.response).toBe("string");
+  expect(callSpy.mock.calls.length).toBeGreaterThan(0);
   for (const call of callSpy.mock.calls) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect(["POST", "PATCH"]).toContain((call[1] as any)["method"]);
@@ -786,6 +787,50 @@ test("responses.parse", async () => {
   }
   callSpy.mockClear();
 });
+
+test("responses.parse streaming", async () => {
+  const { client, callSpy } = mockClient();
+  const openai = wrapOpenAI(new OpenAI(), {
+    client,
+    tracingEnabled: true,
+  });
+
+  const stream = await openai.responses.stream({
+    model: "gpt-4.1-nano",
+    input: [
+      {
+        role: "user",
+        content: [{ type: "input_text", text: "Say hello" }],
+      },
+    ],
+    text: {
+      format: zodTextFormat(
+        z.object({
+          response: z.string(),
+        }),
+        "response"
+      ),
+    },
+  });
+  const chunks: unknown[] = [];
+  for await (const chunk of stream) {
+    chunks.push(chunk);
+  }
+  expect(chunks.length).toBeGreaterThan(0);
+  expect(callSpy.mock.calls.length).toBeGreaterThan(0);
+  for (const call of callSpy.mock.calls) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(["POST", "PATCH"]).toContain((call[1] as any)["method"]);
+    const body = parseRequestBody((call[1] as any).body);
+    expect(body.extra.metadata).toMatchObject({
+      ls_model_name: "gpt-4.1-nano",
+      ls_model_type: "chat",
+      ls_provider: "openai",
+    });
+  }
+  callSpy.mockClear();
+});
+
 
 test("responses other methods (untraced)", async () => {
   const { client, callSpy } = mockClient();

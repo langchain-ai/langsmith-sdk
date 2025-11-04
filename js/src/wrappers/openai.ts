@@ -30,6 +30,8 @@ type OpenAIType = {
     retrieve: (...args: any[]) => any;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     parse: (...args: any[]) => any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    stream: (...args: any[]) => any;
   };
 };
 
@@ -541,6 +543,34 @@ export const wrapOpenAI = <T extends OpenAIType>(
     ) {
       tracedOpenAIClient.responses.parse = traceable(
         openai.responses.parse.bind(openai.responses),
+        {
+          name: chatName,
+          run_type: "llm",
+          aggregator: responsesAggregator,
+          argsConfigPath: [1, "langsmithExtra"],
+          getInvocationParams: (payload: unknown) => {
+            if (typeof payload !== "object" || payload == null)
+              return undefined;
+            // Handle responses API parameters
+            const params = payload as any;
+            return {
+              ls_provider: provider,
+              ls_model_type: "chat",
+              ls_model_name: params.model || "unknown",
+            };
+          },
+          processOutputs: processChatCompletion,
+          ...options,
+        }
+      );
+    }
+    
+    if (
+      tracedOpenAIClient.responses &&
+      typeof tracedOpenAIClient.responses.stream === "function"
+    ) {
+      tracedOpenAIClient.responses.stream = traceable(
+        openai.responses.stream.bind(openai.responses),
         {
           name: chatName,
           run_type: "llm",
