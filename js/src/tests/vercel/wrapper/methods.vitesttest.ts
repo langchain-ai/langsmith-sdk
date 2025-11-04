@@ -161,11 +161,73 @@ describe("wrapAISDK", () => {
 
       // The first createRun should have the AI SDK metadata with custom fields
       const generateTextRun = mockHttpRequests[0];
+      const updateTextRun = mockHttpRequests[3];
       expect(generateTextRun.body.extra.metadata).toMatchObject({
         customField: "test-value",
         version: "2.0",
         ai_sdk_method: "ai.generateText",
       });
+      expect(updateTextRun.body.outputs).not.toHaveProperty(
+        "response_metadata"
+      );
+    });
+
+    it("should allow configuring traceResponseMetadata", async () => {
+      const wrappedWithMetadata = wrapAISDK(
+        {
+          wrapLanguageModel: ai.wrapLanguageModel,
+          generateText: ai.generateText,
+          streamText: ai.streamText,
+          generateObject: ai.generateObject,
+          streamObject: ai.streamObject,
+        },
+        {
+          name: "custom-tracer",
+          traceResponseMetadata: true,
+          client: mockClient as any,
+        }
+      );
+
+      const mockLangModel = new MockLanguageModelV2({
+        modelId: "metadata-test-model",
+        doGenerate: async () => ({
+          content: [{ type: "text" as const, text: "Metadata test" }],
+          finishReason: "stop" as const,
+          usage: {
+            promptTokens: 5,
+            completionTokens: 3,
+            inputTokens: 5,
+            outputTokens: 3,
+            totalTokens: 8,
+          },
+          warnings: [],
+        }),
+      });
+
+      await wrappedWithMetadata.generateText({
+        model: mockLangModel,
+        prompt: "Test with traced steps",
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 1));
+
+      expect(mockHttpRequests.length).toBe(4); // 2 createRun + 2 updateRun
+
+      // Verify sequence: createRun, createRun, updateRun, updateRun
+      expect(mockHttpRequests).toMatchObject([
+        { type: "createRun" },
+        { type: "createRun" },
+        { type: "updateRun" },
+        { type: "updateRun" },
+      ]);
+      expect(mockHttpRequests[1].type).toBe("createRun");
+      expect(mockHttpRequests[2].type).toBe("updateRun");
+      expect(mockHttpRequests[3].type).toBe("updateRun");
+
+      const updateTextRun = mockHttpRequests[3];
+      expect(updateTextRun.body.outputs.response_metadata).toHaveProperty(
+        "steps"
+      );
     });
 
     it("should send error information to LangSmith on model failures", async () => {
@@ -1037,7 +1099,9 @@ describe("wrapAISDK", () => {
           };
         },
         processOutputs: (outputs) => {
-          const originalTracedMessage = { ...outputs };
+          // @ts-expect-error - outputs is wrapped one level deep
+          outputs.content;
+          const originalTracedMessage = { ...outputs.outputs };
           return {
             ...originalTracedMessage,
             content: "REDACTED",
@@ -1053,8 +1117,10 @@ describe("wrapAISDK", () => {
           };
         },
         processChildLLMRunOutputs: (outputs) => {
+          // @ts-expect-error - no wrapping for child outputs
+          outputs.outputs;
           return {
-            providerMetadata: outputs.providerMetadata,
+            ...outputs,
             content: "REDACTED CHILD OUTPUTS",
             role: "assistant",
           };

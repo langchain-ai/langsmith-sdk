@@ -368,7 +368,7 @@ test("process inputs and outputs", async () => {
     },
     processOutputs: (outputs) => {
       return {
-        providerMetadata: outputs.providerMetadata,
+        providerMetadata: outputs.outputs.providerMetadata,
         role: "assistant",
         content: "REDACTED",
       };
@@ -384,7 +384,7 @@ test("process inputs and outputs", async () => {
     },
     processChildLLMRunOutputs: (outputs) => {
       return {
-        providerMetadata: outputs.providerMetadata,
+        ...outputs,
         content: "REDACTED CHILD OUTPUTS",
         role: "assistant",
       };

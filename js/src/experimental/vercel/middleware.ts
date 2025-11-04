@@ -23,7 +23,10 @@ const _formatTracedInputs = (params: LanguageModelV2CallOptions) => {
     return params;
   }
   if (Array.isArray(prompt)) {
-    return { ...rest, messages: prompt.map(convertMessageToTracedFormat) };
+    return {
+      ...rest,
+      messages: prompt.map((message) => convertMessageToTracedFormat(message)),
+    };
   }
   return rest;
 };
