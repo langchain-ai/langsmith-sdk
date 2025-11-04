@@ -64,6 +64,24 @@ def _strip_not_given(d: dict) -> dict:
         return d
 
 
+def _process_inputs(d: dict) -> dict:
+    """Strip NotGiven values and serialize text_format to JSON schema."""
+    d = _strip_not_given(d)
+
+    # Convert text_format (Pydantic model) to JSON schema if present
+    if "text_format" in d:
+        text_format = d["text_format"]
+        if hasattr(text_format, "model_json_schema"):
+            try:
+                return {
+                    **d,
+                    "text_format": text_format.model_json_schema(),
+                }
+            except Exception:
+                pass
+    return d
+
+
 def _infer_invocation_params(model_type: str, provider: str, kwargs: dict):
     stripped = _strip_not_given(kwargs)
 
@@ -313,7 +331,7 @@ def _get_wrapper(
             name=name,
             run_type="llm",
             reduce_fn=reduce_fn if kwargs.get("stream") is True else None,
-            process_inputs=_strip_not_given,
+            process_inputs=_process_inputs,
             _invocation_params_fn=invocation_params_fn,
             process_outputs=process_outputs,
             **textra,
@@ -323,12 +341,11 @@ def _get_wrapper(
 
     @functools.wraps(original_create)
     async def acreate(*args, **kwargs):
-        kwargs = _strip_not_given(kwargs)
         decorator = run_helpers.traceable(
             name=name,
             run_type="llm",
             reduce_fn=reduce_fn if kwargs.get("stream") is True else None,
-            process_inputs=_strip_not_given,
+            process_inputs=_process_inputs,
             _invocation_params_fn=invocation_params_fn,
             process_outputs=process_outputs,
             **textra,
@@ -353,7 +370,7 @@ def _get_parse_wrapper(
             name=name,
             run_type="llm",
             reduce_fn=None,
-            process_inputs=_strip_not_given,
+            process_inputs=_process_inputs,
             _invocation_params_fn=invocation_params_fn,
             process_outputs=process_outputs,
             **textra,
@@ -362,12 +379,11 @@ def _get_parse_wrapper(
 
     @functools.wraps(original_parse)
     async def aparse(*args, **kwargs):
-        kwargs = _strip_not_given(kwargs)
         decorator = run_helpers.traceable(
             name=name,
             run_type="llm",
             reduce_fn=None,
-            process_inputs=_strip_not_given,
+            process_inputs=_process_inputs,
             _invocation_params_fn=invocation_params_fn,
             process_outputs=process_outputs,
             **textra,
