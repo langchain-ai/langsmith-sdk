@@ -1041,6 +1041,7 @@ async def test_traceable_async(enabled: Union[bool, Literal["local"]]):
     run = cast(RunTree, run)
     assert run.name == "expand_and_answer_questions"
 
+
 @pytest.mark.parametrize("enabled", [True, "local"])
 def test_traceable_to_trace(enabled: Union[bool, Literal["local"]]):
     @traceable
