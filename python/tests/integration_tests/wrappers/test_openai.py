@@ -772,6 +772,7 @@ def test_responses_stream_sync_api():
     assert original_full.output_text == patched_full.output_text
 
     time.sleep(0.1)
+    assert mock_session.request.call_count == 3
     for call in mock_session.request.call_args_list:
         assert call[0][0].upper() in ["POST", "GET", "PATCH"]
 
@@ -812,10 +813,11 @@ async def test_responses_stream_async_api():
     assert original_full.output_text == patched_full.output_text
 
     time.sleep(0.1)
+    assert mock_session.request.call_count == 3
     for call in mock_session.request.call_args_list:
         assert call[0][0].upper() in ["POST", "GET", "PATCH"]
 
-    _collect_requests(mock_session, "test_responses_stream_sync_api")
+    _collect_requests(mock_session, "test_responses_stream_async_api")
 
 
 @pytest.mark.asyncio

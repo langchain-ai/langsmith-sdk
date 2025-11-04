@@ -393,46 +393,6 @@ def _get_parse_wrapper(
     return aparse if run_helpers.is_async(original_parse) else parse
 
 
-def _get_stream_wrapper(
-    original_stream: Callable,
-    name: str,
-    tracing_extra: Optional[TracingExtra] = None,
-    invocation_params_fn: Optional[Callable] = None,
-    process_outputs: Optional[Callable] = None,
-) -> Callable:
-    textra = tracing_extra or {}
-
-    @functools.wraps(original_stream)
-    def create(*args, **kwargs):
-        decorator = run_helpers.traceable(
-            name=name,
-            run_type="llm",
-            reduce_fn=_reduce_response_events,
-            process_inputs=_process_inputs,
-            _invocation_params_fn=invocation_params_fn,
-            process_outputs=process_outputs,
-            **textra,
-        )
-
-        return decorator(original_stream)(*args, **kwargs)
-
-    @functools.wraps(original_stream)
-    async def acreate(*args, **kwargs):
-        kwargs = _process_inputs(kwargs)
-        decorator = run_helpers.traceable(
-            name=name,
-            run_type="llm",
-            reduce_fn=_reduce_response_events,
-            process_inputs=_process_inputs,
-            _invocation_params_fn=invocation_params_fn,
-            process_outputs=process_outputs,
-            **textra,
-        )
-        return await decorator(original_stream)(*args, **kwargs)
-
-    return acreate if run_helpers.is_async(original_stream) else create
-
-
 def _reduce_response_events(events: list[ResponseStreamEvent]) -> dict:
     for event in events:
         if event.type == "response.completed":
@@ -593,16 +553,6 @@ def wrap_openai(
                 client.responses.parse,
                 chat_name,
                 _process_responses_api_output,
-                tracing_extra=tracing_extra,
-                invocation_params_fn=functools.partial(
-                    _infer_invocation_params, "chat", ls_provider
-                ),
-            )
-        if hasattr(client.responses, "stream"):
-            client.responses.stream = _get_stream_wrapper(  # type: ignore[method-assign]
-                client.responses.stream,
-                chat_name,
-                process_outputs=_process_responses_api_output,
                 tracing_extra=tracing_extra,
                 invocation_params_fn=functools.partial(
                     _infer_invocation_params, "chat", ls_provider
