@@ -564,7 +564,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
         }
       );
     }
-    
+
     if (
       tracedOpenAIClient.responses &&
       typeof tracedOpenAIClient.responses.stream === "function"

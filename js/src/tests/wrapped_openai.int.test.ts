@@ -795,7 +795,7 @@ test("responses.parse streaming", async () => {
     tracingEnabled: true,
   });
 
-  const stream = await openai.responses.stream({
+  const stream = openai.responses.stream({
     model: "gpt-4.1-nano",
     input: [
       {
@@ -830,7 +830,6 @@ test("responses.parse streaming", async () => {
   }
   callSpy.mockClear();
 });
-
 
 test("responses other methods (untraced)", async () => {
   const { client, callSpy } = mockClient();
