@@ -851,3 +851,5 @@ const wrapAISDK = <
 };
 
 export { wrapAISDK };
+
+export { convertMessageToTracedFormat };
