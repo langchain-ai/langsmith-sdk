@@ -214,7 +214,12 @@ describe("wrapAISDK", () => {
       expect(mockHttpRequests.length).toBe(4); // 2 createRun + 2 updateRun
 
       // Verify sequence: createRun, createRun, updateRun, updateRun
-      expect(mockHttpRequests).toMatchObject([{ type: "createRun" }, { type: "createRun" }, { type: "updateRun" }, { type: "updateRun" }])
+      expect(mockHttpRequests).toMatchObject([
+        { type: "createRun" },
+        { type: "createRun" },
+        { type: "updateRun" },
+        { type: "updateRun" },
+      ]);
       expect(mockHttpRequests[1].type).toBe("createRun");
       expect(mockHttpRequests[2].type).toBe("updateRun");
       expect(mockHttpRequests[3].type).toBe("updateRun");
