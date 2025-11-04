@@ -7,4 +7,3 @@ export { uuidFromTime } from "./utils/_uuid.js";
 export function uuid7(): string {
   return uuidv7();
 }
-
