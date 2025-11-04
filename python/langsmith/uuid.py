@@ -2,6 +2,7 @@
 
 These helpers expose utilities for generating UUID v7 identifiers in user code.
 """
+
 from __future__ import annotations
 
 import datetime as _dt
@@ -35,4 +36,3 @@ def uuid7_from_datetime(dt: _dt.datetime) -> _uuid.UUID:
 
 
 __all__ = ["uuid7", "uuid7_from_datetime"]
-

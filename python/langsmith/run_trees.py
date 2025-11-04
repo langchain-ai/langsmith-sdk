@@ -14,6 +14,7 @@ from uuid import UUID
 from typing_extensions import TypedDict
 
 from langsmith._internal._uuid import uuid7, warn_if_not_uuid_v7
+from langsmith.uuid import uuid7_from_datetime
 
 try:
     from pydantic.v1 import Field, root_validator  # type: ignore[import]
@@ -280,6 +281,22 @@ class RunTree(ls_schemas.RunBase):
         if values.get("replicas") is None:
             values["replicas"] = _REPLICAS.get()
         values["replicas"] = _ensure_write_replicas(values["replicas"])
+        return values
+
+    @root_validator(pre=False)
+    def ensure_dotted_order(cls, values: dict) -> dict:
+        """Ensure the dotted order of the run."""
+        current_dotted_order = values.get("dotted_order")
+        if current_dotted_order and current_dotted_order.strip():
+            return values
+        current_dotted_order = _create_current_dotted_order(
+            values["start_time"], values["id"]
+        )
+        parent_dotted_order = values.get("parent_dotted_order")
+        if parent_dotted_order is not None:
+            values["dotted_order"] = parent_dotted_order + "." + current_dotted_order
+        else:
+            values["dotted_order"] = current_dotted_order
         return values
 
     @property
@@ -1087,3 +1104,12 @@ def _parse_dotted_order(dotted_order: str) -> list[tuple[datetime, UUID]]:
 
 _CLIENT: Optional[Client] = _context._GLOBAL_CLIENT
 __all__ = ["RunTree", "RunTree"]
+
+
+def _create_current_dotted_order(
+    start_time: Optional[datetime], run_id: Optional[UUID]
+) -> str:
+    """Create the current dotted order."""
+    st = start_time or datetime.now(timezone.utc)
+    id_ = run_id or uuid7_from_datetime(st)
+    return st.strftime("%Y%m%dT%H%M%S%fZ") + str(id_)

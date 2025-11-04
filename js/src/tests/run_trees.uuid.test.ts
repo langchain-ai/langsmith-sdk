@@ -41,7 +41,7 @@ test("traceable produces UUIDv7 and start_time matches run id", async () => {
   expect(updatedArg.start_time).toBeDefined();
 
   // UUID version v7
-  const createdId: string = createdArg.id;
+  const createdId: string = createdArg.id!;
   expect(getUuidVersion(createdId)).toBe(7);
   // start_time encoded in v7 should match provided ms
   expect(uuidV7Ms(createdId)).toBe(fixedMs);
