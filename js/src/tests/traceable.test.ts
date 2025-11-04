@@ -2522,7 +2522,6 @@ test("traceable should ignore undefined id", async () => {
 
   expect(callSpy.mock.calls).toHaveLength(2);
   const tree = getAssumedTreeFromCalls(callSpy.mock.calls);
-  console.log(tree);
   expect(tree.nodes).toEqual(["extra_usage_metadata_run:0"]);
   expect(tree.data["extra_usage_metadata_run:0"].id).toBeDefined();
   expect(tree.data["extra_usage_metadata_run:0"].dotted_order).toBeDefined();
