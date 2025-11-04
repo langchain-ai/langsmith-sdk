@@ -384,7 +384,7 @@ test("process inputs and outputs", async () => {
     },
     processChildLLMRunOutputs: (outputs) => {
       return {
-        providerMetadata: outputs.providerMetadata,
+        ...outputs,
         content: "REDACTED CHILD OUTPUTS",
         role: "assistant",
       };
