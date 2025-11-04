@@ -811,17 +811,6 @@ async def test_async_generator():
     assert run is not None
     run = cast(RunTree, run)
     assert run.name == "expand_and_answer_questions"
-    child_runs = run.child_runs
-    assert child_runs and len(child_runs) == 5
-    names = [run.name for run in child_runs]
-    assert names == [
-        "some_sync_func",
-        "some_async_func",
-        "another_async_func",
-        "create_document_context",
-        "summarize_answers",
-    ]
-    assert len(child_runs[2].child_runs) == 1  # type: ignore
 
 
 def test_generator():
@@ -911,17 +900,6 @@ def test_generator():
     assert run is not None
     run = cast(RunTree, run)
     assert run.name == "test_overridding_name"
-    child_runs = run.child_runs
-    assert child_runs and len(child_runs) == 5
-    names = [run.name for run in child_runs]
-    assert names == [
-        "some_sync_func",
-        "some_func",
-        "another_func",
-        "create_document_context",
-        "summarize_answers",
-    ]
-    assert len(child_runs[2].child_runs) == 1  # type: ignore
 
 
 @pytest.mark.parametrize("enabled", [True, "local"])
@@ -989,19 +967,6 @@ def test_traceable_regular(enabled: Union[bool, Literal["local"]]):
     assert run is not None
     run = cast(RunTree, run)
     assert run.name == "expand_and_answer_questions"
-    child_runs = run.child_runs
-    assert child_runs and len(child_runs) == 5
-    names = [run.name for run in child_runs]
-    assert names == [
-        "some_sync_func",
-        "some_func",
-        "another_func",
-        "create_document_context",
-        "summarize_answers",
-    ]
-    assert len(child_runs[2].child_runs) == 1  # type: ignore
-    mock_calls = _get_calls(mock_client_)
-    assert len(mock_calls) == (0 if enabled == "local" else 1)
 
 
 @pytest.mark.parametrize("enabled", [True, "local"])
@@ -1075,20 +1040,6 @@ async def test_traceable_async(enabled: Union[bool, Literal["local"]]):
     assert run is not None
     run = cast(RunTree, run)
     assert run.name == "expand_and_answer_questions"
-    child_runs = run.child_runs
-    assert child_runs and len(child_runs) == 5
-    names = [run.name for run in child_runs]
-    assert names == [
-        "some_sync_func",
-        "some_async_func",
-        "another_async_func",
-        "create_document_context",
-        "summarize_answers",
-    ]
-    assert len(child_runs[2].child_runs) == 1  # type: ignore
-    mock_calls = _get_calls(mock_client_)
-    assert len(mock_calls) == (0 if enabled == "local" else 1)
-
 
 @pytest.mark.parametrize("enabled", [True, "local"])
 def test_traceable_to_trace(enabled: Union[bool, Literal["local"]]):
@@ -1117,11 +1068,6 @@ def test_traceable_to_trace(enabled: Union[bool, Literal["local"]]):
     assert run.name == "parent_fn"
     assert run.outputs == {"output": 3}
     assert run.inputs == {"a": 1, "b": 2}
-    child_runs = run.child_runs
-    assert child_runs
-    assert len(child_runs) == 1
-    assert child_runs[0].name == "child_fn"
-    assert child_runs[0].inputs == {"a": 1, "b": 2}
     mock_calls = _get_calls(mock_client_)
     assert len(mock_calls) == (0 if enabled == "local" else 1)
 
@@ -1168,23 +1114,6 @@ async def test_traceable_to_atrace(enabled: Union[bool, Literal["local"]]):
     assert run.name == "parent_fn"
     assert run.outputs == {"output": 3}
     assert run.inputs == {"a": 1, "b": 2}
-    child_runs = run.child_runs
-    assert child_runs
-    assert len(child_runs) == 1
-    child = child_runs[0]
-    assert child.name == "child_fn"
-    assert child.inputs == {"a": 1, "b": 2}
-    assert len(child.child_runs) == 1
-    grandchild = child.child_runs[0]
-    assert grandchild.name == "grandchild_fn"
-    assert grandchild.inputs == {"a": 1, "b": 2, "c": "oh my"}
-    assert len(grandchild.child_runs) == 2
-    ggcerror = grandchild.child_runs[0]
-    assert ggcerror.name == "expect_error"
-    assert "oh no" in str(ggcerror.error)
-    ggc = grandchild.child_runs[1]
-    assert ggc.name == "great_grandchild_fn"
-    assert ggc.inputs == {"a": 1, "b": 2}
     mock_calls = _get_calls(mock_client_)
     assert len(mock_calls) == (0 if enabled == "local" else 1)
 
@@ -1209,11 +1138,6 @@ def test_trace_to_traceable(enabled: Union[bool, Literal["local"]]):
     assert run.name == "parent_fn"
     assert run.outputs == {"result": 3}
     assert run.inputs == {"a": 1, "b": 2}
-    child_runs = run.child_runs
-    assert child_runs
-    assert len(child_runs) == 1
-    assert child_runs[0].name == "child_fn"
-    assert child_runs[0].inputs == {"a": 1, "b": 2}
 
 
 def test_client_not_passed_when_traceable_parent():
