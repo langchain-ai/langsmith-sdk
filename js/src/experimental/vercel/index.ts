@@ -511,10 +511,13 @@ const wrapAISDK = <
               return outputs;
             }
             const { content } = lastStep;
-            return convertMessageToTracedFormat({
-              content: content ?? outputs.outputs.text,
-              role: "assistant",
-            });
+            return {
+              message: convertMessageToTracedFormat({
+                content: content ?? outputs.outputs.text,
+                role: "assistant",
+              }),
+              steps,
+            };
           } else {
             return outputs;
           }
@@ -595,10 +598,16 @@ const wrapAISDK = <
             );
             return processedOutputs;
           }
-          if (outputs.outputs == null || typeof outputs.outputs !== "object") {
+          if (
+            outputs.outputs == null ||
+            typeof outputs.outputs !== "object" ||
+            typeof outputs.outputs.object !== "object"
+          ) {
             return outputs;
           }
-          return outputs.outputs.object ?? outputs;
+          return {
+            object: outputs.outputs.object,
+          };
         },
       }
     ) as (
@@ -692,10 +701,12 @@ const wrapAISDK = <
             ) {
               return outputs;
             }
-            return convertMessageToTracedFormat({
-              content,
-              role: "assistant",
-            });
+            return {
+              message: convertMessageToTracedFormat({
+                content,
+                role: "assistant",
+              }),
+            };
           } catch (e: unknown) {
             // Handle parsing failures without a log
             return outputs;
@@ -783,7 +794,7 @@ const wrapAISDK = <
             if (object == null || typeof object !== "object") {
               return outputs;
             }
-            return object;
+            return { object };
           } catch (e: unknown) {
             // Handle parsing failures without a log
             return outputs;
