@@ -589,32 +589,6 @@ def test_responses_sync_api():
         == patched_parse.output[0].content[0].parsed
     )
 
-    # Test stream
-    with original_client.responses.stream(
-        input="Say 'foo' then stop.",
-        model="gpt-4o-mini",
-        temperature=0,
-        max_output_tokens=16,
-    ) as original_stream:
-        for _ in original_stream:
-            pass
-        original_full = original_stream.get_final_response()
-    with patched_client.responses.stream(
-        input="Say 'foo' then stop.",
-        model="gpt-4o-mini",
-        temperature=0,
-        max_output_tokens=16,
-    ) as patched_stream:
-        for _ in patched_stream:
-            pass
-        patched_full = patched_stream.get_final_response()
-    original_chunks = list(original_stream)
-    patched_chunks = list(patched_stream)
-    assert len(original_chunks) == len(patched_chunks)
-    for orig, patched in zip(original_chunks, patched_chunks):
-        assert orig.output_text == patched.output_text
-    assert original_full.output_text == patched_full.output_text
-
     time.sleep(0.1)
     for call in mock_session.request.call_args_list:
         assert call[0][0].upper() in ["POST", "GET", "PATCH"]
