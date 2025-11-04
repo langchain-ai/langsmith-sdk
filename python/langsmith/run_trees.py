@@ -253,9 +253,7 @@ class RunTree(ls_schemas.RunBase):
         if "id" not in values:
             # Generate UUID from start_time if available
             if "start_time" in values and values["start_time"] is not None:
-                start_time = values["start_time"]
-                timestamp_ns = int(start_time.timestamp() * 1_000_000_000)
-                values["id"] = uuid7(timestamp_ns)
+                values["id"] = uuid7_from_datetime(values["start_time"])
             else:
                 values["id"] = uuid7()
         else:
