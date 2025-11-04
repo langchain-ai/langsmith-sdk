@@ -245,7 +245,7 @@ export class RunTree implements BaseRun {
       ...config?.extra?.metadata,
     };
     config.extra = { ...config.extra, metadata: dedupedMetadata };
-    if (config.id === undefined) {
+    if (config.id == null) {
       delete config.id;
     }
     Object.assign(this, { ...defaultConfig, ...config, client });
