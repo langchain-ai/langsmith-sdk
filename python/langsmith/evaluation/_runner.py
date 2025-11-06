@@ -952,7 +952,7 @@ def evaluate_comparative(
                 source_run_id=result.source_run_id,
                 feedback_group_id=feedback_group_id,
             )
-        return result
+        return example.id, result
 
     tqdm = _load_tqdm()
     with ls_utils.ContextThreadPoolExecutor(
@@ -976,11 +976,11 @@ def evaluate_comparative(
                         runs_list, data[example_id], comparator, executor
                     )
                     results[example_id][f"feedback.{result.key}"] = result
-            if futures:
-                cf.wait(futures)
-                for future in futures:
-                    result = future.result()
-                    results[example_id][f"feedback.{result.key}"] = result
+        if futures:
+            cf.wait(futures)
+            for future in futures:
+                example_id, result = future.result()
+                results[example_id][f"feedback.{result.key}"] = result
 
     return ComparativeExperimentResults(results, data)
 
