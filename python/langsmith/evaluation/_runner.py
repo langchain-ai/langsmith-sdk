@@ -972,7 +972,7 @@ def evaluate_comparative(
                     )
                     futures.append(future)
                 else:
-                    result = evaluate_and_submit_feedback(
+                    _, result = evaluate_and_submit_feedback(
                         runs_list, data[example_id], comparator, executor
                     )
                     results[example_id][f"feedback.{result.key}"] = result
