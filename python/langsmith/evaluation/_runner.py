@@ -928,7 +928,7 @@ def evaluate_comparative(
         example: schemas.Example,
         comparator: DynamicComparisonRunEvaluator,
         executor: cf.Executor,
-    ) -> ComparisonEvaluationResult:
+    ) -> tuple[uuid.UUID, ComparisonEvaluationResult]:
         feedback_group_id = uuid.uuid4()
         if randomize_order:
             random.shuffle(runs_list)
