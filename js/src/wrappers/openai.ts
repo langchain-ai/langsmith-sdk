@@ -28,6 +28,10 @@ type OpenAIType = {
     create: (...args: any[]) => any;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     retrieve: (...args: any[]) => any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    parse: (...args: any[]) => any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    stream: (...args: any[]) => any;
   };
 };
 
@@ -66,6 +70,30 @@ type PatchedOpenAIClient<T extends OpenAIType> = T & {
     };
   };
 };
+
+const TRACED_INVOCATION_KEYS = [
+  "frequency_penalty",
+  "n",
+  "logit_bias",
+  "logprobs",
+  "modalities",
+  "parallel_tool_calls",
+  "prediction",
+  "presence_penalty",
+  "prompt_cache_key",
+  "reasoning",
+  "reasoning_effort",
+  "response_format",
+  "seed",
+  "service_tier",
+  "stream_options",
+  "top_logprobs",
+  "top_p",
+  "truncation",
+  "user",
+  "verbosity",
+  "web_search_options",
+];
 
 function _combineChatCompletionChoices(
   choices: OpenAI.ChatCompletionChunk.Choice[]
@@ -372,34 +400,9 @@ export const wrapOpenAI = <T extends OpenAIType>(
         (typeof params.stop === "string" ? [params.stop] : params.stop) ??
         undefined;
 
-      // Allowlist of safe invocation parameters to include
-      const allowedInvocationKeys = new Set([
-        "frequency_penalty",
-        "n",
-        "logit_bias",
-        "logprobs",
-        "modalities",
-        "parallel_tool_calls",
-        "prediction",
-        "presence_penalty",
-        "prompt_cache_key",
-        "reasoning",
-        "reasoning_effort",
-        "response_format",
-        "seed",
-        "service_tier",
-        "stream_options",
-        "top_logprobs",
-        "top_p",
-        "truncation",
-        "user",
-        "verbosity",
-        "web_search_options",
-      ]);
-
       const ls_invocation_params: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(params)) {
-        if (allowedInvocationKeys.has(key)) {
+        if (TRACED_INVOCATION_KEYS.includes(key)) {
           ls_invocation_params[key] = value;
         }
       }
@@ -472,34 +475,9 @@ export const wrapOpenAI = <T extends OpenAIType>(
           (typeof params.stop === "string" ? [params.stop] : params.stop) ??
           undefined;
 
-        // Allowlist of safe invocation parameters to include
-        const allowedInvocationKeys = new Set([
-          "frequency_penalty",
-          "n",
-          "logit_bias",
-          "logprobs",
-          "modalities",
-          "parallel_tool_calls",
-          "prediction",
-          "presence_penalty",
-          "prompt_cache_key",
-          "reasoning",
-          "reasoning_effort",
-          "response_format",
-          "seed",
-          "service_tier",
-          "stream_options",
-          "top_logprobs",
-          "top_p",
-          "truncation",
-          "user",
-          "verbosity",
-          "web_search_options",
-        ]);
-
         const ls_invocation_params: Record<string, unknown> = {};
         for (const [key, value] of Object.entries(params)) {
-          if (allowedInvocationKeys.has(key)) {
+          if (TRACED_INVOCATION_KEYS.includes(key)) {
             ls_invocation_params[key] = value;
           }
         }
@@ -549,7 +527,63 @@ export const wrapOpenAI = <T extends OpenAIType>(
             const params = payload as any;
             return {
               ls_provider: provider,
-              ls_model_type: "llm",
+              ls_model_type: "chat",
+              ls_model_name: params.model || "unknown",
+            };
+          },
+          processOutputs: processChatCompletion,
+          ...options,
+        }
+      );
+    }
+
+    if (
+      tracedOpenAIClient.responses &&
+      typeof tracedOpenAIClient.responses.parse === "function"
+    ) {
+      tracedOpenAIClient.responses.parse = traceable(
+        openai.responses.parse.bind(openai.responses),
+        {
+          name: chatName,
+          run_type: "llm",
+          aggregator: responsesAggregator,
+          argsConfigPath: [1, "langsmithExtra"],
+          getInvocationParams: (payload: unknown) => {
+            if (typeof payload !== "object" || payload == null)
+              return undefined;
+            // Handle responses API parameters
+            const params = payload as any;
+            return {
+              ls_provider: provider,
+              ls_model_type: "chat",
+              ls_model_name: params.model || "unknown",
+            };
+          },
+          processOutputs: processChatCompletion,
+          ...options,
+        }
+      );
+    }
+
+    if (
+      tracedOpenAIClient.responses &&
+      typeof tracedOpenAIClient.responses.stream === "function"
+    ) {
+      tracedOpenAIClient.responses.stream = traceable(
+        openai.responses.stream.bind(openai.responses),
+        {
+          name: chatName,
+          run_type: "llm",
+          aggregator: responsesAggregator,
+          argsConfigPath: [1, "langsmithExtra"],
+          getInvocationParams: (payload: unknown) => {
+            if (typeof payload !== "object" || payload == null)
+              return undefined;
+            // Handle responses API parameters
+            const params = payload as any;
+            return {
+              ls_provider: provider,
+              ls_model_type: "chat",
               ls_model_name: params.model || "unknown",
             };
           },
