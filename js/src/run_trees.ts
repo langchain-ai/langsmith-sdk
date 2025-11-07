@@ -247,9 +247,9 @@ export class RunTree implements BaseRun {
     config.extra = { ...config.extra, metadata: dedupedMetadata };
     Object.assign(this, { ...defaultConfig, ...config, client });
 
-    // If start_time was provided but id was not, regenerate id from start_time
-    if (config.start_time !== undefined && !config.id) {
-      this.id = uuid7FromTime(this._serialized_start_time ?? config.start_time);
+    // Generate id from start_time if not provided
+    if (!this.id) {
+      this.id = uuid7FromTime(this._serialized_start_time ?? this.start_time);
     }
 
     if (config.id) {
