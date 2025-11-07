@@ -1871,6 +1871,9 @@ def test_set_run_metadata_updates_current_run_tree() -> None:
     assert run_tree.metadata["bar"] == "two"
 
 
-def test_set_run_metadata_without_active_run_tree() -> None:
-    with pytest.raises(RuntimeError):
-        langsmith.set_run_metadata(foo=1)
+def test_set_run_metadata_without_active_run_tree(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    langsmith.set_run_metadata(foo=1)
+    assert len(caplog.records) == 1
+    assert "No active run tree found" in caplog.text
