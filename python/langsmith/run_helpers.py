@@ -75,6 +75,18 @@ def get_current_run_tree() -> Optional[run_trees.RunTree]:
     return _context._PARENT_RUN_TREE.get()
 
 
+def set_run_metadata(**metadata: Any) -> None:
+    """Update metadata on the current run tree."""
+    run_tree = get_current_run_tree()
+    if run_tree is None:
+        LOGGER.warning(
+            "No active run tree found. Call `set_run_metadata` inside a traced run."
+        )
+    else:
+        run_tree.metadata.update(metadata)
+    return
+
+
 def get_tracing_context(
     context: Optional[contextvars.Context] = None,
 ) -> dict[str, Any]:

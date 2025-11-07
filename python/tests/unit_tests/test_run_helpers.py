@@ -1853,3 +1853,24 @@ async def test_traceable_async_iterator_process_chunk(mock_client: Client) -> No
     body = json.loads(mock_calls[0].kwargs["data"])
     assert body["post"]
     assert body["post"][0]["outputs"]["output"] == list(range(6))
+
+
+def test_set_run_metadata_updates_current_run_tree() -> None:
+    with tracing_context(enabled=True):
+
+        @traceable
+        def instrumented() -> RunTree:
+            langsmith.set_run_metadata(foo=1)
+            langsmith.set_run_metadata(bar="two")
+            rt = get_current_run_tree()
+            assert rt is not None
+            return rt
+
+        run_tree = instrumented()
+    assert run_tree.metadata["foo"] == 1
+    assert run_tree.metadata["bar"] == "two"
+
+
+def test_set_run_metadata_without_active_run_tree() -> None:
+    with pytest.raises(RuntimeError):
+        langsmith.set_run_metadata(foo=1)
