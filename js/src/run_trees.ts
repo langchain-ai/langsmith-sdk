@@ -26,17 +26,25 @@ function stripNonAlphanumeric(input: string) {
   return input.replace(/[-:.]/g, "");
 }
 
+function getMicrosecondPrecisionDatestring(
+  epoch: number,
+  executionOrder = 1
+): string {
+  // Date only has millisecond precision, so we use the microseconds to break
+  // possible ties, avoiding incorrect run order
+  const paddedOrder = executionOrder.toFixed(0).slice(0, 3).padStart(3, "0");
+  return `${new Date(epoch).toISOString().slice(0, -1)}${paddedOrder}Z`;
+}
+
 export function convertToDottedOrderFormat(
   epoch: number,
   runId: string,
   executionOrder = 1
 ) {
-  // Date only has millisecond precision, so we use the microseconds to break
-  // possible ties, avoiding incorrect run order
-  const paddedOrder = executionOrder.toFixed(0).slice(0, 3).padStart(3, "0");
-  const microsecondPrecisionDatestring = `${new Date(epoch)
-    .toISOString()
-    .slice(0, -1)}${paddedOrder}Z`;
+  const microsecondPrecisionDatestring = getMicrosecondPrecisionDatestring(
+    epoch,
+    executionOrder
+  );
   return {
     dottedOrder: stripNonAlphanumeric(microsecondPrecisionDatestring) + runId,
     microsecondPrecisionDatestring,
@@ -250,14 +258,12 @@ export class RunTree implements BaseRun {
     this.execution_order ??= 1;
     this.child_execution_order ??= 1;
 
-    // Generate serialized start time for ID generation and dotted order
+    // Generate serialized start time for ID generation
     if (!this.dotted_order) {
-      const { microsecondPrecisionDatestring } = convertToDottedOrderFormat(
+      this._serialized_start_time = getMicrosecondPrecisionDatestring(
         this.start_time,
-        "", // Placeholder, we'll use the actual ID below
         this.execution_order
       );
-      this._serialized_start_time = microsecondPrecisionDatestring;
     }
 
     // Generate id from serialized start_time if not provided
