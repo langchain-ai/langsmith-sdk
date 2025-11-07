@@ -440,7 +440,7 @@ class RunTree(ls_schemas.RunBase):
     def end(
         self,
         *,
-        outputs: Optional[dict] = None,
+        outputs: Optional[Union[dict, str]] = None,
         error: Optional[str] = None,
         end_time: Optional[datetime] = None,
         events: Optional[Sequence[ls_schemas.RunEvent]] = None,
@@ -452,6 +452,8 @@ class RunTree(ls_schemas.RunBase):
         # the ones that are automatically included
         if not self.extra.get(OVERRIDE_OUTPUTS):
             if outputs is not None:
+                if isinstance(outputs, str):
+                    outputs = {"output": outputs}
                 if not self.outputs:
                     self.outputs = outputs
                 else:
