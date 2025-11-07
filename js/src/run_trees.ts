@@ -247,7 +247,21 @@ export class RunTree implements BaseRun {
     config.extra = { ...config.extra, metadata: dedupedMetadata };
     Object.assign(this, { ...defaultConfig, ...config, client });
 
-    // Generate id from start_time if not provided
+    this.execution_order ??= 1;
+    this.child_execution_order ??= 1;
+
+    // Generate serialized start time for ID generation and dotted order
+    if (!this.dotted_order) {
+      const { microsecondPrecisionDatestring } =
+        convertToDottedOrderFormat(
+          this.start_time,
+          "", // Placeholder, we'll use the actual ID below
+          this.execution_order
+        );
+      this._serialized_start_time = microsecondPrecisionDatestring;
+    }
+
+    // Generate id from serialized start_time if not provided
     if (!this.id) {
       this.id = uuid7FromTime(this._serialized_start_time ?? this.start_time);
     }
@@ -272,22 +286,18 @@ export class RunTree implements BaseRun {
 
     this.replicas = _ensureWriteReplicas(this.replicas);
 
-    this.execution_order ??= 1;
-    this.child_execution_order ??= 1;
-
+    // Now set the dotted order with the actual ID
     if (!this.dotted_order) {
-      const { dottedOrder, microsecondPrecisionDatestring } =
-        convertToDottedOrderFormat(
-          this.start_time,
-          this.id,
-          this.execution_order
-        );
+      const { dottedOrder } = convertToDottedOrderFormat(
+        this.start_time,
+        this.id,
+        this.execution_order
+      );
       if (this.parent_run) {
         this.dotted_order = this.parent_run.dotted_order + "." + dottedOrder;
       } else {
         this.dotted_order = dottedOrder;
       }
-      this._serialized_start_time = microsecondPrecisionDatestring;
     }
   }
 
