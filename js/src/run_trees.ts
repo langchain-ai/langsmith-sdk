@@ -252,12 +252,11 @@ export class RunTree implements BaseRun {
 
     // Generate serialized start time for ID generation and dotted order
     if (!this.dotted_order) {
-      const { microsecondPrecisionDatestring } =
-        convertToDottedOrderFormat(
-          this.start_time,
-          "", // Placeholder, we'll use the actual ID below
-          this.execution_order
-        );
+      const { microsecondPrecisionDatestring } = convertToDottedOrderFormat(
+        this.start_time,
+        "", // Placeholder, we'll use the actual ID below
+        this.execution_order
+      );
       this._serialized_start_time = microsecondPrecisionDatestring;
     }
 
