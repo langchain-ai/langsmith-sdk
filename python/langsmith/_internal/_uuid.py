@@ -128,12 +128,11 @@ def warn_if_not_uuid_v7(uuid_obj: uuid.UUID, id_type: str) -> None:
         _UUID_V7_WARNING_EMITTED = True
         warnings.warn(
             (
-                f"LangSmith now uses UUID v7 for {id_type}. The provided {id_type} "
-                f"'{uuid_obj}' is UUID v{uuid_obj.version}. "
-                "Please migrate to using UUID v7. "
-                "Future versions will require UUID v7. "
-                "Use 'from langsmith.uuid import uuid7, uuid7_from_datetime' "
-                "to generate UUID v7."
+                "LangSmith now uses UUID v7 for run and trace identifiers. "
+                "This warning appears when passing custom IDs. "
+                "Please use: from langsmith import uuid7\n"
+                "            id = uuid7()\n"
+                "Future versions will require UUID v7."
             ),
             UserWarning,
             stacklevel=3,

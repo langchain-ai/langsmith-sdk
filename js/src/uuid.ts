@@ -1,5 +1,5 @@
 import { v7 as uuidv7 } from "uuid";
-export { uuidFromTime } from "./utils/_uuid.js";
+export { uuid7FromTime } from "./utils/_uuid.js";
 
 /**
  * Generate a random UUID v7 string.

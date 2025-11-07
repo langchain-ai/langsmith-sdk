@@ -26,7 +26,7 @@ export function assertUuid(str: string, which?: string): string {
  * @param timestamp - The timestamp in milliseconds
  * @returns A UUID v7 string
  */
-export function uuidFromTime(timestamp: number | string): string {
+export function uuid7FromTime(timestamp: number | string): string {
   const msecs =
     typeof timestamp === "string" ? Date.parse(timestamp) : timestamp;
   // Work around uuid@10 behavior where providing only { msecs }
@@ -64,8 +64,8 @@ export function warnIfNotUuidV7(uuidStr: string, _idType: string): void {
     UUID7_WARNING_EMITTED = true;
     warnOnce(
       `LangSmith now uses UUID v7 for run and trace identifiers. ` +
-        `Please migrate to using UUID v7. ` +
-        `Use { uuid7, uuidFromTime } from 'langsmith'. ` +
+        `This warning appears when passing custom IDs. ` +
+        `Please use: import { uuidv7 } from 'langsmith'; const id = uuidv7(); ` +
         `Future versions will require UUID v7.`
     );
   }

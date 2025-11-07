@@ -20,7 +20,7 @@ import {
 import { getDefaultProjectName } from "./utils/project.js";
 import { getLangSmithEnvironmentVariable } from "./utils/env.js";
 import { warnOnce } from "./utils/warn.js";
-import { warnIfNotUuidV7, uuidFromTime } from "./utils/_uuid.js";
+import { warnIfNotUuidV7, uuid7FromTime } from "./utils/_uuid.js";
 
 function stripNonAlphanumeric(input: string) {
   return input.replace(/[-:.]/g, "");
@@ -249,7 +249,7 @@ export class RunTree implements BaseRun {
 
     // If start_time was provided but id was not, regenerate id from start_time
     if (config.start_time !== undefined && !config.id) {
-      this.id = uuidFromTime(config.start_time);
+      this.id = uuid7FromTime(this._serialized_start_time ?? config.start_time);
     }
 
     if (config.id) {
@@ -308,7 +308,6 @@ export class RunTree implements BaseRun {
   private static getDefaultConfig(): object {
     const start_time = Date.now();
     return {
-      id: uuidFromTime(start_time),
       run_type: "chain",
       project_name: getDefaultProjectName(),
       child_runs: [],
