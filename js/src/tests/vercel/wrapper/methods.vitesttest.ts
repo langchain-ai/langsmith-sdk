@@ -1237,4 +1237,283 @@ describe("wrapAISDK", () => {
       expect(mockHttpRequests[0].body.name).toBe("custom-provider");
     });
   });
+
+  describe("experimental_output handling", () => {
+    it("should preserve experimental_output as structured object in outputs", async () => {
+      const wrappedMethods = wrapAISDK(
+        {
+          wrapLanguageModel: ai.wrapLanguageModel,
+          generateText: ai.generateText,
+          streamText: ai.streamText,
+          generateObject: ai.generateObject,
+          streamObject: ai.streamObject,
+        },
+        { client: mockClient as any }
+      );
+
+      const mockLangModel = new MockLanguageModelV2({
+        modelId: "experimental-output-test",
+        doGenerate: async () => ({
+          content: [
+            {
+              type: "text" as const,
+              text: '{"city":"Prague","temperature":15,"unit":"celsius","conditions":"sunny"}',
+            },
+          ],
+          finishReason: "stop" as const,
+          usage: {
+            promptTokens: 10,
+            completionTokens: 20,
+            inputTokens: 10,
+            outputTokens: 20,
+            totalTokens: 30,
+          },
+          warnings: [],
+        }),
+      });
+
+      await wrappedMethods.generateText({
+        model: mockLangModel,
+        prompt: "What's the weather?",
+        experimental_output: ai.Output.object({
+          schema: z.object({
+            city: z.string(),
+            temperature: z.number(),
+            unit: z.enum(["celsius", "fahrenheit"]),
+            conditions: z.string(),
+          }),
+        }),
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 1));
+
+      // Find the updateRun call for generateText (parent run)
+      const updateGenerateTextCall = mockHttpRequests.find(
+        (req) =>
+          req.type === "updateRun" &&
+          req.body.extra?.metadata?.ai_sdk_method === "ai.generateText"
+      );
+
+      expect(updateGenerateTextCall).toBeDefined();
+
+      // Verify outputs contain the structured object at top level (like generateObject)
+      expect(updateGenerateTextCall.body.outputs).toMatchObject({
+        city: "Prague",
+        temperature: 15,
+        unit: "celsius",
+        conditions: "sunny",
+      });
+
+      // Verify it's NOT stringified
+      const outputsStr = JSON.stringify(updateGenerateTextCall.body.outputs);
+      expect(outputsStr).not.toContain("[object Object]");
+      expect(outputsStr).not.toContain('\\"city\\"'); // Should not be double-escaped
+    });
+
+    it("should not break when experimental_output is not present", async () => {
+      const wrappedMethods = wrapAISDK(
+        {
+          wrapLanguageModel: ai.wrapLanguageModel,
+          generateText: ai.generateText,
+          streamText: ai.streamText,
+          generateObject: ai.generateObject,
+          streamObject: ai.streamObject,
+        },
+        { client: mockClient as any }
+      );
+
+      const mockLangModel = new MockLanguageModelV2({
+        modelId: "no-experimental-output-test",
+        doGenerate: async () => ({
+          content: [{ type: "text" as const, text: "Normal response" }],
+          finishReason: "stop" as const,
+          usage: {
+            promptTokens: 5,
+            completionTokens: 3,
+            inputTokens: 5,
+            outputTokens: 3,
+            totalTokens: 8,
+          },
+          warnings: [],
+        }),
+      });
+
+      await wrappedMethods.generateText({
+        model: mockLangModel,
+        prompt: "Test without experimental_output",
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 1));
+
+      // Verify no errors occurred and outputs are processed normally
+      const updateGenerateTextCall = mockHttpRequests.find(
+        (req) =>
+          req.type === "updateRun" &&
+          req.body.extra?.metadata?.ai_sdk_method === "ai.generateText"
+      );
+
+      expect(updateGenerateTextCall).toBeDefined();
+      expect(updateGenerateTextCall.body.outputs).toBeDefined();
+
+      // Should contain normal text output format
+      expect(updateGenerateTextCall.body.outputs).toHaveProperty("content");
+      expect(updateGenerateTextCall.body.outputs.content).toEqual([
+        {
+          type: "text",
+          text: "Normal response",
+        },
+      ]);
+    });
+
+    it("should preserve experimental_output as structured object in streamText", async () => {
+      const wrappedMethods = wrapAISDK(
+        {
+          wrapLanguageModel: ai.wrapLanguageModel,
+          generateText: ai.generateText,
+          streamText: ai.streamText,
+          generateObject: ai.generateObject,
+          streamObject: ai.streamObject,
+        },
+        { client: mockClient as any }
+      );
+
+      const mockLangModel = new MockLanguageModelV2({
+        modelId: "stream-experimental-output-test",
+        doStream: async () => ({
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "text-start", id: "text-1" },
+              {
+                type: "text-delta",
+                id: "text-1",
+                delta:
+                  '{"city":"Berlin","temperature":10,"unit":"celsius","conditions":"cloudy"}',
+              },
+              { type: "text-end", id: "text-1" },
+              {
+                type: "finish",
+                finishReason: "stop",
+                usage: {
+                  inputTokens: 10,
+                  outputTokens: 20,
+                  totalTokens: 30,
+                },
+              },
+            ],
+          }),
+        }),
+      });
+
+      const result = wrappedMethods.streamText({
+        model: mockLangModel,
+        prompt: "What's the weather?",
+        experimental_output: ai.Output.object({
+          schema: z.object({
+            city: z.string(),
+            temperature: z.number(),
+            unit: z.enum(["celsius", "fahrenheit"]),
+            conditions: z.string(),
+          }),
+        }),
+      });
+
+      await result.consumeStream();
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Find the updateRun call for streamText (parent run)
+      const updateStreamTextCall = mockHttpRequests.find(
+        (req) =>
+          req.type === "updateRun" &&
+          req.body.extra?.metadata?.ai_sdk_method === "ai.streamText"
+      );
+
+      expect(updateStreamTextCall).toBeDefined();
+
+      // Verify outputs contain the structured object at top level (parsed from JSON text)
+      expect(updateStreamTextCall.body.outputs).toMatchObject({
+        city: "Berlin",
+        temperature: 10,
+        unit: "celsius",
+        conditions: "cloudy",
+      });
+
+      // Verify it's NOT stringified
+      const outputsStr = JSON.stringify(updateStreamTextCall.body.outputs);
+      expect(outputsStr).not.toContain("[object Object]");
+      expect(outputsStr).not.toContain('\\"city\\"'); // Should not be double-escaped
+    });
+
+    it("should handle streamText without experimental_output normally", async () => {
+      const wrappedMethods = wrapAISDK(
+        {
+          wrapLanguageModel: ai.wrapLanguageModel,
+          generateText: ai.generateText,
+          streamText: ai.streamText,
+          generateObject: ai.generateObject,
+          streamObject: ai.streamObject,
+        },
+        { client: mockClient as any }
+      );
+
+      const mockLangModel = new MockLanguageModelV2({
+        modelId: "stream-no-experimental-output-test",
+        doStream: async () => ({
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "text-start", id: "text-1" },
+              {
+                type: "text-delta",
+                id: "text-1",
+                delta: "Hello world",
+              },
+              { type: "text-end", id: "text-1" },
+              {
+                type: "finish",
+                finishReason: "stop",
+                usage: {
+                  inputTokens: 5,
+                  outputTokens: 2,
+                  totalTokens: 7,
+                },
+              },
+            ],
+          }),
+        }),
+      });
+
+      const result = wrappedMethods.streamText({
+        model: mockLangModel,
+        prompt: "Say hello",
+      });
+
+      // Consume the stream
+      let fullText = "";
+      for await (const chunk of result.textStream) {
+        fullText += chunk;
+      }
+
+      expect(fullText).toBe("Hello world");
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Find the updateRun call for streamText (parent run)
+      const updateStreamTextCall = mockHttpRequests.find(
+        (req) =>
+          req.type === "updateRun" &&
+          req.body.extra?.metadata?.ai_sdk_method === "ai.streamText"
+      );
+
+      expect(updateStreamTextCall).toBeDefined();
+
+      // Verify outputs contain normal text format
+      expect(updateStreamTextCall.body.outputs).toHaveProperty("content");
+      expect(updateStreamTextCall.body.outputs.content).toContainEqual(
+        expect.objectContaining({
+          type: "text",
+          text: "Hello world",
+        })
+      );
+    });
+  });
 });
