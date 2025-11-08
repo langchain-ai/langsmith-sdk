@@ -525,6 +525,18 @@ const wrapAISDK = <
           if (outputs.outputs == null || typeof outputs.outputs !== "object") {
             return outputs;
           }
+          // If experimental_output is present, return it directly at top level (like generateObject)
+          // Note: accessing experimental_output throws if not specified, so wrap in try-catch
+          try {
+            if ("experimental_output" in outputs.outputs) {
+              const experimentalOutput = outputs.outputs.experimental_output;
+              if (experimentalOutput != null) {
+                return experimentalOutput;
+              }
+            }
+          } catch (e) {
+            // experimental_output not specified, continue with normal processing
+          }
           const { steps } = outputs.outputs;
           if (Array.isArray(steps)) {
             const lastStep = steps.at(-1);
@@ -721,6 +733,17 @@ const wrapAISDK = <
               !["object", "string"].includes(typeof content)
             ) {
               return outputs;
+            }
+            try {
+              if (
+                "experimental_partialOutputStream" in outputs.outputs &&
+                outputs.outputs.experimental_partialOutputStream != null
+              ) {
+                const textContent = await outputs.outputs.text;
+                return JSON.parse(textContent);
+              }
+            } catch (e) {
+              // experimental_partialOutputStream not specified, continue with normal processing
             }
             let responseMetadata: Record<string, unknown> | undefined =
               undefined;
