@@ -928,7 +928,7 @@ def evaluate_comparative(
         example: schemas.Example,
         comparator: DynamicComparisonRunEvaluator,
         executor: cf.Executor,
-    ) -> ComparisonEvaluationResult:
+    ) -> tuple[uuid.UUID, ComparisonEvaluationResult]:
         feedback_group_id = uuid.uuid4()
         if randomize_order:
             random.shuffle(runs_list)
@@ -952,7 +952,7 @@ def evaluate_comparative(
                 source_run_id=result.source_run_id,
                 feedback_group_id=feedback_group_id,
             )
-        return result
+        return example.id, result
 
     tqdm = _load_tqdm()
     with ls_utils.ContextThreadPoolExecutor(
@@ -972,15 +972,15 @@ def evaluate_comparative(
                     )
                     futures.append(future)
                 else:
-                    result = evaluate_and_submit_feedback(
+                    _, result = evaluate_and_submit_feedback(
                         runs_list, data[example_id], comparator, executor
                     )
                     results[example_id][f"feedback.{result.key}"] = result
-            if futures:
-                cf.wait(futures)
-                for future in futures:
-                    result = future.result()
-                    results[example_id][f"feedback.{result.key}"] = result
+        if futures:
+            cf.wait(futures)
+            for future in futures:
+                example_id, result = future.result()
+                results[example_id][f"feedback.{result.key}"] = result
 
     return ComparativeExperimentResults(results, data)
 
