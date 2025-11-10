@@ -351,7 +351,6 @@ def _reduce_generate_content_chunks(all_chunks: list) -> dict:
 
     # Build chat-like response format
     result = {"content": full_text, "role": "assistant"}
-
     if last_chunk:
         try:
             # Extract usage metadata from the last chunk
@@ -382,7 +381,6 @@ def _reduce_generate_content_chunks(all_chunks: list) -> dict:
         except Exception as e:
             logger.debug(f"Error extracting metadata from last chunk: {e}")
 
-    # Apply the same content extraction logic as non-streaming case
     # For simple text responses, return minimal structure with usage metadata
     if isinstance(result.get("content"), str) and not result.get("tool_calls"):
         return {
@@ -413,7 +411,9 @@ def _get_wrapper(
             run_type="llm",
             reduce_fn=_reduce_generate_content_chunks if is_streaming else None,
             process_inputs=_process_gemini_inputs,
-            process_outputs=_process_generate_content_response,
+            process_outputs=(
+                _process_generate_content_response if not is_streaming else None
+            ),
             _invocation_params_fn=_infer_invocation_params,
             **textra,
         )
@@ -430,7 +430,9 @@ def _get_wrapper(
             run_type="llm",
             reduce_fn=_reduce_generate_content_chunks if is_streaming else None,
             process_inputs=_process_gemini_inputs,
-            process_outputs=_process_generate_content_response,
+            process_outputs=(
+                _process_generate_content_response if not is_streaming else None
+            ),
             _invocation_params_fn=_infer_invocation_params,
             **textra,
         )
