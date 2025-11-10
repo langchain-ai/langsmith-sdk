@@ -351,9 +351,7 @@ class TestProcessGenerateContentResponse:
         # Mock response with inline image data (bytes format like real Gemini API)
         import base64
 
-        test_b64 = (
-            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg=="
-        )
+        test_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAA"
         test_image_bytes = base64.b64decode(test_b64)
 
         class MockResponse:
