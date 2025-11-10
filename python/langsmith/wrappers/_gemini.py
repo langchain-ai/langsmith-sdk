@@ -462,7 +462,9 @@ def wrap_gemini(
         - generate_content() and generate_content_stream() methods
         - Sync and async clients
         - Streaming and non-streaming responses
+        - Tool/function calling with proper UI rendering
         - Multimodal inputs (text + images)
+        - Image generation with inline_data support
         - Token usage tracking including reasoning tokens
 
     Args:
@@ -475,17 +477,18 @@ def wrap_gemini(
     Returns:
         genai.Client: The patched client.
 
-    Example:
+    Examples:
 
         .. code-block:: python
 
             from google import genai
+            from google.genai import types
             from langsmith import wrappers
 
             # Use Google Gen AI client same as you normally would.
             client = wrappers.wrap_gemini(genai.Client(api_key="your-api-key"))
 
-            # Non-streaming:
+            # Basic text generation:
             response = client.models.generate_content(
                 model="gemini-2.5-flash",
                 contents="Why is the sky blue?",
@@ -498,6 +501,46 @@ def wrap_gemini(
                 contents="Tell me a story",
             ):
                 print(chunk.text, end="")
+
+            # Tool/Function calling:
+            schedule_meeting_function = {
+                "name": "schedule_meeting",
+                "description": "Schedules a meeting with specified attendees.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "attendees": {"type": "array", "items": {"type": "string"}},
+                        "date": {"type": "string"},
+                        "time": {"type": "string"},
+                        "topic": {"type": "string"},
+                    },
+                    "required": ["attendees", "date", "time", "topic"],
+                },
+            }
+
+            tools = types.Tool(function_declarations=[schedule_meeting_function])
+            config = types.GenerateContentConfig(tools=[tools])
+
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents="Schedule a meeting with Bob and Alice tomorrow at 2 PM.",
+                config=config,
+            )
+
+            # Image generation:
+            response = client.models.generate_content(
+                model="gemini-2.5-flash-image",
+                contents=["Create a picture of a futuristic city"],
+            )
+
+            # Save generated image
+            from io import BytesIO
+            from PIL import Image
+
+            for part in response.candidates[0].content.parts:
+                if part.inline_data is not None:
+                    image = Image.open(BytesIO(part.inline_data.data))
+                    image.save("generated_image.png")
 
     .. versionadded:: 0.4.33
         Initial beta release of Google Gemini wrapper.
