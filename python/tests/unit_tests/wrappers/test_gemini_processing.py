@@ -235,8 +235,8 @@ class TestProcessGenerateContentResponse:
                 }
 
         result = _process_generate_content_response(MockResponse())
+        # For simple text responses, should return minimal structure with usage metadata
         assert result["content"] == "Hello world"
-        assert result["role"] == "assistant"
         assert "usage_metadata" in result
         assert result["usage_metadata"]["input_tokens"] == 5
 
@@ -247,8 +247,9 @@ class TestProcessGenerateContentResponse:
 
         result = _process_generate_content_response(MockResponse())
 
+        # For simple text responses, should return minimal structure
         assert result["content"] == "Direct text response"
-        assert result["role"] == "assistant"
+        assert "usage_metadata" in result
 
     def test_exception_handling(self):
         # Mock response that raises exception
@@ -299,8 +300,9 @@ class TestProcessGenerateContentResponse:
 
         tool_call = result["tool_calls"][0]
         assert tool_call["type"] == "function"
+        assert tool_call["index"] == 0
         assert tool_call["function"]["name"] == "get_weather"
-        assert tool_call["function"]["arguments"] == {"location": "Boston"}
+        assert tool_call["function"]["arguments"] == '{"location": "Boston"}'
         assert result["role"] == "assistant"
         assert "usage_metadata" in result
 
@@ -340,15 +342,16 @@ class TestProcessGenerateContentResponse:
 
         tool_call = result["tool_calls"][0]
         assert tool_call["type"] == "function"
+        assert tool_call["index"] == 0
         assert tool_call["function"]["name"] == "get_weather"
-        assert tool_call["function"]["arguments"] == {"location": "Boston"}
+        assert tool_call["function"]["arguments"] == '{"location": "Boston"}'
         assert "usage_metadata" in result
 
     def test_response_with_image(self):
         # Mock response with inline image data (bytes format like real Gemini API)
         import base64
 
-        test_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
+        test_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg=="
         test_image_bytes = base64.b64decode(test_b64)
 
         class MockResponse:
@@ -362,7 +365,7 @@ class TestProcessGenerateContentResponse:
                                     {
                                         "inline_data": {
                                             "mime_type": "image/png",
-                                            "data": test_image_bytes,  # bytes like real API
+                                            "data": test_image_bytes,
                                         }
                                     },
                                 ]
@@ -397,8 +400,9 @@ class TestReduceGenerateContentChunks:
 
     def test_empty_chunks(self):
         result = _reduce_generate_content_chunks([])
-        expected = {"content": "", "role": "assistant"}
-        assert result == expected
+        # Empty content should return minimal structure
+        assert result["content"] == ""
+        assert "usage_metadata" in result
 
     def test_text_chunks(self):
         # Mock chunks
@@ -409,8 +413,9 @@ class TestReduceGenerateContentChunks:
         chunks = [MockChunk("Hello "), MockChunk("world"), MockChunk("!")]
         result = _reduce_generate_content_chunks(chunks)
 
+        # Should return minimal structure with content
         assert result["content"] == "Hello world!"
-        assert result["role"] == "assistant"
+        assert "usage_metadata" in result
 
     def test_chunks_with_usage(self):
         class MockUsageMetadata:
@@ -425,9 +430,10 @@ class TestReduceGenerateContentChunks:
         chunks = [MockChunk("Hello"), MockChunk(" world", MockUsageMetadata())]
         result = _reduce_generate_content_chunks(chunks)
 
+        # Should return minimal structure with content and usage metadata
         assert result["content"] == "Hello world"
-        assert result["role"] == "assistant"
         assert "usage_metadata" in result
+        assert result["usage_metadata"]["input_tokens"] == 5
 
     def test_chunks_with_errors(self):
         class MockChunk:
@@ -438,9 +444,9 @@ class TestReduceGenerateContentChunks:
         chunks = [MockChunk()]
         result = _reduce_generate_content_chunks(chunks)
 
-        # Should handle errors gracefully
+        # Should handle errors gracefully and return empty content
         assert result["content"] == ""
-        assert result["role"] == "assistant"
+        assert "usage_metadata" in result
 
 
 class TestInferInvocationParams:

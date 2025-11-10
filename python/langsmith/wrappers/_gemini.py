@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import functools
+import json
 import logging
 from collections.abc import Mapping
 from typing import (
@@ -284,9 +285,10 @@ def _process_generate_content_response(response: Any) -> dict:
                     {
                         "id": tc["function_call"].get("id") or f"call_{i}",
                         "type": "function",
+                        "index": i,
                         "function": {
                             "name": tc["function_call"]["name"],
-                            "arguments": tc["function_call"]["arguments"],
+                            "arguments": json.dumps(tc["function_call"]["arguments"]),
                         },
                     }
                     for i, tc in enumerate(tool_calls)
@@ -306,7 +308,25 @@ def _process_generate_content_response(response: Any) -> dict:
         if usage_metadata:
             result["usage_metadata"] = _create_usage_metadata(usage_metadata)  # type: ignore[assignment]
 
-        return result
+        # Return in a format that avoids stringification by LangSmith
+        if result.get("tool_calls"):
+            # For responses with tool calls, return structured format
+            return {
+                "content": result["content"],
+                "role": "assistant",
+                "tool_calls": result["tool_calls"],
+                "usage_metadata": result.get("usage_metadata", {}),
+            }
+        else:
+            # For simple text responses, return minimal structure with usage metadata
+            if isinstance(result["content"], str):
+                return {
+                    "content": result["content"],
+                    "usage_metadata": result.get("usage_metadata", {}),
+                }
+            else:
+                # For multimodal content, return structured format
+                return result
     except Exception as e:
         logger.debug(f"Error processing Gemini response: {e}")
         return {"output": response}
@@ -315,7 +335,7 @@ def _process_generate_content_response(response: Any) -> dict:
 def _reduce_generate_content_chunks(all_chunks: list) -> dict:
     """Reduce streaming chunks into a single response."""
     if not all_chunks:
-        return {"content": "", "role": "assistant"}
+        return {"content": "", "usage_metadata": {}}
 
     # Accumulate text from all chunks
     full_text = ""
@@ -362,7 +382,16 @@ def _reduce_generate_content_chunks(all_chunks: list) -> dict:
         except Exception as e:
             logger.debug(f"Error extracting metadata from last chunk: {e}")
 
-    return result
+    # Apply the same content extraction logic as non-streaming case
+    # For simple text responses, return minimal structure with usage metadata
+    if isinstance(result.get("content"), str) and not result.get("tool_calls"):
+        return {
+            "content": result["content"],
+            "usage_metadata": result.get("usage_metadata", {}),
+        }
+    else:
+        # For complex responses, return structured format
+        return result
 
 
 def _get_wrapper(
