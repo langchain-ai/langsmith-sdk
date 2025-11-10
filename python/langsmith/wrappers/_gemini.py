@@ -31,6 +31,12 @@ def _strip_none(d: dict) -> dict:
     return {k: v for k, v in d.items() if v is not None}
 
 
+def _convert_config_for_tracing(kwargs: dict) -> None:
+    """Convert GenerateContentConfig to dict for LangSmith compatibility."""
+    if "config" in kwargs and not isinstance(kwargs["config"], dict):
+        kwargs["config"] = vars(kwargs["config"])
+
+
 def _process_gemini_inputs(inputs: dict) -> dict:
     r"""Process Gemini inputs to normalize them for LangSmith tracing.
 
@@ -91,6 +97,20 @@ def _process_gemini_inputs(inputs: dict) -> dict:
                                     "image_url": {
                                         "url": f"data:{mime_type};base64,{data}",
                                         "detail": "high",
+                                    },
+                                }
+                            )
+                        # Handle function responses
+                        elif "functionResponse" in part:
+                            function_response = part["functionResponse"]
+                            content_parts.append(
+                                {
+                                    "type": "function_response",
+                                    "function_response": {
+                                        "name": function_response.get("name"),
+                                        "response": function_response.get(
+                                            "response", {}
+                                        ),
                                     },
                                 }
                             )
@@ -190,25 +210,67 @@ def _process_generate_content_response(response: Any) -> dict:
         else:
             rdict = {"text": getattr(response, "text", str(response))}
 
-        # Extract text content from candidates if available
-        text_content = ""
+        # Extract content from candidates if available
+        content_result = ""
+        content_parts = []
+
         if "candidates" in rdict and rdict["candidates"]:
             candidate = rdict["candidates"][0]
             if "content" in candidate:
                 content = candidate["content"]
                 if "parts" in content and content["parts"]:
-                    # Combine text from all parts
-                    text_parts = [
-                        part.get("text", "")
-                        for part in content["parts"]
-                        if "text" in part
-                    ]
-                    text_content = "".join(text_parts)
+                    for part in content["parts"]:
+                        # Handle text parts
+                        if "text" in part and part["text"]:
+                            content_result += part["text"]
+                            content_parts.append({"type": "text", "text": part["text"]})
+                        # Handle function calls in response
+                        elif "function_call" in part or "functionCall" in part:
+                            function_call = part.get("function_call") or part.get(
+                                "functionCall"
+                            )
+                            content_parts.append(
+                                {
+                                    "type": "function_call",
+                                    "function_call": {
+                                        "id": function_call.get("id"),
+                                        "name": function_call.get("name"),
+                                        "arguments": function_call.get("args", {}),
+                                    },
+                                }
+                            )
         elif "text" in rdict:
-            text_content = rdict["text"]
+            content_result = rdict["text"]
+            content_parts.append({"type": "text", "text": content_result})
 
-        # Build chat-like response format
-        result = {"content": text_content, "role": "assistant"}
+        # Build chat-like response format - use OpenAI-compatible format for tool calls
+        tool_calls = [p for p in content_parts if p.get("type") == "function_call"]
+
+        if tool_calls:
+            # OpenAI-compatible format for LangSmith UI
+            result = {
+                "content": content_result or None,
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": tc["function_call"].get("id") or f"call_{i}",
+                        "type": "function",
+                        "function": {
+                            "name": tc["function_call"]["name"],
+                            "arguments": tc["function_call"]["arguments"],
+                        },
+                    }
+                    for i, tc in enumerate(tool_calls)
+                ],
+            }
+        elif len(content_parts) > 1 or (
+            content_parts and content_parts[0]["type"] != "text"
+        ):
+            # Use structured format for mixed non-tool content
+            result = {"content": content_parts, "role": "assistant"}
+        else:
+            # Use simple string format for text-only responses
+            result = {"content": content_result, "role": "assistant"}
 
         # Extract and convert usage metadata
         usage_metadata = rdict.get("usage_metadata")
@@ -285,6 +347,9 @@ def _get_wrapper(
 
     @functools.wraps(original_generate)
     def generate(*args, **kwargs):
+        # Handle config object before tracing setup
+        _convert_config_for_tracing(kwargs)
+
         decorator = run_helpers.traceable(
             name=name,
             run_type="llm",
@@ -299,6 +364,9 @@ def _get_wrapper(
 
     @functools.wraps(original_generate)
     async def agenerate(*args, **kwargs):
+        # Handle config object before tracing setup
+        _convert_config_for_tracing(kwargs)
+
         decorator = run_helpers.traceable(
             name=name,
             run_type="llm",
@@ -361,14 +429,14 @@ def wrap_gemini(
 
             # Non-streaming:
             response = client.models.generate_content(
-                model="gemini-2.0-flash-001",
+                model="gemini-2.5-flash",
                 contents="Why is the sky blue?",
             )
             print(response.text)
 
             # Streaming:
             for chunk in client.models.generate_content_stream(
-                model="gemini-2.0-flash-001",
+                model="gemini-2.5-flash",
                 contents="Tell me a story",
             ):
                 print(chunk.text, end="")

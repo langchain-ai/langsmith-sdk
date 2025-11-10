@@ -141,6 +141,83 @@ class TestProcessGeminiInputs:
         }
         assert result == expected
 
+    def test_function_call_input_passthrough(self):
+        # Function calls in input should be passed through as-is since they're unusual
+        # The normal flow is: user input → model function call → user function response
+        inputs = {
+            "contents": [
+                {
+                    "role": "model",
+                    "parts": [
+                        {
+                            "functionCall": {
+                                "name": "get_weather",
+                                "args": {"location": "Boston"},
+                            }
+                        }
+                    ],
+                }
+            ],
+            "model": "gemini-pro",
+        }
+        result = _process_gemini_inputs(inputs)
+
+        # Should pass through unchanged since functionCall in input is unusual
+        expected = {
+            "messages": [
+                {
+                    "role": "model",
+                    "content": "",  # No text content, so empty string
+                }
+            ],
+            "model": "gemini-pro",
+        }
+        assert result == expected
+
+    def test_function_response_input(self):
+        inputs = {
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [
+                        {
+                            "functionResponse": {
+                                "name": "get_weather",
+                                "response": {
+                                    "temperature": "72°F",
+                                    "condition": "sunny",
+                                },
+                            }
+                        }
+                    ],
+                }
+            ],
+            "model": "gemini-pro",
+        }
+        result = _process_gemini_inputs(inputs)
+
+        expected = {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "function_response",
+                            "function_response": {
+                                "name": "get_weather",
+                                "response": {
+                                    "temperature": "72°F",
+                                    "condition": "sunny",
+                                },
+                            },
+                        }
+                    ],
+                }
+            ],
+            "model": "gemini-pro",
+        }
+        assert result == expected
+
 
 class TestProcessGenerateContentResponse:
     """Test _process_generate_content_response function."""
@@ -186,6 +263,86 @@ class TestProcessGenerateContentResponse:
 
         # Should fallback to generic output format
         assert "output" in result
+
+    def test_response_with_function_call(self):
+        # Mock response with function call
+        class MockResponse:
+            def to_dict(self):
+                return {
+                    "candidates": [
+                        {
+                            "content": {
+                                "parts": [
+                                    {
+                                        "functionCall": {
+                                            "name": "get_weather",
+                                            "args": {"location": "Boston"},
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    ],
+                    "usage_metadata": {
+                        "prompt_token_count": 10,
+                        "candidates_token_count": 5,
+                    },
+                }
+
+        result = _process_generate_content_response(MockResponse())
+
+        # Should now use OpenAI-compatible tool_calls format
+        assert result["content"] is None
+        assert result["role"] == "assistant"
+        assert "tool_calls" in result
+        assert len(result["tool_calls"]) == 1
+
+        tool_call = result["tool_calls"][0]
+        assert tool_call["type"] == "function"
+        assert tool_call["function"]["name"] == "get_weather"
+        assert tool_call["function"]["arguments"] == {"location": "Boston"}
+        assert result["role"] == "assistant"
+        assert "usage_metadata" in result
+
+    def test_response_with_text_and_function_call(self):
+        # Mock response with both text and function call
+        class MockResponse:
+            def to_dict(self):
+                return {
+                    "candidates": [
+                        {
+                            "content": {
+                                "parts": [
+                                    {"text": "I'll help you with that."},
+                                    {
+                                        "functionCall": {
+                                            "name": "get_weather",
+                                            "args": {"location": "Boston"},
+                                        }
+                                    },
+                                ]
+                            }
+                        }
+                    ],
+                    "usage_metadata": {
+                        "prompt_token_count": 15,
+                        "candidates_token_count": 20,
+                    },
+                }
+
+        result = _process_generate_content_response(MockResponse())
+
+        # Should use tool_calls format when function calls are present
+        assert result["content"] == "I'll help you with that."
+        assert result["role"] == "assistant"
+        assert "tool_calls" in result
+        assert len(result["tool_calls"]) == 1
+
+        tool_call = result["tool_calls"][0]
+        assert tool_call["type"] == "function"
+        assert tool_call["function"]["name"] == "get_weather"
+        assert tool_call["function"]["arguments"] == {"location": "Boston"}
+        assert "usage_metadata" in result
 
 
 class TestReduceGenerateContentChunks:
