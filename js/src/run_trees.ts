@@ -1,4 +1,3 @@
-import * as uuid from "uuid";
 import { Client } from "./client.js";
 import { isTracingEnabled } from "./env.js";
 import {
@@ -21,9 +20,20 @@ import {
 import { getDefaultProjectName } from "./utils/project.js";
 import { getLangSmithEnvironmentVariable } from "./utils/env.js";
 import { warnOnce } from "./utils/warn.js";
+import { warnIfNotUuidV7, uuid7FromTime } from "./utils/_uuid.js";
 
 function stripNonAlphanumeric(input: string) {
   return input.replace(/[-:.]/g, "");
+}
+
+function getMicrosecondPrecisionDatestring(
+  epoch: number,
+  executionOrder = 1
+): string {
+  // Date only has millisecond precision, so we use the microseconds to break
+  // possible ties, avoiding incorrect run order
+  const paddedOrder = executionOrder.toFixed(0).slice(0, 3).padStart(3, "0");
+  return `${new Date(epoch).toISOString().slice(0, -1)}${paddedOrder}Z`;
 }
 
 export function convertToDottedOrderFormat(
@@ -31,12 +41,10 @@ export function convertToDottedOrderFormat(
   runId: string,
   executionOrder = 1
 ) {
-  // Date only has millisecond precision, so we use the microseconds to break
-  // possible ties, avoiding incorrect run order
-  const paddedOrder = executionOrder.toFixed(0).slice(0, 3).padStart(3, "0");
-  const microsecondPrecisionDatestring = `${new Date(epoch)
-    .toISOString()
-    .slice(0, -1)}${paddedOrder}Z`;
+  const microsecondPrecisionDatestring = getMicrosecondPrecisionDatestring(
+    epoch,
+    executionOrder
+  );
   return {
     dottedOrder: stripNonAlphanumeric(microsecondPrecisionDatestring) + runId,
     microsecondPrecisionDatestring,
@@ -249,31 +257,55 @@ export class RunTree implements BaseRun {
       delete config.id;
     }
     Object.assign(this, { ...defaultConfig, ...config, client });
+
+    this.execution_order ??= 1;
+    this.child_execution_order ??= 1;
+
+    // Generate serialized start time for ID generation
+    if (!this.dotted_order) {
+      this._serialized_start_time = getMicrosecondPrecisionDatestring(
+        this.start_time,
+        this.execution_order
+      );
+    }
+
+    // Generate id from serialized start_time if not provided
+    if (!this.id) {
+      this.id = uuid7FromTime(this._serialized_start_time ?? this.start_time);
+    }
+
+    if (config.id) {
+      warnIfNotUuidV7(config.id, "run_id");
+    }
+
     if (!this.trace_id) {
       if (this.parent_run) {
         this.trace_id = this.parent_run.trace_id ?? this.id;
       } else {
         this.trace_id = this.id;
       }
+    } else if (config.trace_id) {
+      warnIfNotUuidV7(config.trace_id, "trace_id");
     }
+
+    if (config.parent_run_id) {
+      warnIfNotUuidV7(config.parent_run_id, "parent_run_id");
+    }
+
     this.replicas = _ensureWriteReplicas(this.replicas);
 
-    this.execution_order ??= 1;
-    this.child_execution_order ??= 1;
-
+    // Now set the dotted order with the actual ID
     if (!this.dotted_order) {
-      const { dottedOrder, microsecondPrecisionDatestring } =
-        convertToDottedOrderFormat(
-          this.start_time,
-          this.id,
-          this.execution_order
-        );
+      const { dottedOrder } = convertToDottedOrderFormat(
+        this.start_time,
+        this.id,
+        this.execution_order
+      );
       if (this.parent_run) {
         this.dotted_order = this.parent_run.dotted_order + "." + dottedOrder;
       } else {
         this.dotted_order = dottedOrder;
       }
-      this._serialized_start_time = microsecondPrecisionDatestring;
     }
   }
 
@@ -292,8 +324,8 @@ export class RunTree implements BaseRun {
   }
 
   private static getDefaultConfig(): object {
+    const start_time = Date.now();
     return {
-      id: uuid.v4(),
       run_type: "chain",
       project_name: getDefaultProjectName(),
       child_runs: [],
@@ -301,7 +333,7 @@ export class RunTree implements BaseRun {
         getEnvironmentVariable("LANGCHAIN_ENDPOINT") ?? "http://localhost:1984",
       api_key: getEnvironmentVariable("LANGCHAIN_API_KEY"),
       caller_options: {},
-      start_time: Date.now(),
+      start_time,
       serialized: {},
       inputs: {},
       extra: {},
@@ -459,63 +491,11 @@ export class RunTree implements BaseRun {
     excludeChildRuns = true
   ): RunCreate & { id: string } {
     const baseRun = this._convertToCreate(this, runtimeEnv, excludeChildRuns);
-    if (projectName === this.project_name) {
-      return baseRun;
-    }
 
-    // Create a deterministic UUID mapping for this project
-    const createRemappedId = (originalId: string): string => {
-      return uuid.v5(`${originalId}:${projectName}`, uuid.v5.DNS);
-    };
-
-    // Remap the current run's ID
-    const newId = createRemappedId(baseRun.id);
-
-    const newTraceId = baseRun.trace_id
-      ? createRemappedId(baseRun.trace_id)
-      : undefined;
-
-    const newParentRunId = baseRun.parent_run_id
-      ? createRemappedId(baseRun.parent_run_id)
-      : undefined;
-
-    let newDottedOrder: string | undefined;
-    if (baseRun.dotted_order) {
-      const segments = _parseDottedOrder(baseRun.dotted_order);
-      const rebuilt: string[] = [];
-
-      // Process all segments except the last one
-      for (let i = 0; i < segments.length - 1; i++) {
-        const [timestamp, segmentId] = segments[i];
-        const remappedId = createRemappedId(segmentId);
-        rebuilt.push(
-          timestamp.toISOString().replace(/[-:]/g, "").replace(".", "") +
-            remappedId
-        );
-      }
-
-      // Process the last segment with the new run ID
-      const [lastTimestamp] = segments[segments.length - 1];
-      rebuilt.push(
-        lastTimestamp.toISOString().replace(/[-:]/g, "").replace(".", "") +
-          newId
-      );
-
-      newDottedOrder = rebuilt.join(".");
-    } else {
-      newDottedOrder = undefined;
-    }
-
-    const remappedRun = {
+    return {
       ...baseRun,
-      id: newId,
-      trace_id: newTraceId,
-      parent_run_id: newParentRunId,
-      dotted_order: newDottedOrder,
       session_name: projectName,
     };
-
-    return remappedRun;
   }
 
   async postRun(excludeChildRuns = true): Promise<void> {
@@ -564,6 +544,9 @@ export class RunTree implements BaseRun {
         const runData = this._remapForProject(projectName ?? this.project_name);
         const updatePayload: RunUpdate = {
           id: runData.id,
+          name: runData.name,
+          run_type: runData.run_type,
+          start_time: runData.start_time,
           outputs: runData.outputs,
           error: runData.error,
           parent_run_id: runData.parent_run_id,
@@ -593,6 +576,9 @@ export class RunTree implements BaseRun {
     } else {
       try {
         const runUpdate: RunUpdate = {
+          name: this.name,
+          run_type: this.run_type,
+          start_time: this._serialized_start_time ?? this.start_time,
           end_time: this.end_time,
           error: this.error,
           outputs: this.outputs,
@@ -826,36 +812,6 @@ export function isRunnableConfigLike(x?: unknown): x is RunnableConfigLike {
       // Or it's an array with a LangChainTracerLike object within it
       containsLangChainTracerLike((x as RunnableConfigLike).callbacks))
   );
-}
-
-function _parseDottedOrder(dottedOrder: string): [Date, string][] {
-  const parts = dottedOrder.split(".");
-  return parts.map((part) => {
-    const timestampStr = part.slice(0, -36);
-    const uuidStr = part.slice(-36);
-
-    // Parse timestamp: "%Y%m%dT%H%M%S%fZ" format
-    // Example: "20231215T143045123456Z"
-    const year = parseInt(timestampStr.slice(0, 4));
-    const month = parseInt(timestampStr.slice(4, 6)) - 1; // JS months are 0-indexed
-    const day = parseInt(timestampStr.slice(6, 8));
-    const hour = parseInt(timestampStr.slice(9, 11));
-    const minute = parseInt(timestampStr.slice(11, 13));
-    const second = parseInt(timestampStr.slice(13, 15));
-    const microsecond = parseInt(timestampStr.slice(15, 21));
-
-    const timestamp = new Date(
-      year,
-      month,
-      day,
-      hour,
-      minute,
-      second,
-      microsecond / 1000
-    );
-
-    return [timestamp, uuidStr] as [Date, string];
-  });
 }
 
 function _getWriteReplicasFromEnv(): WriteReplica[] {

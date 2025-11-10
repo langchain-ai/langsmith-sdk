@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from langsmith.run_trees import RunTree
     from langsmith.testing._internal import test, unit
     from langsmith.utils import ContextThreadPoolExecutor
+    from langsmith.uuid import uuid7, uuid7_from_datetime
 
 # Avoid calling into importlib on every call to __version__
 
@@ -109,6 +110,14 @@ def __getattr__(name: str) -> Any:
         from langsmith.run_trees import configure
 
         return configure
+    elif name == "uuid7":
+        from langsmith.uuid import uuid7
+
+        return uuid7
+    elif name == "uuid7_from_datetime":
+        from langsmith.uuid import uuid7_from_datetime
+
+        return uuid7_from_datetime
 
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
@@ -132,4 +141,6 @@ __all__ = [
     "get_current_run_tree",
     "ContextThreadPoolExecutor",
     "AsyncClient",
+    "uuid7",
+    "uuid7_from_datetime",
 ]

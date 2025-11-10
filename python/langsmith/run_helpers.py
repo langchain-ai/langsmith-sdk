@@ -9,7 +9,6 @@ import datetime
 import functools
 import inspect
 import logging
-import uuid
 import warnings
 from collections.abc import (
     AsyncGenerator,
@@ -1480,7 +1479,6 @@ def _setup_run(
             context=copy_context(),
             _token_event_logged=False,
         )
-    id_ = id_ or str(uuid.uuid4())
     signature = inspect.signature(func)
     name_ = name or utils._get_function_name(func)
     extra_inner = _collect_extra(extra_outer, langsmith_extra)
@@ -1528,22 +1526,26 @@ def _setup_run(
             attachments=attachments,
         )
     else:
-        new_run = run_trees.RunTree(
-            id=ls_client._ensure_uuid(id_),
-            name=name_,
-            inputs=inputs,
-            run_type=run_type,
-            reference_example_id=ls_client._ensure_uuid(
+        # Create RunTree kwargs conditionally to let RunTree generate id from start_time
+        run_tree_kwargs = {
+            "name": name_,
+            "inputs": inputs,
+            "run_type": run_type,
+            "reference_example_id": ls_client._ensure_uuid(
                 reference_example_id, accept_null=True
             ),
-            project_name=selected_project,  # type: ignore[arg-type]
-            replicas=run_trees._REPLICAS.get(),
-            extra=extra_inner,
-            tags=tags_,
-            client=client_,  # type: ignore
-            attachments=attachments,  # type: ignore
-            dangerously_allow_filesystem=dangerously_allow_filesystem,
-        )
+            "project_name": selected_project,
+            "replicas": run_trees._REPLICAS.get(),
+            "extra": extra_inner,
+            "tags": tags_,
+            "client": client_,
+            "attachments": attachments,
+            "dangerously_allow_filesystem": dangerously_allow_filesystem,
+        }
+        # Only pass id if user explicitly provided one
+        if id_ is not None:
+            run_tree_kwargs["id"] = ls_client._ensure_uuid(id_)
+        new_run = run_trees.RunTree(**cast(Any, run_tree_kwargs))
     if utils.tracing_is_enabled() is True:
         try:
             new_run.post()
