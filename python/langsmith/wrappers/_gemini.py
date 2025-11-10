@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import functools
 import logging
-import warnings
 from collections.abc import Mapping
 from typing import (
     TYPE_CHECKING,
@@ -17,11 +16,11 @@ from typing_extensions import TypedDict
 
 from langsmith import client as ls_client
 from langsmith import run_helpers
+from langsmith._internal._beta_decorator import warn_beta
 from langsmith.schemas import InputTokenDetails, OutputTokenDetails, UsageMetadata
 
 if TYPE_CHECKING:
-    from google import genai
-    from google.genai.types import GenerateContentResponse
+    from google import genai  # type: ignore[import-untyped, attr-defined]
 
 C = TypeVar("C", bound=Union["genai.Client", Any])
 logger = logging.getLogger(__name__)
@@ -33,7 +32,14 @@ def _strip_none(d: dict) -> dict:
 
 
 def _process_gemini_inputs(inputs: dict) -> dict:
-    """Process Gemini inputs to normalize them for LangSmith tracing."""
+    r"""Process Gemini inputs to normalize them for LangSmith tracing.
+
+    Example:
+        {"contents": "Hello", "model": "gemini-pro"}
+        → {"messages": [{"role": "user", "content": "Hello"}], "model": "gemini-pro"}
+        {"contents": [{"role": "user", "parts": [{"text": "What is AI?"}]}], "model": "gemini-pro"}
+        → {"messages": [{"role": "user", "content": "What is AI?"}], "model": "gemini-pro"}
+    """  # noqa: E501
     # If contents is not present or not in list format, return as-is
     contents = inputs.get("contents")
     if not contents:
@@ -49,6 +55,15 @@ def _process_gemini_inputs(inputs: dict) -> dict:
 
     # Handle list of content objects (multimodal case)
     if isinstance(contents, list):
+        # Check if it's a simple list of strings
+        if all(isinstance(item, str) for item in contents):
+            # Each string becomes a separate user message (matches Gemini's behavior)
+            return {
+                "messages": [{"role": "user", "content": item} for item in contents],
+                "model": inputs.get("model"),
+                **({k: v for k, v in inputs.items() if k not in ("contents", "model")}),
+            }
+        # Handle complex multimodal case
         messages = []
         for content in contents:
             if isinstance(content, dict):
@@ -88,12 +103,13 @@ def _process_gemini_inputs(inputs: dict) -> dict:
                 if content_parts and all(
                     p.get("type") == "text" for p in content_parts
                 ):
-                    message_content = "\n".join(text_parts)
+                    message_content: Union[str, list[dict[str, Any]]] = "\n".join(
+                        text_parts
+                    )
                 else:
                     message_content = content_parts if content_parts else ""
 
                 messages.append({"role": role, "content": message_content})
-
         return {
             "messages": messages,
             "model": inputs.get("model"),
@@ -197,7 +213,7 @@ def _process_generate_content_response(response: Any) -> dict:
         # Extract and convert usage metadata
         usage_metadata = rdict.get("usage_metadata")
         if usage_metadata:
-            result["usage_metadata"] = _create_usage_metadata(usage_metadata)
+            result["usage_metadata"] = _create_usage_metadata(usage_metadata)  # type: ignore[assignment]
 
         return result
     except Exception as e:
@@ -251,7 +267,7 @@ def _reduce_generate_content_chunks(all_chunks: list) -> dict:
                             last_chunk.usage_metadata, "total_token_count", 0
                         ),
                     }
-                result["usage_metadata"] = _create_usage_metadata(usage_dict)
+                result["usage_metadata"] = _create_usage_metadata(usage_dict)  # type: ignore[assignment]
         except Exception as e:
             logger.debug(f"Error extracting metadata from last chunk: {e}")
 
@@ -304,6 +320,7 @@ class TracingExtra(TypedDict, total=False):
     client: Optional[ls_client.Client]
 
 
+@warn_beta
 def wrap_gemini(
     client: C,
     *,
@@ -360,14 +377,6 @@ def wrap_gemini(
         Initial beta release of Google Gemini wrapper.
 
     """
-    # Issue beta warning on first use
-    warnings.warn(
-        "wrap_gemini is currently in beta."
-        "Please report any issues at https://github.com/langchain-ai/langsmith-sdk",
-        FutureWarning,
-        stacklevel=2,
-    )
-
     tracing_extra = tracing_extra or {}
 
     # Check if already wrapped to prevent double-wrapping
