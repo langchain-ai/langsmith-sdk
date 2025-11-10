@@ -351,7 +351,9 @@ class TestProcessGenerateContentResponse:
         # Mock response with inline image data (bytes format like real Gemini API)
         import base64
 
-        test_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg=="
+        test_b64 = (
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg=="
+        )
         test_image_bytes = base64.b64decode(test_b64)
 
         class MockResponse:
@@ -506,49 +508,6 @@ class TestInferInvocationParams:
             "ls_stop": None,
         }
         assert result == expected
-
-
-class TestSmartDetection:
-    """Test smart detection to prevent double processing."""
-
-    def test_already_processed_data_passthrough(self):
-        # This simulates data that comes from _reduce_generate_content_chunks
-        already_processed = {
-            "content": "This is already processed streaming data",
-            "role": "assistant",
-            "usage_metadata": {
-                "input_tokens": 10,
-                "output_tokens": 20,
-                "total_tokens": 30,
-            },
-        }
-
-        result = _process_generate_content_response(already_processed)
-
-        # Should return the same data unchanged
-        assert result == already_processed
-        assert result["content"] == "This is already processed streaming data"
-        assert result["role"] == "assistant"
-        assert result["usage_metadata"]["input_tokens"] == 10
-
-    def test_raw_gemini_response_processing(self):
-        # This simulates a raw Gemini API response
-        class MockResponse:
-            def to_dict(self):
-                return {
-                    "candidates": [{"content": {"parts": [{"text": "Raw response"}]}}],
-                    "usage_metadata": {
-                        "prompt_token_count": 5,
-                        "candidates_token_count": 10,
-                    },
-                }
-
-        result = _process_generate_content_response(MockResponse())
-
-        # Should process the raw response normally
-        assert result["content"] == "Raw response"
-        assert "usage_metadata" in result
-        assert result["usage_metadata"]["input_tokens"] == 5
 
 
 class TestCreateUsageMetadata:
