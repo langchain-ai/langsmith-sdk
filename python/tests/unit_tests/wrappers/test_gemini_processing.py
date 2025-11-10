@@ -344,6 +344,53 @@ class TestProcessGenerateContentResponse:
         assert tool_call["function"]["arguments"] == {"location": "Boston"}
         assert "usage_metadata" in result
 
+    def test_response_with_image(self):
+        # Mock response with inline image data (bytes format like real Gemini API)
+        import base64
+
+        test_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
+        test_image_bytes = base64.b64decode(test_b64)
+
+        class MockResponse:
+            def to_dict(self):
+                return {
+                    "candidates": [
+                        {
+                            "content": {
+                                "parts": [
+                                    {"text": "Here's your image:"},
+                                    {
+                                        "inline_data": {
+                                            "mime_type": "image/png",
+                                            "data": test_image_bytes,  # bytes like real API
+                                        }
+                                    },
+                                ]
+                            }
+                        }
+                    ],
+                    "usage_metadata": {
+                        "prompt_token_count": 10,
+                        "candidates_token_count": 5,
+                    },
+                }
+
+        result = _process_generate_content_response(MockResponse())
+
+        # Should use structured content format for mixed content
+        assert result["content"] == [
+            {"type": "text", "text": "Here's your image:"},
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:image/png;base64,{test_b64}",
+                    "detail": "high",
+                },
+            },
+        ]
+        assert result["role"] == "assistant"
+        assert "usage_metadata" in result
+
 
 class TestReduceGenerateContentChunks:
     """Test _reduce_generate_content_chunks function."""

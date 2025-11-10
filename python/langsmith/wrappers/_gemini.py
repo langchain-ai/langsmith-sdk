@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import functools
 import logging
 from collections.abc import Mapping
@@ -90,12 +91,19 @@ def _process_gemini_inputs(inputs: dict) -> dict:
                         elif "inline_data" in part:
                             inline_data = part["inline_data"]
                             mime_type = inline_data.get("mime_type", "image/jpeg")
-                            data = inline_data.get("data", "")
+                            data = inline_data.get("data", b"")
+
+                            # Convert bytes to base64 string if needed
+                            if isinstance(data, bytes):
+                                data_b64 = base64.b64encode(data).decode("utf-8")
+                            else:
+                                data_b64 = data  # Already a string
+
                             content_parts.append(
                                 {
                                     "type": "image_url",
                                     "image_url": {
-                                        "url": f"data:{mime_type};base64,{data}",
+                                        "url": f"data:{mime_type};base64,{data_b64}",
                                         "detail": "high",
                                     },
                                 }
@@ -224,6 +232,27 @@ def _process_generate_content_response(response: Any) -> dict:
                         if "text" in part and part["text"]:
                             content_result += part["text"]
                             content_parts.append({"type": "text", "text": part["text"]})
+                        # Handle inline data (images) in response
+                        elif "inline_data" in part:
+                            inline_data = part["inline_data"]
+                            mime_type = inline_data.get("mime_type", "image/jpeg")
+                            data = inline_data.get("data", b"")
+
+                            # Convert bytes to base64 string if needed
+                            if isinstance(data, bytes):
+                                data_b64 = base64.b64encode(data).decode("utf-8")
+                            else:
+                                data_b64 = data  # Already a string
+
+                            content_parts.append(
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f"data:{mime_type};base64,{data_b64}",
+                                        "detail": "high",
+                                    },
+                                }
+                            )
                         # Handle function calls in response
                         elif "function_call" in part or "functionCall" in part:
                             function_call = part.get("function_call") or part.get(
