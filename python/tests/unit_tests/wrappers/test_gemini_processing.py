@@ -367,7 +367,10 @@ class TestProcessGenerateContentResponse:
         import base64
 
         # Valid 1x1 red pixel PNG in base64
-        test_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg=="
+        test_b64 = (
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwA"
+            "FBQIAX8jx0gAAAABJRU5ErkJggg=="
+        )
         test_image_bytes = base64.b64decode(test_b64)
 
         class MockResponse:
