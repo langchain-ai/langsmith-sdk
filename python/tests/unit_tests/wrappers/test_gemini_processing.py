@@ -142,7 +142,7 @@ class TestProcessGeminiInputs:
         assert result == expected
 
     def test_function_call_input_passthrough(self):
-        # Function calls in input should be passed through as-is since they're unusual
+        # Function calls in input can occur when including conversation history
         # The normal flow is: user input → model function call → user function response
         inputs = {
             "contents": [
@@ -162,12 +162,21 @@ class TestProcessGeminiInputs:
         }
         result = _process_gemini_inputs(inputs)
 
-        # Should pass through unchanged since functionCall in input is unusual
+        # Should convert to structured format with function_call
         expected = {
             "messages": [
                 {
                     "role": "model",
-                    "content": "",  # No text content, so empty string
+                    "content": [
+                        {
+                            "type": "function_call",
+                            "function_call": {
+                                "id": None,
+                                "name": "get_weather",
+                                "arguments": {"location": "Boston"},
+                            },
+                        }
+                    ],
                 }
             ],
             "model": "gemini-pro",
@@ -227,7 +236,12 @@ class TestProcessGenerateContentResponse:
         class MockResponse:
             def to_dict(self):
                 return {
-                    "candidates": [{"content": {"parts": [{"text": "Hello world"}]}}],
+                    "candidates": [
+                        {
+                            "content": {"parts": [{"text": "Hello world"}]},
+                            "finish_reason": "STOP",
+                        }
+                    ],
                     "usage_metadata": {
                         "prompt_token_count": 5,
                         "candidates_token_count": 10,
@@ -238,6 +252,7 @@ class TestProcessGenerateContentResponse:
         # For simple text responses, should return minimal structure with usage metadata
         assert result["content"] == "Hello world"
         assert "usage_metadata" in result
+        assert result["finish_reason"] == "STOP"
         assert result["usage_metadata"]["input_tokens"] == 5
 
     def test_text_attribute_fallback(self):
@@ -351,7 +366,8 @@ class TestProcessGenerateContentResponse:
         # Mock response with inline image data (bytes format like real Gemini API)
         import base64
 
-        test_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAA"
+        # Valid 1x1 red pixel PNG in base64
+        test_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg=="
         test_image_bytes = base64.b64decode(test_b64)
 
         class MockResponse:

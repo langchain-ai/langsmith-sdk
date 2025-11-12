@@ -10,6 +10,7 @@ import pytest
 
 from langsmith import Client
 from langsmith.wrappers import wrap_gemini
+from langsmith.wrappers._gemini import _process_generate_content_response
 from tests.unit_tests.test_run_helpers import _get_calls
 
 if TYPE_CHECKING:
@@ -175,7 +176,7 @@ async def test_generate_content_stream_async():
 
     # Test streaming async
     original_chunks = []
-    async for chunk in original_client.aio.models.generate_content_stream(
+    async for chunk in await original_client.aio.models.generate_content_stream(
         model=model_name,
         contents=prompt,
     ):
@@ -183,7 +184,7 @@ async def test_generate_content_stream_async():
             original_chunks.append(chunk.text)
 
     patched_chunks = []
-    async for chunk in patched_client.aio.models.generate_content_stream(
+    async for chunk in await patched_client.aio.models.generate_content_stream(
         model=model_name,
         contents=prompt,
     ):
@@ -228,10 +229,17 @@ def test_custom_config(patched_client: genai.Client, mock_ls_client: Client):
     assert calls
 
 
-@pytest.mark.skipif(
-    True,  # Skip by default - requires gemini-2.5-flash-image model access
-    reason="Requires gemini-2.5-flash-image model which may not be available",
-)
+def test_finish_reason(patched_client: genai.Client, mock_ls_client: Client):
+    """Test finish reason."""
+    from google.genai.types import FinishReason
+
+    response = patched_client.models.generate_content(
+        model=model_name,
+        contents=prompt,
+    )
+    assert response.candidates[0].finish_reason == FinishReason.STOP
+
+
 def test_multimodal_image_generation(
     patched_client: genai.Client, mock_ls_client: Client
 ):
@@ -323,3 +331,48 @@ def test_multimodal_input_with_text_only(
                 assert len(inputs["messages"]) > 0
                 assert inputs["messages"][0]["role"] == "user"
                 break
+
+
+def test_function_calling(patched_client: genai.Client, mock_ls_client: Client):
+    """Test function calling with manual function declaration."""
+    from google.genai import types
+
+    # Manually define the function declaration
+    get_weather_func = types.FunctionDeclaration(
+        name="get_current_weather",
+        description="Get the current weather in a given location",
+        parameters={
+            "type": "object",
+            "properties": {
+                "location": {
+                    "type": "string",
+                    "description": "The city and state, e.g. San Francisco, CA",
+                }
+            },
+            "required": ["location"],
+        },
+    )
+
+    response = patched_client.models.generate_content(
+        model=model_name,
+        contents="What is the weather like in Boston?",
+        config=types.GenerateContentConfig(
+            tools=[types.Tool(function_declarations=[get_weather_func])],
+        ),
+    )
+
+    # Test the processing function
+    result = _process_generate_content_response(response)
+
+    # Check that function call was made
+    assert response.candidates
+    assert response.candidates[0].content.parts
+
+    # Verify the function call is present in result
+    assert "tool_calls" in result, f"Expected tool_calls, got: {result.keys()}"
+    assert len(result["tool_calls"]) >= 1
+
+    tool_call = result["tool_calls"][0]
+    assert tool_call["type"] == "function"
+    assert tool_call["function"]["name"] == "get_current_weather"
+    assert "location" in json.loads(tool_call["function"]["arguments"])

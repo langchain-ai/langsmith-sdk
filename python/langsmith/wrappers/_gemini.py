@@ -123,6 +123,27 @@ def _process_gemini_inputs(inputs: dict) -> dict:
                                     },
                                 }
                             )
+                        # Handle function calls (for conversation history)
+                        elif "function_call" in part or "functionCall" in part:
+                            function_call = part.get("function_call") or part.get(
+                                "functionCall"
+                            )
+
+                            if function_call is not None:
+                                # Normalize to dict (FunctionCall is a Pydantic model)
+                                if not isinstance(function_call, dict):
+                                    function_call = function_call.to_dict()
+
+                                content_parts.append(
+                                    {
+                                        "type": "function_call",
+                                        "function_call": {
+                                            "id": function_call.get("id"),
+                                            "name": function_call.get("name"),
+                                            "arguments": function_call.get("args", {}),
+                                        },
+                                    }
+                                )
                     elif isinstance(part, str):
                         # Handle simple string parts
                         text_parts.append(part)
@@ -222,7 +243,7 @@ def _process_generate_content_response(response: Any) -> dict:
         # Extract content from candidates if available
         content_result = ""
         content_parts = []
-
+        finish_reason: Optional[str] = None
         if "candidates" in rdict and rdict["candidates"]:
             candidate = rdict["candidates"][0]
             if "content" in candidate:
@@ -234,7 +255,7 @@ def _process_generate_content_response(response: Any) -> dict:
                             content_result += part["text"]
                             content_parts.append({"type": "text", "text": part["text"]})
                         # Handle inline data (images) in response
-                        elif "inline_data" in part:
+                        elif "inline_data" in part and part["inline_data"] is not None:
                             inline_data = part["inline_data"]
                             mime_type = inline_data.get("mime_type", "image/jpeg")
                             data = inline_data.get("data", b"")
@@ -259,28 +280,36 @@ def _process_generate_content_response(response: Any) -> dict:
                             function_call = part.get("function_call") or part.get(
                                 "functionCall"
                             )
-                            content_parts.append(
-                                {
-                                    "type": "function_call",
-                                    "function_call": {
-                                        "id": function_call.get("id"),
-                                        "name": function_call.get("name"),
-                                        "arguments": function_call.get("args", {}),
-                                    },
-                                }
-                            )
+
+                            if function_call is not None:
+                                # Normalize to dict (FunctionCall is a Pydantic model)
+                                if not isinstance(function_call, dict):
+                                    function_call = function_call.to_dict()
+
+                                content_parts.append(
+                                    {
+                                        "type": "function_call",
+                                        "function_call": {
+                                            "id": function_call.get("id"),
+                                            "name": function_call.get("name"),
+                                            "arguments": function_call.get("args", {}),
+                                        },
+                                    }
+                                )
+                if "finish_reason" in candidate and candidate["finish_reason"]:
+                    finish_reason = candidate["finish_reason"]
         elif "text" in rdict:
             content_result = rdict["text"]
             content_parts.append({"type": "text", "text": content_result})
 
         # Build chat-like response format - use OpenAI-compatible format for tool calls
         tool_calls = [p for p in content_parts if p.get("type") == "function_call"]
-
         if tool_calls:
             # OpenAI-compatible format for LangSmith UI
             result = {
                 "content": content_result or None,
                 "role": "assistant",
+                "finish_reason": finish_reason,
                 "tool_calls": [
                     {
                         "id": tc["function_call"].get("id") or f"call_{i}",
@@ -298,10 +327,18 @@ def _process_generate_content_response(response: Any) -> dict:
             content_parts and content_parts[0]["type"] != "text"
         ):
             # Use structured format for mixed non-tool content
-            result = {"content": content_parts, "role": "assistant"}
+            result = {
+                "content": content_parts,
+                "role": "assistant",
+                "finish_reason": finish_reason,
+            }
         else:
             # Use simple string format for text-only responses
-            result = {"content": content_result, "role": "assistant"}
+            result = {
+                "content": content_result,
+                "role": "assistant",
+                "finish_reason": finish_reason,
+            }
 
         # Extract and convert usage metadata
         usage_metadata = rdict.get("usage_metadata")
@@ -314,6 +351,7 @@ def _process_generate_content_response(response: Any) -> dict:
             return {
                 "content": result["content"],
                 "role": "assistant",
+                "finish_reason": finish_reason,
                 "tool_calls": result["tool_calls"],
                 "usage_metadata": result.get("usage_metadata", {}),
             }
@@ -322,6 +360,8 @@ def _process_generate_content_response(response: Any) -> dict:
             if isinstance(result["content"], str):
                 return {
                     "content": result["content"],
+                    "role": "assistant",
+                    "finish_reason": finish_reason,
                     "usage_metadata": result.get("usage_metadata", {}),
                 }
             else:
