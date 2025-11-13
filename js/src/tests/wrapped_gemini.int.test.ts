@@ -128,7 +128,7 @@ test("should trace calls to langsmith", async () => {
   callSpy.mockClear();
 });
 
-test("should extract usage metadata", async () => {
+test("should extract usage metadata in outputs", async () => {
   const { client, callSpy } = mockClient();
 
   const geminiClient = wrapGemini(
@@ -160,7 +160,48 @@ test("should extract usage metadata", async () => {
     }
   }
 
-  // Verify usage_metadata exists
+  // Verify usage_metadata exists in outputs
+  expect(usageMetadata).toBeDefined();
+  expect(usageMetadata.input_tokens).toBeGreaterThan(0);
+  expect(usageMetadata.output_tokens).toBeGreaterThan(0);
+  expect(usageMetadata.total_tokens).toBeGreaterThan(0);
+
+  callSpy.mockClear();
+});
+
+test("should extract usage metadata in extra.metadata.usage_metadata", async () => {
+  const { client, callSpy } = mockClient();
+
+  const geminiClient = wrapGemini(
+    new GoogleGenAI({
+      apiKey: process.env.GEMINI_API_KEY || "test-key",
+    }),
+    {
+      client,
+      tracingEnabled: true,
+    }
+  );
+
+  await geminiClient.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: "Say hello world",
+  });
+
+  expect(callSpy.mock.calls.length).toBeGreaterThan(0);
+
+  // Find any call with usage_metadata in extra.metadata.usage_metadata
+  let usageMetadata;
+  for (const call of callSpy.mock.calls) {
+    const request = call[1] as any;
+    const body = parseRequestBody(request.body);
+
+    if (body.extra?.metadata?.usage_metadata) {
+      usageMetadata = body.extra.metadata.usage_metadata;
+      break;
+    }
+  }
+
+  // Verify usage_metadata exists in extra.metadata
   expect(usageMetadata).toBeDefined();
   expect(usageMetadata.input_tokens).toBeGreaterThan(0);
   expect(usageMetadata.output_tokens).toBeGreaterThan(0);
