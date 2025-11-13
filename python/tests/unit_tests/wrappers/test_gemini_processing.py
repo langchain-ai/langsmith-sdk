@@ -249,10 +249,11 @@ class TestProcessGenerateContentResponse:
                 }
 
         result = _process_generate_content_response(MockResponse())
-        # For simple text responses, should return minimal structure with usage metadata
+        # For simple text responses, should return minimal structure
         assert result["content"] == "Hello world"
-        assert "usage_metadata" in result
         assert result["finish_reason"] == "STOP"
+        # usage_metadata is in both run.extra AND result
+        assert "usage_metadata" in result
         assert result["usage_metadata"]["input_tokens"] == 5
 
     def test_text_attribute_fallback(self):
@@ -264,6 +265,7 @@ class TestProcessGenerateContentResponse:
 
         # For simple text responses, should return minimal structure
         assert result["content"] == "Direct text response"
+        # usage_metadata is in both run.extra AND result
         assert "usage_metadata" in result
 
     def test_exception_handling(self):
@@ -319,6 +321,7 @@ class TestProcessGenerateContentResponse:
         assert tool_call["function"]["name"] == "get_weather"
         assert tool_call["function"]["arguments"] == '{"location": "Boston"}'
         assert result["role"] == "assistant"
+        # usage_metadata is in both run.extra AND result
         assert "usage_metadata" in result
 
     def test_response_with_text_and_function_call(self):
@@ -360,6 +363,7 @@ class TestProcessGenerateContentResponse:
         assert tool_call["index"] == 0
         assert tool_call["function"]["name"] == "get_weather"
         assert tool_call["function"]["arguments"] == '{"location": "Boston"}'
+        # usage_metadata is in both run.extra AND result
         assert "usage_metadata" in result
 
     def test_response_with_image(self):
@@ -411,6 +415,7 @@ class TestProcessGenerateContentResponse:
             },
         ]
         assert result["role"] == "assistant"
+        # usage_metadata is in both run.extra AND result
         assert "usage_metadata" in result
 
 
@@ -421,6 +426,7 @@ class TestReduceGenerateContentChunks:
         result = _reduce_generate_content_chunks([])
         # Empty content should return minimal structure
         assert result["content"] == ""
+        # usage_metadata is in both run.extra AND result
         assert "usage_metadata" in result
 
     def test_text_chunks(self):
@@ -434,6 +440,7 @@ class TestReduceGenerateContentChunks:
 
         # Should return minimal structure with content
         assert result["content"] == "Hello world!"
+        # usage_metadata is in both run.extra AND result
         assert "usage_metadata" in result
 
     def test_chunks_with_usage(self):
@@ -451,6 +458,7 @@ class TestReduceGenerateContentChunks:
 
         # Should return minimal structure with content and usage metadata
         assert result["content"] == "Hello world"
+        # usage_metadata is in both run.extra AND result
         assert "usage_metadata" in result
         assert result["usage_metadata"]["input_tokens"] == 5
 
@@ -465,6 +473,7 @@ class TestReduceGenerateContentChunks:
 
         # Should handle errors gracefully and return empty content
         assert result["content"] == ""
+        # usage_metadata is in both run.extra AND result
         assert "usage_metadata" in result
 
 

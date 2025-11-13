@@ -342,8 +342,20 @@ def _process_generate_content_response(response: Any) -> dict:
 
         # Extract and convert usage metadata
         usage_metadata = rdict.get("usage_metadata")
+        usage_dict = {}
         if usage_metadata:
-            result["usage_metadata"] = _create_usage_metadata(usage_metadata)  # type: ignore[assignment]
+            usage_dict = _create_usage_metadata(usage_metadata)
+            # Add usage_metadata to both run.extra AND outputs
+            current_run = run_helpers.get_current_run_tree()
+            if current_run:
+                try:
+                    meta = current_run.extra.setdefault("metadata", {}).setdefault(
+                        "usage_metadata", {}
+                    )
+                    meta.update(usage_dict)
+                    current_run.patch()
+                except Exception as e:
+                    logger.warning(f"Failed to update usage metadata: {e}")
 
         # Return in a format that avoids stringification by LangSmith
         if result.get("tool_calls"):
@@ -353,7 +365,7 @@ def _process_generate_content_response(response: Any) -> dict:
                 "role": "assistant",
                 "finish_reason": finish_reason,
                 "tool_calls": result["tool_calls"],
-                "usage_metadata": result.get("usage_metadata", {}),
+                "usage_metadata": usage_dict,
             }
         else:
             # For simple text responses, return minimal structure with usage metadata
@@ -362,10 +374,11 @@ def _process_generate_content_response(response: Any) -> dict:
                     "content": result["content"],
                     "role": "assistant",
                     "finish_reason": finish_reason,
-                    "usage_metadata": result.get("usage_metadata", {}),
+                    "usage_metadata": usage_dict,
                 }
             else:
-                # For multimodal content, return structured format
+                # For multimodal content, return structured format with usage metadata
+                result["usage_metadata"] = usage_dict
                 return result
     except Exception as e:
         logger.debug(f"Error processing Gemini response: {e}")
@@ -417,19 +430,27 @@ def _reduce_generate_content_chunks(all_chunks: list) -> dict:
                             last_chunk.usage_metadata, "total_token_count", 0
                         ),
                     }
-                result["usage_metadata"] = _create_usage_metadata(usage_dict)  # type: ignore[assignment]
+                # Add usage_metadata to both run.extra AND outputs
+                usage_metadata = _create_usage_metadata(usage_dict)
+                result["usage_metadata"] = usage_metadata
+                current_run = run_helpers.get_current_run_tree()
+                if current_run:
+                    try:
+                        meta = current_run.extra.setdefault("metadata", {}).setdefault(
+                            "usage_metadata", {}
+                        )
+                        meta.update(usage_metadata)
+                        current_run.patch()
+                    except Exception as e:
+                        logger.warning(f"Failed to update usage metadata: {e}")
         except Exception as e:
             logger.debug(f"Error extracting metadata from last chunk: {e}")
 
-    # For simple text responses, return minimal structure with usage metadata
-    if isinstance(result.get("content"), str) and not result.get("tool_calls"):
-        return {
-            "content": result["content"],
-            "usage_metadata": result.get("usage_metadata", {}),
-        }
-    else:
-        # For complex responses, return structured format
-        return result
+    # Return minimal structure with usage_metadata in outputs
+    return {
+        "content": result["content"],
+        "usage_metadata": result.get("usage_metadata", {}),
+    }
 
 
 def _get_wrapper(
