@@ -176,6 +176,7 @@ logger = logging.getLogger(__name__)
 _urllib3_logger = logging.getLogger("urllib3.connectionpool")
 
 X_API_KEY = "x-api-key"
+X_SERVICE_KEY = "x-service-key"
 EMPTY_SEQ: tuple[dict, ...] = ()
 URLLIB3_SUPPORTS_BLOCKSIZE = "key_blocksize" in signature(PoolKey).parameters
 DEFAULT_INSTRUCTIONS = "How are people using my agent? What are they asking about?"
@@ -274,12 +275,15 @@ def close_session(session: requests.Session) -> None:
     session.close()
 
 
-def _validate_api_key_if_hosted(api_url: str, api_key: Optional[str]) -> None:
-    """Verify API key is provided if url not localhost.
+def _validate_api_key_if_hosted(
+    api_url: str, api_key: Optional[str], service_key: Optional[str] = None
+) -> None:
+    """Verify credentials are provided if url not localhost.
 
     Args:
         api_url (str): The API URL.
         api_key (Optional[str]): The API key.
+        service_key (Optional[str]): The service key.
 
     Returns:
         None
@@ -288,14 +292,14 @@ def _validate_api_key_if_hosted(api_url: str, api_key: Optional[str]) -> None:
         LangSmithUserError: If the API key is not provided when using the hosted service.
     """
     # If the domain is langchain.com, raise error if no api_key
-    if not api_key:
+    if not api_key and not service_key:
         if (
             _is_langchain_hosted(api_url)
             and not ls_utils.is_env_var_truish("OTEL_ENABLED")
             and ls_utils.tracing_is_enabled()
         ):
             warnings.warn(
-                "API key must be provided when using hosted LangSmith API",
+                "API key or service key must be provided when using hosted LangSmith API",
                 ls_utils.LangSmithMissingAPIKeyWarning,
             )
 
@@ -424,6 +428,7 @@ class Client:
         "__weakref__",
         "api_url",
         "_api_key",
+        "_service_key",
         "_workspace_id",
         "_headers",
         "retry_config",
@@ -461,6 +466,7 @@ class Client:
     ]
 
     _api_key: Optional[str]
+    _service_key: Optional[str]
     _headers: dict[str, str]
     _timeout: tuple[float, float]
     _manual_cleanup: bool
@@ -470,6 +476,7 @@ class Client:
         api_url: Optional[str] = None,
         *,
         api_key: Optional[str] = None,
+        service_key: Optional[str] = None,
         retry_config: Optional[Retry] = None,
         timeout_ms: Optional[Union[int, tuple[int, int]]] = None,
         web_url: Optional[str] = None,
@@ -498,6 +505,8 @@ class Client:
             api_url (Optional[str]): URL for the LangSmith API. Defaults to the LANGCHAIN_ENDPOINT
                 environment variable or https://api.smith.langchain.com if not set.
             api_key (Optional[str]): API key for the LangSmith API. Defaults to the LANGCHAIN_API_KEY
+                environment variable.
+            service_key (Optional[str]): Service key for the LangSmith API. Defaults to the LANGCHAIN_SERVICE_KEY
                 environment variable.
             retry_config (Optional[Retry]): Retry configuration for the HTTPAdapter.
             timeout_ms (Optional[Union[int, Tuple[int, int]]]): Timeout for the HTTPAdapter. Can also be a 2-tuple of
@@ -547,7 +556,7 @@ class Client:
                 If not provided, the default is set by the server.
 
         Raises:
-            LangSmithUserError: If the API key is not provided when using the hosted service.
+            LangSmithUserError: If neither an API key nor service key is provided when using the hosted service.
                 If both api_url and api_urls are provided.
         """
         if api_url and api_urls:
@@ -570,6 +579,7 @@ class Client:
         )
         # Initialize workspace attribute first
         self._workspace_id = ls_utils.get_workspace_id(workspace_id)
+        self._service_key = None
 
         if self._write_api_urls:
             self.api_url = next(iter(self._write_api_urls))
@@ -577,8 +587,14 @@ class Client:
         else:
             self.api_url = ls_utils.get_api_url(api_url)
             self.api_key = ls_utils.get_api_key(api_key)
-            _validate_api_key_if_hosted(self.api_url, self.api_key)
+        service_key_value = ls_utils.get_service_key(service_key)
+        if not self._write_api_urls:
+            _validate_api_key_if_hosted(self.api_url, self.api_key, service_key_value)
             self._write_api_urls = {self.api_url: self.api_key}
+        if service_key_value:
+            self._set_header_affecting_attr("_service_key", service_key_value)
+            if self.api_key:
+                self.api_key = None
         self.retry_config = retry_config or _default_retry_config()
         self.timeout_ms = (
             (timeout_ms, timeout_ms)
@@ -780,6 +796,8 @@ class Client:
         }
         if self.api_key:
             headers[X_API_KEY] = self.api_key
+        if self._service_key:
+            headers[X_SERVICE_KEY] = self._service_key
         if self._workspace_id:
             headers["X-Tenant-Id"] = self._workspace_id
         return headers
@@ -1632,7 +1650,9 @@ class Client:
         if api_key is not None or api_url is not None:
             target_api_url = api_url or self.api_url
             target_api_key = api_key or self.api_key
-            headers = {**self._headers, X_API_KEY: target_api_key}
+            headers = {**self._headers}
+            if target_api_key:
+                headers[X_API_KEY] = target_api_key
             try:
                 self.request_with_retries(
                     "POST",
@@ -1648,7 +1668,9 @@ class Client:
         else:
             # Use all configured write API URLs
             for write_api_url, write_api_key in self._write_api_urls.items():
-                headers = {**self._headers, X_API_KEY: write_api_key}
+                headers = {**self._headers}
+                if write_api_key:
+                    headers[X_API_KEY] = write_api_key
                 try:
                     self.request_with_retries(
                         "POST",
@@ -1998,15 +2020,15 @@ class Client:
                 logger.debug(
                     f"Sending batch ingest request to {target_api_url} with context: {_context}"
                 )
+                headers = {**self._headers}
+                if target_api_key:
+                    headers[X_API_KEY] = target_api_key
                 self.request_with_retries(
                     "POST",
                     f"{target_api_url}/runs/batch",
                     request_kwargs={
                         "data": body,
-                        "headers": {
-                            **self._headers,
-                            X_API_KEY: target_api_key,
-                        },
+                        "headers": headers,
                     },
                     to_ignore=(ls_utils.LangSmithConflictError,),
                     stop_after_attempt=3,
@@ -2256,16 +2278,18 @@ class Client:
                     logger.debug(
                         f"Sending multipart request to {target_api_url} with context: {_context}"
                     )
+                    headers = {
+                        **self._headers,
+                        "Content-Type": encoder.content_type,
+                    }
+                    if target_api_key:
+                        headers[X_API_KEY] = target_api_key
                     self.request_with_retries(
                         "POST",
                         f"{target_api_url}/runs/multipart",
                         request_kwargs={
                             "data": data,
-                            "headers": {
-                                **self._headers,
-                                X_API_KEY: target_api_key,
-                                "Content-Type": encoder.content_type,
-                            },
+                            "headers": headers,
                         },
                         stop_after_attempt=1,
                         _context=_context,
@@ -2596,10 +2620,9 @@ class Client:
         if api_key is not None or api_url is not None:
             target_api_url = api_url or self.api_url
             target_api_key = api_key or self.api_key
-            headers = {
-                **self._headers,
-                X_API_KEY: target_api_key,
-            }
+            headers = {**self._headers}
+            if target_api_key:
+                headers[X_API_KEY] = target_api_key
 
             self.request_with_retries(
                 "PATCH",
@@ -2612,10 +2635,9 @@ class Client:
         else:
             # Use all configured write API URLs
             for write_api_url, write_api_key in self._write_api_urls.items():
-                headers = {
-                    **self._headers,
-                    X_API_KEY: write_api_key,
-                }
+                headers = {**self._headers}
+                if write_api_key:
+                    headers[X_API_KEY] = write_api_key
 
                 self.request_with_retries(
                     "PATCH",
@@ -6830,15 +6852,16 @@ class Client:
         )
 
         def req(api_url: str, api_key: Optional[str]) -> list:
+            headers = {**self._headers}
+            auth_key = api_key or self.api_key
+            if auth_key:
+                headers[X_API_KEY] = auth_key
             response = self.request_with_retries(
                 "POST",
                 f"{api_url}/feedback/tokens",
                 request_kwargs={
                     "data": body,
-                    "headers": {
-                        **self._headers,
-                        X_API_KEY: api_key or self.api_key,
-                    },
+                    "headers": headers,
                 },
             )
             ls_utils.raise_for_status_with_text(response)

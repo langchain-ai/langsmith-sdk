@@ -203,6 +203,11 @@ def test_headers(monkeypatch: pytest.MonkeyPatch) -> None:
         client_no_key = Client(api_url="http://localhost:1984")
         assert "x-api-key" not in client_no_key._headers
 
+        client_service_key = Client(api_url="http://localhost:1984", service_key="svc")
+        assert "x-service-key" in client_service_key._headers
+        assert client_service_key._headers["x-service-key"] == "svc"
+        assert "x-api-key" not in client_service_key._headers
+
 
 @mock.patch("langsmith.client.requests.Session")
 def test_cached_header_and_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -228,6 +233,21 @@ def test_cached_header_and_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
         args, kwargs = client.session.request.call_args
         assert kwargs["timeout"] == client._timeout
         assert kwargs["headers"]["x-api-key"] == "abc"
+
+
+@mock.patch("langsmith.client.requests.Session")
+def test_service_key_overrides_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_env_cache()
+    monkeypatch.delenv("LANGCHAIN_API_KEY", raising=False)
+    with patch.dict("os.environ", {}, clear=True):
+        client = Client(
+            api_url="http://localhost:1984",
+            api_key="abc",
+            service_key="svc",
+        )
+        assert client._headers["x-service-key"] == "svc"
+        assert "x-api-key" not in client._headers
+        assert client.api_key is None
 
 
 @mock.patch("langsmith.client.requests.Session")
@@ -1916,6 +1936,33 @@ def test_validate_api_key_if_hosted_without_tracing(
         client_cls(api_url="https://api.smith.langchain.com")
         assert len(w) == 0, (
             f"Expected no warnings, but got: {[str(warning.message) for warning in w]}"
+        )
+
+
+@pytest.mark.parametrize("client_cls", [Client, AsyncClient])
+@mock.patch("langsmith.client.requests.Session")
+@mock.patch.dict(
+    os.environ,
+    {
+        "LANGCHAIN_API_KEY": "",
+        "LANGSMITH_API_KEY": "",
+        "LANGCHAIN_SERVICE_KEY": "",
+        "LANGSMITH_SERVICE_KEY": "",
+        "LANGSMITH_TRACING": "true",
+    },
+    clear=True,
+)
+def test_validate_service_key_if_hosted_without_warning(
+    _mock_session: mock.Mock, client_cls: Union[Type[Client], Type[AsyncClient]]
+) -> None:
+    from langsmith import utils as ls_utils
+
+    ls_utils.get_env_var.cache_clear()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", ls_utils.LangSmithMissingAPIKeyWarning)
+        client_cls(
+            api_url="https://api.smith.langchain.com",
+            service_key="svc-key",
         )
 
 

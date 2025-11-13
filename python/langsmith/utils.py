@@ -793,6 +793,13 @@ def get_api_key(api_key: Optional[str]) -> Optional[str]:
     return api_key_.strip().strip('"').strip("'")
 
 
+def get_service_key(service_key: Optional[str]) -> Optional[str]:
+    """Normalize a provided service key."""
+    if service_key is None or not service_key.strip():
+        return None
+    return service_key.strip().strip('"').strip("'")
+
+
 def get_workspace_id(workspace_id: Optional[str]) -> Optional[str]:
     """Get workspace ID."""
     workspace_id_ = (

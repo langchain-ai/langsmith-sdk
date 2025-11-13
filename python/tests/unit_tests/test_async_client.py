@@ -10,6 +10,14 @@ from langsmith import AsyncClient
 
 
 @mock.patch("langsmith.async_client.httpx.AsyncClient")
+def test_async_client_includes_service_key(mock_client_cls: mock.Mock) -> None:
+    AsyncClient(api_url="http://localhost:1984", service_key="svc-key")
+    headers = mock_client_cls.call_args.kwargs["headers"]
+    assert headers["x-service-key"] == "svc-key"
+    assert "x-api-key" not in headers
+
+
+@mock.patch("langsmith.async_client.httpx.AsyncClient")
 @pytest.mark.asyncio
 async def test_list_runs_child_run_ids_deprecation_warning(
     mock_client_cls: mock.Mock,

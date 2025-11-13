@@ -36,6 +36,7 @@ class AsyncClient:
         self,
         api_url: Optional[str] = None,
         api_key: Optional[str] = None,
+        service_key: Optional[str] = None,
         timeout_ms: Optional[
             Union[
                 int, tuple[Optional[int], Optional[int], Optional[int], Optional[int]]
@@ -50,10 +51,13 @@ class AsyncClient:
             "Content-Type": "application/json",
         }
         api_key = ls_utils.get_api_key(api_key)
+        service_key = ls_utils.get_service_key(service_key)
         api_url = ls_utils.get_api_url(api_url)
         if api_key:
             _headers[ls_client.X_API_KEY] = api_key
-        ls_client._validate_api_key_if_hosted(api_url, api_key)
+        if service_key:
+            _headers[ls_client.X_SERVICE_KEY] = service_key
+        ls_client._validate_api_key_if_hosted(api_url, api_key, service_key)
 
         if isinstance(timeout_ms, int):
             timeout_: Union[tuple, float] = (timeout_ms / 1000, None, None, None)
