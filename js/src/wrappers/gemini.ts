@@ -5,6 +5,7 @@ import {
   type TraceableConfig,
 } from "../traceable.js";
 import { KVMap, InvocationParamsSchema } from "../schemas.js";
+import { getCurrentRunTree } from "../singletons/traceable.js";
 
 type GoogleGenAIType = {
   models: {
@@ -30,6 +31,37 @@ type PatchedGeminiClient<T extends GoogleGenAIType> = T & {
   };
 };
 
+interface UsageMetadata {
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+}
+
+/**
+ * Store usage metadata in run.extra.metadata.usage_metadata for LangSmith platform integration.
+ * Uses fire-and-forget pattern to avoid blocking the main execution path.
+ */
+function storeUsageMetadata(usageMetadata: UsageMetadata): void {
+  try {
+    const currentRun = getCurrentRunTree(true);
+    if (!currentRun) return;
+
+    // Initialize nested structure
+    if (!currentRun.extra) currentRun.extra = {};
+    if (!currentRun.extra.metadata) currentRun.extra.metadata = {};
+    if (!currentRun.extra.metadata.usage_metadata) {
+      currentRun.extra.metadata.usage_metadata = {};
+    }
+
+    Object.assign(currentRun.extra.metadata.usage_metadata, usageMetadata);
+
+    // Fire-and-forget patch to persist changes asynchronously
+    currentRun.patchRun().catch(() => {});
+  } catch {
+    // Silently fail if run tree unavailable
+  }
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const chatAggregator = (chunks: any[]): any => {
   const fullText = chunks
@@ -37,10 +69,28 @@ const chatAggregator = (chunks: any[]): any => {
     .map((chunk) => chunk.text)
     .join("");
 
-  return {
+  const result: any = {
     content: fullText,
     role: "assistant",
   };
+
+  // Extract usage metadata from the last chunk
+  if (chunks.length > 0) {
+    const lastChunk = chunks[chunks.length - 1];
+    if (lastChunk?.usageMetadata) {
+      const usage = lastChunk.usageMetadata;
+      const usageMetadata: UsageMetadata = {
+        input_tokens: usage.promptTokenCount || 0,
+        output_tokens: usage.candidatesTokenCount || 0,
+        total_tokens: usage.totalTokenCount || 0,
+      };
+
+      result.usage_metadata = usageMetadata;
+      storeUsageMetadata(usageMetadata);
+    }
+  }
+
+  return result;
 };
 
 function processGeminiInputs(inputs: KVMap): KVMap {
@@ -221,15 +271,18 @@ function processGeminiOutputs(outputs: any): KVMap {
     role: "assistant",
   };
 
-  // Extract usage metadata
+  // Extract and store usage metadata
   if ("usageMetadata" in response && response.usageMetadata) {
     const usage = response.usageMetadata;
 
-    result.usage_metadata = {
+    const usageMetadata: UsageMetadata = {
       input_tokens: usage.promptTokenCount || 0,
       output_tokens: usage.candidatesTokenCount || 0,
       total_tokens: usage.totalTokenCount || 0,
     };
+
+    result.usage_metadata = usageMetadata;
+    storeUsageMetadata(usageMetadata);
   }
 
   if (toolCalls.length > 0) {
