@@ -342,7 +342,9 @@ def _process_generate_content_response(response: Any) -> dict:
 
         # Extract and convert usage metadata
         usage_metadata = rdict.get("usage_metadata")
-        usage_dict = {}
+        usage_dict: UsageMetadata = UsageMetadata(
+            input_tokens=0, output_tokens=0, total_tokens=0
+        )
         if usage_metadata:
             usage_dict = _create_usage_metadata(usage_metadata)
             # Add usage_metadata to both run.extra AND outputs
@@ -378,8 +380,12 @@ def _process_generate_content_response(response: Any) -> dict:
                 }
             else:
                 # For multimodal content, return structured format with usage metadata
-                result["usage_metadata"] = usage_dict
-                return result
+                return {
+                    "content": result["content"],
+                    "role": "assistant",
+                    "finish_reason": finish_reason,
+                    "usage_metadata": usage_dict,
+                }
     except Exception as e:
         logger.debug(f"Error processing Gemini response: {e}")
         return {"output": response}
@@ -388,7 +394,12 @@ def _process_generate_content_response(response: Any) -> dict:
 def _reduce_generate_content_chunks(all_chunks: list) -> dict:
     """Reduce streaming chunks into a single response."""
     if not all_chunks:
-        return {"content": "", "usage_metadata": {}}
+        return {
+            "content": "",
+            "usage_metadata": UsageMetadata(
+                input_tokens=0, output_tokens=0, total_tokens=0
+            ),
+        }
 
     # Accumulate text from all chunks
     full_text = ""
@@ -402,11 +413,12 @@ def _reduce_generate_content_chunks(all_chunks: list) -> dict:
         except Exception as e:
             logger.debug(f"Error processing chunk: {e}")
 
-    # Build chat-like response format
-    result = {"content": full_text, "role": "assistant"}
+    # Extract usage metadata from the last chunk
+    usage_metadata: UsageMetadata = UsageMetadata(
+        input_tokens=0, output_tokens=0, total_tokens=0
+    )
     if last_chunk:
         try:
-            # Extract usage metadata from the last chunk
             if hasattr(last_chunk, "usage_metadata") and last_chunk.usage_metadata:
                 if hasattr(last_chunk.usage_metadata, "to_dict"):
                     usage_dict = last_chunk.usage_metadata.to_dict()
@@ -432,7 +444,6 @@ def _reduce_generate_content_chunks(all_chunks: list) -> dict:
                     }
                 # Add usage_metadata to both run.extra AND outputs
                 usage_metadata = _create_usage_metadata(usage_dict)
-                result["usage_metadata"] = usage_metadata
                 current_run = run_helpers.get_current_run_tree()
                 if current_run:
                     try:
@@ -448,8 +459,8 @@ def _reduce_generate_content_chunks(all_chunks: list) -> dict:
 
     # Return minimal structure with usage_metadata in outputs
     return {
-        "content": result["content"],
-        "usage_metadata": result.get("usage_metadata", {}),
+        "content": full_text,
+        "usage_metadata": usage_metadata,
     }
 
 
