@@ -267,15 +267,15 @@ def evaluate(
 
         Using the `evaluate` API with an off-the-shelf LangChain evaluator:
 
-        >>> from langsmith.evaluation import LangChainStringEvaluator
-        >>> from langchain_openai import ChatOpenAI
-        >>> def prepare_criteria_data(run: Run, example: Example):
+        >>> from langsmith.evaluation import LangChainStringEvaluator  # doctest: +SKIP
+        >>> from langchain_openai import ChatOpenAI  # doctest: +SKIP
+        >>> def prepare_criteria_data(run: Run, example: Example):  # doctest: +SKIP
         ...     return {
         ...         "prediction": run.outputs["output"],
         ...         "reference": example.outputs["answer"],
         ...         "input": str(example.inputs),
         ...     }
-        >>> results = evaluate(
+        >>> results = evaluate(  # doctest: +SKIP
         ...     predict,
         ...     data=dataset_name,
         ...     evaluators=[
@@ -295,8 +295,8 @@ def evaluate(
         ...     ],
         ...     description="Evaluating with off-the-shelf LangChain evaluators.",
         ...     summary_evaluators=[precision],
-        ... )  # doctest: +ELLIPSIS
-        View the evaluation results for experiment:...
+        ... )
+        View the evaluation results for experiment:...  # doctest: +SKIP
 
         Evaluating a LangChain object:
 
@@ -928,7 +928,7 @@ def evaluate_comparative(
         example: schemas.Example,
         comparator: DynamicComparisonRunEvaluator,
         executor: cf.Executor,
-    ) -> ComparisonEvaluationResult:
+    ) -> tuple[uuid.UUID, ComparisonEvaluationResult]:
         feedback_group_id = uuid.uuid4()
         if randomize_order:
             random.shuffle(runs_list)
@@ -952,7 +952,7 @@ def evaluate_comparative(
                 source_run_id=result.source_run_id,
                 feedback_group_id=feedback_group_id,
             )
-        return result
+        return example.id, result
 
     tqdm = _load_tqdm()
     with ls_utils.ContextThreadPoolExecutor(
@@ -972,15 +972,15 @@ def evaluate_comparative(
                     )
                     futures.append(future)
                 else:
-                    result = evaluate_and_submit_feedback(
+                    _, result = evaluate_and_submit_feedback(
                         runs_list, data[example_id], comparator, executor
                     )
                     results[example_id][f"feedback.{result.key}"] = result
-            if futures:
-                cf.wait(futures)
-                for future in futures:
-                    result = future.result()
-                    results[example_id][f"feedback.{result.key}"] = result
+        if futures:
+            cf.wait(futures)
+            for future in futures:
+                example_id, result = future.result()
+                results[example_id][f"feedback.{result.key}"] = result
 
     return ComparativeExperimentResults(results, data)
 

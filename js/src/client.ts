@@ -1282,7 +1282,7 @@ export class Client implements LangSmithTracingClientInterface {
       session_name,
       ...run,
       start_time: run.start_time ?? Date.now(),
-    });
+    } as RunCreate);
     if (
       this.autoBatchTracing &&
       runCreate.trace_id !== undefined &&

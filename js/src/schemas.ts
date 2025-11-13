@@ -221,6 +221,9 @@ export interface RunCreate extends BaseRun {
 
 export interface RunUpdate {
   id?: string;
+  name?: string;
+  run_type?: string;
+  start_time?: number | string;
   end_time?: number | string;
   extra?: KVMap;
   tags?: string[];

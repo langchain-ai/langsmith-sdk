@@ -94,6 +94,7 @@ from langsmith._internal._operations import (
     serialized_run_operation_to_multipart_parts_and_context,
 )
 from langsmith._internal._serde import dumps_json as _dumps_json
+from langsmith._internal._uuid import uuid7
 from langsmith.schemas import AttachmentInfo, ExampleWithRuns
 
 _OPENAI_API_KEY = "OPENAI_API_KEY"
@@ -377,7 +378,7 @@ def _ensure_uuid(value: Optional[Union[str, uuid.UUID]], *, accept_null: bool = 
     if value is None:
         if accept_null:
             return None
-        return uuid.uuid4()
+        return uuid7()
     return _as_uuid(value)
 
 
@@ -2368,6 +2369,8 @@ class Client:
         run_id: ID_TYPE,
         *,
         name: Optional[str] = None,
+        run_type: Optional[RUN_TYPE_T] = None,
+        start_time: Optional[datetime.datetime] = None,
         end_time: Optional[datetime.datetime] = None,
         error: Optional[str] = None,
         inputs: Optional[dict] = None,
@@ -2387,6 +2390,8 @@ class Client:
         Args:
             run_id (Union[UUID, str]): The ID of the run to update.
             name (Optional[str]): The name of the run.
+            run_type (Optional[str]): The type of the run (e.g., llm, chain, tool).
+            start_time (Optional[datetime.datetime]): The start time of the run.
             end_time (Optional[datetime.datetime]): The end time of the run.
             error (Optional[str]): The error message of the run.
             inputs (Optional[Dict]): The input values for the run.
@@ -2441,6 +2446,7 @@ class Client:
         data: dict[str, Any] = {
             "id": _as_uuid(run_id, "run_id"),
             "name": name,
+            "run_type": run_type,
             "trace_id": kwargs.pop("trace_id", None),
             "parent_run_id": kwargs.pop("parent_run_id", None),
             "dotted_order": kwargs.pop("dotted_order", None),
@@ -2449,6 +2455,8 @@ class Client:
             "session_id": kwargs.pop("session_id", None),
             "session_name": kwargs.pop("session_name", None),
         }
+        if start_time is not None:
+            data["start_time"] = start_time.isoformat()
         if attachments:
             for _, attachment in attachments.items():
                 if (
