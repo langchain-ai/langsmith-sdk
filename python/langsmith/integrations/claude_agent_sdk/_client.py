@@ -230,6 +230,9 @@ def instrument_claude_client(original_class: Any) -> Any:
                 tracker = TurnLifecycle(self._start_time)
                 collected: list[dict[str, Any]] = []
 
+                # Track subagent sessions by Task tool_use_id
+                subagent_sessions: dict[str, Any] = {}
+
                 try:
                     async for msg in messages:
                         msg_type = type(msg).__name__
@@ -240,48 +243,77 @@ def instrument_claude_client(original_class: Any) -> Any:
                             if content:
                                 collected.append(content)
 
-                            # Check if this AssistantMessage contains tool uses from a subagent
+                            # Process tool uses in this AssistantMessage
                             parent_tool_use_id = getattr(msg, "parent_tool_use_id", None)
-                            if parent_tool_use_id and hasattr(msg, "content"):
-                                from ._hooks import _subagent_sessions, _subagent_tool_runs
-                                subagent_session = _subagent_sessions.get(parent_tool_use_id)
-                                if subagent_session:
-                                    # Process tool uses in this message
-                                    for block in msg.content:
-                                        if type(block).__name__ == "ToolUseBlock":
-                                            try:
-                                                tool_use_id = getattr(block, "id", None)
-                                                tool_name = getattr(block, "name", "unknown_tool")
-                                                tool_input = getattr(block, "input", {})
+                            if hasattr(msg, "content"):
+                                from ._hooks import _client_managed_runs
 
-                                                if tool_use_id:
-                                                    # Create tool run as child of subagent
-                                                    start_time = time.time()
-                                                    tool_run = subagent_session.create_child(
-                                                        name=tool_name,
-                                                        run_type="tool",
-                                                        inputs={"input": tool_input} if tool_input else {},
-                                                        start_time=datetime.fromtimestamp(start_time, tz=timezone.utc),
-                                                    )
-                                                    tool_run.post()
+                                for block in msg.content:
+                                    if type(block).__name__ == "ToolUseBlock":
+                                        try:
+                                            tool_use_id = getattr(block, "id", None)
+                                            tool_name = getattr(block, "name", "unknown_tool")
+                                            tool_input = getattr(block, "input", {})
 
-                                                    # Track so hooks can update it with response
-                                                    _subagent_tool_runs[tool_use_id] = (tool_run, start_time)
-                                                    logger.debug(f"Created subagent tool run for {tool_name} (id={tool_use_id})")
-                                            except Exception as e:
-                                                logger.warning(f"Failed to create subagent tool run: {e}")
+                                            if not tool_use_id:
+                                                continue
+
+                                            start_time = time.time()
+
+                                            # Check if this is a Task tool (subagent invocation)
+                                            if tool_name == "Task" and not parent_tool_use_id:
+                                                # Extract subagent name
+                                                subagent_name = (
+                                                    tool_input.get("subagent_type")
+                                                    or (tool_input.get("description", "").split()[0] if tool_input.get("description") else None)
+                                                    or "unknown-agent"
+                                                )
+
+                                                # Create Task tool run
+                                                task_run = run.create_child(
+                                                    name=tool_name,
+                                                    run_type="tool",
+                                                    inputs={"input": tool_input} if tool_input else {},
+                                                    start_time=datetime.fromtimestamp(start_time, tz=timezone.utc),
+                                                )
+                                                task_run.post()
+
+                                                # Create subagent session as child of Task
+                                                subagent_session = task_run.create_child(
+                                                    name=subagent_name,
+                                                    run_type="chain",
+                                                    start_time=datetime.fromtimestamp(start_time, tz=timezone.utc),
+                                                )
+                                                subagent_sessions[tool_use_id] = subagent_session
+
+                                                # Track Task run with its subagent session
+                                                _client_managed_runs[tool_use_id] = (task_run, start_time, subagent_session)
+
+                                            # Check if this is a tool use within a subagent
+                                            elif parent_tool_use_id and parent_tool_use_id in subagent_sessions:
+                                                subagent_session = subagent_sessions[parent_tool_use_id]
+                                                # Create tool run as child of subagent
+                                                tool_run = subagent_session.create_child(
+                                                    name=tool_name,
+                                                    run_type="tool",
+                                                    inputs={"input": tool_input} if tool_input else {},
+                                                    start_time=datetime.fromtimestamp(start_time, tz=timezone.utc),
+                                                )
+                                                tool_run.post()
+                                                _client_managed_runs[tool_use_id] = (tool_run, start_time, None)
+
+                                        except Exception as e:
+                                            logger.warning(f"Failed to create client-managed tool run: {e}")
                         elif msg_type == "UserMessage":
                             # Check if this is a subagent message
                             parent_tool_use_id = getattr(msg, "parent_tool_use_id", None)
-                            if parent_tool_use_id:
+                            if parent_tool_use_id and parent_tool_use_id in subagent_sessions:
                                 # This is a subagent input message - update the subagent session
-                                from ._hooks import _subagent_sessions
-                                subagent_session = _subagent_sessions.get(parent_tool_use_id)
-                                if subagent_session and hasattr(msg, "content"):
+                                subagent_session = subagent_sessions[parent_tool_use_id]
+                                if hasattr(msg, "content"):
                                     try:
                                         msg_content = flatten_content_blocks(msg.content)
                                         subagent_session.inputs = {"prompt": msg_content}
-                                        logger.debug(f"Set subagent session inputs for {parent_tool_use_id}")
                                     except Exception as e:
                                         logger.warning(f"Failed to set subagent session inputs: {e}")
 
@@ -321,6 +353,7 @@ def instrument_claude_client(original_class: Any) -> Any:
                             }
                             if meta:
                                 run.metadata.update(meta)
+
                         yield msg
                     run.end(outputs=collected[-1] if collected else None)
                 except Exception:
