@@ -14,14 +14,6 @@ type GoogleGenAIType = {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     generateContentStream: (...args: any[]) => any;
   };
-  aio?: {
-    models: {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      generateContent: (...args: any[]) => any;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      generateContentStream: (...args: any[]) => any;
-    };
-  };
 };
 
 type PatchedGeminiClient<T extends GoogleGenAIType> = T & {
@@ -39,9 +31,9 @@ interface UsageMetadata {
 
 /**
  * Store usage metadata in run.extra.metadata.usage_metadata for LangSmith platform integration.
- * Uses fire-and-forget pattern to avoid blocking the main execution path.
+ * Runs asynchronously without blocking the main execution path.
  */
-function storeUsageMetadata(usageMetadata: UsageMetadata): void {
+async function storeUsageMetadata(usageMetadata: UsageMetadata): Promise<void> {
   try {
     const currentRun = getCurrentRunTree(true);
     if (!currentRun) return;
@@ -53,10 +45,13 @@ function storeUsageMetadata(usageMetadata: UsageMetadata): void {
       currentRun.extra.metadata.usage_metadata = {};
     }
 
-    Object.assign(currentRun.extra.metadata.usage_metadata, usageMetadata);
+    currentRun.extra.metadata.usage_metadata = {
+      ...currentRun.extra.metadata.usage_metadata,
+      ...usageMetadata,
+    };
 
-    // Fire-and-forget patch to persist changes asynchronously
-    currentRun.patchRun().catch(() => {});
+    // Await patch to ensure proper completion
+    await currentRun.patchRun();
   } catch {
     // Silently fail if run tree unavailable
   }
@@ -81,7 +76,8 @@ const chatAggregator = (chunks: any[]): any => {
       const usage = lastChunk.usageMetadata;
       const usageMetadata: UsageMetadata = {
         input_tokens: usage.promptTokenCount || 0,
-        output_tokens: usage.candidatesTokenCount || 0,
+        output_tokens:
+          usage.responseTokenCount || usage.candidatesTokenCount || 0,
         total_tokens: usage.totalTokenCount || 0,
       };
 
@@ -131,10 +127,9 @@ function processGeminiInputs(inputs: KVMap): KVMap {
             if ("text" in part && part.text) {
               textParts.push(part.text);
               contentParts.push({ type: "text", text: part.text });
-            } else if ("inline_data" in part || "inlineData" in part) {
-              const inlineData = part.inline_data || part.inlineData;
-              const mimeType =
-                inlineData?.mime_type || inlineData?.mimeType || "image/jpeg";
+            } else if ("inlineData" in part) {
+              const inlineData = part.inlineData;
+              const mimeType = inlineData?.mimeType || "image/jpeg";
               const data = inlineData?.data || "";
 
               contentParts.push({
@@ -144,14 +139,10 @@ function processGeminiInputs(inputs: KVMap): KVMap {
                   detail: "high",
                 },
               });
-            } else if (
-              "functionResponse" in part ||
-              "function_response" in part
-            ) {
-              const funcResponse =
-                part.functionResponse || part.function_response;
+            } else if ("functionResponse" in part) {
+              const funcResponse = part.functionResponse;
               contentParts.push({
-                type: "function_response",
+                type: "function_response", //TODO: add testing for function_response
                 function_response: {
                   name: funcResponse?.name,
                   response: funcResponse?.response || {},
@@ -219,16 +210,13 @@ function processGeminiOutputs(outputs: any): KVMap {
         if ("text" in part && part.text) {
           content += part.text;
           parts.push({ type: "text", text: part.text });
-        } else if ("functionCall" in part || "function_call" in part) {
-          const funcCall = part.functionCall || part.function_call;
-
+        } else if ("functionCall" in part) {
+          const funcCall = part.functionCall;
           toolCalls.push({
             type: "function",
             function: {
               name: funcCall?.name || "",
-              arguments: JSON.stringify(
-                funcCall?.args || funcCall?.arguments || {}
-              ),
+              arguments: JSON.stringify(funcCall?.args || {}),
             },
           });
         } else if ("inlineData" in part && part.inlineData) {
@@ -277,7 +265,8 @@ function processGeminiOutputs(outputs: any): KVMap {
 
     const usageMetadata: UsageMetadata = {
       input_tokens: usage.promptTokenCount || 0,
-      output_tokens: usage.candidatesTokenCount || 0,
+      output_tokens:
+        usage.responseTokenCount || usage.candidatesTokenCount || 0,
       total_tokens: usage.totalTokenCount || 0,
     };
 
@@ -386,23 +375,6 @@ export function wrapGemini<T extends GoogleGenAIType>(
       geminiStreamTraceConfig
     ),
   };
-
-  if (gemini.aio?.models) {
-    tracedGeminiClient.aio = {
-      ...gemini.aio,
-      models: {
-        ...gemini.aio.models,
-        generateContent: traceable(
-          gemini.aio.models.generateContent.bind(gemini.aio.models),
-          geminiTraceConfig
-        ),
-        generateContentStream: traceable(
-          gemini.aio.models.generateContentStream.bind(gemini.aio.models),
-          geminiStreamTraceConfig
-        ),
-      },
-    };
-  }
 
   return tracedGeminiClient;
 }
