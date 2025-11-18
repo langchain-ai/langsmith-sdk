@@ -1646,5 +1646,125 @@ describe.each(ENDPOINT_TYPES)(
       expect(calls[1][0]).toBe(expectedTraceURL);
       expect(calls[2][0]).toBe(expectedTraceURL);
     });
+
+    it("should drop runs when autoBatchQueueSizeLimit is exceeded", async () => {
+      const calls: any[] = [];
+      const mockFetch = createMockFetch(calls);
+      const consoleSpy = jest
+        .spyOn(console, "warn")
+        .mockImplementation(() => {});
+
+      // Set a very low queue size limit (1000 bytes)
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          autoBatchTracing: true,
+          autoBatchQueueSizeLimitBytes: 1000,
+          manualFlushMode: true, // Prevent auto-flushing so we can test the limit
+        },
+        mockFetch
+      );
+      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
+        return {
+          version: "foo",
+          batch_ingest_config: { ...extraBatchIngestConfig },
+          instance_flags: { ...extraInstanceFlags },
+        };
+      });
+      const projectName = "__test_batch";
+
+      // Create runs until we exceed the queue size limit
+      const runIds: string[] = [];
+      const createPromises: Promise<void>[] = [];
+      for (let i = 0; i < 10; i++) {
+        const runId = uuidv4();
+        const { dottedOrder } = convertToDottedOrderFormat(
+          new Date().getTime() / 1000,
+          runId
+        );
+        const promise = client.createRun({
+          id: runId,
+          project_name: projectName,
+          name: "test_run " + i,
+          run_type: "llm",
+          inputs: { text: "x".repeat(200) }, // Make each run ~200+ bytes
+          trace_id: runId,
+          dotted_order: dottedOrder,
+        });
+        createPromises.push(promise);
+        runIds.push(runId);
+      }
+
+      // All promises should resolve immediately without blocking, even dropped ones
+      await Promise.all(createPromises);
+
+      // Should have warned about dropped runs
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining("AutoBatchQueue size limit")
+      );
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Dropping run")
+      );
+
+      // Clean up
+      consoleSpy.mockRestore();
+      await client.flush();
+    });
+
+    it("should allow a single large run that exceeds the queue size limit", async () => {
+      const calls: any[] = [];
+      const mockFetch = createMockFetch(calls);
+      const consoleSpy = jest
+        .spyOn(console, "warn")
+        .mockImplementation(() => {});
+
+      // Set a low queue size limit (1000 bytes)
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          autoBatchTracing: true,
+          autoBatchQueueSizeLimitBytes: 1000,
+          manualFlushMode: true,
+        },
+        mockFetch
+      );
+      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
+        return {
+          version: "foo",
+          batch_ingest_config: { ...extraBatchIngestConfig },
+          instance_flags: { ...extraInstanceFlags },
+        };
+      });
+      const projectName = "__test_batch";
+
+      // Create a single large run that exceeds the limit (queue is empty)
+      const runId = uuidv4();
+      const { dottedOrder } = convertToDottedOrderFormat(
+        new Date().getTime() / 1000,
+        runId
+      );
+      await client.createRun({
+        id: runId,
+        project_name: projectName,
+        name: "large_run",
+        run_type: "llm",
+        inputs: { text: "x".repeat(2000) }, // 2000+ bytes, exceeds 1000 byte limit
+        trace_id: runId,
+        dotted_order: dottedOrder,
+      });
+
+      // Should NOT have warned since the queue was empty
+      expect(consoleSpy).not.toHaveBeenCalledWith(
+        expect.stringContaining("AutoBatchQueue size limit")
+      );
+
+      // The run should be in the queue
+      expect((client as any).autoBatchQueue.items.length).toBe(1);
+      expect((client as any).autoBatchQueue.sizeBytes).toBeGreaterThan(1000);
+
+      // Clean up
+      consoleSpy.mockRestore();
+      await client.flush();
+    });
   }
 );
