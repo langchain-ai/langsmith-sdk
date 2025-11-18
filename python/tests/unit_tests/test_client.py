@@ -4440,3 +4440,86 @@ def test_tracing_queue_size_limit_custom() -> None:
     )
 
     assert client._tracing_queue_size_limit_bytes == custom_limit
+
+
+def test_compressed_traces_size_limit_drops_runs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test that runs are dropped when compressed traces size limit is exceeded."""
+    monkeypatch.setenv("LANGCHAIN_TRACING_V2", "true")
+
+    # Create a client with compressed traces and a small size limit
+    client = Client(
+        api_key="test-api-key",
+        auto_batch_tracing=True,
+        tracing_queue_size_limit_bytes=1000,
+    )
+
+    # Mock to enable compressed traces
+    from langsmith._internal._compressed_traces import CompressedTraces
+
+    client.compressed_traces = CompressedTraces()
+    client._data_available_event = mock.MagicMock()
+
+    # Mock the logger to capture warnings
+    with mock.patch("langsmith.client.logger") as mock_logger:
+        # Create multiple runs to exceed the limit
+        for i in range(10):
+            client.create_run(
+                name=f"test_run_{i}",
+                inputs={"text": "x" * 200},  # Each run ~200+ bytes
+                run_type="llm",
+                project_name="test_project",
+            )
+
+        # Should have warned about dropped runs
+        warning_calls = [
+            call
+            for call in mock_logger.warning.call_args_list
+            if "Compressed traces size limit" in str(call)
+        ]
+        assert len(warning_calls) > 0, (
+            "Expected warnings about compressed traces size limit"
+        )
+
+
+def test_compressed_traces_size_limit_allows_single_large_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test that a single large run is allowed in compressed traces even if it exceeds the limit."""
+    monkeypatch.setenv("LANGCHAIN_TRACING_V2", "true")
+
+    # Create a client with compressed traces and a small size limit
+    client = Client(
+        api_key="test-api-key",
+        auto_batch_tracing=True,
+        tracing_queue_size_limit_bytes=1000,
+    )
+
+    # Mock to enable compressed traces
+    from langsmith._internal._compressed_traces import CompressedTraces
+
+    client.compressed_traces = CompressedTraces()
+    client._data_available_event = mock.MagicMock()
+
+    # Mock the logger to ensure no warnings
+    with mock.patch("langsmith.client.logger") as mock_logger:
+        # Create a single large run that exceeds the limit
+        client.create_run(
+            name="large_run",
+            inputs={"text": "x" * 2000},  # 2000+ bytes, exceeds 1000 byte limit
+            run_type="llm",
+            project_name="test_project",
+        )
+
+        # Should NOT have warned since the buffer was empty
+        warning_calls = [
+            call
+            for call in mock_logger.warning.call_args_list
+            if "Compressed traces size limit" in str(call)
+        ]
+        assert len(warning_calls) == 0, "Should not warn for single large trace"
+
+        # Verify the run was added to compressed traces
+        assert client.compressed_traces.trace_count == 1
+        assert client.compressed_traces.uncompressed_size > 1000

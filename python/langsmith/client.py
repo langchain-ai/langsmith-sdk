@@ -1483,6 +1483,39 @@ class Client:
             self.tracing_queue.put(item)
             self._tracing_queue_size_bytes += item_size
 
+    def _should_compress_trace(
+        self,
+        serialized_op: Union[SerializedRunOperation, SerializedFeedbackOperation],
+    ) -> bool:
+        """Check if we should compress this trace based on size limits.
+
+        Args:
+            serialized_op: The serialized operation to potentially compress.
+
+        Returns:
+            True if the trace should be compressed, False if it should be dropped.
+        """
+        if self.compressed_traces is None:
+            return False
+
+        item_size = serialized_op.calculate_serialized_size()
+
+        # Allow the item if the buffer is empty (to support large single traces)
+        if (
+            self.compressed_traces.uncompressed_size + item_size
+            > self._tracing_queue_size_limit_bytes
+            and self.compressed_traces.uncompressed_size > 0
+        ):
+            logger.warning(
+                f"Compressed traces size limit ({self._tracing_queue_size_limit_bytes} bytes) exceeded. "
+                f"Dropping item with id: {serialized_op.id}. "
+                f"Current buffer size: {self.compressed_traces.uncompressed_size} bytes, "
+                f"attempted addition: {item_size} bytes."
+            )
+            return False
+
+        return True
+
     def create_run(
         self,
         name: str,
@@ -1603,6 +1636,11 @@ class Client:
                         "Run compression is enabled but threading event is not configured"
                     )
                 serialized_op = serialize_run_dict("post", run_create)
+
+                # Check size limit before compressing
+                if not self._should_compress_trace(serialized_op):
+                    return
+
                 (
                     multipart_form,
                     opened_files,
@@ -2570,6 +2608,10 @@ class Client:
                 and api_key is None
                 and api_url is None
             ):
+                # Check size limit before compressing
+                if not self._should_compress_trace(serialized_op):
+                    return
+
                 (
                     multipart_form,
                     opened_files,
@@ -6523,20 +6565,20 @@ class Client:
             ):
                 serialized_op = serialize_feedback_dict(feedback)
                 if self.compressed_traces is not None:
-                    multipart_form = (
-                        serialized_feedback_operation_to_multipart_parts_and_context(
+                    # Check size limit before compressing
+                    if self._should_compress_trace(serialized_op):
+                        multipart_form = serialized_feedback_operation_to_multipart_parts_and_context(
                             serialized_op
                         )
-                    )
-                    with self.compressed_traces.lock:
-                        compress_multipart_parts_and_context(
-                            multipart_form,
-                            self.compressed_traces,
-                            _BOUNDARY,
-                        )
-                        self.compressed_traces.trace_count += 1
-                        if self._data_available_event:
-                            self._data_available_event.set()
+                        with self.compressed_traces.lock:
+                            compress_multipart_parts_and_context(
+                                multipart_form,
+                                self.compressed_traces,
+                                _BOUNDARY,
+                            )
+                            self.compressed_traces.trace_count += 1
+                            if self._data_available_event:
+                                self._data_available_event.set()
                 elif self.tracing_queue is not None:
                     self._put_traced_item(
                         TracingQueueItem(str(feedback.id), serialized_op)
