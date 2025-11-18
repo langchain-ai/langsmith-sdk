@@ -63,13 +63,13 @@ class TracingQueueItem:
     Attributes:
         priority (str): The priority of the item.
         item (Any): The item itself.
-        size (int): The serialized size of the item in bytes.
+        size (int): The serialized size of the item in bytes (lazily calculated).
         otel_context (Optional[Context]): The OTEL context of the item.
     """
 
     priority: str
     item: Union[SerializedRunOperation, SerializedFeedbackOperation]
-    size: int
+    size: Optional[int]
     api_url: Optional[str]
     api_key: Optional[str]
     otel_context: Optional[Context]
@@ -80,7 +80,7 @@ class TracingQueueItem:
         self,
         priority: str,
         item: Union[SerializedRunOperation, SerializedFeedbackOperation],
-        size: int,
+        size: Optional[int] = None,
         api_key: Optional[str] = None,
         api_url: Optional[str] = None,
         otel_context: Optional[Context] = None,
@@ -91,6 +91,12 @@ class TracingQueueItem:
         self.api_key = api_key
         self.api_url = api_url
         self.otel_context = otel_context
+
+    def get_size(self) -> int:
+        """Get the serialized size, calculating it if not already set."""
+        if self.size is None:
+            self.size = self.item.calculate_serialized_size()
+        return self.size
 
     def __lt__(self, other: TracingQueueItem) -> bool:
         return (self.priority, self.item.__class__) < (
@@ -124,7 +130,7 @@ def _tracing_thread_drain_queue(
         if item := tracing_queue.get(block=block, timeout=0.25):
             next_batch.append(item)
             if max_size_bytes > 0:
-                current_size += item.size
+                current_size += item.get_size()
                 # If first item already exceeds limit, return just this item
                 if current_size > max_size_bytes:
                     # Update queue size tracker
@@ -144,7 +150,7 @@ def _tracing_thread_drain_queue(
 
             # Then check size limit AFTER adding the item
             if max_size_bytes > 0:
-                current_size += item.size
+                current_size += item.get_size()
                 # If we've exceeded size limit, stop here
                 # (item is included in this batch)
                 if current_size > max_size_bytes:
@@ -170,7 +176,7 @@ def _update_queue_size_after_drain(
     if not batch:
         return
 
-    total_size = sum(item.size for item in batch)
+    total_size = sum(item.get_size() for item in batch)
     with client._tracing_queue_size_lock:
         client._tracing_queue_size_bytes = max(
             0, client._tracing_queue_size_bytes - total_size

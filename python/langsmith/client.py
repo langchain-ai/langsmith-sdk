@@ -1459,15 +1459,16 @@ class Client:
         """Add an item to the tracing queue with size limit enforcement.
 
         Args:
-            item: The tracing queue item to add (with pre-calculated size).
+            item: The tracing queue item to add (size calculated lazily if needed).
         """
         if self.tracing_queue is None:
             return
 
+        item_size = item.get_size()
         with self._tracing_queue_size_lock:
             # Allow the item if the queue is empty (to support large single traces)
             if (
-                self._tracing_queue_size_bytes + item.size
+                self._tracing_queue_size_bytes + item_size
                 > self._tracing_queue_size_limit_bytes
                 and self._tracing_queue_size_bytes > 0
             ):
@@ -1475,12 +1476,12 @@ class Client:
                     f"Tracing queue size limit ({self._tracing_queue_size_limit_bytes} bytes) exceeded. "
                     f"Dropping run with id: {item.item.id}. "
                     f"Current queue size: {self._tracing_queue_size_bytes} bytes, "
-                    f"attempted addition: {item.size} bytes."
+                    f"attempted addition: {item_size} bytes."
                 )
                 return
 
             self.tracing_queue.put(item)
-            self._tracing_queue_size_bytes += item.size
+            self._tracing_queue_size_bytes += item_size
 
     def create_run(
         self,
@@ -1631,13 +1632,11 @@ class Client:
                     serialized_op.trace_id,
                     serialized_op.id,
                 )
-                item_size = serialized_op.calculate_serialized_size()
                 if self.otel_exporter is not None:
                     self._put_traced_item(
                         TracingQueueItem(
                             run_create["dotted_order"],
                             serialized_op,
-                            item_size,
                             api_key=api_key,
                             api_url=api_url,
                             otel_context=self._set_span_in_context(
@@ -1650,7 +1649,6 @@ class Client:
                         TracingQueueItem(
                             run_create["dotted_order"],
                             serialized_op,
-                            item_size,
                             api_key=api_key,
                             api_url=api_url,
                         )
@@ -2603,13 +2601,11 @@ class Client:
                     serialized_op.trace_id,
                     serialized_op.id,
                 )
-                item_size = serialized_op.calculate_serialized_size()
                 if self.otel_exporter is not None:
                     self._put_traced_item(
                         TracingQueueItem(
                             run_update["dotted_order"],
                             serialized_op,
-                            item_size,
                             api_key=api_key,
                             api_url=api_url,
                             otel_context=self._set_span_in_context(
@@ -2622,7 +2618,6 @@ class Client:
                         TracingQueueItem(
                             run_update["dotted_order"],
                             serialized_op,
-                            item_size,
                             api_key=api_key,
                             api_url=api_url,
                         )
@@ -6543,9 +6538,8 @@ class Client:
                         if self._data_available_event:
                             self._data_available_event.set()
                 elif self.tracing_queue is not None:
-                    item_size = serialized_op.calculate_serialized_size()
                     self._put_traced_item(
-                        TracingQueueItem(str(feedback.id), serialized_op, item_size)
+                        TracingQueueItem(str(feedback.id), serialized_op)
                     )
             else:
                 feedback_block = _dumps_json(feedback.dict(exclude_none=True))
