@@ -63,40 +63,37 @@ class TracingQueueItem:
     Attributes:
         priority (str): The priority of the item.
         item (Any): The item itself.
-        size (int): The serialized size of the item in bytes (lazily calculated).
         otel_context (Optional[Context]): The OTEL context of the item.
     """
 
     priority: str
     item: Union[SerializedRunOperation, SerializedFeedbackOperation]
-    size: Optional[int]
     api_url: Optional[str]
     api_key: Optional[str]
     otel_context: Optional[Context]
 
-    __slots__ = ("priority", "item", "size", "api_key", "api_url", "otel_context")
+    __slots__ = ("priority", "item", "api_key", "api_url", "otel_context", "_size")
 
     def __init__(
         self,
         priority: str,
         item: Union[SerializedRunOperation, SerializedFeedbackOperation],
-        size: Optional[int] = None,
         api_key: Optional[str] = None,
         api_url: Optional[str] = None,
         otel_context: Optional[Context] = None,
     ) -> None:
         self.priority = priority
         self.item = item
-        self.size = size
         self.api_key = api_key
         self.api_url = api_url
         self.otel_context = otel_context
+        self._size: Optional[int] = None
 
     def get_size(self) -> int:
-        """Get the serialized size, calculating it if not already set."""
-        if self.size is None:
-            self.size = self.item.calculate_serialized_size()
-        return self.size
+        """Get the serialized size, calculating it lazily if needed."""
+        if self._size is None:
+            self._size = self.item.calculate_serialized_size()
+        return self._size
 
     def __lt__(self, other: TracingQueueItem) -> bool:
         return (self.priority, self.item.__class__) < (
