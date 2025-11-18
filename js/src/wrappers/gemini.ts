@@ -29,7 +29,8 @@ interface UsageMetadata {
   total_tokens: number;
   input_token_details?: {
     cache_read?: number;
-    cache_read_over_200k_threshold?: number;
+    cache_read_over_200k?: number;
+    over_200k?: number;
   };
   output_token_details?: {
     reasoning?: number;
@@ -93,7 +94,7 @@ const chatAggregator = (chunks: any[]): any => {
         const cacheReadOver200k = Math.max(0, cacheRead - 200000);
         usageMetadata.input_token_details = {
           cache_read: cacheRead,
-          cache_read_over_200k_threshold: cacheReadOver200k,
+          cache_read_over_200k: cacheReadOver200k,
         };
       }
 
@@ -299,7 +300,8 @@ function processGeminiOutputs(outputs: any): KVMap {
       const cacheReadOver200k = Math.max(0, cacheRead - 200000);
       usageMetadata.input_token_details = {
         cache_read: cacheRead,
-        cache_read_over_200k_threshold: cacheReadOver200k,
+        cache_read_over_200k: cacheReadOver200k,
+        over_200k: Math.max(0, usage.promptTokenCount - 200000),
       };
     }
 
