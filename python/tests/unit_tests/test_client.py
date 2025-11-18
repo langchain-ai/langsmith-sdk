@@ -4359,23 +4359,29 @@ def test_list_runs_child_run_ids_deprecation_warning(
 def test_tracing_queue_size_limit_drops_runs(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that runs are dropped when tracing queue size limit is exceeded."""
     monkeypatch.setenv("LANGCHAIN_TRACING_V2", "true")
+    session = mock.MagicMock(spec=requests.Session)
 
     # Create a client with a very small queue size limit (1000 bytes)
     client = Client(
         api_key="test-api-key",
         auto_batch_tracing=True,
         tracing_queue_size_limit_bytes=1000,
+        session=session,
     )
 
     # Mock the logger to capture warnings
     with mock.patch("langsmith.client.logger") as mock_logger:
         # Create multiple runs to exceed the limit
         for i in range(10):
+            run_id = uuid.uuid4()
             client.create_run(
                 name=f"test_run_{i}",
                 inputs={"text": "x" * 200},  # Each run ~200+ bytes
                 run_type="llm",
                 project_name="test_project",
+                id=run_id,
+                trace_id=run_id,
+                dotted_order=f"{i}",
             )
 
         # Should have warned about dropped runs
@@ -4392,22 +4398,28 @@ def test_tracing_queue_size_limit_allows_single_large_run(
 ) -> None:
     """Test that a single large run is allowed even if it exceeds the limit."""
     monkeypatch.setenv("LANGCHAIN_TRACING_V2", "true")
+    session = mock.MagicMock(spec=requests.Session)
 
     # Create a client with a small queue size limit (1000 bytes)
     client = Client(
         api_key="test-api-key",
         auto_batch_tracing=True,
         tracing_queue_size_limit_bytes=1000,
+        session=session,
     )
 
     # Mock the logger to ensure no warnings
     with mock.patch("langsmith.client.logger") as mock_logger:
         # Create a single large run that exceeds the limit
+        run_id = uuid.uuid4()
         client.create_run(
             name="large_run",
             inputs={"text": "x" * 2000},  # 2000+ bytes, exceeds 1000 byte limit
             run_type="llm",
             project_name="test_project",
+            id=run_id,
+            trace_id=run_id,
+            dotted_order="1",
         )
 
         # Should NOT have warned since the queue was empty
@@ -4447,12 +4459,14 @@ def test_compressed_traces_size_limit_drops_runs(
 ) -> None:
     """Test that runs are dropped when compressed traces size limit is exceeded."""
     monkeypatch.setenv("LANGCHAIN_TRACING_V2", "true")
+    session = mock.MagicMock(spec=requests.Session)
 
     # Create a client with compressed traces and a small size limit
     client = Client(
         api_key="test-api-key",
         auto_batch_tracing=True,
         tracing_queue_size_limit_bytes=1000,
+        session=session,
     )
 
     # Mock to enable compressed traces
@@ -4465,11 +4479,15 @@ def test_compressed_traces_size_limit_drops_runs(
     with mock.patch("langsmith.client.logger") as mock_logger:
         # Create multiple runs to exceed the limit
         for i in range(10):
+            run_id = uuid.uuid4()
             client.create_run(
                 name=f"test_run_{i}",
                 inputs={"text": "x" * 200},  # Each run ~200+ bytes
                 run_type="llm",
                 project_name="test_project",
+                id=run_id,
+                trace_id=run_id,
+                dotted_order=f"{i}",
             )
 
         # Should have warned about dropped runs
@@ -4488,12 +4506,14 @@ def test_compressed_traces_size_limit_allows_single_large_run(
 ) -> None:
     """Test that a single large run is allowed in compressed traces even if it exceeds the limit."""
     monkeypatch.setenv("LANGCHAIN_TRACING_V2", "true")
+    session = mock.MagicMock(spec=requests.Session)
 
     # Create a client with compressed traces and a small size limit
     client = Client(
         api_key="test-api-key",
         auto_batch_tracing=True,
         tracing_queue_size_limit_bytes=1000,
+        session=session,
     )
 
     # Mock to enable compressed traces
@@ -4505,11 +4525,15 @@ def test_compressed_traces_size_limit_allows_single_large_run(
     # Mock the logger to ensure no warnings
     with mock.patch("langsmith.client.logger") as mock_logger:
         # Create a single large run that exceeds the limit
+        run_id = uuid.uuid4()
         client.create_run(
             name="large_run",
             inputs={"text": "x" * 2000},  # 2000+ bytes, exceeds 1000 byte limit
             run_type="llm",
             project_name="test_project",
+            id=run_id,
+            trace_id=run_id,
+            dotted_order="1",
         )
 
         # Should NOT have warned since the buffer was empty
