@@ -31,7 +31,6 @@ interface UsageMetadata {
 
 /**
  * Store usage metadata in run.extra.metadata.usage_metadata for LangSmith platform integration.
- * Runs asynchronously without blocking the main execution path.
  */
 async function storeUsageMetadata(usageMetadata: UsageMetadata): Promise<void> {
   try {
@@ -82,7 +81,7 @@ const chatAggregator = (chunks: any[]): any => {
       };
 
       result.usage_metadata = usageMetadata;
-      storeUsageMetadata(usageMetadata);
+      void storeUsageMetadata(usageMetadata);
     }
   }
 
@@ -271,7 +270,7 @@ function processGeminiOutputs(outputs: any): KVMap {
     };
 
     result.usage_metadata = usageMetadata;
-    storeUsageMetadata(usageMetadata);
+    void storeUsageMetadata(usageMetadata);
   }
 
   if (toolCalls.length > 0) {
