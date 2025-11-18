@@ -267,15 +267,15 @@ def evaluate(
 
         Using the `evaluate` API with an off-the-shelf LangChain evaluator:
 
-        >>> from langsmith.evaluation import LangChainStringEvaluator
-        >>> from langchain_openai import ChatOpenAI
-        >>> def prepare_criteria_data(run: Run, example: Example):
+        >>> from langsmith.evaluation import LangChainStringEvaluator  # doctest: +SKIP
+        >>> from langchain_openai import ChatOpenAI  # doctest: +SKIP
+        >>> def prepare_criteria_data(run: Run, example: Example):  # doctest: +SKIP
         ...     return {
         ...         "prediction": run.outputs["output"],
         ...         "reference": example.outputs["answer"],
         ...         "input": str(example.inputs),
         ...     }
-        >>> results = evaluate(
+        >>> results = evaluate(  # doctest: +SKIP
         ...     predict,
         ...     data=dataset_name,
         ...     evaluators=[
@@ -295,8 +295,8 @@ def evaluate(
         ...     ],
         ...     description="Evaluating with off-the-shelf LangChain evaluators.",
         ...     summary_evaluators=[precision],
-        ... )  # doctest: +ELLIPSIS
-        View the evaluation results for experiment:...
+        ... )
+        View the evaluation results for experiment:...  # doctest: +SKIP
 
         Evaluating a LangChain object:
 
