@@ -116,25 +116,6 @@ export class AsyncCaller {
                   throw error;
                 }
               }
-
-              // Handle Retry-After header if present
-              if (response?.headers) {
-                const retryAfter = response.headers.get("retry-after");
-                if (retryAfter) {
-                  let delayMs: number;
-                  // Retry-After can be either a number of seconds or an HTTP date
-                  if (/^\d+$/.test(retryAfter)) {
-                    // It's a number of seconds
-                    delayMs = parseInt(retryAfter, 10) * 1000;
-                  } else {
-                    // It's an HTTP date
-                    const retryDate = new Date(retryAfter);
-                    delayMs = Math.max(0, retryDate.getTime() - Date.now());
-                  }
-                  // Wait for the specified delay
-                  await new Promise((resolve) => setTimeout(resolve, delayMs));
-                }
-              }
             },
             retries: this.maxRetries,
             randomize: true,
