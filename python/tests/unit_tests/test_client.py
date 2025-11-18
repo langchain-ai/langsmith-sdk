@@ -4354,3 +4354,89 @@ def test_list_runs_child_run_ids_deprecation_warning(
     with warnings.catch_warnings():
         warnings.simplefilter("error", DeprecationWarning)
         list(client.list_runs(project_id=uuid.uuid4(), select=["id", "name"]))
+
+
+def test_tracing_queue_size_limit_drops_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that runs are dropped when tracing queue size limit is exceeded."""
+    monkeypatch.setenv("LANGCHAIN_TRACING_V2", "true")
+
+    # Create a client with a very small queue size limit (1000 bytes)
+    client = Client(
+        api_key="test-api-key",
+        auto_batch_tracing=True,
+        tracing_queue_size_limit_bytes=1000,
+    )
+
+    # Mock the logger to capture warnings
+    with mock.patch("langsmith.client.logger") as mock_logger:
+        # Create multiple runs to exceed the limit
+        for i in range(10):
+            client.create_run(
+                name=f"test_run_{i}",
+                inputs={"text": "x" * 200},  # Each run ~200+ bytes
+                run_type="llm",
+                project_name="test_project",
+            )
+
+        # Should have warned about dropped runs
+        warning_calls = [
+            call
+            for call in mock_logger.warning.call_args_list
+            if "Tracing queue size limit" in str(call)
+        ]
+        assert len(warning_calls) > 0, "Expected warnings about queue size limit"
+
+
+def test_tracing_queue_size_limit_allows_single_large_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test that a single large run is allowed even if it exceeds the limit."""
+    monkeypatch.setenv("LANGCHAIN_TRACING_V2", "true")
+
+    # Create a client with a small queue size limit (1000 bytes)
+    client = Client(
+        api_key="test-api-key",
+        auto_batch_tracing=True,
+        tracing_queue_size_limit_bytes=1000,
+    )
+
+    # Mock the logger to ensure no warnings
+    with mock.patch("langsmith.client.logger") as mock_logger:
+        # Create a single large run that exceeds the limit
+        client.create_run(
+            name="large_run",
+            inputs={"text": "x" * 2000},  # 2000+ bytes, exceeds 1000 byte limit
+            run_type="llm",
+            project_name="test_project",
+        )
+
+        # Should NOT have warned since the queue was empty
+        warning_calls = [
+            call
+            for call in mock_logger.warning.call_args_list
+            if "Tracing queue size limit" in str(call)
+        ]
+        assert len(warning_calls) == 0, "Should not warn for single large trace"
+
+        # Verify the run is in the queue
+        assert client.tracing_queue.qsize() == 1
+
+
+def test_tracing_queue_size_limit_default() -> None:
+    """Test that the default queue size limit is 1GB."""
+    client = Client(api_key="test-api-key", auto_batch_tracing=True)
+
+    # Default should be 1GB
+    assert client._tracing_queue_size_limit_bytes == 1024 * 1024 * 1024
+
+
+def test_tracing_queue_size_limit_custom() -> None:
+    """Test that custom queue size limit is respected."""
+    custom_limit = 5000
+    client = Client(
+        api_key="test-api-key",
+        auto_batch_tracing=True,
+        tracing_queue_size_limit_bytes=custom_limit,
+    )
+
+    assert client._tracing_queue_size_limit_bytes == custom_limit
