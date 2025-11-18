@@ -715,7 +715,7 @@ export class Client implements LangSmithTracingClientInterface {
     this.debug = config.debug ?? this.debug;
     this.fetchImplementation = config.fetchImplementation;
     this.batchIngestCaller = new AsyncCaller({
-      maxRetries: 2,
+      maxRetries: 4,
       maxConcurrency: this.traceBatchConcurrency,
       ...(config.callerOptions ?? {}),
       onFailedResponseHook: handle429,

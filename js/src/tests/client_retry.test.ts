@@ -114,4 +114,152 @@ describe("Client timeout and retry behavior", () => {
     await expect(client.readRun(v4())).rejects.toThrow();
     expect(requestCount).toBe(1);
   });
+
+  it("should respect Retry-After header with seconds", async () => {
+    testMode = "retry_after_seconds";
+    requestCount = 0;
+    const retryDelaySeconds = 1;
+    const startTime = Date.now();
+
+    testServer.removeAllListeners("request");
+    testServer.on("request", (req, res) => {
+      requestCount++;
+
+      if (requestCount === 1) {
+        // First request: return 429 with Retry-After in seconds
+        res.writeHead(429, {
+          "Content-Type": "application/json",
+          "Retry-After": retryDelaySeconds.toString(),
+        });
+        res.end(JSON.stringify({ error: "Too Many Requests" }));
+      } else {
+        // Second request: succeed
+        const url = req.url || "";
+        const runId = url.split("/runs/")[1] || "test-run-id";
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            id: runId,
+            name: "test_run",
+            run_type: "llm",
+            status: "success",
+            start_time: new Date().toISOString(),
+            end_time: new Date().toISOString(),
+          })
+        );
+      }
+    });
+
+    const client = new Client({
+      apiKey: "test-api-key",
+      apiUrl: `http://localhost:${port}`,
+      timeout_ms: 5000,
+      autoBatchTracing: true,
+    });
+
+    (client as any).caller = new AsyncCaller({
+      maxRetries: 2,
+      maxConcurrency: 1,
+    });
+
+    const result = await client.readRun(v4());
+    const elapsedTime = Date.now() - startTime;
+
+    expect(result).toHaveProperty("id");
+    expect(requestCount).toBe(2);
+    // Should have waited at least the retry delay
+    expect(elapsedTime).toBeGreaterThanOrEqual(retryDelaySeconds * 1000);
+  });
+
+  it("should respect Retry-After header with HTTP date", async () => {
+    testMode = "retry_after_date";
+    requestCount = 0;
+    const retryDelayMs = 1000;
+    const startTime = Date.now();
+
+    testServer.removeAllListeners("request");
+    testServer.on("request", (req, res) => {
+      requestCount++;
+
+      if (requestCount === 1) {
+        // First request: return 429 with Retry-After as HTTP date
+        const retryAfterDate = new Date(Date.now() + retryDelayMs);
+        res.writeHead(429, {
+          "Content-Type": "application/json",
+          "Retry-After": retryAfterDate.toUTCString(),
+        });
+        res.end(JSON.stringify({ error: "Too Many Requests" }));
+      } else {
+        // Second request: succeed
+        const url = req.url || "";
+        const runId = url.split("/runs/")[1] || "test-run-id";
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            id: runId,
+            name: "test_run",
+            run_type: "llm",
+            status: "success",
+            start_time: new Date().toISOString(),
+            end_time: new Date().toISOString(),
+          })
+        );
+      }
+    });
+
+    const client = new Client({
+      apiKey: "test-api-key",
+      apiUrl: `http://localhost:${port}`,
+      timeout_ms: 5000,
+      autoBatchTracing: true,
+    });
+
+    (client as any).caller = new AsyncCaller({
+      maxRetries: 2,
+      maxConcurrency: 1,
+    });
+
+    const result = await client.readRun(v4());
+    const elapsedTime = Date.now() - startTime;
+
+    expect(result).toHaveProperty("id");
+    expect(requestCount).toBe(2);
+    // Should have waited at least the retry delay (with some tolerance for timing)
+    expect(elapsedTime).toBeGreaterThanOrEqual(retryDelayMs - 100);
+  });
+
+  it("should respect maxRetries even with Retry-After header", async () => {
+    testMode = "retry_after_max_retries";
+    requestCount = 0;
+
+    testServer.removeAllListeners("request");
+    testServer.on("request", (req, res) => {
+      requestCount++;
+      // Always return 429 with Retry-After
+      res.writeHead(429, {
+        "Content-Type": "application/json",
+        "Retry-After": "1",
+      });
+      res.end(JSON.stringify({ error: "Too Many Requests" }));
+    });
+
+    const client = new Client({
+      apiKey: "test-api-key",
+      apiUrl: `http://localhost:${port}`,
+      timeout_ms: 10000,
+      autoBatchTracing: true,
+    });
+
+    const maxRetries = 2;
+    (client as any).caller = new AsyncCaller({
+      maxRetries,
+      maxConcurrency: 1,
+    });
+
+    // Should fail after exhausting retries
+    await expect(client.readRun(v4())).rejects.toThrow();
+
+    // Should make initial attempt + maxRetries attempts
+    expect(requestCount).toBe(maxRetries + 1);
+  });
 });
