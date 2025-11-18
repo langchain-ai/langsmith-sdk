@@ -27,6 +27,13 @@ interface UsageMetadata {
   input_tokens: number;
   output_tokens: number;
   total_tokens: number;
+  input_token_details?: {
+    cache_read?: number;
+    cache_read_over_200k_threshold?: number;
+  };
+  output_token_details?: {
+    reasoning?: number;
+  };
 }
 
 /**
@@ -79,6 +86,23 @@ const chatAggregator = (chunks: any[]): any => {
           usage.responseTokenCount || usage.candidatesTokenCount || 0,
         total_tokens: usage.totalTokenCount || 0,
       };
+
+      // Add cache details if available
+      if (usage.cachedContentTokenCount) {
+        const cacheRead = usage.cachedContentTokenCount;
+        const cacheReadOver200k = Math.max(0, cacheRead - 200000);
+        usageMetadata.input_token_details = {
+          cache_read: cacheRead,
+          cache_read_over_200k_threshold: cacheReadOver200k,
+        };
+      }
+
+      // Add thoughts token count if available
+      if (usage.thoughtsTokenCount) {
+        usageMetadata.output_token_details = {
+          reasoning: usage.thoughtsTokenCount,
+        };
+      }
 
       result.usage_metadata = usageMetadata;
       void storeUsageMetadata(usageMetadata);
@@ -268,6 +292,23 @@ function processGeminiOutputs(outputs: any): KVMap {
         usage.responseTokenCount || usage.candidatesTokenCount || 0,
       total_tokens: usage.totalTokenCount || 0,
     };
+
+    // Add cache details if available
+    if (usage.cachedContentTokenCount) {
+      const cacheRead = usage.cachedContentTokenCount;
+      const cacheReadOver200k = Math.max(0, cacheRead - 200000);
+      usageMetadata.input_token_details = {
+        cache_read: cacheRead,
+        cache_read_over_200k_threshold: cacheReadOver200k,
+      };
+    }
+
+    // Add thoughts token count if available
+    if (usage.thoughtsTokenCount) {
+      usageMetadata.output_token_details = {
+        reasoning: usage.thoughtsTokenCount,
+      };
+    }
 
     result.usage_metadata = usageMetadata;
     void storeUsageMetadata(usageMetadata);
