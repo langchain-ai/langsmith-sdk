@@ -96,6 +96,8 @@ export interface ClientConfig {
   batchSizeBytesLimit?: number;
   /** Maximum number of operations to batch in a single request. */
   batchSizeLimit?: number;
+  /** Maximum total size of the AutoBatchQueue in bytes. Defaults to 1GB. */
+  autoBatchQueueSizeLimitBytes?: number;
   blockOnRootRunFinalization?: boolean;
   traceBatchConcurrency?: number;
   fetchOptions?: RequestInit;
@@ -532,6 +534,14 @@ export class AutoBatchQueue {
 
   sizeBytes = 0;
 
+  private static readonly DEFAULT_MAX_SIZE_BYTES = 1024 * 1024 * 1024; // 1GB
+
+  private maxSizeBytes: number;
+
+  constructor(maxSizeBytes?: number) {
+    this.maxSizeBytes = maxSizeBytes ?? AutoBatchQueue.DEFAULT_MAX_SIZE_BYTES;
+  }
+
   peek() {
     return this.items[0];
   }
@@ -547,6 +557,19 @@ export class AutoBatchQueue {
       item.item,
       `Serializing run with id: ${item.item.id}`
     ).length;
+
+    // Check if adding this item would exceed the size limit
+    // Allow the run if the queue is empty (to support large single traces)
+    if (this.sizeBytes + size > this.maxSizeBytes && this.items.length > 0) {
+      console.warn(
+        `AutoBatchQueue size limit (${this.maxSizeBytes} bytes) exceeded. Dropping run with id: ${item.item.id}. ` +
+          `Current queue size: ${this.sizeBytes} bytes, attempted addition: ${size} bytes.`
+      );
+      // Resolve immediately to avoid blocking caller
+      itemPromiseResolve!();
+      return itemPromise;
+    }
+
     this.items.push({
       action: item.action,
       payload: item.item,
@@ -644,7 +667,7 @@ export class Client implements LangSmithTracingClientInterface {
 
   private autoBatchTracing = true;
 
-  private autoBatchQueue = new AutoBatchQueue();
+  private autoBatchQueue: AutoBatchQueue;
 
   private autoBatchTimeout: ReturnType<typeof setTimeout> | undefined;
 
@@ -728,6 +751,9 @@ export class Client implements LangSmithTracingClientInterface {
       config.hideOutputs ?? config.anonymizer ?? defaultConfig.hideOutputs;
 
     this.autoBatchTracing = config.autoBatchTracing ?? this.autoBatchTracing;
+    this.autoBatchQueue = new AutoBatchQueue(
+      config.autoBatchQueueSizeLimitBytes
+    );
     this.blockOnRootRunFinalization =
       config.blockOnRootRunFinalization ?? this.blockOnRootRunFinalization;
     this.batchSizeBytesLimit = config.batchSizeBytesLimit;
