@@ -458,6 +458,9 @@ class Client:
         "_otel_trace",
         "_set_span_in_context",
         "_max_batch_size_bytes",
+        "_tracing_queue_size_limit_bytes",
+        "_tracing_queue_size_bytes",
+        "_tracing_queue_size_lock",
     ]
 
     _api_key: Optional[str]
@@ -491,6 +494,7 @@ class Client:
         tracing_sampling_rate: Optional[float] = None,
         workspace_id: Optional[str] = None,
         max_batch_size_bytes: Optional[int] = None,
+        tracing_queue_size_limit_bytes: Optional[int] = None,
     ) -> None:
         """Initialize a Client instance.
 
@@ -545,6 +549,9 @@ class Client:
             workspace_id (Optional[str]): The workspace ID. Required for org-scoped API keys.
             max_batch_size_bytes (Optional[int]): The maximum size of a batch of runs in bytes.
                 If not provided, the default is set by the server.
+            tracing_queue_size_limit_bytes (Optional[int]): The maximum total size of the tracing queue in bytes.
+                Defaults to 1GB. When the queue exceeds this limit, additional runs will be dropped with a warning.
+                Allows single large traces when the queue is empty to support large individual traces.
 
         Raises:
             LangSmithUserError: If the API key is not provided when using the hosted service.
@@ -605,6 +612,11 @@ class Client:
         self._run_ops_buffer_lock = threading.Lock()
         self.otel_exporter: Optional[OTELExporter] = None
         self._max_batch_size_bytes = max_batch_size_bytes
+        self._tracing_queue_size_limit_bytes = tracing_queue_size_limit_bytes or (
+            1024 * 1024 * 1024
+        )  # Default 1GB
+        self._tracing_queue_size_bytes = 0
+        self._tracing_queue_size_lock = threading.Lock()
 
         # Initialize auto batching
         if auto_batch_tracing:
@@ -1443,6 +1455,67 @@ class Client:
                     sampled.append(run)
             return sampled
 
+    def _put_traced_item(self, item: TracingQueueItem) -> None:
+        """Add an item to the tracing queue with size limit enforcement.
+
+        Args:
+            item: The tracing queue item to add (size calculated lazily if needed).
+        """
+        if self.tracing_queue is None:
+            return
+
+        item_size = item.get_size()
+        with self._tracing_queue_size_lock:
+            # Allow the item if the queue is empty (to support large single traces)
+            if (
+                self._tracing_queue_size_bytes + item_size
+                > self._tracing_queue_size_limit_bytes
+                and self._tracing_queue_size_bytes > 0
+            ):
+                logger.warning(
+                    f"Tracing queue size limit ({self._tracing_queue_size_limit_bytes} bytes) exceeded. "
+                    f"Dropping run with id: {item.item.id}. "
+                    f"Current queue size: {self._tracing_queue_size_bytes} bytes, "
+                    f"attempted addition: {item_size} bytes."
+                )
+                return
+
+            self.tracing_queue.put(item)
+            self._tracing_queue_size_bytes += item_size
+
+    def _should_compress_trace(
+        self,
+        serialized_op: Union[SerializedRunOperation, SerializedFeedbackOperation],
+    ) -> bool:
+        """Check if we should compress this trace based on size limits.
+
+        Args:
+            serialized_op: The serialized operation to potentially compress.
+
+        Returns:
+            True if the trace should be compressed, False if it should be dropped.
+        """
+        if self.compressed_traces is None:
+            return False
+
+        item_size = serialized_op.calculate_serialized_size()
+
+        # Allow the item if the buffer is empty (to support large single traces)
+        if (
+            self.compressed_traces.uncompressed_size + item_size
+            > self._tracing_queue_size_limit_bytes
+            and self.compressed_traces.uncompressed_size > 0
+        ):
+            logger.warning(
+                f"Compressed traces size limit ({self._tracing_queue_size_limit_bytes} bytes) exceeded. "
+                f"Dropping item with id: {serialized_op.id}. "
+                f"Current buffer size: {self.compressed_traces.uncompressed_size} bytes, "
+                f"attempted addition: {item_size} bytes."
+            )
+            return False
+
+        return True
+
     def create_run(
         self,
         name: str,
@@ -1563,6 +1636,11 @@ class Client:
                         "Run compression is enabled but threading event is not configured"
                     )
                 serialized_op = serialize_run_dict("post", run_create)
+
+                # Check size limit before compressing
+                if not self._should_compress_trace(serialized_op):
+                    return
+
                 (
                     multipart_form,
                     opened_files,
@@ -1593,7 +1671,7 @@ class Client:
                     serialized_op.id,
                 )
                 if self.otel_exporter is not None:
-                    self.tracing_queue.put(
+                    self._put_traced_item(
                         TracingQueueItem(
                             run_create["dotted_order"],
                             serialized_op,
@@ -1605,7 +1683,7 @@ class Client:
                         )
                     )
                 else:
-                    self.tracing_queue.put(
+                    self._put_traced_item(
                         TracingQueueItem(
                             run_create["dotted_order"],
                             serialized_op,
@@ -2530,6 +2608,10 @@ class Client:
                 and api_key is None
                 and api_url is None
             ):
+                # Check size limit before compressing
+                if not self._should_compress_trace(serialized_op):
+                    return
+
                 (
                     multipart_form,
                     opened_files,
@@ -2562,7 +2644,7 @@ class Client:
                     serialized_op.id,
                 )
                 if self.otel_exporter is not None:
-                    self.tracing_queue.put(
+                    self._put_traced_item(
                         TracingQueueItem(
                             run_update["dotted_order"],
                             serialized_op,
@@ -2574,7 +2656,7 @@ class Client:
                         )
                     )
                 else:
-                    self.tracing_queue.put(
+                    self._put_traced_item(
                         TracingQueueItem(
                             run_update["dotted_order"],
                             serialized_op,
@@ -6483,22 +6565,22 @@ class Client:
             ):
                 serialized_op = serialize_feedback_dict(feedback)
                 if self.compressed_traces is not None:
-                    multipart_form = (
-                        serialized_feedback_operation_to_multipart_parts_and_context(
+                    # Check size limit before compressing
+                    if self._should_compress_trace(serialized_op):
+                        multipart_form = serialized_feedback_operation_to_multipart_parts_and_context(
                             serialized_op
                         )
-                    )
-                    with self.compressed_traces.lock:
-                        compress_multipart_parts_and_context(
-                            multipart_form,
-                            self.compressed_traces,
-                            _BOUNDARY,
-                        )
-                        self.compressed_traces.trace_count += 1
-                        if self._data_available_event:
-                            self._data_available_event.set()
+                        with self.compressed_traces.lock:
+                            compress_multipart_parts_and_context(
+                                multipart_form,
+                                self.compressed_traces,
+                                _BOUNDARY,
+                            )
+                            self.compressed_traces.trace_count += 1
+                            if self._data_available_event:
+                                self._data_available_event.set()
                 elif self.tracing_queue is not None:
-                    self.tracing_queue.put(
+                    self._put_traced_item(
                         TracingQueueItem(str(feedback.id), serialized_op)
                     )
             else:

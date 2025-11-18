@@ -27,5 +27,5 @@ class CompressedTraces:
         self.uncompressed_size = 0
         self._context = []
         self.compressor_writer = ZstdCompressor(
-            level=compression_level, threads=-1
+            level=compression_level, threads=compression_threads
         ).stream_writer(self.buffer, closefd=False)
