@@ -1647,7 +1647,7 @@ describe.each(ENDPOINT_TYPES)(
       expect(calls[2][0]).toBe(expectedTraceURL);
     });
 
-    it("should drop runs when autoBatchQueueSizeLimit is exceeded", async () => {
+    it("should drop runs when maxIngestMemoryBytes is exceeded in AutoBatchQueue", async () => {
       const calls: any[] = [];
       const mockFetch = createMockFetch(calls);
       const consoleSpy = jest
@@ -1659,7 +1659,7 @@ describe.each(ENDPOINT_TYPES)(
         {
           apiKey: "test-api-key",
           autoBatchTracing: true,
-          autoBatchQueueSizeLimitBytes: 1000,
+          maxIngestMemoryBytes: 1000,
           manualFlushMode: true, // Prevent auto-flushing so we can test the limit
         },
         mockFetch
@@ -1723,7 +1723,7 @@ describe.each(ENDPOINT_TYPES)(
         {
           apiKey: "test-api-key",
           autoBatchTracing: true,
-          autoBatchQueueSizeLimitBytes: 1000,
+          maxIngestMemoryBytes: 1000,
           manualFlushMode: true,
         },
         mockFetch
@@ -1765,6 +1765,97 @@ describe.each(ENDPOINT_TYPES)(
       // Clean up
       consoleSpy.mockRestore();
       await client.flush();
+    });
+
+    it("should drop batches when maxIngestMemoryBytes is exceeded", async () => {
+      const calls: any[] = [];
+      let callCount = 0;
+      const mockFetch = jest.fn(
+        async (url: string | URL | Request, init?: RequestInit) => {
+          calls.push([url, init]);
+          callCount++;
+          // Block first few requests to simulate slow network and cause queue buildup
+          if (callCount <= 2) {
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+          }
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({}),
+            text: async () => "{}",
+          } as Response;
+        }
+      );
+
+      const consoleErrorSpy = jest
+        .spyOn(console, "error")
+        .mockImplementation(() => {});
+      const consoleWarnSpy = jest
+        .spyOn(console, "warn")
+        .mockImplementation(() => {});
+
+      // Set a low maxIngestMemoryBytes limit (2000 bytes)
+      // This will allow ~4-5 batches before dropping
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          autoBatchTracing: true,
+          maxIngestMemoryBytes: 2000,
+          traceBatchConcurrency: 1, // Low concurrency to cause queue buildup
+          batchSizeBytesLimit: 500, // Small batches
+          batchSizeLimit: 3, // Few items per batch
+        },
+        mockFetch
+      );
+      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
+        return {
+          version: "foo",
+          batch_ingest_config: { ...extraBatchIngestConfig },
+          instance_flags: { ...extraInstanceFlags },
+        };
+      });
+      const projectName = "__test_batch";
+
+      // Create many runs to trigger multiple batches
+      const runIds: string[] = [];
+      for (let i = 0; i < 20; i++) {
+        const runId = uuidv4();
+        const { dottedOrder } = convertToDottedOrderFormat(
+          new Date().getTime() / 1000,
+          runId
+        );
+        await client.createRun({
+          id: runId,
+          project_name: projectName,
+          name: "test_run " + i,
+          run_type: "llm",
+          inputs: { text: "x".repeat(200) }, // Make each run ~200+ bytes
+          trace_id: runId,
+          dotted_order: dottedOrder,
+        });
+        runIds.push(runId);
+      }
+
+      // Wait a bit for batches to start processing
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      // Should have rejected some batches due to queue size limit
+      // Errors can appear in either console.error (from _processBatch) or console.warn (from _sendMultipartRequest)
+      const errorCalled = consoleErrorSpy.mock.calls.some(
+        (call) =>
+          call[0]?.includes?.("Error exporting batch") &&
+          call[1]?.message?.includes?.("Queue size limit")
+      );
+      const warnCalled = consoleWarnSpy.mock.calls.some((call) =>
+        call[0]?.includes?.("Queue size limit")
+      );
+
+      expect(errorCalled || warnCalled).toBe(true);
+
+      // Clean up
+      consoleErrorSpy.mockRestore();
+      consoleWarnSpy.mockRestore();
+      await client.awaitPendingTraceBatches();
     });
   }
 );

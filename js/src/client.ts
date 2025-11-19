@@ -96,8 +96,11 @@ export interface ClientConfig {
   batchSizeBytesLimit?: number;
   /** Maximum number of operations to batch in a single request. */
   batchSizeLimit?: number;
-  /** Maximum total size of the AutoBatchQueue in bytes. Defaults to 1GB. */
-  autoBatchQueueSizeLimitBytes?: number;
+  /**
+   * Maximum total memory (in bytes) for both the AutoBatchQueue and batchIngestCaller queue.
+   * When exceeded, runs/batches are dropped. Defaults to 1GB.
+   */
+  maxIngestMemoryBytes?: number;
   blockOnRootRunFinalization?: boolean;
   traceBatchConcurrency?: number;
   fetchOptions?: RequestInit;
@@ -403,6 +406,7 @@ type AutoBatchQueueItem = {
   otelContext?: OTELContext;
   apiKey?: string;
   apiUrl?: string;
+  size?: number;
 };
 
 type MultipartPart = {
@@ -534,12 +538,10 @@ export class AutoBatchQueue {
 
   sizeBytes = 0;
 
-  private static readonly DEFAULT_MAX_SIZE_BYTES = 1024 * 1024 * 1024; // 1GB
-
   private maxSizeBytes: number;
 
   constructor(maxSizeBytes?: number) {
-    this.maxSizeBytes = maxSizeBytes ?? AutoBatchQueue.DEFAULT_MAX_SIZE_BYTES;
+    this.maxSizeBytes = maxSizeBytes ?? DEFAULT_MAX_SIZE_BYTES;
   }
 
   peek() {
@@ -625,6 +627,7 @@ export class AutoBatchQueue {
         otelContext: it.otelContext,
         apiKey: it.apiKey,
         apiUrl: it.apiUrl,
+        size: it.size,
       })),
       () => popped.forEach((it) => it.itemPromiseResolve()),
     ];
@@ -632,6 +635,9 @@ export class AutoBatchQueue {
 }
 
 export const DEFAULT_UNCOMPRESSED_BATCH_SIZE_LIMIT_BYTES = 24 * 1024 * 1024;
+
+/** Default maximum memory (1GB) for queue size limits. */
+export const DEFAULT_MAX_SIZE_BYTES = 1024 * 1024 * 1024; // 1GB
 
 const SERVER_INFO_REQUEST_TIMEOUT_MS = 10000;
 
@@ -737,9 +743,14 @@ export class Client implements LangSmithTracingClientInterface {
     }
     this.debug = config.debug ?? this.debug;
     this.fetchImplementation = config.fetchImplementation;
+
+    // Use maxIngestMemoryBytes for both queues
+    const maxMemory = config.maxIngestMemoryBytes ?? DEFAULT_MAX_SIZE_BYTES;
+
     this.batchIngestCaller = new AsyncCaller({
       maxRetries: 2,
       maxConcurrency: this.traceBatchConcurrency,
+      maxQueueSizeBytes: maxMemory,
       ...(config.callerOptions ?? {}),
       onFailedResponseHook: handle429,
       debug: config.debug ?? this.debug,
@@ -751,9 +762,7 @@ export class Client implements LangSmithTracingClientInterface {
       config.hideOutputs ?? config.anonymizer ?? defaultConfig.hideOutputs;
 
     this.autoBatchTracing = config.autoBatchTracing ?? this.autoBatchTracing;
-    this.autoBatchQueue = new AutoBatchQueue(
-      config.autoBatchQueueSizeLimitBytes
-    );
+    this.autoBatchQueue = new AutoBatchQueue(maxMemory);
     this.blockOnRootRunFinalization =
       config.blockOnRootRunFinalization ?? this.blockOnRootRunFinalization;
     this.batchSizeBytesLimit = config.batchSizeBytesLimit;
@@ -1123,6 +1132,12 @@ export class Client implements LangSmithTracingClientInterface {
     if (!batch.length) {
       return;
     }
+    // Calculate total batch size for queue tracking
+    const batchSizeBytes = batch.reduce(
+      (sum, item) => sum + (item.size ?? 0),
+      0
+    );
+
     try {
       if (this.langSmithToOTELTranslator !== undefined) {
         this._sendBatchToOTELTranslator(batch);
@@ -1138,9 +1153,16 @@ export class Client implements LangSmithTracingClientInterface {
         const serverInfo = await this._ensureServerInfo();
         if (serverInfo?.batch_ingest_config?.use_multipart_endpoint) {
           const useGzip = serverInfo?.instance_flags?.gzip_body_enabled;
-          await this.multipartIngestRuns(ingestParams, { ...options, useGzip });
+          await this.multipartIngestRuns(ingestParams, {
+            ...options,
+            useGzip,
+            sizeBytes: batchSizeBytes,
+          });
         } else {
-          await this.batchIngestRuns(ingestParams, options);
+          await this.batchIngestRuns(ingestParams, {
+            ...options,
+            sizeBytes: batchSizeBytes,
+          });
         }
       }
     } catch (e) {
@@ -1363,7 +1385,7 @@ export class Client implements LangSmithTracingClientInterface {
       runCreates?: RunCreate[];
       runUpdates?: RunUpdate[];
     },
-    options?: { apiKey?: string; apiUrl?: string }
+    options?: { apiKey?: string; apiUrl?: string; sizeBytes?: number }
   ) {
     if (runCreates === undefined && runUpdates === undefined) {
       return;
@@ -1442,7 +1464,7 @@ export class Client implements LangSmithTracingClientInterface {
 
   private async _postBatchIngestRuns(
     body: Uint8Array,
-    options?: { apiKey?: string; apiUrl?: string }
+    options?: { apiKey?: string; apiUrl?: string; sizeBytes?: number }
   ) {
     const headers: Record<string, string> = {
       ...this.headers,
@@ -1452,20 +1474,23 @@ export class Client implements LangSmithTracingClientInterface {
     if (options?.apiKey !== undefined) {
       headers["x-api-key"] = options.apiKey;
     }
-    await this.batchIngestCaller.call(async () => {
-      const res = await this._fetch(
-        `${options?.apiUrl ?? this.apiUrl}/runs/batch`,
-        {
-          method: "POST",
-          headers,
-          signal: AbortSignal.timeout(this.timeout_ms),
-          ...this.fetchOptions,
-          body,
-        }
-      );
-      await raiseForStatus(res, "batch create run", true);
-      return res;
-    });
+    await this.batchIngestCaller.callWithOptions(
+      { sizeBytes: options?.sizeBytes },
+      async () => {
+        const res = await this._fetch(
+          `${options?.apiUrl ?? this.apiUrl}/runs/batch`,
+          {
+            method: "POST",
+            headers,
+            signal: AbortSignal.timeout(this.timeout_ms),
+            ...this.fetchOptions,
+            body,
+          }
+        );
+        await raiseForStatus(res, "batch create run", true);
+        return res;
+      }
+    );
   }
 
   /**
@@ -1480,7 +1505,12 @@ export class Client implements LangSmithTracingClientInterface {
       runCreates?: RunCreate[];
       runUpdates?: RunUpdate[];
     },
-    options?: { apiKey?: string; apiUrl?: string; useGzip?: boolean }
+    options?: {
+      apiKey?: string;
+      apiUrl?: string;
+      useGzip?: boolean;
+      sizeBytes?: number;
+    }
   ) {
     if (runCreates === undefined && runUpdates === undefined) {
       return;
@@ -1733,7 +1763,12 @@ export class Client implements LangSmithTracingClientInterface {
   private async _sendMultipartRequest(
     parts: MultipartPart[],
     context: string,
-    options?: { apiKey?: string; apiUrl?: string; useGzip?: boolean }
+    options?: {
+      apiKey?: string;
+      apiUrl?: string;
+      useGzip?: boolean;
+      sizeBytes?: number;
+    }
   ) {
     // Create multipart form data boundary
     const boundary =
@@ -1746,46 +1781,49 @@ export class Client implements LangSmithTracingClientInterface {
     const sendWithRetry = async (
       bodyFactory: () => Promise<BodyInit>
     ): Promise<Response> => {
-      return this.batchIngestCaller.call(async () => {
-        const body = await bodyFactory();
-        const headers: Record<string, string> = {
-          ...this.headers,
-          "Content-Type": `multipart/form-data; boundary=${boundary}`,
-        };
-        if (options?.apiKey !== undefined) {
-          headers["x-api-key"] = options.apiKey;
+      return this.batchIngestCaller.callWithOptions(
+        { sizeBytes: options?.sizeBytes },
+        async () => {
+          const body = await bodyFactory();
+          const headers: Record<string, string> = {
+            ...this.headers,
+            "Content-Type": `multipart/form-data; boundary=${boundary}`,
+          };
+          if (options?.apiKey !== undefined) {
+            headers["x-api-key"] = options.apiKey;
+          }
+
+          let transformedBody = body;
+          if (
+            options?.useGzip &&
+            typeof body === "object" &&
+            "pipeThrough" in body
+          ) {
+            transformedBody = body.pipeThrough(new CompressionStream("gzip"));
+            headers["Content-Encoding"] = "gzip";
+          }
+
+          const response = await this._fetch(
+            `${options?.apiUrl ?? this.apiUrl}/runs/multipart`,
+            {
+              method: "POST",
+              headers,
+              body: transformedBody,
+              duplex: "half",
+              signal: AbortSignal.timeout(this.timeout_ms),
+              ...this.fetchOptions,
+            } as RequestInit
+          );
+
+          await raiseForStatus(
+            response,
+            `Failed to send multipart request`,
+            true
+          );
+
+          return response;
         }
-
-        let transformedBody = body;
-        if (
-          options?.useGzip &&
-          typeof body === "object" &&
-          "pipeThrough" in body
-        ) {
-          transformedBody = body.pipeThrough(new CompressionStream("gzip"));
-          headers["Content-Encoding"] = "gzip";
-        }
-
-        const response = await this._fetch(
-          `${options?.apiUrl ?? this.apiUrl}/runs/multipart`,
-          {
-            method: "POST",
-            headers,
-            body: transformedBody,
-            duplex: "half",
-            signal: AbortSignal.timeout(this.timeout_ms),
-            ...this.fetchOptions,
-          } as RequestInit
-        );
-
-        await raiseForStatus(
-          response,
-          `Failed to send multipart request`,
-          true
-        );
-
-        return response;
-      });
+      );
     };
 
     try {
