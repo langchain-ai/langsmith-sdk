@@ -26,7 +26,7 @@ export interface AsyncCallerParams {
   /**
    * The maximum size of the queue buffer in bytes. When the queue reaches this size,
    * new calls will be dropped instead of queued.
-   * Defaults to `Infinity`, which means no limit.
+   * If not specified, no limit is enforced.
    */
   maxQueueSizeBytes?: number;
 
@@ -73,7 +73,7 @@ export class AsyncCaller {
   constructor(params: AsyncCallerParams) {
     this.maxConcurrency = params.maxConcurrency ?? Infinity;
     this.maxRetries = params.maxRetries ?? 6;
-    this.maxQueueSizeBytes = params.maxQueueSizeBytes ?? Infinity;
+    this.maxQueueSizeBytes = params.maxQueueSizeBytes;
 
     if ("default" in PQueueMod) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -106,7 +106,6 @@ export class AsyncCaller {
     // Check if adding this call would exceed the byte size limit
     if (
       this.maxQueueSizeBytes !== undefined &&
-      this.maxQueueSizeBytes !== Infinity &&
       sizeBytes > 0 &&
       this.queueSizeBytes + sizeBytes > this.maxQueueSizeBytes
     ) {
