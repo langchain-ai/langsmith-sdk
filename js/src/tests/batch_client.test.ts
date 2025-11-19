@@ -1857,5 +1857,78 @@ describe.each(ENDPOINT_TYPES)(
       consoleWarnSpy.mockRestore();
       await client.awaitPendingTraceBatches();
     });
+
+    it("should decrement queue size after batches complete", async () => {
+      const calls: any[] = [];
+      let completedCalls = 0;
+      const mockFetch = jest.fn(
+        async (url: string | URL | Request, init?: RequestInit) => {
+          calls.push([url, init]);
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          completedCalls++;
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({}),
+            text: async () => "{}",
+          } as Response;
+        }
+      );
+
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          autoBatchTracing: true,
+          maxIngestMemoryBytes: 10000,
+          traceBatchConcurrency: 2,
+          batchSizeBytesLimit: 500,
+          batchSizeLimit: 3,
+        },
+        mockFetch
+      );
+      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
+        return {
+          version: "foo",
+          batch_ingest_config: { ...extraBatchIngestConfig },
+          instance_flags: { ...extraInstanceFlags },
+        };
+      });
+      const projectName = "__test_batch";
+
+      // Create runs to build up queue
+      for (let i = 0; i < 10; i++) {
+        const runId = uuidv4();
+        const { dottedOrder } = convertToDottedOrderFormat(
+          new Date().getTime() / 1000,
+          runId
+        );
+        await client.createRun({
+          id: runId,
+          project_name: projectName,
+          name: "test_run " + i,
+          run_type: "llm",
+          inputs: { text: "x".repeat(200) },
+          trace_id: runId,
+          dotted_order: dottedOrder,
+        });
+      }
+
+      // Wait for some batches to start processing
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Check that queue size is non-zero while processing
+      const queueSizeDuringProcessing = (client as any).batchIngestCaller
+        .queueSizeBytes;
+      expect(queueSizeDuringProcessing).toBeGreaterThan(0);
+
+      // Wait for all batches to complete
+      await client.awaitPendingTraceBatches();
+
+      // Queue size should be zero after all complete
+      const queueSizeAfterCompletion = (client as any).batchIngestCaller
+        .queueSizeBytes;
+      expect(queueSizeAfterCompletion).toBe(0);
+      expect(completedCalls).toBeGreaterThan(0);
+    });
   }
 );
