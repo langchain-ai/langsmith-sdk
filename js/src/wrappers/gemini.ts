@@ -5,7 +5,6 @@ import {
   type TraceableConfig,
 } from "../traceable.js";
 import { KVMap, InvocationParamsSchema } from "../schemas.js";
-import { getCurrentRunTree } from "../singletons/traceable.js";
 
 type GoogleGenAIType = {
   models: {
