@@ -1930,5 +1930,111 @@ describe.each(ENDPOINT_TYPES)(
       expect(queueSizeAfterCompletion).toBe(0);
       expect(completedCalls).toBeGreaterThan(0);
     });
+
+    it("should decrement queue size even when requests timeout", async () => {
+      const calls: any[] = [];
+      const mockFetch = jest.fn(
+        async (
+          url: string | URL | Request,
+          init?: RequestInit
+        ): Promise<Response> => {
+          calls.push([url, init]);
+          // Respect the abort signal from timeout
+          const signal = init?.signal;
+          if (signal) {
+            return new Promise((resolve, reject) => {
+              const timeoutId = setTimeout(() => {
+                resolve({
+                  ok: true,
+                  status: 200,
+                  json: async () => ({}),
+                  text: async () => "{}",
+                } as Response);
+              }, 120000);
+
+              signal.addEventListener("abort", () => {
+                clearTimeout(timeoutId);
+                reject(new Error("TimeoutError: The operation was aborted"));
+              });
+            });
+          }
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({}),
+            text: async () => "{}",
+          } as Response;
+        }
+      );
+
+      const consoleErrorSpy = jest
+        .spyOn(console, "error")
+        .mockImplementation(() => {});
+      const consoleWarnSpy = jest
+        .spyOn(console, "warn")
+        .mockImplementation(() => {});
+
+      const client = createClient(
+        {
+          apiKey: "test-api-key",
+          autoBatchTracing: true,
+          maxIngestMemoryBytes: 10000,
+          timeout_ms: 100, // Very short timeout to trigger quickly
+          traceBatchConcurrency: 2,
+          batchSizeBytesLimit: 500,
+          batchSizeLimit: 3,
+        },
+        mockFetch
+      );
+      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
+        return {
+          version: "foo",
+          batch_ingest_config: { ...extraBatchIngestConfig },
+          instance_flags: { ...extraInstanceFlags },
+        };
+      });
+      const projectName = "__test_batch";
+
+      // Create runs that will timeout
+      for (let i = 0; i < 5; i++) {
+        const runId = uuidv4();
+        const { dottedOrder } = convertToDottedOrderFormat(
+          new Date().getTime() / 1000,
+          runId
+        );
+        await client.createRun({
+          id: runId,
+          project_name: projectName,
+          name: "test_run " + i,
+          run_type: "llm",
+          inputs: { text: "x".repeat(200) },
+          trace_id: runId,
+          dotted_order: dottedOrder,
+        });
+      }
+
+      // Wait for requests to timeout and batches to complete (with errors)
+      await client.awaitPendingTraceBatches();
+
+      // Queue size should be zero even though requests timed out
+      const queueSizeAfterTimeout = (client as any).batchIngestCaller
+        .queueSizeBytes;
+      expect(queueSizeAfterTimeout).toBe(0);
+
+      // Should have logged timeout errors (in either console.error or console.warn)
+      const errorCalled = consoleErrorSpy.mock.calls.some(
+        (call) =>
+          call[0]?.includes?.("Error exporting batch") &&
+          call[1]?.message?.includes?.("TimeoutError")
+      );
+      const warnCalled = consoleWarnSpy.mock.calls.some((call) =>
+        call[0]?.includes?.("TimeoutError")
+      );
+
+      expect(errorCalled || warnCalled).toBe(true);
+
+      consoleErrorSpy.mockRestore();
+      consoleWarnSpy.mockRestore();
+    });
   }
 );
