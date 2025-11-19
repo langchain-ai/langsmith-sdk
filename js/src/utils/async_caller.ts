@@ -23,6 +23,12 @@ export interface AsyncCallerParams {
    * with an exponential backoff between each attempt. Defaults to 6.
    */
   maxRetries?: number;
+  /**
+   * The maximum size of the queue buffer in bytes. When the queue reaches this size,
+   * new calls will be dropped instead of queued.
+   * If not specified, no limit is enforced.
+   */
+  maxQueueSizeBytes?: number;
 
   onFailedResponseHook?: ResponseCallback;
 
@@ -31,6 +37,11 @@ export interface AsyncCallerParams {
 
 export interface AsyncCallerCallOptions {
   signal?: AbortSignal;
+  /**
+   * The size of this call in bytes, used for queue size tracking.
+   * If not provided, size tracking is skipped for this call.
+   */
+  sizeBytes?: number;
 }
 
 /**
@@ -51,13 +62,18 @@ export class AsyncCaller {
 
   protected maxRetries: AsyncCallerParams["maxRetries"];
 
+  protected maxQueueSizeBytes: AsyncCallerParams["maxQueueSizeBytes"];
+
   queue: typeof import("p-queue")["default"]["prototype"];
 
   private onFailedResponseHook?: ResponseCallback;
 
+  private queueSizeBytes = 0;
+
   constructor(params: AsyncCallerParams) {
     this.maxConcurrency = params.maxConcurrency ?? Infinity;
     this.maxRetries = params.maxRetries ?? 6;
+    this.maxQueueSizeBytes = params.maxQueueSizeBytes;
 
     if ("default" in PQueueMod) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -76,8 +92,38 @@ export class AsyncCaller {
     callable: T,
     ...args: Parameters<T>
   ): Promise<Awaited<ReturnType<T>>> {
+    return this.callWithOptions({}, callable, ...args);
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  callWithOptions<A extends any[], T extends (...args: A) => Promise<any>>(
+    options: AsyncCallerCallOptions,
+    callable: T,
+    ...args: Parameters<T>
+  ): Promise<Awaited<ReturnType<T>>> {
+    const sizeBytes = options.sizeBytes ?? 0;
+
+    // Check if adding this call would exceed the byte size limit
+    if (
+      this.maxQueueSizeBytes !== undefined &&
+      sizeBytes > 0 &&
+      this.queueSizeBytes + sizeBytes > this.maxQueueSizeBytes
+    ) {
+      return Promise.reject(
+        new Error(
+          `Queue size limit (${this.maxQueueSizeBytes} bytes) exceeded. ` +
+            `Current queue size: ${this.queueSizeBytes} bytes, attempted addition: ${sizeBytes} bytes.`
+        )
+      );
+    }
+
+    // Add to queue size tracking
+    if (sizeBytes > 0) {
+      this.queueSizeBytes += sizeBytes;
+    }
+
     const onFailedResponseHook = this.onFailedResponseHook;
-    return this.queue.add(
+    let promise = this.queue.add(
       () =>
         pRetry(
           () =>
@@ -123,19 +169,18 @@ export class AsyncCaller {
         ),
       { throwOnTimeout: true }
     );
-  }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  callWithOptions<A extends any[], T extends (...args: A) => Promise<any>>(
-    options: AsyncCallerCallOptions,
-    callable: T,
-    ...args: Parameters<T>
-  ): Promise<Awaited<ReturnType<T>>> {
-    // Note this doesn't cancel the underlying request,
-    // when available prefer to use the signal option of the underlying call
+    // Decrement queue size when the call completes (success or failure)
+    if (sizeBytes > 0) {
+      promise = promise.finally(() => {
+        this.queueSizeBytes -= sizeBytes;
+      });
+    }
+
+    // Handle signal cancellation
     if (options.signal) {
       return Promise.race([
-        this.call<A, T>(callable, ...args),
+        promise,
         new Promise<never>((_, reject) => {
           options.signal?.addEventListener("abort", () => {
             reject(new Error("AbortError"));
@@ -143,6 +188,7 @@ export class AsyncCaller {
         }),
       ]);
     }
-    return this.call<A, T>(callable, ...args);
+
+    return promise;
   }
 }
