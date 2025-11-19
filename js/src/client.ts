@@ -524,6 +524,18 @@ function _formatFeedbackScore(score?: ScoreType): ScoreType | undefined {
   return score;
 }
 
+export const DEFAULT_UNCOMPRESSED_BATCH_SIZE_LIMIT_BYTES = 24 * 1024 * 1024;
+
+/** Default maximum memory (1GB) for queue size limits. */
+export const DEFAULT_MAX_SIZE_BYTES = 1024 * 1024 * 1024; // 1GB
+
+const SERVER_INFO_REQUEST_TIMEOUT_MS = 10000;
+
+/** Maximum number of operations to batch in a single request. */
+const DEFAULT_BATCH_SIZE_LIMIT = 100;
+
+const DEFAULT_API_URL = "https://api.smith.langchain.com";
+
 export class AutoBatchQueue {
   items: {
     action: "create" | "update";
@@ -633,18 +645,6 @@ export class AutoBatchQueue {
     ];
   }
 }
-
-export const DEFAULT_UNCOMPRESSED_BATCH_SIZE_LIMIT_BYTES = 24 * 1024 * 1024;
-
-/** Default maximum memory (1GB) for queue size limits. */
-export const DEFAULT_MAX_SIZE_BYTES = 1024 * 1024 * 1024; // 1GB
-
-const SERVER_INFO_REQUEST_TIMEOUT_MS = 10000;
-
-/** Maximum number of operations to batch in a single request. */
-const DEFAULT_BATCH_SIZE_LIMIT = 100;
-
-const DEFAULT_API_URL = "https://api.smith.langchain.com";
 
 export class Client implements LangSmithTracingClientInterface {
   private apiKey?: string;
