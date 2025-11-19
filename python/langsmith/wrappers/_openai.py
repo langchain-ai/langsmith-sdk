@@ -565,19 +565,6 @@ def wrap_openai(
                 _infer_invocation_params, "chat", ls_provider
             ),
         )
-        # Also wrap with_raw_response.parse
-        if hasattr(client.beta.chat.completions, "with_raw_response") and hasattr(
-            client.beta.chat.completions.with_raw_response, "parse"
-        ):
-            client.beta.chat.completions.with_raw_response.parse = _get_parse_wrapper(  # type: ignore[method-assign]
-                client.beta.chat.completions.with_raw_response.parse,  # type: ignore
-                chat_name,
-                _process_chat_completion,
-                tracing_extra=tracing_extra,
-                invocation_params_fn=functools.partial(
-                    _infer_invocation_params, "chat", ls_provider
-                ),
-            )
 
     # Wrap chat.completions.parse if it exists
     if (
@@ -594,19 +581,6 @@ def wrap_openai(
                 _infer_invocation_params, "chat", ls_provider
             ),
         )
-        # Also wrap with_raw_response.parse
-        if hasattr(client.chat.completions, "with_raw_response") and hasattr(
-            client.chat.completions.with_raw_response, "parse"
-        ):
-            client.chat.completions.with_raw_response.parse = _get_parse_wrapper(  # type: ignore[method-assign]
-                client.chat.completions.with_raw_response.parse,  # type: ignore
-                chat_name,
-                _process_chat_completion,
-                tracing_extra=tracing_extra,
-                invocation_params_fn=functools.partial(
-                    _infer_invocation_params, "chat", ls_provider
-                ),
-            )
 
     # For the responses API: "client.responses.create(**kwargs)"
     if hasattr(client, "responses"):
