@@ -302,6 +302,18 @@ def _create_usage_metadata(
 
 def _process_chat_completion(outputs: Any):
     try:
+        # Check if outputs is an APIResponse wrapper (from with_raw_response)
+        # APIResponse has a .parsed attribute or .parse() method
+        if hasattr(outputs, "parsed") and hasattr(outputs.parsed, "model_dump"):
+            # Extract the parsed response from the wrapper
+            outputs = outputs.parsed
+        elif hasattr(outputs, "parse") and callable(outputs.parse):
+            # Some versions use .parse() method
+            try:
+                outputs = outputs.parse()
+            except Exception:
+                pass
+
         rdict = outputs.model_dump()
         oai_token_usage = rdict.pop("usage", None)
         rdict["usage_metadata"] = (
@@ -420,6 +432,7 @@ def wrap_openai(
         - Sync and async OpenAI clients
         - create() and parse() methods
         - with and without streaming
+        - with_raw_response API for accessing HTTP headers
 
     Args:
         client (Union[OpenAI, AsyncOpenAI]): The client to patch.
@@ -456,6 +469,13 @@ def wrap_openai(
             )
             print(completion.choices[0].message.content)
 
+            # With raw response to access headers:
+            raw_response = client.chat.completions.with_raw_response.create(
+                model="gpt-4o-mini", messages=messages
+            )
+            print(raw_response.headers)  # Access HTTP headers
+            completion = raw_response.parse()  # Get parsed response
+
             # Responses API:
             response = client.responses.create(
                 model="gpt-4o-mini",
@@ -466,6 +486,10 @@ def wrap_openai(
     .. versionchanged:: 0.3.16
 
         Support for Responses API added.
+
+    .. versionchanged:: 0.3.x
+
+        Support for with_raw_response API added.
     """  # noqa: E501
     tracing_extra = tracing_extra or {}
 
@@ -492,6 +516,19 @@ def wrap_openai(
         process_outputs=_process_chat_completion,
     )
 
+    # Wrap with_raw_response.create for chat completions
+    if hasattr(client.chat.completions, "with_raw_response"):
+        client.chat.completions.with_raw_response.create = _get_wrapper(  # type: ignore[method-assign]
+            client.chat.completions.with_raw_response.create,
+            chat_name,
+            _reduce_chat,
+            tracing_extra=tracing_extra,
+            invocation_params_fn=functools.partial(
+                _infer_invocation_params, "chat", ls_provider
+            ),
+            process_outputs=_process_chat_completion,
+        )
+
     client.completions.create = _get_wrapper(  # type: ignore[method-assign]
         client.completions.create,
         completions_name,
@@ -501,6 +538,18 @@ def wrap_openai(
             _infer_invocation_params, "llm", ls_provider
         ),
     )
+
+    # Wrap with_raw_response.create for completions
+    if hasattr(client.completions, "with_raw_response"):
+        client.completions.with_raw_response.create = _get_wrapper(  # type: ignore[method-assign]
+            client.completions.with_raw_response.create,
+            completions_name,
+            _reduce_completions,
+            tracing_extra=tracing_extra,
+            invocation_params_fn=functools.partial(
+                _infer_invocation_params, "llm", ls_provider
+            ),
+        )
 
     # Wrap beta.chat.completions.parse if it exists
     if (
@@ -518,6 +567,19 @@ def wrap_openai(
                 _infer_invocation_params, "chat", ls_provider
             ),
         )
+        # Also wrap with_raw_response.parse
+        if hasattr(client.beta.chat.completions, "with_raw_response") and hasattr(
+            client.beta.chat.completions.with_raw_response, "parse"
+        ):
+            client.beta.chat.completions.with_raw_response.parse = _get_parse_wrapper(  # type: ignore[method-assign]
+                client.beta.chat.completions.with_raw_response.parse,  # type: ignore
+                chat_name,
+                _process_chat_completion,
+                tracing_extra=tracing_extra,
+                invocation_params_fn=functools.partial(
+                    _infer_invocation_params, "chat", ls_provider
+                ),
+            )
 
     # Wrap chat.completions.parse if it exists
     if (
@@ -534,6 +596,19 @@ def wrap_openai(
                 _infer_invocation_params, "chat", ls_provider
             ),
         )
+        # Also wrap with_raw_response.parse
+        if hasattr(client.chat.completions, "with_raw_response") and hasattr(
+            client.chat.completions.with_raw_response, "parse"
+        ):
+            client.chat.completions.with_raw_response.parse = _get_parse_wrapper(  # type: ignore[method-assign]
+                client.chat.completions.with_raw_response.parse,  # type: ignore
+                chat_name,
+                _process_chat_completion,
+                tracing_extra=tracing_extra,
+                invocation_params_fn=functools.partial(
+                    _infer_invocation_params, "chat", ls_provider
+                ),
+            )
 
     # For the responses API: "client.responses.create(**kwargs)"
     if hasattr(client, "responses"):
