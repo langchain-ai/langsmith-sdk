@@ -262,6 +262,8 @@ class TestProcessGenerateContentResponse:
             result["usage_metadata"]["input_token_details"]["cache_read_over_200k"]
             == 50
         )
+        assert result["usage_metadata"]["output_tokens"] == 10
+        assert result["usage_metadata"]["output_token_details"]["over_200k"] == 0
 
     def test_text_attribute_fallback(self):
         # Mock response with direct text attribute

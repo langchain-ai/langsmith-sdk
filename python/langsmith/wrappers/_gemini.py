@@ -220,6 +220,9 @@ def _create_usage_metadata(gemini_usage_metadata: dict) -> UsageMetadata:
     if thoughts_token_count:
         output_token_details["reasoning"] = thoughts_token_count
 
+    if candidates_token_count:
+        output_token_details["over_200k"] = max(0, candidates_token_count - 200000)
+
     return UsageMetadata(
         input_tokens=prompt_token_count,
         output_tokens=candidates_token_count,
@@ -351,17 +354,6 @@ def _process_generate_content_response(response: Any) -> dict:
         )
         if usage_metadata:
             usage_dict = _create_usage_metadata(usage_metadata)
-            # Add usage_metadata to both run.extra AND outputs
-            current_run = run_helpers.get_current_run_tree()
-            if current_run:
-                try:
-                    meta = current_run.extra.setdefault("metadata", {}).setdefault(
-                        "usage_metadata", {}
-                    )
-                    meta.update(usage_dict)
-                    current_run.patch()
-                except Exception as e:
-                    logger.warning(f"Failed to update usage metadata: {e}")
 
         # Return in a format that avoids stringification by LangSmith
         if result.get("tool_calls"):
@@ -448,16 +440,7 @@ def _reduce_generate_content_chunks(all_chunks: list) -> dict:
                     }
                 # Add usage_metadata to both run.extra AND outputs
                 usage_metadata = _create_usage_metadata(usage_dict)
-                current_run = run_helpers.get_current_run_tree()
-                if current_run:
-                    try:
-                        meta = current_run.extra.setdefault("metadata", {}).setdefault(
-                            "usage_metadata", {}
-                        )
-                        meta.update(usage_metadata)
-                        current_run.patch()
-                    except Exception as e:
-                        logger.warning(f"Failed to update usage metadata: {e}")
+
         except Exception as e:
             logger.debug(f"Error extracting metadata from last chunk: {e}")
 

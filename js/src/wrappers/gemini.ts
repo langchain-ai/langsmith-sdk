@@ -34,34 +34,8 @@ interface UsageMetadata {
   };
   output_token_details?: {
     reasoning?: number;
+    over_200k?: number;
   };
-}
-
-/**
- * Store usage metadata in run.extra.metadata.usage_metadata for LangSmith platform integration.
- */
-async function storeUsageMetadata(usageMetadata: UsageMetadata): Promise<void> {
-  try {
-    const currentRun = getCurrentRunTree(true);
-    if (!currentRun) return;
-
-    // Initialize nested structure
-    if (!currentRun.extra) currentRun.extra = {};
-    if (!currentRun.extra.metadata) currentRun.extra.metadata = {};
-    if (!currentRun.extra.metadata.usage_metadata) {
-      currentRun.extra.metadata.usage_metadata = {};
-    }
-
-    currentRun.extra.metadata.usage_metadata = {
-      ...currentRun.extra.metadata.usage_metadata,
-      ...usageMetadata,
-    };
-
-    // Await patch to ensure proper completion
-    await currentRun.patchRun();
-  } catch {
-    // Silently fail if run tree unavailable
-  }
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -88,25 +62,30 @@ const chatAggregator = (chunks: any[]): any => {
         total_tokens: usage.totalTokenCount || 0,
       };
 
-      // Add cache details if available
-      if (usage.cachedContentTokenCount) {
-        const cacheRead = usage.cachedContentTokenCount;
-        const cacheReadOver200k = Math.max(0, cacheRead - 200000);
-        usageMetadata.input_token_details = {
-          cache_read: cacheRead,
-          cache_read_over_200k: cacheReadOver200k,
-        };
-      }
+      // Add input token details if available
+      usageMetadata.input_token_details = {
+        ...(usage.cachedContentTokenCount && {
+          cache_read_over_200k: Math.max(0, usage.promptTokenCount - 200000),
+        }),
+        ...(usage.promptTokenCount && {
+          over_200k: Math.max(0, usage.promptTokenCount - 200000),
+        }),
+        ...(usage.cachedContentTokenCount && {
+          cache_read: usage.cachedContentTokenCount,
+        }),
+      };
 
-      // Add thoughts token count if available
-      if (usage.thoughtsTokenCount) {
-        usageMetadata.output_token_details = {
+      // Add output token details if available
+      usageMetadata.output_token_details = {
+        ...(usage.candidatesTokenCount && {
+          over_200k: Math.max(0, usage.candidatesTokenCount - 200000),
+        }),
+        ...(usage.thoughtsTokenCount && {
           reasoning: usage.thoughtsTokenCount,
-        };
-      }
+        }),
+      };
 
       result.usage_metadata = usageMetadata;
-      void storeUsageMetadata(usageMetadata);
     }
   }
 
@@ -294,26 +273,30 @@ function processGeminiOutputs(outputs: any): KVMap {
       total_tokens: usage.totalTokenCount || 0,
     };
 
-    // Add cache details if available
-    if (usage.cachedContentTokenCount) {
-      const cacheRead = usage.cachedContentTokenCount;
-      const cacheReadOver200k = Math.max(0, cacheRead - 200000);
-      usageMetadata.input_token_details = {
-        cache_read: cacheRead,
-        cache_read_over_200k: cacheReadOver200k,
+    // Add input token details if available
+    usageMetadata.input_token_details = {
+      ...(usage.cachedContentTokenCount && {
+        cache_read_over_200k: Math.max(0, usage.promptTokenCount - 200000),
+      }),
+      ...(usage.promptTokenCount && {
         over_200k: Math.max(0, usage.promptTokenCount - 200000),
-      };
-    }
+      }),
+      ...(usage.cachedContentTokenCount && {
+        cache_read: usage.cachedContentTokenCount,
+      }),
+    };
 
-    // Add thoughts token count if available
-    if (usage.thoughtsTokenCount) {
-      usageMetadata.output_token_details = {
+    // Add output token details if available
+    usageMetadata.output_token_details = {
+      ...(usage.candidatesTokenCount && {
+        over_200k: Math.max(0, usage.candidatesTokenCount - 200000),
+      }),
+      ...(usage.thoughtsTokenCount && {
         reasoning: usage.thoughtsTokenCount,
-      };
-    }
+      }),
+    };
 
     result.usage_metadata = usageMetadata;
-    void storeUsageMetadata(usageMetadata);
   }
 
   if (toolCalls.length > 0) {
