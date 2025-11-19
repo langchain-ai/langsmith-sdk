@@ -307,13 +307,11 @@ def _create_usage_metadata(
 
 def _process_chat_completion(outputs: Any):
     try:
-        # Check if outputs is an APIResponse wrapper (from with_raw_response)
-        # APIResponse has a .parsed attribute or .parse() method
-        if hasattr(outputs, "parsed") and hasattr(outputs.parsed, "model_dump"):
-            # Extract the parsed response from the wrapper
-            outputs = outputs.parsed
-        elif hasattr(outputs, "parse") and callable(outputs.parse):
-            # Some versions use .parse() method
+        # Check if outputs is an APIResponse wrapper (from with_raw_response).
+        # The OpenAI SDK's APIResponse wraps the actual response object.
+        # Call .parse() to extract the ChatCompletion/Completion for tracing.
+        # See: github.com/openai/openai-python/blob/main/src/openai/_response.py#L285
+        if hasattr(outputs, "parse") and callable(outputs.parse):
             try:
                 outputs = outputs.parse()
             except Exception:
