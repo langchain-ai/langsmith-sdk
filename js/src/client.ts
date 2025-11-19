@@ -748,7 +748,7 @@ export class Client implements LangSmithTracingClientInterface {
     const maxMemory = config.maxIngestMemoryBytes ?? DEFAULT_MAX_SIZE_BYTES;
 
     this.batchIngestCaller = new AsyncCaller({
-      maxRetries: 2,
+      maxRetries: 4,
       maxConcurrency: this.traceBatchConcurrency,
       maxQueueSizeBytes: maxMemory,
       ...(config.callerOptions ?? {}),
