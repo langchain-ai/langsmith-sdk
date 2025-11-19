@@ -3,6 +3,8 @@ import PQueueMod from "p-queue";
 import { _getFetchImplementation } from "../singletons/fetch.js";
 
 const STATUS_RETRYABLE = [
+  408, // Request Timeout
+  425, // Too Early
   429, // Too Many Requests
   500, // Internal Server Error
   502, // Bad Gateway
