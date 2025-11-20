@@ -3419,7 +3419,9 @@ def test__dataset_examples_path():
         assert expected == actual
 
 
-def test_compressed_traces_queue_limit_drops_new_items(caplog: pytest.LogCaptureFixture):
+def test_compressed_traces_queue_limit_drops_new_items(
+    caplog: pytest.LogCaptureFixture,
+):
     """Ensure compressed traces queue enforces a max in-memory size and logs drops."""
     from langsmith._internal._compressed_traces import CompressedTraces
     from langsmith._internal._multipart import MultipartPartsAndContext
