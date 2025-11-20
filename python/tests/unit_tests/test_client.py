@@ -3611,6 +3611,61 @@ def test__convert_stored_attachments_to_attachments_dict(mock_get: mock.Mock):
         "https://api.langsmith.com/download/valid", stream=True
     )
 
+    # Test case 7: Self-hosted backend with relative presigned_url
+    mock_get.reset_mock()
+    mock_response.content = b"self-hosted attachment data"
+
+    data_self_hosted = {
+        "s3_urls": {
+            "attachment.testimage": {
+                "presigned_url": "/public/download?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJwYXRoIjoidHRsX3MvYXR0YWNobWVudHMvNjI0ZmM0NTEwMDNlOTM2NTVkOTYxNjdkZWI0ZTRlOWUxY2ViMjBhYzQyZWRlZWEyMzA0YTI3MTJiOWFkN2MyYy83OTIwYWNkY2Q2NjFmODk0MTNlYzYzMDA4NDE2ZjIxYTU3MWIxN2Y2ZTg3Mjk4MzE4YjI0MmVhMTViODU5NGZmL2EzYmMwZDdmLTBkY2UtNGEzYi1hZjVlLTU4N2JkZjRjMDliNC9mZGZhMjJkNi00NDgzLTQzMTQtYTVhNy02NzQ1N2NhYzA0MzAiLCJleHAiOjE3NjM2MDM4NjJ9.Pmdu9VLjpF5lAFt93LEXLI1tjweVP3e6G6OTfXX0mSE",
+                "s3_url": "ttl_s/attachments/624fc451003e93655d96167deb4e4e9e1ceb20ac42edeea2304a2712b9ad7c2c/7920acdcd661f89413ec63008416f21a571b17f6e87298318b242ea15b8594ff/a3bc0d7f-0dce-4a3b-af5e-587bdf4c09b4/fdfa22d6-4483-4314-a5a7-67457cac0430",
+            }
+        }
+    }
+
+    result = _convert_stored_attachments_to_attachments_dict(
+        data_self_hosted,
+        attachments_key="s3_urls",
+        api_url="https://self-hosted.example.com",
+    )
+
+    assert "testimage" in result
+    assert (
+        result["testimage"]["presigned_url"]
+        == "/public/download?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJwYXRoIjoidHRsX3MvYXR0YWNobWVudHMvNjI0ZmM0NTEwMDNlOTM2NTVkOTYxNjdkZWI0ZTRlOWUxY2ViMjBhYzQyZWRlZWEyMzA0YTI3MTJiOWFkN2MyYy83OTIwYWNkY2Q2NjFmODk0MTNlYzYzMDA4NDE2ZjIxYTU3MWIxN2Y2ZTg3Mjk4MzE4YjI0MmVhMTViODU5NGZmL2EzYmMwZDdmLTBkY2UtNGEzYi1hZjVlLTU4N2JkZjRjMDliNC9mZGZhMjJkNi00NDgzLTQzMTQtYTVhNy02NzQ1N2NhYzA0MzAiLCJleHAiOjE3NjM2MDM4NjJ9.Pmdu9VLjpF5lAFt93LEXLI1tjweVP3e6G6OTfXX0mSE"
+    )  # Original preserved
+    assert result["testimage"]["reader"].read() == b"self-hosted attachment data"
+    # Verify the URL was constructed correctly
+    mock_get.assert_called_with(
+        "https://self-hosted.example.com/public/download?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJwYXRoIjoidHRsX3MvYXR0YWNobWVudHMvNjI0ZmM0NTEwMDNlOTM2NTVkOTYxNjdkZWI0ZTRlOWUxY2ViMjBhYzQyZWRlZWEyMzA0YTI3MTJiOWFkN2MyYy83OTIwYWNkY2Q2NjFmODk0MTNlYzYzMDA4NDE2ZjIxYTU3MWIxN2Y2ZTg3Mjk4MzE4YjI0MmVhMTViODU5NGZmL2EzYmMwZDdmLTBkY2UtNGEzYi1hZjVlLTU4N2JkZjRjMDliNC9mZGZhMjJkNi00NDgzLTQzMTQtYTVhNy02NzQ1N2NhYzA0MzAiLCJleHAiOjE3NjM2MDM4NjJ9.Pmdu9VLjpF5lAFt93LEXLI1tjweVP3e6G6OTfXX0mSE",
+        stream=True,
+    )
+
+    # Test case 8: Download failure - should raise error when reading
+    mock_get.reset_mock()
+    mock_get.side_effect = requests.RequestException("Network error")
+
+    data_with_error = {
+        "attachment_urls": {
+            "attachment.failing_file": {
+                "presigned_url": "https://example.com/failing.txt",
+                "mime_type": "text/plain",
+            }
+        }
+    }
+
+    result = _convert_stored_attachments_to_attachments_dict(
+        data_with_error, attachments_key="attachment_urls", api_url=None
+    )
+
+    assert "failing_file" in result
+    assert result["failing_file"]["presigned_url"] == "https://example.com/failing.txt"
+    assert result["failing_file"]["mime_type"] == "text/plain"
+    # Reading the failed attachment should raise an error
+    with pytest.raises(ls_utils.LangSmithError, match="Failed to download attachment"):
+        result["failing_file"]["reader"].read()
+
 
 def test_workspace_validation_optional(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that workspace is optional when API key is present."""
