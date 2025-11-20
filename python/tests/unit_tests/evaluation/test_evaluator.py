@@ -2,7 +2,6 @@ import asyncio
 import logging
 import uuid
 from typing import Any, Optional
-from unittest import mock
 from unittest.mock import MagicMock
 
 import pytest
@@ -18,7 +17,6 @@ from langsmith.evaluation.evaluator import (
     Run,
     run_evaluator,
 )
-from langsmith.evaluation.integrations._langchain import LangChainStringEvaluator
 from langsmith.run_helpers import tracing_context
 
 
@@ -406,16 +404,3 @@ def test_check_value_non_numeric(caplog):
         "Numeric values should be provided in the 'score' field, not 'value'."
         not in caplog.text
     )
-
-
-def test_langchain_run_evaluator_native_async():
-    try:
-        from langchain.evaluation import load_evaluator  # noqa
-    except ImportError:
-        pytest.skip("Skipping test that requires langchain")
-
-    with mock.patch.dict("os.environ", {"OPENAI_API_KEY": "fake_api_key"}):
-        res = LangChainStringEvaluator(evaluator="qa")
-    run_evaluator = res.as_run_evaluator()
-    assert hasattr(run_evaluator, "afunc")
-    assert hasattr(run_evaluator, "func")

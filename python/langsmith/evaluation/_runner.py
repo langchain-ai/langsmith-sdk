@@ -50,7 +50,6 @@ from langsmith.evaluation.evaluator import (
     comparison_evaluator,
     run_evaluator,
 )
-from langsmith.evaluation.integrations import LangChainStringEvaluator
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -265,38 +264,7 @@ def evaluate(
         >>> for i, result in enumerate(results):  # doctest: +ELLIPSIS
         ...     pass
 
-        Using the `evaluate` API with an off-the-shelf LangChain evaluator:
 
-        >>> from langsmith.evaluation import LangChainStringEvaluator  # doctest: +SKIP
-        >>> from langchain_openai import ChatOpenAI  # doctest: +SKIP
-        >>> def prepare_criteria_data(run: Run, example: Example):  # doctest: +SKIP
-        ...     return {
-        ...         "prediction": run.outputs["output"],
-        ...         "reference": example.outputs["answer"],
-        ...         "input": str(example.inputs),
-        ...     }
-        >>> results = evaluate(  # doctest: +SKIP
-        ...     predict,
-        ...     data=dataset_name,
-        ...     evaluators=[
-        ...         accuracy,
-        ...         LangChainStringEvaluator("embedding_distance"),
-        ...         LangChainStringEvaluator(
-        ...             "labeled_criteria",
-        ...             config={
-        ...                 "criteria": {
-        ...                     "usefulness": "The prediction is useful if it is correct"
-        ...                     " and/or asks a useful followup question."
-        ...                 },
-        ...                 "llm": ChatOpenAI(model="gpt-4o"),
-        ...             },
-        ...             prepare_data=prepare_criteria_data,
-        ...         ),
-        ...     ],
-        ...     description="Evaluating with off-the-shelf LangChain evaluators.",
-        ...     summary_evaluators=[precision],
-        ... )
-        View the evaluation results for experiment:...  # doctest: +SKIP
 
         Evaluating a LangChain object:
 
@@ -520,7 +488,7 @@ def evaluate_existing(
         >>> len(results) > 0
         True
         >>> import time
-        >>> time.sleep(2)
+        >>> time.sleep(5)  # Wait longer for runs to be indexed
         >>> results = evaluate_existing(
         ...     experiment_id,
         ...     evaluators=[accuracy],
@@ -1451,7 +1419,12 @@ class _ExperimentManager(_ExperimentManagerMixin):
         return runs_iter
 
     def start(self) -> _ExperimentManager:
-        first_example = next(itertools.islice(self.examples, 1))
+        first_example = next(itertools.islice(self.examples, 1), None)
+        if first_example is None:
+            raise ValueError(
+                "No examples found to evaluate. Please ensure the experiment has runs "
+                "and that the runs reference examples from a dataset."
+            )
         project = self._get_project(first_example) if self._upload_results else None
         self._print_experiment_start(project, first_example)
         self._metadata["num_repetitions"] = self._num_repetitions
@@ -1841,8 +1814,6 @@ def _resolve_evaluators(
     for evaluator in evaluators:
         if isinstance(evaluator, RunEvaluator):
             results.append(evaluator)
-        elif isinstance(evaluator, LangChainStringEvaluator):
-            results.append(evaluator.as_run_evaluator())
         else:
             results.append(run_evaluator(evaluator))
     return results

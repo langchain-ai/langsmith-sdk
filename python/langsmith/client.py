@@ -8079,43 +8079,6 @@ class Client:
                 for i, result in enumerate(results):  # doctest: +ELLIPSIS
                     pass
 
-            Using the `evaluate` API with an off-the-shelf LangChain evaluator:
-
-            .. code-block:: python
-
-                from langsmith.evaluation import LangChainStringEvaluator
-                from langchain.chat_models import init_chat_model
-
-
-                def prepare_criteria_data(run: Run, example: Example):
-                    return {
-                        "prediction": run.outputs["output"],
-                        "reference": example.outputs["answer"],
-                        "input": str(example.inputs),
-                    }
-
-
-                results = client.evaluate(
-                    predict,
-                    data=dataset_name,
-                    evaluators=[
-                        accuracy,
-                        LangChainStringEvaluator("embedding_distance"),
-                        LangChainStringEvaluator(
-                            "labeled_criteria",
-                            config={
-                                "criteria": {
-                                    "usefulness": "The prediction is useful if it is correct"
-                                    " and/or asks a useful followup question."
-                                },
-                                "llm": init_chat_model("gpt-4o"),
-                            },
-                            prepare_data=prepare_criteria_data,
-                        ),
-                    ],
-                    description="Evaluating with off-the-shelf LangChain evaluators.",
-                    summary_evaluators=[precision],
-                )
 
             View the evaluation results for experiment:...
             Evaluating a LangChain object:
