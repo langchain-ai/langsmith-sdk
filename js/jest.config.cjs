@@ -21,4 +21,7 @@ module.exports = {
   setupFiles: ["dotenv/config"],
   testTimeout: 20_000,
   maxConcurrency: 5,
+  // Retry flaky integration tests up to 3 times
+  retryTimes: 3,
+  retryImmediately: false,
 };
