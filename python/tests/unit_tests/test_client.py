@@ -3618,8 +3618,8 @@ def test__convert_stored_attachments_to_attachments_dict(mock_get: mock.Mock):
     data_self_hosted = {
         "s3_urls": {
             "attachment.testimage": {
-                "presigned_url": "/public/download?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJwYXRoIjoidHRsX3MvYXR0YWNobWVudHMvNjI0ZmM0NTEwMDNlOTM2NTVkOTYxNjdkZWI0ZTRlOWUxY2ViMjBhYzQyZWRlZWEyMzA0YTI3MTJiOWFkN2MyYy83OTIwYWNkY2Q2NjFmODk0MTNlYzYzMDA4NDE2ZjIxYTU3MWIxN2Y2ZTg3Mjk4MzE4YjI0MmVhMTViODU5NGZmL2EzYmMwZDdmLTBkY2UtNGEzYi1hZjVlLTU4N2JkZjRjMDliNC9mZGZhMjJkNi00NDgzLTQzMTQtYTVhNy02NzQ1N2NhYzA0MzAiLCJleHAiOjE3NjM2MDM4NjJ9.Pmdu9VLjpF5lAFt93LEXLI1tjweVP3e6G6OTfXX0mSE",
-                "s3_url": "ttl_s/attachments/624fc451003e93655d96167deb4e4e9e1ceb20ac42edeea2304a2712b9ad7c2c/7920acdcd661f89413ec63008416f21a571b17f6e87298318b242ea15b8594ff/a3bc0d7f-0dce-4a3b-af5e-587bdf4c09b4/fdfa22d6-4483-4314-a5a7-67457cac0430",
+                "presigned_url": "/public/download?jwt=test.jwt.token",
+                "s3_url": "ttl_s/attachments/test-path/test-file-id",
             }
         }
     }
@@ -3631,14 +3631,11 @@ def test__convert_stored_attachments_to_attachments_dict(mock_get: mock.Mock):
     )
 
     assert "testimage" in result
-    assert (
-        result["testimage"]["presigned_url"]
-        == "/public/download?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJwYXRoIjoidHRsX3MvYXR0YWNobWVudHMvNjI0ZmM0NTEwMDNlOTM2NTVkOTYxNjdkZWI0ZTRlOWUxY2ViMjBhYzQyZWRlZWEyMzA0YTI3MTJiOWFkN2MyYy83OTIwYWNkY2Q2NjFmODk0MTNlYzYzMDA4NDE2ZjIxYTU3MWIxN2Y2ZTg3Mjk4MzE4YjI0MmVhMTViODU5NGZmL2EzYmMwZDdmLTBkY2UtNGEzYi1hZjVlLTU4N2JkZjRjMDliNC9mZGZhMjJkNi00NDgzLTQzMTQtYTVhNy02NzQ1N2NhYzA0MzAiLCJleHAiOjE3NjM2MDM4NjJ9.Pmdu9VLjpF5lAFt93LEXLI1tjweVP3e6G6OTfXX0mSE"
-    )  # Original preserved
+    assert result["testimage"]["presigned_url"] == "/public/download?jwt=test.jwt.token"
     assert result["testimage"]["reader"].read() == b"self-hosted attachment data"
     # Verify the URL was constructed correctly
     mock_get.assert_called_with(
-        "https://self-hosted.example.com/public/download?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJwYXRoIjoidHRsX3MvYXR0YWNobWVudHMvNjI0ZmM0NTEwMDNlOTM2NTVkOTYxNjdkZWI0ZTRlOWUxY2ViMjBhYzQyZWRlZWEyMzA0YTI3MTJiOWFkN2MyYy83OTIwYWNkY2Q2NjFmODk0MTNlYzYzMDA4NDE2ZjIxYTU3MWIxN2Y2ZTg3Mjk4MzE4YjI0MmVhMTViODU5NGZmL2EzYmMwZDdmLTBkY2UtNGEzYi1hZjVlLTU4N2JkZjRjMDliNC9mZGZhMjJkNi00NDgzLTQzMTQtYTVhNy02NzQ1N2NhYzA0MzAiLCJleHAiOjE3NjM2MDM4NjJ9.Pmdu9VLjpF5lAFt93LEXLI1tjweVP3e6G6OTfXX0mSE",
+        "https://self-hosted.example.com/public/download?jwt=test.jwt.token",
         stream=True,
     )
 
