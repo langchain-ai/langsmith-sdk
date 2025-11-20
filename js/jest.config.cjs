@@ -9,6 +9,10 @@ module.exports = {
     "cache.*\\.int\\.test\\.ts$",
     "rate_limit.*\\.int\\.test\\.ts$",
     "ai_sdk_evaluate\\.int\\.test\\.ts$",
+    // Temporarily skip consistently flaky tests due to external API issues
+    // TODO: Re-enable once API stability improves
+    // "batch_client\\.int\\.test\\.ts$",
+    "few_shot\\.int\\.test\\.ts$",
   ],
   moduleNameMapper: {
     "^(\\.{1,2}/.*)\\.js$": "$1",
