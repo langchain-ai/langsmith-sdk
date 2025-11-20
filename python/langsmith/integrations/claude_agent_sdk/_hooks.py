@@ -27,9 +27,9 @@ logger = logging.getLogger(__name__)
 # Key: tool_use_id, Value: (run_tree, start_time)
 _active_tool_runs: dict[str, tuple[Any, float]] = {}
 
-# Storage for tool runs managed by client (Tasks and subagent tools)
-# Key: tool_use_id, Value: (run_tree, start_time, optional_subagent_session)
-_client_managed_runs: dict[str, tuple[RunTree, float, Optional[RunTree]]] = {}
+# Storage for tool or subagent runs managed by client
+# Key: tool_use_id, Value: run_tree
+_client_managed_runs: dict[str, RunTree] = {}
 
 
 async def pre_tool_use_hook(
@@ -109,10 +109,9 @@ async def post_tool_use_hook(
     tool_response = input_data.get("tool_response")
 
     # Check if this is a client-managed run
-    client_run_info = _client_managed_runs.pop(tool_use_id, None)
-    if client_run_info:
-        # This tool run is managed by the client, update it with response
-        tool_run, start_time, subagent_session = client_run_info
+    run_tree = _client_managed_runs.pop(tool_use_id, None)
+    if run_tree:
+        # This run is managed by the client (subagent session or its tools)
         try:
             if isinstance(tool_response, dict):
                 outputs = tool_response
@@ -125,24 +124,13 @@ async def post_tool_use_hook(
             if isinstance(tool_response, dict):
                 is_error = tool_response.get("is_error", False)
 
-            # If this is a Task tool with a subagent session, complete the session first
-            if subagent_session:
-                try:
-                    subagent_session.end(
-                        outputs=outputs,
-                        error=outputs.get("output") if is_error else None,
-                    )
-                    subagent_session.post()
-                except Exception as e:
-                    logger.warning(f"Failed to complete subagent session: {e}")
-
-            tool_run.end(
+            run_tree.end(
                 outputs=outputs,
                 error=outputs.get("output") if is_error else None,
             )
-            tool_run.patch()
+            run_tree.patch()
         except Exception as e:
-            logger.warning(f"Failed to update client-managed tool run: {e}")
+            logger.warning(f"Failed to update client-managed run: {e}")
         return {}
 
     try:
@@ -198,13 +186,10 @@ def clear_active_tool_runs() -> None:
     global _active_tool_runs, _client_managed_runs
 
     # End any orphaned client-managed runs
-    for tool_use_id, (tool_run, _, subagent_session) in _client_managed_runs.items():
+    for tool_use_id, run_tree in _client_managed_runs.items():
         try:
-            if subagent_session:
-                subagent_session.end(error="Subagent session not completed (conversation ended)")
-                subagent_session.patch()
-            tool_run.end(error="Tool run not completed (conversation ended)")
-            tool_run.patch()
+            run_tree.end(error="Client-managed run not completed (conversation ended)")
+            run_tree.patch()
         except Exception as e:
             logger.debug(f"Failed to clean up orphaned client-managed run {tool_use_id}: {e}")
 

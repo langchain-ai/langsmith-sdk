@@ -269,25 +269,15 @@ def instrument_claude_client(original_class: Any) -> Any:
                                                     or "unknown-agent"
                                                 )
 
-                                                # Create Task tool run
-                                                task_run = run.create_child(
-                                                    name=tool_name,
-                                                    run_type="tool",
-                                                    inputs={"input": tool_input} if tool_input else {},
-                                                    start_time=datetime.fromtimestamp(start_time, tz=timezone.utc),
-                                                )
-                                                task_run.post()
-
-                                                # Create subagent session as child of Task
-                                                subagent_session = task_run.create_child(
+                                                subagent_session = run.create_child(
                                                     name=subagent_name,
                                                     run_type="chain",
                                                     start_time=datetime.fromtimestamp(start_time, tz=timezone.utc),
                                                 )
+                                                subagent_session.post()
                                                 subagent_sessions[tool_use_id] = subagent_session
 
-                                                # Track Task run with its subagent session
-                                                _client_managed_runs[tool_use_id] = (task_run, start_time, subagent_session)
+                                                _client_managed_runs[tool_use_id] = subagent_session
 
                                             # Check if this is a tool use within a subagent
                                             elif parent_tool_use_id and parent_tool_use_id in subagent_sessions:
@@ -300,7 +290,7 @@ def instrument_claude_client(original_class: Any) -> Any:
                                                     start_time=datetime.fromtimestamp(start_time, tz=timezone.utc),
                                                 )
                                                 tool_run.post()
-                                                _client_managed_runs[tool_use_id] = (tool_run, start_time, None)
+                                                _client_managed_runs[tool_use_id] = tool_run
 
                                         except Exception as e:
                                             logger.warning(f"Failed to create client-managed tool run: {e}")
