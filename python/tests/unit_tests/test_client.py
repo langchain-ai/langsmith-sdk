@@ -3419,6 +3419,85 @@ def test__dataset_examples_path():
         assert expected == actual
 
 
+def test_compressed_traces_queue_limit_drops_new_items(
+    caplog: pytest.LogCaptureFixture,
+):
+    """Ensure compressed traces queue enforces a max in-memory size and logs drops."""
+    from langsmith._internal._compressed_traces import CompressedTraces
+    from langsmith._internal._multipart import MultipartPartsAndContext
+    from langsmith._internal._operations import compress_multipart_parts_and_context
+
+    _clear_env_cache()
+    # Set a very small max ingest memory to force drops.
+    with patch.dict(
+        os.environ,
+        {
+            "LANGSMITH_MAX_INGEST_MEMORY_BYTES": "100",
+        },
+        clear=False,
+    ):
+        compressed_traces = CompressedTraces()
+
+    boundary = "test_boundary"
+
+    # First operation: 60 bytes, should be accepted.
+    parts1 = MultipartPartsAndContext(
+        parts=[
+            (
+                "post.run1",
+                (
+                    None,
+                    b"x" * 60,
+                    "application/json",
+                    {},
+                ),
+            )
+        ],
+        context="trace=trace1,id=run1",
+    )
+
+    enqueued1 = compress_multipart_parts_and_context(
+        parts1, compressed_traces, boundary
+    )
+    assert enqueued1
+    assert compressed_traces.uncompressed_size == 60
+    assert compressed_traces._context == ["trace=trace1,id=run1"]
+
+    # Second operation: another 60 bytes. With current size=60 and limit=100,
+    # this should be dropped and log a warning.
+    parts2 = MultipartPartsAndContext(
+        parts=[
+            (
+                "post.run2",
+                (
+                    None,
+                    b"y" * 60,
+                    "application/json",
+                    {},
+                ),
+            )
+        ],
+        context="trace=trace2,id=run2",
+    )
+
+    with caplog.at_level(logging.WARNING):
+        enqueued2 = compress_multipart_parts_and_context(
+            parts2, compressed_traces, boundary
+        )
+
+    assert not enqueued2
+    # Size and context should be unchanged after a rejected operation.
+    assert compressed_traces.uncompressed_size == 60
+    assert compressed_traces._context == ["trace=trace1,id=run1"]
+
+    # Verify we logged a clear warning about dropping the trace.
+    assert any(
+        "Compressed traces queue size limit" in record.getMessage()
+        and "trace=trace2,id=run2" in record.getMessage()
+        for record in caplog.records
+    )
+
+
 @mock.patch("langsmith.client.requests.Session")
 def test_list_shared_examples_pagination(mock_session_cls: mock.Mock) -> None:
     """Test list_shared_examples handles pagination correctly."""

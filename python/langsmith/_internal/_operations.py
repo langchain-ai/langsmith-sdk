@@ -401,22 +401,50 @@ def compress_multipart_parts_and_context(
     parts_and_context: MultipartPartsAndContext,
     compressed_traces: CompressedTraces,
     boundary: str,
-) -> None:
+) -> bool:
+    """Compress multipart parts into the shared compressed buffer.
+
+    Returns True if the parts were enqueued into the compressed buffer, or False
+    if they were rejected because the configured in-memory size limit would be
+    exceeded.
+    """
     write = compressed_traces.compressor_writer.write
+
+    parts: list[tuple[bytes, bytes]] = []
+    op_uncompressed_size = 0
 
     for headers, data in encode_multipart_parts_and_context(
         parts_and_context, boundary
     ):
-        write(headers)
-
         # Normalise to bytes
         if not isinstance(data, (bytes, bytearray)):
             data = (
                 data.read() if isinstance(data, BufferedReader) else str(data).encode()
             )
 
+        parts.append((headers, data))
+        op_uncompressed_size += len(data)
+
+    max_bytes = getattr(compressed_traces, "max_uncompressed_size_bytes", None)
+    if max_bytes is not None and max_bytes > 0:
+        current_size = compressed_traces.uncompressed_size
+        if current_size > 0 and current_size + op_uncompressed_size > max_bytes:
+            logger.warning(
+                "Compressed traces queue size limit (%s bytes) exceeded. "
+                "Dropping trace data with context: %s. "
+                "Current queue size: %s bytes, attempted addition: %s bytes.",
+                max_bytes,
+                parts_and_context.context,
+                current_size,
+                op_uncompressed_size,
+            )
+            return False
+
+    for headers, data in parts:
+        write(headers)
         compressed_traces.uncompressed_size += len(data)
         write(data)
         write(b"\r\n")  # part terminator
 
     compressed_traces._context.append(parts_and_context.context)
+    return True

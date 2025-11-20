@@ -1575,13 +1575,14 @@ class Client:
                     multipart_form.context,
                 )
                 with self.compressed_traces.lock:
-                    compress_multipart_parts_and_context(
+                    enqueued = compress_multipart_parts_and_context(
                         multipart_form,
                         self.compressed_traces,
                         _BOUNDARY,
                     )
-                    self.compressed_traces.trace_count += 1
-                    self._data_available_event.set()
+                    if enqueued:
+                        self.compressed_traces.trace_count += 1
+                        self._data_available_event.set()
 
                 _close_files(list(opened_files.values()))
             elif self.tracing_queue is not None:
@@ -2546,13 +2547,14 @@ class Client:
                         raise ValueError(
                             "Run compression is enabled but threading event is not configured"
                         )
-                    compress_multipart_parts_and_context(
+                    enqueued = compress_multipart_parts_and_context(
                         multipart_form,
                         self.compressed_traces,
                         _BOUNDARY,
                     )
-                    self.compressed_traces.trace_count += 1
-                    self._data_available_event.set()
+                    if enqueued:
+                        self.compressed_traces.trace_count += 1
+                        self._data_available_event.set()
                 _close_files(list(opened_files.values()))
             elif self.tracing_queue is not None:
                 logger.log(
@@ -6489,14 +6491,15 @@ class Client:
                         )
                     )
                     with self.compressed_traces.lock:
-                        compress_multipart_parts_and_context(
+                        enqueued = compress_multipart_parts_and_context(
                             multipart_form,
                             self.compressed_traces,
                             _BOUNDARY,
                         )
-                        self.compressed_traces.trace_count += 1
-                        if self._data_available_event:
-                            self._data_available_event.set()
+                        if enqueued:
+                            self.compressed_traces.trace_count += 1
+                            if self._data_available_event:
+                                self._data_available_event.set()
                 elif self.tracing_queue is not None:
                     self.tracing_queue.put(
                         TracingQueueItem(str(feedback.id), serialized_op)
