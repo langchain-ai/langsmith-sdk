@@ -2753,7 +2753,7 @@ class Client:
             "GET", f"/runs/{_as_uuid(run_id, 'run_id')}"
         )
         attachments = _convert_stored_attachments_to_attachments_dict(
-            response.json(), attachments_key="s3_urls"
+            response.json(), attachments_key="s3_urls", api_url=self.api_url
         )
         run = ls_schemas.Run(
             attachments=attachments, **response.json(), _host_url=self._host_url
@@ -2948,7 +2948,7 @@ class Client:
         ):
             # Should this be behind a flag?
             attachments = _convert_stored_attachments_to_attachments_dict(
-                run, attachments_key="s3_urls"
+                run, attachments_key="s3_urls", api_url=self.api_url
             )
             yield ls_schemas.Run(
                 attachments=attachments, **run, _host_url=self._host_url
@@ -8893,6 +8893,19 @@ def convert_prompt_to_anthropic_format(
         raise ls_utils.LangSmithError(f"Error converting to Anthropic format: {e}")
 
 
+class _FailedAttachmentReader(io.BytesIO):
+    """BytesIO that raises an error when read, for failed attachment downloads."""
+
+    def __init__(self, error: Exception):
+        super().__init__()
+        self._error = error
+
+    def read(self, size: Optional[int] = -1) -> bytes:
+        raise ls_utils.LangSmithError(
+            f"Failed to download attachment: {self._error}"
+        ) from self._error
+
+
 def _convert_stored_attachments_to_attachments_dict(
     data: dict, *, attachments_key: str, api_url: Optional[str] = None
 ) -> dict[str, AttachmentInfo]:
@@ -8906,9 +8919,13 @@ def _convert_stored_attachments_to_attachments_dict(
                 full_url = _construct_url(api_url, value["presigned_url"])
             else:
                 full_url = value["presigned_url"]
-            response = requests.get(full_url, stream=True)
-            response.raise_for_status()
-            reader = io.BytesIO(response.content)
+            try:
+                response = requests.get(full_url, stream=True)
+                response.raise_for_status()
+                reader = io.BytesIO(response.content)
+            except Exception as e:
+                logger.warning(f"Error downloading attachment {key}: {e}")
+                reader = _FailedAttachmentReader(e)
             attachments_dict[key.removeprefix("attachment.")] = AttachmentInfo(
                 **{
                     "presigned_url": value["presigned_url"],

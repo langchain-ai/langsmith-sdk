@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from langsmith.run_helpers import (
         get_current_run_tree,
         get_tracing_context,
+        set_run_metadata,
         trace,
         traceable,
         tracing_context,
@@ -97,6 +98,10 @@ def __getattr__(name: str) -> Any:
         from langsmith.run_helpers import get_current_run_tree
 
         return get_current_run_tree
+    elif name == "set_run_metadata":
+        from langsmith.run_helpers import set_run_metadata
+
+        return set_run_metadata
 
     elif name == "unit":
         from langsmith.testing._internal import unit
@@ -139,6 +144,7 @@ __all__ = [
     "tracing_context",
     "get_tracing_context",
     "get_current_run_tree",
+    "set_run_metadata",
     "ContextThreadPoolExecutor",
     "AsyncClient",
     "uuid7",
