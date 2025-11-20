@@ -121,12 +121,12 @@ test("wrap generateText with flex service tier", async () => {
   );
 
   expect(childRunPatchBodies.length).toBeGreaterThanOrEqual(1);
-  
+
   const llmChildRun = childRunPatchBodies.find(
     (body) => body.extra?.metadata?.usage_metadata
   );
   expect(llmChildRun).toBeDefined();
-  
+
   const usageMetadata = llmChildRun!.extra.metadata.usage_metadata;
   expect(usageMetadata.input_token_details.flex).toBeGreaterThan(1);
   expect(usageMetadata.input_token_details.flex).toEqual(
@@ -199,12 +199,12 @@ test("wrap streamText with service tier", async () => {
   );
 
   expect(childRunPatchBodies.length).toBeGreaterThanOrEqual(1);
-  
+
   const llmChildRun = childRunPatchBodies.find(
     (body) => body.extra?.metadata?.usage_metadata
   );
   expect(llmChildRun).toBeDefined();
-  
+
   const usageMetadata = llmChildRun!.extra.metadata.usage_metadata;
   expect(usageMetadata.input_token_details.flex).toBeGreaterThan(1);
   expect(usageMetadata.input_token_details.flex).toEqual(
