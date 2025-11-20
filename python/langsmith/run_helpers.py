@@ -1944,7 +1944,8 @@ class _TracedStream(_TracedStreamBase, Generic[T]):
             self._end_trace()
 
     def __enter__(self):
-        return self.__ls_stream__.__enter__()
+        self.__ls_stream__.__enter__()
+        return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         try:
@@ -2003,7 +2004,8 @@ class _TracedAsyncStream(_TracedStreamBase, Generic[T]):
             await self._aend_trace()
 
     async def __aenter__(self):
-        return await self.__ls_stream__.__aenter__()
+        await self.__ls_stream__.__aenter__()
+        return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         try:
