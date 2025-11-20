@@ -175,7 +175,11 @@ def _tracing_thread_drain_compressed_buffer(
             current_size = client.compressed_traces.buffer.tell()
 
             filled_buffer = client.compressed_traces.buffer
-            filled_buffer.context = client.compressed_traces._context
+            setattr(
+                cast(Any, filled_buffer),
+                "context",
+                client.compressed_traces._context,
+            )
 
             compressed_traces_info = (pre_compressed_size, current_size)
 
