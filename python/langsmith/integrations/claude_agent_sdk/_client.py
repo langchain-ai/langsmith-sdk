@@ -234,9 +234,7 @@ def instrument_claude_client(original_class: Any) -> Any:
                         _client_managed_runs[tool_use_id] = subagent_session
 
                     # Check if tool use is within a subagent
-                    elif (
-                        parent_tool_use_id and parent_tool_use_id in subagent_sessions
-                    ):
+                    elif parent_tool_use_id and parent_tool_use_id in subagent_sessions:
                         subagent_session = subagent_sessions[parent_tool_use_id]
                         # Create tool run as child of subagent
                         tool_run = subagent_session.create_child(
@@ -252,9 +250,7 @@ def instrument_claude_client(original_class: Any) -> Any:
                         _client_managed_runs[tool_use_id] = tool_run
 
                 except Exception as e:
-                    logger.warning(
-                        f"Failed to create " f"client-managed tool run: {e}"
-                    )
+                    logger.warning(f"Failed to create client-managed tool run: {e}")
 
         async def receive_response(self) -> AsyncGenerator[Any, None]:
             """Intercept message stream and record chain run activity."""
