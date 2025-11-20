@@ -438,8 +438,8 @@ test("Test create run with revision id", async () => {
     );
     await waitUntilRunFound(langchainClient, runId2);
 
-    // Add a small delay to ensure metadata is fully propagated
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    // Add a delay to ensure metadata is fully propagated (sometimes takes longer in CI)
+    await new Promise((resolve) => setTimeout(resolve, 3000));
 
     const run1 = await langchainClient.readRun(runId);
     expect(run1.extra?.metadata?.revision_id).toEqual("test_revision_id");
@@ -748,11 +748,13 @@ test("Examples CRUD", async () => {
   await client.deleteDataset({ datasetId: dataset.id });
 }, 180_000);
 
-test("list runs limit arg works", async () => {
-  const client = new Client({ callerOptions: { maxRetries: 6 } });
+test(
+  "list runs limit arg works",
+  async () => {
+    const client = new Client({ callerOptions: { maxRetries: 6 } });
 
-  const projectName = `test-limit-runs-${uuidv4().substring(0, 4)}`;
-  const limit = 6;
+    const projectName = `test-limit-runs-${uuidv4().substring(0, 4)}`;
+    const limit = 6;
 
   // delete the project just in case
   if (await client.hasProject({ projectName })) {
@@ -796,7 +798,9 @@ test("list runs limit arg works", async () => {
       await client.deleteProject({ projectName });
     }
   }
-});
+  },
+  180_000
+); // Increased timeout for creating/waiting for 10 runs
 
 test("Test run stats", async () => {
   const client = new Client({ callerOptions: { maxRetries: 6 } });

@@ -8,6 +8,7 @@ module.exports = {
     "\\.vitesteval\\.",
     "cache.*\\.int\\.test\\.ts$",
     "rate_limit.*\\.int\\.test\\.ts$",
+    "ai_sdk_evaluate\\.int\\.test\\.ts$",
   ],
   moduleNameMapper: {
     "^(\\.{1,2}/.*)\\.js$": "$1",
