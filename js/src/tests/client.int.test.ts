@@ -397,7 +397,7 @@ test("Test create run with revision id", async () => {
     autoBatchTracing: false,
     callerOptions: { maxRetries: 6 },
   });
-  
+
   try {
     // eslint-disable-next-line no-process-env
     process.env.LANGCHAIN_REVISION_ID = "test_revision_id";
@@ -429,7 +429,7 @@ test("Test create run with revision id", async () => {
       start_time: new Date().getTime(),
       revision_id: "different_revision_id",
     });
-    
+
     // Wait for both runs to be fully persisted
     await waitUntilRunFound(
       langchainClient,
@@ -437,10 +437,10 @@ test("Test create run with revision id", async () => {
       (run: Run | undefined) => Object.keys(run?.outputs || {}).length !== 0
     );
     await waitUntilRunFound(langchainClient, runId2);
-    
+
     // Add a small delay to ensure metadata is fully propagated
     await new Promise((resolve) => setTimeout(resolve, 1000));
-    
+
     const run1 = await langchainClient.readRun(runId);
     expect(run1.extra?.metadata?.revision_id).toEqual("test_revision_id");
     expect(run1.extra?.metadata.LANGCHAIN_OTHER_FIELD).toEqual(
@@ -448,7 +448,7 @@ test("Test create run with revision id", async () => {
     );
     expect(run1.extra?.metadata.LANGCHAIN_OTHER_KEY).toBeUndefined();
     expect(run1.extra?.metadata).not.toHaveProperty("LANGCHAIN_API_KEY");
-    
+
     const run2 = await langchainClient.readRun(runId2);
     expect(run2.extra?.metadata?.revision_id).toEqual("different_revision_id");
     expect(run2.extra?.metadata.LANGCHAIN_OTHER_FIELD).toEqual(

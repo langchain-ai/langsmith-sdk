@@ -44,7 +44,10 @@ test("few shot search", async () => {
     await client.indexDataset({ datasetId: dataset.id });
   } catch (error: any) {
     // If dataset is already indexed (409 conflict), that's fine - we can proceed
-    if (error?.message?.includes("409") || error?.message?.includes("already indexed")) {
+    if (
+      error?.message?.includes("409") ||
+      error?.message?.includes("already indexed")
+    ) {
       console.log("Dataset already indexed, proceeding with test");
     } else {
       throw error;
