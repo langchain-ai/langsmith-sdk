@@ -256,7 +256,7 @@ test_cases = [
     {
         "description": "reasoning",
         "params": {
-            "model": "o1-mini",
+            "model": "o4-mini",
             "messages": [
                 {
                     "role": "user",
