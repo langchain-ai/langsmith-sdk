@@ -1139,6 +1139,10 @@ class Client:
                 # offset and limit isn't respected if we're
                 # querying for specific values
                 break
+            # When querying by specific IDs, all results are returned in first page
+            # Pagination doesn't apply since we're not doing a range query
+            if params_.get("id") is not None or params_.get("example_ids") is not None:
+                break
             offset += len(items)
 
     def _get_cursor_paginated_list(

@@ -3472,6 +3472,56 @@ def test_list_shared_examples_pagination(mock_session_cls: mock.Mock) -> None:
     assert examples[149].inputs["text"] == "input_149"
 
 
+@mock.patch("langsmith.client.requests.Session")
+def test_list_examples_pagination_with_ids(mock_session_cls: mock.Mock) -> None:
+    """Test list_examples does not paginate when filtering by IDs."""
+    mock_session = mock.Mock()
+    examples_requests = []
+
+    def mock_request(*args, **kwargs):
+        response = mock.Mock()
+        response.status_code = 200
+
+        if "/info" in args[1]:
+            response.json.return_value = {}
+            return response
+
+        if "/examples" in args[1]:
+            offset = kwargs.get("params", {}).get("offset", 0)
+            examples_requests.append(offset)
+
+        offset = kwargs.get("params", {}).get("offset", 0)
+        if offset == 0:
+            examples = [
+                {
+                    "id": str(uuid.uuid4()),
+                    "created_at": _CREATED_AT.isoformat(),
+                    "inputs": {"text": f"input_{i}"},
+                    "outputs": {"result": f"output_{i}"},
+                    "dataset_id": str(uuid.uuid4()),
+                }
+                for i in range(100)
+            ]
+            response.json.return_value = examples
+        else:
+            response.json.return_value = []
+
+        return response
+
+    mock_session.request.side_effect = mock_request
+    mock_session_cls.return_value = mock_session
+
+    client = Client(
+        api_url="http://localhost:1984", api_key="fake-key", session=mock_session
+    )
+
+    example_ids = [str(uuid.uuid4()) for _ in range(100)]
+    examples = list(client.list_examples(example_ids=example_ids))
+
+    assert len(examples) == 100
+    assert len(examples_requests) == 1
+
+
 @mock.patch("langsmith.client.requests.get")
 def test__convert_stored_attachments_to_attachments_dict(mock_get: mock.Mock):
     """Test URL construction in attachment downloading."""
