@@ -3611,6 +3611,58 @@ def test__convert_stored_attachments_to_attachments_dict(mock_get: mock.Mock):
         "https://api.langsmith.com/download/valid", stream=True
     )
 
+    # Test case 7: Self-hosted backend with relative presigned_url
+    mock_get.reset_mock()
+    mock_response.content = b"self-hosted attachment data"
+
+    data_self_hosted = {
+        "s3_urls": {
+            "attachment.testimage": {
+                "presigned_url": "/public/download?jwt=test.jwt.token",
+                "s3_url": "ttl_s/attachments/test-path/test-file-id",
+            }
+        }
+    }
+
+    result = _convert_stored_attachments_to_attachments_dict(
+        data_self_hosted,
+        attachments_key="s3_urls",
+        api_url="https://self-hosted.example.com",
+    )
+
+    assert "testimage" in result
+    assert result["testimage"]["presigned_url"] == "/public/download?jwt=test.jwt.token"
+    assert result["testimage"]["reader"].read() == b"self-hosted attachment data"
+    # Verify the URL was constructed correctly
+    mock_get.assert_called_with(
+        "https://self-hosted.example.com/public/download?jwt=test.jwt.token",
+        stream=True,
+    )
+
+    # Test case 8: Download failure - should raise error when reading
+    mock_get.reset_mock()
+    mock_get.side_effect = requests.RequestException("Network error")
+
+    data_with_error = {
+        "attachment_urls": {
+            "attachment.failing_file": {
+                "presigned_url": "https://example.com/failing.txt",
+                "mime_type": "text/plain",
+            }
+        }
+    }
+
+    result = _convert_stored_attachments_to_attachments_dict(
+        data_with_error, attachments_key="attachment_urls", api_url=None
+    )
+
+    assert "failing_file" in result
+    assert result["failing_file"]["presigned_url"] == "https://example.com/failing.txt"
+    assert result["failing_file"]["mime_type"] == "text/plain"
+    # Reading the failed attachment should raise an error
+    with pytest.raises(ls_utils.LangSmithError, match="Failed to download attachment"):
+        result["failing_file"]["reader"].read()
+
 
 def test_workspace_validation_optional(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that workspace is optional when API key is present."""
