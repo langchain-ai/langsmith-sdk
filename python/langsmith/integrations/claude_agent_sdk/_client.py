@@ -264,7 +264,7 @@ def instrument_claude_client(original_class: Any) -> Any:
 
                                             start_time = time.time()
 
-                                            # Check if this is a Task tool (subagent invocation)
+                                            # Check if this is a Task tool (subagent)
                                             if (
                                                 tool_name == "Task"
                                                 and not parent_tool_use_id
@@ -298,7 +298,7 @@ def instrument_claude_client(original_class: Any) -> Any:
                                                     subagent_session
                                                 )
 
-                                            # Check if this is a tool use within a subagent
+                                            # Check if tool use is within a subagent
                                             elif (
                                                 parent_tool_use_id
                                                 and parent_tool_use_id
@@ -308,15 +308,18 @@ def instrument_claude_client(original_class: Any) -> Any:
                                                     parent_tool_use_id
                                                 ]
                                                 # Create tool run as child of subagent
-                                                tool_run = subagent_session.create_child(
-                                                    name=tool_name,
-                                                    run_type="tool",
-                                                    inputs={"input": tool_input}
-                                                    if tool_input
-                                                    else {},
-                                                    start_time=datetime.fromtimestamp(
-                                                        start_time, tz=timezone.utc
-                                                    ),
+                                                tool_run = (
+                                                    subagent_session.create_child(
+                                                        name=tool_name,
+                                                        run_type="tool",
+                                                        inputs={"input": tool_input}
+                                                        if tool_input
+                                                        else {},
+                                                        start_time=datetime.fromtimestamp(
+                                                            start_time,
+                                                            tz=timezone.utc,
+                                                        ),
+                                                    )
                                                 )
                                                 tool_run.post()
                                                 _client_managed_runs[tool_use_id] = (
@@ -325,7 +328,8 @@ def instrument_claude_client(original_class: Any) -> Any:
 
                                         except Exception as e:
                                             logger.warning(
-                                                f"Failed to create client-managed tool run: {e}"
+                                                f"Failed to create "
+                                                f"client-managed tool run: {e}"
                                             )
                         elif msg_type == "UserMessage":
                             # Check if this is a subagent message
@@ -336,7 +340,7 @@ def instrument_claude_client(original_class: Any) -> Any:
                                 parent_tool_use_id
                                 and parent_tool_use_id in subagent_sessions
                             ):
-                                # This is a subagent input message - update the subagent session
+                                # Subagent input message - update session
                                 subagent_session = subagent_sessions[parent_tool_use_id]
                                 if hasattr(msg, "content"):
                                     try:
@@ -348,7 +352,8 @@ def instrument_claude_client(original_class: Any) -> Any:
                                         }
                                     except Exception as e:
                                         logger.warning(
-                                            f"Failed to set subagent session inputs: {e}"
+                                            f"Failed to set subagent "
+                                            f"session inputs: {e}"
                                         )
 
                             if hasattr(msg, "content"):
