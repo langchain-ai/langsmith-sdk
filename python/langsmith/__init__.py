@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
 # Avoid calling into importlib on every call to __version__
 
-__version__ = "0.4.43"
+__version__ = "0.4.44"
 version = __version__  # for backwards compatibility
 
 
