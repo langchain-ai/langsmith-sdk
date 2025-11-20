@@ -1419,12 +1419,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         return runs_iter
 
     def start(self) -> _ExperimentManager:
-        first_example = next(itertools.islice(self.examples, 1), None)
-        if first_example is None:
-            raise ValueError(
-                "No examples found to evaluate. Please ensure the experiment has runs "
-                "and that the runs reference examples from a dataset."
-            )
+        first_example = next(itertools.islice(self.examples, 1))
         project = self._get_project(first_example) if self._upload_results else None
         self._print_experiment_start(project, first_example)
         self._metadata["num_repetitions"] = self._num_repetitions
