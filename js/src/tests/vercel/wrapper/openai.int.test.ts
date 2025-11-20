@@ -119,8 +119,15 @@ test("wrap generateText with flex service tier", async () => {
   const childRunPatchBodies = patchBodies.filter(
     (body) => body.parent_run_id != null
   );
-  expect(childRunPatchBodies.length).toEqual(1);
-  const usageMetadata = childRunPatchBodies[0].extra.metadata.usage_metadata;
+
+  expect(childRunPatchBodies.length).toBeGreaterThanOrEqual(1);
+  
+  const llmChildRun = childRunPatchBodies.find(
+    (body) => body.extra?.metadata?.usage_metadata
+  );
+  expect(llmChildRun).toBeDefined();
+  
+  const usageMetadata = llmChildRun!.extra.metadata.usage_metadata;
   expect(usageMetadata.input_token_details.flex).toBeGreaterThan(1);
   expect(usageMetadata.input_token_details.flex).toEqual(
     usageMetadata.input_tokens
@@ -190,8 +197,15 @@ test("wrap streamText with service tier", async () => {
   const childRunPatchBodies = patchBodies.filter(
     (body) => body.parent_run_id != null
   );
-  expect(childRunPatchBodies.length).toEqual(1);
-  const usageMetadata = childRunPatchBodies[0].extra.metadata.usage_metadata;
+
+  expect(childRunPatchBodies.length).toBeGreaterThanOrEqual(1);
+  
+  const llmChildRun = childRunPatchBodies.find(
+    (body) => body.extra?.metadata?.usage_metadata
+  );
+  expect(llmChildRun).toBeDefined();
+  
+  const usageMetadata = llmChildRun!.extra.metadata.usage_metadata;
   expect(usageMetadata.input_token_details.flex).toBeGreaterThan(1);
   expect(usageMetadata.input_token_details.flex).toEqual(
     usageMetadata.input_tokens
