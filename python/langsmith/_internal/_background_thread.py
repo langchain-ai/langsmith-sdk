@@ -11,12 +11,7 @@ import time
 import weakref
 from multiprocessing import cpu_count
 from queue import Empty, Queue
-from typing import (
-    TYPE_CHECKING,
-    Optional,
-    Union,
-    cast,
-)
+from typing import TYPE_CHECKING, Any, Optional, Union, cast
 
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
@@ -40,7 +35,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("langsmith.client")
 
-LANGSMITH_CLIENT_THREAD_POOL = cf.ThreadPoolExecutor(max_workers=cpu_count() * 3)
+LANGSMITH_CLIENT_THREAD_POOL = cf.ThreadPoolExecutor(max_workers=cpu_count())
 
 
 def _group_batch_by_api_endpoint(

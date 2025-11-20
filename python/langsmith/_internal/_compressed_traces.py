@@ -24,11 +24,11 @@ class CompressedTraces:
 
         self.max_uncompressed_size_bytes = max_uncompressed_size_bytes
 
-        self.buffer = io.BytesIO()
-        self.trace_count = 0
+        self.buffer: io.BytesIO = io.BytesIO()
+        self.trace_count: int = 0
         self.lock = threading.Lock()
-        self.uncompressed_size = 0
-        self._context = []
+        self.uncompressed_size: int = 0
+        self._context: list[str] = []
 
         self.compressor_writer = ZstdCompressor(
             level=compression_level, threads=compression_threads
