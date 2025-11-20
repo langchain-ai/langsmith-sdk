@@ -70,7 +70,8 @@ test("Test persist update runs above the batch size limit", async () => {
       timeout_ms: 30_000,
     });
     const projectName =
-      "__test_persist_update_run_batch_above_bs_limit" + uuidv4().substring(0, 4);
+      "__test_persist_update_run_batch_above_bs_limit" +
+      uuidv4().substring(0, 4);
     await deleteProject(langchainClient, projectName);
 
     const createRun = async () => {

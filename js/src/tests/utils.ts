@@ -51,7 +51,7 @@ export async function pollRunsUntilCount(
       }
     },
     timeout ?? 120_000, // Wait up to 120 seconds
-    5000 // every 5 second
+    3000
   );
 }
 
@@ -100,7 +100,7 @@ export async function waitUntilRunFound(
       }
     },
     30_000,
-    5_000,
+    3_000,
     `Waiting for run "${runId}"`
   );
 }
