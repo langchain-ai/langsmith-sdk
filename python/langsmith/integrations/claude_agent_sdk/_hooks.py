@@ -191,7 +191,9 @@ def clear_active_tool_runs() -> None:
             run_tree.end(error="Client-managed run not completed (conversation ended)")
             run_tree.patch()
         except Exception as e:
-            logger.debug(f"Failed to clean up orphaned client-managed run {tool_use_id}: {e}")
+            logger.debug(
+                f"Failed to clean up orphaned client-managed run {tool_use_id}: {e}"
+            )
 
     # End any orphaned tool runs
     for tool_use_id, (tool_run, _) in _active_tool_runs.items():
