@@ -947,7 +947,7 @@ const usageMetadataTestCases = [
   {
     description: "reasoning",
     params: {
-      model: "o1-mini",
+      model: "o1",
       messages: [
         {
           role: "user",
