@@ -8900,7 +8900,7 @@ class _FailedAttachmentReader(io.BytesIO):
         super().__init__()
         self._error = error
 
-    def read(self, size: int = -1) -> bytes:
+    def read(self, size: Optional[int] = -1) -> bytes:
         raise ls_utils.LangSmithError(
             f"Failed to download attachment: {self._error}"
         ) from self._error
