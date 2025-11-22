@@ -38,13 +38,13 @@ interface UsageMetadata {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const chatAggregator = (chunks: any[]): any => {
+const chatAggregator = (chunks: any[]): KVMap => {
   const fullText = chunks
     .filter((chunk) => chunk?.text)
     .map((chunk) => chunk.text)
     .join("");
 
-  const result: any = {
+  const result: KVMap = {
     content: fullText,
     role: "assistant",
   };
@@ -64,7 +64,7 @@ const chatAggregator = (chunks: any[]): any => {
       // Add input token details if available
       usageMetadata.input_token_details = {
         ...(usage.cachedContentTokenCount && {
-          cache_read_over_200k: Math.max(0, usage.promptTokenCount - 200000),
+          cache_read_over_200k: Math.max(0, usage.cachedContentTokenCount - 200000),
         }),
         ...(usage.promptTokenCount && {
           over_200k: Math.max(0, usage.promptTokenCount - 200000),
