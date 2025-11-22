@@ -1134,9 +1134,11 @@ class InputTokenDetails(TypedDict, total=False):
     """
     cache_read: int
     """Input tokens that were cached and there was a cache hit.
-
     Since there was a cache hit, the tokens were read from the cache. More precisely,
     the model state given these tokens was read from the cache.
+    """
+    cache_read_over_200k: int
+    """Input tokens that were cached and there was a cache hit over 200k. Part of Gemini pricing. 
     """
 
 
