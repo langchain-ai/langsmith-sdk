@@ -98,25 +98,33 @@ def configure(
 
     Args:
         client: A LangSmith Client instance to use for all tracing operations.
+
             If provided, this client will be used instead of creating new clients.
+
             Pass `None` to explicitly clear the global client.
-        enabled: Whether tracing is enabled. Can be:
+        enabled: Whether tracing is enabled.
+
+            Can be:
+
             - `True`: Enable tracing and send data to LangSmith
             - `False`: Disable tracing completely
-            - `"local"`: Enable tracing but only store data locally
+            - `'local'`: Enable tracing but only store data locally
             - `None`: Clear the setting (falls back to environment variables)
         project_name: The LangSmith project name where traces will be sent.
+
             This determines which project dashboard will display your traces.
+
             Pass `None` to explicitly clear the project name.
-        tags: A list of tags to be applied to all traced runs. Tags are useful
-            for filtering and organizing runs in the LangSmith UI.
+        tags: A list of tags to be applied to all traced runs.
+
+            Tags are useful for filtering and organizing runs in the LangSmith UI.
+
             Pass `None` to explicitly clear all global tags.
         metadata: A dictionary of metadata to attach to all traced runs.
-            Metadata can store any additional context about your runs.
-            Pass `None` to explicitly clear all global metadata.
 
-    Returns:
-        None
+            Metadata can store any additional context about your runs.
+
+            Pass `None` to explicitly clear all global metadata.
 
     Examples:
         Basic configuration:
@@ -312,7 +320,7 @@ class RunTree(ls_schemas.RunBase):
         return self.ls_client
 
     def __setattr__(self, name, value):
-        """Set the _client specially."""
+        """Set the `_client` specially."""
         # For backwards compat
         if name == "_client":
             self.ls_client = value
@@ -335,7 +343,7 @@ class RunTree(ls_schemas.RunBase):
         by the @traceable decorator.
 
         If your LangChain or LangGraph versions are sufficiently up-to-date,
-        this will also override the default behavior of LangChainTracer.
+        this will also override the default behavior of `LangChainTracer`.
 
         Args:
             inputs: The inputs to set.
@@ -389,10 +397,7 @@ class RunTree(ls_schemas.RunBase):
         """Upsert the given outputs into the run.
 
         Args:
-            outputs (Dict[str, Any]): A dictionary containing the outputs to be added.
-
-        Returns:
-            None
+            outputs: A dictionary containing the outputs to be added.
         """
         if self.outputs is None:
             self.outputs = {}
@@ -402,10 +407,7 @@ class RunTree(ls_schemas.RunBase):
         """Upsert the given outputs into the run.
 
         Args:
-            outputs (Dict[str, Any]): A dictionary containing the outputs to be added.
-
-        Returns:
-            None
+            outputs: A dictionary containing the outputs to be added.
         """
         if self.inputs is None:
             self.inputs = {}
@@ -611,7 +613,7 @@ class RunTree(ls_schemas.RunBase):
         """Patch the run tree to the API in a background thread.
 
         Args:
-            exclude_inputs: whether to exclude inputs from the patch request.
+            exclude_inputs: Whether to exclude inputs from the patch request.
         """
         if not self.end_time:
             self.end()
@@ -689,7 +691,7 @@ class RunTree(ls_schemas.RunBase):
             )
 
     def wait(self) -> None:
-        """Wait for all _futures to complete."""
+        """Wait for all `_futures` to complete."""
         pass
 
     def get_url(self) -> str:
@@ -720,11 +722,10 @@ class RunTree(ls_schemas.RunBase):
     ) -> Optional[RunTree]:
         """Create a new 'child' span from the provided runnable config.
 
-        Requires langchain to be installed.
+        Requires `langchain` to be installed.
 
         Returns:
-            Optional[RunTree]: The new span or None if
-                no parent span information is found.
+            The new span or `None` if no parent span information is found.
         """
         try:
             from langchain_core.callbacks.manager import (
@@ -784,12 +785,13 @@ class RunTree(ls_schemas.RunBase):
         """Create a new 'parent' span from the provided headers.
 
         Extracts parent span information from the headers and creates a new span.
+
         Metadata and tags are extracted from the baggage header.
+
         The dotted order and trace id are extracted from the trace header.
 
         Returns:
-            Optional[RunTree]: The new span or None if
-                no parent span information is found.
+            The new span or `None` if no parent span information is found.
         """
         init_args = kwargs.copy()
 
@@ -842,7 +844,7 @@ class RunTree(ls_schemas.RunBase):
         return run_tree
 
     def to_headers(self) -> dict[str, str]:
-        """Return the RunTree as a dictionary of headers."""
+        """Return the `RunTree` as a dictionary of headers."""
         headers = {}
         if self.trace_id:
             headers[f"{LANGSMITH_DOTTED_ORDER}"] = self.dotted_order
@@ -856,7 +858,7 @@ class RunTree(ls_schemas.RunBase):
         return headers
 
     def __repr__(self):
-        """Return a string representation of the RunTree object."""
+        """Return a string representation of the `RunTree` object."""
         return (
             f"RunTree(id={self.id}, name='{self.name}', "
             f"run_type='{self.run_type}', dotted_order='{self.dotted_order}')"
