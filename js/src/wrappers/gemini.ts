@@ -64,7 +64,10 @@ const chatAggregator = (chunks: any[]): KVMap => {
       // Add input token details if available
       usageMetadata.input_token_details = {
         ...(usage.cachedContentTokenCount && {
-          cache_read_over_200k: Math.max(0, usage.cachedContentTokenCount - 200000),
+          cache_read_over_200k: Math.max(
+            0,
+            usage.cachedContentTokenCount - 200000
+          ),
         }),
         ...(usage.promptTokenCount && {
           over_200k: Math.max(0, usage.promptTokenCount - 200000),
