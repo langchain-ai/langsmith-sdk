@@ -4,9 +4,10 @@
 class TracingMiddleware:
     """Middleware for propagating distributed tracing context using LangSmith.
 
-    This middleware checks for the 'langsmith-trace' header and propagates the
+    This middleware checks for the `'langsmith-trace'` header and propagates the
     tracing context if present. It does not start new traces by default.
-    It is designed to work with ASGI applications.
+
+    Designed to work with ASGI applications.
 
     Attributes:
         app: The ASGI application being wrapped.
@@ -27,8 +28,9 @@ class TracingMiddleware:
             receive: An awaitable callable for receiving ASGI events.
             send: An awaitable callable for sending ASGI events.
 
-        If the request is HTTP and contains the 'langsmith-trace' header,
+        If the request is HTTP and contains the `'langsmith-trace'` header,
         it propagates the tracing context before calling the wrapped application.
+
         Otherwise, it calls the application directly without modifying the context.
         """
         if scope["type"] == "http" and "headers" in scope:

@@ -399,9 +399,11 @@ class OTELExporter:
     def _remove_span(self, span_id: uuid.UUID) -> None:
         """Remove a single span and clean up resources.
 
-        Note: We call span.end() here because spans in _span_info are orphaned -
-        they never received their patch operation and will never naturally complete.
-        Ending them gracefully is better than leaving them open indefinitely.
+        Note:
+            We call `span.end()` here because spans in `_span_info` are orphaned -
+            they never received their patch operation and will never naturally complete.
+
+            Ending them gracefully is better than leaving them open indefinitely.
         """
         if span_id not in self._span_info:
             return

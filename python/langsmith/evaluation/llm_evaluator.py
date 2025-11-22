@@ -1,4 +1,4 @@
-"""Contains the LLMEvaluator class for building LLM-as-a-judge evaluators."""
+"""Contains the `LLMEvaluator` class for building LLM-as-a-judge evaluators."""
 
 from typing import Any, Callable, Optional, Union, cast
 
@@ -86,7 +86,7 @@ class LLMEvaluator(RunEvaluator):
         model_provider: str = "openai",
         **kwargs,
     ):
-        """Initialize the LLMEvaluator.
+        """Initialize the `LLMEvaluator`.
 
         Args:
             prompt_template (Union[str, List[Tuple[str, str]]): The prompt
@@ -96,12 +96,13 @@ class LLMEvaluator(RunEvaluator):
                 The configuration for the score, either categorical or continuous.
             map_variables (Optional[Callable[[Run, Example], dict]], optional):
                 A function that maps the run and example to the variables in the
-                prompt. Defaults to None. If None, it is assumed that the prompt
-                only requires 'input', 'output', and 'expected'.
+                prompt.
+
+                If `None`, it is assumed that the prompt only requires 'input',
+                'output', and 'expected'.
             model_name (Optional[str], optional): The model to use for the evaluation.
-                Defaults to "gpt-4o".
             model_provider (Optional[str], optional): The model provider to use
-                for the evaluation. Defaults to "openai".
+                for the evaluation.
         """
         try:
             from langchain.chat_models import (  # type: ignore[import-not-found]
@@ -128,7 +129,7 @@ class LLMEvaluator(RunEvaluator):
         score_config: Union[CategoricalScoreConfig, ContinuousScoreConfig],
         map_variables: Optional[Callable[[Run, Optional[Example]], dict]] = None,
     ):
-        """Create an LLMEvaluator instance from a BaseChatModel instance.
+        """Create an `LLMEvaluator` instance from a `BaseChatModel` instance.
 
         Args:
             model (BaseChatModel): The chat model instance to use for the evaluation.
@@ -139,11 +140,13 @@ class LLMEvaluator(RunEvaluator):
                 The configuration for the score, either categorical or continuous.
             map_variables (Optional[Callable[[Run, Example]], dict]], optional):
                 A function that maps the run and example to the variables in the
-                prompt. Defaults to None. If None, it is assumed that the prompt
-                only requires 'input', 'output', and 'expected'.
+                prompt.
+
+                If `None`, it is assumed that the prompt only requires 'input',
+                'output', and 'expected'.
 
         Returns:
-            LLMEvaluator: An instance of LLMEvaluator.
+            LLMEvaluator: An instance of `LLMEvaluator`.
         """
         instance = cls.__new__(cls)
         instance._initialize(prompt_template, score_config, map_variables, model)
@@ -156,7 +159,7 @@ class LLMEvaluator(RunEvaluator):
         map_variables: Optional[Callable[[Run, Optional[Example]], dict]],
         chat_model: Any,
     ):
-        """Shared initialization code for __init__ and from_model.
+        """Shared initialization code for `__init__` and `from_model`.
 
         Args:
             prompt_template (Union[str, List[Tuple[str, str]]): The prompt template.

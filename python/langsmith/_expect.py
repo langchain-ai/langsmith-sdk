@@ -2,49 +2,50 @@
 
 This module is designed to be used within test cases decorated with the
 `@pytest.mark.decorator` decorator
+
 It allows you to log scores about a test case and optionally make assertions that log as
 "expectation" feedback to LangSmith.
 
-Example usage:
-    .. code-block:: python
+Example:
+    ```python
+    import pytest
+    from langsmith import expect
 
-        import pytest
-        from langsmith import expect
 
+    @pytest.mark.langsmith
+    def test_output_semantically_close():
+        response = oai_client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": "Say hello!"},
+            ],
+        )
+        response_txt = response.choices[0].message.content
+        # Intended usage
+        expect.embedding_distance(
+            prediction=response_txt,
+            reference="Hello!",
+        ).to_be_less_than(0.9)
 
-        @pytest.mark.langsmith
-        def test_output_semantically_close():
-            response = oai_client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": "You are a helpful assistant."},
-                    {"role": "user", "content": "Say hello!"},
-                ],
-            )
-            response_txt = response.choices[0].message.content
-            # Intended usage
-            expect.embedding_distance(
-                prediction=response_txt,
-                reference="Hello!",
-            ).to_be_less_than(0.9)
+        # Score the test case
+        matcher = expect.edit_distance(
+            prediction=response_txt,
+            reference="Hello!",
+        )
+        # Apply an assertion and log 'expectation' feedback to LangSmith
+        matcher.to_be_less_than(1)
 
-            # Score the test case
-            matcher = expect.edit_distance(
-                prediction=response_txt,
-                reference="Hello!",
-            )
-            # Apply an assertion and log 'expectation' feedback to LangSmith
-            matcher.to_be_less_than(1)
+        # You can also directly make assertions on values directly
+        expect.value(response_txt).to_contain("Hello!")
+        # Or using a custom check
+        expect.value(response_txt).against(lambda x: "Hello" in x)
 
-            # You can also directly make assertions on values directly
-            expect.value(response_txt).to_contain("Hello!")
-            # Or using a custom check
-            expect.value(response_txt).against(lambda x: "Hello" in x)
+        # You can even use this for basic metric logging within tests
 
-            # You can even use this for basic metric logging within tests
-
-            expect.score(0.8)
-            expect.score(0.7, key="similarity").to_be_greater_than(0.7)
+        expect.score(0.8)
+        expect.score(0.7, key="similarity").to_be_greater_than(0.7)
+    ```
 """  # noqa: E501
 
 from __future__ import annotations
@@ -164,8 +165,7 @@ class _Matcher:
             max_value: The maximum value (exclusive).
 
         Raises:
-            AssertionError: If the expectation value
-                is not between the given min and max.
+            AssertionError: If the expectation value is not between the min and max.
         """
         self._assert(
             min_value < self.value < max_value,
@@ -208,10 +208,10 @@ class _Matcher:
         )
 
     def to_be_none(self) -> None:
-        """Assert that the expectation value is None.
+        """Assert that the expectation value is `None`.
 
         Raises:
-            AssertionError: If the expectation value is not None.
+            AssertionError: If the expectation value is not `None`.
         """
         self._assert(
             self.value is None,
@@ -278,22 +278,29 @@ class _Expect:
             prediction: The predicted string to compare.
             reference: The reference string to compare against.
             config: Optional configuration for the embedding distance evaluator.
+
                 Supported options:
+
                 - `encoder`: A custom encoder function to encode the list of input
-                     strings to embeddings. Defaults to the OpenAI API.
+                    strings to embeddings.
+
+                    Defaults to the OpenAI API.
                 - `metric`: The distance metric to use for comparison.
-                    Supported values: "cosine", "euclidean", "manhattan",
-                    "chebyshev", "hamming".
+
+                    Supported values: `'cosine'`, `'euclidean'`, `'manhattan'`,
+                    `'chebyshev'`, `'hamming'`.
 
         Returns:
             A `_Matcher` instance for the embedding distance value.
 
 
-        Examples:
-            >>> expect.embedding_distance(
-            ...     prediction="hello",
-            ...     reference="hi",
-            ... ).to_be_less_than(1.0)
+        Example:
+            ```python
+            expect.embedding_distance(
+                prediction="hello",
+                reference="hi",
+            ).to_be_less_than(1.0)
+            ```
         """  # noqa: E501
         from langsmith._internal._embedding_distance import EmbeddingDistance
 
@@ -332,17 +339,22 @@ class _Expect:
             prediction: The predicted string to compare.
             reference: The reference string to compare against.
             config: Optional configuration for the string distance evaluator.
+
                 Supported options:
+
                 - `metric`: The distance metric to use for comparison.
-                    Supported values: "damerau_levenshtein", "levenshtein",
-                    "jaro", "jaro_winkler", "hamming", "indel".
-                - `normalize_score`: Whether to normalize the score between 0 and 1.
+
+                    Supported values: `'damerau_levenshtein'`, `'levenshtein'`,
+                    `'jaro'`, `'jaro_winkler'`, `'hamming'`, `'indel'`.
+                - `normalize_score`: Whether to normalize the score between `0` and `1`.
 
         Returns:
             A `_Matcher` instance for the string distance value.
 
         Examples:
-            >>> expect.edit_distance("hello", "helo").to_be_less_than(1)
+            ```python
+            expect.edit_distance("hello", "helo").to_be_less_than(1)
+            ```
         """
         from langsmith._internal._edit_distance import EditDistance
 
@@ -376,8 +388,10 @@ class _Expect:
         Returns:
             A `_Matcher` instance for the given value.
 
-        Examples:
-           >>> expect.value(10).to_be_less_than(20)
+        Example:
+            ```python
+            expect.value(10).to_be_less_than(20)
+            ```
         """
         return _Matcher(self._client, "value", value, _executor=self.executor)
 
@@ -393,13 +407,15 @@ class _Expect:
 
         Args:
             score: The score value to log.
-            key: The key to use for logging the score. Defaults to "score".
+            key: The key to use for logging the score. Defaults to `'score'`.
 
-        Examples:
-            >>> expect.score(0.8)  # doctest: +ELLIPSIS
+        Example:
+            ```python
+            expect.score(0.8)  # doctest: +ELLIPSIS
             <langsmith._expect._Matcher object at ...>
 
-            >>> expect.score(0.8, key="similarity").to_be_greater_than(0.7)
+            expect.score(0.8, key="similarity").to_be_greater_than(0.7)
+            ```
         """
         self._submit_feedback(
             key,

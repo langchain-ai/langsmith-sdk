@@ -427,49 +427,46 @@ def wrap_anthropic(client: C, *, tracing_extra: Optional[TracingExtra] = None) -
     """Patch the Anthropic client to make it traceable.
 
     Args:
-        client (Union[Anthropic, AsyncAnthropic]): The client to patch.
-        tracing_extra (Optional[TracingExtra], optional): Extra tracing information.
-            Defaults to None.
+        client: The client to patch.
+        tracing_extra: Extra tracing information.
 
     Returns:
-        Union[Anthropic, AsyncAnthropic]: The patched client.
+        The patched client.
 
     Example:
+        ```python
+        import anthropic
+        from langsmith import wrappers
 
-        .. code-block:: python
+        client = wrappers.wrap_anthropic(anthropic.Anthropic())
 
-            import anthropic
-            from langsmith import wrappers
+        # Use Anthropic client same as you normally would:
+        system = "You are a helpful assistant."
+        messages = [
+            {
+                "role": "user",
+                "content": "What physics breakthroughs do you predict will happen by 2300?",
+            }
+        ]
+        completion = client.messages.create(
+            model="claude-3-5-sonnet-latest",
+            messages=messages,
+            max_tokens=1000,
+            system=system,
+        )
+        print(completion.content)
 
-            client = wrappers.wrap_anthropic(anthropic.Anthropic())
-
-            # Use Anthropic client same as you normally would:
-            system = "You are a helpful assistant."
-            messages = [
-                {
-                    "role": "user",
-                    "content": "What physics breakthroughs do you predict will happen by 2300?",
-                }
-            ]
-            completion = client.messages.create(
-                model="claude-3-5-sonnet-latest",
-                messages=messages,
-                max_tokens=1000,
-                system=system,
-            )
-            print(completion.content)
-
-            # You can also use the streaming context manager:
-            with client.messages.stream(
-                model="claude-3-5-sonnet-latest",
-                messages=messages,
-                max_tokens=1000,
-                system=system,
-            ) as stream:
-                for text in stream.text_stream:
-                    print(text, end="", flush=True)
-                message = stream.get_final_message()
-
+        # You can also use the streaming context manager:
+        with client.messages.stream(
+            model="claude-3-5-sonnet-latest",
+            messages=messages,
+            max_tokens=1000,
+            system=system,
+        ) as stream:
+            for text in stream.text_stream:
+                print(text, end="", flush=True)
+            message = stream.get_final_message()
+        ```
     """  # noqa: E501
     tracing_extra = tracing_extra or {}
     client.messages.create = _get_wrapper(  # type: ignore[method-assign]

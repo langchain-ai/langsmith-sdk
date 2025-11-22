@@ -49,18 +49,17 @@ class Attachment(NamedTuple):
     """Annotated type that will be stored as an attachment if used.
 
     Examples:
-
-        .. code-block:: python
-
-            from langsmith import traceable
-            from langsmith.schemas import Attachment
+        ```python
+        from langsmith import traceable
+        from langsmith.schemas import Attachment
 
 
-            @traceable
-            def my_function(bar: int, my_val: Attachment):
-                # my_val will be stored as an attachment
-                # bar will be stored as inputs
-                return bar
+        @traceable
+        def my_function(bar: int, my_val: Attachment):
+            # my_val will be stored as an attachment
+            # bar will be stored as inputs
+            return bar
+        ```
     """
 
     mime_type: str
@@ -69,7 +68,9 @@ class Attachment(NamedTuple):
 
 Attachments = dict[str, Union[tuple[str, bytes], Attachment, tuple[str, Path]]]
 """Attachments associated with the run. 
-Each entry is a tuple of (mime_type, bytes), or (mime_type, file_path)"""
+
+Each entry is a tuple of `(mime_type, bytes)`, or `(mime_type, file_path)`
+"""
 
 
 @runtime_checkable
@@ -387,7 +388,9 @@ class RunBase(BaseModel):
         default_factory=dict
     )
     """Attachments associated with the run.
-    Each entry is a tuple of (mime_type, bytes)."""
+    
+    Each entry is a tuple of `(mime_type, bytes)`.
+    """
 
     @property
     def metadata(self) -> dict[str, Any]:

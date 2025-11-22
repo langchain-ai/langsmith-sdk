@@ -13,7 +13,7 @@ class StringEvaluator(RunEvaluator, BaseModel):
     """Grades the run's string input, output, and optional answer."""
 
     evaluation_name: Optional[str] = None
-    """The name evaluation, such as 'Accuracy' or 'Salience'."""
+    """The name evaluation, such as `'Accuracy'` or `'Salience'`."""
     input_key: str = "input"
     """The key in the run inputs to extract the input string."""
     prediction_key: str = "output"

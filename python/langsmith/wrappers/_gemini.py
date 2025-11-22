@@ -29,12 +29,12 @@ logger = logging.getLogger(__name__)
 
 
 def _strip_none(d: dict) -> dict:
-    """Remove None values from dictionary."""
+    """Remove `None` values from dictionary."""
     return {k: v for k, v in d.items() if v is not None}
 
 
 def _convert_config_for_tracing(kwargs: dict) -> None:
-    """Convert GenerateContentConfig to dict for LangSmith compatibility."""
+    """Convert `GenerateContentConfig` to `dict` for LangSmith compatibility."""
     if "config" in kwargs and not isinstance(kwargs["config"], dict):
         kwargs["config"] = vars(kwargs["config"])
 
@@ -43,10 +43,12 @@ def _process_gemini_inputs(inputs: dict) -> dict:
     r"""Process Gemini inputs to normalize them for LangSmith tracing.
 
     Example:
+        ```txt
         {"contents": "Hello", "model": "gemini-pro"}
         → {"messages": [{"role": "user", "content": "Hello"}], "model": "gemini-pro"}
         {"contents": [{"role": "user", "parts": [{"text": "What is AI?"}]}], "model": "gemini-pro"}
         → {"messages": [{"role": "user", "content": "What is AI?"}], "model": "gemini-pro"}
+        ```
     """  # noqa: E501
     # If contents is not present or not in list format, return as-is
     contents = inputs.get("contents")
@@ -470,7 +472,7 @@ def _get_wrapper(
     tracing_extra: Optional[TracingExtra] = None,
     is_streaming: bool = False,
 ) -> Callable:
-    """Create a wrapper for Gemini's generate_content methods."""
+    """Create a wrapper for Gemini's `generate_content` methods."""
     textra = tracing_extra or {}
 
     @functools.wraps(original_generate)
@@ -529,94 +531,93 @@ def wrap_gemini(
 ) -> C:
     """Patch the Google Gen AI client to make it traceable.
 
-    .. warning::
+    !!! warning
+
         **BETA**: This wrapper is in beta.
 
     Supports:
-        - generate_content() and generate_content_stream() methods
+        - `generate_content` and `generate_content_stream` methods
         - Sync and async clients
         - Streaming and non-streaming responses
         - Tool/function calling with proper UI rendering
         - Multimodal inputs (text + images)
-        - Image generation with inline_data support
+        - Image generation with `inline_data` support
         - Token usage tracking including reasoning tokens
 
     Args:
-        client (genai.Client): The Google Gen AI client to patch.
-        tracing_extra (Optional[TracingExtra], optional): Extra tracing information.
-            Defaults to None.
-        chat_name (str, optional): The run name for the chat endpoint.
-            Defaults to "ChatGoogleGenerativeAI".
+        client: The Google Gen AI client to patch.
+        tracing_extra: Extra tracing information.
+        chat_name: The run name for the chat endpoint.
 
     Returns:
-        genai.Client: The patched client.
+        The patched client.
 
-    Examples:
+    Example:
+        ```python
+        from google import genai
+        from google.genai import types
+        from langsmith import wrappers
 
-        .. code-block:: python
+        # Use Google Gen AI client same as you normally would.
+        client = wrappers.wrap_gemini(genai.Client(api_key="your-api-key"))
 
-            from google import genai
-            from google.genai import types
-            from langsmith import wrappers
+        # Basic text generation:
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents="Why is the sky blue?",
+        )
+        print(response.text)
 
-            # Use Google Gen AI client same as you normally would.
-            client = wrappers.wrap_gemini(genai.Client(api_key="your-api-key"))
+        # Streaming:
+        for chunk in client.models.generate_content_stream(
+            model="gemini-2.5-flash",
+            contents="Tell me a story",
+        ):
+            print(chunk.text, end="")
 
-            # Basic text generation:
-            response = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents="Why is the sky blue?",
-            )
-            print(response.text)
-
-            # Streaming:
-            for chunk in client.models.generate_content_stream(
-                model="gemini-2.5-flash",
-                contents="Tell me a story",
-            ):
-                print(chunk.text, end="")
-
-            # Tool/Function calling:
-            schedule_meeting_function = {
-                "name": "schedule_meeting",
-                "description": "Schedules a meeting with specified attendees.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "attendees": {"type": "array", "items": {"type": "string"}},
-                        "date": {"type": "string"},
-                        "time": {"type": "string"},
-                        "topic": {"type": "string"},
-                    },
-                    "required": ["attendees", "date", "time", "topic"],
+        # Tool/Function calling:
+        schedule_meeting_function = {
+            "name": "schedule_meeting",
+            "description": "Schedules a meeting with specified attendees.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "attendees": {"type": "array", "items": {"type": "string"}},
+                    "date": {"type": "string"},
+                    "time": {"type": "string"},
+                    "topic": {"type": "string"},
                 },
-            }
+                "required": ["attendees", "date", "time", "topic"],
+            },
+        }
 
-            tools = types.Tool(function_declarations=[schedule_meeting_function])
-            config = types.GenerateContentConfig(tools=[tools])
+        tools = types.Tool(function_declarations=[schedule_meeting_function])
+        config = types.GenerateContentConfig(tools=[tools])
 
-            response = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents="Schedule a meeting with Bob and Alice tomorrow at 2 PM.",
-                config=config,
-            )
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents="Schedule a meeting with Bob and Alice tomorrow at 2 PM.",
+            config=config,
+        )
 
-            # Image generation:
-            response = client.models.generate_content(
-                model="gemini-2.5-flash-image",
-                contents=["Create a picture of a futuristic city"],
-            )
+        # Image generation:
+        response = client.models.generate_content(
+            model="gemini-2.5-flash-image",
+            contents=["Create a picture of a futuristic city"],
+        )
 
-            # Save generated image
-            from io import BytesIO
-            from PIL import Image
+        # Save generated image
+        from io import BytesIO
+        from PIL import Image
 
-            for part in response.candidates[0].content.parts:
-                if part.inline_data is not None:
-                    image = Image.open(BytesIO(part.inline_data.data))
-                    image.save("generated_image.png")
+        for part in response.candidates[0].content.parts:
+            if part.inline_data is not None:
+                image = Image.open(BytesIO(part.inline_data.data))
+                image.save("generated_image.png")
+        ```
 
-    .. versionadded:: 0.4.33
+    !!! version-added "Added in `langsmith` 0.4.33"
+
         Initial beta release of Google Gemini wrapper.
 
     """

@@ -161,7 +161,7 @@ def _inject_tracing_hooks(options: Any) -> None:
 
 
 def instrument_claude_client(original_class: Any) -> Any:
-    """Wrap ClaudeSDKClient to trace both query() and receive_response()."""
+    """Wrap `ClaudeSDKClient` to trace both `query()` and `receive_response()`."""
 
     class TracedClaudeSDKClient(original_class):
         def __init__(self, *args: Any, **kwargs: Any):

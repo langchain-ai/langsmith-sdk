@@ -27,56 +27,56 @@ except ImportError:
     HAVE_AGENTS = False
 
     class OpenAIAgentsTracingProcessor:
-        """Tracing processor for the `OpenAI Agents SDK <https://openai.github.io/openai-agents-python/>`_.
+        """Tracing processor for the [OpenAI Agents SDK](https://openai.github.io/openai-agents-python/).
 
         Traces all intermediate steps of your OpenAI Agent to LangSmith.
 
-        Requirements: Make sure to install ``pip install -U langsmith[openai-agents]``.
+        Requirements: Make sure to install `pip install -U langsmith[openai-agents]`.
 
         Args:
-            client: An instance of langsmith.client.Client. If not provided,
-                a default client is created.
+            client: An instance of `langsmith.client.Client`. If not provided, a default
+                client is created.
 
         Example:
-            .. code-block:: python
+            ```python
+            from agents import (
+                Agent,
+                FileSearchTool,
+                Runner,
+                WebSearchTool,
+                function_tool,
+                set_trace_processors,
+            )
 
-                from agents import (
-                    Agent,
-                    FileSearchTool,
-                    Runner,
-                    WebSearchTool,
-                    function_tool,
-                    set_trace_processors,
-                )
+            from langsmith.wrappers import OpenAIAgentsTracingProcessor
 
-                from langsmith.wrappers import OpenAIAgentsTracingProcessor
-
-                set_trace_processors([OpenAIAgentsTracingProcessor()])
-
-
-                @function_tool
-                def get_weather(city: str) -> str:
-                    return f"The weather in {city} is sunny"
+            set_trace_processors([OpenAIAgentsTracingProcessor()])
 
 
-                haiku_agent = Agent(
-                    name="Haiku agent",
-                    instructions="Always respond in haiku form",
-                    model="o3-mini",
-                    tools=[get_weather],
-                )
-                agent = Agent(
-                    name="Assistant",
-                    tools=[WebSearchTool()],
-                    instructions="speak in spanish. use Haiku agent if they ask for a haiku or for the weather",
-                    handoffs=[haiku_agent],
-                )
+            @function_tool
+            def get_weather(city: str) -> str:
+                return f"The weather in {city} is sunny"
 
-                result = await Runner.run(
-                    agent,
-                    "write a haiku about the weather today and tell me a recent news story about new york",
-                )
-                print(result.final_output)
+
+            haiku_agent = Agent(
+                name="Haiku agent",
+                instructions="Always respond in haiku form",
+                model="o3-mini",
+                tools=[get_weather],
+            )
+            agent = Agent(
+                name="Assistant",
+                tools=[WebSearchTool()],
+                instructions="speak in spanish. use Haiku agent if they ask for a haiku or for the weather",
+                handoffs=[haiku_agent],
+            )
+
+            result = await Runner.run(
+                agent,
+                "write a haiku about the weather today and tell me a recent news story about new york",
+            )
+            print(result.final_output)
+            ```
         """  # noqa: E501
 
         def __init__(self, *args, **kwargs):
@@ -93,14 +93,14 @@ logger = logging.getLogger(__name__)
 if HAVE_AGENTS:
 
     class OpenAIAgentsTracingProcessor(tracing.TracingProcessor):  # type: ignore[no-redef]
-        """Tracing processor for the `OpenAI Agents SDK <https://openai.github.io/openai-agents-python/>`_.
+        """Tracing processor for the [OpenAI Agents SDK](https://openai.github.io/openai-agents-python/).
 
         Traces all intermediate steps of your OpenAI Agent to LangSmith.
 
-        Requirements: Make sure to install ``pip install -U langsmith[openai-agents]``.
+        Requirements: Make sure to install `pip install -U langsmith[openai-agents]`.
 
         Args:
-            client: An instance of langsmith.client.Client. If not provided,
+            client: An instance of `langsmith.client.Client`. If not provided,
                 a default client is created.
             metadata: Metadata to associate with all traces.
             tags: Tags to associate with all traces.
@@ -108,45 +108,45 @@ if HAVE_AGENTS:
             name: Name of the root trace.
 
         Example:
-            .. code-block:: python
+            ```python
+            from agents import (
+                Agent,
+                FileSearchTool,
+                Runner,
+                WebSearchTool,
+                function_tool,
+                set_trace_processors,
+            )
 
-                from agents import (
-                    Agent,
-                    FileSearchTool,
-                    Runner,
-                    WebSearchTool,
-                    function_tool,
-                    set_trace_processors,
-                )
+            from langsmith.wrappers import OpenAIAgentsTracingProcessor
 
-                from langsmith.wrappers import OpenAIAgentsTracingProcessor
-
-                set_trace_processors([OpenAIAgentsTracingProcessor()])
-
-
-                @function_tool
-                def get_weather(city: str) -> str:
-                    return f"The weather in {city} is sunny"
+            set_trace_processors([OpenAIAgentsTracingProcessor()])
 
 
-                haiku_agent = Agent(
-                    name="Haiku agent",
-                    instructions="Always respond in haiku form",
-                    model="o3-mini",
-                    tools=[get_weather],
-                )
-                agent = Agent(
-                    name="Assistant",
-                    tools=[WebSearchTool()],
-                    instructions="speak in spanish. use Haiku agent if they ask for a haiku or for the weather",
-                    handoffs=[haiku_agent],
-                )
+            @function_tool
+            def get_weather(city: str) -> str:
+                return f"The weather in {city} is sunny"
 
-                result = await Runner.run(
-                    agent,
-                    "write a haiku about the weather today and tell me a recent news story about new york",
-                )
-                print(result.final_output)
+
+            haiku_agent = Agent(
+                name="Haiku agent",
+                instructions="Always respond in haiku form",
+                model="o3-mini",
+                tools=[get_weather],
+            )
+            agent = Agent(
+                name="Assistant",
+                tools=[WebSearchTool()],
+                instructions="speak in spanish. use Haiku agent if they ask for a haiku or for the weather",
+                handoffs=[haiku_agent],
+            )
+
+            result = await Runner.run(
+                agent,
+                "write a haiku about the weather today and tell me a recent news story about new york",
+            )
+            print(result.final_output)
+            ```
         """  # noqa: E501
 
         def __init__(

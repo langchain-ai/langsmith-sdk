@@ -56,7 +56,7 @@ class Category(TypedDict):
 class FeedbackConfig(TypedDict, total=False):
     """Configuration to define a type of feedback.
 
-    Applied on on the first creation of a feedback_key.
+    Applied on on the first creation of a `feedback_key`.
     """
 
     type: Literal["continuous", "categorical", "freeform"]
@@ -172,7 +172,9 @@ class ComparisonEvaluationResult(BaseModel):
     """The ID of the trace of the evaluator itself."""
     comment: Optional[Union[str, dict[Union[uuid.UUID, str], str]]] = None
     """Comment for the scores. If a string, it's shared across all target runs.
-    If a dict, it maps run IDs to individual comments."""
+    
+    If a `dict`, it maps run IDs to individual comments.
+    """
 
 
 _COMPARISON_OUTPUT = Union[ComparisonEvaluationResult, dict]
@@ -203,7 +205,7 @@ class DynamicRunEvaluator(RunEvaluator):
             ]
         ] = None,
     ):
-        """Initialize the DynamicRunEvaluator with a given function.
+        """Initialize the `DynamicRunEvaluator` with a given function.
 
         Args:
             func (Callable): A function that takes a `Run` and an optional `Example` as
@@ -313,7 +315,7 @@ class DynamicRunEvaluator(RunEvaluator):
         """Check if the evaluator function is asynchronous.
 
         Returns:
-            bool: True if the evaluator function is asynchronous, False otherwise.
+            bool: `True` if the evaluator function is asynchronous, `False` otherwise.
         """
         return hasattr(self, "afunc")
 
@@ -449,7 +451,7 @@ class DynamicComparisonRunEvaluator:
             ]
         ] = None,
     ):
-        """Initialize the DynamicRunEvaluator with a given function.
+        """Initialize the `DynamicRunEvaluator` with a given function.
 
         Args:
             func (Callable): A function that takes a `Run` and an optional `Example` as
@@ -504,7 +506,7 @@ class DynamicComparisonRunEvaluator:
         """Check if the evaluator function is asynchronous.
 
         Returns:
-            bool: True if the evaluator function is asynchronous, False otherwise.
+            bool: `True` if the evaluator function is asynchronous, `False` otherwise.
         """
         return hasattr(self, "afunc")
 
