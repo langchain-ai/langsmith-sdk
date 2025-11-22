@@ -421,7 +421,7 @@ def get_tracer_project(return_default_value=True) -> Optional[str]:
 
 
 class FilterPoolFullWarning(logging.Filter):
-    """Filter `urrllib3` warnings logged when the connection pool isn't reused."""
+    """Filter `urllib3` warnings logged when the connection pool isn't reused."""
 
     def __init__(self, name: str = "", host: str = "") -> None:
         """Initialize the `FilterPoolFullWarning` filter.
