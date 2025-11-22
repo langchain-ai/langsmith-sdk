@@ -37,8 +37,40 @@ interface UsageMetadata {
   };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const chatAggregator = (chunks: any[]): KVMap => {
+const _createUsageMetadata = (usage: Record<string, any>): KVMap => {
+  const usageMetadata: UsageMetadata = {
+    input_tokens: usage.promptTokenCount || 0,
+    output_tokens: usage.responseTokenCount || usage.candidatesTokenCount || 0,
+    total_tokens: usage.totalTokenCount || 0,
+  };
+
+  // Add input token details if available
+  usageMetadata.input_token_details = {
+    ...(usage.cachedContentTokenCount && {
+      cache_read_over_200k: Math.max(0, usage.cachedContentTokenCount - 200000),
+    }),
+    ...(usage.promptTokenCount && {
+      over_200k: Math.max(0, usage.promptTokenCount - 200000),
+    }),
+    ...(usage.cachedContentTokenCount && {
+      cache_read: usage.cachedContentTokenCount,
+    }),
+  };
+
+  // Add output token details if available
+  usageMetadata.output_token_details = {
+    ...(usage.candidatesTokenCount && {
+      over_200k: Math.max(0, usage.candidatesTokenCount - 200000),
+    }),
+    ...(usage.thoughtsTokenCount && {
+      reasoning: usage.thoughtsTokenCount,
+    }),
+  };
+
+  return usageMetadata;
+};
+
+const chatAggregator = (chunks: Record<string, any>[]): KVMap => {
   const fullText = chunks
     .filter((chunk) => chunk?.text)
     .map((chunk) => chunk.text)
@@ -53,41 +85,7 @@ const chatAggregator = (chunks: any[]): KVMap => {
   if (chunks.length > 0) {
     const lastChunk = chunks[chunks.length - 1];
     if (lastChunk?.usageMetadata) {
-      const usage = lastChunk.usageMetadata;
-      const usageMetadata: UsageMetadata = {
-        input_tokens: usage.promptTokenCount || 0,
-        output_tokens:
-          usage.responseTokenCount || usage.candidatesTokenCount || 0,
-        total_tokens: usage.totalTokenCount || 0,
-      };
-
-      // Add input token details if available
-      usageMetadata.input_token_details = {
-        ...(usage.cachedContentTokenCount && {
-          cache_read_over_200k: Math.max(
-            0,
-            usage.cachedContentTokenCount - 200000
-          ),
-        }),
-        ...(usage.promptTokenCount && {
-          over_200k: Math.max(0, usage.promptTokenCount - 200000),
-        }),
-        ...(usage.cachedContentTokenCount && {
-          cache_read: usage.cachedContentTokenCount,
-        }),
-      };
-
-      // Add output token details if available
-      usageMetadata.output_token_details = {
-        ...(usage.candidatesTokenCount && {
-          over_200k: Math.max(0, usage.candidatesTokenCount - 200000),
-        }),
-        ...(usage.thoughtsTokenCount && {
-          reasoning: usage.thoughtsTokenCount,
-        }),
-      };
-
-      result.usage_metadata = usageMetadata;
+      result.usage_metadata = _createUsageMetadata(lastChunk.usageMetadata);
     }
   }
 
@@ -181,8 +179,7 @@ function processGeminiInputs(inputs: KVMap): KVMap {
   return inputs;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function processGeminiOutputs(outputs: any): KVMap {
+function processGeminiOutputs(outputs: Record<string, any>): KVMap {
   const response = outputs?.outputs || outputs;
 
   if (!response) {
@@ -200,8 +197,8 @@ function processGeminiOutputs(outputs: any): KVMap {
 
   // Process raw Gemini response
   let content = "";
-  const toolCalls: Array<any> = [];
-  const parts: Array<any> = [];
+  const toolCalls: Array<Record<string, unknown>> = [];
+  const parts: Array<Record<string, unknown>> = [];
 
   if (
     "candidates" in response &&
@@ -266,39 +263,7 @@ function processGeminiOutputs(outputs: any): KVMap {
 
   // Extract and store usage metadata
   if ("usageMetadata" in response && response.usageMetadata) {
-    const usage = response.usageMetadata;
-
-    const usageMetadata: UsageMetadata = {
-      input_tokens: usage.promptTokenCount || 0,
-      output_tokens:
-        usage.responseTokenCount || usage.candidatesTokenCount || 0,
-      total_tokens: usage.totalTokenCount || 0,
-    };
-
-    // Add input token details if available
-    usageMetadata.input_token_details = {
-      ...(usage.cachedContentTokenCount && {
-        cache_read_over_200k: Math.max(0, usage.promptTokenCount - 200000),
-      }),
-      ...(usage.promptTokenCount && {
-        over_200k: Math.max(0, usage.promptTokenCount - 200000),
-      }),
-      ...(usage.cachedContentTokenCount && {
-        cache_read: usage.cachedContentTokenCount,
-      }),
-    };
-
-    // Add output token details if available
-    usageMetadata.output_token_details = {
-      ...(usage.candidatesTokenCount && {
-        over_200k: Math.max(0, usage.candidatesTokenCount - 200000),
-      }),
-      ...(usage.thoughtsTokenCount && {
-        reasoning: usage.thoughtsTokenCount,
-      }),
-    };
-
-    result.usage_metadata = usageMetadata;
+    result.usage_metadata = _createUsageMetadata(response.usageMetadata);
   }
 
   if (toolCalls.length > 0) {
@@ -308,8 +273,9 @@ function processGeminiOutputs(outputs: any): KVMap {
   return result;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function getInvocationParams(payload: any): InvocationParamsSchema {
+function getInvocationParams(
+  payload: Record<string, any>
+): InvocationParamsSchema {
   const config = payload?.[0] || payload;
   return {
     ls_provider: "google",
