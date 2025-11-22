@@ -20,7 +20,7 @@ import {
 import { getDefaultProjectName } from "./utils/project.js";
 import { getLangSmithEnvironmentVariable } from "./utils/env.js";
 import { warnOnce } from "./utils/warn.js";
-import { warnIfNotUuidV7, uuid7FromTime } from "./utils/_uuid.js";
+import { uuid7FromTime } from "./utils/_uuid.js";
 
 function stripNonAlphanumeric(input: string) {
   return input.replace(/[-:.]/g, "");
@@ -274,22 +274,12 @@ export class RunTree implements BaseRun {
       this.id = uuid7FromTime(this._serialized_start_time ?? this.start_time);
     }
 
-    if (config.id) {
-      warnIfNotUuidV7(config.id, "run_id");
-    }
-
     if (!this.trace_id) {
       if (this.parent_run) {
         this.trace_id = this.parent_run.trace_id ?? this.id;
       } else {
         this.trace_id = this.id;
       }
-    } else if (config.trace_id) {
-      warnIfNotUuidV7(config.trace_id, "trace_id");
-    }
-
-    if (config.parent_run_id) {
-      warnIfNotUuidV7(config.parent_run_id, "parent_run_id");
     }
 
     this.replicas = _ensureWriteReplicas(this.replicas);
