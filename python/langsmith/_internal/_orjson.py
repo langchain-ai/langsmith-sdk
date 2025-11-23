@@ -29,12 +29,12 @@ except ImportError:
 
     from json import JSONDecodeError  # type: ignore
 
-    def dumps(  # type: ignore
+    def dumps(  # type: ignore[misc]
         obj: Any,
         /,
         default: Optional[Callable[[Any], Any]] = None,
         option: int = 0,
-    ) -> bytes:  # type: ignore
+    ) -> bytes:
         # for now, don't do anything for this case because `json.dumps`
         # automatically encodes non-str keys as str by default, unlike orjson
         # enable_non_str_keys = bool(option & OPT_NON_STR_KEYS)
@@ -68,7 +68,7 @@ except ImportError:
 
         return json.dumps(obj, cls=CustomEncoder).encode("utf-8")
 
-    def loads(payload: bytes, /) -> Any:  # type: ignore
+    def loads(payload: bytes, /) -> Any:
         return json.loads(payload)
 
 
