@@ -221,7 +221,7 @@ def _is_langchain_hosted(url: str) -> bool:
     """
     try:
         netloc = urllib_parse.urlsplit(url).netloc.split(":")[0]
-        return netloc.endswith("langchain.com")
+        return netloc == "langchain.com" or netloc.endswith(".langchain.com")
     except Exception:
         return False
 
