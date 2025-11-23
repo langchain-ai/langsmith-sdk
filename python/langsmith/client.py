@@ -6267,7 +6267,7 @@ class Client:
             reference_example (Optional[Union[Example, str, dict, UUID]]):
                 The example to use as a reference for the evaluation.
                 If not provided, the run's reference example will be used.
-            load_child_runs (bool, default=False)
+            load_child_runs (bool, default=False):
                 Whether to load child runs when resolving the run ID.
 
         Returns:
@@ -7417,9 +7417,9 @@ class Client:
             is_public (Optional[bool]): Filter prompts by if they are public.
             is_archived (Optional[bool]): Filter prompts by if they are archived.
             sort_field (PromptSortField): The field to sort by.
-              Defaults to "updated_at".
+                Defaults to "updated_at".
             sort_direction (Literal["desc", "asc"], default="desc"): The order to sort by.
-              Defaults to "desc".
+                Defaults to "desc".
             query (Optional[str]): Filter prompts by a search query.
 
         Returns:
@@ -7857,17 +7857,17 @@ class Client:
             prompt_identifier (str): The identifier of the prompt.
             object (Optional[Any]): The LangChain object to push.
             parent_commit_hash (str): The parent commit hash.
-              Defaults to "latest".
+                Defaults to "latest".
             is_public (Optional[bool]): Whether the prompt should be public.
                 If None (default), the current visibility status is maintained for existing prompts.
                 For new prompts, None defaults to private.
                 Set to True to make public, or False to make private.
             description (Optional[str]): A description of the prompt.
-              Defaults to an empty string.
+                Defaults to an empty string.
             readme (Optional[str]): A readme for the prompt.
-              Defaults to an empty string.
+                Defaults to an empty string.
             tags (Optional[Sequence[str]]): A list of tags for the prompt.
-              Defaults to an empty list.
+                Defaults to an empty list.
 
         Returns:
             str: The URL of the prompt.

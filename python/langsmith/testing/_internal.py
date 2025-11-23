@@ -1230,7 +1230,7 @@ def log_reference_outputs(reference_outputs: dict, /) -> None:
     Should only be used in pytest tests decorated with @pytest.mark.langsmith.
 
     Args:
-        outputs: Reference outputs to log.
+        reference_outputs: Reference outputs to log.
 
     Example:
         ```python

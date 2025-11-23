@@ -258,17 +258,7 @@ P = ParamSpec("P")
 
 @runtime_checkable
 class SupportsLangsmithExtra(Protocol, Generic[P, R]):
-    """Implementations of this Protocol accept an optional langsmith_extra parameter.
-
-    Args:
-        *args: Variable length arguments.
-        langsmith_extra (Optional[LangSmithExtra): Optional dictionary of
-            additional parameters for Langsmith.
-        **kwargs: Keyword arguments.
-
-    Returns:
-        R: The return type of the callable.
-    """
+    """Implementations of this Protocol accept an optional langsmith_extra parameter."""
 
     def __call__(  # type: ignore[valid-type]
         self,

@@ -398,10 +398,10 @@ class RunTree(ls_schemas.RunBase):
         self.outputs.update(outputs)
 
     def add_inputs(self, inputs: dict[str, Any]) -> None:
-        """Upsert the given outputs into the run.
+        """Upsert the given inputs into the run.
 
         Args:
-            outputs: A dictionary containing the outputs to be added.
+            inputs: A dictionary containing the inputs to be added.
         """
         if self.inputs is None:
             self.inputs = {}
@@ -423,9 +423,7 @@ class RunTree(ls_schemas.RunBase):
         """Add an event to the list of events.
 
         Args:
-            events (Union[ls_schemas.RunEvent, Sequence[ls_schemas.RunEvent],
-                    Sequence[dict], dict, str]):
-                The event(s) to be added. It can be a single event, a sequence
+            events: The event(s) to be added. It can be a single event, a sequence
                 of events, a sequence of dictionaries, a dictionary, or a string.
 
         Returns:

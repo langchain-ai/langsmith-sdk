@@ -180,15 +180,6 @@ def evaluate(
 
             For advanced usage only. Should not be specified if target is an existing
             experiment or two-tuple fo experiments.
-        load_nested (bool): Whether to load all child runs for the experiment.
-
-            Default is to only load the top-level root runs.
-
-            Should only be specified when target is an existing experiment or two-tuple
-            of experiments.
-        randomize_order (bool): Whether to randomize the order of the outputs for each
-            evaluation. Default is False. Should only be specified when target is a
-            two-tuple of existing experiments.
         error_handling (str, default="log"): How to handle individual run errors.
 
             `'log'` will trace the runs with the error message as part of the
@@ -460,7 +451,6 @@ def evaluate_existing(
 
     Args:
         experiment (Union[str, uuid.UUID]): The identifier of the experiment to evaluate.
-        data (DATA_T): The data to use for evaluation.
         evaluators (Optional[Sequence[EVALUATOR_T]]): Optional sequence of evaluators to use for individual run evaluation.
         summary_evaluators (Optional[Sequence[SUMMARY_EVALUATOR_T]]): Optional sequence of evaluators
             to apply over the entire dataset.

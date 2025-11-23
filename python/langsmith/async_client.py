@@ -1105,7 +1105,7 @@ class AsyncClient:
             None
 
         Raises:
-            requests.HTTPError
+            requests.HTTPError: If the request fails.
         """  # noqa: E501
         dataset_id = ls_client._as_uuid(dataset_id, "dataset_id")
         resp = await self._arequest_with_retries(
@@ -1134,7 +1134,7 @@ class AsyncClient:
             None
 
         Raises:
-            requests.HTTPError
+            requests.HTTPError: If the request fails.
         """  # noqa: E501
         dataset_id = ls_client._as_uuid(dataset_id, "dataset_id")
         resp = await self._arequest_with_retries(
@@ -1398,9 +1398,9 @@ class AsyncClient:
             is_public (Optional[bool]): Filter prompts by if they are public.
             is_archived (Optional[bool]): Filter prompts by if they are archived.
             sort_field (PromptSortField): The field to sort by.
-              Defaults to "updated_at".
+                Defaults to "updated_at".
             sort_direction (Literal["desc", "asc"], default="desc"): The order to sort by.
-              Defaults to "desc".
+                Defaults to "desc".
             query (Optional[str]): Filter prompts by a search query.
 
         Returns:
@@ -1852,17 +1852,17 @@ class AsyncClient:
             prompt_identifier (str): The identifier of the prompt.
             object (Optional[Any]): The LangChain object to push.
             parent_commit_hash (str): The parent commit hash.
-              Defaults to "latest".
+                Defaults to "latest".
             is_public (Optional[bool]): Whether the prompt should be public.
                 If None (default), the current visibility status is maintained for existing prompts.
                 For new prompts, None defaults to private.
                 Set to True to make public, or False to make private.
             description (Optional[str]): A description of the prompt.
-              Defaults to an empty string.
+                Defaults to an empty string.
             readme (Optional[str]): A readme for the prompt.
-              Defaults to an empty string.
+                Defaults to an empty string.
             tags (Optional[Sequence[str]]): A list of tags for the prompt.
-              Defaults to an empty list.
+                Defaults to an empty list.
 
         Returns:
             str: The URL of the prompt.

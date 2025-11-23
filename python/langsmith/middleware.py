@@ -25,8 +25,8 @@ class TracingMiddleware:
 
         Args:
             scope: A dict containing ASGI connection scope.
-            receive: An awaitable callable for receiving ASGI events.
-            send: An awaitable callable for sending ASGI events.
+            receive (callable): An awaitable callable for receiving ASGI events.
+            send (callable): An awaitable callable for sending ASGI events.
 
         If the request is HTTP and contains the `'langsmith-trace'` header,
         it propagates the tracing context before calling the wrapped application.

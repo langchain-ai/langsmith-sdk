@@ -123,11 +123,6 @@ async def aevaluate(
             extend.
 
             If provided, `experiment_prefix` is ignored. For advanced usage only.
-        load_nested: Whether to load all child runs for the experiment.
-
-            Default is to only load the top-level root runs.
-
-            Should only be specified when evaluating an existing experiment.
         error_handling (str, default="log"): How to handle individual run errors.
 
             `'log'` will trace the runs with the error message as part of the
