@@ -18,6 +18,8 @@ except ImportError:
     import uuid
     from typing import Any, Callable, Optional
 
+    DefaultFunc = Optional[Callable[[Any], Any]]
+
     OPT_NON_STR_KEYS = 1
     OPT_SERIALIZE_DATACLASS = 2
     OPT_SERIALIZE_NUMPY = 4
@@ -29,10 +31,10 @@ except ImportError:
 
     from json import JSONDecodeError  # type: ignore
 
-    def dumps(  # type: ignore[misc]
+    def dumps(
         obj: Any,
         /,
-        default: Optional[Callable[[Any], Any]] = None,
+        default: DefaultFunc = None,
         option: int = 0,
     ) -> bytes:
         # for now, don't do anything for this case because `json.dumps`
