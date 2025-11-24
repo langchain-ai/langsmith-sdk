@@ -148,48 +148,46 @@ def evaluate(
 
     Args:
         target (TARGET_T | Runnable | EXPERIMENT_T | Tuple[EXPERIMENT_T, EXPERIMENT_T]):
-            The target system or experiment(s) to evaluate. Can be a function
-            that takes a dict and returns a dict, a langchain Runnable, an
+            The target system or experiment(s) to evaluate.
+
+            Can be a function that takes a dict and returns a `dict`, a langchain `Runnable`, an
             existing experiment ID, or a two-tuple of experiment IDs.
-        data (DATA_T): The dataset to evaluate on. Can be a dataset name, a list of
-            examples, or a generator of examples.
+        data (DATA_T): The dataset to evaluate on.
+
+            Can be a dataset name, a list of examples, or a generator of examples.
         evaluators (Sequence[EVALUATOR_T] | Sequence[COMPARATIVE_EVALUATOR_T] | None):
             A list of evaluators to run on each example. The evaluator signature
-            depends on the target type. Default to None.
+            depends on the target type.
         summary_evaluators (Sequence[SUMMARY_EVALUATOR_T] | None): A list of summary
-            evaluators to run on the entire dataset. Should not be specified if
-            comparing two existing experiments. Defaults to None.
+            evaluators to run on the entire dataset.
+
+            Should not be specified if comparing two existing experiments.
         metadata (dict | None): Metadata to attach to the experiment.
-            Defaults to None.
         experiment_prefix (str | None): A prefix to provide for your experiment name.
-            Defaults to None.
         description (str | None): A free-form text description for the experiment.
         max_concurrency (int | None): The maximum number of concurrent
-            evaluations to run. If None then no limit is set. If 0 then no concurrency.
-            Defaults to 0.
+            evaluations to run.
+
+            If `None` then no limit is set. If `0` then no concurrency.
         client (langsmith.Client | None): The LangSmith client to use.
-            Defaults to None.
         blocking (bool): Whether to block until the evaluation is complete.
-            Defaults to True.
         num_repetitions (int): The number of times to run the evaluation.
             Each item in the dataset will be run and evaluated this many times.
-            Defaults to 1.
         experiment (schemas.TracerSession | None): An existing experiment to
-            extend. If provided, experiment_prefix is ignored. For advanced
-            usage only. Should not be specified if target is an existing experiment or
-            two-tuple fo experiments.
-        load_nested (bool): Whether to load all child runs for the experiment.
-            Default is to only load the top-level root runs. Should only be specified
-            when target is an existing experiment or two-tuple of experiments.
-        randomize_order (bool): Whether to randomize the order of the outputs for each
-            evaluation. Default is False. Should only be specified when target is a
-            two-tuple of existing experiments.
-        error_handling (str, default="log"): How to handle individual run errors. 'log'
-            will trace the runs with the error message as part of the experiment,
-            'ignore' will not count the run as part of the experiment at all.
+            extend.
+
+            If provided, `experiment_prefix` is ignored.
+
+            For advanced usage only. Should not be specified if target is an existing
+            experiment or two-tuple fo experiments.
+        error_handling (str, default="log"): How to handle individual run errors.
+
+            `'log'` will trace the runs with the error message as part of the
+            experiment, `'ignore'` will not count the run as part of the experiment at
+            all.
 
     Returns:
-        ExperimentResults: If target is a function, Runnable, or existing experiment.
+        ExperimentResults: If target is a function, `Runnable`, or existing experiment.
         ComparativeExperimentResults: If target is a two-tuple of existing experiments.
 
     Examples:
@@ -316,7 +314,7 @@ def evaluate(
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
 
-    .. versionchanged:: 0.2.0
+    !!! warning "Behavior changed in `langsmith` 0.2.0"
 
         'max_concurrency' default updated from None (no limit on concurrency)
         to 0 (no concurrency at all).
@@ -453,27 +451,30 @@ def evaluate_existing(
 
     Args:
         experiment (Union[str, uuid.UUID]): The identifier of the experiment to evaluate.
-        data (DATA_T): The data to use for evaluation.
         evaluators (Optional[Sequence[EVALUATOR_T]]): Optional sequence of evaluators to use for individual run evaluation.
         summary_evaluators (Optional[Sequence[SUMMARY_EVALUATOR_T]]): Optional sequence of evaluators
             to apply over the entire dataset.
         metadata (Optional[dict]): Optional metadata to include in the evaluation results.
         max_concurrency (int | None): The maximum number of concurrent
-            evaluations to run. If None then no limit is set. If 0 then no concurrency.
-            Defaults to 0.
+            evaluations to run.
+
+            If `None` then no limit is set. If `0` then no concurrency.
         client (Optional[langsmith.Client]): Optional Langsmith client to use for evaluation.
         load_nested: Whether to load all child runs for the experiment.
+
             Default is to only load the top-level root runs.
         blocking (bool): Whether to block until evaluation is complete.
 
     Returns:
-        ExperimentResults: The evaluation results.
+        The evaluation results.
 
     Environment:
-        - LANGSMITH_TEST_CACHE: If set, API calls will be cached to disk to save time and
-            cost during testing. Recommended to commit the cache files to your repository
-            for faster CI/CD runs.
-            Requires the 'langsmith[vcr]' package to be installed.
+        - `LANGSMITH_TEST_CACHE`: If set, API calls will be cached to disk to save time and
+            cost during testing.
+
+            Recommended to commit the cache files to your repository for faster CI/CD runs.
+
+            Requires the `'langsmith[vcr]'` package to be installed.
 
     Examples:
         Define your evaluators
@@ -676,21 +677,17 @@ def evaluate_comparative(
         evaluators (Sequence[COMPARATIVE_EVALUATOR_T]):
             A list of evaluators to run on each example.
         experiment_prefix (Optional[str]): A prefix to provide for your experiment name.
-            Defaults to None.
         description (Optional[str]): A free-form text description for the experiment.
         max_concurrency (int): The maximum number of concurrent evaluations to run.
-            Defaults to 5.
         client (Optional[langsmith.Client]): The LangSmith client to use.
-            Defaults to None.
         metadata (Optional[dict]): Metadata to attach to the experiment.
-            Defaults to None.
         load_nested (bool): Whether to load all child runs for the experiment.
+
             Default is to only load the top-level root runs.
         randomize_order (bool): Whether to randomize the order of the outputs for each evaluation.
-            Default is False.
 
     Returns:
-        ComparativeExperimentResults: The results of the comparative evaluation.
+        The results of the comparative evaluation.
 
     Examples:
         Suppose you want to compare two prompts to see which one is more effective.
@@ -1308,7 +1305,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         experiment_prefix (Optional[str]): The prefix for the experiment name.
         metadata (Optional[dict]): Additional metadata for the experiment.
         client (Optional[langsmith.Client]): The Langsmith client used for
-             the experiment.
+            the experiment.
         evaluation_results (Optional[Iterable[EvaluationResults]]): The evaluation
             sresults for the experiment.
         summary_results (Optional[Iterable[EvaluationResults]]): The aggregate results
@@ -1358,7 +1355,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
 
         This is only in the case that an attachment is going to be used by more
         than 1 callable (target + evaluators). In that case we keep a single copy
-        of the attachment data in self._attachment_raw_data_dict, and create
+        of the attachment data in `self._attachment_raw_data_dict`, and create
         readers from that data. This makes it so that we don't have to keep
         copies of the same data in memory, instead we can just create readers
         from the same data.
@@ -1528,7 +1525,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             )
 
     def get_summary_scores(self) -> dict[str, list[dict]]:
-        """If summary_evaluators were applied, consume and return the results."""
+        """If `summary_evaluators` were applied, consume and return the results."""
         if self._summary_results is None:
             return {"results": []}
         # Consume the generator

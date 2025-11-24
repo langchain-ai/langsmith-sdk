@@ -17,9 +17,9 @@ def configure(
     project_name: Optional[str] = None,
     SpanProcessor: Optional[type] = None,
 ) -> bool:
-    """Configure OpenTelemetry with LangSmith as the TracerProvider.
+    """Configure OpenTelemetry with LangSmith as the `TracerProvider`.
 
-    Initializes OpenTelemetry with LangSmith as the primary and only TracerProvider.
+    Initializes OpenTelemetry with LangSmith as the primary and only `TracerProvider`.
 
     Usage:
         >>> from langsmith.integrations.otel import configure
@@ -31,16 +31,20 @@ def configure(
         >>> # Set LANGSMITH_API_KEY and LANGSMITH_PROJECT
         >>> configure()  # Will use env vars  # doctest: +SKIP
 
-    WARNING: This function is only for when LangSmith is your ONLY OpenTelemetry source.
-    It sets the global TracerProvider, which can only be done once per application.
+    !!! warning
+
+        This function is only for when LangSmith is your ONLY OpenTelemetry source.
+
+        It sets the global TracerProvider, which can only be done once per application.
 
     This function will fail if OpenTelemetry is already initialized with another
-    TracerProvider (you cannot override an existing TracerProvider).
+    `TracerProvider` (you cannot override an existing `TracerProvider`).
 
-    If you already have OpenTelemetry set up with other tools, use OtelSpanProcessor
+    If you already have OpenTelemetry set up with other tools, use `OtelSpanProcessor`
     directly to add LangSmith to your existing setup:
 
-    Example for adding LangSmith to existing OTEL setup:
+    !!! example "Adding LangSmith to existing OTEL setup"
+        ```python
         from opentelemetry import trace
         from langsmith.integrations.otel.processor import OtelSpanProcessor
 
@@ -49,18 +53,18 @@ def configure(
 
         # Add LangSmith processor to existing provider
         langsmith_processor = OtelSpanProcessor(
-            api_key="your-api-key",
-            project="your-project"
+            api_key="your-api-key", project="your-project"
         )
         provider.add_span_processor(langsmith_processor)
+        ```
 
     Args:
-        api_key: LangSmith API key. Defaults to LANGSMITH_API_KEY env var.
-        project_name: Project name. Defaults to LANGSMITH_PROJECT env var.
-        SpanProcessor: Span processor class to use. Defaults to BatchSpanProcessor.
+        api_key: LangSmith API key. Defaults to `LANGSMITH_API_KEY` env var.
+        project_name: Project name. Defaults to `LANGSMITH_PROJECT` env var.
+        SpanProcessor: Span processor class to use. Defaults to `BatchSpanProcessor`.
 
     Returns:
-        True if configuration succeeded, False if TracerProvider already exists.
+        `True` if configuration succeeded, `False` if `TracerProvider` already exists.
     """
     try:
         from opentelemetry import trace

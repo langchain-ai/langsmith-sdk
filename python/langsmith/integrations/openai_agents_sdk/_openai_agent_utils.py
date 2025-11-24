@@ -21,7 +21,7 @@ if HAVE_AGENTS:
         Args:
             data: The data to parse (can be inputs or outputs)
             default_key: The default key to use if data is not a dict
-                ("input" or "output")
+                (`'input'` or `'output'`)
 
         Returns:
             Dict: The parsed data as a dictionary

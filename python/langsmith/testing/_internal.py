@@ -116,51 +116,51 @@ def test(*args: Any, **kwargs: Any) -> Callable:
         Callable: The decorated test function.
 
     Environment:
-        - LANGSMITH_TEST_CACHE: If set, API calls will be cached to disk to
+        - `LANGSMITH_TEST_CACHE`: If set, API calls will be cached to disk to
             save time and costs during testing. Recommended to commit the
             cache files to your repository for faster CI/CD runs.
             Requires the 'langsmith[vcr]' package to be installed.
-        - LANGSMITH_TEST_TRACKING: Set this variable to the path of a directory
+        - `LANGSMITH_TEST_TRACKING`: Set this variable to the path of a directory
             to enable caching of test results. This is useful for re-running tests
-             without re-executing the code. Requires the 'langsmith[vcr]' package.
+            without re-executing the code. Requires the 'langsmith[vcr]' package.
 
     Example:
         For basic usage, simply decorate a test function with `@pytest.mark.langsmith`.
         Under the hood this will call the `test` method:
 
-        .. code-block:: python
+        ```python
+        import pytest
 
-            import pytest
 
-
-            # Equivalently can decorate with `test` directly:
-            # from langsmith import test
-            # @test
-            @pytest.mark.langsmith
-            def test_addition():
-                assert 3 + 4 == 7
+        # Equivalently can decorate with `test` directly:
+        # from langsmith import test
+        # @test
+        @pytest.mark.langsmith
+        def test_addition():
+            assert 3 + 4 == 7
+        ```
 
 
         Any code that is traced (such as those traced using `@traceable`
         or `wrap_*` functions) will be traced within the test case for
         improved visibility and debugging.
 
-        .. code-block:: python
-
-            import pytest
-            from langsmith import traceable
-
-
-            @traceable
-            def generate_numbers():
-                return 3, 4
+        ```python
+        import pytest
+        from langsmith import traceable
 
 
-            @pytest.mark.langsmith
-            def test_nested():
-                # Traced code will be included in the test case
-                a, b = generate_numbers()
-                assert a + b == 7
+        @traceable
+        def generate_numbers():
+            return 3, 4
+
+
+        @pytest.mark.langsmith
+        def test_nested():
+            # Traced code will be included in the test case
+            a, b = generate_numbers()
+            assert a + b == 7
+        ```
 
         LLM calls are expensive! Cache requests by setting
         `LANGSMITH_TEST_CACHE=path/to/cache`. Check in these files to speed up
@@ -174,162 +174,162 @@ def test(*args: Any, **kwargs: Any) -> Callable:
         Caching is faster if you install libyaml. See
         https://vcrpy.readthedocs.io/en/latest/installation.html#speed for more details.
 
-        .. code-block:: python
+        ```python
+        # os.environ["LANGSMITH_TEST_CACHE"] = "tests/cassettes"
+        import openai
+        import pytest
+        from langsmith import wrappers
 
-            # os.environ["LANGSMITH_TEST_CACHE"] = "tests/cassettes"
-            import openai
-            import pytest
-            from langsmith import wrappers
-
-            oai_client = wrappers.wrap_openai(openai.Client())
+        oai_client = wrappers.wrap_openai(openai.Client())
 
 
-            @pytest.mark.langsmith
-            def test_openai_says_hello():
-                # Traced code will be included in the test case
-                response = oai_client.chat.completions.create(
-                    model="gpt-3.5-turbo",
-                    messages=[
-                        {"role": "system", "content": "You are a helpful assistant."},
-                        {"role": "user", "content": "Say hello!"},
-                    ],
-                )
-                assert "hello" in response.choices[0].message.content.lower()
+        @pytest.mark.langsmith
+        def test_openai_says_hello():
+            # Traced code will be included in the test case
+            response = oai_client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a helpful assistant."},
+                    {"role": "user", "content": "Say hello!"},
+                ],
+            )
+            assert "hello" in response.choices[0].message.content.lower()
+        ```
 
         You can also specify which hosts to cache by using the `cached_hosts` parameter.
         This is useful when you only want to cache specific API calls:
 
-        .. code-block:: python
-
-            @pytest.mark.langsmith(cached_hosts=["https://api.openai.com"])
-            def test_openai_with_selective_caching():
-                # Only OpenAI API calls will be cached, other API calls will not
-                # be cached
-                response = oai_client.chat.completions.create(
-                    model="gpt-3.5-turbo",
-                    messages=[
-                        {"role": "system", "content": "You are a helpful assistant."},
-                        {"role": "user", "content": "Say hello!"},
-                    ],
-                )
-                assert "hello" in response.choices[0].message.content.lower()
+        ```python
+        @pytest.mark.langsmith(cached_hosts=["https://api.openai.com"])
+        def test_openai_with_selective_caching():
+            # Only OpenAI API calls will be cached, other API calls will not
+            # be cached
+            response = oai_client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a helpful assistant."},
+                    {"role": "user", "content": "Say hello!"},
+                ],
+            )
+            assert "hello" in response.choices[0].message.content.lower()
+        ```
 
         LLMs are stochastic. Naive assertions are flakey. You can use langsmith's
         `expect` to score and make approximate assertions on your results.
 
-        .. code-block:: python
+        ```python
+        import pytest
+        from langsmith import expect
 
-            import pytest
-            from langsmith import expect
 
-
-            @pytest.mark.langsmith
-            def test_output_semantically_close():
-                response = oai_client.chat.completions.create(
-                    model="gpt-3.5-turbo",
-                    messages=[
-                        {"role": "system", "content": "You are a helpful assistant."},
-                        {"role": "user", "content": "Say hello!"},
-                    ],
-                )
-                # The embedding_distance call logs the embedding distance to LangSmith
-                expect.embedding_distance(
-                    prediction=response.choices[0].message.content,
-                    reference="Hello!",
-                    # The following optional assertion logs a
-                    # pass/fail score to LangSmith
-                    # and raises an AssertionError if the assertion fails.
-                ).to_be_less_than(1.0)
-                # Compute damerau_levenshtein distance
-                expect.edit_distance(
-                    prediction=response.choices[0].message.content,
-                    reference="Hello!",
-                    # And then log a pass/fail score to LangSmith
-                ).to_be_less_than(1.0)
+        @pytest.mark.langsmith
+        def test_output_semantically_close():
+            response = oai_client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a helpful assistant."},
+                    {"role": "user", "content": "Say hello!"},
+                ],
+            )
+            # The embedding_distance call logs the embedding distance to LangSmith
+            expect.embedding_distance(
+                prediction=response.choices[0].message.content,
+                reference="Hello!",
+                # The following optional assertion logs a
+                # pass/fail score to LangSmith
+                # and raises an AssertionError if the assertion fails.
+            ).to_be_less_than(1.0)
+            # Compute damerau_levenshtein distance
+            expect.edit_distance(
+                prediction=response.choices[0].message.content,
+                reference="Hello!",
+                # And then log a pass/fail score to LangSmith
+            ).to_be_less_than(1.0)
+        ```
 
         The `@test` decorator works natively with pytest fixtures.
         The values will populate the "inputs" of the corresponding example in LangSmith.
 
-        .. code-block:: python
-
-            import pytest
-
-
-            @pytest.fixture
-            def some_input():
-                return "Some input"
+        ```python
+        import pytest
 
 
-            @pytest.mark.langsmith
-            def test_with_fixture(some_input: str):
-                assert "input" in some_input
+        @pytest.fixture
+        def some_input():
+            return "Some input"
 
-        You can still use pytest.parametrize() as usual to run multiple test cases
+
+        @pytest.mark.langsmith
+        def test_with_fixture(some_input: str):
+            assert "input" in some_input
+        ```
+
+        You can still use `pytest.parametrize()` as usual to run multiple test cases
         using the same test function.
 
-        .. code-block:: python
+        ```python
+        import pytest
 
-            import pytest
 
-
-            @pytest.mark.langsmith(output_keys=["expected"])
-            @pytest.mark.parametrize(
-                "a, b, expected",
-                [
-                    (1, 2, 3),
-                    (3, 4, 7),
-                ],
-            )
-            def test_addition_with_multiple_inputs(a: int, b: int, expected: int):
-                assert a + b == expected
+        @pytest.mark.langsmith(output_keys=["expected"])
+        @pytest.mark.parametrize(
+            "a, b, expected",
+            [
+                (1, 2, 3),
+                (3, 4, 7),
+            ],
+        )
+        def test_addition_with_multiple_inputs(a: int, b: int, expected: int):
+            assert a + b == expected
+        ```
 
         By default, each test case will be assigned a consistent, unique identifier
         based on the function name and module. You can also provide a custom identifier
         using the `id` argument:
 
-        .. code-block:: python
+        ```python
+        import pytest
+        import uuid
 
-            import pytest
-            import uuid
-
-            example_id = uuid.uuid4()
+        example_id = uuid.uuid4()
 
 
-            @pytest.mark.langsmith(id=str(example_id))
-            def test_multiplication():
-                assert 3 * 4 == 12
+        @pytest.mark.langsmith(id=str(example_id))
+        def test_multiplication():
+            assert 3 * 4 == 12
+        ```
 
         By default, all test inputs are saved as "inputs" to a dataset.
         You can specify the `output_keys` argument to persist those keys
         within the dataset's "outputs" fields.
 
-        .. code-block:: python
-
-            import pytest
-
-
-            @pytest.fixture
-            def expected_output():
-                return "input"
+        ```python
+        import pytest
 
 
-            @pytest.mark.langsmith(output_keys=["expected_output"])
-            def test_with_expected_output(some_input: str, expected_output: str):
-                assert expected_output in some_input
+        @pytest.fixture
+        def expected_output():
+            return "input"
+
+
+        @pytest.mark.langsmith(output_keys=["expected_output"])
+        def test_with_expected_output(some_input: str, expected_output: str):
+            assert expected_output in some_input
+        ```
 
 
         To run these tests, use the pytest CLI. Or directly run the test functions.
 
-        .. code-block:: python
-
-            test_output_semantically_close()
-            test_addition()
-            test_nested()
-            test_with_fixture("Some input")
-            test_with_expected_output("Some input", "Some")
-            test_multiplication()
-            test_openai_says_hello()
-            test_addition_with_multiple_inputs(1, 2, 3)
+        ```python
+        test_output_semantically_close()
+        test_addition()
+        test_nested()
+        test_with_fixture("Some input")
+        test_with_expected_output("Some input", "Some")
+        test_multiplication()
+        test_openai_says_hello()
+        test_addition_with_multiple_inputs(1, 2, 3)
+        ```
     """
     cached_hosts = kwargs.pop("cached_hosts", None)
     cache_dir = ls_utils.get_cache_dir(kwargs.pop("cache", None))
@@ -1139,7 +1139,7 @@ unit = test
 def log_inputs(inputs: dict, /) -> None:
     """Log run inputs from within a pytest test run.
 
-    .. warning::
+    !!! warning
 
         This API is in beta and might change in future versions.
 
@@ -1149,17 +1149,17 @@ def log_inputs(inputs: dict, /) -> None:
         inputs: Inputs to log.
 
     Example:
-        .. code-block:: python
+        ```python
+        from langsmith import testing as t
 
-            from langsmith import testing as t
 
-
-            @pytest.mark.langsmith
-            def test_foo() -> None:
-                x = 0
-                y = 1
-                t.log_inputs({"x": x, "y": y})
-                assert foo(x, y) == 2
+        @pytest.mark.langsmith
+        def test_foo() -> None:
+            x = 0
+            y = 1
+            t.log_inputs({"x": x, "y": y})
+            assert foo(x, y) == 2
+        ```
     """
     if ls_utils.test_tracking_is_disabled():
         logger.info("LANGSMITH_TEST_TRACKING is set to 'false'. Skipping log_inputs.")
@@ -1180,7 +1180,7 @@ def log_inputs(inputs: dict, /) -> None:
 def log_outputs(outputs: dict, /) -> None:
     """Log run outputs from within a pytest test run.
 
-    .. warning::
+    !!! warning
 
         This API is in beta and might change in future versions.
 
@@ -1190,18 +1190,18 @@ def log_outputs(outputs: dict, /) -> None:
         outputs: Outputs to log.
 
     Example:
-        .. code-block:: python
+        ```python
+        from langsmith import testing as t
 
-            from langsmith import testing as t
 
-
-            @pytest.mark.langsmith
-            def test_foo() -> None:
-                x = 0
-                y = 1
-                result = foo(x, y)
-                t.log_outputs({"foo": result})
-                assert result == 2
+        @pytest.mark.langsmith
+        def test_foo() -> None:
+            x = 0
+            y = 1
+            result = foo(x, y)
+            t.log_outputs({"foo": result})
+            assert result == 2
+        ```
     """
     if ls_utils.test_tracking_is_disabled():
         logger.info("LANGSMITH_TEST_TRACKING is set to 'false'. Skipping log_outputs.")
@@ -1223,28 +1223,28 @@ def log_outputs(outputs: dict, /) -> None:
 def log_reference_outputs(reference_outputs: dict, /) -> None:
     """Log example reference outputs from within a pytest test run.
 
-    .. warning::
+    !!! warning
 
         This API is in beta and might change in future versions.
 
     Should only be used in pytest tests decorated with @pytest.mark.langsmith.
 
     Args:
-        outputs: Reference outputs to log.
+        reference_outputs: Reference outputs to log.
 
     Example:
-        .. code-block:: python
+        ```python
+        from langsmith import testing
 
-            from langsmith import testing
 
-
-            @pytest.mark.langsmith
-            def test_foo() -> None:
-                x = 0
-                y = 1
-                expected = 2
-                testing.log_reference_outputs({"foo": expected})
-                assert foo(x, y) == expected
+        @pytest.mark.langsmith
+        def test_foo() -> None:
+            x = 0
+            y = 1
+            expected = 2
+            testing.log_reference_outputs({"foo": expected})
+            assert foo(x, y) == expected
+        ```
     """
     if ls_utils.test_tracking_is_disabled():
         logger.info(
@@ -1272,7 +1272,7 @@ def log_feedback(
 ) -> None:
     """Log run feedback from within a pytest test run.
 
-    .. warning::
+    !!! warning
 
         This API is in beta and might change in future versions.
 
@@ -1285,20 +1285,20 @@ def log_feedback(
         kwargs: Any other Client.create_feedback args.
 
     Example:
-        .. code-block:: python
+        ```python
+        import pytest
+        from langsmith import testing as t
 
-            import pytest
-            from langsmith import testing as t
 
-
-            @pytest.mark.langsmith
-            def test_foo() -> None:
-                x = 0
-                y = 1
-                expected = 2
-                result = foo(x, y)
-                t.log_feedback(key="right_type", score=isinstance(result, int))
-                assert result == expected
+        @pytest.mark.langsmith
+        def test_foo() -> None:
+            x = 0
+            y = 1
+            expected = 2
+            result = foo(x, y)
+            t.log_feedback(key="right_type", score=isinstance(result, int))
+            assert result == expected
+        ```
     """
     if ls_utils.test_tracking_is_disabled():
         logger.info("LANGSMITH_TEST_TRACKING is set to 'false'. Skipping log_feedback.")
@@ -1346,7 +1346,7 @@ def trace_feedback(
 ) -> Generator[Optional[run_trees.RunTree], None, None]:
     """Trace the computation of a pytest run feedback as its own run.
 
-    .. warning::
+    !!! warning
 
         This API is in beta and might change in future versions.
 
@@ -1354,55 +1354,55 @@ def trace_feedback(
         name: Feedback run name. Defaults to "Feedback".
 
     Example:
-        .. code-block:: python
+        ```python
+        import openai
+        import pytest
 
-            import openai
-            import pytest
+        from langsmith import testing as t
+        from langsmith import wrappers
 
-            from langsmith import testing as t
-            from langsmith import wrappers
-
-            oai_client = wrappers.wrap_openai(openai.Client())
+        oai_client = wrappers.wrap_openai(openai.Client())
 
 
-            @pytest.mark.langsmith
-            def test_openai_says_hello():
-                # Traced code will be included in the test case
-                text = "Say hello!"
-                response = oai_client.chat.completions.create(
+        @pytest.mark.langsmith
+        def test_openai_says_hello():
+            # Traced code will be included in the test case
+            text = "Say hello!"
+            response = oai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are a helpful assistant."},
+                    {"role": "user", "content": text},
+                ],
+            )
+            t.log_inputs({"text": text})
+            t.log_outputs({"response": response.choices[0].message.content})
+            t.log_reference_outputs({"response": "hello!"})
+
+            # Use this context manager to trace any steps used for generating evaluation
+            # feedback separately from the main application logic
+            with t.trace_feedback():
+                grade = oai_client.chat.completions.create(
                     model="gpt-4o-mini",
                     messages=[
-                        {"role": "system", "content": "You are a helpful assistant."},
-                        {"role": "user", "content": text},
+                        {
+                            "role": "system",
+                            "content": "Return 1 if 'hello' is in the user message and 0 otherwise.",
+                        },
+                        {
+                            "role": "user",
+                            "content": response.choices[0].message.content,
+                        },
                     ],
                 )
-                t.log_inputs({"text": text})
-                t.log_outputs({"response": response.choices[0].message.content})
-                t.log_reference_outputs({"response": "hello!"})
+                # Make sure to log relevant feedback within the context for the
+                # trace to be associated with this feedback.
+                t.log_feedback(
+                    key="llm_judge", score=float(grade.choices[0].message.content)
+                )
 
-                # Use this context manager to trace any steps used for generating evaluation
-                # feedback separately from the main application logic
-                with t.trace_feedback():
-                    grade = oai_client.chat.completions.create(
-                        model="gpt-4o-mini",
-                        messages=[
-                            {
-                                "role": "system",
-                                "content": "Return 1 if 'hello' is in the user message and 0 otherwise.",
-                            },
-                            {
-                                "role": "user",
-                                "content": response.choices[0].message.content,
-                            },
-                        ],
-                    )
-                    # Make sure to log relevant feedback within the context for the
-                    # trace to be associated with this feedback.
-                    t.log_feedback(
-                        key="llm_judge", score=float(grade.choices[0].message.content)
-                    )
-
-                assert "hello" in response.choices[0].message.content.lower()
+            assert "hello" in response.choices[0].message.content.lower()
+        ```
     """  # noqa: E501
     if ls_utils.test_tracking_is_disabled():
         logger.info("LANGSMITH_TEST_TRACKING is set to 'false'. Skipping log_feedback.")

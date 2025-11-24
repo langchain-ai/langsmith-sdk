@@ -1,7 +1,7 @@
 """Hook-based tool tracing for Claude Agent SDK.
 
 This module provides hook handlers that traces tool calls by intercepting
-PreToolUse and PostToolUse events.
+`PreToolUse` and `PostToolUse` events.
 """
 
 import logging
@@ -38,7 +38,7 @@ async def pre_tool_use_hook(
     """Trace tool execution before it starts.
 
     Args:
-        input_data: Contains tool_name, tool_input, session_id
+        input_data: Contains `tool_name`, `tool_input`, `session_id`
         tool_use_id: Unique identifier for this tool invocation
         context: Hook context (currently contains only signal)
 
@@ -92,13 +92,13 @@ async def post_tool_use_hook(
     """Trace tool execution after it completes.
 
     Args:
-        input_data: Contains tool_name, tool_input, tool_response, session_id, etc.
+        input_data: Contains `tool_name`, `tool_input`, `tool_response`, `session_id`, etc.
         tool_use_id: Unique identifier for this tool invocation
         context: Hook context (currently contains only signal)
 
     Returns:
-        Hook output (empty dict by default)
-    """
+        Hook output (empty `dict` by default)
+    """  # noqa: E501
     if not tool_use_id:
         logger.debug("PostToolUse hook called without tool_use_id, skipping trace")
         return {}

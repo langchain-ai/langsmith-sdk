@@ -41,7 +41,7 @@ def extract_usage_metadata(usage: Any) -> dict[str, Any]:
 
 
 def sum_anthropic_tokens(usage_metadata: dict[str, Any]) -> dict[str, int]:
-    """Sum Anthropic cache tokens into input_tokens and add total_tokens."""
+    """Sum Anthropic cache tokens into `input_tokens` and add `total_tokens`."""
     details = usage_metadata.get("input_token_details") or {}
     cache_read = details.get(
         "cache_read", usage_metadata.get("cache_read_input_tokens")
