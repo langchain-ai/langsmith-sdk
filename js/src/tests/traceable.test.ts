@@ -2537,7 +2537,7 @@ test("traceable should ignore undefined id", async () => {
   ).toBe(true);
 });
 
-test("integration: traceable with nested calls and reroot replicas", async () => {
+test("traceable with nested calls and reroot replicas", async () => {
   const { client, callSpy } = mockClient({
     callerOptions: { maxRetries: 0 },
     timeout_ms: 30_000,
@@ -2595,7 +2595,7 @@ test("integration: traceable with nested calls and reroot replicas", async () =>
   );
 
   // Wait for async operations
-  await new Promise((resolve) => setTimeout(resolve, 100));
+  await client.awaitPendingTraceBatches();
 
   // Verify API calls were made to both replicas
   expect(callSpy.mock.calls.length).toBeGreaterThan(0);
