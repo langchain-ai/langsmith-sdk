@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { jest } from "@jest/globals";
 import { v4 as uuidv4 } from "uuid";
 import { RunTree, RunTreeConfig } from "../run_trees.js";
@@ -2607,25 +2608,93 @@ test("integration: traceable with nested calls and reroot replicas", async () =>
   // Verify API calls were made to both replicas
   expect(callSpy.mock.calls.length).toBeGreaterThan(0);
 
-  const calledUrls = callSpy.mock.calls.map((call) => call[0] as string);
-  const childCalls = calledUrls.filter((url) =>
-    url.includes("child.example.com")
+  // Parse the POST bodies to verify rerooting behavior
+  const childPostCalls = callSpy.mock.calls.filter(
+    (call) =>
+      (call[0] as string).includes("child.example.com") &&
+      (call[0] as string).includes("/runs") &&
+      (call[1] as any)?.method === "POST"
   );
-  const fullCalls = calledUrls.filter((url) =>
-    url.includes("full.example.com")
+  const fullPostCalls = callSpy.mock.calls.filter(
+    (call) =>
+      (call[0] as string).includes("full.example.com") &&
+      (call[0] as string).includes("/runs") &&
+      (call[1] as any)?.method === "POST"
   );
 
-  expect(childCalls.length).toBeGreaterThan(0);
-  expect(fullCalls.length).toBeGreaterThan(0);
+  expect(childPostCalls.length).toBeGreaterThan(0);
+  expect(fullPostCalls.length).toBeGreaterThan(0);
 
   // Verify correct API keys
-  const childHeaders = callSpy.mock.calls
-    .filter((call) => (call[0] as string).includes("child.example.com"))
-    .map((call) => (call[1] as any)?.headers?.["x-api-key"]);
-  const fullHeaders = callSpy.mock.calls
-    .filter((call) => (call[0] as string).includes("full.example.com"))
-    .map((call) => (call[1] as any)?.headers?.["x-api-key"]);
+  childPostCalls.forEach((call) => {
+    const headers = (call[1] as any)?.headers;
+    expect(headers["x-api-key"]).toBe("child-key");
+  });
+  fullPostCalls.forEach((call) => {
+    const headers = (call[1] as any)?.headers;
+    expect(headers["x-api-key"]).toBe("full-key");
+  });
 
-  childHeaders.forEach((key) => expect(key).toBe("child-key"));
-  fullHeaders.forEach((key) => expect(key).toBe("full-key"));
+  // Use the tree utility to parse runs from mock calls
+  const childTree = getAssumedTreeFromCalls(childPostCalls);
+  const fullTree = getAssumedTreeFromCalls(fullPostCalls);
+
+  // Find outerTask and middleTask in both replicas to verify rerooting behavior
+  const childOuterTask = Object.values(childTree.data).find(
+    (run) => run.name === "outerTask"
+  );
+  const fullOuterTask = Object.values(fullTree.data).find(
+    (run) => run.name === "outerTask"
+  );
+  const childMiddleTask = Object.values(childTree.data).find(
+    (run) => run.name === "middleTask"
+  );
+  const fullMiddleTask = Object.values(fullTree.data).find(
+    (run) => run.name === "middleTask"
+  );
+
+  expect(childOuterTask).toBeDefined();
+  expect(fullOuterTask).toBeDefined();
+  expect(childMiddleTask).toBeDefined();
+  expect(fullMiddleTask).toBeDefined();
+
+  // Type assertions after checking they're defined
+  if (
+    !childOuterTask ||
+    !fullOuterTask ||
+    !childMiddleTask ||
+    !fullMiddleTask
+  ) {
+    throw new Error("Expected runs to be defined");
+  }
+
+  // With reroot=true on outerTask, outerTask should NOT have a parent_run_id in child workspace
+  // (it becomes the root of a new tree)
+  expect(childOuterTask.parent_run_id).toBeUndefined();
+
+  // middleTask should STILL have a parent_run_id in the rerooted workspace
+  // (reroot doesn't propagate to children - we want a new tree, not all root runs)
+  expect(childMiddleTask.parent_run_id).toBeDefined();
+
+  // In the full workspace without reroot, both maintain their normal parent relationships
+  expect(fullMiddleTask.parent_run_id).toBeDefined();
+
+  // Verify tree structure is maintained in rerooted workspace
+  // Should have 4 runs total: outerTask, middleTask, innerTask x2
+  expect(Object.keys(childTree.data).length).toBe(4);
+  expect(Object.keys(fullTree.data).length).toBe(4);
+
+  // Verify the tree edges in rerooted workspace form a proper tree
+  // outerTask (root) -> middleTask -> innerTask (x2)
+  expect(childTree.edges.length).toBe(3); // 3 parent-child relationships
+
+  // Verify trace_id is updated for rerooted runs
+  // In rerooted workspace, all runs should have trace_id pointing to outerTask
+  expect(childOuterTask.trace_id).toBe(childOuterTask.id);
+  expect(childMiddleTask.trace_id).toBe(childOuterTask.id);
+
+  // Verify dotted_order is properly reset for the root run
+  // Rerooted run should have only one segment in dotted_order
+  const childOuterSegments = childOuterTask.dotted_order?.split(".") || [];
+  expect(childOuterSegments.length).toBe(1);
 }, 180_000);

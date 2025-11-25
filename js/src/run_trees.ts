@@ -344,11 +344,18 @@ export class RunTree implements BaseRun {
   public createChild(config: RunTreeConfig): RunTree {
     const child_execution_order = this.child_execution_order + 1;
 
+    // Remove 'reroot' from replicas when passing to children
+    // Reroot should only apply to the run where it's explicitly configured, not propagate down
+    const childReplicas = this.replicas?.map((replica) => {
+      const { reroot, ...rest } = replica;
+      return rest;
+    });
+
     const child = new RunTree({
       ...config,
       parent_run: this,
       project_name: this.project_name,
-      replicas: this.replicas,
+      replicas: childReplicas,
       client: this.client,
       tracingEnabled: this.tracingEnabled,
       execution_order: child_execution_order,
@@ -529,8 +536,24 @@ export class RunTree implements BaseRun {
   ): RunCreate & { id: string } {
     const baseRun = this._convertToCreate(this, runtimeEnv, excludeChildRuns);
 
-    if (reroot && distributedParentId) {
-      this._sliceParentId(distributedParentId, baseRun);
+    if (reroot) {
+      if (distributedParentId) {
+        // If we have a distributed parent ID, slice at that point
+        this._sliceParentId(distributedParentId, baseRun);
+      } else {
+        // If no distributed parent ID, simply make this run a root run
+        // by removing parent_run_id and resetting trace info
+        baseRun.parent_run_id = undefined;
+        // Keep the current run as the trace root
+        if (baseRun.dotted_order) {
+          // Reset dotted order to just this run
+          const segs = baseRun.dotted_order.split(".");
+          if (segs.length > 0) {
+            baseRun.dotted_order = segs[segs.length - 1];
+            baseRun.trace_id = baseRun.id;
+          }
+        }
+      }
     }
 
     return {
