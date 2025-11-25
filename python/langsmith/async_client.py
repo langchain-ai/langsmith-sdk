@@ -436,6 +436,7 @@ class AsyncClient:
             "id": run_ids,
             "trace": trace_id,
             "select": select,
+            "limit": limit,
             **kwargs,
         }
         if project_ids:
