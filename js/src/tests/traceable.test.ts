@@ -2538,17 +2538,9 @@ test("traceable should ignore undefined id", async () => {
 });
 
 test("integration: traceable with nested calls and reroot replicas", async () => {
-  const callSpy = jest.fn<typeof fetch>().mockResolvedValue({
-    ok: true,
-    text: () => Promise.resolve(""),
-  } as Response);
-
-  const client = new Client({
-    autoBatchTracing: false,
+  const { client, callSpy } = mockClient({
     callerOptions: { maxRetries: 0 },
     timeout_ms: 30_000,
-    apiKey: "test-key",
-    fetchImplementation: callSpy,
   });
 
   // Define nested traceable functions - innermost ones don't need replicas
