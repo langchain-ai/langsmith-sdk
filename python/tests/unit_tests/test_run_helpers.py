@@ -671,7 +671,7 @@ def test_traceable_project_name() -> None:
             return a + b + d
 
         my_function(1, 2, 3)
-        # Inspect the mock_calls and asser tthat "my foo project" is in
+        # Inspect the mock_calls and assert that "my foo project" is in
         # the session_name arg of the body
         mock_calls = _get_calls(mock_client_, minimum=1)
         assert 1 <= len(mock_calls) <= 2

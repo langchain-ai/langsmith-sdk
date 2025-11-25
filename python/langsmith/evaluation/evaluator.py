@@ -644,7 +644,7 @@ def comparison_evaluator(
         Union[_COMPARISON_OUTPUT, Awaitable[_COMPARISON_OUTPUT]],
     ],
 ) -> DynamicComparisonRunEvaluator:
-    """Create a comaprison evaluator from a function."""
+    """Create a comparison evaluator from a function."""
     return DynamicComparisonRunEvaluator(func)
 
 
