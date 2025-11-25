@@ -2548,7 +2548,7 @@ test("traceable with nested calls and reroot replicas", async () => {
     async (input: string) => {
       return `processed: ${input}`;
     },
-    { name: "innerTask", client }
+    { name: "innerTask", client, tracingEnabled: true }
   );
 
   const middleTask = traceable(
@@ -2557,7 +2557,7 @@ test("traceable with nested calls and reroot replicas", async () => {
       const result2 = await innerTask(`${input}-b`);
       return `${result1}, ${result2}`;
     },
-    { name: "middleTask", client }
+    { name: "middleTask", client, tracingEnabled: true }
   );
 
   // Outer task has replicas configured directly
@@ -2569,6 +2569,7 @@ test("traceable with nested calls and reroot replicas", async () => {
     {
       name: "outerTask",
       client,
+      tracingEnabled: true,
       replicas: [
         {
           projectName: "child-workspace-rerooted",
