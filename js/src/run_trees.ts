@@ -22,6 +22,7 @@ import { getLangSmithEnvironmentVariable } from "./utils/env.js";
 import { warnOnce } from "./utils/warn.js";
 import { uuid7FromTime } from "./utils/_uuid.js";
 
+const TIMESTAMP_LENGTH = 36;
 function stripNonAlphanumeric(input: string) {
   return input.replace(/[-:.]/g, "");
 }
@@ -80,6 +81,7 @@ export interface RunTreeConfig {
   dotted_order?: string;
   attachments?: Attachments;
   replicas?: Replica[];
+  distributedParentId?: string;
 }
 
 export interface RunnableConfigLike {
@@ -134,6 +136,7 @@ type WriteReplica = {
   projectName?: string;
   updates?: KVMap | undefined;
   fromEnv?: boolean;
+  reroot?: boolean;
 };
 type Replica = ProjectReplica | WriteReplica;
 
@@ -237,6 +240,7 @@ export class RunTree implements BaseRun {
    */
   replicas?: WriteReplica[];
 
+  distributedParentId?: string;
   private _serialized_start_time: string | undefined;
 
   constructor(originalConfig: RunTreeConfig | RunTree) {
@@ -475,12 +479,59 @@ export class RunTree implements BaseRun {
     };
   }
 
+  private _sliceParentId(
+    parentId: string,
+    runDict: RunCreate & { id: string }
+  ): void {
+    /**
+     * Slice the parent id from dotted order.
+     * Additionally check if the current run is a child of the parent. If so, update
+     * the parent_run_id to undefined, and set the trace id to the new root id after
+     * parent_id.
+     */
+    if (runDict.dotted_order) {
+      const segs = runDict.dotted_order.split(".");
+      let startIdx: number | null = null;
+
+      // Find the index of the parent ID in the dotted order
+      for (let idx = 0; idx < segs.length; idx++) {
+        const segId = segs[idx].slice(-TIMESTAMP_LENGTH);
+        if (segId === parentId) {
+          startIdx = idx;
+          break;
+        }
+      }
+
+      if (startIdx !== null) {
+        // Trim segments to start after parent_id (exclusive)
+        const trimmedSegs = segs.slice(startIdx + 1);
+        // Rebuild dotted_order
+        runDict.dotted_order = trimmedSegs.join(".");
+        if (trimmedSegs.length > 0) {
+          runDict.trace_id = trimmedSegs[0].slice(-TIMESTAMP_LENGTH);
+        } else {
+          runDict.trace_id = runDict.id;
+        }
+      }
+    }
+
+    if (runDict.parent_run_id === parentId) {
+      // We've found the new root node.
+      runDict.parent_run_id = undefined;
+    }
+  }
   private _remapForProject(
     projectName: string,
     runtimeEnv?: RuntimeEnvironment,
-    excludeChildRuns = true
+    excludeChildRuns = true,
+    reroot = false,
+    distributedParentId?: string
   ): RunCreate & { id: string } {
     const baseRun = this._convertToCreate(this, runtimeEnv, excludeChildRuns);
+
+    if (reroot && distributedParentId) {
+      this._sliceParentId(distributedParentId, baseRun);
+    }
 
     return {
       ...baseRun,
@@ -492,12 +543,14 @@ export class RunTree implements BaseRun {
     try {
       const runtimeEnv = getRuntimeEnvironment();
       if (this.replicas && this.replicas.length > 0) {
-        for (const { projectName, apiKey, apiUrl, workspaceId } of this
+        for (const { projectName, apiKey, apiUrl, workspaceId, reroot } of this
           .replicas) {
           const runCreate = this._remapForProject(
             projectName ?? this.project_name,
             runtimeEnv,
-            true
+            true,
+            reroot,
+            this.distributedParentId
           );
           await this.client.createRun(runCreate, {
             apiKey,
@@ -529,9 +582,21 @@ export class RunTree implements BaseRun {
 
   async patchRun(options?: { excludeInputs?: boolean }): Promise<void> {
     if (this.replicas && this.replicas.length > 0) {
-      for (const { projectName, apiKey, apiUrl, workspaceId, updates } of this
-        .replicas) {
-        const runData = this._remapForProject(projectName ?? this.project_name);
+      for (const {
+        projectName,
+        apiKey,
+        apiUrl,
+        workspaceId,
+        updates,
+        reroot,
+      } of this.replicas) {
+        const runData = this._remapForProject(
+          projectName ?? this.project_name,
+          undefined,
+          true,
+          reroot,
+          this.distributedParentId
+        );
         const updatePayload: RunUpdate = {
           id: runData.id,
           name: runData.name,
@@ -724,7 +789,10 @@ export class RunTree implements BaseRun {
       config.replicas = baggage.replicas;
     }
 
-    return new RunTree(config);
+    const runTree = new RunTree(config);
+    // Set the distributed parent ID to this run's ID for rerooting
+    runTree.distributedParentId = runTree.id;
+    return runTree;
   }
 
   toHeaders(headers?: HeadersLike) {

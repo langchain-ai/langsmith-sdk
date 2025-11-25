@@ -2535,3 +2535,97 @@ test("traceable should ignore undefined id", async () => {
     )
   ).toBe(true);
 });
+
+test("integration: traceable with nested calls and reroot replicas", async () => {
+  const callSpy = jest.fn<typeof fetch>().mockResolvedValue({
+    ok: true,
+    text: () => Promise.resolve(""),
+  } as Response);
+
+  const client = new Client({
+    autoBatchTracing: false,
+    callerOptions: { maxRetries: 0 },
+    timeout_ms: 30_000,
+    apiKey: "test-key",
+    fetchImplementation: callSpy,
+  });
+
+  // Define nested traceable functions - innermost ones don't need replicas
+  const innerTask = traceable(
+    async (input: string) => {
+      return `processed: ${input}`;
+    },
+    { name: "innerTask", client }
+  );
+
+  const middleTask = traceable(
+    async (input: string) => {
+      const result1 = await innerTask(`${input}-a`);
+      const result2 = await innerTask(`${input}-b`);
+      return `${result1}, ${result2}`;
+    },
+    { name: "middleTask", client }
+  );
+
+  // Outer task has replicas configured directly
+  const outerTask = traceable(
+    async (input: string) => {
+      const result = await middleTask(input);
+      return `final: ${result}`;
+    },
+    {
+      name: "outerTask",
+      client,
+      replicas: [
+        {
+          projectName: "child-workspace-rerooted",
+          apiKey: "child-key",
+          apiUrl: "https://child.example.com",
+          reroot: true,
+        },
+        {
+          projectName: "full-trace-workspace",
+          apiKey: "full-key",
+          apiUrl: "https://full.example.com",
+          reroot: false,
+        },
+      ],
+    }
+  );
+
+  // Execute the nested traceable calls
+  const result = await outerTask("test-input");
+
+  // Verify the result
+  expect(result).toBe(
+    "final: processed: test-input-a, processed: test-input-b"
+  );
+
+  // Wait for async operations
+  await new Promise((resolve) => setTimeout(resolve, 100));
+
+  // Verify API calls were made to both replicas
+  expect(callSpy.mock.calls.length).toBeGreaterThan(0);
+
+  const calledUrls = callSpy.mock.calls.map((call) => call[0] as string);
+  const childCalls = calledUrls.filter((url) =>
+    url.includes("child.example.com")
+  );
+  const fullCalls = calledUrls.filter((url) =>
+    url.includes("full.example.com")
+  );
+
+  expect(childCalls.length).toBeGreaterThan(0);
+  expect(fullCalls.length).toBeGreaterThan(0);
+
+  // Verify correct API keys
+  const childHeaders = callSpy.mock.calls
+    .filter((call) => (call[0] as string).includes("child.example.com"))
+    .map((call) => (call[1] as any)?.headers?.["x-api-key"]);
+  const fullHeaders = callSpy.mock.calls
+    .filter((call) => (call[0] as string).includes("full.example.com"))
+    .map((call) => (call[1] as any)?.headers?.["x-api-key"]);
+
+  childHeaders.forEach((key) => expect(key).toBe("child-key"));
+  fullHeaders.forEach((key) => expect(key).toBe("full-key"));
+}, 180_000);
