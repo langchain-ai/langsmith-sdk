@@ -2694,7 +2694,6 @@ test("traceable with nested calls and reroot replicas", async () => {
 
 test("child traceable with own replicas config", async () => {
   const { client, callSpy } = mockClient();
-  const mainProject = process.env.LANGSMITH_PROJECT ?? "default";
 
   const grandchild = traceable(
     async () => {
@@ -2713,7 +2712,7 @@ test("child traceable with own replicas config", async () => {
     {
       replicas: [
         {
-          projectName: mainProject,
+          projectName: "mainProject",
         },
         {
           projectName: "subrun",
