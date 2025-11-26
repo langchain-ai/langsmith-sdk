@@ -2,7 +2,7 @@
 // @ts-nocheck
 // p-retry code vendored to avoid import issues
 // Source: https://github.com/sindresorhus/p-retry
-import isNetworkError from "is-network-error";
+import isNetworkError from "../is-network-error/index.js";
 
 function validateRetries(retries) {
   if (typeof retries === "number") {
