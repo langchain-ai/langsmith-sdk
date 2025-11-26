@@ -2695,6 +2695,9 @@ test("traceable with nested calls and reroot replicas", async () => {
 test("child traceable with own replicas config", async () => {
   const { client, callSpy } = mockClient();
 
+  const defaultProject = "mainProject";
+  const replicaProject = "subrun";
+
   const grandchild = traceable(
     async () => {
       return "grandchild";
@@ -2713,10 +2716,10 @@ test("child traceable with own replicas config", async () => {
     {
       replicas: [
         {
-          projectName: "mainProject",
+          projectName: defaultProject,
         },
         {
-          projectName: "subrun",
+          projectName: replicaProject,
           reroot: true,
         },
       ],
@@ -2734,6 +2737,7 @@ test("child traceable with own replicas config", async () => {
       name: "parent",
       client,
       tracingEnabled: true,
+      project_name: defaultProject,
     }
   );
 
@@ -2750,7 +2754,7 @@ test("child traceable with own replicas config", async () => {
   );
 
   // Parent should only go to default project (no replicas)
-  // Child and grandchild should go to both "main-project" and "subrun"
+  // Child and grandchild should go to both "main-project" and replicaProject
   // Total: 1 (parent) + 2 (child) + 2 (grandchild) = 5 POST calls
   expect(allPostCalls.length).toBe(5);
 
@@ -2771,11 +2775,10 @@ test("child traceable with own replicas config", async () => {
   });
 
   // Count runs by project
-  const defaultProject = runs[0].session_name; // Get whatever the default project is
   const defaultProjectRuns = runs.filter(
     (r) => r.session_name === defaultProject
   );
-  const subrunRuns = runs.filter((r) => r.session_name === "subrun");
+  const subrunRuns = runs.filter((r) => r.session_name === replicaProject);
 
   // We should have: 1 parent in default, 2 children in default, 2 grandchildren in default
   // Plus: 1 child in subrun, 1 grandchild in subrun
@@ -2791,15 +2794,15 @@ test("child traceable with own replicas config", async () => {
   const childRuns = runs.filter((r) => r.name === "child");
   expect(childRuns.length).toBe(2);
   const childProjects = childRuns.map((r) => r.session_name).sort();
-  expect(childProjects).toEqual([defaultProject, "subrun"].sort());
+  expect(childProjects).toEqual([defaultProject, replicaProject].sort());
 
   // Grandchild also goes to BOTH (inherits child's replicas)
   const grandchildRuns = runs.filter((r) => r.name === "grandchild");
   expect(grandchildRuns.length).toBe(2);
   const grandchildProjects = grandchildRuns.map((r) => r.session_name).sort();
-  expect(grandchildProjects).toEqual([defaultProject, "subrun"].sort());
+  expect(grandchildProjects).toEqual([defaultProject, replicaProject].sort());
 
-  // Verify reroot behavior in "subrun" project
+  // Verify reroot behavior in replicaProject project
   const subrunChild = subrunRuns.find((r) => r.name === "child");
   const subrunGrandchild = subrunRuns.find((r) => r.name === "grandchild");
 
@@ -2819,17 +2822,6 @@ test("child traceable with own replicas config", async () => {
 
   // Grandchild should have child as parent (inherited replicas, reroot doesn't propagate)
   expect(subrunGrandchild.parent_run_id).toBeDefined();
-
-  console.log("Subrun child:", {
-    id: subrunChild.id,
-    trace_id: subrunChild.trace_id,
-    parent_run_id: subrunChild.parent_run_id,
-  });
-  console.log("Subrun grandchild:", {
-    id: subrunGrandchild.id,
-    trace_id: subrunGrandchild.trace_id,
-    parent_run_id: subrunGrandchild.parent_run_id,
-  });
 
   // Grandchild's trace_id should match child's id (same trace in rerooted tree)
   // This is the key fix - with ID remapping, grandchild gets the remapped child's id as trace_id
