@@ -20,3 +20,46 @@ export const printVitestReporterTable = async (files: any, ctx: any) => {
     }
   }
 };
+
+// Plucked from Vitest 4.x internal types
+export interface VitestTestModule {
+  children: {
+    allTests: () => {
+      name: string;
+      result: () => { state: "pending" | "passed" | "failed" | "skipped" };
+      diagnostic: () => { duration: number };
+    }[];
+  };
+  state: () => "skipped" | "passed" | "failed";
+  relativeModuleId: string;
+}
+
+export const printVitestTestModulesReporterTable = async (
+  testModules: {
+    children: {
+      allTests: () => {
+        name: string;
+        result: () => { state: "pending" | "passed" | "failed" | "skipped" };
+        diagnostic: () => { duration: number };
+      }[];
+    };
+    state: () => "skipped" | "passed" | "failed";
+    relativeModuleId: string;
+  }[]
+) => {
+  for (const testModule of testModules) {
+    const tests = [...testModule.children.allTests()].map((test) => {
+      return {
+        title: test.name,
+        status: test.result()?.state ?? "skipped",
+        duration: Math.round(test.diagnostic()?.duration ?? 0),
+      };
+    });
+
+    await printReporterTable(
+      testModule.relativeModuleId,
+      tests,
+      testModule.state()
+    );
+  }
+};
