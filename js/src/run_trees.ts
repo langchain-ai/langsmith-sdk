@@ -635,7 +635,7 @@ export class RunTree implements BaseRun {
     let newDottedOrder: string | undefined;
     if (baseRun.dotted_order) {
       const segs = baseRun.dotted_order.split(".");
-      const remappedSegs = segs.map((seg, idx) => {
+      const remappedSegs = segs.map((seg) => {
         // Extract the UUID from the segment (last TIMESTAMP_LENGTH characters)
         const segId = seg.slice(-TIMESTAMP_LENGTH);
         const remappedId = uuidv5(
