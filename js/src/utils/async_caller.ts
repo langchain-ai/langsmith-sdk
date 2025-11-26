@@ -1,4 +1,4 @@
-import pRetry from "p-retry";
+import pRetry from "../utils/p-retry/index.js";
 import PQueueMod from "p-queue";
 import { _getFetchImplementation } from "../singletons/fetch.js";
 
