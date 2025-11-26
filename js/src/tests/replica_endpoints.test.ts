@@ -758,6 +758,7 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
           name: "grandchild",
           client,
           project_name: mainProject,
+          tracingEnabled: true,
         }
       );
 
@@ -780,6 +781,7 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
           name: "child",
           client,
           project_name: mainProject,
+          tracingEnabled: true,
         }
       );
 
@@ -793,6 +795,7 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
           name: "parent",
           client,
           project_name: mainProject,
+          tracingEnabled: true,
         }
       );
 

@@ -2702,6 +2702,7 @@ test("child traceable with own replicas config", async () => {
     {
       name: "grandchild",
       client,
+      tracingEnabled: true,
     }
   );
   const child = traceable(
@@ -2721,6 +2722,7 @@ test("child traceable with own replicas config", async () => {
       ],
       name: "child",
       client,
+      tracingEnabled: true,
     }
   );
   const parent = traceable(
@@ -2731,6 +2733,7 @@ test("child traceable with own replicas config", async () => {
     {
       name: "parent",
       client,
+      tracingEnabled: true,
     }
   );
 
