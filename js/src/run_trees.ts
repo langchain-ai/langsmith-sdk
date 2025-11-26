@@ -21,8 +21,11 @@ import { getDefaultProjectName } from "./utils/project.js";
 import { getLangSmithEnvironmentVariable } from "./utils/env.js";
 import { warnOnce } from "./utils/warn.js";
 import { uuid7FromTime } from "./utils/_uuid.js";
+import { v5 as uuidv5 } from "uuid";
 
 const TIMESTAMP_LENGTH = 36;
+// DNS namespace for UUID v5 (same as Python's uuid.NAMESPACE_DNS)
+const UUID_NAMESPACE_DNS = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
 function stripNonAlphanumeric(input: string) {
   return input.replace(/[-:.]/g, "");
 }
@@ -344,12 +347,14 @@ export class RunTree implements BaseRun {
   public createChild(config: RunTreeConfig): RunTree {
     const child_execution_order = this.child_execution_order + 1;
 
-    // Remove 'reroot' from replicas when passing to children
+    // Handle replicas: if child has its own replicas, use those; otherwise inherit parent's (with reroot stripped)
     // Reroot should only apply to the run where it's explicitly configured, not propagate down
-    const childReplicas = this.replicas?.map((replica) => {
+    const inheritedReplicas = this.replicas?.map((replica) => {
       const { reroot, ...rest } = replica;
       return rest;
     });
+
+    const childReplicas = config.replicas ?? inheritedReplicas;
 
     const child = new RunTree({
       ...config,
@@ -536,6 +541,15 @@ export class RunTree implements BaseRun {
   ): RunCreate & { id: string } {
     const baseRun = this._convertToCreate(this, runtimeEnv, excludeChildRuns);
 
+    // Skip remapping if project name is the same
+    if (projectName === this.project_name) {
+      return {
+        ...baseRun,
+        session_name: projectName,
+      };
+    }
+
+    // Apply reroot logic before ID remapping
     if (reroot) {
       if (distributedParentId) {
         // If we have a distributed parent ID, slice at that point
@@ -556,8 +570,90 @@ export class RunTree implements BaseRun {
       }
     }
 
+    // If this run has a parent and the parent was rerooted for this replica,
+    // update trace_id and dotted_order to reflect the new trace hierarchy
+    if (!reroot && baseRun.parent_run_id && this.parent_run) {
+      // Check if parent has reroot=true for this specific replica
+      const parentHasReroot = this.parent_run.replicas?.some(
+        (replica) => replica.projectName === projectName && replica.reroot
+      );
+      if (parentHasReroot) {
+        // Parent becomes the trace root in this replica, so set our trace_id
+        // to the parent's ID (before remapping)
+        baseRun.trace_id = baseRun.parent_run_id;
+
+        // Also slice the dotted_order to start from the parent
+        // This ensures child runs of a rerooted parent have correct hierarchy
+        if (baseRun.dotted_order) {
+          const segs = baseRun.dotted_order.split(".");
+          let parentIdx: number | null = null;
+
+          // Find the parent's segment in dotted_order
+          for (let idx = 0; idx < segs.length; idx++) {
+            const segId = segs[idx].slice(-TIMESTAMP_LENGTH);
+            if (segId === baseRun.parent_run_id) {
+              parentIdx = idx;
+              break;
+            }
+          }
+
+          if (parentIdx !== null) {
+            // Keep segments from parent onwards
+            const trimmedSegs = segs.slice(parentIdx);
+            baseRun.dotted_order = trimmedSegs.join(".");
+          }
+        }
+      }
+    }
+
+    // Remap IDs for the replica using uuid5 (deterministic)
+    // This ensures consistency across runs in the same replica
+    const oldId = baseRun.id;
+    const newId = uuidv5(`${oldId}:${projectName}`, UUID_NAMESPACE_DNS);
+
+    // Remap trace_id
+    let newTraceId: string;
+    if (baseRun.trace_id) {
+      newTraceId = uuidv5(
+        `${baseRun.trace_id}:${projectName}`,
+        UUID_NAMESPACE_DNS
+      );
+    } else {
+      newTraceId = newId;
+    }
+
+    // Remap parent_run_id
+    let newParentId: string | undefined;
+    if (baseRun.parent_run_id) {
+      newParentId = uuidv5(
+        `${baseRun.parent_run_id}:${projectName}`,
+        UUID_NAMESPACE_DNS
+      );
+    }
+
+    // Remap dotted_order segments
+    let newDottedOrder: string | undefined;
+    if (baseRun.dotted_order) {
+      const segs = baseRun.dotted_order.split(".");
+      const remappedSegs = segs.map((seg, idx) => {
+        // Extract the UUID from the segment (last TIMESTAMP_LENGTH characters)
+        const segId = seg.slice(-TIMESTAMP_LENGTH);
+        const remappedId = uuidv5(
+          `${segId}:${projectName}`,
+          UUID_NAMESPACE_DNS
+        );
+        // Replace the UUID part while keeping the timestamp prefix
+        return seg.slice(0, -TIMESTAMP_LENGTH) + remappedId;
+      });
+      newDottedOrder = remappedSegs.join(".");
+    }
+
     return {
       ...baseRun,
+      id: newId,
+      trace_id: newTraceId,
+      parent_run_id: newParentId,
+      dotted_order: newDottedOrder,
       session_name: projectName,
     };
   }
