@@ -554,7 +554,7 @@ export class RunTree implements BaseRun {
   }
 
   private _setReplicaTraceRoot(replicaKey: string, traceRootId: string): void {
-    // Set the replica trace root in context vars on this run
+    // Set the replica trace root in context vars on this run and all descendants
     const contextVars =
       _LC_CONTEXT_VARIABLES_KEY in this
         ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -571,20 +571,6 @@ export class RunTree implements BaseRun {
 
     // Recursively update all descendants
     for (const child of this.child_runs) {
-      const childContextVars =
-        _LC_CONTEXT_VARIABLES_KEY in child
-          ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (child as any)[_LC_CONTEXT_VARIABLES_KEY]
-          : {};
-
-      const childReplicaTraceRoots: Record<string, string> =
-        childContextVars[_REPLICA_TRACE_ROOTS_KEY] ?? {};
-      childReplicaTraceRoots[replicaKey] = traceRootId;
-
-      childContextVars[_REPLICA_TRACE_ROOTS_KEY] = childReplicaTraceRoots;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (child as any)[_LC_CONTEXT_VARIABLES_KEY] = childContextVars;
-
       child._setReplicaTraceRoot(replicaKey, traceRootId);
     }
   }
@@ -627,6 +613,11 @@ export class RunTree implements BaseRun {
           }
         }
       }
+
+      // Store this run's original ID in context vars so descendants know the new trace root
+      // We store the original ID (before remapping) so it can be found in dotted_order
+      const replicaKey = getReplicaKey({ projectName, apiUrl, apiKey });
+      this._setReplicaTraceRoot(replicaKey, baseRun.id);
     }
 
     // If an ancestor was rerooted for this replica, update trace_id and dotted_order
@@ -712,14 +703,6 @@ export class RunTree implements BaseRun {
         return seg.slice(0, -TIMESTAMP_LENGTH) + remappedId;
       });
       newDottedOrder = remappedSegs.join(".");
-    }
-
-    // If this run has reroot=true, store this run's original ID in context vars
-    // so descendants know what the new trace root is for this replica
-    // We store the original ID (before remapping) so it can be found in dotted_order
-    if (reroot) {
-      const replicaKey = getReplicaKey({ projectName, apiUrl, apiKey });
-      this._setReplicaTraceRoot(replicaKey, oldId);
     }
 
     return {
