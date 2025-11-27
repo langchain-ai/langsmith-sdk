@@ -572,15 +572,26 @@ export class RunTree implements BaseRun {
     }
   }
 
-  private _remapForProject(
-    projectName: string,
-    runtimeEnv?: RuntimeEnvironment,
-    excludeChildRuns = true,
-    reroot = false,
-    distributedParentId?: string,
-    apiUrl?: string,
-    apiKey?: string
-  ): RunCreate & { id: string } {
+  private _remapForProject(params: {
+    projectName: string;
+    runtimeEnv?: RuntimeEnvironment;
+    excludeChildRuns?: boolean;
+    reroot?: boolean;
+    distributedParentId?: string;
+    apiUrl?: string;
+    apiKey?: string;
+    workspaceId?: string;
+  }): RunCreate & { id: string } {
+    const {
+      projectName,
+      runtimeEnv,
+      excludeChildRuns = true,
+      reroot = false,
+      distributedParentId,
+      apiUrl,
+      apiKey,
+      workspaceId,
+    } = params;
     const baseRun = this._convertToCreate(this, runtimeEnv, excludeChildRuns);
 
     // Skip remapping if project name is the same
@@ -613,7 +624,12 @@ export class RunTree implements BaseRun {
 
       // Store this run's original ID in context vars so descendants know the new trace root
       // We store the original ID (before remapping) so it can be found in dotted_order
-      const replicaKey = getReplicaKey({ projectName, apiUrl, apiKey });
+      const replicaKey = getReplicaKey({
+        projectName,
+        apiUrl,
+        apiKey,
+        workspaceId,
+      });
       this._setReplicaTraceRoot(replicaKey, baseRun.id);
     }
 
@@ -626,7 +642,12 @@ export class RunTree implements BaseRun {
           string,
           string
         >) ?? {};
-      const replicaKey = getReplicaKey({ projectName, apiUrl, apiKey });
+      const replicaKey = getReplicaKey({
+        projectName,
+        apiUrl,
+        apiKey,
+        workspaceId,
+      });
       ancestorRerootedTraceId = replicaTraceRoots[replicaKey];
 
       if (ancestorRerootedTraceId) {
@@ -716,15 +737,16 @@ export class RunTree implements BaseRun {
       if (this.replicas && this.replicas.length > 0) {
         for (const { projectName, apiKey, apiUrl, workspaceId, reroot } of this
           .replicas) {
-          const runCreate = this._remapForProject(
-            projectName ?? this.project_name,
+          const runCreate = this._remapForProject({
+            projectName: projectName ?? this.project_name,
             runtimeEnv,
-            true,
+            excludeChildRuns: true,
             reroot,
-            this.distributedParentId,
+            distributedParentId: this.distributedParentId,
             apiUrl,
-            apiKey
-          );
+            apiKey,
+            workspaceId,
+          });
           await this.client.createRun(runCreate, {
             apiKey,
             apiUrl,
@@ -763,15 +785,16 @@ export class RunTree implements BaseRun {
         updates,
         reroot,
       } of this.replicas) {
-        const runData = this._remapForProject(
-          projectName ?? this.project_name,
-          undefined,
-          true,
+        const runData = this._remapForProject({
+          projectName: projectName ?? this.project_name,
+          runtimeEnv: undefined,
+          excludeChildRuns: true,
           reroot,
-          this.distributedParentId,
+          distributedParentId: this.distributedParentId,
           apiUrl,
-          apiKey
-        );
+          apiKey,
+          workspaceId,
+        });
         const updatePayload: RunUpdate = {
           id: runData.id,
           name: runData.name,

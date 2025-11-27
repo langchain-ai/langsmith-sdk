@@ -193,13 +193,13 @@ test("reroot functionality slices dotted order correctly", () => {
   child2.replicas = [replicaConfig];
 
   // Use private method to remap for project with reroot
-  const remapped = (child2 as any)._remapForProject(
-    "child-project",
-    undefined,
-    true,
-    true,
-    child1Id
-  );
+  const remapped = (child2 as any)._remapForProject({
+    projectName: "child-project",
+    runtimeEnv: undefined,
+    excludeChildRuns: true,
+    reroot: true,
+    distributedParentId: child1Id,
+  });
 
   // Verify that the dotted order was sliced
   // Original dotted order should have parent -> child1 -> child2
@@ -288,13 +288,13 @@ test("distributed tracing: _remapForProject with reroot", () => {
   child.distributedParentId = parentId;
 
   // Test WITH reroot enabled
-  const remappedWithReroot = (child as any)._remapForProject(
-    "child_project",
-    undefined,
-    true,
-    true, // reroot enabled
-    parentId
-  );
+  const remappedWithReroot = (child as any)._remapForProject({
+    projectName: "child_project",
+    runtimeEnv: undefined,
+    excludeChildRuns: true,
+    reroot: true, // reroot enabled
+    distributedParentId: parentId,
+  });
 
   expect(remappedWithReroot.parent_run_id).toBeUndefined();
   expect(remappedWithReroot.session_name).toBe("child_project");
@@ -303,24 +303,23 @@ test("distributed tracing: _remapForProject with reroot", () => {
   expect(segmentsWithReroot.length).toBe(1);
 
   // Test WITHOUT reroot (should keep parent relationship)
-  const remappedWithoutReroot = (child as any)._remapForProject(
-    "child_project_2",
-    undefined,
-    true,
-    false, // reroot disabled
-    parentId
-  );
+  const remappedWithoutReroot = (child as any)._remapForProject({
+    projectName: "child_project_2",
+    runtimeEnv: undefined,
+    excludeChildRuns: true,
+    reroot: false, // reroot disabled
+    distributedParentId: parentId,
+  });
 
   expect(remappedWithoutReroot.parent_run_id).toBeTruthy();
 
   // Test with no reroot parameter (should keep parent relationship)
-  const remappedNoParam = (child as any)._remapForProject(
-    "child_project_3",
-    undefined,
-    true,
-    undefined,
-    parentId
-  );
+  const remappedNoParam = (child as any)._remapForProject({
+    projectName: "child_project_3",
+    runtimeEnv: undefined,
+    excludeChildRuns: true,
+    distributedParentId: parentId,
+  });
 
   expect(remappedNoParam.parent_run_id).toBeTruthy();
 });
@@ -360,13 +359,13 @@ test("distributed tracing: fromHeaders sets distributedParentId correctly", () =
   newRun.distributedParentId = fromHeadersRun!.id;
 
   // Remap with reroot enabled
-  const remapped = (newRun as any)._remapForProject(
-    "child_project",
-    undefined,
-    true,
-    true,
-    newRun.distributedParentId
-  );
+  const remapped = (newRun as any)._remapForProject({
+    projectName: "child_project",
+    runtimeEnv: undefined,
+    excludeChildRuns: true,
+    reroot: true,
+    distributedParentId: newRun.distributedParentId,
+  });
 
   expect(remapped.parent_run_id).toBeUndefined();
 
