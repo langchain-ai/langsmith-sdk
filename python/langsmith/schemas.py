@@ -27,7 +27,6 @@ try:
         StrictBool,
         StrictFloat,
         StrictInt,
-        conlist,
     )
 except ImportError:
     from pydantic import (  # type: ignore[assignment]
@@ -37,7 +36,6 @@ except ImportError:
         StrictBool,
         StrictFloat,
         StrictInt,
-        conlist,
     )
 
 from pathlib import Path
@@ -1361,8 +1359,8 @@ class FeedbackFormulaCreate(BaseModel):
     session_id: Optional[UUID] = None
     feedback_key: str
     aggregation_type: Literal["sum", "avg"]
-    formula_parts: conlist(
-        FeedbackFormulaWeightedVariable, min_items=1, max_items=50
+    formula_parts: list[FeedbackFormulaWeightedVariable] = Field(
+        ..., min_items=1, max_items=50
     )
 
 
@@ -1371,8 +1369,8 @@ class FeedbackFormulaUpdate(BaseModel):
 
     feedback_key: str
     aggregation_type: Literal["sum", "avg"]
-    formula_parts: conlist(
-        FeedbackFormulaWeightedVariable, min_items=1, max_items=50
+    formula_parts: list[FeedbackFormulaWeightedVariable] = Field(
+        ..., min_items=1, max_items=50
     )
 
 
