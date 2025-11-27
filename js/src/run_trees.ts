@@ -565,7 +565,8 @@ export class RunTree implements BaseRun {
 
     setContextVar(this, _REPLICA_TRACE_ROOTS_KEY, replicaTraceRoots);
 
-    // Recursively update all descendants
+    // Recursively update all descendants to avoid race conditions
+    // around run tree creation vs processing time
     for (const child of this.child_runs) {
       child._setReplicaTraceRoot(replicaKey, traceRootId);
     }
