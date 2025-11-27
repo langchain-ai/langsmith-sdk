@@ -15,6 +15,7 @@ import {
   _LC_CONTEXT_VARIABLES_KEY,
   _REPLICA_TRACE_ROOTS_KEY,
 } from "./singletons/constants.js";
+import { getContextVar, setContextVar } from "./utils/context_vars.js";
 import {
   RuntimeEnvironment,
   getEnvironmentVariable,
@@ -555,19 +556,14 @@ export class RunTree implements BaseRun {
 
   private _setReplicaTraceRoot(replicaKey: string, traceRootId: string): void {
     // Set the replica trace root in context vars on this run and all descendants
-    const contextVars =
-      _LC_CONTEXT_VARIABLES_KEY in this
-        ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (this as any)[_LC_CONTEXT_VARIABLES_KEY]
-        : {};
-
     const replicaTraceRoots: Record<string, string> =
-      contextVars[_REPLICA_TRACE_ROOTS_KEY] ?? {};
+      (getContextVar(this, _REPLICA_TRACE_ROOTS_KEY) as Record<
+        string,
+        string
+      >) ?? {};
     replicaTraceRoots[replicaKey] = traceRootId;
 
-    contextVars[_REPLICA_TRACE_ROOTS_KEY] = replicaTraceRoots;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (this as any)[_LC_CONTEXT_VARIABLES_KEY] = contextVars;
+    setContextVar(this, _REPLICA_TRACE_ROOTS_KEY, replicaTraceRoots);
 
     // Recursively update all descendants
     for (const child of this.child_runs) {
@@ -624,13 +620,11 @@ export class RunTree implements BaseRun {
     // to reflect the new trace hierarchy. This is tracked via context variables.
     let ancestorRerootedTraceId: string | undefined;
     if (!reroot) {
-      const contextVars =
-        _LC_CONTEXT_VARIABLES_KEY in this
-          ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (this as any)[_LC_CONTEXT_VARIABLES_KEY]
-          : {};
       const replicaTraceRoots: Record<string, string> =
-        contextVars[_REPLICA_TRACE_ROOTS_KEY] ?? {};
+        (getContextVar(this, _REPLICA_TRACE_ROOTS_KEY) as Record<
+          string,
+          string
+        >) ?? {};
       const replicaKey = getReplicaKey({ projectName, apiUrl, apiKey });
       ancestorRerootedTraceId = replicaTraceRoots[replicaKey];
 
