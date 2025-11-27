@@ -486,3 +486,90 @@ test("integration: reroot with replicas makes correct API calls", async () => {
   // The actual rerooting logic is already tested in unit tests
   // This integration test just verifies the API calls are made to the correct endpoints
 }, 180_000);
+
+test("reroot propagates to grandchildren via context variables", () => {
+  // Create a 4-level hierarchy: great-grandparent -> grandparent -> parent -> child
+  const greatGrandparent = new RunTree({
+    name: "GreatGrandparent",
+    id: "00000000-0000-0000-0000-000000000001",
+    project_name: "main-project",
+  });
+
+  const grandparent = greatGrandparent.createChild({
+    name: "Grandparent",
+    id: "00000000-0000-0000-0000-000000000002",
+  });
+
+  // Parent has reroot=true for a replica
+  const parent = grandparent.createChild({
+    name: "Parent",
+    id: "00000000-0000-0000-0000-000000000003",
+    replicas: [
+      {
+        projectName: "replica-project",
+        reroot: true,
+      },
+    ],
+  });
+
+  const child = parent.createChild({
+    name: "Child",
+    id: "00000000-0000-0000-0000-000000000004",
+  });
+
+  const grandchild = child.createChild({
+    name: "Grandchild",
+    id: "00000000-0000-0000-0000-000000000005",
+  });
+
+  // Remap parent for the replica
+  const remappedParent = (parent as any)._remapForProject(
+    "replica-project",
+    undefined,
+    true,
+    true
+  );
+
+  // Remap child for the replica (should inherit trace root from context)
+  const remappedChild = (child as any)._remapForProject(
+    "replica-project",
+    undefined,
+    true,
+    false
+  );
+
+  // Remap grandchild for the replica (should also inherit trace root from context)
+  const remappedGrandchild = (grandchild as any)._remapForProject(
+    "replica-project",
+    undefined,
+    true,
+    false
+  );
+
+  // Parent should be the trace root (its own ID after remapping)
+  expect(remappedParent.trace_id).toBe(remappedParent.id);
+  expect(remappedParent.parent_run_id).toBeUndefined();
+
+  // Child's trace_id should point to parent (before remapping, then remapped)
+  // The original parent ID gets remapped, so we need to check it points to the remapped parent
+  const expectedParentRemappedId = remappedParent.id;
+  expect(remappedChild.trace_id).toBe(expectedParentRemappedId);
+
+  // Grandchild's trace_id should ALSO point to parent (the rerooted ancestor)
+  expect(remappedGrandchild.trace_id).toBe(expectedParentRemappedId);
+
+  // Verify dotted_order is sliced correctly for both child and grandchild
+  // They should not include great-grandparent or grandparent in their dotted order
+  const parentSegments = remappedParent.dotted_order.split(".");
+  const childSegments = remappedChild.dotted_order.split(".");
+  const grandchildSegments = remappedGrandchild.dotted_order.split(".");
+
+  // Parent should have 1 segment (just itself)
+  expect(parentSegments.length).toBe(1);
+
+  // Child should have 2 segments (parent -> child)
+  expect(childSegments.length).toBe(2);
+
+  // Grandchild should have 3 segments (parent -> child -> grandchild)
+  expect(grandchildSegments.length).toBe(3);
+});
