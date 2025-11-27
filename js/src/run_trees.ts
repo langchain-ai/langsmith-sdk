@@ -513,7 +513,7 @@ export class RunTree implements BaseRun {
 
   private _sliceParentId(
     parentId: string,
-    runDict: RunCreate & { id: string }
+    run: RunCreate & { id: string }
   ): void {
     /**
      * Slice the parent id from dotted order.
@@ -521,8 +521,8 @@ export class RunTree implements BaseRun {
      * the parent_run_id to undefined, and set the trace id to the new root id after
      * parent_id.
      */
-    if (runDict.dotted_order) {
-      const segs = runDict.dotted_order.split(".");
+    if (run.dotted_order) {
+      const segs = run.dotted_order.split(".");
       let startIdx: number | null = null;
 
       // Find the index of the parent ID in the dotted order
@@ -538,18 +538,18 @@ export class RunTree implements BaseRun {
         // Trim segments to start after parent_id (exclusive)
         const trimmedSegs = segs.slice(startIdx + 1);
         // Rebuild dotted_order
-        runDict.dotted_order = trimmedSegs.join(".");
+        run.dotted_order = trimmedSegs.join(".");
         if (trimmedSegs.length > 0) {
-          runDict.trace_id = trimmedSegs[0].slice(-TIMESTAMP_LENGTH);
+          run.trace_id = trimmedSegs[0].slice(-TIMESTAMP_LENGTH);
         } else {
-          runDict.trace_id = runDict.id;
+          run.trace_id = run.id;
         }
       }
     }
 
-    if (runDict.parent_run_id === parentId) {
+    if (run.parent_run_id === parentId) {
       // We've found the new root node.
-      runDict.parent_run_id = undefined;
+      run.parent_run_id = undefined;
     }
   }
 
