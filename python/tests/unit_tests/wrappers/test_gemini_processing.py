@@ -243,8 +243,9 @@ class TestProcessGenerateContentResponse:
                         }
                     ],
                     "usage_metadata": {
-                        "prompt_token_count": 5,
+                        "prompt_token_count": 200050,
                         "candidates_token_count": 10,
+                        "cached_content_token_count": 200050,
                     },
                 }
 
@@ -254,7 +255,15 @@ class TestProcessGenerateContentResponse:
         assert result["finish_reason"] == "STOP"
         # usage_metadata is in both run.extra AND result
         assert "usage_metadata" in result
-        assert result["usage_metadata"]["input_tokens"] == 5
+        assert result["usage_metadata"]["input_tokens"] == 200050
+        assert result["usage_metadata"]["input_token_details"]["over_200k"] == 50
+        assert result["usage_metadata"]["input_token_details"]["cache_read"] == 200050
+        assert (
+            result["usage_metadata"]["input_token_details"]["cache_read_over_200k"]
+            == 50
+        )
+        assert result["usage_metadata"]["output_tokens"] == 10
+        assert result["usage_metadata"]["output_token_details"]["over_200k"] == 0
 
     def test_text_attribute_fallback(self):
         # Mock response with direct text attribute

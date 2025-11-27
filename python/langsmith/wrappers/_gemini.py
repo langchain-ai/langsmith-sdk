@@ -213,10 +213,17 @@ def _create_usage_metadata(gemini_usage_metadata: dict) -> UsageMetadata:
     input_token_details: dict = {}
     if cached_content_token_count:
         input_token_details["cache_read"] = cached_content_token_count
+        input_token_details["cache_read_over_200k"] = max(
+            0, cached_content_token_count - 200000
+        )
+        input_token_details["over_200k"] = max(0, prompt_token_count - 200000)
 
     output_token_details: dict = {}
     if thoughts_token_count:
         output_token_details["reasoning"] = thoughts_token_count
+
+    if candidates_token_count:
+        output_token_details["over_200k"] = max(0, candidates_token_count - 200000)
 
     return UsageMetadata(
         input_tokens=prompt_token_count,
@@ -349,17 +356,6 @@ def _process_generate_content_response(response: Any) -> dict:
         )
         if usage_metadata:
             usage_dict = _create_usage_metadata(usage_metadata)
-            # Add usage_metadata to both run.extra AND outputs
-            current_run = run_helpers.get_current_run_tree()
-            if current_run:
-                try:
-                    meta = current_run.extra.setdefault("metadata", {}).setdefault(
-                        "usage_metadata", {}
-                    )
-                    meta.update(usage_dict)
-                    current_run.patch()
-                except Exception as e:
-                    logger.warning(f"Failed to update usage metadata: {e}")
 
         # Return in a format that avoids stringification by LangSmith
         if result.get("tool_calls"):
@@ -446,16 +442,7 @@ def _reduce_generate_content_chunks(all_chunks: list) -> dict:
                     }
                 # Add usage_metadata to both run.extra AND outputs
                 usage_metadata = _create_usage_metadata(usage_dict)
-                current_run = run_helpers.get_current_run_tree()
-                if current_run:
-                    try:
-                        meta = current_run.extra.setdefault("metadata", {}).setdefault(
-                            "usage_metadata", {}
-                        )
-                        meta.update(usage_metadata)
-                        current_run.patch()
-                    except Exception as e:
-                        logger.warning(f"Failed to update usage metadata: {e}")
+
         except Exception as e:
             logger.debug(f"Error extracting metadata from last chunk: {e}")
 
