@@ -1,6 +1,6 @@
 {
   "name": "langsmith",
-  "version": "0.3.81",
+  "version": "0.3.82",
   "description": "Client library to connect to the LangSmith Observability and Evaluation Platform.",
   "packageManager": "yarn@1.22.19",
   "files": [
