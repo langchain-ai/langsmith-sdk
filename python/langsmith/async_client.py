@@ -167,6 +167,10 @@ class AsyncClient:
                 yield item
             if len(items) < params["limit"]:
                 break
+            # When querying by specific IDs, all results are returned in first page
+            # Pagination doesn't apply since we're not doing a range query
+            if params.get("id") is not None or params.get("example_ids") is not None:
+                break
             offset += len(items)
 
     async def _aget_cursor_paginated_list(

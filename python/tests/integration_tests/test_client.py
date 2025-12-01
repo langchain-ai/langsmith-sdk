@@ -386,6 +386,39 @@ def test_list_examples(langchain_client: Client) -> None:
     safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
+def test_list_examples_by_ids_multiple_of_100(langchain_client: Client) -> None:
+    """Test list_examples with exactly 100 example IDs."""
+    dataset_name = "__test_list_examples_by_ids_" + uuid4().hex[:4]
+    dataset = _create_dataset(langchain_client, dataset_name)
+
+    inputs = [{"text": f"input_{i}"} for i in range(100)]
+    outputs = [{"label": f"output_{i}"} for i in range(100)]
+    langchain_client.create_examples(
+        inputs=inputs, outputs=outputs, dataset_id=dataset.id
+    )
+
+    all_examples = list(langchain_client.list_examples(dataset_id=dataset.id))
+    assert len(all_examples) == 100
+
+    example_ids = [ex.id for ex in all_examples]
+
+    examples_by_id = list(langchain_client.list_examples(example_ids=example_ids))
+    assert len(examples_by_id) == 100
+    assert {ex.id for ex in examples_by_id} == {ex.id for ex in all_examples}
+
+    examples_by_id_50 = list(
+        langchain_client.list_examples(example_ids=example_ids[:50])
+    )
+    assert len(examples_by_id_50) == 50
+
+    examples_by_id_99 = list(
+        langchain_client.list_examples(example_ids=example_ids[:99])
+    )
+    assert len(examples_by_id_99) == 99
+
+    safe_delete_dataset(langchain_client, dataset_id=dataset.id)
+
+
 @pytest.mark.slow
 def test_similar_examples(langchain_client: Client) -> None:
     inputs = [{"text": "how are you"}, {"text": "good bye"}, {"text": "see ya later"}]
