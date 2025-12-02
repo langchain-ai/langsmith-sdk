@@ -31,6 +31,7 @@ dependencies = [
     "requests-toolbelt>=1.0.0",
     "zstandard>=0.23.0",
     "packaging>=23.2",
+    "uuid-utils>=0.12.0,<1.0",
 ]
 
 [project.urls]
