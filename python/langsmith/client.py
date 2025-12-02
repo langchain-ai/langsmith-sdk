@@ -426,6 +426,7 @@ class Client:
         "_api_key",
         "_workspace_id",
         "_headers",
+        "_custom_headers",
         "retry_config",
         "timeout_ms",
         "_timeout",
@@ -462,6 +463,7 @@ class Client:
 
     _api_key: Optional[str]
     _headers: dict[str, str]
+    _custom_headers: dict[str, str]
     _timeout: tuple[float, float]
     _manual_cleanup: bool
 
@@ -491,6 +493,7 @@ class Client:
         tracing_sampling_rate: Optional[float] = None,
         workspace_id: Optional[str] = None,
         max_batch_size_bytes: Optional[int] = None,
+        headers: Optional[dict[str, str]] = None,
     ) -> None:
         """Initialize a `Client` instance.
 
@@ -569,6 +572,9 @@ class Client:
             max_batch_size_bytes (Optional[int]): The maximum size of a batch of runs in bytes.
 
                 If not provided, the default is set by the server.
+            headers (Optional[Dict[str, str]]): Additional HTTP headers to include in all requests.
+                These headers will be merged with the default headers (User-Agent, Accept, x-api-key, etc.).
+                Custom headers will not override the default required headers.
 
         Raises:
             LangSmithUserError: If the API key is not provided when using the hosted service.
@@ -594,6 +600,8 @@ class Client:
         )
         # Initialize workspace attribute first
         self._workspace_id = ls_utils.get_workspace_id(workspace_id)
+        # Store custom headers
+        self._custom_headers = headers or {}
 
         if self._write_api_urls:
             self.api_url = next(iter(self._write_api_urls))
@@ -802,6 +810,9 @@ class Client:
             "User-Agent": f"langsmith-py/{langsmith.__version__}",
             "Accept": "application/json",
         }
+        # Merge custom headers first so they don't override required headers
+        headers.update(self._custom_headers)
+        # Required headers that should not be overridden
         if self.api_key:
             headers[X_API_KEY] = self.api_key
         if self._workspace_id:

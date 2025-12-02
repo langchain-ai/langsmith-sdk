@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { jest } from "@jest/globals";
 import { v4 as uuidv4 } from "uuid";
 import { RunTree, RunTreeConfig } from "../run_trees.js";
@@ -2534,4 +2535,360 @@ test("traceable should ignore undefined id", async () => {
       tree.data["extra_usage_metadata_run:0"].id
     )
   ).toBe(true);
+});
+
+test("traceable with nested calls and reroot replicas", async () => {
+  const { client, callSpy } = mockClient({
+    callerOptions: { maxRetries: 0 },
+    timeout_ms: 30_000,
+  });
+
+  // Define nested traceable functions - innermost ones don't need replicas
+  const innerTask = traceable(
+    async (input: string) => {
+      return `processed: ${input}`;
+    },
+    { name: "innerTask", client, tracingEnabled: true }
+  );
+
+  const middleTask = traceable(
+    async (input: string) => {
+      const result1 = await innerTask(`${input}-a`);
+      const result2 = await innerTask(`${input}-b`);
+      return `${result1}, ${result2}`;
+    },
+    { name: "middleTask", client, tracingEnabled: true }
+  );
+
+  // Outer task has replicas configured directly
+  const outerTask = traceable(
+    async (input: string) => {
+      const result = await middleTask(input);
+      return `final: ${result}`;
+    },
+    {
+      name: "outerTask",
+      client,
+      tracingEnabled: true,
+      replicas: [
+        {
+          projectName: "child-workspace-rerooted",
+          apiKey: "child-key",
+          apiUrl: "https://child.example.com",
+          reroot: true,
+        },
+        {
+          projectName: "full-trace-workspace",
+          apiKey: "full-key",
+          apiUrl: "https://full.example.com",
+          reroot: false,
+        },
+      ],
+    }
+  );
+
+  // Execute the nested traceable calls
+  const result = await outerTask("test-input");
+
+  // Verify the result
+  expect(result).toBe(
+    "final: processed: test-input-a, processed: test-input-b"
+  );
+
+  // Wait for async operations
+  await client.awaitPendingTraceBatches();
+
+  // Verify API calls were made to both replicas
+  expect(callSpy.mock.calls.length).toBeGreaterThan(0);
+
+  // Parse the POST bodies to verify rerooting behavior
+  const childPostCalls = callSpy.mock.calls.filter(
+    (call) =>
+      (call[0] as string).includes("child.example.com") &&
+      (call[0] as string).includes("/runs") &&
+      (call[1] as any)?.method === "POST"
+  );
+  const fullPostCalls = callSpy.mock.calls.filter(
+    (call) =>
+      (call[0] as string).includes("full.example.com") &&
+      (call[0] as string).includes("/runs") &&
+      (call[1] as any)?.method === "POST"
+  );
+
+  expect(childPostCalls.length).toBeGreaterThan(0);
+  expect(fullPostCalls.length).toBeGreaterThan(0);
+
+  // Verify correct API keys
+  childPostCalls.forEach((call) => {
+    const headers = (call[1] as any)?.headers;
+    expect(headers["x-api-key"]).toBe("child-key");
+  });
+  fullPostCalls.forEach((call) => {
+    const headers = (call[1] as any)?.headers;
+    expect(headers["x-api-key"]).toBe("full-key");
+  });
+
+  // Use the tree utility to parse runs from mock calls
+  const childTree = getAssumedTreeFromCalls(childPostCalls);
+  const fullTree = getAssumedTreeFromCalls(fullPostCalls);
+
+  // Find outerTask and middleTask in both replicas to verify rerooting behavior
+  const childOuterTask = Object.values(childTree.data).find(
+    (run) => run.name === "outerTask"
+  );
+  const fullOuterTask = Object.values(fullTree.data).find(
+    (run) => run.name === "outerTask"
+  );
+  const childMiddleTask = Object.values(childTree.data).find(
+    (run) => run.name === "middleTask"
+  );
+  const fullMiddleTask = Object.values(fullTree.data).find(
+    (run) => run.name === "middleTask"
+  );
+
+  expect(childOuterTask).toBeDefined();
+  expect(fullOuterTask).toBeDefined();
+  expect(childMiddleTask).toBeDefined();
+  expect(fullMiddleTask).toBeDefined();
+
+  // Type assertions after checking they're defined
+  if (
+    !childOuterTask ||
+    !fullOuterTask ||
+    !childMiddleTask ||
+    !fullMiddleTask
+  ) {
+    throw new Error("Expected runs to be defined");
+  }
+
+  // With reroot=true on outerTask, outerTask should NOT have a parent_run_id in child workspace
+  // (it becomes the root of a new tree)
+  expect(childOuterTask.parent_run_id).toBeUndefined();
+
+  // middleTask should STILL have a parent_run_id in the rerooted workspace
+  // (reroot doesn't propagate to children - we want a new tree, not all root runs)
+  expect(childMiddleTask.parent_run_id).toBeDefined();
+
+  // In the full workspace without reroot, both maintain their normal parent relationships
+  expect(fullMiddleTask.parent_run_id).toBeDefined();
+
+  // Verify tree structure is maintained in rerooted workspace
+  // Should have 4 runs total: outerTask, middleTask, innerTask x2
+  expect(Object.keys(childTree.data).length).toBe(4);
+  expect(Object.keys(fullTree.data).length).toBe(4);
+
+  // Verify the tree edges in rerooted workspace form a proper tree
+  // outerTask (root) -> middleTask -> innerTask (x2)
+  expect(childTree.edges.length).toBe(3); // 3 parent-child relationships
+
+  // Verify trace_id is updated for rerooted runs
+  // In rerooted workspace, all runs should have trace_id pointing to outerTask
+  expect(childOuterTask.trace_id).toBe(childOuterTask.id);
+  expect(childMiddleTask.trace_id).toBe(childOuterTask.id);
+
+  // Verify dotted_order is properly reset for the root run
+  // Rerooted run should have only one segment in dotted_order
+  const childOuterSegments = childOuterTask.dotted_order?.split(".") || [];
+  expect(childOuterSegments.length).toBe(1);
+}, 180_000);
+
+test("child traceable with own replicas config", async () => {
+  const { client, callSpy } = mockClient();
+
+  const defaultProject = "mainProject";
+  const replicaProject = "subrun";
+
+  const greatGrandchild = traceable(
+    async () => {
+      return "greatGrandchild";
+    },
+    {
+      name: "greatGrandchild",
+      client,
+      tracingEnabled: true,
+    }
+  );
+
+  const grandchild = traceable(
+    async () => {
+      const greatGrandchildRes = await greatGrandchild();
+      return "grandchild: " + greatGrandchildRes;
+    },
+    {
+      name: "grandchild",
+      client,
+      tracingEnabled: true,
+    }
+  );
+  const child = traceable(
+    async () => {
+      const grandchildRes = await grandchild();
+      return "child: " + grandchildRes;
+    },
+    {
+      replicas: [
+        {
+          projectName: defaultProject,
+        },
+        {
+          projectName: replicaProject,
+          reroot: true,
+        },
+      ],
+      name: "child",
+      client,
+      tracingEnabled: true,
+    }
+  );
+  const parent = traceable(
+    async () => {
+      const childRes = await child();
+      return "parent: " + childRes;
+    },
+    {
+      name: "parent",
+      client,
+      tracingEnabled: true,
+      project_name: defaultProject,
+    }
+  );
+
+  await parent();
+
+  // Wait for async operations
+  await new Promise((resolve) => setTimeout(resolve, 100));
+
+  // Verify that child's replicas were used by checking calls to both projects
+  const allPostCalls = callSpy.mock.calls.filter(
+    (call) =>
+      (call[0] as string).includes("/runs") &&
+      (call[1] as any)?.method === "POST"
+  );
+
+  // Parent should only go to default project (no replicas)
+  // Child and grandchild should go to both "main-project" and replicaProject
+  // greatGrandchild should also go to both (inherits from grandchild which inherits from child)
+  // Total: 1 (parent) + 2 (child) + 2 (grandchild) + 2 (greatGrandchild) = 7 POST calls
+  expect(allPostCalls.length).toBe(7);
+
+  // Parse calls - since all go to same mock endpoint, we need to check session_name in body
+  const runs = allPostCalls.map((call) => {
+    const body = (call[1] as any)?.body;
+    let bodyStr: string;
+    if (typeof body === "string") {
+      bodyStr = body;
+    } else if (Buffer.isBuffer(body)) {
+      bodyStr = body.toString("utf-8");
+    } else if (ArrayBuffer.isView(body)) {
+      bodyStr = new TextDecoder().decode(body);
+    } else {
+      bodyStr = JSON.stringify(body);
+    }
+    return JSON.parse(bodyStr);
+  });
+
+  // Count runs by project
+  const defaultProjectRuns = runs.filter(
+    (r) => r.session_name === defaultProject
+  );
+  const subrunRuns = runs.filter((r) => r.session_name === replicaProject);
+
+  // We should have: 1 parent, 1 child, 1 grandchild, 1 greatGrandchild in default
+  // Plus: 1 child, 1 grandchild, 1 greatGrandchild in subrun (child's replicas inherited)
+  // Total: 7 runs (4 in default + 3 in subrun)
+  expect(runs.length).toBe(7);
+
+  // Parent only goes to default project (no replicas)
+  const parentRuns = runs.filter((r) => r.name === "parent");
+  expect(parentRuns.length).toBe(1);
+  expect(parentRuns[0].session_name).toBe(defaultProject);
+
+  // Child goes to BOTH default project and subrun (child's replicas)
+  const childRuns = runs.filter((r) => r.name === "child");
+  expect(childRuns.length).toBe(2);
+  const childProjects = childRuns.map((r) => r.session_name).sort();
+  expect(childProjects).toEqual([defaultProject, replicaProject].sort());
+
+  // Grandchild also goes to BOTH (inherits child's replicas)
+  const grandchildRuns = runs.filter((r) => r.name === "grandchild");
+  expect(grandchildRuns.length).toBe(2);
+  const grandchildProjects = grandchildRuns.map((r) => r.session_name).sort();
+  expect(grandchildProjects).toEqual([defaultProject, replicaProject].sort());
+
+  // GreatGrandchild also goes to BOTH (inherits from grandchild which inherits from child)
+  const greatGrandchildRuns = runs.filter((r) => r.name === "greatGrandchild");
+  expect(greatGrandchildRuns.length).toBe(2);
+  const greatGrandchildProjects = greatGrandchildRuns
+    .map((r) => r.session_name)
+    .sort();
+  expect(greatGrandchildProjects).toEqual(
+    [defaultProject, replicaProject].sort()
+  );
+
+  // Verify reroot behavior in replicaProject project
+  const subrunChild = subrunRuns.find((r) => r.name === "child");
+  const subrunGrandchild = subrunRuns.find((r) => r.name === "grandchild");
+  const subrunGreatGrandchild = subrunRuns.find(
+    (r) => r.name === "greatGrandchild"
+  );
+
+  if (!subrunChild || !subrunGrandchild || !subrunGreatGrandchild) {
+    throw new Error("Expected subrun runs to be defined");
+  }
+
+  // Child should be a root in subrun (reroot: true)
+  expect(subrunChild.parent_run_id).toBeUndefined();
+
+  // Child's dotted_order should have only one segment (it's a new root)
+  const childDottedSegments = subrunChild.dotted_order?.split(".") || [];
+  expect(childDottedSegments.length).toBe(1);
+
+  // Child's trace_id should be its own id (new trace root after reroot)
+  expect(subrunChild.trace_id).toBe(subrunChild.id);
+
+  // Grandchild should have child as parent (inherited replicas, reroot doesn't propagate)
+  expect(subrunGrandchild.parent_run_id).toBeDefined();
+
+  // Grandchild's trace_id should match child's id (same trace in rerooted tree)
+  // This is the key fix - with ID remapping, grandchild gets the remapped child's id as trace_id
+  expect(subrunGrandchild.trace_id).toBe(subrunChild.id);
+
+  // Verify parent_run_id is the remapped child id
+  expect(subrunGrandchild.parent_run_id).toBe(subrunChild.id);
+
+  // Grandchild's dotted_order should have two segments (child.grandchild)
+  const grandchildDottedSegments =
+    subrunGrandchild.dotted_order?.split(".") || [];
+  expect(grandchildDottedSegments.length).toBe(2);
+
+  // GreatGrandchild should also be part of the rerooted trace
+  expect(subrunGreatGrandchild.trace_id).toBe(subrunChild.id);
+  expect(subrunGreatGrandchild.parent_run_id).toBe(subrunGrandchild.id);
+
+  // GreatGrandchild's dotted_order should have three segments (child.grandchild.greatGrandchild)
+  const greatGrandchildDottedSegments =
+    subrunGreatGrandchild.dotted_order?.split(".") || [];
+  expect(greatGrandchildDottedSegments.length).toBe(3);
+
+  // In the default project (no reroot), verify child still has parent
+  const defaultChild = defaultProjectRuns.find((r) => r.name === "child");
+  const defaultGrandchild = defaultProjectRuns.find(
+    (r) => r.name === "grandchild"
+  );
+  const defaultGreatGrandchild = defaultProjectRuns.find(
+    (r) => r.name === "greatGrandchild"
+  );
+
+  if (!defaultChild || !defaultGrandchild || !defaultGreatGrandchild) {
+    throw new Error("Expected default project runs to be defined");
+  }
+
+  // In default project, child should have parent (no reroot there)
+  expect(defaultChild.parent_run_id).toBeDefined();
+
+  // All runs in default project should share same trace_id (parent's trace)
+  const defaultParent = defaultProjectRuns.find((r) => r.name === "parent");
+  expect(defaultChild.trace_id).toBe(defaultParent?.trace_id);
+  expect(defaultGrandchild.trace_id).toBe(defaultParent?.trace_id);
+  expect(defaultGreatGrandchild.trace_id).toBe(defaultParent?.trace_id);
 });

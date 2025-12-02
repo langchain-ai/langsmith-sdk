@@ -165,3 +165,323 @@ test("shared client between run trees", () => {
   expect(runTree2.client).toBeDefined();
   expect(runTree1.client).toBe(runTree2.client);
 });
+
+test("reroot functionality slices dotted order correctly", () => {
+  // Create a parent run tree
+  const parentId = "00000000-0000-0000-0000-000000000000";
+  const parent = new RunTree({
+    name: "parent",
+    id: parentId,
+    project_name: "main-project",
+  });
+
+  // Create child runs
+  const child1Id = "11111111-1111-1111-1111-111111111111";
+  const child1 = parent.createChild({ name: "child1", id: child1Id });
+
+  const child2Id = "22222222-2222-2222-2222-222222222222";
+  const child2 = child1.createChild({ name: "child2", id: child2Id });
+
+  // Create a replica with reroot enabled
+  const replicaConfig = {
+    projectName: "child-project",
+    reroot: true,
+  };
+
+  // Set distributed parent ID (simulating fromHeaders behavior)
+  child2.distributedParentId = child1Id;
+  child2.replicas = [replicaConfig];
+
+  // Use private method to remap for project with reroot
+  const remapped = (child2 as any)._remapForProject({
+    projectName: "child-project",
+    runtimeEnv: undefined,
+    excludeChildRuns: true,
+    reroot: true,
+    distributedParentId: child1Id,
+  });
+
+  // Verify that the dotted order was sliced
+  // Original dotted order should have parent -> child1 -> child2
+  // After slicing at child1, it should only have child2
+  const originalSegments = child2.dotted_order.split(".");
+  const remappedSegments = remapped.dotted_order.split(".");
+
+  // The remapped version should have fewer segments
+  expect(remappedSegments.length).toBeLessThan(originalSegments.length);
+
+  // The parent_run_id should be undefined after rerooting at the immediate parent
+  if (child2.parent_run_id === child1Id) {
+    expect(remapped.parent_run_id).toBeUndefined();
+  }
+
+  // The trace_id should be updated to the new root
+  expect(remapped.trace_id).toBeTruthy();
+});
+
+test("reroot with fromHeaders sets distributedParentId", () => {
+  const parentDottedOrder =
+    "20210503T000000000000000000000000-0000-0000-0000-000000000000";
+  const headers = {
+    "langsmith-trace": parentDottedOrder,
+  };
+
+  const runTree = RunTree.fromHeaders(headers);
+
+  expect(runTree).toBeDefined();
+  expect(runTree!.distributedParentId).toBe(runTree!.id);
+});
+
+test("distributed tracing: _sliceParentId method", () => {
+  const { client } = mockClient();
+
+  // Create a 3-level hierarchy: grandparent -> parent -> child
+  const grandparent = new RunTree({
+    name: "Grandparent",
+    inputs: { text: "root" },
+    client: client,
+  });
+
+  const parent = grandparent.createChild({ name: "Parent" });
+  const child = parent.createChild({ name: "Child" });
+
+  const parentId = parent.id;
+
+  // Get the child's run data
+  const childDict = (child as any)._convertToCreate(child, undefined, true);
+
+  // Verify initial state
+  expect(childDict.parent_run_id).toBe(parent.id);
+  expect(childDict.trace_id).toBe(grandparent.id);
+  expect(childDict.dotted_order).toBeTruthy();
+
+  // Slice at parent ID
+  (child as any)._sliceParentId(parentId, childDict);
+
+  // After slicing, parent_run_id should be undefined
+  expect(childDict.parent_run_id).toBeUndefined();
+
+  // Trace ID should now be the child's ID
+  expect(childDict.trace_id).toBe(child.id);
+
+  // Dotted order should have only 1 segment (just the child)
+  const segments = childDict.dotted_order.split(".");
+  expect(segments.length).toBe(1);
+});
+
+test("distributed tracing: _remapForProject with reroot", () => {
+  const { client } = mockClient();
+
+  const grandparent = new RunTree({
+    name: "Grandparent",
+    inputs: { text: "root" },
+    client: client,
+    project_name: "original_project",
+  });
+
+  const parent = grandparent.createChild({ name: "Parent" });
+  const child = parent.createChild({ name: "Child" });
+
+  const parentId = parent.id;
+
+  // Simulate distributed parent ID being set
+  child.distributedParentId = parentId;
+
+  // Test WITH reroot enabled
+  const remappedWithReroot = (child as any)._remapForProject({
+    projectName: "child_project",
+    runtimeEnv: undefined,
+    excludeChildRuns: true,
+    reroot: true, // reroot enabled
+    distributedParentId: parentId,
+  });
+
+  expect(remappedWithReroot.parent_run_id).toBeUndefined();
+  expect(remappedWithReroot.session_name).toBe("child_project");
+
+  const segmentsWithReroot = remappedWithReroot.dotted_order.split(".");
+  expect(segmentsWithReroot.length).toBe(1);
+
+  // Test WITHOUT reroot (should keep parent relationship)
+  const remappedWithoutReroot = (child as any)._remapForProject({
+    projectName: "child_project_2",
+    runtimeEnv: undefined,
+    excludeChildRuns: true,
+    reroot: false, // reroot disabled
+    distributedParentId: parentId,
+  });
+
+  expect(remappedWithoutReroot.parent_run_id).toBeTruthy();
+
+  // Test with no reroot parameter (should keep parent relationship)
+  const remappedNoParam = (child as any)._remapForProject({
+    projectName: "child_project_3",
+    runtimeEnv: undefined,
+    excludeChildRuns: true,
+    distributedParentId: parentId,
+  });
+
+  expect(remappedNoParam.parent_run_id).toBeTruthy();
+});
+
+test("distributed tracing: fromHeaders sets distributedParentId correctly", () => {
+  const { client } = mockClient();
+
+  // Create a hierarchy: grandparent -> parent -> child
+  const grandparent = new RunTree({
+    name: "Grandparent",
+    inputs: { text: "grandparent" },
+    client: client,
+    project_name: "original_project",
+  });
+
+  const parent = grandparent.createChild({ name: "Parent" });
+  const child = parent.createChild({ name: "Child" });
+
+  // Get headers from child
+  const headers = child.toHeaders();
+
+  // Create a new run tree from headers
+  const fromHeadersRun = RunTree.fromHeaders(headers);
+
+  expect(fromHeadersRun).toBeDefined();
+  expect(fromHeadersRun!.distributedParentId).toBe(fromHeadersRun!.id);
+  expect(fromHeadersRun!.distributedParentId).toBe(child.id);
+
+  // Now create a new run that should use this distributed parent ID
+  const newRun = new RunTree({
+    name: "NewRun",
+    inputs: { text: "new_run" },
+    client: client,
+    project_name: "child_project",
+  });
+
+  newRun.distributedParentId = fromHeadersRun!.id;
+
+  // Remap with reroot enabled
+  const remapped = (newRun as any)._remapForProject({
+    projectName: "child_project",
+    runtimeEnv: undefined,
+    excludeChildRuns: true,
+    reroot: true,
+    distributedParentId: newRun.distributedParentId,
+  });
+
+  expect(remapped.parent_run_id).toBeUndefined();
+
+  const segments = remapped.dotted_order.split(".");
+  expect(segments.length).toBe(1);
+  expect(remapped.trace_id).toBe(newRun.id);
+});
+
+test("_sliceParentId handles missing parent gracefully", () => {
+  const { client } = mockClient();
+
+  const parent = new RunTree({
+    name: "Parent",
+    inputs: { text: "parent" },
+    client: client,
+  });
+
+  const child = parent.createChild({ name: "Child" });
+
+  const childDict = (child as any)._convertToCreate(child, undefined, true);
+  const originalDottedOrder = childDict.dotted_order;
+  const originalParentRunId = childDict.parent_run_id;
+
+  // Try to slice with a non-existent parent ID
+  const nonExistentId = "99999999-9999-9999-9999-999999999999";
+  (child as any)._sliceParentId(nonExistentId, childDict);
+
+  // Should not modify dotted order if parent not found
+  expect(childDict.dotted_order).toBe(originalDottedOrder);
+
+  // Should not modify parent_run_id if it doesn't match
+  expect(childDict.parent_run_id).toBe(originalParentRunId);
+});
+
+test("_sliceParentId handles empty dotted order segments", () => {
+  const { client } = mockClient();
+
+  const singleRun = new RunTree({
+    name: "SingleRun",
+    inputs: { text: "single" },
+    client: client,
+  });
+
+  const runDict = (singleRun as any)._convertToCreate(
+    singleRun,
+    undefined,
+    true
+  );
+
+  // Try to slice at the run's own ID (should result in empty segments)
+  (singleRun as any)._sliceParentId(singleRun.id, runDict);
+
+  // When all segments are removed, trace_id should be set to the run's ID
+  expect(runDict.trace_id).toBe(singleRun.id);
+});
+
+test("integration: reroot with replicas makes correct API calls", async () => {
+  const callSpy = jest.fn<typeof fetch>().mockResolvedValue({
+    ok: true,
+    text: () => Promise.resolve(""),
+  } as Response);
+
+  const client = new Client({
+    autoBatchTracing: false,
+    callerOptions: { maxRetries: 0 },
+    timeout_ms: 30_000,
+    apiKey: "test-key",
+    fetchImplementation: callSpy,
+  });
+
+  // Create a 3-level hierarchy
+  const grandparent = new RunTree({
+    name: "Grandparent",
+    inputs: { text: "root" },
+    client: client,
+    project_name: "main-project",
+  });
+
+  const parent = grandparent.createChild({ name: "Parent" });
+  const child = parent.createChild({ name: "Child" });
+
+  // Set up replicas - one with reroot, one without
+  child.distributedParentId = parent.id;
+  child.replicas = [
+    {
+      projectName: "child-project-rerooted",
+      apiKey: "replica1-key",
+      apiUrl: "https://replica1.example.com",
+      reroot: true,
+    },
+    {
+      projectName: "child-project-full-trace",
+      apiKey: "replica2-key",
+      apiUrl: "https://replica2.example.com",
+      reroot: false,
+    },
+  ];
+
+  // Post the run
+  await child.postRun();
+
+  // Verify that createRun was called twice (once per replica)
+  expect(callSpy).toHaveBeenCalledTimes(2);
+
+  // Verify the URLs called
+  const calls = callSpy.mock.calls;
+  expect(calls[0][0]).toBe("https://replica1.example.com/runs");
+  expect(calls[1][0]).toBe("https://replica2.example.com/runs");
+
+  // Verify that both calls include the Authorization header with different keys
+  const call1Headers = (calls[0][1] as any)?.headers;
+  const call2Headers = (calls[1][1] as any)?.headers;
+
+  expect(call1Headers?.["x-api-key"]).toBe("replica1-key");
+  expect(call2Headers?.["x-api-key"]).toBe("replica2-key");
+
+  // The actual rerooting logic is already tested in unit tests
+  // This integration test just verifies the API calls are made to the correct endpoints
+}, 180_000);

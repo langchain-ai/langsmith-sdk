@@ -11,7 +11,11 @@ import {
   isConflictingEndpointsError,
   ConflictingEndpointsError,
 } from "./utils/error.js";
-import { _LC_CONTEXT_VARIABLES_KEY } from "./singletons/constants.js";
+import {
+  _LC_CONTEXT_VARIABLES_KEY,
+  _REPLICA_TRACE_ROOTS_KEY,
+} from "./singletons/constants.js";
+import { getContextVar, setContextVar } from "./utils/context_vars.js";
 import {
   RuntimeEnvironment,
   getEnvironmentVariable,
@@ -21,6 +25,27 @@ import { getDefaultProjectName } from "./utils/project.js";
 import { getLangSmithEnvironmentVariable } from "./utils/env.js";
 import { warnOnce } from "./utils/warn.js";
 import { uuid7FromTime } from "./utils/_uuid.js";
+import { v5 as uuidv5 } from "uuid";
+
+const TIMESTAMP_LENGTH = 36;
+// DNS namespace for UUID v5 (same as Python's uuid.NAMESPACE_DNS)
+const UUID_NAMESPACE_DNS = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
+
+function getReplicaKey(replica: {
+  projectName?: string;
+  apiUrl?: string;
+  workspaceId?: string;
+  apiKey?: string;
+}): string {
+  // Generate a unique key by hashing the replica's identifying properties
+  // This ensures each unique replica (combination of projectName, apiUrl, workspaceId, apiKey) gets a unique key
+  // Sort keys to ensure consistent hashing
+  const sortedKeys = Object.keys(replica).sort();
+  const keyData = sortedKeys
+    .map((key) => `${key}:${replica[key as keyof typeof replica] ?? ""}`)
+    .join("|");
+  return uuidv5(keyData, UUID_NAMESPACE_DNS);
+}
 
 function stripNonAlphanumeric(input: string) {
   return input.replace(/[-:.]/g, "");
@@ -80,6 +105,7 @@ export interface RunTreeConfig {
   dotted_order?: string;
   attachments?: Attachments;
   replicas?: Replica[];
+  distributedParentId?: string;
 }
 
 export interface RunnableConfigLike {
@@ -134,6 +160,7 @@ type WriteReplica = {
   projectName?: string;
   updates?: KVMap | undefined;
   fromEnv?: boolean;
+  reroot?: boolean;
 };
 type Replica = ProjectReplica | WriteReplica;
 
@@ -237,6 +264,7 @@ export class RunTree implements BaseRun {
    */
   replicas?: WriteReplica[];
 
+  distributedParentId?: string;
   private _serialized_start_time: string | undefined;
 
   constructor(originalConfig: RunTreeConfig | RunTree) {
@@ -340,11 +368,20 @@ export class RunTree implements BaseRun {
   public createChild(config: RunTreeConfig): RunTree {
     const child_execution_order = this.child_execution_order + 1;
 
+    // Handle replicas: if child has its own replicas, use those; otherwise inherit parent's (with reroot stripped)
+    // Reroot should only apply to the run where it's explicitly configured, not propagate down
+    const inheritedReplicas = this.replicas?.map((replica) => {
+      const { reroot, ...rest } = replica;
+      return rest;
+    });
+
+    const childReplicas = config.replicas ?? inheritedReplicas;
+
     const child = new RunTree({
       ...config,
       parent_run: this,
       project_name: this.project_name,
-      replicas: this.replicas,
+      replicas: childReplicas,
       client: this.client,
       tracingEnabled: this.tracingEnabled,
       execution_order: child_execution_order,
@@ -475,15 +512,221 @@ export class RunTree implements BaseRun {
     };
   }
 
-  private _remapForProject(
-    projectName: string,
-    runtimeEnv?: RuntimeEnvironment,
-    excludeChildRuns = true
-  ): RunCreate & { id: string } {
+  private _sliceParentId(
+    parentId: string,
+    run: RunCreate & { id: string }
+  ): void {
+    /**
+     * Slice the parent id from dotted order.
+     * Additionally check if the current run is a child of the parent. If so, update
+     * the parent_run_id to undefined, and set the trace id to the new root id after
+     * parent_id.
+     */
+    if (run.dotted_order) {
+      const segs = run.dotted_order.split(".");
+      let startIdx: number | null = null;
+
+      // Find the index of the parent ID in the dotted order
+      for (let idx = 0; idx < segs.length; idx++) {
+        const segId = segs[idx].slice(-TIMESTAMP_LENGTH);
+        if (segId === parentId) {
+          startIdx = idx;
+          break;
+        }
+      }
+
+      if (startIdx !== null) {
+        // Trim segments to start after parent_id (exclusive)
+        const trimmedSegs = segs.slice(startIdx + 1);
+        // Rebuild dotted_order
+        run.dotted_order = trimmedSegs.join(".");
+        if (trimmedSegs.length > 0) {
+          run.trace_id = trimmedSegs[0].slice(-TIMESTAMP_LENGTH);
+        } else {
+          run.trace_id = run.id;
+        }
+      }
+    }
+
+    if (run.parent_run_id === parentId) {
+      // We've found the new root node.
+      run.parent_run_id = undefined;
+    }
+  }
+
+  private _setReplicaTraceRoot(replicaKey: string, traceRootId: string): void {
+    // Set the replica trace root in context vars on this run and all descendants
+    const replicaTraceRoots: Record<string, string> =
+      (getContextVar(this, _REPLICA_TRACE_ROOTS_KEY) as Record<
+        string,
+        string
+      >) ?? {};
+    replicaTraceRoots[replicaKey] = traceRootId;
+
+    setContextVar(this, _REPLICA_TRACE_ROOTS_KEY, replicaTraceRoots);
+
+    // Recursively update all descendants to avoid race conditions
+    // around run tree creation vs processing time
+    for (const child of this.child_runs) {
+      child._setReplicaTraceRoot(replicaKey, traceRootId);
+    }
+  }
+
+  private _remapForProject(params: {
+    projectName: string;
+    runtimeEnv?: RuntimeEnvironment;
+    excludeChildRuns?: boolean;
+    reroot?: boolean;
+    distributedParentId?: string;
+    apiUrl?: string;
+    apiKey?: string;
+    workspaceId?: string;
+  }): RunCreate & { id: string } {
+    const {
+      projectName,
+      runtimeEnv,
+      excludeChildRuns = true,
+      reroot = false,
+      distributedParentId,
+      apiUrl,
+      apiKey,
+      workspaceId,
+    } = params;
     const baseRun = this._convertToCreate(this, runtimeEnv, excludeChildRuns);
+
+    // Skip remapping if project name is the same
+    if (projectName === this.project_name) {
+      return {
+        ...baseRun,
+        session_name: projectName,
+      };
+    }
+
+    // Apply reroot logic before ID remapping
+    if (reroot) {
+      if (distributedParentId) {
+        // If we have a distributed parent ID, slice at that point
+        this._sliceParentId(distributedParentId, baseRun);
+      } else {
+        // If no distributed parent ID, simply make this run a root run
+        // by removing parent_run_id and resetting trace info
+        baseRun.parent_run_id = undefined;
+        // Keep the current run as the trace root
+        if (baseRun.dotted_order) {
+          // Reset dotted order to just this run
+          const segs = baseRun.dotted_order.split(".");
+          if (segs.length > 0) {
+            baseRun.dotted_order = segs[segs.length - 1];
+            baseRun.trace_id = baseRun.id;
+          }
+        }
+      }
+
+      // Store this run's original ID in context vars so descendants know the new trace root
+      // We store the original ID (before remapping) so it can be found in dotted_order
+      const replicaKey = getReplicaKey({
+        projectName,
+        apiUrl,
+        apiKey,
+        workspaceId,
+      });
+      this._setReplicaTraceRoot(replicaKey, baseRun.id);
+    }
+
+    // If an ancestor was rerooted for this replica, update trace_id and dotted_order
+    // to reflect the new trace hierarchy. This is tracked via context variables.
+    let ancestorRerootedTraceId: string | undefined;
+    if (!reroot) {
+      const replicaTraceRoots: Record<string, string> =
+        (getContextVar(this, _REPLICA_TRACE_ROOTS_KEY) as Record<
+          string,
+          string
+        >) ?? {};
+      const replicaKey = getReplicaKey({
+        projectName,
+        apiUrl,
+        apiKey,
+        workspaceId,
+      });
+      ancestorRerootedTraceId = replicaTraceRoots[replicaKey];
+
+      if (ancestorRerootedTraceId) {
+        // An ancestor was rerooted for this replica, so set our trace_id
+        // to the ancestor's original (unmapped) ID. It will be remapped along with other IDs.
+        baseRun.trace_id = ancestorRerootedTraceId;
+
+        // Also slice the dotted_order to start from the new trace root
+        // This ensures descendants of a rerooted ancestor have correct hierarchy
+        if (baseRun.dotted_order) {
+          const segs = baseRun.dotted_order.split(".");
+          let rootIdx: number | null = null;
+
+          // Find the new trace root's segment in dotted_order
+          for (let idx = 0; idx < segs.length; idx++) {
+            const segId = segs[idx].slice(-TIMESTAMP_LENGTH);
+            if (segId === ancestorRerootedTraceId) {
+              rootIdx = idx;
+              break;
+            }
+          }
+
+          if (rootIdx !== null) {
+            // Keep segments from new trace root onwards
+            const trimmedSegs = segs.slice(rootIdx);
+            baseRun.dotted_order = trimmedSegs.join(".");
+          }
+        }
+      }
+    }
+
+    // Remap IDs for the replica using uuid5 (deterministic)
+    // This ensures consistency across runs in the same replica
+    const oldId = baseRun.id;
+    const newId = uuidv5(`${oldId}:${projectName}`, UUID_NAMESPACE_DNS);
+
+    // Remap trace_id
+    let newTraceId: string;
+    if (baseRun.trace_id) {
+      newTraceId = uuidv5(
+        `${baseRun.trace_id}:${projectName}`,
+        UUID_NAMESPACE_DNS
+      );
+    } else {
+      newTraceId = newId;
+    }
+
+    // Remap parent_run_id
+    let newParentId: string | undefined;
+    if (baseRun.parent_run_id) {
+      newParentId = uuidv5(
+        `${baseRun.parent_run_id}:${projectName}`,
+        UUID_NAMESPACE_DNS
+      );
+    }
+
+    // Remap dotted_order segments
+    let newDottedOrder: string | undefined;
+    if (baseRun.dotted_order) {
+      const segs = baseRun.dotted_order.split(".");
+      const remappedSegs = segs.map((seg) => {
+        // Extract the UUID from the segment (last TIMESTAMP_LENGTH characters)
+        const segId = seg.slice(-TIMESTAMP_LENGTH);
+        const remappedId = uuidv5(
+          `${segId}:${projectName}`,
+          UUID_NAMESPACE_DNS
+        );
+        // Replace the UUID part while keeping the timestamp prefix
+        return seg.slice(0, -TIMESTAMP_LENGTH) + remappedId;
+      });
+      newDottedOrder = remappedSegs.join(".");
+    }
 
     return {
       ...baseRun,
+      id: newId,
+      trace_id: newTraceId,
+      parent_run_id: newParentId,
+      dotted_order: newDottedOrder,
       session_name: projectName,
     };
   }
@@ -492,13 +735,18 @@ export class RunTree implements BaseRun {
     try {
       const runtimeEnv = getRuntimeEnvironment();
       if (this.replicas && this.replicas.length > 0) {
-        for (const { projectName, apiKey, apiUrl, workspaceId } of this
+        for (const { projectName, apiKey, apiUrl, workspaceId, reroot } of this
           .replicas) {
-          const runCreate = this._remapForProject(
-            projectName ?? this.project_name,
+          const runCreate = this._remapForProject({
+            projectName: projectName ?? this.project_name,
             runtimeEnv,
-            true
-          );
+            excludeChildRuns: true,
+            reroot,
+            distributedParentId: this.distributedParentId,
+            apiUrl,
+            apiKey,
+            workspaceId,
+          });
           await this.client.createRun(runCreate, {
             apiKey,
             apiUrl,
@@ -529,9 +777,24 @@ export class RunTree implements BaseRun {
 
   async patchRun(options?: { excludeInputs?: boolean }): Promise<void> {
     if (this.replicas && this.replicas.length > 0) {
-      for (const { projectName, apiKey, apiUrl, workspaceId, updates } of this
-        .replicas) {
-        const runData = this._remapForProject(projectName ?? this.project_name);
+      for (const {
+        projectName,
+        apiKey,
+        apiUrl,
+        workspaceId,
+        updates,
+        reroot,
+      } of this.replicas) {
+        const runData = this._remapForProject({
+          projectName: projectName ?? this.project_name,
+          runtimeEnv: undefined,
+          excludeChildRuns: true,
+          reroot,
+          distributedParentId: this.distributedParentId,
+          apiUrl,
+          apiKey,
+          workspaceId,
+        });
         const updatePayload: RunUpdate = {
           id: runData.id,
           name: runData.name,
@@ -724,7 +987,10 @@ export class RunTree implements BaseRun {
       config.replicas = baggage.replicas;
     }
 
-    return new RunTree(config);
+    const runTree = new RunTree(config);
+    // Set the distributed parent ID to this run's ID for rerooting
+    runTree.distributedParentId = runTree.id;
+    return runTree;
   }
 
   toHeaders(headers?: HeadersLike) {
