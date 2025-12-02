@@ -2,6 +2,8 @@ import datetime
 from typing import Any
 from unittest.mock import MagicMock
 
+import pytest
+
 from langsmith.client import Client
 from langsmith.run_helpers import traceable
 from langsmith.run_trees import RunTree
@@ -42,6 +44,7 @@ def test_traceable_uses_uuidv7_and_start_time_matches_run_id() -> None:
     assert id_ms == start_ms
 
 
+@pytest.mark.repeat(100)
 def test_run_tree_default_uuidv7_and_start_time_match() -> None:
     # Default RunTree should have v7 id and matching start_time
     rt = RunTree(name="test", run_type="chain", inputs={})
