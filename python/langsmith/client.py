@@ -6920,7 +6920,7 @@ class Client:
         limit: Optional[int] = None,
         offset: int = 0,
     ) -> Iterator[ls_schemas.FeedbackFormula]:
-        """List the feedback formulas on the LangSmith API.
+        """List feedback formulas.
 
         Args:
             dataset_id (Optional[Union[UUID, str]]):
@@ -6982,7 +6982,7 @@ class Client:
         dataset_id: Optional[ID_TYPE] = None,
         session_id: Optional[ID_TYPE] = None,
     ) -> ls_schemas.FeedbackFormula:
-        """Create a feedback formula on the LangSmith API.
+        """Create a feedback formula.
 
         Args:
             feedback_key (str):
@@ -7036,7 +7036,7 @@ class Client:
             Union[ls_schemas.FeedbackFormulaWeightedVariable, dict]
         ],
     ) -> ls_schemas.FeedbackFormula:
-        """Update a feedback formula on the LangSmith API.
+        """Update a feedback formula.
 
         Args:
             feedback_formula_id (Union[UUID, str]):
