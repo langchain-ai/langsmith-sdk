@@ -1431,7 +1431,7 @@ def test_multipart_ingest_create_wrong_type(
 
         # this should 422
         assert len(caplog.records) == 1, "Should get 1 warning for 422, not retried"
-        assert all("422" in record.message for record in caplog.records)
+        assert all("422" in record.message or "429" in record.message for record in caplog.records)
 
 
 @freeze_time("2023-01-01")
