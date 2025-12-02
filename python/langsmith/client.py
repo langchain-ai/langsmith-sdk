@@ -7082,7 +7082,6 @@ class Client:
         response = self.request_with_retries(
             "DELETE",
             f"/feedback/formulas/{_as_uuid(feedback_formula_id, 'feedback_formula_id')}",
-            headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
 
