@@ -14,7 +14,6 @@ from ._messages import (
     extract_usage_from_result_message,
     flatten_content_blocks,
 )
-from ._tools import clear_parent_run_tree, set_parent_run_tree
 
 logger = logging.getLogger(__name__)
 
@@ -161,7 +160,7 @@ def _inject_tracing_hooks(options: Any) -> None:
 
 
 def instrument_claude_client(original_class: Any) -> Any:
-    """Wrap ClaudeSDKClient to trace both query() and receive_response()."""
+    """Wrap `ClaudeSDKClient` to trace both `query()` and `receive_response()`."""
 
     class TracedClaudeSDKClient(original_class):
         def __init__(self, *args: Any, **kwargs: Any):
@@ -179,6 +178,78 @@ def instrument_claude_client(original_class: Any) -> Any:
             self._start_time = time.time()
             self._prompt = str(kwargs.get("prompt") or (args[0] if args else ""))
             return await super().query(*args, **kwargs)
+
+        def _handle_assistant_tool_uses(
+            self,
+            msg: Any,
+            run: Any,
+            subagent_sessions: dict[str, Any],
+        ) -> None:
+            """Process tool uses for an assistant message."""
+            if not hasattr(msg, "content"):
+                return
+
+            from ._hooks import _client_managed_runs
+
+            parent_tool_use_id = getattr(msg, "parent_tool_use_id", None)
+
+            for block in msg.content:
+                if type(block).__name__ != "ToolUseBlock":
+                    continue
+
+                try:
+                    tool_use_id = getattr(block, "id", None)
+                    tool_name = getattr(block, "name", "unknown_tool")
+                    tool_input = getattr(block, "input", {})
+
+                    if not tool_use_id:
+                        continue
+
+                    start_time = time.time()
+
+                    # Check if this is a Task tool (subagent)
+                    if tool_name == "Task" and not parent_tool_use_id:
+                        # Extract subagent name
+                        subagent_name = (
+                            tool_input.get("subagent_type")
+                            or (
+                                tool_input.get("description", "").split()[0]
+                                if tool_input.get("description")
+                                else None
+                            )
+                            or "unknown-agent"
+                        )
+
+                        subagent_session = run.create_child(
+                            name=subagent_name,
+                            run_type="chain",
+                            start_time=datetime.fromtimestamp(
+                                start_time, tz=timezone.utc
+                            ),
+                        )
+                        subagent_session.post()
+                        subagent_sessions[tool_use_id] = subagent_session
+
+                        _client_managed_runs[tool_use_id] = subagent_session
+
+                    # Check if tool use is within a subagent
+                    elif parent_tool_use_id and parent_tool_use_id in subagent_sessions:
+                        subagent_session = subagent_sessions[parent_tool_use_id]
+                        # Create tool run as child of subagent
+                        tool_run = subagent_session.create_child(
+                            name=tool_name,
+                            run_type="tool",
+                            inputs={"input": tool_input} if tool_input else {},
+                            start_time=datetime.fromtimestamp(
+                                start_time,
+                                tz=timezone.utc,
+                            ),
+                        )
+                        tool_run.post()
+                        _client_managed_runs[tool_use_id] = tool_run
+
+                except Exception as e:
+                    logger.warning(f"Failed to create client-managed tool run: {e}")
 
         async def receive_response(self) -> AsyncGenerator[Any, None]:
             """Intercept message stream and record chain run activity."""
@@ -226,9 +297,11 @@ def instrument_claude_client(original_class: Any) -> Any:
                 inputs=trace_inputs,
                 metadata=trace_metadata,
             ) as run:
-                set_parent_run_tree(run)
                 tracker = TurnLifecycle(self._start_time)
                 collected: list[dict[str, Any]] = []
+
+                # Track subagent sessions by Task tool_use_id
+                subagent_sessions: dict[str, Any] = {}
 
                 try:
                     async for msg in messages:
@@ -239,7 +312,38 @@ def instrument_claude_client(original_class: Any) -> Any:
                             )
                             if content:
                                 collected.append(content)
+
+                            # Process tool uses in this AssistantMessage
+                            self._handle_assistant_tool_uses(
+                                msg,
+                                run,
+                                subagent_sessions,
+                            )
                         elif msg_type == "UserMessage":
+                            # Check if this is a subagent message
+                            parent_tool_use_id = getattr(
+                                msg, "parent_tool_use_id", None
+                            )
+                            if (
+                                parent_tool_use_id
+                                and parent_tool_use_id in subagent_sessions
+                            ):
+                                # Subagent input message - update session
+                                subagent_session = subagent_sessions[parent_tool_use_id]
+                                if hasattr(msg, "content"):
+                                    try:
+                                        msg_content = flatten_content_blocks(
+                                            msg.content
+                                        )
+                                        subagent_session.inputs = {
+                                            "prompt": msg_content
+                                        }
+                                    except Exception as e:
+                                        logger.warning(
+                                            f"Failed to set subagent "
+                                            f"session inputs: {e}"
+                                        )
+
                             if hasattr(msg, "content"):
                                 collected.append(
                                     {
@@ -276,13 +380,13 @@ def instrument_claude_client(original_class: Any) -> Any:
                             }
                             if meta:
                                 run.metadata.update(meta)
+
                         yield msg
                     run.end(outputs=collected[-1] if collected else None)
                 except Exception:
                     logger.exception("Error while tracing Claude Agent stream")
                 finally:
                     tracker.close()
-                    clear_parent_run_tree()
                     clear_active_tool_runs()
 
         async def __aenter__(self) -> "TracedClaudeSDKClient":

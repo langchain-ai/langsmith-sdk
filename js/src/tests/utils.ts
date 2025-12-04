@@ -51,7 +51,7 @@ export async function pollRunsUntilCount(
       }
     },
     timeout ?? 120_000, // Wait up to 120 seconds
-    5000 // every 5 second
+    3000
   );
 }
 
@@ -100,7 +100,7 @@ export async function waitUntilRunFound(
       }
     },
     30_000,
-    5_000,
+    3_000,
     `Waiting for run "${runId}"`
   );
 }
@@ -199,4 +199,36 @@ export function createRunsFactory(
     },
     project_name: projectName,
   }));
+}
+
+/**
+ * Helper to check if an error is a rate limit (429) error
+ */
+export function isRateLimitError(error: any): boolean {
+  return (
+    error?.status === 429 ||
+    error?.statusCode === 429 ||
+    error?.message?.includes("429") ||
+    error?.message?.includes("Too Many Requests") ||
+    error?.message?.includes("Rate limit")
+  );
+}
+
+/**
+ * Wraps a test function to skip gracefully on rate limit errors
+ */
+export async function skipOnRateLimit(
+  testFn: () => Promise<void>
+): Promise<void> {
+  try {
+    await testFn();
+  } catch (error: any) {
+    if (isRateLimitError(error)) {
+      console.log(
+        "⚠️  Test skipped due to rate limit (429). This is expected in CI with API rate limits."
+      );
+      return; // Skip test gracefully
+    }
+    throw error; // Re-throw other errors
+  }
 }

@@ -442,6 +442,39 @@ def test_traceable_iterator_noargs(_: MagicMock) -> None:
     assert list(my_iterator_fn(1, 2, 3)) == [0, 1, 2, 3, 4, 5]
 
 
+def test_traceable_stream_context_manager_returns_wrapper(
+    mock_client: Client,
+) -> None:
+    with tracing_context(enabled=True):
+
+        @traceable(client=mock_client, reduce_fn=lambda chunks: chunks)
+        def my_stream_fn():
+            class SyncCtxStream:
+                def __init__(self) -> None:
+                    self.entered = False
+                    self.exited = False
+
+                def __enter__(self):
+                    self.entered = True
+                    return self
+
+                def __exit__(self, exc_type, exc_val, exc_tb):
+                    self.exited = True
+
+                def __iter__(self):
+                    return iter([])
+
+            stream = SyncCtxStream()
+            return stream
+
+        stream = my_stream_fn()
+        with stream as s:
+            assert s is stream
+        # Ensure the underlying stream context manager was used
+        assert stream.__ls_stream__.entered
+        assert stream.__ls_stream__.exited
+
+
 @patch("langsmith.run_trees.Client", autospec=True)
 async def test_traceable_async_iterator_noargs(_: MagicMock) -> None:
     # Check that it's callable without the parens
@@ -451,6 +484,49 @@ async def test_traceable_async_iterator_noargs(_: MagicMock) -> None:
             yield i
 
     assert [i async for i in my_iterator_fn(1, 2, 3)] == [0, 1, 2, 3, 4, 5]
+
+
+@pytest.mark.asyncio
+async def test_traceable_async_stream_context_manager_returns_wrapper(
+    mock_client: Client,
+) -> None:
+    with tracing_context(enabled=True):
+
+        @traceable(client=mock_client, reduce_fn=lambda chunks: chunks)
+        async def my_stream_fn():
+            class AsyncCtxStream:
+                def __init__(self) -> None:
+                    self.entered = False
+                    self.exited = False
+                    self._done = False
+
+                async def __aenter__(self):
+                    self.entered = True
+                    return self
+
+                async def __aexit__(self, exc_type, exc_val, exc_tb):
+                    self.exited = True
+
+                def __aiter__(self):
+                    return self
+
+                async def __anext__(self):
+                    if self._done:
+                        raise StopAsyncIteration
+                    self._done = True
+                    return "chunk"
+
+            stream = AsyncCtxStream()
+            return stream
+
+        stream = await my_stream_fn()
+        async with stream as s:
+            assert s is stream
+            collected = [item async for item in s]
+            assert collected == ["chunk"]
+        # Ensure the underlying stream context manager was used
+        assert stream.__ls_stream__.entered
+        assert stream.__ls_stream__.exited
 
 
 @patch("langsmith.client.requests.Session", autospec=True)
@@ -1853,3 +1929,27 @@ async def test_traceable_async_iterator_process_chunk(mock_client: Client) -> No
     body = json.loads(mock_calls[0].kwargs["data"])
     assert body["post"]
     assert body["post"][0]["outputs"]["output"] == list(range(6))
+
+
+def test_set_run_metadata_updates_current_run_tree() -> None:
+    with tracing_context(enabled=True):
+
+        @traceable
+        def instrumented() -> RunTree:
+            langsmith.set_run_metadata(foo=1)
+            langsmith.set_run_metadata(bar="two")
+            rt = get_current_run_tree()
+            assert rt is not None
+            return rt
+
+        run_tree = instrumented()
+    assert run_tree.metadata["foo"] == 1
+    assert run_tree.metadata["bar"] == "two"
+
+
+def test_set_run_metadata_without_active_run_tree(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    langsmith.set_run_metadata(foo=1)
+    assert len(caplog.records) == 1
+    assert "No active run tree found" in caplog.text

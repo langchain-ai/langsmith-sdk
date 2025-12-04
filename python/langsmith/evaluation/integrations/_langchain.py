@@ -28,119 +28,135 @@ class SingleEvaluatorInput(TypedDict):
 
 
 class LangChainStringEvaluator:
-    r"""A class for wrapping a LangChain StringEvaluator.
+    r"""A class for wrapping a LangChain `StringEvaluator`.
 
     Requires the `langchain` package to be installed.
 
     Attributes:
-        evaluator (StringEvaluator): The underlying StringEvaluator OR the name
+        evaluator (StringEvaluator): The underlying `StringEvaluator` OR the name
             of the evaluator to load.
 
     Methods:
-        as_run_evaluator() -> RunEvaluator:
-            Convert the LangChainStringEvaluator to a RunEvaluator.
+        `as_run_evaluator() -> RunEvaluator`:
+            Convert the `LangChainStringEvaluator` to a `RunEvaluator`.
 
     Examples:
-        Creating a simple LangChainStringEvaluator:
+        !!! example "Creating a simple `LangChainStringEvaluator`"
 
-        >>> evaluator = LangChainStringEvaluator("exact_match")
+            ```python
+            evaluator = LangChainStringEvaluator("exact_match")
+            ```
 
-        Converting a LangChainStringEvaluator to a RunEvaluator:
+        !!! example "Converting a `LangChainStringEvaluator` to a `RunEvaluator`"
 
-        >>> from langsmith.evaluation import LangChainStringEvaluator
-        >>> from langchain_openai import ChatOpenAI
-        >>> evaluator = LangChainStringEvaluator(
-        ...     "criteria",
-        ...     config={
-        ...         "criteria": {
-        ...             "usefulness": "The prediction is useful if"
-        ...             " it is correct and/or asks a useful followup question."
-        ...         },
-        ...         "llm": ChatOpenAI(model="gpt-4o"),
-        ...     },
-        ... )
-        >>> run_evaluator = evaluator.as_run_evaluator()
-        >>> run_evaluator  # doctest: +ELLIPSIS
-        <DynamicRunEvaluator ...>
+            ```python
+            from langsmith.evaluation import LangChainStringEvaluator
+            from langchain_openai import ChatOpenAI
+            evaluator = LangChainStringEvaluator(
+                "criteria",
+                config={
+                    "criteria": {
+                        "usefulness": "The prediction is useful if"
+                        " it is correct and/or asks a useful followup question."
+                    },
+                    "llm": ChatOpenAI(model="gpt-4o"),
+                },
+            )
+            run_evaluator = evaluator.as_run_evaluator()
+            run_evaluator  # doctest: +ELLIPSIS
+            <DynamicRunEvaluator ...>
+            ```
 
-        Customizing the LLM model used by the evaluator:
+        !!! example "Customizing the LLM model used by the evaluator"
 
-        >>> from langsmith.evaluation import LangChainStringEvaluator
-        >>> from langchain_anthropic import ChatAnthropic
-        >>> evaluator = LangChainStringEvaluator(
-        ...     "criteria",
-        ...     config={
-        ...         "criteria": {
-        ...             "usefulness": "The prediction is useful if"
-        ...             " it is correct and/or asks a useful followup question."
-        ...         },
-        ...         "llm": ChatAnthropic(model="claude-3-opus-20240229"),
-        ...     },
-        ... )
-        >>> run_evaluator = evaluator.as_run_evaluator()
-        >>> run_evaluator  # doctest: +ELLIPSIS
-        <DynamicRunEvaluator ...>
+            ```python
+            from langsmith.evaluation import LangChainStringEvaluator
+            from langchain_anthropic import ChatAnthropic
+            evaluator = LangChainStringEvaluator(
+                "criteria",
+                config={
+                    "criteria": {
+                        "usefulness": "The prediction is useful if"
+                        " it is correct and/or asks a useful followup question."
+                    },
+                    "llm": ChatAnthropic(model="claude-3-opus-20240229"),
+                },
+            )
 
-        Using the `evaluate` API with different evaluators:
-        >>> def prepare_data(run: Run, example: Example):
-        ...     # Convert the evaluation data into the format expected by the evaluator
-        ...     # Only required for datasets with multiple inputs/output keys
-        ...     return {
-        ...         "prediction": run.outputs["prediction"],
-        ...         "reference": example.outputs["answer"],
-        ...         "input": str(example.inputs),
-        ...     }
-        >>> import re
-        >>> from langchain_anthropic import ChatAnthropic
-        >>> import langsmith
-        >>> from langsmith.evaluation import LangChainStringEvaluator, evaluate
-        >>> criteria_evaluator = LangChainStringEvaluator(
-        ...     "criteria",
-        ...     config={
-        ...         "criteria": {
-        ...             "usefulness": "The prediction is useful if it is correct"
-        ...             " and/or asks a useful followup question."
-        ...         },
-        ...         "llm": ChatAnthropic(model="claude-3-opus-20240229"),
-        ...     },
-        ...     prepare_data=prepare_data,
-        ... )
-        >>> embedding_evaluator = LangChainStringEvaluator("embedding_distance")
-        >>> exact_match_evaluator = LangChainStringEvaluator("exact_match")
-        >>> regex_match_evaluator = LangChainStringEvaluator(
-        ...     "regex_match", config={"flags": re.IGNORECASE}, prepare_data=prepare_data
-        ... )
-        >>> scoring_evaluator = LangChainStringEvaluator(
-        ...     "labeled_score_string",
-        ...     config={
-        ...         "criteria": {
-        ...             "accuracy": "Score 1: Completely inaccurate\nScore 5: Somewhat accurate\nScore 10: Completely accurate"
-        ...         },
-        ...         "normalize_by": 10,
-        ...         "llm": ChatAnthropic(model="claude-3-opus-20240229"),
-        ...     },
-        ...     prepare_data=prepare_data,
-        ... )
-        >>> string_distance_evaluator = LangChainStringEvaluator(
-        ...     "string_distance",
-        ...     config={"distance_metric": "levenshtein"},
-        ...     prepare_data=prepare_data,
-        ... )
-        >>> from langsmith import Client
-        >>> client = Client()
-        >>> results = evaluate(
-        ...     lambda inputs: {"prediction": "foo"},
-        ...     data=client.list_examples(dataset_name="Evaluate Examples", limit=1),
-        ...     evaluators=[
-        ...         embedding_evaluator,
-        ...         criteria_evaluator,
-        ...         exact_match_evaluator,
-        ...         regex_match_evaluator,
-        ...         scoring_evaluator,
-        ...         string_distance_evaluator,
-        ...     ],
-        ... )  # doctest: +ELLIPSIS
-        View the evaluation results for experiment:...
+            run_evaluator = evaluator.as_run_evaluator()
+            run_evaluator  # doctest: +ELLIPSIS
+            <DynamicRunEvaluator ...>
+            ```
+
+        !!! example "Using the `evaluate` API with different evaluators"
+
+            ```python
+            def prepare_data(run: Run, example: Example):
+                # Convert the evaluation data into the format expected by the evaluator
+                # Only required for datasets with multiple inputs/output keys
+                return {
+                    "prediction": run.outputs["prediction"],
+                    "reference": example.outputs["answer"],
+                    "input": str(example.inputs),
+                }
+
+
+            import re
+            from langchain_anthropic import ChatAnthropic
+            import langsmith
+            from langsmith.evaluation import LangChainStringEvaluator, evaluate
+
+            criteria_evaluator = LangChainStringEvaluator(
+                "criteria",
+                config={
+                    "criteria": {
+                        "usefulness": "The prediction is useful if it is correct"
+                        " and/or asks a useful followup question."
+                    },
+                    "llm": ChatAnthropic(model="claude-3-opus-20240229"),
+                },
+                prepare_data=prepare_data,
+            )
+
+            embedding_evaluator = LangChainStringEvaluator("embedding_distance")
+            exact_match_evaluator = LangChainStringEvaluator("exact_match")
+            regex_match_evaluator = LangChainStringEvaluator(
+                "regex_match", config={"flags": re.IGNORECASE}, prepare_data=prepare_data
+            )
+
+            scoring_evaluator = LangChainStringEvaluator(
+                "labeled_score_string",
+                config={
+                    "criteria": {
+                        "accuracy": "Score 1: Completely inaccurate\nScore 5: Somewhat accurate\nScore 10: Completely accurate"
+                    },
+                    "normalize_by": 10,
+                    "llm": ChatAnthropic(model="claude-3-opus-20240229"),
+                },
+                prepare_data=prepare_data,
+            )
+            string_distance_evaluator = LangChainStringEvaluator(
+                "string_distance",
+                config={"distance_metric": "levenshtein"},
+                prepare_data=prepare_data,
+            )
+
+            from langsmith import Client
+
+            client = Client()
+            results = evaluate(
+                lambda inputs: {"prediction": "foo"},
+                data=client.list_examples(dataset_name="Evaluate Examples", limit=1),
+                evaluators=[
+                    embedding_evaluator,
+                    criteria_evaluator,
+                    exact_match_evaluator,
+                    regex_match_evaluator,
+                    scoring_evaluator,
+                    string_distance_evaluator,
+                ],
+            )  # doctest: +ELLIPSIS
+            ```
     """  # noqa: E501
 
     def __init__(
@@ -152,12 +168,10 @@ class LangChainStringEvaluator:
             Callable[[Run, Optional[Example]], SingleEvaluatorInput]
         ] = None,
     ):
-        """Initialize a LangChainStringEvaluator.
-
-        See: https://api.python.langchain.com/en/latest/evaluation/langchain.evaluation.schema.StringEvaluator.html#langchain-evaluation-schema-stringevaluator
+        """Initialize a `LangChainStringEvaluator`.
 
         Args:
-            evaluator (StringEvaluator): The underlying StringEvaluator.
+            evaluator (StringEvaluator): The underlying `StringEvaluator`.
         """
         from langchain.evaluation.schema import StringEvaluator  # noqa: F811
 
@@ -177,12 +191,12 @@ class LangChainStringEvaluator:
     def as_run_evaluator(
         self,
     ) -> RunEvaluator:
-        """Convert the LangChainStringEvaluator to a RunEvaluator.
+        """Convert the `LangChainStringEvaluator` to a `RunEvaluator`.
 
         This is the object used in the LangSmith `evaluate` API.
 
         Returns:
-            RunEvaluator: The converted RunEvaluator.
+            RunEvaluator: The converted `RunEvaluator`.
         """
         input_str = (
             "\n       \"input\": example.inputs['input'],"

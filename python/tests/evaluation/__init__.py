@@ -23,9 +23,10 @@ Example:
 
     print(metrics.summary())
 
-For detailed API documentation and advanced usage scenarios, visit:
-https://docs.langsmith.com/evaluation
+For detailed API documentation and advanced usage scenarios, visit the [LangSmith docs](https://docs.langchain.com/langsmith/evaluation-concepts).
 
-Note: This module is designed to work seamlessly with the LangSmith platform.
-Ensure you have the necessary credentials and permissions set up before use.
+!!! note
+
+    This module is designed to work seamlessly with the LangSmith platform.
+    Ensure you have the necessary credentials and permissions set up before use.
 """

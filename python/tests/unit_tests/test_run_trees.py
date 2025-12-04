@@ -2,7 +2,7 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from unittest.mock import MagicMock
-from uuid import UUID
+from uuid import NAMESPACE_DNS, UUID, uuid5
 
 import pytest
 
@@ -267,3 +267,95 @@ def test_distributed_parent_id_from_headers():
         f"Distributed parent ID should be the immediate parent from headers! "
         f"Expected {child.id}, got {current_distributed_parent_id}"
     )
+
+
+def test_remap_for_project_uuid5_remapping():
+    """Test that _remap_for_project remaps UUIDs using uuid5 for different projects."""
+    mock_client = MagicMock(spec=Client)
+
+    # Create a hierarchy: grandparent -> parent -> child
+    grandparent = RunTree(
+        name="Grandparent",
+        inputs={"text": "root"},
+        client=mock_client,
+        session_name="original_project",
+    )
+    parent = grandparent.create_child(name="Parent")
+    child = parent.create_child(name="Child")
+
+    # Test 1: Same project name should return unmodified dict
+    same_project_dict = child._remap_for_project("original_project")
+    assert same_project_dict["id"] == child.id
+    assert same_project_dict["trace_id"] == grandparent.id
+    assert same_project_dict["parent_run_id"] == parent.id
+
+    # Test 2: Different project name should remap UUIDs using uuid5
+    new_project = "different_project"
+    remapped_dict = child._remap_for_project(new_project)
+
+    # Verify IDs are remapped using uuid5
+    expected_id = uuid5(NAMESPACE_DNS, f"{child.id}:{new_project}")
+    expected_trace_id = uuid5(NAMESPACE_DNS, f"{grandparent.id}:{new_project}")
+    expected_parent_id = uuid5(NAMESPACE_DNS, f"{parent.id}:{new_project}")
+
+    assert remapped_dict["id"] == expected_id
+    assert remapped_dict["trace_id"] == expected_trace_id
+    assert remapped_dict["parent_run_id"] == expected_parent_id
+    assert remapped_dict["session_name"] == new_project
+
+    # Test 3: Verify dotted_order is correctly rebuilt with remapped UUIDs
+    original_dotted_order = child.dotted_order
+    remapped_dotted_order = remapped_dict["dotted_order"]
+
+    # Parse both dotted orders
+    original_parts = run_trees._parse_dotted_order(original_dotted_order)
+    remapped_parts = run_trees._parse_dotted_order(remapped_dotted_order)
+
+    # Should have same number of segments
+    assert len(original_parts) == len(remapped_parts)
+
+    # Each segment should have UUID remapped via uuid5
+    for (orig_time, orig_uuid), (remap_time, remap_uuid) in zip(
+        original_parts, remapped_parts
+    ):
+        expected_uuid = uuid5(NAMESPACE_DNS, f"{orig_uuid}:{new_project}")
+        assert remap_uuid == expected_uuid
+        assert orig_time == remap_time  # Timestamps should be preserved
+
+    # Test 4: Remapping is deterministic (same input -> same output)
+    remapped_dict_2 = child._remap_for_project(new_project)
+    assert remapped_dict["id"] == remapped_dict_2["id"]
+    assert remapped_dict["trace_id"] == remapped_dict_2["trace_id"]
+    assert remapped_dict["parent_run_id"] == remapped_dict_2["parent_run_id"]
+    assert remapped_dict["dotted_order"] == remapped_dict_2["dotted_order"]
+
+
+def test_remap_for_project_root_run():
+    """Test _remap_for_project on a root run (no parent)."""
+    mock_client = MagicMock(spec=Client)
+
+    root = RunTree(
+        name="Root",
+        inputs={"text": "root"},
+        client=mock_client,
+        session_name="original_project",
+    )
+
+    new_project = "different_project"
+    remapped_dict = root._remap_for_project(new_project)
+
+    # Verify ID is remapped
+    expected_id = uuid5(NAMESPACE_DNS, f"{root.id}:{new_project}")
+    assert remapped_dict["id"] == expected_id
+
+    # Root run has trace_id == id, so trace_id should also be remapped
+    expected_trace_id = uuid5(NAMESPACE_DNS, f"{root.id}:{new_project}")
+    assert remapped_dict["trace_id"] == expected_trace_id
+
+    # Root run has no parent
+    assert remapped_dict["parent_run_id"] is None
+
+    # Dotted order should have single segment with remapped UUID
+    remapped_parts = run_trees._parse_dotted_order(remapped_dict["dotted_order"])
+    assert len(remapped_parts) == 1
+    assert remapped_parts[0][1] == expected_id

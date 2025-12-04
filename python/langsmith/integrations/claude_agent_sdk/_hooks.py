@@ -1,7 +1,7 @@
 """Hook-based tool tracing for Claude Agent SDK.
 
 This module provides hook handlers that traces tool calls by intercepting
-PreToolUse and PostToolUse events.
+`PreToolUse` and `PostToolUse` events.
 """
 
 import logging
@@ -10,8 +10,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Optional
 
 from langsmith.run_helpers import get_current_run_tree
-
-from ._tools import get_parent_run_tree
+from langsmith.run_trees import RunTree
 
 if TYPE_CHECKING:
     from claude_agent_sdk import (
@@ -26,6 +25,10 @@ logger = logging.getLogger(__name__)
 # Key: tool_use_id, Value: (run_tree, start_time)
 _active_tool_runs: dict[str, tuple[Any, float]] = {}
 
+# Storage for tool or subagent runs managed by client
+# Key: tool_use_id, Value: run_tree
+_client_managed_runs: dict[str, RunTree] = {}
+
 
 async def pre_tool_use_hook(
     input_data: "HookInput",
@@ -35,7 +38,7 @@ async def pre_tool_use_hook(
     """Trace tool execution before it starts.
 
     Args:
-        input_data: Contains tool_name, tool_input, session_id
+        input_data: Contains `tool_name`, `tool_input`, `session_id`
         tool_use_id: Unique identifier for this tool invocation
         context: Hook context (currently contains only signal)
 
@@ -46,11 +49,15 @@ async def pre_tool_use_hook(
         logger.debug("PreToolUse hook called without tool_use_id, skipping trace")
         return {}
 
+    # Skip if this tool run is already managed by the client
+    if tool_use_id in _client_managed_runs:
+        return {}
+
     tool_name: str = str(input_data.get("tool_name", "unknown_tool"))
     tool_input = input_data.get("tool_input", {})
 
     try:
-        parent = get_parent_run_tree() or get_current_run_tree()
+        parent = get_current_run_tree()
         if not parent:
             logger.debug(f"No parent run tree found for tool {tool_name}")
             return {}
@@ -69,7 +76,6 @@ async def pre_tool_use_hook(
             logger.warning(f"Failed to post tool run for {tool_name}: {e}")
 
         _active_tool_runs[tool_use_id] = (tool_run, start_time)
-
         logger.debug(f"Started tool trace for {tool_name} (id={tool_use_id})")
 
     except Exception as e:
@@ -86,19 +92,44 @@ async def post_tool_use_hook(
     """Trace tool execution after it completes.
 
     Args:
-        input_data: Contains tool_name, tool_input, tool_response, session_id, etc.
+        input_data: Contains `tool_name`, `tool_input`, `tool_response`, `session_id`, etc.
         tool_use_id: Unique identifier for this tool invocation
         context: Hook context (currently contains only signal)
 
     Returns:
-        Hook output (empty dict by default)
-    """
+        Hook output (empty `dict` by default)
+    """  # noqa: E501
     if not tool_use_id:
         logger.debug("PostToolUse hook called without tool_use_id, skipping trace")
         return {}
 
     tool_name: str = str(input_data.get("tool_name", "unknown_tool"))
     tool_response = input_data.get("tool_response")
+
+    # Check if this is a client-managed run
+    run_tree = _client_managed_runs.pop(tool_use_id, None)
+    if run_tree:
+        # This run is managed by the client (subagent session or its tools)
+        try:
+            if isinstance(tool_response, dict):
+                outputs = tool_response
+            elif isinstance(tool_response, list):
+                outputs = {"content": tool_response}
+            else:
+                outputs = {"output": str(tool_response)} if tool_response else {}
+
+            is_error = False
+            if isinstance(tool_response, dict):
+                is_error = tool_response.get("is_error", False)
+
+            run_tree.end(
+                outputs=outputs,
+                error=outputs.get("output") if is_error else None,
+            )
+            run_tree.patch()
+        except Exception as e:
+            logger.warning(f"Failed to update client-managed run: {e}")
+        return {}
 
     try:
         run_info = _active_tool_runs.pop(tool_use_id, None)
@@ -150,9 +181,19 @@ def clear_active_tool_runs() -> None:
     This should be called when a conversation ends to avoid memory leaks
     and to clean up any orphaned tool runs.
     """
-    global _active_tool_runs
+    global _active_tool_runs, _client_managed_runs
 
-    # End any orphaned runs
+    # End any orphaned client-managed runs
+    for tool_use_id, run_tree in _client_managed_runs.items():
+        try:
+            run_tree.end(error="Client-managed run not completed (conversation ended)")
+            run_tree.patch()
+        except Exception as e:
+            logger.debug(
+                f"Failed to clean up orphaned client-managed run {tool_use_id}: {e}"
+            )
+
+    # End any orphaned tool runs
     for tool_use_id, (tool_run, _) in _active_tool_runs.items():
         try:
             tool_run.end(error="Tool run not completed (conversation ended)")
@@ -161,3 +202,4 @@ def clear_active_tool_runs() -> None:
             logger.debug(f"Failed to clean up orphaned tool run {tool_use_id}: {e}")
 
     _active_tool_runs.clear()
+    _client_managed_runs.clear()

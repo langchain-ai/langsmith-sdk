@@ -318,87 +318,87 @@ class AsyncClient:
         --------
         List all runs in a project:
 
-        .. code-block:: python
-
-            project_runs = client.list_runs(project_name="<your_project>")
+        ```python
+        project_runs = client.list_runs(project_name="<your_project>")
+        ```
 
         List LLM and Chat runs in the last 24 hours:
 
-        .. code-block:: python
-
-            todays_llm_runs = client.list_runs(
-                project_name="<your_project>",
-                start_time=datetime.now() - timedelta(days=1),
-                run_type="llm",
-            )
+        ```python
+        todays_llm_runs = client.list_runs(
+            project_name="<your_project>",
+            start_time=datetime.now() - timedelta(days=1),
+            run_type="llm",
+        )
+        ```
 
         List root traces in a project:
 
-        .. code-block:: python
-
-            root_runs = client.list_runs(project_name="<your_project>", is_root=1)
+        ```python
+        root_runs = client.list_runs(project_name="<your_project>", is_root=1)
+        ```
 
         List runs without errors:
 
-        .. code-block:: python
-
-            correct_runs = client.list_runs(project_name="<your_project>", error=False)
+        ```python
+        correct_runs = client.list_runs(project_name="<your_project>", error=False)
+        ```
 
         List runs and only return their inputs/outputs (to speed up the query):
 
-        .. code-block:: python
-
-            input_output_runs = client.list_runs(
-                project_name="<your_project>", select=["inputs", "outputs"]
-            )
+        ```python
+        input_output_runs = client.list_runs(
+            project_name="<your_project>", select=["inputs", "outputs"]
+        )
+        ```
 
         List runs by run ID:
 
-        .. code-block:: python
-
-            run_ids = [
-                "a36092d2-4ad5-4fb4-9c0d-0dba9a2ed836",
-                "9398e6be-964f-4aa4-8ae9-ad78cd4b7074",
-            ]
-            selected_runs = client.list_runs(id=run_ids)
+        ```python
+        run_ids = [
+            "a36092d2-4ad5-4fb4-9c0d-0dba9a2ed836",
+            "9398e6be-964f-4aa4-8ae9-ad78cd4b7074",
+        ]
+        selected_runs = client.list_runs(id=run_ids)
+        ```
 
         List all "chain" type runs that took more than 10 seconds and had
         `total_tokens` greater than 5000:
 
-        .. code-block:: python
-
-            chain_runs = client.list_runs(
-                project_name="<your_project>",
-                filter='and(eq(run_type, "chain"), gt(latency, 10), gt(total_tokens, 5000))',
-            )
+        ```python
+        chain_runs = client.list_runs(
+            project_name="<your_project>",
+            filter='and(eq(run_type, "chain"), gt(latency, 10), gt(total_tokens, 5000))',
+        )
+        ```
 
         List all runs called "extractor" whose root of the trace was assigned feedback "user_score" score of 1:
 
-        .. code-block:: python
-
-            good_extractor_runs = client.list_runs(
-                project_name="<your_project>",
-                filter='eq(name, "extractor")',
-                trace_filter='and(eq(feedback_key, "user_score"), eq(feedback_score, 1))',
-            )
+        ```python
+        good_extractor_runs = client.list_runs(
+            project_name="<your_project>",
+            filter='eq(name, "extractor")',
+            trace_filter='and(eq(feedback_key, "user_score"), eq(feedback_score, 1))',
+        )
+        ```
 
         List all runs that started after a specific timestamp and either have "error" not equal to null or a "Correctness" feedback score equal to 0:
 
-        .. code-block:: python
-
-            complex_runs = client.list_runs(
-                project_name="<your_project>",
-                filter='and(gt(start_time, "2023-07-15T12:34:56Z"), or(neq(error, null), and(eq(feedback_key, "Correctness"), eq(feedback_score, 0.0))))',
-            )
+        ```python
+        complex_runs = client.list_runs(
+            project_name="<your_project>",
+            filter='and(gt(start_time, "2023-07-15T12:34:56Z"), or(neq(error, null), and(eq(feedback_key, "Correctness"), eq(feedback_score, 0.0))))',
+        )
+        ```
 
         List all runs where `tags` include "experimental" or "beta" and `latency` is greater than 2 seconds:
 
-        .. code-block:: python
-
-            tagged_runs = client.list_runs(
-                project_name="<your_project>",
-                filter='and(or(has(tags, "experimental"), has(tags, "beta")), gt(latency, 2))',
-            )
+        ```python
+        tagged_runs = client.list_runs(
+            project_name="<your_project>",
+            filter='and(or(has(tags, "experimental"), has(tags, "beta")), gt(latency, 2))',
+        )
+        ```
         """
         project_ids = []
         if isinstance(project_id, (uuid.UUID, str)):
@@ -436,6 +436,7 @@ class AsyncClient:
             "id": run_ids,
             "trace": trace_id,
             "select": select,
+            "limit": limit,
             **kwargs,
         }
         if project_ids:
@@ -968,7 +969,7 @@ class AsyncClient:
     async def read_annotation_queue(
         self, queue_id: ID_TYPE
     ) -> ls_schemas.AnnotationQueue:
-        """Read an annotation queue with the specified queue ID.
+        """Read an annotation queue with the specified `queue_id`.
 
         Args:
             queue_id (Union[UUID, str]): The ID of the annotation queue to read.
@@ -982,7 +983,7 @@ class AsyncClient:
     async def update_annotation_queue(
         self, queue_id: ID_TYPE, *, name: str, description: Optional[str] = None
     ) -> None:
-        """Update an annotation queue with the specified queue_id.
+        """Update an annotation queue with the specified `queue_id`.
 
         Args:
             queue_id (Union[UUID, str]): The ID of the annotation queue to update.
@@ -1004,7 +1005,7 @@ class AsyncClient:
         ls_utils.raise_for_status_with_text(response)
 
     async def delete_annotation_queue(self, queue_id: ID_TYPE) -> None:
-        """Delete an annotation queue with the specified queue ID.
+        """Delete an annotation queue with the specified `queue_id`.
 
         Args:
             queue_id (Union[UUID, str]): The ID of the annotation queue to delete.
@@ -1022,7 +1023,7 @@ class AsyncClient:
     async def add_runs_to_annotation_queue(
         self, queue_id: ID_TYPE, *, run_ids: list[ID_TYPE]
     ) -> None:
-        """Add runs to an annotation queue with the specified queue ID.
+        """Add runs to an annotation queue with the specified `queue_id`.
 
         Args:
             queue_id (Union[UUID, str]): The ID of the annotation queue.
@@ -1045,7 +1046,7 @@ class AsyncClient:
     async def delete_run_from_annotation_queue(
         self, queue_id: ID_TYPE, *, run_id: ID_TYPE
     ) -> None:
-        """Delete a run from an annotation queue with the specified queue ID and run ID.
+        """Delete a run from an annotation queue with the specified `queue_id` and `run_id`.
 
         Args:
             queue_id (Union[UUID, str]): The ID of the annotation queue.
@@ -1105,7 +1106,7 @@ class AsyncClient:
             None
 
         Raises:
-            requests.HTTPError
+            requests.HTTPError: If the request fails.
         """  # noqa: E501
         dataset_id = ls_client._as_uuid(dataset_id, "dataset_id")
         resp = await self._arequest_with_retries(
@@ -1122,7 +1123,10 @@ class AsyncClient:
         dataset_id: ls_client.ID_TYPE,
         **kwargs: Any,
     ) -> None:
-        """Sync dataset index. This already happens automatically every 5 minutes, but you can call this to force a sync.
+        """Sync dataset index.
+
+        This already happens automatically every 5 minutes, but you can call this to
+        force a sync.
 
         Args:
             dataset_id (UUID): The ID of the dataset to sync.
@@ -1131,7 +1135,7 @@ class AsyncClient:
             None
 
         Raises:
-            requests.HTTPError
+            requests.HTTPError: If the request fails.
         """  # noqa: E501
         dataset_id = ls_client._as_uuid(dataset_id, "dataset_id")
         resp = await self._arequest_with_retries(
@@ -1154,8 +1158,9 @@ class AsyncClient:
     ) -> list[ls_schemas.ExampleSearch]:
         r"""Retrieve the dataset examples whose inputs best match the current inputs.
 
-        **Note**: Must have few-shot indexing enabled for the dataset. See
-        ``client.index_dataset()``.
+        !!! note
+
+            Must have few-shot indexing enabled for the dataset. See `client.index_dataset()`.
 
         Args:
             inputs (dict): The inputs to use as a search query. Must match the dataset
@@ -1170,43 +1175,51 @@ class AsyncClient:
         Returns:
             List of ExampleSearch objects.
 
-        Example:
-            .. code-block:: python
+        Examples:
+            ```python
+            from langsmith import Client
 
-                from langsmith import Client
+            client = Client()
+            await client.similar_examples(
+                {"question": "When would i use the runnable generator"},
+                limit=3,
+                dataset_id="...",
+            )
+            ```
 
-                client = Client()
-                await client.similar_examples(
-                    {"question": "When would i use the runnable generator"},
-                    limit=3,
-                    dataset_id="...",
-                )
-
-            .. code-block:: pycon
-
-                [
-                    ExampleSearch(
-                        inputs={'question': 'How do I cache a Chat model? What caches can I use?'},
-                        outputs={'answer': 'You can use LangChain\'s caching layer for Chat Models. This can save you money by reducing the number of API calls you make to the LLM provider, if you\'re often requesting the same completion multiple times, and speed up your application.\n\n```python\n\nfrom langchain.cache import InMemoryCache\nlangchain.llm_cache = InMemoryCache()\n\n# The first time, it is not yet in cache, so it should take longer\nllm.predict(\'Tell me a joke\')\n\n```\n\nYou can also use SQLite Cache which uses a SQLite database:\n\n```python\n  rm .langchain.db\n\nfrom langchain.cache import SQLiteCache\nlangchain.llm_cache = SQLiteCache(database_path=".langchain.db")\n\n# The first time, it is not yet in cache, so it should take longer\nllm.predict(\'Tell me a joke\') \n```\n'},
-                        metadata=None,
-                        id=UUID('b2ddd1c4-dff6-49ae-8544-f48e39053398'),
-                        dataset_id=UUID('01b6ce0f-bfb6-4f48-bbb8-f19272135d40')
-                    ),
-                    ExampleSearch(
-                        inputs={'question': "What's a runnable lambda?"},
-                        outputs={'answer': "A runnable lambda is an object that implements LangChain's `Runnable` interface and runs a callbale (i.e., a function). Note the function must accept a single argument."},
-                        metadata=None,
-                        id=UUID('f94104a7-2434-4ba7-8293-6a283f4860b4'),
-                        dataset_id=UUID('01b6ce0f-bfb6-4f48-bbb8-f19272135d40')
-                    ),
-                    ExampleSearch(
-                        inputs={'question': 'Show me how to use RecursiveURLLoader'},
-                        outputs={'answer': 'The RecursiveURLLoader comes from the langchain.document_loaders.recursive_url_loader module. Here\'s an example of how to use it:\n\n```python\nfrom langchain.document_loaders.recursive_url_loader import RecursiveUrlLoader\n\n# Create an instance of RecursiveUrlLoader with the URL you want to load\nloader = RecursiveUrlLoader(url="https://example.com")\n\n# Load all child links from the URL page\nchild_links = loader.load()\n\n# Print the child links\nfor link in child_links:\n    print(link)\n```\n\nMake sure to replace "https://example.com" with the actual URL you want to load. The load() method returns a list of child links found on the URL page. You can iterate over this list to access each child link.'},
-                        metadata=None,
-                        id=UUID('0308ea70-a803-4181-a37d-39e95f138f8c'),
-                        dataset_id=UUID('01b6ce0f-bfb6-4f48-bbb8-f19272135d40')
-                    ),
-                ]
+            ```python
+            [
+                ExampleSearch(
+                    inputs={
+                        "question": "How do I cache a Chat model? What caches can I use?"
+                    },
+                    outputs={
+                        "answer": "You can use LangChain's caching layer for Chat Models. This can save you money by reducing the number of API calls you make to the LLM provider, if you're often requesting the same completion multiple times, and speed up your application.\n\n```python\n\nfrom langchain.cache import InMemoryCache\nlangchain.llm_cache = InMemoryCache()\n\n# The first time, it is not yet in cache, so it should take longer\nllm.predict('Tell me a joke')\n\n```\n\nYou can also use SQLite Cache which uses a SQLite database:\n\n```python\n  rm .langchain.db\n\nfrom langchain.cache import SQLiteCache\nlangchain.llm_cache = SQLiteCache(database_path=\".langchain.db\")\n\n# The first time, it is not yet in cache, so it should take longer\nllm.predict('Tell me a joke') \n```\n"
+                    },
+                    metadata=None,
+                    id=UUID("b2ddd1c4-dff6-49ae-8544-f48e39053398"),
+                    dataset_id=UUID("01b6ce0f-bfb6-4f48-bbb8-f19272135d40"),
+                ),
+                ExampleSearch(
+                    inputs={"question": "What's a runnable lambda?"},
+                    outputs={
+                        "answer": "A runnable lambda is an object that implements LangChain's `Runnable` interface and runs a callbale (i.e., a function). Note the function must accept a single argument."
+                    },
+                    metadata=None,
+                    id=UUID("f94104a7-2434-4ba7-8293-6a283f4860b4"),
+                    dataset_id=UUID("01b6ce0f-bfb6-4f48-bbb8-f19272135d40"),
+                ),
+                ExampleSearch(
+                    inputs={"question": "Show me how to use RecursiveURLLoader"},
+                    outputs={
+                        "answer": 'The RecursiveURLLoader comes from the langchain.document_loaders.recursive_url_loader module. Here\'s an example of how to use it:\n\n```python\nfrom langchain.document_loaders.recursive_url_loader import RecursiveUrlLoader\n\n# Create an instance of RecursiveUrlLoader with the URL you want to load\nloader = RecursiveUrlLoader(url="https://example.com")\n\n# Load all child links from the URL page\nchild_links = loader.load()\n\n# Print the child links\nfor link in child_links:\n    print(link)\n```\n\nMake sure to replace "https://example.com" with the actual URL you want to load. The load() method returns a list of child links found on the URL page. You can iterate over this list to access each child link.'
+                    },
+                    metadata=None,
+                    id=UUID("0308ea70-a803-4181-a37d-39e95f138f8c"),
+                    dataset_id=UUID("01b6ce0f-bfb6-4f48-bbb8-f19272135d40"),
+                ),
+            ]
+            ```
 
         """  # noqa: E501
         dataset_id = ls_client._as_uuid(dataset_id, "dataset_id")
@@ -1386,9 +1399,9 @@ class AsyncClient:
             is_public (Optional[bool]): Filter prompts by if they are public.
             is_archived (Optional[bool]): Filter prompts by if they are archived.
             sort_field (PromptSortField): The field to sort by.
-              Defaults to "updated_at".
+                Defaults to "updated_at".
             sort_direction (Literal["desc", "asc"], default="desc"): The order to sort by.
-              Defaults to "desc".
+                Defaults to "desc".
             query (Optional[str]): Filter prompts by a search query.
 
         Returns:
@@ -1678,7 +1691,8 @@ class AsyncClient:
         Yields:
             A ListedPromptCommit object for each commit.
 
-        Note:
+        !!! note
+
             This method uses pagination to retrieve commits. It will make multiple API calls if necessary to retrieve all commits
             or up to the specified limit.
         """
@@ -1718,13 +1732,13 @@ class AsyncClient:
     async def pull_prompt(
         self, prompt_identifier: str, *, include_model: Optional[bool] = False
     ) -> Any:
-        """Pull a prompt and return it as a LangChain PromptTemplate.
+        """Pull a prompt and return it as a LangChain `PromptTemplate`.
 
-        This method requires `langchain-core <https://pypi.org/project/langchain-core/>`__.
+        This method requires [`langchain-core`](https://pypi.org/project/langchain-core).
 
         Args:
-            prompt_identifier (str): The identifier of the prompt.
-            include_model (Optional[bool], default=False): Whether to include the model information in the prompt data.
+            prompt_identifier: The identifier of the prompt.
+            include_model: Whether to include the model information in the prompt data.
 
         Returns:
             Any: The prompt object in the specified format.
@@ -1839,17 +1853,17 @@ class AsyncClient:
             prompt_identifier (str): The identifier of the prompt.
             object (Optional[Any]): The LangChain object to push.
             parent_commit_hash (str): The parent commit hash.
-              Defaults to "latest".
+                Defaults to "latest".
             is_public (Optional[bool]): Whether the prompt should be public.
                 If None (default), the current visibility status is maintained for existing prompts.
                 For new prompts, None defaults to private.
                 Set to True to make public, or False to make private.
             description (Optional[str]): A description of the prompt.
-              Defaults to an empty string.
+                Defaults to an empty string.
             readme (Optional[str]): A readme for the prompt.
-              Defaults to an empty string.
+                Defaults to an empty string.
             tags (Optional[Sequence[str]]): A list of tags for the prompt.
-              Defaults to an empty list.
+                Defaults to an empty list.
 
         Returns:
             str: The URL of the prompt.
