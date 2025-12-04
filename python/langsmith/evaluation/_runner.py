@@ -1221,6 +1221,7 @@ class _ExperimentManagerMixin:
 
     def _get_experiment_metadata(self):
         project_metadata = self._metadata or {}
+        project_metadata["__ls_runner"] = "py_sdk_evaluate"
         git_info = ls_env.get_git_info()
         if git_info:
             project_metadata = {
