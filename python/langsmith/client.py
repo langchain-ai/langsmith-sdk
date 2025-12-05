@@ -459,6 +459,7 @@ class Client:
         "_otel_trace",
         "_set_span_in_context",
         "_max_batch_size_bytes",
+        "_background_tracing_error_callback",
     ]
 
     _api_key: Optional[str]
@@ -494,6 +495,7 @@ class Client:
         workspace_id: Optional[str] = None,
         max_batch_size_bytes: Optional[int] = None,
         headers: Optional[dict[str, str]] = None,
+        background_tracing_error_callback: Optional[Callable[[Exception], None]] = None,
     ) -> None:
         """Initialize a `Client` instance.
 
@@ -575,6 +577,9 @@ class Client:
             headers (Optional[Dict[str, str]]): Additional HTTP headers to include in all requests.
                 These headers will be merged with the default headers (User-Agent, Accept, x-api-key, etc.).
                 Custom headers will not override the default required headers.
+            background_tracing_error_callback (Optional[Callable[[Exception], None]]): Optional callback function to handle errors.
+
+                Called when exceptions occur during background tracing operations.
 
         Raises:
             LangSmithUserError: If the API key is not provided when using the hosted service.
@@ -778,6 +783,8 @@ class Client:
                 self.otel_exporter = None
         else:
             self.otel_exporter = None
+
+        self._background_tracing_error_callback = background_tracing_error_callback
 
     def _repr_html_(self) -> str:
         """Return an HTML representation of the instance with a link to the URL.
