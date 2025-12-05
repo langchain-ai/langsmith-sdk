@@ -29,7 +29,11 @@ class TurnLifecycle:
         self.next_start_time: Optional[float] = query_start_time
 
     def start_llm_run(
-        self, message: Any, prompt: Any, history: list[dict[str, Any]]
+        self,
+        message: Any,
+        prompt: Any,
+        history: list[dict[str, Any]],
+        parent: Optional[Any] = None,
     ) -> Optional[dict[str, Any]]:
         """Begin a new model run, ending any existing one."""
         start = self.next_start_time or time.time()
@@ -39,7 +43,7 @@ class TurnLifecycle:
             self.current_run.patch()
 
         final_output, run = begin_llm_run_from_assistant_messages(
-            [message], prompt, history, start_time=start
+            [message], prompt, history, start_time=start, parent=parent
         )
         self.current_run = run
         self.next_start_time = None
@@ -75,6 +79,7 @@ def begin_llm_run_from_assistant_messages(
     prompt: Any,
     history: list[dict[str, Any]],
     start_time: Optional[float] = None,
+    parent: Optional[Any] = None,
 ) -> tuple[Optional[dict[str, Any]], Optional[Any]]:
     """Create a traced model run from assistant messages."""
     if not messages or type(messages[-1]).__name__ != "AssistantMessage":
@@ -82,7 +87,8 @@ def begin_llm_run_from_assistant_messages(
 
     last_msg = messages[-1]
     model = getattr(last_msg, "model", None)
-    parent = get_current_run_tree()
+    if parent is None:
+        parent = get_current_run_tree()
     if not parent:
         return None, None
 
@@ -223,6 +229,7 @@ def instrument_claude_client(original_class: Any) -> Any:
                         subagent_session = run.create_child(
                             name=subagent_name,
                             run_type="chain",
+                            inputs=tool_input,
                             start_time=datetime.fromtimestamp(
                                 start_time, tz=timezone.utc
                             ),
@@ -307,8 +314,18 @@ def instrument_claude_client(original_class: Any) -> Any:
                     async for msg in messages:
                         msg_type = type(msg).__name__
                         if msg_type == "AssistantMessage":
+                            # Check if this message belongs to a subagent
+                            parent_tool_use_id = getattr(
+                                msg, "parent_tool_use_id", None
+                            )
+                            llm_parent = (
+                                subagent_sessions.get(parent_tool_use_id)
+                                if parent_tool_use_id
+                                else None
+                            )
+
                             content = tracker.start_llm_run(
-                                msg, self._prompt, collected
+                                msg, self._prompt, collected, parent=llm_parent
                             )
                             if content:
                                 collected.append(content)
@@ -320,30 +337,6 @@ def instrument_claude_client(original_class: Any) -> Any:
                                 subagent_sessions,
                             )
                         elif msg_type == "UserMessage":
-                            # Check if this is a subagent message
-                            parent_tool_use_id = getattr(
-                                msg, "parent_tool_use_id", None
-                            )
-                            if (
-                                parent_tool_use_id
-                                and parent_tool_use_id in subagent_sessions
-                            ):
-                                # Subagent input message - update session
-                                subagent_session = subagent_sessions[parent_tool_use_id]
-                                if hasattr(msg, "content"):
-                                    try:
-                                        msg_content = flatten_content_blocks(
-                                            msg.content
-                                        )
-                                        subagent_session.inputs = {
-                                            "prompt": msg_content
-                                        }
-                                    except Exception as e:
-                                        logger.warning(
-                                            f"Failed to set subagent "
-                                            f"session inputs: {e}"
-                                        )
-
                             if hasattr(msg, "content"):
                                 collected.append(
                                     {
