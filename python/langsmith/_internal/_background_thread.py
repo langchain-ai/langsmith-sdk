@@ -311,14 +311,7 @@ def _tracing_thread_handle_batch(
             "Error details:",
             exc_info=True,
         )
-        if client._tracing_error_callback:
-            try:
-                client._tracing_error_callback(e)
-            except Exception:
-                logger.error(
-                    "Error in tracing_error_callback:\n",
-                    exc_info=True,
-                )
+        client._invoke_tracing_error_callback(e)
     finally:
         if mark_task_done and tracing_queue is not None:
             for _ in batch:
@@ -382,14 +375,7 @@ def _otel_tracing_thread_handle_batch(
             "Error details:",
             exc_info=True,
         )
-        if client._tracing_error_callback:
-            try:
-                client._tracing_error_callback(e)
-            except Exception:
-                logger.error(
-                    "Error in tracing_error_callback:\n",
-                    exc_info=True,
-                )
+        client._invoke_tracing_error_callback(e)
     finally:
         if mark_task_done and tracing_queue is not None:
             for _ in batch:

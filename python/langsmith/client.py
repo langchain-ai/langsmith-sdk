@@ -2076,6 +2076,7 @@ class Client:
                     logger.warning(f"Failed to batch ingest runs: {exc_desc}")
                 except Exception:
                     logger.warning(f"Failed to batch ingest runs: {repr(e)}")
+                self._invoke_tracing_error_callback(e)
 
     def _multipart_ingest_ops(
         self,
