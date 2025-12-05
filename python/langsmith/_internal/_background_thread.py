@@ -187,21 +187,13 @@ def _tracing_thread_drain_compressed_buffer(
 
         filled_buffer.seek(0)
         return (filled_buffer, compressed_traces_info)
-    except Exception as e:
+    except Exception:
         logger.error(
             "LangSmith tracing error: Failed to submit trace data.\n"
             "This does not affect your application's runtime.\n"
             "Error details:",
             exc_info=True,
         )
-        if client._background_tracing_error_callback:
-            try:
-                client._background_tracing_error_callback(e)
-            except Exception:
-                logger.error(
-                    "Error in background_tracing_error_callback:\n",
-                    exc_info=True,
-                )
         # exceptions are logged elsewhere, but we need to make sure the
         # background thread continues to run
         return None, None
@@ -247,7 +239,7 @@ def _process_buffered_run_ops_batch(
         # Trigger data available event
         if client._data_available_event:
             client._data_available_event.set()
-    except Exception as e:
+    except Exception:
         # Log errors but don't crash the background thread
         logger.error(
             "LangSmith buffered run ops processing error: Failed to process batch.\n"
@@ -255,14 +247,6 @@ def _process_buffered_run_ops_batch(
             "Error details:",
             exc_info=True,
         )
-        if client._background_tracing_error_callback:
-            try:
-                client._background_tracing_error_callback(e)
-            except Exception:
-                logger.error(
-                    "Error in background_tracing_error_callback:\n",
-                    exc_info=True,
-                )
 
 
 def _tracing_thread_handle_batch(
@@ -327,12 +311,12 @@ def _tracing_thread_handle_batch(
             "Error details:",
             exc_info=True,
         )
-        if client._background_tracing_error_callback:
+        if client._tracing_error_callback:
             try:
-                client._background_tracing_error_callback(e)
+                client._tracing_error_callback(e)
             except Exception:
                 logger.error(
-                    "Error in background_tracing_error_callback:\n",
+                    "Error in tracing_error_callback:\n",
                     exc_info=True,
                 )
     finally:
@@ -398,12 +382,12 @@ def _otel_tracing_thread_handle_batch(
             "Error details:",
             exc_info=True,
         )
-        if client._background_tracing_error_callback:
+        if client._tracing_error_callback:
             try:
-                client._background_tracing_error_callback(e)
+                client._tracing_error_callback(e)
             except Exception:
                 logger.error(
-                    "Error in background_tracing_error_callback:\n",
+                    "Error in tracing_error_callback:\n",
                     exc_info=True,
                 )
     finally:
@@ -874,21 +858,13 @@ def tracing_control_thread_func_compress_parallel(
                     compressed_traces_info,
                 )
 
-    except Exception as e:
+    except Exception:
         logger.error(
             "LangSmith tracing error: Failed during final cleanup.\n"
             "This does not affect your application's runtime.\n"
             "Error details:",
             exc_info=True,
         )
-        if client._background_tracing_error_callback:
-            try:
-                client._background_tracing_error_callback(e)
-            except Exception:
-                logger.error(
-                    "Error in background_tracing_error_callback:\n",
-                    exc_info=True,
-                )
     logger.debug("Compressed traces control thread is shutting down")
 
 

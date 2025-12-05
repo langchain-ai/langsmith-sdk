@@ -459,7 +459,7 @@ class Client:
         "_otel_trace",
         "_set_span_in_context",
         "_max_batch_size_bytes",
-        "_background_tracing_error_callback",
+        "_tracing_error_callback",
     ]
 
     _api_key: Optional[str]
@@ -495,7 +495,7 @@ class Client:
         workspace_id: Optional[str] = None,
         max_batch_size_bytes: Optional[int] = None,
         headers: Optional[dict[str, str]] = None,
-        background_tracing_error_callback: Optional[Callable[[Exception], None]] = None,
+        tracing_error_callback: Optional[Callable[[Exception], None]] = None,
     ) -> None:
         """Initialize a `Client` instance.
 
@@ -577,9 +577,9 @@ class Client:
             headers (Optional[Dict[str, str]]): Additional HTTP headers to include in all requests.
                 These headers will be merged with the default headers (User-Agent, Accept, x-api-key, etc.).
                 Custom headers will not override the default required headers.
-            background_tracing_error_callback (Optional[Callable[[Exception], None]]): Optional callback function to handle errors.
+            tracing_error_callback (Optional[Callable[[Exception], None]]): Optional callback function to handle errors.
 
-                Called when exceptions occur during background tracing operations.
+                Called when exceptions occur during tracing operations.
 
         Raises:
             LangSmithUserError: If the API key is not provided when using the hosted service.
@@ -784,7 +784,7 @@ class Client:
         else:
             self.otel_exporter = None
 
-        self._background_tracing_error_callback = background_tracing_error_callback
+        self._tracing_error_callback = tracing_error_callback
 
     def _repr_html_(self) -> str:
         """Return an HTML representation of the instance with a link to the URL.
@@ -794,6 +794,21 @@ class Client:
         """
         link = self._host_url
         return f'<a href="{link}", target="_blank" rel="noopener">LangSmith Client</a>'
+
+    def _invoke_tracing_error_callback(self, error: Exception) -> None:
+        """Invoke the background tracing error callback if configured.
+
+        Args:
+            error: The exception that occurred during background tracing.
+        """
+        if self._tracing_error_callback:
+            try:
+                self._tracing_error_callback(error)
+            except Exception:
+                logger.error(
+                    "Error in tracing_error_callback:\n",
+                    exc_info=True,
+                )
 
     def __repr__(self) -> str:
         """Return a string representation of the instance with a link to the URL.
@@ -2318,6 +2333,7 @@ class Client:
                 ) as exc:
                     if idx == attempts:
                         logger.warning(f"Failed to multipart ingest runs: {exc}")
+                        self._invoke_tracing_error_callback(exc)
                     else:
                         continue
                 except Exception as e:
@@ -2327,6 +2343,7 @@ class Client:
                         logger.warning(f"Failed to multipart ingest runs: {exc_desc}")
                     except Exception:
                         logger.warning(f"Failed to multipart ingest runs: {repr(e)}")
+                    self._invoke_tracing_error_callback(e)
                     # do not retry by default
                     break
 
@@ -2386,6 +2403,7 @@ class Client:
                         logger.warning(
                             f"Failed to send compressed multipart ingest: {exc}"
                         )
+                        self._invoke_tracing_error_callback(exc)
                     else:
                         continue
                 except Exception as e:
@@ -2399,6 +2417,7 @@ class Client:
                         logger.warning(
                             f"Failed to send compressed multipart ingest: {repr(e)}"
                         )
+                    self._invoke_tracing_error_callback(e)
                     # Do not retry by default after unknown exceptions
                     break
 
