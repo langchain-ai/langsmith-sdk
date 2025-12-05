@@ -1285,6 +1285,10 @@ async def _aforward(
         )
 
 
+def _default_process_inputs(inputs: dict) -> dict:
+    return inputs["inputs"] if "inputs" in inputs else inputs
+
+
 def _ensure_async_traceable(
     target: ATARGET_T,
 ) -> rh.SupportsLangsmithExtra[[dict], Awaitable]:
@@ -1312,7 +1316,10 @@ def _ensure_async_traceable(
     else:
         if _is_langchain_runnable(target):
             target = target.ainvoke  # type: ignore[union-attr]
-        return rh.traceable(name="AsyncTarget")(target)  # type: ignore[arg-type]
+        return rh.traceable(
+            name="AsyncTarget",
+            process_inputs=_default_process_inputs,
+        )(target)  # type: ignore[arg-type]
 
 
 def _aresolve_data(

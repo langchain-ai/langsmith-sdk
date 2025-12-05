@@ -1965,6 +1965,10 @@ def _resolve_data(
     return data
 
 
+def _default_process_inputs(inputs: dict) -> dict:
+    return inputs["inputs"] if "inputs" in inputs else inputs
+
+
 def _ensure_traceable(
     target: TARGET_T | rh.SupportsLangsmithExtra[[dict], dict] | Runnable,
 ) -> rh.SupportsLangsmithExtra[[dict], dict]:
@@ -1987,7 +1991,9 @@ def _ensure_traceable(
     else:
         if _is_langchain_runnable(target):
             target = target.invoke  # type: ignore[union-attr]
-        fn = rh.traceable(name="Target")(cast(Callable, target))
+        fn = rh.traceable(name="Target", process_inputs=_default_process_inputs)(
+            cast(Callable, target)
+        )
     return fn
 
 
