@@ -12,6 +12,7 @@ import math
 import os
 import pathlib
 import sys
+import threading
 import time
 import uuid
 import warnings
@@ -45,7 +46,8 @@ from langsmith.client import (
     _is_langchain_hosted,
     _parse_token_or_url,
 )
-from langsmith.utils import LangSmithUserError
+from langsmith.run_trees import RunTree
+from langsmith.utils import LangSmithRateLimitError, LangSmithUserError
 
 _CREATED_AT = datetime(2015, 1, 1, 0, 0, 0)
 
@@ -4489,10 +4491,6 @@ def test_list_runs_child_run_ids_deprecation_warning(
 
 def test_tracing_error_callback_on_429():
     """Test that tracing_error_callback is invoked on 429 errors in multipart flow."""
-    import threading
-
-    from langsmith.utils import LangSmithRateLimitError
-
     mock_session = MagicMock()
 
     # Track callback invocations
@@ -4552,8 +4550,6 @@ def test_tracing_error_callback_on_429():
     )
 
     # Create a test run using RunTree with trace_id and dotted_order
-    from langsmith.run_trees import RunTree
-
     run_id = uuid.uuid4()
     trace_id = uuid.uuid4()
     run = RunTree(
