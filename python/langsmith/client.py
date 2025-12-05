@@ -1720,9 +1720,13 @@ class Client:
                 except Exception as e:
                     errors.append(e)
         if errors:
+            # Invoke callback for the errors
             if len(errors) > 1:
-                raise ls_utils.LangSmithExceptionGroup(exceptions=errors)
+                exception_group = ls_utils.LangSmithExceptionGroup(exceptions=errors)
+                self._invoke_tracing_error_callback(exception_group)
+                raise exception_group
             else:
+                self._invoke_tracing_error_callback(errors[0])
                 raise errors[0]
 
     def _hide_run_inputs(self, inputs: dict):
