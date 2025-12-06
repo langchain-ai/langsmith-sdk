@@ -2775,7 +2775,7 @@ class Client:
             if child_run.parent_run_id is None:
                 raise ls_utils.LangSmithError(f"Child run {child_run.id} has no parent")
 
-             # Only track downstream children
+            # Only track downstream children
             ancestor_ids = {
                 seg.split("Z", 1)[1]
                 for seg in child_run.dotted_order.split(".")
