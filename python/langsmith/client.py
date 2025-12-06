@@ -2735,6 +2735,8 @@ class Client:
             collections.defaultdict(list)
         )
         runs: dict[uuid.UUID, ls_schemas.Run] = {}
+        run_id_str = str(run.id)
+
         for child_run in sorted(
             child_runs,
             key=lambda r: r.dotted_order,
@@ -2742,11 +2744,13 @@ class Client:
             if child_run.parent_run_id is None:
                 raise ls_utils.LangSmithError(f"Child run {child_run.id} has no parent")
 
-            # Only track downstream children
-            if (
-                child_run.dotted_order.startswith(run.dotted_order)
-                and child_run.id != run.id
-            ):
+             # Only track downstream children
+            ancestor_ids = {
+                seg.split("Z", 1)[1]
+                for seg in child_run.dotted_order.split(".")
+                if "Z" in seg
+            }
+            if run_id_str in ancestor_ids and child_run.id != run.id:
                 treemap[child_run.parent_run_id].append(child_run)
                 runs[child_run.id] = child_run
         run.child_runs = treemap.pop(run.id, [])
