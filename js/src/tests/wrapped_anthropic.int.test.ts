@@ -5,6 +5,7 @@ import { wrapAnthropic } from "../wrappers/anthropic.js";
 import { mockClient } from "./utils/mock_client.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 import { UsageMetadata } from "../schemas.js";
+import { generateLongContext } from "./utils.js";
 
 function parseRequestBody(body: any) {
   // eslint-disable-next-line no-instanceof/no-instanceof
@@ -851,6 +852,167 @@ const usageMetadataTestCases = [
     expectUsageMetadata: true,
   },
 ];
+
+// Token intensive test, so skipping by default
+describe.skip("Anthropic Prompt Caching Tests", () => {
+  test("5-minute ephemeral cache", async () => {
+    const { client, callSpy } = mockClient();
+
+    const patchedClient = wrapAnthropic(new Anthropic(), {
+      client,
+      tracingEnabled: true,
+    });
+
+    const longContext = generateLongContext();
+
+    // First call - creates 5-minute cache
+    const response1 = await patchedClient.beta.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 100,
+      betas: ["prompt-caching-2024-07-31"],
+      system: [
+        {
+          type: "text",
+          text: "You are a helpful assistant that analyzes error logs.",
+        },
+        {
+          type: "text",
+          text: longContext,
+          cache_control: { type: "ephemeral", ttl: "5m" },
+        },
+      ],
+      messages: [
+        { role: "user", content: "Summarize the main error briefly." },
+      ],
+    });
+
+    expect(response1.usage).toBeDefined();
+    expect(response1.usage.cache_creation_input_tokens).toBeGreaterThan(0);
+
+    // Second call - should read from 5-minute cache
+    const response2 = await patchedClient.beta.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 100,
+      betas: ["prompt-caching-2024-07-31"],
+      system: [
+        {
+          type: "text",
+          text: "You are a helpful assistant that analyzes error logs.",
+        },
+        {
+          type: "text",
+          text: longContext,
+          cache_control: { type: "ephemeral", ttl: "5m" },
+        },
+      ],
+      messages: [{ role: "user", content: "What are the recommended fixes?" }],
+    });
+
+    expect(response2.usage).toBeDefined();
+    expect(response2.usage.cache_read_input_tokens).toBeGreaterThan(0);
+
+    // Verify usage_metadata was captured in tracing
+    const patchCalls = callSpy.mock.calls.filter(
+      (call) => (call[1] as any).method === "PATCH"
+    );
+
+    expect(patchCalls.length).toBeGreaterThanOrEqual(2);
+
+    const firstPatchBody = parseRequestBody((patchCalls[0][1] as any).body);
+    expect(firstPatchBody.outputs.usage_metadata).toBeDefined();
+    expect(
+      firstPatchBody.outputs.usage_metadata.input_token_details?.cache_read
+    ).toBeGreaterThan(0);
+
+    const secondPatchBody = parseRequestBody((patchCalls[1][1] as any).body);
+    expect(secondPatchBody.outputs.usage_metadata).toBeDefined();
+    expect(
+      secondPatchBody.outputs.usage_metadata.input_token_details?.cache_read
+    ).toBeGreaterThan(0);
+
+    callSpy.mockClear();
+  });
+
+  test("1-hour extended cache", async () => {
+    const { client, callSpy } = mockClient();
+
+    const patchedClient = wrapAnthropic(new Anthropic(), {
+      client,
+      tracingEnabled: true,
+    });
+
+    const longContext = generateLongContext();
+
+    // First call - creates 1-hour extended cache
+    const response1 = await patchedClient.beta.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 100,
+      betas: ["prompt-caching-2024-07-31"],
+      system: [
+        {
+          type: "text",
+          text: "You are a helpful assistant that analyzes error logs.",
+        },
+        {
+          type: "text",
+          text: longContext,
+          cache_control: { type: "ephemeral", ttl: "1h" },
+        },
+      ],
+      messages: [
+        { role: "user", content: "What is the primary error message?" },
+      ],
+    });
+
+    expect(response1.usage).toBeDefined();
+    expect(response1.usage.cache_creation_input_tokens).toBeGreaterThan(0);
+
+    // Second call - should read from 1-hour extended cache
+    const response2 = await patchedClient.beta.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 100,
+      betas: ["prompt-caching-2024-07-31"],
+      system: [
+        {
+          type: "text",
+          text: "You are a helpful assistant that analyzes error logs.",
+        },
+        {
+          type: "text",
+          text: longContext,
+          cache_control: { type: "ephemeral", ttl: "1h" },
+        },
+      ],
+      messages: [
+        { role: "user", content: "What services are mentioned in the stack?" },
+      ],
+    });
+
+    expect(response2.usage).toBeDefined();
+    expect(response2.usage.cache_read_input_tokens).toBeGreaterThan(0);
+
+    // Verify usage_metadata was captured in tracing
+    const patchCalls = callSpy.mock.calls.filter(
+      (call) => (call[1] as any).method === "PATCH"
+    );
+
+    expect(patchCalls.length).toBeGreaterThanOrEqual(2);
+
+    const firstPatchBody = parseRequestBody((patchCalls[0][1] as any).body);
+    expect(firstPatchBody.outputs.usage_metadata).toBeDefined();
+    expect(
+      firstPatchBody.outputs.usage_metadata.input_token_details?.cache_read
+    ).toBeGreaterThan(0);
+
+    const secondPatchBody = parseRequestBody((patchCalls[1][1] as any).body);
+    expect(secondPatchBody.outputs.usage_metadata).toBeDefined();
+    expect(
+      secondPatchBody.outputs.usage_metadata.input_token_details?.cache_read
+    ).toBeGreaterThan(0);
+
+    callSpy.mockClear();
+  });
+});
 
 describe("Usage Metadata Tests", () => {
   usageMetadataTestCases.forEach(
