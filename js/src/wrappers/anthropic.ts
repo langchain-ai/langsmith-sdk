@@ -177,14 +177,7 @@ const messageAggregator = (chunks: Anthropic.MessageStreamEvent[]): KVMap => {
         };
         // Capture initial usage
         if (chunk.message.usage) {
-          usage = {
-            input_tokens: chunk.message.usage.input_tokens,
-            output_tokens: chunk.message.usage.output_tokens,
-            cache_read_input_tokens:
-              chunk.message.usage.cache_read_input_tokens,
-            cache_creation_input_tokens:
-              chunk.message.usage.cache_creation_input_tokens,
-          };
+          usage = chunk.message.usage;
         }
         break;
 
@@ -234,7 +227,12 @@ const messageAggregator = (chunks: Anthropic.MessageStreamEvent[]): KVMap => {
         message.stop_reason = chunk.delta.stop_reason;
         message.stop_sequence = chunk.delta.stop_sequence ?? null;
         if (chunk.usage) {
-          usage.output_tokens = chunk.usage.output_tokens;
+          // Override only non-null keys
+          for (const [key, value] of Object.entries(chunk.usage)) {
+            if (value != null) {
+              usage[key] = value;
+            }
+          }
         }
         break;
 

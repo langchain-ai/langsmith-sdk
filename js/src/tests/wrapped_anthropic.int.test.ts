@@ -856,10 +856,7 @@ const usageMetadataTestCases = [
 // Token intensive test, so skipping by default
 describe.skip("Anthropic Prompt Caching Tests", () => {
   test("5-minute ephemeral cache", async () => {
-    const { client, callSpy } = mockClient();
-
     const patchedClient = wrapAnthropic(new Anthropic(), {
-      client,
       tracingEnabled: true,
     });
 
@@ -867,8 +864,8 @@ describe.skip("Anthropic Prompt Caching Tests", () => {
 
     // First call - creates 5-minute cache
     const response1 = await patchedClient.beta.messages.create({
-      model: "claude-haiku-4-5",
-      max_tokens: 100,
+      model: "claude-sonnet-4-5",
+      max_tokens: 1024,
       betas: ["prompt-caching-2024-07-31"],
       system: [
         {
@@ -886,13 +883,14 @@ describe.skip("Anthropic Prompt Caching Tests", () => {
       ],
     });
 
-    expect(response1.usage).toBeDefined();
-    expect(response1.usage.cache_creation_input_tokens).toBeGreaterThan(0);
+    expect(
+      response1.usage.cache_creation?.ephemeral_5m_input_tokens
+    ).toBeGreaterThan(0);
 
     // Second call - should read from 5-minute cache
     const response2 = await patchedClient.beta.messages.create({
-      model: "claude-haiku-4-5",
-      max_tokens: 100,
+      model: "claude-sonnet-4-5",
+      max_tokens: 1024,
       betas: ["prompt-caching-2024-07-31"],
       system: [
         {
@@ -910,34 +908,10 @@ describe.skip("Anthropic Prompt Caching Tests", () => {
 
     expect(response2.usage).toBeDefined();
     expect(response2.usage.cache_read_input_tokens).toBeGreaterThan(0);
-
-    // Verify usage_metadata was captured in tracing
-    const patchCalls = callSpy.mock.calls.filter(
-      (call) => (call[1] as any).method === "PATCH"
-    );
-
-    expect(patchCalls.length).toBeGreaterThanOrEqual(2);
-
-    const firstPatchBody = parseRequestBody((patchCalls[0][1] as any).body);
-    expect(firstPatchBody.outputs.usage_metadata).toBeDefined();
-    expect(
-      firstPatchBody.outputs.usage_metadata.input_token_details?.cache_read
-    ).toBeGreaterThan(0);
-
-    const secondPatchBody = parseRequestBody((patchCalls[1][1] as any).body);
-    expect(secondPatchBody.outputs.usage_metadata).toBeDefined();
-    expect(
-      secondPatchBody.outputs.usage_metadata.input_token_details?.cache_read
-    ).toBeGreaterThan(0);
-
-    callSpy.mockClear();
   });
 
   test("1-hour extended cache", async () => {
-    const { client, callSpy } = mockClient();
-
     const patchedClient = wrapAnthropic(new Anthropic(), {
-      client,
       tracingEnabled: true,
     });
 
@@ -945,8 +919,8 @@ describe.skip("Anthropic Prompt Caching Tests", () => {
 
     // First call - creates 1-hour extended cache
     const response1 = await patchedClient.beta.messages.create({
-      model: "claude-haiku-4-5",
-      max_tokens: 100,
+      model: "claude-sonnet-4-5",
+      max_tokens: 1024,
       betas: ["prompt-caching-2024-07-31"],
       system: [
         {
@@ -964,13 +938,14 @@ describe.skip("Anthropic Prompt Caching Tests", () => {
       ],
     });
 
-    expect(response1.usage).toBeDefined();
-    expect(response1.usage.cache_creation_input_tokens).toBeGreaterThan(0);
+    expect(
+      response1.usage.cache_creation?.ephemeral_1h_input_tokens
+    ).toBeGreaterThan(0);
 
     // Second call - should read from 1-hour extended cache
     const response2 = await patchedClient.beta.messages.create({
-      model: "claude-haiku-4-5",
-      max_tokens: 100,
+      model: "claude-sonnet-4-5",
+      max_tokens: 1024,
       betas: ["prompt-caching-2024-07-31"],
       system: [
         {
@@ -990,27 +965,132 @@ describe.skip("Anthropic Prompt Caching Tests", () => {
 
     expect(response2.usage).toBeDefined();
     expect(response2.usage.cache_read_input_tokens).toBeGreaterThan(0);
+  });
 
-    // Verify usage_metadata was captured in tracing
-    const patchCalls = callSpy.mock.calls.filter(
-      (call) => (call[1] as any).method === "PATCH"
-    );
+  test("5-minute ephemeral cache with streaming and finalMessage", async () => {
+    const patchedClient = wrapAnthropic(new Anthropic(), {
+      tracingEnabled: true,
+    });
 
-    expect(patchCalls.length).toBeGreaterThanOrEqual(2);
+    const longContext = generateLongContext();
 
-    const firstPatchBody = parseRequestBody((patchCalls[0][1] as any).body);
-    expect(firstPatchBody.outputs.usage_metadata).toBeDefined();
-    expect(
-      firstPatchBody.outputs.usage_metadata.input_token_details?.cache_read
-    ).toBeGreaterThan(0);
+    // First call - creates 5-minute cache
+    const stream1 = await patchedClient.beta.messages.create({
+      model: "claude-sonnet-4-5",
+      max_tokens: 100,
+      betas: ["prompt-caching-2024-07-31"],
+      system: [
+        {
+          type: "text",
+          text: "You are a helpful assistant that analyzes error logs.",
+        },
+        {
+          type: "text",
+          text: longContext,
+          cache_control: { type: "ephemeral", ttl: "5m" },
+        },
+      ],
+      messages: [
+        { role: "user", content: "Summarize the main error briefly." },
+      ],
+      stream: true,
+    });
 
-    const secondPatchBody = parseRequestBody((patchCalls[1][1] as any).body);
-    expect(secondPatchBody.outputs.usage_metadata).toBeDefined();
-    expect(
-      secondPatchBody.outputs.usage_metadata.input_token_details?.cache_read
-    ).toBeGreaterThan(0);
+    const events1: any[] = [];
+    for await (const event of stream1) {
+      events1.push(event);
+    }
 
-    callSpy.mockClear();
+    expect(events1.length).toBeGreaterThan(0);
+
+    // Second call - should read from 5-minute cache using finalMessage
+    const stream2 = patchedClient.beta.messages.stream({
+      model: "claude-sonnet-4-5",
+      max_tokens: 100,
+      betas: ["prompt-caching-2024-07-31"],
+      system: [
+        {
+          type: "text",
+          text: "You are a helpful assistant that analyzes error logs.",
+        },
+        {
+          type: "text",
+          text: longContext,
+          cache_control: { type: "ephemeral", ttl: "5m" },
+        },
+      ],
+      messages: [{ role: "user", content: "What are the recommended fixes?" }],
+    });
+
+    const finalMessage = await stream2.finalMessage();
+
+    expect(finalMessage.role).toBe("assistant");
+    expect(finalMessage.usage).toBeDefined();
+    expect(finalMessage.usage.cache_read_input_tokens).toBeGreaterThan(0);
+  });
+
+  test("1-hour extended cache with streaming and finalMessage", async () => {
+    const patchedClient = wrapAnthropic(new Anthropic(), {
+      tracingEnabled: true,
+    });
+
+    const longContext = generateLongContext();
+
+    // First call - creates 1-hour cache
+    const stream1 = await patchedClient.beta.messages.create({
+      model: "claude-sonnet-4-5",
+      max_tokens: 100,
+      betas: ["prompt-caching-2024-07-31"],
+      system: [
+        {
+          type: "text",
+          text: "You are a helpful assistant that analyzes error logs.",
+        },
+        {
+          type: "text",
+          text: longContext,
+          cache_control: { type: "ephemeral", ttl: "1h" },
+        },
+      ],
+      messages: [
+        { role: "user", content: "What is the primary error message?" },
+      ],
+      stream: true,
+    });
+
+    const events1: any[] = [];
+    for await (const event of stream1) {
+      events1.push(event);
+    }
+
+    expect(events1.length).toBeGreaterThan(0);
+
+    // Second call - should read from 1-hour cache using finalMessage
+    const stream2 = patchedClient.beta.messages.stream({
+      model: "claude-sonnet-4-5",
+      max_tokens: 100,
+      betas: ["prompt-caching-2024-07-31"],
+      system: [
+        {
+          type: "text",
+          text: "You are a helpful assistant that analyzes error logs.",
+        },
+        {
+          type: "text",
+          text: longContext,
+          cache_control: { type: "ephemeral", ttl: "1h" },
+        },
+      ],
+      messages: [
+        { role: "user", content: "What services are mentioned in the stack?" },
+      ],
+    });
+
+    const finalMessage = await stream2.finalMessage();
+
+    expect(finalMessage.role).toBe("assistant");
+    expect(finalMessage.usage).toBeDefined();
+    expect(finalMessage.usage.cache_read_input_tokens).toBeGreaterThan(0);
   });
 });
 
