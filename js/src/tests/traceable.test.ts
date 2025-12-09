@@ -2604,7 +2604,7 @@ test("traceable should ignore undefined id", async () => {
   await client.awaitPendingTraceBatches();
 
   expect(callSpy.mock.calls).toHaveLength(2);
-  const tree = getAssumedTreeFromCalls(callSpy.mock.calls);
+  const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
   expect(tree.nodes).toEqual(["extra_usage_metadata_run:0"]);
   expect(tree.data["extra_usage_metadata_run:0"].id).toBeDefined();
   expect(tree.data["extra_usage_metadata_run:0"].dotted_order).toBeDefined();
@@ -2711,8 +2711,8 @@ test("traceable with nested calls and reroot replicas", async () => {
   });
 
   // Use the tree utility to parse runs from mock calls
-  const childTree = getAssumedTreeFromCalls(childPostCalls);
-  const fullTree = getAssumedTreeFromCalls(fullPostCalls);
+  const childTree = await getAssumedTreeFromCalls(childPostCalls, client);
+  const fullTree = await getAssumedTreeFromCalls(fullPostCalls, client);
 
   // Find outerTask and middleTask in both replicas to verify rerooting behavior
   const childOuterTask = Object.values(childTree.data).find(
