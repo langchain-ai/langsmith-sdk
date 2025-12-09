@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING, Any, Optional
 from langsmith.run_helpers import get_current_run_tree
 from langsmith.run_trees import RunTree
 
+from ._tools import get_parent_run_tree
+
 if TYPE_CHECKING:
     from claude_agent_sdk import (
         HookContext,
@@ -57,7 +59,7 @@ async def pre_tool_use_hook(
     tool_input = input_data.get("tool_input", {})
 
     try:
-        parent = get_current_run_tree()
+        parent = get_parent_run_tree() or get_current_run_tree()
         if not parent:
             logger.debug(f"No parent run tree found for tool {tool_name}")
             return {}
