@@ -8,6 +8,7 @@ import {
   TraceableConfig,
 } from "../traceable.js";
 import { KVMap } from "../schemas.js";
+import { convertAnthropicUsageToInputTokenDetails } from "../utils/usage.js";
 
 const TRACED_INVOCATION_KEYS = ["top_k", "top_p", "stream", "thinking"];
 
@@ -59,35 +60,31 @@ type PatchedAnthropicClient<T extends AnthropicType> = T & {
   };
 };
 
-interface UsageTracker {
-  input_tokens: number;
-  output_tokens: number;
-  cache_read_input_tokens?: number | null;
-  cache_creation_input_tokens?: number | null;
-}
-
 /**
  * Create usage metadata from Anthropic's token usage format.
  */
 function createUsageMetadata(
-  anthropicUsage: UsageTracker | undefined
+  anthropicUsage: Partial<Anthropic.Messages.Usage>
 ): KVMap | undefined {
   if (!anthropicUsage) {
     return undefined;
   }
 
-  const inputTokens = anthropicUsage.input_tokens ?? 0;
-  const outputTokens = anthropicUsage.output_tokens ?? 0;
+  const inputTokens =
+    typeof anthropicUsage.input_tokens === "number"
+      ? anthropicUsage.input_tokens
+      : 0;
+  const outputTokens =
+    typeof anthropicUsage.output_tokens === "number"
+      ? anthropicUsage.output_tokens
+      : 0;
   const totalTokens = inputTokens + outputTokens;
 
-  // Anthropic provides cache tokens separately
-  const cacheReadTokens = anthropicUsage.cache_read_input_tokens ?? 0;
-  const cacheCreationTokens = anthropicUsage.cache_creation_input_tokens ?? 0;
-
-  const inputTokenDetails: Record<string, number> = {};
-  if (cacheReadTokens > 0 || cacheCreationTokens > 0) {
-    inputTokenDetails.cache_read = cacheReadTokens + cacheCreationTokens;
-  }
+  const inputTokenDetails: Record<string, number> =
+    convertAnthropicUsageToInputTokenDetails(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      anthropicUsage as Record<string, any>
+    );
 
   return {
     input_tokens: inputTokens,
@@ -109,7 +106,7 @@ function processMessageOutput(outputs: KVMap): KVMap {
   delete result.type;
 
   if (message.usage) {
-    result.usage_metadata = createUsageMetadata(message.usage as UsageTracker);
+    result.usage_metadata = createUsageMetadata(message.usage);
     delete result.usage;
   }
 
@@ -161,7 +158,7 @@ const messageAggregator = (chunks: Anthropic.MessageStreamEvent[]): KVMap => {
   };
 
   // Track usage
-  let usage: UsageTracker = {
+  let usage: Partial<Anthropic.Messages.Usage> = {
     input_tokens: 0,
     output_tokens: 0,
   };
