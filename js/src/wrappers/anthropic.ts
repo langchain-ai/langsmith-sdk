@@ -282,26 +282,12 @@ const messageAggregator = (chunks: Anthropic.MessageStreamEvent[]): KVMap => {
  *   messages: [{ role: "user", content: "Hello!" }],
  * });
  *
- * // Streaming with create()
- * const stream = await anthropic.messages.create({
- *   model: "claude-sonnet-4-20250514",
- *   max_tokens: 1024,
- *   messages: [{ role: "user", content: "Hello!" }],
- *   stream: true,
- * });
- * for await (const event of stream) {
- *   // process events
- * }
- *
- * // Streaming with stream()
+ * // Streaming
  * const messageStream = anthropic.messages.stream({
  *   model: "claude-sonnet-4-20250514",
  *   max_tokens: 1024,
  *   messages: [{ role: "user", content: "Hello!" }],
  * });
- * for await (const event of messageStream) {
- *   // process events
- * }
  * const finalMessage = await messageStream.finalMessage();
  * ```
  */
