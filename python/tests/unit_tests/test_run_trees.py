@@ -1,14 +1,59 @@
 import json
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from unittest.mock import MagicMock
 from uuid import NAMESPACE_DNS, UUID, uuid5
 
 import pytest
+from requests_toolbelt import MultipartEncoder
 
 from langsmith import run_trees
+from langsmith import schemas as ls_schemas
 from langsmith.client import Client
 from langsmith.run_trees import RunTree
+
+
+def _get_calls(
+    mock_client: Client,
+    minimum: int = 0,
+    verbs: set[str] = {"POST"},
+    attempts: int = 10,
+):
+    calls = []
+    for _ in range(attempts):
+        calls = [
+            c
+            for c in mock_client.session.request.mock_calls  # type: ignore[attr-defined]
+            if c.args and c.args[0] in verbs
+        ]
+        if minimum is None:
+            return calls
+        if minimum is not None and len(calls) > minimum:
+            break
+        time.sleep(0.1)
+    return calls
+
+
+def _get_multipart_data(mock_calls):
+    datas = []
+    for call_ in mock_calls:
+        data = call_.kwargs.get("data")
+        if isinstance(data, MultipartEncoder):
+            fields = data.fields
+            for key, value in fields:
+                if isinstance(value, tuple):
+                    _, file_content, content_type, _ = value
+                    datas.append((key, (content_type, file_content)))
+                else:
+                    datas.append((key, value))
+    return datas
+
+
+def _get_mock_client(**kwargs):
+    mock_session = MagicMock()
+    client = Client(session=mock_session, api_key="test", **kwargs)
+    return client
 
 
 def test_run_tree_accepts_tpe() -> None:
@@ -359,3 +404,37 @@ def test_remap_for_project_root_run():
     remapped_parts = run_trees._parse_dotted_order(remapped_dict["dotted_order"])
     assert len(remapped_parts) == 1
     assert remapped_parts[0][1] == expected_id
+
+
+def test_inputs_attachment_moved_to_attachments():
+    """Ensure Attachment values in inputs are moved to attachments."""
+    mock_client = _get_mock_client()
+    run_tree = RunTree(
+        name="WithAttachment",
+        inputs={
+            "text": "hello",
+            "file": ls_schemas.Attachment(mime_type="text/plain", data=b"hi"),
+        },
+        client=mock_client,
+    )
+    run_tree.post()
+
+    calls = _get_calls(mock_client, minimum=1)
+    datas = _get_multipart_data(calls)
+
+    # Find trace_id from a post field
+    post_keys = [k for k, _ in datas if k.startswith("post.") and k.endswith(".inputs")]
+    assert post_keys, f"No post inputs found in multipart fields: {datas}"
+    # Keys are like 'post.<trace_id>.inputs'
+    trace_id = post_keys[0].split(".")[1]
+
+    # Verify inputs no longer contain the attachment key
+    _, (_, inputs_bytes) = next((d for d in datas if d[0] == f"post.{trace_id}.inputs"))
+    inputs_obj = json.loads(inputs_bytes)
+    assert inputs_obj == {"text": "hello"}
+
+    # Verify the attachment was uploaded under the correct key
+    key = f"attachment.{trace_id}.file"
+    _, (mime_type, content) = next((d for d in datas if d[0] == key))
+    assert mime_type == "text/plain"
+    assert content == b"hi"
