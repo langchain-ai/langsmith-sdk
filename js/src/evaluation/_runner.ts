@@ -1027,7 +1027,6 @@ async function _forward(
     },
     client,
     tracingEnabled: true,
-    processInputs: (inputs: KVMap) => inputs?.inputs,
   };
 
   const wrappedFn = isTraceableFunction(fn)
