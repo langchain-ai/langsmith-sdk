@@ -372,34 +372,47 @@ export const wrapAnthropic = <T extends AnthropicType>(
     messagesCreateConfig
   );
 
-  // Wrap messages.stream
-  const originalStream = anthropic.messages.stream.bind(anthropic.messages);
-
+  // Shared function to wrap stream methods
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const streamMethod = function (...args: any[]) {
-    const stream = originalStream(...args);
-    if ("finalMessage" in stream && typeof stream.finalMessage === "function") {
-      const originalFinalMessage = stream.finalMessage.bind(stream);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      stream.finalMessage = async (...args: any[]) => {
-        for await (const _ of stream) {
-          // consume chunks
-        }
-        return originalFinalMessage(...args);
-      };
-    }
-    return stream;
+  const wrapStreamMethod = (originalStreamFn: (...args: any[]) => any) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return function (...args: any[]) {
+      const stream = originalStreamFn(...args);
+      if (
+        "finalMessage" in stream &&
+        typeof stream.finalMessage === "function"
+      ) {
+        const originalFinalMessage = stream.finalMessage.bind(stream);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        stream.finalMessage = async (...args: any[]) => {
+          if ("done" in stream && typeof stream.done === "function") {
+            await stream.done();
+          }
+          for await (const _ of stream) {
+            // Finish consuming the stream if it has not already been consumed
+            // It should be relatively uncommon to consume an iterator after calling
+            // .finalMessage()
+          }
+          return originalFinalMessage(...args);
+        };
+      }
+      return stream;
+    };
   };
 
-  tracedAnthropicClient.messages.stream = traceable(streamMethod, {
-    name: "ChatAnthropic",
-    run_type: "llm",
-    aggregator: messageAggregator,
-    argsConfigPath: [1, "langsmithExtra"],
-    getInvocationParams: messagesCreateConfig.getInvocationParams,
-    processOutputs: processMessageOutput,
-    ...options,
-  });
+  // Wrap messages.stream
+  tracedAnthropicClient.messages.stream = traceable(
+    wrapStreamMethod(anthropic.messages.stream.bind(anthropic.messages)),
+    {
+      name: "ChatAnthropic",
+      run_type: "llm",
+      aggregator: messageAggregator,
+      argsConfigPath: [1, "langsmithExtra"],
+      getInvocationParams: messagesCreateConfig.getInvocationParams,
+      processOutputs: processMessageOutput,
+      ...options,
+    }
+  );
 
   // Wrap beta.messages if it exists
   if (
@@ -423,7 +436,9 @@ export const wrapAnthropic = <T extends AnthropicType>(
     // Wrap beta.messages.stream if it exists
     if (typeof anthropic.beta.messages.stream === "function") {
       tracedBeta.messages.stream = traceable(
-        anthropic.beta.messages.stream.bind(anthropic.beta.messages),
+        wrapStreamMethod(
+          anthropic.beta.messages.stream.bind(anthropic.beta.messages)
+        ),
         {
           name: "ChatAnthropic",
           run_type: "llm",

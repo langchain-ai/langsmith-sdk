@@ -636,6 +636,144 @@ test("beta.messages.create streaming", async () => {
   callSpy.mockClear();
 });
 
+test("beta.messages.stream", async () => {
+  const { client, callSpy } = mockClient();
+
+  const originalClient = new Anthropic();
+  const patchedClient = wrapAnthropic(new Anthropic(), {
+    client,
+    tracingEnabled: true,
+  });
+
+  // Use beta.messages.stream with original client
+  const originalStream = originalClient.beta.messages.stream({
+    model: "claude-haiku-4-5",
+    max_tokens: 100,
+    messages: [{ role: "user", content: "Say 'beta stream method'" }],
+    betas: ["computer-use-2025-01-24"],
+  });
+
+  const originalEvents: any[] = [];
+  for await (const event of originalStream) {
+    originalEvents.push(event);
+  }
+
+  // Use beta.messages.stream with patched client
+  const patchedStream = patchedClient.beta.messages.stream({
+    model: "claude-haiku-4-5",
+    max_tokens: 100,
+    messages: [{ role: "user", content: "Say 'beta stream method'" }],
+    betas: ["computer-use-2025-01-24"],
+  });
+
+  const patchedEvents: any[] = [];
+  for await (const event of patchedStream) {
+    patchedEvents.push(event);
+  }
+
+  // Both should have events
+  expect(patchedEvents.length).toBeGreaterThan(0);
+  expect(originalEvents.length).toBeGreaterThan(0);
+
+  // Verify tracing calls were made
+  expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
+
+  // Verify metadata
+  const postCalls = callSpy.mock.calls.filter(
+    (call) => (call[1] as any).method === "POST"
+  );
+  expect(postCalls.length).toBeGreaterThanOrEqual(1);
+
+  const postBody = parseRequestBody((postCalls[0][1] as any).body);
+  expect(postBody.extra.metadata).toMatchObject({
+    ls_model_name: "claude-haiku-4-5",
+    ls_model_type: "chat",
+    ls_provider: "anthropic",
+  });
+
+  // Verify token events were logged
+  const patchCalls = callSpy.mock.calls.filter(
+    (call) => (call[1] as any).method === "PATCH"
+  );
+  expect(patchCalls.length).toBeGreaterThan(0);
+  const lastPatchCall = patchCalls[patchCalls.length - 1];
+  const body = parseRequestBody((lastPatchCall[1] as any).body);
+
+  expect(body.events).toBeDefined();
+  const tokenEvents = body.events.filter(
+    (event: any) => event.name === "new_token"
+  );
+  expect(tokenEvents.length).toBeGreaterThan(0);
+
+  callSpy.mockClear();
+});
+
+test("beta.messages.stream with finalMessage", async () => {
+  const { client, callSpy } = mockClient();
+
+  const originalClient = new Anthropic();
+  const patchedClient = wrapAnthropic(new Anthropic(), {
+    client,
+    tracingEnabled: true,
+  });
+
+  // Use beta.messages.stream with original client
+  const originalStream = originalClient.beta.messages.stream({
+    model: "claude-haiku-4-5",
+    max_tokens: 100,
+    messages: [{ role: "user", content: "Say 'beta final'" }],
+    betas: ["computer-use-2025-01-24"],
+  });
+
+  const originalFinalMessage = await originalStream.finalMessage();
+
+  // Use beta.messages.stream with patched client
+  const patchedStream = patchedClient.beta.messages.stream({
+    model: "claude-haiku-4-5",
+    max_tokens: 100,
+    messages: [{ role: "user", content: "Say 'beta final'" }],
+    betas: ["computer-use-2025-01-24"],
+  });
+
+  const patchedFinalMessage = await patchedStream.finalMessage();
+
+  // Both should have final messages
+  expect(patchedFinalMessage.role).toBe("assistant");
+  expect(originalFinalMessage.role).toBe("assistant");
+
+  // Verify tracing calls were made
+  expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
+
+  // Verify metadata
+  const postCalls = callSpy.mock.calls.filter(
+    (call) => (call[1] as any).method === "POST"
+  );
+  expect(postCalls.length).toBeGreaterThanOrEqual(1);
+
+  const postBody = parseRequestBody((postCalls[0][1] as any).body);
+  expect(postBody.extra.metadata).toMatchObject({
+    ls_model_name: "claude-haiku-4-5",
+    ls_model_type: "chat",
+    ls_provider: "anthropic",
+  });
+
+  // Verify token events were logged
+  const patchCalls = callSpy.mock.calls.filter(
+    (call) => (call[1] as any).method === "PATCH"
+  );
+  expect(patchCalls.length).toBeGreaterThan(0);
+  const lastPatchCall = patchCalls[patchCalls.length - 1];
+  const body = parseRequestBody((lastPatchCall[1] as any).body);
+
+  expect(body.events).toBeDefined();
+  const tokenEvents = body.events.filter(
+    (event: any) => event.name === "new_token"
+  );
+  expect(tokenEvents.length).toBeGreaterThan(0);
+
+  callSpy.mockClear();
+});
+
 test("chat extra name", async () => {
   const { client, callSpy } = mockClient();
 
