@@ -32,13 +32,13 @@ test("messages.create non-streaming", async () => {
 
   // invoke
   const original = await originalClient.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-haiku-4-5",
     max_tokens: 100,
     messages: [{ role: "user", content: "Say 'foo'" }],
   });
 
   const patched = await patchedClient.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-haiku-4-5",
     max_tokens: 100,
     messages: [{ role: "user", content: "Say 'foo'" }],
   });
@@ -63,7 +63,7 @@ test("messages.create non-streaming", async () => {
 
   const postBody = parseRequestBody((postCalls[0][1] as any).body);
   expect(postBody.extra.metadata).toMatchObject({
-    ls_model_name: "claude-sonnet-4-20250514",
+    ls_model_name: "claude-haiku-4-5",
     ls_model_type: "chat",
     ls_provider: "anthropic",
   });
@@ -95,7 +95,7 @@ test("messages.create streaming", async () => {
 
   // Stream with original client
   const originalStream = await originalClient.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-haiku-4-5",
     max_tokens: 100,
     messages: [{ role: "user", content: "Say 'foo'" }],
     stream: true,
@@ -108,7 +108,7 @@ test("messages.create streaming", async () => {
 
   // Stream with patched client
   const patchedStream = await patchedClient.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-haiku-4-5",
     max_tokens: 100,
     messages: [{ role: "user", content: "Say 'foo'" }],
     stream: true,
@@ -156,7 +156,7 @@ test("messages.create streaming", async () => {
   );
   const postBody = parseRequestBody((postCalls[0][1] as any).body);
   expect(postBody.extra.metadata).toMatchObject({
-    ls_model_name: "claude-sonnet-4-20250514",
+    ls_model_name: "claude-haiku-4-5",
     ls_model_type: "chat",
     ls_provider: "anthropic",
   });
@@ -179,7 +179,7 @@ test("messages.create streaming break early", async () => {
   });
 
   const patchedStreamToBreak = await patchedClient.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-haiku-4-5",
     max_tokens: 1024,
     messages: [{ role: "user", content: "Count from 1 to 100 slowly" }],
     stream: true,
@@ -207,7 +207,7 @@ test("messages.create streaming with langsmithExtra", async () => {
 
   const patchedStreamWithMetadata = await patchedClient.messages.create(
     {
-      model: "claude-sonnet-4-20250514",
+      model: "claude-haiku-4-5",
       max_tokens: 100,
       messages: [{ role: "user", content: "Say 'foo'" }],
       stream: true,
@@ -233,7 +233,7 @@ test("messages.create streaming with langsmithExtra", async () => {
     const body = parseRequestBody((call[1] as any).body);
     expect(body.extra.metadata).toMatchObject({
       thing1: "thing2",
-      ls_model_name: "claude-sonnet-4-20250514",
+      ls_model_name: "claude-haiku-4-5",
       ls_model_type: "chat",
       ls_provider: "anthropic",
     });
@@ -252,7 +252,7 @@ test("messages.stream", async () => {
 
   // Use messages.stream with original client
   const originalStream = originalClient.messages.stream({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-haiku-4-5",
     max_tokens: 100,
     messages: [{ role: "user", content: "Say 'bar'" }],
   });
@@ -261,11 +261,77 @@ test("messages.stream", async () => {
   for await (const event of originalStream) {
     originalEvents.push(event);
   }
+
+  // Use messages.stream with patched client
+  const patchedStream = patchedClient.messages.stream({
+    model: "claude-haiku-4-5",
+    max_tokens: 100,
+    messages: [{ role: "user", content: "Say 'bar'" }],
+  });
+
+  const patchedEvents: any[] = [];
+  for await (const event of patchedStream) {
+    patchedEvents.push(event);
+  }
+
+  // Both should have events and final messages
+  expect(patchedEvents.length).toBeGreaterThan(0);
+  expect(originalEvents.length).toBeGreaterThan(0);
+
+  // Verify tracing calls were made
+  expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
+
+  // Verify metadata
+  const postCalls = callSpy.mock.calls.filter(
+    (call) => (call[1] as any).method === "POST"
+  );
+  expect(postCalls.length).toBeGreaterThanOrEqual(1);
+
+  const postBody = parseRequestBody((postCalls[0][1] as any).body);
+  expect(postBody.extra.metadata).toMatchObject({
+    ls_model_name: "claude-haiku-4-5",
+    ls_model_type: "chat",
+    ls_provider: "anthropic",
+  });
+
+  // Verify token events were logged
+  const patchCalls = callSpy.mock.calls.filter(
+    (call) => (call[1] as any).method === "PATCH"
+  );
+  expect(patchCalls.length).toBeGreaterThan(0);
+  const lastPatchCall = patchCalls[patchCalls.length - 1];
+  const body = parseRequestBody((lastPatchCall[1] as any).body);
+
+  expect(body.events).toBeDefined();
+  const tokenEvents = body.events.filter(
+    (event: any) => event.name === "new_token"
+  );
+  expect(tokenEvents.length).toBeGreaterThan(0);
+
+  callSpy.mockClear();
+});
+
+test("messages.stream with finalMessage", async () => {
+  const { client, callSpy } = mockClient();
+
+  const originalClient = new Anthropic();
+  const patchedClient = wrapAnthropic(new Anthropic(), {
+    client,
+    tracingEnabled: true,
+  });
+
+  // Use messages.stream with original client
+  const originalStream = originalClient.messages.stream({
+    model: "claude-haiku-4-5",
+    max_tokens: 100,
+    messages: [{ role: "user", content: "Say 'bar'" }],
+  });
+
   const originalFinalMessage = await originalStream.finalMessage();
 
   // Use messages.stream with patched client
   const patchedStream = patchedClient.messages.stream({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-haiku-4-5",
     max_tokens: 100,
     messages: [{ role: "user", content: "Say 'bar'" }],
   });
@@ -277,8 +343,6 @@ test("messages.stream", async () => {
   const patchedFinalMessage = await patchedStream.finalMessage();
 
   // Both should have events and final messages
-  expect(patchedEvents.length).toBeGreaterThan(0);
-  expect(originalEvents.length).toBeGreaterThan(0);
   expect(patchedFinalMessage.role).toBe("assistant");
   expect(originalFinalMessage.role).toBe("assistant");
 
@@ -293,7 +357,7 @@ test("messages.stream", async () => {
 
   const postBody = parseRequestBody((postCalls[0][1] as any).body);
   expect(postBody.extra.metadata).toMatchObject({
-    ls_model_name: "claude-sonnet-4-20250514",
+    ls_model_name: "claude-haiku-4-5",
     ls_model_type: "chat",
     ls_provider: "anthropic",
   });
@@ -325,7 +389,7 @@ test("messages.stream with langsmithExtra", async () => {
 
   const patchedStream = patchedClient.messages.stream(
     {
-      model: "claude-sonnet-4-20250514",
+      model: "claude-haiku-4-5",
       max_tokens: 100,
       messages: [{ role: "user", content: "Say 'baz'" }],
     },
@@ -387,7 +451,7 @@ test("messages.create with tool calling", async () => {
 
   // Non-streaming tool call
   const original = await originalClient.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-haiku-4-5",
     max_tokens: 1024,
     messages: [{ role: "user", content: "What's the weather in SF?" }],
     tools: toolDefinition,
@@ -395,7 +459,7 @@ test("messages.create with tool calling", async () => {
   });
 
   const patched = await patchedClient.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-haiku-4-5",
     max_tokens: 1024,
     messages: [{ role: "user", content: "What's the weather in SF?" }],
     tools: toolDefinition,
@@ -448,7 +512,7 @@ test("messages.create streaming with tool calling", async () => {
   ];
 
   const patchedStream = await patchedClient.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-haiku-4-5",
     max_tokens: 1024,
     messages: [{ role: "user", content: "What's the weather in SF?" }],
     tools: toolDefinition,
@@ -502,14 +566,14 @@ test("beta.messages.create", async () => {
 
   // Non-streaming beta call
   const original = await originalClient.beta.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-haiku-4-5",
     max_tokens: 100,
     messages: [{ role: "user", content: "Say 'beta'" }],
     betas: ["computer-use-2025-01-24"],
   });
 
   const patched = await patchedClient.beta.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-haiku-4-5",
     max_tokens: 100,
     messages: [{ role: "user", content: "Say 'beta'" }],
     betas: ["computer-use-2025-01-24"],
@@ -530,7 +594,7 @@ test("beta.messages.create", async () => {
 
   const postBody = parseRequestBody((postCalls[0][1] as any).body);
   expect(postBody.extra.metadata).toMatchObject({
-    ls_model_name: "claude-sonnet-4-20250514",
+    ls_model_name: "claude-haiku-4-5",
     ls_model_type: "chat",
     ls_provider: "anthropic",
   });
@@ -547,7 +611,7 @@ test("beta.messages.create streaming", async () => {
   });
 
   const patchedStream = await patchedClient.beta.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-haiku-4-5",
     max_tokens: 100,
     messages: [{ role: "user", content: "Say 'beta stream'" }],
     betas: ["computer-use-2025-01-24"],
@@ -568,7 +632,7 @@ test("beta.messages.create streaming", async () => {
   );
   const postBody = parseRequestBody((postCalls[0][1] as any).body);
   expect(postBody.extra.metadata).toMatchObject({
-    ls_model_name: "claude-sonnet-4-20250514",
+    ls_model_name: "claude-haiku-4-5",
     ls_model_type: "chat",
     ls_provider: "anthropic",
   });
@@ -586,7 +650,7 @@ test("chat extra name", async () => {
 
   await anthropic.messages.create(
     {
-      model: "claude-sonnet-4-20250514",
+      model: "claude-haiku-4-5",
       max_tokens: 100,
       messages: [{ role: "user", content: "Say 'red'" }],
     },
@@ -595,7 +659,7 @@ test("chat extra name", async () => {
 
   const stream = await anthropic.messages.create(
     {
-      model: "claude-sonnet-4-20250514",
+      model: "claude-haiku-4-5",
       max_tokens: 100,
       messages: [{ role: "user", content: "Say 'green'" }],
       stream: true,
@@ -636,7 +700,7 @@ const usageMetadataTestCases = [
   {
     description: "stream with usage",
     params: {
-      model: "claude-sonnet-4-20250514",
+      model: "claude-haiku-4-5",
       max_tokens: 100,
       messages: [{ role: "user", content: "howdy" }],
       stream: true,
@@ -646,7 +710,7 @@ const usageMetadataTestCases = [
   {
     description: "default",
     params: {
-      model: "claude-sonnet-4-20250514",
+      model: "claude-haiku-4-5",
       max_tokens: 100,
       messages: [{ role: "user", content: "howdy" }],
     },

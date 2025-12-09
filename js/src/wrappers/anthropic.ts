@@ -9,12 +9,7 @@ import {
 } from "../traceable.js";
 import { KVMap } from "../schemas.js";
 
-const TRACED_INVOCATION_KEYS = [
-  "top_k",
-  "top_p",
-  "stream",
-  "thinking",
-];
+const TRACED_INVOCATION_KEYS = ["top_k", "top_p", "stream", "thinking"];
 
 type ExtraRunTreeConfig = Pick<
   Partial<RunTreeConfig>,
@@ -138,17 +133,18 @@ function accumulateContentBlockDelta(
     event.delta.type === "input_json_delta"
   ) {
     // Accumulate JSON input for tool use
-    const toolBlock = block as Anthropic.ToolUseBlock & { _partial_json?: string };
-    toolBlock._partial_json = (toolBlock._partial_json ?? "") + event.delta.partial_json;
+    const toolBlock = block as Anthropic.ToolUseBlock & {
+      _partial_json?: string;
+    };
+    toolBlock._partial_json =
+      (toolBlock._partial_json ?? "") + event.delta.partial_json;
   }
 }
 
 /**
  * Aggregate streaming chunks into a complete message response
  */
-const messageAggregator = (
-  chunks: Anthropic.MessageStreamEvent[]
-): KVMap => {
+const messageAggregator = (chunks: Anthropic.MessageStreamEvent[]): KVMap => {
   if (!chunks || chunks.length === 0) {
     return {
       role: "assistant",
@@ -187,8 +183,10 @@ const messageAggregator = (
           usage = {
             input_tokens: chunk.message.usage.input_tokens,
             output_tokens: chunk.message.usage.output_tokens,
-            cache_read_input_tokens: chunk.message.usage.cache_read_input_tokens,
-            cache_creation_input_tokens: chunk.message.usage.cache_creation_input_tokens,
+            cache_read_input_tokens:
+              chunk.message.usage.cache_read_input_tokens,
+            cache_creation_input_tokens:
+              chunk.message.usage.cache_creation_input_tokens,
           };
         }
         break;
@@ -218,7 +216,9 @@ const messageAggregator = (
             chunk.index
           ];
           if (block?.type === "tool_use") {
-            const toolBlock = block as Anthropic.ToolUseBlock & { _partial_json?: string };
+            const toolBlock = block as Anthropic.ToolUseBlock & {
+              _partial_json?: string;
+            };
             if (toolBlock._partial_json) {
               try {
                 toolBlock.input = JSON.parse(toolBlock._partial_json);
@@ -321,41 +321,42 @@ export const wrapAnthropic = <T extends AnthropicType>(
   const tracedAnthropicClient = { ...anthropic };
 
   // Common configuration for messages.create
-  const messagesCreateConfig: TraceableConfig<typeof anthropic.messages.create> =
-    {
-      name: "ChatAnthropic",
-      run_type: "llm",
-      aggregator: messageAggregator,
-      argsConfigPath: [1, "langsmithExtra"],
-      getInvocationParams: (payload: unknown) => {
-        if (typeof payload !== "object" || payload == null) return undefined;
-        const params = payload as Anthropic.MessageCreateParams;
+  const messagesCreateConfig: TraceableConfig<
+    typeof anthropic.messages.create
+  > = {
+    name: "ChatAnthropic",
+    run_type: "llm",
+    aggregator: messageAggregator,
+    argsConfigPath: [1, "langsmithExtra"],
+    getInvocationParams: (payload: unknown) => {
+      if (typeof payload !== "object" || payload == null) return undefined;
+      const params = payload as Anthropic.MessageCreateParams;
 
-        const ls_stop =
-          (typeof params.stop_sequences === "string"
-            ? [params.stop_sequences]
-            : params.stop_sequences) ?? undefined;
+      const ls_stop =
+        (typeof params.stop_sequences === "string"
+          ? [params.stop_sequences]
+          : params.stop_sequences) ?? undefined;
 
-        const ls_invocation_params: Record<string, unknown> = {};
-        for (const [key, value] of Object.entries(params)) {
-          if (TRACED_INVOCATION_KEYS.includes(key)) {
-            ls_invocation_params[key] = value;
-          }
+      const ls_invocation_params: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(params)) {
+        if (TRACED_INVOCATION_KEYS.includes(key)) {
+          ls_invocation_params[key] = value;
         }
+      }
 
-        return {
-          ls_provider: "anthropic",
-          ls_model_type: "chat",
-          ls_model_name: params.model,
-          ls_max_tokens: params.max_tokens ?? undefined,
-          ls_temperature: params.temperature ?? undefined,
-          ls_stop,
-          ls_invocation_params,
-        };
-      },
-      processOutputs: processMessageOutput,
-      ...options,
-    };
+      return {
+        ls_provider: "anthropic",
+        ls_model_type: "chat",
+        ls_model_name: params.model,
+        ls_max_tokens: params.max_tokens ?? undefined,
+        ls_temperature: params.temperature ?? undefined,
+        ls_stop,
+        ls_invocation_params,
+      };
+    },
+    processOutputs: processMessageOutput,
+    ...options,
+  };
 
   // Create a new messages object preserving the prototype
   tracedAnthropicClient.messages = Object.create(
@@ -374,18 +375,32 @@ export const wrapAnthropic = <T extends AnthropicType>(
   // Wrap messages.stream
   const originalStream = anthropic.messages.stream.bind(anthropic.messages);
 
-  tracedAnthropicClient.messages.stream = traceable(
-    originalStream,
-    {
-      name: "ChatAnthropic",
-      run_type: "llm",
-      aggregator: messageAggregator,
-      argsConfigPath: [1, "langsmithExtra"],
-      getInvocationParams: messagesCreateConfig.getInvocationParams,
-      processOutputs: processMessageOutput,
-      ...options,
+  const streamMethod = function (...args: any[]) {
+    const stream = originalStream(...args);
+    if ("finalMessage" in stream && typeof stream.finalMessage === "function") {
+      stream.finalMessage = traceable(stream.finalMessage.bind(stream), {
+        name: "ChatAnthropic",
+        run_type: "llm",
+        aggregator: messageAggregator,
+        argsConfigPath: [1, "langsmithExtra"],
+        getInvocationParams: messagesCreateConfig.getInvocationParams,
+        processOutputs: processMessageOutput,
+        processInputs: () => args[0],
+        ...options,
+      });
     }
-  );
+    return stream;
+  };
+
+  tracedAnthropicClient.messages.stream = traceable(streamMethod, {
+    name: "ChatAnthropic",
+    run_type: "llm",
+    aggregator: messageAggregator,
+    argsConfigPath: [1, "langsmithExtra"],
+    getInvocationParams: messagesCreateConfig.getInvocationParams,
+    processOutputs: processMessageOutput,
+    ...options,
+  });
 
   // Wrap beta.messages if it exists
   if (
