@@ -230,7 +230,7 @@ const messageAggregator = (chunks: Anthropic.MessageStreamEvent[]): KVMap => {
           // Override only non-null keys
           for (const [key, value] of Object.entries(chunk.usage)) {
             if (value != null) {
-              usage[key] = value;
+              usage[key as keyof typeof usage] = value;
             }
           }
         }
