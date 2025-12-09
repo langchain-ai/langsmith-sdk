@@ -336,10 +336,6 @@ test("messages.stream with finalMessage", async () => {
     messages: [{ role: "user", content: "Say 'bar'" }],
   });
 
-  const patchedEvents: any[] = [];
-  for await (const event of patchedStream) {
-    patchedEvents.push(event);
-  }
   const patchedFinalMessage = await patchedStream.finalMessage();
 
   // Both should have events and final messages
