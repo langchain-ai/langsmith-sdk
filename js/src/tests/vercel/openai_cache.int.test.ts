@@ -6,7 +6,7 @@ import { openai } from "@ai-sdk/openai";
 
 import { AISDKExporter } from "../../vercel.js";
 import { traceable } from "../../traceable.js";
-import { generateLongContext } from "./utils.js";
+import { generateLongContext } from "../utils.js";
 
 // Token intensive test, so skipping by default
 describe.skip("OpenAI Cache Completion Tests", () => {
