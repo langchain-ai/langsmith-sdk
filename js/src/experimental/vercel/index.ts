@@ -78,9 +78,17 @@ const _getModelId = (model: string | Record<string, unknown>) => {
 const _formatTracedInputs = (params: Record<string, unknown>) => {
   const { prompt, messages, model, tools, ...rest } = params;
   if (Array.isArray(prompt)) {
-    return { ...rest, messages: prompt.map(convertMessageToTracedFormat) };
+    return {
+      ...rest,
+      messages: prompt.map((message) => convertMessageToTracedFormat(message)),
+    };
   } else if (Array.isArray(messages)) {
-    return { ...rest, messages: messages.map(convertMessageToTracedFormat) };
+    return {
+      ...rest,
+      messages: messages.map((message) =>
+        convertMessageToTracedFormat(message)
+      ),
+    };
   } else {
     return { ...rest, prompt, messages };
   }
@@ -210,7 +218,10 @@ export type WrapAISDKConfig<
    * @param outputs.raw - Raw outputs from the AI SDK.
    * @returns A single combined key-value map of processed outputs.
    */
-  processOutputs?: (outputs: Awaited<ReturnType<T>>) => Record<string, unknown>;
+  processOutputs?: (
+    // TODO: Unnest this typing on minor bump
+    outputs: { outputs: Awaited<ReturnType<T>> }
+  ) => Record<string, unknown> | Promise<Record<string, unknown>>;
   /**
    * Apply transformations to AI SDK child LLM run inputs before logging.
    * This function should NOT mutate the inputs.
@@ -299,6 +310,13 @@ export type WrapAISDKConfig<
       ? AggregatedDoStreamOutput
       : Awaited<ReturnType<LanguageModelV2["doGenerate"]>>
   ) => Record<string, unknown>;
+
+  /**
+   * Whether to include additional fields such as intermediate steps in traced
+   * output messages.
+   * @default false
+   */
+  traceResponseMetadata?: boolean;
 };
 
 const _extractChildRunConfig = (lsConfig?: WrapAISDKConfig) => {
@@ -321,7 +339,9 @@ const _extractChildRunConfig = (lsConfig?: WrapAISDKConfig) => {
     childConfig.processInputs = processChildLLMRunInputs;
   }
   if (processChildLLMRunOutputs) {
-    childConfig.processOutputs = processChildLLMRunOutputs;
+    // TODO: Fix this typing on minor bump
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    childConfig.processOutputs = processChildLLMRunOutputs as any;
   }
   return childConfig;
 };
@@ -329,7 +349,11 @@ const _extractChildRunConfig = (lsConfig?: WrapAISDKConfig) => {
 const _resolveConfigs = (
   baseLsConfig?: WrapAISDKConfig,
   runtimeLsConfig?: WrapAISDKConfig
-) => {
+): {
+  resolvedLsConfig: WrapAISDKConfig;
+  resolvedChildLLMRunConfig: WrapAISDKConfig;
+  resolvedToolConfig: WrapAISDKConfig;
+} => {
   const baseChildRunConfig = _extractChildRunConfig(baseLsConfig);
   const runtimeChildLLMRunConfig = _extractChildRunConfig(runtimeLsConfig);
   const resolvedLsConfig = _mergeConfig(baseLsConfig, runtimeLsConfig);
@@ -463,7 +487,8 @@ const wrapAISDK = <
           middleware: LangSmithMiddleware({
             name: _getModelDisplayName(params.model),
             modelId: _getModelId(params.model),
-            lsConfig: resolvedChildLLMRunConfig,
+            // TODO: Fix this typing on minor bump
+            lsConfig: resolvedChildLLMRunConfig as Record<string, unknown>,
           }),
         });
         return generateText(
@@ -488,12 +513,29 @@ const wrapAISDK = <
             resolvedLsConfig?.processInputs ?? _formatTracedInputs;
           return inputFormatter(inputs);
         },
-        processOutputs: (outputs) => {
+        processOutputs: async (outputs) => {
           if (resolvedLsConfig?.processOutputs) {
-            return resolvedLsConfig.processOutputs(outputs);
+            const processedOutputs = await resolvedLsConfig.processOutputs(
+              // TODO: Fix this typing on minor bump
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              outputs as any
+            );
+            return processedOutputs;
           }
           if (outputs.outputs == null || typeof outputs.outputs !== "object") {
             return outputs;
+          }
+          // If experimental_output is present, return it directly at top level (like generateObject)
+          // Note: accessing experimental_output throws if not specified, so wrap in try-catch
+          try {
+            if ("experimental_output" in outputs.outputs) {
+              const experimentalOutput = outputs.outputs.experimental_output;
+              if (experimentalOutput != null) {
+                return experimentalOutput;
+              }
+            }
+          } catch (e) {
+            // experimental_output not specified, continue with normal processing
           }
           const { steps } = outputs.outputs;
           if (Array.isArray(steps)) {
@@ -502,10 +544,13 @@ const wrapAISDK = <
               return outputs;
             }
             const { content } = lastStep;
-            return convertMessageToTracedFormat({
-              content: content ?? outputs.outputs.text,
-              role: "assistant",
-            });
+            return convertMessageToTracedFormat(
+              {
+                content: content ?? outputs.outputs.text,
+                role: "assistant",
+              },
+              resolvedLsConfig?.traceResponseMetadata ? { steps } : undefined
+            );
           } else {
             return outputs;
           }
@@ -555,7 +600,8 @@ const wrapAISDK = <
           middleware: LangSmithMiddleware({
             name: _getModelDisplayName(params.model),
             modelId: _getModelId(params.model),
-            lsConfig: resolvedChildLLMRunConfig,
+            // TODO: Fix this typing on minor bump
+            lsConfig: resolvedChildLLMRunConfig as Record<string, unknown>,
           }),
         });
         return generateObject(
@@ -579,9 +625,14 @@ const wrapAISDK = <
             resolvedLsConfig?.processInputs ?? _formatTracedInputs;
           return inputFormatter(inputs);
         },
-        processOutputs: (outputs) => {
+        processOutputs: async (outputs) => {
           if (resolvedLsConfig?.processOutputs) {
-            return resolvedLsConfig.processOutputs(outputs);
+            const processedOutputs = await resolvedLsConfig.processOutputs(
+              // TODO: Fix this typing on minor bump
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              outputs as any
+            );
+            return processedOutputs;
           }
           if (outputs.outputs == null || typeof outputs.outputs !== "object") {
             return outputs;
@@ -628,7 +679,8 @@ const wrapAISDK = <
           middleware: LangSmithMiddleware({
             name: _getModelDisplayName(params.model),
             modelId: _getModelId(params.model),
-            lsConfig: resolvedChildLLMRunConfig,
+            // TODO: Fix this typing on minor bump
+            lsConfig: resolvedChildLLMRunConfig as Record<string, unknown>,
           }),
         });
         return streamText(
@@ -656,7 +708,12 @@ const wrapAISDK = <
         processOutputs: async (outputs) => {
           try {
             if (resolvedLsConfig?.processOutputs) {
-              return resolvedLsConfig.processOutputs(outputs);
+              const processedOutputs = await resolvedLsConfig.processOutputs(
+                // TODO: Fix this typing on minor bump
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                outputs as any
+              );
+              return processedOutputs;
             }
             if (
               outputs.outputs == null ||
@@ -677,10 +734,34 @@ const wrapAISDK = <
             ) {
               return outputs;
             }
-            return convertMessageToTracedFormat({
-              content,
-              role: "assistant",
-            });
+            try {
+              if (
+                "experimental_partialOutputStream" in outputs.outputs &&
+                outputs.outputs.experimental_partialOutputStream != null
+              ) {
+                const textContent = await outputs.outputs.text;
+                return JSON.parse(textContent);
+              }
+            } catch (e) {
+              // experimental_partialOutputStream not specified, continue with normal processing
+            }
+            let responseMetadata: Record<string, unknown> | undefined =
+              undefined;
+            if (resolvedLsConfig?.traceResponseMetadata) {
+              try {
+                const steps = await outputs.outputs.steps;
+                responseMetadata = { steps };
+              } catch (e: unknown) {
+                // Do nothing if step parsing fails
+              }
+            }
+            return convertMessageToTracedFormat(
+              {
+                content,
+                role: "assistant",
+              },
+              responseMetadata
+            );
           } catch (e: unknown) {
             // Handle parsing failures without a log
             return outputs;
@@ -726,7 +807,8 @@ const wrapAISDK = <
           middleware: LangSmithMiddleware({
             name: _getModelDisplayName(params.model),
             modelId: _getModelId(params.model),
-            lsConfig: resolvedChildLLMRunConfig,
+            // TODO: Fix this typing on minor bump
+            lsConfig: resolvedChildLLMRunConfig as Record<string, unknown>,
           }),
         });
         return streamObject(
@@ -753,7 +835,12 @@ const wrapAISDK = <
         processOutputs: async (outputs) => {
           try {
             if (resolvedLsConfig?.processOutputs) {
-              return resolvedLsConfig.processOutputs(outputs);
+              const processedOutputs = await resolvedLsConfig.processOutputs(
+                // TODO: Fix this typing on minor bump
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                outputs as any
+              );
+              return processedOutputs;
             }
             if (
               outputs.outputs == null ||
@@ -787,3 +874,5 @@ const wrapAISDK = <
 };
 
 export { wrapAISDK };
+
+export { convertMessageToTracedFormat };

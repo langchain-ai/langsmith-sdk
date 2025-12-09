@@ -29,19 +29,23 @@ logger = logging.getLogger(__name__)
 
 
 @functools.lru_cache
-def _get_not_given() -> Optional[type]:
+def _get_not_given() -> Optional[tuple[type, ...]]:
     try:
-        from anthropic._types import NotGiven
+        from anthropic._types import NotGiven, Omit
 
-        return NotGiven
+        return (NotGiven, Omit)
     except ImportError:
         return None
 
 
 def _strip_not_given(d: dict) -> dict:
     try:
-        if (not_given := _get_not_given()) is not None:
-            d = {k: v for k, v in d.items() if not isinstance(v, not_given)}
+        if not_given := _get_not_given():
+            d = {
+                k: v
+                for k, v in d.items()
+                if not any(isinstance(v, t) for t in not_given)
+            }
     except Exception as e:
         logger.error(f"Error stripping NotGiven: {e}")
 
@@ -60,6 +64,22 @@ def _infer_ls_params(kwargs: dict):
     if stop and isinstance(stop, str):
         stop = [stop]
 
+    # Allowlist of safe invocation parameters to include
+    # Only include known, non-sensitive parameters
+    allowed_invocation_keys = {
+        "mcp_servers",
+        "service_tier",
+        "top_k",
+        "top_p",
+        "stream",
+        "thinking",
+    }
+
+    # Only include allowlisted parameters
+    invocation_params = {
+        k: v for k, v in stripped.items() if k in allowed_invocation_keys
+    }
+
     return {
         "ls_provider": "anthropic",
         "ls_model_type": "chat",
@@ -67,6 +87,7 @@ def _infer_ls_params(kwargs: dict):
         "ls_temperature": stripped.get("temperature", None),
         "ls_max_tokens": stripped.get("max_tokens", None),
         "ls_stop": stop,
+        "ls_invocation_params": invocation_params,
     }
 
 
@@ -406,49 +427,46 @@ def wrap_anthropic(client: C, *, tracing_extra: Optional[TracingExtra] = None) -
     """Patch the Anthropic client to make it traceable.
 
     Args:
-        client (Union[Anthropic, AsyncAnthropic]): The client to patch.
-        tracing_extra (Optional[TracingExtra], optional): Extra tracing information.
-            Defaults to None.
+        client: The client to patch.
+        tracing_extra: Extra tracing information.
 
     Returns:
-        Union[Anthropic, AsyncAnthropic]: The patched client.
+        The patched client.
 
     Example:
+        ```python
+        import anthropic
+        from langsmith import wrappers
 
-        .. code-block:: python
+        client = wrappers.wrap_anthropic(anthropic.Anthropic())
 
-            import anthropic
-            from langsmith import wrappers
+        # Use Anthropic client same as you normally would:
+        system = "You are a helpful assistant."
+        messages = [
+            {
+                "role": "user",
+                "content": "What physics breakthroughs do you predict will happen by 2300?",
+            }
+        ]
+        completion = client.messages.create(
+            model="claude-3-5-sonnet-latest",
+            messages=messages,
+            max_tokens=1000,
+            system=system,
+        )
+        print(completion.content)
 
-            client = wrappers.wrap_anthropic(anthropic.Anthropic())
-
-            # Use Anthropic client same as you normally would:
-            system = "You are a helpful assistant."
-            messages = [
-                {
-                    "role": "user",
-                    "content": "What physics breakthroughs do you predict will happen by 2300?",
-                }
-            ]
-            completion = client.messages.create(
-                model="claude-3-5-sonnet-latest",
-                messages=messages,
-                max_tokens=1000,
-                system=system,
-            )
-            print(completion.content)
-
-            # You can also use the streaming context manager:
-            with client.messages.stream(
-                model="claude-3-5-sonnet-latest",
-                messages=messages,
-                max_tokens=1000,
-                system=system,
-            ) as stream:
-                for text in stream.text_stream:
-                    print(text, end="", flush=True)
-                message = stream.get_final_message()
-
+        # You can also use the streaming context manager:
+        with client.messages.stream(
+            model="claude-3-5-sonnet-latest",
+            messages=messages,
+            max_tokens=1000,
+            system=system,
+        ) as stream:
+            for text in stream.text_stream:
+                print(text, end="", flush=True)
+            message = stream.get_final_message()
+        ```
     """  # noqa: E501
     tracing_extra = tracing_extra or {}
     client.messages.create = _get_wrapper(  # type: ignore[method-assign]

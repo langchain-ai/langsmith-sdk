@@ -17,12 +17,12 @@ from langsmith._internal._beta_decorator import warn_beta
 from langsmith.client import Client
 
 
-def _convert_ids(run_dict: dict, id_map: dict):
+def _convert_ids(run_dict: dict, id_map: dict) -> dict:
     """Convert the IDs in the run dictionary using the provided ID map.
 
     Parameters:
-    - run_dict (dict): The dictionary representing a run.
-    - id_map (dict): The dictionary mapping old IDs to new IDs.
+    - run_dict: The dictionary representing a run.
+    - id_map: The dictionary mapping old IDs to new IDs.
 
     Returns:
     - dict: The updated run dictionary.
@@ -43,11 +43,11 @@ def _convert_root_run(root: ls_schemas.Run, run_to_example_map: dict) -> list[di
     """Convert the root run and its child runs to a list of dictionaries.
 
     Parameters:
-    - root (ls_schemas.Run): The root run to convert.
-    - run_to_example_map (dict): The dictionary mapping run IDs to example IDs.
+    - root: The root run to convert.
+    - run_to_example_map: The dictionary mapping run IDs to example IDs.
 
     Returns:
-    - List[dict]: The list of converted run dictionaries.
+    - The list of converted run dictionaries.
     """
     runs_ = [root]
     trace_id = uuid.uuid4()
@@ -88,38 +88,37 @@ def convert_runs_to_test(
         3. Clone the production runs and re-upload against the dataset.
 
     Parameters:
-    - runs (Sequence[ls_schemas.Run]): A sequence of runs to be executed as a test.
-    - dataset_name (str): The name of the dataset to associate with the test runs.
-    - client (Optional[Client]): An optional LangSmith client instance. If not provided,
-        a new client will be created.
-    - load_child_runs (bool): Whether to load child runs when copying runs.
-        Defaults to False.
+    - runs: A sequence of runs to be executed as a test.
+    - dataset_name: The name of the dataset to associate with the test runs.
+    - client: An optional LangSmith client instance. If not provided, a new client will
+        be created.
+    - load_child_runs: Whether to load child runs when copying runs.
 
     Returns:
-    - ls_schemas.TracerSession: The project containing the cloned runs.
+    - The project containing the cloned runs.
 
-    Examples:
+    Example:
     --------
-    .. code-block:: python
+    ```python
+    import langsmith
+    import random
 
-        import langsmith
-        import random
+    client = langsmith.Client()
 
-        client = langsmith.Client()
+    # Randomly sample 100 runs from a prod project
+    runs = list(client.list_runs(project_name="My Project", execution_order=1))
+    sampled_runs = random.sample(runs, min(len(runs), 100))
 
-        # Randomly sample 100 runs from a prod project
-        runs = list(client.list_runs(project_name="My Project", execution_order=1))
-        sampled_runs = random.sample(runs, min(len(runs), 100))
+    runs_as_test(runs, dataset_name="Random Runs")
 
-        runs_as_test(runs, dataset_name="Random Runs")
-
-        # Select runs named "extractor" whose root traces received good feedback
-        runs = client.list_runs(
-            project_name="<your_project>",
-            filter='eq(name, "extractor")',
-            trace_filter='and(eq(feedback_key, "user_score"), eq(feedback_score, 1))',
-        )
-        runs_as_test(runs, dataset_name="Extraction Good")
+    # Select runs named "extractor" whose root traces received good feedback
+    runs = client.list_runs(
+        project_name="<your_project>",
+        filter='eq(name, "extractor")',
+        trace_filter='and(eq(feedback_key, "user_score"), eq(feedback_score, 1))',
+    )
+    runs_as_test(runs, dataset_name="Extraction Good")
+    ```
     """
     if not runs:
         raise ValueError(f"""Expected a non-empty sequence of runs. Received: {runs}""")

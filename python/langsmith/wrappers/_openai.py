@@ -64,12 +64,61 @@ def _strip_not_given(d: dict) -> dict:
         return d
 
 
+def _process_inputs(d: dict) -> dict:
+    """Strip `NotGiven` values and serialize `text_format` to JSON schema."""
+    d = _strip_not_given(d)
+
+    # Convert text_format (Pydantic model) to JSON schema if present
+    if "text_format" in d:
+        text_format = d["text_format"]
+        if hasattr(text_format, "model_json_schema"):
+            try:
+                return {
+                    **d,
+                    "text_format": text_format.model_json_schema(),
+                }
+            except Exception:
+                pass
+    return d
+
+
 def _infer_invocation_params(model_type: str, provider: str, kwargs: dict):
     stripped = _strip_not_given(kwargs)
 
     stop = stripped.get("stop")
     if stop and isinstance(stop, str):
         stop = [stop]
+
+    # Allowlist of safe invocation parameters to include
+    # Only include known, non-sensitive parameters
+    allowed_invocation_keys = {
+        "frequency_penalty",
+        "n",
+        "logit_bias",
+        "logprobs",
+        "modalities",
+        "parallel_tool_calls",
+        "prediction",
+        "presence_penalty",
+        "prompt_cache_key",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "seed",
+        "service_tier",
+        "stream_options",
+        "top_logprobs",
+        "top_p",
+        "truncation",
+        "user",
+        "verbosity",
+        "web_search_options",
+    }
+
+    # Only include allowlisted parameters
+    invocation_params = {
+        k: v for k, v in stripped.items() if k in allowed_invocation_keys
+    }
 
     return {
         "ls_provider": provider,
@@ -80,6 +129,7 @@ def _infer_invocation_params(model_type: str, provider: str, kwargs: dict):
         or stripped.get("max_completion_tokens")
         or stripped.get("max_output_tokens"),
         "ls_stop": stop,
+        "ls_invocation_params": invocation_params,
     }
 
 
@@ -281,7 +331,7 @@ def _get_wrapper(
             name=name,
             run_type="llm",
             reduce_fn=reduce_fn if kwargs.get("stream") is True else None,
-            process_inputs=_strip_not_given,
+            process_inputs=_process_inputs,
             _invocation_params_fn=invocation_params_fn,
             process_outputs=process_outputs,
             **textra,
@@ -291,12 +341,11 @@ def _get_wrapper(
 
     @functools.wraps(original_create)
     async def acreate(*args, **kwargs):
-        kwargs = _strip_not_given(kwargs)
         decorator = run_helpers.traceable(
             name=name,
             run_type="llm",
             reduce_fn=reduce_fn if kwargs.get("stream") is True else None,
-            process_inputs=_strip_not_given,
+            process_inputs=_process_inputs,
             _invocation_params_fn=invocation_params_fn,
             process_outputs=process_outputs,
             **textra,
@@ -321,7 +370,7 @@ def _get_parse_wrapper(
             name=name,
             run_type="llm",
             reduce_fn=None,
-            process_inputs=_strip_not_given,
+            process_inputs=_process_inputs,
             _invocation_params_fn=invocation_params_fn,
             process_outputs=process_outputs,
             **textra,
@@ -330,12 +379,11 @@ def _get_parse_wrapper(
 
     @functools.wraps(original_parse)
     async def aparse(*args, **kwargs):
-        kwargs = _strip_not_given(kwargs)
         decorator = run_helpers.traceable(
             name=name,
             run_type="llm",
             reduce_fn=None,
-            process_inputs=_strip_not_given,
+            process_inputs=_process_inputs,
             _invocation_params_fn=invocation_params_fn,
             process_outputs=process_outputs,
             **textra,
@@ -370,52 +418,48 @@ def wrap_openai(
     Supports:
         - Chat and Responses API's
         - Sync and async OpenAI clients
-        - create() and parse() methods
-        - with and without streaming
+        - `create` and `parse` methods
+        - With and without streaming
 
     Args:
-        client (Union[OpenAI, AsyncOpenAI]): The client to patch.
-        tracing_extra (Optional[TracingExtra], optional): Extra tracing information.
-            Defaults to None.
-        chat_name (str, optional): The run name for the chat completions endpoint.
-            Defaults to "ChatOpenAI".
-        completions_name (str, optional): The run name for the completions endpoint.
-            Defaults to "OpenAI".
+        client: The client to patch.
+        tracing_extra: Extra tracing information.
+        chat_name: The run name for the chat completions endpoint.
+        completions_name: The run name for the completions endpoint.
 
     Returns:
-        Union[OpenAI, AsyncOpenAI]: The patched client.
+        The patched client.
 
     Example:
+        ```python
+        import openai
+        from langsmith import wrappers
 
-        .. code-block:: python
+        # Use OpenAI client same as you normally would.
+        client = wrappers.wrap_openai(openai.OpenAI())
 
-            import openai
-            from langsmith import wrappers
+        # Chat API:
+        messages = [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {
+                "role": "user",
+                "content": "What physics breakthroughs do you predict will happen by 2300?",
+            },
+        ]
+        completion = client.chat.completions.create(
+            model="gpt-4o-mini", messages=messages
+        )
+        print(completion.choices[0].message.content)
 
-            # Use OpenAI client same as you normally would.
-            client = wrappers.wrap_openai(openai.OpenAI())
+        # Responses API:
+        response = client.responses.create(
+            model="gpt-4o-mini",
+            messages=messages,
+        )
+        print(response.output_text)
+        ```
 
-            # Chat API:
-            messages = [
-                {"role": "system", "content": "You are a helpful assistant."},
-                {
-                    "role": "user",
-                    "content": "What physics breakthroughs do you predict will happen by 2300?",
-                },
-            ]
-            completion = client.chat.completions.create(
-                model="gpt-4o-mini", messages=messages
-            )
-            print(completion.choices[0].message.content)
-
-            # Responses API:
-            response = client.responses.create(
-                model="gpt-4o-mini",
-                messages=messages,
-            )
-            print(response.output_text)
-
-    .. versionchanged:: 0.3.16
+    !!! warning "Behavior changed in `langsmith` 0.3.16"
 
         Support for Responses API added.
     """  # noqa: E501

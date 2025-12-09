@@ -11,12 +11,7 @@ import time
 import weakref
 from multiprocessing import cpu_count
 from queue import Empty, Queue
-from typing import (
-    TYPE_CHECKING,
-    Optional,
-    Union,
-    cast,
-)
+from typing import TYPE_CHECKING, Any, Optional, Union, cast
 
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
@@ -40,7 +35,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("langsmith.client")
 
-LANGSMITH_CLIENT_THREAD_POOL = cf.ThreadPoolExecutor(max_workers=cpu_count() * 3)
+LANGSMITH_CLIENT_THREAD_POOL = cf.ThreadPoolExecutor(max_workers=cpu_count())
 
 
 def _group_batch_by_api_endpoint(
@@ -180,7 +175,11 @@ def _tracing_thread_drain_compressed_buffer(
             current_size = client.compressed_traces.buffer.tell()
 
             filled_buffer = client.compressed_traces.buffer
-            filled_buffer.context = client.compressed_traces._context
+            setattr(
+                cast(Any, filled_buffer),
+                "context",
+                client.compressed_traces._context,
+            )
 
             compressed_traces_info = (pre_compressed_size, current_size)
 
@@ -305,13 +304,14 @@ def _tracing_thread_handle_batch(
                     api_key=api_key,
                 )
 
-    except Exception:
+    except Exception as e:
         logger.error(
             "LangSmith tracing error: Failed to submit trace data.\n"
             "This does not affect your application's runtime.\n"
             "Error details:",
             exc_info=True,
         )
+        client._invoke_tracing_error_callback(e)
     finally:
         if mark_task_done and tracing_queue is not None:
             for _ in batch:
@@ -368,13 +368,14 @@ def _otel_tracing_thread_handle_batch(
                     "Error details: client.otel_exporter is None"
                 )
 
-    except Exception:
+    except Exception as e:
         logger.error(
             "OTEL tracing error: Failed to submit trace data.\n"
             "This does not affect your application's runtime.\n"
             "Error details:",
             exc_info=True,
         )
+        client._invoke_tracing_error_callback(e)
     finally:
         if mark_task_done and tracing_queue is not None:
             for _ in batch:

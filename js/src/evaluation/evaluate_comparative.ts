@@ -8,7 +8,7 @@ import {
 import { shuffle } from "../utils/shuffle.js";
 import { AsyncCaller } from "../utils/async_caller.js";
 import { evaluate } from "./index.js";
-import pRetry from "p-retry";
+import pRetry from "../utils/p-retry/index.js";
 import { getCurrentRunTree, traceable } from "../traceable.js";
 
 type ExperimentResults = Awaited<ReturnType<typeof evaluate>>;

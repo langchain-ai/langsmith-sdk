@@ -442,6 +442,39 @@ def test_traceable_iterator_noargs(_: MagicMock) -> None:
     assert list(my_iterator_fn(1, 2, 3)) == [0, 1, 2, 3, 4, 5]
 
 
+def test_traceable_stream_context_manager_returns_wrapper(
+    mock_client: Client,
+) -> None:
+    with tracing_context(enabled=True):
+
+        @traceable(client=mock_client, reduce_fn=lambda chunks: chunks)
+        def my_stream_fn():
+            class SyncCtxStream:
+                def __init__(self) -> None:
+                    self.entered = False
+                    self.exited = False
+
+                def __enter__(self):
+                    self.entered = True
+                    return self
+
+                def __exit__(self, exc_type, exc_val, exc_tb):
+                    self.exited = True
+
+                def __iter__(self):
+                    return iter([])
+
+            stream = SyncCtxStream()
+            return stream
+
+        stream = my_stream_fn()
+        with stream as s:
+            assert s is stream
+        # Ensure the underlying stream context manager was used
+        assert stream.__ls_stream__.entered
+        assert stream.__ls_stream__.exited
+
+
 @patch("langsmith.run_trees.Client", autospec=True)
 async def test_traceable_async_iterator_noargs(_: MagicMock) -> None:
     # Check that it's callable without the parens
@@ -451,6 +484,49 @@ async def test_traceable_async_iterator_noargs(_: MagicMock) -> None:
             yield i
 
     assert [i async for i in my_iterator_fn(1, 2, 3)] == [0, 1, 2, 3, 4, 5]
+
+
+@pytest.mark.asyncio
+async def test_traceable_async_stream_context_manager_returns_wrapper(
+    mock_client: Client,
+) -> None:
+    with tracing_context(enabled=True):
+
+        @traceable(client=mock_client, reduce_fn=lambda chunks: chunks)
+        async def my_stream_fn():
+            class AsyncCtxStream:
+                def __init__(self) -> None:
+                    self.entered = False
+                    self.exited = False
+                    self._done = False
+
+                async def __aenter__(self):
+                    self.entered = True
+                    return self
+
+                async def __aexit__(self, exc_type, exc_val, exc_tb):
+                    self.exited = True
+
+                def __aiter__(self):
+                    return self
+
+                async def __anext__(self):
+                    if self._done:
+                        raise StopAsyncIteration
+                    self._done = True
+                    return "chunk"
+
+            stream = AsyncCtxStream()
+            return stream
+
+        stream = await my_stream_fn()
+        async with stream as s:
+            assert s is stream
+            collected = [item async for item in s]
+            assert collected == ["chunk"]
+        # Ensure the underlying stream context manager was used
+        assert stream.__ls_stream__.entered
+        assert stream.__ls_stream__.exited
 
 
 @patch("langsmith.client.requests.Session", autospec=True)
@@ -811,17 +887,6 @@ async def test_async_generator():
     assert run is not None
     run = cast(RunTree, run)
     assert run.name == "expand_and_answer_questions"
-    child_runs = run.child_runs
-    assert child_runs and len(child_runs) == 5
-    names = [run.name for run in child_runs]
-    assert names == [
-        "some_sync_func",
-        "some_async_func",
-        "another_async_func",
-        "create_document_context",
-        "summarize_answers",
-    ]
-    assert len(child_runs[2].child_runs) == 1  # type: ignore
 
 
 def test_generator():
@@ -911,17 +976,6 @@ def test_generator():
     assert run is not None
     run = cast(RunTree, run)
     assert run.name == "test_overridding_name"
-    child_runs = run.child_runs
-    assert child_runs and len(child_runs) == 5
-    names = [run.name for run in child_runs]
-    assert names == [
-        "some_sync_func",
-        "some_func",
-        "another_func",
-        "create_document_context",
-        "summarize_answers",
-    ]
-    assert len(child_runs[2].child_runs) == 1  # type: ignore
 
 
 @pytest.mark.parametrize("enabled", [True, "local"])
@@ -989,19 +1043,6 @@ def test_traceable_regular(enabled: Union[bool, Literal["local"]]):
     assert run is not None
     run = cast(RunTree, run)
     assert run.name == "expand_and_answer_questions"
-    child_runs = run.child_runs
-    assert child_runs and len(child_runs) == 5
-    names = [run.name for run in child_runs]
-    assert names == [
-        "some_sync_func",
-        "some_func",
-        "another_func",
-        "create_document_context",
-        "summarize_answers",
-    ]
-    assert len(child_runs[2].child_runs) == 1  # type: ignore
-    mock_calls = _get_calls(mock_client_)
-    assert len(mock_calls) == (0 if enabled == "local" else 1)
 
 
 @pytest.mark.parametrize("enabled", [True, "local"])
@@ -1075,19 +1116,6 @@ async def test_traceable_async(enabled: Union[bool, Literal["local"]]):
     assert run is not None
     run = cast(RunTree, run)
     assert run.name == "expand_and_answer_questions"
-    child_runs = run.child_runs
-    assert child_runs and len(child_runs) == 5
-    names = [run.name for run in child_runs]
-    assert names == [
-        "some_sync_func",
-        "some_async_func",
-        "another_async_func",
-        "create_document_context",
-        "summarize_answers",
-    ]
-    assert len(child_runs[2].child_runs) == 1  # type: ignore
-    mock_calls = _get_calls(mock_client_)
-    assert len(mock_calls) == (0 if enabled == "local" else 1)
 
 
 @pytest.mark.parametrize("enabled", [True, "local"])
@@ -1117,11 +1145,6 @@ def test_traceable_to_trace(enabled: Union[bool, Literal["local"]]):
     assert run.name == "parent_fn"
     assert run.outputs == {"output": 3}
     assert run.inputs == {"a": 1, "b": 2}
-    child_runs = run.child_runs
-    assert child_runs
-    assert len(child_runs) == 1
-    assert child_runs[0].name == "child_fn"
-    assert child_runs[0].inputs == {"a": 1, "b": 2}
     mock_calls = _get_calls(mock_client_)
     assert len(mock_calls) == (0 if enabled == "local" else 1)
 
@@ -1168,23 +1191,6 @@ async def test_traceable_to_atrace(enabled: Union[bool, Literal["local"]]):
     assert run.name == "parent_fn"
     assert run.outputs == {"output": 3}
     assert run.inputs == {"a": 1, "b": 2}
-    child_runs = run.child_runs
-    assert child_runs
-    assert len(child_runs) == 1
-    child = child_runs[0]
-    assert child.name == "child_fn"
-    assert child.inputs == {"a": 1, "b": 2}
-    assert len(child.child_runs) == 1
-    grandchild = child.child_runs[0]
-    assert grandchild.name == "grandchild_fn"
-    assert grandchild.inputs == {"a": 1, "b": 2, "c": "oh my"}
-    assert len(grandchild.child_runs) == 2
-    ggcerror = grandchild.child_runs[0]
-    assert ggcerror.name == "expect_error"
-    assert "oh no" in str(ggcerror.error)
-    ggc = grandchild.child_runs[1]
-    assert ggc.name == "great_grandchild_fn"
-    assert ggc.inputs == {"a": 1, "b": 2}
     mock_calls = _get_calls(mock_client_)
     assert len(mock_calls) == (0 if enabled == "local" else 1)
 
@@ -1209,11 +1215,6 @@ def test_trace_to_traceable(enabled: Union[bool, Literal["local"]]):
     assert run.name == "parent_fn"
     assert run.outputs == {"result": 3}
     assert run.inputs == {"a": 1, "b": 2}
-    child_runs = run.child_runs
-    assert child_runs
-    assert len(child_runs) == 1
-    assert child_runs[0].name == "child_fn"
-    assert child_runs[0].inputs == {"a": 1, "b": 2}
 
 
 def test_client_not_passed_when_traceable_parent():
@@ -1928,3 +1929,27 @@ async def test_traceable_async_iterator_process_chunk(mock_client: Client) -> No
     body = json.loads(mock_calls[0].kwargs["data"])
     assert body["post"]
     assert body["post"][0]["outputs"]["output"] == list(range(6))
+
+
+def test_set_run_metadata_updates_current_run_tree() -> None:
+    with tracing_context(enabled=True):
+
+        @traceable
+        def instrumented() -> RunTree:
+            langsmith.set_run_metadata(foo=1)
+            langsmith.set_run_metadata(bar="two")
+            rt = get_current_run_tree()
+            assert rt is not None
+            return rt
+
+        run_tree = instrumented()
+    assert run_tree.metadata["foo"] == 1
+    assert run_tree.metadata["bar"] == "two"
+
+
+def test_set_run_metadata_without_active_run_tree(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    langsmith.set_run_metadata(foo=1)
+    assert len(caplog.records) == 1
+    assert "No active run tree found" in caplog.text

@@ -1,7 +1,7 @@
 """LangSmith integration for Claude Agent SDK.
 
 This module provides automatic tracing for the Claude Agent SDK by instrumenting
-key components like ClaudeSDKClient, SdkMcpTool, and tool handlers.
+`ClaudeSDKClient` and injecting hooks to trace all tool calls.
 """
 
 import logging
@@ -10,7 +10,6 @@ from typing import Optional
 
 from ._client import instrument_claude_client
 from ._config import set_tracing_config
-from ._tools import instrument_sdk_mcp_tool_class, instrument_tool_factory
 
 logger = logging.getLogger(__name__)
 
@@ -26,9 +25,11 @@ def configure_claude_agent_sdk(
     """Enable LangSmith tracing for the Claude Agent SDK by patching entry points.
 
     This function instruments the Claude Agent SDK to automatically trace:
-    - Chain runs for each conversation stream (via ClaudeSDKClient)
+    - Chain runs for each conversation stream (via `ClaudeSDKClient`)
     - Model runs for each assistant turn
-    - Tool calls made during agent execution
+    - All tool calls including built-in tools, external MCP tools, and SDK MCP tools
+
+    Tool tracing is implemented via `PreToolUse` and `PostToolUse` hooks
 
     Args:
         name: Name of the root trace.
@@ -37,24 +38,25 @@ def configure_claude_agent_sdk(
         tags: Tags to associate with all traces.
 
     Returns:
-        True if configuration was successful, False otherwise.
+        `True` if configuration was successful, `False` otherwise.
 
     Example:
-        >>> from langsmith.integrations.claude_agents_sdk import (
+        >>> from langsmith.integrations.claude_agent_sdk import (
         ...     configure_claude_agent_sdk,
         ... )
-        >>> configure_claude_agent_sdk(project_name="my-project", tags=["production"])
+        >>> configure_claude_agent_sdk(
+        ...     project_name="my-project", tags=["production"]
+        ... )  # doctest: +SKIP
         >>> # Now use claude_agent_sdk as normal - tracing is automatic
-    """
+    """  # noqa: E501
     try:
         import claude_agent_sdk  # type: ignore[import-not-found]
     except ImportError:
         logger.warning("Claude Agent SDK not installed.")
         return False
 
-    required = ["ClaudeSDKClient", "SdkMcpTool", "tool"]
-    if not all(hasattr(claude_agent_sdk, attr) for attr in required):
-        logger.warning("Claude Agent SDK missing expected attributes.")
+    if not hasattr(claude_agent_sdk, "ClaudeSDKClient"):
+        logger.warning("Claude Agent SDK missing ClaudeSDKClient.")
         return False
 
     set_tracing_config(
@@ -64,25 +66,18 @@ def configure_claude_agent_sdk(
         tags=tags,
     )
 
-    patches = {
-        "ClaudeSDKClient": instrument_claude_client,
-        "SdkMcpTool": instrument_sdk_mcp_tool_class,
-        "tool": instrument_tool_factory,
-    }
+    original = getattr(claude_agent_sdk, "ClaudeSDKClient", None)
+    if not original:
+        return False
 
-    for symbol, wrapper in patches.items():
-        original = getattr(claude_agent_sdk, symbol, None)
-        if not original:
+    wrapped = instrument_claude_client(original)
+    setattr(claude_agent_sdk, "ClaudeSDKClient", wrapped)
+
+    for module in list(sys.modules.values()):
+        try:
+            if module and getattr(module, "ClaudeSDKClient", None) is original:
+                setattr(module, "ClaudeSDKClient", wrapped)
+        except Exception:
             continue
-        wrapped = wrapper(original)
-        setattr(claude_agent_sdk, symbol, wrapped)
-
-        # Best-effort propagation to already-imported modules.
-        for module in list(sys.modules.values()):
-            try:
-                if module and getattr(module, symbol, None) is original:
-                    setattr(module, symbol, wrapped)
-            except Exception:
-                continue
 
     return True

@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from langsmith.run_helpers import (
         get_current_run_tree,
         get_tracing_context,
+        set_run_metadata,
         trace,
         traceable,
         tracing_context,
@@ -18,10 +19,11 @@ if TYPE_CHECKING:
     from langsmith.run_trees import RunTree
     from langsmith.testing._internal import test, unit
     from langsmith.utils import ContextThreadPoolExecutor
+    from langsmith.uuid import uuid7, uuid7_from_datetime
 
 # Avoid calling into importlib on every call to __version__
 
-__version__ = "0.4.38"
+__version__ = "0.4.56"
 version = __version__  # for backwards compatibility
 
 
@@ -96,6 +98,10 @@ def __getattr__(name: str) -> Any:
         from langsmith.run_helpers import get_current_run_tree
 
         return get_current_run_tree
+    elif name == "set_run_metadata":
+        from langsmith.run_helpers import set_run_metadata
+
+        return set_run_metadata
 
     elif name == "unit":
         from langsmith.testing._internal import unit
@@ -109,6 +115,14 @@ def __getattr__(name: str) -> Any:
         from langsmith.run_trees import configure
 
         return configure
+    elif name == "uuid7":
+        from langsmith.uuid import uuid7
+
+        return uuid7
+    elif name == "uuid7_from_datetime":
+        from langsmith.uuid import uuid7_from_datetime
+
+        return uuid7_from_datetime
 
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
@@ -130,6 +144,9 @@ __all__ = [
     "tracing_context",
     "get_tracing_context",
     "get_current_run_tree",
+    "set_run_metadata",
     "ContextThreadPoolExecutor",
     "AsyncClient",
+    "uuid7",
+    "uuid7_from_datetime",
 ]

@@ -12,6 +12,7 @@ import math
 import os
 import pathlib
 import sys
+import threading
 import time
 import uuid
 import warnings
@@ -45,7 +46,8 @@ from langsmith.client import (
     _is_langchain_hosted,
     _parse_token_or_url,
 )
-from langsmith.utils import LangSmithUserError
+from langsmith.run_trees import RunTree
+from langsmith.utils import LangSmithRateLimitError, LangSmithUserError
 
 _CREATED_AT = datetime(2015, 1, 1, 0, 0, 0)
 
@@ -3419,6 +3421,85 @@ def test__dataset_examples_path():
         assert expected == actual
 
 
+def test_compressed_traces_queue_limit_drops_new_items(
+    caplog: pytest.LogCaptureFixture,
+):
+    """Ensure compressed traces queue enforces a max in-memory size and logs drops."""
+    from langsmith._internal._compressed_traces import CompressedTraces
+    from langsmith._internal._multipart import MultipartPartsAndContext
+    from langsmith._internal._operations import compress_multipart_parts_and_context
+
+    _clear_env_cache()
+    # Set a very small max ingest memory to force drops.
+    with patch.dict(
+        os.environ,
+        {
+            "LANGSMITH_MAX_INGEST_MEMORY_BYTES": "100",
+        },
+        clear=False,
+    ):
+        compressed_traces = CompressedTraces()
+
+    boundary = "test_boundary"
+
+    # First operation: 60 bytes, should be accepted.
+    parts1 = MultipartPartsAndContext(
+        parts=[
+            (
+                "post.run1",
+                (
+                    None,
+                    b"x" * 60,
+                    "application/json",
+                    {},
+                ),
+            )
+        ],
+        context="trace=trace1,id=run1",
+    )
+
+    enqueued1 = compress_multipart_parts_and_context(
+        parts1, compressed_traces, boundary
+    )
+    assert enqueued1
+    assert compressed_traces.uncompressed_size == 60
+    assert compressed_traces._context == ["trace=trace1,id=run1"]
+
+    # Second operation: another 60 bytes. With current size=60 and limit=100,
+    # this should be dropped and log a warning.
+    parts2 = MultipartPartsAndContext(
+        parts=[
+            (
+                "post.run2",
+                (
+                    None,
+                    b"y" * 60,
+                    "application/json",
+                    {},
+                ),
+            )
+        ],
+        context="trace=trace2,id=run2",
+    )
+
+    with caplog.at_level(logging.WARNING):
+        enqueued2 = compress_multipart_parts_and_context(
+            parts2, compressed_traces, boundary
+        )
+
+    assert not enqueued2
+    # Size and context should be unchanged after a rejected operation.
+    assert compressed_traces.uncompressed_size == 60
+    assert compressed_traces._context == ["trace=trace1,id=run1"]
+
+    # Verify we logged a clear warning about dropping the trace.
+    assert any(
+        "Compressed traces queue size limit" in record.getMessage()
+        and "trace=trace2,id=run2" in record.getMessage()
+        for record in caplog.records
+    )
+
+
 @mock.patch("langsmith.client.requests.Session")
 def test_list_shared_examples_pagination(mock_session_cls: mock.Mock) -> None:
     """Test list_shared_examples handles pagination correctly."""
@@ -3610,6 +3691,58 @@ def test__convert_stored_attachments_to_attachments_dict(mock_get: mock.Mock):
     mock_get.assert_called_once_with(
         "https://api.langsmith.com/download/valid", stream=True
     )
+
+    # Test case 7: Self-hosted backend with relative presigned_url
+    mock_get.reset_mock()
+    mock_response.content = b"self-hosted attachment data"
+
+    data_self_hosted = {
+        "s3_urls": {
+            "attachment.testimage": {
+                "presigned_url": "/public/download?jwt=test.jwt.token",
+                "s3_url": "ttl_s/attachments/test-path/test-file-id",
+            }
+        }
+    }
+
+    result = _convert_stored_attachments_to_attachments_dict(
+        data_self_hosted,
+        attachments_key="s3_urls",
+        api_url="https://self-hosted.example.com",
+    )
+
+    assert "testimage" in result
+    assert result["testimage"]["presigned_url"] == "/public/download?jwt=test.jwt.token"
+    assert result["testimage"]["reader"].read() == b"self-hosted attachment data"
+    # Verify the URL was constructed correctly
+    mock_get.assert_called_with(
+        "https://self-hosted.example.com/public/download?jwt=test.jwt.token",
+        stream=True,
+    )
+
+    # Test case 8: Download failure - should raise error when reading
+    mock_get.reset_mock()
+    mock_get.side_effect = requests.RequestException("Network error")
+
+    data_with_error = {
+        "attachment_urls": {
+            "attachment.failing_file": {
+                "presigned_url": "https://example.com/failing.txt",
+                "mime_type": "text/plain",
+            }
+        }
+    }
+
+    result = _convert_stored_attachments_to_attachments_dict(
+        data_with_error, attachments_key="attachment_urls", api_url=None
+    )
+
+    assert "failing_file" in result
+    assert result["failing_file"]["presigned_url"] == "https://example.com/failing.txt"
+    assert result["failing_file"]["mime_type"] == "text/plain"
+    # Reading the failed attachment should raise an error
+    with pytest.raises(ls_utils.LangSmithError, match="Failed to download attachment"):
+        result["failing_file"]["reader"].read()
 
 
 def test_workspace_validation_optional(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -4354,3 +4487,94 @@ def test_list_runs_child_run_ids_deprecation_warning(
     with warnings.catch_warnings():
         warnings.simplefilter("error", DeprecationWarning)
         list(client.list_runs(project_id=uuid.uuid4(), select=["id", "name"]))
+
+
+def test_tracing_error_callback_on_429():
+    """Test that tracing_error_callback is invoked on 429 errors in multipart flow."""
+    mock_session = MagicMock()
+
+    # Track callback invocations
+    callback_errors = []
+    callback_event = threading.Event()
+
+    def error_callback(error: Exception):
+        callback_errors.append(error)
+        callback_event.set()
+
+    # Mock successful response for info endpoint
+    info_response = MagicMock()
+    info_response.status_code = 200
+    info_response.json.return_value = {
+        "version": "0.1.0",
+        "batch_ingest_config": {
+            "size_limit": 1,  # Process immediately
+            "size_limit_bytes": 1,  # Process immediately
+            "use_multipart_endpoint": True,
+            "scale_up_nthreads_limit": 16,
+            "scale_up_qsize_trigger": 1,  # Scale up immediately
+            "scale_down_nempty_trigger": 4,
+        },
+        "instance_flags": {
+            "zstd_compression_enabled": False,
+        },
+    }
+
+    # Mock 429 response for batch ingest
+    rate_limit_response = MagicMock()
+    rate_limit_response.status_code = 429
+    rate_limit_response.text = "Rate limit exceeded"
+    rate_limit_response.raise_for_status.side_effect = HTTPError(
+        response=rate_limit_response
+    )
+
+    def mock_request_handler(method, url, **kwargs):
+        # Return info for info endpoint
+        if url.endswith("/info"):
+            return info_response
+        # Return 429 for multipart endpoint
+        elif "multipart" in url:
+            return rate_limit_response
+        # Return 200 for other endpoints (should not be called in this test)
+        else:
+            success_response = MagicMock()
+            success_response.status_code = 200
+            return success_response
+
+    mock_session.request.side_effect = mock_request_handler
+
+    client = Client(
+        api_key="test",
+        session=mock_session,
+        auto_batch_tracing=True,
+        tracing_error_callback=error_callback,
+    )
+
+    # Create a test run using RunTree with trace_id and dotted_order
+    run_id = uuid.uuid4()
+    trace_id = uuid.uuid4()
+    run = RunTree(
+        name="test_run",
+        id=run_id,
+        trace_id=trace_id,
+        dotted_order=f"{time.time()}.{run_id}",
+        client=client,
+        project_name="test_project",
+        inputs={"input": "test"},
+    )
+    run.post()  # Explicitly post to trigger queue
+    run.end(outputs={"output": "test"})
+    run.patch()  # Explicitly patch to trigger queue
+
+    # Wait for the background thread to process
+    time.sleep(0.5)
+
+    # Now wait for callback
+    callback_event.wait(timeout=10.0)
+
+    # Verify callback was invoked with the error
+    assert len(callback_errors) >= 1, (
+        f"Expected callback to be invoked, got {len(callback_errors)} errors. "
+        f"Queue size: {client.tracing_queue.qsize() if client.tracing_queue else 'N/A'}"
+    )
+    assert isinstance(callback_errors[0], LangSmithRateLimitError)
+    assert "Rate limit exceeded" in str(callback_errors[0])

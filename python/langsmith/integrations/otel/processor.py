@@ -59,12 +59,13 @@ except ImportError:
 
 
 class OtelExporter(OTLPSpanExporter):
-    """A subclass of OTLPSpanExporter configured for LangSmith.
+    """A subclass of `OTLPSpanExporter` configured for LangSmith.
 
     Environment Variables:
-    - LANGSMITH_API_KEY: Your LangSmith API key.
-    - LANGSMITH_ENDPOINT: Base URL for LangSmith API (defaults to https://api.smith.langchain.com).
-    - LANGSMITH_PROJECT: Project identifier.
+
+    - `LANGSMITH_API_KEY`: Your LangSmith API key.
+    - `LANGSMITH_ENDPOINT`: Base URL for LangSmith API (defaults to `https://api.smith.langchain.com`).
+    - `LANGSMITH_PROJECT`: Project identifier.
     """
 
     def __init__(
@@ -75,15 +76,16 @@ class OtelExporter(OTLPSpanExporter):
         headers: Optional[dict[str, str]] = None,
         **kwargs,
     ):
-        """Initialize the OtelExporter.
+        """Initialize the `OtelExporter`.
 
         Args:
-            url: OTLP endpoint URL. Defaults to {LANGSMITH_ENDPOINT}/otel/v1/traces.
-            api_key: LangSmith API key. Defaults to LANGSMITH_API_KEY env var.
-            parent: Parent identifier (e.g., "project_name:test").
-                Defaults to LANGSMITH_PARENT env var.
+            url: OTLP endpoint URL. Defaults to `{LANGSMITH_ENDPOINT}/otel/v1/traces`.
+            api_key: LangSmith API key. Defaults to `LANGSMITH_API_KEY` env var.
+            parent: Parent identifier (e.g., `'project_name:test'`).
+
+                Defaults to `LANGSMITH_PARENT` env var.
             headers: Additional headers to include in requests.
-            **kwargs: Additional arguments passed to OTLPSpanExporter.
+            **kwargs: Additional arguments passed to `OTLPSpanExporter`.
         """
         base_url = ls_utils.get_api_url(None)
         # Ensure base_url ends with / for proper joining
@@ -124,10 +126,11 @@ class OtelExporter(OTLPSpanExporter):
 class OtelSpanProcessor:
     """A span processor for adding LangSmith to OpenTelemetry setups.
 
-    This class combines the OtelExporter and BatchSpanProcessor
-    into a single processor that can be added to any TracerProvider.
+    This class combines the `OtelExporter` and `BatchSpanProcessor`
+    into a single processor that can be added to any `TracerProvider`.
 
     Use this when:
+
     1. You already have OpenTelemetry initialized with other tools
     2. You want to add LangSmith alongside existing OTEL exporters
 
@@ -158,16 +161,16 @@ class OtelSpanProcessor:
         headers: Optional[dict[str, str]] = None,
         SpanProcessor: Optional[type] = None,
     ):
-        """Initialize the OtelSpanProcessor.
+        """Initialize the `OtelSpanProcessor`.
 
         Args:
-            api_key: LangSmith API key. Defaults to LANGSMITH_API_KEY env var.
-            project: Project identifier. Defaults to LANGSMITH_PROJECT env var.
-            url: Base URL for LangSmith API. Defaults to LANGSMITH_ENDPOINT env var
-                or https://api.smith.langchain.com.
+            api_key: LangSmith API key. Defaults to `LANGSMITH_API_KEY` env var.
+            project: Project identifier. Defaults to `LANGSMITH_PROJECT` env var.
+            url: Base URL for LangSmith API. Defaults to `LANGSMITH_ENDPOINT` env var
+                or `https://api.smith.langchain.com`.
             headers: Additional headers to include in requests.
-            SpanProcessor: Optional span processor class.
-                Defaults to BatchSpanProcessor.
+            SpanProcessor: Optional span processor class. Defaults to
+                `BatchSpanProcessor`.
         """
         # Create the exporter
         # Convert url to the full endpoint URL that OtelExporter expects

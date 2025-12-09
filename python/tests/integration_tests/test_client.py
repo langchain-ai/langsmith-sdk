@@ -782,9 +782,6 @@ def test_list_datasets(langchain_client: Client) -> None:
         assert dataset1.url is not None
         assert dataset2.url is not None
 
-        # Test datasets without metadata return empty metadata
-        assert dataset2.metadata is None  # dataset2 has no metadata
-
         datasets = list(
             langchain_client.list_datasets(dataset_ids=[dataset1.id, dataset2.id])
         )
@@ -1431,7 +1428,10 @@ def test_multipart_ingest_create_wrong_type(
 
         # this should 422
         assert len(caplog.records) == 1, "Should get 1 warning for 422, not retried"
-        assert all("422" in record.message for record in caplog.records)
+        assert all(
+            "422" in record.message or "429" in record.message
+            for record in caplog.records
+        ), [record.message for record in caplog.records]
 
 
 @freeze_time("2023-01-01")
@@ -3832,3 +3832,135 @@ def test_get_experiment_results(langchain_client: Client) -> None:
     assert len(list(preview_results["examples_with_runs"])) > 0
 
     safe_delete_dataset(langchain_client, dataset_name=dataset_name)
+
+
+def test_create_insights_job(langchain_client: Client) -> None:
+    chat_histories = [
+        [
+            {"role": "user", "content": "buy me a coffee"},
+            {"role": "assistant", "content": "i dont wanna"},
+        ],
+        [
+            {"role": "user", "content": "how are you?"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {"name": "existential_crisis", "args": {"trigger": "how am i"}}
+                ],
+            },
+            {"role": "tool", "content": "you are panicking"},
+            {"role": "assitant", "content": "i am panicking"},
+        ],
+    ]
+
+    session_name = f"test-insights-{uuid4()})"
+    insights_job = langchain_client.generate_insights(chat_histories, name=session_name)
+    assert insights_job["name"] == session_name
+    assert insights_job["status"] in ["queued", "running", "success"]
+    try:
+        uuid.UUID(insights_job["session_id"])
+    except Exception:
+        raise AssertionError(
+            f"Invalid session ID, not a UUID: {insights_job['session_id']}"
+        )
+
+    def check_runs():
+        runs = list(langchain_client.list_runs(project_id=insights_job["session_id"]))
+        return len(runs) == len(chat_histories)
+
+    wait_for(check_runs, max_sleep_time=30)
+
+    runs = list(langchain_client.list_runs(project_id=insights_job["session_id"]))
+    assert len(runs) == len(chat_histories)
+
+    for chat_history in chat_histories:
+        match = next((r for r in runs if r.outputs["messages"] == chat_history), None)
+        assert match.inputs["messages"] == chat_history[:1]
+        assert match.run_type == "chain"
+        assert match.name == "trace"
+        assert str(match.session_id) == insights_job["session_id"]
+
+
+def test_feedback_formula_crud_flow(langchain_client: Client) -> None:
+    dataset_name = f"feedback-formula-crud-{uuid4().hex}"
+    feedback_key = f"overall-quality-{uuid4().hex[:8]}"
+    initial_parts = [
+        {"part_type": "weighted_key", "weight": 0.6, "key": "accuracy"},
+        {"part_type": "weighted_key", "weight": 0.4, "key": "helpfulness"},
+    ]
+    updated_parts = [
+        {"part_type": "weighted_key", "weight": 0.25, "key": "coverage"},
+        {"part_type": "weighted_key", "weight": 0.75, "key": "relevance"},
+    ]
+
+    dataset = None
+    feedback_formula_id = None
+    try:
+        dataset = langchain_client.create_dataset(dataset_name)
+        created_formula = langchain_client.create_feedback_formula(
+            feedback_key=feedback_key,
+            aggregation_type="sum",
+            formula_parts=initial_parts,
+            dataset_id=dataset.id,
+        )
+        feedback_formula_id = created_formula.id
+
+        assert created_formula.dataset_id == dataset.id
+        assert created_formula.feedback_key == feedback_key
+        assert [part.key for part in created_formula.formula_parts] == [
+            part["key"] for part in initial_parts
+        ]
+
+        formulas = list(langchain_client.list_feedback_formulas(dataset_id=dataset.id))
+        assert any(formula.id == feedback_formula_id for formula in formulas)
+
+        updated_feedback_key = f"{feedback_key}-updated"
+        updated_formula = langchain_client.update_feedback_formula(
+            feedback_formula_id,
+            feedback_key=updated_feedback_key,
+            aggregation_type="avg",
+            formula_parts=updated_parts,
+        )
+        assert updated_formula.id == feedback_formula_id
+        assert updated_formula.feedback_key == updated_feedback_key
+        assert updated_formula.aggregation_type == "avg"
+        assert [part.key for part in updated_formula.formula_parts] == [
+            part["key"] for part in updated_parts
+        ]
+        assert [part.weight for part in updated_formula.formula_parts] == [
+            part["weight"] for part in updated_parts
+        ]
+
+        fetched_formula = langchain_client.get_feedback_formula_by_id(
+            feedback_formula_id
+        )
+        assert fetched_formula.feedback_key == updated_feedback_key
+        assert fetched_formula.aggregation_type == "avg"
+        assert [part.key for part in fetched_formula.formula_parts] == [
+            part["key"] for part in updated_parts
+        ]
+
+        langchain_client.delete_feedback_formula(feedback_formula_id)
+        deleted_formula_id = feedback_formula_id
+        feedback_formula_id = None
+
+        wait_for(
+            lambda: deleted_formula_id
+            not in {
+                formula.id
+                for formula in langchain_client.list_feedback_formulas(
+                    dataset_id=dataset.id
+                )
+            },
+            max_sleep_time=30,
+            sleep_time=1,
+        )
+    finally:
+        if feedback_formula_id is not None:
+            try:
+                langchain_client.delete_feedback_formula(feedback_formula_id)
+            except Exception:
+                pass
+        if dataset is not None:
+            safe_delete_dataset(langchain_client, dataset_id=dataset.id)

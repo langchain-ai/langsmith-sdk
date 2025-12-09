@@ -122,7 +122,8 @@ export const normalizeFileDataAsDataURL = (
 };
 
 export const convertMessageToTracedFormat = (
-  message: LanguageModelV2Message | ModelMessage
+  message: LanguageModelV2Message | ModelMessage,
+  responseMetadata?: Record<string, unknown>
 ) => {
   const formattedMessage: Record<string, unknown> = {
     ...message,
@@ -195,6 +196,9 @@ export const convertMessageToTracedFormat = (
         };
       });
     }
+  }
+  if (responseMetadata != null) {
+    formattedMessage.response_metadata = responseMetadata;
   }
   return formattedMessage;
 };
