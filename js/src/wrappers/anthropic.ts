@@ -375,19 +375,18 @@ export const wrapAnthropic = <T extends AnthropicType>(
   // Wrap messages.stream
   const originalStream = anthropic.messages.stream.bind(anthropic.messages);
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const streamMethod = function (...args: any[]) {
     const stream = originalStream(...args);
     if ("finalMessage" in stream && typeof stream.finalMessage === "function") {
-      stream.finalMessage = traceable(stream.finalMessage.bind(stream), {
-        name: "ChatAnthropic",
-        run_type: "llm",
-        aggregator: messageAggregator,
-        argsConfigPath: [1, "langsmithExtra"],
-        getInvocationParams: messagesCreateConfig.getInvocationParams,
-        processOutputs: processMessageOutput,
-        processInputs: () => args[0],
-        ...options,
-      });
+      const originalFinalMessage = stream.finalMessage.bind(stream);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      stream.finalMessage = async (...args: any[]) => {
+        for await (const _ of stream) {
+          // consume chunks
+        }
+        return originalFinalMessage(...args);
+      };
     }
     return stream;
   };
