@@ -487,6 +487,95 @@ test("wrapping same instance", async () => {
   );
 });
 
+test("beta.messages.create", async () => {
+  const { client, callSpy } = mockClient();
+
+  const originalClient = new Anthropic();
+  const patchedClient = wrapAnthropic(new Anthropic(), {
+    client,
+    tracingEnabled: true,
+  });
+
+  // Verify beta namespace exists
+  expect(patchedClient.beta).toBeDefined();
+  expect(patchedClient.beta.messages).toBeDefined();
+
+  // Non-streaming beta call
+  const original = await originalClient.beta.messages.create({
+    model: "claude-sonnet-4-20250514",
+    max_tokens: 100,
+    messages: [{ role: "user", content: "Say 'beta'" }],
+    betas: ["computer-use-2025-01-24"],
+  });
+
+  const patched = await patchedClient.beta.messages.create({
+    model: "claude-sonnet-4-20250514",
+    max_tokens: 100,
+    messages: [{ role: "user", content: "Say 'beta'" }],
+    betas: ["computer-use-2025-01-24"],
+  });
+
+  expect(patched.content).toBeDefined();
+  expect(patched.role).toBe("assistant");
+  expect(original.role).toBe("assistant");
+
+  // Verify tracing calls were made
+  expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
+
+  // Verify metadata was set correctly
+  const postCalls = callSpy.mock.calls.filter(
+    (call) => (call[1] as any).method === "POST"
+  );
+  expect(postCalls.length).toBeGreaterThanOrEqual(1);
+
+  const postBody = parseRequestBody((postCalls[0][1] as any).body);
+  expect(postBody.extra.metadata).toMatchObject({
+    ls_model_name: "claude-sonnet-4-20250514",
+    ls_model_type: "chat",
+    ls_provider: "anthropic",
+  });
+
+  callSpy.mockClear();
+});
+
+test("beta.messages.create streaming", async () => {
+  const { client, callSpy } = mockClient();
+
+  const patchedClient = wrapAnthropic(new Anthropic(), {
+    client,
+    tracingEnabled: true,
+  });
+
+  const patchedStream = await patchedClient.beta.messages.create({
+    model: "claude-sonnet-4-20250514",
+    max_tokens: 100,
+    messages: [{ role: "user", content: "Say 'beta stream'" }],
+    betas: ["computer-use-2025-01-24"],
+    stream: true,
+  });
+
+  const events: any[] = [];
+  for await (const event of patchedStream) {
+    events.push(event);
+  }
+
+  expect(events.length).toBeGreaterThan(0);
+  expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
+
+  // Verify metadata
+  const postCalls = callSpy.mock.calls.filter(
+    (call) => (call[1] as any).method === "POST"
+  );
+  const postBody = parseRequestBody((postCalls[0][1] as any).body);
+  expect(postBody.extra.metadata).toMatchObject({
+    ls_model_name: "claude-sonnet-4-20250514",
+    ls_model_type: "chat",
+    ls_provider: "anthropic",
+  });
+
+  callSpy.mockClear();
+});
+
 test("chat extra name", async () => {
   const { client, callSpy } = mockClient();
 

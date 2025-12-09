@@ -22,12 +22,17 @@ type ExtraRunTreeConfig = Pick<
 >;
 
 // Type definitions for Anthropic SDK
+type MessagesNamespace = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  create: (...args: any[]) => any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  stream: (...args: any[]) => any;
+};
+
 type AnthropicType = {
-  messages: {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    create: (...args: any[]) => any;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    stream: (...args: any[]) => any;
+  messages: MessagesNamespace;
+  beta?: {
+    messages?: MessagesNamespace;
   };
 };
 
@@ -381,6 +386,44 @@ export const wrapAnthropic = <T extends AnthropicType>(
       ...options,
     }
   );
+
+  // Wrap beta.messages if it exists
+  if (
+    anthropic.beta &&
+    anthropic.beta.messages &&
+    typeof anthropic.beta.messages.create === "function"
+  ) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const tracedBeta = { ...anthropic.beta } as any;
+    tracedBeta.messages = Object.create(
+      Object.getPrototypeOf(anthropic.beta.messages)
+    );
+    Object.assign(tracedBeta.messages, anthropic.beta.messages);
+
+    // Wrap beta.messages.create
+    tracedBeta.messages.create = traceable(
+      anthropic.beta.messages.create.bind(anthropic.beta.messages),
+      messagesCreateConfig
+    );
+
+    // Wrap beta.messages.stream if it exists
+    if (typeof anthropic.beta.messages.stream === "function") {
+      tracedBeta.messages.stream = traceable(
+        anthropic.beta.messages.stream.bind(anthropic.beta.messages),
+        {
+          name: "ChatAnthropic",
+          run_type: "llm",
+          aggregator: messageAggregator,
+          argsConfigPath: [1, "langsmithExtra"],
+          getInvocationParams: messagesCreateConfig.getInvocationParams,
+          processOutputs: processMessageOutput,
+          ...options,
+        }
+      );
+    }
+
+    tracedAnthropicClient.beta = tracedBeta;
+  }
 
   return tracedAnthropicClient as PatchedAnthropicClient<T>;
 };
