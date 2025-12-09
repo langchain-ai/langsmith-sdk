@@ -863,4 +863,398 @@ interactions:
     status:
       code: 200
       message: OK
+- request:
+    body: '{"input": "Say ''foo'' then stop.", "max_output_tokens": 1024, "model":
+      "gpt-4o-mini", "temperature": 0, "text": {"format": {"type": "json_schema",
+      "strict": true, "name": "Format", "schema": {"properties": {"speech": {"title":
+      "Speech", "type": "string"}}, "required": ["speech"], "title": "Format", "type":
+      "object", "additionalProperties": false}}}}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '350'
+      content-type:
+      - application/json
+      cookie:
+      - _cfuvid=q1boQsJYbKs7134l_tfLtGvII_TFSi8OExKq_mqwLqE-1741823806467-0.0.1.1-604800000
+      host:
+      - api.openai.com
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - async:asyncio
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 2.6.0
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.11.3
+    method: POST
+    uri: https://api.openai.com/v1/responses
+  response:
+    body:
+      string: 'upstream connect error or disconnect/reset before headers. retried
+        and the latest reset reason: remote connection failure, transport failure
+        reason: delayed connect error: Connection refused'
+    headers:
+      CF-RAY:
+      - 99902a9e6c16270a-SJC
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '190'
+      Content-Type:
+      - text/plain
+      Date:
+      - Tue, 04 Nov 2025 00:59:03 GMT
+      Server:
+      - cloudflare
+      Set-Cookie:
+      - __cf_bm=.uyhmNmZuQYHBXXuMX_O4poJLIdhasjdDxLQJPa1ZzU-1762217943-1.0.1.1-UwIE.vhO0IlQapZ0y9s1fHKFAvr.croxD0j6jui8uMecu5rypa_vKGQUjUFdW0pdO5m0kBaL9kVjRd2ne9lE.EOLsiGuFny2DBvczmf5hX4;
+        path=/; expires=Tue, 04-Nov-25 01:29:03 GMT; domain=.api.openai.com; HttpOnly;
+        Secure; SameSite=None
+      - _cfuvid=YuEoA.yHHFDJSnMZjouWcJo3BucTL9JzyNG_D5N1u_s-1762217943461-0.0.1.1-604800000;
+        path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None
+      Strict-Transport-Security:
+      - max-age=31536000; includeSubDomains; preload
+      X-Content-Type-Options:
+      - nosniff
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+    status:
+      code: 503
+      message: Service Unavailable
+- request:
+    body: '{"input": "Say ''foo'' then stop.", "max_output_tokens": 1024, "model":
+      "gpt-4o-mini", "temperature": 0, "text": {"format": {"type": "json_schema",
+      "strict": true, "name": "Format", "schema": {"properties": {"speech": {"title":
+      "Speech", "type": "string"}}, "required": ["speech"], "title": "Format", "type":
+      "object", "additionalProperties": false}}}}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '350'
+      content-type:
+      - application/json
+      cookie:
+      - _cfuvid=YuEoA.yHHFDJSnMZjouWcJo3BucTL9JzyNG_D5N1u_s-1762217943461-0.0.1.1-604800000;
+        __cf_bm=.uyhmNmZuQYHBXXuMX_O4poJLIdhasjdDxLQJPa1ZzU-1762217943-1.0.1.1-UwIE.vhO0IlQapZ0y9s1fHKFAvr.croxD0j6jui8uMecu5rypa_vKGQUjUFdW0pdO5m0kBaL9kVjRd2ne9lE.EOLsiGuFny2DBvczmf5hX4
+      host:
+      - api.openai.com
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - async:asyncio
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 2.6.0
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '2'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.11.3
+    method: POST
+    uri: https://api.openai.com/v1/responses
+  response:
+    body:
+      string: "{\n  \"id\": \"resp_05b9451117abb2ca0069094fd8cae48197aed78d4266fb3e6c\",\n
+        \ \"object\": \"response\",\n  \"created_at\": 1762217944,\n  \"status\":
+        \"completed\",\n  \"background\": false,\n  \"billing\": {\n    \"payer\":
+        \"developer\"\n  },\n  \"error\": null,\n  \"incomplete_details\": null,\n
+        \ \"instructions\": null,\n  \"max_output_tokens\": 1024,\n  \"max_tool_calls\":
+        null,\n  \"model\": \"gpt-4o-mini-2024-07-18\",\n  \"output\": [\n    {\n
+        \     \"id\": \"msg_05b9451117abb2ca0069094fd964b481978be3dc28de38fa6a\",\n
+        \     \"type\": \"message\",\n      \"status\": \"completed\",\n      \"content\":
+        [\n        {\n          \"type\": \"output_text\",\n          \"annotations\":
+        [],\n          \"logprobs\": [],\n          \"text\": \"{\\\"speech\\\":\\\"foo\\\"}\"\n
+        \       }\n      ],\n      \"role\": \"assistant\"\n    }\n  ],\n  \"parallel_tool_calls\":
+        true,\n  \"previous_response_id\": null,\n  \"prompt_cache_key\": null,\n
+        \ \"prompt_cache_retention\": null,\n  \"reasoning\": {\n    \"effort\": null,\n
+        \   \"summary\": null\n  },\n  \"safety_identifier\": null,\n  \"service_tier\":
+        \"default\",\n  \"store\": true,\n  \"temperature\": 0.0,\n  \"text\": {\n
+        \   \"format\": {\n      \"type\": \"json_schema\",\n      \"description\":
+        null,\n      \"name\": \"Format\",\n      \"schema\": {\n        \"properties\":
+        {\n          \"speech\": {\n            \"title\": \"Speech\",\n            \"type\":
+        \"string\"\n          }\n        },\n        \"required\": [\n          \"speech\"\n
+        \       ],\n        \"title\": \"Format\",\n        \"type\": \"object\",\n
+        \       \"additionalProperties\": false\n      },\n      \"strict\": true\n
+        \   },\n    \"verbosity\": \"medium\"\n  },\n  \"tool_choice\": \"auto\",\n
+        \ \"tools\": [],\n  \"top_logprobs\": 0,\n  \"top_p\": 1.0,\n  \"truncation\":
+        \"disabled\",\n  \"usage\": {\n    \"input_tokens\": 44,\n    \"input_tokens_details\":
+        {\n      \"cached_tokens\": 0\n    },\n    \"output_tokens\": 6,\n    \"output_tokens_details\":
+        {\n      \"reasoning_tokens\": 0\n    },\n    \"total_tokens\": 50\n  },\n
+        \ \"user\": null,\n  \"metadata\": {}\n}"
+    headers:
+      CF-RAY:
+      - 99902aaa8b40270a-SJC
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Tue, 04 Nov 2025 00:59:05 GMT
+      Server:
+      - cloudflare
+      Strict-Transport-Security:
+      - max-age=31536000; includeSubDomains; preload
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '1841'
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '917'
+      openai-project:
+      - proj_IfpviNC2vx5jMiYFE4hbElsy
+      openai-version:
+      - '2020-10-01'
+      x-envoy-upstream-service-time:
+      - '922'
+      x-ratelimit-limit-requests:
+      - '30000'
+      x-ratelimit-limit-tokens:
+      - '150000000'
+      x-ratelimit-remaining-requests:
+      - '29999'
+      x-ratelimit-remaining-tokens:
+      - '149999937'
+      x-ratelimit-reset-requests:
+      - 2ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_cefb31d128514983824e1ecda2a177e9
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"input": "Say ''foo'' then stop.", "max_output_tokens": 1024, "model":
+      "gpt-4o-mini", "temperature": 0, "text": {"format": {"type": "json_schema",
+      "strict": true, "name": "Format", "schema": {"properties": {"speech": {"title":
+      "Speech", "type": "string"}}, "required": ["speech"], "title": "Format", "type":
+      "object", "additionalProperties": false}}}}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '350'
+      content-type:
+      - application/json
+      cookie:
+      - _cfuvid=vUHIofVPLDNC16p4epur5mQkJdVfthw3tA5UiL3bjOA-1741823808011-0.0.1.1-604800000
+      host:
+      - api.openai.com
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - async:asyncio
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 2.6.0
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.11.3
+    method: POST
+    uri: https://api.openai.com/v1/responses
+  response:
+    body:
+      string: 'upstream connect error or disconnect/reset before headers. retried
+        and the latest reset reason: remote connection failure, transport failure
+        reason: delayed connect error: Connection refused'
+    headers:
+      CF-RAY:
+      - 99902b777937ce90-SJC
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '190'
+      Content-Type:
+      - text/plain
+      Date:
+      - Tue, 04 Nov 2025 00:59:37 GMT
+      Server:
+      - cloudflare
+      Set-Cookie:
+      - __cf_bm=pUGItDXSW_Kg7UqsEfmW2gGzaToTDIVA_q2OAmn1cIo-1762217977-1.0.1.1-TGKXjjHWWEsgMxy1DxSQ.6rQzaLM.kwPyuLB53vvgHEoTKul83t1mBYlP40rb1Ncd_oKPuzXJipvzq4ZgMlrP9RBBBw6biKufa76tVxhZIs;
+        path=/; expires=Tue, 04-Nov-25 01:29:37 GMT; domain=.api.openai.com; HttpOnly;
+        Secure; SameSite=None
+      - _cfuvid=fH0yj_N3Pbw0Ch1R5.6rFakhW5_o11N2njigzMzkzZU-1762217977682-0.0.1.1-604800000;
+        path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None
+      Strict-Transport-Security:
+      - max-age=31536000; includeSubDomains; preload
+      X-Content-Type-Options:
+      - nosniff
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+    status:
+      code: 503
+      message: Service Unavailable
+- request:
+    body: '{"input": "Say ''foo'' then stop.", "max_output_tokens": 1024, "model":
+      "gpt-4o-mini", "temperature": 0, "text": {"format": {"type": "json_schema",
+      "strict": true, "name": "Format", "schema": {"properties": {"speech": {"title":
+      "Speech", "type": "string"}}, "required": ["speech"], "title": "Format", "type":
+      "object", "additionalProperties": false}}}}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '350'
+      content-type:
+      - application/json
+      cookie:
+      - _cfuvid=fH0yj_N3Pbw0Ch1R5.6rFakhW5_o11N2njigzMzkzZU-1762217977682-0.0.1.1-604800000;
+        __cf_bm=pUGItDXSW_Kg7UqsEfmW2gGzaToTDIVA_q2OAmn1cIo-1762217977-1.0.1.1-TGKXjjHWWEsgMxy1DxSQ.6rQzaLM.kwPyuLB53vvgHEoTKul83t1mBYlP40rb1Ncd_oKPuzXJipvzq4ZgMlrP9RBBBw6biKufa76tVxhZIs
+      host:
+      - api.openai.com
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - async:asyncio
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - MacOS
+      x-stainless-package-version:
+      - 2.6.0
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '2'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.11.3
+    method: POST
+    uri: https://api.openai.com/v1/responses
+  response:
+    body:
+      string: "{\n  \"id\": \"resp_022b122f2526f1740069094ffb13f88193a67185a49fbc43ba\",\n
+        \ \"object\": \"response\",\n  \"created_at\": 1762217979,\n  \"status\":
+        \"completed\",\n  \"background\": false,\n  \"billing\": {\n    \"payer\":
+        \"developer\"\n  },\n  \"error\": null,\n  \"incomplete_details\": null,\n
+        \ \"instructions\": null,\n  \"max_output_tokens\": 1024,\n  \"max_tool_calls\":
+        null,\n  \"model\": \"gpt-4o-mini-2024-07-18\",\n  \"output\": [\n    {\n
+        \     \"id\": \"msg_022b122f2526f1740069094ffe1f708193967998271d2e39a5\",\n
+        \     \"type\": \"message\",\n      \"status\": \"completed\",\n      \"content\":
+        [\n        {\n          \"type\": \"output_text\",\n          \"annotations\":
+        [],\n          \"logprobs\": [],\n          \"text\": \"{\\\"speech\\\":\\\"foo\\\"}\"\n
+        \       }\n      ],\n      \"role\": \"assistant\"\n    }\n  ],\n  \"parallel_tool_calls\":
+        true,\n  \"previous_response_id\": null,\n  \"prompt_cache_key\": null,\n
+        \ \"prompt_cache_retention\": null,\n  \"reasoning\": {\n    \"effort\": null,\n
+        \   \"summary\": null\n  },\n  \"safety_identifier\": null,\n  \"service_tier\":
+        \"default\",\n  \"store\": true,\n  \"temperature\": 0.0,\n  \"text\": {\n
+        \   \"format\": {\n      \"type\": \"json_schema\",\n      \"description\":
+        null,\n      \"name\": \"Format\",\n      \"schema\": {\n        \"properties\":
+        {\n          \"speech\": {\n            \"title\": \"Speech\",\n            \"type\":
+        \"string\"\n          }\n        },\n        \"required\": [\n          \"speech\"\n
+        \       ],\n        \"title\": \"Format\",\n        \"type\": \"object\",\n
+        \       \"additionalProperties\": false\n      },\n      \"strict\": true\n
+        \   },\n    \"verbosity\": \"medium\"\n  },\n  \"tool_choice\": \"auto\",\n
+        \ \"tools\": [],\n  \"top_logprobs\": 0,\n  \"top_p\": 1.0,\n  \"truncation\":
+        \"disabled\",\n  \"usage\": {\n    \"input_tokens\": 44,\n    \"input_tokens_details\":
+        {\n      \"cached_tokens\": 0\n    },\n    \"output_tokens\": 6,\n    \"output_tokens_details\":
+        {\n      \"reasoning_tokens\": 0\n    },\n    \"total_tokens\": 50\n  },\n
+        \ \"user\": null,\n  \"metadata\": {}\n}"
+    headers:
+      CF-RAY:
+      - 99902b80b802ce90-SJC
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Tue, 04 Nov 2025 00:59:42 GMT
+      Server:
+      - cloudflare
+      Strict-Transport-Security:
+      - max-age=31536000; includeSubDomains; preload
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '1841'
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '3387'
+      openai-project:
+      - proj_IfpviNC2vx5jMiYFE4hbElsy
+      openai-version:
+      - '2020-10-01'
+      x-envoy-upstream-service-time:
+      - '3395'
+      x-ratelimit-limit-requests:
+      - '30000'
+      x-ratelimit-limit-tokens:
+      - '150000000'
+      x-ratelimit-remaining-requests:
+      - '29999'
+      x-ratelimit-remaining-tokens:
+      - '149999937'
+      x-ratelimit-reset-requests:
+      - 2ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_c97366f1fee64b62ac318f28080da6c8
+    status:
+      code: 200
+      message: OK
 version: 1

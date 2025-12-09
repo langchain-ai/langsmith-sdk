@@ -1,7 +1,7 @@
 {
   "name": "langsmith",
-  "version": "0.3.74",
-  "description": "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform.",
+  "version": "0.3.82",
+  "description": "Client library to connect to the LangSmith Observability and Evaluation Platform.",
   "packageManager": "yarn@1.22.19",
   "files": [
     "dist/",
@@ -144,7 +144,6 @@
     "chalk": "^4.1.2",
     "console-table-printer": "^2.12.1",
     "p-queue": "^6.6.2",
-    "p-retry": "4",
     "semver": "^7.6.3",
     "uuid": "^10.0.0"
   },

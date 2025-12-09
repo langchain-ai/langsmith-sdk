@@ -31,7 +31,8 @@ Sign up for [LangSmith](https://smith.langchain.com/) using your GitHub, Discord
 
 Then, create a unique API key on the [Settings Page](https://smith.langchain.com/settings).
 
-Note: Save the API Key in a secure location. It will not be shown again.
+> [!NOTE]
+> Save the API Key in a secure location. It will not be shown again.
 
 ## 2. Log Traces
 

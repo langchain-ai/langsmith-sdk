@@ -119,8 +119,15 @@ test("wrap generateText with flex service tier", async () => {
   const childRunPatchBodies = patchBodies.filter(
     (body) => body.parent_run_id != null
   );
-  expect(childRunPatchBodies.length).toEqual(1);
-  const usageMetadata = childRunPatchBodies[0].extra.metadata.usage_metadata;
+
+  expect(childRunPatchBodies.length).toBeGreaterThanOrEqual(1);
+
+  const llmChildRun = childRunPatchBodies.find(
+    (body) => body.extra?.metadata?.usage_metadata
+  );
+  expect(llmChildRun).toBeDefined();
+
+  const usageMetadata = llmChildRun!.extra.metadata.usage_metadata;
   expect(usageMetadata.input_token_details.flex).toBeGreaterThan(1);
   expect(usageMetadata.input_token_details.flex).toEqual(
     usageMetadata.input_tokens
@@ -190,8 +197,15 @@ test("wrap streamText with service tier", async () => {
   const childRunPatchBodies = patchBodies.filter(
     (body) => body.parent_run_id != null
   );
-  expect(childRunPatchBodies.length).toEqual(1);
-  const usageMetadata = childRunPatchBodies[0].extra.metadata.usage_metadata;
+
+  expect(childRunPatchBodies.length).toBeGreaterThanOrEqual(1);
+
+  const llmChildRun = childRunPatchBodies.find(
+    (body) => body.extra?.metadata?.usage_metadata
+  );
+  expect(llmChildRun).toBeDefined();
+
+  const usageMetadata = llmChildRun!.extra.metadata.usage_metadata;
   expect(usageMetadata.input_token_details.flex).toBeGreaterThan(1);
   expect(usageMetadata.input_token_details.flex).toEqual(
     usageMetadata.input_tokens
@@ -368,7 +382,7 @@ test("process inputs and outputs", async () => {
     },
     processOutputs: (outputs) => {
       return {
-        providerMetadata: outputs.providerMetadata,
+        providerMetadata: outputs.outputs.providerMetadata,
         role: "assistant",
         content: "REDACTED",
       };
@@ -384,7 +398,7 @@ test("process inputs and outputs", async () => {
     },
     processChildLLMRunOutputs: (outputs) => {
       return {
-        providerMetadata: outputs.providerMetadata,
+        ...outputs,
         content: "REDACTED CHILD OUTPUTS",
         role: "assistant",
       };
@@ -398,4 +412,58 @@ test("process inputs and outputs", async () => {
     },
   });
   expect(text).not.toContain("REDACTED");
+});
+
+test("generateText with experimental_output should display as structured object in LangSmith", async () => {
+  const outputSchema = z.object({
+    city: z.string(),
+    temperature: z.number().nullable(),
+    unit: z.enum(["celsius", "fahrenheit"]),
+    conditions: z.string(),
+  });
+
+  const { generateText: wrappedGenerateText } = wrapAISDK(ai);
+
+  const result = await wrappedGenerateText({
+    model: openai("gpt-5-nano"),
+    prompt: "What's the weather in Prague? Return a structured response.",
+    experimental_output: ai.Output.object({
+      schema: outputSchema,
+    }),
+  });
+
+  // Verify the output is returned correctly and can be parsed
+  expect(result.experimental_output).toBeDefined();
+  const parsedOutput = outputSchema.parse(result.experimental_output);
+  expect(parsedOutput.city).toBeDefined();
+  expect(parsedOutput.temperature).toBeDefined();
+  expect(parsedOutput.unit).toBeDefined();
+  expect(parsedOutput.conditions).toBeDefined();
+});
+
+test("streamText with experimental_output should display as structured object in LangSmith", async () => {
+  const outputSchema = z.object({
+    city: z.string(),
+    temperature: z.number().nullable(),
+    unit: z.enum(["celsius", "fahrenheit"]),
+    conditions: z.string(),
+  });
+
+  const { streamText: wrappedStreamText } = wrapAISDK(ai);
+
+  const result = wrappedStreamText({
+    model: openai("gpt-5-nano"),
+    prompt: "What's the weather in Paris? Return a structured response.",
+    experimental_output: ai.Output.object({
+      schema: outputSchema,
+    }),
+  });
+
+  const chunks = [];
+  // Consume the stream
+  for await (const chunk of result.experimental_partialOutputStream) {
+    chunks.push(chunk);
+  }
+  expect(chunks.length).toBeGreaterThan(0);
+  expect(outputSchema.parse(chunks.at(-1))).toBeDefined();
 });

@@ -97,48 +97,48 @@ async def aevaluate(
 
     Args:
         target (AsyncCallable[[dict], dict] | AsyncIterable[dict] | Runnable | EXPERIMENT_T | Tuple[EXPERIMENT_T, EXPERIMENT_T]):
-            The target system or experiment(s) to evaluate. Can be an async function
-            that takes a dict and returns a dict, a langchain Runnable, an
-            existing experiment ID, or a two-tuple of experiment IDs.
-        data (Union[DATA_T, AsyncIterable[schemas.Example]]): The dataset to evaluate on. Can be a dataset name, a list of
-            examples, an async generator of examples, or an async iterable of examples.
+            The target system or experiment(s) to evaluate.
+
+            Can be an async function that takes a `dict` and returns a `dict`, a
+            langchain `Runnable`, an existing experiment ID, or a two-tuple of experiment IDs.
+        data (Union[DATA_T, AsyncIterable[schemas.Example]]): The dataset to evaluate on.
+
+            Can be a dataset name, a list of examples, an async generator of examples, or an async iterable of examples.
         evaluators (Optional[Sequence[EVALUATOR_T]]): A list of evaluators to run
-            on each example. Defaults to None.
+            on each example.
         summary_evaluators (Optional[Sequence[SUMMARY_EVALUATOR_T]]): A list of summary
-            evaluators to run on the entire dataset. Defaults to None.
+            evaluators to run on the entire dataset.
         metadata (Optional[dict]): Metadata to attach to the experiment.
-            Defaults to None.
         experiment_prefix (Optional[str]): A prefix to provide for your experiment name.
-            Defaults to None.
         description (Optional[str]): A description of the experiment.
         max_concurrency (int | None): The maximum number of concurrent
-            evaluations to run. If None then no limit is set. If 0 then no concurrency.
-            Defaults to 0.
+            evaluations to run.
+
+            If `None` then no limit is set. If `0` then no concurrency.
         num_repetitions (int): The number of times to run the evaluation.
             Each item in the dataset will be run and evaluated this many times.
-            Defaults to 1.
         client (Optional[langsmith.Client]): The LangSmith client to use.
-            Defaults to None.
         blocking (bool): Whether to block until the evaluation is complete.
-            Defaults to True.
         experiment (Optional[schemas.TracerSession]): An existing experiment to
-            extend. If provided, experiment_prefix is ignored. For advanced
-            usage only.
-        load_nested: Whether to load all child runs for the experiment.
-            Default is to only load the top-level root runs. Should only be specified
-            when evaluating an existing experiment.
-        error_handling (str, default="log"): How to handle individual run errors. 'log'
-            will trace the runs with the error message as part of the experiment,
-            'ignore' will not count the run as part of the experiment at all.
+            extend.
+
+            If provided, `experiment_prefix` is ignored. For advanced usage only.
+        error_handling (str, default="log"): How to handle individual run errors.
+
+            `'log'` will trace the runs with the error message as part of the
+            experiment, `'ignore'` will not count the run as part of the experiment at
+            all.
 
     Returns:
-        AsyncIterator[ExperimentResultRow]: An async iterator over the experiment results.
+        An async iterator over the experiment results.
 
     Environment:
-        - LANGSMITH_TEST_CACHE: If set, API calls will be cached to disk to save time and
-            cost during testing. Recommended to commit the cache files to your repository
-            for faster CI/CD runs.
-            Requires the 'langsmith[vcr]' package to be installed.
+        - `LANGSMITH_TEST_CACHE`: If set, API calls will be cached to disk to save time and
+            cost during testing.
+
+            Recommended to commit the cache files to your repository for faster CI/CD runs.
+
+            Requires the `'langsmith[vcr]'` package to be installed.
 
     Examples:
         >>> from typing import Sequence
@@ -261,7 +261,7 @@ async def aevaluate(
         View the evaluation results for experiment:...
 
 
-    .. versionchanged:: 0.2.0
+    !!! warning "Behavior changed in `langsmith` 0.2.0"
 
         'max_concurrency' default updated from None (no limit on concurrency)
         to 0 (no concurrency at all).
@@ -358,15 +358,17 @@ async def aevaluate_existing(
             to apply over the entire dataset.
         metadata (Optional[dict]): Optional metadata to include in the evaluation results.
         max_concurrency (int | None): The maximum number of concurrent
-            evaluations to run. If None then no limit is set. If 0 then no concurrency.
-            Defaults to 0.
+            evaluations to run.
+
+            If `None` then no limit is set. If `0` then no concurrency.
         client (Optional[langsmith.Client]): Optional Langsmith client to use for evaluation.
         load_nested: Whether to load all child runs for the experiment.
+
             Default is to only load the top-level root runs.
         blocking (bool): Whether to block until evaluation is complete.
 
     Returns:
-        AsyncIterator[ExperimentResultRow]: An async iterator over the experiment results.
+        An async iterator over the experiment results.
 
     Examples:
         Define your evaluators
@@ -567,9 +569,11 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         attachment_raw_data_dict (Optional[dict]): A dictionary to store raw data
             for attachments. Only used if we reuse attachments across multiple
             target/evaluator functions.
-        error_handling (str, default="log"): How to handle individual run errors. 'log'
-            will trace the runs with the error message as part of the experiment,
-            'ignore' will not count the run as part of the experiment at all.
+        error_handling (str, default="log"): How to handle individual run errors.
+
+            `'log'` will trace the runs with the error message as part of the
+            experiment, `'ignore'` will not count the run as part of the experiment at
+            all.
     """
 
     def __init__(

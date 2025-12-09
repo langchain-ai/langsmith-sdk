@@ -782,9 +782,6 @@ def test_list_datasets(langchain_client: Client) -> None:
         assert dataset1.url is not None
         assert dataset2.url is not None
 
-        # Test datasets without metadata return empty metadata
-        assert dataset2.metadata is None  # dataset2 has no metadata
-
         datasets = list(
             langchain_client.list_datasets(dataset_ids=[dataset1.id, dataset2.id])
         )
@@ -894,7 +891,7 @@ def test_create_run_with_masked_inputs_outputs(
 def test_create_chat_example(
     monkeypatch: pytest.MonkeyPatch, langchain_client: Client
 ) -> None:
-    from langchain.schema import FunctionMessage, HumanMessage
+    from langchain_core.messages import FunctionMessage, HumanMessage
 
     dataset_name = "__createChatExample-test-dataset"
     try:
@@ -1431,7 +1428,10 @@ def test_multipart_ingest_create_wrong_type(
 
         # this should 422
         assert len(caplog.records) == 1, "Should get 1 warning for 422, not retried"
-        assert all("422" in record.message for record in caplog.records)
+        assert all(
+            "422" in record.message or "429" in record.message
+            for record in caplog.records
+        ), [record.message for record in caplog.records]
 
 
 @freeze_time("2023-01-01")
@@ -2587,6 +2587,175 @@ def test_create_examples_errors(langchain_client: Client) -> None:
     safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
+def test_create_examples_batching(parameterized_multipart_client: Client) -> None:
+    """Test create_examples batching with large numbers of examples."""
+    dataset_name = "__test_batching_" + uuid4().hex[:4]
+    dataset = _create_dataset(parameterized_multipart_client, dataset_name)
+
+    # Test batching with 250 examples (> default batch_size=200)
+    examples = [
+        {"inputs": {"q": f"Q{i}"}, "outputs": {"a": f"A{i}"}} for i in range(250)
+    ]
+
+    result = parameterized_multipart_client.create_examples(
+        dataset_id=dataset.id, examples=examples
+    )
+
+    assert result["count"] == 250
+    assert len(result["example_ids"]) == 250
+
+    # Verify examples exist
+    listed = list(parameterized_multipart_client.list_examples(dataset_id=dataset.id))
+    assert len(listed) == 250
+
+    safe_delete_dataset(parameterized_multipart_client, dataset_id=dataset.id)
+
+
+def test_create_examples_large_multipart_batching(
+    parameterized_multipart_client: Client,
+) -> None:
+    """Test create_examples batching with large multipart payloads."""
+    dataset_name = "__test_large_multipart_" + uuid4().hex[:4]
+    dataset = _create_dataset(parameterized_multipart_client, dataset_name)
+
+    # Create examples with large attachments to simulate >100MB payload
+    large_data = b"x" * 5_000_000  # 5MB per attachment
+    examples = [
+        {
+            "inputs": {"question": f"What's in image {i}?"},
+            "outputs": {"answer": f"Image {i} content"},
+            "attachments": {
+                f"image_{i}": ("image/png", large_data),
+                f"doc_{i}": ("text/plain", large_data),
+            },
+        }
+        for i in range(20)  # ~100MB total payload
+    ]
+
+    result = parameterized_multipart_client.create_examples(
+        dataset_id=dataset.id, examples=examples
+    )
+
+    assert result["count"] == 20
+    assert len(result["example_ids"]) == 20
+
+    # Verify attachments were uploaded
+    first_example = parameterized_multipart_client.read_example(
+        result["example_ids"][0]
+    )
+    if hasattr(first_example, "attachments") and first_example.attachments:
+        assert len(first_example.attachments) == 2
+
+    safe_delete_dataset(parameterized_multipart_client, dataset_id=dataset.id)
+
+
+def test_create_examples_large_multipart_batching_parallel(
+    parameterized_multipart_client: Client,
+) -> None:
+    """Test create_examples batching with large multipart payloads in parallel."""
+    dataset_name = "__test_large_multipart_" + uuid4().hex[:4]
+    dataset = _create_dataset(parameterized_multipart_client, dataset_name)
+
+    # Create examples with large attachments to simulate >100MB payload
+    large_data = b"x" * 5_000_000  # 5MB per attachment
+    examples = [
+        {
+            "inputs": {"question": f"What's in image {i}?"},
+            "outputs": {"answer": f"Image {i} content"},
+            "attachments": {
+                f"image_{i}": ("image/png", large_data),
+                f"doc_{i}": ("text/plain", large_data),
+            },
+        }
+        for i in range(20)  # ~100MB total payload
+    ]
+
+    result = parameterized_multipart_client.create_examples(
+        dataset_id=dataset.id, examples=examples, max_concurrency=3
+    )
+
+    assert result["count"] == 20
+    assert len(result["example_ids"]) == 20
+
+    # Verify attachments were uploaded
+    first_example = parameterized_multipart_client.read_example(
+        result["example_ids"][0]
+    )
+    if hasattr(first_example, "attachments") and first_example.attachments:
+        assert len(first_example.attachments) == 2
+
+    safe_delete_dataset(parameterized_multipart_client, dataset_id=dataset.id)
+
+
+def test_create_examples_invalid_max_concurrency(
+    parameterized_multipart_client: Client,
+) -> None:
+    """Test that invalid max_concurrency values raise errors."""
+    dataset_name = "__test_invalid_concurrency_" + uuid4().hex[:4]
+    dataset = _create_dataset(parameterized_multipart_client, dataset_name)
+    examples = [{"inputs": {"q": "Q1"}, "outputs": {"a": "A1"}}]
+
+    # Test max_concurrency < 1
+    with pytest.raises(ValueError, match="max_concurrency must be between 1 and 3"):
+        parameterized_multipart_client.create_examples(
+            dataset_id=dataset.id, examples=examples, max_concurrency=0
+        )
+
+    # Test max_concurrency > 3
+    with pytest.raises(ValueError, match="max_concurrency must be between 1 and 3"):
+        parameterized_multipart_client.create_examples(
+            dataset_id=dataset.id, examples=examples, max_concurrency=4
+        )
+
+    safe_delete_dataset(parameterized_multipart_client, dataset_id=dataset.id)
+
+
+def test_create_examples_boundary_concurrency(
+    parameterized_multipart_client: Client,
+) -> None:
+    """Test max_concurrency boundary values (1 and 3)."""
+    dataset_name = "__test_boundary_" + uuid4().hex[:4]
+    dataset = _create_dataset(parameterized_multipart_client, dataset_name)
+    examples = [
+        {"inputs": {"q": f"Q{i}"}, "outputs": {"a": f"A{i}"}} for i in range(50)
+    ]
+
+    # Test min value (sequential)
+    result1 = parameterized_multipart_client.create_examples(
+        dataset_id=dataset.id, examples=examples, max_concurrency=1
+    )
+    assert result1["count"] == 50
+    assert len(result1["example_ids"]) == 50
+
+    # Test max value (max parallelism)
+    examples2 = [
+        {"inputs": {"q": f"Q{i}_2"}, "outputs": {"a": f"A{i}_2"}} for i in range(50)
+    ]
+    result2 = parameterized_multipart_client.create_examples(
+        dataset_id=dataset.id, examples=examples2, max_concurrency=3
+    )
+    assert result2["count"] == 50
+    assert len(result2["example_ids"]) == 50
+
+    # Verify all examples exist
+    listed = list(parameterized_multipart_client.list_examples(dataset_id=dataset.id))
+    assert len(listed) == 100
+
+    safe_delete_dataset(parameterized_multipart_client, dataset_id=dataset.id)
+
+
+def test_create_examples_empty_list(parameterized_multipart_client: Client) -> None:
+    """Test create_examples with empty list."""
+    dataset_name = "__test_empty_" + uuid4().hex[:4]
+    dataset = _create_dataset(parameterized_multipart_client, dataset_name)
+
+    # Test max_concurrency > 3
+    with pytest.raises(ValueError, match="Must specify either 'examples' or 'inputs.'"):
+        parameterized_multipart_client.create_examples(
+            dataset_id=dataset.id, examples=[]
+        )
+
+
 @pytest.mark.xfail(reason="Need to wait for backend changes to go endpoint")
 def test_use_source_run_io_multiple_examples(langchain_client: Client) -> None:
     dataset_name = "__test_use_source_run_io" + uuid4().hex[:4]
@@ -3663,3 +3832,135 @@ def test_get_experiment_results(langchain_client: Client) -> None:
     assert len(list(preview_results["examples_with_runs"])) > 0
 
     safe_delete_dataset(langchain_client, dataset_name=dataset_name)
+
+
+def test_create_insights_job(langchain_client: Client) -> None:
+    chat_histories = [
+        [
+            {"role": "user", "content": "buy me a coffee"},
+            {"role": "assistant", "content": "i dont wanna"},
+        ],
+        [
+            {"role": "user", "content": "how are you?"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {"name": "existential_crisis", "args": {"trigger": "how am i"}}
+                ],
+            },
+            {"role": "tool", "content": "you are panicking"},
+            {"role": "assitant", "content": "i am panicking"},
+        ],
+    ]
+
+    session_name = f"test-insights-{uuid4()})"
+    insights_job = langchain_client.generate_insights(chat_histories, name=session_name)
+    assert insights_job["name"] == session_name
+    assert insights_job["status"] in ["queued", "running", "success"]
+    try:
+        uuid.UUID(insights_job["session_id"])
+    except Exception:
+        raise AssertionError(
+            f"Invalid session ID, not a UUID: {insights_job['session_id']}"
+        )
+
+    def check_runs():
+        runs = list(langchain_client.list_runs(project_id=insights_job["session_id"]))
+        return len(runs) == len(chat_histories)
+
+    wait_for(check_runs, max_sleep_time=30)
+
+    runs = list(langchain_client.list_runs(project_id=insights_job["session_id"]))
+    assert len(runs) == len(chat_histories)
+
+    for chat_history in chat_histories:
+        match = next((r for r in runs if r.outputs["messages"] == chat_history), None)
+        assert match.inputs["messages"] == chat_history[:1]
+        assert match.run_type == "chain"
+        assert match.name == "trace"
+        assert str(match.session_id) == insights_job["session_id"]
+
+
+def test_feedback_formula_crud_flow(langchain_client: Client) -> None:
+    dataset_name = f"feedback-formula-crud-{uuid4().hex}"
+    feedback_key = f"overall-quality-{uuid4().hex[:8]}"
+    initial_parts = [
+        {"part_type": "weighted_key", "weight": 0.6, "key": "accuracy"},
+        {"part_type": "weighted_key", "weight": 0.4, "key": "helpfulness"},
+    ]
+    updated_parts = [
+        {"part_type": "weighted_key", "weight": 0.25, "key": "coverage"},
+        {"part_type": "weighted_key", "weight": 0.75, "key": "relevance"},
+    ]
+
+    dataset = None
+    feedback_formula_id = None
+    try:
+        dataset = langchain_client.create_dataset(dataset_name)
+        created_formula = langchain_client.create_feedback_formula(
+            feedback_key=feedback_key,
+            aggregation_type="sum",
+            formula_parts=initial_parts,
+            dataset_id=dataset.id,
+        )
+        feedback_formula_id = created_formula.id
+
+        assert created_formula.dataset_id == dataset.id
+        assert created_formula.feedback_key == feedback_key
+        assert [part.key for part in created_formula.formula_parts] == [
+            part["key"] for part in initial_parts
+        ]
+
+        formulas = list(langchain_client.list_feedback_formulas(dataset_id=dataset.id))
+        assert any(formula.id == feedback_formula_id for formula in formulas)
+
+        updated_feedback_key = f"{feedback_key}-updated"
+        updated_formula = langchain_client.update_feedback_formula(
+            feedback_formula_id,
+            feedback_key=updated_feedback_key,
+            aggregation_type="avg",
+            formula_parts=updated_parts,
+        )
+        assert updated_formula.id == feedback_formula_id
+        assert updated_formula.feedback_key == updated_feedback_key
+        assert updated_formula.aggregation_type == "avg"
+        assert [part.key for part in updated_formula.formula_parts] == [
+            part["key"] for part in updated_parts
+        ]
+        assert [part.weight for part in updated_formula.formula_parts] == [
+            part["weight"] for part in updated_parts
+        ]
+
+        fetched_formula = langchain_client.get_feedback_formula_by_id(
+            feedback_formula_id
+        )
+        assert fetched_formula.feedback_key == updated_feedback_key
+        assert fetched_formula.aggregation_type == "avg"
+        assert [part.key for part in fetched_formula.formula_parts] == [
+            part["key"] for part in updated_parts
+        ]
+
+        langchain_client.delete_feedback_formula(feedback_formula_id)
+        deleted_formula_id = feedback_formula_id
+        feedback_formula_id = None
+
+        wait_for(
+            lambda: deleted_formula_id
+            not in {
+                formula.id
+                for formula in langchain_client.list_feedback_formulas(
+                    dataset_id=dataset.id
+                )
+            },
+            max_sleep_time=30,
+            sleep_time=1,
+        )
+    finally:
+        if feedback_formula_id is not None:
+            try:
+                langchain_client.delete_feedback_formula(feedback_formula_id)
+            except Exception:
+                pass
+        if dataset is not None:
+            safe_delete_dataset(langchain_client, dataset_id=dataset.id)

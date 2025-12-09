@@ -82,6 +82,8 @@ describe("wrapAISDK", () => {
         prompt: "Test prompt",
       });
 
+      await new Promise((resolve) => setTimeout(resolve, 1));
+
       // Verify HTTP requests were made to LangSmith in correct order
       expect(mockHttpRequests.length).toBe(4); // 2 createRun + 2 updateRun
 
@@ -146,6 +148,8 @@ describe("wrapAISDK", () => {
         prompt: "Test with metadata",
       });
 
+      await new Promise((resolve) => setTimeout(resolve, 1));
+
       // Verify custom metadata was applied in HTTP requests
       expect(mockHttpRequests.length).toBe(4); // 2 createRun + 2 updateRun
 
@@ -157,11 +161,73 @@ describe("wrapAISDK", () => {
 
       // The first createRun should have the AI SDK metadata with custom fields
       const generateTextRun = mockHttpRequests[0];
+      const updateTextRun = mockHttpRequests[3];
       expect(generateTextRun.body.extra.metadata).toMatchObject({
         customField: "test-value",
         version: "2.0",
         ai_sdk_method: "ai.generateText",
       });
+      expect(updateTextRun.body.outputs).not.toHaveProperty(
+        "response_metadata"
+      );
+    });
+
+    it("should allow configuring traceResponseMetadata", async () => {
+      const wrappedWithMetadata = wrapAISDK(
+        {
+          wrapLanguageModel: ai.wrapLanguageModel,
+          generateText: ai.generateText,
+          streamText: ai.streamText,
+          generateObject: ai.generateObject,
+          streamObject: ai.streamObject,
+        },
+        {
+          name: "custom-tracer",
+          traceResponseMetadata: true,
+          client: mockClient as any,
+        }
+      );
+
+      const mockLangModel = new MockLanguageModelV2({
+        modelId: "metadata-test-model",
+        doGenerate: async () => ({
+          content: [{ type: "text" as const, text: "Metadata test" }],
+          finishReason: "stop" as const,
+          usage: {
+            promptTokens: 5,
+            completionTokens: 3,
+            inputTokens: 5,
+            outputTokens: 3,
+            totalTokens: 8,
+          },
+          warnings: [],
+        }),
+      });
+
+      await wrappedWithMetadata.generateText({
+        model: mockLangModel,
+        prompt: "Test with traced steps",
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 1));
+
+      expect(mockHttpRequests.length).toBe(4); // 2 createRun + 2 updateRun
+
+      // Verify sequence: createRun, createRun, updateRun, updateRun
+      expect(mockHttpRequests).toMatchObject([
+        { type: "createRun" },
+        { type: "createRun" },
+        { type: "updateRun" },
+        { type: "updateRun" },
+      ]);
+      expect(mockHttpRequests[1].type).toBe("createRun");
+      expect(mockHttpRequests[2].type).toBe("updateRun");
+      expect(mockHttpRequests[3].type).toBe("updateRun");
+
+      const updateTextRun = mockHttpRequests[3];
+      expect(updateTextRun.body.outputs.response_metadata).toHaveProperty(
+        "steps"
+      );
     });
 
     it("should send error information to LangSmith on model failures", async () => {
@@ -379,6 +445,8 @@ describe("wrapAISDK", () => {
       });
 
       expect(result.object).toEqual({ name: "John", age: 30 });
+
+      await new Promise((resolve) => setTimeout(resolve, 1));
 
       // Verify HTTP requests were made for generateObject
       expect(mockHttpRequests.length).toBe(4); // 2 createRun + 2 updateRun
@@ -1031,7 +1099,9 @@ describe("wrapAISDK", () => {
           };
         },
         processOutputs: (outputs) => {
-          const originalTracedMessage = { ...outputs };
+          // @ts-expect-error - outputs is wrapped one level deep
+          outputs.content;
+          const originalTracedMessage = { ...outputs.outputs };
           return {
             ...originalTracedMessage,
             content: "REDACTED",
@@ -1047,8 +1117,10 @@ describe("wrapAISDK", () => {
           };
         },
         processChildLLMRunOutputs: (outputs) => {
+          // @ts-expect-error - no wrapping for child outputs
+          outputs.outputs;
           return {
-            providerMetadata: outputs.providerMetadata,
+            ...outputs,
             content: "REDACTED CHILD OUTPUTS",
             role: "assistant",
           };
@@ -1067,6 +1139,9 @@ describe("wrapAISDK", () => {
           langsmith: lsConfig,
         },
       });
+
+      await new Promise((resolve) => setTimeout(resolve, 1));
+
       expect(mockHttpRequests).toHaveLength(4);
       // Verify merged config was used in trace
       const createRunCall = mockHttpRequests.find(
@@ -1152,12 +1227,166 @@ describe("wrapAISDK", () => {
         prompt: "Test config",
       });
 
+      await new Promise((resolve) => setTimeout(resolve, 1));
+
       // Verify the trace was created with proper model name
       expect(mockHttpRequests.length).toBe(4); // 2 createRun + 2 updateRun
 
       // Verify sequence and that first run uses the custom provider name
       expect(mockHttpRequests[0].type).toBe("createRun");
       expect(mockHttpRequests[0].body.name).toBe("custom-provider");
+    });
+  });
+
+  describe("experimental_output handling", () => {
+    it("should preserve experimental_output as structured object in outputs", async () => {
+      const wrappedMethods = wrapAISDK(
+        {
+          wrapLanguageModel: ai.wrapLanguageModel,
+          generateText: ai.generateText,
+          streamText: ai.streamText,
+          generateObject: ai.generateObject,
+          streamObject: ai.streamObject,
+        },
+        { client: mockClient as any }
+      );
+
+      const mockLangModel = new MockLanguageModelV2({
+        modelId: "experimental-output-test",
+        doGenerate: async () => ({
+          content: [
+            {
+              type: "text" as const,
+              text: '{"city":"Prague","temperature":15,"unit":"celsius","conditions":"sunny"}',
+            },
+          ],
+          finishReason: "stop" as const,
+          usage: {
+            promptTokens: 10,
+            completionTokens: 20,
+            inputTokens: 10,
+            outputTokens: 20,
+            totalTokens: 30,
+          },
+          warnings: [],
+        }),
+      });
+
+      await wrappedMethods.generateText({
+        model: mockLangModel,
+        prompt: "What's the weather?",
+        experimental_output: ai.Output.object({
+          schema: z.object({
+            city: z.string(),
+            temperature: z.number(),
+            unit: z.enum(["celsius", "fahrenheit"]),
+            conditions: z.string(),
+          }),
+        }),
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 1));
+
+      // Find the updateRun call for generateText (parent run)
+      const updateGenerateTextCall = mockHttpRequests.find(
+        (req) =>
+          req.type === "updateRun" &&
+          req.body.extra?.metadata?.ai_sdk_method === "ai.generateText"
+      );
+
+      expect(updateGenerateTextCall).toBeDefined();
+
+      // Verify outputs contain the structured object at top level (like generateObject)
+      expect(updateGenerateTextCall.body.outputs).toMatchObject({
+        city: "Prague",
+        temperature: 15,
+        unit: "celsius",
+        conditions: "sunny",
+      });
+
+      // Verify it's NOT stringified
+      const outputsStr = JSON.stringify(updateGenerateTextCall.body.outputs);
+      expect(outputsStr).not.toContain("[object Object]");
+      expect(outputsStr).not.toContain('\\"city\\"'); // Should not be double-escaped
+    });
+
+    it("should preserve experimental_output as structured object in streamText", async () => {
+      const wrappedMethods = wrapAISDK(
+        {
+          wrapLanguageModel: ai.wrapLanguageModel,
+          generateText: ai.generateText,
+          streamText: ai.streamText,
+          generateObject: ai.generateObject,
+          streamObject: ai.streamObject,
+        },
+        { client: mockClient as any }
+      );
+
+      const mockLangModel = new MockLanguageModelV2({
+        modelId: "stream-experimental-output-test",
+        doStream: async () => ({
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "text-start", id: "text-1" },
+              {
+                type: "text-delta",
+                id: "text-1",
+                delta:
+                  '{"city":"Berlin","temperature":10,"unit":"celsius","conditions":"cloudy"}',
+              },
+              { type: "text-end", id: "text-1" },
+              {
+                type: "finish",
+                finishReason: "stop",
+                usage: {
+                  inputTokens: 10,
+                  outputTokens: 20,
+                  totalTokens: 30,
+                },
+              },
+            ],
+          }),
+        }),
+      });
+
+      const result = wrappedMethods.streamText({
+        model: mockLangModel,
+        prompt: "What's the weather?",
+        experimental_output: ai.Output.object({
+          schema: z.object({
+            city: z.string(),
+            temperature: z.number(),
+            unit: z.enum(["celsius", "fahrenheit"]),
+            conditions: z.string(),
+          }),
+        }),
+      });
+
+      await result.consumeStream();
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Find the updateRun call for streamText (parent run)
+      const updateStreamTextCall = mockHttpRequests.find(
+        (req) =>
+          req.type === "updateRun" &&
+          req.body.extra?.metadata?.ai_sdk_method === "ai.streamText"
+      );
+
+      expect(updateStreamTextCall).toBeDefined();
+
+      // Verify outputs contain the structured object at top level (parsed from JSON text)
+      expect(updateStreamTextCall.body.outputs).toMatchObject({
+        city: "Berlin",
+        temperature: 10,
+        unit: "celsius",
+        conditions: "cloudy",
+      });
+
+      // Verify it's NOT stringified
+      const outputsStr = JSON.stringify(updateStreamTextCall.body.outputs);
+      expect(outputsStr).not.toContain("[object Object]");
+      expect(outputsStr).not.toContain('\\"city\\"'); // Should not be double-escaped
     });
   });
 });

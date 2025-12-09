@@ -54,7 +54,8 @@ Sign up for [LangSmith](https://smith.langchain.com/) using your GitHub, Discord
 
 Then, create a unique API key on the [Settings Page](https://smith.langchain.com/settings), which is found in the menu at the top right corner of the page.
 
-Note: Save the API Key in a secure location. It will not be shown again.
+> [!NOTE]
+> Save the API Key in a secure location. It will not be shown again.
 
 ## 2. Log Traces
 
@@ -429,3 +430,13 @@ See also official pytest docs: [How to install and use plugins](https://docs.pyt
 ## Additional Documentation
 
 To learn more about the LangSmith platform, check out the [docs](https://docs.smith.langchain.com/).
+
+
+# License
+
+The LangSmith SDK is licensed under the [MIT License](../LICENSE).
+
+The copyright information for certain dependencies' are reproduced in their corresponding COPYRIGHT.txt files in this repo, including the following:
+
+- [uuid-utils](docs/templates/uuid-utils/COPYRIGHT.txt)
+- [zstandard](docs/templates/zstandard/COPYRIGHT.txt)

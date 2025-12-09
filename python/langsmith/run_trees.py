@@ -9,9 +9,12 @@ import sys
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from typing import Any, Optional, Union, cast
-from uuid import NAMESPACE_DNS, UUID, uuid4, uuid5
+from uuid import NAMESPACE_DNS, UUID, uuid5
 
 from typing_extensions import TypedDict
+
+from langsmith._internal._uuid import uuid7
+from langsmith.uuid import uuid7_from_datetime
 
 try:
     from pydantic.v1 import Field, root_validator  # type: ignore[import]
@@ -95,25 +98,33 @@ def configure(
 
     Args:
         client: A LangSmith Client instance to use for all tracing operations.
+
             If provided, this client will be used instead of creating new clients.
+
             Pass `None` to explicitly clear the global client.
-        enabled: Whether tracing is enabled. Can be:
+        enabled: Whether tracing is enabled.
+
+            Can be:
+
             - `True`: Enable tracing and send data to LangSmith
             - `False`: Disable tracing completely
-            - `"local"`: Enable tracing but only store data locally
+            - `'local'`: Enable tracing but only store data locally
             - `None`: Clear the setting (falls back to environment variables)
         project_name: The LangSmith project name where traces will be sent.
+
             This determines which project dashboard will display your traces.
+
             Pass `None` to explicitly clear the project name.
-        tags: A list of tags to be applied to all traced runs. Tags are useful
-            for filtering and organizing runs in the LangSmith UI.
+        tags: A list of tags to be applied to all traced runs.
+
+            Tags are useful for filtering and organizing runs in the LangSmith UI.
+
             Pass `None` to explicitly clear all global tags.
         metadata: A dictionary of metadata to attach to all traced runs.
-            Metadata can store any additional context about your runs.
-            Pass `None` to explicitly clear all global metadata.
 
-    Returns:
-        None
+            Metadata can store any additional context about your runs.
+
+            Pass `None` to explicitly clear all global metadata.
 
     Examples:
         Basic configuration:
@@ -187,7 +198,7 @@ class RunTree(ls_schemas.RunBase):
     """Run Schema with back-references for posting runs."""
 
     name: str
-    id: UUID = Field(default_factory=uuid4)
+    id: UUID = Field(default_factory=uuid7)
     run_type: str = Field(default="chain")
     start_time: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     # Note: no longer set.
@@ -248,7 +259,11 @@ class RunTree(ls_schemas.RunBase):
             values["parent_run_id"] = parent_run.id
             values["parent_dotted_order"] = parent_run.dotted_order
         if "id" not in values:
-            values["id"] = uuid4()
+            # Generate UUID from start_time if available
+            if "start_time" in values and values["start_time"] is not None:
+                values["id"] = uuid7_from_datetime(values["start_time"])
+            else:
+                values["id"] = uuid7()
         if "trace_id" not in values:
             if parent_run is not None:
                 values["trace_id"] = parent_run.trace_id
@@ -299,7 +314,7 @@ class RunTree(ls_schemas.RunBase):
         return self.ls_client
 
     def __setattr__(self, name, value):
-        """Set the _client specially."""
+        """Set the `_client` specially."""
         # For backwards compat
         if name == "_client":
             self.ls_client = value
@@ -322,7 +337,7 @@ class RunTree(ls_schemas.RunBase):
         by the @traceable decorator.
 
         If your LangChain or LangGraph versions are sufficiently up-to-date,
-        this will also override the default behavior of LangChainTracer.
+        this will also override the default behavior of `LangChainTracer`.
 
         Args:
             inputs: The inputs to set.
@@ -376,23 +391,17 @@ class RunTree(ls_schemas.RunBase):
         """Upsert the given outputs into the run.
 
         Args:
-            outputs (Dict[str, Any]): A dictionary containing the outputs to be added.
-
-        Returns:
-            None
+            outputs: A dictionary containing the outputs to be added.
         """
         if self.outputs is None:
             self.outputs = {}
         self.outputs.update(outputs)
 
     def add_inputs(self, inputs: dict[str, Any]) -> None:
-        """Upsert the given outputs into the run.
+        """Upsert the given inputs into the run.
 
         Args:
-            outputs (Dict[str, Any]): A dictionary containing the outputs to be added.
-
-        Returns:
-            None
+            inputs: A dictionary containing the inputs to be added.
         """
         if self.inputs is None:
             self.inputs = {}
@@ -414,9 +423,7 @@ class RunTree(ls_schemas.RunBase):
         """Add an event to the list of events.
 
         Args:
-            events (Union[ls_schemas.RunEvent, Sequence[ls_schemas.RunEvent],
-                    Sequence[dict], dict, str]):
-                The event(s) to be added. It can be a single event, a sequence
+            events: The event(s) to be added. It can be a single event, a sequence
                 of events, a sequence of dictionaries, a dictionary, or a string.
 
         Returns:
@@ -502,8 +509,7 @@ class RunTree(ls_schemas.RunBase):
             attachments=attachments or {},  # type: ignore
             dangerously_allow_filesystem=self.dangerously_allow_filesystem,
         )
-        if not utils.is_env_var_truish("EXCLUDE_CHILD_RUNS"):
-            self.child_runs.append(run)
+
         return run
 
     def _get_dicts_safe(self):
@@ -559,7 +565,6 @@ class RunTree(ls_schemas.RunBase):
 
         if updates and updates.get("reroot", False):
             distributed_parent_id = _DISTRIBUTED_PARENT_ID.get()
-
             if distributed_parent_id:
                 self._slice_parent_id(distributed_parent_id, run_dict)
 
@@ -631,15 +636,12 @@ class RunTree(ls_schemas.RunBase):
         if not exclude_child_runs:
             for child_run in self.child_runs:
                 child_run.post(exclude_child_runs=False)
-        elif utils.is_env_var_truish("EXCLUDE_CHILD_RUNS"):
-            # Clear child_runs
-            self.child_runs.clear()
 
     def patch(self, *, exclude_inputs: bool = False) -> None:
         """Patch the run tree to the API in a background thread.
 
         Args:
-            exclude_inputs: whether to exclude inputs from the patch request.
+            exclude_inputs: Whether to exclude inputs from the patch request.
         """
         if not self.end_time:
             self.end()
@@ -673,6 +675,8 @@ class RunTree(ls_schemas.RunBase):
                 self.client.update_run(
                     name=run_dict["name"],
                     run_id=run_dict["id"],
+                    run_type=run_dict.get("run_type"),
+                    start_time=run_dict.get("start_time"),
                     inputs=None if exclude_inputs else run_dict["inputs"],
                     outputs=run_dict["outputs"],
                     error=run_dict.get("error"),
@@ -693,6 +697,8 @@ class RunTree(ls_schemas.RunBase):
             self.client.update_run(
                 name=self.name,
                 run_id=self.id,
+                run_type=cast(RUN_TYPE_T, self.run_type),
+                start_time=self.start_time,
                 inputs=(
                     None
                     if exclude_inputs
@@ -713,7 +719,7 @@ class RunTree(ls_schemas.RunBase):
             )
 
     def wait(self) -> None:
-        """Wait for all _futures to complete."""
+        """Wait for all `_futures` to complete."""
         pass
 
     def get_url(self) -> str:
@@ -744,11 +750,10 @@ class RunTree(ls_schemas.RunBase):
     ) -> Optional[RunTree]:
         """Create a new 'child' span from the provided runnable config.
 
-        Requires langchain to be installed.
+        Requires `langchain` to be installed.
 
         Returns:
-            Optional[RunTree]: The new span or None if
-                no parent span information is found.
+            The new span or `None` if no parent span information is found.
         """
         try:
             from langchain_core.callbacks.manager import (
@@ -808,12 +813,13 @@ class RunTree(ls_schemas.RunBase):
         """Create a new 'parent' span from the provided headers.
 
         Extracts parent span information from the headers and creates a new span.
+
         Metadata and tags are extracted from the baggage header.
+
         The dotted order and trace id are extracted from the trace header.
 
         Returns:
-            Optional[RunTree]: The new span or None if
-                no parent span information is found.
+            The new span or `None` if no parent span information is found.
         """
         init_args = kwargs.copy()
 
@@ -866,7 +872,7 @@ class RunTree(ls_schemas.RunBase):
         return run_tree
 
     def to_headers(self) -> dict[str, str]:
-        """Return the RunTree as a dictionary of headers."""
+        """Return the `RunTree` as a dictionary of headers."""
         headers = {}
         if self.trace_id:
             headers[f"{LANGSMITH_DOTTED_ORDER}"] = self.dotted_order
@@ -880,7 +886,7 @@ class RunTree(ls_schemas.RunBase):
         return headers
 
     def __repr__(self):
-        """Return a string representation of the RunTree object."""
+        """Return a string representation of the `RunTree` object."""
         return (
             f"RunTree(id={self.id}, name='{self.name}', "
             f"run_type='{self.run_type}', dotted_order='{self.dotted_order}')"
@@ -1120,14 +1126,14 @@ def _parse_dotted_order(dotted_order: str) -> list[tuple[datetime, UUID]]:
     ]
 
 
+_CLIENT: Optional[Client] = _context._GLOBAL_CLIENT
+__all__ = ["RunTree", "RunTree"]
+
+
 def _create_current_dotted_order(
     start_time: Optional[datetime], run_id: Optional[UUID]
 ) -> str:
     """Create the current dotted order."""
     st = start_time or datetime.now(timezone.utc)
-    id_ = run_id or uuid4()
+    id_ = run_id or uuid7_from_datetime(st)
     return st.strftime("%Y%m%dT%H%M%S%fZ") + str(id_)
-
-
-_CLIENT: Optional[Client] = _context._GLOBAL_CLIENT
-__all__ = ["RunTree", "RunTree"]

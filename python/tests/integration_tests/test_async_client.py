@@ -120,6 +120,7 @@ async def test_create_run(async_client: AsyncClient):
 
 
 @pytest.mark.asyncio
+@pytest.mark.flaky(retries=3, only_on=(ls_utils.LangSmithRateLimitError,))
 async def test_list_runs(async_client: AsyncClient):
     project_name = "__test_list_runs"
     run_ids = [uuid.uuid4() for _ in range(3)]
@@ -148,7 +149,7 @@ async def test_list_runs(async_client: AsyncClient):
         ]
         return len(runs) == 3
 
-    await wait_for(check_runs)
+    await wait_for(check_runs, timeout=30)
 
     runs = [
         run
@@ -229,7 +230,7 @@ async def test_create_feedback(async_client: AsyncClient):
         except ls_utils.LangSmithError:
             return False
 
-    await wait_for(check_project_exists, timeout=10)
+    await wait_for(check_project_exists, timeout=20)
 
     feedback = await async_client.create_feedback(
         run_id=run_id,

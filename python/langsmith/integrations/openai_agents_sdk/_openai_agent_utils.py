@@ -1,8 +1,6 @@
 import json
 import logging
-from datetime import datetime, timezone
-from typing import Any, Literal, Optional
-from uuid import uuid4
+from typing import Any, Literal
 
 try:
     from agents import tracing  # type: ignore[import]
@@ -10,8 +8,6 @@ try:
     HAVE_AGENTS = True
 except ImportError:
     HAVE_AGENTS = False
-
-from langsmith.wrappers._openai import _create_usage_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -25,16 +21,21 @@ if HAVE_AGENTS:
         Args:
             data: The data to parse (can be inputs or outputs)
             default_key: The default key to use if data is not a dict
-                ("input" or "output")
+                (`'input'` or `'output'`)
 
         Returns:
             Dict: The parsed data as a dictionary
         """
         if isinstance(data, list):
-            if len(data) > 0:
-                return data[0]
-            else:
+            if len(data) == 0:
                 return {}
+            # Check if this is a list of output blocks (reasoning, message, etc.)
+            if len(data) > 0 and isinstance(data[0], dict):
+                if "type" in data[0]:
+                    return {default_key: data}
+                elif len(data) == 1:
+                    return data[0]
+            return {default_key: data}
         elif isinstance(data, dict):
             data_ = data
         elif isinstance(data, str):
@@ -108,6 +109,8 @@ if HAVE_AGENTS:
             },
         }
         if span_data.usage:
+            from langsmith.wrappers._openai import _create_usage_metadata
+
             if "metadata" not in data:
                 data["metadata"] = {}
             data["metadata"]["usage_metadata"] = _create_usage_metadata(span_data.usage)
@@ -166,6 +169,8 @@ if HAVE_AGENTS:
                 }
             )
             if usage := response.pop("usage", None):
+                from langsmith.wrappers._openai import _create_usage_metadata
+
                 metadata["usage_metadata"] = _create_usage_metadata(usage)
             data["metadata"] = metadata
 
@@ -221,16 +226,3 @@ if HAVE_AGENTS:
             return {}
 
         return data
-
-    def ensure_dotted_order(
-        start_time: Optional[datetime],
-        run_id: Optional[str],
-        parent_dotted_order: Optional[str] = None,
-    ) -> str:
-        """Create a dotted order from a start time and run id."""
-        st = start_time or datetime.now(timezone.utc)
-        id_ = run_id or str(uuid4())
-        current_dotted_order = st.strftime("%Y%m%dT%H%M%S%fZ") + id_
-        if parent_dotted_order is not None:
-            return parent_dotted_order + "." + current_dotted_order
-        return current_dotted_order
