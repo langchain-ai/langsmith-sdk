@@ -100,6 +100,7 @@ describe.each([[""], ["mocked"]])("Client uses %s fetch", (description) => {
   });
 
   test("basic traceable implementation", async () => {
+    const client = new Client({ apiKey: "test-api-key" });
     process.env.LANGSMITH_TRACING_BACKGROUND = "false";
     const llm = traceable(
       async function* llm(input: string) {
@@ -108,13 +109,16 @@ describe.each([[""], ["mocked"]])("Client uses %s fetch", (description) => {
           yield char;
         }
       },
-      { tracingEnabled: true }
+      { tracingEnabled: true, client }
     );
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     for await (const _ of llm("Hello world")) {
       // pass
     }
+
+    await client.awaitPendingTraceBatches();
+
     expect(expectedFetchMock).toHaveBeenCalled();
     expect(unexpectedFetchMock).not.toHaveBeenCalled();
   });

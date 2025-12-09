@@ -152,7 +152,9 @@ test("distributed", async () => {
   await parent.end();
   await parent.patchRun();
   await client.awaitPendingTraceBatches();
-  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+  expect(
+    await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+  ).toMatchObject({
     nodes: ["parent_1:0", "child_2:1", "grandchild_traceable:2"],
   });
 });
