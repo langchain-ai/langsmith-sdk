@@ -14,6 +14,7 @@ from ._messages import (
     extract_usage_from_result_message,
     flatten_content_blocks,
 )
+from ._tools import clear_parent_run_tree, set_parent_run_tree
 
 logger = logging.getLogger(__name__)
 
@@ -304,6 +305,7 @@ def instrument_claude_client(original_class: Any) -> Any:
                 inputs=trace_inputs,
                 metadata=trace_metadata,
             ) as run:
+                set_parent_run_tree(run)
                 tracker = TurnLifecycle(self._start_time)
                 collected: list[dict[str, Any]] = []
 
@@ -380,6 +382,7 @@ def instrument_claude_client(original_class: Any) -> Any:
                     logger.exception("Error while tracing Claude Agent stream")
                 finally:
                     tracker.close()
+                    clear_parent_run_tree()
                     clear_active_tool_runs()
 
         async def __aenter__(self) -> "TracedClaudeSDKClient":
