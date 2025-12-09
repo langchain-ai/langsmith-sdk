@@ -61,6 +61,10 @@
     "anonymizer.js",
     "anonymizer.d.ts",
     "anonymizer.d.cts",
+    "wrappers/anthropic.cjs",
+    "wrappers/anthropic.js",
+    "wrappers/anthropic.d.ts",
+    "wrappers/anthropic.d.cts",
     "wrappers/openai.cjs",
     "wrappers/openai.js",
     "wrappers/openai.d.ts",
@@ -352,6 +356,15 @@
       },
       "import": "./anonymizer.js",
       "require": "./anonymizer.cjs"
+    },
+    "./wrappers/anthropic": {
+      "types": {
+        "import": "./wrappers/anthropic.d.ts",
+        "require": "./wrappers/anthropic.d.cts",
+        "default": "./wrappers/anthropic.d.ts"
+      },
+      "import": "./wrappers/anthropic.js",
+      "require": "./wrappers/anthropic.cjs"
     },
     "./wrappers/openai": {
       "types": {

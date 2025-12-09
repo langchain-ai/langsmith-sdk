@@ -47,6 +47,7 @@
       "src/vitest/reporter.ts",
       "src/wrappers/index.ts",
       "src/anonymizer/index.ts",
+      "src/wrappers/anthropic.ts",
       "src/wrappers/openai.ts",
       "src/wrappers/vercel.ts",
       "src/singletons/traceable.ts",

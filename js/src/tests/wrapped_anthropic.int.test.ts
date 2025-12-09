@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable no-process-env */
 import Anthropic from "@anthropic-ai/sdk";
-import { wrapAnthropic } from "../wrappers/index.js";
+import { wrapAnthropic } from "../wrappers/anthropic.js";
 import { mockClient } from "./utils/mock_client.js";
 import { getAssumedTreeFromCalls } from "./utils/tree.js";
 import { UsageMetadata } from "../schemas.js";
