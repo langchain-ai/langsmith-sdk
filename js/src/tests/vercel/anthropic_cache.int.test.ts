@@ -6,7 +6,7 @@ import { anthropic } from "@ai-sdk/anthropic";
 
 import { AISDKExporter } from "../../vercel.js";
 import { traceable } from "../../traceable.js";
-import { generateLongContext } from "./utils.js";
+import { generateLongContext } from "../utils.js";
 
 // Token intensive test, so skipping by default
 describe.skip("Anthropic Cache Completion Tests", () => {

@@ -87,6 +87,10 @@ Chinook_Sqlite.sql
 /anonymizer.js
 /anonymizer.d.ts
 /anonymizer.d.cts
+/wrappers/anthropic.cjs
+/wrappers/anthropic.js
+/wrappers/anthropic.d.ts
+/wrappers/anthropic.d.cts
 /wrappers/openai.cjs
 /wrappers/openai.js
 /wrappers/openai.d.ts
