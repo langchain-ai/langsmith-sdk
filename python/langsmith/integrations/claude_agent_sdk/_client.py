@@ -62,10 +62,6 @@ class TurnLifecycle:
             "usage_metadata", {}
         )
         meta.update(metrics)
-        try:
-            self.current_run.patch()
-        except Exception as e:
-            logger.warning(f"Failed to update usage metrics: {e}")
 
     def close(self) -> None:
         """End any open run gracefully."""
