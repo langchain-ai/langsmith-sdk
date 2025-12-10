@@ -3793,6 +3793,32 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   /**
+   * Delete multiple examples by ID.
+   * @param exampleIds - The IDs of the examples to delete
+   */
+  public async deleteExamples(exampleIds: string[]): Promise<void> {
+    // Validate all UUIDs
+    exampleIds.forEach((id) => assertUuid(id));
+
+    const params = new URLSearchParams();
+    exampleIds.forEach((id) => params.append("example_ids", id));
+
+    await this.caller.call(async () => {
+      const res = await this._fetch(
+        `${this.apiUrl}/examples?${params.toString()}`,
+        {
+          method: "DELETE",
+          headers: this.headers,
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+        }
+      );
+      await raiseForStatus(res, "delete examples", true);
+      return res;
+    });
+  }
+
+  /**
    * @deprecated This signature is deprecated, use updateExample(update: ExampleUpdate) instead
    */
   public async updateExample(
