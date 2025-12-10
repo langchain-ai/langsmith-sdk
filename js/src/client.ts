@@ -3793,6 +3793,58 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   /**
+   * Delete multiple examples by ID.
+   * @param exampleIds - The IDs of the examples to delete
+   * @param options - Optional settings for deletion
+   * @param options.hardDelete - If true, permanently delete examples. If false (default), soft delete them.
+   */
+  public async deleteExamples(
+    exampleIds: string[],
+    options?: { hardDelete?: boolean }
+  ): Promise<void> {
+    // Validate all UUIDs
+    exampleIds.forEach((id) => assertUuid(id));
+
+    if (options?.hardDelete) {
+      // Hard delete uses POST to a different platform endpoint
+      const path = this._getPlatformEndpointPath("datasets/examples/delete");
+
+      await this.caller.call(async () => {
+        const res = await this._fetch(`${this.apiUrl}${path}`, {
+          method: "POST",
+          headers: { ...this.headers, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            example_ids: exampleIds,
+            hard_delete: true,
+          }),
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+        });
+        await raiseForStatus(res, "hard delete examples", true);
+        return res;
+      });
+    } else {
+      // Soft delete uses DELETE with query params
+      const params = new URLSearchParams();
+      exampleIds.forEach((id) => params.append("example_ids", id));
+
+      await this.caller.call(async () => {
+        const res = await this._fetch(
+          `${this.apiUrl}/examples?${params.toString()}`,
+          {
+            method: "DELETE",
+            headers: this.headers,
+            signal: AbortSignal.timeout(this.timeout_ms),
+            ...this.fetchOptions,
+          }
+        );
+        await raiseForStatus(res, "delete examples", true);
+        return res;
+      });
+    }
+  }
+
+  /**
    * @deprecated This signature is deprecated, use updateExample(update: ExampleUpdate) instead
    */
   public async updateExample(

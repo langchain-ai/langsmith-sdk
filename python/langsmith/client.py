@@ -6001,25 +6001,53 @@ class Client:
         )
         ls_utils.raise_for_status_with_text(response)
 
-    def delete_examples(self, example_ids: Sequence[ID_TYPE]) -> None:
+    def delete_examples(
+        self, example_ids: Sequence[ID_TYPE], *, hard_delete: bool = False
+    ) -> None:
         """Delete multiple examples by ID.
 
         Parameters
         ----------
         example_ids : Sequence[ID_TYPE]
             The IDs of the examples to delete.
+        hard_delete : bool, default=False
+            If True, permanently delete the examples. If False, soft delete them.
         """
-        response = self.request_with_retries(
-            "DELETE",
-            "/examples",
-            headers={**self._headers, "Content-Type": "application/json"},
-            params={
+        if hard_delete:
+            # Hard delete uses POST to a different endpoint
+            # The platform endpoint is at /v1/platform/... instead of /api/v1/...
+            # So we need to use a different base URL
+            body = {
+                "example_ids": [
+                    str(_as_uuid(id_, f"example_ids[{i}]"))
+                    for i, id_ in enumerate(example_ids)
+                ],
+                "hard_delete": True,
+            }
+            # Use platform path helper for consistent URL construction
+            path = _platform_path(self.api_url, "datasets/examples/delete")
+            full_url = _construct_url(self.api_url, path)
+            response = self.session.request(
+                "POST",
+                full_url,
+                headers={**self._headers, "Content-Type": "application/json"},
+                data=_dumps_json(body),
+                timeout=self._timeout,
+            )
+        else:
+            # Soft delete uses DELETE with query params
+            params: dict[str, Any] = {
                 "example_ids": [
                     str(_as_uuid(id_, f"example_ids[{i}]"))
                     for i, id_ in enumerate(example_ids)
                 ]
-            },
-        )
+            }
+            response = self.request_with_retries(
+                "DELETE",
+                "/examples",
+                headers={**self._headers, "Content-Type": "application/json"},
+                params=params,
+            )
         ls_utils.raise_for_status_with_text(response)
 
     def list_dataset_splits(
@@ -9194,6 +9222,14 @@ def _dataset_examples_path(api_url: str, dataset_id: ID_TYPE) -> str:
         return f"/platform/datasets/{dataset_id}/examples"
     else:
         return f"/v1/platform/datasets/{dataset_id}/examples"
+
+
+def _platform_path(api_url: str, path: str) -> str:
+    """Construct a platform API path based on the API URL structure."""
+    if api_url.rstrip("/").endswith("/v1"):
+        return f"/platform/{path}"
+    else:
+        return f"/v1/platform/{path}"
 
 
 def _construct_url(api_url: str, pathname: str) -> str:
