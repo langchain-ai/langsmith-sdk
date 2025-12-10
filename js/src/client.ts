@@ -74,7 +74,7 @@ import { __version__ } from "./index.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
 import { parsePromptIdentifier } from "./utils/prompts.js";
-import { raiseForStatus } from "./utils/error.js";
+import { raiseForStatus, LangSmithNotFoundError } from "./utils/error.js";
 import {
   _globalFetchImplementationIsNodeFetch,
   _getFetchImplementation,
@@ -724,6 +724,8 @@ export class Client implements LangSmithTracingClientInterface {
 
   private multipartStreamingDisabled = false;
 
+  private _multipartDisabled = false;
+
   debug = getEnvironmentVariable("LANGSMITH_DEBUG") === "true";
 
   constructor(config: ClientConfig = {}) {
@@ -1165,13 +1167,30 @@ export class Client implements LangSmithTracingClientInterface {
             .map((item) => item.item) as RunUpdate[],
         };
         const serverInfo = await this._ensureServerInfo();
-        if (serverInfo?.batch_ingest_config?.use_multipart_endpoint) {
+        const useMultipart =
+          !this._multipartDisabled &&
+          (serverInfo?.batch_ingest_config?.use_multipart_endpoint ?? true);
+        if (useMultipart) {
           const useGzip = serverInfo?.instance_flags?.gzip_body_enabled;
-          await this.multipartIngestRuns(ingestParams, {
-            ...options,
-            useGzip,
-            sizeBytes: batchSizeBytes,
-          });
+          try {
+            await this.multipartIngestRuns(ingestParams, {
+              ...options,
+              useGzip,
+              sizeBytes: batchSizeBytes,
+            });
+          } catch (e) {
+            if (e instanceof LangSmithNotFoundError) {
+              // Fallback to batch ingest if multipart endpoint returns 404
+              // Disable multipart for future requests
+              this._multipartDisabled = true;
+              await this.batchIngestRuns(ingestParams, {
+                ...options,
+                sizeBytes: batchSizeBytes,
+              });
+            } else {
+              throw e;
+            }
+          }
         } else {
           await this.batchIngestRuns(ingestParams, {
             ...options,
@@ -1878,6 +1897,10 @@ export class Client implements LangSmithTracingClientInterface {
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
+      // Re-throw 404 errors so caller can fall back to batch ingest
+      if (e instanceof LangSmithNotFoundError) {
+        throw e;
+      }
       console.warn(`${e.message.trim()}\n\nContext: ${context}`);
     }
   }
