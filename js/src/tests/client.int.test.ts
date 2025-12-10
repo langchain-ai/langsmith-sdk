@@ -747,7 +747,7 @@ test("Examples CRUD", async () => {
   );
   expect(examplesList3.length).toEqual(3);
 
-  // Test batch delete - at the end so it doesn't affect other tests
+  // Test batch soft delete - at the end so it doesn't affect other tests
   const allExamples = await toArray(
     client.listExamples({ datasetId: dataset.id })
   );
@@ -757,6 +757,21 @@ test("Examples CRUD", async () => {
     client.listExamples({ datasetId: dataset.id })
   );
   expect(examplesAfterBatchDelete.length).toEqual(allExamples.length - 2);
+
+  // Test hard delete
+  const remainingExamples = await toArray(
+    client.listExamples({ datasetId: dataset.id })
+  );
+  if (remainingExamples.length > 0) {
+    const hardDeleteIds = [remainingExamples[0].id];
+    await client.deleteExamples(hardDeleteIds, { hardDelete: true });
+    const examplesAfterHardDelete = await toArray(
+      client.listExamples({ datasetId: dataset.id })
+    );
+    expect(examplesAfterHardDelete.length).toEqual(
+      remainingExamples.length - 1
+    );
+  }
 
   await client.deleteDataset({ datasetId: dataset.id });
 }, 180_000);
