@@ -28,7 +28,6 @@ import langsmith
 from langsmith import Client
 from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
-from tests.unit_tests.conftest import parse_request_data
 from langsmith import utils as ls_utils
 from langsmith._internal import _aiter as aitertools
 from langsmith.run_helpers import (
@@ -42,6 +41,7 @@ from langsmith.run_helpers import (
     tracing_context,
 )
 from langsmith.run_trees import RunTree
+from tests.unit_tests.conftest import parse_request_data
 
 
 def _get_calls(
