@@ -6544,10 +6544,9 @@ class Client:
                 error=error,
             )
 
-            use_multipart = (
-                not self._multipart_disabled
-                and (self.info.batch_ingest_config or {}).get("use_multipart_endpoint", True)
-            )
+            use_multipart = not self._multipart_disabled and (
+                self.info.batch_ingest_config or {}
+            ).get("use_multipart_endpoint", True)
 
             if (
                 use_multipart
