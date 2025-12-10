@@ -435,7 +435,11 @@ def test_create_run_mutate(
             payloads = [
                 parse_request_data(call[2]["data"])
                 for call in session.request.mock_calls
-                if call.args and (call.args[1].endswith("runs/batch") or call.args[1].endswith("runs/multipart"))
+                if call.args
+                and (
+                    call.args[1].endswith("runs/batch")
+                    or call.args[1].endswith("runs/multipart")
+                )
             ]
             if payloads:
                 break

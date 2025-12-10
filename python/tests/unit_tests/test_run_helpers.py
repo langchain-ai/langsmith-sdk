@@ -365,7 +365,9 @@ async def test_traceable_stream(
     call = mock_calls[0]
     assert call.args[0] == "POST"
     assert call.args[1].startswith("https://api.smith.langchain.com")
-    call_data = [parse_request_data(mock_call.kwargs["data"]) for mock_call in mock_calls]
+    call_data = [
+        parse_request_data(mock_call.kwargs["data"]) for mock_call in mock_calls
+    ]
     body = call_data[0]
     assert body["post"]
     assert body["post"][0]["name"] == "my_stream_fn"

@@ -81,7 +81,10 @@ class FakeRequest:
                 response = MagicMock()
                 response.json.return_value = self.created_session
                 return response
-            elif endpoint == "http://localhost:1984/runs/batch" or endpoint == "http://localhost:1984/runs/multipart":
+            elif (
+                endpoint == "http://localhost:1984/runs/batch"
+                or endpoint == "http://localhost:1984/runs/multipart"
+            ):
                 loaded_runs = parse_request_data(kwargs["data"])
                 posted = loaded_runs.get("post", [])
                 patched = loaded_runs.get("patch", [])
