@@ -1,5 +1,5 @@
-import json
 import io
+import json
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
@@ -7,8 +7,8 @@ from unittest.mock import MagicMock
 from uuid import NAMESPACE_DNS, UUID, uuid5
 
 import pytest
-from requests_toolbelt import MultipartEncoder
 from multipart import MultipartParser, parse_options_header
+from requests_toolbelt import MultipartEncoder
 
 from langsmith import run_trees
 from langsmith import schemas as ls_schemas
