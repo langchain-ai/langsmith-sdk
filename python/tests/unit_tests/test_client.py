@@ -934,6 +934,103 @@ def test_hide_metadata(
         )
 
 
+def test_omit_traced_runtime_info() -> None:
+    """Test that omit_traced_runtime_info prevents runtime info from being added."""
+    session = mock.MagicMock(spec=requests.Session)
+
+    # Test with omit_traced_runtime_info=True
+    client_omit = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        auto_batch_tracing=False,
+        session=session,
+        omit_traced_runtime_info=True,
+    )
+
+    run_id = uuid.uuid4()
+    client_omit.create_run(
+        "test_run_no_runtime",
+        inputs={"in": "put"},
+        run_type="llm",
+        id=run_id,
+    )
+
+    # Find the POST call
+    post_call = None
+    for call in session.request.mock_calls:
+        if len(call.args) > 1 and call.args[0] == "POST" and "runs" in call.args[1]:
+            post_call = call
+            break
+
+    assert post_call is not None, "POST request to /runs not found"
+
+    payload_data = post_call.kwargs.get("data", b"{}")
+    if isinstance(payload_data, bytes):
+        payload_str = payload_data.decode("utf-8")
+    else:
+        payload_str = str(payload_data)
+
+    try:
+        payload = json.loads(payload_str)
+    except json.JSONDecodeError:
+        if isinstance(payload_data, dict):
+            payload = payload_data
+        else:
+            raise
+
+    payload_extra = payload.get("extra", {})
+
+    # Runtime should not be present or should be empty
+    assert "runtime" not in payload_extra or payload_extra["runtime"] == {}
+
+    # Test with default (omit_traced_runtime_info=False)
+    session2 = mock.MagicMock(spec=requests.Session)
+    client_default = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        auto_batch_tracing=False,
+        session=session2,
+    )
+
+    run_id2 = uuid.uuid4()
+    client_default.create_run(
+        "test_run_with_runtime",
+        inputs={"in": "put"},
+        run_type="llm",
+        id=run_id2,
+    )
+
+    # Find the POST call
+    post_call2 = None
+    for call in session2.request.mock_calls:
+        if len(call.args) > 1 and call.args[0] == "POST" and "runs" in call.args[1]:
+            post_call2 = call
+            break
+
+    assert post_call2 is not None, "POST request to /runs not found"
+
+    payload_data2 = post_call2.kwargs.get("data", b"{}")
+    if isinstance(payload_data2, bytes):
+        payload_str2 = payload_data2.decode("utf-8")
+    else:
+        payload_str2 = str(payload_data2)
+
+    try:
+        payload2 = json.loads(payload_str2)
+    except json.JSONDecodeError:
+        if isinstance(payload_data2, dict):
+            payload2 = payload_data2
+        else:
+            raise
+
+    payload_extra2 = payload2.get("extra", {})
+
+    # Runtime should be present and not empty
+    assert "runtime" in payload_extra2
+    assert payload_extra2["runtime"]  # Should not be empty
+    assert "sdk_version" in payload_extra2["runtime"]
+
+
 @pytest.mark.flaky(retries=3)
 def test_client_gc_after_autoscale() -> None:
     session = mock.MagicMock(spec=requests.Session)

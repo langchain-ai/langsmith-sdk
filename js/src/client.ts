@@ -91,6 +91,13 @@ export interface ClientConfig {
   anonymizer?: (values: KVMap) => KVMap | Promise<KVMap>;
   hideInputs?: boolean | ((inputs: KVMap) => KVMap | Promise<KVMap>);
   hideOutputs?: boolean | ((outputs: KVMap) => KVMap | Promise<KVMap>);
+  /**
+   * Whether to omit runtime information from traced runs.
+   * If true, runtime information (SDK version, platform, etc.) and
+   * LangChain environment variable metadata will not be stored in runs.
+   * Defaults to false.
+   */
+  omitTracedRuntimeInfo?: boolean;
   autoBatchTracing?: boolean;
   /** Maximum size of a batch of runs in bytes. */
   batchSizeBytesLimit?: number;
@@ -432,8 +439,12 @@ type Thread = {
 
 export function mergeRuntimeEnvIntoRun<T extends RunCreate | RunUpdate>(
   run: T,
-  cachedEnvVars?: Record<string, string>
+  cachedEnvVars?: Record<string, string>,
+  omitTracedRuntimeInfo?: boolean
 ): T {
+  if (omitTracedRuntimeInfo) {
+    return run;
+  }
   const runtimeEnv = getRuntimeEnvironment();
   const envVars = cachedEnvVars ?? getLangSmithEnvVarsMetadata();
   const extra = run.extra ?? {};
@@ -667,6 +678,8 @@ export class Client implements LangSmithTracingClientInterface {
 
   private hideOutputs?: boolean | ((outputs: KVMap) => KVMap | Promise<KVMap>);
 
+  private omitTracedRuntimeInfo?: boolean;
+
   private tracingSampleRate?: number;
 
   private filteredPostUuids = new Set();
@@ -760,6 +773,7 @@ export class Client implements LangSmithTracingClientInterface {
       config.hideInputs ?? config.anonymizer ?? defaultConfig.hideInputs;
     this.hideOutputs =
       config.hideOutputs ?? config.anonymizer ?? defaultConfig.hideOutputs;
+    this.omitTracedRuntimeInfo = config.omitTracedRuntimeInfo ?? false;
 
     this.autoBatchTracing = config.autoBatchTracing ?? this.autoBatchTracing;
     this.autoBatchQueue = new AutoBatchQueue(maxMemory);
@@ -1203,7 +1217,8 @@ export class Client implements LangSmithTracingClientInterface {
     this.autoBatchTimeout = undefined;
     item.item = mergeRuntimeEnvIntoRun(
       item.item as RunCreate,
-      this.cachedLSEnvVarsForMetadata
+      this.cachedLSEnvVarsForMetadata,
+      this.omitTracedRuntimeInfo
     );
     const itemPromise = this.autoBatchQueue.push(item);
     if (this.manualFlushMode) {
@@ -1348,7 +1363,8 @@ export class Client implements LangSmithTracingClientInterface {
     }
     const mergedRunCreateParam = mergeRuntimeEnvIntoRun(
       runCreate,
-      this.cachedLSEnvVarsForMetadata
+      this.cachedLSEnvVarsForMetadata,
+      this.omitTracedRuntimeInfo
     );
     if (options?.apiKey !== undefined) {
       headers["x-api-key"] = options.apiKey;
