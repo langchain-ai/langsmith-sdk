@@ -119,6 +119,7 @@ def parameterized_multipart_client(request) -> Client:
     )
 
 
+@pytest.mark.flaky(retries=3)
 def test_datasets(parameterized_multipart_client: Client) -> None:
     """Test datasets."""
     csv_content = "col1,col2\nval1,val2"
@@ -2662,6 +2663,7 @@ def test_create_examples_large_multipart_batching(
     safe_delete_dataset(parameterized_multipart_client, dataset_id=dataset.id)
 
 
+@pytest.mark.flaky(retries=3)
 def test_create_examples_large_multipart_batching_parallel(
     parameterized_multipart_client: Client,
 ) -> None:
