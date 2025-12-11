@@ -279,7 +279,22 @@ async def test_create_feedback(async_client: AsyncClient, skip_on_rate_limit):
         assert feedback.score in {0.8, 0.9}
     assert set(f.score for f in presigned_feedbacks) == {0.8, 0.9}
 
-    shared_run_url = await async_client.share_run(run_id)
+    shared_run_url = None
+
+    # The share endpoint can lag run creation; retry a bit before failing.
+    async def check_share():
+        nonlocal shared_run_url
+        try:
+            shared_run_url = await async_client.share_run(run_id)
+            return True
+        except (
+            ls_utils.LangSmithNotFoundError,
+            ls_utils.LangSmithRateLimitError,
+        ):
+            return False
+
+    await wait_for(check_share, timeout=5)
+    assert shared_run_url is not None
     run_is_shared = await async_client.run_is_shared(run_id)
     assert run_is_shared, f"Run isn't shared; failed link: {shared_run_url}"
 
