@@ -441,6 +441,7 @@ class Client:
         "_hide_inputs",
         "_hide_outputs",
         "_hide_metadata",
+        "_omit_traced_runtime_info",
         "_process_buffered_run_ops",
         "_run_ops_buffer_size",
         "_run_ops_buffer_timeout_ms",
@@ -482,6 +483,7 @@ class Client:
         hide_inputs: Optional[Union[Callable[[dict], dict], bool]] = None,
         hide_outputs: Optional[Union[Callable[[dict], dict], bool]] = None,
         hide_metadata: Optional[Union[Callable[[dict], dict], bool]] = None,
+        omit_traced_runtime_info: bool = False,
         process_buffered_run_ops: Optional[
             Callable[[Sequence[dict]], Sequence[dict]]
         ] = None,
@@ -531,6 +533,12 @@ class Client:
                 If `True`, hides the entire metadata.
 
                 If a function, applied to all run metadata when creating runs.
+            omit_traced_runtime_info (bool): Whether to omit runtime information from traced runs.
+
+                If `True`, runtime information (SDK version, platform, Python version, etc.)
+                will not be stored in the `extra.runtime` field of runs.
+
+                Defaults to `False`.
             process_buffered_run_ops (Optional[Callable[[Sequence[dict]], Sequence[dict]]]): A function applied to buffered run operations
                 that allows for modification of the raw run dicts before they are converted to multipart and compressed.
 
@@ -686,6 +694,7 @@ class Client:
             if hide_metadata is not None
             else ls_utils.get_env_var("HIDE_METADATA") == "true"
         )
+        self._omit_traced_runtime_info = omit_traced_runtime_info
         self._process_buffered_run_ops = process_buffered_run_ops
         self._run_ops_buffer_size = run_ops_buffer_size
         self._run_ops_buffer_timeout_ms = run_ops_buffer_timeout_ms or 5000
@@ -1446,8 +1455,9 @@ class Client:
 
         return run_create
 
-    @staticmethod
-    def _insert_runtime_env(runs: Sequence[dict]) -> None:
+    def _insert_runtime_env(self, runs: Sequence[dict]) -> None:
+        if self._omit_traced_runtime_info:
+            return
         runtime_env = ls_env.get_runtime_environment()
         for run_create in runs:
             run_extra = cast(dict, run_create.setdefault("extra", {}))
