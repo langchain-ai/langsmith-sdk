@@ -209,7 +209,7 @@ async def test_list_examples(async_client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_create_feedback(async_client: AsyncClient):
+async def test_create_feedback(async_client: AsyncClient, skip_on_rate_limit):
     project_name = "__test_create_feedback" + uuid.uuid4().hex[:8]
     run_id = uuid.uuid4()
 
@@ -253,7 +253,10 @@ async def test_create_feedback(async_client: AsyncClient):
         token.id, score=0.8, value="presigned_value", comment="presigned_comment"
     )
     await async_client.create_feedback_from_token(
-        str(token.url), score=0.9, value="presigned_value", comment="presigned_comment"
+        str(token.url),
+        score=0.9,
+        value="presigned_value",
+        comment="presigned_comment",
     )
 
     async def check_feedback():

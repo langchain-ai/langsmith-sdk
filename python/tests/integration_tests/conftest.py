@@ -4,6 +4,21 @@ import re
 import pytest
 import vcr
 
+from langsmith import utils as ls_utils
+
+
+@pytest.fixture
+def skip_on_rate_limit():
+    """Skip the test if it raises LangSmithRateLimitError.
+
+    Use by adding `skip_on_rate_limit` as a test argument.
+    Works for both sync and async tests.
+    """
+    try:
+        yield
+    except ls_utils.LangSmithRateLimitError as e:
+        pytest.skip(f"LangSmith rate limited: {e}")
+
 
 def pytest_collection_modifyitems(config, items):
     if config.getoption("--runslow"):
