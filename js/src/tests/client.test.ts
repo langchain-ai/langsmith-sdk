@@ -736,7 +736,7 @@ describe("Client", () => {
 
   describe("omitTracedRuntimeInfo", () => {
     it("should omit runtime info when flag is true", () => {
-      const run = {
+      const run: any = {
         id: "test-run-id",
         name: "test-run",
         run_type: "llm" as const,
@@ -749,7 +749,7 @@ describe("Client", () => {
     });
 
     it("should include runtime info when flag is false", () => {
-      const run = {
+      const run: any = {
         id: "test-run-id",
         name: "test-run",
         run_type: "llm" as const,
