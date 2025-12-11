@@ -108,6 +108,7 @@ export interface RunTreeConfig {
   distributedParentId?: string;
 }
 
+// TODO: Remove in 0.4
 export interface RunnableConfigLike {
   /**
    * Tags for this call and any sub-calls (eg. a Chain calling an LLM).
