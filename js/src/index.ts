@@ -22,4 +22,4 @@ export { getDefaultProjectName } from "./utils/project.js";
 export { uuid7, uuid7FromTime } from "./uuid.js";
 
 // Update using yarn bump-version
-export const __version__ = "0.3.84";
+export const __version__ = "0.3.85";
