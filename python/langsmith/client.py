@@ -9276,12 +9276,12 @@ def _construct_url(api_url: str, pathname: str) -> str:
     return http + "/".join(p for p in parts if p)
 
 
-def dump_model(model) -> dict[str, Any]:
+def dump_model(model, exclude_none: bool = False) -> dict[str, Any]:
     """Dump model depending on pydantic version."""
     if hasattr(model, "model_dump"):
-        return model.model_dump()
+        return model.model_dump(exclude_none=exclude_none)
     elif hasattr(model, "dict"):
-        return model.dict()
+        return model.dict(exclude_none=exclude_none)
     else:
         raise TypeError("Unsupported model type")
 
