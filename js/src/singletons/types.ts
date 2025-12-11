@@ -2,7 +2,7 @@ import { RunTree, RunnableConfigLike } from "../run_trees.js";
 import { ROOT } from "./traceable.js";
 import { _LC_CONTEXT_VARIABLES_KEY } from "./constants.js";
 
-type SmartPromise<T> = T extends AsyncGenerator
+type SmartPromise<T> = T extends AsyncIterable<unknown>
   ? T
   : T extends Promise<unknown>
   ? T
@@ -22,7 +22,7 @@ type WrapArgReturnPair<Pair> = Pair extends [
       }
     : {
         (...args: Args): SmartPromise<Return>;
-        (runTree: RunTree, ...rest: Args): SmartPromise<Return>;
+        (runTree: RunTree | typeof ROOT, ...rest: Args): SmartPromise<Return>;
         (config: RunnableConfigLike, ...args: Args): SmartPromise<Return>;
       }
   : never;

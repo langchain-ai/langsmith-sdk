@@ -2892,3 +2892,60 @@ test("child traceable with own replicas config", async () => {
   expect(defaultGrandchild.trace_id).toBe(defaultParent?.trace_id);
   expect(defaultGreatGrandchild.trace_id).toBe(defaultParent?.trace_id);
 });
+
+test("type test: AsyncIterable return type not wrapped in Promise", async () => {
+  // Test that async iterable functions return AsyncIterable, not Promise<AsyncIterable>
+  async function* testAsyncIterable(): AsyncIterable<string> {
+    yield "test";
+  }
+
+  const wrapped = traceable(testAsyncIterable);
+
+  // This should work without await - the return type should be AsyncIterable<string>
+  // not Promise<AsyncIterable<string>>
+  const result = wrapped();
+
+  // If the type is correct, we can iterate directly
+  for await (const value of result) {
+    expect(typeof value).toBe("string");
+  }
+
+  // Type assertion to verify compile-time type
+  const _typeCheck: AsyncIterable<string> = wrapped();
+  for await (const _ of _typeCheck) {
+    // pass
+  }
+});
+
+test("type test: RunTree overload works correctly", async () => {
+  // Test that RunTree can be passed as first argument
+  const testFunc = async (input: string) => `output: ${input}`;
+  const wrapped = traceable(testFunc);
+
+  // Should work with RunTree as first arg
+  const runTree = new RunTree({ name: "test" });
+  const result1 = await wrapped(runTree, "test");
+  expect(result1).toBe("output: test");
+
+  // Should work with ROOT as first arg
+  const result2 = await wrapped(ROOT, "test");
+  expect(result2).toBe("output: test");
+
+  // Should work without RunTree
+  const result3 = await wrapped("test");
+  expect(result3).toBe("output: test");
+
+  // @ts-expect-error Typing should not permit random objects
+  await wrapped({ foo: "bar" }, "foo");
+
+  // @ts-expect-error Typing should not permit callbacks that are not objects
+  await wrapped({ callbacks: "bar" }, "foo");
+
+  // Should allow an object, array, or the special ROOT value
+  await wrapped({ callbacks: [] }, "foo");
+  await wrapped({ callbacks: {} }, "foo");
+  await wrapped(ROOT, "foo");
+
+  // @ts-expect-error Typing should not permit additional args
+  await wrapped("ROOT", "foo");
+});
