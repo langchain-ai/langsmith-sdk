@@ -1118,3 +1118,86 @@ describe("Usage Metadata Tests", () => {
     }
   );
 });
+
+test("chat.completions.stream with finalChatCompletion", async () => {
+  const { client, callSpy } = mockClient();
+  const openai = wrapOpenAI(new OpenAI(), {
+    client,
+    tracingEnabled: true,
+  });
+
+  const stream = openai.chat.completions.stream({
+    model: "gpt-4o-mini",
+    messages: [{ role: "user", content: "Say 'hello'" }],
+  });
+
+  const completion = await stream.finalChatCompletion();
+
+  expect(completion.choices[0].message.role).toBe("assistant");
+  expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
+
+  // Verify tracing calls were made
+  const patchCalls = callSpy.mock.calls.filter(
+    (call) => (call[1] as any).method === "PATCH"
+  );
+  expect(patchCalls.length).toBeGreaterThan(0);
+
+  callSpy.mockClear();
+});
+
+test("chat.completions.stream with finalMessage", async () => {
+  const { client, callSpy } = mockClient();
+  const openai = wrapOpenAI(new OpenAI(), {
+    client,
+    tracingEnabled: true,
+  });
+
+  const stream = openai.chat.completions.stream({
+    model: "gpt-4o-mini",
+    messages: [{ role: "user", content: "Say 'hello'" }],
+  });
+
+  const message = await stream.finalMessage();
+
+  expect(message.role).toBe("assistant");
+  expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
+
+  // Verify tracing calls were made
+  const patchCalls = callSpy.mock.calls.filter(
+    (call) => (call[1] as any).method === "PATCH"
+  );
+  expect(patchCalls.length).toBeGreaterThan(0);
+
+  callSpy.mockClear();
+});
+
+test("responses.stream with finalResponse", async () => {
+  const { client, callSpy } = mockClient();
+  const openai = wrapOpenAI(new OpenAI(), {
+    client,
+    tracingEnabled: true,
+  });
+
+  const stream = openai.responses.stream({
+    model: "gpt-4.1-nano",
+    input: [
+      {
+        role: "user",
+        content: [{ type: "input_text", text: "Say hello" }],
+      },
+    ],
+  });
+
+  const response = await stream.finalResponse();
+
+  expect(response).toBeDefined();
+  expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
+
+  // Verify tracing calls were made
+  const patchCalls = callSpy.mock.calls.filter(
+    (call) => (call[1] as any).method === "PATCH"
+  );
+  expect(patchCalls.length).toBeGreaterThan(0);
+
+  callSpy.mockClear();
+});
