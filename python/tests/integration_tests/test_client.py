@@ -227,16 +227,14 @@ def test_datasets(parameterized_multipart_client: Client) -> None:
     )
     assert len(examples2) == 2
 
-    # Test hard delete
-    if examples2:
-        hard_delete_example = examples2[0]
-        parameterized_multipart_client.delete_examples(
-            example_ids=[hard_delete_example.id], hard_delete=True
-        )
-        examples_after_hard_delete = list(
-            parameterized_multipart_client.list_examples(dataset_id=new_dataset.id)  # type: ignore
-        )
-        assert len(examples_after_hard_delete) == len(examples2) - 1
+    hard_delete_example = examples2[0]
+    parameterized_multipart_client.delete_examples(
+        example_ids=[hard_delete_example.id], hard_delete=True
+    )
+    examples_after_hard_delete = list(
+        parameterized_multipart_client.list_examples(dataset_id=new_dataset.id)  # type: ignore
+    )
+    assert len(examples_after_hard_delete) == len(examples2) - 1
     parameterized_multipart_client.create_example(
         inputs={},
         outputs=None,
@@ -245,7 +243,7 @@ def test_datasets(parameterized_multipart_client: Client) -> None:
     examples3 = list(
         parameterized_multipart_client.list_examples(dataset_id=new_dataset.id)  # type: ignore
     )
-    assert len(examples3) == 3
+    assert len(examples3) == 2
 
     # Find the example with empty inputs that we just created
     empty_input_examples = [ex for ex in examples3 if ex.inputs == {}]
