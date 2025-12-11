@@ -2894,12 +2894,13 @@ test("child traceable with own replicas config", async () => {
 });
 
 test("type test: AsyncIterable return type not wrapped in Promise", async () => {
+  const { client } = mockClient();
   // Test that async iterable functions return AsyncIterable, not Promise<AsyncIterable>
   async function* testAsyncIterable(): AsyncIterable<string> {
     yield "test";
   }
 
-  const wrapped = traceable(testAsyncIterable);
+  const wrapped = traceable(testAsyncIterable, { client });
 
   // This should work without await - the return type should be AsyncIterable<string>
   // not Promise<AsyncIterable<string>>
@@ -2918,9 +2919,12 @@ test("type test: AsyncIterable return type not wrapped in Promise", async () => 
 });
 
 test("type test: RunTree overload works correctly", async () => {
+  const { client } = mockClient();
   // Test that RunTree can be passed as first argument
   const testFunc = async (input: string) => `output: ${input}`;
-  const wrapped = traceable(testFunc);
+  const wrapped = traceable(testFunc, {
+    client,
+  });
 
   // Should work with RunTree as first arg
   const runTree = new RunTree({ name: "test" });
@@ -2944,7 +2948,8 @@ test("type test: RunTree overload works correctly", async () => {
   // Should allow an object, array, or the special ROOT value
   await wrapped({ callbacks: [] }, "foo");
   await wrapped({ callbacks: {} }, "foo");
-  await wrapped(ROOT, "foo");
+  const result4 = await wrapped(ROOT, "BAR");
+  expect(result4).toBe("output: BAR");
 
   // @ts-expect-error Typing should not permit additional args
   await wrapped("ROOT", "foo");

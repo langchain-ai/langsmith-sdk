@@ -741,7 +741,7 @@ export function traceable<Func extends (...args: any[]) => any>(
           extractAttachmentsFn
         );
 
-        return [currentRunTree, [currentRunTree, ...restArgs] as Inputs];
+        return [currentRunTree, [...restArgs] as Inputs];
       }
 
       // Node.JS uses AsyncLocalStorage (ALS) and AsyncResource
