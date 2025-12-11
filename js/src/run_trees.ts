@@ -108,6 +108,7 @@ export interface RunTreeConfig {
   distributedParentId?: string;
 }
 
+// TODO: Remove in 0.4
 export interface RunnableConfigLike {
   /**
    * Tags for this call and any sub-calls (eg. a Chain calling an LLM).
@@ -126,7 +127,7 @@ export interface RunnableConfigLike {
    * Tags are passed to all callbacks, metadata is passed to handle*Start callbacks.
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  callbacks?: any;
+  callbacks?: Record<string, any> | any[];
 }
 
 interface CallbackManagerLike {
@@ -1058,15 +1059,15 @@ export function isRunnableConfigLike(x?: unknown): x is RunnableConfigLike {
   // that has either a CallbackManagerLike object with a langchain tracer within it
   // or an array with a LangChainTracerLike object within it
 
+  const callbacks = (x as RunnableConfigLike)?.callbacks;
   return (
     x != null &&
-    typeof (x as RunnableConfigLike).callbacks === "object" &&
+    typeof callbacks === "object" &&
     // Callback manager with a langchain tracer
-    (containsLangChainTracerLike(
-      (x as RunnableConfigLike).callbacks?.handlers
-    ) ||
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (containsLangChainTracerLike((callbacks as any)?.handlers) ||
       // Or it's an array with a LangChainTracerLike object within it
-      containsLangChainTracerLike((x as RunnableConfigLike).callbacks))
+      containsLangChainTracerLike(callbacks))
   );
 }
 
