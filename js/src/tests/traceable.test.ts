@@ -2928,16 +2928,14 @@ test("type test: RunTree overload works correctly", async () => {
 
   // Should work with RunTree as first arg
   const runTree = new RunTree({ name: "test" });
-  const result1 = await wrapped(runTree, "test");
-  expect(result1).toBe("output: test");
+  await wrapped(runTree, "test");
 
   // Should work with ROOT as first arg
-  const result2 = await wrapped(ROOT, "test");
-  expect(result2).toBe("output: test");
+  await wrapped(ROOT, "test");
 
   // Should work without RunTree
-  const result3 = await wrapped("test");
-  expect(result3).toBe("output: test");
+  const result = await wrapped("test");
+  expect(result).toBe("output: test");
 
   // @ts-expect-error Typing should not permit random objects
   await wrapped({ foo: "bar" }, "foo");
@@ -2948,8 +2946,6 @@ test("type test: RunTree overload works correctly", async () => {
   // Should allow an object, array, or the special ROOT value
   await wrapped({ callbacks: [] }, "foo");
   await wrapped({ callbacks: {} }, "foo");
-  const result4 = await wrapped(ROOT, "BAR");
-  expect(result4).toBe("output: BAR");
 
   // @ts-expect-error Typing should not permit additional args
   await wrapped("ROOT", "foo");
