@@ -1,4 +1,5 @@
 import json
+import io
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
@@ -7,6 +8,7 @@ from uuid import NAMESPACE_DNS, UUID, uuid5
 
 import pytest
 from requests_toolbelt import MultipartEncoder
+from multipart import MultipartParser, parse_options_header
 
 from langsmith import run_trees
 from langsmith import schemas as ls_schemas
@@ -39,14 +41,31 @@ def _get_multipart_data(mock_calls):
     datas = []
     for call_ in mock_calls:
         data = call_.kwargs.get("data")
-        if isinstance(data, MultipartEncoder):
-            fields = data.fields
-            for key, value in fields:
-                if isinstance(value, tuple):
-                    _, file_content, content_type, _ = value
-                    datas.append((key, (content_type, file_content)))
-                else:
-                    datas.append((key, value))
+        headers = call_.kwargs.get("headers", {})
+        content_type = headers.get("Content-Type")
+        if not content_type or not content_type.startswith("multipart/form-data"):
+            continue
+
+        # Get boundary from content type
+        boundary = parse_options_header(content_type)[1].get("boundary")
+        if not boundary:
+            continue
+
+        # Normalize data to raw bytes
+        if isinstance(data, (bytes, bytearray)):
+            raw = data
+        elif isinstance(data, MultipartEncoder):
+            raw = data.to_string()
+        else:
+            # Unknown format
+            continue
+
+        parser = MultipartParser(io.BytesIO(raw), boundary)
+        for part in parser.parts():
+            name = part.name
+            part_ct = part.headers.get("Content-Type", "")
+            value = part.value
+            datas.append((name, (part_ct, value)))
     return datas
 
 
@@ -408,7 +427,21 @@ def test_remap_for_project_root_run():
 
 def test_inputs_attachment_moved_to_attachments():
     """Ensure Attachment values in inputs are moved to attachments."""
-    mock_client = _get_mock_client()
+    mock_client = _get_mock_client(
+        info=ls_schemas.LangSmithInfo(
+            instance_flags={
+                "zstd_compression_enabled": False,
+            },
+            batch_ingest_config=ls_schemas.BatchIngestConfig(
+                use_multipart_endpoint=True,
+                size_limit_bytes=None,
+                size_limit=100,
+                scale_up_nthreads_limit=16,
+                scale_up_qsize_trigger=1000,
+                scale_down_nempty_trigger=4,
+            ),
+        ),
+    )
     run_tree = RunTree(
         name="WithAttachment",
         inputs={
@@ -419,8 +452,11 @@ def test_inputs_attachment_moved_to_attachments():
     )
     run_tree.post()
 
-    calls = _get_calls(mock_client, minimum=1)
+    # Wait until at least one POST call is recorded by the background thread
+    calls = _get_calls(mock_client, minimum=0)
+    assert calls
     datas = _get_multipart_data(calls)
+    assert datas
 
     # Find trace_id from a post field
     post_keys = [k for k, _ in datas if k.startswith("post.") and k.endswith(".inputs")]
@@ -437,4 +473,4 @@ def test_inputs_attachment_moved_to_attachments():
     key = f"attachment.{trace_id}.file"
     _, (mime_type, content) = next((d for d in datas if d[0] == key))
     assert mime_type == "text/plain"
-    assert content == b"hi"
+    assert content == "hi"
