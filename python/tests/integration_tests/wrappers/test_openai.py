@@ -23,14 +23,14 @@ def test_chat_sync_api(stream: bool):
     patched_client = wrap_openai(openai.Client(), tracing_extra={"client": client})
     messages = [{"role": "user", "content": "Say 'foo'"}]
     original = original_client.chat.completions.create(
-        messages=messages,  # noqa: arg-type
+        messages=messages,
         stream=stream,
         temperature=0,
         seed=42,
         model="gpt-3.5-turbo",
     )
     patched = patched_client.chat.completions.create(
-        messages=messages,  # noqa: arg-type
+        messages=messages,
         stream=stream,
         temperature=0,
         seed=42,

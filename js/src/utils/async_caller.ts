@@ -1,4 +1,4 @@
-import pRetry from "p-retry";
+import pRetry from "../utils/p-retry/index.js";
 import PQueueMod from "p-queue";
 import { _getFetchImplementation } from "../singletons/fetch.js";
 
@@ -139,7 +139,7 @@ export class AsyncCaller {
             }),
           {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            async onFailedAttempt(error: any) {
+            async onFailedAttempt({ error }: { error: any }) {
               if (
                 error.message.startsWith("Cancel") ||
                 error.message.startsWith("TimeoutError") ||

@@ -12,6 +12,7 @@ import math
 import os
 import pathlib
 import sys
+import threading
 import time
 import uuid
 import warnings
@@ -45,7 +46,8 @@ from langsmith.client import (
     _is_langchain_hosted,
     _parse_token_or_url,
 )
-from langsmith.utils import LangSmithUserError
+from langsmith.run_trees import RunTree
+from langsmith.utils import LangSmithRateLimitError, LangSmithUserError
 
 _CREATED_AT = datetime(2015, 1, 1, 0, 0, 0)
 
@@ -930,6 +932,103 @@ def test_hide_metadata(
         assert all(k not in payload_extra["metadata"] for k in initial_metadata), (
             f"Metadata key should NOT be present in extra {payload_extra}"
         )
+
+
+def test_omit_traced_runtime_info() -> None:
+    """Test that omit_traced_runtime_info prevents runtime info from being added."""
+    session = mock.MagicMock(spec=requests.Session)
+
+    # Test with omit_traced_runtime_info=True
+    client_omit = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        auto_batch_tracing=False,
+        session=session,
+        omit_traced_runtime_info=True,
+    )
+
+    run_id = uuid.uuid4()
+    client_omit.create_run(
+        "test_run_no_runtime",
+        inputs={"in": "put"},
+        run_type="llm",
+        id=run_id,
+    )
+
+    # Find the POST call
+    post_call = None
+    for call in session.request.mock_calls:
+        if len(call.args) > 1 and call.args[0] == "POST" and "runs" in call.args[1]:
+            post_call = call
+            break
+
+    assert post_call is not None, "POST request to /runs not found"
+
+    payload_data = post_call.kwargs.get("data", b"{}")
+    if isinstance(payload_data, bytes):
+        payload_str = payload_data.decode("utf-8")
+    else:
+        payload_str = str(payload_data)
+
+    try:
+        payload = json.loads(payload_str)
+    except json.JSONDecodeError:
+        if isinstance(payload_data, dict):
+            payload = payload_data
+        else:
+            raise
+
+    payload_extra = payload.get("extra", {})
+
+    # Runtime should not be present or should be empty
+    assert "runtime" not in payload_extra or payload_extra["runtime"] == {}
+
+    # Test with default (omit_traced_runtime_info=False)
+    session2 = mock.MagicMock(spec=requests.Session)
+    client_default = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        auto_batch_tracing=False,
+        session=session2,
+    )
+
+    run_id2 = uuid.uuid4()
+    client_default.create_run(
+        "test_run_with_runtime",
+        inputs={"in": "put"},
+        run_type="llm",
+        id=run_id2,
+    )
+
+    # Find the POST call
+    post_call2 = None
+    for call in session2.request.mock_calls:
+        if len(call.args) > 1 and call.args[0] == "POST" and "runs" in call.args[1]:
+            post_call2 = call
+            break
+
+    assert post_call2 is not None, "POST request to /runs not found"
+
+    payload_data2 = post_call2.kwargs.get("data", b"{}")
+    if isinstance(payload_data2, bytes):
+        payload_str2 = payload_data2.decode("utf-8")
+    else:
+        payload_str2 = str(payload_data2)
+
+    try:
+        payload2 = json.loads(payload_str2)
+    except json.JSONDecodeError:
+        if isinstance(payload_data2, dict):
+            payload2 = payload_data2
+        else:
+            raise
+
+    payload_extra2 = payload2.get("extra", {})
+
+    # Runtime should be present and not empty
+    assert "runtime" in payload_extra2
+    assert payload_extra2["runtime"]  # Should not be empty
+    assert "sdk_version" in payload_extra2["runtime"]
 
 
 @pytest.mark.flaky(retries=3)
@@ -4485,3 +4584,94 @@ def test_list_runs_child_run_ids_deprecation_warning(
     with warnings.catch_warnings():
         warnings.simplefilter("error", DeprecationWarning)
         list(client.list_runs(project_id=uuid.uuid4(), select=["id", "name"]))
+
+
+def test_tracing_error_callback_on_429():
+    """Test that tracing_error_callback is invoked on 429 errors in multipart flow."""
+    mock_session = MagicMock()
+
+    # Track callback invocations
+    callback_errors = []
+    callback_event = threading.Event()
+
+    def error_callback(error: Exception):
+        callback_errors.append(error)
+        callback_event.set()
+
+    # Mock successful response for info endpoint
+    info_response = MagicMock()
+    info_response.status_code = 200
+    info_response.json.return_value = {
+        "version": "0.1.0",
+        "batch_ingest_config": {
+            "size_limit": 1,  # Process immediately
+            "size_limit_bytes": 1,  # Process immediately
+            "use_multipart_endpoint": True,
+            "scale_up_nthreads_limit": 16,
+            "scale_up_qsize_trigger": 1,  # Scale up immediately
+            "scale_down_nempty_trigger": 4,
+        },
+        "instance_flags": {
+            "zstd_compression_enabled": False,
+        },
+    }
+
+    # Mock 429 response for batch ingest
+    rate_limit_response = MagicMock()
+    rate_limit_response.status_code = 429
+    rate_limit_response.text = "Rate limit exceeded"
+    rate_limit_response.raise_for_status.side_effect = HTTPError(
+        response=rate_limit_response
+    )
+
+    def mock_request_handler(method, url, **kwargs):
+        # Return info for info endpoint
+        if url.endswith("/info"):
+            return info_response
+        # Return 429 for multipart endpoint
+        elif "multipart" in url:
+            return rate_limit_response
+        # Return 200 for other endpoints (should not be called in this test)
+        else:
+            success_response = MagicMock()
+            success_response.status_code = 200
+            return success_response
+
+    mock_session.request.side_effect = mock_request_handler
+
+    client = Client(
+        api_key="test",
+        session=mock_session,
+        auto_batch_tracing=True,
+        tracing_error_callback=error_callback,
+    )
+
+    # Create a test run using RunTree with trace_id and dotted_order
+    run_id = uuid.uuid4()
+    trace_id = uuid.uuid4()
+    run = RunTree(
+        name="test_run",
+        id=run_id,
+        trace_id=trace_id,
+        dotted_order=f"{time.time()}.{run_id}",
+        client=client,
+        project_name="test_project",
+        inputs={"input": "test"},
+    )
+    run.post()  # Explicitly post to trigger queue
+    run.end(outputs={"output": "test"})
+    run.patch()  # Explicitly patch to trigger queue
+
+    # Wait for the background thread to process
+    time.sleep(0.5)
+
+    # Now wait for callback
+    callback_event.wait(timeout=10.0)
+
+    # Verify callback was invoked with the error
+    assert len(callback_errors) >= 1, (
+        f"Expected callback to be invoked, got {len(callback_errors)} errors. "
+        f"Queue size: {client.tracing_queue.qsize() if client.tracing_queue else 'N/A'}"
+    )
+    assert isinstance(callback_errors[0], LangSmithRateLimitError)
+    assert "Rate limit exceeded" in str(callback_errors[0])

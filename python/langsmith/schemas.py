@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from enum import Enum
 from typing import (
+    Annotated,
     Any,
     NamedTuple,
     Optional,
@@ -49,18 +50,17 @@ class Attachment(NamedTuple):
     """Annotated type that will be stored as an attachment if used.
 
     Examples:
-
-        .. code-block:: python
-
-            from langsmith import traceable
-            from langsmith.schemas import Attachment
+        ```python
+        from langsmith import traceable
+        from langsmith.schemas import Attachment
 
 
-            @traceable
-            def my_function(bar: int, my_val: Attachment):
-                # my_val will be stored as an attachment
-                # bar will be stored as inputs
-                return bar
+        @traceable
+        def my_function(bar: int, my_val: Attachment):
+            # my_val will be stored as an attachment
+            # bar will be stored as inputs
+            return bar
+        ```
     """
 
     mime_type: str
@@ -69,7 +69,9 @@ class Attachment(NamedTuple):
 
 Attachments = dict[str, Union[tuple[str, bytes], Attachment, tuple[str, Path]]]
 """Attachments associated with the run. 
-Each entry is a tuple of (mime_type, bytes), or (mime_type, file_path)"""
+
+Each entry is a tuple of `(mime_type, bytes)`, or `(mime_type, file_path)`
+"""
 
 
 @runtime_checkable
@@ -387,7 +389,9 @@ class RunBase(BaseModel):
         default_factory=dict
     )
     """Attachments associated with the run.
-    Each entry is a tuple of (mime_type, bytes)."""
+    
+    Each entry is a tuple of `(mime_type, bytes)`.
+    """
 
     @property
     def metadata(self) -> dict[str, Any]:
@@ -1338,3 +1342,41 @@ class InsightsReport(BaseModel):
 
     def _repr_html_(self) -> str:
         return f'<a href="{self.link}", target="_blank" rel="noopener">InsightsReport(\'{self.name}\')</a>'
+
+
+class FeedbackFormulaWeightedVariable(BaseModel):
+    """A feedback key and weight used when calculating feedback formulas."""
+
+    part_type: Literal["weighted_key"]
+    weight: float
+    key: Annotated[str, Field(min_length=1)]
+
+
+class FeedbackFormulaCreate(BaseModel):
+    """Schema used for creating a feedback formula."""
+
+    dataset_id: Optional[UUID] = None
+    session_id: Optional[UUID] = None
+    feedback_key: str
+    aggregation_type: Literal["sum", "avg"]
+    formula_parts: list[FeedbackFormulaWeightedVariable] = Field(
+        ..., min_items=1, max_items=50
+    )
+
+
+class FeedbackFormulaUpdate(BaseModel):
+    """Schema used for updating a feedback formula."""
+
+    feedback_key: str
+    aggregation_type: Literal["sum", "avg"]
+    formula_parts: list[FeedbackFormulaWeightedVariable] = Field(
+        ..., min_items=1, max_items=50
+    )
+
+
+class FeedbackFormula(FeedbackFormulaCreate):
+    """Schema for getting feedback formulas."""
+
+    id: UUID
+    created_at: datetime
+    modified_at: datetime

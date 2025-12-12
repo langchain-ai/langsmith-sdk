@@ -120,18 +120,21 @@ def tracing_context(
     """Set the tracing context for a block of code.
 
     Args:
-        project_name: The name of the project to log the run to. Defaults to None.
-        tags: The tags to add to the run. Defaults to None.
-        metadata: The metadata to add to the run. Defaults to None.
-        parent: The parent run to use for the context. Can be a Run/RunTree object,
-            request headers (for distributed tracing), or the dotted order string.
-            Defaults to None.
-        client: The client to use for logging the run to LangSmith. Defaults to None,
-        enabled: Whether tracing is enabled. Defaults to None, meaning it will use the
-            current context value or environment variables.
-        replicas: A sequence of WriteReplica dictionaries to send runs to.
-              Example: [{"api_url": "https://api.example.com", "api_key": "key", "project_name": "proj"}]
-              or [{"project_name": "my_experiment", "updates": {"reference_example_id": None}}]
+        project_name: The name of the project to log the run to.
+        tags: The tags to add to the run.
+        metadata: The metadata to add to the run.
+        parent: The parent run to use for the context.
+
+            Can be a Run/`RunTree` object, request headers (for distributed tracing),
+            or the dotted order string.
+        client: The client to use for logging the run to LangSmith.
+        enabled: Whether tracing is enabled.
+
+            Defaults to `None`, meaning it will use the current context value or environment variables.
+        replicas: A sequence of `WriteReplica` dictionaries to send runs to.
+
+            Example: `[{"api_url": "https://api.example.com", "api_key": "key", "project_name": "proj"}]`
+            or `[{"project_name": "my_experiment", "updates": {"reference_example_id": None}}]`
         distributed_parent_id: The distributed parent ID for distributed tracing. Defaults to None.
     """
     if kwargs:
@@ -176,7 +179,7 @@ get_run_tree_context = get_current_run_tree
 
 
 def is_traceable_function(func: Any) -> TypeGuard[SupportsLangsmithExtra[P, R]]:
-    """Check if a function is @traceable decorated."""
+    """Check if a function is `@traceable` decorated."""
     return (
         _is_traceable_function(func)
         or (isinstance(func, functools.partial) and _is_traceable_function(func.func))
@@ -255,17 +258,7 @@ P = ParamSpec("P")
 
 @runtime_checkable
 class SupportsLangsmithExtra(Protocol, Generic[P, R]):
-    """Implementations of this Protocol accept an optional langsmith_extra parameter.
-
-    Args:
-        *args: Variable length arguments.
-        langsmith_extra (Optional[LangSmithExtra): Optional dictionary of
-            additional parameters for Langsmith.
-        **kwargs: Keyword arguments.
-
-    Returns:
-        R: The return type of the callable.
-    """
+    """Implementations of this Protocol accept an optional langsmith_extra parameter."""
 
     def __call__(  # type: ignore[valid-type]
         self,
@@ -329,42 +322,54 @@ def traceable(
     """Trace a function with langsmith.
 
     Args:
-        run_type: The type of run (span) to create. Examples: llm, chain, tool, prompt,
-            retriever, etc. Defaults to "chain".
+        run_type: The type of run (span) to create.
+
+            Examples: `llm`, `chain`, `tool`, `prompt`, `retriever`, etc.
+
+            Defaults to "chain".
         name: The name of the run. Defaults to the function name.
-        metadata: The metadata to add to the run. Defaults to None.
-        tags: The tags to add to the run. Defaults to None.
+        metadata: The metadata to add to the run. Defaults to `None`.
+        tags: The tags to add to the run. Defaults to `None`.
         client: The client to use for logging the run to LangSmith. Defaults to
-            None, which will use the default client.
+            `None`, which will use the default client.
         reduce_fn: A function to reduce the output of the function if the function
-            returns a generator. Defaults to None, which means the values will be
-            logged as a list. Note: if the iterator is never exhausted (e.g.
-            the function returns an infinite generator), this will never be
-            called, and the run itself will be stuck in a pending state.
-        project_name: The name of the project to log the run to. Defaults to None,
-            which will use the default project.
+            returns a generator.
+
+            Defaults to `None`, which means the values will be logged as a list.
+
+            !!! note
+
+                If the iterator is never exhausted (e.g. the function returns an
+                infinite generator), this will never be called, and the run itself will
+                be stuck in a pending state.
+        project_name: The name of the project to log the run to.
+
+            Defaults to `None`, which will use the default project.
         process_inputs: Custom serialization / processing function for inputs.
-            Defaults to None.
+
+            Defaults to `None`.
         process_outputs: Custom serialization / processing function for outputs.
-            Defaults to None.
+
+            Defaults to `None`.
         dangerously_allow_filesystem: Whether to allow filesystem access for attachments.
-            Defaults to False.
+
+            Defaults to `False`.
 
             Traces that reference local filepaths will be uploaded to LangSmith.
             In general, network-hosted applications should not be using this because
             referenced files are usually on the user's machine, not the host machine.
 
     Returns:
-            Union[Callable, Callable[[Callable], Callable]]: The decorated function.
+        The decorated function.
 
-    Note:
-            - Requires that LANGSMITH_TRACING_V2 be set to 'true' in the environment.
+    !!! note
+
+        Requires that `LANGSMITH_TRACING_V2` be set to 'true' in the environment.
 
     Examples:
-        Basic usage:
+        !!! example "Basic usage"
 
-        .. code-block:: python
-
+            ```python
             @traceable
             def my_function(x: float, y: float) -> float:
                 return x + y
@@ -384,11 +389,11 @@ def traceable(
 
 
             asyncio.run(my_async_function({"param": "value"}))
+            ```
 
-        Streaming data with a generator:
+        !!! example "Streaming data with a generator"
 
-        .. code-block:: python
-
+            ```python
             @traceable
             def my_generator(n: int) -> Iterable:
                 for i in range(n):
@@ -397,11 +402,11 @@ def traceable(
 
             for item in my_generator(5):
                 print(item)
+            ```
 
-        Async streaming data:
+        !!! example "Async streaming data"
 
-        .. code-block:: python
-
+            ```python
             @traceable
             async def my_async_generator(query_params: dict) -> Iterable:
                 async with httpx.AsyncClient() as http_client:
@@ -419,22 +424,22 @@ def traceable(
 
 
             asyncio.run(async_code())
+            ```
 
-        Specifying a run type and name:
+        !!! example "Specifying a run type and name"
 
-        .. code-block:: python
-
+            ```python
             @traceable(name="CustomName", run_type="tool")
             def another_function(a: float, b: float) -> float:
                 return a * b
 
 
             another_function(5, 6)
+            ```
 
-        Logging with custom metadata and tags:
+        !!! example "Logging with custom metadata and tags"
 
-        .. code-block:: python
-
+            ```python
             @traceable(
                 metadata={"version": "1.0", "author": "John Doe"}, tags=["beta", "test"]
             )
@@ -443,11 +448,11 @@ def traceable(
 
 
             tagged_function(5)
+            ```
 
-        Specifying a custom client and project name:
+        !!! example "Specifying a custom client and project name"
 
-        .. code-block:: python
-
+            ```python
             custom_client = Client(api_key="your_api_key")
 
 
@@ -457,17 +462,18 @@ def traceable(
 
 
             project_specific_function({"data": "to process"})
+            ```
 
-        Manually passing langsmith_extra:
+        !!! example "Manually passing `langsmith_extra`"
 
-        .. code-block:: python
-
+            ```python
             @traceable
             def manual_extra_function(x):
                 return x**2
 
 
             manual_extra_function(5, langsmith_extra={"metadata": {"version": "1.0"}})
+            ```
     """
     run_type = cast(
         ls_client.RUN_TYPE_T,
@@ -884,52 +890,61 @@ class trace:
     This class can be used as both a synchronous and asynchronous context manager.
 
     Args:
-        name (str): Name of the run.
-        run_type (ls_client.RUN_TYPE_T, optional): Type of run (e.g., "chain", "llm", "tool"). Defaults to "chain".
-        inputs (Optional[Dict], optional): Initial input data for the run. Defaults to None.
-        project_name (Optional[str], optional): Project name to associate the run with. Defaults to None.
-        parent (Optional[Union[run_trees.RunTree, str, Mapping]], optional): Parent run. Can be a RunTree, dotted order string, or tracing headers. Defaults to None.
-        tags (Optional[List[str]], optional): List of tags for the run. Defaults to None.
-        metadata (Optional[Mapping[str, Any]], optional): Additional metadata for the run. Defaults to None.
-        client (Optional[ls_client.Client], optional): LangSmith client for custom settings. Defaults to None.
-        run_id (Optional[ls_client.ID_TYPE], optional): Preset identifier for the run. Defaults to None.
-        reference_example_id (Optional[ls_client.ID_TYPE], optional): Associates run with a dataset example. Only for root runs in evaluation. Defaults to None.
-        exceptions_to_handle (Optional[Tuple[Type[BaseException], ...]], optional): Exception types to ignore. Defaults to None.
-        extra (Optional[Dict], optional): Extra data to send to LangSmith. Use 'metadata' instead. Defaults to None.
+        name: Name of the run.
+        run_type: Type of run (e.g., `'chain'`, `'llm'`, `'tool'`).
+        inputs: Initial input data for the run.
+        project_name: Project name to associate the run with.
+        parent: Parent run.
+
+            Can be a `RunTree`, dotted order string, or tracing headers.
+        tags: List of tags for the run.
+        metadata: Additional metadata for the run.
+        client: LangSmith client for custom settings.
+        run_id: Preset identifier for the run.
+        reference_example_id: Associates run with a dataset example.
+
+            Only for root runs in evaluation.
+        exceptions_to_handle: Exception types to ignore.
+        extra: Extra data to send to LangSmith.
+
+            Use 'metadata' instead.
 
     Examples:
         Synchronous usage:
 
-        .. code-block:: python
-
-            >>> with trace("My Operation", run_type="tool", tags=["important"]) as run:
-            ...     result = "foo"  # Perform operation
-            ...     run.metadata["some-key"] = "some-value"
-            ...     run.end(outputs={"result": result})
+        ```python
+        with trace("My Operation", run_type="tool", tags=["important"]) as run:
+            result = "foo"  # Perform operation
+            run.metadata["some-key"] = "some-value"
+            run.end(outputs={"result": result})
+        ```
 
         Asynchronous usage:
 
-        .. code-block:: python
+        ```python
+        async def main():
+            async with trace("Async Operation", run_type="tool", tags=["async"]) as run:
+                result = "foo"  # Await async operation
+                run.metadata["some-key"] = "some-value"
+                # "end" just adds the outputs and sets error to None
+                # The actual patching of the run happens when the context exits
+                run.end(outputs={"result": result})
 
-            >>> async def main():
-            ...     async with trace("Async Operation", run_type="tool", tags=["async"]) as run:
-            ...         result = "foo"  # Await async operation
-            ...         run.metadata["some-key"] = "some-value"
-            ...         # "end" just adds the outputs and sets error to None
-            ...         # The actual patching of the run happens when the context exits
-            ...         run.end(outputs={"result": result})
-            >>> asyncio.run(main())
+
+        asyncio.run(main())
+        ```
 
         Handling specific exceptions:
 
-        .. code-block:: python
+        ```python
+        import pytest
+        import sys
 
-            >>> import pytest
-            >>> import sys
-            >>> with trace("Test", exceptions_to_handle=(pytest.skip.Exception,)):
-            ...     if sys.platform == "win32": # Just an example
-            ...         pytest.skip("Skipping test for windows")
-            ...     result = "foo"  # Perform test operation
+        with trace("Test", exceptions_to_handle=(pytest.skip.Exception,)):
+            if sys.platform == "win32":  # Just an example
+                pytest.skip("Skipping test for windows")
+            result = "foo"  # Perform test operation
+        ```
     """
 
     def __init__(
@@ -1171,18 +1186,18 @@ def _get_project_name(project_name: Optional[str]) -> Optional[str]:
 
 
 def as_runnable(traceable_fn: Callable) -> Runnable:
-    """Convert a function wrapped by the LangSmith @traceable decorator to a Runnable.
+    """Convert a function wrapped by the LangSmith `@traceable` decorator to a `Runnable`.
 
     Args:
-        traceable_fn (Callable): The function wrapped by the @traceable decorator.
+        traceable_fn: The function wrapped by the `@traceable` decorator.
 
     Returns:
-        Runnable: A Runnable object that maintains a consistent LangSmith
+        Runnable: A `Runnable` object that maintains a consistent LangSmith
             tracing context.
 
     Raises:
-        ImportError: If langchain module is not installed.
-        ValueError: If the provided function is not wrapped by the @traceable decorator.
+        ImportError: If `langchain` module is not installed.
+        ValueError: If the provided function is not wrapped by the `@traceable` decorator.
 
     Example:
         >>> @traceable
@@ -1210,7 +1225,7 @@ def as_runnable(traceable_fn: Callable) -> Runnable:
         )
 
     class RunnableTraceable(RunnableLambda):
-        """Converts a @traceable decorated function to a Runnable.
+        """Converts a `@traceable` decorated function to a `Runnable`.
 
         This helps maintain a consistent LangSmith tracing context.
         """

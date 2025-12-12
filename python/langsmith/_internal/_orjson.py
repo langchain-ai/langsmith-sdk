@@ -16,7 +16,9 @@ except ImportError:
     import dataclasses
     import json
     import uuid
-    from typing import Any, Callable, Optional
+    from typing import Any, Callable, Optional, Union
+
+    DefaultFunc = Optional[Callable[[Any], Any]]
 
     OPT_NON_STR_KEYS = 1
     OPT_SERIALIZE_DATACLASS = 2
@@ -29,15 +31,17 @@ except ImportError:
 
     from json import JSONDecodeError  # type: ignore
 
-    def dumps(  # type: ignore
+    def dumps(
         obj: Any,
         /,
-        default: Optional[Callable[[Any], Any]] = None,
-        option: int = 0,
-    ) -> bytes:  # type: ignore
+        default: DefaultFunc = None,
+        option: Optional[int] = None,
+    ) -> bytes:
         # for now, don't do anything for this case because `json.dumps`
         # automatically encodes non-str keys as str by default, unlike orjson
         # enable_non_str_keys = bool(option & OPT_NON_STR_KEYS)
+        if option is None:
+            option = 0
 
         enable_serialize_numpy = bool(option & OPT_SERIALIZE_NUMPY)
         enable_serialize_dataclass = bool(option & OPT_SERIALIZE_DATACLASS)
@@ -68,7 +72,7 @@ except ImportError:
 
         return json.dumps(obj, cls=CustomEncoder).encode("utf-8")
 
-    def loads(payload: bytes, /) -> Any:  # type: ignore
+    def loads(payload: Union[bytes, bytearray, memoryview, str], /) -> Any:
         return json.loads(payload)
 
 

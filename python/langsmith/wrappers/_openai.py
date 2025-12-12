@@ -65,7 +65,7 @@ def _strip_not_given(d: dict) -> dict:
 
 
 def _process_inputs(d: dict) -> dict:
-    """Strip NotGiven values and serialize text_format to JSON schema."""
+    """Strip `NotGiven` values and serialize `text_format` to JSON schema."""
     d = _strip_not_given(d)
 
     # Convert text_format (Pydantic model) to JSON schema if present
@@ -418,52 +418,48 @@ def wrap_openai(
     Supports:
         - Chat and Responses API's
         - Sync and async OpenAI clients
-        - create() and parse() methods
-        - with and without streaming
+        - `create` and `parse` methods
+        - With and without streaming
 
     Args:
-        client (Union[OpenAI, AsyncOpenAI]): The client to patch.
-        tracing_extra (Optional[TracingExtra], optional): Extra tracing information.
-            Defaults to None.
-        chat_name (str, optional): The run name for the chat completions endpoint.
-            Defaults to "ChatOpenAI".
-        completions_name (str, optional): The run name for the completions endpoint.
-            Defaults to "OpenAI".
+        client: The client to patch.
+        tracing_extra: Extra tracing information.
+        chat_name: The run name for the chat completions endpoint.
+        completions_name: The run name for the completions endpoint.
 
     Returns:
-        Union[OpenAI, AsyncOpenAI]: The patched client.
+        The patched client.
 
     Example:
+        ```python
+        import openai
+        from langsmith import wrappers
 
-        .. code-block:: python
+        # Use OpenAI client same as you normally would.
+        client = wrappers.wrap_openai(openai.OpenAI())
 
-            import openai
-            from langsmith import wrappers
+        # Chat API:
+        messages = [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {
+                "role": "user",
+                "content": "What physics breakthroughs do you predict will happen by 2300?",
+            },
+        ]
+        completion = client.chat.completions.create(
+            model="gpt-4o-mini", messages=messages
+        )
+        print(completion.choices[0].message.content)
 
-            # Use OpenAI client same as you normally would.
-            client = wrappers.wrap_openai(openai.OpenAI())
+        # Responses API:
+        response = client.responses.create(
+            model="gpt-4o-mini",
+            messages=messages,
+        )
+        print(response.output_text)
+        ```
 
-            # Chat API:
-            messages = [
-                {"role": "system", "content": "You are a helpful assistant."},
-                {
-                    "role": "user",
-                    "content": "What physics breakthroughs do you predict will happen by 2300?",
-                },
-            ]
-            completion = client.chat.completions.create(
-                model="gpt-4o-mini", messages=messages
-            )
-            print(completion.choices[0].message.content)
-
-            # Responses API:
-            response = client.responses.create(
-                model="gpt-4o-mini",
-                messages=messages,
-            )
-            print(response.output_text)
-
-    .. versionchanged:: 0.3.16
+    !!! warning "Behavior changed in `langsmith` 0.3.16"
 
         Support for Responses API added.
     """  # noqa: E501
