@@ -1288,7 +1288,9 @@ describe.each(ENDPOINT_TYPES)(
         },
         mockFetch
       );
-      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue(undefined);
+      jest
+        .spyOn(client as any, "_ensureServerInfo")
+        .mockResolvedValue(undefined);
       const projectName = "__test_batch";
 
       const runId = uuidv4();

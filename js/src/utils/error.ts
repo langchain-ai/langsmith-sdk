@@ -81,6 +81,17 @@ export class LangSmithNotFoundError extends Error {
   }
 }
 
+export function isLangSmithNotFoundError(
+  error: unknown
+): error is LangSmithNotFoundError {
+  return (
+    error != null &&
+    typeof error === "object" &&
+    "name" in error &&
+    error?.name === "LangSmithNotFoundError"
+  );
+}
+
 /**
  * Throws an appropriate error based on the response status and body.
  *

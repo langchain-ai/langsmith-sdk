@@ -74,7 +74,7 @@ import { __version__ } from "./index.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
 import { parsePromptIdentifier } from "./utils/prompts.js";
-import { raiseForStatus, LangSmithNotFoundError } from "./utils/error.js";
+import { raiseForStatus, isLangSmithNotFoundError } from "./utils/error.js";
 import {
   _globalFetchImplementationIsNodeFetch,
   _getFetchImplementation,
@@ -1178,8 +1178,9 @@ export class Client implements LangSmithTracingClientInterface {
               useGzip,
               sizeBytes: batchSizeBytes,
             });
-          } catch (e) {
-            if (e instanceof LangSmithNotFoundError) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          } catch (e: any) {
+            if (isLangSmithNotFoundError(e)) {
               // Fallback to batch ingest if multipart endpoint returns 404
               // Disable multipart for future requests
               this._multipartDisabled = true;
@@ -1898,7 +1899,7 @@ export class Client implements LangSmithTracingClientInterface {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       // Re-throw 404 errors so caller can fall back to batch ingest
-      if (e instanceof LangSmithNotFoundError) {
+      if (isLangSmithNotFoundError(e)) {
         throw e;
       }
       console.warn(`${e.message.trim()}\n\nContext: ${context}`);
