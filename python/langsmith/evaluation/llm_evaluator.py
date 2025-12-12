@@ -73,6 +73,7 @@ def _create_score_json_schema(
     }
 
 
+# deprecated: use openevals instead https://github.com/langchain-ai/openevals
 class LLMEvaluator(RunEvaluator):
     """A class for building LLM-as-a-judge evaluators."""
 
