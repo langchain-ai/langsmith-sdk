@@ -22,7 +22,11 @@ if TYPE_CHECKING:
 
 def __getattr__(
     name: str,
-) -> Any:  # deprecated: use client.evaluate() instead
+) -> Any:
+    """.. deprecated:: 0.5.0
+
+    Importing from langsmith.evaluation is deprecated. Use client.evaluate() instead.
+    """
     if name == "evaluate":
         from langsmith.evaluation._runner import evaluate
 
