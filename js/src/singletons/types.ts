@@ -3,7 +3,7 @@ import { ROOT } from "./traceable.js";
 import { _LC_CONTEXT_VARIABLES_KEY } from "./constants.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type SmartPromise<T> = T extends AsyncIterable<any, any, any>
+type SmartPromise<T> = T extends AsyncIterable<any>
   ? T
   : T extends Promise<unknown>
   ? T
