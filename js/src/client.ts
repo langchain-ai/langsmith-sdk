@@ -1071,7 +1071,7 @@ export class Client implements LangSmithTracingClientInterface {
     const serverInfo = await this._ensureServerInfo();
     return (
       this.batchSizeBytesLimit ??
-      serverInfo.batch_ingest_config?.size_limit_bytes ??
+      serverInfo?.batch_ingest_config?.size_limit_bytes ??
       DEFAULT_UNCOMPRESSED_BATCH_SIZE_LIMIT_BYTES
     );
   }
@@ -1083,7 +1083,7 @@ export class Client implements LangSmithTracingClientInterface {
     const serverInfo = await this._ensureServerInfo();
     return (
       this.batchSizeLimit ??
-      serverInfo.batch_ingest_config?.size_limit ??
+      serverInfo?.batch_ingest_config?.size_limit ??
       DEFAULT_BATCH_SIZE_LIMIT
     );
   }

@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable prefer-const */
 /* eslint-disable no-process-env */
-import { jest, describe } from "@jest/globals";
+/* eslint-disable @typescript-eslint/no-non-null-assertion */
+import { jest, describe, expect, afterEach, it } from "@jest/globals";
 import { v4 as uuidv4 } from "uuid";
 import { Client, mergeRuntimeEnvIntoRun } from "../client.js";
 import { convertToDottedOrderFormat } from "../run_trees.js";
@@ -56,7 +57,7 @@ const parseMockRequestBody = async (
     let parsedValue;
     try {
       parsedValue = JSON.parse(value);
-    } catch (e) {
+    } catch {
       parsedValue = value;
     }
     if (!(method in reconstructedBody)) {
@@ -134,7 +135,7 @@ describe.each(ENDPOINT_TYPES)(
       for (const client of testClients) {
         try {
           await client.awaitPendingTraceBatches();
-        } catch (e) {
+        } catch {
           // Ignore cleanup errors
         }
       }
