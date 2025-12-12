@@ -21,11 +21,11 @@ test("Simple Bun tracing integration test", async () => {
   )({ text: "Hello world" });
 
   // Wait for the run to be found in the backend
-  await waitUntilRunFound(client, runId, true);
+  await waitUntilRunFound(client, runId, true, 90_000);
 
   const storedRun = await client.readRun(runId);
   expect(storedRun.id).toEqual(runId);
   expect(storedRun.name).toEqual("bun_tracing_test");
   expect(storedRun.inputs).toEqual({ text: "Hello world" });
   expect(storedRun.outputs).toEqual({ out: "Hello world" });
-}, 30_000);
+}, 90_000);
