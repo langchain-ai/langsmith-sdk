@@ -3,11 +3,11 @@ import { test, expect } from "bun:test";
 import { traceable } from "../../traceable.js";
 import { Client } from "../../client.js";
 import { waitUntilRunFound } from "../utils.js";
-import { v4 as uuidv4 } from "uuid";
+import { v7 as uuidv7 } from "uuid";
 
 test("Simple Bun tracing integration test", async () => {
   const client = new Client();
-  const runId = uuidv4();
+  const runId = uuidv7();
 
   await traceable(
     async (input: { text: string }) => {
