@@ -3833,8 +3833,8 @@ def test_get_experiment_results(langchain_client: Client) -> None:
 
     # Test stats are the same regardless of limit (since stats come from project)
     assert (
-        limited_results["run_stats"].run_count
-        == experiment_results["run_stats"].run_count
+        limited_results["run_stats"]["run_count"]
+        == experiment_results["run_stats"]["run_count"]
     )
 
     # Test preview mode - should be faster and return preview data
