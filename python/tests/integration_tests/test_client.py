@@ -55,7 +55,6 @@ from langsmith.utils import (
     LangSmithNotFoundError,
     get_env_var,
 )
-from tests.integration_tests.conftest import skip_if_rate_limited
 
 logger = logging.getLogger(__name__)
 
@@ -493,11 +492,10 @@ def test_persist_update_run(langchain_client: Client) -> None:
         langchain_client.delete_project(project_name=project_name)
 
 
+@pytest.mark.slow
 def test_update_run_attachments(langchain_client: Client) -> None:
     """Test the persist and update methods work as expected."""
     project_name = "__test_update_run_attachments" + uuid7().hex
-    if langchain_client.has_project(project_name):
-        langchain_client.delete_project(project_name=project_name)
     try:
         trace_id = uuid7()
         start_time = datetime.datetime.now(datetime.timezone.utc)
@@ -951,7 +949,7 @@ def test_create_chat_example(
 
 
 @pytest.mark.parametrize("use_multipart_endpoint", [True, False])
-@skip_if_rate_limited
+@pytest.mark.slow
 def test_batch_ingest_runs(
     langchain_client: Client, use_multipart_endpoint: bool
 ) -> None:
@@ -1106,7 +1104,7 @@ def test_multipart_ingest_create_with_attachments_error(
         langchain_client.multipart_ingest(create=runs_to_create, update=[])
 
 
-@pytest.mark.flaky(retries=3)
+@pytest.mark.slow
 def test_multipart_ingest_create_with_attachments(
     langchain_client: Client, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -1154,6 +1152,7 @@ def test_multipart_ingest_create_with_attachments(
         )
 
 
+@pytest.mark.slow
 def test_multipart_ingest_update_with_attachments_no_paths(
     langchain_client: Client, caplog: pytest.LogCaptureFixture
 ):

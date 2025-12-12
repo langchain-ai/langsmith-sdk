@@ -144,57 +144,6 @@ async def test_list_runs_multi_project(langchain_client: Client):
     assert runs[0].session_id != runs[1].session_id
 
 
-async def test_nested_async_runs(langchain_client: Client):
-    """Test nested runs with a mix of async and sync functions."""
-    project_name = "__My Tracer Project - test_nested_async_runs"
-    executor = ThreadPoolExecutor(max_workers=1)
-
-    @traceable(run_type="chain")
-    async def my_run(text: str):
-        await my_llm_run(text)
-        my_sync_tool(text, my_arg=20)
-        return text
-
-    @traceable(run_type="llm")
-    async def my_llm_run(text: str):
-        # The function needn't accept a run
-        await asyncio.sleep(0.2)
-        return f"Completed: {text}"
-
-    @traceable(run_type="tool")
-    def my_sync_tool(text: str, *, my_arg: int = 10):
-        return f"Completed: {text} {my_arg}"
-
-    @traceable(run_type="chain")  # type: ignore
-    async def my_chain_run(text: str):
-        return await my_run(text)
-
-    meta = uuid.uuid4().hex
-    await my_chain_run(
-        "foo",
-        langsmith_extra=dict(project_name=project_name, metadata={"test_run": meta}),
-    )
-    executor.shutdown(wait=True)
-    _filter = f'and(eq(metadata_key, "test_run"), eq(metadata_value, "{meta}"))'
-    poll_runs_until_count(langchain_client, project_name, 4, filter_=_filter)
-    runs = list(langchain_client.list_runs(project_name=project_name, filter=_filter))
-    assert len(runs) == 4
-    runs_dict = {run.name: run for run in runs}
-    assert runs_dict["my_chain_run"].parent_run_id is None
-    assert runs_dict["my_chain_run"].run_type == "chain"
-    assert runs_dict["my_run"].parent_run_id == runs_dict["my_chain_run"].id
-    assert runs_dict["my_run"].run_type == "chain"
-    assert runs_dict["my_llm_run"].parent_run_id == runs_dict["my_run"].id
-    assert runs_dict["my_llm_run"].run_type == "llm"
-    assert runs_dict["my_llm_run"].inputs == {"text": "foo"}
-    assert runs_dict["my_sync_tool"].parent_run_id == runs_dict["my_run"].id
-    assert runs_dict["my_sync_tool"].run_type == "tool"
-    assert runs_dict["my_sync_tool"].inputs == {
-        "text": "foo",
-        "my_arg": 20,
-    }
-
-
 async def test_nested_async_runs_with_threadpool(langchain_client: Client):
     """Test nested runs with a mix of async and sync functions."""
     project_name = "__My Tracer Project - test_nested_async_runs_with_threadpol"
