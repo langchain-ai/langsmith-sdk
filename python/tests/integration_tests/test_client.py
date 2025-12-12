@@ -12,6 +12,8 @@ import string
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
 from typing import Any, Callable, Dict, cast
@@ -268,8 +270,17 @@ def _create_dataset(client: Client, dataset_name: str) -> Dataset:
     return client.create_dataset(dataset_name=dataset_name)
 
 
-def test_list_examples(langchain_client: Client) -> None:
-    """Test list_examples."""
+@dataclass(frozen=True)
+class ListReq:
+    key: str
+    kwargs: dict[str, Any]
+
+
+def _fetch_list(client: "Client", dataset_id: str, req: ListReq):
+    return req.key, list(client.list_examples(dataset_id=dataset_id, **req.kwargs))
+
+
+def test_list_examples(langchain_client: "Client") -> None:
     examples = [
         ("Shut up, idiot", "Toxic", ["train", "validation"]),
         ("You're a wonderful person", "Not toxic", "test"),
@@ -281,119 +292,98 @@ def test_list_examples(langchain_client: Client) -> None:
 
     dataset_name = "__test_list_examples" + uuid7().hex
     dataset = _create_dataset(langchain_client, dataset_name)
-    inputs, outputs, splits = zip(
-        *[({"text": text}, {"label": label}, split) for text, label, split in examples]
-    )
-    langchain_client.create_examples(
-        inputs=inputs, outputs=outputs, splits=splits, dataset_id=dataset.id
-    )
-    example_list = list(langchain_client.list_examples(dataset_id=dataset.id))
-    assert len(example_list) == len(examples)
 
-    example_list = list(
-        langchain_client.list_examples(dataset_id=dataset.id, offset=1, limit=2)
-    )
-    assert len(example_list) == 2
-
-    example_list = list(langchain_client.list_examples(dataset_id=dataset.id, offset=1))
-    assert len(example_list) == len(examples) - 1
-
-    example_list = list(
-        langchain_client.list_examples(dataset_id=dataset.id, splits=["train"])
-    )
-    assert len(example_list) == 3
-
-    example_list = list(
-        langchain_client.list_examples(dataset_id=dataset.id, splits=["validation"])
-    )
-    assert len(example_list) == 1
-
-    example_list = list(
-        langchain_client.list_examples(dataset_id=dataset.id, splits=["test"])
-    )
-    assert len(example_list) == 2
-
-    example_list = list(
-        langchain_client.list_examples(dataset_id=dataset.id, splits=["train", "test"])
-    )
-    assert len(example_list) == 5
-
-    langchain_client.update_example(
-        example_id=[
-            example.id
-            for example in example_list
-            if example.metadata is not None
-            and "test" in example.metadata.get("dataset_split", [])
-        ][0],
-        split="train",
-    )
-
-    example_list = list(
-        langchain_client.list_examples(dataset_id=dataset.id, splits=["test"])
-    )
-    assert len(example_list) == 1
-
-    example_list = list(
-        langchain_client.list_examples(dataset_id=dataset.id, splits=["train"])
-    )
-    assert len(example_list) == 4
-
-    langchain_client.create_example(
-        inputs={"text": "What's up!"},
-        outputs={"label": "Not toxic"},
-        metadata={"foo": "bar", "baz": "qux"},
-        dataset_name=dataset_name,
-    )
-
-    example_list = list(langchain_client.list_examples(dataset_id=dataset.id))
-    assert len(example_list) == len(examples) + 1
-
-    example_list = list(
-        langchain_client.list_examples(dataset_id=dataset.id, metadata={"foo": "bar"})
-    )
-    assert len(example_list) == 1
-
-    example_list = list(
-        langchain_client.list_examples(dataset_id=dataset.id, metadata={"baz": "qux"})
-    )
-    assert len(example_list) == 1
-
-    example_list = list(
-        langchain_client.list_examples(
-            dataset_id=dataset.id, metadata={"foo": "bar", "baz": "qux"}
+    try:
+        inputs, outputs, splits = zip(
+            *[
+                ({"text": text}, {"label": label}, split)
+                for text, label, split in examples
+            ]
         )
-    )
-    assert len(example_list) == 1
-
-    example_list = list(
-        langchain_client.list_examples(
-            dataset_id=dataset.id, metadata={"foo": "bar", "baz": "quux"}
+        langchain_client.create_examples(
+            inputs=inputs, outputs=outputs, splits=splits, dataset_id=dataset.id
         )
-    )
-    assert len(example_list) == 0
 
-    example_list = list(
-        langchain_client.list_examples(
-            dataset_id=dataset.id, filter='exists(metadata, "baz")'
+        batch1 = [
+            ListReq("all", {}),
+            ListReq("offset_limit", {"offset": 1, "limit": 2}),
+            ListReq("offset_only", {"offset": 1}),
+            ListReq("train", {"splits": ["train"]}),
+            ListReq("validation", {"splits": ["validation"]}),
+            ListReq("test", {"splits": ["test"]}),
+            ListReq("train_test", {"splits": ["train", "test"]}),
+        ]
+
+        with ThreadPoolExecutor(max_workers=min(8, len(batch1))) as tp:
+            results1 = dict(
+                tp.map(lambda r: _fetch_list(langchain_client, dataset.id, r), batch1)
+            )
+
+        assert len(results1["all"]) == len(examples)
+        assert len(results1["offset_limit"]) == 2
+        assert len(results1["offset_only"]) == len(examples) - 1
+        assert len(results1["train"]) == 3
+        assert len(results1["validation"]) == 1
+        assert len(results1["test"]) == 2
+        assert len(results1["train_test"]) == 5
+
+        example_list_train_test = results1["train_test"]
+        to_move = [
+            ex.id
+            for ex in example_list_train_test
+            if ex.metadata is not None
+            and "test" in ex.metadata.get("dataset_split", [])
+        ][0]
+
+        langchain_client.update_example(example_id=to_move, split="train")
+
+        batch2 = [
+            ListReq("test_after_move", {"splits": ["test"]}),
+            ListReq("train_after_move", {"splits": ["train"]}),
+        ]
+        with ThreadPoolExecutor(max_workers=len(batch2)) as tp:
+            results2 = dict(
+                tp.map(lambda r: _fetch_list(langchain_client, dataset.id, r), batch2)
+            )
+
+        assert len(results2["test_after_move"]) == 1
+        assert len(results2["train_after_move"]) == 4
+
+        langchain_client.create_example(
+            inputs={"text": "What's up!"},
+            outputs={"label": "Not toxic"},
+            metadata={"foo": "bar", "baz": "qux"},
+            dataset_name=dataset_name,
         )
-    )
-    assert len(example_list) == 1
 
-    example_list = list(
-        langchain_client.list_examples(
-            dataset_id=dataset.id, filter='has("metadata", \'{"foo": "bar"}\')'
-        )
-    )
-    assert len(example_list) == 1
+        batch3 = [
+            ListReq("all_after_create", {}),
+            ListReq("meta_foo", {"metadata": {"foo": "bar"}}),
+            ListReq("meta_baz", {"metadata": {"baz": "qux"}}),
+            ListReq("meta_both", {"metadata": {"foo": "bar", "baz": "qux"}}),
+            ListReq("meta_miss", {"metadata": {"foo": "bar", "baz": "quux"}}),
+            ListReq("filter_exists_baz", {"filter": 'exists(metadata, "baz")'}),
+            ListReq(
+                "filter_has_foo", {"filter": 'has("metadata", \'{"foo": "bar"}\')'}
+            ),
+            ListReq("filter_exists_bazzz", {"filter": 'exists(metadata, "bazzz")'}),
+        ]
+        with ThreadPoolExecutor(max_workers=min(8, len(batch3))) as tp:
+            results3 = dict(
+                tp.map(lambda r: _fetch_list(langchain_client, dataset.id, r), batch3)
+            )
 
-    example_list = list(
-        langchain_client.list_examples(
-            dataset_id=dataset.id, filter='exists(metadata, "bazzz")'
-        )
-    )
-    assert len(example_list) == 0
+        assert len(results3["all_after_create"]) == len(examples) + 1
+        assert len(results3["meta_foo"]) == 1
+        assert len(results3["meta_baz"]) == 1
+        assert len(results3["meta_both"]) == 1
+        assert len(results3["meta_miss"]) == 0
+        assert len(results3["filter_exists_baz"]) == 1
+        assert len(results3["filter_has_foo"]) == 1
+        assert len(results3["filter_exists_bazzz"]) == 0
 
-    safe_delete_dataset(langchain_client, dataset_id=dataset.id)
+    finally:
+        safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
 @pytest.mark.slow

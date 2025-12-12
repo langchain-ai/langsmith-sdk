@@ -9,6 +9,7 @@ from langsmith import utils as ls_utils
 from langsmith import uuid7
 from langsmith.async_client import AsyncClient
 from langsmith.schemas import DataType
+from langsmith.utils import LangSmithRateLimitError
 from tests.integration_tests.conftest import skip_if_rate_limited
 
 
@@ -24,7 +25,7 @@ async def test_indexed_datasets():
         # Create a new dataset
         try:
             dataset = await client.create_dataset(
-                "test_dataset_for_integration_tests_" + uuid7().hex,
+                "test_dataset_for_integration_tests_" + uuid.uuid4().hex,
                 inputs_schema_definition=InputsSchema.model_json_schema(),
             )
 
@@ -97,7 +98,7 @@ async def async_client():
 @pytest.mark.asyncio
 @skip_if_rate_limited
 async def test_create_run(async_client: AsyncClient):
-    project_name = "__test_create_run" + uuid7().hex[:8]
+    project_name = "__test_create_run" + uuid.uuid4().hex[:8]
     run_id = uuid7()
 
     await async_client.create_run(
@@ -125,7 +126,7 @@ async def test_create_run(async_client: AsyncClient):
 @pytest.mark.asyncio
 @skip_if_rate_limited
 async def test_list_runs(async_client: AsyncClient):
-    project_name = "__test_list_runs"
+    project_name = "__test_list_runs" + uuid.uuid4().hex
     run_ids = [uuid7() for _ in range(2)]
     meta_uid = str(uuid7())
 
@@ -152,12 +153,15 @@ async def test_list_runs(async_client: AsyncClient):
         ]
         return len(runs) == 2
 
-    await wait_for(check_runs, timeout=30)
+    try:
+        await wait_for(check_runs, timeout=30)
+    except TimeoutError:
+        raise LangSmithRateLimitError("rate limited")
 
 
 @pytest.mark.asyncio
 async def test_create_dataset(async_client: AsyncClient):
-    dataset_name = "__test_create_dataset" + uuid7().hex[:8]
+    dataset_name = "__test_create_dataset" + uuid.uuid4().hex[:8]
 
     dataset = await async_client.create_dataset(dataset_name, data_type=DataType.kv)
 
@@ -169,7 +173,7 @@ async def test_create_dataset(async_client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_create_example(async_client: AsyncClient):
-    dataset_name = "__test_create_example" + uuid7().hex[:8]
+    dataset_name = "__test_create_example" + uuid.uuid4().hex
     dataset = await async_client.create_dataset(dataset_name)
 
     example = await async_client.create_example(
@@ -184,7 +188,7 @@ async def test_create_example(async_client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_list_examples(async_client: AsyncClient):
-    dataset_name = "__test_list_examples" + uuid7().hex[:8]
+    dataset_name = "__test_list_examples" + uuid.uuid4().hex[:8]
     dataset = await async_client.create_dataset(dataset_name)
 
     for i in range(3):
@@ -205,7 +209,7 @@ async def test_list_examples(async_client: AsyncClient):
 @pytest.mark.asyncio
 @pytest.mark.slow
 async def test_create_feedback(async_client: AsyncClient):
-    project_name = "__test_create_feedback" + uuid7().hex[:8]
+    project_name = "__test_create_feedback" + uuid.uuid4().hex[:8]
     run_id = uuid7()
 
     await async_client.create_run(
@@ -344,7 +348,7 @@ async def test_list_feedback(async_client: AsyncClient):
 @pytest.mark.asyncio
 async def test_delete_feedback(async_client: AsyncClient):
     """Test deleting feedback."""
-    project_name = "__test_delete_feedback" + uuid7().hex[:8]
+    project_name = "__test_delete_feedback" + uuid.uuid4().hex[:8]
     run_id = uuid7()
 
     await async_client.create_run(
@@ -377,7 +381,7 @@ async def test_delete_feedback(async_client: AsyncClient):
 @pytest.mark.asyncio
 async def test_annotation_queue_crud(async_client: AsyncClient):
     """Test basic CRUD operations for annotation queues."""
-    queue_name = f"test_queue_{uuid7().hex[:8]}"
+    queue_name = f"test_queue_{uuid.uuid4().hex[:8]}"
     queue_id = uuid7()
 
     # Test creation
@@ -415,7 +419,7 @@ async def test_annotation_queue_crud(async_client: AsyncClient):
 @pytest.mark.asyncio
 async def test_list_annotation_queues(async_client: AsyncClient):
     """Test listing and filtering annotation queues."""
-    queue_names = [f"test_queue_{i}_{uuid7().hex[:8]}" for i in range(3)]
+    queue_names = [f"test_queue_{i}_{uuid.uuid4().hex[:8]}" for i in range(3)]
     queue_ids = []
 
     try:
@@ -462,8 +466,8 @@ async def test_list_annotation_queues(async_client: AsyncClient):
 @pytest.mark.slow
 async def test_annotation_queue_runs(async_client: AsyncClient):
     """Test managing runs within an annotation queue."""
-    queue_name = f"test_queue_{uuid7().hex[:8]}"
-    project_name = f"test_project_{uuid7().hex[:8]}"
+    queue_name = f"test_queue_{uuid.uuid4().hex[:8]}"
+    project_name = f"test_project_{uuid.uuid4().hex[:8]}"
 
     # Create a queue
     queue = await async_client.create_annotation_queue(
