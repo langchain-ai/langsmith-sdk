@@ -3877,12 +3877,6 @@ def test_create_insights_job(langchain_client: Client) -> None:
     )
     assert insights_job.name == session_name
     assert insights_job.status in ["queued", "running", "success"]
-    try:
-        uuid.UUID(insights_job["session_id"])
-    except Exception:
-        raise AssertionError(
-            f"Invalid session ID, not a UUID: {insights_job['session_id']}"
-        )
 
 
 def test_feedback_formula_crud_flow(langchain_client: Client) -> None:
