@@ -280,7 +280,7 @@ def test_list_examples(langchain_client: Client) -> None:
         ("This is unacceptable. I want to speak to the manager.", "Not toxic", None),
     ]
 
-    dataset_name = "__test_list_examples" + uuid7().hex[:4]
+    dataset_name = "__test_list_examples" + uuid7().hex
     dataset = _create_dataset(langchain_client, dataset_name)
     inputs, outputs, splits = zip(
         *[({"text": text}, {"label": label}, split) for text, label, split in examples]
@@ -405,7 +405,7 @@ def test_similar_examples(langchain_client: Client) -> None:
         {"response": "ta ta"},
         {"response": "tootles"},
     ]
-    dataset_name = "__test_similar_examples" + uuid7().hex[:4]
+    dataset_name = "__test_similar_examples" + uuid7().hex
     if langchain_client.has_dataset(dataset_name=dataset_name):
         safe_delete_dataset(langchain_client, dataset_name=dataset_name)
     dataset = langchain_client.create_dataset(
@@ -460,7 +460,7 @@ def test_similar_examples(langchain_client: Client) -> None:
 @pytest.mark.skip(reason="This test is flaky")
 def test_persist_update_run(langchain_client: Client) -> None:
     """Test the persist and update methods work as expected."""
-    project_name = "__test_persist_update_run" + uuid7().hex[:4]
+    project_name = "__test_persist_update_run" + uuid7().hex
     if langchain_client.has_project(project_name):
         langchain_client.delete_project(project_name=project_name)
     try:
@@ -495,7 +495,7 @@ def test_persist_update_run(langchain_client: Client) -> None:
 
 def test_update_run_attachments(langchain_client: Client) -> None:
     """Test the persist and update methods work as expected."""
-    project_name = "__test_update_run_attachments" + uuid7().hex[:4]
+    project_name = "__test_update_run_attachments" + uuid7().hex
     if langchain_client.has_project(project_name):
         langchain_client.delete_project(project_name=project_name)
     try:
@@ -539,7 +539,7 @@ def test_error_surfaced_invalid_uri(uri: str) -> None:
 
 def test_upload_examples_multipart(langchain_client: Client):
     """Test uploading examples with attachments via multipart endpoint."""
-    dataset_name = "__test_upload_examples_multipart" + uuid7().hex[:4]
+    dataset_name = "__test_upload_examples_multipart" + uuid7().hex
     dataset = _create_dataset(langchain_client, dataset_name)
 
     # Test example with all fields
@@ -619,7 +619,7 @@ def test_upload_examples_multipart(langchain_client: Client):
 
 def test_update_example_preserves_existing_inputs_outputs(langchain_client: Client):
     """Test update example with omitted inputs/outputs preserves existing values."""
-    dataset_name = "__test_update_preserve_values" + uuid7().hex[:4]
+    dataset_name = "__test_update_preserve_values" + uuid7().hex
     dataset = _create_dataset(langchain_client, dataset_name)
 
     # Create an example with both inputs and outputs
@@ -676,7 +676,7 @@ def test_update_example_preserves_existing_inputs_outputs(langchain_client: Clie
 
 
 def test_create_dataset(langchain_client: Client) -> None:
-    dataset_name = "__test_create_dataset" + uuid7().hex[:4]
+    dataset_name = "__test_create_dataset" + uuid7().hex
     if langchain_client.has_dataset(dataset_name=dataset_name):
         safe_delete_dataset(langchain_client, dataset_name=dataset_name)
     dataset = langchain_client.create_dataset(dataset_name, data_type=DataType.llm)
@@ -720,7 +720,7 @@ def test_create_dataset(langchain_client: Client) -> None:
 
 
 def test_dataset_schema_validation(langchain_client: Client) -> None:
-    dataset_name = "__test_create_dataset" + uuid7().hex[:4]
+    dataset_name = "__test_create_dataset" + uuid7().hex
     if langchain_client.has_dataset(dataset_name=dataset_name):
         safe_delete_dataset(langchain_client, dataset_name=dataset_name)
 
@@ -783,8 +783,8 @@ def test_dataset_schema_validation(langchain_client: Client) -> None:
 
 @freeze_time("2023-01-01")
 def test_list_datasets(langchain_client: Client) -> None:
-    ds1n = "__test_list_datasets1" + uuid7().hex[:4]
-    ds2n = "__test_list_datasets2" + uuid7().hex[:4]
+    ds1n = "__test_list_datasets1" + uuid7().hex
+    ds2n = "__test_list_datasets2" + uuid7().hex
     try:
         dataset1 = langchain_client.create_dataset(
             ds1n, data_type=DataType.llm, metadata={"foo": "barqux"}
@@ -847,7 +847,7 @@ def test_list_datasets(langchain_client: Client) -> None:
 def test_create_run_with_masked_inputs_outputs(
     langchain_client: Client, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    project_name = "__test_create_run_with_masked_inputs_outputs" + uuid7().hex[:4]
+    project_name = "__test_create_run_with_masked_inputs_outputs" + uuid7().hex
     monkeypatch.setenv("LANGCHAIN_HIDE_INPUTS", "true")
     monkeypatch.setenv("LANGCHAIN_HIDE_OUTPUTS", "true")
     if langchain_client.has_project(project_name):
@@ -1638,7 +1638,7 @@ def test_slow_run_read_multipart(
 
 def test_list_examples_attachments_keys(langchain_client: Client) -> None:
     """Test list_examples returns same keys with and without attachments."""
-    dataset_name = "__test_list_examples_attachments" + uuid7().hex[:4]
+    dataset_name = "__test_list_examples_attachments" + uuid7().hex
     dataset = _create_dataset(langchain_client, dataset_name)
 
     langchain_client.upload_examples_multipart(
@@ -1677,7 +1677,7 @@ def test_list_examples_attachments_keys(langchain_client: Client) -> None:
 
 def test_mime_type_is_propogated(langchain_client: Client) -> None:
     """Test that the mime type is propogated correctly."""
-    dataset_name = "__test_mime_type_is_propogated" + uuid7().hex[:4]
+    dataset_name = "__test_mime_type_is_propogated" + uuid7().hex
     dataset = _create_dataset(langchain_client, dataset_name)
 
     langchain_client.upload_examples_multipart(
@@ -1706,7 +1706,7 @@ def test_mime_type_is_propogated(langchain_client: Client) -> None:
 
 def test_evaluate_mime_type_is_propogated(langchain_client: Client) -> None:
     """Test that the mime type is propogated correctly when evaluating."""
-    dataset_name = "__test_evaluate_mime_type_is_propogated" + uuid7().hex[:4]
+    dataset_name = "__test_evaluate_mime_type_is_propogated" + uuid7().hex
     dataset = _create_dataset(langchain_client, dataset_name)
 
     langchain_client.upload_examples_multipart(
@@ -1745,7 +1745,7 @@ def test_evaluate_mime_type_is_propogated(langchain_client: Client) -> None:
 
 async def test_aevaluate_mime_type_is_propogated(langchain_client: Client) -> None:
     """Test that the mime type is propogated correctly when evaluating."""
-    dataset_name = "__test_evaluate_mime_type_is_propogated" + uuid7().hex[:4]
+    dataset_name = "__test_evaluate_mime_type_is_propogated" + uuid7().hex
     dataset = _create_dataset(langchain_client, dataset_name)
 
     langchain_client.upload_examples_multipart(
@@ -1788,7 +1788,7 @@ def test_evaluate_with_attachments_multiple_evaluators(
     langchain_client: Client,
 ) -> None:
     """Test evaluating examples with attachments and multiple evaluators."""
-    dataset_name = "__test_evaluate_attachments_multiple" + uuid7().hex[:4]
+    dataset_name = "__test_evaluate_attachments_multiple" + uuid7().hex
     dataset = _create_dataset(langchain_client, dataset_name)
 
     # 2. Create example with attachments
@@ -1853,7 +1853,7 @@ def test_evaluate_with_attachments_multiple_evaluators(
 
 def test_evaluate_with_attachments(langchain_client: Client) -> None:
     """Test evaluating examples with attachments."""
-    dataset_name = "__test_evaluate_attachments" + uuid7().hex[:4]
+    dataset_name = "__test_evaluate_attachments" + uuid7().hex
     dataset = _create_dataset(langchain_client, dataset_name)
 
     # 2. Create example with attachments
@@ -1904,7 +1904,7 @@ def test_evaluate_with_attachments(langchain_client: Client) -> None:
 
 def test_evaluate_with_attachments_not_in_target(langchain_client: Client) -> None:
     """Test evaluating examples with attachments."""
-    dataset_name = "__test_evaluate_attachments" + uuid7().hex[:4]
+    dataset_name = "__test_evaluate_attachments" + uuid7().hex
     dataset = _create_dataset(langchain_client, dataset_name)
 
     example = ExampleCreate(
@@ -1959,7 +1959,7 @@ def test_evaluate_with_attachments_not_in_target(langchain_client: Client) -> No
 
 def test_evaluate_with_no_attachments(langchain_client: Client) -> None:
     """Test evaluating examples without attachments using a target with attachments."""
-    dataset_name = "__test_evaluate_no_attachments" + uuid7().hex[:4]
+    dataset_name = "__test_evaluate_no_attachments" + uuid7().hex
     dataset = _create_dataset(langchain_client, dataset_name)
 
     # Create example using old way, attachments should be set to {}
@@ -2002,7 +2002,7 @@ def test_evaluate_with_no_attachments(langchain_client: Client) -> None:
 
 async def test_aevaluate_with_attachments(langchain_client: Client) -> None:
     """Test evaluating examples with attachments."""
-    dataset_name = "__test_aevaluate_attachments" + uuid7().hex[:4]
+    dataset_name = "__test_aevaluate_attachments" + uuid7().hex
     dataset = _create_dataset(langchain_client, dataset_name)
 
     examples = [
@@ -2074,7 +2074,7 @@ async def test_aevaluate_with_attachments_not_in_target(
     langchain_client: Client,
 ) -> None:
     """Test evaluating examples with attachments."""
-    dataset_name = "__test_aevaluate_attachments" + uuid7().hex[:4]
+    dataset_name = "__test_aevaluate_attachments" + uuid7().hex
     dataset = _create_dataset(langchain_client, dataset_name)
 
     example = ExampleCreate(
@@ -2117,7 +2117,7 @@ async def test_aevaluate_with_attachments_not_in_target(
 
 async def test_aevaluate_with_no_attachments(langchain_client: Client) -> None:
     """Test evaluating examples without attachments using a target with attachments."""
-    dataset_name = "__test_aevaluate_no_attachments" + uuid7().hex[:4]
+    dataset_name = "__test_aevaluate_no_attachments" + uuid7().hex
     dataset = _create_dataset(langchain_client, dataset_name)
 
     # Create example using old way, attachments should be set to {}
@@ -2162,7 +2162,7 @@ async def test_aevaluate_with_no_attachments(langchain_client: Client) -> None:
 
 def test_examples_length_validation(langchain_client: Client) -> None:
     """Test that mismatched lengths raise ValueError for create and update examples."""
-    dataset_name = "__test_examples_length_validation" + uuid7().hex[:4]
+    dataset_name = "__test_examples_length_validation" + uuid7().hex
     dataset = _create_dataset(langchain_client, dataset_name)
 
     # Test create_examples validation
@@ -2203,7 +2203,7 @@ def test_examples_length_validation(langchain_client: Client) -> None:
 
 def test_new_create_example(parameterized_multipart_client: Client) -> None:
     """Test create_examples works with multipart style input."""
-    dataset_name = "__test_update_examples_output" + uuid7().hex[:4]
+    dataset_name = "__test_update_examples_output" + uuid7().hex
     dataset = _create_dataset(parameterized_multipart_client, dataset_name)
 
     supports_attachments = (
@@ -2243,7 +2243,7 @@ def test_new_create_example(parameterized_multipart_client: Client) -> None:
 
 def test_new_create_examples(parameterized_multipart_client: Client) -> None:
     """Test create_examples works with multipart style input."""
-    dataset_name = "__test_update_examples_output" + uuid7().hex[:4]
+    dataset_name = "__test_update_examples_output" + uuid7().hex
     dataset = _create_dataset(parameterized_multipart_client, dataset_name)
 
     supports_attachments = (
@@ -2313,7 +2313,7 @@ def test_new_create_examples(parameterized_multipart_client: Client) -> None:
 
 def test_new_update_examples(parameterized_multipart_client: Client) -> None:
     """Test update_examples works with multipart style input."""
-    dataset_name = "__test_update_examples_output" + uuid7().hex[:4]
+    dataset_name = "__test_update_examples_output" + uuid7().hex
     dataset = _create_dataset(parameterized_multipart_client, dataset_name)
 
     supports_attachments = (
@@ -2402,8 +2402,8 @@ def test_new_update_examples(parameterized_multipart_client: Client) -> None:
 
 def test_update_examples_multiple_datasets(langchain_client: Client) -> None:
     """Test update_examples does not work with multiple datasets."""
-    dataset_name1 = "__test_update_examples_output" + uuid7().hex[:4]
-    dataset_name2 = "__test_update_examples_output" + uuid7().hex[:4]
+    dataset_name1 = "__test_update_examples_output" + uuid7().hex
+    dataset_name2 = "__test_update_examples_output" + uuid7().hex
     dataset1 = _create_dataset(langchain_client, dataset_name1)
     dataset2 = _create_dataset(langchain_client, dataset_name2)
 
@@ -2470,7 +2470,7 @@ def test_update_examples_multiple_datasets(langchain_client: Client) -> None:
 
 @pytest.mark.xfail(reason="Need to wait for backend changes to go endpoint")
 def test_use_source_run_io(langchain_client: Client) -> None:
-    dataset_name = "__test_use_source_run_io" + uuid7().hex[:4]
+    dataset_name = "__test_use_source_run_io" + uuid7().hex
     dataset = _create_dataset(langchain_client, dataset_name)
 
     run_id = uuid7()
@@ -2500,7 +2500,7 @@ def test_use_source_run_io(langchain_client: Client) -> None:
 
 @pytest.mark.xfail(reason="Need to wait for backend changes to go endpoint")
 def test_use_source_run_attachments(langchain_client: Client) -> None:
-    dataset_name = "__test_use_source_run_attachments" + uuid7().hex[:4]
+    dataset_name = "__test_use_source_run_attachments" + uuid7().hex
     dataset = _create_dataset(langchain_client, dataset_name)
 
     run_id = uuid7()
@@ -2561,7 +2561,7 @@ def test_use_source_run_attachments(langchain_client: Client) -> None:
 
 def test_create_examples_xor_dataset_args(langchain_client: Client) -> None:
     """Test create_examples fails if both dataset_name and dataset_id are provided."""
-    dataset_name = "__test_create_examples_xor_dataset_args" + uuid7().hex[:4]
+    dataset_name = "__test_create_examples_xor_dataset_args" + uuid7().hex
     dataset = _create_dataset(langchain_client, dataset_name)
 
     with pytest.raises(
@@ -2579,7 +2579,7 @@ def test_create_examples_xor_dataset_args(langchain_client: Client) -> None:
 
 def test_must_pass_uploads_or_inputs(langchain_client: Client) -> None:
     """Test create_examples fails if no uploads or inputs are provided."""
-    dataset_name = "__test_must_pass_uploads_or_inputs" + uuid7().hex[:4]
+    dataset_name = "__test_must_pass_uploads_or_inputs" + uuid7().hex
     dataset = _create_dataset(langchain_client, dataset_name)
 
     with pytest.raises(ValueError, match="Must specify either 'examples' or 'inputs.'"):
@@ -2591,7 +2591,7 @@ def test_must_pass_uploads_or_inputs(langchain_client: Client) -> None:
 
 def test_create_examples_errors(langchain_client: Client) -> None:
     """Test create_examples fails in a number of cases."""
-    dataset_name = "__test_create_examples_errors" + uuid7().hex[:4]
+    dataset_name = "__test_create_examples_errors" + uuid7().hex
     dataset = _create_dataset(langchain_client, dataset_name)
     with pytest.raises(
         ValueError, match="Cannot specify 'outputs' when 'examples' is specified."
@@ -2606,7 +2606,7 @@ def test_create_examples_errors(langchain_client: Client) -> None:
 
 def test_create_examples_batching(parameterized_multipart_client: Client) -> None:
     """Test create_examples batching with large numbers of examples."""
-    dataset_name = "__test_batching_" + uuid7().hex[:4]
+    dataset_name = "__test_batching_" + uuid7().hex
     dataset = _create_dataset(parameterized_multipart_client, dataset_name)
 
     # Test batching with 250 examples (> default batch_size=200)
@@ -2632,7 +2632,7 @@ def test_create_examples_large_multipart_batching(
     parameterized_multipart_client: Client,
 ) -> None:
     """Test create_examples batching with large multipart payloads."""
-    dataset_name = "__test_large_multipart_" + uuid7().hex[:4]
+    dataset_name = "__test_large_multipart_" + uuid7().hex
     dataset = _create_dataset(parameterized_multipart_client, dataset_name)
 
     # Create examples with large attachments to simulate >100MB payload
@@ -2670,7 +2670,7 @@ def test_create_examples_large_multipart_batching_parallel(
     parameterized_multipart_client: Client,
 ) -> None:
     """Test create_examples batching with large multipart payloads in parallel."""
-    dataset_name = "__test_large_multipart_" + uuid7().hex[:4]
+    dataset_name = "__test_large_multipart_" + uuid7().hex
     dataset = _create_dataset(parameterized_multipart_client, dataset_name)
 
     # Create examples with large attachments to simulate >100MB payload
@@ -2708,7 +2708,7 @@ def test_create_examples_invalid_max_concurrency(
     parameterized_multipart_client: Client,
 ) -> None:
     """Test that invalid max_concurrency values raise errors."""
-    dataset_name = "__test_invalid_concurrency_" + uuid7().hex[:4]
+    dataset_name = "__test_invalid_concurrency_" + uuid7().hex
     dataset = _create_dataset(parameterized_multipart_client, dataset_name)
     examples = [{"inputs": {"q": "Q1"}, "outputs": {"a": "A1"}}]
 
@@ -2731,7 +2731,7 @@ def test_create_examples_boundary_concurrency(
     parameterized_multipart_client: Client,
 ) -> None:
     """Test max_concurrency boundary values (1 and 3)."""
-    dataset_name = "__test_boundary_" + uuid7().hex[:4]
+    dataset_name = "__test_boundary_" + uuid7().hex
     dataset = _create_dataset(parameterized_multipart_client, dataset_name)
     examples = [
         {"inputs": {"q": f"Q{i}"}, "outputs": {"a": f"A{i}"}} for i in range(50)
@@ -2763,7 +2763,7 @@ def test_create_examples_boundary_concurrency(
 
 def test_create_examples_empty_list(parameterized_multipart_client: Client) -> None:
     """Test create_examples with empty list."""
-    dataset_name = "__test_empty_" + uuid7().hex[:4]
+    dataset_name = "__test_empty_" + uuid7().hex
     dataset = _create_dataset(parameterized_multipart_client, dataset_name)
 
     # Test max_concurrency > 3
@@ -2775,7 +2775,7 @@ def test_create_examples_empty_list(parameterized_multipart_client: Client) -> N
 
 @pytest.mark.xfail(reason="Need to wait for backend changes to go endpoint")
 def test_use_source_run_io_multiple_examples(langchain_client: Client) -> None:
-    dataset_name = "__test_use_source_run_io" + uuid7().hex[:4]
+    dataset_name = "__test_use_source_run_io" + uuid7().hex
     dataset = _create_dataset(langchain_client, dataset_name)
 
     run_id = uuid7()
@@ -2848,7 +2848,7 @@ def test_use_source_run_io_multiple_examples(langchain_client: Client) -> None:
 
 def test_update_example_with_attachments_operations(langchain_client: Client) -> None:
     """Test updating an example with attachment operations."""
-    dataset_name = "__test_update_example_attachments" + uuid7().hex[:4]
+    dataset_name = "__test_update_example_attachments" + uuid7().hex
     if langchain_client.has_dataset(dataset_name=dataset_name):
         safe_delete_dataset(langchain_client, dataset_name=dataset_name)
     dataset = _create_dataset(langchain_client, dataset_name)
@@ -2920,7 +2920,7 @@ def test_bulk_update_examples_with_attachments_operations(
     langchain_client: Client,
 ) -> None:
     """Test bulk updating examples with attachment operations."""
-    dataset_name = "__test_bulk_update_attachments" + uuid7().hex[:4]
+    dataset_name = "__test_bulk_update_attachments" + uuid7().hex
     if langchain_client.has_dataset(dataset_name=dataset_name):
         safe_delete_dataset(langchain_client, dataset_name=dataset_name)
     dataset = _create_dataset(langchain_client, dataset_name)
@@ -3003,7 +3003,7 @@ def test_examples_multipart_attachment_path(
     langchain_client: Client, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Test uploading examples with attachments via multipart endpoint."""
-    dataset_name = "__test_upload_examples_multipart" + uuid7().hex[:4]
+    dataset_name = "__test_upload_examples_multipart" + uuid7().hex
     dataset = _create_dataset(langchain_client, dataset_name)
 
     file_path = Path(__file__).parent / "test_data/parrot-icon.png"
@@ -3127,7 +3127,7 @@ def test_examples_multipart_attachment_path(
 
 def test_update_examples_multipart(langchain_client: Client) -> None:
     """Test updating examples with attachments via multipart endpoint."""
-    dataset_name = "__test_update_examples_multipart" + uuid7().hex[:4]
+    dataset_name = "__test_update_examples_multipart" + uuid7().hex
     dataset = _create_dataset(langchain_client, dataset_name)
     example_ids = [uuid7() for _ in range(2)]
 
@@ -3279,7 +3279,7 @@ def test_update_examples_multipart(langchain_client: Client) -> None:
 
 async def test_aevaluate_max_concurrency(langchain_client: Client) -> None:
     """Test max concurrency works as expected."""
-    dataset_name = "__test_a_ton_of_feedback" + uuid7().hex[:4]
+    dataset_name = "__test_a_ton_of_feedback" + uuid7().hex
     dataset = _create_dataset(langchain_client, dataset_name)
 
     examples = [
@@ -3388,6 +3388,7 @@ def test_list_annotation_queues(langchain_client: Client):
             langchain_client.delete_annotation_queue(queue_id)
 
 
+@pytest.mark.slow
 def test_annotation_queue_runs(langchain_client: Client):
     """Test managing runs within an annotation queue."""
     queue_name = f"test_queue_{uuid7().hex[:8]}"
@@ -3766,7 +3767,7 @@ def test_otel_trace_attributes(monkeypatch: pytest.MonkeyPatch):
 
 def test_get_experiment_results(langchain_client: Client) -> None:
     """Test get_experiment_results method with evaluation data."""
-    dataset_name = "__test_evaluate_attachments" + uuid7().hex[:4]
+    dataset_name = "__test_evaluate_attachments" + uuid7().hex
     dataset = _create_dataset(langchain_client, dataset_name)
 
     # Create example with attachments

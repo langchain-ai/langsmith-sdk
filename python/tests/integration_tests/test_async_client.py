@@ -203,7 +203,7 @@ async def test_list_examples(async_client: AsyncClient):
 
 
 @pytest.mark.asyncio
-@skip_if_rate_limited
+@pytest.mark.slow
 async def test_create_feedback(async_client: AsyncClient):
     project_name = "__test_create_feedback" + uuid7().hex[:8]
     run_id = uuid7()
@@ -459,6 +459,7 @@ async def test_list_annotation_queues(async_client: AsyncClient):
 
 
 @pytest.mark.asyncio
+@pytest.mark.slow
 async def test_annotation_queue_runs(async_client: AsyncClient):
     """Test managing runs within an annotation queue."""
     queue_name = f"test_queue_{uuid7().hex[:8]}"

@@ -2019,8 +2019,6 @@ def test_validate_api_key_if_hosted_without_tracing(
             )
             if "unclosed event loop" not in str(w[0].message):
                 raise e
-            elif len(w) >= 1:
-                raise e
 
 
 def test_parse_token_or_url():

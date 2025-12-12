@@ -49,7 +49,7 @@ jobs:
           fi
 
   python_integration_test:
-    name: Python ${{ matrix.test-type }} Test
+    name: Python ${{ matrix.test-type }} Test ${{ matrix.shard_index }}
     needs: changed_files
     if: >
       (github.event_name == 'push') ||
@@ -86,7 +86,7 @@ jobs:
         working-directory: python
     steps:
       - uses: actions/checkout@v4
-      - name: Run Python ${{ matrix.test-type }}
+      - name: Run Python ${{ matrix.test-type }}-${{ matrix.shard_index }}
         uses: ./.github/actions/python-integration-tests
         with:
           python-version: 3.11
