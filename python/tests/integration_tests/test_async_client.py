@@ -94,6 +94,7 @@ async def async_client():
 
 
 @pytest.mark.asyncio
+@skip_if_rate_limited
 async def test_create_run(async_client: AsyncClient):
     project_name = "__test_create_run" + uuid.uuid4().hex[:8]
     run_id = uuid.uuid4()
