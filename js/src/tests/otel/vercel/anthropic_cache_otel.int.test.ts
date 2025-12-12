@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from "uuid";
 
 import { Client } from "../../../client.js";
 import { traceable } from "../../../traceable.js";
-import { generateLongContext } from "../../vercel/utils.js";
+import { generateLongContext } from "../../utils.js";
 
 // Initialize basic OTEL setup
 import { initializeOTEL } from "../../../experimental/otel/setup.js";

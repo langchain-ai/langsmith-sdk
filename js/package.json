@@ -1,6 +1,6 @@
 {
   "name": "langsmith",
-  "version": "0.3.82",
+  "version": "0.3.86",
   "description": "Client library to connect to the LangSmith Observability and Evaluation Platform.",
   "packageManager": "yarn@1.22.19",
   "files": [
@@ -61,6 +61,10 @@
     "anonymizer.js",
     "anonymizer.d.ts",
     "anonymizer.d.cts",
+    "wrappers/anthropic.cjs",
+    "wrappers/anthropic.js",
+    "wrappers/anthropic.d.ts",
+    "wrappers/anthropic.d.cts",
     "wrappers/openai.cjs",
     "wrappers/openai.js",
     "wrappers/openai.d.ts",
@@ -150,6 +154,7 @@
   "devDependencies": {
     "@ai-sdk/anthropic": "^2.0.17",
     "@ai-sdk/openai": "^2.0.23",
+    "@anthropic-ai/sdk": "^0.71.2",
     "@babel/preset-env": "^7.22.4",
     "@faker-js/faker": "^8.4.1",
     "@jest/globals": "^29.5.0",
@@ -351,6 +356,15 @@
       },
       "import": "./anonymizer.js",
       "require": "./anonymizer.cjs"
+    },
+    "./wrappers/anthropic": {
+      "types": {
+        "import": "./wrappers/anthropic.d.ts",
+        "require": "./wrappers/anthropic.d.cts",
+        "default": "./wrappers/anthropic.d.ts"
+      },
+      "import": "./wrappers/anthropic.js",
+      "require": "./wrappers/anthropic.cjs"
     },
     "./wrappers/openai": {
       "types": {

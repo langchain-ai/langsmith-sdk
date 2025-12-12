@@ -16,7 +16,10 @@ type OpenAIType = {
     completions: {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       create: (...args: any[]) => any;
-      parse: (...args: any[]) => any;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      parse?: (...args: any[]) => any;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      stream?: (...args: any[]) => any;
     };
   };
   completions: {
@@ -437,6 +440,40 @@ export const wrapOpenAI = <T extends OpenAIType>(
     }
   }
 
+  // Shared function to wrap stream methods (similar to wrapAnthropic)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const wrapStreamMethod = (originalStreamFn: (...args: any[]) => any) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return function (...args: any[]) {
+      const stream = originalStreamFn(...args);
+
+      // Helper to ensure stream is fully consumed before calling final methods
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const ensureStreamConsumed = (methodName: string) => {
+        if (methodName in stream && typeof stream[methodName] === "function") {
+          const originalMethod = stream[methodName].bind(stream);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          stream[methodName] = async (...args: any[]) => {
+            if ("done" in stream && typeof stream.done === "function") {
+              await stream.done();
+            }
+            for await (const _ of stream) {
+              // Finish consuming the stream if it has not already been consumed
+            }
+            return originalMethod(...args);
+          };
+        }
+      };
+
+      // Ensure stream is consumed for final methods
+      ensureStreamConsumed("finalChatCompletion");
+      ensureStreamConsumed("finalMessage");
+      ensureStreamConsumed("finalResponse");
+
+      return stream;
+    };
+  };
+
   tracedOpenAIClient.chat = {
     ...openai.chat,
     completions: Object.create(Object.getPrototypeOf(openai.chat.completions)),
@@ -455,6 +492,31 @@ export const wrapOpenAI = <T extends OpenAIType>(
   if (typeof openai.chat.completions.parse === "function") {
     tracedOpenAIClient.chat.completions.parse = traceable(
       openai.chat.completions.parse.bind(openai.chat.completions),
+      chatCompletionParseMetadata
+    );
+  }
+
+  // Wrap chat.completions.stream if it exists
+  if (typeof openai.chat.completions.stream === "function") {
+    tracedOpenAIClient.chat.completions.stream = traceable(
+      wrapStreamMethod(
+        openai.chat.completions.stream.bind(openai.chat.completions)
+      ),
+      chatCompletionParseMetadata
+    );
+  }
+
+  // Wrap beta.chat.completions.stream if it exists
+  if (
+    openai.beta &&
+    openai.beta.chat &&
+    openai.beta.chat.completions &&
+    typeof openai.beta.chat.completions.stream === "function"
+  ) {
+    tracedOpenAIClient.beta.chat.completions.stream = traceable(
+      wrapStreamMethod(
+        openai.beta.chat.completions.stream.bind(openai.beta.chat.completions)
+      ),
       chatCompletionParseMetadata
     );
   }
@@ -570,7 +632,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
       typeof tracedOpenAIClient.responses.stream === "function"
     ) {
       tracedOpenAIClient.responses.stream = traceable(
-        openai.responses.stream.bind(openai.responses),
+        wrapStreamMethod(openai.responses.stream.bind(openai.responses)),
         {
           name: chatName,
           run_type: "llm",

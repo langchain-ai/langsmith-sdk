@@ -21,6 +21,7 @@ const entrypoints = {
   "vitest/reporter": "vitest/reporter",
   wrappers: "wrappers/index",
   anonymizer: "anonymizer/index",
+  "wrappers/anthropic": "wrappers/anthropic",
   "wrappers/openai": "wrappers/openai",
   "wrappers/vercel": "wrappers/vercel",
   "singletons/traceable": "singletons/traceable",
@@ -31,15 +32,10 @@ const entrypoints = {
   "experimental/vercel": "experimental/vercel/index",
 };
 
-const defaultEntrypoints = [
-  "vitest/reporter"
-];
+const defaultEntrypoints = ["vitest/reporter"];
 
 // Easier to have mts files ignored by CJS build
-const hasMjs = [
-  "vitest/reporter",
-  "vitest",
-];
+const hasMjs = ["vitest/reporter", "vitest"];
 
 const updateJsonFile = (relativePath, updateFunction) => {
   const contents = fs.readFileSync(relativePath).toString();
@@ -53,7 +49,9 @@ const generateFiles = () => {
       const nrOfDots = key.split("/").length - 1;
       const relativePath = "../".repeat(nrOfDots) || "./";
       const compiledPath = `${relativePath}dist/${value}.js`;
-      const modulePath = hasMjs.includes(key) ? `${relativePath}dist/${value}.mjs` : compiledPath;
+      const modulePath = hasMjs.includes(key)
+        ? `${relativePath}dist/${value}.mjs`
+        : compiledPath;
       if (defaultEntrypoints.includes(key)) {
         return [
           [

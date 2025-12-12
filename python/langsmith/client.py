@@ -441,6 +441,7 @@ class Client:
         "_hide_inputs",
         "_hide_outputs",
         "_hide_metadata",
+        "_omit_traced_runtime_info",
         "_process_buffered_run_ops",
         "_run_ops_buffer_size",
         "_run_ops_buffer_timeout_ms",
@@ -482,6 +483,7 @@ class Client:
         hide_inputs: Optional[Union[Callable[[dict], dict], bool]] = None,
         hide_outputs: Optional[Union[Callable[[dict], dict], bool]] = None,
         hide_metadata: Optional[Union[Callable[[dict], dict], bool]] = None,
+        omit_traced_runtime_info: bool = False,
         process_buffered_run_ops: Optional[
             Callable[[Sequence[dict]], Sequence[dict]]
         ] = None,
@@ -531,6 +533,12 @@ class Client:
                 If `True`, hides the entire metadata.
 
                 If a function, applied to all run metadata when creating runs.
+            omit_traced_runtime_info (bool): Whether to omit runtime information from traced runs.
+
+                If `True`, runtime information (SDK version, platform, Python version, etc.)
+                will not be stored in the `extra.runtime` field of runs.
+
+                Defaults to `False`.
             process_buffered_run_ops (Optional[Callable[[Sequence[dict]], Sequence[dict]]]): A function applied to buffered run operations
                 that allows for modification of the raw run dicts before they are converted to multipart and compressed.
 
@@ -686,6 +694,7 @@ class Client:
             if hide_metadata is not None
             else ls_utils.get_env_var("HIDE_METADATA") == "true"
         )
+        self._omit_traced_runtime_info = omit_traced_runtime_info
         self._process_buffered_run_ops = process_buffered_run_ops
         self._run_ops_buffer_size = run_ops_buffer_size
         self._run_ops_buffer_timeout_ms = run_ops_buffer_timeout_ms or 5000
@@ -1446,8 +1455,9 @@ class Client:
 
         return run_create
 
-    @staticmethod
-    def _insert_runtime_env(runs: Sequence[dict]) -> None:
+    def _insert_runtime_env(self, runs: Sequence[dict]) -> None:
+        if self._omit_traced_runtime_info:
+            return
         runtime_env = ls_env.get_runtime_environment()
         for run_create in runs:
             run_extra = cast(dict, run_create.setdefault("extra", {}))
@@ -6001,25 +6011,53 @@ class Client:
         )
         ls_utils.raise_for_status_with_text(response)
 
-    def delete_examples(self, example_ids: Sequence[ID_TYPE]) -> None:
+    def delete_examples(
+        self, example_ids: Sequence[ID_TYPE], *, hard_delete: bool = False
+    ) -> None:
         """Delete multiple examples by ID.
 
         Parameters
         ----------
         example_ids : Sequence[ID_TYPE]
             The IDs of the examples to delete.
+        hard_delete : bool, default=False
+            If True, permanently delete the examples. If False, soft delete them.
         """
-        response = self.request_with_retries(
-            "DELETE",
-            "/examples",
-            headers={**self._headers, "Content-Type": "application/json"},
-            params={
+        if hard_delete:
+            # Hard delete uses POST to a different endpoint
+            # The platform endpoint is at /v1/platform/... instead of /api/v1/...
+            # So we need to use a different base URL
+            body = {
+                "example_ids": [
+                    str(_as_uuid(id_, f"example_ids[{i}]"))
+                    for i, id_ in enumerate(example_ids)
+                ],
+                "hard_delete": True,
+            }
+            # Use platform path helper for consistent URL construction
+            path = _platform_path(self.api_url, "datasets/examples/delete")
+            full_url = _construct_url(self.api_url, path)
+            response = self.session.request(
+                "POST",
+                full_url,
+                headers={**self._headers, "Content-Type": "application/json"},
+                data=_dumps_json(body),
+                timeout=self._timeout,
+            )
+        else:
+            # Soft delete uses DELETE with query params
+            params: dict[str, Any] = {
                 "example_ids": [
                     str(_as_uuid(id_, f"example_ids[{i}]"))
                     for i, id_ in enumerate(example_ids)
                 ]
-            },
-        )
+            }
+            response = self.request_with_retries(
+                "DELETE",
+                "/examples",
+                headers={**self._headers, "Content-Type": "application/json"},
+                params=params,
+            )
         ls_utils.raise_for_status_with_text(response)
 
     def list_dataset_splits(
@@ -9194,6 +9232,14 @@ def _dataset_examples_path(api_url: str, dataset_id: ID_TYPE) -> str:
         return f"/platform/datasets/{dataset_id}/examples"
     else:
         return f"/v1/platform/datasets/{dataset_id}/examples"
+
+
+def _platform_path(api_url: str, path: str) -> str:
+    """Construct a platform API path based on the API URL structure."""
+    if api_url.rstrip("/").endswith("/v1"):
+        return f"/platform/{path}"
+    else:
+        return f"/v1/platform/{path}"
 
 
 def _construct_url(api_url: str, pathname: str) -> str:
