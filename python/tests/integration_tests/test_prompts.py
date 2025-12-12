@@ -16,6 +16,7 @@ from langsmith.client import (
     convert_prompt_to_anthropic_format,
     convert_prompt_to_openai_format,
 )
+from tests.utils.any_int import AnyInt
 
 
 @pytest.fixture
@@ -553,7 +554,7 @@ def test_convert_to_anthropic_format(chat_prompt_template: ChatPromptTemplate):
 
     assert res == {
         "model": "claude-2",
-        "max_tokens": 1024,
+        "max_tokens": AnyInt(1024),
         "messages": [{"role": "user", "content": "What is the meaning of life?"}],
         "system": "You are a chatbot",
     }

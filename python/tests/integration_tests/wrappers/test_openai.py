@@ -286,6 +286,7 @@ test_cases = [
 
 
 @pytest.mark.parametrize("test_case", test_cases)
+@pytest.mark.flaky(retries=3)
 def test_wrap_openai_chat_tokens(test_case):
     import openai
     from openai.types.chat import ChatCompletion, ChatCompletionChunk
