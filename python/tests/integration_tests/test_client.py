@@ -3813,8 +3813,8 @@ def test_get_experiment_results(langchain_client: Client) -> None:
     # Test that we get run stats
     assert experiment_results["run_stats"] is not None
     run_stats = experiment_results["run_stats"]
-    assert hasattr(run_stats, "run_count") or "run_count" in run_stats
-    assert run_stats.run_count > 0
+    assert "run_count" in run_stats
+    assert run_stats["run_count"] > 0
 
     # Test that we get feedback stats
     assert experiment_results["feedback_stats"] is not None
