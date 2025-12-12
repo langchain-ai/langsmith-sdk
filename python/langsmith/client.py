@@ -461,6 +461,7 @@ class Client:
         "_set_span_in_context",
         "_max_batch_size_bytes",
         "_tracing_error_callback",
+        "_multipart_disabled",
     ]
 
     _api_key: Optional[str]
@@ -650,6 +651,7 @@ class Client:
         self._run_ops_buffer_lock = threading.Lock()
         self.otel_exporter: Optional[OTELExporter] = None
         self._max_batch_size_bytes = max_batch_size_bytes
+        self._multipart_disabled: bool = False
 
         # Initialize auto batching
         if auto_batch_tracing:
@@ -2121,6 +2123,14 @@ class Client:
                 self._send_multipart_req(
                     acc_multipart, api_url=api_url, api_key=api_key
                 )
+            except ls_utils.LangSmithNotFoundError:
+                # Fallback to batch ingest if multipart endpoint returns 404
+                # Disable multipart for future requests
+                self._multipart_disabled = True
+                # Filter out feedback operations as they're not supported in non-multipart mode
+                run_ops = [op for op in ops if isinstance(op, SerializedRunOperation)]
+                if run_ops:
+                    self._batch_ingest_run_ops(run_ops)
             finally:
                 _close_files(list(opened_files_dict.values()))
 
@@ -6572,9 +6582,9 @@ class Client:
                 error=error,
             )
 
-            use_multipart = (self.info.batch_ingest_config or {}).get(
-                "use_multipart_endpoint", False
-            )
+            use_multipart = not self._multipart_disabled and (
+                self.info.batch_ingest_config or {}
+            ).get("use_multipart_endpoint", True)
 
             if (
                 use_multipart

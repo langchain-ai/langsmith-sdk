@@ -26,6 +26,7 @@ from langsmith.evaluation.evaluator import (
     _normalize_evaluator_func,
     _normalize_summary_evaluator,
 )
+from tests.unit_tests.conftest import parse_request_data
 
 
 class FakeRequest:
@@ -80,8 +81,11 @@ class FakeRequest:
                 response = MagicMock()
                 response.json.return_value = self.created_session
                 return response
-            elif endpoint == "http://localhost:1984/runs/batch":
-                loaded_runs = json.loads(kwargs["data"])
+            elif (
+                endpoint == "http://localhost:1984/runs/batch"
+                or endpoint == "http://localhost:1984/runs/multipart"
+            ):
+                loaded_runs = parse_request_data(kwargs["data"])
                 posted = loaded_runs.get("post", [])
                 patched = loaded_runs.get("patch", [])
                 for p in posted:
