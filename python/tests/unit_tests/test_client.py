@@ -306,7 +306,6 @@ def test_async_methods() -> None:
         method
         for method in dir(Client)
         if not method.startswith("_")
-        and method not in {"arun_on_dataset"}
         and callable(getattr(Client, method))
         and asyncio.iscoroutinefunction(getattr(Client, method))
     ]

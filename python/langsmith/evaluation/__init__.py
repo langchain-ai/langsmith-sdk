@@ -18,10 +18,15 @@ if TYPE_CHECKING:
         RunEvaluator,
         run_evaluator,
     )
-    from langsmith.evaluation.integrations._langchain import LangChainStringEvaluator
 
 
-def __getattr__(name: str) -> Any:
+def __getattr__(
+    name: str,
+) -> Any:
+    """.. deprecated:: 0.5.0.
+
+    Importing from langsmith.evaluation is deprecated. Use client.evaluate() instead.
+    """
     if name == "evaluate":
         from langsmith.evaluation._runner import evaluate
 
@@ -62,12 +67,7 @@ def __getattr__(name: str) -> Any:
         from langsmith.evaluation.string_evaluator import StringEvaluator
 
         return StringEvaluator
-    elif name == "LangChainStringEvaluator":
-        from langsmith.evaluation.integrations._langchain import (
-            LangChainStringEvaluator,
-        )
 
-        return LangChainStringEvaluator
     raise AttributeError(f"module {__name__} has no attribute {name}")
 
 
@@ -82,7 +82,6 @@ __all__ = [
     "evaluate",
     "evaluate_existing",
     "evaluate_comparative",
-    "LangChainStringEvaluator",
 ]
 
 
