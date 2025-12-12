@@ -6,7 +6,12 @@ if TYPE_CHECKING:
     from langsmith._expect import expect
     from langsmith.async_client import AsyncClient
     from langsmith.client import Client
-    from langsmith.evaluation import aevaluate, evaluate
+    from langsmith.evaluation import (
+        aevaluate,
+        aevaluate_existing,
+        evaluate,
+        evaluate_existing,
+    )
     from langsmith.evaluation.evaluator import EvaluationResult, RunEvaluator
     from langsmith.run_helpers import (
         get_current_run_tree,
@@ -16,7 +21,7 @@ if TYPE_CHECKING:
         traceable,
         tracing_context,
     )
-    from langsmith.run_trees import RunTree
+    from langsmith.run_trees import RunTree, configure
     from langsmith.testing._internal import test, unit
     from langsmith.utils import ContextThreadPoolExecutor
     from langsmith.uuid import uuid7, uuid7_from_datetime
@@ -130,6 +135,7 @@ def __getattr__(name: str) -> Any:
 __all__ = [
     "Client",
     "RunTree",
+    "configure",
     "__version__",
     "EvaluationResult",
     "RunEvaluator",
@@ -140,6 +146,8 @@ __all__ = [
     "test",
     "expect",
     "evaluate",
+    "evaluate_existing",
+    "aevaluate_existing",
     "aevaluate",
     "tracing_context",
     "get_tracing_context",
