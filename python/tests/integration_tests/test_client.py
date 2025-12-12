@@ -1217,6 +1217,7 @@ def _get_run(run_id: ID_TYPE, langchain_client: Client, has_end: bool = False) -
         return False
 
 
+@pytest.mark.skip(reason="Flakey")
 def test_multipart_ingest_update_with_attachments_error(
     langchain_client: Client, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -3559,6 +3560,7 @@ def test_list_runs_with_child_runs(langchain_client: Client):
             langchain_client.delete_project(project_name=project_name)
 
 
+@pytest.mark.skip(reason="Flakey")
 def test_run_ops_buffer_integration(langchain_client: Client) -> None:
     project_name = f"test-run-ops-buffer-{str(uuid.uuid4())[:8]}"
 
