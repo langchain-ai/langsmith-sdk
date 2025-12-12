@@ -122,7 +122,7 @@ async def test_create_run(async_client: AsyncClient):
 
 
 @pytest.mark.asyncio
-@pytest.mark.flaky(retries=3, only_on=(ls_utils.LangSmithRateLimitError,))
+@skip_if_rate_limited
 async def test_list_runs(async_client: AsyncClient):
     project_name = "__test_list_runs"
     run_ids = [uuid.uuid4() for _ in range(3)]
