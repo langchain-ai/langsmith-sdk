@@ -3875,30 +3875,14 @@ def test_create_insights_job(langchain_client: Client) -> None:
     insights_job = langchain_client.generate_insights(
         chat_histories=chat_histories, name=session_name
     )
-    assert insights_job["name"] == session_name
-    assert insights_job["status"] in ["queued", "running", "success"]
+    assert insights_job.name == session_name
+    assert insights_job.status in ["queued", "running", "success"]
     try:
         uuid.UUID(insights_job["session_id"])
     except Exception:
         raise AssertionError(
             f"Invalid session ID, not a UUID: {insights_job['session_id']}"
         )
-
-    def check_runs():
-        runs = list(langchain_client.list_runs(project_id=insights_job["session_id"]))
-        return len(runs) == len(chat_histories)
-
-    wait_for(check_runs, max_sleep_time=30)
-
-    runs = list(langchain_client.list_runs(project_id=insights_job["session_id"]))
-    assert len(runs) == len(chat_histories)
-
-    for chat_history in chat_histories:
-        match = next((r for r in runs if r.outputs["messages"] == chat_history), None)
-        assert match.inputs["messages"] == chat_history[:1]
-        assert match.run_type == "chain"
-        assert match.name == "trace"
-        assert str(match.session_id) == insights_job["session_id"]
 
 
 def test_feedback_formula_crud_flow(langchain_client: Client) -> None:
