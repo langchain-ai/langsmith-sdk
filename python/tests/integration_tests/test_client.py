@@ -3871,7 +3871,9 @@ def test_create_insights_job(langchain_client: Client) -> None:
     ]
 
     session_name = f"test-insights-{uuid4()})"
-    insights_job = langchain_client.generate_insights(chat_histories, name=session_name)
+    insights_job = langchain_client.generate_insights(
+        chat_histories=chat_histories, name=session_name
+    )
     assert insights_job["name"] == session_name
     assert insights_job["status"] in ["queued", "running", "success"]
     try:
