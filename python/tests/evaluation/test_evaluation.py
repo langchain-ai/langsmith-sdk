@@ -33,7 +33,7 @@ def wait_for(
     """Wait for a condition to be true."""
     start_time = time.time()
     last_e = None
-    while time.time() - start_time < max_sleep_time:
+    while (time.time() - start_time) < max_sleep_time:
         try:
             res, cond = condition()
             if cond:
@@ -256,7 +256,7 @@ async def test_aevaluate():
             assert "slow_accuracy" in r.feedback_stats
         return current_runs, len(current_runs) == len(all_examples)
 
-    final_runs = wait_for(check_run_count, max_sleep_time=60, sleep_time=2)
+    final_runs = wait_for(check_run_count, max_sleep_time=90, sleep_time=2)
 
     assert len(final_runs) == len(all_examples), (
         f"Expected {len(all_examples)} runs, but got {len(final_runs)}"

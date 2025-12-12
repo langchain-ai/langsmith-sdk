@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from langsmith import utils as ls_utils
 from langsmith.async_client import AsyncClient
 from langsmith.schemas import DataType, Run
+from tests.integration_tests.conftest import skip_if_rate_limited
 
 
 @pytest.mark.asyncio
@@ -209,7 +210,8 @@ async def test_list_examples(async_client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_create_feedback(async_client: AsyncClient, skip_on_rate_limit):
+@skip_if_rate_limited
+async def test_create_feedback(async_client: AsyncClient):
     project_name = "__test_create_feedback" + uuid.uuid4().hex[:8]
     run_id = uuid.uuid4()
 
@@ -287,15 +289,23 @@ async def test_create_feedback(async_client: AsyncClient, skip_on_rate_limit):
         try:
             shared_run_url = await async_client.share_run(run_id)
             return True
-        except (
-            ls_utils.LangSmithNotFoundError,
-            ls_utils.LangSmithRateLimitError,
-        ):
+        except ls_utils.LangSmithNotFoundError:
             return False
 
-    await wait_for(check_share, timeout=5)
+    await wait_for(check_share, timeout=20)
     assert shared_run_url is not None
-    run_is_shared = await async_client.run_is_shared(run_id)
+
+    run_is_shared = False
+
+    async def check_run_is_shared():
+        nonlocal run_is_shared
+        try:
+            run_is_shared = await async_client.run_is_shared(run_id)
+            return run_is_shared
+        except ls_utils.LangSmithNotFoundError:
+            return False
+
+    await wait_for(check_run_is_shared, timeout=20)
     assert run_is_shared, f"Run isn't shared; failed link: {shared_run_url}"
 
 
