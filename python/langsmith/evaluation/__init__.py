@@ -20,7 +20,9 @@ if TYPE_CHECKING:
     )
 
 
-def __getattr__(name: str) -> Any:
+def __getattr__(
+    name: str,
+) -> Any:  # deprecated: use client.evaluate() instead
     if name == "evaluate":
         from langsmith.evaluation._runner import evaluate
 
