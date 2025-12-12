@@ -120,7 +120,6 @@ def parameterized_multipart_client(request) -> Client:
     )
 
 
-@pytest.mark.flaky(retries=3)
 def test_datasets(parameterized_multipart_client: Client) -> None:
     """Test datasets."""
     csv_content = "col1,col2\nval1,val2"
@@ -144,7 +143,9 @@ def test_datasets(parameterized_multipart_client: Client) -> None:
     dataset2 = parameterized_multipart_client.read_dataset(dataset_id=dataset_id)
     assert dataset.id == dataset2.id
 
-    datasets = list(parameterized_multipart_client.list_datasets())
+    datasets = list(
+        parameterized_multipart_client.list_datasets(dataset_ids=[dataset_id])
+    )
     assert len(datasets) > 0
     assert dataset_id in [dataset.id for dataset in datasets]
 
