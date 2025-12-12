@@ -17,9 +17,16 @@ const parseMockRequestBody = async (
   let rawMultipart;
   // eslint-disable-next-line no-instanceof/no-instanceof
   if (body instanceof ReadableStream) {
-    rawMultipart = await new Response(
-      body.pipeThrough(new DecompressionStream("gzip"))
-    ).text();
+    // Clone the stream in case we need to retry without decompression
+    const [stream1, stream2] = body.tee();
+    try {
+      rawMultipart = await new Response(
+        stream1.pipeThrough(new DecompressionStream("gzip"))
+      ).text();
+    } catch {
+      // If gzip decompression fails, try reading as plain text
+      rawMultipart = await new Response(stream2).text();
+    }
   } else {
     rawMultipart = new TextDecoder().decode(body);
   }
@@ -81,7 +88,9 @@ describe.each(ENDPOINT_TYPES)(
   (endpointType) => {
     const extraBatchIngestConfig =
       endpointType === "batch"
-        ? {}
+        ? {
+            use_multipart_endpoint: false,
+          }
         : {
             use_multipart_endpoint: true,
           };
@@ -149,12 +158,10 @@ describe.each(ENDPOINT_TYPES)(
         },
         mockFetch
       );
-      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
-        return {
-          version: "foo",
-          batch_ingest_config: { ...extraBatchIngestConfig },
-          instance_flags: { ...extraInstanceFlags },
-        };
+      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+        version: "foo",
+        batch_ingest_config: { ...extraBatchIngestConfig },
+        instance_flags: { ...extraInstanceFlags },
       });
       const projectName = "__test_batch";
 
@@ -206,12 +213,10 @@ describe.each(ENDPOINT_TYPES)(
         },
         mockFetch
       );
-      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
-        return {
-          version: "foo",
-          batch_ingest_config: { ...extraBatchIngestConfig },
-          instance_flags: { ...extraInstanceFlags },
-        };
+      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+        version: "foo",
+        batch_ingest_config: { ...extraBatchIngestConfig },
+        instance_flags: { ...extraInstanceFlags },
       });
       const projectName = "__test_batch";
 
@@ -267,12 +272,10 @@ describe.each(ENDPOINT_TYPES)(
         },
         mockFetch
       );
-      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
-        return {
-          version: "foo",
-          batch_ingest_config: { ...extraBatchIngestConfig },
-          instance_flags: { ...extraInstanceFlags },
-        };
+      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+        version: "foo",
+        batch_ingest_config: { ...extraBatchIngestConfig },
+        instance_flags: { ...extraInstanceFlags },
       });
       const projectName = "__test_batch";
 
@@ -329,12 +332,10 @@ describe.each(ENDPOINT_TYPES)(
         },
         mockFetch
       );
-      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
-        return {
-          version: "foo",
-          batch_ingest_config: { ...extraBatchIngestConfig },
-          instance_flags: { ...extraInstanceFlags },
-        };
+      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+        version: "foo",
+        batch_ingest_config: { ...extraBatchIngestConfig },
+        instance_flags: { ...extraInstanceFlags },
       });
       const projectName = "__test_batch";
 
@@ -368,12 +369,10 @@ describe.each(ENDPOINT_TYPES)(
         },
         mockFetch
       );
-      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
-        return {
-          version: "foo",
-          batch_ingest_config: { ...extraBatchIngestConfig },
-          instance_flags: { ...extraInstanceFlags },
-        };
+      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+        version: "foo",
+        batch_ingest_config: { ...extraBatchIngestConfig },
+        instance_flags: { ...extraInstanceFlags },
       });
       const projectName = "__test_batch";
 
@@ -437,16 +436,16 @@ describe.each(ENDPOINT_TYPES)(
         mockFetch
       );
       let serverInfoFailedOnce = false;
-      jest.spyOn(client as any, "_getServerInfo").mockImplementationOnce(() => {
-        serverInfoFailedOnce = true;
-        throw new Error("[MOCK] Connection error.");
-      });
-      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
-        return {
-          version: "foo",
-          batch_ingest_config: { ...extraBatchIngestConfig },
-          instance_flags: { ...extraInstanceFlags },
-        };
+      jest
+        .spyOn(client as any, "_ensureServerInfo")
+        .mockImplementationOnce(async () => {
+          serverInfoFailedOnce = true;
+          throw new Error("[MOCK] Connection error.");
+        });
+      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+        version: "foo",
+        batch_ingest_config: { ...extraBatchIngestConfig },
+        instance_flags: { ...extraInstanceFlags },
       });
       const projectName = "__test_batch";
 
@@ -512,12 +511,10 @@ describe.each(ENDPOINT_TYPES)(
         },
         mockFetch
       );
-      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
-        return {
-          version: "foo",
-          batch_ingest_config: { ...extraBatchIngestConfig },
-          instance_flags: { ...extraInstanceFlags },
-        };
+      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+        version: "foo",
+        batch_ingest_config: { ...extraBatchIngestConfig },
+        instance_flags: { ...extraInstanceFlags },
       });
       const projectName = "__test_batch";
 
@@ -634,12 +631,10 @@ describe.each(ENDPOINT_TYPES)(
         },
         mockFetch
       );
-      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
-        return {
-          version: "foo",
-          batch_ingest_config: { ...extraBatchIngestConfig },
-          instance_flags: { ...extraInstanceFlags },
-        };
+      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+        version: "foo",
+        batch_ingest_config: { ...extraBatchIngestConfig },
+        instance_flags: { ...extraInstanceFlags },
       });
       const projectName = "__test_batch";
 
@@ -756,12 +751,10 @@ describe.each(ENDPOINT_TYPES)(
         },
         mockFetch
       );
-      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
-        return {
-          version: "foo",
-          batch_ingest_config: { ...extraBatchIngestConfig },
-          instance_flags: { ...extraInstanceFlags },
-        };
+      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+        version: "foo",
+        batch_ingest_config: { ...extraBatchIngestConfig },
+        instance_flags: { ...extraInstanceFlags },
       });
       const projectName = "__test_batch";
 
@@ -853,12 +846,10 @@ describe.each(ENDPOINT_TYPES)(
         },
         mockFetch
       );
-      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
-        return {
-          version: "foo",
-          batch_ingest_config: { ...extraBatchIngestConfig },
-          instance_flags: { ...extraInstanceFlags },
-        };
+      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+        version: "foo",
+        batch_ingest_config: { ...extraBatchIngestConfig },
+        instance_flags: { ...extraInstanceFlags },
       });
       const projectName = "__test_batch";
 
@@ -952,12 +943,10 @@ describe.each(ENDPOINT_TYPES)(
         counter += 1;
         return counter % 2 !== 0;
       });
-      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
-        return {
-          version: "foo",
-          batch_ingest_config: { ...extraBatchIngestConfig },
-          instance_flags: { ...extraInstanceFlags },
-        };
+      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+        version: "foo",
+        batch_ingest_config: { ...extraBatchIngestConfig },
+        instance_flags: { ...extraInstanceFlags },
       });
       const projectName = "__test_batch";
 
@@ -1087,12 +1076,10 @@ describe.each(ENDPOINT_TYPES)(
         },
         mockFetch
       );
-      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
-        return {
-          version: "foo",
-          batch_ingest_config: { ...extraBatchIngestConfig },
-          instance_flags: { ...extraInstanceFlags },
-        };
+      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+        version: "foo",
+        batch_ingest_config: { ...extraBatchIngestConfig },
+        instance_flags: { ...extraInstanceFlags },
       });
       const projectName = "__test_batch";
 
@@ -1189,14 +1176,12 @@ describe.each(ENDPOINT_TYPES)(
         },
         mockFetch
       );
-      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
-        return {
-          version: "foo",
-          batch_ingest_config: {
-            ...extraBatchIngestConfig,
-          },
-          instance_flags: { ...extraInstanceFlags },
-        };
+      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+        version: "foo",
+        batch_ingest_config: {
+          ...extraBatchIngestConfig,
+        },
+        instance_flags: { ...extraInstanceFlags },
       });
       const projectName = "__test_batch";
 
@@ -1292,7 +1277,7 @@ describe.each(ENDPOINT_TYPES)(
       });
     });
 
-    it("Use batch endpoint if info call fails", async () => {
+    it("Use multipart endpoint if info call fails", async () => {
       const calls: any[] = [];
       const mockFetch = createMockFetch(calls);
 
@@ -1303,9 +1288,7 @@ describe.each(ENDPOINT_TYPES)(
         },
         mockFetch
       );
-      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
-        throw new Error("Totally expected mock error");
-      });
+      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue(undefined);
       const projectName = "__test_batch";
 
       const runId = uuidv4();
@@ -1345,8 +1328,10 @@ describe.each(ENDPOINT_TYPES)(
         ],
         patch: [],
       });
-      // When server info fails, client falls back to batch endpoint regardless of test type
-      expect(calls[0][0]).toBe("https://api.smith.langchain.com/runs/batch");
+      // When server info is unavailable, client defaults to multipart endpoint (the new default)
+      expect(calls[0][0]).toBe(
+        "https://api.smith.langchain.com/runs/multipart"
+      );
 
       expect(calls.length).toBe(1);
     });
@@ -1362,12 +1347,10 @@ describe.each(ENDPOINT_TYPES)(
         },
         mockFetch
       );
-      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
-        return {
-          version: "foo",
-          batch_ingest_config: { ...extraBatchIngestConfig },
-          instance_flags: { ...extraInstanceFlags },
-        };
+      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+        version: "foo",
+        batch_ingest_config: { ...extraBatchIngestConfig },
+        instance_flags: { ...extraInstanceFlags },
       });
       const projectName = "__test_batch";
       const a: Record<string, any> = {};
@@ -1475,12 +1458,10 @@ describe.each(ENDPOINT_TYPES)(
         mockFetch
       );
 
-      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
-        return {
-          version: "foo",
-          batch_ingest_config: { ...extraBatchIngestConfig },
-          instance_flags: { ...extraInstanceFlags },
-        };
+      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+        version: "foo",
+        batch_ingest_config: { ...extraBatchIngestConfig },
+        instance_flags: { ...extraInstanceFlags },
       });
 
       const projectName = "__test_batch";
@@ -1541,12 +1522,10 @@ describe.each(ENDPOINT_TYPES)(
         mockFetch
       );
 
-      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
-        return {
-          version: "foo",
-          batch_ingest_config: { ...extraBatchIngestConfig },
-          instance_flags: { ...extraInstanceFlags },
-        };
+      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+        version: "foo",
+        batch_ingest_config: { ...extraBatchIngestConfig },
+        instance_flags: { ...extraInstanceFlags },
       });
 
       const projectName = "__test_batch";
@@ -1613,12 +1592,10 @@ describe.each(ENDPOINT_TYPES)(
         mockFetch
       );
 
-      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
-        return {
-          version: "foo",
-          batch_ingest_config: { ...extraBatchIngestConfig },
-          instance_flags: { ...extraInstanceFlags },
-        };
+      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+        version: "foo",
+        batch_ingest_config: { ...extraBatchIngestConfig },
+        instance_flags: { ...extraInstanceFlags },
       });
 
       const projectName = "__test_batch";
@@ -1664,12 +1641,10 @@ describe.each(ENDPOINT_TYPES)(
         },
         mockFetch
       );
-      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
-        return {
-          version: "foo",
-          batch_ingest_config: { ...extraBatchIngestConfig },
-          instance_flags: { ...extraInstanceFlags },
-        };
+      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+        version: "foo",
+        batch_ingest_config: { ...extraBatchIngestConfig },
+        instance_flags: { ...extraInstanceFlags },
       });
       const projectName = "__test_batch";
 
@@ -1728,12 +1703,10 @@ describe.each(ENDPOINT_TYPES)(
         },
         mockFetch
       );
-      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
-        return {
-          version: "foo",
-          batch_ingest_config: { ...extraBatchIngestConfig },
-          instance_flags: { ...extraInstanceFlags },
-        };
+      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+        version: "foo",
+        batch_ingest_config: { ...extraBatchIngestConfig },
+        instance_flags: { ...extraInstanceFlags },
       });
       const projectName = "__test_batch";
 
@@ -1807,12 +1780,10 @@ describe.each(ENDPOINT_TYPES)(
         },
         mockFetch
       );
-      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
-        return {
-          version: "foo",
-          batch_ingest_config: { ...extraBatchIngestConfig },
-          instance_flags: { ...extraInstanceFlags },
-        };
+      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+        version: "foo",
+        batch_ingest_config: { ...extraBatchIngestConfig },
+        instance_flags: { ...extraInstanceFlags },
       });
       const projectName = "__test_batch";
 
@@ -1886,12 +1857,10 @@ describe.each(ENDPOINT_TYPES)(
         },
         mockFetch
       );
-      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
-        return {
-          version: "foo",
-          batch_ingest_config: { ...extraBatchIngestConfig },
-          instance_flags: { ...extraInstanceFlags },
-        };
+      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+        version: "foo",
+        batch_ingest_config: { ...extraBatchIngestConfig },
+        instance_flags: { ...extraInstanceFlags },
       });
       const projectName = "__test_batch";
 
@@ -1986,12 +1955,10 @@ describe.each(ENDPOINT_TYPES)(
         },
         mockFetch
       );
-      jest.spyOn(client as any, "_getServerInfo").mockImplementation(() => {
-        return {
-          version: "foo",
-          batch_ingest_config: { ...extraBatchIngestConfig },
-          instance_flags: { ...extraInstanceFlags },
-        };
+      jest.spyOn(client as any, "_ensureServerInfo").mockResolvedValue({
+        version: "foo",
+        batch_ingest_config: { ...extraBatchIngestConfig },
+        instance_flags: { ...extraInstanceFlags },
       });
       const projectName = "__test_batch";
 
