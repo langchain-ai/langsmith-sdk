@@ -395,7 +395,7 @@ mod tests {
     fn test_set_add() {
         Python::with_gil(|py| {
             let set = PySet::new(py, [1, 2]).unwrap();
-            set.add(1).unwrap(); // Add a dupliated element
+            set.add(1).unwrap(); // Add a duplicated element
             assert!(set.contains(1).unwrap());
         });
     }

@@ -1139,7 +1139,7 @@ impl Serialize for NumpyBool {
     }
 }
 
-/// This mimicks the units supported by numpy's datetime64 type.
+/// This mimics the units supported by numpy's datetime64 type.
 ///
 /// See
 /// https://github.com/numpy/numpy/blob/fc8e3bbe419748ac5c6b7f3d0845e4bafa74644b/numpy/core/include/numpy/ndarraytypes.h#L268-L282.
