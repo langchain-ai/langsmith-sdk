@@ -4098,50 +4098,6 @@ export class Client implements LangSmithTracingClientInterface {
     });
   }
 
-  /**
-   * @deprecated This method is deprecated and will be removed in future LangSmith versions, use `evaluate` from `langsmith/evaluation` instead.
-   */
-  public async evaluateRun(
-    run: Run | string,
-    evaluator: RunEvaluator,
-    {
-      sourceInfo,
-      loadChildRuns,
-      referenceExample,
-    }: {
-      sourceInfo?: KVMap;
-      loadChildRuns: boolean;
-      referenceExample?: Example;
-    } = { loadChildRuns: false }
-  ): Promise<Feedback> {
-    warnOnce(
-      "This method is deprecated and will be removed in future LangSmith versions, use `evaluate` from `langsmith/evaluation` instead."
-    );
-    let run_: Run;
-    if (typeof run === "string") {
-      run_ = await this.readRun(run, { loadChildRuns });
-    } else if (typeof run === "object" && "id" in run) {
-      run_ = run as Run;
-    } else {
-      throw new Error(`Invalid run type: ${typeof run}`);
-    }
-    if (
-      run_.reference_example_id !== null &&
-      run_.reference_example_id !== undefined
-    ) {
-      referenceExample = await this.readExample(run_.reference_example_id);
-    }
-
-    const feedbackResult = await evaluator.evaluateRun(run_, referenceExample);
-    const [_, feedbacks] = await this._logEvaluationFeedback(
-      feedbackResult,
-      run_,
-      sourceInfo
-    );
-
-    return feedbacks[0];
-  }
-
   public async createFeedback(
     runId: string | null,
     key: string,
