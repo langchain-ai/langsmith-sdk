@@ -82,13 +82,40 @@ def pytest_addoption(parser):
 
 def pytest_collection_modifyitems(config, items):
     """Configure tests to run."""
-    if config.getoption("--runslow"):
-        # --runslow given in cli: do not skip slow tests
+    if not config.getoption("--runslow"):
+        skip_slow = pytest.mark.skip(reason="need --runslow option to run")
+        for item in items:
+            if "slow" in item.keywords:
+                item.add_marker(skip_slow)
+
+    shard_total_raw = os.getenv("PYTEST_SHARD_TOTAL")
+    shard_index_raw = os.getenv("PYTEST_SHARD_INDEX")
+    if not shard_total_raw:
         return
-    skip_slow = pytest.mark.skip(reason="need --runslow option to run")
-    for item in items:
-        if "slow" in item.keywords:
-            item.add_marker(skip_slow)
+
+    if shard_index_raw is None:
+        raise pytest.UsageError(
+            "PYTEST_SHARD_INDEX must be set if PYTEST_SHARD_TOTAL is set"
+        )
+
+    try:
+        shard_total = int(shard_total_raw)
+        shard_index = int(shard_index_raw)
+    except ValueError as e:
+        raise pytest.UsageError(
+            "PYTEST_SHARD_TOTAL and PYTEST_SHARD_INDEX must be integers"
+        ) from e
+
+    if shard_total <= 1:
+        return
+    if shard_index < 0 or shard_index >= shard_total:
+        raise pytest.UsageError(f"PYTEST_SHARD_INDEX must be in [0, {shard_total - 1}]")
+
+    def item_shard(item: pytest.Item) -> int:
+        digest = hashlib.md5(item.nodeid.encode("utf-8")).hexdigest()
+        return int(digest, 16) % shard_total
+
+    items[:] = [item for item in items if item_shard(item) == shard_index]
 
 
 def is_ai_api_request(request):

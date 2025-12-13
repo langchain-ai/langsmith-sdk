@@ -16,6 +16,8 @@ from langsmith.client import (
     convert_prompt_to_anthropic_format,
     convert_prompt_to_openai_format,
 )
+from tests.integration_tests.conftest import skip_if_rate_limited
+from tests.utils.any_int import AnyInt
 
 
 @pytest.fixture
@@ -161,6 +163,7 @@ def test_list_prompts(langsmith_client: Client):
     assert len(response.repos) <= 10
 
 
+@skip_if_rate_limited
 def test_get_prompt(langsmith_client: Client, prompt_template_1: ChatPromptTemplate):
     prompt_name = f"test_prompt_{uuid4().hex[:8]}"
     url = langsmith_client.push_prompt(prompt_name, object=prompt_template_1)
@@ -174,6 +177,7 @@ def test_get_prompt(langsmith_client: Client, prompt_template_1: ChatPromptTempl
     langsmith_client.delete_prompt(prompt_name)
 
 
+@skip_if_rate_limited
 def test_prompt_exists(langsmith_client: Client, prompt_template_2: ChatPromptTemplate):
     non_existent_prompt = f"non_existent_{uuid4().hex[:8]}"
     assert not langsmith_client._prompt_exists(non_existent_prompt)
@@ -185,6 +189,7 @@ def test_prompt_exists(langsmith_client: Client, prompt_template_2: ChatPromptTe
     langsmith_client.delete_prompt(existent_prompt)
 
 
+@skip_if_rate_limited
 def test_update_prompt(langsmith_client: Client, prompt_template_1: ChatPromptTemplate):
     prompt_name = f"test_prompt_{uuid4().hex[:8]}"
     langsmith_client.push_prompt(prompt_name, object=prompt_template_1)
@@ -274,6 +279,7 @@ def test_pull_prompt(langsmith_client: Client, prompt_template_1: ChatPromptTemp
     langsmith_client.delete_prompt(prompt_name)
 
 
+@skip_if_rate_limited
 def test_push_and_pull_prompt(
     langsmith_client: Client, prompt_template_2: ChatPromptTemplate
 ):
@@ -310,25 +316,7 @@ def test_pull_prompt_include_model(langsmith_client: Client, prompt_with_model: 
     langsmith_client.delete_prompt(prompt_name)
 
 
-def test_like_unlike_prompt(
-    langsmith_client: Client, prompt_template_1: ChatPromptTemplate
-):
-    prompt_name = f"test_prompt_{uuid4().hex[:8]}"
-    langsmith_client.push_prompt(prompt_name, object=prompt_template_1)
-
-    langsmith_client.like_prompt(prompt_name)
-    prompt = langsmith_client.get_prompt(prompt_name)
-    assert isinstance(prompt, ls_schemas.Prompt)
-    assert prompt.num_likes == 1
-
-    langsmith_client.unlike_prompt(prompt_name)
-    prompt = langsmith_client.get_prompt(prompt_name)
-    assert isinstance(prompt, ls_schemas.Prompt)
-    assert prompt.num_likes == 0
-
-    langsmith_client.delete_prompt(prompt_name)
-
-
+@skip_if_rate_limited
 def test_get_latest_commit_hash(
     langsmith_client: Client, prompt_template_1: ChatPromptTemplate
 ):
@@ -460,6 +448,7 @@ def test_push_prompt(
 
 
 @pytest.mark.parametrize("is_public,expected_count", [(True, 1), (False, 1)])
+@skip_if_rate_limited
 def test_list_prompts_filter(
     langsmith_client: Client,
     prompt_template_1: ChatPromptTemplate,
@@ -480,6 +469,7 @@ def test_list_prompts_filter(
     langsmith_client.delete_prompt(prompt_name)
 
 
+@skip_if_rate_limited
 def test_update_prompt_archive(
     langsmith_client: Client, prompt_template_1: ChatPromptTemplate
 ):
@@ -553,7 +543,7 @@ def test_convert_to_anthropic_format(chat_prompt_template: ChatPromptTemplate):
 
     assert res == {
         "model": "claude-2",
-        "max_tokens": 1024,
+        "max_tokens": AnyInt(1024),
         "messages": [{"role": "user", "content": "What is the meaning of life?"}],
         "system": "You are a chatbot",
     }

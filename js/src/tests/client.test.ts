@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { jest } from "@jest/globals";
-import { Client } from "../client.js";
+import { Client, mergeRuntimeEnvIntoRun } from "../client.js";
 import {
   getLangSmithEnvironmentVariables,
   getLangSmithEnvVarsMetadata,
@@ -731,6 +731,36 @@ describe("Client", () => {
 
       expect(consoleWarnSpy).not.toHaveBeenCalled();
       consoleWarnSpy.mockRestore();
+    });
+  });
+
+  describe("omitTracedRuntimeInfo", () => {
+    it("should omit runtime info when flag is true", () => {
+      const run: any = {
+        id: "test-run-id",
+        name: "test-run",
+        run_type: "llm" as const,
+        inputs: { text: "hello" },
+      };
+
+      const result = mergeRuntimeEnvIntoRun(run, undefined, true);
+
+      expect(result.extra).toBeUndefined();
+    });
+
+    it("should include runtime info when flag is false", () => {
+      const run: any = {
+        id: "test-run-id",
+        name: "test-run",
+        run_type: "llm" as const,
+        inputs: { text: "hello" },
+      };
+
+      const result = mergeRuntimeEnvIntoRun(run, undefined, false);
+
+      expect(result.extra).toBeDefined();
+      expect(result.extra.runtime).toBeDefined();
+      expect(result.extra.metadata).toBeDefined();
     });
   });
 });

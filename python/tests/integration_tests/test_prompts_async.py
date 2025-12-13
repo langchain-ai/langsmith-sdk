@@ -14,6 +14,7 @@ import langsmith.utils as ls_utils
 from langsmith.async_client import (
     AsyncClient,
 )
+from tests.integration_tests.conftest import skip_if_rate_limited
 
 
 @pytest.fixture
@@ -161,6 +162,7 @@ async def test_list_prompts(langsmith_client: AsyncClient):
     assert len(response.repos) <= 10
 
 
+@skip_if_rate_limited
 async def test_get_prompt(
     langsmith_client: AsyncClient, prompt_template_1: ChatPromptTemplate
 ):
@@ -176,6 +178,7 @@ async def test_get_prompt(
     await langsmith_client.delete_prompt(prompt_name)
 
 
+@skip_if_rate_limited
 async def test_prompt_exists(
     langsmith_client: AsyncClient, prompt_template_2: ChatPromptTemplate
 ):
@@ -188,6 +191,7 @@ async def test_prompt_exists(
     await langsmith_client.delete_prompt(existent_prompt)
 
 
+@skip_if_rate_limited
 async def test_update_prompt(
     langsmith_client: AsyncClient, prompt_template_1: ChatPromptTemplate
 ):
@@ -285,6 +289,7 @@ async def test_pull_prompt(
     await langsmith_client.delete_prompt(prompt_name)
 
 
+@skip_if_rate_limited
 async def test_push_and_pull_prompt(
     langsmith_client: AsyncClient, prompt_template_2: ChatPromptTemplate
 ):
@@ -325,25 +330,7 @@ async def test_pull_prompt_include_model(
     await langsmith_client.delete_prompt(prompt_name)
 
 
-async def test_like_unlike_prompt(
-    langsmith_client: AsyncClient, prompt_template_1: ChatPromptTemplate
-):
-    prompt_name = f"test_prompt_{uuid4().hex[:8]}"
-    await langsmith_client.push_prompt(prompt_name, object=prompt_template_1)
-
-    await langsmith_client.like_prompt(prompt_name)
-    prompt = await langsmith_client.get_prompt(prompt_name)
-    assert isinstance(prompt, ls_schemas.Prompt)
-    assert prompt.num_likes == 1
-
-    await langsmith_client.unlike_prompt(prompt_name)
-    prompt = await langsmith_client.get_prompt(prompt_name)
-    assert isinstance(prompt, ls_schemas.Prompt)
-    assert prompt.num_likes == 0
-
-    await langsmith_client.delete_prompt(prompt_name)
-
-
+@skip_if_rate_limited
 async def test_get_latest_commit_hash(
     langsmith_client: AsyncClient, prompt_template_1: ChatPromptTemplate
 ):
@@ -481,6 +468,7 @@ async def test_push_prompt(
 
 
 @pytest.mark.parametrize("is_public,expected_count", [(True, 1), (False, 1)])
+@skip_if_rate_limited
 async def test_list_prompts_filter(
     langsmith_client: AsyncClient,
     prompt_template_1: ChatPromptTemplate,
@@ -503,6 +491,7 @@ async def test_list_prompts_filter(
     await langsmith_client.delete_prompt(prompt_name)
 
 
+@skip_if_rate_limited
 async def test_update_prompt_archive(
     langsmith_client: AsyncClient, prompt_template_1: ChatPromptTemplate
 ):

@@ -91,6 +91,13 @@ export interface ClientConfig {
   anonymizer?: (values: KVMap) => KVMap | Promise<KVMap>;
   hideInputs?: boolean | ((inputs: KVMap) => KVMap | Promise<KVMap>);
   hideOutputs?: boolean | ((outputs: KVMap) => KVMap | Promise<KVMap>);
+  /**
+   * Whether to omit runtime information from traced runs.
+   * If true, runtime information (SDK version, platform, etc.) and
+   * LangChain environment variable metadata will not be stored in runs.
+   * Defaults to false.
+   */
+  omitTracedRuntimeInfo?: boolean;
   autoBatchTracing?: boolean;
   /** Maximum size of a batch of runs in bytes. */
   batchSizeBytesLimit?: number;
@@ -432,8 +439,12 @@ type Thread = {
 
 export function mergeRuntimeEnvIntoRun<T extends RunCreate | RunUpdate>(
   run: T,
-  cachedEnvVars?: Record<string, string>
+  cachedEnvVars?: Record<string, string>,
+  omitTracedRuntimeInfo?: boolean
 ): T {
+  if (omitTracedRuntimeInfo) {
+    return run;
+  }
   const runtimeEnv = getRuntimeEnvironment();
   const envVars = cachedEnvVars ?? getLangSmithEnvVarsMetadata();
   const extra = run.extra ?? {};
@@ -667,6 +678,8 @@ export class Client implements LangSmithTracingClientInterface {
 
   private hideOutputs?: boolean | ((outputs: KVMap) => KVMap | Promise<KVMap>);
 
+  private omitTracedRuntimeInfo?: boolean;
+
   private tracingSampleRate?: number;
 
   private filteredPostUuids = new Set();
@@ -760,6 +773,7 @@ export class Client implements LangSmithTracingClientInterface {
       config.hideInputs ?? config.anonymizer ?? defaultConfig.hideInputs;
     this.hideOutputs =
       config.hideOutputs ?? config.anonymizer ?? defaultConfig.hideOutputs;
+    this.omitTracedRuntimeInfo = config.omitTracedRuntimeInfo ?? false;
 
     this.autoBatchTracing = config.autoBatchTracing ?? this.autoBatchTracing;
     this.autoBatchQueue = new AutoBatchQueue(maxMemory);
@@ -1203,7 +1217,8 @@ export class Client implements LangSmithTracingClientInterface {
     this.autoBatchTimeout = undefined;
     item.item = mergeRuntimeEnvIntoRun(
       item.item as RunCreate,
-      this.cachedLSEnvVarsForMetadata
+      this.cachedLSEnvVarsForMetadata,
+      this.omitTracedRuntimeInfo
     );
     const itemPromise = this.autoBatchQueue.push(item);
     if (this.manualFlushMode) {
@@ -1348,7 +1363,8 @@ export class Client implements LangSmithTracingClientInterface {
     }
     const mergedRunCreateParam = mergeRuntimeEnvIntoRun(
       runCreate,
-      this.cachedLSEnvVarsForMetadata
+      this.cachedLSEnvVarsForMetadata,
+      this.omitTracedRuntimeInfo
     );
     if (options?.apiKey !== undefined) {
       headers["x-api-key"] = options.apiKey;
@@ -3790,6 +3806,58 @@ export class Client implements LangSmithTracingClientInterface {
       await raiseForStatus(res, `delete ${path}`, true);
       return res;
     });
+  }
+
+  /**
+   * Delete multiple examples by ID.
+   * @param exampleIds - The IDs of the examples to delete
+   * @param options - Optional settings for deletion
+   * @param options.hardDelete - If true, permanently delete examples. If false (default), soft delete them.
+   */
+  public async deleteExamples(
+    exampleIds: string[],
+    options?: { hardDelete?: boolean }
+  ): Promise<void> {
+    // Validate all UUIDs
+    exampleIds.forEach((id) => assertUuid(id));
+
+    if (options?.hardDelete) {
+      // Hard delete uses POST to a different platform endpoint
+      const path = this._getPlatformEndpointPath("datasets/examples/delete");
+
+      await this.caller.call(async () => {
+        const res = await this._fetch(`${this.apiUrl}${path}`, {
+          method: "POST",
+          headers: { ...this.headers, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            example_ids: exampleIds,
+            hard_delete: true,
+          }),
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+        });
+        await raiseForStatus(res, "hard delete examples", true);
+        return res;
+      });
+    } else {
+      // Soft delete uses DELETE with query params
+      const params = new URLSearchParams();
+      exampleIds.forEach((id) => params.append("example_ids", id));
+
+      await this.caller.call(async () => {
+        const res = await this._fetch(
+          `${this.apiUrl}/examples?${params.toString()}`,
+          {
+            method: "DELETE",
+            headers: this.headers,
+            signal: AbortSignal.timeout(this.timeout_ms),
+            ...this.fetchOptions,
+          }
+        );
+        await raiseForStatus(res, "delete examples", true);
+        return res;
+      });
+    }
   }
 
   /**

@@ -23,6 +23,7 @@ view-profile:
 	uv run snakeviz profiles/${PROFILE_NAME}.prof
 
 TEST ?= "tests/unit_tests"
+test: tests
 tests:
 	env \
 	 -u LANGCHAIN_PROJECT \
