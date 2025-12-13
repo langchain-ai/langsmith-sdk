@@ -209,6 +209,47 @@ async def test_list_examples(async_client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_list_examples_by_ids_multiple_of_100(async_client: AsyncClient):
+    """Test list_examples with exactly 100 example IDs."""
+    dataset_name = "__test_list_examples_by_ids_" + uuid.uuid4().hex[:8]
+    dataset = await async_client.create_dataset(dataset_name)
+
+    for i in range(100):
+        await async_client.create_example(
+            inputs={"text": f"input_{i}"},
+            outputs={"label": f"output_{i}"},
+            dataset_id=dataset.id,
+        )
+
+    all_examples = [
+        example async for example in async_client.list_examples(dataset_id=dataset.id)
+    ]
+    assert len(all_examples) == 100
+
+    example_ids = [ex.id for ex in all_examples]
+
+    examples_by_id = [
+        example async for example in async_client.list_examples(example_ids=example_ids)
+    ]
+    assert len(examples_by_id) == 100
+    assert {ex.id for ex in examples_by_id} == {ex.id for ex in all_examples}
+
+    examples_by_id_50 = [
+        example
+        async for example in async_client.list_examples(example_ids=example_ids[:50])
+    ]
+    assert len(examples_by_id_50) == 50
+
+    examples_by_id_99 = [
+        example
+        async for example in async_client.list_examples(example_ids=example_ids[:99])
+    ]
+    assert len(examples_by_id_99) == 99
+
+    await async_client.delete_dataset(dataset_id=dataset.id)
+
+
+@pytest.mark.asyncio
 async def test_create_feedback(async_client: AsyncClient):
     project_name = "__test_create_feedback" + uuid.uuid4().hex[:8]
     run_id = uuid.uuid4()
