@@ -65,11 +65,7 @@ import {
   getEnv,
 } from "./utils/env.js";
 
-import {
-  EvaluationResult,
-  EvaluationResults,
-  RunEvaluator,
-} from "./evaluation/evaluator.js";
+import { EvaluationResult, EvaluationResults } from "./evaluation/evaluator.js";
 import { __version__ } from "./index.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
