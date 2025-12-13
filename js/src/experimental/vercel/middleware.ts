@@ -299,15 +299,9 @@ export function LangSmithMiddleware(config?: {
                   tool_calls: [],
                 }
               );
-              let formattedOutputs: Record<string, unknown>;
-              if (lsConfig?.processOutputs) {
-                formattedOutputs = await lsConfig.processOutputs(output);
-              } else {
-                formattedOutputs = _formatTracedOutputs(
-                  output,
-                  lsConfig?.traceRawHttp
-                );
-              }
+              const outputFormatter =
+                lsConfig?.processOutputs ?? convertMessageToTracedFormat;
+              const formattedOutputs = await outputFormatter(output);
               await runTree?.end(formattedOutputs);
             } catch (error: any) {
               await runTree?.end(undefined, error.message ?? String(error));
