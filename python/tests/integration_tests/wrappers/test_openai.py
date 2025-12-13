@@ -300,7 +300,10 @@ def test_wrap_openai_chat_tokens(test_case):
     with langsmith.tracing_context(enabled=True):
         params: dict[str, Any] = test_case["params"].copy()
         params["langsmith_extra"] = {"on_end": collect}
-        res = wrapped_oai_client.chat.completions.create(**params)
+        try:
+            res = wrapped_oai_client.chat.completions.create(**params)
+        except openai.APIConnectionError as e:
+            pytest.skip("Openai is having some issues: " + str(e))
 
         if params.get("stream"):
             for chunk in res:
@@ -355,7 +358,10 @@ async def test_wrap_openai_chat_async_tokens(test_case):
     with langsmith.tracing_context(enabled=True):
         params: dict[str, Any] = test_case["params"].copy()
         params["langsmith_extra"] = {"on_end": collect}
-        res = await wrapped_oai_client.chat.completions.create(**params)
+        try:
+            res = await wrapped_oai_client.chat.completions.create(**params)
+        except openai.APIConnectionError:
+            pytest.skip("Openai is having some issues.")
 
         if params.get("stream"):
             oai_usage = None

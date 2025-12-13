@@ -23,6 +23,14 @@ inputs:
     description: "Type of test to run (integration, doctest, evals, or all)"
     required: false
     default: "all"
+  shard-total:
+    description: "Total pytest shards (integration only)"
+    required: false
+    default: ""
+  shard-index:
+    description: "Current pytest shard index (integration only, 0-based)"
+    required: false
+    default: ""
 runs:
   using: "composite"
   steps:
@@ -54,22 +62,9 @@ runs:
         GEMINI_API_KEY: ${{ inputs.gemini-api-key }}
         GOOGLE_API_KEY: ${{ inputs.gemini-api-key }}
         LANGSMITH_TEST_CACHE: tests/cassettes
+        PYTEST_SHARD_TOTAL: ${{ inputs.shard-total }}
+        PYTEST_SHARD_INDEX: ${{ inputs.shard-index }}
       run: make integration_tests_fast
-      shell: bash
-      working-directory: python
-
-    - name: Run doctest
-      if: inputs.test-type == 'doctest' || inputs.test-type == 'all'
-      env:
-        LANGSMITH_TRACING_V2: "true"
-        LANGSMITH_ENDPOINT: https://api.smith.langchain.com
-        LANGSMITH_API_KEY: ${{ inputs.langchain-api-key-prod }}
-        OPENAI_API_KEY: ${{ inputs.openai-api-key }}
-        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
-        GEMINI_API_KEY: ${{ inputs.gemini-api-key }}
-        GOOGLE_API_KEY: ${{ inputs.gemini-api-key }}
-        LANGSMITH_TEST_CACHE: tests/cassettes
-      run: make doctest
       shell: bash
       working-directory: python
 

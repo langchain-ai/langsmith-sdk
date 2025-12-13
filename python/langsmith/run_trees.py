@@ -519,7 +519,16 @@ class RunTree(ls_schemas.RunBase):
         )
         if self.inputs is not None:
             # shallow copy. deep copying will occur in the client
-            self_dict["inputs"] = self.inputs.copy()
+            inputs_ = {}
+            attachments = self_dict.get("attachments", {})
+            for k, v in self.inputs.items():
+                if isinstance(v, ls_schemas.Attachment):
+                    attachments[k] = v
+                else:
+                    inputs_[k] = v
+            self_dict["inputs"] = inputs_
+            if attachments:
+                self_dict["attachments"] = attachments
         if self.outputs is not None:
             # shallow copy; deep copying will occur in the client
             self_dict["outputs"] = self.outputs.copy()

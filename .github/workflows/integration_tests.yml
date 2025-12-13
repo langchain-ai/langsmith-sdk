@@ -49,7 +49,7 @@ jobs:
           fi
 
   python_integration_test:
-    name: Python ${{ matrix.test-type }} Test
+    name: Python ${{ matrix.test-type }} Test ${{ matrix.shard_index }}
     needs: changed_files
     if: >
       (github.event_name == 'push') ||
@@ -62,13 +62,37 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test-type: [integration, doctest, evals]
+        include:
+          - test-type: integration
+            shard_total: 6 
+            shard_index: 0
+          - test-type: integration
+            shard_total: 6
+            shard_index: 1
+          - test-type: integration
+            shard_total: 6 
+            shard_index: 2
+          - test-type: integration
+            shard_total: 4
+            shard_index: 3
+          - test-type: integration
+            shard_total: 6
+            shard_index: 4 
+          - test-type: integration
+            shard_total: 6
+            shard_index: 5
+          - test-type: doctest
+            shard_total: ""
+            shard_index: ""
+          - test-type: evals
+            shard_total: ""
+            shard_index: ""
     defaults:
       run:
         working-directory: python
     steps:
       - uses: actions/checkout@v4
-      - name: Run Python ${{ matrix.test-type }}
+      - name: Run Python ${{ matrix.test-type }}-${{ matrix.shard_index }}
         uses: ./.github/actions/python-integration-tests
         with:
           python-version: 3.11
@@ -78,6 +102,8 @@ jobs:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
           test-type: ${{ matrix.test-type }}
+          shard-total: ${{ matrix.shard_total }}
+          shard-index: ${{ matrix.shard_index }}
 
   js_integration_test:
     name: JS Integration Test

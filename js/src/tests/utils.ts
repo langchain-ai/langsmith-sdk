@@ -81,7 +81,8 @@ export async function deleteDataset(
 export async function waitUntilRunFound(
   client: Client,
   runId: string,
-  checkOutputs = false
+  checkOutputs = false,
+  timeout?: number
 ) {
   return waitUntil(
     async () => {
@@ -99,7 +100,7 @@ export async function waitUntilRunFound(
         return false;
       }
     },
-    30_000,
+    timeout ?? 30_000,
     3_000,
     `Waiting for run "${runId}"`
   );

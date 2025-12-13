@@ -22,6 +22,7 @@ from langsmith.schemas import InputTokenDetails, UsageMetadata
 if TYPE_CHECKING:
     import httpx
     from anthropic import Anthropic, AsyncAnthropic
+    from anthropic.lib.streaming import AsyncMessageStream, MessageStream
     from anthropic.types import Completion, Message, MessageStreamEvent
 
 C = TypeVar("C", bound=Union["Anthropic", "AsyncAnthropic", Any])
@@ -241,8 +242,6 @@ def _get_stream_wrapper(
     tracing_extra: TracingExtra,
 ) -> Callable:
     """Create a wrapper for Anthropic's streaming context manager."""
-    import anthropic
-
     is_async = "async" in str(original_stream).lower()
     configured_traceable = run_helpers.traceable(
         name=name,
@@ -266,7 +265,7 @@ def _get_stream_wrapper(
         class AsyncMessageStreamWrapper:
             def __init__(
                 self,
-                wrapped: anthropic.lib.streaming._messages.AsyncMessageStream,
+                wrapped: AsyncMessageStream,
                 **kwargs,
             ) -> None:
                 self._wrapped = wrapped
@@ -345,7 +344,7 @@ def _get_stream_wrapper(
         class MessageStreamWrapper:
             def __init__(
                 self,
-                wrapped: anthropic.lib.streaming._messages.MessageStream,
+                wrapped: MessageStream,
                 **kwargs,
             ) -> None:
                 self._wrapped = wrapped
