@@ -1,8 +1,39 @@
+import functools
+import inspect
 import os
 import re
 
 import pytest
 import vcr
+
+from langsmith import utils as ls_utils
+
+
+def skip_if_rate_limited(fn):
+    """Decorator to skip a test if it raises LangSmithRateLimitError.
+
+    Works for both sync and async tests.
+    """
+
+    if inspect.iscoroutinefunction(fn):
+
+        @functools.wraps(fn)
+        async def _async_wrapped(*args, **kwargs):
+            try:
+                return await fn(*args, **kwargs)
+            except ls_utils.LangSmithRateLimitError as e:
+                pytest.skip(f"LangSmith rate limited: {e}")
+
+        return _async_wrapped
+
+    @functools.wraps(fn)
+    def _wrapped(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except ls_utils.LangSmithRateLimitError as e:
+            pytest.skip(f"LangSmith rate limited: {e}")
+
+    return _wrapped
 
 
 def pytest_collection_modifyitems(config, items):

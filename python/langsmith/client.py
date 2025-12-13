@@ -5249,7 +5249,10 @@ class Client:
                 headers={**self._headers, "Content-Type": "application/json"},
                 data=_dumps_json(
                     [
-                        {**dump_model(upload), "dataset_id": str(dataset_id)}
+                        {
+                            **dump_model(upload, exclude_none=True),
+                            "dataset_id": str(dataset_id),
+                        }
                         for upload in batch
                     ]
                 ),
@@ -9276,12 +9279,12 @@ def _construct_url(api_url: str, pathname: str) -> str:
     return http + "/".join(p for p in parts if p)
 
 
-def dump_model(model) -> dict[str, Any]:
+def dump_model(model, *, exclude_none: bool = False) -> dict[str, Any]:
     """Dump model depending on pydantic version."""
     if hasattr(model, "model_dump"):
-        return model.model_dump()
+        return model.model_dump(exclude_none=exclude_none)
     elif hasattr(model, "dict"):
-        return model.dict()
+        return model.dict(exclude_none=exclude_none)
     else:
         raise TypeError("Unsupported model type")
 

@@ -27,6 +27,8 @@ def _collect_trace_requests(mock_session: mock.MagicMock):
 @pytest.mark.asyncio
 async def test_openai_agents_tracing_processor():
     """Test that OpenAIAgentsTracingProcessor correctly traces agent runs."""
+    import openai
+
     mock_session = mock.MagicMock()
     client = langsmith.Client(session=mock_session)
 
@@ -43,8 +45,10 @@ async def test_openai_agents_tracing_processor():
         "Why is my code failing when I try to divide by zero?"
         " I keep getting this error message."
     )
-
-    result = await Runner.run(agent, question)
+    try:
+        result = await Runner.run(agent, question)
+    except openai.APIConnectionError as e:
+        pytest.skip(reason="Openai is having issues" + str(e))
 
     # Verify we got a result
     assert result is not None
