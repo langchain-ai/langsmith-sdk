@@ -37,7 +37,6 @@
       "src/run_trees.ts",
       "src/traceable.ts",
       "src/evaluation/index.ts",
-      "src/evaluation/langchain.ts",
       "src/schemas.ts",
       "src/langchain.ts",
       "src/jest/index.ts",

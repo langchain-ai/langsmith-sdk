@@ -104,7 +104,9 @@ describe("client", () => {
       [`UUID: ${id}`, `email: hello@example.com`].join("\n")
     );
 
-    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+    expect(
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+    ).toMatchObject({
       nodes: ["evaluate:0", "child:1"],
       data: {
         "evaluate:0": {

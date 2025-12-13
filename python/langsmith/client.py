@@ -461,6 +461,7 @@ class Client:
         "_set_span_in_context",
         "_max_batch_size_bytes",
         "_tracing_error_callback",
+        "_multipart_disabled",
     ]
 
     _api_key: Optional[str]
@@ -650,6 +651,7 @@ class Client:
         self._run_ops_buffer_lock = threading.Lock()
         self.otel_exporter: Optional[OTELExporter] = None
         self._max_batch_size_bytes = max_batch_size_bytes
+        self._multipart_disabled: bool = False
 
         # Initialize auto batching
         if auto_batch_tracing:
@@ -2121,6 +2123,14 @@ class Client:
                 self._send_multipart_req(
                     acc_multipart, api_url=api_url, api_key=api_key
                 )
+            except ls_utils.LangSmithNotFoundError:
+                # Fallback to batch ingest if multipart endpoint returns 404
+                # Disable multipart for future requests
+                self._multipart_disabled = True
+                # Filter out feedback operations as they're not supported in non-multipart mode
+                run_ops = [op for op in ops if isinstance(op, SerializedRunOperation)]
+                if run_ops:
+                    self._batch_ingest_run_ops(run_ops)
             finally:
                 _close_files(list(opened_files_dict.values()))
 
@@ -6575,9 +6585,9 @@ class Client:
                 error=error,
             )
 
-            use_multipart = (self.info.batch_ingest_config or {}).get(
-                "use_multipart_endpoint", False
-            )
+            use_multipart = not self._multipart_disabled and (
+                self.info.batch_ingest_config or {}
+            ).get("use_multipart_endpoint", True)
 
             if (
                 use_multipart
@@ -7433,108 +7443,6 @@ class Client:
         response_d = response.json()
         return ls_schemas.ComparativeExperiment(**response_d)
 
-    async def arun_on_dataset(
-        self,
-        dataset_name: str,
-        llm_or_chain_factory: Any,
-        *,
-        evaluation: Optional[Any] = None,
-        concurrency_level: int = 5,
-        project_name: Optional[str] = None,
-        project_metadata: Optional[dict[str, Any]] = None,
-        dataset_version: Optional[Union[datetime.datetime, str]] = None,
-        verbose: bool = False,
-        input_mapper: Optional[Callable[[dict], Any]] = None,
-        revision_id: Optional[str] = None,
-        **kwargs: Any,
-    ) -> dict[str, Any]:
-        """Asynchronously run the Chain or language model on a dataset.
-
-        .. deprecated:: 0.1.0
-
-           This method is deprecated. Use :func:`langsmith.aevaluate` instead.
-        """  # noqa: E501
-        warnings.warn(
-            "The `arun_on_dataset` method is deprecated and"
-            " will be removed in a future version."
-            "Please use the `aevaluate` method instead.",
-            DeprecationWarning,
-        )
-        try:
-            from langchain.smith import (  # type: ignore[import-not-found]
-                arun_on_dataset as _arun_on_dataset,
-            )
-        except ImportError:
-            raise ImportError(
-                "The client.arun_on_dataset function requires the langchain"
-                "package to run.\nInstall with pip install langchain"
-            )
-        return await _arun_on_dataset(
-            dataset_name=dataset_name,
-            llm_or_chain_factory=llm_or_chain_factory,
-            client=self,
-            evaluation=evaluation,
-            concurrency_level=concurrency_level,
-            project_name=project_name,
-            project_metadata=project_metadata,
-            verbose=verbose,
-            input_mapper=input_mapper,
-            revision_id=revision_id,
-            dataset_version=dataset_version,
-            **kwargs,
-        )
-
-    def run_on_dataset(
-        self,
-        dataset_name: str,
-        llm_or_chain_factory: Any,
-        *,
-        evaluation: Optional[Any] = None,
-        concurrency_level: int = 5,
-        project_name: Optional[str] = None,
-        project_metadata: Optional[dict[str, Any]] = None,
-        dataset_version: Optional[Union[datetime.datetime, str]] = None,
-        verbose: bool = False,
-        input_mapper: Optional[Callable[[dict], Any]] = None,
-        revision_id: Optional[str] = None,
-        **kwargs: Any,
-    ) -> dict[str, Any]:
-        """Run the Chain or language model on a dataset.
-
-        .. deprecated:: 0.1.0
-
-           This method is deprecated. Use :func:`langsmith.aevaluate` instead.
-        """  # noqa: E501  # noqa: E501
-        warnings.warn(
-            "The `run_on_dataset` method is deprecated and"
-            " will be removed in a future version."
-            "Please use the `evaluate` method instead.",
-            DeprecationWarning,
-        )
-        try:
-            from langchain.smith import (
-                run_on_dataset as _run_on_dataset,  # type: ignore
-            )
-        except ImportError:
-            raise ImportError(
-                "The client.run_on_dataset function requires the langchain"
-                "package to run.\nInstall with pip install langchain"
-            )
-        return _run_on_dataset(
-            dataset_name=dataset_name,
-            llm_or_chain_factory=llm_or_chain_factory,
-            concurrency_level=concurrency_level,
-            client=self,
-            evaluation=evaluation,
-            project_name=project_name,
-            project_metadata=project_metadata,
-            verbose=verbose,
-            input_mapper=input_mapper,
-            revision_id=revision_id,
-            dataset_version=dataset_version,
-            **kwargs,
-        )
-
     def _current_tenant_is_owner(self, owner: str) -> bool:
         """Check if the current workspace has the same handle as owner.
 
@@ -8359,43 +8267,6 @@ class Client:
                 pass
             ```
 
-            Using the `evaluate` API with an off-the-shelf LangChain evaluator:
-
-            ```python
-            from langsmith.evaluation import LangChainStringEvaluator
-            from langchain.chat_models import init_chat_model
-
-
-            def prepare_criteria_data(run: Run, example: Example):
-                return {
-                    "prediction": run.outputs["output"],
-                    "reference": example.outputs["answer"],
-                    "input": str(example.inputs),
-                }
-
-
-            results = client.evaluate(
-                predict,
-                data=dataset_name,
-                evaluators=[
-                    accuracy,
-                    LangChainStringEvaluator("embedding_distance"),
-                    LangChainStringEvaluator(
-                        "labeled_criteria",
-                        config={
-                            "criteria": {
-                                "usefulness": "The prediction is useful if it is correct"
-                                " and/or asks a useful followup question."
-                            },
-                            "llm": init_chat_model("gpt-4o"),
-                        },
-                        prepare_data=prepare_criteria_data,
-                    ),
-                ],
-                description="Evaluating with off-the-shelf LangChain evaluators.",
-                summary_evaluators=[precision],
-            )
-            ```
 
             View the evaluation results for experiment:...
             Evaluating a LangChain object:

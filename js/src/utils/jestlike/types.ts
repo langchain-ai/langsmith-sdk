@@ -12,8 +12,6 @@ export { type SimpleEvaluator };
 export type LangSmithJestlikeWrapperConfig = Partial<
   Omit<RunTreeConfig, "client">
 > & {
-  /** @deprecated Use `repetitions` instead. */
-  iterations?: number;
   repetitions?: number;
   enableTestTracking?: boolean;
 };
@@ -36,9 +34,6 @@ export type LangSmithJestlikeDescribeWrapper = (
   fn: () => void | Promise<void>,
   config?: LangSmithJestlikeDescribeWrapperConfig
 ) => void;
-
-/** @deprecated Import as `LangSmithJestlikeDescribeWrapper` instead. */
-export type LangSmithJestDescribeWrapper = LangSmithJestlikeDescribeWrapper;
 
 export type SimpleEvaluationResult = {
   key: EvaluationResult["key"];

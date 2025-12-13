@@ -499,7 +499,7 @@ export function generateWrapperFromJestlikeMethods(
       if (!referenceOutputs && "outputs" in rest) {
         referenceOutputs = rest.outputs as O;
       }
-      const totalRuns = config?.repetitions ?? config?.iterations ?? 1;
+      const totalRuns = config?.repetitions ?? 1;
       for (let i = 0; i < totalRuns; i += 1) {
         const testUuid = v4().replace(/-/g, "").slice(0, 13);
         // Jest will not group tests under the same "describe" group if you await the test and

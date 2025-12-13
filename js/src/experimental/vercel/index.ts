@@ -317,6 +317,18 @@ export type WrapAISDKConfig<
    * @default false
    */
   traceResponseMetadata?: boolean;
+
+  /**
+   * Whether to include raw HTTP request and response details in traces from the
+   * underlying model calls (doGenerate/doStream).
+   *
+   * When enabled, traces will include the full HTTP request body, response body,
+   * headers, and other low-level details. This can be useful for debugging provider
+   * issues but creates very verbose traces.
+   *
+   * @default false
+   */
+  traceRawHttp?: boolean;
 };
 
 const _extractChildRunConfig = (lsConfig?: WrapAISDKConfig) => {

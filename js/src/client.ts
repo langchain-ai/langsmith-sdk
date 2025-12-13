@@ -65,16 +65,12 @@ import {
   getEnv,
 } from "./utils/env.js";
 
-import {
-  EvaluationResult,
-  EvaluationResults,
-  RunEvaluator,
-} from "./evaluation/evaluator.js";
+import { EvaluationResult, EvaluationResults } from "./evaluation/evaluator.js";
 import { __version__ } from "./index.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
 import { parsePromptIdentifier } from "./utils/prompts.js";
-import { raiseForStatus } from "./utils/error.js";
+import { raiseForStatus, isLangSmithNotFoundError } from "./utils/error.js";
 import {
   _globalFetchImplementationIsNodeFetch,
   _getFetchImplementation,
@@ -724,6 +720,8 @@ export class Client implements LangSmithTracingClientInterface {
 
   private multipartStreamingDisabled = false;
 
+  private _multipartDisabled = false;
+
   debug = getEnvironmentVariable("LANGSMITH_DEBUG") === "true";
 
   constructor(config: ClientConfig = {}) {
@@ -1069,7 +1067,7 @@ export class Client implements LangSmithTracingClientInterface {
     const serverInfo = await this._ensureServerInfo();
     return (
       this.batchSizeBytesLimit ??
-      serverInfo.batch_ingest_config?.size_limit_bytes ??
+      serverInfo?.batch_ingest_config?.size_limit_bytes ??
       DEFAULT_UNCOMPRESSED_BATCH_SIZE_LIMIT_BYTES
     );
   }
@@ -1081,7 +1079,7 @@ export class Client implements LangSmithTracingClientInterface {
     const serverInfo = await this._ensureServerInfo();
     return (
       this.batchSizeLimit ??
-      serverInfo.batch_ingest_config?.size_limit ??
+      serverInfo?.batch_ingest_config?.size_limit ??
       DEFAULT_BATCH_SIZE_LIMIT
     );
   }
@@ -1165,13 +1163,31 @@ export class Client implements LangSmithTracingClientInterface {
             .map((item) => item.item) as RunUpdate[],
         };
         const serverInfo = await this._ensureServerInfo();
-        if (serverInfo?.batch_ingest_config?.use_multipart_endpoint) {
+        const useMultipart =
+          !this._multipartDisabled &&
+          (serverInfo?.batch_ingest_config?.use_multipart_endpoint ?? true);
+        if (useMultipart) {
           const useGzip = serverInfo?.instance_flags?.gzip_body_enabled;
-          await this.multipartIngestRuns(ingestParams, {
-            ...options,
-            useGzip,
-            sizeBytes: batchSizeBytes,
-          });
+          try {
+            await this.multipartIngestRuns(ingestParams, {
+              ...options,
+              useGzip,
+              sizeBytes: batchSizeBytes,
+            });
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          } catch (e: any) {
+            if (isLangSmithNotFoundError(e)) {
+              // Fallback to batch ingest if multipart endpoint returns 404
+              // Disable multipart for future requests
+              this._multipartDisabled = true;
+              await this.batchIngestRuns(ingestParams, {
+                ...options,
+                sizeBytes: batchSizeBytes,
+              });
+            } else {
+              throw e;
+            }
+          }
         } else {
           await this.batchIngestRuns(ingestParams, {
             ...options,
@@ -1878,6 +1894,10 @@ export class Client implements LangSmithTracingClientInterface {
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
+      // Re-throw 404 errors so caller can fall back to batch ingest
+      if (isLangSmithNotFoundError(e)) {
+        throw e;
+      }
       console.warn(`${e.message.trim()}\n\nContext: ${context}`);
     }
   }
@@ -4074,50 +4094,6 @@ export class Client implements LangSmithTracingClientInterface {
     });
   }
 
-  /**
-   * @deprecated This method is deprecated and will be removed in future LangSmith versions, use `evaluate` from `langsmith/evaluation` instead.
-   */
-  public async evaluateRun(
-    run: Run | string,
-    evaluator: RunEvaluator,
-    {
-      sourceInfo,
-      loadChildRuns,
-      referenceExample,
-    }: {
-      sourceInfo?: KVMap;
-      loadChildRuns: boolean;
-      referenceExample?: Example;
-    } = { loadChildRuns: false }
-  ): Promise<Feedback> {
-    warnOnce(
-      "This method is deprecated and will be removed in future LangSmith versions, use `evaluate` from `langsmith/evaluation` instead."
-    );
-    let run_: Run;
-    if (typeof run === "string") {
-      run_ = await this.readRun(run, { loadChildRuns });
-    } else if (typeof run === "object" && "id" in run) {
-      run_ = run as Run;
-    } else {
-      throw new Error(`Invalid run type: ${typeof run}`);
-    }
-    if (
-      run_.reference_example_id !== null &&
-      run_.reference_example_id !== undefined
-    ) {
-      referenceExample = await this.readExample(run_.reference_example_id);
-    }
-
-    const feedbackResult = await evaluator.evaluateRun(run_, referenceExample);
-    const [_, feedbacks] = await this._logEvaluationFeedback(
-      feedbackResult,
-      run_,
-      sourceInfo
-    );
-
-    return feedbacks[0];
-  }
-
   public async createFeedback(
     runId: string | null,
     key: string,
@@ -5601,6 +5577,21 @@ export class Client implements LangSmithTracingClientInterface {
       );
       return Promise.resolve();
     }
+    /**
+     * traceables use a backgrounded promise before updating runs to avoid blocking
+     * and to allow waiting for child runs to end. Waiting a small amount of time
+     * here ensures that they are able to enqueue their run operation before we await
+     * queued run operations below:
+     *
+     * ```ts
+     * const run = await traceable(async () => {
+     *   return "Hello, world!";
+     * }, { client })();
+     *
+     * await client.awaitPendingTraceBatches();
+     * ```
+     */
+    await new Promise((resolve) => setTimeout(resolve, 1));
     await Promise.all([
       ...this.autoBatchQueue.items.map(({ itemPromise }) => itemPromise),
       this.batchIngestCaller.queue.onIdle(),

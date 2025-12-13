@@ -810,7 +810,9 @@ describe.skip("Requires Anthropic API key", () => {
       // pass
     }
 
-    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+    expect(
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+    ).toMatchObject({
       nodes: ["red:0", "green:1"],
       edges: [],
       data: {

@@ -470,56 +470,6 @@ for (const run of runs) {
 }
 ```
 
-# Evaluating Runs
-
-Check out the [LangSmith Testing & Evaluation dos](https://docs.smith.langchain.com/docs/evaluation/) for up-to-date workflows.
-
-For generating automated feedback on individual runs, you can run evaluations directly using the LangSmith client.
-
-```ts
-import { StringEvaluator } from "langsmith/evaluation";
-
-function jaccardChars(output: string, answer: string): number {
-  const predictionChars = new Set(output.trim().toLowerCase());
-  const answerChars = new Set(answer.trim().toLowerCase());
-  const intersection = [...predictionChars].filter((x) => answerChars.has(x));
-  const union = new Set([...predictionChars, ...answerChars]);
-  return intersection.length / union.size;
-}
-
-async function grader(config: {
-  input: string;
-  prediction: string;
-  answer?: string;
-}): Promise<{ score: number; value: string }> {
-  let value: string;
-  let score: number;
-  if (config.answer === null || config.answer === undefined) {
-    value = "AMBIGUOUS";
-    score = 0.5;
-  } else {
-    score = jaccardChars(config.prediction, config.answer);
-    value = score > 0.9 ? "CORRECT" : "INCORRECT";
-  }
-  return { score: score, value: value };
-}
-
-const evaluator = new StringEvaluator({
-  evaluationName: "Jaccard",
-  gradingFunction: grader,
-});
-
-const runs = await client.listRuns({
-  projectName: "my_project",
-  executionOrder: 1,
-  error: false,
-});
-
-for (const run of runs) {
-  client.evaluateRun(run, evaluator);
-}
-```
-
 ## Additional Documentation
 
 To learn more about the LangSmith platform, check out the [docs](https://docs.smith.langchain.com/docs/).

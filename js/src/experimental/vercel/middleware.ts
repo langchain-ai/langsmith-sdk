@@ -31,8 +31,21 @@ const _formatTracedInputs = (params: LanguageModelV2CallOptions) => {
   return rest;
 };
 
-const _formatTracedOutputs = (outputs: Record<string, unknown>) => {
-  const formattedOutputs = { ...outputs };
+const _formatTracedOutputs = (
+  outputs: Record<string, unknown>,
+  includeHttpDetails = false
+) => {
+  let formattedOutputs: Record<string, unknown>;
+
+  if (includeHttpDetails) {
+    // Include all fields including raw request/response/usage
+    formattedOutputs = { ...outputs };
+  } else {
+    // Extract only the fields we want to trace, excluding raw request/response/usage
+    const { request: _, response: __, ...messageFields } = outputs;
+    formattedOutputs = { ...messageFields };
+  }
+
   if (formattedOutputs.role == null) {
     formattedOutputs.role = formattedOutputs.type ?? "assistant";
   }
@@ -124,6 +137,7 @@ export function LangSmithMiddleware(config?: {
     processOutputs?: (
       outputs: Record<string, unknown>
     ) => Record<string, unknown> | Promise<Record<string, unknown>>;
+    traceRawHttp?: boolean;
   };
 }): LanguageModelV2Middleware {
   const { name, modelId, lsConfig } = config ?? {};
@@ -158,9 +172,10 @@ export function LangSmithMiddleware(config?: {
             const typedOutputs = outputs as Awaited<
               ReturnType<typeof doGenerate>
             >;
-            const outputFormatter =
-              lsConfig?.processOutputs ?? _formatTracedOutputs;
-            return outputFormatter(typedOutputs);
+            if (lsConfig?.processOutputs) {
+              return lsConfig.processOutputs(typedOutputs);
+            }
+            return _formatTracedOutputs(typedOutputs, lsConfig?.traceRawHttp);
           },
         }
       );

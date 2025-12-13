@@ -531,7 +531,7 @@ def _ensure_ingest_config(
     info: ls_schemas.LangSmithInfo,
 ) -> ls_schemas.BatchIngestConfig:
     default_config = ls_schemas.BatchIngestConfig(
-        use_multipart_endpoint=False,
+        use_multipart_endpoint=True,
         size_limit_bytes=None,  # Note this field is not used here
         size_limit=100,
         scale_up_nthreads_limit=_AUTO_SCALE_UP_NTHREADS_LIMIT,
@@ -584,7 +584,9 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
     size_limit: int = batch_ingest_config["size_limit"]
     scale_up_nthreads_limit: int = batch_ingest_config["scale_up_nthreads_limit"]
     scale_up_qsize_trigger: int = batch_ingest_config["scale_up_qsize_trigger"]
-    use_multipart = batch_ingest_config.get("use_multipart_endpoint", False)
+    use_multipart = not client._multipart_disabled and batch_ingest_config.get(
+        "use_multipart_endpoint", True
+    )
 
     sub_threads: list[threading.Thread] = []
     # 1 for this func, 1 for getrefcount, 1 for _get_data_type_cached

@@ -28,6 +28,9 @@ test("traceable produces UUIDv7 and start_time matches run id", async () => {
 
   const out = await fn(1);
   expect(out).toBe(2);
+
+  await client.awaitPendingTraceBatches();
+
   // Ensure post and patch include run_type and start_time
   expect(createSpy).toHaveBeenCalled();
   const createdArg = createSpy.mock.calls[0][0];

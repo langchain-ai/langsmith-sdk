@@ -11,7 +11,6 @@ const entrypoints = {
   run_trees: "run_trees",
   traceable: "traceable",
   evaluation: "evaluation/index",
-  "evaluation/langchain": "evaluation/langchain",
   schemas: "schemas",
   langchain: "langchain",
   jest: "jest/index",

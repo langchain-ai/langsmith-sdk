@@ -1693,9 +1693,9 @@ def test_mime_type_is_propogated(langchain_client: Client) -> None:
     safe_delete_dataset(langchain_client, dataset_id=dataset.id)
 
 
-def test_evaluate_mime_type_is_propogated(langchain_client: Client) -> None:
+def test_evaluate_mime_type_is_propagated(langchain_client: Client) -> None:
     """Test that the mime type is propogated correctly when evaluating."""
-    dataset_name = "__test_evaluate_mime_type_is_propogated" + uuid7().hex
+    dataset_name = "__test_evaluate_mime_type_is_propagated" + uuid7().hex
     dataset = _create_dataset(langchain_client, dataset_name)
 
     langchain_client.upload_examples_multipart(
