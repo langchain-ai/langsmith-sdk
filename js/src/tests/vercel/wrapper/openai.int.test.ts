@@ -140,7 +140,7 @@ test("wrap generateText with flex service tier", async () => {
 });
 
 test("wrap streamText", async () => {
-  const result = await streamText({
+  const result = streamText({
     model: openai("gpt-5-nano"),
     messages: [
       {

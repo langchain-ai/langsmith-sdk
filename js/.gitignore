@@ -63,10 +63,6 @@ Chinook_Sqlite.sql
 /jest/reporter.js
 /jest/reporter.d.ts
 /jest/reporter.d.cts
-/vercel.cjs
-/vercel.js
-/vercel.d.ts
-/vercel.d.cts
 /vitest.cjs
 /vitest.js
 /vitest.d.ts
@@ -91,10 +87,6 @@ Chinook_Sqlite.sql
 /wrappers/openai.js
 /wrappers/openai.d.ts
 /wrappers/openai.d.cts
-/wrappers/vercel.cjs
-/wrappers/vercel.js
-/wrappers/vercel.d.ts
-/wrappers/vercel.d.cts
 /singletons/traceable.cjs
 /singletons/traceable.js
 /singletons/traceable.d.ts
