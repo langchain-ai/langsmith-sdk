@@ -869,6 +869,8 @@ describe("deferred input", () => {
           }
         );
 
+        await new Promise((resolve) => setTimeout(resolve, 10));
+
         yield childFn();
 
         for await (const token of input) {
