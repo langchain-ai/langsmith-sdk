@@ -464,7 +464,10 @@ const convertSerializableArg = (
                       >
                     >
                   ) => {
-                    const wrapped = getSerializablePromise(bound(...args));
+                    const wrapped = getSerializablePromise(
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      bound(...args)
+                    );
                     proxyState.current.push(
                       wrapped as Promise<IteratorResult<unknown>> & {
                         toJSON: () => IteratorResult<unknown>;

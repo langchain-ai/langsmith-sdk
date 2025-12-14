@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
-import { jest, expect, test } from "@jest/globals";
+import { jest, expect, test, describe, it } from "@jest/globals";
 import { v4 as uuidv4 } from "uuid";
 import { RunTree, RunTreeConfig } from "../run_trees.js";
 import { _LC_CONTEXT_VARIABLES_KEY } from "../singletons/constants.js";
@@ -193,7 +193,7 @@ test("nested traceable passes through LangChain context vars", (done) => {
           (alsInstance.getStore() as any)?.[_LC_CONTEXT_VARIABLES_KEY]?.foo
         ).toEqual("bar");
         done();
-      } catch (e) {
+      } catch (e: any) {
         done(e);
       }
     }
@@ -1516,7 +1516,7 @@ test("traceable process inputs/process outputs type inference", async () => {
       return {};
     },
   });
-  const chunks = [];
+  const chunks: any[] = [];
   for (const value of await tracedIteratorFunc(["a", "b", "c"])) {
     chunks.push(value);
   }
@@ -1559,7 +1559,7 @@ test("traceable process inputs/process outputs type inference", async () => {
     yield "e";
     yield "f";
   })();
-  const chunks2 = [];
+  const chunks2: any[] = [];
   for await (const value of tracedAsyncIteratorFunc(inputAsyncIterable)) {
     chunks2.push(value);
   }
@@ -2309,7 +2309,7 @@ test("traceable wrapper with aggregator function", async () => {
 
   expect(isTraceableFunction(iterableTraceable)).toBe(true);
 
-  const chunks = [];
+  const chunks: any[] = [];
   for await (const chunk of iterableTraceable("Hello there")) {
     chunks.push(chunk);
   }
@@ -2347,7 +2347,7 @@ test("traceable async generator success", async () => {
 
   expect(isTraceableFunction(iterableTraceable)).toBe(true);
 
-  const results = [];
+  const results: any[] = [];
   for await (const num of iterableTraceable()) {
     results.push(num);
   }
