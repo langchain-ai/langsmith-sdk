@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { jest } from "@jest/globals";
+/* eslint-disable @typescript-eslint/no-non-null-assertion */
+import { jest, expect, test, describe, it } from "@jest/globals";
 import { v4 as uuidv4 } from "uuid";
 import { RunTree, RunTreeConfig } from "../run_trees.js";
 import { _LC_CONTEXT_VARIABLES_KEY } from "../singletons/constants.js";
@@ -41,6 +42,7 @@ test("basic traceable implementation", async () => {
     nodes: ["llm:0"],
     edges: [],
   });
+  expect(callSpy.mock.calls.length).toBe(2);
 });
 
 test("404s should only log, not throw an error", async () => {
@@ -119,6 +121,7 @@ test("nested traceable implementation", async () => {
       ["chain:0", "str:2"],
     ],
   });
+  expect(callSpy.mock.calls.length).toBe(6);
 });
 
 test("nested traceable passes through LangChain context vars", (done) => {
@@ -190,7 +193,7 @@ test("nested traceable passes through LangChain context vars", (done) => {
           (alsInstance.getStore() as any)?.[_LC_CONTEXT_VARIABLES_KEY]?.foo
         ).toEqual("bar");
         done();
-      } catch (e) {
+      } catch (e: any) {
         done(e);
       }
     }
@@ -804,6 +807,8 @@ describe("deferred input", () => {
         },
       },
     });
+    // If input is deferred, it should be sent in a single POST call
+    expect(callSpy.mock.calls.length).toBe(1);
   });
 
   test("async generator", async () => {
@@ -841,6 +846,70 @@ describe("deferred input", () => {
         },
       },
     });
+    // If input is deferred, it should be sent in a single POST call
+    expect(callSpy.mock.calls.length).toBe(1);
+  });
+
+  test("async generator with child non generator", async () => {
+    const { client, callSpy } = mockClient();
+    const inputStream = async function* inputStream() {
+      for (const token of "Hello world".split(" ")) {
+        yield token;
+      }
+    };
+
+    const parrotStream = traceable(
+      async function* parrotStream(input: AsyncGenerator<string>) {
+        const childFn = traceable(
+          () => {
+            return "foo";
+          },
+          {
+            name: "childFn",
+          }
+        );
+
+        await new Promise((resolve) => setTimeout(resolve, 10));
+
+        yield childFn();
+
+        for await (const token of input) {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          yield token;
+        }
+      },
+      { client, tracingEnabled: true }
+    );
+
+    const tokens: string[] = [];
+    for await (const token of parrotStream(inputStream())) {
+      tokens.push(token);
+    }
+
+    expect(tokens).toEqual(["foo", "Hello", "world"]);
+    const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+    expect(tree).toMatchObject({
+      nodes: ["childFn:0", "parrotStream:1"],
+      edges: [["parrotStream:1", "childFn:0"]],
+      data: {
+        "childFn:0": {
+          inputs: {},
+          outputs: { outputs: "foo" },
+        },
+        "parrotStream:1": {
+          inputs: { input: ["Hello", "world"] },
+          outputs: { outputs: ["foo", "Hello", "world"] },
+        },
+      },
+    });
+    expect(
+      new Date(tree.data["parrotStream:1"].start_time!).getTime()
+    ).toBeLessThan(new Date(tree.data["childFn:0"].start_time!).getTime());
+    expect(
+      new Date(tree.data["parrotStream:1"].end_time!).getTime()
+    ).toBeGreaterThan(new Date(tree.data["childFn:0"].end_time!).getTime());
+    // If input is deferred, it should be sent in a single POST call
+    expect(callSpy.mock.calls.length).toBe(3);
   });
 
   test("readable stream", async () => {
@@ -881,6 +950,8 @@ describe("deferred input", () => {
         },
       },
     });
+    // If input is deferred, it should be sent in a single POST call
+    expect(callSpy.mock.calls.length).toBe(1);
   });
 
   test("readable stream reader", async () => {
@@ -928,6 +999,8 @@ describe("deferred input", () => {
         },
       },
     });
+    // If input is deferred, it should be sent in a single POST call
+    expect(callSpy.mock.calls.length).toBe(1);
   });
 
   test("promise", async () => {
@@ -966,6 +1039,8 @@ describe("deferred input", () => {
         },
       },
     });
+    // If input is deferred, it should be sent in a single POST call
+    expect(callSpy.mock.calls.length).toBe(1);
   });
 
   test("promise rejection", async () => {
@@ -993,6 +1068,8 @@ describe("deferred input", () => {
         },
       },
     });
+    // If input is deferred, it should be sent in a single POST call
+    expect(callSpy.mock.calls.length).toBe(1);
   });
 
   test("promise rejection, callback handling", async () => {
@@ -1020,6 +1097,8 @@ describe("deferred input", () => {
         },
       },
     });
+    // If input is deferred, it should be sent in a single POST call
+    expect(callSpy.mock.calls.length).toBe(1);
   });
 });
 
@@ -1439,7 +1518,7 @@ test("traceable process inputs/process outputs type inference", async () => {
       return {};
     },
   });
-  const chunks = [];
+  const chunks: any[] = [];
   for (const value of await tracedIteratorFunc(["a", "b", "c"])) {
     chunks.push(value);
   }
@@ -1482,7 +1561,7 @@ test("traceable process inputs/process outputs type inference", async () => {
     yield "e";
     yield "f";
   })();
-  const chunks2 = [];
+  const chunks2: any[] = [];
   for await (const value of tracedAsyncIteratorFunc(inputAsyncIterable)) {
     chunks2.push(value);
   }
@@ -2232,7 +2311,7 @@ test("traceable wrapper with aggregator function", async () => {
 
   expect(isTraceableFunction(iterableTraceable)).toBe(true);
 
-  const chunks = [];
+  const chunks: any[] = [];
   for await (const chunk of iterableTraceable("Hello there")) {
     chunks.push(chunk);
   }
@@ -2270,7 +2349,7 @@ test("traceable async generator success", async () => {
 
   expect(isTraceableFunction(iterableTraceable)).toBe(true);
 
-  const results = [];
+  const results: any[] = [];
   for await (const num of iterableTraceable()) {
     results.push(num);
   }
