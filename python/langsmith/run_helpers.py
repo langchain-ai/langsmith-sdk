@@ -661,14 +661,14 @@ def traceable(
                         _on_run_end,
                         run_container,
                         error=e,
-                        outputs=_get_function_result(results, reduce_fn),
+                        outputs=_get_function_result(results, reduce_fn, run_container),
                     )
                 )
                 raise
             await aitertools.aio_to_thread(
                 _on_run_end,
                 run_container,
-                outputs=_get_function_result(results, reduce_fn),
+                outputs=_get_function_result(results, reduce_fn, run_container),
             )
 
         @functools.wraps(func)
@@ -763,10 +763,13 @@ def traceable(
                 _on_run_end(
                     run_container,
                     error=e,
-                    outputs=_get_function_result(results, reduce_fn),
+                    outputs=_get_function_result(results, reduce_fn, run_container),
                 )
                 raise
-            _on_run_end(run_container, outputs=_get_function_result(results, reduce_fn))
+            _on_run_end(
+                run_container,
+                outputs=_get_function_result(results, reduce_fn, run_container),
+            )
 
             return function_return
 
@@ -1370,7 +1373,11 @@ def _container_end(
             dict_outputs = {"output": outputs}
     else:
         dict_outputs = {"output": outputs}
-    if (usage := _extract_usage(run_tree=run_tree, outputs=dict_outputs)) is not None:
+    if (
+        "usage_metadata" not in run_tree.metadata
+        and (usage := _extract_usage(run_tree=run_tree, outputs=dict_outputs))
+        is not None
+    ):
         run_tree.metadata["usage_metadata"] = usage
     if error:
         stacktrace = utils._format_exc()
@@ -1603,7 +1610,12 @@ def _handle_container_end(
     """Handle the end of run."""
     try:
         if outputs_processor is not None:
-            outputs = outputs_processor(outputs)
+            # Call process_outputs within the run tree context
+            token = _PARENT_RUN_TREE.set(container["new_run"])
+            try:
+                outputs = outputs_processor(outputs)
+            finally:
+                _PARENT_RUN_TREE.reset(token)
         _container_end(container, outputs=outputs, error=error)
     except BaseException as e:
         LOGGER.warning(f"Unable to process trace outputs: {repr(e)}")
@@ -1905,7 +1917,14 @@ class _TracedStreamBase(Generic[T]):
             return
         try:
             if self.__ls_reduce_fn__:
-                reduced_output = self.__ls_reduce_fn__(self.__ls_accumulated_output__)
+                # Set run tree context for reduce_fn
+                token = _PARENT_RUN_TREE.set(self.__ls_trace_container__["new_run"])
+                try:
+                    reduced_output = self.__ls_reduce_fn__(
+                        self.__ls_accumulated_output__
+                    )
+                finally:
+                    _PARENT_RUN_TREE.reset(token)
             else:
                 reduced_output = self.__ls_accumulated_output__
             _container_end(
@@ -2029,11 +2048,21 @@ class _TracedAsyncStream(_TracedStreamBase, Generic[T]):
             await self._aend_trace()
 
 
-def _get_function_result(results: list, reduce_fn: Callable) -> Any:
+def _get_function_result(
+    results: list, reduce_fn: Callable, container: Optional[_TraceableContainer] = None
+) -> Any:
     if results:
         if reduce_fn is not None:
             try:
-                return reduce_fn(results)
+                # Set run tree context for reduce_fn
+                if container is not None:
+                    token = _PARENT_RUN_TREE.set(container["new_run"])
+                    try:
+                        return reduce_fn(results)
+                    finally:
+                        _PARENT_RUN_TREE.reset(token)
+                else:
+                    return reduce_fn(results)
             except BaseException as e:
                 LOGGER.error(e)
                 return results

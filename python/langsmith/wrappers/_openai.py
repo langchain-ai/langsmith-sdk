@@ -209,10 +209,15 @@ def _reduce_chat(all_chunks: list[ChatCompletionChunk]) -> dict:
         d = {"choices": [{"message": {"role": "assistant", "content": ""}}]}
     # streamed outputs don't go through `process_outputs`
     # so we need to flatten metadata here
-    oai_token_usage = d.pop("usage", None)
-    d["usage_metadata"] = (
-        _create_usage_metadata(oai_token_usage) if oai_token_usage else None
-    )
+    current_run_tree = run_helpers.get_current_run_tree()
+    if current_run_tree:
+        try:
+            oai_token_usage: Any = d.get("usage", None)
+            if oai_token_usage:
+                usage_metadata = _create_usage_metadata(oai_token_usage)
+                current_run_tree.metadata.update({"usage_metadata": usage_metadata})
+        except Exception as e:
+            logger.error(f"Error updating usage metadata: {e}")
     return d
 
 
@@ -303,12 +308,18 @@ def _create_usage_metadata(
 def _process_chat_completion(outputs: Any):
     try:
         rdict = outputs.model_dump()
-        oai_token_usage = rdict.pop("usage", None)
-        rdict["usage_metadata"] = (
-            _create_usage_metadata(oai_token_usage, rdict.get("service_tier"))
-            if oai_token_usage
-            else None
-        )
+        # Add usage metadata to run tree
+        current_run_tree = run_helpers.get_current_run_tree()
+        if current_run_tree:
+            try:
+                raw_usage = rdict.get("usage")
+                usage_metadata = _create_usage_metadata(
+                    raw_usage, rdict.get("service_tier")
+                )
+                current_run_tree.metadata.update({"usage_metadata": usage_metadata})
+            except BaseException as e:
+                logger.debug(f"Failed to extract usage metadata: {e}")
+
         return rdict
     except BaseException as e:
         logger.debug(f"Error processing chat completion: {e}")
@@ -562,10 +573,20 @@ def _process_responses_api_output(response: Any) -> dict:
     if response:
         try:
             output = response.model_dump(exclude_none=True, mode="json")
-            if usage := output.pop("usage", None):
-                output["usage_metadata"] = _create_usage_metadata(
-                    usage, output.get("service_tier")
-                )
+            # Add usage metadata to run tree
+            current_run_tree = run_helpers.get_current_run_tree()
+            if current_run_tree:
+                try:
+                    if usage := output.get("usage"):
+                        usage_metadata = _create_usage_metadata(
+                            usage, output.get("service_tier")
+                        )
+                        current_run_tree.metadata.update(
+                            {"usage_metadata": usage_metadata}
+                        )
+                except BaseException as e:
+                    logger.debug(f"Failed to extract usage metadata: {e}")
+
             return output
         except Exception:
             return {"output": response}
