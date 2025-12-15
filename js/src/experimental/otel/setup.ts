@@ -47,6 +47,8 @@ export type InitializeOTELConfig = {
 };
 
 /**
+ * @deprecated Use non-OTEL `wrapAISDK` from `langsmith/experimental/vercel` instead.
+ *
  * Initializes OpenTelemetry with LangSmith-specific configuration for tracing.
  *
  * Call this once at the start of your application to enable tracing integration. Sets global
