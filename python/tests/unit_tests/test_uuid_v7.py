@@ -52,6 +52,18 @@ def test_run_tree_default_uuidv7_and_start_time_match() -> None:
     assert id_ms == start_ms
 
 
+def test_run_tree_explicit_start_time_matches_id() -> None:
+    fixed_start = datetime.datetime(
+        2024, 6, 7, 8, 9, 10, 123000, tzinfo=datetime.timezone.utc
+    )
+    rt = RunTree(name="test", run_type="chain", inputs={}, start_time=fixed_start)
+
+    assert rt.id.version == 7
+    id_ms = _uuid_v7_ms(rt.id)
+    start_ms = int(rt.start_time.timestamp() * 1_000_000_000) // 1_000_000
+    assert id_ms == start_ms
+
+
 def test_post_and_patch_include_run_type_and_start_time() -> None:
     client = MagicMock(spec=Client)
     fixed_start = datetime.datetime(

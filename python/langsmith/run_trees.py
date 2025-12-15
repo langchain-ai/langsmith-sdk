@@ -263,7 +263,9 @@ class RunTree(ls_schemas.RunBase):
             if "start_time" in values and values["start_time"] is not None:
                 values["id"] = uuid7_from_datetime(values["start_time"])
             else:
-                values["id"] = uuid7()
+                now = datetime.now(timezone.utc)
+                values["start_time"] = now
+                values["id"] = uuid7_from_datetime(now)
         if "trace_id" not in values:
             if parent_run is not None:
                 values["trace_id"] = parent_run.trace_id
