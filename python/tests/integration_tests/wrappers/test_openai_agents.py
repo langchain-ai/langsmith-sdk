@@ -263,6 +263,17 @@ async def test_wrap_openai_nests_under_agent_trace():
         f"but found {len(trace_ids)}: {trace_ids}"
     )
 
+    # Verify invocation_params with tools are present in trace events
+    events_with_tools = [
+        event
+        for event in all_events
+        if event.get("extra", {}).get("invocation_params", {}).get("tools")
+    ]
+    assert len(events_with_tools) > 0, (
+        "No trace events found with invocation_params.tools - "
+        "tools should be captured in invocation_params"
+    )
+
 
 @pytest.mark.asyncio
 async def test_traceable_decorator_nests_under_agent_trace():
