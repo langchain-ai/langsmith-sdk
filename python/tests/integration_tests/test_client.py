@@ -102,6 +102,7 @@ def langchain_client() -> Client:
             "instance_flags": {
                 "dataset_examples_multipart_enabled": True,
                 "examples_multipart_enabled": True,
+                "zstd_compression_enabled": True,
             }
         }
     )
