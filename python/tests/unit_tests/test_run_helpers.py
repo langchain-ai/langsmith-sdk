@@ -41,6 +41,7 @@ from langsmith.run_helpers import (
     tracing_context,
 )
 from langsmith.run_trees import RunTree
+from tests.unit_tests.conftest import parse_request_data
 
 
 def _get_calls(
@@ -67,7 +68,7 @@ def _get_calls(
 def _get_data(mock_calls: List[Any]) -> List[Tuple[str, dict]]:
     datas = []
     for call_ in mock_calls:
-        data = json.loads(call_.kwargs["data"])
+        data = parse_request_data(call_.kwargs["data"])
         for verb in ("post", "patch"):
             for payload in data.get(verb) or []:
                 datas.append((verb, payload))
@@ -280,7 +281,7 @@ def test_traceable_iterator(
     call = mock_calls[0]
     assert call.args[0] == "POST"
     assert call.args[1].startswith("https://api.smith.langchain.com")
-    body = json.loads(mock_calls[0].kwargs["data"])
+    body = parse_request_data(mock_calls[0].kwargs["data"])
     assert body["post"]
     assert body["post"][0]["outputs"]["output"] == expected
 
@@ -364,7 +365,9 @@ async def test_traceable_stream(
     call = mock_calls[0]
     assert call.args[0] == "POST"
     assert call.args[1].startswith("https://api.smith.langchain.com")
-    call_data = [json.loads(mock_call.kwargs["data"]) for mock_call in mock_calls]
+    call_data = [
+        parse_request_data(mock_call.kwargs["data"]) for mock_call in mock_calls
+    ]
     body = call_data[0]
     assert body["post"]
     assert body["post"][0]["name"] == "my_stream_fn"
@@ -379,7 +382,7 @@ async def test_traceable_stream(
                 assert False, "Could not get patch"
             mock_calls = _get_calls(mock_client, minimum=1)
             call_data = [
-                json.loads(mock_call.kwargs["data"]) for mock_call in mock_calls
+                parse_request_data(mock_call.kwargs["data"]) for mock_call in mock_calls
             ]
             first_patch = next((d for d in call_data if d.get("patch")), None)
             attempt += 1
@@ -417,7 +420,7 @@ async def test_traceable_async_iterator(use_next: bool, mock_client: Client) -> 
         call = mock_calls[0]
         assert call.args[0] == "POST"
         assert call.args[1].startswith("https://api.smith.langchain.com")
-        body = json.loads(call.kwargs["data"])
+        body = parse_request_data(call.kwargs["data"])
         assert body["post"]
         assert body["post"][0]["inputs"] == {"a": "FOOOOOO", "b": 2, "d": 3}
         outputs_ = body["post"][0]["outputs"]
@@ -427,7 +430,7 @@ async def test_traceable_async_iterator(use_next: bool, mock_client: Client) -> 
         else:
             # It was put in the second batch
             assert len(mock_calls) == 2
-            body_2 = json.loads(mock_calls[1].kwargs["data"])
+            body_2 = parse_request_data(mock_calls[1].kwargs["data"])
             assert body_2["patch"]
             assert body_2["patch"][0]["outputs"]["output"] == expected
 
@@ -614,7 +617,7 @@ def test_traceable_parent_from_runnable_config() -> None:
             if call.args and call.args[0] != "GET":
                 assert call.args[0] == "POST"
                 assert call.args[1].startswith("https://api.smith.langchain.com")
-                body = json.loads(call.kwargs["data"])
+                body = parse_request_data(call.kwargs["data"])
                 assert body["post"]
                 posts.extend(body["post"])
         assert len(posts) == 2
@@ -653,7 +656,7 @@ def test_traceable_parent_from_runnable_config_accepts_config() -> None:
             if call.args and call.args[0] != "GET":
                 assert call.args[0] == "POST"
                 assert call.args[1].startswith("https://api.smith.langchain.com")
-                body = json.loads(call.kwargs["data"])
+                body = parse_request_data(call.kwargs["data"])
                 assert body["post"]
                 posts.extend(body["post"])
         assert len(posts) == 2
@@ -678,7 +681,7 @@ def test_traceable_project_name() -> None:
         call = mock_calls[0]
         assert call.args[0] == "POST"
         assert call.args[1].startswith("https://api.smith.langchain.com")
-        body = json.loads(call.kwargs["data"])
+        body = parse_request_data(call.kwargs["data"])
         assert body["post"]
         assert body["post"][0]["session_name"] == "my foo project"
 
@@ -698,7 +701,7 @@ def test_traceable_project_name() -> None:
         call = mock_calls[0]
         assert call.args[0] == "POST"
         assert call.args[1].startswith("https://api.smith.langchain.com")
-        body = json.loads(call.kwargs["data"])
+        body = parse_request_data(call.kwargs["data"])
         assert body["post"]
         assert body["post"][0]["session_name"] == "my bar project"
         assert body["post"][1]["session_name"] == "my bar project"
@@ -1245,7 +1248,7 @@ def test_client_passed_when_trace_parent():
     call = calls[0]
     assert call.args[0] == "POST"
     assert call.args[1].startswith("https://api.smith.langchain.com")
-    body = json.loads(call.kwargs["data"])
+    body = parse_request_data(call.kwargs["data"])
     assert body["post"]
     assert body["post"][0]["inputs"] == {"foo": "bar"}
     assert body["post"][0]["outputs"] == {"bar": "baz"}
@@ -1355,7 +1358,7 @@ def test_io_interops():
     assert parent_result == expected_at_stage["parent_output"]
     mock_posts = _get_calls(tracer.client, minimum=5)
     assert len(mock_posts) == 5
-    datas = [json.loads(mock_post.kwargs["data"]) for mock_post in mock_posts]
+    datas = [parse_request_data(mock_post.kwargs["data"]) for mock_post in mock_posts]
     names = [
         "the_parent",
         "child",
@@ -1386,7 +1389,7 @@ def test_io_interops():
     mock_patches = _get_calls(tracer.client, verbs={"PATCH"}, minimum=5)
     assert len(mock_patches) == 5
     patches_datas = [
-        json.loads(mock_patch.kwargs["data"]) for mock_patch in mock_patches
+        parse_request_data(mock_patch.kwargs["data"]) for mock_patch in mock_patches
     ]
     patches_dict = {d["id"]: d for d in patches_datas}
     child_patch = patches_dict[ids["child"]]
@@ -1432,7 +1435,7 @@ def test_trace_nested_enable_disable():
     # run -> run3
     # with run2 being invisible
     mock_calls = _get_calls(mock_client, verbs={"POST", "PATCH"})
-    datas = [json.loads(mock_post.kwargs["data"]) for mock_post in mock_calls]
+    datas = [parse_request_data(mock_post.kwargs["data"]) for mock_post in mock_calls]
     assert "post" in datas[0]
     posted = datas[0]["post"]
     assert len(posted) == 2
@@ -1631,7 +1634,7 @@ async def test_process_inputs_outputs():
         call = mock_calls[0]
         assert call.args[0] == "POST"
         assert call.args[1].startswith("https://api.smith.langchain.com")
-        body = json.loads(call.kwargs["data"])
+        body = parse_request_data(call.kwargs["data"])
         assert body["post"]
         assert body["post"][0]["inputs"] == {
             "serialized_in": "what's the meaning of life?"
@@ -1880,7 +1883,7 @@ def test_traceable_iterator_process_chunk(mock_client: Client) -> None:
     call = mock_calls[0]
     assert call.args[0] == "POST"
     assert call.args[1].startswith("https://api.smith.langchain.com")
-    body = json.loads(mock_calls[0].kwargs["data"])
+    body = parse_request_data(mock_calls[0].kwargs["data"])
     assert body["post"]
     assert body["post"][0]["outputs"]["output"] == list(range(6))
 
@@ -1926,7 +1929,7 @@ async def test_traceable_async_iterator_process_chunk(mock_client: Client) -> No
     call = mock_calls[0]
     assert call.args[0] == "POST"
     assert call.args[1].startswith("https://api.smith.langchain.com")
-    body = json.loads(mock_calls[0].kwargs["data"])
+    body = parse_request_data(mock_calls[0].kwargs["data"])
     assert body["post"]
     assert body["post"][0]["outputs"]["output"] == list(range(6))
 

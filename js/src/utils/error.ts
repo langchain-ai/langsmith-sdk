@@ -64,6 +64,35 @@ export class LangSmithConflictError extends Error {
 }
 
 /**
+ * LangSmithNotFoundError
+ *
+ * Represents an error that occurs when a requested resource is not found,
+ * typically corresponding to HTTP 404 status code responses.
+ *
+ * @extends Error
+ */
+export class LangSmithNotFoundError extends Error {
+  status: number;
+
+  constructor(message: string) {
+    super(message);
+    this.name = "LangSmithNotFoundError";
+    this.status = 404;
+  }
+}
+
+export function isLangSmithNotFoundError(
+  error: unknown
+): error is LangSmithNotFoundError {
+  return (
+    error != null &&
+    typeof error === "object" &&
+    "name" in error &&
+    error?.name === "LangSmithNotFoundError"
+  );
+}
+
+/**
  * Throws an appropriate error based on the response status and body.
  *
  * @param response - The fetch Response object
@@ -116,6 +145,10 @@ export async function raiseForStatus(
   }
 
   const fullMessage = `Failed to ${context}. Received status [${response.status}]: ${response.statusText}. Message: ${errorBody}`;
+
+  if (response.status === 404) {
+    throw new LangSmithNotFoundError(fullMessage);
+  }
 
   if (response.status === 409) {
     throw new LangSmithConflictError(fullMessage);

@@ -7,7 +7,7 @@ import {
   Run,
   TracerSession,
 } from "../schemas.js";
-import { traceable } from "../traceable.js";
+import { isTraceableFunction, traceable } from "../traceable.js";
 import { getDefaultRevisionId, getGitInfo } from "../utils/_git.js";
 import { assertUuid } from "../utils/_uuid.js";
 import { AsyncCaller } from "../utils/async_caller.js";
@@ -1015,7 +1015,7 @@ async function _forward(
     run = r;
   };
 
-  const options = {
+  const defaultOptions = {
     reference_example_id: example.id,
     on_end: _getRun,
     project_name: experimentName,
@@ -1029,34 +1029,35 @@ async function _forward(
     tracingEnabled: true,
   };
 
-  const wrappedFn =
-    "invoke" in fn
-      ? traceable(async (inputs) => {
-          let langChainCallbacks;
-          try {
-            // TODO: Deprecate this and rely on interop on 0.2 minor bump.
-            const { getLangchainCallbacks } = await import("../langchain.js");
-            langChainCallbacks = await getLangchainCallbacks();
-          } catch {
-            // no-op
-          }
-          // Issue with retrieving LangChain callbacks, rely on interop
-          if (langChainCallbacks === undefined && !includeAttachments) {
-            return await fn.invoke(inputs);
-          } else if (langChainCallbacks === undefined && includeAttachments) {
-            return await fn.invoke(inputs, {
-              attachments: example.attachments,
-            });
-          } else if (!includeAttachments) {
-            return await fn.invoke(inputs, { callbacks: langChainCallbacks });
-          } else {
-            return await fn.invoke(inputs, {
-              attachments: example.attachments,
-              callbacks: langChainCallbacks,
-            });
-          }
-        }, options)
-      : traceable(fn, options);
+  const wrappedFn = isTraceableFunction(fn)
+    ? fn
+    : "invoke" in fn
+    ? traceable(async (inputs) => {
+        let langChainCallbacks;
+        try {
+          // TODO: Deprecate this and rely on interop on 0.2 minor bump.
+          const { getLangchainCallbacks } = await import("../langchain.js");
+          langChainCallbacks = await getLangchainCallbacks();
+        } catch {
+          // no-op
+        }
+        // Issue with retrieving LangChain callbacks, rely on interop
+        if (langChainCallbacks === undefined && !includeAttachments) {
+          return await fn.invoke(inputs);
+        } else if (langChainCallbacks === undefined && includeAttachments) {
+          return await fn.invoke(inputs, {
+            attachments: example.attachments,
+          });
+        } else if (!includeAttachments) {
+          return await fn.invoke(inputs, { callbacks: langChainCallbacks });
+        } else {
+          return await fn.invoke(inputs, {
+            attachments: example.attachments,
+            callbacks: langChainCallbacks,
+          });
+        }
+      }, defaultOptions)
+    : traceable(fn, defaultOptions);
 
   try {
     if (includeAttachments && !("invoke" in fn)) {

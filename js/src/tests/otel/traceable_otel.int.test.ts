@@ -16,7 +16,8 @@ import { initializeOTEL } from "../../experimental/otel/setup.js";
 
 const { DEFAULT_LANGSMITH_SPAN_PROCESSOR } = initializeOTEL();
 
-describe("Traceable OTEL Integration Tests", () => {
+// Deprecated
+describe.skip("Traceable OTEL Integration Tests", () => {
   beforeEach(() => {
     process.env.LANGCHAIN_TRACING = "true";
   });

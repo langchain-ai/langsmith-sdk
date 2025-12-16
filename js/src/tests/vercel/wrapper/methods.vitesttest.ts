@@ -10,6 +10,7 @@ import {
   createLangSmithProviderOptions,
   wrapAISDK,
 } from "../../../experimental/vercel/index.js";
+import { traceable } from "../../../traceable.js";
 
 // Track HTTP requests made by the real traceable function
 const mockHttpRequests: any[] = [];
@@ -356,6 +357,116 @@ describe("wrapAISDK", () => {
           text: "Hello world",
         },
       ]);
+    });
+
+    it("should delay a parent traceable's end time until the child traceable ends", async () => {
+      const wrappedMethods = wrapAISDK(
+        {
+          wrapLanguageModel: ai.wrapLanguageModel,
+          generateText: ai.generateText,
+          streamText: ai.streamText,
+          generateObject: ai.generateObject,
+          streamObject: ai.streamObject,
+        },
+        { client: mockClient as any }
+      );
+
+      const mockLangModel = new MockLanguageModelV2({
+        modelId: "stream-test-model",
+        doStream: async () => ({
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "text-start", id: "text-1" },
+              { type: "text-delta", id: "text-1", delta: "Hello" },
+              { type: "text-delta", id: "text-1", delta: " " },
+              { type: "text-delta", id: "text-1", delta: "world" },
+              { type: "text-end", id: "text-1" },
+              {
+                type: "finish",
+                finishReason: "stop",
+                usage: {
+                  inputTokens: 5,
+                  outputTokens: 2,
+                  totalTokens: 7,
+                },
+              },
+            ],
+            chunkDelayInMs: 100,
+          }),
+        }),
+      });
+
+      const start = new Date();
+      const result = await traceable(
+        async () => {
+          return wrappedMethods.streamText({
+            model: mockLangModel,
+            prompt: "Say hello",
+          });
+        },
+        {
+          client: mockClient as any,
+          name: "parent-traceable",
+        }
+      )();
+
+      // Should return quickly
+      expect(new Date().getTime() - start.getTime()).toBeLessThan(50);
+
+      // Consume the stream to trigger aggregation
+      let fullText = "";
+      for await (const textPart of result.textStream) {
+        fullText += textPart;
+      }
+
+      expect(new Date().getTime() - start.getTime()).toBeGreaterThanOrEqual(
+        500
+      );
+
+      expect(fullText).toBe("Hello world");
+
+      // Verify HTTP requests were made for streamText
+      expect(mockHttpRequests.length).toBe(6); // 3 createRun + 3 updateRun
+
+      const parentCreateRun = mockHttpRequests.find(
+        (req) =>
+          req.type === "createRun" && req.body.name === "parent-traceable"
+      );
+      expect(parentCreateRun).toBeDefined();
+      const parentUpdateRun = mockHttpRequests.find(
+        (req) => req.type === "updateRun" && !req.body.parent_run_id
+      );
+      expect(parentUpdateRun).toBeDefined();
+      const generateTextPostRun = mockHttpRequests.find(
+        (req) =>
+          req.type === "createRun" &&
+          req.body.extra.metadata.ai_sdk_method === "ai.streamText"
+      );
+      expect(generateTextPostRun).toBeDefined();
+      const generateTextPatchRun = mockHttpRequests.find(
+        (req) =>
+          req.type === "updateRun" &&
+          req.body.extra.metadata.ai_sdk_method === "ai.streamText"
+      );
+      expect(generateTextPatchRun).toBeDefined();
+      expect(generateTextPatchRun.body.outputs.content).toMatchObject([
+        {
+          type: "text",
+          text: "Hello world",
+        },
+      ]);
+      const generateLLMPatchRun = mockHttpRequests.find(
+        (req) =>
+          req.type === "updateRun" &&
+          req.body.extra.metadata.ai_sdk_method === "ai.doStream"
+      );
+      expect(generateLLMPatchRun).toBeDefined();
+      expect(parentUpdateRun.body.end_time).toBeGreaterThanOrEqual(
+        generateTextPatchRun.body.end_time
+      );
+      expect(parentUpdateRun.body.end_time).toBeGreaterThanOrEqual(
+        generateLLMPatchRun.body.end_time
+      );
     });
 
     it("should handle streamText errors properly", async () => {

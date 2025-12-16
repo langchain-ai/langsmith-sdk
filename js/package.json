@@ -21,10 +21,6 @@
     "evaluation.js",
     "evaluation.d.ts",
     "evaluation.d.cts",
-    "evaluation/langchain.cjs",
-    "evaluation/langchain.js",
-    "evaluation/langchain.d.ts",
-    "evaluation/langchain.d.cts",
     "schemas.cjs",
     "schemas.js",
     "schemas.d.ts",
@@ -41,10 +37,6 @@
     "jest/reporter.js",
     "jest/reporter.d.ts",
     "jest/reporter.d.cts",
-    "vercel.cjs",
-    "vercel.js",
-    "vercel.d.ts",
-    "vercel.d.cts",
     "vitest.cjs",
     "vitest.js",
     "vitest.d.ts",
@@ -69,10 +61,6 @@
     "wrappers/openai.js",
     "wrappers/openai.d.ts",
     "wrappers/openai.d.cts",
-    "wrappers/vercel.cjs",
-    "wrappers/vercel.js",
-    "wrappers/vercel.d.ts",
-    "wrappers/vercel.d.cts",
     "singletons/traceable.cjs",
     "singletons/traceable.js",
     "singletons/traceable.d.ts",
@@ -267,15 +255,6 @@
       "import": "./evaluation.js",
       "require": "./evaluation.cjs"
     },
-    "./evaluation/langchain": {
-      "types": {
-        "import": "./evaluation/langchain.d.ts",
-        "require": "./evaluation/langchain.d.cts",
-        "default": "./evaluation/langchain.d.ts"
-      },
-      "import": "./evaluation/langchain.js",
-      "require": "./evaluation/langchain.cjs"
-    },
     "./schemas": {
       "types": {
         "import": "./schemas.d.ts",
@@ -311,15 +290,6 @@
       },
       "import": "./jest/reporter.js",
       "require": "./jest/reporter.cjs"
-    },
-    "./vercel": {
-      "types": {
-        "import": "./vercel.d.ts",
-        "require": "./vercel.d.cts",
-        "default": "./vercel.d.ts"
-      },
-      "import": "./vercel.js",
-      "require": "./vercel.cjs"
     },
     "./vitest": {
       "types": {
@@ -374,15 +344,6 @@
       },
       "import": "./wrappers/openai.js",
       "require": "./wrappers/openai.cjs"
-    },
-    "./wrappers/vercel": {
-      "types": {
-        "import": "./wrappers/vercel.d.ts",
-        "require": "./wrappers/vercel.d.cts",
-        "default": "./wrappers/vercel.d.ts"
-      },
-      "import": "./wrappers/vercel.js",
-      "require": "./wrappers/vercel.cjs"
     },
     "./singletons/traceable": {
       "types": {

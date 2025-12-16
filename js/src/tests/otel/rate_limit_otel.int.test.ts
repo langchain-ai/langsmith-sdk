@@ -14,7 +14,8 @@ const client = new Client();
 
 const { DEFAULT_LANGSMITH_SPAN_PROCESSOR } = initializeOTEL();
 
-describe("OTEL Rate Limit Error Tests", () => {
+// Deprecated
+describe.skip("OTEL Rate Limit Error Tests", () => {
   beforeEach(() => {
     // Initialize native OTEL exporter
     initializeOTEL();

@@ -74,7 +74,12 @@ def _create_score_json_schema(
 
 
 class LLMEvaluator(RunEvaluator):
-    """A class for building LLM-as-a-judge evaluators."""
+    """A class for building LLM-as-a-judge evaluators.
+
+    .. deprecated:: 0.5.0
+
+       LLMEvaluator is deprecated. Use openevals instead: https://github.com/langchain-ai/openevals
+    """
 
     def __init__(
         self,

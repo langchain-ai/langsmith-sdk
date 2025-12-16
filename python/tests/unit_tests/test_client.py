@@ -48,6 +48,7 @@ from langsmith.client import (
 )
 from langsmith.run_trees import RunTree
 from langsmith.utils import LangSmithRateLimitError, LangSmithUserError
+from tests.unit_tests.conftest import parse_request_data
 
 _CREATED_AT = datetime(2015, 1, 1, 0, 0, 0)
 
@@ -305,7 +306,6 @@ def test_async_methods() -> None:
         method
         for method in dir(Client)
         if not method.startswith("_")
-        and method not in {"arun_on_dataset"}
         and callable(getattr(Client, method))
         and asyncio.iscoroutinefunction(getattr(Client, method))
     ]
@@ -432,9 +432,13 @@ def test_create_run_mutate(
         for _ in range(10):
             time.sleep(0.1)  # Give the background thread time to stop
             payloads = [
-                json.loads(call[2]["data"])
+                parse_request_data(call[2]["data"])
                 for call in session.request.mock_calls
-                if call.args and call.args[1].endswith("runs/batch")
+                if call.args
+                and (
+                    call.args[1].endswith("runs/batch")
+                    or call.args[1].endswith("runs/multipart")
+                )
             ]
             if payloads:
                 break
@@ -751,7 +755,7 @@ def test_client_gc(auto_batch_tracing: bool, supports_batch_endpoint: bool) -> N
 
         for call in request_calls:
             assert call.args[0] == "POST"
-            assert call.args[1] == "http://localhost:1984/runs/batch"
+            assert call.args[1] == "http://localhost:1984/runs/multipart"
         get_calls = [
             call
             for call in session.request.mock_calls
@@ -1072,7 +1076,7 @@ def test_client_gc_after_autoscale() -> None:
     assert len(request_calls) >= 500 and len(request_calls) <= 550
     for call in request_calls:
         assert call.args[0] == "POST"
-        assert call.args[1] == "http://localhost:1984/runs/batch"
+        assert call.args[1] == "http://localhost:1984/runs/multipart"
 
 
 @pytest.mark.parametrize("supports_batch_endpoint", [True, False])
@@ -1130,7 +1134,7 @@ def test_create_run_includes_langchain_env_var_metadata(
         if tracing_queue := client.tracing_queue:
             tracing_queue.join()
         # Check the posted value in the request
-        posted_value = json.loads(session.request.call_args[1]["data"])
+        posted_value = parse_request_data(session.request.call_args[1]["data"])
         if auto_batch_tracing:
             assert (
                 posted_value["post"][0]["extra"]["metadata"]["LANGCHAIN_REVISION"]
@@ -1905,13 +1909,13 @@ def test_original_sampling_and_batching():
         assert len(post_calls) >= 2
 
         # Verify that only odd-numbered runs were sampled (due to our counter logic)
-        assert post_calls[0].args[1].endswith("/runs/batch")
-        assert post_calls[1].args[1].endswith("/runs/batch")
+        assert post_calls[0].args[1].endswith("/runs/multipart")
+        assert post_calls[1].args[1].endswith("/runs/multipart")
 
         data = post_calls[0].kwargs["data"]
         if isinstance(data, bytes):
             data = data.decode("utf-8")
-        batch_data = json.loads(data)
+        batch_data = parse_request_data(data)
 
         # Verify posts only contain odd-numbered runs
         assert len(batch_data.get("post", [])) == 2
@@ -1927,7 +1931,7 @@ def test_original_sampling_and_batching():
         data = post_calls[1].kwargs["data"]
         if isinstance(data, bytes):
             data = data.decode("utf-8")
-        batch_data = json.loads(data)
+        batch_data = parse_request_data(data)
         assert len(batch_data.get("post", [])) == 2
         for p in batch_data.get("post", []):
             run_id = p["id"]
