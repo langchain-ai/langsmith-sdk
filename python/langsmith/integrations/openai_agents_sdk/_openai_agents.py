@@ -318,6 +318,9 @@ if HAVE_AGENTS:
                 # Merge any additional metadata from extracted
                 if metadata := extracted.get("metadata"):
                     run.extra["metadata"].update(metadata)
+                # Merge invocation_params
+                if invocation_params := extracted.get("invocation_params"):
+                    run.extra["invocation_params"] = invocation_params
 
                 # Track first/last response inputs/outputs for trace
                 if isinstance(span.span_data, tracing.ResponseSpanData):
