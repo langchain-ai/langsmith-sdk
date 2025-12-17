@@ -20,6 +20,18 @@ model_name = "gemini-2.0-flash-001"
 prompt = "Say 'foo'"
 
 
+LS_TEST_CLIENT_INFO = {
+    "batch_ingest_config": {
+        "use_multipart_endpoint": False,
+        "scale_up_qsize_trigger": 1000,
+        "scale_up_nthreads_limit": 16,
+        "scale_down_nempty_trigger": 4,
+        "size_limit": 100,
+        "size_limit_bytes": 20971520,
+    },
+}
+
+
 @pytest.fixture
 def original_client() -> genai.Client:
     """Create an original Gemini client."""
@@ -32,7 +44,7 @@ def original_client() -> genai.Client:
 def mock_ls_client() -> Client:
     """Create a mock LangSmith client."""
     mock_session = mock.MagicMock()
-    return Client(session=mock_session)
+    return Client(session=mock_session, info=LS_TEST_CLIENT_INFO)
 
 
 @pytest.fixture
