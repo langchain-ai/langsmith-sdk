@@ -204,3 +204,21 @@ async def test_repetitions_parameter_async():
     t.log_reference_outputs({"sum": 15})
 
     assert result == 15
+
+
+@pytest.mark.langsmith(metadata={"product_area": "initial_value"})
+def test_metadata_update():
+    """Test that metadata changes are reflected when tests are re-run.
+
+    This test should be run twice with different metadata values to verify
+    that the example metadata is properly updated on the second run.
+    """
+    x = 100
+    y = 200
+    t.log_inputs({"x": x, "y": y})
+
+    result = x + y
+    t.log_outputs({"sum": result})
+    t.log_reference_outputs({"sum": 300})
+
+    assert result == 300

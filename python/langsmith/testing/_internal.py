@@ -675,11 +675,13 @@ class _LangSmithTestSuite:
                 normalized_split = [normalized_split]
             if normalized_split and metadata:
                 metadata["dataset_split"] = normalized_split
-            existing_dataset_split = (example.metadata or {}).pop("dataset_split")
+            # Get existing dataset_split without mutating example.metadata
+            existing_metadata = (example.metadata or {}).copy()
+            existing_dataset_split = existing_metadata.pop("dataset_split", None)
             if (
                 (inputs != example.inputs)
                 or (outputs is not None and outputs != example.outputs)
-                or (metadata is not None and metadata != example.metadata)
+                or (metadata is not None and metadata != existing_metadata)
                 or str(example.dataset_id) != str(self.id)
                 or (
                     normalized_split is not None
