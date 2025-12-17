@@ -6,7 +6,7 @@ import {
   traceable,
   TraceableConfig,
 } from "../traceable.js";
-import { KVMap } from "../schemas.js";
+import { InvocationParamsSchema, KVMap } from "../schemas.js";
 
 // Extra leniency around types in case multiple OpenAI SDK versions get installed
 type OpenAIType = {
@@ -334,6 +334,42 @@ function processChatCompletion(outputs: KVMap): KVMap {
   return result;
 }
 
+const getChatModelInvocationParamsFn = (
+  provider: string,
+  useResponsesApi: boolean
+) => {
+  return (payload: unknown) => {
+    if (typeof payload !== "object" || payload == null) return undefined;
+    const params = payload as Record<string, unknown>;
+
+    const ls_stop =
+      (typeof params.stop === "string" ? [params.stop] : params.stop) ??
+      undefined;
+
+    const ls_invocation_params: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(params)) {
+      if (TRACED_INVOCATION_KEYS.includes(key)) {
+        ls_invocation_params[key] = value;
+      }
+    }
+
+    if (useResponsesApi) {
+      ls_invocation_params.use_responses_api = true;
+    }
+
+    return {
+      ls_provider: provider,
+      ls_model_type: "chat",
+      ls_model_name: params.model,
+      ls_max_tokens:
+        params.max_completion_tokens ?? params.max_tokens ?? undefined,
+      ls_temperature: params.temperature ?? undefined,
+      ls_stop,
+      ls_invocation_params,
+    } as InvocationParamsSchema;
+  };
+};
+
 /**
  * Wraps an OpenAI client's completion methods, enabling automatic LangSmith
  * tracing. Method signatures are unchanged, with the exception that you can pass
@@ -394,33 +430,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
     run_type: "llm",
     aggregator: chatAggregator,
     argsConfigPath: [1, "langsmithExtra"],
-    getInvocationParams: (payload: unknown) => {
-      if (typeof payload !== "object" || payload == null) return undefined;
-      // we can safely do so, as the types are not exported in TSC
-      const params = payload as OpenAI.ChatCompletionCreateParams;
-
-      const ls_stop =
-        (typeof params.stop === "string" ? [params.stop] : params.stop) ??
-        undefined;
-
-      const ls_invocation_params: Record<string, unknown> = {};
-      for (const [key, value] of Object.entries(params)) {
-        if (TRACED_INVOCATION_KEYS.includes(key)) {
-          ls_invocation_params[key] = value;
-        }
-      }
-
-      return {
-        ls_provider: provider,
-        ls_model_type: "chat",
-        ls_model_name: params.model,
-        ls_max_tokens:
-          params.max_completion_tokens ?? params.max_tokens ?? undefined,
-        ls_temperature: params.temperature ?? undefined,
-        ls_stop,
-        ls_invocation_params,
-      };
-    },
+    getInvocationParams: getChatModelInvocationParamsFn(provider, false),
     processOutputs: processChatCompletion,
     ...options,
   };
@@ -582,17 +592,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
           run_type: "llm",
           aggregator: responsesAggregator,
           argsConfigPath: [1, "langsmithExtra"],
-          getInvocationParams: (payload: unknown) => {
-            if (typeof payload !== "object" || payload == null)
-              return undefined;
-            // Handle responses API parameters
-            const params = payload as any;
-            return {
-              ls_provider: provider,
-              ls_model_type: "chat",
-              ls_model_name: params.model || "unknown",
-            };
-          },
+          getInvocationParams: getChatModelInvocationParamsFn(provider, true),
           processOutputs: processChatCompletion,
           ...options,
         }
@@ -610,17 +610,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
           run_type: "llm",
           aggregator: responsesAggregator,
           argsConfigPath: [1, "langsmithExtra"],
-          getInvocationParams: (payload: unknown) => {
-            if (typeof payload !== "object" || payload == null)
-              return undefined;
-            // Handle responses API parameters
-            const params = payload as any;
-            return {
-              ls_provider: provider,
-              ls_model_type: "chat",
-              ls_model_name: params.model || "unknown",
-            };
-          },
+          getInvocationParams: getChatModelInvocationParamsFn(provider, true),
           processOutputs: processChatCompletion,
           ...options,
         }
@@ -638,17 +628,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
           run_type: "llm",
           aggregator: responsesAggregator,
           argsConfigPath: [1, "langsmithExtra"],
-          getInvocationParams: (payload: unknown) => {
-            if (typeof payload !== "object" || payload == null)
-              return undefined;
-            // Handle responses API parameters
-            const params = payload as any;
-            return {
-              ls_provider: provider,
-              ls_model_type: "chat",
-              ls_model_name: params.model || "unknown",
-            };
-          },
+          getInvocationParams: getChatModelInvocationParamsFn(provider, true),
           processOutputs: processChatCompletion,
           ...options,
         }

@@ -93,6 +93,8 @@ test("chat.completions", async () => {
 
   expect(patchedChoices).toEqual(originalChoices);
 
+  await client.awaitPendingTraceBatches();
+
   expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
 
   // Verify token events were logged
@@ -302,6 +304,7 @@ test("chat completions with tool calling", async () => {
   expect(removeToolCallId(patchedChoices)).toEqual(
     removeToolCallId(originalChoices)
   );
+  await client.awaitPendingTraceBatches();
   expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
 
   // Verify token events were logged for tool calling stream
@@ -363,6 +366,7 @@ test("chat completions with tool calling", async () => {
   expect(removeToolCallId(patchedChoices2)).toEqual(
     removeToolCallId(originalChoices)
   );
+  await client.awaitPendingTraceBatches();
   expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
   for (const call of callSpy.mock.calls) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -637,7 +641,10 @@ test("responses.create and retrieve workflow", async () => {
 
   // Create a response (this should be traced)
   const createResponse = await openai.responses.create({
-    model: "gpt-4.1-nano",
+    model: "gpt-5-nano",
+    reasoning: {
+      effort: "low",
+    },
     input: [
       {
         role: "user",
@@ -670,9 +677,14 @@ test("responses.create and retrieve workflow", async () => {
   for (const call of createCalls) {
     const body = parseRequestBody((call[1] as any).body);
     expect(body.extra.metadata).toMatchObject({
-      ls_model_name: "gpt-4.1-nano",
+      ls_model_name: "gpt-5-nano",
       ls_model_type: "chat",
       ls_provider: "openai",
+      ls_invocation_params: {
+        reasoning: {
+          effort: "low",
+        },
+      },
     });
   }
   const updateCalls = callSpy.mock.calls.filter(
@@ -714,6 +726,7 @@ test("responses.create streaming", async () => {
   }
 
   expect(chunks.length).toBeGreaterThan(0);
+  await client.awaitPendingTraceBatches();
   expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
 
   // Verify token events were logged
@@ -1045,6 +1058,7 @@ describe("Usage Metadata Tests", () => {
           );
           oaiUsage = (res as OpenAI.ChatCompletion).usage;
         }
+        await client.awaitPendingTraceBatches();
 
         let usageMetadata: UsageMetadata | undefined;
         const requestBodies: any = {};
