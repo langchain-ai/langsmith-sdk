@@ -36,7 +36,8 @@ def test__get_id():
 
 
 def test_sync_example_metadata_update():
-    """Test that metadata updates are properly detected without mutating existing metadata.
+    """Test that metadata updates are properly detected without
+    mutating existing metadata.
 
     This is a regression test for a bug where example.metadata was being mutated
     during the comparison check, causing metadata updates to not be detected properly.
