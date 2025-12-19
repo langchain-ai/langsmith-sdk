@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, test, expect } from "@jest/globals";
-import { wrapClaudeAgentSDK } from "../experimental/claude_agent_sdk/index.js";
+import { wrapClaudeAgentSDK } from "../experimental/anthropic/index.js";
 
 // Mock Claude Agent SDK types and functions
 type MockSDKMessage = {

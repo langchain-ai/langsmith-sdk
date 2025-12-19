@@ -570,11 +570,31 @@ function wrapClaudeAgentQuery<
           // Wait for all child runs to complete
           await Promise.all(childRunEndPromises);
 
-          // Note: resultUsage and resultMetadata are captured but would need
-          // run patching to apply to the chain run (not yet implemented in JS)
-          // For now they are available for future enhancement
-          void resultUsage;
-          void resultMetadata;
+          // Apply result metadata to the chain run (matches Python behavior)
+          const currentRun = getCurrentRunTree();
+          if (currentRun) {
+            // Add usage metadata if available
+            if (resultUsage && Object.keys(resultUsage).length > 0) {
+              if (!currentRun.extra) {
+                currentRun.extra = {};
+              }
+              if (!currentRun.extra.metadata) {
+                currentRun.extra.metadata = {};
+              }
+              currentRun.extra.metadata.usage_metadata = resultUsage;
+            }
+
+            // Add conversation-level metadata if available
+            if (resultMetadata && Object.keys(resultMetadata).length > 0) {
+              if (!currentRun.extra) {
+                currentRun.extra = {};
+              }
+              if (!currentRun.extra.metadata) {
+                currentRun.extra.metadata = {};
+              }
+              Object.assign(currentRun.extra.metadata, resultMetadata);
+            }
+          }
         } finally {
           // Clean up parent run reference and any orphaned tool runs
           _currentParentRun = undefined;
@@ -698,7 +718,7 @@ async function _createLLMSpanForMessages(
   prompt: string | AsyncIterable<SDKMessage> | undefined,
   conversationHistory: Array<{ content: unknown; role: string }>,
   options: QueryOptions,
-  _startTime: number
+  startTime: number
 ): Promise<{ content: unknown; role: string } | undefined> {
   if (messages.length === 0) return undefined;
 
@@ -732,14 +752,18 @@ async function _createLLMSpanForMessages(
     ? _subagentSessions.get(parentToolUseId)
     : undefined;
 
+  const endTime = Date.now();
+
   if (subagentParent) {
-    // Create LLM run as child of subagent session
+    // Create LLM run as child of subagent session with proper start and end time
     try {
       const llmRun = await subagentParent.createChild({
         name: "claude.assistant.turn",
         run_type: "llm",
         inputs: input ?? {},
         outputs: outputs[outputs.length - 1] || { content: outputs },
+        start_time: startTime,
+        end_time: endTime,
         extra: {
           metadata: {
             ...(model ? { ls_model_name: model } : {}),
@@ -748,26 +772,35 @@ async function _createLLMSpanForMessages(
         },
       });
       await llmRun.postRun();
-      llmRun.end();
-      await llmRun.patchRun();
     } catch (e) {
       // Silently fail
     }
   } else {
     // Regular LLM turn under main conversation
-    await traceable(
-      async (_inputMessages: typeof input) => {
-        return outputs[outputs.length - 1] || outputs;
-      },
-      {
-        name: "claude.assistant.turn",
-        run_type: "llm",
-        metadata: {
-          ...(model ? { ls_model_name: model } : {}),
-          usage_metadata: usage,
-        },
+    // Note: traceable doesn't support start_time config, so we use getCurrentRunTree
+    // and manually create the child run to preserve timing
+    const currentRun = getCurrentRunTree();
+    if (currentRun) {
+      try {
+        const llmRun = await currentRun.createChild({
+          name: "claude.assistant.turn",
+          run_type: "llm",
+          inputs: input ?? {},
+          outputs: outputs[outputs.length - 1] || { content: outputs },
+          start_time: startTime,
+          end_time: endTime,
+          extra: {
+            metadata: {
+              ...(model ? { ls_model_name: model } : {}),
+              usage_metadata: usage,
+            },
+          },
+        });
+        await llmRun.postRun();
+      } catch (e) {
+        // Silently fail
       }
-    )(input);
+    }
   }
 
   // Return flattened content for conversation history

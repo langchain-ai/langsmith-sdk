@@ -3,7 +3,7 @@
 /* eslint-disable import/no-extraneous-dependencies */
 import { describe, beforeAll, test, expect } from "@jest/globals";
 import * as claudeSDK from "@anthropic-ai/claude-agent-sdk";
-import { wrapClaudeAgentSDK } from "../experimental/claude_agent_sdk/index.js";
+import { wrapClaudeAgentSDK } from "../experimental/anthropic/index.js";
 
 // Note: These tests require an ANTHROPIC_API_KEY environment variable.
 // They are skipped by default to avoid requiring API keys in CI.
