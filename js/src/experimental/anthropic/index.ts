@@ -12,6 +12,10 @@ type SDKMessage = {
 };
 
 type QueryOptions = {
+  model?: string;
+  maxTurns?: number;
+  tools?: Array<SdkMcpToolDefinition<any>>;
+  hooks?: Record<string, HookCallbackMatcher[]>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [key: string]: any;
 };
@@ -98,6 +102,13 @@ const _clientManagedRuns: Map<string, RunTree> = new Map();
  * Used to parent LLM turns and tools to the correct subagent.
  */
 const _subagentSessions: Map<string, RunTree> = new Map();
+
+/**
+ * Tracks the currently active subagent context (tool_use_id).
+ * Set when a Task tool is called, cleared when the tool result returns.
+ * Assistant messages that arrive while a subagent is active belong to that subagent.
+ */
+let _activeSubagentToolUseId: string | undefined;
 
 /**
  * Reference to the current parent run tree for tool tracing.
@@ -202,8 +213,11 @@ async function _postToolUseHook(
     const clientRun = _clientManagedRuns.get(toolUseId);
     if (clientRun) {
       _clientManagedRuns.delete(toolUseId);
-      // Also remove from subagent sessions if it was a Task tool
-      _subagentSessions.delete(toolUseId);
+
+      // If this is a subagent session (Task tool), DON'T delete from _subagentSessions yet
+      // The subagent's assistant messages will arrive after the tool result
+      // We'll clean it up when we detect the next main conversation turn
+      const isSubagentSession = _subagentSessions.has(toolUseId);
 
       const { outputs, isError } = formatOutputs(toolResponse);
       clientRun.end({
@@ -211,6 +225,12 @@ async function _postToolUseHook(
         error: isError ? outputs.output?.toString() : undefined,
       });
       await clientRun.patchRun();
+
+      // If this is NOT a subagent session (it's a tool within a subagent), remove it
+      if (!isSubagentSession) {
+        // This was a tool within a subagent, safe to remove
+      }
+
       return {};
     }
 
@@ -245,6 +265,11 @@ async function _postToolUseHook(
 function _createTracingHooks(): {
   PreToolUse: HookCallbackMatcher[];
   PostToolUse: HookCallbackMatcher[];
+  SessionStart: HookCallbackMatcher[];
+  SessionEnd: HookCallbackMatcher[];
+  SubagentStart: HookCallbackMatcher[];
+  SubagentStop: HookCallbackMatcher[];
+  Stop: HookCallbackMatcher[];
 } {
   return {
     PreToolUse: [
@@ -268,6 +293,69 @@ function _createTracingHooks(): {
             toolUseId: string | undefined,
             _options: { signal: AbortSignal }
           ) => _postToolUseHook(input, toolUseId),
+        ],
+      },
+    ],
+    SessionStart: [
+      {
+        matcher: undefined,
+        hooks: [
+          async (_input: HookInput) => {
+            // Initialize session - runs once at the start of a conversation
+            // Currently no-op, but available for future use
+            return {};
+          },
+        ],
+      },
+    ],
+    SessionEnd: [
+      {
+        matcher: undefined,
+        hooks: [
+          async (_input: HookInput) => {
+            // Clean up at end of session
+            _clearActiveToolRuns();
+            return {};
+          },
+        ],
+      },
+    ],
+    SubagentStart: [
+      {
+        matcher: undefined,
+        hooks: [
+          async (_input: HookInput) => {
+            // Track subagent start - already handled in _handleAssistantToolUses
+            // but this provides an additional hook point if needed
+            return {};
+          },
+        ],
+      },
+    ],
+    SubagentStop: [
+      {
+        matcher: undefined,
+        hooks: [
+          async (_input: HookInput, toolUseId: string | undefined) => {
+            // Clean up subagent session
+            if (toolUseId) {
+              _subagentSessions.delete(toolUseId);
+              _clientManagedRuns.delete(toolUseId);
+            }
+            return {};
+          },
+        ],
+      },
+    ],
+    Stop: [
+      {
+        matcher: undefined,
+        hooks: [
+          async (_input: HookInput) => {
+            // Clean up on stop - ensure all runs are finalized
+            _clearActiveToolRuns();
+            return {};
+          },
         ],
       },
     ],
@@ -335,6 +423,7 @@ async function _handleAssistantToolUses(
         // Extract subagent name from input
         const subagentName =
           toolInput.subagent_type ||
+          toolInput.agent_type ||
           (toolInput.description
             ? toolInput.description.split(" ")[0]
             : null) ||
@@ -346,6 +435,8 @@ async function _handleAssistantToolUses(
           inputs: toolInput,
         });
 
+        // Post the run to start it, but DON'T end it yet
+        // It will be ended when we receive the tool result or at cleanup
         await subagentSession.postRun();
 
         // Store in both maps
@@ -387,6 +478,7 @@ function _clearActiveToolRuns(): void {
   }
   _clientManagedRuns.clear();
   _subagentSessions.clear();
+  _activeSubagentToolUseId = undefined;
 
   // Clean up regular tool runs
   for (const [, { run }] of _activeToolRuns) {
@@ -408,206 +500,308 @@ function _clearActiveToolRuns(): void {
 function wrapClaudeAgentQuery<
   T extends (...args: unknown[]) => AsyncGenerator<SDKMessage, void, unknown>
 >(queryFn: T, defaultThis?: unknown, baseConfig?: WrapClaudeAgentSDKConfig): T {
-  const proxy: T = new Proxy(queryFn, {
-    apply(target, thisArg, argArray) {
-      const params = (argArray[0] ?? {}) as {
-        prompt?: string | AsyncIterable<SDKMessage>;
-        options?: QueryOptions;
-      };
+  const wrapped = async function* (...args: unknown[]) {
+    const params = (args[0] ?? {}) as {
+      prompt?: string | AsyncIterable<SDKMessage>;
+      options?: QueryOptions;
+    };
 
-      const { prompt, options = {} } = params;
+    const { prompt, options = {} } = params;
 
-      // Inject LangSmith tracing hooks into options
-      const mergedHooks = _mergeHooks(options.hooks);
-      const modifiedOptions = { ...options, hooks: mergedHooks };
-      const modifiedParams = { ...params, options: modifiedOptions };
-      const modifiedArgArray = [modifiedParams, ...argArray.slice(1)];
+    // Inject LangSmith tracing hooks into options
+    const mergedHooks = _mergeHooks(options.hooks);
+    const modifiedOptions = { ...options, hooks: mergedHooks };
+    const modifiedParams = { ...params, options: modifiedOptions };
+    const modifiedArgs = [modifiedParams, ...args.slice(1)];
 
-      // Create wrapped async generator that maintains trace context
-      const wrappedGenerator = (async function* () {
-        const finalResults: Array<{ content: unknown; role: string }> = [];
+    const finalResults: Array<{ content: unknown; role: string }> = [];
 
-        // Track assistant messages by their message ID for proper streaming handling
-        // Each message ID maps to { message, startTime } - we keep the latest streaming update
-        const pendingMessages: Map<
-          string,
-          { message: SDKMessage; startTime: number }
-        > = new Map();
+    // Track assistant messages by their message ID for proper streaming handling
+    // Each message ID maps to { message, startTime } - we keep the latest streaming update
+    const pendingMessages: Map<
+      string,
+      { message: SDKMessage; startTime: number }
+    > = new Map();
 
-        // Store child run promises for proper async handling
-        const childRunEndPromises: Promise<void>[] = [];
+    // Track which message IDs have already had spans created
+    // This prevents creating duplicate spans when the SDK sends multiple updates
+    // for the same message ID with stop_reason set
+    const completedMessageIds = new Set<string>();
 
-        // Track usage from ResultMessage to patch into final LLM span
-        let resultUsage: Record<string, unknown> | undefined;
-        let resultMetadata: Record<string, unknown> | undefined;
+    // Store child run promises for proper async handling
+    const childRunEndPromises: Promise<void>[] = [];
 
-        // Set the parent run for hook-based tool tracing
-        _currentParentRun = getCurrentRunTree();
+    // Track usage from ResultMessage to add to the parent span
+    let resultUsage: Record<string, unknown> | undefined;
 
-        // Create an LLM span for a specific message ID
-        const createLLMSpanForId = async (messageId: string) => {
-          const pending = pendingMessages.get(messageId);
-          if (!pending) return;
+    // Track usage from completed assistant message spans (by model)
+    // Used to calculate remaining tokens for pending messages
+    const completedUsageByModel = new Map<
+      string,
+      {
+        inputTokens: number;
+        outputTokens: number;
+        cacheReadTokens: number;
+        cacheCreationTokens: number;
+      }
+    >();
 
-          pendingMessages.delete(messageId);
+    // Set the parent run for hook-based tool tracing
+    _currentParentRun = getCurrentRunTree();
 
-          const finalMessageContent = await _createLLMSpanForMessages(
-            [pending.message],
-            prompt,
-            finalResults,
-            modifiedOptions,
-            pending.startTime
-          );
+    // Create an LLM span for a specific message ID
+    const createLLMSpanForId = async (messageId: string) => {
+      // Skip if we've already created a span for this message ID
+      if (completedMessageIds.has(messageId)) {
+        return;
+      }
 
-          if (finalMessageContent) {
-            finalResults.push(finalMessageContent);
-          }
+      const pending = pendingMessages.get(messageId);
+      if (!pending) return;
+
+      pendingMessages.delete(messageId);
+      completedMessageIds.add(messageId);
+
+      // Track the usage before creating the span
+      const model = pending.message.message?.model;
+      const usage = pending.message.message?.usage;
+      if (model && usage) {
+        const existing = completedUsageByModel.get(model) || {
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
         };
+        existing.inputTokens += usage.input_tokens || 0;
+        existing.outputTokens += usage.output_tokens || 0;
+        existing.cacheReadTokens += usage.cache_read_input_tokens || 0;
+        existing.cacheCreationTokens += usage.cache_creation_input_tokens || 0;
+        completedUsageByModel.set(model, existing);
+      }
 
-        const invocationTarget: unknown =
-          thisArg === proxy || thisArg === undefined
-            ? defaultThis ?? thisArg
-            : thisArg;
+      const finalMessageContent = await _createLLMSpanForMessages(
+        [pending.message],
+        prompt,
+        finalResults,
+        modifiedOptions,
+        pending.startTime
+      );
 
-        const generator: AsyncGenerator<SDKMessage, void, unknown> =
-          Reflect.apply(
-            target,
-            invocationTarget,
-            modifiedArgArray
-          ) as AsyncGenerator<SDKMessage, void, unknown>;
+      if (finalMessageContent) {
+        finalResults.push(finalMessageContent);
+      }
+    };
 
-        try {
-          for await (const message of generator) {
-            const currentTime = Date.now();
+    const generator: AsyncGenerator<SDKMessage, void, unknown> =
+      await queryFn.call(defaultThis, ...modifiedArgs);
 
-            // Handle assistant messages - group by message ID for streaming
-            // Multiple messages with the same ID are streaming updates; use the last one
-            if (message.type === "assistant") {
-              const messageId = message.message?.id;
+    try {
+      for await (const message of generator) {
+        const currentTime = Date.now();
 
-              if (messageId) {
-                // Check if this is a new message or an update to existing
-                const existing = pendingMessages.get(messageId);
-                if (!existing) {
-                  // New message - store it with current time
-                  pendingMessages.set(messageId, {
-                    message,
-                    startTime: currentTime,
-                  });
-                } else {
-                  // Streaming update - keep the start time, update the message
-                  pendingMessages.set(messageId, {
-                    message,
-                    startTime: existing.startTime,
-                  });
-                }
+        // Handle assistant messages - group by message ID for streaming
+        // Multiple messages with the same ID are streaming updates; use the last one
+        if (message.type === "assistant") {
+          const messageId = message.message?.id;
 
-                // Check if this message has a stop_reason (meaning it's complete)
-                // If so, create the span now
-                if (message.message?.stop_reason) {
-                  const spanPromise = createLLMSpanForId(messageId);
+          // If we have an active subagent context and this message doesn't have parent_tool_use_id,
+          // check if this is a new main conversation message (which would end the subagent execution)
+          if (_activeSubagentToolUseId && !message.parent_tool_use_id) {
+            // Check if this message contains tool uses - if it does, it's part of main conversation
+            const content = message.message?.content;
+            if (Array.isArray(content)) {
+              const hasToolUse = content.some(
+                (block: any) =>
+                  block &&
+                  typeof block === "object" &&
+                  block.type === "tool_use"
+              );
+              // If this message has tool uses and none are within the subagent, it's a new turn
+              if (hasToolUse) {
+                // Clean up the subagent session
+                _subagentSessions.delete(_activeSubagentToolUseId);
+                _activeSubagentToolUseId = undefined;
+              }
+            }
+          }
+
+          if (messageId) {
+            // Check if this is a new message or an update to existing
+            const existing = pendingMessages.get(messageId);
+            if (!existing) {
+              // New message arrived - finalize all OTHER pending messages first
+              // (they must be complete if we're seeing a new message)
+
+              // Finalize all other pending messages
+              for (const [otherId] of pendingMessages) {
+                if (otherId !== messageId) {
+                  const spanPromise = createLLMSpanForId(otherId);
                   childRunEndPromises.push(spanPromise);
                 }
               }
 
-              // Process tool uses for subagent detection (matches Python's _handle_assistant_tool_uses)
-              await _handleAssistantToolUses(message, _currentParentRun);
-            }
-
-            // Handle UserMessage - add to conversation history (matches Python)
-            if (message.type === "user" && message.content) {
-              finalResults.push({
-                content: flattenContentBlocks(message.content),
-                role: "user",
+              pendingMessages.set(messageId, {
+                message,
+                startTime: currentTime,
+              });
+            } else {
+              // Streaming update - keep the start time, update the message
+              pendingMessages.set(messageId, {
+                message,
+                startTime: existing.startTime,
               });
             }
 
-            // Handle ResultMessage - extract usage and metadata (matches Python)
-            if (message.type === "result") {
-              if (message.usage) {
-                resultUsage = _extractUsageFromMessage(message);
-                // Add total_cost if available
-                if (message.total_cost_usd != null) {
-                  resultUsage.total_cost = message.total_cost_usd;
-                }
-                // Add per-model usage if available
-                if (message.modelUsage) {
-                  resultUsage.model_usage = message.modelUsage;
-                }
-              }
-
-              // Extract conversation-level metadata
-              resultMetadata = {};
-              if (message.num_turns != null) {
-                resultMetadata.num_turns = message.num_turns;
-              }
-              if (message.session_id != null) {
-                resultMetadata.session_id = message.session_id;
-              }
-              if (message.duration_ms != null) {
-                resultMetadata.duration_ms = message.duration_ms;
-              }
-              if (message.duration_api_ms != null) {
-                resultMetadata.duration_api_ms = message.duration_api_ms;
-              }
-              if (message.is_error != null) {
-                resultMetadata.is_error = message.is_error;
-              }
-              if (message.stop_reason != null) {
-                resultMetadata.stop_reason = message.stop_reason;
-              }
-            }
-
-            yield message;
-          }
-
-          // Create spans for any remaining pending messages (those without stop_reason)
-          for (const messageId of pendingMessages.keys()) {
-            const spanPromise = createLLMSpanForId(messageId);
-            childRunEndPromises.push(spanPromise);
-          }
-
-          // Wait for all child runs to complete
-          await Promise.all(childRunEndPromises);
-
-          // Apply result metadata to the chain run (matches Python behavior)
-          const currentRun = getCurrentRunTree();
-          if (currentRun) {
-            // Add usage metadata if available
-            if (resultUsage && Object.keys(resultUsage).length > 0) {
-              if (!currentRun.extra) {
-                currentRun.extra = {};
-              }
-              if (!currentRun.extra.metadata) {
-                currentRun.extra.metadata = {};
-              }
-              currentRun.extra.metadata.usage_metadata = resultUsage;
-            }
-
-            // Add conversation-level metadata if available
-            if (resultMetadata && Object.keys(resultMetadata).length > 0) {
-              if (!currentRun.extra) {
-                currentRun.extra = {};
-              }
-              if (!currentRun.extra.metadata) {
-                currentRun.extra.metadata = {};
-              }
-              Object.assign(currentRun.extra.metadata, resultMetadata);
+            // Check if this message has a stop_reason (meaning it's complete)
+            // If so, create the span now (createLLMSpanForId will skip if already created)
+            if (message.message?.stop_reason) {
+              const spanPromise = createLLMSpanForId(messageId);
+              childRunEndPromises.push(spanPromise);
             }
           }
-        } finally {
-          // Clean up parent run reference and any orphaned tool runs
-          _currentParentRun = undefined;
-          _clearActiveToolRuns();
+
+          // Process tool uses for subagent detection (matches Python's _handle_assistant_tool_uses)
+          await _handleAssistantToolUses(message, _currentParentRun);
         }
-      })();
 
-      return wrappedGenerator as ReturnType<T>;
-    },
-  });
+        // Handle UserMessage - add to conversation history (matches Python)
+        if (message.type === "user") {
+          if (message.content) {
+            finalResults.push({
+              content: flattenContentBlocks(message.content),
+              role: "user",
+            });
+          }
 
-  // Wrap the proxy in traceable
-  return traceable(proxy, {
+          // If this is a tool result for a Task tool (subagent), we're entering the subagent's execution
+          // The subagent's assistant messages will come AFTER this result
+          if (
+            message.parent_tool_use_id &&
+            _subagentSessions.has(message.parent_tool_use_id)
+          ) {
+            _activeSubagentToolUseId = message.parent_tool_use_id;
+          }
+        }
+
+        // Handle ResultMessage - extract usage and metadata
+        if (message.type === "result") {
+          // If modelUsage is available, aggregate from it (includes ALL models)
+          // Otherwise fall back to top-level usage field
+          if (message.modelUsage) {
+            // Aggregate usage from modelUsage (includes ALL models)
+            resultUsage = _aggregateUsageFromModelUsage(message.modelUsage);
+
+            // Patch token counts for pending messages using modelUsage
+            // This handles the SDK limitation where the last assistant message
+            // doesn't receive final streaming updates with accurate token counts
+            for (const [, { message: pendingMsg }] of pendingMessages) {
+              const model = pendingMsg.message?.model;
+              if (
+                model &&
+                message.modelUsage[model] &&
+                pendingMsg.message?.usage
+              ) {
+                const modelStats = message.modelUsage[model];
+                const completed = completedUsageByModel.get(model) || {
+                  inputTokens: 0,
+                  outputTokens: 0,
+                  cacheReadTokens: 0,
+                  cacheCreationTokens: 0,
+                };
+
+                // Calculate remaining tokens = total - completed
+                const remainingOutput =
+                  (modelStats.outputTokens || 0) - completed.outputTokens;
+                const remainingInput =
+                  (modelStats.inputTokens || 0) - completed.inputTokens;
+                const remainingCacheRead =
+                  (modelStats.cacheReadInputTokens || 0) -
+                  completed.cacheReadTokens;
+                const remainingCacheCreation =
+                  (modelStats.cacheCreationInputTokens || 0) -
+                  completed.cacheCreationTokens;
+
+                // Update the pending message's usage with remaining tokens
+                pendingMsg.message.usage.output_tokens = Math.max(
+                  0,
+                  remainingOutput
+                );
+                pendingMsg.message.usage.input_tokens = Math.max(
+                  0,
+                  remainingInput
+                );
+
+                if (remainingCacheRead > 0) {
+                  pendingMsg.message.usage.cache_read_input_tokens =
+                    remainingCacheRead;
+                }
+                if (remainingCacheCreation > 0) {
+                  pendingMsg.message.usage.cache_creation_input_tokens =
+                    remainingCacheCreation;
+                }
+              }
+            }
+          } else if (message.usage) {
+            // Fall back to top-level usage if modelUsage not available
+            resultUsage = _extractUsageFromMessage(message);
+          }
+
+          // Add total_cost if available (LangSmith standard field)
+          if (message.total_cost_usd != null && resultUsage) {
+            resultUsage.total_cost = message.total_cost_usd;
+          }
+        }
+
+        yield message;
+      }
+
+      // Create spans for any remaining pending messages (those without stop_reason)
+      for (const messageId of pendingMessages.keys()) {
+        const spanPromise = createLLMSpanForId(messageId);
+        childRunEndPromises.push(spanPromise);
+      }
+
+      // Wait for all child runs to complete
+      await Promise.all(childRunEndPromises);
+
+      // Apply usage metadata to the chain run using LangSmith's standard fields
+      const currentRun = getCurrentRunTree();
+      if (currentRun && resultUsage) {
+        // Initialize metadata object if needed
+        if (!currentRun.extra) {
+          currentRun.extra = {};
+        }
+        if (!currentRun.extra.metadata) {
+          currentRun.extra.metadata = {};
+        }
+
+        // Add LangSmith-standard usage fields directly to metadata
+        if (resultUsage.input_tokens !== undefined) {
+          currentRun.extra.metadata.input_tokens = resultUsage.input_tokens;
+        }
+        if (resultUsage.output_tokens !== undefined) {
+          currentRun.extra.metadata.output_tokens = resultUsage.output_tokens;
+        }
+        if (resultUsage.total_tokens !== undefined) {
+          currentRun.extra.metadata.total_tokens = resultUsage.total_tokens;
+        }
+        if (resultUsage.input_token_details) {
+          currentRun.extra.metadata.input_token_details =
+            resultUsage.input_token_details;
+        }
+        if (resultUsage.total_cost !== undefined) {
+          currentRun.extra.metadata.total_cost = resultUsage.total_cost;
+        }
+      }
+    } finally {
+      // Clean up parent run reference and any orphaned tool runs
+      _currentParentRun = undefined;
+      _clearActiveToolRuns();
+    }
+  } as T;
+
+  // Wrap in traceable
+  return traceable(wrapped, {
     name: "claude.conversation",
     run_type: "chain",
     ...baseConfig,
@@ -656,6 +850,47 @@ function _buildLLMInput(
   ];
 
   return inputParts.length > 0 ? inputParts : undefined;
+}
+
+/**
+ * Aggregates usage from modelUsage breakdown (includes all models, including hidden ones).
+ * This provides accurate totals when multiple models are used.
+ */
+function _aggregateUsageFromModelUsage(
+  modelUsage: Record<string, any>
+): Record<string, unknown> {
+  const metrics: Record<string, unknown> = {};
+
+  let totalInputTokens = 0;
+  let totalOutputTokens = 0;
+  let totalCacheReadTokens = 0;
+  let totalCacheCreationTokens = 0;
+
+  // Aggregate across all models
+  for (const modelStats of Object.values(modelUsage)) {
+    totalInputTokens += modelStats.inputTokens || 0;
+    totalOutputTokens += modelStats.outputTokens || 0;
+    totalCacheReadTokens += modelStats.cacheReadInputTokens || 0;
+    totalCacheCreationTokens += modelStats.cacheCreationInputTokens || 0;
+  }
+
+  // Build input_token_details if we have cache tokens
+  if (totalCacheReadTokens > 0 || totalCacheCreationTokens > 0) {
+    metrics.input_token_details = {
+      cache_read: totalCacheReadTokens,
+      cache_creation: totalCacheCreationTokens,
+    };
+  }
+
+  // Sum all input tokens (new + cache read + cache creation)
+  const totalPromptTokens =
+    totalInputTokens + totalCacheReadTokens + totalCacheCreationTokens;
+
+  metrics.input_tokens = totalPromptTokens;
+  metrics.output_tokens = totalOutputTokens;
+  metrics.total_tokens = totalPromptTokens + totalOutputTokens;
+
+  return metrics;
 }
 
 /**
@@ -747,12 +982,22 @@ async function _createLLMSpanForMessages(
     .filter((c): c is { content: unknown; role: string } => c !== undefined);
 
   // Check if this message belongs to a subagent
+  // First check if message has explicit parent_tool_use_id
   const parentToolUseId = lastMessage.parent_tool_use_id;
-  const subagentParent = parentToolUseId
+  let subagentParent = parentToolUseId
     ? _subagentSessions.get(parentToolUseId)
     : undefined;
 
+  // If no explicit parent, check if we're in an active subagent context
+  if (!subagentParent && _activeSubagentToolUseId) {
+    subagentParent = _subagentSessions.get(_activeSubagentToolUseId);
+  }
+
   const endTime = Date.now();
+
+  // Format inputs: if we have a single input, use it directly; otherwise wrap as messages
+  const formattedInputs =
+    input && input.length === 1 ? input[0] : input ? { messages: input } : {};
 
   if (subagentParent) {
     // Create LLM run as child of subagent session with proper start and end time
@@ -760,7 +1005,7 @@ async function _createLLMSpanForMessages(
       const llmRun = await subagentParent.createChild({
         name: "claude.assistant.turn",
         run_type: "llm",
-        inputs: input ?? {},
+        inputs: formattedInputs,
         outputs: outputs[outputs.length - 1] || { content: outputs },
         start_time: startTime,
         end_time: endTime,
@@ -785,7 +1030,7 @@ async function _createLLMSpanForMessages(
         const llmRun = await currentRun.createChild({
           name: "claude.assistant.turn",
           run_type: "llm",
-          inputs: input ?? {},
+          inputs: formattedInputs,
           outputs: outputs[outputs.length - 1] || { content: outputs },
           start_time: startTime,
           end_time: endTime,
@@ -844,68 +1089,46 @@ export function wrapClaudeAgentSDK<T extends object>(
   sdk: T,
   config?: WrapClaudeAgentSDKConfig
 ): T {
-  const cache = new Map<PropertyKey, unknown>();
+  // Create a shallow copy of the SDK
+  const wrapped = { ...sdk };
 
-  return new Proxy(sdk, {
-    get(target, prop, receiver) {
-      if (cache.has(prop)) {
-        return cache.get(prop);
-      }
+  // Wrap the query method if it exists
+  if ("query" in sdk && typeof sdk.query === "function") {
+    (wrapped as any).query = wrapClaudeAgentQuery(
+      sdk.query as (
+        ...args: unknown[]
+      ) => AsyncGenerator<SDKMessage, void, unknown>,
+      sdk,
+      config
+    );
+  }
 
-      const value = Reflect.get(target, prop, receiver);
-
-      if (prop === "query" && typeof value === "function") {
-        const wrappedQuery = wrapClaudeAgentQuery(
-          value as (
-            ...args: unknown[]
-          ) => AsyncGenerator<SDKMessage, void, unknown>,
-          target,
+  // Wrap the tool method if it exists
+  if ("tool" in sdk && typeof sdk.tool === "function") {
+    const originalTool = sdk.tool as (...args: any[]) => any;
+    (wrapped as any).tool = function (...args: any[]) {
+      const toolDef = originalTool.apply(sdk, args);
+      if (toolDef && typeof toolDef === "object" && "handler" in toolDef) {
+        return wrapClaudeAgentTool(
+          toolDef as SdkMcpToolDefinition<unknown>,
           config
         );
-        cache.set(prop, wrappedQuery);
-        return wrappedQuery;
       }
+      return toolDef;
+    };
+  }
 
-      if (prop === "tool" && typeof value === "function") {
-        const toolFn = value as typeof value;
+  // Keep createSdkMcpServer and other methods as-is (bound to original SDK)
+  if (
+    "createSdkMcpServer" in sdk &&
+    typeof sdk.createSdkMcpServer === "function"
+  ) {
+    (wrapped as any).createSdkMcpServer = (
+      sdk.createSdkMcpServer as Function
+    ).bind(sdk);
+  }
 
-        const wrappedToolFactory = new Proxy(toolFn, {
-          apply(toolTarget, thisArg, argArray) {
-            const invocationTarget =
-              thisArg === receiver || thisArg === undefined ? target : thisArg;
-
-            const toolDef = Reflect.apply(
-              toolTarget,
-              invocationTarget,
-              argArray
-            );
-            if (
-              toolDef &&
-              typeof toolDef === "object" &&
-              "handler" in toolDef
-            ) {
-              return wrapClaudeAgentTool(
-                toolDef as SdkMcpToolDefinition<unknown>,
-                config
-              );
-            }
-            return toolDef;
-          },
-        });
-
-        cache.set(prop, wrappedToolFactory);
-        return wrappedToolFactory;
-      }
-
-      if (typeof value === "function") {
-        const bound = value.bind(target);
-        cache.set(prop, bound);
-        return bound;
-      }
-
-      return value;
-    },
-  }) as T;
+  return wrapped as T;
 }
 
 function getNumberProperty(obj: unknown, key: string): number | undefined {

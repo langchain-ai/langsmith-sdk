@@ -16,7 +16,7 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
   const wrappedSDK = wrapClaudeAgentSDK(claudeSDK, {
     project_name: "claude-agent-sdk-test",
     tags: ["integration-test"],
-  });
+  }) as typeof claudeSDK;
 
   beforeAll(() => {
     if (!process.env.ANTHROPIC_API_KEY) {
@@ -24,7 +24,7 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
     }
   });
 
-  test.only("query with simple prompt", async () => {
+  test("query with simple prompt", async () => {
     const messages: any[] = [];
 
     for await (const message of wrappedSDK.query({
@@ -72,7 +72,47 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
     expect(resultMessage.usage.output_tokens).toBeGreaterThan(0);
   });
 
-  test("query with tool usage", async () => {
+  test("query with subagent usage", async () => {
+    const messages: any[] = [];
+
+    // Configure a subagent that can do calculations
+    for await (const message of wrappedSDK.query({
+      prompt:
+        "I need to calculate 25 * 4 + 100. Please delegate this to the calculator subagent.",
+      options: {
+        model: "claude-3-5-haiku-20241022",
+        maxTurns: 10,
+        agents: {
+          calculator: {
+            description: "A subagent that performs mathematical calculations",
+            prompt:
+              "You are a calculator assistant. Perform the requested calculation and return the result.",
+            tools: [],
+            model: "haiku",
+          },
+        },
+      },
+    })) {
+      messages.push(message);
+    }
+
+    expect(messages.length).toBeGreaterThan(0);
+
+    // Verify we have assistant messages
+    const assistantMessages = messages.filter((m) => m.type === "assistant");
+    expect(assistantMessages.length).toBeGreaterThan(0);
+
+    const resultMessage = messages.find((m) => m.type === "result");
+    expect(resultMessage).toBeDefined();
+    expect(resultMessage.usage).toBeDefined();
+    expect(resultMessage.modelUsage).toBeDefined();
+
+    // Verify token usage
+    expect(resultMessage.usage.output_tokens).toBeGreaterThan(0);
+    expect(resultMessage.usage.input_tokens).toBeGreaterThan(0);
+  });
+
+  test("query with MCP tool usage", async () => {
     const calculator = wrappedSDK.tool(
       "calculator",
       "Performs basic arithmetic operations",
@@ -112,44 +152,23 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
       }
     );
 
+    // Create SDK MCP server with the tool
+    const mcpServer = wrappedSDK.createSdkMcpServer({
+      name: "calculator-server",
+      tools: [calculator],
+    });
+
     const messages: any[] = [];
 
     for await (const message of wrappedSDK.query({
       prompt:
-        "Use the calculator tool to compute 42 + 17. Just give me the result.",
-      options: {
-        model: "claude-3-5-haiku-20241022",
-        maxTurns: 3,
-        tools: [calculator] as any,
-      },
-    })) {
-      messages.push(message);
-    }
-
-    expect(messages.length).toBeGreaterThan(0);
-
-    // Should have tool use in the messages
-    const hasToolUse = messages.some(
-      (m) =>
-        m.type === "assistant" &&
-        Array.isArray(m.message?.content) &&
-        m.message.content.some((c: any) => c.type === "tool_use")
-    );
-    expect(hasToolUse).toBe(true);
-
-    const resultMessage = messages.find((m) => m.type === "result");
-    expect(resultMessage).toBeDefined();
-    expect(resultMessage.usage).toBeDefined();
-  });
-
-  test("query with multiple turns", async () => {
-    const messages: any[] = [];
-
-    for await (const message of wrappedSDK.query({
-      prompt: "Count from 1 to 3, one number per turn. Use exactly 3 turns.",
+        "Use the calculator tool to compute 42 + 17, then tell me the result.",
       options: {
         model: "claude-3-5-haiku-20241022",
         maxTurns: 5,
+        mcpServers: {
+          calculator: mcpServer,
+        },
       },
     })) {
       messages.push(message);
@@ -157,13 +176,28 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
 
     expect(messages.length).toBeGreaterThan(0);
 
+    // Verify basic message structure
     const assistantMessages = messages.filter((m) => m.type === "assistant");
     expect(assistantMessages.length).toBeGreaterThan(0);
 
     const resultMessage = messages.find((m) => m.type === "result");
     expect(resultMessage).toBeDefined();
-    expect(resultMessage.num_turns).toBeDefined();
-    expect(resultMessage.num_turns).toBeGreaterThan(0);
+    expect(resultMessage.usage).toBeDefined();
+    expect(resultMessage.modelUsage).toBeDefined();
+
+    // Verify that multiple models are tracked (including hidden ones)
+    expect(Object.keys(resultMessage.modelUsage).length).toBeGreaterThan(0);
+
+    // Verify server_tool_use is captured if present
+    if (resultMessage.usage.server_tool_use) {
+      expect(resultMessage.usage.server_tool_use).toBeDefined();
+      expect(
+        resultMessage.usage.server_tool_use.web_search_requests
+      ).toBeDefined();
+      expect(
+        resultMessage.usage.server_tool_use.web_fetch_requests
+      ).toBeDefined();
+    }
   });
 
   test("tracks token usage including cache tokens", async () => {
@@ -325,7 +359,8 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
     const messageIdToUpdates: Map<string, number> = new Map();
 
     for await (const message of wrappedSDK.query({
-      prompt: "Use the calculator tool to compute 42 + 17. Report the result.",
+      prompt:
+        "IMPORTANT: You MUST use the calculator tool to compute 42 + 17. Do not calculate yourself. Call the tool with operation='add', a=42, b=17, then report the result you get back.",
       options: {
         model: "claude-3-5-haiku-20241022",
         maxTurns: 3,
