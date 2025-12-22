@@ -866,7 +866,7 @@ describe("async generators", () => {
       async function parentWithError() {
         // Start child operation that will never finish
         const childIterator = neverEndingChild()[Symbol.asyncIterator]();
-        childIterator.next(); // Start the child
+        void childIterator.next(); // Start the child
 
         // Throw error immediately
         throw new Error("Parent error");
@@ -913,7 +913,7 @@ describe("async generators", () => {
       async function* generatorWithError() {
         // Start child operation that will never finish
         const childIterator = neverEndingChild()[Symbol.asyncIterator]();
-        childIterator.next(); // Start the child
+        void childIterator.next(); // Start the child
 
         yield "first";
 
