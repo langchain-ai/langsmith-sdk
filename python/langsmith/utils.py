@@ -395,7 +395,7 @@ def get_env_var(
     names = [f"{namespace}_{name}" for namespace in namespaces]
     for name in names:
         value = os.environ.get(name)
-        if value is not None:
+        if value is not None and value.strip() != "":
             return value
     return default
 
