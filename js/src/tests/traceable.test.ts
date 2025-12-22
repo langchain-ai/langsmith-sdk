@@ -883,13 +883,13 @@ describe("async generators", () => {
     const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
     expect(tree.data["parent:0"].error).toContain("Parent error");
     expect(tree.data["parent:0"].end_time).toBeDefined();
-    
+
     // Child run should NOT have ended (since it never finishes and parent didn't wait)
     expect(tree.data["never_ending_child:1"]).toBeDefined();
     expect(tree.data["never_ending_child:1"].end_time).toBeUndefined();
 
     const elapsedTime = Date.now() - startTime;
-    
+
     // Parent run should end quickly, proving we didn't wait for the never-ending child
     expect(elapsedTime).toBeLessThan(200);
   });
@@ -937,13 +937,13 @@ describe("async generators", () => {
     const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
     expect(tree.data["generator:0"].error).toContain("Generator error");
     expect(tree.data["generator:0"].end_time).toBeDefined();
-    
+
     // Child run should NOT have ended (since it never finishes and generator didn't wait)
     expect(tree.data["never_ending_child:1"]).toBeDefined();
     expect(tree.data["never_ending_child:1"].end_time).toBeUndefined();
 
     const elapsedTime = Date.now() - startTime;
-    
+
     // Generator run should end quickly, proving we didn't wait for the never-ending child
     expect(elapsedTime).toBeLessThan(200);
   });

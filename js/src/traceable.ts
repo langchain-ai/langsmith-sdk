@@ -168,7 +168,13 @@ async function handleEnd(params: {
   deferredInputs?: boolean;
   skipChildPromiseDelay?: boolean;
 }) {
-  const { runTree, on_end, postRunPromise, deferredInputs, skipChildPromiseDelay } = params;
+  const {
+    runTree,
+    on_end,
+    postRunPromise,
+    deferredInputs,
+    skipChildPromiseDelay,
+  } = params;
   const onEnd = on_end;
   if (onEnd) {
     onEnd(runTree);
