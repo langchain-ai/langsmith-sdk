@@ -970,7 +970,13 @@ export function traceable<Func extends (...args: any[]) => any>(
           await currentRunTree?.end(undefined, String(e));
           throw e;
         } finally {
-          if (!finished) await currentRunTree?.end(undefined, "Cancelled");
+          if (!finished) {
+            // Call return() on the original iterator to trigger cleanup
+            if (iterator.return) {
+              await iterator.return(undefined);
+            }
+            await currentRunTree?.end(undefined, "Cancelled");
+          }
           await handleRunOutputs({
             runTree: currentRunTree,
             rawOutputs: await handleChunks(chunks),

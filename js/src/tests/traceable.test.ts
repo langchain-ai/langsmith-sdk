@@ -769,6 +769,82 @@ describe("async generators", () => {
       },
     });
   });
+
+  test("early termination triggers finally block cleanup", async () => {
+    const { client } = mockClient();
+    const cleanupOrder: string[] = [];
+
+    async function* generator(name: string) {
+      try {
+        cleanupOrder.push(`${name}: In try block`);
+        yield `${name}: yield 1`;
+        yield `${name}: yield 2`;
+      } catch {
+        cleanupOrder.push(`${name}: caught exception`);
+      } finally {
+        cleanupOrder.push(`${name}: In finally block`);
+      }
+    }
+
+    const traceableGenerator = traceable(generator, {
+      name: "traceable_test",
+      client,
+      tracingEnabled: true,
+    });
+
+    // Break early to trigger cleanup
+    for await (const _ of traceableGenerator("test")) {
+      break;
+    }
+
+    // Verify that finally block was called even though we broke early
+    expect(cleanupOrder).toEqual([
+      "test: In try block",
+      "test: In finally block",
+    ]);
+  });
+
+  test("early termination with throw triggers finally block cleanup", async () => {
+    const { client } = mockClient();
+    const cleanupOrder: string[] = [];
+
+    async function* generator(name: string, shouldThrow: boolean) {
+      try {
+        cleanupOrder.push(`${name}: In try block`);
+        yield `${name}: yield 1`;
+        if (shouldThrow) {
+          throw new Error("Test error");
+        }
+        yield `${name}: yield 2`;
+      } catch (ex) {
+        cleanupOrder.push(`${name}: caught exception`);
+        throw ex;
+      } finally {
+        cleanupOrder.push(`${name}: In finally block`);
+      }
+    }
+
+    const traceableGenerator = traceable(generator, {
+      name: "traceable_test_throw",
+      client,
+      tracingEnabled: true,
+    });
+
+    // Error should propagate and finally should still run
+    await expect(async () => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      for await (const _ of traceableGenerator("test", true)) {
+        // pass
+      }
+    }).rejects.toThrow("Test error");
+
+    // Verify that finally block was called even though an error was thrown
+    expect(cleanupOrder).toEqual([
+      "test: In try block",
+      "test: caught exception",
+      "test: In finally block",
+    ]);
+  });
 });
 
 describe("deferred input", () => {
