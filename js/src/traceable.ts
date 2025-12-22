@@ -166,22 +166,18 @@ async function handleEnd(params: {
   on_end: (runTree?: RunTree) => void;
   postRunPromise?: Promise<void>;
   deferredInputs?: boolean;
-  skipChildPromiseDelay?: boolean;
 }) {
   const {
     runTree,
     on_end,
     postRunPromise,
     deferredInputs,
-    skipChildPromiseDelay,
   } = params;
   const onEnd = on_end;
   if (onEnd) {
     onEnd(runTree);
   }
-  if (!skipChildPromiseDelay) {
-    await postRunPromise;
-  }
+  await postRunPromise;
   if (deferredInputs) {
     await runTree?.postRun();
   } else {
@@ -1152,7 +1148,6 @@ export function traceable<Func extends (...args: any[]) => any>(
                 postRunPromise,
                 on_end,
                 deferredInputs,
-                skipChildPromiseDelay: true,
               });
               throw error;
             }
