@@ -168,7 +168,7 @@ async function handleEnd(params: {
   deferredInputs?: boolean;
   skipChildPromiseDelay?: boolean;
 }) {
-  const { runTree, on_end, postRunPromise, deferredInputs, skipChildPromiseDelay = false } = params;
+  const { runTree, on_end, postRunPromise, deferredInputs, skipChildPromiseDelay } = params;
   const onEnd = on_end;
   if (onEnd) {
     onEnd(runTree);
@@ -232,7 +232,7 @@ async function handleRunOutputs<Return>(params: {
     on_end,
     postRunPromise,
     deferredInputs,
-    skipChildPromiseDelay = false,
+    skipChildPromiseDelay,
   } = params;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let outputs: any;
