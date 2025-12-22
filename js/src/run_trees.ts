@@ -771,6 +771,8 @@ export class RunTree implements BaseRun {
           await childRun.postRun(false);
         }
       }
+
+      this.child_runs = [];
     } catch (error) {
       console.error(`Error in postRun for run ${this.id}:`, error);
     }
@@ -857,6 +859,8 @@ export class RunTree implements BaseRun {
         console.error(`Error in patchRun for run ${this.id}`, error);
       }
     }
+
+    this.child_runs = [];
   }
 
   toJSON() {
