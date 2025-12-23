@@ -541,7 +541,6 @@ const wrapAISDK = <
           }
           // If output or experimental_output (legacy) was explicitly provided, return it directly at top level (like generateObject)
           // Note: In AI SDK 6, experimental_output/output is always available as a getter, so we need to check if it was explicitly provided
-          console.log(hasExplicitOutput, hasExplicitExperimentalOutput);
           if (hasExplicitOutput) {
             try {
               // Try new 'output' property first, then fall back to 'experimental_output' for backwards compatibility
