@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable no-process-env */
 /* eslint-disable import/no-extraneous-dependencies */
-import { MockLanguageModelV2 } from "ai/test";
+import { MockLanguageModelV3 } from "ai/test";
 import * as ai from "ai";
 import { simulateReadableStream, APICallError } from "ai";
 import { z } from "zod";
@@ -62,16 +62,21 @@ describe("wrapAISDK", () => {
         },
         { client: mockClient as any }
       );
-      const mockLangModel = new MockLanguageModelV2({
+      const mockLangModel = new MockLanguageModelV3({
         modelId: "trace-test-model",
         doGenerate: async () => ({
           content: [{ type: "text" as const, text: "Test response" }],
-          finishReason: "stop" as const,
+          finishReason: { unified: "stop" as const, raw: "stop" },
           usage: {
             promptTokens: 5,
             completionTokens: 3,
-            inputTokens: 5,
-            outputTokens: 3,
+            inputTokens: {
+              total: 5,
+              noCache: 5,
+              cacheRead: 0,
+              cacheWrite: 0,
+            },
+            outputTokens: { total: 3, text: 3, reasoning: 0 },
             totalTokens: 8,
           },
           warnings: [],
@@ -128,16 +133,21 @@ describe("wrapAISDK", () => {
         }
       );
 
-      const mockLangModel = new MockLanguageModelV2({
+      const mockLangModel = new MockLanguageModelV3({
         modelId: "metadata-test-model",
         doGenerate: async () => ({
           content: [{ type: "text" as const, text: "Metadata test" }],
-          finishReason: "stop" as const,
+          finishReason: { unified: "stop" as const, raw: "stop" },
           usage: {
             promptTokens: 5,
             completionTokens: 3,
-            inputTokens: 5,
-            outputTokens: 3,
+            inputTokens: {
+              total: 5,
+              noCache: 5,
+              cacheRead: 0,
+              cacheWrite: 0,
+            },
+            outputTokens: { total: 3, text: 3, reasoning: 0 },
             totalTokens: 8,
           },
           warnings: [],
@@ -189,16 +199,21 @@ describe("wrapAISDK", () => {
         }
       );
 
-      const mockLangModel = new MockLanguageModelV2({
+      const mockLangModel = new MockLanguageModelV3({
         modelId: "metadata-test-model",
         doGenerate: async () => ({
           content: [{ type: "text" as const, text: "Metadata test" }],
-          finishReason: "stop" as const,
+          finishReason: { unified: "stop" as const, raw: "stop" },
           usage: {
             promptTokens: 5,
             completionTokens: 3,
-            inputTokens: 5,
-            outputTokens: 3,
+            inputTokens: {
+              total: 5,
+              noCache: 5,
+              cacheRead: 0,
+              cacheWrite: 0,
+            },
+            outputTokens: { total: 3, text: 3, reasoning: 0 },
             totalTokens: 8,
           },
           warnings: [],
@@ -244,7 +259,7 @@ describe("wrapAISDK", () => {
         { client: mockClient as any }
       );
 
-      const mockLangModel = new MockLanguageModelV2({
+      const mockLangModel = new MockLanguageModelV3({
         modelId: "error-test-model",
         doGenerate: async () => {
           throw new Error("TOTALLY EXPECTED MOCK DOGENERATE ERROR");
@@ -299,7 +314,7 @@ describe("wrapAISDK", () => {
         { client: mockClient as any }
       );
 
-      const mockLangModel = new MockLanguageModelV2({
+      const mockLangModel = new MockLanguageModelV3({
         modelId: "stream-test-model",
         doStream: async () => ({
           stream: simulateReadableStream({
@@ -311,10 +326,15 @@ describe("wrapAISDK", () => {
               { type: "text-end", id: "text-1" },
               {
                 type: "finish",
-                finishReason: "stop",
+                finishReason: { unified: "stop" as const, raw: "stop" },
                 usage: {
-                  inputTokens: 5,
-                  outputTokens: 2,
+                  inputTokens: {
+                    total: 5,
+                    noCache: 5,
+                    cacheRead: 0,
+                    cacheWrite: 0,
+                  },
+                  outputTokens: { total: 2, text: 2, reasoning: 0 },
                   totalTokens: 7,
                 },
               },
@@ -371,7 +391,7 @@ describe("wrapAISDK", () => {
         { client: mockClient as any }
       );
 
-      const mockLangModel = new MockLanguageModelV2({
+      const mockLangModel = new MockLanguageModelV3({
         modelId: "stream-test-model",
         doStream: async () => ({
           stream: simulateReadableStream({
@@ -383,10 +403,15 @@ describe("wrapAISDK", () => {
               { type: "text-end", id: "text-1" },
               {
                 type: "finish",
-                finishReason: "stop",
+                finishReason: { unified: "stop" as const, raw: "stop" },
                 usage: {
-                  inputTokens: 5,
-                  outputTokens: 2,
+                  inputTokens: {
+                    total: 5,
+                    noCache: 5,
+                    cacheRead: 0,
+                    cacheWrite: 0,
+                  },
+                  outputTokens: { total: 2, text: 2, reasoning: 0 },
                   totalTokens: 7,
                 },
               },
@@ -482,7 +507,7 @@ describe("wrapAISDK", () => {
       );
 
       // Test error at doStream level
-      const mockLangModel = new MockLanguageModelV2({
+      const mockLangModel = new MockLanguageModelV3({
         modelId: "stream-error-model",
         doStream: async () => {
           throw new Error("TOTALLY EXPECTED MOCK DOSTREAM ERROR");
@@ -525,7 +550,7 @@ describe("wrapAISDK", () => {
         { client: mockClient as any }
       );
 
-      const mockLangModel = new MockLanguageModelV2({
+      const mockLangModel = new MockLanguageModelV3({
         modelId: "object-test-model",
         doGenerate: async () => ({
           content: [
@@ -534,12 +559,17 @@ describe("wrapAISDK", () => {
               text: '{"name": "John", "age": 30}',
             },
           ],
-          finishReason: "stop" as const,
+          finishReason: { unified: "stop" as const, raw: "stop" },
           usage: {
             promptTokens: 10,
             completionTokens: 8,
-            inputTokens: 10,
-            outputTokens: 8,
+            inputTokens: {
+              total: 10,
+              noCache: 10,
+              cacheRead: 0,
+              cacheWrite: 0,
+            },
+            outputTokens: { total: 8, text: 8, reasoning: 0 },
             totalTokens: 18,
           },
           warnings: [],
@@ -582,7 +612,7 @@ describe("wrapAISDK", () => {
         { client: mockClient as any }
       );
 
-      const mockLangModel = new MockLanguageModelV2({
+      const mockLangModel = new MockLanguageModelV3({
         modelId: "object-error-model",
         doGenerate: async () => {
           throw new Error("TOTALLY EXPECTED MOCK DOGENERATE ERROR");
@@ -629,7 +659,7 @@ describe("wrapAISDK", () => {
         { client: mockClient as any }
       );
 
-      const mockLangModel = new MockLanguageModelV2({
+      const mockLangModel = new MockLanguageModelV3({
         modelId: "object-generics-test-model",
         doGenerate: async () => ({
           content: [
@@ -638,12 +668,17 @@ describe("wrapAISDK", () => {
               text: '{"key": "test-value"}',
             },
           ],
-          finishReason: "stop" as const,
+          finishReason: { unified: "stop" as const, raw: "stop" },
           usage: {
             promptTokens: 10,
             completionTokens: 8,
-            inputTokens: 10,
-            outputTokens: 8,
+            inputTokens: {
+              total: 10,
+              noCache: 10,
+              cacheRead: 0,
+              cacheWrite: 0,
+            },
+            outputTokens: { total: 8, text: 8, reasoning: 0 },
             totalTokens: 18,
           },
           warnings: [],
@@ -683,7 +718,7 @@ describe("wrapAISDK", () => {
         { client: mockClient as any }
       );
 
-      const mockLangModel = new MockLanguageModelV2({
+      const mockLangModel = new MockLanguageModelV3({
         modelId: "stream-object-trace-test",
         doStream: async () => ({
           stream: simulateReadableStream({
@@ -693,10 +728,15 @@ describe("wrapAISDK", () => {
               { type: "text-end", id: "text-1" },
               {
                 type: "finish",
-                finishReason: "stop",
+                finishReason: { unified: "stop" as const, raw: "stop" },
                 usage: {
-                  inputTokens: 10,
-                  outputTokens: 5,
+                  inputTokens: {
+                    total: 10,
+                    noCache: 10,
+                    cacheRead: 0,
+                    cacheWrite: 0,
+                  },
+                  outputTokens: { total: 5, text: 5, reasoning: 0 },
                   totalTokens: 15,
                 },
               },
@@ -756,7 +796,7 @@ describe("wrapAISDK", () => {
       );
 
       // Test error at doStream level for streamObject
-      const mockLangModel = new MockLanguageModelV2({
+      const mockLangModel = new MockLanguageModelV3({
         modelId: "stream-object-error-model",
         doStream: async () => {
           throw new Error("TOTALLY EXPECTED MOCK STREAMOBJECT DOSTREAM ERROR");
@@ -803,7 +843,7 @@ describe("wrapAISDK", () => {
       );
 
       let callCount = 0;
-      const mockLangModel = new MockLanguageModelV2({
+      const mockLangModel = new MockLanguageModelV3({
         modelId: "rate-limit-test-model",
         doStream: async () => {
           callCount++;
@@ -844,10 +884,15 @@ describe("wrapAISDK", () => {
                 { type: "text-end", id: "text-1" },
                 {
                   type: "finish",
-                  finishReason: "stop",
+                  finishReason: { unified: "stop" as const, raw: "stop" },
                   usage: {
-                    inputTokens: 5,
-                    outputTokens: 3,
+                    inputTokens: {
+                      total: 5,
+                      noCache: 5,
+                      cacheRead: 0,
+                      cacheWrite: 0,
+                    },
+                    outputTokens: { total: 3, text: 3, reasoning: 0 },
                     totalTokens: 8,
                   },
                 },
@@ -915,7 +960,7 @@ describe("wrapAISDK", () => {
       );
 
       let callCount = 0;
-      const mockLangModel = new MockLanguageModelV2({
+      const mockLangModel = new MockLanguageModelV3({
         modelId: "generatetext-rate-limit-test-model",
         doGenerate: async () => {
           callCount++;
@@ -946,12 +991,17 @@ describe("wrapAISDK", () => {
           // Third call succeeds
           return {
             content: [{ type: "text" as const, text: "Generated after retry" }],
-            finishReason: "stop" as const,
+            finishReason: { unified: "stop" as const, raw: "stop" },
             usage: {
               promptTokens: 10,
               completionTokens: 5,
-              inputTokens: 10,
-              outputTokens: 5,
+              inputTokens: {
+                total: 10,
+                noCache: 10,
+                cacheRead: 0,
+                cacheWrite: 0,
+              },
+              outputTokens: { total: 5, text: 5, reasoning: 0 },
               totalTokens: 15,
             },
             warnings: [],
@@ -1029,7 +1079,7 @@ describe("wrapAISDK", () => {
 
       const abortController = new AbortController();
 
-      const mockLangModel = new MockLanguageModelV2({
+      const mockLangModel = new MockLanguageModelV3({
         modelId: "abort-test-model",
         doStream: async () => ({
           stream: simulateReadableStream({
@@ -1046,10 +1096,15 @@ describe("wrapAISDK", () => {
               { type: "text-end", id: "text-1" },
               {
                 type: "finish",
-                finishReason: "stop",
+                finishReason: { unified: "stop" as const, raw: "stop" },
                 usage: {
-                  inputTokens: 5,
-                  outputTokens: 8,
+                  inputTokens: {
+                    total: 5,
+                    noCache: 5,
+                    cacheRead: 0,
+                    cacheWrite: 0,
+                  },
+                  outputTokens: { total: 8, text: 8, reasoning: 0 },
                   totalTokens: 13,
                 },
               },
@@ -1127,16 +1182,21 @@ describe("wrapAISDK", () => {
         baseConfig
       );
 
-      const mockLangModel = new MockLanguageModelV2({
+      const mockLangModel = new MockLanguageModelV3({
         modelId: "config-merge-test",
         doGenerate: async () => ({
           content: [{ type: "text" as const, text: "Config test" }],
-          finishReason: "stop" as const,
+          finishReason: { unified: "stop" as const, raw: "stop" },
           usage: {
             promptTokens: 5,
             completionTokens: 3,
-            inputTokens: 5,
-            outputTokens: 3,
+            inputTokens: {
+              total: 5,
+              noCache: 5,
+              cacheRead: 0,
+              cacheWrite: 0,
+            },
+            outputTokens: { total: 3, text: 3, reasoning: 0 },
             totalTokens: 8,
           },
           warnings: [],
@@ -1181,16 +1241,21 @@ describe("wrapAISDK", () => {
         { client: mockClient as any }
       );
 
-      const mockLangModel = new MockLanguageModelV2({
+      const mockLangModel = new MockLanguageModelV3({
         modelId: "config-provider-test",
         doGenerate: async () => ({
           content: [{ type: "text" as const, text: "Config test" }],
-          finishReason: "stop" as const,
+          finishReason: { unified: "stop" as const, raw: "stop" },
           usage: {
             promptTokens: 5,
             completionTokens: 3,
-            inputTokens: 5,
-            outputTokens: 3,
+            inputTokens: {
+              total: 5,
+              noCache: 5,
+              cacheRead: 0,
+              cacheWrite: 0,
+            },
+            outputTokens: { total: 3, text: 3, reasoning: 0 },
             totalTokens: 8,
           },
           warnings: [],
@@ -1314,16 +1379,21 @@ describe("wrapAISDK", () => {
         },
         { client: mockClient as any }
       );
-      const modelWithConfig = new MockLanguageModelV2({
+      const modelWithConfig = new MockLanguageModelV3({
         modelId: "custom-model",
         doGenerate: async () => ({
           content: [{ type: "text" as const, text: "Config test" }],
-          finishReason: "stop" as const,
+          finishReason: { unified: "stop" as const, raw: "stop" },
           usage: {
             promptTokens: 5,
             completionTokens: 3,
-            inputTokens: 5,
-            outputTokens: 3,
+            inputTokens: {
+              total: 5,
+              noCache: 5,
+              cacheRead: 0,
+              cacheWrite: 0,
+            },
+            outputTokens: { total: 3, text: 3, reasoning: 0 },
             totalTokens: 8,
           },
           warnings: [],
@@ -1362,7 +1432,7 @@ describe("wrapAISDK", () => {
         { client: mockClient as any }
       );
 
-      const mockLangModel = new MockLanguageModelV2({
+      const mockLangModel = new MockLanguageModelV3({
         modelId: "experimental-output-test",
         doGenerate: async () => ({
           content: [
@@ -1371,12 +1441,17 @@ describe("wrapAISDK", () => {
               text: '{"city":"Prague","temperature":15,"unit":"celsius","conditions":"sunny"}',
             },
           ],
-          finishReason: "stop" as const,
+          finishReason: { unified: "stop" as const, raw: "stop" },
           usage: {
             promptTokens: 10,
             completionTokens: 20,
-            inputTokens: 10,
-            outputTokens: 20,
+            inputTokens: {
+              total: 10,
+              noCache: 10,
+              cacheRead: 10,
+              cacheWrite: 10,
+            },
+            outputTokens: { total: 20, text: 20, reasoning: 0 },
             totalTokens: 30,
           },
           warnings: [],
@@ -1433,7 +1508,7 @@ describe("wrapAISDK", () => {
         { client: mockClient as any }
       );
 
-      const mockLangModel = new MockLanguageModelV2({
+      const mockLangModel = new MockLanguageModelV3({
         modelId: "stream-experimental-output-test",
         doStream: async () => ({
           stream: simulateReadableStream({
@@ -1447,11 +1522,16 @@ describe("wrapAISDK", () => {
               },
               { type: "text-end", id: "text-1" },
               {
-                type: "finish",
-                finishReason: "stop",
+                type: "finish" as const,
+                finishReason: { unified: "stop", raw: "stop" },
                 usage: {
-                  inputTokens: 10,
-                  outputTokens: 20,
+                  inputTokens: {
+                    total: 10,
+                    noCache: 10,
+                    cacheRead: 10,
+                    cacheWrite: 10,
+                  },
+                  outputTokens: { total: 20, text: 20, reasoning: 0 },
                   totalTokens: 30,
                 },
               },
@@ -1498,6 +1578,347 @@ describe("wrapAISDK", () => {
       const outputsStr = JSON.stringify(updateStreamTextCall.body.outputs);
       expect(outputsStr).not.toContain("[object Object]");
       expect(outputsStr).not.toContain('\\"city\\"'); // Should not be double-escaped
+    });
+  });
+
+  describe("token usage tracking", () => {
+    it("should track reasoning tokens in AI SDK 6", async () => {
+      const wrappedMethods = wrapAISDK(
+        {
+          wrapLanguageModel: ai.wrapLanguageModel,
+          generateText: ai.generateText,
+          streamText: ai.streamText,
+          generateObject: ai.generateObject,
+          streamObject: ai.streamObject,
+        },
+        { client: mockClient as any }
+      );
+
+      const mockLangModel = new MockLanguageModelV3({
+        modelId: "reasoning-test-model",
+        doGenerate: async () => ({
+          content: [{ type: "text" as const, text: "Test response" }],
+          finishReason: { unified: "stop" as const, raw: "stop" },
+          usage: {
+            inputTokens: {
+              total: 10,
+              noCache: 10,
+              cacheRead: 0,
+              cacheWrite: 0,
+            },
+            outputTokens: { total: 25, text: 15, reasoning: 10 },
+            totalTokens: 35,
+          },
+          warnings: [],
+        }),
+      });
+
+      await wrappedMethods.generateText({
+        model: mockLangModel,
+        prompt: "Test prompt",
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Find the LLM run (child run)
+      const llmRunCreate = mockHttpRequests.find(
+        (req) =>
+          req.type === "createRun" &&
+          req.body.extra?.metadata?.ai_sdk_method === "ai.doGenerate"
+      );
+      const llmRunUpdate = mockHttpRequests.find(
+        (req) =>
+          req.type === "updateRun" &&
+          req.body.extra?.metadata?.ai_sdk_method === "ai.doGenerate"
+      );
+
+      expect(llmRunUpdate).toBeDefined();
+      expect(llmRunUpdate.body.extra.metadata.usage_metadata).toMatchObject({
+        input_tokens: 10,
+        output_tokens: 25,
+        total_tokens: 35,
+      });
+
+      // Verify reasoning tokens are tracked
+      expect(
+        llmRunUpdate.body.extra.metadata.usage_metadata.output_token_details
+          .reasoning
+      ).toBe(10);
+    });
+
+    it("should track cache tokens in AI SDK 6", async () => {
+      const wrappedMethods = wrapAISDK(
+        {
+          wrapLanguageModel: ai.wrapLanguageModel,
+          generateText: ai.generateText,
+          streamText: ai.streamText,
+          generateObject: ai.generateObject,
+          streamObject: ai.streamObject,
+        },
+        { client: mockClient as any }
+      );
+
+      const mockLangModel = new MockLanguageModelV3({
+        modelId: "cache-test-model",
+        doGenerate: async () => ({
+          content: [{ type: "text" as const, text: "Test response" }],
+          finishReason: { unified: "stop" as const, raw: "stop" },
+          usage: {
+            inputTokens: {
+              total: 100,
+              noCache: 50,
+              cacheRead: 30,
+              cacheWrite: 20,
+            },
+            outputTokens: { total: 10, text: 10, reasoning: 0 },
+            totalTokens: 110,
+          },
+          warnings: [],
+        }),
+      });
+
+      await wrappedMethods.generateText({
+        model: mockLangModel,
+        prompt: "Test prompt",
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Find the LLM run
+      const llmRunUpdate = mockHttpRequests.find(
+        (req) =>
+          req.type === "updateRun" &&
+          req.body.extra?.metadata?.ai_sdk_method === "ai.doGenerate"
+      );
+
+      expect(llmRunUpdate).toBeDefined();
+      expect(llmRunUpdate.body.extra.metadata.usage_metadata).toMatchObject({
+        input_tokens: 100,
+        output_tokens: 10,
+        total_tokens: 110,
+      });
+
+      // Verify cache tokens are tracked
+      const inputTokenDetails =
+        llmRunUpdate.body.extra.metadata.usage_metadata.input_token_details;
+      expect(inputTokenDetails.cache_read).toBe(30);
+      expect(inputTokenDetails.cache_creation).toBe(20);
+    });
+
+    it("should track OpenAI flex service tier tokens", async () => {
+      const wrappedMethods = wrapAISDK(
+        {
+          wrapLanguageModel: ai.wrapLanguageModel,
+          generateText: ai.generateText,
+          streamText: ai.streamText,
+          generateObject: ai.generateObject,
+          streamObject: ai.streamObject,
+        },
+        { client: mockClient as any }
+      );
+
+      const mockLangModel = new MockLanguageModelV3({
+        modelId: "flex-test-model",
+        doGenerate: async () => ({
+          content: [{ type: "text" as const, text: "Test response" }],
+          finishReason: { unified: "stop" as const, raw: "stop" },
+          usage: {
+            inputTokens: {
+              total: 100,
+              noCache: 80,
+              cacheRead: 20,
+              cacheWrite: 0,
+            },
+            outputTokens: { total: 30, text: 25, reasoning: 5 },
+            totalTokens: 130,
+          },
+          providerMetadata: {
+            openai: {
+              serviceTier: "flex",
+            },
+          },
+          warnings: [],
+        }),
+      });
+
+      await wrappedMethods.generateText({
+        model: mockLangModel,
+        prompt: "Test prompt",
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Find the LLM run
+      const llmRunUpdate = mockHttpRequests.find(
+        (req) =>
+          req.type === "updateRun" &&
+          req.body.extra?.metadata?.ai_sdk_method === "ai.doGenerate"
+      );
+
+      expect(llmRunUpdate).toBeDefined();
+      expect(llmRunUpdate.body.extra.metadata.usage_metadata).toMatchObject({
+        input_tokens: 100,
+        output_tokens: 30,
+        total_tokens: 130,
+      });
+
+      // Verify service tier tokens are tracked with proper prefixes
+      const inputTokenDetails =
+        llmRunUpdate.body.extra.metadata.usage_metadata.input_token_details;
+      const outputTokenDetails =
+        llmRunUpdate.body.extra.metadata.usage_metadata.output_token_details;
+
+      // Input: flex tier tokens (total - cached)
+      expect(inputTokenDetails.flex).toBe(80); // 100 - 20
+      expect(inputTokenDetails.flex_cache_read).toBe(20);
+
+      // Output: flex tier tokens (total - reasoning) and reasoning tokens
+      expect(outputTokenDetails.flex).toBe(25); // 30 - 5
+      expect(outputTokenDetails.flex_reasoning).toBe(5);
+    });
+
+    it("should track OpenAI priority service tier tokens", async () => {
+      const wrappedMethods = wrapAISDK(
+        {
+          wrapLanguageModel: ai.wrapLanguageModel,
+          generateText: ai.generateText,
+          streamText: ai.streamText,
+          generateObject: ai.generateObject,
+          streamObject: ai.streamObject,
+        },
+        { client: mockClient as any }
+      );
+
+      const mockLangModel = new MockLanguageModelV3({
+        modelId: "priority-test-model",
+        doGenerate: async () => ({
+          content: [{ type: "text" as const, text: "Test response" }],
+          finishReason: { unified: "stop" as const, raw: "stop" },
+          usage: {
+            inputTokens: {
+              total: 50,
+              noCache: 50,
+              cacheRead: 0,
+              cacheWrite: 0,
+            },
+            outputTokens: { total: 40, text: 30, reasoning: 10 },
+            totalTokens: 90,
+          },
+          providerMetadata: {
+            openai: {
+              serviceTier: "priority",
+            },
+          },
+          warnings: [],
+        }),
+      });
+
+      await wrappedMethods.generateText({
+        model: mockLangModel,
+        prompt: "Test prompt",
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Find the LLM run
+      const llmRunUpdate = mockHttpRequests.find(
+        (req) =>
+          req.type === "updateRun" &&
+          req.body.extra?.metadata?.ai_sdk_method === "ai.doGenerate"
+      );
+
+      expect(llmRunUpdate).toBeDefined();
+
+      // Verify service tier tokens are tracked with priority prefix
+      const inputTokenDetails =
+        llmRunUpdate.body.extra.metadata.usage_metadata.input_token_details;
+      const outputTokenDetails =
+        llmRunUpdate.body.extra.metadata.usage_metadata.output_token_details;
+
+      expect(inputTokenDetails.priority).toBe(50);
+      expect(outputTokenDetails.priority).toBe(30); // 40 - 10
+      expect(outputTokenDetails.priority_reasoning).toBe(10);
+    });
+
+    it("should handle streaming with cache and reasoning tokens", async () => {
+      const wrappedMethods = wrapAISDK(
+        {
+          wrapLanguageModel: ai.wrapLanguageModel,
+          generateText: ai.generateText,
+          streamText: ai.streamText,
+          generateObject: ai.generateObject,
+          streamObject: ai.streamObject,
+        },
+        { client: mockClient as any }
+      );
+
+      const mockLangModel = new MockLanguageModelV3({
+        modelId: "stream-cache-reasoning-test",
+        doStream: async () => ({
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "text-start", id: "text-1" },
+              { type: "text-delta", id: "text-1", delta: "Hello" },
+              { type: "text-delta", id: "text-1", delta: " world" },
+              { type: "text-end", id: "text-1" },
+              {
+                type: "finish" as const,
+                finishReason: { unified: "stop", raw: "stop" },
+                usage: {
+                  inputTokens: {
+                    total: 200,
+                    noCache: 100,
+                    cacheRead: 80,
+                    cacheWrite: 20,
+                  },
+                  outputTokens: { total: 50, text: 40, reasoning: 10 },
+                  totalTokens: 250,
+                },
+                providerMetadata: {
+                  openai: {
+                    serviceTier: "flex",
+                  },
+                },
+              },
+            ],
+          }),
+        }),
+      });
+
+      const result = wrappedMethods.streamText({
+        model: mockLangModel,
+        prompt: "Test prompt",
+      });
+
+      await result.consumeStream();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Find the LLM run
+      const llmRunUpdate = mockHttpRequests.find(
+        (req) =>
+          req.type === "updateRun" &&
+          req.body.extra?.metadata?.ai_sdk_method === "ai.doStream"
+      );
+
+      expect(llmRunUpdate).toBeDefined();
+      expect(llmRunUpdate.body.extra.metadata.usage_metadata).toMatchObject({
+        input_tokens: 200,
+        output_tokens: 50,
+        total_tokens: 250,
+      });
+
+      // Verify all token details are tracked
+      const inputTokenDetails =
+        llmRunUpdate.body.extra.metadata.usage_metadata.input_token_details;
+      const outputTokenDetails =
+        llmRunUpdate.body.extra.metadata.usage_metadata.output_token_details;
+
+      expect(inputTokenDetails.flex_cache_read).toBe(80);
+      expect(inputTokenDetails.cache_creation).toBe(20);
+      expect(inputTokenDetails.flex).toBe(120); // 200 - 80
+
+      expect(outputTokenDetails.flex_reasoning).toBe(10);
+      expect(outputTokenDetails.flex).toBe(40); // 50 - 10
     });
   });
 });

@@ -489,6 +489,8 @@ const wrapAISDK = <
       params.providerOptions ?? {};
     const { resolvedLsConfig, resolvedChildLLMRunConfig, resolvedToolConfig } =
       _resolveConfigs(baseLsConfig, runtimeLsConfig);
+    const hasExplicitExperimentalOutput = "experimental_output" in params;
+    const hasExplicitOutput = "output" in params;
     const traceableFunc = traceable(
       async (
         ...args: Parameters<GenerateTextType>
@@ -537,17 +539,26 @@ const wrapAISDK = <
           if (outputs.outputs == null || typeof outputs.outputs !== "object") {
             return outputs;
           }
-          // If experimental_output is present, return it directly at top level (like generateObject)
-          // Note: accessing experimental_output throws if not specified, so wrap in try-catch
-          try {
-            if ("experimental_output" in outputs.outputs) {
-              const experimentalOutput = outputs.outputs.experimental_output;
-              if (experimentalOutput != null) {
-                return experimentalOutput;
+          // If output or experimental_output (legacy) was explicitly provided, return it directly at top level (like generateObject)
+          // Note: In AI SDK 6, experimental_output/output is always available as a getter, so we need to check if it was explicitly provided
+          if (hasExplicitOutput || hasExplicitExperimentalOutput) {
+            try {
+              // Try new 'output' property first, then fall back to 'experimental_output' for backwards compatibility
+              if ("output" in outputs.outputs) {
+                const output = outputs.outputs.output;
+                if (output != null) {
+                  return output;
+                }
               }
+              if ("experimental_output" in outputs.outputs) {
+                const experimentalOutput = outputs.outputs.experimental_output;
+                if (experimentalOutput != null) {
+                  return experimentalOutput;
+                }
+              }
+            } catch (e) {
+              // output/experimental_output not accessible, continue with normal processing
             }
-          } catch (e) {
-            // experimental_output not specified, continue with normal processing
           }
           const { steps } = outputs.outputs;
           if (Array.isArray(steps)) {
