@@ -7966,7 +7966,7 @@ class Client:
                     allowed_objects=allowed_objects,  # type: ignore[call-arg]
                 )
             else:
-                prompt = loads(json.dumps(prompt_object.manifest))  # type: ignore[call-arg]
+                prompt = loads(json.dumps(prompt_object.manifest))
 
         if (
             isinstance(prompt, BasePromptTemplate)
