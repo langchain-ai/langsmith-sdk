@@ -7919,6 +7919,7 @@ class Client:
         try:
             from langchain_core.language_models.base import BaseLanguageModel
             from langchain_core.load.load import loads
+            from langchain_core import __version__
             from langchain_core.output_parsers import BaseOutputParser
             from langchain_core.prompts import BasePromptTemplate
             from langchain_core.prompts.structured import StructuredPrompt
@@ -7936,11 +7937,27 @@ class Client:
             def suppress_langchain_beta_warning():
                 yield
 
+        # Check if allowed_objects is supported in loads
+        allowed_objects_supported = False
+        try:
+            from packaging import version
+            lc_version = version.parse(__version__)
+            # allowed_objects supported in langchain-core >= 0.3.81 and < 1.0, or >= 1.2.5
+            if (lc_version >= version.parse("0.3.81") and lc_version < version.parse("1.0.0")) or (lc_version >= version.parse("1.2.5")):
+                allowed_objects_supported = True
+        except Exception:
+            # If version checking fails, default to False
+            pass
+
         prompt_object = self.pull_prompt_commit(
             prompt_identifier, include_model=include_model
         )
         with suppress_langchain_beta_warning():
-            prompt = loads(json.dumps(prompt_object.manifest))
+            if allowed_objects_supported:
+                allowed_objects: Literal["all", "core"] = "all" if include_model else "core"
+                prompt = loads(json.dumps(prompt_object.manifest), allowed_objects=allowed_objects)
+            else:
+                prompt = loads(json.dumps(prompt_object.manifest))
 
         if (
             isinstance(prompt, BasePromptTemplate)
