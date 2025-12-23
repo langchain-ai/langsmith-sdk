@@ -7949,9 +7949,13 @@ class Client:
                 and lc_version < version.parse("1.0.0")
             ) or (lc_version >= version.parse("1.2.5")):
                 allowed_objects_supported = True
-        except Exception:
+        except (ImportError, ValueError, TypeError) as exc:
             # If version checking fails, default to False
-            pass
+            logging.getLogger(__name__).debug(
+                "Failed to determine langchain-core version for allowed_objects "
+                "support, defaulting to disabled: %s",
+                exc,
+            )
 
         prompt_object = self.pull_prompt_commit(
             prompt_identifier, include_model=include_model
