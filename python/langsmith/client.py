@@ -12,6 +12,8 @@ For detailed API documentation, visit the [LangSmith docs](https://docs.langchai
 
 from __future__ import annotations
 
+from urllib import parse as urllib_parse
+
 import atexit
 import collections
 import concurrent.futures as cf
@@ -26,6 +28,7 @@ import json
 import logging
 import os
 import random
+import requests
 import threading
 import time
 import traceback
@@ -36,7 +39,12 @@ import weakref
 from collections.abc import AsyncIterable, Iterable, Iterator, Mapping, Sequence
 from inspect import signature
 from pathlib import Path
+from pydantic import Field
 from queue import PriorityQueue
+from requests import adapters as requests_adapters
+from requests_toolbelt import (  # type: ignore[import-untyped]
+    multipart as rqtb_multipart,
+)
 from typing import (
     TYPE_CHECKING,
     Annotated,
@@ -46,14 +54,6 @@ from typing import (
     Optional,
     Union,
     cast,
-)
-from urllib import parse as urllib_parse
-
-import requests
-from pydantic import Field
-from requests import adapters as requests_adapters
-from requests_toolbelt import (  # type: ignore[import-untyped]
-    multipart as rqtb_multipart,
 )
 from typing_extensions import TypeGuard, overload
 from urllib3.poolmanager import PoolKey  # type: ignore[attr-defined, import-untyped]
@@ -7962,11 +7962,10 @@ class Client:
                     "all" if include_model else "core"
                 )
                 prompt = loads(
-                    json.dumps(prompt_object.manifest),
-                    allowed_objects=allowed_objects,  # type: ignore
+                    json.dumps(prompt_object.manifest), allowed_objects=allowed_objects # type: ignore[call-arg]
                 )
             else:
-                prompt = loads(json.dumps(prompt_object.manifest))  # type: ignore
+                prompt = loads(json.dumps(prompt_object.manifest)) # type: ignore[call-arg]
 
         if (
             isinstance(prompt, BasePromptTemplate)
