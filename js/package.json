@@ -142,6 +142,7 @@
   "devDependencies": {
     "@ai-sdk/anthropic": "^3.0.0",
     "@ai-sdk/openai": "^3.0.0",
+    "@ai-sdk/provider": "^3.0.0",
     "@anthropic-ai/sdk": "^0.71.2",
     "@babel/preset-env": "^7.22.4",
     "@faker-js/faker": "^8.4.1",

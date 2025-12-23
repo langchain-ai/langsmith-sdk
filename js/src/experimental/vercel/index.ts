@@ -541,7 +541,8 @@ const wrapAISDK = <
           }
           // If output or experimental_output (legacy) was explicitly provided, return it directly at top level (like generateObject)
           // Note: In AI SDK 6, experimental_output/output is always available as a getter, so we need to check if it was explicitly provided
-          if (hasExplicitOutput || hasExplicitExperimentalOutput) {
+          console.log(hasExplicitOutput, hasExplicitExperimentalOutput);
+          if (hasExplicitOutput) {
             try {
               // Try new 'output' property first, then fall back to 'experimental_output' for backwards compatibility
               if ("output" in outputs.outputs) {
@@ -550,14 +551,19 @@ const wrapAISDK = <
                   return output;
                 }
               }
+            } catch {
+              // output not accessible, continue with normal processing
+            }
+          } else if (hasExplicitExperimentalOutput) {
+            try {
               if ("experimental_output" in outputs.outputs) {
                 const experimentalOutput = outputs.outputs.experimental_output;
                 if (experimentalOutput != null) {
                   return experimentalOutput;
                 }
               }
-            } catch (e) {
-              // output/experimental_output not accessible, continue with normal processing
+            } catch {
+              // experimental_output not accessible, continue with normal processing
             }
           }
           const { steps } = outputs.outputs;
@@ -876,7 +882,7 @@ const wrapAISDK = <
               return outputs;
             }
             return object;
-          } catch (e: unknown) {
+          } catch {
             // Handle parsing failures without a log
             return outputs;
           }
