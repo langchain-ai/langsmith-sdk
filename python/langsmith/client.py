@@ -7962,10 +7962,11 @@ class Client:
                     "all" if include_model else "core"
                 )
                 prompt = loads(
-                    json.dumps(prompt_object.manifest), allowed_objects=allowed_objects
+                    json.dumps(prompt_object.manifest),
+                    allowed_objects=allowed_objects,  # type: ignore
                 )
             else:
-                prompt = loads(json.dumps(prompt_object.manifest))
+                prompt = loads(json.dumps(prompt_object.manifest))  # type: ignore
 
         if (
             isinstance(prompt, BasePromptTemplate)
