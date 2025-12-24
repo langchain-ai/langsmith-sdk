@@ -490,6 +490,17 @@ class RunTree(ls_schemas.RunBase):
         attachments: Optional[ls_schemas.Attachments] = None,
     ) -> RunTree:
         """Add a child run to the run tree."""
+        # Ensure child start_time is never earlier than parent start_time
+        # to prevent timestamp ordering violations in dotted_order
+        if start_time is not None and self.start_time is not None:
+            if start_time < self.start_time:
+                logger.debug(
+                    f"Adjusting child run '{name}' start_time from {start_time} "
+                    f"to {self.start_time} to maintain timestamp ordering with "
+                    f"parent '{self.name}'"
+                )
+            start_time = max(start_time, self.start_time)
+
         serialized_ = serialized or {"name": name}
         run = RunTree(
             name=name,
