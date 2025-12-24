@@ -2,7 +2,7 @@ import io
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 from uuid import NAMESPACE_DNS, UUID, uuid5
 
@@ -474,3 +474,45 @@ def test_inputs_attachment_moved_to_attachments():
     _, (mime_type, content) = next((d for d in datas if d[0] == key))
     assert mime_type == "text/plain"
     assert content == "hi"
+
+
+def test_create_child_enforces_timestamp_order():
+    """Test that child runs cannot have start_time earlier than parent.
+
+    This prevents timestamp ordering violations in dotted_order that can
+    cause 400 Bad Request errors from the LangSmith API.
+
+    See: https://github.com/langchain-ai/langsmith-sdk/issues/2236
+    """
+    mock_client = MagicMock(spec=Client)
+
+    # Create a parent run with a specific timestamp
+    parent_time = datetime(2025, 12, 22, 23, 43, 8, 14739, tzinfo=timezone.utc)
+    parent = RunTree(
+        name="Parent",
+        start_time=parent_time,
+        client=mock_client,
+    )
+
+    # Try to create a child with an earlier timestamp (simulating race condition)
+    earlier_time = parent_time - timedelta(milliseconds=3)
+    child = parent.create_child(
+        name="Child",
+        start_time=earlier_time,
+    )
+
+    # Child's start_time should be adjusted to match parent's start_time
+    assert child.start_time == parent.start_time
+    assert child.parent_run_id == parent.id
+
+    # Test with a later timestamp - should not be modified
+    later_time = parent_time + timedelta(milliseconds=10)
+    child2 = parent.create_child(
+        name="Child2",
+        start_time=later_time,
+    )
+    assert child2.start_time == later_time
+
+    # Test with no start_time provided - should use current time
+    child3 = parent.create_child(name="Child3")
+    assert child3.start_time >= parent.start_time
