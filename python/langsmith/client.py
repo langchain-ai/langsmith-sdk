@@ -34,6 +34,7 @@ import uuid
 import warnings
 import weakref
 from collections.abc import AsyncIterable, Iterable, Iterator, Mapping, Sequence
+from functools import lru_cache
 from inspect import signature
 from pathlib import Path
 from queue import PriorityQueue
@@ -49,6 +50,7 @@ from typing import (
 )
 from urllib import parse as urllib_parse
 
+import packaging
 import requests
 from pydantic import Field
 from requests import adapters as requests_adapters
@@ -96,6 +98,8 @@ from langsmith._internal._operations import (
 from langsmith._internal._serde import dumps_json as _dumps_json
 from langsmith._internal._uuid import uuid7
 from langsmith.schemas import AttachmentInfo, ExampleWithRuns
+
+logger = logging.getLogger(__name__)
 
 _OPENAI_API_KEY = "OPENAI_API_KEY"
 _ANTHROPIC_API_KEY = "ANTHROPIC_API_KEY"
@@ -179,6 +183,63 @@ X_API_KEY = "x-api-key"
 EMPTY_SEQ: tuple[dict, ...] = ()
 URLLIB3_SUPPORTS_BLOCKSIZE = "key_blocksize" in signature(PoolKey).parameters
 DEFAULT_INSTRUCTIONS = "How are people using my agent? What are they asking about?"
+
+
+@lru_cache(maxsize=1)
+def _lc_load_allowed_objects_arg_supported() -> bool:
+    allowed_objects_supported = False
+    try:
+        from langchain_core import __version__
+
+        lc_version = packaging.version.parse(__version__)
+        # allowed_objects supported in langchain-core >= 0.3.81 and < 1.0, or >= 1.2.5
+        allowed_objects_supported = (
+            lc_version >= packaging.version.parse("0.3.81")
+            and lc_version < packaging.version.parse("1.0.0")
+        ) or (lc_version >= packaging.version.parse("1.2.5"))
+    except (ImportError, ValueError, TypeError) as exc:
+        # If version checking fails, default to False
+        logger.debug(
+            "Failed to determine langchain-core version for allowed_objects "
+            "support, defaulting to disabled: %s",
+            exc,
+        )
+    return allowed_objects_supported
+
+
+def _manifest_has_secrets(
+    manifest: dict | list, *, depth: int = 0, max_depth: int = 10, max_width: int = 50
+) -> bool:
+    if max_depth < 0:
+        raise ValueError("max_depth must be positive.")
+    if max_width < 1:
+        raise ValueError("max_width must be positive.")
+    if depth >= max_depth:
+        return False
+    if (
+        isinstance(manifest, dict)
+        and set(manifest) == {"lc", "type", "id"}
+        and manifest["type"] == "secret"
+    ):
+        return True
+    elif depth + 1 == max_depth:
+        return False
+    elif isinstance(manifest, dict):
+        return any(
+            _manifest_has_secrets(
+                x, depth=depth + 1, max_depth=max_depth, max_width=max_width
+            )
+            for x in itertools.islice(manifest.values(), max_width)
+        )
+    elif isinstance(manifest, (tuple, list)):
+        return any(
+            _manifest_has_secrets(
+                x, depth=depth + 1, max_depth=max_depth, max_width=max_width
+            )
+            for x in manifest[:max_width]
+        )
+    else:
+        return False
 
 
 def _parse_token_or_url(
@@ -7903,7 +7964,12 @@ class Client:
                 break
 
     def pull_prompt(
-        self, prompt_identifier: str, *, include_model: Optional[bool] = False
+        self,
+        prompt_identifier: str,
+        *,
+        include_model: Optional[bool] = False,
+        secrets: dict[str, str] | None = None,
+        secrets_from_env: bool = False,
     ) -> Any:
         """Pull a prompt and return it as a LangChain `PromptTemplate`.
 
@@ -7912,14 +7978,41 @@ class Client:
         Args:
             prompt_identifier: The identifier of the prompt.
             include_model: Whether to include the model information in the prompt data.
+            secrets: A map of secrets to use when loading, e.g.
+                `{'OPENAI_API_KEY': 'sk-...'}`.
+
+                If a secret is not found in the map, it will be loaded from the
+                environment if `secrets_from_env` is `True`. Should only be needed when
+                `include_model=True`.
+            secrets_from_env: Whether to load secrets from the environment.
+
+                **SECURITY NOTE**: Should only be set to `True` when pulling trusted
+                prompts.
 
         Returns:
             Any: The prompt object in the specified format.
+
+        !!! warning "Behavior changed in `langsmith` 0.5.1"
+
+            Updated to take arguments `secrets` and `secrets_from_env` which default
+            to None and False, respectively.
+
+            By default secrets needed to initialize a pulled object will no longer be
+            read from environment variables. This is relevant when when
+            `include_models=True`. For example, to load an OpenAI model you need to
+            have an OPENAI_API_KEY.  Previously this was read from environment
+            variables by default. To do so now you must specify
+            `secrets={"OPENAI_API_KEY": "sk-..."}` or `secrets_from_env=True`.
+            `secrets_from_env` should only be done when pulling trusted prompts.
+
+            These updates were made to remediate vulnerability
+            [GHSA-c67j-w6g6-q2cm](https://github.com/langchain-ai/langchain/security/advisories/GHSA-c67j-w6g6-q2cm)
+            in the `langchain-core` package which this method (but not the entire
+            langsmith package) depends on.
         """
         try:
-            from langchain_core import __version__
             from langchain_core.language_models.base import BaseLanguageModel
-            from langchain_core.load.load import loads
+            from langchain_core.load.load import load
             from langchain_core.output_parsers import BaseOutputParser
             from langchain_core.prompts import BasePromptTemplate
             from langchain_core.prompts.structured import StructuredPrompt
@@ -7937,40 +8030,28 @@ class Client:
             def suppress_langchain_beta_warning():
                 yield
 
-        # Check if allowed_objects is supported in loads
-        allowed_objects_supported = False
-        try:
-            from packaging import version
-
-            lc_version = version.parse(__version__)
-            # allowed_objects supported in langchain-core >= 0.3.81 and < 1.0, or >= 1.2.5
-            if (
-                lc_version >= version.parse("0.3.81")
-                and lc_version < version.parse("1.0.0")
-            ) or (lc_version >= version.parse("1.2.5")):
-                allowed_objects_supported = True
-        except (ImportError, ValueError, TypeError) as exc:
-            # If version checking fails, default to False
-            logging.getLogger(__name__).debug(
-                "Failed to determine langchain-core version for allowed_objects "
-                "support, defaulting to disabled: %s",
-                exc,
-            )
-
         prompt_object = self.pull_prompt_commit(
             prompt_identifier, include_model=include_model
         )
+        load_kwargs: dict = {}
+        if _lc_load_allowed_objects_arg_supported():
+            load_kwargs["allowed_objects"] = "all" if include_model else "core"
         with suppress_langchain_beta_warning():
-            if allowed_objects_supported:
-                allowed_objects: Literal["all", "core"] = (
-                    "all" if include_model else "core"
+            try:
+                prompt = load(
+                    prompt_object.manifest,
+                    secrets_map=secrets,
+                    secrets_from_env=secrets_from_env,
+                    **load_kwargs,
                 )
-                prompt = loads(
-                    json.dumps(prompt_object.manifest),
-                    allowed_objects=allowed_objects,  # type: ignore[call-arg]
-                )
-            else:
-                prompt = loads(json.dumps(prompt_object.manifest))
+            except Exception as e:
+                if (
+                    _manifest_has_secrets(prompt_object.manifest)
+                    and not secrets_from_env
+                    and not secrets
+                ):
+                    raise ValueError(...)
+                raise e
 
         if (
             isinstance(prompt, BasePromptTemplate)
