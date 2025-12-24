@@ -247,6 +247,143 @@ def _manifest_has_secrets(
         return False
 
 
+def _process_prompt_manifest(
+    prompt_object: Any,
+    *,
+    include_model: bool | None,
+    secrets: dict[str, str] | None,
+    secrets_from_env: bool,
+) -> Any:
+    """Process a prompt manifest into a LangChain prompt object.
+
+    This is the common logic shared between Client.pull_prompt() and
+    AsyncClient.pull_prompt().
+
+    Args:
+        prompt_object: The prompt commit object containing the manifest.
+        include_model: Whether to include model information.
+        secrets: Map of secrets to use when loading.
+        secrets_from_env: Whether to load secrets from environment variables.
+
+    Returns:
+        The processed prompt object.
+
+    Raises:
+        ImportError: If langchain-core is not installed.
+        ValueError: If secrets are required but not provided.
+    """
+    try:
+        from langchain_core.language_models.base import BaseLanguageModel
+        from langchain_core.load.load import load
+        from langchain_core.output_parsers import BaseOutputParser
+        from langchain_core.prompts import BasePromptTemplate
+        from langchain_core.prompts.structured import StructuredPrompt
+        from langchain_core.runnables.base import RunnableBinding, RunnableSequence
+    except ImportError:
+        raise ImportError(
+            "The client.pull_prompt function requires the langchain-core "
+            "package to run.\nInstall with `pip install langchain-core`"
+        )
+    try:
+        from langchain_core._api import suppress_langchain_beta_warning
+    except ImportError:
+
+        @contextlib.contextmanager
+        def suppress_langchain_beta_warning():
+            yield
+
+    load_kwargs: dict = {}
+    if _lc_load_allowed_objects_arg_supported():
+        load_kwargs["allowed_objects"] = "all" if include_model else "core"
+
+    with suppress_langchain_beta_warning():
+        try:
+            prompt = load(
+                prompt_object.manifest,
+                secrets_map=secrets,
+                secrets_from_env=secrets_from_env,
+                **load_kwargs,
+            )
+        except Exception as e:
+            if (
+                _manifest_has_secrets(prompt_object.manifest)
+                and not secrets_from_env
+                and not secrets
+            ):
+                raise ValueError(
+                    "Failed to load prompt. The prompt manifest contains secrets "
+                    "(like API keys or access tokens) but no secrets were provided. "
+                    "This is due to a security patch in langsmith 0.5.1 that "
+                    "disabled reading secrets from environment variables by default.\n\n"
+                    "To resolve this:\n"
+                    "- Recommended: Pass secrets directly via `secrets={'KEY_NAME': 'value'}`\n"
+                    "- If this is a trusted prompt: Set `secrets_from_env=True` to read "
+                    "secrets from environment variables\n\n"
+                    f"Underlying error:\n{e}"
+                )
+            raise e
+
+    if (
+        isinstance(prompt, BasePromptTemplate)
+        or isinstance(prompt, RunnableSequence)
+        and isinstance(prompt.first, BasePromptTemplate)
+    ):
+        prompt_template = (
+            prompt
+            if isinstance(prompt, BasePromptTemplate)
+            else (
+                prompt.first
+                if isinstance(prompt, RunnableSequence)
+                and isinstance(prompt.first, BasePromptTemplate)
+                else None
+            )
+        )
+        if prompt_template is None:
+            raise ls_utils.LangSmithError(
+                "Prompt object is not a valid prompt template."
+            )
+
+        if prompt_template.metadata is None:
+            prompt_template.metadata = {}
+        prompt_template.metadata.update(
+            {
+                "lc_hub_owner": prompt_object.owner,
+                "lc_hub_repo": prompt_object.repo,
+                "lc_hub_commit_hash": prompt_object.commit_hash,
+            }
+        )
+
+    # Transform 2-step RunnableSequence to 3-step for structured prompts
+    # See create_commit for the reverse transformation
+    if (
+        include_model
+        and isinstance(prompt, RunnableSequence)
+        and isinstance(prompt.first, StructuredPrompt)
+        # Make forward-compatible in case we let update the response type
+        and (len(prompt.steps) == 2 and not isinstance(prompt.last, BaseOutputParser))
+    ):
+        if isinstance(prompt.last, RunnableBinding) and isinstance(
+            prompt.last.bound, BaseLanguageModel
+        ):
+            seq = cast(RunnableSequence, prompt.first | prompt.last.bound)
+            if len(seq.steps) == 3:  # prompt | bound llm | output parser
+                rebound_llm = seq.steps[1]
+                prompt = RunnableSequence(
+                    prompt.first,
+                    rebound_llm.bind(**{**prompt.last.kwargs}),
+                    seq.last,
+                )
+            else:
+                prompt = seq  # Not sure
+
+        elif isinstance(prompt.last, BaseLanguageModel):
+            prompt: RunnableSequence = prompt.first | prompt.last  # type: ignore[no-redef, assignment]
+        else:
+            pass
+
+    return prompt
+
+
 def _parse_token_or_url(
     url_or_token: Union[str, uuid.UUID],
     api_url: str,
@@ -7972,7 +8109,7 @@ class Client:
         self,
         prompt_identifier: str,
         *,
-        include_model: Optional[bool] = False,
+        include_model: bool | None = False,
         secrets: dict[str, str] | None = None,
         secrets_from_env: bool = False,
     ) -> Any:
@@ -8015,120 +8152,15 @@ class Client:
             in the `langchain-core` package which this method (but not the entire
             langsmith package) depends on.
         """
-        try:
-            from langchain_core.language_models.base import BaseLanguageModel
-            from langchain_core.load.load import load
-            from langchain_core.output_parsers import BaseOutputParser
-            from langchain_core.prompts import BasePromptTemplate
-            from langchain_core.prompts.structured import StructuredPrompt
-            from langchain_core.runnables.base import RunnableBinding, RunnableSequence
-        except ImportError:
-            raise ImportError(
-                "The client.pull_prompt function requires the langchain-core "
-                "package to run.\nInstall with `pip install langchain-core`"
-            )
-        try:
-            from langchain_core._api import suppress_langchain_beta_warning
-        except ImportError:
-
-            @contextlib.contextmanager
-            def suppress_langchain_beta_warning():
-                yield
-
         prompt_object = self.pull_prompt_commit(
             prompt_identifier, include_model=include_model
         )
-        load_kwargs: dict = {}
-        if _lc_load_allowed_objects_arg_supported():
-            load_kwargs["allowed_objects"] = "all" if include_model else "core"
-        with suppress_langchain_beta_warning():
-            try:
-                prompt = load(
-                    prompt_object.manifest,
-                    secrets_map=secrets,
-                    secrets_from_env=secrets_from_env,
-                    **load_kwargs,
-                )
-            except Exception as e:
-                if (
-                    _manifest_has_secrets(prompt_object.manifest)
-                    and not secrets_from_env
-                    and not secrets
-                ):
-                    raise ValueError(
-                        "Failed to load prompt. The prompt manifest contains secrets "
-                        "(like API keys or access tokens) but no secrets were provided. "
-                        "This is due to a security patch in langsmith 0.5.1 that "
-                        "disabled reading secrets from environment variables by default.\n\n"
-                        "To resolve this:\n"
-                        "- Recommended: Pass secrets directly via `secrets={'KEY_NAME': 'value'}`\n"
-                        "- If this is a trusted prompt: Set `secrets_from_env=True` to read "
-                        "secrets from environment variables\n\n"
-                        f"Underlying error:\n{e}"
-                    )
-                raise e
-
-        if (
-            isinstance(prompt, BasePromptTemplate)
-            or isinstance(prompt, RunnableSequence)
-            and isinstance(prompt.first, BasePromptTemplate)
-        ):
-            prompt_template = (
-                prompt
-                if isinstance(prompt, BasePromptTemplate)
-                else (
-                    prompt.first
-                    if isinstance(prompt, RunnableSequence)
-                    and isinstance(prompt.first, BasePromptTemplate)
-                    else None
-                )
-            )
-            if prompt_template is None:
-                raise ls_utils.LangSmithError(
-                    "Prompt object is not a valid prompt template."
-                )
-
-            if prompt_template.metadata is None:
-                prompt_template.metadata = {}
-            prompt_template.metadata.update(
-                {
-                    "lc_hub_owner": prompt_object.owner,
-                    "lc_hub_repo": prompt_object.repo,
-                    "lc_hub_commit_hash": prompt_object.commit_hash,
-                }
-            )
-
-        # Transform 2-step RunnableSequence to 3-step for structured prompts
-        # See create_commit for the reverse transformation
-        if (
-            include_model
-            and isinstance(prompt, RunnableSequence)
-            and isinstance(prompt.first, StructuredPrompt)
-            # Make forward-compatible in case we let update the response type
-            and (
-                len(prompt.steps) == 2 and not isinstance(prompt.last, BaseOutputParser)
-            )
-        ):
-            if isinstance(prompt.last, RunnableBinding) and isinstance(
-                prompt.last.bound, BaseLanguageModel
-            ):
-                seq = cast(RunnableSequence, prompt.first | prompt.last.bound)
-                if len(seq.steps) == 3:  # prompt | bound llm | output parser
-                    rebound_llm = seq.steps[1]
-                    prompt = RunnableSequence(
-                        prompt.first,
-                        rebound_llm.bind(**{**prompt.last.kwargs}),
-                        seq.last,
-                    )
-                else:
-                    prompt = seq  # Not sure
-
-            elif isinstance(prompt.last, BaseLanguageModel):
-                prompt: RunnableSequence = prompt.first | prompt.last  # type: ignore[no-redef, assignment]
-            else:
-                pass
-
-        return prompt
+        return _process_prompt_manifest(
+            prompt_object,
+            include_model=include_model,
+            secrets=secrets,
+            secrets_from_env=secrets_from_env,
+        )
 
     def push_prompt(
         self,

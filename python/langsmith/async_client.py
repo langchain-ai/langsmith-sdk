@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import datetime
 import json
 import uuid
@@ -1730,7 +1729,12 @@ class AsyncClient:
                 break
 
     async def pull_prompt(
-        self, prompt_identifier: str, *, include_model: Optional[bool] = False
+        self,
+        prompt_identifier: str,
+        *,
+        include_model: bool | None = False,
+        secrets: dict[str, str] | None = None,
+        secrets_from_env: bool = False,
     ) -> Any:
         """Pull a prompt and return it as a LangChain `PromptTemplate`.
 
@@ -1739,97 +1743,47 @@ class AsyncClient:
         Args:
             prompt_identifier: The identifier of the prompt.
             include_model: Whether to include the model information in the prompt data.
+            secrets: A map of secrets to use when loading, e.g.
+                `{'OPENAI_API_KEY': 'sk-...'}`.
+
+                If a secret is not found in the map, it will be loaded from the
+                environment if `secrets_from_env` is `True`. Should only be needed when
+                `include_model=True`.
+            secrets_from_env: Whether to load secrets from the environment.
+
+                **SECURITY NOTE**: Should only be set to `True` when pulling trusted
+                prompts.
 
         Returns:
             Any: The prompt object in the specified format.
+
+        !!! warning "Behavior changed in `langsmith` 0.5.1"
+
+            Updated to take arguments `secrets` and `secrets_from_env` which default
+            to None and False, respectively.
+
+            By default secrets needed to initialize a pulled object will no longer be
+            read from environment variables. This is relevant when
+            `include_model=True`. For example, to load an OpenAI model you need to
+            have an OPENAI_API_KEY. Previously this was read from environment
+            variables by default. To do so now you must specify
+            `secrets={"OPENAI_API_KEY": "sk-..."}` or `secrets_from_env=True`.
+            `secrets_from_env` should only be used when pulling trusted prompts.
+
+            These updates were made to remediate vulnerability
+            [GHSA-c67j-w6g6-q2cm](https://github.com/langchain-ai/langchain/security/advisories/GHSA-c67j-w6g6-q2cm)
+            in the `langchain-core` package which this method (but not the entire
+            langsmith package) depends on.
         """
-        try:
-            from langchain_core.language_models.base import BaseLanguageModel
-            from langchain_core.load.load import loads
-            from langchain_core.output_parsers import BaseOutputParser
-            from langchain_core.prompts import BasePromptTemplate
-            from langchain_core.prompts.structured import StructuredPrompt
-            from langchain_core.runnables.base import RunnableBinding, RunnableSequence
-        except ImportError:
-            raise ImportError(
-                "The client.pull_prompt function requires the langchain-core"
-                "package to run.\nInstall with `pip install langchain-core`"
-            )
-        try:
-            from langchain_core._api import suppress_langchain_beta_warning
-        except ImportError:
-
-            @contextlib.contextmanager
-            def suppress_langchain_beta_warning():
-                yield
-
         prompt_object = await self.pull_prompt_commit(
             prompt_identifier, include_model=include_model
         )
-        with suppress_langchain_beta_warning():
-            prompt = loads(json.dumps(prompt_object.manifest))
-
-        if (
-            isinstance(prompt, BasePromptTemplate)
-            or isinstance(prompt, RunnableSequence)
-            and isinstance(prompt.first, BasePromptTemplate)
-        ):
-            prompt_template = (
-                prompt
-                if isinstance(prompt, BasePromptTemplate)
-                else (
-                    prompt.first
-                    if isinstance(prompt, RunnableSequence)
-                    and isinstance(prompt.first, BasePromptTemplate)
-                    else None
-                )
-            )
-            if prompt_template is None:
-                raise ls_utils.LangSmithError(
-                    "Prompt object is not a valid prompt template."
-                )
-
-            if prompt_template.metadata is None:
-                prompt_template.metadata = {}
-            prompt_template.metadata.update(
-                {
-                    "lc_hub_owner": prompt_object.owner,
-                    "lc_hub_repo": prompt_object.repo,
-                    "lc_hub_commit_hash": prompt_object.commit_hash,
-                }
-            )
-
-        # Transform 2-step RunnableSequence to 3-step for structured prompts
-        # See create_commit for the reverse transformation when pushing a prompt
-        if (
-            include_model
-            and isinstance(prompt, RunnableSequence)
-            and isinstance(prompt.first, StructuredPrompt)
-            # Make forward-compatible in case we let update the response type
-            and (
-                len(prompt.steps) == 2 and not isinstance(prompt.last, BaseOutputParser)
-            )
-        ):
-            if isinstance(prompt.last, RunnableBinding) and isinstance(
-                prompt.last.bound, BaseLanguageModel
-            ):
-                seq = cast(RunnableSequence, prompt.first | prompt.last.bound)
-                if len(seq.steps) == 3:  # prompt | bound llm | output parser
-                    rebound_llm = seq.steps[1]
-                    prompt = RunnableSequence(
-                        prompt.first,
-                        rebound_llm.bind(**{**prompt.last.kwargs}),
-                        seq.last,
-                    )
-                else:
-                    prompt = seq  # Not sure
-
-            elif isinstance(prompt.last, BaseLanguageModel):
-                prompt: RunnableSequence = prompt.first | prompt.last  # type: ignore[no-redef, assignment]
-            else:
-                pass
-
-        return prompt
+        return ls_client._process_prompt_manifest(
+            prompt_object,
+            include_model=include_model,
+            secrets=secrets,
+            secrets_from_env=secrets_from_env,
+        )
 
     async def push_prompt(
         self,
