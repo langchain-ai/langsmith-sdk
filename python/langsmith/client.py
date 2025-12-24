@@ -187,6 +187,11 @@ DEFAULT_INSTRUCTIONS = "How are people using my agent? What are they asking abou
 
 @lru_cache(maxsize=1)
 def _lc_load_allowed_objects_arg_supported() -> bool:
+    """Check if the installed langchain-core supports the 'allowed_objects' parameter.
+
+    Returns True if langchain-core >= 0.3.81 and < 1.0, or >= 1.2.5.
+    Returns False if langchain-core is not installed or version cannot be determined.
+    """
     allowed_objects_supported = False
     try:
         from langchain_core import __version__
@@ -210,7 +215,21 @@ def _lc_load_allowed_objects_arg_supported() -> bool:
 def _manifest_has_secrets(
     manifest: dict | list, *, depth: int = 0, max_depth: int = 10, max_width: int = 50
 ) -> bool:
-    if max_depth < 0:
+    """Recursively check if a manifest contains any secret objects.
+
+    A secret is identified as a dict with exactly keys {"lc", "type", "id"}
+    where type == "secret".
+
+    Args:
+        manifest: The manifest dict or list to check.
+        depth: Current recursion depth (internal use).
+        max_depth: Maximum recursion depth to prevent infinite loops.
+        max_width: Maximum number of items to check per dict/list to limit processing.
+
+    Returns:
+        True if any secrets are found, False otherwise.
+    """
+    if max_depth < 1:
         raise ValueError("max_depth must be positive.")
     if max_width < 1:
         raise ValueError("max_width must be positive.")
@@ -222,7 +241,7 @@ def _manifest_has_secrets(
         and manifest["type"] == "secret"
     ):
         return True
-    elif depth + 1 == max_depth:
+    elif depth + 1 == max_depth:  # skip extra layer of function calls.
         return False
     elif isinstance(manifest, dict):
         return any(
@@ -7998,12 +8017,12 @@ class Client:
             to None and False, respectively.
 
             By default secrets needed to initialize a pulled object will no longer be
-            read from environment variables. This is relevant when when
-            `include_models=True`. For example, to load an OpenAI model you need to
-            have an OPENAI_API_KEY.  Previously this was read from environment
+            read from environment variables. This is relevant when
+            `include_model=True`. For example, to load an OpenAI model you need to
+            have an OPENAI_API_KEY. Previously this was read from environment
             variables by default. To do so now you must specify
             `secrets={"OPENAI_API_KEY": "sk-..."}` or `secrets_from_env=True`.
-            `secrets_from_env` should only be done when pulling trusted prompts.
+            `secrets_from_env` should only be used when pulling trusted prompts.
 
             These updates were made to remediate vulnerability
             [GHSA-c67j-w6g6-q2cm](https://github.com/langchain-ai/langchain/security/advisories/GHSA-c67j-w6g6-q2cm)
@@ -8019,7 +8038,7 @@ class Client:
             from langchain_core.runnables.base import RunnableBinding, RunnableSequence
         except ImportError:
             raise ImportError(
-                "The client.pull_prompt function requires the langchain-core"
+                "The client.pull_prompt function requires the langchain-core "
                 "package to run.\nInstall with `pip install langchain-core`"
             )
         try:
@@ -8050,7 +8069,17 @@ class Client:
                     and not secrets_from_env
                     and not secrets
                 ):
-                    raise ValueError(...)
+                    raise ValueError(
+                        "Failed to load prompt. The prompt manifest contains secrets "
+                        "(like API keys or access tokens) but no secrets were provided. "
+                        "This is due to a security patch in langsmith 0.5.1 that "
+                        "disabled reading secrets from environment variables by default.\n\n"
+                        "To resolve this:\n"
+                        "- Recommended: Pass secrets directly via `secrets={'KEY_NAME': 'value'}`\n"
+                        "- If this is a trusted prompt: Set `secrets_from_env=True` to read "
+                        "secrets from environment variables\n\n"
+                        f"Underlying error:\n{e}"
+                    )
                 raise e
 
         if (
