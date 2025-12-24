@@ -2911,9 +2911,22 @@ def test_pull_prompt(
             "OPENAI_API_KEY": "test_openai_key",
         },
     ):
-        result = client.pull_prompt(
-            prompt_identifier=manifest_data["repo"], include_model=include_model
-        )
+        if include_model:
+            try:
+                client.pull_prompt(
+                    prompt_identifier=manifest_data["repo"], include_model=include_model
+                )
+            except ValueError as e:
+                assert "no secrets were provided" in str(e)
+            result = client.pull_prompt(
+                prompt_identifier=manifest_data["repo"],
+                include_model=include_model,
+                secrets_from_env=True,
+            )
+        else:
+            result = client.pull_prompt(
+                prompt_identifier=manifest_data["repo"], include_model=include_model
+            )
     expected_prompt_type = (
         StructuredPrompt if manifest_type == "structured" else ChatPromptTemplate
     )

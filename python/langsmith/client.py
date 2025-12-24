@@ -187,8 +187,7 @@ DEFAULT_INSTRUCTIONS = "How are people using my agent? What are they asking abou
 
 @lru_cache(maxsize=1)
 def _lc_load_allowed_objects_arg_supported() -> bool:
-    """Check if the installed langchain_core.load.load supports the 'allowed_objects'
-        parameter.
+    """Check if the installed langchain_core.load.load supports the 'allowed_objects' parameter.
 
     Returns True if langchain-core >= 0.3.81 and < 1.0, or >= 1.2.5.
     """
