@@ -187,10 +187,10 @@ DEFAULT_INSTRUCTIONS = "How are people using my agent? What are they asking abou
 
 @lru_cache(maxsize=1)
 def _lc_load_allowed_objects_arg_supported() -> bool:
-    """Check if the installed langchain-core supports the 'allowed_objects' parameter.
+    """Check if the installed langchain_core.load.load supports the 'allowed_objects'
+        parameter.
 
     Returns True if langchain-core >= 0.3.81 and < 1.0, or >= 1.2.5.
-    Returns False if langchain-core is not installed or version cannot be determined.
     """
     allowed_objects_supported = False
     try:
@@ -215,20 +215,7 @@ def _lc_load_allowed_objects_arg_supported() -> bool:
 def _manifest_has_secrets(
     manifest: dict | list, *, depth: int = 0, max_depth: int = 10, max_width: int = 50
 ) -> bool:
-    """Recursively check if a manifest contains any secret objects.
-
-    A secret is identified as a dict with exactly keys {"lc", "type", "id"}
-    where type == "secret".
-
-    Args:
-        manifest: The manifest dict or list to check.
-        depth: Current recursion depth (internal use).
-        max_depth: Maximum recursion depth to prevent infinite loops.
-        max_width: Maximum number of items to check per dict/list to limit processing.
-
-    Returns:
-        True if any secrets are found, False otherwise.
-    """
+    """Recursively check if a manifest contains any secret objects."""
     if max_depth < 1:
         raise ValueError("max_depth must be positive.")
     if max_width < 1:
