@@ -893,10 +893,12 @@ class Feedback(_SchemaBase):
         if isinstance(self.feedback_group_id, str):
             object.__setattr__(self, "feedback_group_id", UUID(self.feedback_group_id))
         if isinstance(self.feedback_thread_id, str):
-            object.__setattr__(self, "feedback_thread_id", UUID(self.feedback_thread_id))
+            object.__setattr__(
+                self, "feedback_thread_id", UUID(self.feedback_thread_id)
+            )
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Feedback":
+    def from_dict(cls, data: dict[str, Any]) -> Feedback:
         """Create from dictionary, filtering unknown fields."""
         field_names = {f.name for f in dataclasses.fields(cls)}
         filtered_data = {k: v for k, v in data.items() if k in field_names}
