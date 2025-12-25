@@ -12,8 +12,9 @@ import {
   createLangSmithProviderOptions,
   wrapAISDK,
 } from "../../../experimental/vercel/index.js";
-import { waitUntilRunFound } from "../../utils.js";
+import { generateLongContext, waitUntilRunFound } from "../../utils.js";
 import { mockClient } from "../../utils/mock_client.js";
+import { traceable } from "../../../traceable.js";
 
 const { tool, stepCountIs } = ai;
 
@@ -466,4 +467,169 @@ test("streamText with experimental_output should display as structured object in
   }
   expect(chunks.length).toBeGreaterThan(0);
   expect(outputSchema.parse(chunks.at(-1))).toBeDefined();
+});
+
+it.skip("openai cache with large prompt for automatic caching using OTEL", async () => {
+  const meta = v4();
+  const client = new Client();
+  const aiSDKResponses: unknown[] = [];
+
+  // Create a large prompt (>1024 tokens) to trigger OpenAI's automatic prompt caching
+  const largeProgrammingContext = generateLongContext();
+
+  const wrapper = traceable(
+    async () => {
+      // First call - should create cache due to large prompt (>1024 tokens)
+      try {
+        const res1 = await generateText({
+          model: openai("gpt-4o-mini"),
+          experimental_telemetry: {
+            isEnabled: true,
+          },
+          messages: [
+            {
+              role: "system",
+              content: largeProgrammingContext,
+            },
+            {
+              role: "user",
+              content:
+                "What are the top 3 memory optimization strategies you would recommend for this Java service?",
+            },
+          ],
+        });
+        aiSDKResponses.push(res1);
+        console.log("Cache create response:", res1.usage);
+      } catch (error) {
+        console.error("Cache create error:", error);
+      }
+
+      // Second call - should read from cache with same large context
+      try {
+        const res2 = await generateText({
+          model: openai("gpt-4o-mini"),
+          experimental_telemetry: {
+            isEnabled: true,
+          },
+          messages: [
+            {
+              role: "system",
+              content: largeProgrammingContext,
+            },
+            {
+              role: "user",
+              content:
+                "How would you redesign the database access pattern to reduce connection pool pressure?",
+            },
+          ],
+        });
+        aiSDKResponses.push(res2);
+        console.log("Cache read response:", res2.usage);
+      } catch (error) {
+        console.error("Cache read error:", error);
+      }
+
+      return "OpenAI cache test completed";
+    },
+    {
+      name: "OpenAI Cache Test Wrapper",
+      metadata: { testKey: meta },
+      client,
+    }
+  );
+
+  await wrapper();
+
+  await client.awaitPendingTraceBatches();
+});
+
+it.skip("openai cache with streamText using OTEL", async () => {
+  const meta = v4();
+  const client = new Client();
+  const aiSDKResponses: unknown[] = [];
+
+  // Create a large prompt (>1024 tokens) to trigger OpenAI's automatic prompt caching
+  const largeProgrammingContext = generateLongContext();
+
+  const wrapper = traceable(
+    async () => {
+      // First call - should create cache due to large prompt (>1024 tokens)
+      try {
+        const { textStream } = streamText({
+          model: openai("gpt-4o-mini"),
+          experimental_telemetry: {
+            isEnabled: true,
+          },
+          messages: [
+            {
+              role: "system",
+              content: largeProgrammingContext,
+            },
+            {
+              role: "user",
+              content:
+                "What are the top 3 memory optimization strategies you would recommend for this Java service?",
+            },
+          ],
+        });
+
+        let fullText = "";
+        for await (const chunk of textStream) {
+          fullText += chunk;
+        }
+        aiSDKResponses.push({ text: fullText });
+        console.log("Cache create response with streamText");
+      } catch (error) {
+        console.error("Cache create error:", error);
+      }
+
+      // Second call - should read from cache with same large context
+      try {
+        const { textStream } = streamText({
+          model: openai("gpt-4o-mini"),
+          experimental_telemetry: {
+            isEnabled: true,
+          },
+          messages: [
+            {
+              role: "system",
+              content: largeProgrammingContext,
+            },
+            {
+              role: "user",
+              content:
+                "How would you redesign the database access pattern to reduce connection pool pressure?",
+            },
+          ],
+          providerOptions: {
+            openai: {
+              stream_options: {
+                include_usage: true,
+              },
+            },
+          },
+        });
+
+        let fullText = "";
+        for await (const chunk of textStream) {
+          fullText += chunk;
+        }
+        aiSDKResponses.push({ text: fullText });
+        console.log("Cache read response with streamText");
+      } catch (error) {
+        console.error("Cache read error:", error);
+      }
+
+      return "OpenAI cache streamText test completed";
+    },
+    {
+      name: "OpenAI Cache StreamText Test Wrapper",
+      metadata: { testKey: meta },
+      client,
+    }
+  );
+
+  await wrapper();
+
+  await client.awaitPendingTraceBatches();
 });

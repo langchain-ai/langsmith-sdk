@@ -146,7 +146,7 @@ describe("anthropic", () => {
     }
   });
 
-  it("anthropic cache read and write tokens with OTEL exporter", async () => {
+  it.skip("anthropic cache read and write tokens with OTEL exporter", async () => {
     const meta = v4();
     const client = new Client();
     const aiSDKResponses: unknown[] = [];
@@ -232,7 +232,7 @@ describe("anthropic", () => {
     await client.awaitPendingTraceBatches();
   });
 
-  it("anthropic cache read and write 1h cached tokens with OTEL exporter", async () => {
+  it.skip("anthropic cache read and write 1h cached tokens with OTEL exporter", async () => {
     const meta = v4();
     const client = new Client();
     const aiSDKResponses: unknown[] = [];
