@@ -637,6 +637,7 @@ class DynamicComparisonRunEvaluator:
     @staticmethod
     def _get_tags(runs: Sequence[Run]) -> list[str]:
         """Extract tags from runs."""
+        # Add tags to support filtering
         tags = []
         for run in runs:
             tags.append("run:" + str(run.id))

@@ -46,6 +46,7 @@ OVERRIDE_OUTPUTS = sys.intern("__omit_auto_outputs")
 NOT_PROVIDED = cast(None, object())
 _LOCK = threading.Lock()
 
+# Context variables
 _REPLICAS = contextvars.ContextVar[Optional[Sequence[WriteReplica]]](
     "_REPLICAS", default=None
 )
@@ -59,6 +60,7 @@ _SENTINEL = cast(None, object())
 TIMESTAMP_LENGTH = 36
 
 
+# Note, this is called directly by langchain. Do not remove.
 def get_cached_client(**init_kwargs: Any) -> Client:
     global _CLIENT
     if _CLIENT is None:
@@ -412,16 +414,20 @@ class RunTree(ls_schemas.RunBase):
     @property
     def client(self) -> Client:
         """Return the client."""
+        # Lazily load the client
+        # If you never use this for API calls, it will never be loaded
         if self.ls_client is None:
             object.__setattr__(self, "ls_client", get_cached_client())
         return self.ls_client
 
     @property
     def _client(self) -> Optional[Client]:
+        # For backwards compat
         return self.ls_client
 
     def __setattr__(self, name, value):
         """Set the `_client` specially."""
+        # For backwards compat
         if name == "_client":
             object.__setattr__(self, "ls_client", value)
         else:
@@ -460,6 +466,8 @@ class RunTree(ls_schemas.RunBase):
         if metadata is not NOT_PROVIDED:
             self.extra.setdefault("metadata", {}).update(metadata or {})
         if inputs is not NOT_PROVIDED:
+            # Used by LangChain core to determine whether to
+            # re-upload the inputs upon run completion
             self.extra["inputs_is_truthy"] = False
             if inputs is None:
                 object.__setattr__(self, "inputs", {})
@@ -510,6 +518,8 @@ class RunTree(ls_schemas.RunBase):
         if self.inputs is None:
             object.__setattr__(self, "inputs", {})
         self.inputs.update(inputs)
+        # Set to False so LangChain thinks it needs to
+        # re-upload inputs
         self.extra["inputs_is_truthy"] = False
 
     def add_event(
@@ -557,6 +567,8 @@ class RunTree(ls_schemas.RunBase):
     ) -> None:
         """Set the end time of the run and all child runs."""
         object.__setattr__(self, "end_time", end_time or datetime.now(timezone.utc))
+        # We've already 'set' the outputs, so ignore
+        # the ones that are automatically included
         if not self.extra.get(OVERRIDE_OUTPUTS):
             if outputs is not None:
                 if not self.outputs:
@@ -588,6 +600,8 @@ class RunTree(ls_schemas.RunBase):
         attachments: Optional[ls_schemas.Attachments] = None,
     ) -> "RunTree":
         """Add a child run to the run tree."""
+        # Ensure child start_time is never earlier than parent start_time
+        # to prevent timestamp ordering violations in dotted_order
         if start_time is not None and self.start_time is not None:
             if start_time < self.start_time:
                 logger.debug(
@@ -622,10 +636,12 @@ class RunTree(ls_schemas.RunBase):
         return run
 
     def _get_dicts_safe(self):
+        # Things like generators cannot be copied
         self_dict = self.dict(
             exclude={"child_runs", "inputs", "outputs"}, exclude_none=True
         )
         if self.inputs is not None:
+            # shallow copy. deep copying will occur in the client
             inputs_ = {}
             attachments = self_dict.get("attachments", {})
             for k, v in self.inputs.items():
@@ -637,6 +653,7 @@ class RunTree(ls_schemas.RunBase):
             if attachments:
                 self_dict["attachments"] = attachments
         if self.outputs is not None:
+            # shallow copy; deep copying will occur in the client
             self_dict["outputs"] = self.outputs.copy()
         return self_dict
 
@@ -651,19 +668,23 @@ class RunTree(ls_schemas.RunBase):
             segs = dotted_order.split(".")
             start_idx = None
             parent_id = str(parent_id)
+            # TODO(angus): potentially use binary search to find the index
             for idx, part in enumerate(segs):
                 seg_id = part[-TIMESTAMP_LENGTH:]
                 if str(seg_id) == parent_id:
                     start_idx = idx
                     break
             if start_idx is not None:
+                # Trim segments to start after parent_id (exclusive)
                 trimmed_segs = segs[start_idx + 1 :]
+                # Rebuild dotted_order
                 run_dict["dotted_order"] = ".".join(trimmed_segs)
                 if trimmed_segs:
                     run_dict["trace_id"] = UUID(trimmed_segs[0][-TIMESTAMP_LENGTH:])
                 else:
                     run_dict["trace_id"] = run_dict["id"]
         if str(run_dict.get("parent_run_id")) == parent_id:
+            # We've found the new root node.
             run_dict.pop("parent_run_id", None)
 
     def _remap_for_project(
@@ -681,16 +702,19 @@ class RunTree(ls_schemas.RunBase):
 
         old_id = run_dict["id"]
         new_id = uuid5(NAMESPACE_DNS, f"{old_id}:{project_name}")
+        # trace id
         old_trace = run_dict.get("trace_id")
         if old_trace:
             new_trace = uuid5(NAMESPACE_DNS, f"{old_trace}:{project_name}")
         else:
             new_trace = None
+        # parent id
         parent = run_dict.get("parent_run_id")
         if parent:
             new_parent = uuid5(NAMESPACE_DNS, f"{parent}:{project_name}")
         else:
             new_parent = None
+        # dotted order
         if run_dict.get("dotted_order"):
             segs = run_dict["dotted_order"].split(".")
             rebuilt = []
@@ -757,6 +781,7 @@ class RunTree(ls_schemas.RunBase):
             a: v for a, v in self.attachments.items() if isinstance(v, tuple)
         }
         try:
+            # Avoid loading the same attachment twice
             if attachments:
                 uploaded = next(
                     (
@@ -946,7 +971,10 @@ class RunTree(ls_schemas.RunBase):
         init_args["id"] = parsed_dotted_order[-1][1]
         init_args["dotted_order"] = parent_dotted_order
         if len(parsed_dotted_order) >= 2:
+            # Has a parent
             init_args["parent_run_id"] = parsed_dotted_order[-2][1]
+        # All placeholders. We assume the source process
+        # handles the life-cycle of the run.
         init_args["start_time"] = init_args.get("start_time") or datetime.now(
             timezone.utc
         )
@@ -970,6 +998,7 @@ class RunTree(ls_schemas.RunBase):
 
         run_tree = RunTree(**init_args)
 
+        # Set the distributed parent ID to this run's ID for rerooting
         _DISTRIBUTED_PARENT_ID.set(str(run_tree.id))
 
         return run_tree
@@ -1038,6 +1067,7 @@ class _Baggage:
                             isinstance(replica_item, (tuple, list))
                             and len(replica_item) == 2
                         ):
+                            # Convert legacy format to WriteReplica
                             parsed_replicas.append(
                                 WriteReplica(
                                     api_url=None,
@@ -1047,6 +1077,7 @@ class _Baggage:
                                 )
                             )
                         elif isinstance(replica_item, dict):
+                            # New WriteReplica format: preserve as dict
                             parsed_replicas.append(cast(WriteReplica, replica_item))
                         else:
                             logger.warning(
@@ -1211,6 +1242,7 @@ def _ensure_write_replicas(
     if replicas is None:
         return _get_write_replicas_from_env()
 
+    # All replicas should now be WriteReplica dicts
     return list(replicas)
 
 
