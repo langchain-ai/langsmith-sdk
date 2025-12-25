@@ -75,35 +75,19 @@ export function extractOutputTokenDetails(
     ? `${openAIServiceTier}_`
     : "";
   const outputTokenDetails: Record<string, number> = {};
-
-  // Provider-specific extraction for AI SDK 5/4 or when SDK 6 doesn't have breakdowns
-  let reasoningTokens: number | undefined;
-
-  // AI SDK 5: reasoningTokens
   if (typeof usage?.reasoningTokens === "number") {
-    reasoningTokens = usage.reasoningTokens;
-  }
-
-  if (typeof reasoningTokens === "number") {
     outputTokenDetails[`${outputTokenDetailsKeyPrefix}reasoning`] =
-      reasoningTokens;
+      usage.reasoningTokens;
   }
-
-  // Extract total output tokens for service tier calculation
-  let outputTokensTotal: number | undefined;
-  if (typeof usage?.outputTokens === "number") {
-    // AI SDK 5: outputTokens
-    outputTokensTotal = usage.outputTokens;
-  }
-
-  if (openAIServiceTier && typeof outputTokensTotal === "number") {
+  if (openAIServiceTier && typeof usage?.outputTokens === "number") {
     // Avoid counting reasoning tokens towards the output token count
     // since service tier tokens are already priced differently
     outputTokenDetails[openAIServiceTier] =
-      outputTokensTotal -
+      usage.outputTokens -
       (outputTokenDetails[`${outputTokenDetailsKeyPrefix}reasoning`] ?? 0);
   }
   return outputTokenDetails;
+}
 }
 
 function extractAISDK6InputTokenDetails(
@@ -193,10 +177,7 @@ export function extractInputTokenDetails(
       providerMetadata
     );
   }
-
   let inputTokenDetails: Record<string, number> = {};
-
-  // Provider-specific extraction for AI SDK 5/4 or when SDK 6 doesn't have breakdowns
   if (
     providerMetadata?.anthropic != null &&
     typeof providerMetadata?.anthropic === "object"
@@ -227,37 +208,29 @@ export function extractInputTokenDetails(
     providerMetadata?.openai != null &&
     typeof providerMetadata?.openai === "object"
   ) {
-    // AI SDK 5/4: Handle OpenAI cached tokens with service tier support
     const openAIServiceTier = extractTraceableServiceTier(
       providerMetadata ?? {}
     );
-    const tokenDetailsKeyPrefix = openAIServiceTier
+    const outputTokenDetailsKeyPrefix = openAIServiceTier
       ? `${openAIServiceTier}_`
       : "";
-
-    // Extract cached input tokens
-    let cachedInputTokens: number | undefined;
     if (typeof usage?.cachedInputTokens === "number") {
-      // AI SDK 5: cachedInputTokens
-      cachedInputTokens = usage.cachedInputTokens;
+      inputTokenDetails[`${outputTokenDetailsKeyPrefix}cache_read`] =
+        usage.cachedInputTokens;
     } else if (
       "cachedPromptTokens" in providerMetadata.openai &&
+      providerMetadata.openai.cachedPromptTokens != null &&
       typeof providerMetadata.openai.cachedPromptTokens === "number"
     ) {
-      // AI SDK 4: cachedPromptTokens in providerMetadata
-      cachedInputTokens = providerMetadata.openai.cachedPromptTokens;
+      inputTokenDetails[`${outputTokenDetailsKeyPrefix}cache_read`] =
+        providerMetadata.openai.cachedPromptTokens;
     }
-
-    if (typeof cachedInputTokens === "number") {
-      inputTokenDetails[`${tokenDetailsKeyPrefix}cache_read`] =
-        cachedInputTokens;
-    }
-
-    // Calculate service tier tokens (total minus cached)
     if (openAIServiceTier && typeof usage?.inputTokens === "number") {
+      // Avoid counting cached input tokens towards the input token count
+      // since service tier tokens are already priced differently
       inputTokenDetails[openAIServiceTier] =
         usage.inputTokens -
-        (inputTokenDetails[`${tokenDetailsKeyPrefix}cache_read`] ?? 0);
+        (inputTokenDetails[`${outputTokenDetailsKeyPrefix}cache_read`] ?? 0);
     }
   }
   return inputTokenDetails;
