@@ -1,15 +1,15 @@
 """Contains the `LLMEvaluator` class for building LLM-as-a-judge evaluators."""
 
+from dataclasses import dataclass
 from typing import Any, Callable, Optional, Union, cast
-
-from pydantic import BaseModel
 
 from langsmith._internal._beta_decorator import warn_beta
 from langsmith.evaluation import EvaluationResult, EvaluationResults, RunEvaluator
 from langsmith.schemas import Example, Run
 
 
-class CategoricalScoreConfig(BaseModel):
+@dataclass
+class CategoricalScoreConfig:
     """Configuration for a categorical score."""
 
     key: str
@@ -19,13 +19,14 @@ class CategoricalScoreConfig(BaseModel):
     explanation_description: Optional[str] = None
 
 
-class ContinuousScoreConfig(BaseModel):
+@dataclass
+class ContinuousScoreConfig:
     """Configuration for a continuous score."""
 
     key: str
+    description: str
     min: float = 0
     max: float = 1
-    description: str
     include_explanation: bool = False
     explanation_description: Optional[str] = None
 

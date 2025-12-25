@@ -256,7 +256,7 @@ def test_upload_csv(mock_session_cls: mock.Mock) -> None:
         "id": dataset_id,
         "name": "test.csv",
         "description": "Test dataset",
-        "owner_id": "the owner",
+        "owner_id": "00000000-0000-0000-0000-000000000001",
         "created_at": _CREATED_AT,
         "examples": [example_1, example_2],
     }

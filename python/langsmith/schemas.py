@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import copy
+import dataclasses
 from collections.abc import Iterator
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from enum import Enum
@@ -17,33 +20,65 @@ from typing import (
 )
 from uuid import UUID
 
-from typing_extensions import NotRequired, TypedDict
-
-try:
-    from pydantic.v1 import (
-        BaseModel,
-        Field,  # type: ignore[import]
-        PrivateAttr,
-        StrictBool,
-        StrictFloat,
-        StrictInt,
-    )
-except ImportError:
-    from pydantic import (  # type: ignore[assignment]
-        BaseModel,
-        Field,
-        PrivateAttr,
-        StrictBool,
-        StrictFloat,
-        StrictInt,
-    )
+from typing_extensions import Literal, NotRequired, TypedDict
 
 from pathlib import Path
 
-from typing_extensions import Literal
 
-SCORE_TYPE = Union[StrictBool, StrictInt, StrictFloat, None]
+SCORE_TYPE = Union[bool, int, float, None]
 VALUE_TYPE = Union[dict, str, None]
+
+
+def _default_extra():
+    return {"metadata": {}}
+
+
+class _SchemaBase:
+    """Base class that provides pydantic-like methods for dataclasses."""
+
+    def model_dump(
+        self,
+        *,
+        exclude_none: bool = False,
+        exclude: Optional[set] = None,
+        mode: str = "python",
+    ) -> dict[str, Any]:
+        """Convert the dataclass to a dictionary."""
+        result = {}
+        exclude = exclude or set()
+        for f in dataclasses.fields(self):
+            if f.name in exclude:
+                continue
+            if f.name.startswith("_"):
+                continue
+            value = getattr(self, f.name)
+            if exclude_none and value is None:
+                continue
+            if mode == "json" and hasattr(value, "model_dump"):
+                value = value.model_dump(exclude_none=exclude_none, mode=mode)
+            result[f.name] = value
+        return result
+
+    def dict(
+        self,
+        *,
+        exclude_none: bool = False,
+        exclude: Optional[set] = None,
+    ) -> dict[str, Any]:
+        """Convert the dataclass to a dictionary (pydantic v1 compatibility)."""
+        return self.model_dump(exclude_none=exclude_none, exclude=exclude)
+
+    def json(self) -> str:
+        """Convert the dataclass to a JSON string."""
+        from langsmith._internal._serde import dumps_json
+
+        return dumps_json(self.model_dump()).decode("utf-8")
+
+    def copy(self, **kwargs: Any) -> "_SchemaBase":
+        """Create a copy of the object with optional field updates."""
+        d = self.model_dump()
+        d.update(kwargs)
+        return self.__class__(**d)
 
 
 class Attachment(NamedTuple):
@@ -68,7 +103,7 @@ class Attachment(NamedTuple):
 
 
 Attachments = dict[str, Union[tuple[str, bytes], Attachment, tuple[str, Path]]]
-"""Attachments associated with the run. 
+"""Attachments associated with the run.
 
 Each entry is a tuple of `(mime_type, bytes)`, or `(mime_type, file_path)`
 """
@@ -91,19 +126,14 @@ class BinaryIOLike(Protocol):
         ...
 
 
-class ExampleBase(BaseModel):
+@dataclass(frozen=True)
+class ExampleBase(_SchemaBase):
     """Example base model."""
 
     dataset_id: UUID
-    inputs: Optional[dict[str, Any]] = Field(default=None)
-    outputs: Optional[dict[str, Any]] = Field(default=None)
-    metadata: Optional[dict[str, Any]] = Field(default=None)
-
-    class Config:
-        """Configuration class for the schema."""
-
-        frozen = True
-        arbitrary_types_allowed = True
+    inputs: Optional[dict[str, Any]] = None
+    outputs: Optional[dict[str, Any]] = None
+    metadata: Optional[dict[str, Any]] = None
 
 
 class _AttachmentDict(TypedDict):
@@ -116,32 +146,30 @@ _AttachmentLike = Union[
 ]
 
 
-class ExampleCreate(BaseModel):
+@dataclass
+class ExampleCreate(_SchemaBase):
     """Example upload with attachments."""
 
-    id: Optional[UUID]
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    inputs: Optional[dict[str, Any]] = Field(default=None)
-    outputs: Optional[dict[str, Any]] = Field(default=None)
-    metadata: Optional[dict[str, Any]] = Field(default=None)
+    id: Optional[UUID] = None
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    inputs: Optional[dict[str, Any]] = None
+    outputs: Optional[dict[str, Any]] = None
+    metadata: Optional[dict[str, Any]] = None
     split: Optional[Union[str, list[str]]] = None
     attachments: Optional[dict[str, _AttachmentLike]] = None
     use_source_run_io: bool = False
     use_source_run_attachments: Optional[list[str]] = None
     source_run_id: Optional[UUID] = None
 
-    def __init__(self, **data):
-        """Initialize from dict."""
-        super().__init__(**data)
-
 
 ExampleUploadWithAttachments = ExampleCreate
 
 
+@dataclass
 class ExampleUpsertWithAttachments(ExampleCreate):
     """Example create with attachments."""
 
-    dataset_id: UUID
+    dataset_id: UUID = field(default_factory=lambda: UUID("00000000-0000-0000-0000-000000000000"))
 
 
 class AttachmentInfo(TypedDict):
@@ -152,32 +180,38 @@ class AttachmentInfo(TypedDict):
     mime_type: Optional[str]
 
 
-class Example(ExampleBase):
+def _ensure_uuid(val: Union[UUID, str, None]) -> Optional[UUID]:
+    """Convert string to UUID if needed."""
+    if val is None:
+        return None
+    if isinstance(val, UUID):
+        return val
+    return UUID(val)
+
+
+@dataclass
+class Example(_SchemaBase):
     """Example model."""
 
     id: UUID
-    created_at: datetime = Field(
+    dataset_id: UUID = field(default_factory=lambda: UUID("00000000-0000-0000-0000-000000000000"))
+    inputs: Optional[dict[str, Any]] = None
+    outputs: Optional[dict[str, Any]] = None
+    metadata: Optional[dict[str, Any]] = None
+    created_at: datetime = field(
         default_factory=lambda: datetime.fromtimestamp(0, tz=timezone.utc)
     )
-    dataset_id: UUID = Field(default=UUID("00000000-0000-0000-0000-000000000000"))
-    modified_at: Optional[datetime] = Field(default=None)
+    modified_at: Optional[datetime] = None
     source_run_id: Optional[UUID] = None
-    attachments: Optional[dict[str, AttachmentInfo]] = Field(default=None)
-    """Dictionary with attachment names as keys and a tuple of the S3 url
-    and a reader of the data for the file."""
-    _host_url: Optional[str] = PrivateAttr(default=None)
-    _tenant_id: Optional[UUID] = PrivateAttr(default=None)
+    attachments: Optional[dict[str, AttachmentInfo]] = None
+    _host_url: Optional[str] = field(default=None, repr=False)
+    _tenant_id: Optional[UUID] = field(default=None, repr=False)
 
-    def __init__(
-        self,
-        _host_url: Optional[str] = None,
-        _tenant_id: Optional[UUID] = None,
-        **kwargs: Any,
-    ) -> None:
-        """Initialize a Dataset object."""
-        super().__init__(**kwargs)
-        self._host_url = _host_url
-        self._tenant_id = _tenant_id
+    def __post_init__(self):
+        """Convert string IDs to UUIDs."""
+        object.__setattr__(self, "id", _ensure_uuid(self.id))
+        object.__setattr__(self, "dataset_id", _ensure_uuid(self.dataset_id))
+        object.__setattr__(self, "source_run_id", _ensure_uuid(self.source_run_id))
 
     @property
     def url(self) -> Optional[str]:
@@ -194,43 +228,37 @@ class Example(ExampleBase):
         return f"{self.__class__}(id={self.id}, dataset_id={self.dataset_id}, link='{self.url}')"
 
 
-class ExampleSearch(ExampleBase):
+@dataclass(frozen=True)
+class ExampleSearch(_SchemaBase):
     """Example returned via search."""
 
     id: UUID
+    dataset_id: UUID
+    inputs: Optional[dict[str, Any]] = None
+    outputs: Optional[dict[str, Any]] = None
+    metadata: Optional[dict[str, Any]] = None
 
 
-class AttachmentsOperations(BaseModel):
+@dataclass
+class AttachmentsOperations(_SchemaBase):
     """Operations to perform on attachments."""
 
-    rename: dict[str, str] = Field(
-        default_factory=dict, description="Mapping of old attachment names to new names"
-    )
-    retain: list[str] = Field(
-        default_factory=list, description="List of attachment names to keep"
-    )
+    rename: dict[str, str] = field(default_factory=dict)
+    retain: list[str] = field(default_factory=list)
 
 
-class ExampleUpdate(BaseModel):
+@dataclass(frozen=True)
+class ExampleUpdate(_SchemaBase):
     """Example update with attachments."""
 
     id: UUID
     dataset_id: Optional[UUID] = None
-    inputs: Optional[dict[str, Any]] = Field(default=None)
-    outputs: Optional[dict[str, Any]] = Field(default=None)
-    metadata: Optional[dict[str, Any]] = Field(default=None)
+    inputs: Optional[dict[str, Any]] = None
+    outputs: Optional[dict[str, Any]] = None
+    metadata: Optional[dict[str, Any]] = None
     split: Optional[Union[str, list[str]]] = None
     attachments: Optional[Attachments] = None
     attachments_operations: Optional[AttachmentsOperations] = None
-
-    class Config:
-        """Configuration class for the schema."""
-
-        frozen = True
-
-    def __init__(self, **data):
-        """Initialize from dict."""
-        super().__init__(**data)
 
 
 ExampleUpdateWithAttachments = ExampleUpdate
@@ -244,17 +272,13 @@ class DataType(str, Enum):
     chat = "chat"
 
 
-class DatasetBase(BaseModel):
+@dataclass(frozen=True)
+class DatasetBase(_SchemaBase):
     """Dataset base model."""
 
     name: str
     description: Optional[str] = None
     data_type: Optional[DataType] = None
-
-    class Config:
-        """Configuration class for the schema."""
-
-        frozen = True
 
 
 DatasetTransformationType = Literal[
@@ -273,41 +297,69 @@ class DatasetTransformation(TypedDict, total=False):
     transformation_type: Union[DatasetTransformationType, str]
 
 
-class Dataset(DatasetBase):
+@dataclass
+class Dataset(_SchemaBase):
     """Dataset ORM model."""
 
     id: UUID
+    """The unique identifier of the dataset."""
+    name: str
+    """The name of the dataset."""
     created_at: datetime
-    modified_at: Optional[datetime] = Field(default=None)
+    """The time the dataset was created."""
+    description: Optional[str] = None
+    """The description of the dataset."""
+    data_type: Optional[DataType] = None
+    """The data type of the dataset."""
+    modified_at: Optional[datetime] = None
+    """The time the dataset was last modified."""
     example_count: Optional[int] = None
+    """The number of examples in the dataset."""
     session_count: Optional[int] = None
+    """The number of sessions using this dataset."""
     last_session_start_time: Optional[datetime] = None
+    """The start time of the last session."""
     inputs_schema: Optional[dict[str, Any]] = None
+    """The schema for the inputs."""
     outputs_schema: Optional[dict[str, Any]] = None
+    """The schema for the outputs."""
     transformations: Optional[list[DatasetTransformation]] = None
+    """The transformations applied to the dataset."""
     metadata: Optional[dict[str, Any]] = None
-    _host_url: Optional[str] = PrivateAttr(default=None)
-    _tenant_id: Optional[UUID] = PrivateAttr(default=None)
-    _public_path: Optional[str] = PrivateAttr(default=None)
+    """Metadata for the dataset."""
+    owner_id: Optional[UUID] = None
+    """The owner ID of the dataset."""
+    examples: Optional[list[Any]] = None
+    """List of examples in the dataset (when populated)."""
+    _host_url: Optional[str] = field(default=None, repr=False)
+    _tenant_id: Optional[UUID] = field(default=None, repr=False)
+    _public_path: Optional[str] = field(default=None, repr=False)
 
-    def __init__(
-        self,
-        _host_url: Optional[str] = None,
-        _tenant_id: Optional[UUID] = None,
-        _public_path: Optional[str] = None,
-        **kwargs: Any,
-    ) -> None:
-        """Initialize a Dataset object."""
-        if "inputs_schema_definition" in kwargs:
-            kwargs["inputs_schema"] = kwargs.pop("inputs_schema_definition")
+    def __post_init__(self):
+        """Convert string UUIDs to UUID objects."""
+        if isinstance(self.id, str):
+            object.__setattr__(self, "id", UUID(self.id))
+        if isinstance(self.owner_id, str):
+            object.__setattr__(self, "owner_id", _ensure_uuid(self.owner_id))
 
-        if "outputs_schema_definition" in kwargs:
-            kwargs["outputs_schema"] = kwargs.pop("outputs_schema_definition")
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], **private_attrs: Any) -> "Dataset":
+        """Create from dictionary with optional private attributes."""
+        if "inputs_schema_definition" in data:
+            data = data.copy()
+            data["inputs_schema"] = data.pop("inputs_schema_definition")
+        if "outputs_schema_definition" in data:
+            data = data.copy()
+            data["outputs_schema"] = data.pop("outputs_schema_definition")
 
-        super().__init__(**kwargs)
-        self._host_url = _host_url
-        self._tenant_id = _tenant_id
-        self._public_path = _public_path
+        field_names = {f.name for f in dataclasses.fields(cls)}
+        filtered_data = {k: v for k, v in data.items() if k in field_names}
+
+        obj = cls(**filtered_data)
+        object.__setattr__(obj, "_host_url", private_attrs.get("_host_url"))
+        object.__setattr__(obj, "_tenant_id", private_attrs.get("_tenant_id"))
+        object.__setattr__(obj, "_public_path", private_attrs.get("_public_path"))
+        return obj
 
     @property
     def url(self) -> Optional[str]:
@@ -321,18 +373,16 @@ class Dataset(DatasetBase):
         return None
 
 
-class DatasetVersion(BaseModel):
+@dataclass
+class DatasetVersion(_SchemaBase):
     """Class representing a dataset version."""
 
-    tags: Optional[list[str]] = None
     as_of: datetime
+    tags: Optional[list[str]] = None
 
 
-def _default_extra():
-    return {"metadata": {}}
-
-
-class RunBase(BaseModel):
+@dataclass
+class RunBase(_SchemaBase):
     """Base Run schema.
 
     A Run is a span representing a single unit of work or operation within your LLM app.
@@ -357,7 +407,7 @@ class RunBase(BaseModel):
     end_time: Optional[datetime] = None
     """End time of the run, if applicable."""
 
-    extra: Optional[dict] = Field(default_factory=_default_extra)
+    extra: Optional[dict] = field(default_factory=_default_extra)
     """Additional metadata or settings related to the run."""
 
     error: Optional[str] = None
@@ -370,7 +420,7 @@ class RunBase(BaseModel):
     """List of events associated with the run, like
     start and end events."""
 
-    inputs: dict = Field(default_factory=dict)
+    inputs: dict = field(default_factory=dict)
     """Inputs used for the run."""
 
     outputs: Optional[dict] = None
@@ -385,11 +435,11 @@ class RunBase(BaseModel):
     tags: Optional[list[str]] = None
     """Tags for categorizing or annotating the run."""
 
-    attachments: Union[Attachments, dict[str, AttachmentInfo]] = Field(
+    attachments: Union[Attachments, dict[str, AttachmentInfo]] = field(
         default_factory=dict
     )
     """Attachments associated with the run.
-    
+
     Each entry is a tuple of `(mime_type, bytes)`.
     """
 
@@ -397,8 +447,9 @@ class RunBase(BaseModel):
     def metadata(self) -> dict[str, Any]:
         """Retrieve the metadata (if any)."""
         if self.extra is None:
-            self.extra = {}
-        return self.extra.setdefault("metadata", {})
+            object.__setattr__(self, "extra", {})
+        extra = self.extra or {}
+        return extra.setdefault("metadata", {})
 
     @property
     def revision_id(self) -> Optional[UUID]:
@@ -416,20 +467,18 @@ class RunBase(BaseModel):
         """Return a string representation of the RunBase object."""
         return f"{self.__class__}(id={self.id}, name='{self.name}', run_type='{self.run_type}')"
 
-    class Config:
-        """Configuration class for the schema."""
 
-        arbitrary_types_allowed = True
-
-
+@dataclass
 class Run(RunBase):
     """Run schema when loading from the DB."""
 
+    trace_id: UUID = field(default_factory=lambda: UUID("00000000-0000-0000-0000-000000000000"))
+    """Unique ID assigned to every run within this nested trace."""
     session_id: Optional[UUID] = None
     """The project ID this run belongs to."""
     child_run_ids: Optional[list[UUID]] = None
     """Deprecated: The child run IDs of this run."""
-    child_runs: Optional[list[Run]] = None
+    child_runs: Optional[list["Run"]] = None
     """The child runs of this run, if instructed to load using the client
     These are not populated by default, as it is a heavier query to make."""
     feedback_stats: Optional[dict[str, Any]] = None
@@ -476,9 +525,7 @@ class Run(RunBase):
     """
     parent_run_ids: Optional[list[UUID]] = None
     """List of parent run IDs."""
-    trace_id: UUID
-    """Unique ID assigned to every run within this nested trace."""
-    dotted_order: str = Field(default="")
+    dotted_order: str = ""
     """Dotted order for the run.
 
     This is a string composed of {time}{run-uuid}.* so that a trace can be
@@ -492,17 +539,42 @@ class Run(RunBase):
     """  # noqa: E501
     in_dataset: Optional[bool] = None
     """Whether this run is in a dataset."""
-    _host_url: Optional[str] = PrivateAttr(default=None)
+    replicas: Optional[list[Any]] = None
+    """Replicas for this run."""
+    _host_url: Optional[str] = field(default=None, repr=False)
 
-    def __init__(self, _host_url: Optional[str] = None, **kwargs: Any) -> None:
-        """Initialize a Run object."""
-        if not kwargs.get("trace_id"):
-            kwargs = {"trace_id": kwargs.get("id"), **kwargs}
-        inputs = kwargs.pop("inputs", None) or {}
-        super().__init__(**kwargs, inputs=inputs)
-        self._host_url = _host_url
+    def __post_init__(self):
+        """Initialize defaults after dataclass creation."""
+        if not self.trace_id or str(self.trace_id) == "00000000-0000-0000-0000-000000000000":
+            object.__setattr__(self, "trace_id", self.id)
         if not self.dotted_order.strip() and not self.parent_run_id:
-            self.dotted_order = f"{self.start_time.isoformat()}{self.id}"
+            object.__setattr__(
+                self, "dotted_order", f"{self.start_time.isoformat()}{self.id}"
+            )
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], **private_attrs: Any) -> "Run":
+        """Create from dictionary with optional private attributes."""
+        if not data.get("trace_id"):
+            data = {"trace_id": data.get("id"), **data}
+        inputs = data.pop("inputs", None) or {}
+        data["inputs"] = inputs
+
+        field_names = {f.name for f in dataclasses.fields(cls)}
+        filtered_data = {k: v for k, v in data.items() if k in field_names}
+
+        uuid_fields = {
+            "id", "trace_id", "session_id", "reference_example_id",
+            "parent_run_id", "manifest_id",
+        }
+        for f in uuid_fields:
+            if f in filtered_data:
+                filtered_data[f] = _ensure_uuid(filtered_data[f])
+
+        obj = cls(**filtered_data)
+        if "_host_url" in private_attrs:
+            object.__setattr__(obj, "_host_url", private_attrs["_host_url"])
+        return obj
 
     @property
     def url(self) -> Optional[str]:
@@ -593,6 +665,7 @@ class RunLikeDict(TypedDict, total=False):
     attachments: Attachments
 
 
+@dataclass
 class RunWithAnnotationQueueInfo(RunBase):
     """Run schema with annotation queue info."""
 
@@ -602,7 +675,8 @@ class RunWithAnnotationQueueInfo(RunBase):
     """The time this run was added to the queue."""
 
 
-class FeedbackSourceBase(BaseModel):
+@dataclass
+class FeedbackSourceBase(_SchemaBase):
     """Base class for feedback sources.
 
     This represents whether feedback is submitted from the API, model, human labeler,
@@ -611,7 +685,7 @@ class FeedbackSourceBase(BaseModel):
 
     type: str
     """The type of the feedback source."""
-    metadata: Optional[dict[str, Any]] = Field(default_factory=dict)
+    metadata: Optional[dict[str, Any]] = field(default_factory=dict)
     """Additional metadata for the feedback source."""
     user_id: Optional[Union[UUID, str]] = None
     """The user ID associated with the feedback source."""
@@ -619,12 +693,14 @@ class FeedbackSourceBase(BaseModel):
     """The user name associated with the feedback source."""
 
 
+@dataclass
 class APIFeedbackSource(FeedbackSourceBase):
     """API feedback source."""
 
     type: Literal["api"] = "api"
 
 
+@dataclass
 class ModelFeedbackSource(FeedbackSourceBase):
     """Model feedback source."""
 
@@ -640,21 +716,22 @@ class FeedbackSourceType(Enum):
     """Model-assisted feedback."""
 
 
-class FeedbackBase(BaseModel):
+@dataclass(frozen=True)
+class FeedbackBase(_SchemaBase):
     """Feedback schema."""
 
     id: UUID
     """The unique ID of the feedback."""
+    key: str
+    """The metric name, tag, or aspect to provide feedback on."""
     created_at: Optional[datetime] = None
     """The time the feedback was created."""
     modified_at: Optional[datetime] = None
     """The time the feedback was last modified."""
-    run_id: Optional[UUID]
+    run_id: Optional[UUID] = None
     """The associated run ID this feedback is logged for."""
-    trace_id: Optional[UUID]
+    trace_id: Optional[UUID] = None
     """The associated trace ID this feedback is logged for."""
-    key: str
-    """The metric name, tag, or aspect to provide feedback on."""
     score: SCORE_TYPE = None
     """Value or score to assign the run."""
     value: VALUE_TYPE = None
@@ -675,11 +752,6 @@ class FeedbackBase(BaseModel):
     run in the group that was being compared."""
     extra: Optional[dict] = None
     """The metadata of the feedback."""
-
-    class Config:
-        """Configuration class for the schema."""
-
-        frozen = True
 
 
 class FeedbackCategory(TypedDict, total=False):
@@ -705,29 +777,104 @@ class FeedbackConfig(TypedDict, total=False):
     Not applicable to continuous or freeform feedback types."""  # noqa
 
 
-class FeedbackCreate(FeedbackBase):
+@dataclass
+class FeedbackCreate(_SchemaBase):
     """Schema used for creating feedback."""
 
+    id: UUID
+    """The unique ID of the feedback."""
+    key: str
+    """The metric name, tag, or aspect to provide feedback on."""
     feedback_source: FeedbackSourceBase
     """The source of the feedback."""
+    created_at: Optional[datetime] = None
+    """The time the feedback was created."""
+    modified_at: Optional[datetime] = None
+    """The time the feedback was last modified."""
+    run_id: Optional[UUID] = None
+    """The associated run ID this feedback is logged for."""
+    trace_id: Optional[UUID] = None
+    """The associated trace ID this feedback is logged for."""
+    score: SCORE_TYPE = None
+    """Value or score to assign the run."""
+    value: VALUE_TYPE = None
+    """The display value, tag or other value for the feedback if not a metric."""
+    comment: Optional[str] = None
+    """Comment or explanation for the feedback."""
+    correction: Union[str, dict, None] = None
+    """Correction for the run."""
+    session_id: Optional[UUID] = None
+    """The associated project ID (Session = Project) this feedback is logged for."""
+    comparative_experiment_id: Optional[UUID] = None
+    """If logged within a 'comparative experiment', this is the ID of the experiment."""
+    feedback_group_id: Optional[UUID] = None
+    """For preference scoring, this group ID is shared across feedbacks for each
+    run in the group that was being compared."""
+    extra: Optional[dict] = None
+    """The metadata of the feedback."""
     feedback_config: Optional[FeedbackConfig] = None
     """The config for the feedback"""
     error: Optional[bool] = None
 
 
-class Feedback(FeedbackBase):
+@dataclass
+class Feedback(_SchemaBase):
     """Schema for getting feedback."""
 
     id: UUID
+    """The unique ID of the feedback."""
     created_at: datetime
     """The time the feedback was created."""
     modified_at: datetime
     """The time the feedback was last modified."""
+    key: str
+    """The metric name, tag, or aspect to provide feedback on."""
+    run_id: Optional[UUID] = None
+    """The associated run ID this feedback is logged for."""
+    trace_id: Optional[UUID] = None
+    """The associated trace ID this feedback is logged for."""
+    score: SCORE_TYPE = None
+    """Value or score to assign the run."""
+    value: VALUE_TYPE = None
+    """The display value, tag or other value for the feedback if not a metric."""
+    comment: Optional[str] = None
+    """Comment or explanation for the feedback."""
+    correction: Union[str, dict, None] = None
+    """Correction for the run."""
     feedback_source: Optional[FeedbackSourceBase] = None
-    """The source of the feedback. In this case"""
+    """The source of the feedback."""
+    session_id: Optional[UUID] = None
+    """The associated project ID (Session = Project) this feedback is logged for."""
+    comparative_experiment_id: Optional[UUID] = None
+    """If logged within a 'comparative experiment', this is the ID of the experiment."""
+    feedback_group_id: Optional[UUID] = None
+    """For preference scoring, this group ID is shared across feedbacks for each
+    run in the group that was being compared."""
+    extra: Optional[dict] = None
+    """The metadata of the feedback."""
+    feedback_config: Optional[FeedbackConfig] = None
+    """The config for the feedback."""
+    error: Optional[bool] = None
+    """Whether the feedback encountered an error."""
+
+    def __post_init__(self):
+        """Convert string UUIDs to UUID objects."""
+        if isinstance(self.id, str):
+            object.__setattr__(self, "id", UUID(self.id))
+        if isinstance(self.run_id, str):
+            object.__setattr__(self, "run_id", UUID(self.run_id))
+        if isinstance(self.trace_id, str):
+            object.__setattr__(self, "trace_id", UUID(self.trace_id))
+        if isinstance(self.session_id, str):
+            object.__setattr__(self, "session_id", UUID(self.session_id))
+        if isinstance(self.comparative_experiment_id, str):
+            object.__setattr__(self, "comparative_experiment_id", UUID(self.comparative_experiment_id))
+        if isinstance(self.feedback_group_id, str):
+            object.__setattr__(self, "feedback_group_id", UUID(self.feedback_group_id))
 
 
-class TracerSession(BaseModel):
+@dataclass
+class TracerSession(_SchemaBase):
     """TracerSession schema for the API.
 
     Sessions are also referred to as "Projects" in the UI.
@@ -735,7 +882,9 @@ class TracerSession(BaseModel):
 
     id: UUID
     """The ID of the project."""
-    start_time: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    tenant_id: UUID
+    """The tenant ID this project belongs to."""
+    start_time: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     """The time the project was created."""
     end_time: Optional[datetime] = None
     """The time the project was ended."""
@@ -745,19 +894,26 @@ class TracerSession(BaseModel):
     """The name of the session."""
     extra: Optional[dict[str, Any]] = None
     """Extra metadata for the project."""
-    tenant_id: UUID
-    """The tenant ID this project belongs to."""
-    reference_dataset_id: Optional[UUID]
+    reference_dataset_id: Optional[UUID] = None
     """The reference dataset IDs this project's runs were generated on."""
+    _host_url: Optional[str] = field(default=None, repr=False)
 
-    _host_url: Optional[str] = PrivateAttr(default=None)
-
-    def __init__(self, _host_url: Optional[str] = None, **kwargs: Any) -> None:
-        """Initialize a Run object."""
-        super().__init__(**kwargs)
-        self._host_url = _host_url
+    def __post_init__(self):
+        """Initialize defaults after dataclass creation."""
         if self.start_time.tzinfo is None:
-            self.start_time = self.start_time.replace(tzinfo=timezone.utc)
+            object.__setattr__(
+                self, "start_time", self.start_time.replace(tzinfo=timezone.utc)
+            )
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], **private_attrs: Any) -> "TracerSession":
+        """Create from dictionary with optional private attributes."""
+        field_names = {f.name for f in dataclasses.fields(cls)}
+        filtered_data = {k: v for k, v in data.items() if k in field_names}
+        obj = cls(**filtered_data)
+        if "_host_url" in private_attrs:
+            object.__setattr__(obj, "_host_url", private_attrs["_host_url"])
+        return obj
 
     @property
     def url(self) -> Optional[str]:
@@ -781,43 +937,44 @@ class TracerSession(BaseModel):
         return self.extra["tags"]
 
 
+@dataclass
 class TracerSessionResult(TracerSession):
     """A project, hydrated with additional information.
 
     Sessions are also referred to as "Projects" in the UI.
     """
 
-    run_count: Optional[int]
+    run_count: Optional[int] = None
     """The number of runs in the project."""
-    latency_p50: Optional[timedelta]
+    latency_p50: Optional[timedelta] = None
     """The median (50th percentile) latency for the project."""
-    latency_p99: Optional[timedelta]
+    latency_p99: Optional[timedelta] = None
     """The 99th percentile latency for the project."""
-    total_tokens: Optional[int]
+    total_tokens: Optional[int] = None
     """The total number of tokens consumed in the project."""
-    prompt_tokens: Optional[int]
+    prompt_tokens: Optional[int] = None
     """The total number of prompt tokens consumed in the project."""
-    completion_tokens: Optional[int]
+    completion_tokens: Optional[int] = None
     """The total number of completion tokens consumed in the project."""
-    last_run_start_time: Optional[datetime]
+    last_run_start_time: Optional[datetime] = None
     """The start time of the last run in the project."""
-    feedback_stats: Optional[dict[str, Any]]
+    feedback_stats: Optional[dict[str, Any]] = None
     """Feedback stats for the project."""
-    session_feedback_stats: Optional[dict[str, Any]]
+    session_feedback_stats: Optional[dict[str, Any]] = None
     """Summary feedback stats for the project."""
-    run_facets: Optional[list[dict[str, Any]]]
+    run_facets: Optional[list[dict[str, Any]]] = None
     """Facets for the runs in the project."""
-    total_cost: Optional[Decimal]
+    total_cost: Optional[Decimal] = None
     """The total estimated LLM cost associated with the completion tokens."""
-    prompt_cost: Optional[Decimal]
+    prompt_cost: Optional[Decimal] = None
     """The estimated cost associated with the prompt (input) tokens."""
-    completion_cost: Optional[Decimal]
+    completion_cost: Optional[Decimal] = None
     """The estimated cost associated with the completion tokens."""
-    first_token_p50: Optional[timedelta]
+    first_token_p50: Optional[timedelta] = None
     """The median (50th percentile) time to process the first token."""
-    first_token_p99: Optional[timedelta]
+    first_token_p99: Optional[timedelta] = None
     """The 99th percentile time to process the first token."""
-    error_rate: Optional[float]
+    error_rate: Optional[float] = None
     """The error rate for the project."""
 
 
@@ -846,23 +1003,25 @@ class DatasetShareSchema(TypedDict, total=False):
     """The URL of the shared dataset."""
 
 
-class AnnotationQueue(BaseModel):
+@dataclass
+class AnnotationQueue(_SchemaBase):
     """Represents an annotation queue."""
 
     id: UUID
     """The unique identifier of the annotation queue."""
     name: str
     """The name of the annotation queue."""
-    description: Optional[str] = None
-    """An optional description of the annotation queue."""
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    """The timestamp when the annotation queue was created."""
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    """The timestamp when the annotation queue was last updated."""
     tenant_id: UUID
     """The ID of the tenant associated with the annotation queue."""
+    description: Optional[str] = None
+    """An optional description of the annotation queue."""
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    """The timestamp when the annotation queue was created."""
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    """The timestamp when the annotation queue was last updated."""
 
 
+@dataclass
 class AnnotationQueueWithDetails(AnnotationQueue):
     """Represents an annotation queue with details."""
 
@@ -887,7 +1046,8 @@ class BatchIngestConfig(TypedDict, total=False):
     """The maximum size limit in bytes for the batch."""
 
 
-class LangSmithInfo(BaseModel):
+@dataclass
+class LangSmithInfo(_SchemaBase):
     """Information about the LangSmith server."""
 
     version: str = ""
@@ -895,14 +1055,21 @@ class LangSmithInfo(BaseModel):
     license_expiration_time: Optional[datetime] = None
     """The time the license will expire."""
     batch_ingest_config: Optional[BatchIngestConfig] = None
-    """The instance flags."""
+    """The batch ingest configuration."""
     instance_flags: Optional[dict[str, Any]] = None
+    """The instance flags."""
+    id: Optional[str] = None
+    """The ID of the LangSmith instance."""
+    name: Optional[str] = None
+    """The name of the LangSmith instance."""
+    description: Optional[str] = None
+    """The description of the LangSmith instance."""
+    owner_id: Optional[str] = None
+    """The owner ID."""
 
 
-Example.update_forward_refs()
-
-
-class LangSmithSettings(BaseModel):
+@dataclass
+class LangSmithSettings(_SchemaBase):
     """Settings for the LangSmith tenant."""
 
     id: str
@@ -914,7 +1081,8 @@ class LangSmithSettings(BaseModel):
     tenant_handle: Optional[str] = None
 
 
-class FeedbackIngestToken(BaseModel):
+@dataclass
+class FeedbackIngestToken(_SchemaBase):
     """Represents the schema for a feedback ingest token."""
 
     id: UUID
@@ -947,7 +1115,8 @@ class TimeDeltaInput(TypedDict, total=False):
     """Number of minutes."""
 
 
-class DatasetDiffInfo(BaseModel):
+@dataclass
+class DatasetDiffInfo(_SchemaBase):
     """Represents the difference information between two datasets."""
 
     examples_modified: list[UUID]
@@ -958,7 +1127,8 @@ class DatasetDiffInfo(BaseModel):
     """A list of UUIDs representing the removed examples."""
 
 
-class ComparativeExperiment(BaseModel):
+@dataclass
+class ComparativeExperiment(_SchemaBase):
     """Represents a comparative experiment.
 
     This information summarizes evaluation results comparing
@@ -967,10 +1137,6 @@ class ComparativeExperiment(BaseModel):
 
     id: UUID
     """The unique identifier for the comparative experiment."""
-    name: Optional[str] = None
-    """The optional name of the comparative experiment."""
-    description: Optional[str] = None
-    """An optional description of the comparative experiment."""
     tenant_id: UUID
     """The identifier of the tenant associated with this experiment."""
     created_at: datetime
@@ -979,6 +1145,10 @@ class ComparativeExperiment(BaseModel):
     """The timestamp when the comparative experiment was last modified."""
     reference_dataset_id: UUID
     """The identifier of the reference dataset used in this experiment."""
+    name: Optional[str] = None
+    """The optional name of the comparative experiment."""
+    description: Optional[str] = None
+    """An optional description of the comparative experiment."""
     extra: Optional[dict[str, Any]] = None
     """Optional additional information about the experiment."""
     experiments_info: Optional[list[dict]] = None
@@ -994,7 +1164,8 @@ class ComparativeExperiment(BaseModel):
         return self.extra["metadata"]
 
 
-class PromptCommit(BaseModel):
+@dataclass
+class PromptCommit(_SchemaBase):
     """Represents a Prompt with a manifest."""
 
     owner: str
@@ -1009,7 +1180,8 @@ class PromptCommit(BaseModel):
     """The list of examples."""
 
 
-class ListedPromptCommit(BaseModel):
+@dataclass
+class ListedPromptCommit(_SchemaBase):
     """Represents a listed prompt commit with associated metadata."""
 
     id: UUID
@@ -1039,7 +1211,7 @@ class ListedPromptCommit(BaseModel):
     updated_at: Optional[datetime] = None
     """The optional timestamp when the commit was last updated."""
 
-    example_run_ids: Optional[list[UUID]] = Field(default_factory=list)
+    example_run_ids: Optional[list[UUID]] = field(default_factory=list)
     """A list of example run identifiers associated with this commit."""
 
     num_downloads: Optional[int] = 0
@@ -1052,15 +1224,12 @@ class ListedPromptCommit(BaseModel):
     """The optional hash of the parent commit."""
 
 
-class Prompt(BaseModel):
+@dataclass
+class Prompt(_SchemaBase):
     """Represents a Prompt with metadata."""
 
     repo_handle: str
     """The name of the prompt."""
-    description: Optional[str] = None
-    """The description of the prompt."""
-    readme: Optional[str] = None
-    """The README of the prompt."""
     id: str
     """The ID of the prompt."""
     tenant_id: str
@@ -1075,12 +1244,6 @@ class Prompt(BaseModel):
     """Whether the prompt is archived."""
     tags: list[str]
     """The tags associated with the prompt."""
-    original_repo_id: Optional[str] = None
-    """The ID of the original prompt, if forked."""
-    upstream_repo_id: Optional[str] = None
-    """The ID of the upstream prompt, if forked."""
-    owner: Optional[str]
-    """The handle of the owner of the prompt."""
     full_name: str
     """The full name of the prompt. (owner + repo_handle)"""
     num_likes: int
@@ -1089,19 +1252,30 @@ class Prompt(BaseModel):
     """The number of downloads."""
     num_views: int
     """The number of views."""
+    num_commits: int
+    """The number of commits."""
+    description: Optional[str] = None
+    """The description of the prompt."""
+    readme: Optional[str] = None
+    """The README of the prompt."""
+    original_repo_id: Optional[str] = None
+    """The ID of the original prompt, if forked."""
+    upstream_repo_id: Optional[str] = None
+    """The ID of the upstream prompt, if forked."""
+    owner: Optional[str] = None
+    """The handle of the owner of the prompt."""
     liked_by_auth_user: Optional[bool] = None
     """Whether the prompt is liked by the authenticated user."""
     last_commit_hash: Optional[str] = None
     """The hash of the last commit."""
-    num_commits: int
-    """The number of commits."""
     original_repo_full_name: Optional[str] = None
     """The full name of the original prompt, if forked."""
     upstream_repo_full_name: Optional[str] = None
     """The full name of the upstream prompt, if forked."""
 
 
-class ListPromptsResponse(BaseModel):
+@dataclass
+class ListPromptsResponse(_SchemaBase):
     """A list of prompts with metadata."""
 
     repos: list[Prompt]
@@ -1269,11 +1443,11 @@ class UpsertExamplesResponse(TypedDict):
     """The ids of the examples that were upserted."""
 
 
+@dataclass
 class ExampleWithRuns(Example):
     """Example with runs."""
 
-    runs: list[Run] = Field(default_factory=list)
-
+    runs: list[Run] = field(default_factory=list)
     """The runs of the example."""
 
 
@@ -1324,16 +1498,17 @@ class ExperimentResults(TypedDict):
     examples_with_runs: Iterator[ExampleWithRuns]
 
 
-class InsightsReport(BaseModel):
+@dataclass
+class InsightsReport(_SchemaBase):
     """An Insights Report created by the Insights Agent over a tracing project."""
 
-    id: UUID | str
+    id: Union[UUID, str]
     name: str
     status: str
-    error: str | None = None
-    project_id: UUID | str
+    project_id: Union[UUID, str]
     host_url: str
-    tenant_id: UUID | str
+    tenant_id: Union[UUID, str]
+    error: Optional[str] = None
 
     @property
     def link(self) -> str:
@@ -1344,39 +1519,39 @@ class InsightsReport(BaseModel):
         return f'<a href="{self.link}", target="_blank" rel="noopener">InsightsReport(\'{self.name}\')</a>'
 
 
-class FeedbackFormulaWeightedVariable(BaseModel):
+@dataclass
+class FeedbackFormulaWeightedVariable(_SchemaBase):
     """A feedback key and weight used when calculating feedback formulas."""
 
     part_type: Literal["weighted_key"]
     weight: float
-    key: Annotated[str, Field(min_length=1)]
+    key: str
 
 
-class FeedbackFormulaCreate(BaseModel):
+@dataclass
+class FeedbackFormulaCreate(_SchemaBase):
     """Schema used for creating a feedback formula."""
 
-    dataset_id: Optional[UUID] = None
-    session_id: Optional[UUID] = None
     feedback_key: str
     aggregation_type: Literal["sum", "avg"]
-    formula_parts: list[FeedbackFormulaWeightedVariable] = Field(
-        ..., min_items=1, max_items=50
-    )
+    formula_parts: list[FeedbackFormulaWeightedVariable]
+    dataset_id: Optional[UUID] = None
+    session_id: Optional[UUID] = None
 
 
-class FeedbackFormulaUpdate(BaseModel):
+@dataclass
+class FeedbackFormulaUpdate(_SchemaBase):
     """Schema used for updating a feedback formula."""
 
     feedback_key: str
     aggregation_type: Literal["sum", "avg"]
-    formula_parts: list[FeedbackFormulaWeightedVariable] = Field(
-        ..., min_items=1, max_items=50
-    )
+    formula_parts: list[FeedbackFormulaWeightedVariable]
 
 
+@dataclass
 class FeedbackFormula(FeedbackFormulaCreate):
     """Schema for getting feedback formulas."""
 
-    id: UUID
-    created_at: datetime
-    modified_at: datetime
+    id: UUID = field(default_factory=lambda: UUID("00000000-0000-0000-0000-000000000000"))
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    modified_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))

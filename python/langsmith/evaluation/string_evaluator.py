@@ -1,15 +1,15 @@
 """This module contains the StringEvaluator class."""
 
 import uuid
+from dataclasses import dataclass, field
 from typing import Callable, Optional
-
-from pydantic import BaseModel
 
 from langsmith.evaluation.evaluator import EvaluationResult, RunEvaluator
 from langsmith.schemas import Example, Run
 
 
-class StringEvaluator(RunEvaluator, BaseModel):
+@dataclass
+class StringEvaluator(RunEvaluator):
     """Grades the run's string input, output, and optional answer.
 
     .. deprecated:: 0.5.0
@@ -17,6 +17,8 @@ class StringEvaluator(RunEvaluator, BaseModel):
        StringEvaluator is deprecated. Use openevals instead: https://github.com/langchain-ai/openevals
     """
 
+    grading_function: Callable[[str, str, Optional[str]], dict]
+    """Function that grades the run output against the example output."""
     evaluation_name: Optional[str] = None
     """The name evaluation, such as `'Accuracy'` or `'Salience'`."""
     input_key: str = "input"
@@ -25,8 +27,6 @@ class StringEvaluator(RunEvaluator, BaseModel):
     """The key in the run outputs to extra the prediction string."""
     answer_key: Optional[str] = "output"
     """The key in the example outputs the answer string."""
-    grading_function: Callable[[str, str, Optional[str]], dict]
-    """Function that grades the run output against the example output."""
 
     def evaluate_run(
         self,
