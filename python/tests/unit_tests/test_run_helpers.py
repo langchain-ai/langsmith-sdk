@@ -1776,7 +1776,7 @@ def test_traceable_input_attachments():
             result = my_func(
                 42,
                 ls_schemas.Attachment(mime_type="text/plain", data=long_content),
-                ("application/octet-stream", "content2"),
+                ("application/octet-stream", b"content2"),
                 langsmith_extra={"client": mock_client},
             )
             assert result == "foo"

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import contextvars
 import functools
 import json
 import logging
 import sys
+import threading
+import urllib.parse
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from typing import Any, Optional, Union, cast
@@ -13,25 +16,12 @@ from uuid import NAMESPACE_DNS, UUID, uuid5
 
 from typing_extensions import TypedDict
 
-from langsmith._internal._uuid import uuid7
-from langsmith.uuid import uuid7_from_datetime
-
-try:
-    from pydantic.v1 import Field, root_validator  # type: ignore[import]
-except ImportError:
-    from pydantic import (  # type: ignore[assignment, no-redef]
-        Field,
-        root_validator,
-    )
-
-import contextvars
-import threading
-import urllib.parse
-
 import langsmith._internal._context as _context
 from langsmith import schemas as ls_schemas
 from langsmith import utils
+from langsmith._internal._uuid import uuid7
 from langsmith.client import ID_TYPE, RUN_TYPE_T, Client, _dumps_json, _ensure_uuid
+from langsmith.uuid import uuid7_from_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -191,115 +181,267 @@ def validate_extracted_usage_metadata(
     extra_keys = set(data.keys()) - allowed_keys
     if extra_keys:
         raise ValueError(f"Unexpected keys in usage metadata: {extra_keys}")
-    return data  # type: ignore
+    return data
 
 
 class RunTree(ls_schemas.RunBase):
     """Run Schema with back-references for posting runs."""
 
     name: str
-    id: UUID = Field(default_factory=uuid7)
-    run_type: str = Field(default="chain")
-    start_time: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    # Note: no longer set.
-    parent_run: Optional[RunTree] = Field(default=None, exclude=True)
-    parent_dotted_order: Optional[str] = Field(default=None, exclude=True)
-    child_runs: list[RunTree] = Field(
-        default_factory=list,
-        exclude={"__all__": {"parent_run_id"}},
-    )
-    session_name: str = Field(
-        default_factory=lambda: utils.get_tracer_project() or "default",
-        alias="project_name",
-    )
-    session_id: Optional[UUID] = Field(default=None, alias="project_id")
-    extra: dict = Field(default_factory=dict)
-    tags: Optional[list[str]] = Field(default_factory=list)
-    events: list[dict] = Field(default_factory=list)
-    """List of events associated with the run, like
-    start and end events."""
-    ls_client: Optional[Any] = Field(default=None, exclude=True)
-    dotted_order: str = Field(
-        default="", description="The order of the run in the tree."
-    )
-    trace_id: UUID = Field(default="", description="The trace id of the run.")  # type: ignore
-    dangerously_allow_filesystem: Optional[bool] = Field(
-        default=False, description="Whether to allow filesystem access for attachments."
-    )
-    replicas: Optional[Sequence[WriteReplica]] = Field(
-        default=None,
-        description="Projects to replicate this run to with optional updates.",
-    )
+    id: UUID
+    run_type: str
+    start_time: datetime
+    parent_run: Optional[RunTree]
+    parent_dotted_order: Optional[str]
+    child_runs: list[RunTree]
+    session_name: str
+    session_id: Optional[UUID]
+    extra: dict
+    tags: Optional[list[str]]
+    events: list[dict]
+    ls_client: Optional[Any]
+    dotted_order: str
+    trace_id: UUID
+    dangerously_allow_filesystem: Optional[bool]
+    replicas: Optional[Sequence[WriteReplica]]
 
-    class Config:
-        """Pydantic model configuration."""
+    def __init__(
+        self,
+        name: str = "",
+        id: Optional[UUID] = None,
+        run_type: str = "chain",
+        start_time: Optional[datetime] = None,
+        parent_run: Optional[RunTree] = None,
+        parent_dotted_order: Optional[str] = None,
+        child_runs: Optional[list[RunTree]] = None,
+        session_name: Optional[str] = None,
+        session_id: Optional[UUID] = None,
+        extra: Optional[dict] = None,
+        tags: Optional[list[str]] = None,
+        events: Optional[list[dict]] = None,
+        ls_client: Optional[Any] = None,
+        dotted_order: str = "",
+        trace_id: Optional[UUID] = None,
+        dangerously_allow_filesystem: Optional[bool] = False,
+        replicas: Optional[Sequence[WriteReplica]] = None,
+        client: Optional[Any] = None,
+        _client: Optional[Any] = None,
+        project_name: Optional[str] = None,
+        project_id: Optional[UUID] = None,
+        **kwargs: Any,
+    ):
+        """Initialize the RunTree."""
+        ls_client = ls_client or client or _client
+        session_name = (
+            session_name or project_name or utils.get_tracer_project() or "default"
+        )
+        session_id = session_id or project_id
 
-        arbitrary_types_allowed = True
-        allow_population_by_field_name = True
-        extra = "ignore"
+        if id is None:
+            if start_time is not None:
+                id = uuid7_from_datetime(start_time)
+            else:
+                id = uuid7()
 
-    @root_validator(pre=True)
-    def infer_defaults(cls, values: dict) -> dict:
-        """Assign name to the run."""
-        if values.get("name") is None and values.get("serialized") is not None:
-            if "name" in values["serialized"]:
-                values["name"] = values["serialized"]["name"]
-            elif "id" in values["serialized"]:
-                values["name"] = values["serialized"]["id"][-1]
-        if values.get("name") is None:
-            values["name"] = "Unnamed"
-        if "client" in values:  # Handle user-constructed clients
-            values["ls_client"] = values.pop("client")
-        elif "_client" in values:
-            values["ls_client"] = values.pop("_client")
-        if not values.get("ls_client"):
-            values["ls_client"] = None
-        parent_run = values.pop("parent_run", None)
-        if parent_run is not None:
-            values["parent_run_id"] = parent_run.id
-            values["parent_dotted_order"] = parent_run.dotted_order
-        if "id" not in values:
-            # Generate UUID from start_time if available
-            if "start_time" in values and values["start_time"] is not None:
-                values["id"] = uuid7_from_datetime(values["start_time"])
+        super().__init__(
+            id=id,
+            name=name,
+            run_type=run_type,
+            start_time=start_time or datetime.now(timezone.utc),
+            inputs=kwargs.get("inputs", {}),
+            outputs=kwargs.get("outputs"),
+            serialized=kwargs.get("serialized"),
+            extra=extra or {},
+            error=kwargs.get("error"),
+            end_time=kwargs.get("end_time"),
+            events=events or [],
+            reference_example_id=kwargs.get("reference_example_id"),
+            parent_run_id=kwargs.get("parent_run_id"),
+            tags=tags or [],
+            attachments=kwargs.get("attachments", {}),
+        )
+
+        self.parent_run = parent_run
+        self.parent_dotted_order = parent_dotted_order
+        self.child_runs = child_runs or []
+        self.session_name = session_name
+        self.session_id = session_id
+        self.ls_client = ls_client
+        self.dotted_order = dotted_order
+        self.trace_id = trace_id or UUID("00000000-0000-0000-0000-000000000000")
+        self.dangerously_allow_filesystem = dangerously_allow_filesystem
+        self.replicas = replicas
+
+        self._apply_defaults()
+
+    def _apply_defaults(self):
+        """Apply defaults and validators."""
+        if not self.name and self.serialized:
+            if "name" in self.serialized:
+                self.name = self.serialized["name"]
+            elif "id" in self.serialized:
+                self.name = self.serialized["id"][-1]
+        if not self.name:
+            self.name = "Unnamed"
+
+        if self.parent_run is not None:
+            self.parent_run_id = self.parent_run.id
+            self.parent_dotted_order = self.parent_run.dotted_order
+
+        if self.outputs is None:
+            self.outputs = {}
+
+        if self.attachments is None:
+            self.attachments = {}
+
+        if self.replicas is None:
+            self.replicas = _REPLICAS.get()
+        self.replicas = _ensure_write_replicas(self.replicas)
+
+        if (
+            not self.trace_id
+            or str(self.trace_id) == "00000000-0000-0000-0000-000000000000"
+        ):
+            if self.parent_run is not None:
+                self.trace_id = self.parent_run.trace_id
+            else:
+                self.trace_id = self.id
+
+        current_dotted_order = self.dotted_order
+        if not current_dotted_order or not current_dotted_order.strip():
+            current_dotted_order = _create_current_dotted_order(
+                self.start_time, self.id
+            )
+            if self.parent_dotted_order is not None:
+                self.dotted_order = (
+                    self.parent_dotted_order + "." + current_dotted_order
+                )
+            else:
+                self.dotted_order = current_dotted_order
+
+    @classmethod
+    def construct(cls, **kwargs: Any) -> RunTree:
+        """Create a RunTree without validation (Pydantic compatibility method)."""
+        return cls(**kwargs)
+
+    @classmethod
+    def create(
+        cls,
+        name: str = "Unnamed",
+        run_type: str = "chain",
+        *,
+        id: Optional[UUID] = None,
+        start_time: Optional[datetime] = None,
+        parent_run: Optional[RunTree] = None,
+        client: Optional[Any] = None,
+        _client: Optional[Any] = None,
+        project_name: Optional[str] = None,
+        project_id: Optional[UUID] = None,
+        **kwargs: Any,
+    ) -> RunTree:
+        """Create a RunTree with proper initialization.
+
+        This handles keyword argument aliases like client/_client and project_name.
+        """
+        ls_client = client or _client
+
+        if id is None:
+            if start_time is not None:
+                id = uuid7_from_datetime(start_time)
             else:
                 now = datetime.now(timezone.utc)
-                values["start_time"] = now
-                values["id"] = uuid7_from_datetime(now)
-        if "trace_id" not in values:
-            if parent_run is not None:
-                values["trace_id"] = parent_run.trace_id
-            else:
-                values["trace_id"] = values["id"]
-        cast(dict, values.setdefault("extra", {}))
-        if values.get("events") is None:
-            values["events"] = []
-        if values.get("tags") is None:
-            values["tags"] = []
-        if values.get("outputs") is None:
-            values["outputs"] = {}
-        if values.get("attachments") is None:
-            values["attachments"] = {}
-        if values.get("replicas") is None:
-            values["replicas"] = _REPLICAS.get()
-        values["replicas"] = _ensure_write_replicas(values["replicas"])
-        return values
+                start_time = now
+                id = uuid7_from_datetime(now)
+        elif start_time is None:
+            start_time = datetime.now(timezone.utc)
 
-    @root_validator(pre=False)
-    def ensure_dotted_order(cls, values: dict) -> dict:
-        """Ensure the dotted order of the run."""
-        current_dotted_order = values.get("dotted_order")
-        if current_dotted_order and current_dotted_order.strip():
-            return values
-        current_dotted_order = _create_current_dotted_order(
-            values["start_time"], values["id"]
+        session_name = (
+            project_name
+            or kwargs.pop("session_name", None)
+            or utils.get_tracer_project()
+            or "default"
         )
-        parent_dotted_order = values.get("parent_dotted_order")
-        if parent_dotted_order is not None:
-            values["dotted_order"] = parent_dotted_order + "." + current_dotted_order
-        else:
-            values["dotted_order"] = current_dotted_order
-        return values
+        session_id = project_id or kwargs.pop("session_id", None)
+
+        trace_id = kwargs.pop("trace_id", None)
+        if not trace_id:
+            if parent_run is not None:
+                trace_id = parent_run.trace_id
+            else:
+                trace_id = id
+
+        return cls(
+            name=name,
+            run_type=run_type,
+            id=id,
+            start_time=start_time,
+            parent_run=parent_run,
+            ls_client=ls_client,
+            session_name=session_name,
+            session_id=session_id,
+            trace_id=trace_id,
+            **kwargs,
+        )
+
+    _FIELDS = (
+        "id",
+        "name",
+        "run_type",
+        "start_time",
+        "end_time",
+        "extra",
+        "error",
+        "serialized",
+        "events",
+        "inputs",
+        "outputs",
+        "reference_example_id",
+        "parent_run_id",
+        "tags",
+        "attachments",
+        "session_name",
+        "session_id",
+        "dotted_order",
+        "trace_id",
+        "dangerously_allow_filesystem",
+        "replicas",
+    )
+
+    def model_dump(
+        self,
+        *,
+        exclude_none: bool = False,
+        exclude: Optional[set] = None,
+        mode: str = "python",
+    ) -> dict[str, Any]:
+        """Convert to dict, handling exclusions."""
+        result = {}
+        exclude = exclude or set()
+        exclude_fields = {
+            "parent_run",
+            "ls_client",
+            "child_runs",
+            "parent_dotted_order",
+        } | exclude
+        for name in self._FIELDS:
+            if name in exclude_fields:
+                continue
+            if name.startswith("_"):
+                continue
+            value = getattr(self, name, None)
+            if exclude_none and value is None:
+                continue
+            result[name] = value
+        return result
+
+    def dict(
+        self,
+        *,
+        exclude_none: bool = False,
+        exclude: Optional[set] = None,
+    ) -> dict[str, Any]:
+        """Convert to dict (pydantic v1 compatibility)."""
+        return self.model_dump(exclude_none=exclude_none, exclude=exclude)
 
     @property
     def client(self) -> Client:
@@ -307,7 +449,7 @@ class RunTree(ls_schemas.RunBase):
         # Lazily load the client
         # If you never use this for API calls, it will never be loaded
         if self.ls_client is None:
-            self.ls_client = get_cached_client()
+            object.__setattr__(self, "ls_client", get_cached_client())
         return self.ls_client
 
     @property
@@ -319,9 +461,9 @@ class RunTree(ls_schemas.RunBase):
         """Set the `_client` specially."""
         # For backwards compat
         if name == "_client":
-            self.ls_client = value
+            object.__setattr__(self, "ls_client", value)
         else:
-            return super().__setattr__(name, value)
+            object.__setattr__(self, name, value)
 
     def set(
         self,
@@ -352,7 +494,7 @@ class RunTree(ls_schemas.RunBase):
             None
         """
         if tags is not NOT_PROVIDED:
-            self.tags = list(tags)
+            object.__setattr__(self, "tags", list(tags))
         if metadata is not NOT_PROVIDED:
             self.extra.setdefault("metadata", {}).update(metadata or {})
         if inputs is not NOT_PROVIDED:
@@ -360,15 +502,15 @@ class RunTree(ls_schemas.RunBase):
             # re-upload the inputs upon run completion
             self.extra["inputs_is_truthy"] = False
             if inputs is None:
-                self.inputs = {}
+                object.__setattr__(self, "inputs", {})
             else:
-                self.inputs = dict(inputs)
+                object.__setattr__(self, "inputs", dict(inputs))
         if outputs is not NOT_PROVIDED:
             self.extra[OVERRIDE_OUTPUTS] = True
             if outputs is None:
-                self.outputs = {}
+                object.__setattr__(self, "outputs", {})
             else:
-                self.outputs = dict(outputs)
+                object.__setattr__(self, "outputs", dict(outputs))
         if usage_metadata is not NOT_PROVIDED:
             self.extra.setdefault("metadata", {})["usage_metadata"] = (
                 validate_extracted_usage_metadata(usage_metadata)
@@ -379,13 +521,13 @@ class RunTree(ls_schemas.RunBase):
         if isinstance(tags, str):
             tags = [tags]
         if self.tags is None:
-            self.tags = []
+            object.__setattr__(self, "tags", [])
         self.tags.extend(tags)
 
     def add_metadata(self, metadata: dict[str, Any]) -> None:
         """Add metadata to the run."""
         if self.extra is None:
-            self.extra = {}
+            object.__setattr__(self, "extra", {})
         metadata_: dict = cast(dict, self.extra).setdefault("metadata", {})
         metadata_.update(metadata)
 
@@ -396,7 +538,7 @@ class RunTree(ls_schemas.RunBase):
             outputs: A dictionary containing the outputs to be added.
         """
         if self.outputs is None:
-            self.outputs = {}
+            object.__setattr__(self, "outputs", {})
         self.outputs.update(outputs)
 
     def add_inputs(self, inputs: dict[str, Any]) -> None:
@@ -406,9 +548,9 @@ class RunTree(ls_schemas.RunBase):
             inputs: A dictionary containing the inputs to be added.
         """
         if self.inputs is None:
-            self.inputs = {}
+            object.__setattr__(self, "inputs", {})
         self.inputs.update(inputs)
-        # Set to False so LangChain things it needs to
+        # Set to False so LangChain thinks it needs to
         # re-upload inputs
         self.extra["inputs_is_truthy"] = False
 
@@ -432,9 +574,9 @@ class RunTree(ls_schemas.RunBase):
             None
         """
         if self.events is None:
-            self.events = []
+            object.__setattr__(self, "events", [])
         if isinstance(events, dict):
-            self.events.append(events)  # type: ignore[arg-type]
+            self.events.append(events)
         elif isinstance(events, str):
             self.events.append(
                 {
@@ -444,7 +586,7 @@ class RunTree(ls_schemas.RunBase):
                 }
             )
         else:
-            self.events.extend(events)  # type: ignore[arg-type]
+            self.events.extend(events)
 
     def end(
         self,
@@ -456,17 +598,17 @@ class RunTree(ls_schemas.RunBase):
         metadata: Optional[dict[str, Any]] = None,
     ) -> None:
         """Set the end time of the run and all child runs."""
-        self.end_time = end_time or datetime.now(timezone.utc)
+        object.__setattr__(self, "end_time", end_time or datetime.now(timezone.utc))
         # We've already 'set' the outputs, so ignore
         # the ones that are automatically included
         if not self.extra.get(OVERRIDE_OUTPUTS):
             if outputs is not None:
                 if not self.outputs:
-                    self.outputs = outputs
+                    object.__setattr__(self, "outputs", outputs)
                 else:
                     self.outputs.update(outputs)
         if error is not None:
-            self.error = error
+            object.__setattr__(self, "error", error)
         if events is not None:
             self.add_event(events)
         if metadata is not None:
@@ -515,11 +657,11 @@ class RunTree(ls_schemas.RunBase):
             end_time=end_time,
             extra=extra or {},
             parent_run=self,
-            project_name=self.session_name,
+            session_name=self.session_name,
             replicas=self.replicas,
             ls_client=self.ls_client,
             tags=tags,
-            attachments=attachments or {},  # type: ignore
+            attachments=attachments or {},
             dangerously_allow_filesystem=self.dangerously_allow_filesystem,
         )
 
@@ -762,7 +904,7 @@ class RunTree(ls_schemas.RunBase):
         headers = {
             LANGSMITH_DOTTED_ORDER: dotted_order,
         }
-        return cast(RunTree, cls.from_headers(headers, **kwargs))  # type: ignore[arg-type]
+        return cast("RunTree", cls.from_headers(headers, **kwargs))
 
     @classmethod
     def from_runnable_config(
@@ -823,8 +965,8 @@ class RunTree(ls_schemas.RunBase):
                 dotted_order = tracer.order_map[cb.parent_run_id][1]
             else:
                 return None
-            kwargs["client"] = tracer.client
-            kwargs["project_name"] = tracer.project_name
+            kwargs["ls_client"] = tracer.client
+            kwargs["session_name"] = tracer.project_name
             return RunTree.from_dotted_order(dotted_order, **kwargs)
         return None
 
@@ -851,7 +993,7 @@ class RunTree(ls_schemas.RunBase):
                 Optional[bytes], headers.get(LANGSMITH_DOTTED_ORDER_BYTES)
             )
             if not langsmith_trace_bytes:
-                return  # type: ignore[return-value]
+                return None
             langsmith_trace = langsmith_trace_bytes.decode("utf-8")
 
         parent_dotted_order = langsmith_trace.strip()
@@ -882,7 +1024,7 @@ class RunTree(ls_schemas.RunBase):
             tags = sorted(set(baggage.tags + init_args.get("tags", [])))
             init_args["tags"] = tags
         if baggage.project_name:
-            init_args["project_name"] = baggage.project_name
+            init_args["session_name"] = baggage.project_name
         if baggage.replicas:
             init_args["replicas"] = baggage.replicas
 

@@ -40,7 +40,6 @@ from pathlib import Path
 from queue import PriorityQueue
 from typing import (
     TYPE_CHECKING,
-    Annotated,
     Any,
     Callable,
     Literal,
@@ -52,7 +51,6 @@ from urllib import parse as urllib_parse
 
 import packaging
 import requests
-from pydantic import Field
 from requests import adapters as requests_adapters
 from requests_toolbelt import (  # type: ignore[import-untyped]
     multipart as rqtb_multipart,
@@ -1601,8 +1599,8 @@ class Client:
             file_name = csv_file if isinstance(csv_file, str) else csv_file[0]
             file_name = file_name.split("/")[-1]
             raise ValueError(f"Dataset {file_name} already exists")
-        return ls_schemas.Dataset(
-            **result,
+        return ls_schemas.Dataset.from_dict(
+            result,
             _host_url=self._host_url,
             _tenant_id=self._get_optional_tenant_id(),
         )
@@ -3040,12 +3038,12 @@ class Client:
         response = self.request_with_retries(
             "GET", f"/runs/{_as_uuid(run_id, 'run_id')}"
         )
+        run_data = response.json()
         attachments = _convert_stored_attachments_to_attachments_dict(
-            response.json(), attachments_key="s3_urls", api_url=self.api_url
+            run_data, attachments_key="s3_urls", api_url=self.api_url
         )
-        run = ls_schemas.Run(
-            attachments=attachments, **response.json(), _host_url=self._host_url
-        )
+        run_data["attachments"] = attachments
+        run = ls_schemas.Run.from_dict(run_data, _host_url=self._host_url)
 
         if load_child_runs:
             run = self._load_child_runs(run)
@@ -3239,9 +3237,8 @@ class Client:
             attachments = _convert_stored_attachments_to_attachments_dict(
                 run, attachments_key="s3_urls", api_url=self.api_url
             )
-            yield ls_schemas.Run(
-                attachments=attachments, **run, _host_url=self._host_url
-            )
+            run["attachments"] = attachments
+            yield ls_schemas.Run.from_dict(run, _host_url=self._host_url)
             if limit is not None and i + 1 >= limit:
                 break
 
@@ -3469,7 +3466,7 @@ class Client:
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
-        return ls_schemas.Run(**response.json(), _host_url=self._host_url)
+        return ls_schemas.Run.from_dict(response.json(), _host_url=self._host_url)
 
     def list_shared_runs(
         self, share_token: Union[ID_TYPE, str], run_ids: Optional[list[str]] = None
@@ -3488,7 +3485,7 @@ class Client:
         for run in self._get_cursor_paginated_list(
             f"/public/{token_uuid}/runs/query", body=body
         ):
-            yield ls_schemas.Run(**run, _host_url=self._host_url)
+            yield ls_schemas.Run.from_dict(run, _host_url=self._host_url)
 
     def read_dataset_shared_schema(
         self,
@@ -3605,8 +3602,8 @@ class Client:
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
-        return ls_schemas.Dataset(
-            **response.json(),
+        return ls_schemas.Dataset.from_dict(
+            response.json(),
             _host_url=self._host_url,
             _public_path=f"/public/{share_token}/d",
         )
@@ -4140,8 +4137,8 @@ class Client:
 
         json_response = response.json()
         json_response["metadata"] = json_response.get("metadata") or metadata
-        return ls_schemas.Dataset(
-            **json_response,
+        return ls_schemas.Dataset.from_dict(
+            json_response,
             _host_url=self._host_url,
             _tenant_id=self._get_optional_tenant_id(),
         )
@@ -4206,13 +4203,13 @@ class Client:
                 raise ls_utils.LangSmithNotFoundError(
                     f"Dataset {dataset_name} not found"
                 )
-            return ls_schemas.Dataset(
-                **result[0],
+            return ls_schemas.Dataset.from_dict(
+                result[0],
                 _host_url=self._host_url,
                 _tenant_id=self._get_optional_tenant_id(),
             )
-        return ls_schemas.Dataset(
-            **result,
+        return ls_schemas.Dataset.from_dict(
+            result,
             _host_url=self._host_url,
             _tenant_id=self._get_optional_tenant_id(),
         )
@@ -4365,8 +4362,8 @@ class Client:
         for i, dataset in enumerate(
             self._get_paginated_list("/datasets", params=params)
         ):
-            yield ls_schemas.Dataset(
-                **dataset,
+            yield ls_schemas.Dataset.from_dict(
+                dataset,
                 _host_url=self._host_url,
                 _tenant_id=self._get_optional_tenant_id(),
             )
@@ -5259,7 +5256,7 @@ class Client:
         dataset_id: Optional[ID_TYPE] = None,
         examples: Optional[Sequence[ls_schemas.ExampleCreate | dict]] = None,
         dangerously_allow_filesystem: bool = False,
-        max_concurrency: Annotated[int, Field(ge=1, le=3)] = 1,
+        max_concurrency: int = 1,
         **kwargs: Any,
     ) -> ls_schemas.UpsertExamplesResponse | dict[str, Any]:
         """Create examples in a dataset.
@@ -5352,6 +5349,8 @@ class Client:
 
         if not (dataset_id or dataset_name):
             raise ValueError("Either dataset_id or dataset_name must be provided.")
+        if not (1 <= max_concurrency <= 3):
+            raise ValueError("max_concurrency must be between 1 and 3.")
         elif not dataset_id:
             dataset_id = self.read_dataset(dataset_name=dataset_name).id
 
@@ -6425,13 +6424,13 @@ class Client:
             single_result: Union[ls_evaluator.EvaluationResult, dict],
         ) -> ls_evaluator.EvaluationResult:
             if isinstance(single_result, dict):
-                return ls_evaluator.EvaluationResult(
-                    **{
-                        "key": fn_name,
-                        "comment": single_result.get("reasoning"),
-                        **single_result,
-                    }
-                )
+                data = {**single_result}
+                reasoning = data.pop("reasoning", None)
+                if "comment" not in data or data.get("comment") is None:
+                    data["comment"] = reasoning
+                if "key" not in data or data.get("key") is None:
+                    data["key"] = fn_name
+                return ls_evaluator.EvaluationResult(**data)
             return single_result
 
         def _is_eval_results(results: Any) -> TypeGuard[ls_evaluator.EvaluationResults]:
@@ -6834,7 +6833,7 @@ class Client:
                     stop_after_attempt=stop_after_attempt,
                     retry_on=(ls_utils.LangSmithNotFoundError,),
                 )
-            return ls_schemas.Feedback(**feedback.dict())
+            return ls_schemas.Feedback.from_dict(feedback.dict())
         except Exception as e:
             logger.error("Error creating feedback", exc_info=True)
             raise e
@@ -6896,7 +6895,7 @@ class Client:
             "GET",
             f"/feedback/{_as_uuid(feedback_id, 'feedback_id')}",
         )
-        return ls_schemas.Feedback(**response.json())
+        return ls_schemas.Feedback.from_dict(response.json())
 
     def list_feedback(
         self,
@@ -6937,7 +6936,7 @@ class Client:
         for i, feedback in enumerate(
             self._get_paginated_list("/feedback", params=params)
         ):
-            yield ls_schemas.Feedback(**feedback)
+            yield ls_schemas.Feedback.from_dict(feedback)
             if limit is not None and i + 1 >= limit:
                 break
 
