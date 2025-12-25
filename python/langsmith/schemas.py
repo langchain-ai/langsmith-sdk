@@ -344,6 +344,14 @@ class Dataset(_SchemaBase):
             object.__setattr__(self, "id", UUID(self.id))
         if isinstance(self.owner_id, str):
             object.__setattr__(self, "owner_id", _ensure_uuid(self.owner_id))
+        if self.examples is not None:
+            converted_examples = []
+            for example in self.examples:
+                if isinstance(example, str):
+                    converted_examples.append(UUID(example))
+                else:
+                    converted_examples.append(example)
+            object.__setattr__(self, "examples", converted_examples)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any], **private_attrs: Any) -> Dataset:
@@ -931,6 +939,8 @@ class TracerSession(_SchemaBase):
     """The reference dataset IDs this project's runs were generated on."""
     default_dataset_id: Optional[UUID] = None
     """The default dataset ID for this project."""
+    trace_tier: Optional[str] = None
+    """The trace tier for this project."""
     _host_url: Optional[str] = field(default=None, repr=False)
 
     def __post_init__(self):
@@ -1013,6 +1023,8 @@ class TracerSessionResult(TracerSession):
     """The 99th percentile time to process the first token."""
     error_rate: Optional[float] = None
     """The error rate for the project."""
+    streaming_rate: Optional[float] = None
+    """The streaming rate for the project."""
     default_dataset_id: Optional[UUID] = None
     """The default dataset ID for the project."""
     trace_tier: Optional[str] = None
@@ -1060,6 +1072,8 @@ class AnnotationQueue(_SchemaBase):
     """The timestamp when the annotation queue was created."""
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     """The timestamp when the annotation queue was last updated."""
+    num_reviewers_per_item: Optional[int] = None
+    """The number of reviewers per item in the annotation queue."""
 
 
 @dataclass
