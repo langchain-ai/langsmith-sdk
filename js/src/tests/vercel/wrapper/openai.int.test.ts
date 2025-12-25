@@ -1,4 +1,4 @@
-// import { generateText, stepCountIs, tool, wrapLanguageModel } from "ai";
+/* eslint-disable @typescript-eslint/no-non-null-assertion */
 import { openai } from "@ai-sdk/openai";
 import * as ai from "ai";
 import z from "zod";
@@ -241,7 +241,7 @@ test("wrap streamObject", async () => {
   const schema = z.object({
     color: z.string(),
   });
-  const result = await streamObject({
+  const result = streamObject({
     model: openai("gpt-5-nano"),
     messages: [
       {

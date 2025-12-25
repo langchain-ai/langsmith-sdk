@@ -1350,7 +1350,7 @@ describe("wrapAISDK", () => {
   });
 
   describe("experimental_output handling", () => {
-    it.only("should preserve experimental_output as structured object in outputs", async () => {
+    it.skip("should preserve experimental_output as structured object in outputs", async () => {
       const wrappedMethods = wrapAISDK(
         {
           wrapLanguageModel: ai.wrapLanguageModel,

@@ -1,4 +1,7 @@
-import type { LanguageModelV2Usage } from "@ai-sdk/provider";
+import type {
+  LanguageModelV2Usage,
+  LanguageModelV3Usage,
+} from "@ai-sdk/provider";
 import { KVMap } from "../schemas.js";
 import { convertAnthropicUsageToInputTokenDetails } from "./usage.js";
 
@@ -21,46 +24,57 @@ function extractTraceableServiceTier(
   return undefined;
 }
 
-export function extractOutputTokenDetails(
-  usage?: Partial<LanguageModelV2Usage>,
+function extractAISDK6OutputTokenDetails(
+  usage: Partial<LanguageModelV3Usage>,
   providerMetadata?: Record<string, unknown>
 ) {
   const openAIServiceTier = extractTraceableServiceTier(providerMetadata ?? {});
   const outputTokenDetailsKeyPrefix = openAIServiceTier
     ? `${openAIServiceTier}_`
     : "";
+  const outputTokens = usage.outputTokens;
   const outputTokenDetails: Record<string, number> = {};
+
+  // Extract reasoning tokens from AI SDK 6
+  if (
+    typeof outputTokens?.reasoning === "number" &&
+    outputTokens?.reasoning > 0
+  ) {
+    outputTokenDetails[`${outputTokenDetailsKeyPrefix}reasoning`] =
+      outputTokens.reasoning;
+  }
+
+  // Apply service tier logic for AI SDK 6
+  if (openAIServiceTier && typeof outputTokens?.total === "number") {
+    // Avoid counting reasoning tokens towards the output token count
+    // since service tier tokens are already priced differently
+    outputTokenDetails[openAIServiceTier] =
+      outputTokens.total -
+      (outputTokenDetails[`${outputTokenDetailsKeyPrefix}reasoning`] ?? 0);
+  }
+  return outputTokenDetails;
+}
+
+export function extractOutputTokenDetails(
+  usage?: Partial<LanguageModelV2Usage> | Partial<LanguageModelV3Usage>,
+  providerMetadata?: Record<string, unknown>
+) {
+  if (usage == null) {
+    return {};
+  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const usageAny = usage as Record<string, any>;
 
   // AI SDK 6: Check for built-in outputTokens breakdown first
-  if (
-    typeof usageAny?.outputTokens === "object" &&
-    usageAny.outputTokens != null
-  ) {
-    const outputTokens = usageAny.outputTokens;
-
-    // Extract reasoning tokens from AI SDK 6
-    if (
-      typeof outputTokens.reasoning === "number" &&
-      outputTokens.reasoning > 0
-    ) {
-      outputTokenDetails[`${outputTokenDetailsKeyPrefix}reasoning`] =
-        outputTokens.reasoning;
-    }
-
-    // Apply service tier logic for AI SDK 6
-    if (openAIServiceTier && typeof outputTokens.total === "number") {
-      // Avoid counting reasoning tokens towards the output token count
-      // since service tier tokens are already priced differently
-      outputTokenDetails[openAIServiceTier] =
-        outputTokens.total -
-        (outputTokenDetails[`${outputTokenDetailsKeyPrefix}reasoning`] ?? 0);
-    }
-
+  if (isLanguageModelV3Usage(usage)) {
     // Return AI SDK 6 results (even if empty, to prevent falling through to SDK 5 logic)
-    return outputTokenDetails;
+    return extractAISDK6OutputTokenDetails(usage, providerMetadata);
   }
+
+  const openAIServiceTier = extractTraceableServiceTier(providerMetadata ?? {});
+  const outputTokenDetailsKeyPrefix = openAIServiceTier
+    ? `${openAIServiceTier}_`
+    : "";
+  const outputTokenDetails: Record<string, number> = {};
 
   // Provider-specific extraction for AI SDK 5/4 or when SDK 6 doesn't have breakdowns
   let reasoningTokens: number | undefined;
@@ -92,66 +106,95 @@ export function extractOutputTokenDetails(
   return outputTokenDetails;
 }
 
-export function extractInputTokenDetails(
-  usage?: Partial<LanguageModelV2Usage>,
+function extractAISDK6InputTokenDetails(
+  usage: Partial<LanguageModelV3Usage>,
   providerMetadata?: Record<string, unknown>
 ) {
   let inputTokenDetails: Record<string, number> = {};
-  const usageAny = usage as Record<string, any>;
+  const inputTokens = usage.inputTokens;
 
-  // AI SDK 6: Check for built-in inputTokens breakdown first
+  // Extract standard AI SDK 6 input token breakdowns
+  // Map AI SDK 6 fields to LangSmith token detail fields:
+  // - cacheRead -> cache_read
+  // - cacheWrite -> cache_creation
   if (
-    typeof usageAny?.inputTokens === "object" &&
-    usageAny.inputTokens != null
+    providerMetadata?.anthropic != null &&
+    typeof providerMetadata?.anthropic === "object"
   ) {
-    const inputTokens = usageAny.inputTokens;
-
-    // Extract standard AI SDK 6 input token breakdowns
-    // Map AI SDK 6 fields to LangSmith token detail fields:
-    // - cacheRead -> cache_read
-    // - cacheWrite -> cache_creation
+    const anthropic = providerMetadata.anthropic as Record<string, unknown>;
+    if (anthropic.usage != null && typeof anthropic.usage === "object") {
+      // Raw usage from Anthropic returned in AI SDK 5
+      const usage = anthropic.usage as Record<string, unknown>;
+      inputTokenDetails = convertAnthropicUsageToInputTokenDetails(usage);
+    }
+  } else {
     if (
-      typeof inputTokens.cacheRead === "number" &&
+      typeof inputTokens?.cacheRead === "number" &&
       inputTokens.cacheRead > 0
     ) {
       inputTokenDetails.cache_read = inputTokens.cacheRead;
     }
     if (
-      typeof inputTokens.cacheWrite === "number" &&
-      inputTokens.cacheWrite > 0
+      typeof inputTokens?.cacheWrite === "number" &&
+      inputTokens?.cacheWrite > 0
     ) {
-      inputTokenDetails.cache_creation = inputTokens.cacheWrite;
+      inputTokenDetails.cache_creation = inputTokens?.cacheWrite;
     }
-
-    // Handle OpenAI service tier for AI SDK 6
-    const openAIServiceTier = extractTraceableServiceTier(
-      providerMetadata ?? {}
-    );
-    if (openAIServiceTier) {
-      const serviceTierPrefix = `${openAIServiceTier}_`;
-
-      // Add cache_read with service tier prefix if we have cached tokens
-      if (
-        typeof inputTokens.cacheRead === "number" &&
-        inputTokens.cacheRead > 0
-      ) {
-        inputTokenDetails[`${serviceTierPrefix}cache_read`] =
-          inputTokens.cacheRead;
-        // Remove the non-prefixed version since we're using service tier
-        delete inputTokenDetails.cache_read;
-      }
-
-      // Calculate service tier tokens (total minus cached)
-      if (typeof inputTokens.total === "number") {
-        inputTokenDetails[openAIServiceTier] =
-          inputTokens.total -
-          (inputTokenDetails[`${serviceTierPrefix}cache_read`] ?? 0);
-      }
-    }
-
-    // Return AI SDK 6 results (even if empty, to prevent falling through to SDK 5 logic)
-    return inputTokenDetails;
   }
+
+  // Handle OpenAI service tier for AI SDK 6
+  const openAIServiceTier = extractTraceableServiceTier(providerMetadata ?? {});
+  if (openAIServiceTier) {
+    const serviceTierPrefix = `${openAIServiceTier}_`;
+
+    // Add cache_read with service tier prefix if we have cached tokens
+    if (
+      typeof inputTokens?.cacheRead === "number" &&
+      inputTokens?.cacheRead > 0
+    ) {
+      inputTokenDetails[`${serviceTierPrefix}cache_read`] =
+        inputTokens.cacheRead;
+      // Remove the non-prefixed version since we're using service tier
+      delete inputTokenDetails.cache_read;
+    }
+
+    // Calculate service tier tokens (total minus cached)
+    if (typeof inputTokens?.total === "number") {
+      inputTokenDetails[openAIServiceTier] =
+        inputTokens.total -
+        (inputTokenDetails[`${serviceTierPrefix}cache_read`] ?? 0);
+    }
+  }
+  return inputTokenDetails;
+}
+
+function isLanguageModelV3Usage(
+  usage: Partial<LanguageModelV2Usage> | Partial<LanguageModelV3Usage>
+): usage is Partial<LanguageModelV3Usage> {
+  return (
+    usage.inputTokens != null &&
+    typeof usage.inputTokens === "object" &&
+    usage.inputTokens != null
+  );
+}
+
+export function extractInputTokenDetails(
+  usage?: Partial<LanguageModelV2Usage> | Partial<LanguageModelV3Usage>,
+  providerMetadata?: Record<string, unknown>
+) {
+  if (usage == null) {
+    return {};
+  }
+  // AI SDK 6: Check for built-in inputTokens breakdown first
+  if (isLanguageModelV3Usage(usage)) {
+    // Return AI SDK 6 results (even if empty, to prevent falling through to SDK 5 logic)
+    return extractAISDK6InputTokenDetails(
+      usage as Partial<LanguageModelV3Usage>,
+      providerMetadata
+    );
+  }
+
+  let inputTokenDetails: Record<string, number> = {};
 
   // Provider-specific extraction for AI SDK 5/4 or when SDK 6 doesn't have breakdowns
   if (
@@ -184,28 +227,21 @@ export function extractInputTokenDetails(
     providerMetadata?.openai != null &&
     typeof providerMetadata?.openai === "object"
   ) {
+    // AI SDK 5/4: Handle OpenAI cached tokens with service tier support
     const openAIServiceTier = extractTraceableServiceTier(
       providerMetadata ?? {}
     );
-    const outputTokenDetailsKeyPrefix = openAIServiceTier
+    const tokenDetailsKeyPrefix = openAIServiceTier
       ? `${openAIServiceTier}_`
       : "";
 
-    const usageAny = usage as Record<string, any>;
+    // Extract cached input tokens
     let cachedInputTokens: number | undefined;
-
-    // AI SDK 6: inputTokens.cacheRead
-    if (
-      typeof usageAny?.inputTokens === "object" &&
-      usageAny.inputTokens?.cacheRead != null
-    ) {
-      cachedInputTokens = usageAny.inputTokens.cacheRead;
-    } else if (typeof usage?.cachedInputTokens === "number") {
+    if (typeof usage?.cachedInputTokens === "number") {
       // AI SDK 5: cachedInputTokens
       cachedInputTokens = usage.cachedInputTokens;
     } else if (
       "cachedPromptTokens" in providerMetadata.openai &&
-      providerMetadata.openai.cachedPromptTokens != null &&
       typeof providerMetadata.openai.cachedPromptTokens === "number"
     ) {
       // AI SDK 4: cachedPromptTokens in providerMetadata
@@ -213,29 +249,15 @@ export function extractInputTokenDetails(
     }
 
     if (typeof cachedInputTokens === "number") {
-      inputTokenDetails[`${outputTokenDetailsKeyPrefix}cache_read`] =
+      inputTokenDetails[`${tokenDetailsKeyPrefix}cache_read`] =
         cachedInputTokens;
     }
 
-    // Extract total input tokens for service tier calculation
-    let inputTokensTotal: number | undefined;
-    if (
-      typeof usageAny?.inputTokens === "object" &&
-      usageAny.inputTokens?.total != null
-    ) {
-      // AI SDK 6: inputTokens.total
-      inputTokensTotal = usageAny.inputTokens.total;
-    } else if (typeof usage?.inputTokens === "number") {
-      // AI SDK 5: inputTokens
-      inputTokensTotal = usage.inputTokens;
-    }
-
-    if (openAIServiceTier && typeof inputTokensTotal === "number") {
-      // Avoid counting cached input tokens towards the input token count
-      // since service tier tokens are already priced differently
+    // Calculate service tier tokens (total minus cached)
+    if (openAIServiceTier && typeof usage?.inputTokens === "number") {
       inputTokenDetails[openAIServiceTier] =
-        inputTokensTotal -
-        (inputTokenDetails[`${outputTokenDetailsKeyPrefix}cache_read`] ?? 0);
+        usage.inputTokens -
+        (inputTokenDetails[`${tokenDetailsKeyPrefix}cache_read`] ?? 0);
     }
   }
   return inputTokenDetails;
