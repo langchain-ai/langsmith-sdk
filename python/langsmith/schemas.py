@@ -204,6 +204,7 @@ class Example(_SchemaBase):
     modified_at: Optional[datetime] = None
     source_run_id: Optional[UUID] = None
     attachments: Optional[dict[str, AttachmentInfo]] = None
+    attachment_urls: Optional[dict[str, str]] = None
     name: Optional[str] = None
     """Optional name for the example."""
     _host_url: Optional[str] = field(default=None, repr=False)
@@ -928,6 +929,8 @@ class TracerSession(_SchemaBase):
     """Extra metadata for the project."""
     reference_dataset_id: Optional[UUID] = None
     """The reference dataset IDs this project's runs were generated on."""
+    default_dataset_id: Optional[UUID] = None
+    """The default dataset ID for this project."""
     _host_url: Optional[str] = field(default=None, repr=False)
 
     def __post_init__(self):
@@ -990,6 +993,8 @@ class TracerSessionResult(TracerSession):
     """The total number of completion tokens consumed in the project."""
     last_run_start_time: Optional[datetime] = None
     """The start time of the last run in the project."""
+    last_run_start_time_live: Optional[datetime] = None
+    """The start time of the last run in the project (live)."""
     feedback_stats: Optional[dict[str, Any]] = None
     """Feedback stats for the project."""
     session_feedback_stats: Optional[dict[str, Any]] = None
