@@ -469,7 +469,7 @@ test("streamText with experimental_output should display as structured object in
   expect(outputSchema.parse(chunks.at(-1))).toBeDefined();
 });
 
-it.skip("openai cache with large prompt for automatic caching using OTEL", async () => {
+it.skip("openai cache with large prompt for automatic caching", async () => {
   const meta = v4();
   const client = new Client();
   const aiSDKResponses: unknown[] = [];
@@ -482,10 +482,7 @@ it.skip("openai cache with large prompt for automatic caching using OTEL", async
       // First call - should create cache due to large prompt (>1024 tokens)
       try {
         const res1 = await generateText({
-          model: openai("gpt-4o-mini"),
-          experimental_telemetry: {
-            isEnabled: true,
-          },
+          model: openai("gpt-5-nano"),
           messages: [
             {
               role: "system",
@@ -504,13 +501,12 @@ it.skip("openai cache with large prompt for automatic caching using OTEL", async
         console.error("Cache create error:", error);
       }
 
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+
       // Second call - should read from cache with same large context
       try {
         const res2 = await generateText({
-          model: openai("gpt-4o-mini"),
-          experimental_telemetry: {
-            isEnabled: true,
-          },
+          model: openai("gpt-5-nano"),
           messages: [
             {
               role: "system",
@@ -543,7 +539,7 @@ it.skip("openai cache with large prompt for automatic caching using OTEL", async
   await client.awaitPendingTraceBatches();
 });
 
-it.skip("openai cache with streamText using OTEL", async () => {
+it.skip("openai cache with streamText", async () => {
   const meta = v4();
   const client = new Client();
   const aiSDKResponses: unknown[] = [];
@@ -556,10 +552,7 @@ it.skip("openai cache with streamText using OTEL", async () => {
       // First call - should create cache due to large prompt (>1024 tokens)
       try {
         const { textStream } = streamText({
-          model: openai("gpt-4o-mini"),
-          experimental_telemetry: {
-            isEnabled: true,
-          },
+          model: openai("gpt-5-nano"),
           messages: [
             {
               role: "system",
@@ -583,13 +576,12 @@ it.skip("openai cache with streamText using OTEL", async () => {
         console.error("Cache create error:", error);
       }
 
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+
       // Second call - should read from cache with same large context
       try {
         const { textStream } = streamText({
-          model: openai("gpt-4o-mini"),
-          experimental_telemetry: {
-            isEnabled: true,
-          },
+          model: openai("gpt-5-nano"),
           messages: [
             {
               role: "system",

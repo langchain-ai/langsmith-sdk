@@ -146,7 +146,7 @@ describe("anthropic", () => {
     }
   });
 
-  it.skip("anthropic cache read and write tokens with OTEL exporter", async () => {
+  it.skip("anthropic cache read and write tokens", async () => {
     const meta = v4();
     const client = new Client();
     const aiSDKResponses: unknown[] = [];
@@ -159,9 +159,6 @@ describe("anthropic", () => {
         try {
           const res1 = await generateText({
             model: anthropic("claude-3-5-haiku-20241022"),
-            experimental_telemetry: {
-              isEnabled: true,
-            },
             messages: [
               {
                 role: "user",
@@ -193,9 +190,6 @@ describe("anthropic", () => {
         try {
           const res2 = await generateText({
             model: anthropic("claude-3-5-haiku-20241022"),
-            experimental_telemetry: {
-              isEnabled: true,
-            },
             messages: [
               {
                 role: "user",
@@ -232,7 +226,7 @@ describe("anthropic", () => {
     await client.awaitPendingTraceBatches();
   });
 
-  it.skip("anthropic cache read and write 1h cached tokens with OTEL exporter", async () => {
+  it.skip("anthropic cache read and write 1h cached tokens", async () => {
     const meta = v4();
     const client = new Client();
     const aiSDKResponses: unknown[] = [];
@@ -247,9 +241,6 @@ describe("anthropic", () => {
             model: anthropic("claude-sonnet-4-20250514"),
             headers: {
               "anthropic-beta": "extended-cache-ttl-2025-04-11",
-            },
-            experimental_telemetry: {
-              isEnabled: true,
             },
             messages: [
               {
@@ -286,9 +277,6 @@ describe("anthropic", () => {
             model: anthropic("claude-sonnet-4-20250514"),
             headers: {
               "anthropic-beta": "extended-cache-ttl-2025-04-11",
-            },
-            experimental_telemetry: {
-              isEnabled: true,
             },
             messages: [
               {
