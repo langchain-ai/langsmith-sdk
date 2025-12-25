@@ -3399,8 +3399,8 @@ class Client:
             headers=self._headers,
         )
         ls_utils.raise_for_status_with_text(response)
-        return ls_schemas.Dataset(
-            **response.json(),
+        return ls_schemas.Dataset.from_dict(
+            response.json(),
             _host_url=self._host_url,
             _public_path=f"/public/{share_token}/d",
         )
@@ -3934,8 +3934,8 @@ class Client:
 
         json_response = response.json()
         json_response["metadata"] = json_response.get("metadata") or metadata
-        return ls_schemas.Dataset(
-            **json_response,
+        return ls_schemas.Dataset.from_dict(
+            json_response,
             _host_url=self._host_url,
             _tenant_id=self._get_optional_tenant_id(),
         )

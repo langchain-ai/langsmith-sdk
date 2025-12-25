@@ -204,6 +204,8 @@ class Example(_SchemaBase):
     modified_at: Optional[datetime] = None
     source_run_id: Optional[UUID] = None
     attachments: Optional[dict[str, AttachmentInfo]] = None
+    name: Optional[str] = None
+    """Optional name for the example."""
     _host_url: Optional[str] = field(default=None, repr=False)
     _tenant_id: Optional[UUID] = field(default=None, repr=False)
 
@@ -871,6 +873,8 @@ class Feedback(_SchemaBase):
     """Whether the feedback encountered an error."""
     start_time: Optional[datetime] = None
     """The start time of the feedback."""
+    feedback_thread_id: Optional[UUID] = None
+    """The feedback thread ID."""
 
     def __post_init__(self):
         """Convert string UUIDs to UUID objects."""
@@ -995,6 +999,8 @@ class TracerSessionResult(TracerSession):
     """The error rate for the project."""
     default_dataset_id: Optional[UUID] = None
     """The default dataset ID for the project."""
+    trace_tier: Optional[str] = None
+    """The trace tier for the project."""
 
 
 @runtime_checkable
