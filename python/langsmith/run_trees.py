@@ -234,7 +234,9 @@ class RunTree(ls_schemas.RunBase):
     ):
         """Initialize the RunTree."""
         ls_client = ls_client or client or _client
-        session_name = session_name or project_name or utils.get_tracer_project() or "default"
+        session_name = (
+            session_name or project_name or utils.get_tracer_project() or "default"
+        )
         session_id = session_id or project_id
 
         if id is None:
@@ -298,7 +300,10 @@ class RunTree(ls_schemas.RunBase):
             self.replicas = _REPLICAS.get()
         self.replicas = _ensure_write_replicas(self.replicas)
 
-        if not self.trace_id or str(self.trace_id) == "00000000-0000-0000-0000-000000000000":
+        if (
+            not self.trace_id
+            or str(self.trace_id) == "00000000-0000-0000-0000-000000000000"
+        ):
             if self.parent_run is not None:
                 self.trace_id = self.parent_run.trace_id
             else:
@@ -310,7 +315,9 @@ class RunTree(ls_schemas.RunBase):
                 self.start_time, self.id
             )
             if self.parent_dotted_order is not None:
-                self.dotted_order = self.parent_dotted_order + "." + current_dotted_order
+                self.dotted_order = (
+                    self.parent_dotted_order + "." + current_dotted_order
+                )
             else:
                 self.dotted_order = current_dotted_order
 
@@ -350,7 +357,12 @@ class RunTree(ls_schemas.RunBase):
         elif start_time is None:
             start_time = datetime.now(timezone.utc)
 
-        session_name = project_name or kwargs.pop("session_name", None) or utils.get_tracer_project() or "default"
+        session_name = (
+            project_name
+            or kwargs.pop("session_name", None)
+            or utils.get_tracer_project()
+            or "default"
+        )
         session_id = project_id or kwargs.pop("session_id", None)
 
         trace_id = kwargs.pop("trace_id", None)
@@ -374,10 +386,27 @@ class RunTree(ls_schemas.RunBase):
         )
 
     _FIELDS = (
-        "id", "name", "run_type", "start_time", "end_time", "extra", "error",
-        "serialized", "events", "inputs", "outputs", "reference_example_id",
-        "parent_run_id", "tags", "attachments", "session_name", "session_id",
-        "dotted_order", "trace_id", "dangerously_allow_filesystem", "replicas"
+        "id",
+        "name",
+        "run_type",
+        "start_time",
+        "end_time",
+        "extra",
+        "error",
+        "serialized",
+        "events",
+        "inputs",
+        "outputs",
+        "reference_example_id",
+        "parent_run_id",
+        "tags",
+        "attachments",
+        "session_name",
+        "session_id",
+        "dotted_order",
+        "trace_id",
+        "dangerously_allow_filesystem",
+        "replicas",
     )
 
     def model_dump(
@@ -390,7 +419,12 @@ class RunTree(ls_schemas.RunBase):
         """Convert to dict, handling exclusions."""
         result = {}
         exclude = exclude or set()
-        exclude_fields = {"parent_run", "ls_client", "child_runs", "parent_dotted_order"} | exclude
+        exclude_fields = {
+            "parent_run",
+            "ls_client",
+            "child_runs",
+            "parent_dotted_order",
+        } | exclude
         for name in self._FIELDS:
             if name in exclude_fields:
                 continue

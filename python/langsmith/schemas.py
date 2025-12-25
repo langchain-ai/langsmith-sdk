@@ -169,7 +169,9 @@ ExampleUploadWithAttachments = ExampleCreate
 class ExampleUpsertWithAttachments(ExampleCreate):
     """Example create with attachments."""
 
-    dataset_id: UUID = field(default_factory=lambda: UUID("00000000-0000-0000-0000-000000000000"))
+    dataset_id: UUID = field(
+        default_factory=lambda: UUID("00000000-0000-0000-0000-000000000000")
+    )
 
 
 class AttachmentInfo(TypedDict):
@@ -194,7 +196,9 @@ class Example(_SchemaBase):
     """Example model."""
 
     id: UUID
-    dataset_id: UUID = field(default_factory=lambda: UUID("00000000-0000-0000-0000-000000000000"))
+    dataset_id: UUID = field(
+        default_factory=lambda: UUID("00000000-0000-0000-0000-000000000000")
+    )
     inputs: Optional[dict[str, Any]] = None
     outputs: Optional[dict[str, Any]] = None
     metadata: Optional[dict[str, Any]] = None
@@ -472,7 +476,9 @@ class RunBase(_SchemaBase):
 class Run(RunBase):
     """Run schema when loading from the DB."""
 
-    trace_id: UUID = field(default_factory=lambda: UUID("00000000-0000-0000-0000-000000000000"))
+    trace_id: UUID = field(
+        default_factory=lambda: UUID("00000000-0000-0000-0000-000000000000")
+    )
     """Unique ID assigned to every run within this nested trace."""
     session_id: Optional[UUID] = None
     """The project ID this run belongs to."""
@@ -541,11 +547,18 @@ class Run(RunBase):
     """Whether this run is in a dataset."""
     replicas: Optional[list[Any]] = None
     """Replicas for this run."""
+    inputs_preview: Optional[str] = None
+    """Preview of the inputs."""
+    outputs_preview: Optional[str] = None
+    """Preview of the outputs."""
     _host_url: Optional[str] = field(default=None, repr=False)
 
     def __post_init__(self):
         """Initialize defaults after dataclass creation."""
-        if not self.trace_id or str(self.trace_id) == "00000000-0000-0000-0000-000000000000":
+        if (
+            not self.trace_id
+            or str(self.trace_id) == "00000000-0000-0000-0000-000000000000"
+        ):
             object.__setattr__(self, "trace_id", self.id)
         if not self.dotted_order.strip() and not self.parent_run_id:
             object.__setattr__(
@@ -564,8 +577,12 @@ class Run(RunBase):
         filtered_data = {k: v for k, v in data.items() if k in field_names}
 
         uuid_fields = {
-            "id", "trace_id", "session_id", "reference_example_id",
-            "parent_run_id", "manifest_id",
+            "id",
+            "trace_id",
+            "session_id",
+            "reference_example_id",
+            "parent_run_id",
+            "manifest_id",
         }
         for f in uuid_fields:
             if f in filtered_data:
@@ -856,6 +873,8 @@ class Feedback(_SchemaBase):
     """The config for the feedback."""
     error: Optional[bool] = None
     """Whether the feedback encountered an error."""
+    start_time: Optional[datetime] = None
+    """The start time of the feedback."""
 
     def __post_init__(self):
         """Convert string UUIDs to UUID objects."""
@@ -868,7 +887,9 @@ class Feedback(_SchemaBase):
         if isinstance(self.session_id, str):
             object.__setattr__(self, "session_id", UUID(self.session_id))
         if isinstance(self.comparative_experiment_id, str):
-            object.__setattr__(self, "comparative_experiment_id", UUID(self.comparative_experiment_id))
+            object.__setattr__(
+                self, "comparative_experiment_id", UUID(self.comparative_experiment_id)
+            )
         if isinstance(self.feedback_group_id, str):
             object.__setattr__(self, "feedback_group_id", UUID(self.feedback_group_id))
 
@@ -976,6 +997,8 @@ class TracerSessionResult(TracerSession):
     """The 99th percentile time to process the first token."""
     error_rate: Optional[float] = None
     """The error rate for the project."""
+    default_dataset_id: Optional[UUID] = None
+    """The default dataset ID for the project."""
 
 
 @runtime_checkable
@@ -1552,6 +1575,8 @@ class FeedbackFormulaUpdate(_SchemaBase):
 class FeedbackFormula(FeedbackFormulaCreate):
     """Schema for getting feedback formulas."""
 
-    id: UUID = field(default_factory=lambda: UUID("00000000-0000-0000-0000-000000000000"))
+    id: UUID = field(
+        default_factory=lambda: UUID("00000000-0000-0000-0000-000000000000")
+    )
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     modified_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))

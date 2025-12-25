@@ -1397,8 +1397,8 @@ class Client:
             file_name = csv_file if isinstance(csv_file, str) else csv_file[0]
             file_name = file_name.split("/")[-1]
             raise ValueError(f"Dataset {file_name} already exists")
-        return ls_schemas.Dataset(
-            **result,
+        return ls_schemas.Dataset.from_dict(
+            result,
             _host_url=self._host_url,
             _tenant_id=self._get_optional_tenant_id(),
         )
@@ -4001,13 +4001,13 @@ class Client:
                 raise ls_utils.LangSmithNotFoundError(
                     f"Dataset {dataset_name} not found"
                 )
-            return ls_schemas.Dataset(
-                **result[0],
+            return ls_schemas.Dataset.from_dict(
+                result[0],
                 _host_url=self._host_url,
                 _tenant_id=self._get_optional_tenant_id(),
             )
-        return ls_schemas.Dataset(
-            **result,
+        return ls_schemas.Dataset.from_dict(
+            result,
             _host_url=self._host_url,
             _tenant_id=self._get_optional_tenant_id(),
         )
@@ -4160,8 +4160,8 @@ class Client:
         for i, dataset in enumerate(
             self._get_paginated_list("/datasets", params=params)
         ):
-            yield ls_schemas.Dataset(
-                **dataset,
+            yield ls_schemas.Dataset.from_dict(
+                dataset,
                 _host_url=self._host_url,
                 _tenant_id=self._get_optional_tenant_id(),
             )

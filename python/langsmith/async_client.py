@@ -242,7 +242,7 @@ class AsyncClient:
             "GET",
             f"/runs/{ls_client._as_uuid(run_id)}",
         )
-        return ls_schemas.Run(**response.json())
+        return ls_schemas.Run.from_dict(response.json())
 
     async def list_runs(
         self,
@@ -446,7 +446,7 @@ class AsyncClient:
         body = {k: v for k, v in body_query.items() if v is not None}
         ix = 0
         async for run in self._aget_cursor_paginated_list("/runs/query", body=body):
-            yield ls_schemas.Run(**run)
+            yield ls_schemas.Run.from_dict(run)
             ix += 1
             if limit is not None and ix >= limit:
                 break
@@ -581,7 +581,7 @@ class AsyncClient:
         response = await self._arequest_with_retries(
             "POST", "/datasets", content=ls_client._dumps_json(data)
         )
-        return ls_schemas.Dataset(**response.json())
+        return ls_schemas.Dataset.from_dict(response.json())
 
     async def read_dataset(
         self,
@@ -606,8 +606,8 @@ class AsyncClient:
                 raise ls_utils.LangSmithNotFoundError(
                     f"Dataset {dataset_name} not found"
                 )
-            return ls_schemas.Dataset(**data[0])
-        return ls_schemas.Dataset(**data)
+            return ls_schemas.Dataset.from_dict(data[0])
+        return ls_schemas.Dataset.from_dict(data)
 
     async def delete_dataset(self, dataset_id: ls_client.ID_TYPE) -> None:
         """Delete a dataset."""
@@ -622,7 +622,7 @@ class AsyncClient:
     ) -> AsyncIterator[ls_schemas.Dataset]:
         """List datasets."""
         async for dataset in self._aget_paginated_list("/datasets", params=kwargs):
-            yield ls_schemas.Dataset(**dataset)
+            yield ls_schemas.Dataset.from_dict(dataset)
 
     async def create_example(
         self,
