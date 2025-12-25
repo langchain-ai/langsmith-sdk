@@ -72,7 +72,6 @@ export function extractOutputTokenDetails(
   if (usage == null) {
     return {};
   }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
 
   // AI SDK 6: Check for built-in outputTokens breakdown first
   if (isLanguageModelV3Usage(usage)) {
