@@ -24,6 +24,16 @@ function extractTraceableServiceTier(
   return undefined;
 }
 
+function isLanguageModelV3Usage(
+  usage: Partial<LanguageModelV2Usage> | Partial<LanguageModelV3Usage>
+): usage is Partial<LanguageModelV3Usage> {
+  return (
+    usage.inputTokens != null &&
+    typeof usage.inputTokens === "object" &&
+    usage.inputTokens != null
+  );
+}
+
 function extractAISDK6OutputTokenDetails(
   usage: Partial<LanguageModelV3Usage>,
   providerMetadata?: Record<string, unknown>
@@ -88,7 +98,6 @@ export function extractOutputTokenDetails(
   }
   return outputTokenDetails;
 }
-}
 
 function extractAISDK6InputTokenDetails(
   usage: Partial<LanguageModelV3Usage>,
@@ -150,16 +159,6 @@ function extractAISDK6InputTokenDetails(
     }
   }
   return inputTokenDetails;
-}
-
-function isLanguageModelV3Usage(
-  usage: Partial<LanguageModelV2Usage> | Partial<LanguageModelV3Usage>
-): usage is Partial<LanguageModelV3Usage> {
-  return (
-    usage.inputTokens != null &&
-    typeof usage.inputTokens === "object" &&
-    usage.inputTokens != null
-  );
 }
 
 export function extractInputTokenDetails(
