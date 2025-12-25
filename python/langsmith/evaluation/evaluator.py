@@ -55,12 +55,6 @@ class FeedbackConfig(TypedDict, total=False):
     categories: Optional[list[Union[Category, dict]]]
 
 
-class EvaluationResultValidationError(ValueError):
-    """Validation error for evaluation results."""
-
-    pass
-
-
 @dataclass(eq=True)
 class EvaluationResult:
     """Evaluation result."""
@@ -100,11 +94,6 @@ class EvaluationResult:
                 f" Got: {self.value}"
             )
 
-    _FIELDS = (
-        "key", "score", "value", "comment", "correction", "evaluator_info",
-        "feedback_config", "source_run_id", "target_run_id", "extra", "metadata",
-    )
-
     def model_dump(
         self,
         *,
@@ -115,13 +104,13 @@ class EvaluationResult:
         """Convert to dict."""
         result = {}
         exclude = exclude or set()
-        for field_name in self._FIELDS:
-            if field_name in exclude:
+        for f in dataclasses.fields(self):
+            if f.name in exclude:
                 continue
-            value = getattr(self, field_name)
+            value = getattr(self, f.name)
             if exclude_none and value is None:
                 continue
-            result[field_name] = value
+            result[f.name] = value
         return result
 
     def dict(
