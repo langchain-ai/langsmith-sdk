@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import contextvars
 import functools
 import json
 import logging
 import sys
+import threading
+import urllib.parse
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from typing import Any, Optional, Union, cast
@@ -13,17 +16,12 @@ from uuid import NAMESPACE_DNS, UUID, uuid5
 
 from typing_extensions import TypedDict
 
-from langsmith._internal._uuid import uuid7
-from langsmith.uuid import uuid7_from_datetime
-
-import contextvars
-import threading
-import urllib.parse
-
 import langsmith._internal._context as _context
 from langsmith import schemas as ls_schemas
 from langsmith import utils
+from langsmith._internal._uuid import uuid7
 from langsmith.client import ID_TYPE, RUN_TYPE_T, Client, _dumps_json, _ensure_uuid
+from langsmith.uuid import uuid7_from_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -193,9 +191,9 @@ class RunTree(ls_schemas.RunBase):
     id: UUID
     run_type: str
     start_time: datetime
-    parent_run: Optional["RunTree"]
+    parent_run: Optional[RunTree]
     parent_dotted_order: Optional[str]
-    child_runs: list["RunTree"]
+    child_runs: list[RunTree]
     session_name: str
     session_id: Optional[UUID]
     extra: dict
@@ -213,9 +211,9 @@ class RunTree(ls_schemas.RunBase):
         id: Optional[UUID] = None,
         run_type: str = "chain",
         start_time: Optional[datetime] = None,
-        parent_run: Optional["RunTree"] = None,
+        parent_run: Optional[RunTree] = None,
         parent_dotted_order: Optional[str] = None,
-        child_runs: Optional[list["RunTree"]] = None,
+        child_runs: Optional[list[RunTree]] = None,
         session_name: Optional[str] = None,
         session_id: Optional[UUID] = None,
         extra: Optional[dict] = None,
@@ -322,7 +320,7 @@ class RunTree(ls_schemas.RunBase):
                 self.dotted_order = current_dotted_order
 
     @classmethod
-    def construct(cls, **kwargs: Any) -> "RunTree":
+    def construct(cls, **kwargs: Any) -> RunTree:
         """Create a RunTree without validation (Pydantic compatibility method)."""
         return cls(**kwargs)
 
@@ -334,13 +332,13 @@ class RunTree(ls_schemas.RunBase):
         *,
         id: Optional[UUID] = None,
         start_time: Optional[datetime] = None,
-        parent_run: Optional["RunTree"] = None,
+        parent_run: Optional[RunTree] = None,
         client: Optional[Any] = None,
         _client: Optional[Any] = None,
         project_name: Optional[str] = None,
         project_id: Optional[UUID] = None,
         **kwargs: Any,
-    ) -> "RunTree":
+    ) -> RunTree:
         """Create a RunTree with proper initialization.
 
         This handles keyword argument aliases like client/_client and project_name.
@@ -632,7 +630,7 @@ class RunTree(ls_schemas.RunBase):
         tags: Optional[list[str]] = None,
         extra: Optional[dict] = None,
         attachments: Optional[ls_schemas.Attachments] = None,
-    ) -> "RunTree":
+    ) -> RunTree:
         """Add a child run to the run tree."""
         # Ensure child start_time is never earlier than parent start_time
         # to prevent timestamp ordering violations in dotted_order
@@ -897,7 +895,7 @@ class RunTree(ls_schemas.RunBase):
         cls,
         dotted_order: str,
         **kwargs: Any,
-    ) -> "RunTree":
+    ) -> RunTree:
         """Create a new 'child' span from the provided dotted order.
 
         Returns:
@@ -913,7 +911,7 @@ class RunTree(ls_schemas.RunBase):
         cls,
         config: Optional[dict],
         **kwargs: Any,
-    ) -> Optional["RunTree"]:
+    ) -> Optional[RunTree]:
         """Create a new 'child' span from the provided runnable config.
 
         Requires `langchain` to be installed.
@@ -975,7 +973,7 @@ class RunTree(ls_schemas.RunBase):
     @classmethod
     def from_headers(
         cls, headers: Mapping[Union[str, bytes], Union[str, bytes]], **kwargs: Any
-    ) -> Optional["RunTree"]:
+    ) -> Optional[RunTree]:
         """Create a new 'parent' span from the provided headers.
 
         Extracts parent span information from the headers and creates a new span.
@@ -1076,7 +1074,7 @@ class _Baggage:
         self.replicas = replicas or []
 
     @classmethod
-    def from_header(cls, header_value: Optional[str]) -> "_Baggage":
+    def from_header(cls, header_value: Optional[str]) -> _Baggage:
         """Create a Baggage object from the given header value."""
         if not header_value:
             return cls()
@@ -1127,7 +1125,7 @@ class _Baggage:
         )
 
     @classmethod
-    def from_headers(cls, headers: Mapping[Union[str, bytes], Any]) -> "_Baggage":
+    def from_headers(cls, headers: Mapping[Union[str, bytes], Any]) -> _Baggage:
         if "baggage" in headers:
             return cls.from_header(headers["baggage"])
         elif b"baggage" in headers:

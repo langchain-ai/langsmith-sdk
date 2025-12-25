@@ -39,7 +39,6 @@ from pathlib import Path
 from queue import PriorityQueue
 from typing import (
     TYPE_CHECKING,
-    Annotated,
     Any,
     Callable,
     Literal,

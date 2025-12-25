@@ -1,7 +1,7 @@
 """This module contains the StringEvaluator class."""
 
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable, Optional
 
 from langsmith.evaluation.evaluator import EvaluationResult, RunEvaluator

@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-import copy
 import dataclasses
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from enum import Enum
+from pathlib import Path
 from typing import (
-    Annotated,
     Any,
     NamedTuple,
     Optional,
@@ -21,9 +20,6 @@ from typing import (
 from uuid import UUID
 
 from typing_extensions import Literal, NotRequired, TypedDict
-
-from pathlib import Path
-
 
 SCORE_TYPE = Union[bool, int, float, None]
 VALUE_TYPE = Union[dict, str, None]
@@ -74,7 +70,7 @@ class _SchemaBase:
 
         return dumps_json(self.model_dump()).decode("utf-8")
 
-    def copy(self, **kwargs: Any) -> "_SchemaBase":
+    def copy(self, **kwargs: Any) -> _SchemaBase:
         """Create a copy of the object with optional field updates."""
         d = self.model_dump()
         d.update(kwargs)
@@ -347,7 +343,7 @@ class Dataset(_SchemaBase):
             object.__setattr__(self, "owner_id", _ensure_uuid(self.owner_id))
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any], **private_attrs: Any) -> "Dataset":
+    def from_dict(cls, data: dict[str, Any], **private_attrs: Any) -> Dataset:
         """Create from dictionary with optional private attributes."""
         if "inputs_schema_definition" in data:
             data = data.copy()
@@ -484,7 +480,7 @@ class Run(RunBase):
     """The project ID this run belongs to."""
     child_run_ids: Optional[list[UUID]] = None
     """Deprecated: The child run IDs of this run."""
-    child_runs: Optional[list["Run"]] = None
+    child_runs: Optional[list[Run]] = None
     """The child runs of this run, if instructed to load using the client
     These are not populated by default, as it is a heavier query to make."""
     feedback_stats: Optional[dict[str, Any]] = None
@@ -566,7 +562,7 @@ class Run(RunBase):
             )
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any], **private_attrs: Any) -> "Run":
+    def from_dict(cls, data: dict[str, Any], **private_attrs: Any) -> Run:
         """Create from dictionary with optional private attributes."""
         if not data.get("trace_id"):
             data = {"trace_id": data.get("id"), **data}
@@ -927,7 +923,7 @@ class TracerSession(_SchemaBase):
             )
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any], **private_attrs: Any) -> "TracerSession":
+    def from_dict(cls, data: dict[str, Any], **private_attrs: Any) -> TracerSession:
         """Create from dictionary with optional private attributes."""
         field_names = {f.name for f in dataclasses.fields(cls)}
         filtered_data = {k: v for k, v in data.items() if k in field_names}
