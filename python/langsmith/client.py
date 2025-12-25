@@ -6630,7 +6630,7 @@ class Client:
                     stop_after_attempt=stop_after_attempt,
                     retry_on=(ls_utils.LangSmithNotFoundError,),
                 )
-            return ls_schemas.Feedback(**feedback.dict())
+            return ls_schemas.Feedback.from_dict(feedback.dict())
         except Exception as e:
             logger.error("Error creating feedback", exc_info=True)
             raise e
@@ -6692,7 +6692,7 @@ class Client:
             "GET",
             f"/feedback/{_as_uuid(feedback_id, 'feedback_id')}",
         )
-        return ls_schemas.Feedback(**response.json())
+        return ls_schemas.Feedback.from_dict(response.json())
 
     def list_feedback(
         self,
@@ -6733,7 +6733,7 @@ class Client:
         for i, feedback in enumerate(
             self._get_paginated_list("/feedback", params=params)
         ):
-            yield ls_schemas.Feedback(**feedback)
+            yield ls_schemas.Feedback.from_dict(feedback)
             if limit is not None and i + 1 >= limit:
                 break
 

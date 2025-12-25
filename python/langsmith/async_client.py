@@ -712,7 +712,7 @@ class AsyncClient:
         response = await self._arequest_with_retries(
             "POST", "/feedback", content=ls_client._dumps_json(data)
         )
-        return ls_schemas.Feedback(**response.json())
+        return ls_schemas.Feedback.from_dict(response.json())
 
     async def create_feedback_from_token(
         self,
@@ -839,7 +839,7 @@ class AsyncClient:
         response = await self._arequest_with_retries(
             "GET", f"/feedback/{ls_client._as_uuid(feedback_id)}"
         )
-        return ls_schemas.Feedback(**response.json())
+        return ls_schemas.Feedback.from_dict(response.json())
 
     async def list_feedback(
         self,
@@ -864,7 +864,7 @@ class AsyncClient:
             params["source"] = feedback_source_type
         ix = 0
         async for feedback in self._aget_paginated_list("/feedback", params=params):
-            yield ls_schemas.Feedback(**feedback)
+            yield ls_schemas.Feedback.from_dict(feedback)
             ix += 1
             if limit is not None and ix >= limit:
                 break
