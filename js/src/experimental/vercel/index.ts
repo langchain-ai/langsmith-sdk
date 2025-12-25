@@ -75,29 +75,46 @@ const _getModelId = (model: string | Record<string, unknown>) => {
   return typeof model.modelId === "string" ? model.modelId : undefined;
 };
 
-const _formatTracedInputs = (params: Record<string, unknown>) => {
-  const { prompt, messages, model, tools, ...rest } = params;
+const _formatTracedInputs = async (params: Record<string, unknown>) => {
+  const { prompt, messages, model, tools, output, ...rest } = params;
+  let processedInputs: Record<string, unknown> = {};
   if (Array.isArray(prompt)) {
-    return {
+    processedInputs = {
       ...rest,
       messages: prompt.map((message) => convertMessageToTracedFormat(message)),
     };
   } else if (Array.isArray(messages)) {
-    return {
+    processedInputs = {
       ...rest,
       messages: messages.map((message) =>
         convertMessageToTracedFormat(message)
       ),
     };
   } else {
-    return { ...rest, prompt, messages };
+    processedInputs = { ...rest, prompt, messages };
   }
+  try {
+    if (
+      output != null &&
+      typeof output === "object" &&
+      "responseFormat" in output
+    ) {
+      const responseFormat = await output.responseFormat;
+      processedInputs.output = responseFormat;
+    } else {
+      processedInputs.output = output;
+    }
+  } catch {
+    // Could not extract response format from output for tracing
+    processedInputs.output = output;
+  }
+  return processedInputs;
 };
 
 const _mergeConfig = (
   baseConfig?: Partial<RunTreeConfig>,
   runtimeConfig?: Partial<RunTreeConfig>
-): Record<string, any> => {
+): Record<string, unknown> => {
   return {
     ...baseConfig,
     ...runtimeConfig,
@@ -423,7 +440,7 @@ export const createLangSmithProviderOptions = <
 };
 
 /**
- * Wraps Vercel AI SDK 5 functions with LangSmith tracing capabilities.
+ * Wraps Vercel AI SDK 6 or AI SDK 5 functions with LangSmith tracing capabilities.
  *
  * @param methods - Object containing AI SDK methods to wrap
  * @param methods.wrapLanguageModel - AI SDK's wrapLanguageModel function
@@ -466,7 +483,7 @@ const wrapAISDK = <
   baseLsConfig?: WrapAISDKConfig
 ) => {
   /**
-   * Wrapped version of AI SDK 5's generateText with LangSmith tracing.
+   * Wrapped version of AI SDK's generateText with LangSmith tracing.
    *
    * This function has the same signature and behavior as the original generateText,
    * but adds automatic tracing to LangSmith for observability.
@@ -489,8 +506,8 @@ const wrapAISDK = <
       params.providerOptions ?? {};
     const { resolvedLsConfig, resolvedChildLLMRunConfig, resolvedToolConfig } =
       _resolveConfigs(baseLsConfig, runtimeLsConfig);
-    const hasExplicitExperimentalOutput = "experimental_output" in params;
     const hasExplicitOutput = "output" in params;
+    const hasExplicitExperimentalOutput = "experimental_output" in params;
     const traceableFunc = traceable(
       async (
         ...args: Parameters<GenerateTextType>
@@ -522,7 +539,7 @@ const wrapAISDK = <
           ai_sdk_method: "ai.generateText",
           ...resolvedLsConfig?.metadata,
         },
-        processInputs: (inputs) => {
+        processInputs: async (inputs) => {
           const inputFormatter =
             resolvedLsConfig?.processInputs ?? _formatTracedInputs;
           return inputFormatter(inputs);
@@ -546,7 +563,10 @@ const wrapAISDK = <
               // Try new 'output' property first, then fall back to 'experimental_output' for backwards compatibility
               if ("output" in outputs.outputs) {
                 const output = outputs.outputs.output;
-                if (output != null) {
+                if (output != null && typeof output === "object") {
+                  if (Array.isArray(output)) {
+                    return { outputs: output };
+                  }
                   return output;
                 }
               }
@@ -591,7 +611,7 @@ const wrapAISDK = <
   };
 
   /**
-   * Wrapped version of AI SDK 5's generateObject with LangSmith tracing.
+   * Wrapped version of AI SDK's generateObject with LangSmith tracing.
    *
    * This function has the same signature and behavior as the original generateObject,
    * but adds automatic tracing to LangSmith for observability.
@@ -648,7 +668,7 @@ const wrapAISDK = <
           ai_sdk_method: "ai.generateObject",
           ...resolvedLsConfig?.metadata,
         },
-        processInputs: (inputs) => {
+        processInputs: async (inputs) => {
           const inputFormatter =
             resolvedLsConfig?.processInputs ?? _formatTracedInputs;
           return inputFormatter(inputs);
@@ -675,7 +695,7 @@ const wrapAISDK = <
   };
 
   /**
-   * Wrapped version of AI SDK 5's streamText with LangSmith tracing.
+   * Wrapped version of AI SDK's streamText with LangSmith tracing.
    *
    * Must be called with `await`, but otherwise behaves the same as the
    * original streamText and adds adds automatic tracing to LangSmith
@@ -699,6 +719,8 @@ const wrapAISDK = <
       params.providerOptions ?? {};
     const { resolvedLsConfig, resolvedChildLLMRunConfig, resolvedToolConfig } =
       _resolveConfigs(baseLsConfig, runtimeLsConfig);
+    const hasExplicitOutput = "output" in params;
+    const hasExplicitExperimentalOutput = "experimental_output" in params;
     const traceableFunc = traceable(
       (...args: Parameters<StreamTextType>): ReturnType<StreamTextType> => {
         const [params, ...rest] = args;
@@ -728,7 +750,7 @@ const wrapAISDK = <
           ai_sdk_method: "ai.streamText",
           ...resolvedLsConfig?.metadata,
         },
-        processInputs: (inputs) => {
+        processInputs: async (inputs) => {
           const inputFormatter =
             resolvedLsConfig?.processInputs ?? _formatTracedInputs;
           return inputFormatter(inputs);
@@ -763,10 +785,7 @@ const wrapAISDK = <
               return outputs;
             }
             try {
-              if (
-                "experimental_partialOutputStream" in outputs.outputs &&
-                outputs.outputs.experimental_partialOutputStream != null
-              ) {
+              if (hasExplicitOutput || hasExplicitExperimentalOutput) {
                 const textContent = await outputs.outputs.text;
                 return JSON.parse(textContent);
               }
@@ -779,7 +798,7 @@ const wrapAISDK = <
               try {
                 const steps = await outputs.outputs.steps;
                 responseMetadata = { steps };
-              } catch (e: unknown) {
+              } catch {
                 // Do nothing if step parsing fails
               }
             }
@@ -790,7 +809,7 @@ const wrapAISDK = <
               },
               responseMetadata
             );
-          } catch (e: unknown) {
+          } catch {
             // Handle parsing failures without a log
             return outputs;
           }
@@ -801,7 +820,7 @@ const wrapAISDK = <
   };
 
   /**
-   * Wrapped version of AI SDK 5's streamObject with LangSmith tracing.
+   * Wrapped version of AI SDK's streamObject with LangSmith tracing.
    *
    * Must be called with `await`, but otherwise behaves the same as the
    * original streamObject and adds adds automatic tracing to LangSmith
@@ -855,7 +874,7 @@ const wrapAISDK = <
           ai_sdk_method: "ai.streamObject",
           ...resolvedLsConfig?.metadata,
         },
-        processInputs: (inputs) => {
+        processInputs: async (inputs) => {
           const inputFormatter =
             resolvedLsConfig?.processInputs ?? _formatTracedInputs;
           return inputFormatter(inputs);

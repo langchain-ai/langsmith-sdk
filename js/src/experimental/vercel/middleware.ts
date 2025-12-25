@@ -174,7 +174,7 @@ export type AggregatedDoStreamOutput = {
 };
 
 /**
- * AI SDK middleware that wraps an AI SDK 5 model and adds LangSmith tracing.
+ * AI SDK middleware that wraps an AI SDK 6 or 5 model and adds LangSmith tracing.
  */
 export function LangSmithMiddleware(config?: {
   name: string;

@@ -218,7 +218,30 @@ test("wrap streamText with service tier", async () => {
   ).toEqual(usageMetadata.output_tokens);
 });
 
-test("wrap generateObject", async () => {
+test("wrap generateText with an output schema", async () => {
+  const schema = z.object({
+    color: z.string(),
+  });
+  const output = ai.Output.object({
+    schema,
+  });
+  const result = await generateText({
+    model: openai("gpt-5-nano"),
+    messages: [
+      {
+        role: "user",
+        content: "What color is the sky in one word?",
+      },
+    ],
+    output,
+  });
+  expect(result.output).toBeDefined();
+  expect(schema.parse(result.output)).toBeDefined();
+  expect(result.usage).toBeDefined();
+  expect(result.providerMetadata).toBeDefined();
+});
+
+test.skip("wrap generateObject (deprecated)", async () => {
   const schema = z.object({
     color: z.string(),
   });
@@ -238,7 +261,34 @@ test("wrap generateObject", async () => {
   expect(result.providerMetadata).toBeDefined();
 });
 
-test("wrap streamObject", async () => {
+test("wrap streamText with an output schema", async () => {
+  const schema = z.object({
+    color: z.string(),
+  });
+  const output = ai.Output.object({
+    schema,
+  });
+  const result = streamText({
+    model: openai("gpt-5-nano"),
+    messages: [
+      {
+        role: "user",
+        content: "What color is the sky in one word?",
+      },
+    ],
+    output,
+  });
+  const chunks = [];
+  for await (const chunk of result.partialOutputStream) {
+    chunks.push(chunk);
+  }
+  expect(chunks.length).toBeGreaterThan(0);
+  expect(schema.parse(chunks.at(-1))).toBeDefined();
+  expect(result.usage).toBeDefined();
+  expect(result.providerMetadata).toBeDefined();
+});
+
+test.skip("wrap streamObject", async () => {
   const schema = z.object({
     color: z.string(),
   });

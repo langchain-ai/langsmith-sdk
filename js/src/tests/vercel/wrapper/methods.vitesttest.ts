@@ -40,6 +40,59 @@ class MockLangSmithClient {
   }
 }
 
+const standardMockedModel = new MockLanguageModelV3({
+  modelId: "object-test-model",
+  doGenerate: async () => ({
+    content: [
+      {
+        type: "text" as const,
+        text: '{"name": "John", "age": 30}',
+      },
+    ],
+    finishReason: { unified: "stop" as const, raw: "stop" },
+    usage: {
+      promptTokens: 10,
+      completionTokens: 8,
+      inputTokens: {
+        total: 10,
+        noCache: 10,
+        cacheRead: 0,
+        cacheWrite: 0,
+      },
+      outputTokens: { total: 8, text: 8, reasoning: 0 },
+      totalTokens: 18,
+    },
+    warnings: [],
+  }),
+  doStream: async () => ({
+    stream: simulateReadableStream({
+      chunks: [
+        { type: "text-start", id: "text-1" },
+        {
+          type: "text-delta",
+          id: "text-1",
+          delta: '{"name": "John", "age": 30}',
+        },
+        { type: "text-end", id: "text-1" },
+        {
+          type: "finish",
+          finishReason: { unified: "stop" as const, raw: "stop" },
+          usage: {
+            inputTokens: {
+              total: 10,
+              noCache: 10,
+              cacheRead: 0,
+              cacheWrite: 0,
+            },
+            outputTokens: { total: 5, text: 5, reasoning: 0 },
+            totalTokens: 15,
+          },
+        },
+      ],
+    }),
+  }),
+});
+
 describe("wrapAISDK", () => {
   let mockClient: MockLangSmithClient;
 
@@ -599,6 +652,219 @@ describe("wrapAISDK", () => {
       );
       expect(generateObjectRun).toBeDefined();
     });
+
+    it.each(["generateText", "streamText"])(
+      "should handle %s with an object output schema",
+      async (method) => {
+        const wrappedMethods = wrapAISDK(
+          {
+            wrapLanguageModel: ai.wrapLanguageModel,
+            generateText: ai.generateText,
+            streamText: ai.streamText,
+            generateObject: ai.generateObject,
+            streamObject: ai.streamObject,
+          },
+          { client: mockClient as any }
+        );
+
+        const output = ai.Output.object({
+          schema: z.object({
+            name: z.string(),
+            age: z.number(),
+          }),
+        });
+
+        const result = await (wrappedMethods as any)[method]({
+          model: standardMockedModel,
+          prompt: "Generate a person object",
+          output,
+        });
+
+        const directOutput =
+          method === "generateText" ? result.output : await result.output;
+        expect(directOutput).toEqual({ name: "John", age: 30 });
+
+        await new Promise((resolve) => setTimeout(resolve, 1));
+
+        // Verify HTTP requests were made for generateObject
+        expect(mockHttpRequests.length).toBe(4); // 2 createRun + 2 updateRun
+
+        const createRun = mockHttpRequests.find(
+          (req) =>
+            req.type === "createRun" &&
+            req.body.extra.metadata.ai_sdk_method === `ai.${method}`
+        );
+        const updateRun = mockHttpRequests.find(
+          (req) =>
+            req.type === "updateRun" &&
+            req.body.extra.metadata.ai_sdk_method === `ai.${method}`
+        );
+        expect(createRun).toBeDefined();
+        expect(updateRun.body.outputs).toEqual({
+          name: "John",
+          age: 30,
+        });
+        expect(createRun.body.inputs.output).toEqual(
+          await output.responseFormat
+        );
+      }
+    );
+
+    it.each(["generateText", "streamText"])(
+      "should handle %s with text output",
+      async (method) => {
+        const wrappedMethods = wrapAISDK(
+          {
+            wrapLanguageModel: ai.wrapLanguageModel,
+            generateText: ai.generateText,
+            streamText: ai.streamText,
+            generateObject: ai.generateObject,
+            streamObject: ai.streamObject,
+          },
+          { client: mockClient as any }
+        );
+
+        const output = ai.Output.text();
+
+        const result = await (wrappedMethods as any)[method]({
+          model: standardMockedModel,
+          prompt: "Generate a person object",
+          output,
+        });
+
+        const directOutput =
+          method === "generateText" ? result.output : await result.output;
+        expect(directOutput).toEqual('{"name": "John", "age": 30}');
+
+        await new Promise((resolve) => setTimeout(resolve, 1));
+
+        // Verify HTTP requests were made for generateObject
+        expect(mockHttpRequests.length).toBe(4); // 2 createRun + 2 updateRun
+
+        const createRun = mockHttpRequests.find(
+          (req) =>
+            req.type === "createRun" &&
+            req.body.extra.metadata.ai_sdk_method === `ai.${method}`
+        );
+        const updateRun = mockHttpRequests.find(
+          (req) =>
+            req.type === "updateRun" &&
+            req.body.extra.metadata.ai_sdk_method === `ai.${method}`
+        );
+        expect(createRun).toBeDefined();
+        expect(typeof updateRun.body.outputs).toEqual("object");
+        expect(createRun.body.inputs.output).toEqual(
+          await output.responseFormat
+        );
+      }
+    );
+
+    it.each(["generateText", "streamText"])(
+      "should handle %s with array output",
+      async (method) => {
+        const wrappedMethods = wrapAISDK(
+          {
+            wrapLanguageModel: ai.wrapLanguageModel,
+            generateText: ai.generateText,
+            streamText: ai.streamText,
+            generateObject: ai.generateObject,
+            streamObject: ai.streamObject,
+          },
+          { client: mockClient as any }
+        );
+
+        const output = ai.Output.array({
+          element: z.string(),
+        });
+
+        const standardMockedModel = new MockLanguageModelV3({
+          modelId: "object-test-model",
+          doGenerate: async () => ({
+            content: [
+              {
+                type: "text" as const,
+                text: '{"elements": ["foo"]}',
+              },
+            ],
+            finishReason: { unified: "stop" as const, raw: "stop" },
+            usage: {
+              promptTokens: 10,
+              completionTokens: 8,
+              inputTokens: {
+                total: 10,
+                noCache: 10,
+                cacheRead: 0,
+                cacheWrite: 0,
+              },
+              outputTokens: { total: 8, text: 8, reasoning: 0 },
+              totalTokens: 18,
+            },
+            warnings: [],
+          }),
+          doStream: async () => ({
+            stream: simulateReadableStream({
+              chunks: [
+                { type: "text-start", id: "text-1" },
+                {
+                  type: "text-delta",
+                  id: "text-1",
+                  delta: '{"elements": ["foo"]}',
+                },
+                { type: "text-end", id: "text-1" },
+                {
+                  type: "finish",
+                  finishReason: { unified: "stop" as const, raw: "stop" },
+                  usage: {
+                    inputTokens: {
+                      total: 10,
+                      noCache: 10,
+                      cacheRead: 0,
+                      cacheWrite: 0,
+                    },
+                    outputTokens: { total: 5, text: 5, reasoning: 0 },
+                    totalTokens: 15,
+                  },
+                },
+              ],
+            }),
+          }),
+        });
+
+        const result = await (wrappedMethods as any)[method]({
+          model: standardMockedModel,
+          prompt: "Generate a person object",
+          output,
+        });
+
+        const directOutput =
+          method === "generateText" ? result.output : await result.output;
+        expect(directOutput).toEqual(["foo"]);
+
+        await new Promise((resolve) => setTimeout(resolve, 1));
+
+        // Verify HTTP requests were made for generateObject
+        expect(mockHttpRequests.length).toBe(4); // 2 createRun + 2 updateRun
+
+        const createRun = mockHttpRequests.find(
+          (req) =>
+            req.type === "createRun" &&
+            req.body.extra.metadata.ai_sdk_method === `ai.${method}`
+        );
+
+        const patchRun = mockHttpRequests.find(
+          (req) =>
+            req.type === "updateRun" &&
+            req.body.extra.metadata.ai_sdk_method === `ai.${method}`
+        );
+        expect(createRun).toBeDefined();
+        expect(typeof patchRun.body.outputs).toEqual("object");
+        // Should be wrapped
+        expect(Array.isArray(patchRun.body.outputs)).toEqual(false);
+        expect(createRun.body.inputs.output).toEqual(
+          await output.responseFormat
+        );
+      }
+    );
 
     it("should handle generateObject errors", async () => {
       const wrappedMethods = wrapAISDK(
