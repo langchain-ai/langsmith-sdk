@@ -267,6 +267,7 @@ export class RunTree implements BaseRun {
 
   distributedParentId?: string;
   private _serialized_start_time: string | undefined;
+  _awaitInputsOnPost?: boolean;
 
   constructor(originalConfig: RunTreeConfig | RunTree) {
     // If you pass in a run tree directly, return a shallow clone
@@ -733,6 +734,9 @@ export class RunTree implements BaseRun {
   }
 
   async postRun(excludeChildRuns = true): Promise<void> {
+    if (this._awaitInputsOnPost) {
+      this.inputs = await (this.inputs as Promise<KVMap>);
+    }
     try {
       const runtimeEnv = getRuntimeEnvironment();
       if (this.replicas && this.replicas.length > 0) {

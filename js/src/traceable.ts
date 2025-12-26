@@ -139,7 +139,9 @@ const runInputsToMap = (rawInputs: unknown[]) => {
 const handleRunInputs = <Args extends unknown[]>(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   inputs: any,
-  processInputs: (inputs: Readonly<ProcessInputs<Args>>) => KVMap
+  processInputs: (
+    inputs: Readonly<ProcessInputs<Args>>
+  ) => KVMap | Promise<KVMap>
 ): KVMap => {
   try {
     return processInputs(inputs);
@@ -335,7 +337,9 @@ const getTracingRunTree = <Args extends unknown[]>(
   getInvocationParams:
     | ((...args: Args) => InvocationParamsSchema | undefined)
     | undefined,
-  processInputs: (inputs: Readonly<ProcessInputs<Args>>) => KVMap,
+  processInputs: (
+    inputs: Readonly<ProcessInputs<Args>>
+  ) => KVMap | Promise<KVMap>,
   extractAttachments:
     | ((...args: Args) => [Attachments | undefined, KVMap])
     | undefined
@@ -351,7 +355,11 @@ const getTracingRunTree = <Args extends unknown[]>(
       | undefined
   );
   runTree.attachments = attached;
-  runTree.inputs = handleRunInputs<Args>(args, processInputs);
+  const processedInputs = handleRunInputs<Args>(args, processInputs);
+  if (isAsyncFn(processInputs)) {
+    runTree._awaitInputsOnPost = true;
+  }
+  runTree.inputs = processedInputs;
 
   const invocationParams = getInvocationParams?.(...inputs);
   if (invocationParams != null) {
@@ -616,7 +624,9 @@ export type TraceableConfig<Func extends (...args: any[]) => any> = Partial<
    * @param inputs Key-value map of the function inputs.
    * @returns Transformed key-value map
    */
-  processInputs?: (inputs: Readonly<ProcessInputs<Parameters<Func>>>) => KVMap;
+  processInputs?: (
+    inputs: Readonly<ProcessInputs<Parameters<Func>>>
+  ) => KVMap | Promise<KVMap>;
 
   /**
    * Apply transformations to the outputs before logging.
