@@ -27,11 +27,7 @@ function extractTraceableServiceTier(
 function isLanguageModelV3Usage(
   usage: Partial<LanguageModelV2Usage> | Partial<LanguageModelV3Usage>
 ): usage is Partial<LanguageModelV3Usage> {
-  return (
-    usage.inputTokens != null &&
-    typeof usage.inputTokens === "object" &&
-    usage.inputTokens != null
-  );
+  return usage.inputTokens != null && typeof usage.inputTokens === "object";
 }
 
 function extractAISDK6OutputTokenDetails(
