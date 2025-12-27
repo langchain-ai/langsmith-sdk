@@ -2182,4 +2182,522 @@ describe("wrapAISDK", () => {
       expect(outputTokenDetails.flex).toBe(40); // 50 - 10
     });
   });
+
+  describe("ToolLoopAgent tracing", () => {
+    it("should wrap ToolLoopAgent class correctly", async () => {
+      const wrappedMethods = wrapAISDK(
+        {
+          wrapLanguageModel: ai.wrapLanguageModel,
+          generateText: ai.generateText,
+          streamText: ai.streamText,
+          generateObject: ai.generateObject,
+          streamObject: ai.streamObject,
+          ToolLoopAgent: ai.ToolLoopAgent,
+        },
+        { client: mockClient as any }
+      );
+
+      // Verify ToolLoopAgent was wrapped
+      expect(wrappedMethods.ToolLoopAgent).toBeDefined();
+      expect(wrappedMethods.ToolLoopAgent).not.toBe(ai.ToolLoopAgent);
+    });
+
+    it("should trace ToolLoopAgent.generate() without tools", async () => {
+      const wrappedMethods = wrapAISDK(
+        {
+          wrapLanguageModel: ai.wrapLanguageModel,
+          generateText: ai.generateText,
+          streamText: ai.streamText,
+          generateObject: ai.generateObject,
+          streamObject: ai.streamObject,
+          ToolLoopAgent: ai.ToolLoopAgent,
+        },
+        { client: mockClient as any }
+      );
+
+      const mockLangModel = new MockLanguageModelV3({
+        modelId: "no-tools-test",
+        doGenerate: async () => ({
+          content: [
+            {
+              type: "text" as const,
+              text: "Direct response without tools",
+            },
+          ],
+          finishReason: { unified: "stop" as const, raw: "stop" },
+          usage: {
+            promptTokens: 20,
+            completionTokens: 8,
+            inputTokens: {
+              total: 20,
+              noCache: 20,
+              cacheRead: 0,
+              cacheWrite: 0,
+            },
+            outputTokens: { total: 8, text: 8, reasoning: 0 },
+            totalTokens: 28,
+          },
+          warnings: [],
+        }),
+      });
+
+      const agent = new wrappedMethods.ToolLoopAgent({
+        model: mockLangModel,
+        tools: {},
+      });
+
+      const result = await agent.generate({
+        prompt: "Just answer directly",
+      });
+
+      expect(result.text).toBe("Direct response without tools");
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Should have agent run and LLM run, but no tool runs
+      const agentRun = mockHttpRequests.find(
+        (req) =>
+          req.type === "createRun" &&
+          req.body.extra.metadata.ai_sdk_method === "ai.ToolLoopAgent.generate"
+      );
+      expect(agentRun).toBeDefined();
+      expect(agentRun.body.name).toBe("ToolLoopAgent");
+      expect(agentRun.body.inputs).toHaveProperty(
+        "prompt",
+        "Just answer directly"
+      );
+
+      const llmRun = mockHttpRequests.find(
+        (req) =>
+          req.type === "createRun" &&
+          req.body.extra.metadata.ai_sdk_method === "ai.doGenerate"
+      );
+      expect(llmRun).toBeDefined();
+
+      const toolRuns = mockHttpRequests.filter(
+        (req) => req.type === "createRun" && req.body.run_type === "tool"
+      );
+      expect(toolRuns.length).toBe(0);
+
+      // Verify agent update run has response_metadata with steps
+      const agentUpdateRun = mockHttpRequests.find(
+        (req) =>
+          req.type === "updateRun" &&
+          req.body.extra?.metadata?.ai_sdk_method ===
+            "ai.ToolLoopAgent.generate"
+      );
+      expect(agentUpdateRun).toBeDefined();
+      expect(agentUpdateRun.body.outputs.response_metadata).toBeDefined();
+      expect(agentUpdateRun.body.outputs.response_metadata.steps).toBeDefined();
+    });
+
+    it("should trace ToolLoopAgent.stream() without tools", async () => {
+      const wrappedMethods = wrapAISDK(
+        {
+          wrapLanguageModel: ai.wrapLanguageModel,
+          generateText: ai.generateText,
+          streamText: ai.streamText,
+          generateObject: ai.generateObject,
+          streamObject: ai.streamObject,
+          ToolLoopAgent: ai.ToolLoopAgent,
+        },
+        { client: mockClient as any }
+      );
+
+      const mockLangModel = new MockLanguageModelV3({
+        modelId: "stream-no-tools-test",
+        doStream: async () => ({
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "text-start", id: "text-1" },
+              { type: "text-delta", id: "text-1", delta: "Stream response" },
+              { type: "text-end", id: "text-1" },
+              {
+                type: "finish" as const,
+                finishReason: { unified: "stop", raw: "stop" },
+                usage: {
+                  inputTokens: {
+                    total: 15,
+                    noCache: 15,
+                    cacheRead: 0,
+                    cacheWrite: 0,
+                  },
+                  outputTokens: { total: 5, text: 5, reasoning: 0 },
+                  totalTokens: 20,
+                },
+              },
+            ],
+          }),
+        }),
+      });
+
+      const agent = new wrappedMethods.ToolLoopAgent({
+        model: mockLangModel,
+        tools: {},
+      });
+
+      const result = await agent.stream({
+        prompt: "Stream test",
+      });
+
+      // Consume the stream
+      let fullText = "";
+      for await (const textPart of result.textStream) {
+        fullText += textPart;
+      }
+
+      expect(fullText).toBe("Stream response");
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Verify agent stream run was created
+      const agentRun = mockHttpRequests.find(
+        (req) =>
+          req.type === "createRun" &&
+          req.body.extra.metadata.ai_sdk_method === "ai.ToolLoopAgent.stream"
+      );
+      expect(agentRun).toBeDefined();
+      expect(agentRun.body.name).toBe("ToolLoopAgent");
+
+      const agentUpdateRun = mockHttpRequests.find(
+        (req) =>
+          req.type === "updateRun" &&
+          req.body.extra?.metadata?.ai_sdk_method === "ai.ToolLoopAgent.stream"
+      );
+      expect(agentUpdateRun).toBeDefined();
+      expect(agentUpdateRun.body.outputs.response_metadata.steps).toBeDefined();
+    });
+
+    it("should handle ToolLoopAgent with custom processInputs/processOutputs", async () => {
+      const wrappedMethods = wrapAISDK(
+        {
+          wrapLanguageModel: ai.wrapLanguageModel,
+          generateText: ai.generateText,
+          streamText: ai.streamText,
+          generateObject: ai.generateObject,
+          streamObject: ai.streamObject,
+          ToolLoopAgent: ai.ToolLoopAgent,
+        },
+        { client: mockClient as any }
+      );
+
+      const mockLangModel = new MockLanguageModelV3({
+        modelId: "agent-process-test",
+        doGenerate: async () => ({
+          content: [{ type: "text" as const, text: "Final answer" }],
+          finishReason: { unified: "stop" as const, raw: "stop" },
+          usage: {
+            promptTokens: 30,
+            completionTokens: 10,
+            inputTokens: {
+              total: 30,
+              noCache: 30,
+              cacheRead: 0,
+              cacheWrite: 0,
+            },
+            outputTokens: { total: 10, text: 10, reasoning: 0 },
+            totalTokens: 40,
+          },
+          warnings: [],
+        }),
+      });
+
+      const lsConfig = createLangSmithProviderOptions({
+        processInputs: (inputs) => ({
+          ...inputs,
+          prompt: "REDACTED_PROMPT",
+        }),
+        processOutputs: (outputs) => ({
+          ...outputs.outputs,
+          content: [{ type: "text", text: "REDACTED_OUTPUT" }],
+        }),
+        processChildLLMRunInputs: (inputs) => ({
+          messages: inputs.prompt.map((msg: any) => ({
+            ...msg,
+            content: "REDACTED_CHILD_INPUT",
+          })),
+        }),
+        processChildLLMRunOutputs: (outputs) => ({
+          content: "REDACTED_CHILD_OUTPUT",
+          role: "assistant",
+        }),
+      });
+
+      const agent = new wrappedMethods.ToolLoopAgent({
+        model: mockLangModel,
+        tools: {},
+        providerOptions: { langsmith: lsConfig },
+      });
+
+      await agent.generate({
+        prompt: "Secret prompt that should be redacted",
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Verify parent agent run has redacted inputs/outputs
+      const agentCreateRun = mockHttpRequests.find(
+        (req) =>
+          req.type === "createRun" &&
+          req.body.extra.metadata.ai_sdk_method === "ai.ToolLoopAgent.generate"
+      );
+      expect(agentCreateRun).toBeDefined();
+      expect(agentCreateRun.body.inputs.prompt).toBe("REDACTED_PROMPT");
+
+      const agentUpdateRun = mockHttpRequests.find(
+        (req) =>
+          req.type === "updateRun" &&
+          req.body.extra?.metadata?.ai_sdk_method ===
+            "ai.ToolLoopAgent.generate"
+      );
+      expect(agentUpdateRun).toBeDefined();
+      expect(agentUpdateRun.body.outputs.content[0].text).toBe(
+        "REDACTED_OUTPUT"
+      );
+
+      // Verify child LLM run has redacted inputs/outputs
+      const llmCreateRun = mockHttpRequests.find(
+        (req) =>
+          req.type === "createRun" &&
+          req.body.extra.metadata.ai_sdk_method === "ai.doGenerate"
+      );
+      expect(llmCreateRun).toBeDefined();
+      expect(llmCreateRun.body.inputs.messages[0].content).toBe(
+        "REDACTED_CHILD_INPUT"
+      );
+
+      const llmUpdateRun = mockHttpRequests.find(
+        (req) =>
+          req.type === "updateRun" &&
+          req.body.extra?.metadata?.ai_sdk_method === "ai.doGenerate"
+      );
+      expect(llmUpdateRun).toBeDefined();
+      expect(llmUpdateRun.body.outputs.content).toBe("REDACTED_CHILD_OUTPUT");
+    });
+
+    it("should handle ToolLoopAgent with metadata config", async () => {
+      const wrappedMethods = wrapAISDK(
+        {
+          wrapLanguageModel: ai.wrapLanguageModel,
+          generateText: ai.generateText,
+          streamText: ai.streamText,
+          generateObject: ai.generateObject,
+          streamObject: ai.streamObject,
+          ToolLoopAgent: ai.ToolLoopAgent,
+        },
+        {
+          client: mockClient as any,
+          metadata: { testKey: "testValue" },
+          tags: ["agent-test"],
+        }
+      );
+
+      const mockLangModel = new MockLanguageModelV3({
+        modelId: "metadata-test-model",
+        doGenerate: async () => ({
+          content: [{ type: "text" as const, text: "Response" }],
+          finishReason: { unified: "stop" as const, raw: "stop" },
+          usage: {
+            promptTokens: 10,
+            completionTokens: 5,
+            inputTokens: {
+              total: 10,
+              noCache: 10,
+              cacheRead: 0,
+              cacheWrite: 0,
+            },
+            outputTokens: { total: 5, text: 5, reasoning: 0 },
+            totalTokens: 15,
+          },
+          warnings: [],
+        }),
+      });
+
+      const agent = new wrappedMethods.ToolLoopAgent({
+        model: mockLangModel,
+        tools: {},
+      });
+
+      await agent.generate({ prompt: "Test" });
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      const agentRun = mockHttpRequests.find(
+        (req) =>
+          req.type === "createRun" &&
+          req.body.extra.metadata.ai_sdk_method === "ai.ToolLoopAgent.generate"
+      );
+      expect(agentRun).toBeDefined();
+      expect(agentRun.body.extra.metadata.testKey).toBe("testValue");
+      expect(agentRun.body.tags).toContain("agent-test");
+    });
+
+    it("should trace LLM child runs (doGenerate/doStream) within ToolLoopAgent", async () => {
+      const wrappedMethods = wrapAISDK(
+        {
+          wrapLanguageModel: ai.wrapLanguageModel,
+          generateText: ai.generateText,
+          streamText: ai.streamText,
+          generateObject: ai.generateObject,
+          streamObject: ai.streamObject,
+          ToolLoopAgent: ai.ToolLoopAgent,
+        },
+        { client: mockClient as any }
+      );
+
+      const mockLangModel = new MockLanguageModelV3({
+        modelId: "llm-tracing-test-model",
+        doGenerate: async () => ({
+          content: [{ type: "text" as const, text: "LLM response" }],
+          finishReason: { unified: "stop" as const, raw: "stop" },
+          usage: {
+            promptTokens: 25,
+            completionTokens: 12,
+            inputTokens: {
+              total: 25,
+              noCache: 20,
+              cacheRead: 5,
+              cacheWrite: 0,
+            },
+            outputTokens: { total: 12, text: 10, reasoning: 2 },
+            totalTokens: 37,
+          },
+          warnings: [],
+        }),
+        doStream: async () => ({
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "text-start", id: "text-1" },
+              {
+                type: "text-delta",
+                id: "text-1",
+                delta: "Streamed LLM response",
+              },
+              { type: "text-end", id: "text-1" },
+              {
+                type: "finish" as const,
+                finishReason: { unified: "stop", raw: "stop" },
+                usage: {
+                  inputTokens: {
+                    total: 30,
+                    noCache: 25,
+                    cacheRead: 5,
+                    cacheWrite: 0,
+                  },
+                  outputTokens: { total: 15, text: 13, reasoning: 2 },
+                  totalTokens: 45,
+                },
+              },
+            ],
+          }),
+        }),
+      });
+
+      const agent = new wrappedMethods.ToolLoopAgent({
+        model: mockLangModel,
+        tools: {},
+      });
+
+      // Test generate() - should create doGenerate child run
+      await agent.generate({ prompt: "Test generate" });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      const doGenerateCreateRun = mockHttpRequests.find(
+        (req) =>
+          req.type === "createRun" &&
+          req.body.extra.metadata.ai_sdk_method === "ai.doGenerate"
+      );
+      expect(doGenerateCreateRun).toBeDefined();
+      expect(doGenerateCreateRun.body.extra.metadata.ls_model_name).toBe(
+        "llm-tracing-test-model"
+      );
+
+      const doGenerateUpdateRun = mockHttpRequests.find(
+        (req) =>
+          req.type === "updateRun" &&
+          req.body.extra?.metadata?.ai_sdk_method === "ai.doGenerate"
+      );
+      expect(doGenerateUpdateRun).toBeDefined();
+      expect(
+        doGenerateUpdateRun.body.extra.metadata.usage_metadata
+      ).toBeDefined();
+      expect(
+        doGenerateUpdateRun.body.extra.metadata.usage_metadata.input_tokens
+      ).toBe(25);
+      expect(
+        doGenerateUpdateRun.body.extra.metadata.usage_metadata.output_tokens
+      ).toBe(12);
+      expect(
+        doGenerateUpdateRun.body.extra.metadata.usage_metadata.total_tokens
+      ).toBe(37);
+      // Verify token details
+      expect(
+        doGenerateUpdateRun.body.extra.metadata.usage_metadata
+          .input_token_details
+      ).toBeDefined();
+      expect(
+        doGenerateUpdateRun.body.extra.metadata.usage_metadata
+          .input_token_details.cache_read
+      ).toBe(5);
+      expect(
+        doGenerateUpdateRun.body.extra.metadata.usage_metadata
+          .output_token_details
+      ).toBeDefined();
+      expect(
+        doGenerateUpdateRun.body.extra.metadata.usage_metadata
+          .output_token_details.reasoning
+      ).toBe(2);
+
+      // Clear requests for stream test
+      mockHttpRequests.length = 0;
+
+      // Test stream() - should create doStream child run
+      const streamResult = await agent.stream({ prompt: "Test stream" });
+      let streamedText = "";
+      for await (const chunk of streamResult.textStream) {
+        streamedText += chunk;
+      }
+      expect(streamedText).toBe("Streamed LLM response");
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      const doStreamCreateRun = mockHttpRequests.find(
+        (req) =>
+          req.type === "createRun" &&
+          req.body.extra.metadata.ai_sdk_method === "ai.doStream"
+      );
+      expect(doStreamCreateRun).toBeDefined();
+      expect(doStreamCreateRun.body.extra.metadata.ls_model_name).toBe(
+        "llm-tracing-test-model"
+      );
+
+      const doStreamUpdateRun = mockHttpRequests.find(
+        (req) =>
+          req.type === "updateRun" &&
+          req.body.extra?.metadata?.ai_sdk_method === "ai.doStream"
+      );
+      expect(doStreamUpdateRun).toBeDefined();
+      expect(
+        doStreamUpdateRun.body.extra.metadata.usage_metadata
+      ).toBeDefined();
+      expect(
+        doStreamUpdateRun.body.extra.metadata.usage_metadata.input_tokens
+      ).toBe(30);
+      expect(
+        doStreamUpdateRun.body.extra.metadata.usage_metadata.output_tokens
+      ).toBe(15);
+      expect(
+        doStreamUpdateRun.body.extra.metadata.usage_metadata.total_tokens
+      ).toBe(45);
+      // Verify token details for streaming
+      expect(
+        doStreamUpdateRun.body.extra.metadata.usage_metadata.input_token_details
+          .cache_read
+      ).toBe(5);
+      expect(
+        doStreamUpdateRun.body.extra.metadata.usage_metadata
+          .output_token_details.reasoning
+      ).toBe(2);
+    });
+  });
 });
