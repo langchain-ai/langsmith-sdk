@@ -1,31 +1,27 @@
 """Prompt caching module for LangSmith SDK.
 
-This module provides a thread-safe LRU cache with filesystem persistence
-and background TTL-based refresh for prompt caching.
+This module provides thread-safe LRU caches with background refresh
+for prompt caching. Includes both sync and async implementations.
 """
 
 from __future__ import annotations
 
-import hashlib
+import asyncio
 import json
 import logging
 import os
 import threading
 import time
-import weakref
+from abc import ABC
 from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Optional, TypeVar
-
-from langsmith._internal._serde import dumps_json
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional, Union
 
 if TYPE_CHECKING:
     from langsmith import schemas as ls_schemas
 
 logger = logging.getLogger("langsmith.cache")
-
-T = TypeVar("T")
 
 
 @dataclass
@@ -33,37 +29,20 @@ class CacheEntry:
     """A single cache entry with metadata for TTL tracking."""
 
     value: Any  # The cached value (e.g., PromptCommit)
-    created_at: float  # time.time() when entry was created
-    last_accessed_at: float  # time.time() when entry was last accessed
-    refresh_attempted_at: Optional[float] = None  # When background refresh was last attempted
+    created_at: float  # time.time() when entry was created/refreshed
 
-    def is_stale(self, ttl_seconds: float) -> bool:
+    def is_stale(self, ttl_seconds: Optional[float]) -> bool:
         """Check if entry is past its TTL (needs refresh)."""
+        if ttl_seconds is None:
+            return False  # Infinite TTL, never stale
         return (time.time() - self.created_at) > ttl_seconds
 
-    def is_expired(self, max_stale_seconds: float) -> bool:
-        """Check if entry is too old to serve even as stale data."""
-        return (time.time() - self.created_at) > max_stale_seconds
 
+class _BasePromptCache(ABC):
+    """Base class for prompt caches with shared LRU logic.
 
-class PromptCache:
-    """Thread-safe LRU cache with filesystem persistence and background refresh.
-
-    Features:
-    - In-memory LRU cache with configurable max size
-    - Write-through filesystem persistence (JSON format)
-    - Background TTL-based refresh (stale-while-revalidate)
-    - Thread-safe for concurrent access
-    - Cache warming from filesystem on startup
-
-    Example:
-        >>> cache = PromptCache(
-        ...     max_size=100,
-        ...     ttl_seconds=3600,
-        ...     persist_path="/path/to/cache",
-        ... )
-        >>> cache.set("my-prompt:latest", prompt_commit)
-        >>> cached = cache.get("my-prompt:latest")
+    Provides thread-safe in-memory LRU cache operations.
+    Subclasses implement the background refresh mechanism.
     """
 
     __slots__ = [
@@ -71,13 +50,7 @@ class PromptCache:
         "_lock",
         "_max_size",
         "_ttl_seconds",
-        "_max_stale_seconds",
-        "_persist_path",
-        "_refresh_interval_seconds",
-        "_refresh_thread",
-        "_stop_event",
-        "_fetch_func",
-        "_client_ref",
+        "_refresh_interval",
         "_enabled",
     ]
 
@@ -85,127 +58,73 @@ class PromptCache:
         self,
         *,
         max_size: int = 100,
-        ttl_seconds: float = 3600.0,  # 1 hour
-        max_stale_seconds: float = 86400.0,  # 24 hours
-        persist_path: Optional[str] = None,
+        ttl_seconds: Optional[float] = 3600.0,
         refresh_interval_seconds: float = 60.0,
-        fetch_func: Optional[Callable[[str], Any]] = None,
-        client_ref: Optional[weakref.ref] = None,
         enabled: bool = True,
     ) -> None:
-        """Initialize the prompt cache.
+        """Initialize the base cache.
 
         Args:
             max_size: Maximum entries in cache (LRU eviction when exceeded).
-            ttl_seconds: Time before entry is considered stale and needs refresh.
-            max_stale_seconds: Maximum time to serve stale data before requiring fresh fetch.
-            persist_path: Directory for JSON cache files. Defaults to ~/.langsmith/prompt_cache/
-            refresh_interval_seconds: Interval for background thread to check for stale entries.
-            fetch_func: Function to fetch fresh data, signature: (key: str) -> Any.
-            client_ref: Weak reference to the Client instance for lifecycle management.
+            ttl_seconds: Time before entry is considered stale. Set to None for
+                infinite TTL (entries never expire, no background refresh).
+            refresh_interval_seconds: How often to check for stale entries.
             enabled: Whether caching is enabled.
         """
         self._cache: OrderedDict[str, CacheEntry] = OrderedDict()
         self._lock = threading.RLock()
         self._max_size = max_size
         self._ttl_seconds = ttl_seconds
-        self._max_stale_seconds = max_stale_seconds
-        self._persist_path = Path(persist_path) if persist_path else self._default_persist_path()
-        self._refresh_interval_seconds = refresh_interval_seconds
-        self._fetch_func = fetch_func
-        self._client_ref = client_ref
+        self._refresh_interval = refresh_interval_seconds
         self._enabled = enabled
-        self._stop_event = threading.Event()
-        self._refresh_thread: Optional[threading.Thread] = None
 
-        if self._enabled:
-            # Ensure persist directory exists
-            try:
-                self._persist_path.mkdir(parents=True, exist_ok=True)
-            except OSError as e:
-                logger.warning(f"Failed to create cache directory {self._persist_path}: {e}")
-
-            # Warm cache from filesystem
-            self._warm_from_filesystem()
-
-            # Start background refresh thread
-            self._start_refresh_thread()
-
-    @staticmethod
-    def _default_persist_path() -> Path:
-        """Get default cache directory path."""
-        return Path.home() / ".langsmith" / "prompt_cache"
-
-    def get(self, key: str) -> Optional[ls_schemas.PromptCommit]:
+    def get(self, key: str) -> Optional[Any]:
         """Get a value from cache.
-
-        Returns cached value if available (even if stale, within max_stale_seconds).
-        Triggers background refresh if entry is stale.
-        Returns None if no entry exists or entry is too old.
 
         Args:
             key: The cache key (prompt identifier like "owner/name:hash").
 
         Returns:
-            The cached PromptCommit or None if not found/expired.
+            The cached value or None if not found.
+            Stale entries are still returned (background refresh handles updates).
         """
         if not self._enabled:
             return None
 
         with self._lock:
             if key not in self._cache:
-                # Try loading from filesystem
-                entry = self._load_from_filesystem(key)
-                if entry is None:
-                    return None
-                self._cache[key] = entry
+                return None
 
             entry = self._cache[key]
 
-            # Check if too old to serve
-            if entry.is_expired(self._max_stale_seconds):
-                self._cache.pop(key, None)
-                self._delete_from_filesystem(key)
-                return None
-
             # Move to end for LRU
             self._cache.move_to_end(key)
-            entry.last_accessed_at = time.time()
 
-            # Return value (may be stale, refresh happens in background)
             return entry.value
 
-    def set(self, key: str, value: ls_schemas.PromptCommit) -> None:
-        """Set a value in the cache with write-through persistence.
+    def set(self, key: str, value: Any) -> None:
+        """Set a value in the cache.
 
         Args:
             key: The cache key (prompt identifier).
-            value: The PromptCommit to cache.
+            value: The value to cache.
         """
         if not self._enabled:
             return
 
         with self._lock:
             now = time.time()
-            entry = CacheEntry(
-                value=value,
-                created_at=now,
-                last_accessed_at=now,
-            )
+            entry = CacheEntry(value=value, created_at=now)
 
             # Check if we need to evict
             if key not in self._cache and len(self._cache) >= self._max_size:
                 # Evict oldest (first item in OrderedDict)
                 oldest_key = next(iter(self._cache))
                 self._cache.pop(oldest_key)
-                self._delete_from_filesystem(oldest_key)
                 logger.debug(f"Evicted oldest cache entry: {oldest_key}")
 
             self._cache[key] = entry
             self._cache.move_to_end(key)
-
-            # Write-through to filesystem
-            self._persist_to_filesystem(key, entry)
 
     def invalidate(self, key: str) -> None:
         """Remove a specific entry from cache.
@@ -218,242 +137,346 @@ class PromptCache:
 
         with self._lock:
             self._cache.pop(key, None)
-            self._delete_from_filesystem(key)
 
     def clear(self) -> None:
-        """Clear all cache entries from memory and filesystem."""
+        """Clear all cache entries from memory."""
         with self._lock:
             self._cache.clear()
-            # Clear filesystem cache
-            if self._persist_path.exists():
-                for f in self._persist_path.glob("*.json"):
-                    try:
-                        f.unlink()
-                    except OSError:
-                        pass
 
-    # -------------------------------------------------------------------------
-    # Filesystem persistence
-    # -------------------------------------------------------------------------
+    def _get_stale_keys(self) -> list[str]:
+        """Get list of stale cache keys (thread-safe)."""
+        with self._lock:
+            return [
+                key
+                for key, entry in self._cache.items()
+                if entry.is_stale(self._ttl_seconds)
+            ]
 
-    def _key_to_filename(self, key: str) -> str:
-        """Convert cache key to safe filename.
+    def dump(self, path: Union[str, Path]) -> None:
+        """Dump cache contents to a JSON file for offline use.
 
-        Handles special characters in prompt identifiers like "owner/name:hash".
+        Args:
+            path: Path to the output JSON file.
         """
-        # Use hash for safety with special chars, but keep prefix for debugging
-        safe_prefix = key.replace("/", "_").replace(":", "_")[:50]
-        key_hash = hashlib.sha256(key.encode()).hexdigest()[:16]
-        return f"{safe_prefix}_{key_hash}.json"
-
-    def _persist_to_filesystem(self, key: str, entry: CacheEntry) -> None:
-        """Write cache entry to filesystem with atomic write."""
-        try:
-            filename = self._key_to_filename(key)
-            filepath = self._persist_path / filename
-
-            # Serialize the value using Pydantic's method
-            if hasattr(entry.value, "model_dump"):
-                value_dict = entry.value.model_dump()  # Pydantic v2
-            elif hasattr(entry.value, "dict"):
-                value_dict = entry.value.dict()  # Pydantic v1
-            else:
-                value_dict = entry.value
-
-            data = {
-                "key": key,
-                "value": value_dict,
-                "created_at": entry.created_at,
-                "last_accessed_at": entry.last_accessed_at,
-            }
-
-            # Write atomically using temp file + rename
-            temp_path = filepath.with_suffix(".tmp")
-            with open(temp_path, "wb") as f:
-                f.write(dumps_json(data))
-            temp_path.rename(filepath)
-
-        except Exception as e:
-            logger.warning(f"Failed to persist cache entry {key}: {e}")
-
-    def _load_from_filesystem(self, key: str) -> Optional[CacheEntry]:
-        """Load cache entry from filesystem."""
-        try:
-            from langsmith import schemas as ls_schemas
-
-            filename = self._key_to_filename(key)
-            filepath = self._persist_path / filename
-
-            if not filepath.exists():
-                return None
-
-            with open(filepath, "r") as f:
-                data = json.load(f)
-
-            # Validate key matches
-            if data.get("key") != key:
-                logger.warning(f"Cache key mismatch in file {filename}")
-                return None
-
-            # Reconstruct PromptCommit
-            value = ls_schemas.PromptCommit(**data["value"])
-
-            return CacheEntry(
-                value=value,
-                created_at=data["created_at"],
-                last_accessed_at=data.get("last_accessed_at", data["created_at"]),
-            )
-
-        except Exception as e:
-            logger.warning(f"Failed to load cache entry {key}: {e}")
-            return None
-
-    def _delete_from_filesystem(self, key: str) -> None:
-        """Delete cache entry from filesystem."""
-        try:
-            filename = self._key_to_filename(key)
-            filepath = self._persist_path / filename
-            if filepath.exists():
-                filepath.unlink()
-        except Exception as e:
-            logger.warning(f"Failed to delete cache file for {key}: {e}")
-
-    def _warm_from_filesystem(self) -> None:
-        """Load existing cache entries from filesystem on startup."""
-        if not self._persist_path.exists():
-            return
-
         from langsmith import schemas as ls_schemas
 
-        loaded_count = 0
-        for filepath in self._persist_path.glob("*.json"):
-            try:
-                with open(filepath, "r") as f:
-                    data = json.load(f)
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
 
-                key = data.get("key")
-                if not key:
-                    continue
-
-                value = ls_schemas.PromptCommit(**data["value"])
-                entry = CacheEntry(
-                    value=value,
-                    created_at=data["created_at"],
-                    last_accessed_at=data.get("last_accessed_at", data["created_at"]),
-                )
-
-                # Skip if expired
-                if entry.is_expired(self._max_stale_seconds):
-                    try:
-                        filepath.unlink()
-                    except OSError:
-                        pass
-                    continue
-
-                # Add to cache (respecting max_size)
-                if len(self._cache) < self._max_size:
-                    self._cache[key] = entry
-                    loaded_count += 1
-
-            except Exception as e:
-                logger.warning(f"Failed to warm cache from {filepath}: {e}")
-
-        if loaded_count > 0:
-            logger.debug(f"Warmed cache with {loaded_count} entries from filesystem")
-
-    # -------------------------------------------------------------------------
-    # Background refresh thread
-    # -------------------------------------------------------------------------
-
-    def _start_refresh_thread(self) -> None:
-        """Start the background refresh thread."""
-        if self._refresh_thread is not None:
-            return
-
-        self._refresh_thread = threading.Thread(
-            target=self._refresh_thread_func,
-            daemon=True,
-            name="langsmith-prompt-cache-refresh",
-        )
-        self._refresh_thread.start()
-
-    def _refresh_thread_func(self) -> None:
-        """Background thread that refreshes stale cache entries."""
-        logger.debug("Prompt cache refresh thread started")
-
-        while not self._stop_event.is_set():
-            try:
-                self._refresh_stale_entries()
-            except Exception as e:
-                logger.warning(f"Error in cache refresh thread: {e}")
-
-            # Wait for next refresh interval or stop event
-            self._stop_event.wait(timeout=self._refresh_interval_seconds)
-
-        logger.debug("Prompt cache refresh thread stopped")
-
-    def _refresh_stale_entries(self) -> None:
-        """Find and refresh stale entries."""
-        if self._fetch_func is None:
-            return
-
-        # Check if client is still alive
-        if self._client_ref is not None:
-            client = self._client_ref()
-            if client is None or getattr(client, "_manual_cleanup", False):
-                self._stop_event.set()
-                return
-
-        # Get list of stale entries (copy to avoid holding lock during refresh)
-        stale_keys = []
         with self._lock:
-            now = time.time()
+            entries = {}
             for key, entry in self._cache.items():
-                if entry.is_stale(self._ttl_seconds):
-                    # Only attempt refresh if not recently attempted
-                    if (
-                        entry.refresh_attempted_at is None
-                        or (now - entry.refresh_attempted_at) > self._refresh_interval_seconds
-                    ):
-                        stale_keys.append(key)
+                # Serialize PromptCommit using Pydantic
+                if isinstance(entry.value, ls_schemas.PromptCommit):
+                    # Handle both pydantic v1 and v2
+                    if hasattr(entry.value, "model_dump"):
+                        value_data = entry.value.model_dump(mode="json")
+                    else:
+                        value_data = entry.value.dict()
+                else:
+                    # Fallback for other types
+                    value_data = entry.value
 
-        # Refresh stale entries (outside lock)
-        for key in stale_keys:
-            self._refresh_entry(key)
+                entries[key] = value_data
 
-    def _refresh_entry(self, key: str) -> None:
-        """Refresh a single cache entry."""
-        if self._fetch_func is None:
-            return
+            data = {"entries": entries}
 
-        # Mark refresh attempted
-        with self._lock:
-            if key in self._cache:
-                self._cache[key].refresh_attempted_at = time.time()
+        # Atomic write: write to temp file then rename
+        temp_path = path.with_suffix(".tmp")
+        try:
+            with open(temp_path, "w") as f:
+                json.dump(data, f, indent=2)
+            temp_path.replace(path)
+            logger.debug(f"Dumped {len(entries)} cache entries to {path}")
+        except Exception as e:
+            # Clean up temp file on failure
+            if temp_path.exists():
+                temp_path.unlink()
+            raise e
+
+    def load(self, path: Union[str, Path]) -> int:
+        """Load cache contents from a JSON file.
+
+        Args:
+            path: Path to the JSON file to load.
+
+        Returns:
+            Number of entries loaded.
+
+        Loaded entries get a fresh TTL starting from load time.
+        If the file doesn't exist or is corrupted, returns 0.
+        """
+        from langsmith import schemas as ls_schemas
+
+        path = Path(path)
+
+        if not path.exists():
+            logger.debug(f"Cache file not found: {path}")
+            return 0
 
         try:
-            # Fetch fresh data
-            fresh_value = self._fetch_func(key)
+            with open(path, "r") as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning(f"Failed to load cache file {path}: {e}")
+            return 0
 
-            # Update cache with fresh data
-            self.set(key, fresh_value)
-            logger.debug(f"Successfully refreshed cache entry: {key}")
+        entries = data.get("entries", {})
+        loaded = 0
+        now = time.time()
 
-        except Exception as e:
-            # On refresh failure, keep serving stale data
-            logger.debug(f"Failed to refresh cache entry {key}: {e}")
-            # Entry remains in cache with stale data
+        with self._lock:
+            for key, value_data in entries.items():
+                if len(self._cache) >= self._max_size:
+                    logger.debug(f"Reached max cache size, stopping load at {loaded}")
+                    break
+
+                try:
+                    # Deserialize PromptCommit using Pydantic (v1 and v2 compatible)
+                    if hasattr(ls_schemas.PromptCommit, "model_validate"):
+                        value = ls_schemas.PromptCommit.model_validate(value_data)
+                    else:
+                        value = ls_schemas.PromptCommit.parse_obj(value_data)
+
+                    # Fresh TTL from load time
+                    entry = CacheEntry(value=value, created_at=now)
+                    self._cache[key] = entry
+                    loaded += 1
+                except Exception as e:
+                    logger.warning(f"Failed to load cache entry {key}: {e}")
+                    continue
+
+        logger.debug(f"Loaded {loaded} cache entries from {path}")
+        return loaded
+
+
+class PromptCache(_BasePromptCache):
+    """Thread-safe LRU cache with background thread refresh.
+
+    For use with the synchronous Client.
+
+    Features:
+    - In-memory LRU cache with configurable max size
+    - Background thread for refreshing stale entries
+    - Stale-while-revalidate: returns stale data while refresh happens
+    - Thread-safe for concurrent access
+
+    Example:
+        >>> def fetch_prompt(key: str) -> PromptCommit:
+        ...     return client._fetch_prompt_from_api(key)
+        >>> cache = PromptCache(
+        ...     max_size=100,
+        ...     ttl_seconds=3600,
+        ...     fetch_func=fetch_prompt,
+        ... )
+        >>> cache.set("my-prompt:latest", prompt_commit)
+        >>> cached = cache.get("my-prompt:latest")
+        >>> cache.shutdown()
+    """
+
+    __slots__ = ["_fetch_func", "_shutdown_event", "_refresh_thread"]
+
+    def __init__(
+        self,
+        *,
+        max_size: int = 100,
+        ttl_seconds: Optional[float] = 3600.0,
+        refresh_interval_seconds: float = 60.0,
+        fetch_func: Optional[Callable[[str], Any]] = None,
+        enabled: bool = True,
+    ) -> None:
+        """Initialize the sync prompt cache.
+
+        Args:
+            max_size: Maximum entries in cache (LRU eviction when exceeded).
+            ttl_seconds: Time before entry is considered stale. Set to None for
+                infinite TTL (offline mode - entries never expire).
+            refresh_interval_seconds: How often to check for stale entries.
+            fetch_func: Callback to fetch fresh data for a cache key.
+                If provided, starts a background thread for refresh.
+            enabled: Whether caching is enabled.
+        """
+        super().__init__(
+            max_size=max_size,
+            ttl_seconds=ttl_seconds,
+            refresh_interval_seconds=refresh_interval_seconds,
+            enabled=enabled,
+        )
+        self._fetch_func = fetch_func
+        self._shutdown_event = threading.Event()
+        self._refresh_thread: Optional[threading.Thread] = None
+
+        # Start background refresh if fetch_func provided and TTL is set
+        # (no refresh needed for infinite TTL)
+        if self._enabled and self._fetch_func is not None and self._ttl_seconds is not None:
+            self._start_refresh_thread()
 
     def shutdown(self) -> None:
-        """Stop the background refresh thread and cleanup."""
-        self._stop_event.set()
+        """Stop background refresh thread.
+
+        Should be called when the client is being cleaned up.
+        """
+        self._shutdown_event.set()
         if self._refresh_thread is not None:
             self._refresh_thread.join(timeout=5.0)
             self._refresh_thread = None
 
-    def __del__(self) -> None:
-        """Cleanup on garbage collection."""
+    def _start_refresh_thread(self) -> None:
+        """Start background thread for refreshing stale entries."""
+        self._refresh_thread = threading.Thread(
+            target=self._refresh_loop,
+            daemon=True,
+            name="PromptCache-refresh",
+        )
+        self._refresh_thread.start()
+        logger.debug("Started cache refresh thread")
+
+    def _refresh_loop(self) -> None:
+        """Background loop to refresh stale entries."""
+        while not self._shutdown_event.wait(self._refresh_interval):
+            self._refresh_stale_entries()
+
+    def _refresh_stale_entries(self) -> None:
+        """Check for stale entries and refresh them."""
+        if self._fetch_func is None:
+            return
+
+        stale_keys = self._get_stale_keys()
+
+        if not stale_keys:
+            return
+
+        logger.debug(f"Refreshing {len(stale_keys)} stale cache entries")
+
+        for key in stale_keys:
+            if self._shutdown_event.is_set():
+                break
+            try:
+                new_value = self._fetch_func(key)
+                self.set(key, new_value)
+                logger.debug(f"Refreshed cache entry: {key}")
+            except Exception as e:
+                # Keep stale data on refresh failure
+                logger.warning(f"Failed to refresh cache entry {key}: {e}")
+
+
+class AsyncPromptCache(_BasePromptCache):
+    """Thread-safe LRU cache with asyncio task refresh.
+
+    For use with the asynchronous AsyncClient.
+
+    Features:
+    - In-memory LRU cache with configurable max size
+    - Asyncio task for refreshing stale entries
+    - Stale-while-revalidate: returns stale data while refresh happens
+    - Thread-safe for concurrent access
+
+    Example:
+        >>> async def fetch_prompt(key: str) -> PromptCommit:
+        ...     return await client._afetch_prompt_from_api(key)
+        >>> cache = AsyncPromptCache(
+        ...     max_size=100,
+        ...     ttl_seconds=3600,
+        ...     fetch_func=fetch_prompt,
+        ... )
+        >>> await cache.start()
+        >>> cache.set("my-prompt:latest", prompt_commit)
+        >>> cached = cache.get("my-prompt:latest")
+        >>> await cache.stop()
+    """
+
+    __slots__ = ["_fetch_func", "_refresh_task"]
+
+    def __init__(
+        self,
+        *,
+        max_size: int = 100,
+        ttl_seconds: Optional[float] = 3600.0,
+        refresh_interval_seconds: float = 60.0,
+        fetch_func: Optional[Callable[[str], Awaitable[Any]]] = None,
+        enabled: bool = True,
+    ) -> None:
+        """Initialize the async prompt cache.
+
+        Args:
+            max_size: Maximum entries in cache (LRU eviction when exceeded).
+            ttl_seconds: Time before entry is considered stale. Set to None for
+                infinite TTL (offline mode - entries never expire).
+            refresh_interval_seconds: How often to check for stale entries.
+            fetch_func: Async callback to fetch fresh data for a cache key.
+            enabled: Whether caching is enabled.
+        """
+        super().__init__(
+            max_size=max_size,
+            ttl_seconds=ttl_seconds,
+            refresh_interval_seconds=refresh_interval_seconds,
+            enabled=enabled,
+        )
+        self._fetch_func = fetch_func
+        self._refresh_task: Optional[asyncio.Task[None]] = None
+
+    async def start(self) -> None:
+        """Start async background refresh loop.
+
+        Must be called from an async context. Creates an asyncio task that
+        periodically checks for stale entries and refreshes them.
+        Does nothing if ttl_seconds is None (infinite TTL mode).
+        """
+        if not self._enabled or self._fetch_func is None or self._ttl_seconds is None:
+            return
+
+        if self._refresh_task is not None:
+            # Already running
+            return
+
+        self._refresh_task = asyncio.create_task(
+            self._refresh_loop(),
+            name="AsyncPromptCache-refresh",
+        )
+        logger.debug("Started async cache refresh task")
+
+    async def stop(self) -> None:
+        """Stop async background refresh loop.
+
+        Cancels the refresh task and waits for it to complete.
+        """
+        if self._refresh_task is None:
+            return
+
+        self._refresh_task.cancel()
         try:
-            self.shutdown()
-        except Exception:
+            await self._refresh_task
+        except asyncio.CancelledError:
             pass
+        self._refresh_task = None
+        logger.debug("Stopped async cache refresh task")
+
+    async def _refresh_loop(self) -> None:
+        """Async background loop to refresh stale entries."""
+        try:
+            while True:
+                await asyncio.sleep(self._refresh_interval)
+                await self._refresh_stale_entries()
+        except asyncio.CancelledError:
+            raise
+
+    async def _refresh_stale_entries(self) -> None:
+        """Check for stale entries and refresh them asynchronously."""
+        if self._fetch_func is None:
+            return
+
+        stale_keys = self._get_stale_keys()
+
+        if not stale_keys:
+            return
+
+        logger.debug(f"Async refreshing {len(stale_keys)} stale cache entries")
+
+        for key in stale_keys:
+            try:
+                new_value = await self._fetch_func(key)
+                self.set(key, new_value)
+                logger.debug(f"Async refreshed cache entry: {key}")
+            except Exception as e:
+                # Keep stale data on refresh failure
+                logger.warning(f"Failed to async refresh cache entry {key}: {e}")

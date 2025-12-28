@@ -1,28 +1,14 @@
 """Test the prompt cache module."""
 
-import json
-import os
-import shutil
-import tempfile
+import asyncio
 import threading
 import time
-from pathlib import Path
-from typing import Optional
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from langsmith import schemas as ls_schemas
-from langsmith._internal._cache import CacheEntry, PromptCache
-
-
-@pytest.fixture
-def temp_cache_dir():
-    """Create a temporary directory for cache files."""
-    temp_dir = tempfile.mkdtemp()
-    yield temp_dir
-    # Cleanup
-    shutil.rmtree(temp_dir, ignore_errors=True)
+from langsmith._internal._cache import AsyncPromptCache, CacheEntry, PromptCache
 
 
 @pytest.fixture
@@ -45,7 +31,6 @@ class TestCacheEntry:
         entry = CacheEntry(
             value=None,
             created_at=time.time(),
-            last_accessed_at=time.time(),
         )
         assert not entry.is_stale(ttl_seconds=3600)
 
@@ -54,27 +39,8 @@ class TestCacheEntry:
         entry = CacheEntry(
             value=None,
             created_at=time.time() - 4000,  # 4000 seconds ago
-            last_accessed_at=time.time(),
         )
         assert entry.is_stale(ttl_seconds=3600)
-
-    def test_is_expired_fresh(self):
-        """Test that fresh entries are not expired."""
-        entry = CacheEntry(
-            value=None,
-            created_at=time.time(),
-            last_accessed_at=time.time(),
-        )
-        assert not entry.is_expired(max_stale_seconds=86400)
-
-    def test_is_expired_old(self):
-        """Test that very old entries are expired."""
-        entry = CacheEntry(
-            value=None,
-            created_at=time.time() - 100000,  # Very old
-            last_accessed_at=time.time(),
-        )
-        assert entry.is_expired(max_stale_seconds=86400)
 
 
 class TestPromptCacheBasic:
@@ -87,13 +53,9 @@ class TestPromptCacheBasic:
         assert cache.get("test-key") is None
         cache.shutdown()
 
-    def test_get_set_basic(self, sample_prompt_commit, temp_cache_dir):
+    def test_get_set_basic(self, sample_prompt_commit):
         """Test basic get/set operations."""
-        cache = PromptCache(
-            persist_path=temp_cache_dir,
-            max_size=100,
-            enabled=True,
-        )
+        cache = PromptCache(max_size=100, enabled=True)
         try:
             # Initially empty
             assert cache.get("test-key") is None
@@ -109,9 +71,9 @@ class TestPromptCacheBasic:
         finally:
             cache.shutdown()
 
-    def test_invalidate(self, sample_prompt_commit, temp_cache_dir):
+    def test_invalidate(self, sample_prompt_commit):
         """Test cache invalidation."""
-        cache = PromptCache(persist_path=temp_cache_dir, enabled=True)
+        cache = PromptCache(enabled=True)
         try:
             cache.set("test-key", sample_prompt_commit)
             assert cache.get("test-key") is not None
@@ -121,9 +83,9 @@ class TestPromptCacheBasic:
         finally:
             cache.shutdown()
 
-    def test_clear(self, sample_prompt_commit, temp_cache_dir):
+    def test_clear(self, sample_prompt_commit):
         """Test clearing entire cache."""
-        cache = PromptCache(persist_path=temp_cache_dir, enabled=True)
+        cache = PromptCache(enabled=True)
         try:
             cache.set("key1", sample_prompt_commit)
             cache.set("key2", sample_prompt_commit)
@@ -140,13 +102,9 @@ class TestPromptCacheBasic:
 class TestPromptCacheLRU:
     """Tests for LRU eviction."""
 
-    def test_lru_eviction(self, sample_prompt_commit, temp_cache_dir):
+    def test_lru_eviction(self, sample_prompt_commit):
         """Test that LRU eviction works when max_size is exceeded."""
-        cache = PromptCache(
-            persist_path=temp_cache_dir,
-            max_size=3,
-            enabled=True,
-        )
+        cache = PromptCache(max_size=3, enabled=True)
         try:
             # Fill cache to max
             cache.set("key1", sample_prompt_commit)
@@ -167,13 +125,9 @@ class TestPromptCacheLRU:
         finally:
             cache.shutdown()
 
-    def test_lru_access_updates_order(self, sample_prompt_commit, temp_cache_dir):
+    def test_lru_access_updates_order(self, sample_prompt_commit):
         """Test that accessing an entry updates its position in LRU."""
-        cache = PromptCache(
-            persist_path=temp_cache_dir,
-            max_size=2,
-            enabled=True,
-        )
+        cache = PromptCache(max_size=2, enabled=True)
         try:
             cache.set("key1", sample_prompt_commit)
             cache.set("key2", sample_prompt_commit)
@@ -191,148 +145,15 @@ class TestPromptCacheLRU:
             cache.shutdown()
 
 
-class TestPromptCacheFilesystem:
-    """Tests for filesystem persistence."""
-
-    def test_write_through(self, sample_prompt_commit, temp_cache_dir):
-        """Test that entries are persisted to disk on set."""
-        cache = PromptCache(persist_path=temp_cache_dir, enabled=True)
-        try:
-            cache.set("test-key", sample_prompt_commit)
-
-            # Check that file was created
-            files = list(Path(temp_cache_dir).glob("*.json"))
-            assert len(files) == 1
-        finally:
-            cache.shutdown()
-
-    def test_load_from_filesystem(self, sample_prompt_commit, temp_cache_dir):
-        """Test loading from filesystem when entry not in memory."""
-        # First cache - write to disk
-        cache1 = PromptCache(persist_path=temp_cache_dir, enabled=True)
-        try:
-            cache1.set("test-key", sample_prompt_commit)
-        finally:
-            cache1.shutdown()
-
-        # Second cache - should load from disk
-        cache2 = PromptCache(persist_path=temp_cache_dir, enabled=True)
-        try:
-            result = cache2.get("test-key")
-            assert result is not None
-            assert result.owner == "test-owner"
-        finally:
-            cache2.shutdown()
-
-    def test_cache_warming(self, sample_prompt_commit, temp_cache_dir):
-        """Test that cache warms from filesystem on startup."""
-        # First cache - write multiple entries
-        cache1 = PromptCache(persist_path=temp_cache_dir, enabled=True)
-        try:
-            cache1.set("key1", sample_prompt_commit)
-            cache1.set("key2", sample_prompt_commit)
-        finally:
-            cache1.shutdown()
-
-        # Second cache - entries should be loaded on init (cache warming)
-        cache2 = PromptCache(persist_path=temp_cache_dir, enabled=True)
-        try:
-            # Entries should already be in memory from warming
-            # We verify by checking _cache dict directly
-            assert "key1" in cache2._cache
-            assert "key2" in cache2._cache
-
-            # Getting should work
-            result1 = cache2.get("key1")
-            result2 = cache2.get("key2")
-            assert result1 is not None
-            assert result2 is not None
-            assert result1.owner == "test-owner"
-        finally:
-            cache2.shutdown()
-
-    def test_delete_from_filesystem(self, sample_prompt_commit, temp_cache_dir):
-        """Test that invalidate also deletes from filesystem."""
-        cache = PromptCache(persist_path=temp_cache_dir, enabled=True)
-        try:
-            cache.set("test-key", sample_prompt_commit)
-            assert len(list(Path(temp_cache_dir).glob("*.json"))) == 1
-
-            cache.invalidate("test-key")
-            assert len(list(Path(temp_cache_dir).glob("*.json"))) == 0
-        finally:
-            cache.shutdown()
-
-    def test_corrupted_file_handling(self, temp_cache_dir):
-        """Test handling of corrupted cache files."""
-        # Create a corrupted file
-        cache_file = Path(temp_cache_dir) / "corrupted_abc123.json"
-        cache_file.write_text("not valid json {{{")
-
-        cache = PromptCache(persist_path=temp_cache_dir, enabled=True)
-        try:
-            # Should not raise, just log warning
-            result = cache.get("nonexistent")
-            assert result is None
-        finally:
-            cache.shutdown()
-
-
-class TestPromptCacheTTL:
-    """Tests for TTL and staleness."""
-
-    def test_stale_entry_still_served(self, sample_prompt_commit, temp_cache_dir):
-        """Test that stale entries are still served."""
-        cache = PromptCache(
-            persist_path=temp_cache_dir,
-            ttl_seconds=1,  # Very short TTL
-            max_stale_seconds=3600,  # Long max stale
-            enabled=True,
-        )
-        try:
-            cache.set("test-key", sample_prompt_commit)
-
-            # Wait for entry to become stale
-            time.sleep(1.5)
-
-            # Should still be served (within max_stale)
-            result = cache.get("test-key")
-            assert result is not None
-        finally:
-            cache.shutdown()
-
-    def test_expired_entry_not_served(self, sample_prompt_commit, temp_cache_dir):
-        """Test that expired entries are not served."""
-        cache = PromptCache(
-            persist_path=temp_cache_dir,
-            ttl_seconds=0.1,
-            max_stale_seconds=0.2,  # Very short max stale
-            enabled=True,
-        )
-        try:
-            cache.set("test-key", sample_prompt_commit)
-
-            # Wait for entry to expire
-            time.sleep(0.5)
-
-            # Should not be served (past max_stale)
-            result = cache.get("test-key")
-            assert result is None
-        finally:
-            cache.shutdown()
-
-
 class TestPromptCacheBackgroundRefresh:
     """Tests for background refresh functionality."""
 
-    def test_background_refresh_called(self, sample_prompt_commit, temp_cache_dir):
+    def test_background_refresh_called(self, sample_prompt_commit):
         """Test that background refresh is triggered for stale entries."""
         mock_fetch = MagicMock(return_value=sample_prompt_commit)
 
         cache = PromptCache(
-            persist_path=temp_cache_dir,
             ttl_seconds=0.1,  # Very short TTL
-            max_stale_seconds=3600,
             refresh_interval_seconds=0.2,
             fetch_func=mock_fetch,
             enabled=True,
@@ -345,10 +166,11 @@ class TestPromptCacheBackgroundRefresh:
 
             # Fetch should have been called
             assert mock_fetch.called
+            mock_fetch.assert_called_with("test-key")
         finally:
             cache.shutdown()
 
-    def test_refresh_failure_keeps_stale(self, sample_prompt_commit, temp_cache_dir):
+    def test_refresh_failure_keeps_stale(self, sample_prompt_commit):
         """Test that refresh failure keeps serving stale data."""
         call_count = [0]
 
@@ -357,9 +179,7 @@ class TestPromptCacheBackgroundRefresh:
             raise Exception("API error")
 
         cache = PromptCache(
-            persist_path=temp_cache_dir,
             ttl_seconds=0.1,
-            max_stale_seconds=3600,
             refresh_interval_seconds=0.2,
             fetch_func=failing_fetch,
             enabled=True,
@@ -376,16 +196,57 @@ class TestPromptCacheBackgroundRefresh:
             # Stale data should still be served
             result = cache.get("test-key")
             assert result is not None
+            assert result.owner == "test-owner"
         finally:
             cache.shutdown()
+
+    def test_no_refresh_without_fetch_func(self, sample_prompt_commit):
+        """Test that no background refresh happens without fetch_func."""
+        cache = PromptCache(
+            ttl_seconds=0.1,
+            refresh_interval_seconds=0.1,
+            # No fetch_func
+            enabled=True,
+        )
+        try:
+            cache.set("test-key", sample_prompt_commit)
+
+            # Wait - should not crash
+            time.sleep(0.3)
+
+            # Data should still be there
+            result = cache.get("test-key")
+            assert result is not None
+        finally:
+            cache.shutdown()
+
+    def test_shutdown_stops_refresh_thread(self, sample_prompt_commit):
+        """Test that shutdown stops the background refresh thread."""
+        mock_fetch = MagicMock(return_value=sample_prompt_commit)
+
+        cache = PromptCache(
+            ttl_seconds=0.1,
+            refresh_interval_seconds=0.1,
+            fetch_func=mock_fetch,
+            enabled=True,
+        )
+
+        # Verify thread is running
+        assert cache._refresh_thread is not None
+        assert cache._refresh_thread.is_alive()
+
+        cache.shutdown()
+
+        # Thread should be stopped
+        assert cache._refresh_thread is None or not cache._refresh_thread.is_alive()
 
 
 class TestPromptCacheThreadSafety:
     """Tests for thread safety."""
 
-    def test_concurrent_reads(self, sample_prompt_commit, temp_cache_dir):
+    def test_concurrent_reads(self, sample_prompt_commit):
         """Test concurrent read operations."""
-        cache = PromptCache(persist_path=temp_cache_dir, enabled=True)
+        cache = PromptCache(enabled=True)
         try:
             cache.set("test-key", sample_prompt_commit)
 
@@ -411,9 +272,9 @@ class TestPromptCacheThreadSafety:
         finally:
             cache.shutdown()
 
-    def test_concurrent_writes(self, sample_prompt_commit, temp_cache_dir):
+    def test_concurrent_writes(self, sample_prompt_commit):
         """Test concurrent write operations."""
-        cache = PromptCache(persist_path=temp_cache_dir, max_size=1000, enabled=True)
+        cache = PromptCache(max_size=1000, enabled=True)
         try:
             errors = []
 
@@ -424,7 +285,9 @@ class TestPromptCacheThreadSafety:
                 except Exception as e:
                     errors.append(e)
 
-            threads = [threading.Thread(target=write_cache, args=(i,)) for i in range(10)]
+            threads = [
+                threading.Thread(target=write_cache, args=(i,)) for i in range(10)
+            ]
             for t in threads:
                 t.start()
             for t in threads:
@@ -435,19 +298,343 @@ class TestPromptCacheThreadSafety:
             cache.shutdown()
 
 
-class TestPromptCacheKeyGeneration:
-    """Tests for cache key generation."""
+class TestAsyncPromptCache:
+    """Tests for AsyncPromptCache."""
 
-    def test_key_to_filename_safe(self):
-        """Test that key_to_filename handles special characters."""
-        cache = PromptCache(enabled=False)
+    @pytest.mark.asyncio
+    async def test_async_refresh_called(self, sample_prompt_commit):
+        """Test that async background refresh is triggered for stale entries."""
+        mock_fetch = AsyncMock(return_value=sample_prompt_commit)
 
-        # Test various prompt identifiers
-        filename1 = cache._key_to_filename("owner/prompt-name:latest")
-        assert ".json" in filename1
-        assert "/" not in filename1
-        assert ":" not in filename1.replace(".json", "")
+        cache = AsyncPromptCache(
+            ttl_seconds=0.1,  # Very short TTL
+            refresh_interval_seconds=0.2,
+            fetch_func=mock_fetch,
+            enabled=True,
+        )
+        try:
+            cache.set("test-key", sample_prompt_commit)
 
-        filename2 = cache._key_to_filename("owner/prompt:abc123:with_model")
-        assert ".json" in filename2
-        assert "/" not in filename2
+            # Start async refresh
+            await cache.start()
+
+            # Wait for entry to become stale and refresh to run
+            await asyncio.sleep(0.5)
+
+            # Fetch should have been called
+            assert mock_fetch.called
+            mock_fetch.assert_called_with("test-key")
+        finally:
+            await cache.stop()
+
+    @pytest.mark.asyncio
+    async def test_async_refresh_failure_keeps_stale(self, sample_prompt_commit):
+        """Test that async refresh failure keeps serving stale data."""
+        call_count = [0]
+
+        async def failing_fetch(key):
+            call_count[0] += 1
+            raise Exception("API error")
+
+        cache = AsyncPromptCache(
+            ttl_seconds=0.1,
+            refresh_interval_seconds=0.2,
+            fetch_func=failing_fetch,
+            enabled=True,
+        )
+        try:
+            cache.set("test-key", sample_prompt_commit)
+
+            # Start async refresh
+            await cache.start()
+
+            # Wait for refresh attempt
+            await asyncio.sleep(0.5)
+
+            # Fetch was attempted
+            assert call_count[0] > 0
+
+            # Stale data should still be served
+            result = cache.get("test-key")
+            assert result is not None
+            assert result.owner == "test-owner"
+        finally:
+            await cache.stop()
+
+    @pytest.mark.asyncio
+    async def test_stop_cancels_refresh_task(self, sample_prompt_commit):
+        """Test that stop() cancels the refresh task."""
+        mock_fetch = AsyncMock(return_value=sample_prompt_commit)
+
+        cache = AsyncPromptCache(
+            ttl_seconds=0.1,
+            refresh_interval_seconds=0.1,
+            fetch_func=mock_fetch,
+            enabled=True,
+        )
+
+        await cache.start()
+
+        # Verify task is running
+        assert cache._refresh_task is not None
+        assert not cache._refresh_task.done()
+
+        await cache.stop()
+
+        # Task should be stopped
+        assert cache._refresh_task is None
+
+    @pytest.mark.asyncio
+    async def test_start_without_fetch_func(self, sample_prompt_commit):
+        """Test that start() is a no-op without fetch_func."""
+        cache = AsyncPromptCache(
+            ttl_seconds=0.1,
+            refresh_interval_seconds=0.1,
+            # No fetch_func
+            enabled=True,
+        )
+
+        await cache.start()
+
+        # No task should be created
+        assert cache._refresh_task is None
+
+        # Should not crash
+        await cache.stop()
+
+    @pytest.mark.asyncio
+    async def test_basic_operations(self, sample_prompt_commit):
+        """Test basic get/set operations work without starting refresh."""
+        cache = AsyncPromptCache(enabled=True)
+
+        # Set and get
+        cache.set("test-key", sample_prompt_commit)
+        result = cache.get("test-key")
+
+        assert result is not None
+        assert result.owner == "test-owner"
+
+        # Invalidate
+        cache.invalidate("test-key")
+        assert cache.get("test-key") is None
+
+
+class TestCachePersistence:
+    """Tests for dump/load persistence functionality."""
+
+    def test_dump_and_load(self, sample_prompt_commit, tmp_path):
+        """Test dumping and loading cache to/from file."""
+        cache_file = tmp_path / "cache.json"
+
+        # Create cache and add entries
+        cache1 = PromptCache(enabled=True)
+        try:
+            cache1.set("prompt1", sample_prompt_commit)
+            cache1.set("prompt2", sample_prompt_commit)
+
+            # Dump to file
+            cache1.dump(cache_file)
+        finally:
+            cache1.shutdown()
+
+        # Verify file exists
+        assert cache_file.exists()
+
+        # Load into new cache
+        cache2 = PromptCache(enabled=True)
+        try:
+            loaded = cache2.load(cache_file)
+
+            assert loaded == 2
+
+            # Verify data
+            result1 = cache2.get("prompt1")
+            assert result1 is not None
+            assert result1.owner == "test-owner"
+            assert result1.repo == "test-prompt"
+            assert result1.commit_hash == "abc123"
+
+            result2 = cache2.get("prompt2")
+            assert result2 is not None
+        finally:
+            cache2.shutdown()
+
+    def test_load_nonexistent_file(self, tmp_path):
+        """Test loading from nonexistent file returns 0."""
+        cache = PromptCache(enabled=True)
+        try:
+            loaded = cache.load(tmp_path / "nonexistent.json")
+            assert loaded == 0
+        finally:
+            cache.shutdown()
+
+    def test_load_corrupted_file(self, tmp_path):
+        """Test loading corrupted file returns 0."""
+        cache_file = tmp_path / "corrupted.json"
+        cache_file.write_text("not valid json {{{")
+
+        cache = PromptCache(enabled=True)
+        try:
+            loaded = cache.load(cache_file)
+            assert loaded == 0
+        finally:
+            cache.shutdown()
+
+    def test_load_respects_max_size(self, sample_prompt_commit, tmp_path):
+        """Test that load respects max_size limit."""
+        cache_file = tmp_path / "cache.json"
+
+        # Create cache with many entries
+        cache1 = PromptCache(max_size=100, enabled=True)
+        try:
+            for i in range(10):
+                cache1.set(f"prompt{i}", sample_prompt_commit)
+            cache1.dump(cache_file)
+        finally:
+            cache1.shutdown()
+
+        # Load into cache with smaller max_size
+        cache2 = PromptCache(max_size=3, enabled=True)
+        try:
+            loaded = cache2.load(cache_file)
+            assert loaded == 3  # Only loaded up to max_size
+        finally:
+            cache2.shutdown()
+
+    def test_dump_creates_parent_dirs(self, sample_prompt_commit, tmp_path):
+        """Test that dump creates parent directories if needed."""
+        cache_file = tmp_path / "nested" / "dir" / "cache.json"
+
+        cache = PromptCache(enabled=True)
+        try:
+            cache.set("prompt1", sample_prompt_commit)
+            cache.dump(cache_file)
+        finally:
+            cache.shutdown()
+
+        assert cache_file.exists()
+
+    def test_load_gives_fresh_ttl(self, sample_prompt_commit, tmp_path):
+        """Test that loaded entries get fresh TTL."""
+        cache_file = tmp_path / "cache.json"
+
+        # Create and dump cache
+        cache1 = PromptCache(enabled=True)
+        try:
+            cache1.set("prompt1", sample_prompt_commit)
+            cache1.dump(cache_file)
+        finally:
+            cache1.shutdown()
+
+        # Load into new cache - entries should have fresh TTL (not stale)
+        cache2 = PromptCache(ttl_seconds=3600, enabled=True)
+        try:
+            cache2.load(cache_file)
+            stale_keys = cache2._get_stale_keys()
+            assert "prompt1" not in stale_keys  # Fresh TTL, not stale
+        finally:
+            cache2.shutdown()
+
+    def test_async_cache_dump_load(self, sample_prompt_commit, tmp_path):
+        """Test that AsyncPromptCache can also dump/load."""
+        cache_file = tmp_path / "async_cache.json"
+
+        # dump/load are inherited from base class
+        cache1 = AsyncPromptCache(enabled=True)
+        cache1.set("prompt1", sample_prompt_commit)
+        cache1.dump(cache_file)
+
+        cache2 = AsyncPromptCache(enabled=True)
+        loaded = cache2.load(cache_file)
+
+        assert loaded == 1
+        assert cache2.get("prompt1") is not None
+
+
+class TestOfflineMode:
+    """Tests for offline mode (infinite TTL)."""
+
+    def test_infinite_ttl_never_stale(self, sample_prompt_commit):
+        """Test that entries with ttl_seconds=None are never stale."""
+        cache = PromptCache(ttl_seconds=None, enabled=True)
+        try:
+            cache.set("prompt1", sample_prompt_commit)
+
+            # Manually set old timestamp
+            cache._cache["prompt1"].created_at = time.time() - 1000000
+
+            # Should still not be stale
+            stale_keys = cache._get_stale_keys()
+            assert "prompt1" not in stale_keys
+
+            # Should still be retrievable
+            assert cache.get("prompt1") is not None
+        finally:
+            cache.shutdown()
+
+    def test_infinite_ttl_no_refresh_thread(self, sample_prompt_commit):
+        """Test that no refresh thread starts with ttl_seconds=None."""
+        mock_fetch = MagicMock(return_value=sample_prompt_commit)
+
+        cache = PromptCache(
+            ttl_seconds=None,
+            fetch_func=mock_fetch,
+            enabled=True,
+        )
+        try:
+            # No refresh thread should be started
+            assert cache._refresh_thread is None
+
+            cache.set("prompt1", sample_prompt_commit)
+
+            # Wait a bit - fetch should never be called
+            time.sleep(0.3)
+            assert not mock_fetch.called
+        finally:
+            cache.shutdown()
+
+    def test_offline_workflow(self, sample_prompt_commit, tmp_path):
+        """Test full offline workflow: dump online, load offline."""
+        cache_file = tmp_path / "offline_cache.json"
+
+        # Online: populate and dump cache
+        online_cache = PromptCache(ttl_seconds=3600, enabled=True)
+        try:
+            online_cache.set("prompt1", sample_prompt_commit)
+            online_cache.set("prompt2", sample_prompt_commit)
+            online_cache.dump(cache_file)
+        finally:
+            online_cache.shutdown()
+
+        # Offline: load with infinite TTL
+        offline_cache = PromptCache(ttl_seconds=None, enabled=True)
+        try:
+            loaded = offline_cache.load(cache_file)
+            assert loaded == 2
+
+            # Entries work and never expire
+            assert offline_cache.get("prompt1") is not None
+            assert offline_cache.get("prompt2") is not None
+
+            # No refresh thread
+            assert offline_cache._refresh_thread is None
+        finally:
+            offline_cache.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_async_infinite_ttl_no_refresh_task(self, sample_prompt_commit):
+        """Test that async cache doesn't start refresh task with ttl_seconds=None."""
+        mock_fetch = AsyncMock(return_value=sample_prompt_commit)
+
+        cache = AsyncPromptCache(
+            ttl_seconds=None,
+            fetch_func=mock_fetch,
+            enabled=True,
+        )
+
+        await cache.start()
+
+        # No task should be created
+        assert cache._refresh_task is None
+
+        await cache.stop()

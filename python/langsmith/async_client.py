@@ -10,6 +10,8 @@ import warnings
 from collections.abc import AsyncGenerator, AsyncIterator, Mapping, Sequence
 from typing import (
     Any,
+    Awaitable,
+    Callable,
     Literal,
     Optional,
     Union,
@@ -22,6 +24,7 @@ from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._internal import _beta_decorator as ls_beta
+from langsmith._internal._cache import AsyncPromptCache
 
 ID_TYPE = Union[uuid.UUID, str]
 
@@ -45,8 +48,6 @@ class AsyncClient:
         prompt_cache_enabled: Optional[bool] = None,
         prompt_cache_max_size: Optional[int] = None,
         prompt_cache_ttl_seconds: Optional[float] = None,
-        prompt_cache_max_stale_seconds: Optional[float] = None,
-        prompt_cache_persist_path: Optional[str] = None,
         prompt_cache_refresh_interval_seconds: Optional[float] = None,
     ):
         """Initialize the async client.
@@ -60,9 +61,8 @@ class AsyncClient:
             prompt_cache_enabled: Whether to enable prompt caching. Defaults to False.
             prompt_cache_max_size: Maximum number of prompts to cache. Defaults to 100.
             prompt_cache_ttl_seconds: TTL for cached prompts in seconds. Defaults to 3600.
-            prompt_cache_max_stale_seconds: Max time to serve stale prompts. Defaults to 86400.
-            prompt_cache_persist_path: Directory for cache persistence.
-            prompt_cache_refresh_interval_seconds: Background refresh interval. Defaults to 60.
+            prompt_cache_refresh_interval_seconds: How often to check for stale entries.
+                Defaults to 60 seconds.
         """
         self._retry_config = retry_config or {"max_retries": 3}
         _headers = {
@@ -86,7 +86,7 @@ class AsyncClient:
         self._web_url = web_url
         self._settings: Optional[ls_schemas.LangSmithSettings] = None
 
-        # Initialize prompt cache
+        # Initialize prompt cache with async refresh support
         cache_enabled = (
             prompt_cache_enabled
             if prompt_cache_enabled is not None
@@ -94,27 +94,18 @@ class AsyncClient:
         )
 
         if cache_enabled:
-            from langsmith._internal._cache import PromptCache
-
-            self._prompt_cache: Optional[PromptCache] = PromptCache(
+            self._prompt_cache: Optional[AsyncPromptCache] = AsyncPromptCache(
                 max_size=prompt_cache_max_size
                 or int(ls_utils.get_env_var("PROMPT_CACHE_MAX_SIZE", default="100")),
                 ttl_seconds=prompt_cache_ttl_seconds
                 or float(ls_utils.get_env_var("PROMPT_CACHE_TTL_SECONDS", default="3600")),
-                max_stale_seconds=prompt_cache_max_stale_seconds
-                or float(
-                    ls_utils.get_env_var("PROMPT_CACHE_MAX_STALE_SECONDS", default="86400")
-                ),
-                persist_path=prompt_cache_persist_path
-                or ls_utils.get_env_var("PROMPT_CACHE_PATH", default=None),
                 refresh_interval_seconds=prompt_cache_refresh_interval_seconds
                 or float(
-                    ls_utils.get_env_var("PROMPT_CACHE_REFRESH_INTERVAL", default="60")
+                    ls_utils.get_env_var(
+                        "PROMPT_CACHE_REFRESH_INTERVAL_SECONDS", default="60"
+                    )
                 ),
-                # Note: Background refresh not supported for AsyncClient
-                # as it requires sync function. Cache still works for get/set.
-                fetch_func=None,
-                client_ref=None,
+                fetch_func=self._make_async_prompt_cache_fetch_func(),
                 enabled=True,
             )
         else:
@@ -122,6 +113,8 @@ class AsyncClient:
 
     async def __aenter__(self) -> AsyncClient:
         """Enter the async client."""
+        if self._prompt_cache is not None:
+            await self._prompt_cache.start()
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -131,7 +124,7 @@ class AsyncClient:
     async def aclose(self):
         """Close the async client."""
         if self._prompt_cache is not None:
-            self._prompt_cache.shutdown()
+            await self._prompt_cache.stop()
         await self._client.aclose()
 
     @property
@@ -1711,6 +1704,56 @@ class AsyncClient:
         suffix = ":with_model" if include_model else ""
         return f"{prompt_identifier}{suffix}"
 
+    def _make_async_prompt_cache_fetch_func(
+        self,
+    ) -> Callable[[str], Awaitable[ls_schemas.PromptCommit]]:
+        """Create an async fetch function for the prompt cache background refresh.
+
+        Returns:
+            An async function that takes a cache key and returns the fetched
+            PromptCommit.
+        """
+
+        async def fetch(cache_key: str) -> ls_schemas.PromptCommit:
+            # Parse cache key to extract prompt_identifier and include_model
+            if cache_key.endswith(":with_model"):
+                prompt_identifier = cache_key[:-11]  # Remove ":with_model"
+                include_model = True
+            else:
+                prompt_identifier = cache_key
+                include_model = False
+            return await self._afetch_prompt_from_api(prompt_identifier, include_model)
+
+        return fetch
+
+    async def _afetch_prompt_from_api(
+        self,
+        prompt_identifier: str,
+        include_model: Optional[bool] = False,
+    ) -> ls_schemas.PromptCommit:
+        """Fetch a prompt from the API (no caching).
+
+        Args:
+            prompt_identifier: The prompt identifier.
+            include_model: Whether to include model information.
+
+        Returns:
+            The PromptCommit object.
+        """
+        owner, prompt_name, commit_hash = ls_utils.parse_prompt_identifier(
+            prompt_identifier
+        )
+        response = await self._arequest_with_retries(
+            "GET",
+            (
+                f"/commits/{owner}/{prompt_name}/{commit_hash}"
+                f"{'?include_model=true' if include_model else ''}"
+            ),
+        )
+        return ls_schemas.PromptCommit(
+            **{"owner": owner, "repo": prompt_name, **response.json()}
+        )
+
     async def pull_prompt_commit(
         self,
         prompt_identifier: str,
@@ -1740,20 +1783,8 @@ class AsyncClient:
             if cached is not None:
                 return cached
 
-        # Fetch from API
-        owner, prompt_name, commit_hash = ls_utils.parse_prompt_identifier(
-            prompt_identifier
-        )
-        response = await self._arequest_with_retries(
-            "GET",
-            (
-                f"/commits/{owner}/{prompt_name}/{commit_hash}"
-                f"{'?include_model=true' if include_model else ''}"
-            ),
-        )
-        result = ls_schemas.PromptCommit(
-            **{"owner": owner, "repo": prompt_name, **response.json()}
-        )
+        # Cache miss or cache disabled - fetch from API
+        result = await self._afetch_prompt_from_api(prompt_identifier, include_model)
 
         # Store in cache
         if use_cache and self._prompt_cache is not None:
