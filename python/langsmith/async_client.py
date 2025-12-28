@@ -100,9 +100,7 @@ class AsyncClient:
                 max_size=prompt_cache_max_size
                 or int(ls_utils.get_env_var("PROMPT_CACHE_MAX_SIZE", default="100")),
                 ttl_seconds=prompt_cache_ttl_seconds
-                or float(
-                    ls_utils.get_env_var("PROMPT_CACHE_TTL_SECONDS", default="3600")
-                ),
+                or float(ls_utils.get_env_var("PROMPT_CACHE_TTL_SECONDS", default="3600")),
                 refresh_interval_seconds=prompt_cache_refresh_interval_seconds
                 or float(
                     ls_utils.get_env_var(
