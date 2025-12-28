@@ -102,7 +102,7 @@ _AttachmentLike = Union[
 class ExampleCreate(BaseModel):
     """Example upload with attachments."""
 
-    id: Optional[UUID]
+    id: Optional[UUID] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     inputs: Optional[dict[str, Any]] = Field(default=None)
     outputs: Optional[dict[str, Any]] = Field(default=None)
