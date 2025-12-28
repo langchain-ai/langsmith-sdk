@@ -1,4 +1,5 @@
 """Schemas for the LangSmith API."""
+# mypy: disable-error-code="valid-type,attr-defined,union-attr"
 
 from __future__ import annotations
 
@@ -422,87 +423,279 @@ class RunBase(BaseModel):
         arbitrary_types_allowed = True
 
 
-class Run(RunBase):
+class Run:
     """Run schema when loading from the DB."""
 
-    session_id: Optional[UUID] = None
-    """The project ID this run belongs to."""
-    child_run_ids: Optional[list[UUID]] = None
-    """Deprecated: The child run IDs of this run."""
-    child_runs: Optional[list[Run]] = None
-    """The child runs of this run, if instructed to load using the client
-    These are not populated by default, as it is a heavier query to make."""
-    feedback_stats: Optional[dict[str, Any]] = None
-    """Feedback stats for this run."""
-    app_path: Optional[str] = None
-    """Relative URL path of this run within the app."""
-    manifest_id: Optional[UUID] = None
-    """Unique ID of the serialized object for this run."""
-    status: Optional[str] = None
-    """Status of the run (e.g., 'success')."""
-    prompt_tokens: Optional[int] = None
-    """Number of tokens used for the prompt."""
-    completion_tokens: Optional[int] = None
-    """Number of tokens generated as output."""
-    total_tokens: Optional[int] = None
-    """Total tokens for prompt and completion."""
-    prompt_token_details: Optional[dict[str, int]] = None
-    """Breakdown of prompt (input) token counts.
+    __slots__ = (
+        # From RunBase
+        "id",
+        "name",
+        "start_time",
+        "run_type",
+        "end_time",
+        "extra",
+        "error",
+        "serialized",
+        "events",
+        "inputs",
+        "outputs",
+        "reference_example_id",
+        "parent_run_id",
+        "tags",
+        "attachments",
+        # Run-specific fields
+        "session_id",
+        "child_run_ids",
+        "child_runs",
+        "feedback_stats",
+        "app_path",
+        "manifest_id",
+        "manifest_s3_id",
+        "status",
+        "prompt_tokens",
+        "completion_tokens",
+        "total_tokens",
+        "prompt_token_details",
+        "completion_token_details",
+        "first_token_time",
+        "total_cost",
+        "prompt_cost",
+        "completion_cost",
+        "prompt_cost_details",
+        "completion_cost_details",
+        "parent_run_ids",
+        "trace_id",
+        "dotted_order",
+        "in_dataset",
+        # New fields from PR
+        "replicas",
+        "inputs_preview",
+        "outputs_preview",
+        # Private fields
+        "_host_url",
+        "_extensions",
+    )
 
-    Does *not* need to sum to full prompt token count.
-    """
-    completion_token_details: Optional[dict[str, int]] = None
-    """Breakdown of completion (output) token counts.
-
-    Does *not* need to sum to full completion token count.
-    """
-    first_token_time: Optional[datetime] = None
-    """Time the first token was processed."""
-    total_cost: Optional[Decimal] = None
-    """The total estimated LLM cost associated with the completion tokens."""
-    prompt_cost: Optional[Decimal] = None
-    """The estimated cost associated with the prompt (input) tokens."""
-    completion_cost: Optional[Decimal] = None
-    """The estimated cost associated with the completion tokens."""
-    prompt_cost_details: Optional[dict[str, Decimal]] = None
-    """Breakdown of prompt (input) token costs.
-
-    Does *not* need to sum to full prompt token cost.
-    """
-    completion_cost_details: Optional[dict[str, Decimal]] = None
-    """Breakdown of completion (output) token costs.
-
-    Does *not* need to sum to full completion token cost.
-    """
-    parent_run_ids: Optional[list[UUID]] = None
-    """List of parent run IDs."""
+    # Type annotations for mypy (required for __slots__)
+    id: UUID
+    name: str
+    start_time: datetime
+    run_type: str
+    end_time: Optional[datetime]
+    extra: Optional[dict[str, Any]]
+    error: Optional[str]
+    serialized: Optional[dict[str, Any]]
+    events: Optional[list[dict[str, Any]]]
+    inputs: dict[str, Any]
+    outputs: Optional[dict[str, Any]]
+    reference_example_id: Optional[UUID]
+    parent_run_id: Optional[UUID]
+    tags: Optional[list[str]]
+    attachments: Union[Attachments, dict[str, AttachmentInfo]]
+    session_id: Optional[UUID]
+    child_run_ids: Optional[list[UUID]]
+    child_runs: Optional[list[Run]]
+    feedback_stats: Optional[dict[str, Any]]
+    app_path: Optional[str]
+    manifest_id: Optional[UUID]
+    manifest_s3_id: Optional[str]
+    status: Optional[str]
+    prompt_tokens: Optional[int]
+    completion_tokens: Optional[int]
+    total_tokens: Optional[int]
+    prompt_token_details: Optional[dict[str, int]]
+    completion_token_details: Optional[dict[str, int]]
+    first_token_time: Optional[datetime]
+    total_cost: Optional[Decimal]
+    prompt_cost: Optional[Decimal]
+    completion_cost: Optional[Decimal]
+    prompt_cost_details: Optional[dict[str, Decimal]]
+    completion_cost_details: Optional[dict[str, Decimal]]
+    parent_run_ids: Optional[list[UUID]]
     trace_id: UUID
-    """Unique ID assigned to every run within this nested trace."""
-    dotted_order: str = Field(default="")
-    """Dotted order for the run.
-
-    This is a string composed of {time}{run-uuid}.* so that a trace can be
-    sorted in the order it was executed.
-
-    Example:
-        - Parent: 20230914T223155647Z1b64098b-4ab7-43f6-afee-992304f198d8
-        - Children:
-        - 20230914T223155647Z1b64098b-4ab7-43f6-afee-992304f198d8.20230914T223155649Z809ed3a2-0172-4f4d-8a02-a64e9b7a0f8a
-        - 20230915T223155647Z1b64098b-4ab7-43f6-afee-992304f198d8.20230914T223155650Zc8d9f4c5-6c5a-4b2d-9b1c-3d9d7a7c5c7c
-    """  # noqa: E501
-    in_dataset: Optional[bool] = None
-    """Whether this run is in a dataset."""
-    _host_url: Optional[str] = PrivateAttr(default=None)
+    dotted_order: str
+    in_dataset: Optional[bool]
+    replicas: Optional[Any]
+    inputs_preview: Optional[str]
+    outputs_preview: Optional[str]
+    _host_url: Optional[str]
+    _extensions: dict[str, Any]
 
     def __init__(self, _host_url: Optional[str] = None, **kwargs: Any) -> None:
         """Initialize a Run object."""
+        # Initialize _extensions first
+        object.__setattr__(self, "_extensions", {})
+        object.__setattr__(self, "_host_url", _host_url)
+
+        # Handle trace_id defaulting
         if not kwargs.get("trace_id"):
-            kwargs = {"trace_id": kwargs.get("id"), **kwargs}
+            kwargs["trace_id"] = kwargs.get("id")
+
+        # Handle inputs defaulting
         inputs = kwargs.pop("inputs", None) or {}
-        super().__init__(**kwargs, inputs=inputs)
-        self._host_url = _host_url
+        kwargs["inputs"] = inputs
+
+        # Set all known fields from kwargs
+        for slot in self.__slots__:
+            if slot.startswith("_"):
+                continue
+            if slot in kwargs:
+                value = kwargs.pop(slot)
+                object.__setattr__(self, slot, value)
+            else:
+                # Set default values for known fields
+                if slot == "extra":
+                    object.__setattr__(self, slot, _default_extra())
+                elif slot == "events":
+                    object.__setattr__(self, slot, None)
+                elif slot == "attachments":
+                    object.__setattr__(self, slot, {})
+                elif slot == "dotted_order":
+                    object.__setattr__(self, slot, "")
+                else:
+                    object.__setattr__(self, slot, None)
+
+        # Store any remaining unknown fields in _extensions
+        for key, value in kwargs.items():
+            self._extensions[key] = value
+
+        # Validation: ensure required fields are set
+        if self.id is None:
+            raise ValueError("id is required")
+        if self.name is None:
+            raise ValueError("name is required")
+        if self.start_time is None:
+            raise ValueError("start_time is required")
+        if self.run_type is None:
+            raise ValueError("run_type is required")
+        if self.trace_id is None:
+            raise ValueError("trace_id is required")
+
+        # Post-init logic
         if not self.dotted_order.strip() and not self.parent_run_id:
-            self.dotted_order = f"{self.start_time.isoformat()}{self.id}"
+            object.__setattr__(
+                self, "dotted_order", f"{self.start_time.isoformat()}{self.id}"
+            )
+
+    def __getattr__(self, name: str) -> Any:
+        """Fall back to _extensions for unknown attributes."""
+        if name.startswith("_"):
+            raise AttributeError(
+                f"'{self.__class__.__name__}' object has no attribute '{name}'"
+            )
+        try:
+            extensions = object.__getattribute__(self, "_extensions")
+            return extensions[name]
+        except KeyError:
+            raise AttributeError(
+                f"'{self.__class__.__name__}' object has no attribute '{name}'"
+            )
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        """Route unknown fields to _extensions."""
+        if name in self.__slots__:
+            object.__setattr__(self, name, value)
+        else:
+            # Ensure _extensions exists
+            try:
+                extensions = object.__getattribute__(self, "_extensions")
+            except AttributeError:
+                object.__setattr__(self, "_extensions", {})
+                extensions = object.__getattribute__(self, "_extensions")
+            extensions[name] = value
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], **private_attrs: Any) -> Run:
+        """Create a Run from a dictionary."""
+        # Make a copy to avoid mutating the input
+        data = dict(data)
+
+        # Handle private attributes
+        _host_url = private_attrs.get("_host_url")
+
+        # Convert string UUIDs to UUID objects
+        for uuid_field in (
+            "id",
+            "trace_id",
+            "session_id",
+            "reference_example_id",
+            "parent_run_id",
+            "manifest_id",
+        ):
+            if uuid_field in data and isinstance(data[uuid_field], str):
+                from uuid import UUID
+
+                data[uuid_field] = UUID(data[uuid_field])
+
+        # Convert ISO datetime strings to datetime objects
+        for dt_field in ("start_time", "end_time", "first_token_time"):
+            if dt_field in data and isinstance(data[dt_field], str):
+                from datetime import datetime
+
+                # Handle ISO format datetime strings
+                data[dt_field] = datetime.fromisoformat(
+                    data[dt_field].replace("Z", "+00:00")
+                )
+
+        return cls(_host_url=_host_url, **data)
+
+    def model_dump(
+        self,
+        *,
+        exclude_none: bool = False,
+        exclude: Optional[set] = None,
+        mode: str = "python",
+    ) -> dict[str, Any]:
+        """Convert to dict, including extensions."""
+        result = {}
+        exclude = exclude or set()
+
+        # Add all __slots__ fields (except private ones)
+        for slot in self.__slots__:
+            if slot.startswith("_") or slot in exclude:
+                continue
+            value = getattr(self, slot, None)
+            if exclude_none and value is None:
+                continue
+            result[slot] = value
+
+        # Add extensions
+        extensions = object.__getattribute__(self, "_extensions")
+        for key, value in extensions.items():
+            if key not in exclude:
+                if not exclude_none or value is not None:
+                    result[key] = value
+
+        return result
+
+    def dict(
+        self,
+        *,
+        exclude_none: bool = False,
+        exclude: Optional[set] = None,
+    ) -> dict[str, Any]:
+        """Convert to dict (pydantic v1 compatibility)."""
+        return self.model_dump(exclude_none=exclude_none, exclude=exclude)
+
+    @property
+    def metadata(self) -> dict[str, Any]:
+        """Retrieve the metadata (if any)."""
+        if self.extra is None:
+            object.__setattr__(self, "extra", {})
+        assert self.extra is not None  # for mypy
+        return self.extra.setdefault("metadata", {})
+
+    @property
+    def revision_id(self) -> Optional[UUID]:
+        """Retrieve the revision ID (if any)."""
+        return self.metadata.get("revision_id")
+
+    @property
+    def latency(self) -> Optional[float]:
+        """Latency in seconds."""
+        if self.end_time is None:
+            return None
+        return (self.end_time - self.start_time).total_seconds()
 
     @property
     def url(self) -> Optional[str]:
@@ -550,6 +743,10 @@ class Run(RunBase):
     def output_cost_details(self) -> dict[str, Decimal] | None:
         """Alias for completion_cost_details."""
         return self.completion_cost_details
+
+    def __repr__(self):
+        """Return a string representation of the Run object."""
+        return f"{self.__class__.__name__}(id={self.id}, name='{self.name}', run_type='{self.run_type}')"
 
 
 class RunTypeEnum(str, Enum):

@@ -1,11 +1,15 @@
 """Schemas for the LangSmith API."""
+# mypy: disable-error-code="valid-type,attr-defined,union-attr,index,arg-type"
 
 from __future__ import annotations
 
+import contextvars
 import functools
 import json
 import logging
 import sys
+import threading
+import urllib.parse
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from typing import Any, Optional, Union, cast
@@ -13,25 +17,11 @@ from uuid import NAMESPACE_DNS, UUID, uuid5
 
 from typing_extensions import TypedDict
 
-from langsmith._internal._uuid import uuid7
-from langsmith.uuid import uuid7_from_datetime
-
-try:
-    from pydantic.v1 import Field, root_validator  # type: ignore[import]
-except ImportError:
-    from pydantic import (  # type: ignore[assignment, no-redef]
-        Field,
-        root_validator,
-    )
-
-import contextvars
-import threading
-import urllib.parse
-
 import langsmith._internal._context as _context
 from langsmith import schemas as ls_schemas
 from langsmith import utils
 from langsmith.client import ID_TYPE, RUN_TYPE_T, Client, _dumps_json, _ensure_uuid
+from langsmith.uuid import uuid7_from_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -194,112 +184,314 @@ def validate_extracted_usage_metadata(
     return data  # type: ignore
 
 
-class RunTree(ls_schemas.RunBase):
+class RunTree:
     """Run Schema with back-references for posting runs."""
 
+    __slots__ = (
+        # From RunBase
+        "id",
+        "name",
+        "start_time",
+        "run_type",
+        "end_time",
+        "extra",
+        "error",
+        "serialized",
+        "events",
+        "inputs",
+        "outputs",
+        "reference_example_id",
+        "parent_run_id",
+        "tags",
+        "attachments",
+        # RunTree-specific
+        "parent_run",
+        "parent_dotted_order",
+        "child_runs",
+        "session_name",
+        "session_id",
+        "ls_client",
+        "dotted_order",
+        "trace_id",
+        "dangerously_allow_filesystem",
+        "replicas",
+        # Private
+        "_extensions",
+    )
+
+    # Type annotations for mypy (required for __slots__)
+    id: UUID
     name: str
-    id: UUID = Field(default_factory=uuid7)
-    run_type: str = Field(default="chain")
-    start_time: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    # Note: no longer set.
-    parent_run: Optional[RunTree] = Field(default=None, exclude=True)
-    parent_dotted_order: Optional[str] = Field(default=None, exclude=True)
-    child_runs: list[RunTree] = Field(
-        default_factory=list,
-        exclude={"__all__": {"parent_run_id"}},
-    )
-    session_name: str = Field(
-        default_factory=lambda: utils.get_tracer_project() or "default",
-        alias="project_name",
-    )
-    session_id: Optional[UUID] = Field(default=None, alias="project_id")
-    extra: dict = Field(default_factory=dict)
-    tags: Optional[list[str]] = Field(default_factory=list)
-    events: list[dict] = Field(default_factory=list)
-    """List of events associated with the run, like
-    start and end events."""
-    ls_client: Optional[Any] = Field(default=None, exclude=True)
-    dotted_order: str = Field(
-        default="", description="The order of the run in the tree."
-    )
-    trace_id: UUID = Field(default="", description="The trace id of the run.")  # type: ignore
-    dangerously_allow_filesystem: Optional[bool] = Field(
-        default=False, description="Whether to allow filesystem access for attachments."
-    )
-    replicas: Optional[Sequence[WriteReplica]] = Field(
-        default=None,
-        description="Projects to replicate this run to with optional updates.",
-    )
+    start_time: datetime
+    run_type: str
+    end_time: Optional[datetime]
+    extra: dict[str, Any]  # Always set to {} in __init__ if None
+    error: Optional[str]
+    serialized: Optional[dict[str, Any]]
+    events: list[dict[str, Any]]
+    inputs: dict[str, Any]
+    outputs: Optional[dict[str, Any]]
+    reference_example_id: Optional[UUID]
+    parent_run_id: Optional[UUID]
+    tags: Optional[list[str]]
+    attachments: Any
+    parent_run: Optional[RunTree]
+    parent_dotted_order: Optional[str]
+    child_runs: list[RunTree]
+    session_name: str
+    session_id: Optional[UUID]
+    ls_client: Optional[Any]
+    dotted_order: str
+    trace_id: UUID
+    dangerously_allow_filesystem: Optional[bool]
+    replicas: Optional[Sequence[WriteReplica]]
+    _extensions: dict[str, Any]
 
-    class Config:
-        """Pydantic model configuration."""
+    def __init__(
+        self,
+        name: str = "Unnamed",
+        run_type: str = "chain",
+        *,
+        id: Optional[UUID] = None,
+        start_time: Optional[datetime] = None,
+        parent_run: Optional[RunTree] = None,
+        parent_dotted_order: Optional[str] = None,
+        child_runs: Optional[list[RunTree]] = None,
+        session_name: Optional[str] = None,
+        session_id: Optional[UUID] = None,
+        extra: Optional[dict] = None,
+        tags: Optional[list[str]] = None,
+        events: Optional[list[dict]] = None,
+        ls_client: Optional[Any] = None,
+        dotted_order: str = "",
+        trace_id: Optional[UUID] = None,
+        dangerously_allow_filesystem: Optional[bool] = False,
+        replicas: Optional[Sequence[WriteReplica]] = None,
+        # Support aliases
+        client: Optional[Any] = None,
+        _client: Optional[Any] = None,
+        project_name: Optional[str] = None,
+        project_id: Optional[UUID] = None,
+        # Other RunBase fields
+        end_time: Optional[datetime] = None,
+        error: Optional[str] = None,
+        serialized: Optional[dict] = None,
+        inputs: Optional[dict] = None,
+        outputs: Optional[dict] = None,
+        reference_example_id: Optional[UUID] = None,
+        parent_run_id: Optional[UUID] = None,
+        attachments: Optional[Any] = None,
+        **kwargs: Any,
+    ):
+        """Initialize the RunTree."""
+        # Initialize _extensions first
+        object.__setattr__(self, "_extensions", {})
 
-        arbitrary_types_allowed = True
-        allow_population_by_field_name = True
-        extra = "ignore"
-
-    @root_validator(pre=True)
-    def infer_defaults(cls, values: dict) -> dict:
-        """Assign name to the run."""
-        if values.get("name") is None and values.get("serialized") is not None:
-            if "name" in values["serialized"]:
-                values["name"] = values["serialized"]["name"]
-            elif "id" in values["serialized"]:
-                values["name"] = values["serialized"]["id"][-1]
-        if values.get("name") is None:
-            values["name"] = "Unnamed"
-        if "client" in values:  # Handle user-constructed clients
-            values["ls_client"] = values.pop("client")
-        elif "_client" in values:
-            values["ls_client"] = values.pop("_client")
-        if not values.get("ls_client"):
-            values["ls_client"] = None
-        parent_run = values.pop("parent_run", None)
-        if parent_run is not None:
-            values["parent_run_id"] = parent_run.id
-            values["parent_dotted_order"] = parent_run.dotted_order
-        if "id" not in values:
-            # Generate UUID from start_time if available
-            if "start_time" in values and values["start_time"] is not None:
-                values["id"] = uuid7_from_datetime(values["start_time"])
-            else:
-                now = datetime.now(timezone.utc)
-                values["start_time"] = now
-                values["id"] = uuid7_from_datetime(now)
-        if "trace_id" not in values:
-            if parent_run is not None:
-                values["trace_id"] = parent_run.trace_id
-            else:
-                values["trace_id"] = values["id"]
-        cast(dict, values.setdefault("extra", {}))
-        if values.get("events") is None:
-            values["events"] = []
-        if values.get("tags") is None:
-            values["tags"] = []
-        if values.get("outputs") is None:
-            values["outputs"] = {}
-        if values.get("attachments") is None:
-            values["attachments"] = {}
-        if values.get("replicas") is None:
-            values["replicas"] = _REPLICAS.get()
-        values["replicas"] = _ensure_write_replicas(values["replicas"])
-        return values
-
-    @root_validator(pre=False)
-    def ensure_dotted_order(cls, values: dict) -> dict:
-        """Ensure the dotted order of the run."""
-        current_dotted_order = values.get("dotted_order")
-        if current_dotted_order and current_dotted_order.strip():
-            return values
-        current_dotted_order = _create_current_dotted_order(
-            values["start_time"], values["id"]
+        # Handle aliases
+        ls_client = ls_client or client or _client
+        session_name = (
+            session_name or project_name or utils.get_tracer_project() or "default"
         )
-        parent_dotted_order = values.get("parent_dotted_order")
-        if parent_dotted_order is not None:
-            values["dotted_order"] = parent_dotted_order + "." + current_dotted_order
+        session_id = session_id or project_id
+
+        # Infer name from serialized if needed
+        if not name or name == "Unnamed":
+            if serialized is not None:
+                if "name" in serialized:
+                    name = serialized["name"]
+                elif "id" in serialized:
+                    name = serialized["id"][-1]
+            if not name:
+                name = "Unnamed"
+
+        # Handle parent_run
+        if parent_run is not None:
+            parent_run_id = parent_run.id
+            parent_dotted_order = parent_run.dotted_order
+
+        # Generate ID if not provided
+        if id is None:
+            if start_time is not None:
+                id = uuid7_from_datetime(start_time)
+            else:
+                start_time = datetime.now(timezone.utc)
+                id = uuid7_from_datetime(start_time)
+        elif start_time is None:
+            start_time = datetime.now(timezone.utc)
+
+        # Handle trace_id
+        if trace_id is None:
+            if parent_run is not None:
+                trace_id = parent_run.trace_id
+            else:
+                trace_id = id
+
+        # Handle defaults
+        if extra is None:
+            extra = {}
+        if events is None:
+            events = []
+        if tags is None:
+            tags = []
+        if outputs is None:
+            outputs = {}
+        if attachments is None:
+            attachments = {}
+        if inputs is None:
+            inputs = {}
+        if child_runs is None:
+            child_runs = []
+        if replicas is None:
+            replicas = _REPLICAS.get()
+        replicas = _ensure_write_replicas(replicas)
+
+        # Ensure dotted_order
+        if not dotted_order or not dotted_order.strip():
+            current_dotted_order = _create_current_dotted_order(start_time, id)
+            if parent_dotted_order is not None:
+                dotted_order = parent_dotted_order + "." + current_dotted_order
+            else:
+                dotted_order = current_dotted_order
+
+        # Set all fields using object.__setattr__ to bypass __setattr__
+        object.__setattr__(self, "id", id)
+        object.__setattr__(self, "name", name)
+        object.__setattr__(self, "run_type", run_type)
+        object.__setattr__(self, "start_time", start_time)
+        object.__setattr__(self, "end_time", end_time)
+        object.__setattr__(self, "extra", extra)
+        object.__setattr__(self, "error", error)
+        object.__setattr__(self, "serialized", serialized)
+        object.__setattr__(self, "events", events)
+        object.__setattr__(self, "inputs", inputs)
+        object.__setattr__(self, "outputs", outputs)
+        object.__setattr__(self, "reference_example_id", reference_example_id)
+        object.__setattr__(self, "parent_run_id", parent_run_id)
+        object.__setattr__(self, "tags", tags)
+        object.__setattr__(self, "attachments", attachments)
+        object.__setattr__(self, "parent_run", parent_run)
+        object.__setattr__(self, "parent_dotted_order", parent_dotted_order)
+        object.__setattr__(self, "child_runs", child_runs)
+        object.__setattr__(self, "session_name", session_name)
+        object.__setattr__(self, "session_id", session_id)
+        object.__setattr__(self, "ls_client", ls_client)
+        object.__setattr__(self, "dotted_order", dotted_order)
+        object.__setattr__(self, "trace_id", trace_id)
+        object.__setattr__(
+            self, "dangerously_allow_filesystem", dangerously_allow_filesystem
+        )
+        object.__setattr__(self, "replicas", replicas)
+
+        # Store any remaining unknown fields in _extensions
+        for key, value in kwargs.items():
+            self._extensions[key] = value
+
+    def __getattr__(self, name: str) -> Any:
+        """Fall back to _extensions for unknown attributes."""
+        if name.startswith("_"):
+            raise AttributeError(
+                f"'{self.__class__.__name__}' object has no attribute '{name}'"
+            )
+        try:
+            extensions = object.__getattribute__(self, "_extensions")
+            return extensions[name]
+        except KeyError:
+            raise AttributeError(
+                f"'{self.__class__.__name__}' object has no attribute '{name}'"
+            )
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        """Handle setting attributes, with special handling for _client."""
+        # For backwards compat
+        if name == "_client":
+            object.__setattr__(self, "ls_client", value)
+        elif name in self.__slots__:
+            object.__setattr__(self, name, value)
         else:
-            values["dotted_order"] = current_dotted_order
-        return values
+            # Route unknown fields to _extensions
+            try:
+                extensions = object.__getattribute__(self, "_extensions")
+            except AttributeError:
+                object.__setattr__(self, "_extensions", {})
+                extensions = object.__getattribute__(self, "_extensions")
+            extensions[name] = value
+
+    def model_dump(
+        self,
+        *,
+        exclude_none: bool = False,
+        exclude: Optional[set] = None,
+        mode: str = "python",
+    ) -> dict[str, Any]:
+        """Convert to dict, including extensions."""
+        result = {}
+        exclude = exclude or set()
+        # Fields to always exclude
+        always_exclude = {
+            "parent_run",
+            "parent_dotted_order",
+            "ls_client",
+            "_extensions",
+        }
+
+        # Add all __slots__ fields (except excluded ones)
+        for slot in self.__slots__:
+            if slot.startswith("_") or slot in exclude or slot in always_exclude:
+                continue
+            value = getattr(self, slot, None)
+            if exclude_none and value is None:
+                continue
+            result[slot] = value
+
+        # Add extensions
+        extensions = object.__getattribute__(self, "_extensions")
+        for key, value in extensions.items():
+            if key not in exclude:
+                if not exclude_none or value is not None:
+                    result[key] = value
+
+        return result
+
+    def dict(
+        self,
+        *,
+        exclude_none: bool = False,
+        exclude: Optional[set] = None,
+    ) -> dict[str, Any]:
+        """Convert to dict (pydantic v1 compatibility)."""
+        return self.model_dump(exclude_none=exclude_none, exclude=exclude)
+
+    @property
+    def metadata(self) -> dict[str, Any]:
+        """Retrieve the metadata (if any)."""
+        if self.extra is None:
+            object.__setattr__(self, "extra", {})
+        assert self.extra is not None  # for mypy
+        return self.extra.setdefault("metadata", {})
+
+    @property
+    def revision_id(self) -> Optional[UUID]:
+        """Retrieve the revision ID (if any)."""
+        return self.metadata.get("revision_id")
+
+    @property
+    def latency(self) -> Optional[float]:
+        """Latency in seconds."""
+        if self.end_time is None:
+            return None
+        return (self.end_time - self.start_time).total_seconds()
+
+    def __repr__(self):
+        """Return a string representation of the RunTree object."""
+        return (
+            f"RunTree(id={self.id}, name='{self.name}', "
+            f"run_type='{self.run_type}', dotted_order='{self.dotted_order}')"
+        )
+
+    @classmethod
+    def construct(cls, **kwargs: Any) -> RunTree:
+        """Construct a RunTree without validation (Pydantic compatibility)."""
+        return cls(**kwargs)
 
     @property
     def client(self) -> Client:
@@ -314,14 +506,6 @@ class RunTree(ls_schemas.RunBase):
     def _client(self) -> Optional[Client]:
         # For backwards compat
         return self.ls_client
-
-    def __setattr__(self, name, value):
-        """Set the `_client` specially."""
-        # For backwards compat
-        if name == "_client":
-            self.ls_client = value
-        else:
-            return super().__setattr__(name, value)
 
     def set(
         self,
@@ -525,9 +709,9 @@ class RunTree(ls_schemas.RunBase):
 
         return run
 
-    def _get_dicts_safe(self):
+    def _get_dicts_safe(self) -> dict[str, Any]:
         # Things like generators cannot be copied
-        self_dict = self.dict(
+        self_dict = self.model_dump(
             exclude={"child_runs", "inputs", "outputs"}, exclude_none=True
         )
         if self.inputs is not None:
@@ -547,7 +731,7 @@ class RunTree(ls_schemas.RunBase):
             self_dict["outputs"] = self.outputs.copy()
         return self_dict
 
-    def _slice_parent_id(self, parent_id: str, run_dict: dict) -> None:
+    def _slice_parent_id(self, parent_id: str, run_dict: dict[str, Any]) -> None:
         """Slice the parent id from dotted order.
 
         Additionally check if the current run is a child of the parent. If so, update
@@ -579,7 +763,7 @@ class RunTree(ls_schemas.RunBase):
 
     def _remap_for_project(
         self, project_name: str, updates: Optional[dict] = None
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Rewrites ids/dotted_order for a given project with optional updates."""
         run_dict = self._get_dicts_safe()
         if project_name == self.session_name:
@@ -746,7 +930,7 @@ class RunTree(ls_schemas.RunBase):
 
     def get_url(self) -> str:
         """Return the URL of the run."""
-        return self.client.get_run_url(run=self)
+        return self.client.get_run_url(run=self)  # type: ignore[arg-type]  # RunTree not RunBase
 
     @classmethod
     def from_dotted_order(
@@ -906,13 +1090,6 @@ class RunTree(ls_schemas.RunBase):
         )
         headers["baggage"] = baggage.to_header()
         return headers
-
-    def __repr__(self):
-        """Return a string representation of the `RunTree` object."""
-        return (
-            f"RunTree(id={self.id}, name='{self.name}', "
-            f"run_type='{self.run_type}', dotted_order='{self.dotted_order}')"
-        )
 
 
 class _Baggage:

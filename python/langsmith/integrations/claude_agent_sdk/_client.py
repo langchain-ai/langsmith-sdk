@@ -370,7 +370,7 @@ def instrument_claude_client(original_class: Any) -> Any:
                                 if v is not None
                             }
                             if meta:
-                                run.metadata.update(meta)
+                                run.metadata.update(meta)  # type: ignore[attr-defined]
 
                         yield msg
                     run.end(outputs=collected[-1] if collected else None)

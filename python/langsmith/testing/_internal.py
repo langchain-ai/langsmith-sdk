@@ -1327,10 +1327,10 @@ def log_feedback(
             "LANGSMITH_TRACING environment variable to 'true')."
         )
         raise ValueError(msg)
-    if run_tree.session_name == "evaluators" and run_tree.metadata.get(
+    if run_tree.session_name == "evaluators" and run_tree.metadata.get(  # type: ignore[attr-defined]
         "reference_run_id"
     ):
-        run_id = run_tree.metadata["reference_run_id"]
+        run_id = run_tree.metadata["reference_run_id"]  # type: ignore[index]  # noqa: F841
         run_tree.add_outputs(
             feedback if isinstance(feedback, dict) else {"feedback": feedback}
         )

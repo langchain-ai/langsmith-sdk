@@ -82,7 +82,7 @@ def set_run_metadata(**metadata: Any) -> None:
             "No active run tree found. Call `set_run_metadata` inside a traced run."
         )
     else:
-        run_tree.metadata.update(metadata)
+        run_tree.metadata.update(metadata)  # type: ignore[attr-defined]
     return
 
 
@@ -287,7 +287,7 @@ def _extract_usage(
     outputs: Optional[dict] = None,
     **kwargs: Any,
 ) -> Optional[schemas.ExtractedUsageMetadata]:
-    from_metadata = (run_tree.metadata or {}).get("usage_metadata")
+    from_metadata = (run_tree.metadata or {}).get("usage_metadata")  # type: ignore[attr-defined]
     return (outputs or {}).get("usage_metadata") or from_metadata
 
 
@@ -1371,7 +1371,7 @@ def _container_end(
     else:
         dict_outputs = {"output": outputs}
     if (usage := _extract_usage(run_tree=run_tree, outputs=dict_outputs)) is not None:
-        run_tree.metadata["usage_metadata"] = usage
+        run_tree.metadata["usage_metadata"] = usage  # type: ignore[index]
     if error:
         stacktrace = utils._format_exc()
         error_repr = f"{repr(error)}\n\n{stacktrace}"

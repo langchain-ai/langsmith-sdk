@@ -1245,7 +1245,7 @@ async def _aforward(
     include_attachments: bool = False,
     error_handling: Literal["log", "ignore"] = "log",
 ) -> _ForwardResults:
-    run: Optional[schemas.RunBase] = None
+    run: Optional[Union[schemas.RunBase, run_trees.RunTree]] = None
 
     def _get_run(r: run_trees.RunTree) -> None:
         nonlocal run
