@@ -103,9 +103,8 @@ function bytesToUuid(bytes: Buffer): string {
  * - Uses current time if the original is not UUID v7
  * - Uses deterministic "random" bits derived from hashing the original + key
  * - Is valid UUID v7 format
- * - Produces the same output for the same inputs (deterministic)
  *
- * This is useful for creating replica IDs that maintain time-ordering properties
+ * This is used for creating replica IDs that maintain time-ordering properties
  * while being deterministic across distributed systems.
  *
  * @param originalId - The source UUID string (ideally UUID v7 to preserve timestamp)

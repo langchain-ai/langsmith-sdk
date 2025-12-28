@@ -107,7 +107,6 @@ def test_uuid7_deterministic() -> None:
     assert d1.version == 7
     assert (d1.bytes[8] & 0xC0) == 0x80  # RFC 4122 variant
 
-    # Deterministic (same input -> same output, critical for distributed tracing)
     assert d1 == d2
 
     # Different inputs -> different outputs

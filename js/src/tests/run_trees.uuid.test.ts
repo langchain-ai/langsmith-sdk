@@ -93,7 +93,6 @@ test("uuid7Deterministic produces valid, deterministic UUID7s", () => {
   // Valid UUID7
   expect(getUuidVersion(d1)).toBe(7);
 
-  // Deterministic (same input -> same output, critical for distributed tracing)
   expect(d1).toBe(d2);
 
   // Different inputs -> different outputs
