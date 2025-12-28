@@ -49,6 +49,7 @@ class AsyncClient:
         prompt_cache_max_size: Optional[int] = None,
         prompt_cache_ttl_seconds: Optional[float] = None,
         prompt_cache_refresh_interval_seconds: Optional[float] = None,
+        prompt_cache_path: Optional[str] = None,
     ):
         """Initialize the async client.
 
@@ -63,6 +64,8 @@ class AsyncClient:
             prompt_cache_ttl_seconds: TTL for cached prompts in seconds. Defaults to 3600.
             prompt_cache_refresh_interval_seconds: How often to check for stale entries.
                 Defaults to 60 seconds.
+            prompt_cache_path: Path to a JSON file to load cached prompts from on
+                initialization. Useful for offline mode.
         """
         self._retry_config = retry_config or {"max_retries": 3}
         _headers = {
@@ -98,7 +101,9 @@ class AsyncClient:
                 max_size=prompt_cache_max_size
                 or int(ls_utils.get_env_var("PROMPT_CACHE_MAX_SIZE", default="100")),
                 ttl_seconds=prompt_cache_ttl_seconds
-                or float(ls_utils.get_env_var("PROMPT_CACHE_TTL_SECONDS", default="3600")),
+                or float(
+                    ls_utils.get_env_var("PROMPT_CACHE_TTL_SECONDS", default="3600")
+                ),
                 refresh_interval_seconds=prompt_cache_refresh_interval_seconds
                 or float(
                     ls_utils.get_env_var(
@@ -108,6 +113,12 @@ class AsyncClient:
                 fetch_func=self._make_async_prompt_cache_fetch_func(),
                 enabled=True,
             )
+            # Load from file if path provided
+            cache_path = prompt_cache_path or ls_utils.get_env_var(
+                "PROMPT_CACHE_PATH", default=""
+            )
+            if cache_path:
+                self._prompt_cache.load(cache_path)
         else:
             self._prompt_cache = None
 

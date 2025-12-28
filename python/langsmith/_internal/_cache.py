@@ -343,7 +343,11 @@ class PromptCache(_BasePromptCache):
 
         # Start background refresh if fetch_func provided and TTL is set
         # (no refresh needed for infinite TTL)
-        if self._enabled and self._fetch_func is not None and self._ttl_seconds is not None:
+        if (
+            self._enabled
+            and self._fetch_func is not None
+            and self._ttl_seconds is not None
+        ):
             self._start_refresh_thread()
 
     def shutdown(self) -> None:

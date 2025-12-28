@@ -713,6 +713,7 @@ class TestCacheMetrics:
 
     def test_refresh_error_tracking(self, sample_prompt_commit):
         """Test that refresh errors are tracked."""
+
         def failing_fetch(key):
             raise Exception("API error")
 
