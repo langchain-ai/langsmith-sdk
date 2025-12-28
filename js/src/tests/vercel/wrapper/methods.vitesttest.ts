@@ -2417,7 +2417,7 @@ describe("wrapAISDK", () => {
             content: "REDACTED_CHILD_INPUT",
           })),
         }),
-        processChildLLMRunOutputs: (outputs) => ({
+        processChildLLMRunOutputs: () => ({
           content: "REDACTED_CHILD_OUTPUT",
           role: "assistant",
         }),
