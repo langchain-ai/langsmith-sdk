@@ -9,17 +9,17 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import threading
 import time
 from abc import ABC
 from collections import OrderedDict
+from collections.abc import Awaitable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional, Union
+from typing import TYPE_CHECKING, Any, Callable, Optional, Union
 
 if TYPE_CHECKING:
-    from langsmith import schemas as ls_schemas
+    pass
 
 logger = logging.getLogger("langsmith.cache")
 
@@ -250,7 +250,7 @@ class _BasePromptCache(ABC):
             return 0
 
         try:
-            with open(path, "r") as f:
+            with open(path) as f:
                 data = json.load(f)
         except (json.JSONDecodeError, OSError) as e:
             logger.warning(f"Failed to load cache file {path}: {e}")

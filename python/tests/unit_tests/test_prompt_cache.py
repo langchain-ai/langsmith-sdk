@@ -11,7 +11,6 @@ from langsmith import schemas as ls_schemas
 from langsmith._internal._cache import (
     AsyncPromptCache,
     CacheEntry,
-    CacheMetrics,
     PromptCache,
 )
 

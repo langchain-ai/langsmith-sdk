@@ -7,10 +7,9 @@ import datetime
 import json
 import uuid
 import warnings
-from collections.abc import AsyncGenerator, AsyncIterator, Mapping, Sequence
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Mapping, Sequence
 from typing import (
     Any,
-    Awaitable,
     Callable,
     Literal,
     Optional,
