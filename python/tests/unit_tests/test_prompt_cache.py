@@ -8,7 +8,12 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from langsmith import schemas as ls_schemas
-from langsmith._internal._cache import AsyncPromptCache, CacheEntry, PromptCache
+from langsmith._internal._cache import (
+    AsyncPromptCache,
+    CacheEntry,
+    CacheMetrics,
+    PromptCache,
+)
 
 
 @pytest.fixture
@@ -638,3 +643,152 @@ class TestOfflineMode:
         assert cache._refresh_task is None
 
         await cache.stop()
+
+
+class TestCacheMetrics:
+    """Tests for cache metrics."""
+
+    def test_initial_metrics(self):
+        """Test that metrics start at zero."""
+        cache = PromptCache(enabled=True)
+        try:
+            assert cache.metrics.hits == 0
+            assert cache.metrics.misses == 0
+            assert cache.metrics.refreshes == 0
+            assert cache.metrics.refresh_errors == 0
+            assert cache.metrics.total_requests == 0
+            assert cache.metrics.hit_rate == 0.0
+        finally:
+            cache.shutdown()
+
+    def test_hit_miss_tracking(self, sample_prompt_commit):
+        """Test that hits and misses are tracked correctly."""
+        cache = PromptCache(enabled=True)
+        try:
+            # Miss on empty cache
+            cache.get("key1")
+            assert cache.metrics.misses == 1
+            assert cache.metrics.hits == 0
+
+            # Set and hit
+            cache.set("key1", sample_prompt_commit)
+            cache.get("key1")
+            assert cache.metrics.hits == 1
+            assert cache.metrics.misses == 1
+
+            # Another hit
+            cache.get("key1")
+            assert cache.metrics.hits == 2
+
+            # Another miss
+            cache.get("key2")
+            assert cache.metrics.misses == 2
+
+            # Verify totals
+            assert cache.metrics.total_requests == 4
+            assert cache.metrics.hit_rate == 0.5  # 2 hits / 4 requests
+        finally:
+            cache.shutdown()
+
+    def test_refresh_tracking(self, sample_prompt_commit):
+        """Test that refreshes are tracked correctly."""
+        mock_fetch = MagicMock(return_value=sample_prompt_commit)
+
+        cache = PromptCache(
+            ttl_seconds=0.1,
+            refresh_interval_seconds=0.2,
+            fetch_func=mock_fetch,
+            enabled=True,
+        )
+        try:
+            cache.set("key1", sample_prompt_commit)
+
+            # Wait for refresh
+            time.sleep(0.5)
+
+            assert cache.metrics.refreshes >= 1
+            assert cache.metrics.refresh_errors == 0
+        finally:
+            cache.shutdown()
+
+    def test_refresh_error_tracking(self, sample_prompt_commit):
+        """Test that refresh errors are tracked."""
+        def failing_fetch(key):
+            raise Exception("API error")
+
+        cache = PromptCache(
+            ttl_seconds=0.1,
+            refresh_interval_seconds=0.2,
+            fetch_func=failing_fetch,
+            enabled=True,
+        )
+        try:
+            cache.set("key1", sample_prompt_commit)
+
+            # Wait for refresh attempt
+            time.sleep(0.5)
+
+            assert cache.metrics.refresh_errors >= 1
+            assert cache.metrics.refreshes == 0
+        finally:
+            cache.shutdown()
+
+    def test_reset_metrics(self, sample_prompt_commit):
+        """Test that metrics can be reset."""
+        cache = PromptCache(enabled=True)
+        try:
+            cache.set("key1", sample_prompt_commit)
+            cache.get("key1")
+            cache.get("key2")
+
+            assert cache.metrics.hits == 1
+            assert cache.metrics.misses == 1
+
+            cache.reset_metrics()
+
+            assert cache.metrics.hits == 0
+            assert cache.metrics.misses == 0
+            assert cache.metrics.total_requests == 0
+        finally:
+            cache.shutdown()
+
+    def test_disabled_cache_tracks_misses(self, sample_prompt_commit):
+        """Test that disabled cache still tracks misses."""
+        cache = PromptCache(enabled=False)
+        try:
+            cache.get("key1")
+            cache.get("key2")
+
+            assert cache.metrics.misses == 2
+            assert cache.metrics.hits == 0
+        finally:
+            cache.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_async_metrics(self, sample_prompt_commit):
+        """Test that async cache also tracks metrics."""
+        mock_fetch = AsyncMock(return_value=sample_prompt_commit)
+
+        cache = AsyncPromptCache(
+            ttl_seconds=0.1,
+            refresh_interval_seconds=0.2,
+            fetch_func=mock_fetch,
+            enabled=True,
+        )
+        try:
+            # Miss
+            cache.get("key1")
+            assert cache.metrics.misses == 1
+
+            # Set and hit
+            cache.set("key1", sample_prompt_commit)
+            cache.get("key1")
+            assert cache.metrics.hits == 1
+
+            # Start refresh and wait
+            await cache.start()
+            await asyncio.sleep(0.5)
+
+            assert cache.metrics.refreshes >= 1
+        finally:
+            await cache.stop()

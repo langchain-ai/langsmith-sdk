@@ -38,6 +38,27 @@ class CacheEntry:
         return (time.time() - self.created_at) > ttl_seconds
 
 
+@dataclass
+class CacheMetrics:
+    """Cache performance metrics."""
+
+    hits: int = 0
+    misses: int = 0
+    refreshes: int = 0
+    refresh_errors: int = 0
+
+    @property
+    def total_requests(self) -> int:
+        """Total cache requests (hits + misses)."""
+        return self.hits + self.misses
+
+    @property
+    def hit_rate(self) -> float:
+        """Cache hit rate (0.0 to 1.0)."""
+        total = self.total_requests
+        return self.hits / total if total > 0 else 0.0
+
+
 class _BasePromptCache(ABC):
     """Base class for prompt caches with shared LRU logic.
 
@@ -52,6 +73,7 @@ class _BasePromptCache(ABC):
         "_ttl_seconds",
         "_refresh_interval",
         "_enabled",
+        "_metrics",
     ]
 
     def __init__(
@@ -77,6 +99,16 @@ class _BasePromptCache(ABC):
         self._ttl_seconds = ttl_seconds
         self._refresh_interval = refresh_interval_seconds
         self._enabled = enabled
+        self._metrics = CacheMetrics()
+
+    @property
+    def metrics(self) -> CacheMetrics:
+        """Get cache performance metrics."""
+        return self._metrics
+
+    def reset_metrics(self) -> None:
+        """Reset all metrics to zero."""
+        self._metrics = CacheMetrics()
 
     def get(self, key: str) -> Optional[Any]:
         """Get a value from cache.
@@ -89,10 +121,12 @@ class _BasePromptCache(ABC):
             Stale entries are still returned (background refresh handles updates).
         """
         if not self._enabled:
+            self._metrics.misses += 1
             return None
 
         with self._lock:
             if key not in self._cache:
+                self._metrics.misses += 1
                 return None
 
             entry = self._cache[key]
@@ -100,6 +134,7 @@ class _BasePromptCache(ABC):
             # Move to end for LRU
             self._cache.move_to_end(key)
 
+            self._metrics.hits += 1
             return entry.value
 
     def set(self, key: str, value: Any) -> None:
@@ -334,7 +369,11 @@ class PromptCache(_BasePromptCache):
     def _refresh_loop(self) -> None:
         """Background loop to refresh stale entries."""
         while not self._shutdown_event.wait(self._refresh_interval):
-            self._refresh_stale_entries()
+            try:
+                self._refresh_stale_entries()
+            except Exception as e:
+                # Log but don't die - keep the refresh loop running
+                logger.exception(f"Unexpected error in cache refresh loop: {e}")
 
     def _refresh_stale_entries(self) -> None:
         """Check for stale entries and refresh them."""
@@ -354,9 +393,11 @@ class PromptCache(_BasePromptCache):
             try:
                 new_value = self._fetch_func(key)
                 self.set(key, new_value)
+                self._metrics.refreshes += 1
                 logger.debug(f"Refreshed cache entry: {key}")
             except Exception as e:
                 # Keep stale data on refresh failure
+                self._metrics.refresh_errors += 1
                 logger.warning(f"Failed to refresh cache entry {key}: {e}")
 
 
@@ -453,12 +494,15 @@ class AsyncPromptCache(_BasePromptCache):
 
     async def _refresh_loop(self) -> None:
         """Async background loop to refresh stale entries."""
-        try:
-            while True:
+        while True:
+            try:
                 await asyncio.sleep(self._refresh_interval)
                 await self._refresh_stale_entries()
-        except asyncio.CancelledError:
-            raise
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                # Log but don't die - keep the refresh loop running
+                logger.exception(f"Unexpected error in async cache refresh loop: {e}")
 
     async def _refresh_stale_entries(self) -> None:
         """Check for stale entries and refresh them asynchronously."""
@@ -476,7 +520,9 @@ class AsyncPromptCache(_BasePromptCache):
             try:
                 new_value = await self._fetch_func(key)
                 self.set(key, new_value)
+                self._metrics.refreshes += 1
                 logger.debug(f"Async refreshed cache entry: {key}")
             except Exception as e:
                 # Keep stale data on refresh failure
+                self._metrics.refresh_errors += 1
                 logger.warning(f"Failed to async refresh cache entry {key}: {e}")
