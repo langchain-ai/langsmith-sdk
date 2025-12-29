@@ -153,7 +153,6 @@ class TestPromptCacheBackgroundRefresh:
             ttl_seconds=0.1,  # Very short TTL
             refresh_interval_seconds=0.2,
             fetch_func=mock_fetch,
-            
         )
         try:
             cache.set("test-key", sample_prompt_commit)
@@ -179,7 +178,6 @@ class TestPromptCacheBackgroundRefresh:
             ttl_seconds=0.1,
             refresh_interval_seconds=0.2,
             fetch_func=failing_fetch,
-            
         )
         try:
             cache.set("test-key", sample_prompt_commit)
@@ -203,7 +201,6 @@ class TestPromptCacheBackgroundRefresh:
             ttl_seconds=0.1,
             refresh_interval_seconds=0.1,
             # No fetch_func
-            
         )
         try:
             cache.set("test-key", sample_prompt_commit)
@@ -225,7 +222,6 @@ class TestPromptCacheBackgroundRefresh:
             ttl_seconds=0.1,
             refresh_interval_seconds=0.1,
             fetch_func=mock_fetch,
-            
         )
 
         # Verify thread is running
@@ -307,7 +303,6 @@ class TestAsyncPromptCache:
             ttl_seconds=0.1,  # Very short TTL
             refresh_interval_seconds=0.2,
             fetch_func=mock_fetch,
-            
         )
         try:
             cache.set("test-key", sample_prompt_commit)
@@ -337,7 +332,6 @@ class TestAsyncPromptCache:
             ttl_seconds=0.1,
             refresh_interval_seconds=0.2,
             fetch_func=failing_fetch,
-            
         )
         try:
             cache.set("test-key", sample_prompt_commit)
@@ -367,7 +361,6 @@ class TestAsyncPromptCache:
             ttl_seconds=0.1,
             refresh_interval_seconds=0.1,
             fetch_func=mock_fetch,
-            
         )
 
         await cache.start()
@@ -388,7 +381,6 @@ class TestAsyncPromptCache:
             ttl_seconds=0.1,
             refresh_interval_seconds=0.1,
             # No fetch_func
-            
         )
 
         await cache.start()
@@ -576,7 +568,6 @@ class TestOfflineMode:
         cache = PromptCache(
             ttl_seconds=None,
             fetch_func=mock_fetch,
-            
         )
         try:
             # No refresh thread should be started
@@ -626,7 +617,6 @@ class TestOfflineMode:
         cache = AsyncPromptCache(
             ttl_seconds=None,
             fetch_func=mock_fetch,
-            
         )
 
         await cache.start()
@@ -690,7 +680,6 @@ class TestCacheMetrics:
             ttl_seconds=0.1,
             refresh_interval_seconds=0.2,
             fetch_func=mock_fetch,
-            
         )
         try:
             cache.set("key1", sample_prompt_commit)
@@ -713,7 +702,6 @@ class TestCacheMetrics:
             ttl_seconds=0.1,
             refresh_interval_seconds=0.2,
             fetch_func=failing_fetch,
-            
         )
         try:
             cache.set("key1", sample_prompt_commit)
@@ -754,7 +742,6 @@ class TestCacheMetrics:
             ttl_seconds=0.1,
             refresh_interval_seconds=0.2,
             fetch_func=mock_fetch,
-            
         )
         try:
             # Miss
