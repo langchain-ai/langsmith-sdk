@@ -829,7 +829,8 @@ export class Client implements LangSmithTracingClientInterface {
         ttlSeconds:
           config.promptCacheTtlSeconds ??
           parseFloat(
-            getLangSmithEnvironmentVariable("PROMPT_CACHE_TTL_SECONDS") ?? "3600"
+            getLangSmithEnvironmentVariable("PROMPT_CACHE_TTL_SECONDS") ??
+              "3600"
           ),
         refreshIntervalSeconds:
           config.promptCacheRefreshIntervalSeconds ??

@@ -253,7 +253,9 @@ describe("PromptCache", () => {
 
     test("should refresh stale entries", async () => {
       const refreshedPrompt = createMockPromptCommit("refreshed");
-      const fetchFunc = jest.fn<(key: string) => Promise<PromptCommit>>().mockResolvedValue(refreshedPrompt);
+      const fetchFunc = jest
+        .fn<(key: string) => Promise<PromptCommit>>()
+        .mockResolvedValue(refreshedPrompt);
 
       const cache = new PromptCache({
         enabled: true,
@@ -299,7 +301,9 @@ describe("PromptCache", () => {
     });
 
     test("should stop refresh on stop()", () => {
-      const fetchFunc = jest.fn<(key: string) => Promise<PromptCommit>>().mockResolvedValue(createMockPromptCommit("test"));
+      const fetchFunc = jest
+        .fn<(key: string) => Promise<PromptCommit>>()
+        .mockResolvedValue(createMockPromptCommit("test"));
 
       const cache = new PromptCache({
         enabled: true,
