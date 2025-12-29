@@ -72,7 +72,6 @@ class _BasePromptCache(ABC):
         "_max_size",
         "_ttl_seconds",
         "_refresh_interval",
-        "_enabled",
         "_metrics",
     ]
 
@@ -82,7 +81,6 @@ class _BasePromptCache(ABC):
         max_size: int = 100,
         ttl_seconds: Optional[float] = 3600.0,
         refresh_interval_seconds: float = 60.0,
-        enabled: bool = True,
     ) -> None:
         """Initialize the base cache.
 
@@ -91,14 +89,12 @@ class _BasePromptCache(ABC):
             ttl_seconds: Time before entry is considered stale. Set to None for
                 infinite TTL (entries never expire, no background refresh).
             refresh_interval_seconds: How often to check for stale entries.
-            enabled: Whether caching is enabled.
         """
         self._cache: OrderedDict[str, CacheEntry] = OrderedDict()
         self._lock = threading.RLock()
         self._max_size = max_size
         self._ttl_seconds = ttl_seconds
         self._refresh_interval = refresh_interval_seconds
-        self._enabled = enabled
         self._metrics = CacheMetrics()
 
     @property
@@ -120,10 +116,6 @@ class _BasePromptCache(ABC):
             The cached value or None if not found.
             Stale entries are still returned (background refresh handles updates).
         """
-        if not self._enabled:
-            self._metrics.misses += 1
-            return None
-
         with self._lock:
             if key not in self._cache:
                 self._metrics.misses += 1
@@ -144,9 +136,6 @@ class _BasePromptCache(ABC):
             key: The cache key (prompt identifier).
             value: The value to cache.
         """
-        if not self._enabled:
-            return
-
         with self._lock:
             now = time.time()
             entry = CacheEntry(value=value, created_at=now)
@@ -167,9 +156,6 @@ class _BasePromptCache(ABC):
         Args:
             key: The cache key to invalidate.
         """
-        if not self._enabled:
-            return
-
         with self._lock:
             self._cache.pop(key, None)
 
@@ -318,7 +304,6 @@ class PromptCache(_BasePromptCache):
         ttl_seconds: Optional[float] = 3600.0,
         refresh_interval_seconds: float = 60.0,
         fetch_func: Optional[Callable[[str], Any]] = None,
-        enabled: bool = True,
     ) -> None:
         """Initialize the sync prompt cache.
 
@@ -329,13 +314,11 @@ class PromptCache(_BasePromptCache):
             refresh_interval_seconds: How often to check for stale entries.
             fetch_func: Callback to fetch fresh data for a cache key.
                 If provided, starts a background thread for refresh.
-            enabled: Whether caching is enabled.
         """
         super().__init__(
             max_size=max_size,
             ttl_seconds=ttl_seconds,
             refresh_interval_seconds=refresh_interval_seconds,
-            enabled=enabled,
         )
         self._fetch_func = fetch_func
         self._shutdown_event = threading.Event()
@@ -343,11 +326,7 @@ class PromptCache(_BasePromptCache):
 
         # Start background refresh if fetch_func provided and TTL is set
         # (no refresh needed for infinite TTL)
-        if (
-            self._enabled
-            and self._fetch_func is not None
-            and self._ttl_seconds is not None
-        ):
+        if self._fetch_func is not None and self._ttl_seconds is not None:
             self._start_refresh_thread()
 
     def shutdown(self) -> None:
@@ -439,7 +418,6 @@ class AsyncPromptCache(_BasePromptCache):
         ttl_seconds: Optional[float] = 3600.0,
         refresh_interval_seconds: float = 60.0,
         fetch_func: Optional[Callable[[str], Awaitable[Any]]] = None,
-        enabled: bool = True,
     ) -> None:
         """Initialize the async prompt cache.
 
@@ -449,13 +427,11 @@ class AsyncPromptCache(_BasePromptCache):
                 infinite TTL (offline mode - entries never expire).
             refresh_interval_seconds: How often to check for stale entries.
             fetch_func: Async callback to fetch fresh data for a cache key.
-            enabled: Whether caching is enabled.
         """
         super().__init__(
             max_size=max_size,
             ttl_seconds=ttl_seconds,
             refresh_interval_seconds=refresh_interval_seconds,
-            enabled=enabled,
         )
         self._fetch_func = fetch_func
         self._refresh_task: Optional[asyncio.Task[None]] = None
@@ -467,7 +443,7 @@ class AsyncPromptCache(_BasePromptCache):
         periodically checks for stale entries and refreshes them.
         Does nothing if ttl_seconds is None (infinite TTL mode).
         """
-        if not self._enabled or self._fetch_func is None or self._ttl_seconds is None:
+        if self._fetch_func is None or self._ttl_seconds is None:
             return
 
         if self._refresh_task is not None:

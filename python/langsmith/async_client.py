@@ -110,7 +110,6 @@ class AsyncClient:
                     )
                 ),
                 fetch_func=self._make_async_prompt_cache_fetch_func(),
-                enabled=True,
             )
             # Load from file if path provided
             cache_path = prompt_cache_path or ls_utils.get_env_var(
@@ -1769,16 +1768,16 @@ class AsyncClient:
         prompt_identifier: str,
         *,
         include_model: Optional[bool] = False,
-        use_cache: bool = True,
+        skip_cache: bool = False,
     ) -> ls_schemas.PromptCommit:
         """Pull a prompt object from the LangSmith API.
 
         Args:
             prompt_identifier (str): The identifier of the prompt.
             include_model (Optional[bool]): Whether to include model information.
-            use_cache (bool): Whether to use the prompt cache if enabled.
+            skip_cache (bool): Whether to skip the prompt cache.
 
-                Defaults to `True`.
+                Defaults to `False`.
 
         Returns:
             PromptCommit: The prompt object.
@@ -1787,7 +1786,7 @@ class AsyncClient:
             ValueError: If no commits are found for the prompt.
         """
         # Try cache first if enabled
-        if use_cache and self._prompt_cache is not None:
+        if not skip_cache and self._prompt_cache is not None:
             cache_key = self._get_prompt_cache_key(prompt_identifier, include_model)
             cached = self._prompt_cache.get(cache_key)
             if cached is not None:
@@ -1797,7 +1796,7 @@ class AsyncClient:
         result = await self._afetch_prompt_from_api(prompt_identifier, include_model)
 
         # Store in cache
-        if use_cache and self._prompt_cache is not None:
+        if not skip_cache and self._prompt_cache is not None:
             cache_key = self._get_prompt_cache_key(prompt_identifier, include_model)
             self._prompt_cache.set(cache_key, result)
 
@@ -1867,6 +1866,7 @@ class AsyncClient:
         include_model: bool | None = False,
         secrets: dict[str, str] | None = None,
         secrets_from_env: bool = False,
+        skip_cache: bool = False,
     ) -> Any:
         """Pull a prompt and return it as a LangChain `PromptTemplate`.
 
@@ -1885,6 +1885,7 @@ class AsyncClient:
 
                 **SECURITY NOTE**: Should only be set to `True` when pulling trusted
                 prompts.
+            skip_cache: Whether to skip the prompt cache. Defaults to `False`.
 
         Returns:
             Any: The prompt object in the specified format.
@@ -1908,7 +1909,7 @@ class AsyncClient:
             langsmith package) depends on.
         """
         prompt_object = await self.pull_prompt_commit(
-            prompt_identifier, include_model=include_model
+            prompt_identifier, include_model=include_model, skip_cache=skip_cache
         )
         return ls_client._process_prompt_manifest(
             prompt_object,

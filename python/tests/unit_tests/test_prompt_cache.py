@@ -50,16 +50,9 @@ class TestCacheEntry:
 class TestPromptCacheBasic:
     """Basic tests for PromptCache."""
 
-    def test_cache_disabled(self, sample_prompt_commit):
-        """Test that disabled cache returns None."""
-        cache = PromptCache(enabled=False)
-        cache.set("test-key", sample_prompt_commit)
-        assert cache.get("test-key") is None
-        cache.shutdown()
-
     def test_get_set_basic(self, sample_prompt_commit):
         """Test basic get/set operations."""
-        cache = PromptCache(max_size=100, enabled=True)
+        cache = PromptCache(max_size=100)
         try:
             # Initially empty
             assert cache.get("test-key") is None
@@ -77,7 +70,7 @@ class TestPromptCacheBasic:
 
     def test_invalidate(self, sample_prompt_commit):
         """Test cache invalidation."""
-        cache = PromptCache(enabled=True)
+        cache = PromptCache()
         try:
             cache.set("test-key", sample_prompt_commit)
             assert cache.get("test-key") is not None
@@ -89,7 +82,7 @@ class TestPromptCacheBasic:
 
     def test_clear(self, sample_prompt_commit):
         """Test clearing entire cache."""
-        cache = PromptCache(enabled=True)
+        cache = PromptCache()
         try:
             cache.set("key1", sample_prompt_commit)
             cache.set("key2", sample_prompt_commit)
@@ -108,7 +101,7 @@ class TestPromptCacheLRU:
 
     def test_lru_eviction(self, sample_prompt_commit):
         """Test that LRU eviction works when max_size is exceeded."""
-        cache = PromptCache(max_size=3, enabled=True)
+        cache = PromptCache(max_size=3)
         try:
             # Fill cache to max
             cache.set("key1", sample_prompt_commit)
@@ -131,7 +124,7 @@ class TestPromptCacheLRU:
 
     def test_lru_access_updates_order(self, sample_prompt_commit):
         """Test that accessing an entry updates its position in LRU."""
-        cache = PromptCache(max_size=2, enabled=True)
+        cache = PromptCache(max_size=2)
         try:
             cache.set("key1", sample_prompt_commit)
             cache.set("key2", sample_prompt_commit)
@@ -160,7 +153,7 @@ class TestPromptCacheBackgroundRefresh:
             ttl_seconds=0.1,  # Very short TTL
             refresh_interval_seconds=0.2,
             fetch_func=mock_fetch,
-            enabled=True,
+            
         )
         try:
             cache.set("test-key", sample_prompt_commit)
@@ -186,7 +179,7 @@ class TestPromptCacheBackgroundRefresh:
             ttl_seconds=0.1,
             refresh_interval_seconds=0.2,
             fetch_func=failing_fetch,
-            enabled=True,
+            
         )
         try:
             cache.set("test-key", sample_prompt_commit)
@@ -210,7 +203,7 @@ class TestPromptCacheBackgroundRefresh:
             ttl_seconds=0.1,
             refresh_interval_seconds=0.1,
             # No fetch_func
-            enabled=True,
+            
         )
         try:
             cache.set("test-key", sample_prompt_commit)
@@ -232,7 +225,7 @@ class TestPromptCacheBackgroundRefresh:
             ttl_seconds=0.1,
             refresh_interval_seconds=0.1,
             fetch_func=mock_fetch,
-            enabled=True,
+            
         )
 
         # Verify thread is running
@@ -250,7 +243,7 @@ class TestPromptCacheThreadSafety:
 
     def test_concurrent_reads(self, sample_prompt_commit):
         """Test concurrent read operations."""
-        cache = PromptCache(enabled=True)
+        cache = PromptCache()
         try:
             cache.set("test-key", sample_prompt_commit)
 
@@ -278,7 +271,7 @@ class TestPromptCacheThreadSafety:
 
     def test_concurrent_writes(self, sample_prompt_commit):
         """Test concurrent write operations."""
-        cache = PromptCache(max_size=1000, enabled=True)
+        cache = PromptCache(max_size=1000)
         try:
             errors = []
 
@@ -314,7 +307,7 @@ class TestAsyncPromptCache:
             ttl_seconds=0.1,  # Very short TTL
             refresh_interval_seconds=0.2,
             fetch_func=mock_fetch,
-            enabled=True,
+            
         )
         try:
             cache.set("test-key", sample_prompt_commit)
@@ -344,7 +337,7 @@ class TestAsyncPromptCache:
             ttl_seconds=0.1,
             refresh_interval_seconds=0.2,
             fetch_func=failing_fetch,
-            enabled=True,
+            
         )
         try:
             cache.set("test-key", sample_prompt_commit)
@@ -374,7 +367,7 @@ class TestAsyncPromptCache:
             ttl_seconds=0.1,
             refresh_interval_seconds=0.1,
             fetch_func=mock_fetch,
-            enabled=True,
+            
         )
 
         await cache.start()
@@ -395,7 +388,7 @@ class TestAsyncPromptCache:
             ttl_seconds=0.1,
             refresh_interval_seconds=0.1,
             # No fetch_func
-            enabled=True,
+            
         )
 
         await cache.start()
@@ -409,7 +402,7 @@ class TestAsyncPromptCache:
     @pytest.mark.asyncio
     async def test_basic_operations(self, sample_prompt_commit):
         """Test basic get/set operations work without starting refresh."""
-        cache = AsyncPromptCache(enabled=True)
+        cache = AsyncPromptCache()
 
         # Set and get
         cache.set("test-key", sample_prompt_commit)
@@ -431,7 +424,7 @@ class TestCachePersistence:
         cache_file = tmp_path / "cache.json"
 
         # Create cache and add entries
-        cache1 = PromptCache(enabled=True)
+        cache1 = PromptCache()
         try:
             cache1.set("prompt1", sample_prompt_commit)
             cache1.set("prompt2", sample_prompt_commit)
@@ -445,7 +438,7 @@ class TestCachePersistence:
         assert cache_file.exists()
 
         # Load into new cache
-        cache2 = PromptCache(enabled=True)
+        cache2 = PromptCache()
         try:
             loaded = cache2.load(cache_file)
 
@@ -465,7 +458,7 @@ class TestCachePersistence:
 
     def test_load_nonexistent_file(self, tmp_path):
         """Test loading from nonexistent file returns 0."""
-        cache = PromptCache(enabled=True)
+        cache = PromptCache()
         try:
             loaded = cache.load(tmp_path / "nonexistent.json")
             assert loaded == 0
@@ -477,7 +470,7 @@ class TestCachePersistence:
         cache_file = tmp_path / "corrupted.json"
         cache_file.write_text("not valid json {{{")
 
-        cache = PromptCache(enabled=True)
+        cache = PromptCache()
         try:
             loaded = cache.load(cache_file)
             assert loaded == 0
@@ -489,7 +482,7 @@ class TestCachePersistence:
         cache_file = tmp_path / "cache.json"
 
         # Create cache with many entries
-        cache1 = PromptCache(max_size=100, enabled=True)
+        cache1 = PromptCache(max_size=100)
         try:
             for i in range(10):
                 cache1.set(f"prompt{i}", sample_prompt_commit)
@@ -498,7 +491,7 @@ class TestCachePersistence:
             cache1.shutdown()
 
         # Load into cache with smaller max_size
-        cache2 = PromptCache(max_size=3, enabled=True)
+        cache2 = PromptCache(max_size=3)
         try:
             loaded = cache2.load(cache_file)
             assert loaded == 3  # Only loaded up to max_size
@@ -509,7 +502,7 @@ class TestCachePersistence:
         """Test that dump creates parent directories if needed."""
         cache_file = tmp_path / "nested" / "dir" / "cache.json"
 
-        cache = PromptCache(enabled=True)
+        cache = PromptCache()
         try:
             cache.set("prompt1", sample_prompt_commit)
             cache.dump(cache_file)
@@ -523,7 +516,7 @@ class TestCachePersistence:
         cache_file = tmp_path / "cache.json"
 
         # Create and dump cache
-        cache1 = PromptCache(enabled=True)
+        cache1 = PromptCache()
         try:
             cache1.set("prompt1", sample_prompt_commit)
             cache1.dump(cache_file)
@@ -531,7 +524,7 @@ class TestCachePersistence:
             cache1.shutdown()
 
         # Load into new cache - entries should have fresh TTL (not stale)
-        cache2 = PromptCache(ttl_seconds=3600, enabled=True)
+        cache2 = PromptCache(ttl_seconds=3600)
         try:
             cache2.load(cache_file)
             stale_keys = cache2._get_stale_keys()
@@ -544,11 +537,11 @@ class TestCachePersistence:
         cache_file = tmp_path / "async_cache.json"
 
         # dump/load are inherited from base class
-        cache1 = AsyncPromptCache(enabled=True)
+        cache1 = AsyncPromptCache()
         cache1.set("prompt1", sample_prompt_commit)
         cache1.dump(cache_file)
 
-        cache2 = AsyncPromptCache(enabled=True)
+        cache2 = AsyncPromptCache()
         loaded = cache2.load(cache_file)
 
         assert loaded == 1
@@ -560,7 +553,7 @@ class TestOfflineMode:
 
     def test_infinite_ttl_never_stale(self, sample_prompt_commit):
         """Test that entries with ttl_seconds=None are never stale."""
-        cache = PromptCache(ttl_seconds=None, enabled=True)
+        cache = PromptCache(ttl_seconds=None)
         try:
             cache.set("prompt1", sample_prompt_commit)
 
@@ -583,7 +576,7 @@ class TestOfflineMode:
         cache = PromptCache(
             ttl_seconds=None,
             fetch_func=mock_fetch,
-            enabled=True,
+            
         )
         try:
             # No refresh thread should be started
@@ -602,7 +595,7 @@ class TestOfflineMode:
         cache_file = tmp_path / "offline_cache.json"
 
         # Online: populate and dump cache
-        online_cache = PromptCache(ttl_seconds=3600, enabled=True)
+        online_cache = PromptCache(ttl_seconds=3600)
         try:
             online_cache.set("prompt1", sample_prompt_commit)
             online_cache.set("prompt2", sample_prompt_commit)
@@ -611,7 +604,7 @@ class TestOfflineMode:
             online_cache.shutdown()
 
         # Offline: load with infinite TTL
-        offline_cache = PromptCache(ttl_seconds=None, enabled=True)
+        offline_cache = PromptCache(ttl_seconds=None)
         try:
             loaded = offline_cache.load(cache_file)
             assert loaded == 2
@@ -633,7 +626,7 @@ class TestOfflineMode:
         cache = AsyncPromptCache(
             ttl_seconds=None,
             fetch_func=mock_fetch,
-            enabled=True,
+            
         )
 
         await cache.start()
@@ -649,7 +642,7 @@ class TestCacheMetrics:
 
     def test_initial_metrics(self):
         """Test that metrics start at zero."""
-        cache = PromptCache(enabled=True)
+        cache = PromptCache()
         try:
             assert cache.metrics.hits == 0
             assert cache.metrics.misses == 0
@@ -662,7 +655,7 @@ class TestCacheMetrics:
 
     def test_hit_miss_tracking(self, sample_prompt_commit):
         """Test that hits and misses are tracked correctly."""
-        cache = PromptCache(enabled=True)
+        cache = PromptCache()
         try:
             # Miss on empty cache
             cache.get("key1")
@@ -697,7 +690,7 @@ class TestCacheMetrics:
             ttl_seconds=0.1,
             refresh_interval_seconds=0.2,
             fetch_func=mock_fetch,
-            enabled=True,
+            
         )
         try:
             cache.set("key1", sample_prompt_commit)
@@ -720,7 +713,7 @@ class TestCacheMetrics:
             ttl_seconds=0.1,
             refresh_interval_seconds=0.2,
             fetch_func=failing_fetch,
-            enabled=True,
+            
         )
         try:
             cache.set("key1", sample_prompt_commit)
@@ -735,7 +728,7 @@ class TestCacheMetrics:
 
     def test_reset_metrics(self, sample_prompt_commit):
         """Test that metrics can be reset."""
-        cache = PromptCache(enabled=True)
+        cache = PromptCache()
         try:
             cache.set("key1", sample_prompt_commit)
             cache.get("key1")
@@ -752,18 +745,6 @@ class TestCacheMetrics:
         finally:
             cache.shutdown()
 
-    def test_disabled_cache_tracks_misses(self, sample_prompt_commit):
-        """Test that disabled cache still tracks misses."""
-        cache = PromptCache(enabled=False)
-        try:
-            cache.get("key1")
-            cache.get("key2")
-
-            assert cache.metrics.misses == 2
-            assert cache.metrics.hits == 0
-        finally:
-            cache.shutdown()
-
     @pytest.mark.asyncio
     async def test_async_metrics(self, sample_prompt_commit):
         """Test that async cache also tracks metrics."""
@@ -773,7 +754,7 @@ class TestCacheMetrics:
             ttl_seconds=0.1,
             refresh_interval_seconds=0.2,
             fetch_func=mock_fetch,
-            enabled=True,
+            
         )
         try:
             # Miss
