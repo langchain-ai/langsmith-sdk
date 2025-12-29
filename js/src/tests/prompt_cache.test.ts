@@ -18,22 +18,14 @@ function createMockPromptCommit(name: string): PromptCommit {
 
 describe("PromptCache", () => {
   describe("basic operations", () => {
-    test("should return undefined for missing keys when enabled", () => {
-      const cache = new PromptCache({ enabled: true });
+    test("should return undefined for missing keys", () => {
+      const cache = new PromptCache();
       expect(cache.get("missing-key")).toBeUndefined();
       cache.stop();
     });
 
-    test("should return undefined when disabled", () => {
-      const cache = new PromptCache({ enabled: false });
-      const prompt = createMockPromptCommit("test");
-      cache.set("test-key", prompt);
-      expect(cache.get("test-key")).toBeUndefined();
-      cache.stop();
-    });
-
     test("should get and set values", () => {
-      const cache = new PromptCache({ enabled: true, ttlSeconds: null });
+      const cache = new PromptCache({ ttlSeconds: null });
       const prompt = createMockPromptCommit("test");
       cache.set("test-key", prompt);
       expect(cache.get("test-key")).toEqual(prompt);
@@ -41,7 +33,7 @@ describe("PromptCache", () => {
     });
 
     test("should invalidate entries", () => {
-      const cache = new PromptCache({ enabled: true, ttlSeconds: null });
+      const cache = new PromptCache({ ttlSeconds: null });
       const prompt = createMockPromptCommit("test");
       cache.set("test-key", prompt);
       cache.invalidate("test-key");
@@ -50,7 +42,7 @@ describe("PromptCache", () => {
     });
 
     test("should clear all entries", () => {
-      const cache = new PromptCache({ enabled: true, ttlSeconds: null });
+      const cache = new PromptCache({ ttlSeconds: null });
       cache.set("key1", createMockPromptCommit("test1"));
       cache.set("key2", createMockPromptCommit("test2"));
       expect(cache.size).toBe(2);
@@ -63,7 +55,6 @@ describe("PromptCache", () => {
   describe("LRU eviction", () => {
     test("should evict oldest entry when max size reached", () => {
       const cache = new PromptCache({
-        enabled: true,
         maxSize: 2,
         ttlSeconds: null,
       });
@@ -81,7 +72,6 @@ describe("PromptCache", () => {
 
     test("should update LRU order on access", () => {
       const cache = new PromptCache({
-        enabled: true,
         maxSize: 2,
         ttlSeconds: null,
       });
@@ -104,7 +94,7 @@ describe("PromptCache", () => {
 
   describe("metrics", () => {
     test("should track hits and misses", () => {
-      const cache = new PromptCache({ enabled: true, ttlSeconds: null });
+      const cache = new PromptCache({ ttlSeconds: null });
       cache.set("key1", createMockPromptCommit("test1"));
 
       cache.get("key1"); // Hit
@@ -118,15 +108,8 @@ describe("PromptCache", () => {
       cache.stop();
     });
 
-    test("should track misses when disabled", () => {
-      const cache = new PromptCache({ enabled: false });
-      cache.get("any-key");
-      expect(cache.metrics.misses).toBe(1);
-      cache.stop();
-    });
-
     test("should reset metrics", () => {
-      const cache = new PromptCache({ enabled: true, ttlSeconds: null });
+      const cache = new PromptCache({ ttlSeconds: null });
       cache.set("key1", createMockPromptCommit("test1"));
       cache.get("key1");
       cache.get("missing");
@@ -154,14 +137,14 @@ describe("PromptCache", () => {
 
     test("should dump and load cache", () => {
       const cachePath = path.join(tempDir, "cache.json");
-      const cache1 = new PromptCache({ enabled: true, ttlSeconds: null });
+      const cache1 = new PromptCache({ ttlSeconds: null });
 
       cache1.set("key1", createMockPromptCommit("test1"));
       cache1.set("key2", createMockPromptCommit("test2"));
       cache1.dump(cachePath);
       cache1.stop();
 
-      const cache2 = new PromptCache({ enabled: true, ttlSeconds: null });
+      const cache2 = new PromptCache({ ttlSeconds: null });
       const loaded = cache2.load(cachePath);
 
       expect(loaded).toBe(2);
@@ -171,7 +154,7 @@ describe("PromptCache", () => {
     });
 
     test("should return 0 for non-existent file", () => {
-      const cache = new PromptCache({ enabled: true, ttlSeconds: null });
+      const cache = new PromptCache({ ttlSeconds: null });
       const loaded = cache.load("/non/existent/path.json");
       expect(loaded).toBe(0);
       cache.stop();
@@ -181,7 +164,7 @@ describe("PromptCache", () => {
       const cachePath = path.join(tempDir, "corrupted.json");
       fs.writeFileSync(cachePath, "not valid json{{{");
 
-      const cache = new PromptCache({ enabled: true, ttlSeconds: null });
+      const cache = new PromptCache({ ttlSeconds: null });
       const loaded = cache.load(cachePath);
       expect(loaded).toBe(0);
       cache.stop();
@@ -190,7 +173,6 @@ describe("PromptCache", () => {
     test("should respect max size when loading", () => {
       const cachePath = path.join(tempDir, "cache.json");
       const cache1 = new PromptCache({
-        enabled: true,
         maxSize: 10,
         ttlSeconds: null,
       });
@@ -202,7 +184,6 @@ describe("PromptCache", () => {
       cache1.stop();
 
       const cache2 = new PromptCache({
-        enabled: true,
         maxSize: 3,
         ttlSeconds: null,
       });
@@ -215,7 +196,7 @@ describe("PromptCache", () => {
 
     test("should create parent directories", () => {
       const cachePath = path.join(tempDir, "nested", "dir", "cache.json");
-      const cache = new PromptCache({ enabled: true, ttlSeconds: null });
+      const cache = new PromptCache({ ttlSeconds: null });
 
       cache.set("key1", createMockPromptCommit("test1"));
       cache.dump(cachePath);
@@ -237,7 +218,6 @@ describe("PromptCache", () => {
     test("should not start refresh when ttlSeconds is null", () => {
       const fetchFunc = jest.fn();
       const cache = new PromptCache({
-        enabled: true,
         ttlSeconds: null, // Infinite TTL
         fetchFunc: fetchFunc as (key: string) => Promise<PromptCommit>,
       });
@@ -258,7 +238,6 @@ describe("PromptCache", () => {
         .mockResolvedValue(refreshedPrompt);
 
       const cache = new PromptCache({
-        enabled: true,
         ttlSeconds: 1, // 1 second TTL
         refreshIntervalSeconds: 1, // Check every second
         fetchFunc,
@@ -282,7 +261,6 @@ describe("PromptCache", () => {
         .mockRejectedValue(new Error("Network error"));
 
       const cache = new PromptCache({
-        enabled: true,
         ttlSeconds: 1,
         refreshIntervalSeconds: 1,
         fetchFunc,
@@ -306,7 +284,6 @@ describe("PromptCache", () => {
         .mockResolvedValue(createMockPromptCommit("test"));
 
       const cache = new PromptCache({
-        enabled: true,
         ttlSeconds: 1,
         refreshIntervalSeconds: 1,
         fetchFunc,
@@ -339,7 +316,6 @@ describe("PromptCache", () => {
 
       // Step 1: Online - populate and dump cache
       const onlineCache = new PromptCache({
-        enabled: true,
         ttlSeconds: 3600,
       });
       onlineCache.set("prompt1", createMockPromptCommit("test1"));
@@ -349,7 +325,6 @@ describe("PromptCache", () => {
 
       // Step 2: Offline - load from file with infinite TTL
       const offlineCache = new PromptCache({
-        enabled: true,
         ttlSeconds: null, // Never expire
         fetchFunc: undefined, // No network access
       });

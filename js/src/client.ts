@@ -840,7 +840,6 @@ export class Client implements LangSmithTracingClientInterface {
             ) ?? "60"
           ),
         fetchFunc: this._makeFetchPromptFunc(),
-        enabled: true,
       });
 
       // Load from file if path provided
@@ -5483,10 +5482,11 @@ export class Client implements LangSmithTracingClientInterface {
     promptIdentifier: string,
     options?: {
       includeModel?: boolean;
+      skipCache?: boolean;
     }
   ): Promise<PromptCommit> {
-    // Check cache first
-    if (this._promptCache) {
+    // Check cache first if not skipped
+    if (!options?.skipCache && this._promptCache) {
       const cacheKey = this._getPromptCacheKey(
         promptIdentifier,
         options?.includeModel
@@ -5502,7 +5502,7 @@ export class Client implements LangSmithTracingClientInterface {
       return result;
     }
 
-    // No cache - fetch directly
+    // No cache or skip cache - fetch directly
     return this._fetchPromptFromApi(promptIdentifier, options);
   }
 
@@ -5515,10 +5515,12 @@ export class Client implements LangSmithTracingClientInterface {
     promptIdentifier: string,
     options?: {
       includeModel?: boolean;
+      skipCache?: boolean;
     }
   ): Promise<any> {
     const promptObject = await this.pullPromptCommit(promptIdentifier, {
       includeModel: options?.includeModel,
+      skipCache: options?.skipCache,
     });
     const prompt = JSON.stringify(promptObject.manifest);
     return prompt;

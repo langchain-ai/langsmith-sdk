@@ -40,8 +40,6 @@ export interface PromptCacheConfig {
   refreshIntervalSeconds?: number;
   /** Callback to fetch fresh data for a cache key */
   fetchFunc?: (key: string) => Promise<PromptCommit>;
-  /** Whether caching is enabled. Default: true */
-  enabled?: boolean;
 }
 
 /**
@@ -86,7 +84,6 @@ export class PromptCache {
   private ttlSeconds: number | null;
   private refreshIntervalSeconds: number;
   private fetchFunc?: (key: string) => Promise<PromptCommit>;
-  private enabled: boolean;
   private refreshTimer?: ReturnType<typeof setInterval>;
   private _metrics: CacheMetrics = {
     hits: 0,
@@ -100,10 +97,9 @@ export class PromptCache {
     this.ttlSeconds = config.ttlSeconds ?? 3600;
     this.refreshIntervalSeconds = config.refreshIntervalSeconds ?? 60;
     this.fetchFunc = config.fetchFunc;
-    this.enabled = config.enabled ?? true;
 
     // Start background refresh if fetch function provided and TTL is set
-    if (this.enabled && this.fetchFunc && this.ttlSeconds !== null) {
+    if (this.fetchFunc && this.ttlSeconds !== null) {
       this.startRefreshLoop();
     }
   }
@@ -149,11 +145,6 @@ export class PromptCache {
    * Stale entries are still returned (background refresh handles updates).
    */
   get(key: string): PromptCommit | undefined {
-    if (!this.enabled) {
-      this._metrics.misses += 1;
-      return undefined;
-    }
-
     const entry = this.cache.get(key);
     if (!entry) {
       this._metrics.misses += 1;
@@ -172,10 +163,6 @@ export class PromptCache {
    * Set a value in the cache.
    */
   set(key: string, value: PromptCommit): void {
-    if (!this.enabled) {
-      return;
-    }
-
     // Check if we need to evict (and key is new)
     if (!this.cache.has(key) && this.cache.size >= this.maxSize) {
       // Evict oldest (first item in Map)
@@ -199,9 +186,6 @@ export class PromptCache {
    * Remove a specific entry from cache.
    */
   invalidate(key: string): void {
-    if (!this.enabled) {
-      return;
-    }
     this.cache.delete(key);
   }
 
