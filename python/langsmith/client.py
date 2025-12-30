@@ -73,6 +73,7 @@ from langsmith._internal._background_thread import (
     tracing_control_thread_func as _tracing_control_thread_func,
 )
 from langsmith._internal._beta_decorator import warn_beta
+from langsmith._internal._cache import PromptCache
 from langsmith._internal._compressed_traces import CompressedTraces
 from langsmith._internal._constants import (
     _AUTO_SCALE_UP_NTHREADS_LIMIT,
@@ -665,6 +666,7 @@ class Client:
         "_max_batch_size_bytes",
         "_tracing_error_callback",
         "_multipart_disabled",
+        "_prompt_cache",
     ]
 
     _api_key: Optional[str]
@@ -702,6 +704,11 @@ class Client:
         max_batch_size_bytes: Optional[int] = None,
         headers: Optional[dict[str, str]] = None,
         tracing_error_callback: Optional[Callable[[Exception], None]] = None,
+        prompt_cache_enabled: Optional[bool] = None,
+        prompt_cache_max_size: Optional[int] = None,
+        prompt_cache_ttl_seconds: Optional[float] = None,
+        prompt_cache_refresh_interval_seconds: Optional[float] = None,
+        prompt_cache_path: Optional[str] = None,
     ) -> None:
         """Initialize a `Client` instance.
 
@@ -792,6 +799,22 @@ class Client:
             tracing_error_callback (Optional[Callable[[Exception], None]]): Optional callback function to handle errors.
 
                 Called when exceptions occur during tracing operations.
+            prompt_cache_enabled (Optional[bool]): Whether to enable prompt caching.
+
+                Defaults to `False`. Set to `True` or use the `LANGSMITH_PROMPT_CACHE_ENABLED`
+                environment variable to enable.
+            prompt_cache_max_size (Optional[int]): Maximum number of prompts to cache.
+
+                Defaults to `100`.
+            prompt_cache_ttl_seconds (Optional[float]): Time-to-live for cached prompts in seconds.
+
+                After this time, cached prompts are considered stale and will be
+                refreshed in the background. Defaults to `3600` (1 hour).
+            prompt_cache_refresh_interval_seconds (Optional[float]): How often to check for
+                stale cache entries and refresh them in seconds. Defaults to `60` (1 minute).
+            prompt_cache_path (Optional[str]): Path to a JSON file to load cached prompts from
+                on initialization. Useful for offline mode. The file should have been created
+                using `client._prompt_cache.dump(path)`.
 
         Raises:
             LangSmithUserError: If the API key is not provided when using the hosted service.
@@ -999,6 +1022,38 @@ class Client:
             self.otel_exporter = None
 
         self._tracing_error_callback = tracing_error_callback
+
+        # Initialize prompt cache
+        cache_enabled = (
+            prompt_cache_enabled
+            if prompt_cache_enabled is not None
+            else ls_utils.get_env_var("PROMPT_CACHE_ENABLED", default="false") == "true"
+        )
+
+        if cache_enabled:
+            self._prompt_cache: Optional[PromptCache] = PromptCache(
+                max_size=prompt_cache_max_size
+                or int(ls_utils.get_env_var("PROMPT_CACHE_MAX_SIZE", default="100")),
+                ttl_seconds=prompt_cache_ttl_seconds
+                or float(
+                    ls_utils.get_env_var("PROMPT_CACHE_TTL_SECONDS", default="3600")
+                ),
+                refresh_interval_seconds=prompt_cache_refresh_interval_seconds
+                or float(
+                    ls_utils.get_env_var(
+                        "PROMPT_CACHE_REFRESH_INTERVAL_SECONDS", default="60"
+                    )
+                ),
+                fetch_func=self._make_prompt_cache_fetch_func(),
+            )
+            # Load from file if path provided
+            cache_path = prompt_cache_path or ls_utils.get_env_var(
+                "PROMPT_CACHE_PATH", default=""
+            )
+            if cache_path:
+                self._prompt_cache.load(cache_path)
+        else:
+            self._prompt_cache = None
 
     def _repr_html_(self) -> str:
         """Return an HTML representation of the instance with a link to the URL.
@@ -8017,22 +8072,53 @@ class Client:
         response = self.request_with_retries("DELETE", f"/repos/{owner}/{prompt_name}")
         response.raise_for_status()
 
-    def pull_prompt_commit(
-        self,
-        prompt_identifier: str,
-        *,
-        include_model: Optional[bool] = False,
-    ) -> ls_schemas.PromptCommit:
-        """Pull a prompt object from the LangSmith API.
+    def _get_prompt_cache_key(
+        self, prompt_identifier: str, include_model: Optional[bool] = False
+    ) -> str:
+        """Generate a cache key for a prompt.
 
         Args:
-            prompt_identifier (str): The identifier of the prompt.
+            prompt_identifier: The prompt identifier.
+            include_model: Whether model info is included.
 
         Returns:
-            PromptCommit: The prompt object.
+            The cache key string.
+        """
+        suffix = ":with_model" if include_model else ""
+        return f"{prompt_identifier}{suffix}"
 
-        Raises:
-            ValueError: If no commits are found for the prompt.
+    def _make_prompt_cache_fetch_func(self) -> Callable[[str], ls_schemas.PromptCommit]:
+        """Create a fetch function for the prompt cache background refresh.
+
+        Returns:
+            A function that takes a cache key and returns the fetched PromptCommit.
+        """
+
+        def fetch(cache_key: str) -> ls_schemas.PromptCommit:
+            # Parse cache key to extract prompt_identifier and include_model
+            if cache_key.endswith(":with_model"):
+                prompt_identifier = cache_key[:-11]  # Remove ":with_model"
+                include_model = True
+            else:
+                prompt_identifier = cache_key
+                include_model = False
+            return self._fetch_prompt_from_api(prompt_identifier, include_model)
+
+        return fetch
+
+    def _fetch_prompt_from_api(
+        self,
+        prompt_identifier: str,
+        include_model: Optional[bool] = False,
+    ) -> ls_schemas.PromptCommit:
+        """Fetch a prompt directly from the API (no cache).
+
+        Args:
+            prompt_identifier: The prompt identifier.
+            include_model: Whether to include model information.
+
+        Returns:
+            The fetched PromptCommit.
         """
         owner, prompt_name, commit_hash = ls_utils.parse_prompt_identifier(
             prompt_identifier
@@ -8047,6 +8133,43 @@ class Client:
         return ls_schemas.PromptCommit(
             **{"owner": owner, "repo": prompt_name, **response.json()}
         )
+
+    def pull_prompt_commit(
+        self,
+        prompt_identifier: str,
+        *,
+        include_model: Optional[bool] = False,
+        skip_cache: bool = False,
+    ) -> ls_schemas.PromptCommit:
+        """Pull a prompt object from the LangSmith API.
+
+        Args:
+            prompt_identifier (str): The identifier of the prompt.
+            include_model (Optional[bool]): Whether to include model information.
+            skip_cache (bool): Whether to skip the prompt cache. Defaults to `False`.
+
+        Returns:
+            PromptCommit: The prompt object.
+
+        Raises:
+            ValueError: If no commits are found for the prompt.
+        """
+        # Try cache first if enabled
+        if not skip_cache and self._prompt_cache is not None:
+            cache_key = self._get_prompt_cache_key(prompt_identifier, include_model)
+            cached = self._prompt_cache.get(cache_key)
+            if cached is not None:
+                return cached
+
+        # Cache miss or cache skipped - fetch from API
+        result = self._fetch_prompt_from_api(prompt_identifier, include_model)
+
+        # Store in cache (background thread will handle refresh when stale)
+        if not skip_cache and self._prompt_cache is not None:
+            cache_key = self._get_prompt_cache_key(prompt_identifier, include_model)
+            self._prompt_cache.set(cache_key, result)
+
+        return result
 
     def list_prompt_commits(
         self,
@@ -8112,6 +8235,7 @@ class Client:
         include_model: bool | None = False,
         secrets: dict[str, str] | None = None,
         secrets_from_env: bool = False,
+        skip_cache: bool = False,
     ) -> Any:
         """Pull a prompt and return it as a LangChain `PromptTemplate`.
 
@@ -8130,6 +8254,7 @@ class Client:
 
                 **SECURITY NOTE**: Should only be set to `True` when pulling trusted
                 prompts.
+            skip_cache: Whether to skip the prompt cache. Defaults to `False`.
 
         Returns:
             Any: The prompt object in the specified format.
@@ -8153,7 +8278,7 @@ class Client:
             langsmith package) depends on.
         """
         prompt_object = self.pull_prompt_commit(
-            prompt_identifier, include_model=include_model
+            prompt_identifier, include_model=include_model, skip_cache=skip_cache
         )
         return _process_prompt_manifest(
             prompt_object,
@@ -8232,8 +8357,10 @@ class Client:
         return url
 
     def cleanup(self) -> None:
-        """Manually trigger cleanup of the background thread."""
+        """Manually trigger cleanup of background threads."""
         self._manual_cleanup = True
+        if self._prompt_cache is not None:
+            self._prompt_cache.shutdown()
 
     @overload
     def evaluate(
