@@ -99,7 +99,7 @@ def begin_llm_run_from_assistant_messages(
     llm_run = parent.create_child(
         name=LLM_RUN_NAME,
         run_type="llm",
-        inputs=inputs if len(inputs) > 1 else inputs[0] if inputs else {},  # type: ignore[arg-type]
+        inputs={"messages": inputs} if inputs else {},
         outputs=outputs[-1] if len(outputs) == 1 else {"content": outputs},
         extra={"metadata": {"ls_model_name": model}} if model else {},
         start_time=datetime.fromtimestamp(start_time, tz=timezone.utc)
@@ -336,12 +336,32 @@ def instrument_claude_client(original_class: Any) -> Any:
                             )
                         elif msg_type == "UserMessage":
                             if hasattr(msg, "content"):
-                                collected.append(
-                                    {
-                                        "content": flatten_content_blocks(msg.content),
-                                        "role": "user",
-                                    }
-                                )
+                                # Check if this is a tool result message
+                                flattened = flatten_content_blocks(msg.content)
+                                if (
+                                    isinstance(flattened, list)
+                                    and flattened
+                                    and isinstance(flattened[0], dict)
+                                    and flattened[0].get("type") == "tool_result"
+                                ):
+                                    # Format each tool result as a separate message
+                                    for block in flattened:
+                                        collected.append(
+                                            {
+                                                "role": "tool",
+                                                "content": block.get("content", ""),
+                                                "tool_call_id": block.get(
+                                                    "tool_use_id"
+                                                ),
+                                            }
+                                        )
+                                else:
+                                    collected.append(
+                                        {
+                                            "content": flattened,
+                                            "role": "user",
+                                        }
+                                    )
                             tracker.mark_next_start()
                         elif msg_type == "ResultMessage":
                             # Add usage metrics including cost

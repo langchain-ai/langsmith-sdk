@@ -40,7 +40,6 @@ import { getEnvironmentVariable, isJsDom } from "../env.js";
 import {
   STRIP_ANSI_REGEX,
   TEST_ID_DELIMITER,
-  DEFAULT_TEST_TIMEOUT,
   UUID5_NAMESPACE,
 } from "./constants.js";
 
@@ -765,7 +764,7 @@ export function generateWrapperFromJestlikeMethods(
               );
             }
           },
-          timeout ?? DEFAULT_TEST_TIMEOUT
+          timeout
         );
       }
     };

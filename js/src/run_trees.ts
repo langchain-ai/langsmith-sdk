@@ -24,7 +24,7 @@ import {
 import { getDefaultProjectName } from "./utils/project.js";
 import { getLangSmithEnvironmentVariable } from "./utils/env.js";
 import { warnOnce } from "./utils/warn.js";
-import { uuid7FromTime } from "./utils/_uuid.js";
+import { uuid7FromTime, uuid7Deterministic } from "./utils/_uuid.js";
 import { v5 as uuidv5 } from "uuid";
 
 const TIMESTAMP_LENGTH = 36;
@@ -266,7 +266,16 @@ export class RunTree implements BaseRun {
   replicas?: WriteReplica[];
 
   distributedParentId?: string;
+
+  /**
+   * @interface
+   */
   private _serialized_start_time: string | undefined;
+
+  /**
+   * @internal
+   */
+  _awaitInputsOnPost?: boolean;
 
   constructor(originalConfig: RunTreeConfig | RunTree) {
     // If you pass in a run tree directly, return a shallow clone
@@ -680,18 +689,16 @@ export class RunTree implements BaseRun {
       }
     }
 
-    // Remap IDs for the replica using uuid5 (deterministic)
-    // This ensures consistency across runs in the same replica
+    // Remap IDs for the replica using uuid7Deterministic
+    // This ensures consistency across runs in the same replica while
+    // preserving UUID7 properties (time-ordering, monotonicity)
     const oldId = baseRun.id;
-    const newId = uuidv5(`${oldId}:${projectName}`, UUID_NAMESPACE_DNS);
+    const newId = uuid7Deterministic(oldId, projectName);
 
     // Remap trace_id
     let newTraceId: string;
     if (baseRun.trace_id) {
-      newTraceId = uuidv5(
-        `${baseRun.trace_id}:${projectName}`,
-        UUID_NAMESPACE_DNS
-      );
+      newTraceId = uuid7Deterministic(baseRun.trace_id, projectName);
     } else {
       newTraceId = newId;
     }
@@ -699,10 +706,7 @@ export class RunTree implements BaseRun {
     // Remap parent_run_id
     let newParentId: string | undefined;
     if (baseRun.parent_run_id) {
-      newParentId = uuidv5(
-        `${baseRun.parent_run_id}:${projectName}`,
-        UUID_NAMESPACE_DNS
-      );
+      newParentId = uuid7Deterministic(baseRun.parent_run_id, projectName);
     }
 
     // Remap dotted_order segments
@@ -712,10 +716,7 @@ export class RunTree implements BaseRun {
       const remappedSegs = segs.map((seg) => {
         // Extract the UUID from the segment (last TIMESTAMP_LENGTH characters)
         const segId = seg.slice(-TIMESTAMP_LENGTH);
-        const remappedId = uuidv5(
-          `${segId}:${projectName}`,
-          UUID_NAMESPACE_DNS
-        );
+        const remappedId = uuid7Deterministic(segId, projectName);
         // Replace the UUID part while keeping the timestamp prefix
         return seg.slice(0, -TIMESTAMP_LENGTH) + remappedId;
       });
@@ -733,6 +734,10 @@ export class RunTree implements BaseRun {
   }
 
   async postRun(excludeChildRuns = true): Promise<void> {
+    // Applies when `processInputs` is an async function
+    if (this._awaitInputsOnPost) {
+      this.inputs = await (this.inputs as Promise<KVMap>);
+    }
     try {
       const runtimeEnv = getRuntimeEnvironment();
       if (this.replicas && this.replicas.length > 0) {
