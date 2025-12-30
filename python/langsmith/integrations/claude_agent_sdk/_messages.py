@@ -3,6 +3,24 @@
 from typing import Any
 
 
+def _extract_tool_result_text(content: Any) -> str:
+    """Extract text content from tool result content blocks."""
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        texts = []
+        for item in content:
+            if isinstance(item, dict):
+                if item.get("type") == "text":
+                    texts.append(item.get("text", ""))
+            elif hasattr(item, "text"):
+                texts.append(getattr(item, "text", ""))
+        return "\n".join(texts) if texts else str(content)
+    return str(content)
+
+
 def flatten_content_blocks(content: Any) -> Any:
     """Convert SDK content blocks into serializable dicts using explicit type checks."""
     if not isinstance(content, list):
@@ -38,11 +56,14 @@ def flatten_content_blocks(content: Any) -> Any:
                 }
             )
         elif block_type == "ToolResultBlock":
+            # Extract text from nested content for tool results
+            tool_content = getattr(block, "content", None)
+            content_text = _extract_tool_result_text(tool_content)
             result.append(
                 {
                     "type": "tool_result",
                     "tool_use_id": getattr(block, "tool_use_id", None),
-                    "content": getattr(block, "content", None),
+                    "content": content_text,
                     "is_error": getattr(block, "is_error", False),
                 }
             )
