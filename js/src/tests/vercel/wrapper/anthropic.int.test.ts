@@ -146,6 +146,7 @@ describe("anthropic", () => {
     }
   });
 
+  // Skipped due to high token usage
   it.skip("anthropic cache read and write tokens", async () => {
     const meta = v4();
     const client = new Client();
@@ -226,6 +227,7 @@ describe("anthropic", () => {
     await client.awaitPendingTraceBatches();
   });
 
+  // Skipped due to high token usage
   it.skip("anthropic cache read and write 1h cached tokens", async () => {
     const meta = v4();
     const client = new Client();

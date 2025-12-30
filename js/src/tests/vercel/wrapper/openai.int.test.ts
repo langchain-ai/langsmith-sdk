@@ -288,6 +288,7 @@ test("wrap streamText with an output schema", async () => {
   expect(result.providerMetadata).toBeDefined();
 });
 
+// Deprecated in AI SDK v6
 test.skip("wrap streamObject", async () => {
   const schema = z.object({
     color: z.string(),
