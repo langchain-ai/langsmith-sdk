@@ -266,7 +266,16 @@ export class RunTree implements BaseRun {
   replicas?: WriteReplica[];
 
   distributedParentId?: string;
+
+  /**
+   * @interface
+   */
   private _serialized_start_time: string | undefined;
+
+  /**
+   * @internal
+   */
+  _awaitInputsOnPost?: boolean;
 
   constructor(originalConfig: RunTreeConfig | RunTree) {
     // If you pass in a run tree directly, return a shallow clone
@@ -733,6 +742,10 @@ export class RunTree implements BaseRun {
   }
 
   async postRun(excludeChildRuns = true): Promise<void> {
+    // Applies when `processInputs` is an async function
+    if (this._awaitInputsOnPost) {
+      this.inputs = await (this.inputs as Promise<KVMap>);
+    }
     try {
       const runtimeEnv = getRuntimeEnvironment();
       if (this.replicas && this.replicas.length > 0) {

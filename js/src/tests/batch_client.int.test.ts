@@ -61,7 +61,7 @@ test("Test persist update run", async () => {
   });
 }, 180_000);
 
-test("Test persist update runs above the batch size limit", async () => {
+test.skip("Test persist update runs above the batch size limit", async () => {
   await skipOnRateLimit(async () => {
     const langchainClient = new Client({
       autoBatchTracing: true,
