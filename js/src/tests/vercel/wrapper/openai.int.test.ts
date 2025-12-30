@@ -18,8 +18,13 @@ import { traceable } from "../../../traceable.js";
 
 const { tool, stepCountIs } = ai;
 
-const { generateText, streamText, generateObject, streamObject } =
-  wrapAISDK(ai);
+const {
+  generateText,
+  streamText,
+  generateObject,
+  streamObject,
+  ToolLoopAgent,
+} = wrapAISDK(ai);
 
 test("wrap generateText", async () => {
   const result = await generateText({
@@ -675,4 +680,44 @@ it.skip("openai cache with streamText", async () => {
   await wrapper();
 
   await client.awaitPendingTraceBatches();
+});
+
+test.skip("ToolLoopAgent generate", async () => {
+  const agent = new ToolLoopAgent({
+    model: openai("gpt-5-nano"),
+    tools: {
+      listOrders: tool({
+        description: "list all orders",
+        inputSchema: z.object({ userId: z.string() }),
+        execute: async ({ userId }) =>
+          `User ${userId} has the following orders: 1`,
+      }),
+    },
+  });
+
+  const result = await agent.generate({
+    prompt: "What are my orders? My user id is 1",
+  });
+  console.log(result);
+});
+
+test.skip("ToolLoopAgent stream", async () => {
+  const agent = new ToolLoopAgent({
+    model: openai("gpt-5-nano"),
+    tools: {
+      listOrders: tool({
+        description: "list all orders",
+        inputSchema: z.object({ userId: z.string() }),
+        execute: async ({ userId }) =>
+          `User ${userId} has the following orders: 1`,
+      }),
+    },
+  });
+
+  const result = await agent.stream({
+    prompt: "What are my orders? My user id is 1",
+  });
+  for await (const chunk of result.textStream) {
+    console.log(chunk);
+  }
 });
