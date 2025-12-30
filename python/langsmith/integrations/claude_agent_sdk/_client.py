@@ -335,7 +335,7 @@ def instrument_claude_client(original_class: Any) -> Any:
                                 subagent_sessions,
                             )
                         elif msg_type == "UserMessage":
-                            if hasattr(msg, "content") and msg.content:
+                            if hasattr(msg, "content"):
                                 # Check if this is a tool result message
                                 flattened = flatten_content_blocks(msg.content)
                                 if (
