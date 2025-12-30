@@ -274,7 +274,7 @@ describe("PromptCache", () => {
       // Allow the async refresh to complete
       await Promise.resolve();
 
-      expect(cache.metrics.refreshErrors).toBeGreaterThanOrEqual(0);
+      expect(cache.metrics.refreshErrors).toBeGreaterThan(0);
       cache.stop();
     });
 

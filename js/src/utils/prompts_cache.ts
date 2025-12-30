@@ -332,9 +332,10 @@ export class PromptCache {
         const newValue = await this.fetchFunc(key);
         this.set(key, newValue);
         this._metrics.refreshes += 1;
-      } catch {
+      } catch (e) {
         // Keep stale data on refresh failure
         this._metrics.refreshErrors += 1;
+        console.warn(`Failed to refresh cache entry ${key}:`, e);
       }
     }
   }
