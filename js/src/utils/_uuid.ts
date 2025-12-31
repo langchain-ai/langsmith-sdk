@@ -2,7 +2,6 @@
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-import { createHash } from "crypto";
 import { v7 as uuidv7 } from "uuid";
 import { warnOnce } from "./warn.js";
 
@@ -70,102 +69,4 @@ export function warnIfNotUuidV7(uuidStr: string, _idType: string): void {
         `Future versions will require UUID v7.`
     );
   }
-}
-
-/**
- * Convert a UUID string to its 16-byte representation.
- * @param uuidStr - The UUID string (with or without dashes)
- * @returns A Buffer containing the 16 bytes of the UUID
- */
-function uuidToBytes(uuidStr: string): Buffer {
-  const hex = uuidStr.replace(/-/g, "");
-  return Buffer.from(hex, "hex");
-}
-
-/**
- * Convert 16 bytes to a UUID string.
- * @param bytes - A Buffer containing 16 bytes
- * @returns A UUID string in standard format
- */
-function bytesToUuid(bytes: Buffer): string {
-  const hex = bytes.toString("hex");
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(
-    12,
-    16
-  )}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-}
-
-/**
- * Generate a deterministic UUID v7 derived from an original UUID and a key.
- *
- * This function creates a new UUID that:
- * - Preserves the timestamp from the original UUID if it's UUID v7
- * - Uses current time if the original is not UUID v7
- * - Uses deterministic "random" bits derived from hashing the original + key
- * - Is valid UUID v7 format
- *
- * This is used for creating replica IDs that maintain time-ordering properties
- * while being deterministic across distributed systems.
- *
- * @param originalId - The source UUID string (ideally UUID v7 to preserve timestamp)
- * @param key - A string key used for deterministic derivation (e.g., project name)
- * @returns A new UUID v7 string with preserved timestamp (if original is v7) and
- *          deterministic random bits
- *
- * @example
- * ```typescript
- * const original = uuidv7();
- * const replicaId = uuid7Deterministic(original, "replica-project");
- * // Same inputs always produce same output
- * assert(uuid7Deterministic(original, "replica-project") === replicaId);
- * ```
- */
-export function uuid7Deterministic(originalId: string, key: string): string {
-  // Generate deterministic bytes from hash of original + key
-  const hashInput = `${originalId}:${key}`;
-  const h = createHash("sha256").update(hashInput).digest();
-
-  // Build new UUID7:
-  // UUID7 structure (RFC 9562):
-  // [0-5]  48 bits: unix_ts_ms (timestamp in milliseconds)
-  // [6]    4 bits: version (0111 = 7) + 4 bits rand_a
-  // [7]    8 bits: rand_a (continued)
-  // [8]    2 bits: variant (10) + 6 bits rand_b
-  // [9-15] 56 bits: rand_b (continued)
-
-  const b = Buffer.alloc(16);
-
-  // Check if original is UUID v7 - if so, preserve its timestamp
-  // If not, use current time to ensure the derived UUID has a valid timestamp
-  const version = getUuidVersion(originalId);
-  if (version === 7) {
-    // Preserve timestamp from original UUID7 (bytes 0-5)
-    const originalBytes = uuidToBytes(originalId);
-    originalBytes.copy(b, 0, 0, 6);
-  } else {
-    // Generate fresh timestamp for non-UUID7 inputs
-    // This matches the uuid npm package's v7 implementation:
-    // https://github.com/uuidjs/uuid/blob/main/src/v7.ts
-    const msecs = Date.now();
-    b[0] = (msecs / 0x10000000000) & 0xff;
-    b[1] = (msecs / 0x100000000) & 0xff;
-    b[2] = (msecs / 0x1000000) & 0xff;
-    b[3] = (msecs / 0x10000) & 0xff;
-    b[4] = (msecs / 0x100) & 0xff;
-    b[5] = msecs & 0xff;
-  }
-
-  // Set version 7 (0111) in high nibble + 4 bits from hash
-  b[6] = 0x70 | (h[0] & 0x0f);
-
-  // rand_a continued (8 bits from hash)
-  b[7] = h[1];
-
-  // Set variant (10) in high 2 bits + 6 bits from hash
-  b[8] = 0x80 | (h[2] & 0x3f);
-
-  // rand_b (56 bits = 7 bytes from hash)
-  h.copy(b, 9, 3, 10);
-
-  return bytesToUuid(b);
 }
