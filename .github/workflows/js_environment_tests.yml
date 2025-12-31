@@ -13,6 +13,9 @@ on:
       - "js/**"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: js-exports-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
