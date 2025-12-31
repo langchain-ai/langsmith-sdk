@@ -6650,7 +6650,7 @@ class Client:
         key: str = "unnamed",
         *,
         score: Union[float, int, bool, None] = None,
-        value: Union[str, dict, None] = None,
+        value: Union[float, int, bool, str, dict, None] = None,
         trace_id: Optional[ID_TYPE] = None,
         correction: Union[dict, None] = None,
         comment: Union[str, None] = None,
