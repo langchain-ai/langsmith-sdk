@@ -737,7 +737,7 @@ class AsyncClient:
         run_id: Optional[ls_client.ID_TYPE],
         key: str,
         score: Optional[float] = None,
-        value: Optional[Any] = None,
+        value: Union[float, int, bool, str, dict, None] = None,
         comment: Optional[str] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
@@ -748,7 +748,7 @@ class AsyncClient:
                 Can be None for project-level feedback.
             key (str): The name of the metric or aspect this feedback is about.
             score (Optional[float]): The score to rate this run on the metric or aspect.
-            value (Optional[Any]): The display value or non-numeric value for this feedback.
+            value (Union[float, int, bool, str, dict, None]): The display value or non-numeric value for this feedback.
             comment (Optional[str]): A comment about this feedback.
             **kwargs: Additional keyword arguments to include in the feedback data.
 
