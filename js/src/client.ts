@@ -847,10 +847,11 @@ export class Client implements LangSmithTracingClientInterface {
         config.promptCachePath ??
         getLangSmithEnvironmentVariable("PROMPT_CACHE_PATH");
       if (cachePath) {
-        // Fire and forget - load async but don't block constructor
-        this._promptCache.load(cachePath).catch((e) => {
+        try {
+          this._promptCache.load(cachePath);
+        } catch (e) {
           console.warn(`Failed to load prompt cache from ${cachePath}:`, e);
-        });
+        }
       }
     }
   }

@@ -401,5 +401,8 @@
       "require": "./experimental/vercel.cjs"
     },
     "./package.json": "./package.json"
+  },
+  "browser": {
+    "./dist/utils/prompts_cache_fs.js": "./dist/utils/prompts_cache_fs.browser.js"
   }
 }

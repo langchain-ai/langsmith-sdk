@@ -4,11 +4,12 @@
  * Provides an LRU cache with background refresh for prompt caching.
  * Uses stale-while-revalidate pattern for optimal performance.
  *
- * Core functionality (get, set, invalidate, clear) works in all environments.
- * File operations (dump, load) require Node.js.
+ * Works in all environments. File operations (dump/load) use helpers
+ * that are swapped for browser builds via package.json browser field.
  */
 
 import type { PromptCommit } from "../schemas.js";
+import { dumpCache, loadCache } from "./prompts_cache_fs.js";
 
 /**
  * A single cache entry with metadata for TTL tracking.
@@ -216,45 +217,13 @@ export class PromptCache {
 
   /**
    * Dump cache contents to a JSON file for offline use.
-   *
-   * Note: This method requires Node.js and will throw in browser/edge environments.
    */
-  async dump(filePath: string): Promise<void> {
-    let fs: typeof import("node:fs");
-    let path: typeof import("node:path");
-    try {
-      fs = await import("node:fs");
-      path = await import("node:path");
-    } catch {
-      throw new Error(
-        "dump() requires Node.js. File operations are not supported in browser/edge environments."
-      );
-    }
-
-    const dir = path.dirname(filePath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-
+  dump(filePath: string): void {
     const entries: Record<string, PromptCommit> = {};
     for (const [key, entry] of this.cache.entries()) {
       entries[key] = entry.value;
     }
-
-    const data = { entries };
-
-    // Atomic write: write to temp file then rename
-    const tempPath = `${filePath}.tmp`;
-    try {
-      fs.writeFileSync(tempPath, JSON.stringify(data, null, 2));
-      fs.renameSync(tempPath, filePath);
-    } catch (e) {
-      // Clean up temp file on failure
-      if (fs.existsSync(tempPath)) {
-        fs.unlinkSync(tempPath);
-      }
-      throw e;
-    }
+    dumpCache(filePath, entries);
   }
 
   /**
@@ -262,33 +231,14 @@ export class PromptCache {
    *
    * Loaded entries get a fresh TTL starting from load time.
    *
-   * Note: This method requires Node.js and will throw in browser/edge environments.
-   *
    * @returns Number of entries loaded.
    */
-  async load(filePath: string): Promise<number> {
-    let fs: typeof import("node:fs");
-    try {
-      fs = await import("node:fs");
-    } catch {
-      throw new Error(
-        "load() requires Node.js. File operations are not supported in browser/edge environments."
-      );
-    }
-
-    if (!fs.existsSync(filePath)) {
+  load(filePath: string): number {
+    const entries = loadCache(filePath);
+    if (!entries) {
       return 0;
     }
 
-    let data: { entries?: Record<string, PromptCommit> };
-    try {
-      const content = fs.readFileSync(filePath, "utf-8");
-      data = JSON.parse(content);
-    } catch {
-      return 0;
-    }
-
-    const entries = data.entries ?? {};
     let loaded = 0;
     const now = Date.now();
 
@@ -298,7 +248,7 @@ export class PromptCache {
       }
 
       const entry: CacheEntry<PromptCommit> = {
-        value,
+        value: value as PromptCommit,
         createdAt: now, // Fresh TTL from load time
       };
       this.cache.set(key, entry);

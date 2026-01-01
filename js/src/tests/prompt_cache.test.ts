@@ -135,17 +135,17 @@ describe("PromptCache", () => {
       fs.rmSync(tempDir, { recursive: true, force: true });
     });
 
-    test("should dump and load cache", async () => {
+    test("should dump and load cache", () => {
       const cachePath = path.join(tempDir, "cache.json");
       const cache1 = new PromptCache({ ttlSeconds: null });
 
       cache1.set("key1", createMockPromptCommit("test1"));
       cache1.set("key2", createMockPromptCommit("test2"));
-      await cache1.dump(cachePath);
+      cache1.dump(cachePath);
       cache1.stop();
 
       const cache2 = new PromptCache({ ttlSeconds: null });
-      const loaded = await cache2.load(cachePath);
+      const loaded = cache2.load(cachePath);
 
       expect(loaded).toBe(2);
       expect(cache2.get("key1")).toBeDefined();
@@ -153,24 +153,24 @@ describe("PromptCache", () => {
       cache2.stop();
     });
 
-    test("should return 0 for non-existent file", async () => {
+    test("should return 0 for non-existent file", () => {
       const cache = new PromptCache({ ttlSeconds: null });
-      const loaded = await cache.load("/non/existent/path.json");
+      const loaded = cache.load("/non/existent/path.json");
       expect(loaded).toBe(0);
       cache.stop();
     });
 
-    test("should return 0 for corrupted file", async () => {
+    test("should return 0 for corrupted file", () => {
       const cachePath = path.join(tempDir, "corrupted.json");
       fs.writeFileSync(cachePath, "not valid json{{{");
 
       const cache = new PromptCache({ ttlSeconds: null });
-      const loaded = await cache.load(cachePath);
+      const loaded = cache.load(cachePath);
       expect(loaded).toBe(0);
       cache.stop();
     });
 
-    test("should respect max size when loading", async () => {
+    test("should respect max size when loading", () => {
       const cachePath = path.join(tempDir, "cache.json");
       const cache1 = new PromptCache({
         maxSize: 10,
@@ -180,26 +180,26 @@ describe("PromptCache", () => {
       for (let i = 0; i < 5; i++) {
         cache1.set(`key${i}`, createMockPromptCommit(`test${i}`));
       }
-      await cache1.dump(cachePath);
+      cache1.dump(cachePath);
       cache1.stop();
 
       const cache2 = new PromptCache({
         maxSize: 3,
         ttlSeconds: null,
       });
-      const loaded = await cache2.load(cachePath);
+      const loaded = cache2.load(cachePath);
 
       expect(loaded).toBe(3);
       expect(cache2.size).toBe(3);
       cache2.stop();
     });
 
-    test("should create parent directories", async () => {
+    test("should create parent directories", () => {
       const cachePath = path.join(tempDir, "nested", "dir", "cache.json");
       const cache = new PromptCache({ ttlSeconds: null });
 
       cache.set("key1", createMockPromptCommit("test1"));
-      await cache.dump(cachePath);
+      cache.dump(cachePath);
 
       expect(fs.existsSync(cachePath)).toBe(true);
       cache.stop();
@@ -311,7 +311,7 @@ describe("PromptCache", () => {
       fs.rmSync(tempDir, { recursive: true, force: true });
     });
 
-    test("should work in full offline mode", async () => {
+    test("should work in full offline mode", () => {
       const cachePath = path.join(tempDir, "offline-cache.json");
 
       // Step 1: Online - populate and dump cache
@@ -320,7 +320,7 @@ describe("PromptCache", () => {
       });
       onlineCache.set("prompt1", createMockPromptCommit("test1"));
       onlineCache.set("prompt2", createMockPromptCommit("test2"));
-      await onlineCache.dump(cachePath);
+      onlineCache.dump(cachePath);
       onlineCache.stop();
 
       // Step 2: Offline - load from file with infinite TTL
@@ -328,7 +328,7 @@ describe("PromptCache", () => {
         ttlSeconds: null, // Never expire
         fetchFunc: undefined, // No network access
       });
-      const loaded = await offlineCache.load(cachePath);
+      const loaded = offlineCache.load(cachePath);
 
       expect(loaded).toBe(2);
       expect(offlineCache.get("prompt1")).toBeDefined();
