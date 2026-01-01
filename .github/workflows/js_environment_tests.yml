@@ -1,0 +1,88 @@
+name: JS Environment Tests
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "js/**"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "js/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: js-exports-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "22.4.1"
+
+jobs:
+  exports-esm:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "yarn"
+          cache-dependency-path: js/yarn.lock
+      - name: Install dependencies
+        working-directory: js
+        run: yarn install --immutable
+      - name: Build
+        working-directory: js
+        run: yarn build
+      - name: Test ESM exports
+        run: docker compose -f js/internal/environment_tests/docker-compose.yml run test-exports-esm
+
+  exports-cjs:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "yarn"
+          cache-dependency-path: js/yarn.lock
+      - name: Install dependencies
+        working-directory: js
+        run: yarn install --immutable
+      - name: Build
+        working-directory: js
+        run: yarn build
+      - name: Test CJS exports
+        run: docker compose -f js/internal/environment_tests/docker-compose.yml run test-exports-cjs
+
+  exports-cf:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "yarn"
+          cache-dependency-path: js/yarn.lock
+      - name: Install dependencies
+        working-directory: js
+        run: yarn install --immutable
+      - name: Build
+        working-directory: js
+        run: yarn build
+      - name: Test Cloudflare exports
+        run: docker compose -f js/internal/environment_tests/docker-compose.yml run test-exports-cf
