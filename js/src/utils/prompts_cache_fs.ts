@@ -41,9 +41,7 @@ export function dumpCache(
  *
  * @returns The entries object, or null if file doesn't exist or is invalid.
  */
-export function loadCache(
-  filePath: string
-): Record<string, unknown> | null {
+export function loadCache(filePath: string): Record<string, unknown> | null {
   if (!fs.existsSync(filePath)) {
     return null;
   }
