@@ -29,6 +29,27 @@ services:
       - ../../..:/app
     command: bash -c "yarn install && yarn test"
 
+  test-exports-webpack:
+    image: node:22
+    working_dir: /app/js/internal/environment_tests/test-exports-webpack
+    volumes:
+      - ../../..:/app
+    command: bash -c "yarn install && yarn test"
+
+  test-exports-esbuild:
+    image: node:22
+    working_dir: /app/js/internal/environment_tests/test-exports-esbuild
+    volumes:
+      - ../../..:/app
+    command: bash -c "yarn install && yarn test"
+
+  test-exports-nextjs:
+    image: node:22
+    working_dir: /app/js/internal/environment_tests/test-exports-nextjs
+    volumes:
+      - ../../..:/app
+    command: bash -c "yarn install && yarn test"
+
   success:
     image: alpine:3.14
     depends_on:
@@ -39,5 +60,11 @@ services:
       test-exports-cf:
         condition: service_completed_successfully
       test-exports-vite:
+        condition: service_completed_successfully
+      test-exports-webpack:
+        condition: service_completed_successfully
+      test-exports-esbuild:
+        condition: service_completed_successfully
+      test-exports-nextjs:
         condition: service_completed_successfully
     command: echo "All export tests passed!"
