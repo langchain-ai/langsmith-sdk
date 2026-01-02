@@ -1,0 +1,16 @@
+{
+  "name": "test-exports-webpack",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Tests that langsmith exports work correctly in webpack browser builds",
+  "scripts": {
+    "test": "webpack --mode production"
+  },
+  "dependencies": {
+    "langsmith": "file:../../.."
+  },
+  "devDependencies": {
+    "webpack": "^5.90.0",
+    "webpack-cli": "^5.1.0"
+  }
+}
