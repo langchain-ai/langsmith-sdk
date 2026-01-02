@@ -1721,7 +1721,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         aggregate_feedback.extend(flattened_results)
                         if self._upload_results:
                             for result in flattened_results:
-                                feedback = result.dict(exclude={"target_run_id"})
+                                feedback = result.model_dump(exclude={"target_run_id"})
                                 evaluator_info = feedback.pop("evaluator_info", None)
                                 executor.submit(
                                     self.client.create_feedback,

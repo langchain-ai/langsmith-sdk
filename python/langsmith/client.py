@@ -1678,8 +1678,8 @@ class Client:
         Returns:
             dict: The transformed run object as a dictionary.
         """
-        if hasattr(run, "dict") and callable(getattr(run, "dict")):
-            run_create: dict = run.dict()  # type: ignore
+        if hasattr(run, "model_dump") and callable(getattr(run, "model_dump")):
+            run_create: dict = run.model_dump()  # type: ignore
         else:
             run_create = cast(dict, run)
         if "id" not in run_create:
@@ -6480,13 +6480,13 @@ class Client:
             single_result: Union[ls_evaluator.EvaluationResult, dict],
         ) -> ls_evaluator.EvaluationResult:
             if isinstance(single_result, dict):
-                return ls_evaluator.EvaluationResult(
-                    **{
-                        "key": fn_name,
-                        "comment": single_result.get("reasoning"),
-                        **single_result,
-                    }
-                )
+                merged_result: dict[str, Any] = {**single_result}
+                if "reasoning" in merged_result and "comment" not in merged_result:
+                    merged_result["comment"] = merged_result["reasoning"]
+                merged_result.pop("reasoning", None)
+                if fn_name is not None and merged_result.get("key") is None:
+                    merged_result["key"] = fn_name
+                return ls_evaluator.EvaluationResult(**merged_result)
             return single_result
 
         def _is_eval_results(results: Any) -> TypeGuard[ls_evaluator.EvaluationResults]:
@@ -6650,7 +6650,7 @@ class Client:
         key: str = "unnamed",
         *,
         score: Union[float, int, bool, None] = None,
-        value: Union[str, dict, None] = None,
+        value: Union[float, int, bool, str, dict, None] = None,
         trace_id: Optional[ID_TYPE] = None,
         correction: Union[dict, None] = None,
         comment: Union[str, None] = None,
@@ -6809,8 +6809,10 @@ class Client:
                 # Validate that the linked run ID is a valid UUID
                 # Run info may be a base model or dict.
                 _run_meta: Union[dict, Any] = feedback_source.metadata["__run"]
-                if hasattr(_run_meta, "dict") and callable(_run_meta):
-                    _run_meta = _run_meta.dict()
+                if hasattr(_run_meta, "model_dump") and callable(
+                    getattr(_run_meta, "model_dump")
+                ):
+                    _run_meta = _run_meta.model_dump()
                 if "run_id" in _run_meta:
                     _run_meta["run_id"] = str(
                         _as_uuid(
@@ -6879,7 +6881,7 @@ class Client:
                         TracingQueueItem(str(feedback.id), serialized_op)
                     )
             else:
-                feedback_block = _dumps_json(feedback.dict(exclude_none=True))
+                feedback_block = _dumps_json(feedback.model_dump(exclude_none=True))
                 self.request_with_retries(
                     "POST",
                     "/feedback",
@@ -6889,7 +6891,7 @@ class Client:
                     stop_after_attempt=stop_after_attempt,
                     retry_on=(ls_utils.LangSmithNotFoundError,),
                 )
-            return ls_schemas.Feedback(**feedback.dict())
+            return ls_schemas.Feedback(**feedback.model_dump())
         except Exception as e:
             logger.error("Error creating feedback", exc_info=True)
             raise e
@@ -7364,7 +7366,7 @@ class Client:
             "POST",
             "/feedback/formulas",
             request_kwargs={
-                "data": _dumps_json(payload.dict(exclude_none=True)),
+                "data": _dumps_json(payload.model_dump(exclude_none=True)),
             },
         )
         ls_utils.raise_for_status_with_text(response)
@@ -7410,7 +7412,7 @@ class Client:
             "PUT",
             f"/feedback/formulas/{_as_uuid(feedback_formula_id, 'feedback_formula_id')}",
             request_kwargs={
-                "data": _dumps_json(payload.dict(exclude_none=True)),
+                "data": _dumps_json(payload.model_dump(exclude_none=True)),
             },
         )
         ls_utils.raise_for_status_with_text(response)
@@ -8976,7 +8978,7 @@ class Client:
                 project_id="037ae90f-f297-4926-b93c-37d8abf6899f",
             )
             for example_with_runs in results["examples_with_runs"]:
-                print(example_with_runs.dict())
+                print(example_with_runs.model_dump())
 
             # Access aggregated experiment statistics
             print(f"Total runs: {results['run_stats']['run_count']}")

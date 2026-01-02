@@ -6,6 +6,7 @@ from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from enum import Enum
+from pathlib import Path
 from typing import (
     Annotated,
     Any,
@@ -17,33 +18,19 @@ from typing import (
 )
 from uuid import UUID
 
-from typing_extensions import NotRequired, TypedDict
-
-try:
-    from pydantic.v1 import (
-        BaseModel,
-        Field,  # type: ignore[import]
-        PrivateAttr,
-        StrictBool,
-        StrictFloat,
-        StrictInt,
-    )
-except ImportError:
-    from pydantic import (  # type: ignore[assignment]
-        BaseModel,
-        Field,
-        PrivateAttr,
-        StrictBool,
-        StrictFloat,
-        StrictInt,
-    )
-
-from pathlib import Path
-
-from typing_extensions import Literal
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    StrictBool,
+    StrictFloat,
+    StrictInt,
+)
+from typing_extensions import Literal, NotRequired, TypedDict
 
 SCORE_TYPE = Union[StrictBool, StrictInt, StrictFloat, None]
-VALUE_TYPE = Union[dict, str, None]
+VALUE_TYPE = Union[dict, str, StrictBool, StrictInt, StrictFloat, None]
 
 
 class Attachment(NamedTuple):
@@ -99,11 +86,7 @@ class ExampleBase(BaseModel):
     outputs: Optional[dict[str, Any]] = Field(default=None)
     metadata: Optional[dict[str, Any]] = Field(default=None)
 
-    class Config:
-        """Configuration class for the schema."""
-
-        frozen = True
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
 
 class _AttachmentDict(TypedDict):
@@ -119,7 +102,7 @@ _AttachmentLike = Union[
 class ExampleCreate(BaseModel):
     """Example upload with attachments."""
 
-    id: Optional[UUID]
+    id: Optional[UUID] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     inputs: Optional[dict[str, Any]] = Field(default=None)
     outputs: Optional[dict[str, Any]] = Field(default=None)
@@ -223,10 +206,7 @@ class ExampleUpdate(BaseModel):
     attachments: Optional[Attachments] = None
     attachments_operations: Optional[AttachmentsOperations] = None
 
-    class Config:
-        """Configuration class for the schema."""
-
-        frozen = True
+    model_config = ConfigDict(frozen=True)
 
     def __init__(self, **data):
         """Initialize from dict."""
@@ -251,10 +231,7 @@ class DatasetBase(BaseModel):
     description: Optional[str] = None
     data_type: Optional[DataType] = None
 
-    class Config:
-        """Configuration class for the schema."""
-
-        frozen = True
+    model_config = ConfigDict(frozen=True)
 
 
 DatasetTransformationType = Literal[
@@ -416,10 +393,7 @@ class RunBase(BaseModel):
         """Return a string representation of the RunBase object."""
         return f"{self.__class__}(id={self.id}, name='{self.name}', run_type='{self.run_type}')"
 
-    class Config:
-        """Configuration class for the schema."""
-
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class Run(RunBase):
@@ -676,10 +650,7 @@ class FeedbackBase(BaseModel):
     extra: Optional[dict] = None
     """The metadata of the feedback."""
 
-    class Config:
-        """Configuration class for the schema."""
-
-        frozen = True
+    model_config = ConfigDict(frozen=True)
 
 
 class FeedbackCategory(TypedDict, total=False):
@@ -787,37 +758,37 @@ class TracerSessionResult(TracerSession):
     Sessions are also referred to as "Projects" in the UI.
     """
 
-    run_count: Optional[int]
+    run_count: Optional[int] = None
     """The number of runs in the project."""
-    latency_p50: Optional[timedelta]
+    latency_p50: Optional[timedelta] = None
     """The median (50th percentile) latency for the project."""
-    latency_p99: Optional[timedelta]
+    latency_p99: Optional[timedelta] = None
     """The 99th percentile latency for the project."""
-    total_tokens: Optional[int]
+    total_tokens: Optional[int] = None
     """The total number of tokens consumed in the project."""
-    prompt_tokens: Optional[int]
+    prompt_tokens: Optional[int] = None
     """The total number of prompt tokens consumed in the project."""
-    completion_tokens: Optional[int]
+    completion_tokens: Optional[int] = None
     """The total number of completion tokens consumed in the project."""
-    last_run_start_time: Optional[datetime]
+    last_run_start_time: Optional[datetime] = None
     """The start time of the last run in the project."""
-    feedback_stats: Optional[dict[str, Any]]
+    feedback_stats: Optional[dict[str, Any]] = None
     """Feedback stats for the project."""
-    session_feedback_stats: Optional[dict[str, Any]]
+    session_feedback_stats: Optional[dict[str, Any]] = None
     """Summary feedback stats for the project."""
-    run_facets: Optional[list[dict[str, Any]]]
+    run_facets: Optional[list[dict[str, Any]]] = None
     """Facets for the runs in the project."""
-    total_cost: Optional[Decimal]
+    total_cost: Optional[Decimal] = None
     """The total estimated LLM cost associated with the completion tokens."""
-    prompt_cost: Optional[Decimal]
+    prompt_cost: Optional[Decimal] = None
     """The estimated cost associated with the prompt (input) tokens."""
-    completion_cost: Optional[Decimal]
+    completion_cost: Optional[Decimal] = None
     """The estimated cost associated with the completion tokens."""
-    first_token_p50: Optional[timedelta]
+    first_token_p50: Optional[timedelta] = None
     """The median (50th percentile) time to process the first token."""
-    first_token_p99: Optional[timedelta]
+    first_token_p99: Optional[timedelta] = None
     """The 99th percentile time to process the first token."""
-    error_rate: Optional[float]
+    error_rate: Optional[float] = None
     """The error rate for the project."""
 
 
@@ -899,7 +870,7 @@ class LangSmithInfo(BaseModel):
     instance_flags: Optional[dict[str, Any]] = None
 
 
-Example.update_forward_refs()
+Example.model_rebuild()
 
 
 class LangSmithSettings(BaseModel):
@@ -1360,7 +1331,7 @@ class FeedbackFormulaCreate(BaseModel):
     feedback_key: str
     aggregation_type: Literal["sum", "avg"]
     formula_parts: list[FeedbackFormulaWeightedVariable] = Field(
-        ..., min_items=1, max_items=50
+        ..., min_length=1, max_length=50
     )
 
 
@@ -1370,7 +1341,7 @@ class FeedbackFormulaUpdate(BaseModel):
     feedback_key: str
     aggregation_type: Literal["sum", "avg"]
     formula_parts: list[FeedbackFormulaWeightedVariable] = Field(
-        ..., min_items=1, max_items=50
+        ..., min_length=1, max_length=50
     )
 
 
