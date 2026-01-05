@@ -815,7 +815,7 @@ export class Client implements LangSmithTracingClientInterface {
     // Initialize cache
     if (config.cache === true) {
       this._cache = new Cache();
-    } else if (config.cache instanceof Cache) {
+    } else if (config.cache && typeof config.cache === "object") {
       this._cache = config.cache;
     } else {
       this._cache = undefined;
