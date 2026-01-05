@@ -1,0 +1,16 @@
+{
+  "name": "test-exports-esbuild",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Tests that langsmith exports work correctly in esbuild browser builds",
+  "scripts": {
+    "test": "esbuild src/index.ts --bundle --platform=browser --outfile=dist/bundle.js"
+  },
+  "dependencies": {
+    "langsmith": "file:../../.."
+  },
+  "devDependencies": {
+    "esbuild": "^0.20.0"
+  }
+}
