@@ -150,3 +150,24 @@ jobs:
       - name: Test esbuild exports
         run: docker compose -f js/internal/environment_tests/docker-compose.yml run test-exports-esbuild
 
+  exports-metro:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "yarn"
+          cache-dependency-path: js/yarn.lock
+      - name: Install dependencies
+        working-directory: js
+        run: yarn install --immutable
+      - name: Build
+        working-directory: js
+        run: yarn build
+      - name: Test Metro exports
+        run: docker compose -f js/internal/environment_tests/docker-compose.yml run test-exports-metro
+
