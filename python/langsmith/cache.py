@@ -271,7 +271,7 @@ class _BasePromptCache(ABC):
         return loaded
 
 
-class PromptHubCache(_BasePromptCache):
+class Cache(_BasePromptCache):
     """Thread-safe LRU cache with background thread refresh.
 
     For use with the synchronous Client.
@@ -384,7 +384,7 @@ class PromptHubCache(_BasePromptCache):
                 logger.warning(f"Failed to refresh cache entry {key}: {e}")
 
 
-class AsyncPromptHubCache(_BasePromptCache):
+class AsyncCache(_BasePromptCache):
     """Thread-safe LRU cache with asyncio task refresh.
 
     For use with the asynchronous AsyncClient.

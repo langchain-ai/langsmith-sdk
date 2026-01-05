@@ -71,7 +71,7 @@ import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
 import { parsePromptIdentifier } from "./utils/prompts.js";
 import { raiseForStatus, isLangSmithNotFoundError } from "./utils/error.js";
-import { PromptHubCache } from "./utils/prompts_cache.js";
+import { Cache } from "./utils/prompts_cache.js";
 import {
   _globalFetchImplementationIsNodeFetch,
   _getFetchImplementation,
@@ -127,27 +127,27 @@ export interface ClientConfig {
    */
   fetchImplementation?: typeof fetch;
   /**
-   * Configuration for prompt caching. Can be:
+   * Configuration for caching. Can be:
    * - `true`: Enable caching with default settings
-   * - `PromptHubCache` instance: Use custom cache configuration
+   * - `Cache` instance: Use custom cache configuration
    * - `undefined` or `false`: Disable caching (default)
    *
    * @example
    * ```typescript
-   * import { Client, PromptHubCache } from "langsmith";
+   * import { Client, Cache } from "langsmith";
    *
    * // Enable with defaults
-   * const client1 = new Client({ promptCache: true });
+   * const client1 = new Client({ cache: true });
    *
    * // Or use custom configuration
-   * const cache = new PromptHubCache({
+   * const myCache = new Cache({
    *   maxSize: 100,
    *   ttlSeconds: 3600, // 1 hour, or null for infinite TTL
    * });
-   * const client2 = new Client({ promptCache: cache });
+   * const client2 = new Client({ cache: myCache });
    * ```
    */
-  promptCache?: PromptHubCache | boolean;
+  cache?: Cache | boolean;
 }
 
 /**
@@ -737,7 +737,7 @@ export class Client implements LangSmithTracingClientInterface {
 
   private cachedLSEnvVarsForMetadata?: Record<string, string>;
 
-  private _promptCache?: PromptHubCache;
+  private _cache?: Cache;
 
   private get _fetch(): typeof fetch {
     return this.fetchImplementation || _getFetchImplementation(this.debug);
@@ -812,13 +812,13 @@ export class Client implements LangSmithTracingClientInterface {
     // Cache metadata env vars once during construction to avoid repeatedly scanning process.env
     this.cachedLSEnvVarsForMetadata = getLangSmithEnvVarsMetadata();
 
-    // Initialize prompt cache
-    if (config.promptCache === true) {
-      this._promptCache = new PromptHubCache();
-    } else if (config.promptCache instanceof PromptHubCache) {
-      this._promptCache = config.promptCache;
+    // Initialize cache
+    if (config.cache === true) {
+      this._cache = new Cache();
+    } else if (config.cache instanceof Cache) {
+      this._cache = config.cache;
     } else {
-      this._promptCache = undefined;
+      this._cache = undefined;
     }
   }
 
@@ -5444,19 +5444,19 @@ export class Client implements LangSmithTracingClientInterface {
     }
   ): Promise<PromptCommit> {
     // Check cache first if not skipped
-    if (!options?.skipCache && this._promptCache) {
+    if (!options?.skipCache && this._cache) {
       const cacheKey = this._getPromptCacheKey(
         promptIdentifier,
         options?.includeModel
       );
-      const cached = this._promptCache.get(cacheKey);
+      const cached = this._cache.get(cacheKey);
       if (cached) {
         return cached;
       }
 
       // Cache miss - fetch from API and cache it
       const result = await this._fetchPromptFromApi(promptIdentifier, options);
-      this._promptCache.set(cacheKey, result);
+      this._cache.set(cacheKey, result);
       return result;
     }
 
@@ -5627,20 +5627,20 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   /**
-   * Get the prompt cache instance, if caching is enabled.
+   * Get the cache instance, if caching is enabled.
    * Useful for accessing cache metrics or manually managing the cache.
    */
-  get promptCache(): PromptHubCache | undefined {
-    return this._promptCache;
+  get cache(): Cache | undefined {
+    return this._cache;
   }
 
   /**
    * Cleanup resources held by the client.
-   * Stops the prompt cache's background refresh timer.
+   * Stops the cache's background refresh timer.
    */
   public cleanup(): void {
-    if (this._promptCache) {
-      this._promptCache.stop();
+    if (this._cache) {
+      this._cache.stop();
     }
   }
 

@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from langsmith._expect import expect
     from langsmith.async_client import AsyncClient
-    from langsmith.cache import AsyncPromptHubCache, PromptHubCache
+    from langsmith.cache import AsyncCache, Cache
     from langsmith.client import Client
     from langsmith.evaluation import (
         aevaluate,
@@ -129,14 +129,14 @@ def __getattr__(name: str) -> Any:
         from langsmith.uuid import uuid7_from_datetime
 
         return uuid7_from_datetime
-    elif name == "PromptHubCache":
-        from langsmith.cache import PromptHubCache
+    elif name == "Cache":
+        from langsmith.cache import Cache
 
-        return PromptHubCache
-    elif name == "AsyncPromptHubCache":
-        from langsmith.cache import AsyncPromptHubCache
+        return Cache
+    elif name == "AsyncCache":
+        from langsmith.cache import AsyncCache
 
-        return AsyncPromptHubCache
+        return AsyncCache
 
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
@@ -144,8 +144,8 @@ def __getattr__(name: str) -> Any:
 __all__ = [
     "Client",
     "AsyncClient",
-    "PromptHubCache",
-    "AsyncPromptHubCache",
+    "Cache",
+    "AsyncCache",
     "RunTree",
     "configure",
     "__version__",

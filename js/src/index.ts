@@ -22,8 +22,8 @@ export { getDefaultProjectName } from "./utils/project.js";
 export { uuid7, uuid7FromTime } from "./uuid.js";
 
 export {
-  PromptHubCache,
-  type PromptHubCacheConfig,
+  Cache,
+  type CacheConfig,
   type CacheMetrics,
 } from "./utils/prompts_cache.js";
 

@@ -23,7 +23,7 @@ from langsmith import client as ls_client
 from langsmith import schemas as ls_schemas
 from langsmith import utils as ls_utils
 from langsmith._internal import _beta_decorator as ls_beta
-from langsmith.cache import AsyncPromptHubCache
+from langsmith.cache import AsyncCache
 
 ID_TYPE = Union[uuid.UUID, str]
 
@@ -31,7 +31,7 @@ ID_TYPE = Union[uuid.UUID, str]
 class AsyncClient:
     """Async Client for interacting with the LangSmith API."""
 
-    __slots__ = ("_retry_config", "_client", "_web_url", "_settings", "_prompt_cache")
+    __slots__ = ("_retry_config", "_client", "_web_url", "_settings", "_cache")
 
     def __init__(
         self,
@@ -44,7 +44,7 @@ class AsyncClient:
         ] = None,
         retry_config: Optional[Mapping[str, Any]] = None,
         web_url: Optional[str] = None,
-        prompt_cache: Union[AsyncPromptHubCache, bool, None] = None,
+        cache: Union[AsyncCache, bool, None] = None,
     ):
         """Initialize the async client.
 
@@ -54,9 +54,9 @@ class AsyncClient:
             timeout_ms: Timeout for requests in milliseconds.
             retry_config: Retry configuration.
             web_url: URL for the LangSmith web app.
-            prompt_cache: Configuration for prompt caching. Can be:
+            cache: Configuration for caching. Can be:
                 - True: Enable caching with default settings
-                - AsyncPromptHubCache instance: Use custom cache configuration
+                - AsyncCache instance: Use custom cache configuration
                 - None or False: Disable caching (default)
         """
         self._retry_config = retry_config or {"max_retries": 3}
@@ -81,18 +81,18 @@ class AsyncClient:
         self._web_url = web_url
         self._settings: Optional[ls_schemas.LangSmithSettings] = None
 
-        # Initialize prompt cache
-        if prompt_cache is True:
-            self._prompt_cache: Optional[AsyncPromptHubCache] = AsyncPromptHubCache()
-        elif isinstance(prompt_cache, AsyncPromptHubCache):
-            self._prompt_cache = prompt_cache
+        # Initialize cache
+        if cache is True:
+            self._cache: Optional[AsyncCache] = AsyncCache()
+        elif isinstance(cache, AsyncCache):
+            self._cache = cache
         else:
-            self._prompt_cache = None
+            self._cache = None
 
     async def __aenter__(self) -> AsyncClient:
         """Enter the async client."""
-        if self._prompt_cache is not None:
-            await self._prompt_cache.start()
+        if self._cache is not None:
+            await self._cache.start()
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -101,8 +101,8 @@ class AsyncClient:
 
     async def aclose(self):
         """Close the async client."""
-        if self._prompt_cache is not None:
-            await self._prompt_cache.stop()
+        if self._cache is not None:
+            await self._cache.stop()
         await self._client.aclose()
 
     @property
@@ -1667,7 +1667,7 @@ class AsyncClient:
         )
         response.raise_for_status()
 
-    def _get_prompt_cache_key(
+    def _get_cache_key(
         self, prompt_identifier: str, include_model: Optional[bool] = False
     ) -> str:
         """Generate a cache key for a prompt.
@@ -1733,9 +1733,9 @@ class AsyncClient:
             ValueError: If no commits are found for the prompt.
         """
         # Try cache first if enabled
-        if not skip_cache and self._prompt_cache is not None:
-            cache_key = self._get_prompt_cache_key(prompt_identifier, include_model)
-            cached = self._prompt_cache.get(cache_key)
+        if not skip_cache and self._cache is not None:
+            cache_key = self._get_cache_key(prompt_identifier, include_model)
+            cached = self._cache.get(cache_key)
             if cached is not None:
                 return cached
 
@@ -1743,9 +1743,9 @@ class AsyncClient:
         result = await self._afetch_prompt_from_api(prompt_identifier, include_model)
 
         # Store in cache
-        if not skip_cache and self._prompt_cache is not None:
-            cache_key = self._get_prompt_cache_key(prompt_identifier, include_model)
-            self._prompt_cache.set(cache_key, result)
+        if not skip_cache and self._cache is not None:
+            cache_key = self._get_cache_key(prompt_identifier, include_model)
+            self._cache.set(cache_key, result)
 
         return result
 

@@ -73,7 +73,7 @@ from langsmith._internal._background_thread import (
     tracing_control_thread_func as _tracing_control_thread_func,
 )
 from langsmith._internal._beta_decorator import warn_beta
-from langsmith.cache import PromptHubCache
+from langsmith.cache import Cache
 from langsmith._internal._compressed_traces import CompressedTraces
 from langsmith._internal._constants import (
     _AUTO_SCALE_UP_NTHREADS_LIMIT,
@@ -666,7 +666,7 @@ class Client:
         "_max_batch_size_bytes",
         "_tracing_error_callback",
         "_multipart_disabled",
-        "_prompt_cache",
+        "_cache",
     ]
 
     _api_key: Optional[str]
@@ -704,7 +704,7 @@ class Client:
         max_batch_size_bytes: Optional[int] = None,
         headers: Optional[dict[str, str]] = None,
         tracing_error_callback: Optional[Callable[[Exception], None]] = None,
-        prompt_cache: Union[PromptHubCache, bool, None] = None,
+        cache: Union[Cache, bool, None] = None,
     ) -> None:
         """Initialize a `Client` instance.
 
@@ -795,26 +795,25 @@ class Client:
             tracing_error_callback (Optional[Callable[[Exception], None]]): Optional callback function to handle errors.
 
                 Called when exceptions occur during tracing operations.
-            prompt_cache (Union[PromptHubCache, bool, None]): Configuration for
-                prompt caching. Can be:
+            cache (Union[Cache, bool, None]): Configuration for caching. Can be:
 
                 - ``True``: Enable caching with default settings
-                - ``PromptHubCache`` instance: Use custom cache configuration
+                - ``Cache`` instance: Use custom cache configuration
                 - ``None`` or ``False``: Disable caching (default)
 
                 Example::
 
-                    from langsmith import Client, PromptHubCache
+                    from langsmith import Client, Cache
 
                     # Enable with defaults
-                    client = Client(prompt_cache=True)
+                    client = Client(cache=True)
 
                     # Or use custom configuration
-                    cache = PromptHubCache(
+                    my_cache = Cache(
                         max_size=100,
                         ttl_seconds=3600,  # 1 hour, or None for infinite TTL
                     )
-                    client = Client(prompt_cache=cache)
+                    client = Client(cache=my_cache)
 
         Raises:
             LangSmithUserError: If the API key is not provided when using the hosted service.
@@ -1023,13 +1022,13 @@ class Client:
 
         self._tracing_error_callback = tracing_error_callback
 
-        # Initialize prompt cache
-        if prompt_cache is True:
-            self._prompt_cache: Optional[PromptHubCache] = PromptHubCache()
-        elif isinstance(prompt_cache, PromptHubCache):
-            self._prompt_cache = prompt_cache
+        # Initialize cache
+        if cache is True:
+            self._cache: Optional[Cache] = Cache()
+        elif isinstance(cache, Cache):
+            self._cache = cache
         else:
-            self._prompt_cache = None
+            self._cache = None
 
     def _repr_html_(self) -> str:
         """Return an HTML representation of the instance with a link to the URL.
@@ -8050,7 +8049,7 @@ class Client:
         response = self.request_with_retries("DELETE", f"/repos/{owner}/{prompt_name}")
         response.raise_for_status()
 
-    def _get_prompt_cache_key(
+    def _get_cache_key(
         self, prompt_identifier: str, include_model: Optional[bool] = False
     ) -> str:
         """Generate a cache key for a prompt.
@@ -8114,9 +8113,9 @@ class Client:
             ValueError: If no commits are found for the prompt.
         """
         # Try cache first if enabled
-        if not skip_cache and self._prompt_cache is not None:
-            cache_key = self._get_prompt_cache_key(prompt_identifier, include_model)
-            cached = self._prompt_cache.get(cache_key)
+        if not skip_cache and self._cache is not None:
+            cache_key = self._get_cache_key(prompt_identifier, include_model)
+            cached = self._cache.get(cache_key)
             if cached is not None:
                 return cached
 
@@ -8124,9 +8123,9 @@ class Client:
         result = self._fetch_prompt_from_api(prompt_identifier, include_model)
 
         # Store in cache (background thread will handle refresh when stale)
-        if not skip_cache and self._prompt_cache is not None:
-            cache_key = self._get_prompt_cache_key(prompt_identifier, include_model)
-            self._prompt_cache.set(cache_key, result)
+        if not skip_cache and self._cache is not None:
+            cache_key = self._get_cache_key(prompt_identifier, include_model)
+            self._cache.set(cache_key, result)
 
         return result
 
@@ -8318,8 +8317,8 @@ class Client:
     def cleanup(self) -> None:
         """Manually trigger cleanup of background threads."""
         self._manual_cleanup = True
-        if self._prompt_cache is not None:
-            self._prompt_cache.shutdown()
+        if self._cache is not None:
+            self._cache.shutdown()
 
     @overload
     def evaluate(
