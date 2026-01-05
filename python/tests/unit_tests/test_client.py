@@ -2962,7 +2962,9 @@ def test_pull_and_push_prompt(
         if method == "GET" and "/commits/" in url:
             return mock.Mock(json=lambda: manifest_data)
         elif method == "POST" and "/commits/" in url:
-            return mock.Mock(json=lambda: {"commit": {"commit_hash": "new_hash"}})
+            return mock.Mock(
+                json=lambda: {"commit": {"commit_hash": "new_hash", "id": "new_id"}}
+            )
         else:
             return mock.Mock(json=lambda: {})
 
@@ -4702,3 +4704,149 @@ def test_tracing_error_callback_on_429():
     )
     assert isinstance(callback_errors[0], LangSmithRateLimitError)
     assert "Rate limit exceeded" in str(callback_errors[0])
+
+
+@patch("langsmith.client.requests.Session")
+def test_prompt_commit_tags(mock_session_cls: mock.Mock) -> None:
+    """Test _create_commit_tags functionality and create_commit integration with tags."""
+    try:
+        from langchain_core.load import dumps
+        from langchain_core.prompts import ChatPromptTemplate
+    except ImportError:
+        pytest.skip("Skipping test that requires langchain-core")
+
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+
+    def mock_request(method, url, **kwargs):
+        response = MagicMock()
+        response.status_code = 200
+
+        if "/commits/" in url and method == "GET":
+            response.json.return_value = {
+                "commits": [{"commit_hash": "parent123", "id": "1"}],
+                "total": 1,
+            }
+        elif "/commits/" in url and method == "POST":
+            response.json.return_value = {
+                "commit": {"commit_hash": "new_commit_123", "id": "1"}
+            }
+        elif "/repos/" in url and "/tags" in url and method == "POST":
+            response.json.return_value = {}
+        else:
+            response.json.return_value = {}
+
+        return response
+
+    mock_session.request.side_effect = mock_request
+    mock_session_cls.return_value = mock_session
+
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="test_api_key",
+    )
+
+    # Test 1: _create_commit_tags with multiple tags
+    mock_session.request.reset_mock()
+    mock_session.request.return_value = mock_response
+    tags = ["tag1", "tag2", "tag3"]
+    commit_id = "abc123"
+    client._create_commit_tags("test-owner/test-repo", commit_id, tags)
+
+    post_calls = [
+        call
+        for call in mock_session.request.call_args_list
+        if call[0][0] == "POST" and "/repos/" in call[0][1]
+    ]
+    assert len(post_calls) == 3
+
+    for i, tag in enumerate(tags):
+        call_args = post_calls[i]
+        assert call_args[0][0] == "POST"
+        assert call_args[0][1].endswith("/repos/test-owner/test-repo/tags")
+        assert call_args[1]["json"] == {
+            "tag_name": tag,
+            "commit_id": commit_id,
+        }
+
+    # Test 2: Empty tags list
+    mock_session.request.reset_mock()
+    client._create_commit_tags("owner/repo", "commit123", [])
+
+    post_calls = [
+        call
+        for call in mock_session.request.call_args_list
+        if call[0][0] == "POST" and "/repos/" in call[0][1]
+    ]
+    assert len(post_calls) == 0
+
+    # Test 3: create_commit with tags
+    mock_session.request.reset_mock()
+    mock_session.request.side_effect = mock_request
+
+    with patch.object(Client, "_prompt_exists", return_value=True):
+        with patch.object(Client, "_current_tenant_is_owner", return_value=True):
+            with patch.object(Client, "_get_settings") as mock_settings:
+                mock_settings.return_value = ls_schemas.LangSmithSettings(
+                    id=str(uuid.uuid4()),
+                    tenant_handle="test-owner",
+                    display_name="test_commit",
+                    created_at=datetime.now(),
+                )
+
+                prompt = ChatPromptTemplate.from_messages(
+                    [
+                        ("system", "You are a helpful assistant"),
+                        ("human", "{input}"),
+                    ]
+                )
+
+                # Create commit with tags
+                commit_tags = ["production", "v1.0"]
+                client.create_commit(
+                    "test-owner/test-prompt",
+                    prompt,
+                    tags=commit_tags,
+                )
+
+                tag_post_calls = [
+                    call
+                    for call in mock_session.request.call_args_list
+                    if call[0][0] == "POST"
+                    and "/repos/" in call[0][1]
+                    and "/tags" in call[0][1]
+                ]
+                assert len(tag_post_calls) == 2
+
+                tag_names = [call[1]["json"]["tag_name"] for call in tag_post_calls]
+                assert "production" in tag_names
+                assert "v1.0" in tag_names
+
+    # Test 4: create_commit without tags
+    mock_session.request.reset_mock()
+    mock_session.request.side_effect = mock_request
+
+    with patch.object(Client, "_prompt_exists", return_value=True):
+        with patch.object(Client, "_current_tenant_is_owner", return_value=True):
+            with patch.object(Client, "_get_settings") as mock_settings:
+                mock_settings.return_value = ls_schemas.LangSmithSettings(
+                    id=str(uuid.uuid4()),
+                    tenant_handle="test-owner",
+                    display_name="test_commit",
+                    created_at=datetime.now(),
+                )
+
+                client.create_commit(
+                    "test-owner/test-prompt",
+                    prompt,
+                )
+
+                tag_post_calls = [
+                    call
+                    for call in mock_session.request.call_args_list
+                    if call[0][0] == "POST"
+                    and "/repos/" in call[0][1]
+                    and "/tags" in call[0][1]
+                ]
+                assert len(tag_post_calls) == 0
