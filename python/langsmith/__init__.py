@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from langsmith._expect import expect
     from langsmith.async_client import AsyncClient
+    from langsmith.cache import AsyncCache, Cache
     from langsmith.client import Client
     from langsmith.evaluation import (
         aevaluate,
@@ -128,12 +129,23 @@ def __getattr__(name: str) -> Any:
         from langsmith.uuid import uuid7_from_datetime
 
         return uuid7_from_datetime
+    elif name == "Cache":
+        from langsmith.cache import Cache
+
+        return Cache
+    elif name == "AsyncCache":
+        from langsmith.cache import AsyncCache
+
+        return AsyncCache
 
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 __all__ = [
     "Client",
+    "AsyncClient",
+    "Cache",
+    "AsyncCache",
     "RunTree",
     "configure",
     "__version__",
@@ -154,7 +166,6 @@ __all__ = [
     "get_current_run_tree",
     "set_run_metadata",
     "ContextThreadPoolExecutor",
-    "AsyncClient",
     "uuid7",
     "uuid7_from_datetime",
 ]

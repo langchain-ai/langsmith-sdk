@@ -30,9 +30,9 @@ export interface CacheMetrics {
 }
 
 /**
- * Configuration options for PromptCache.
+ * Configuration options for Cache.
  */
-export interface PromptCacheConfig {
+export interface CacheConfig {
   /** Maximum entries in cache (LRU eviction when exceeded). Default: 100 */
   maxSize?: number;
   /** Time in seconds before entry is stale. null = infinite TTL. Default: 3600 */
@@ -65,7 +65,7 @@ function isStale(entry: CacheEntry, ttlSeconds: number | null): boolean {
  *
  * @example
  * ```typescript
- * const cache = new PromptCache({
+ * const cache = new Cache({
  *   maxSize: 100,
  *   ttlSeconds: 3600,
  *   fetchFunc: async (key) => client.pullPromptCommit(key),
@@ -79,7 +79,7 @@ function isStale(entry: CacheEntry, ttlSeconds: number | null): boolean {
  * cache.stop();
  * ```
  */
-export class PromptCache {
+export class Cache {
   private cache: Map<string, CacheEntry<PromptCommit>> = new Map();
   private maxSize: number;
   private ttlSeconds: number | null;
@@ -93,7 +93,7 @@ export class PromptCache {
     refreshErrors: 0,
   };
 
-  constructor(config: PromptCacheConfig = {}) {
+  constructor(config: CacheConfig = {}) {
     this.maxSize = config.maxSize ?? 100;
     this.ttlSeconds = config.ttlSeconds ?? 3600;
     this.refreshIntervalSeconds = config.refreshIntervalSeconds ?? 60;
