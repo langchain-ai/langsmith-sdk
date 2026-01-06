@@ -4760,14 +4760,16 @@ def test_prompt_commit_tags(mock_session_cls: mock.Mock) -> None:
     ]
     assert len(post_calls) == 3
 
-    for i, tag in enumerate(tags):
-        call_args = post_calls[i]
+    # Verify all tags were created (order not guaranteed due to threading)
+    tag_names_created = {call[1]["json"]["tag_name"] for call in post_calls}
+    assert tag_names_created == set(tags)
+
+    # Verify all calls have correct structure
+    for call_args in post_calls:
         assert call_args[0][0] == "POST"
         assert call_args[0][1].endswith("/repos/test-owner/test-repo/tags")
-        assert call_args[1]["json"] == {
-            "tag_name": tag,
-            "commit_id": commit_id,
-        }
+        assert call_args[1]["json"]["commit_id"] == commit_id
+        assert call_args[1]["json"]["tag_name"] in tags
 
     # Test 2: Empty tags list
     mock_session.request.reset_mock()
