@@ -7753,7 +7753,7 @@ class Client:
         Args:
             prompt_owner_and_name (str): The owner and name of the prompt in the format 'owner/repo'.
             commit_id (str): The commit hash/ID to tag.
-            tags (Union[str, list[str]]): A single tag string or list of tags to apply to the commit.
+            tags (Union[str, list[str]]): A single tag or list of tags to apply to the commit.
 
         Raises:
             requests.exceptions.HTTPError: If the request fails.
@@ -7994,7 +7994,7 @@ class Client:
             object (Any): The LangChain object to commit.
             parent_commit_hash (Optional[str]): The hash of the parent commit.
                 Defaults to latest commit.
-            tags (Optional[str | list[str]]): A single tag string or list of tags to apply to the commit.
+            tags (Optional[str | list[str]]): A single tag or list of tags to apply to the commit.
                 Defaults to None.
 
         Returns:
@@ -8364,7 +8364,7 @@ class Client:
                 Defaults to an empty string.
             tags (Optional[Sequence[str]]): A list of tags for the prompt.
                 Defaults to an empty list.
-            commit_tags (Optional[str | list[str]]): A single tag string or list of tags for the prompt commit.
+            commit_tags (Optional[str | list[str]]): A single tag or list of tags for the prompt commit.
                 Defaults to an empty list.
 
         Returns:
