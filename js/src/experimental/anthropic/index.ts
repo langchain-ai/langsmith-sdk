@@ -1,52 +1,83 @@
 import { traceable, getCurrentRunTree } from "../../traceable.js";
 import type { RunTreeConfig, RunTree } from "../../run_trees.js";
+import type Anthropic from "@anthropic-ai/sdk";
 import { convertAnthropicUsageToInputTokenDetails } from "../../utils/usage.js";
 
 /**
  * Types from @anthropic-ai/claude-agent-sdk
  */
-type SDKMessage = {
-  type: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+type SDKAssistantMessage = {
+  type: "assistant";
+  message: Anthropic.Beta.BetaMessage;
+  parent_tool_use_id: string | null;
 };
+
+type SDKResultMessage = {
+  type: "result";
+  duration_ms: number;
+  duration_api_ms: number;
+  total_cost_usd: number;
+  usage: Record<string, Anthropic.Beta.BetaUsage>;
+  modelUsage: Record<string, SDKModelUsage>;
+};
+
+type SDKUserMessage = {
+  type: "user";
+  message: Anthropic.MessageParam;
+  parent_tool_use_id: string | null;
+  isSynthetic?: boolean;
+  tool_use_result?: unknown;
+  session_id: string;
+  isReplay?: boolean;
+};
+
+type SDKMessage = SDKAssistantMessage | SDKResultMessage | SDKUserMessage;
+
+type SDKModelUsage = {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadInputTokens: number;
+  cacheCreationInputTokens: number;
+  webSearchRequests: number;
+  costUSD: number;
+  contextWindow: number;
+};
+
+type SDKHookEvents = [
+  "PreToolUse",
+  "PostToolUse",
+  "PostToolUseFailure",
+  "Notification",
+  "UserPromptSubmit",
+  "SessionStart",
+  "SessionEnd",
+  "Stop",
+  "SubagentStart",
+  "SubagentStop",
+  "PreCompact",
+  "PermissionRequest"
+][number];
 
 type QueryOptions = {
   model?: string;
   maxTurns?: number;
-  tools?: Array<SdkMcpToolDefinition<any>>;
+  tools?: Array<SdkMcpToolDefinition<unknown>>;
   hooks?: Record<string, HookCallbackMatcher[]>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 };
 
 type CallToolResult = {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  content: Array<any>;
+  content: unknown[];
   isError?: boolean;
 };
 
-type ToolHandler<T> = (
-  args: T,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  extra: any
-) => Promise<CallToolResult>;
+type ToolHandler<T> = (args: T, extra: unknown) => Promise<CallToolResult>;
 
 type SdkMcpToolDefinition<T> = {
   name: string;
   description: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  inputSchema: any;
+  inputSchema: unknown;
   handler: ToolHandler<T>;
-};
-
-/**
- * Content block types from Claude SDK
- */
-type ContentBlock = {
-  type: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
 };
 
 /**
@@ -55,20 +86,16 @@ type ContentBlock = {
 type HookInput = {
   hook_event_name: string;
   tool_name?: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  tool_input?: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  tool_response?: any;
+  tool_input?: unknown;
+  tool_response?: unknown;
   tool_use_id?: string;
   session_id?: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 };
 
 type HookOutput = {
   continue?: boolean;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 };
 
 type HookCallback = (
@@ -108,12 +135,14 @@ const _subagentSessions: Map<string, RunTree> = new Map();
  * Set when a Task tool is called, cleared when the tool result returns.
  * Assistant messages that arrive while a subagent is active belong to that subagent.
  */
+// TODO: THIS SHOULD NOT BE STORED AT MODULE LEVEL (what happens if there are parallel agents running?)
 let _activeSubagentToolUseId: string | undefined;
 
 /**
  * Reference to the current parent run tree for tool tracing.
  * Set when a traced query starts, cleared when it ends.
  */
+// TODO: THIS SHOULD NOT BE STORED AT MODULE LEVEL (what happens if there are parallel agents running?)
 let _currentParentRun: RunTree | undefined;
 
 /**
@@ -135,9 +164,7 @@ async function _preToolUseHook(
   input: HookInput,
   toolUseId: string | undefined
 ): Promise<HookOutput> {
-  if (!toolUseId) {
-    return {};
-  }
+  if (!toolUseId) return {};
 
   // Skip if this tool run is already managed by the client (subagent or its children)
   if (_clientManagedRuns.has(toolUseId)) {
@@ -163,7 +190,7 @@ async function _preToolUseHook(
     await toolRun.postRun();
 
     _activeToolRuns.set(toolUseId, { run: toolRun, startTime });
-  } catch (e) {
+  } catch {
     // Silently fail - don't interrupt tool execution
   }
 
@@ -178,10 +205,7 @@ async function _postToolUseHook(
   input: HookInput,
   toolUseId: string | undefined
 ): Promise<HookOutput> {
-  if (!toolUseId) {
-    return {};
-  }
-
+  if (!toolUseId) return {};
   const toolResponse = input.tool_response;
 
   // Format outputs based on response type
@@ -220,7 +244,7 @@ async function _postToolUseHook(
       const isSubagentSession = _subagentSessions.has(toolUseId);
 
       const { outputs, isError } = formatOutputs(toolResponse);
-      clientRun.end({
+      await clientRun.end({
         outputs,
         error: isError ? outputs.output?.toString() : undefined,
       });
@@ -245,13 +269,13 @@ async function _postToolUseHook(
     const { run: toolRun } = runInfo;
     const { outputs, isError } = formatOutputs(toolResponse);
 
-    toolRun.end({
+    await toolRun.end({
       outputs,
       error: isError ? outputs.output?.toString() : undefined,
     });
 
     await toolRun.patchRun();
-  } catch (e) {
+  } catch {
     // Silently fail - don't interrupt tool execution
   }
 
@@ -262,15 +286,8 @@ async function _postToolUseHook(
  * Creates hook matchers for LangSmith tracing.
  * Returns PreToolUse and PostToolUse hook configurations.
  */
-function _createTracingHooks(): {
-  PreToolUse: HookCallbackMatcher[];
-  PostToolUse: HookCallbackMatcher[];
-  SessionStart: HookCallbackMatcher[];
-  SessionEnd: HookCallbackMatcher[];
-  SubagentStart: HookCallbackMatcher[];
-  SubagentStop: HookCallbackMatcher[];
-  Stop: HookCallbackMatcher[];
-} {
+
+function _createTracingHooks() {
   return {
     PreToolUse: [
       {
@@ -296,18 +313,7 @@ function _createTracingHooks(): {
         ],
       },
     ],
-    SessionStart: [
-      {
-        matcher: undefined,
-        hooks: [
-          async (_input: HookInput) => {
-            // Initialize session - runs once at the start of a conversation
-            // Currently no-op, but available for future use
-            return {};
-          },
-        ],
-      },
-    ],
+
     SessionEnd: [
       {
         matcher: undefined,
@@ -320,18 +326,7 @@ function _createTracingHooks(): {
         ],
       },
     ],
-    SubagentStart: [
-      {
-        matcher: undefined,
-        hooks: [
-          async (_input: HookInput) => {
-            // Track subagent start - already handled in _handleAssistantToolUses
-            // but this provides an additional hook point if needed
-            return {};
-          },
-        ],
-      },
-    ],
+
     SubagentStop: [
       {
         matcher: undefined,
@@ -359,7 +354,7 @@ function _createTracingHooks(): {
         ],
       },
     ],
-  };
+  } satisfies Partial<Record<SDKHookEvents, HookCallbackMatcher[]>>;
 }
 
 /**
@@ -369,23 +364,44 @@ function _mergeHooks(
   existingHooks: Record<string, HookCallbackMatcher[]> | undefined
 ): Record<string, HookCallbackMatcher[]> {
   const tracingHooks = _createTracingHooks();
-
-  if (!existingHooks) {
-    return tracingHooks;
-  }
+  if (!existingHooks) return tracingHooks;
 
   const merged: Record<string, HookCallbackMatcher[]> = { ...existingHooks };
 
   // Prepend tracing hooks so they run first
   for (const [event, matchers] of Object.entries(tracingHooks)) {
-    if (merged[event]) {
-      merged[event] = [...matchers, ...merged[event]];
-    } else {
-      merged[event] = matchers;
-    }
+    merged[event] = [...matchers, ...(merged[event] ?? [])];
   }
 
   return merged;
+}
+
+/**
+ * Type assertion to check if a tool is a Task tool
+ * @param tool - The tool to check
+ * @returns True if the tool is a Task tool, false otherwise
+ */
+function _isTaskTool(tool: Anthropic.Beta.BetaToolUseBlock): tool is {
+  id: string;
+  input: {
+    description: string;
+    prompt: string;
+    subagent_type: string;
+
+    // TODO: where does this come from?
+    agent_type?: string;
+  };
+  name: "Task";
+  type: "tool_use";
+} {
+  return tool.type === "tool_use" && tool.name === "Task";
+}
+
+function _isToolBlock(
+  block: Anthropic.Beta.BetaContentBlock
+): block is Anthropic.Beta.BetaToolUseBlock {
+  if (!block || typeof block !== "object") return false;
+  return block.type === "tool_use";
 }
 
 /**
@@ -396,7 +412,7 @@ function _mergeHooks(
  * @param parentRun - The parent run tree (main conversation chain)
  */
 async function _handleAssistantToolUses(
-  message: SDKMessage,
+  message: SDKAssistantMessage,
   parentRun: RunTree | undefined
 ): Promise<void> {
   if (!parentRun) return;
@@ -407,32 +423,24 @@ async function _handleAssistantToolUses(
   const parentToolUseId = message.parent_tool_use_id;
 
   for (const block of content) {
-    if (!block || typeof block !== "object" || block.type !== "tool_use") {
-      continue;
-    }
-
-    const toolUseId = block.id;
-    const toolName = block.name || "unknown_tool";
-    const toolInput = block.input || {};
-
-    if (!toolUseId) continue;
+    if (!_isToolBlock(block) || !block.id) continue;
 
     try {
       // Check if this is a Task tool (subagent) at the top level
-      if (toolName === "Task" && !parentToolUseId) {
+      if (_isTaskTool(block) && !parentToolUseId) {
         // Extract subagent name from input
         const subagentName =
-          toolInput.subagent_type ||
-          toolInput.agent_type ||
-          (toolInput.description
-            ? toolInput.description.split(" ")[0]
+          block.input.subagent_type ||
+          block.input.agent_type ||
+          (block.input.description
+            ? block.input.description.split(" ")[0]
             : null) ||
           "unknown-agent";
 
         const subagentSession = await parentRun.createChild({
           name: subagentName,
           run_type: "chain",
-          inputs: toolInput,
+          inputs: block.input,
         });
 
         // Post the run to start it, but DON'T end it yet
@@ -440,24 +448,25 @@ async function _handleAssistantToolUses(
         await subagentSession.postRun();
 
         // Store in both maps
-        _subagentSessions.set(toolUseId, subagentSession);
-        _clientManagedRuns.set(toolUseId, subagentSession);
+        _subagentSessions.set(block.id, subagentSession);
+        _clientManagedRuns.set(block.id, subagentSession);
       }
       // Check if tool use is within a subagent
       else if (parentToolUseId && _subagentSessions.has(parentToolUseId)) {
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         const subagentSession = _subagentSessions.get(parentToolUseId)!;
 
         // Create tool run as child of subagent
         const toolRun = await subagentSession.createChild({
-          name: toolName,
+          name: block.name || "unknown_tool",
           run_type: "tool",
-          inputs: toolInput ? { input: toolInput } : {},
+          inputs: block.input ? { input: block.input } : {},
         });
 
         await toolRun.postRun();
-        _clientManagedRuns.set(toolUseId, toolRun);
+        _clientManagedRuns.set(block.id, toolRun);
       }
-    } catch (e) {
+    } catch {
       // Silently fail - don't interrupt message processing
     }
   }
@@ -470,8 +479,10 @@ function _clearActiveToolRuns(): void {
   // Clean up client-managed runs (subagents and their children)
   for (const [, run] of _clientManagedRuns) {
     try {
-      run.end({ error: "Run not completed (conversation ended)" });
-      run.patchRun().catch(() => {});
+      run
+        .end({ error: "Run not completed (conversation ended)" })
+        .then(() => run.patchRun())
+        .catch(() => {});
     } catch {
       // Ignore cleanup errors
     }
@@ -483,8 +494,10 @@ function _clearActiveToolRuns(): void {
   // Clean up regular tool runs
   for (const [, { run }] of _activeToolRuns) {
     try {
-      run.end({ error: "Tool run not completed (conversation ended)" });
-      run.patchRun().catch(() => {});
+      run
+        .end({ error: "Tool run not completed (conversation ended)" })
+        .then(() => run.patchRun())
+        .catch(() => {});
     } catch {
       // Ignore cleanup errors
     }
@@ -497,7 +510,7 @@ function _clearActiveToolRuns(): void {
  * Traces the entire agent interaction including all streaming messages.
  * Internal use only - use wrapClaudeAgentSDK instead.
  */
-function wrapClaudeAgentQuery<
+function _wrapClaudeAgentQuery<
   T extends (...args: unknown[]) => AsyncGenerator<SDKMessage, void, unknown>
 >(queryFn: T, defaultThis?: unknown, baseConfig?: WrapClaudeAgentSDKConfig): T {
   const wrapped = async function* (...args: unknown[]) {
@@ -520,7 +533,7 @@ function wrapClaudeAgentQuery<
     // Each message ID maps to { message, startTime } - we keep the latest streaming update
     const pendingMessages: Map<
       string,
-      { message: SDKMessage; startTime: number }
+      { message: SDKAssistantMessage; startTime: number }
     > = new Map();
 
     // Track which message IDs have already had spans created
@@ -587,9 +600,7 @@ function wrapClaudeAgentQuery<
         pending.startTime
       );
 
-      if (finalMessageContent) {
-        finalResults.push(finalMessageContent);
-      }
+      if (finalMessageContent) finalResults.push(finalMessageContent);
     };
 
     const generator: AsyncGenerator<SDKMessage, void, unknown> =
@@ -611,7 +622,7 @@ function wrapClaudeAgentQuery<
             const content = message.message?.content;
             if (Array.isArray(content)) {
               const hasToolUse = content.some(
-                (block: any) =>
+                (block) =>
                   block &&
                   typeof block === "object" &&
                   block.type === "tool_use"
@@ -666,9 +677,9 @@ function wrapClaudeAgentQuery<
 
         // Handle UserMessage - add to conversation history (matches Python)
         if (message.type === "user") {
-          if (message.content) {
+          if (message.message.content) {
             finalResults.push({
-              content: flattenContentBlocks(message.content),
+              content: _flattenContentBlocks(message.message.content),
               role: "user",
             });
           }
@@ -805,18 +816,15 @@ function wrapClaudeAgentQuery<
     name: "claude.conversation",
     run_type: "chain",
     ...baseConfig,
-    metadata: {
-      ...baseConfig?.metadata,
-    },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  }) as any;
+    metadata: { ...baseConfig?.metadata },
+  }) as T;
 }
 
 /**
  * Wraps a Claude Agent SDK tool definition to add LangSmith tracing for tool executions.
  * Internal use only - use wrapClaudeAgentSDK instead.
  */
-function wrapClaudeAgentTool<T>(
+function _wrapClaudeAgentTool<T>(
   toolDef: SdkMcpToolDefinition<T>,
   baseConfig?: WrapClaudeAgentSDKConfig
 ): SdkMcpToolDefinition<T> {
@@ -857,7 +865,7 @@ function _buildLLMInput(
  * This provides accurate totals when multiple models are used.
  */
 function _aggregateUsageFromModelUsage(
-  modelUsage: Record<string, any>
+  modelUsage: Record<string, SDKModelUsage>
 ): Record<string, unknown> {
   const metrics: Record<string, unknown> = {};
 
@@ -915,13 +923,13 @@ function _extractUsageFromMessage(
   }
 
   // Standard token counts - use LangSmith's expected field names
-  const inputTokens = getNumberProperty(usage, "input_tokens") || 0;
-  const outputTokens = getNumberProperty(usage, "output_tokens") || 0;
+  const inputTokens = _getNumberProperty(usage, "input_tokens") || 0;
+  const outputTokens = _getNumberProperty(usage, "output_tokens") || 0;
 
   // Get cache tokens
-  const cacheRead = getNumberProperty(usage, "cache_read_input_tokens") || 0;
+  const cacheRead = _getNumberProperty(usage, "cache_read_input_tokens") || 0;
   const cacheCreation =
-    getNumberProperty(usage, "cache_creation_input_tokens") || 0;
+    _getNumberProperty(usage, "cache_creation_input_tokens") || 0;
 
   // Build input_token_details if we have cache tokens
   if (cacheRead > 0 || cacheCreation > 0) {
@@ -971,15 +979,14 @@ async function _createLLMSpanForMessages(
 
   // Flatten content blocks for proper serialization (matches Python)
   const outputs = messages
-    .map((m) =>
-      m.message?.content && m.message?.role
-        ? {
-            content: flattenContentBlocks(m.message.content),
-            role: m.message.role,
-          }
-        : undefined
-    )
-    .filter((c): c is { content: unknown; role: string } => c !== undefined);
+    .map((m) => {
+      if (!("message" in m) || !("role" in m.message)) return undefined;
+      return {
+        content: _flattenContentBlocks(m.message.content),
+        role: m.message.role as "assistant" | "user",
+      };
+    })
+    .filter((c) => c !== undefined);
 
   // Check if this message belongs to a subagent
   // First check if message has explicit parent_tool_use_id
@@ -1017,7 +1024,7 @@ async function _createLLMSpanForMessages(
         },
       });
       await llmRun.postRun();
-    } catch (e) {
+    } catch {
       // Silently fail
     }
   } else {
@@ -1042,7 +1049,7 @@ async function _createLLMSpanForMessages(
           },
         });
         await llmRun.postRun();
-      } catch (e) {
+      } catch {
         // Silently fail
       }
     }
@@ -1051,10 +1058,65 @@ async function _createLLMSpanForMessages(
   // Return flattened content for conversation history
   return lastMessage.message?.content && lastMessage.message?.role
     ? {
-        content: flattenContentBlocks(lastMessage.message.content),
+        content: _flattenContentBlocks(lastMessage.message.content),
         role: lastMessage.message.role,
       }
     : undefined;
+}
+
+function _getNumberProperty(obj: unknown, key: string): number | undefined {
+  if (!obj || typeof obj !== "object" || !(key in obj)) {
+    return undefined;
+  }
+  const value = Reflect.get(obj, key);
+  return typeof value === "number" ? value : undefined;
+}
+
+/**
+ * Converts SDK content blocks into serializable objects.
+ * Matches Python's flatten_content_blocks behavior.
+ */
+function _flattenContentBlocks(
+  content: Anthropic.Beta.BetaContentBlock[] | unknown
+): Array<Record<string, unknown>> | unknown {
+  if (!Array.isArray(content)) {
+    return content;
+  }
+
+  return content.map((block) => {
+    if (!block || typeof block !== "object" || !("type" in block)) {
+      return block;
+    }
+
+    const blockType = block.type;
+
+    switch (blockType) {
+      case "text":
+        return { type: "text", text: block.text || "" };
+      case "thinking":
+        return {
+          type: "thinking",
+          thinking: block.thinking || "",
+          signature: block.signature || "",
+        };
+      case "tool_use":
+        return {
+          type: "tool_use",
+          id: block.id,
+          name: block.name,
+          input: block.input,
+        };
+      case "tool_result":
+        return {
+          type: "tool_result",
+          tool_use_id: block.tool_use_id,
+          content: block.content,
+          is_error: block.is_error || false,
+        };
+      default:
+        return block;
+    }
+  });
 }
 
 /**
@@ -1089,27 +1151,27 @@ export function wrapClaudeAgentSDK<T extends object>(
   sdk: T,
   config?: WrapClaudeAgentSDKConfig
 ): T {
-  // Create a shallow copy of the SDK
-  const wrapped = { ...sdk };
+  type TypedSdk = T & {
+    query?: (...args: unknown[]) => AsyncGenerator<SDKMessage, void, unknown>;
+    tool?: (...args: unknown[]) => unknown;
+    createSdkMcpServer?: () => unknown;
+  };
+
+  const inputSdk = sdk as TypedSdk;
+  const wrappedSdk = { ...sdk } as TypedSdk;
 
   // Wrap the query method if it exists
-  if ("query" in sdk && typeof sdk.query === "function") {
-    (wrapped as any).query = wrapClaudeAgentQuery(
-      sdk.query as (
-        ...args: unknown[]
-      ) => AsyncGenerator<SDKMessage, void, unknown>,
-      sdk,
-      config
-    );
+  if ("query" in inputSdk && typeof inputSdk.query === "function") {
+    wrappedSdk.query = _wrapClaudeAgentQuery(inputSdk.query, inputSdk, config);
   }
 
   // Wrap the tool method if it exists
-  if ("tool" in sdk && typeof sdk.tool === "function") {
-    const originalTool = sdk.tool as (...args: any[]) => any;
-    (wrapped as any).tool = function (...args: any[]) {
+  if ("tool" in inputSdk && typeof inputSdk.tool === "function") {
+    const originalTool = inputSdk.tool;
+    wrappedSdk.tool = function (...args) {
       const toolDef = originalTool.apply(sdk, args);
       if (toolDef && typeof toolDef === "object" && "handler" in toolDef) {
-        return wrapClaudeAgentTool(
+        return _wrapClaudeAgentTool(
           toolDef as SdkMcpToolDefinition<unknown>,
           config
         );
@@ -1120,71 +1182,12 @@ export function wrapClaudeAgentSDK<T extends object>(
 
   // Keep createSdkMcpServer and other methods as-is (bound to original SDK)
   if (
-    "createSdkMcpServer" in sdk &&
-    typeof sdk.createSdkMcpServer === "function"
+    "createSdkMcpServer" in inputSdk &&
+    typeof inputSdk.createSdkMcpServer === "function"
   ) {
-    (wrapped as any).createSdkMcpServer = (
-      sdk.createSdkMcpServer as Function
-    ).bind(sdk);
+    wrappedSdk.createSdkMcpServer = inputSdk.createSdkMcpServer.bind(inputSdk);
   }
 
-  return wrapped as T;
-}
-
-function getNumberProperty(obj: unknown, key: string): number | undefined {
-  if (!obj || typeof obj !== "object" || !(key in obj)) {
-    return undefined;
-  }
-  const value = Reflect.get(obj, key);
-  return typeof value === "number" ? value : undefined;
-}
-
-/**
- * Converts SDK content blocks into serializable objects.
- * Matches Python's flatten_content_blocks behavior.
- */
-function flattenContentBlocks(
-  content: ContentBlock[] | unknown
-): Array<Record<string, unknown>> | unknown {
-  if (!Array.isArray(content)) {
-    return content;
-  }
-
-  return content.map((block) => {
-    if (!block || typeof block !== "object" || !("type" in block)) {
-      return block;
-    }
-
-    const blockType = block.type;
-
-    switch (blockType) {
-      case "text":
-        return {
-          type: "text",
-          text: block.text || "",
-        };
-      case "thinking":
-        return {
-          type: "thinking",
-          thinking: block.thinking || "",
-          signature: block.signature || "",
-        };
-      case "tool_use":
-        return {
-          type: "tool_use",
-          id: block.id,
-          name: block.name,
-          input: block.input,
-        };
-      case "tool_result":
-        return {
-          type: "tool_result",
-          tool_use_id: block.tool_use_id,
-          content: block.content,
-          is_error: block.is_error || false,
-        };
-      default:
-        return block;
-    }
-  });
+  // TODO: add a warning if attempting to trace unstable_v2 APIs
+  return wrappedSdk as T;
 }
