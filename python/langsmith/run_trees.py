@@ -12,7 +12,7 @@ import urllib.parse
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from typing import Any, Optional, Union, cast
-from uuid import UUID
+from uuid import NAMESPACE_DNS, UUID, uuid5
 
 from pydantic import ConfigDict, Field, model_validator
 from typing_extensions import TypedDict
@@ -20,7 +20,7 @@ from typing_extensions import TypedDict
 import langsmith._internal._context as _context
 from langsmith import schemas as ls_schemas
 from langsmith import utils
-from langsmith._internal._uuid import uuid7, uuid7_deterministic
+from langsmith._internal._uuid import uuid7
 from langsmith.client import ID_TYPE, RUN_TYPE_T, Client, _dumps_json, _ensure_uuid
 from langsmith.uuid import uuid7_from_datetime
 
@@ -579,17 +579,17 @@ class RunTree(ls_schemas.RunBase):
                 self._slice_parent_id(distributed_parent_id, run_dict)
 
         old_id = run_dict["id"]
-        new_id = uuid7_deterministic(UUID(str(old_id)), project_name)
+        new_id = uuid5(NAMESPACE_DNS, f"{old_id}:{project_name}")
         # trace id
         old_trace = run_dict.get("trace_id")
         if old_trace:
-            new_trace = uuid7_deterministic(UUID(str(old_trace)), project_name)
+            new_trace = uuid5(NAMESPACE_DNS, f"{old_trace}:{project_name}")
         else:
             new_trace = None
         # parent id
         parent = run_dict.get("parent_run_id")
         if parent:
-            new_parent = uuid7_deterministic(UUID(str(parent)), project_name)
+            new_parent = uuid5(NAMESPACE_DNS, f"{parent}:{project_name}")
         else:
             new_parent = None
         # dotted order
@@ -597,8 +597,9 @@ class RunTree(ls_schemas.RunBase):
             segs = run_dict["dotted_order"].split(".")
             rebuilt = []
             for part in segs[:-1]:
-                seg_id = UUID(part[-TIMESTAMP_LENGTH:])
-                repl = uuid7_deterministic(seg_id, project_name)
+                repl = uuid5(
+                    NAMESPACE_DNS, f"{part[-TIMESTAMP_LENGTH:]}:{project_name}"
+                )
                 rebuilt.append(part[:-TIMESTAMP_LENGTH] + str(repl))
             rebuilt.append(segs[-1][:-TIMESTAMP_LENGTH] + str(new_id))
             dotted = ".".join(rebuilt)
