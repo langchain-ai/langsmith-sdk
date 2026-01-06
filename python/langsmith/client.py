@@ -7985,7 +7985,7 @@ class Client:
         object: Any,
         *,
         parent_commit_hash: Optional[str] = None,
-        tags: Optional[Sequence[str]] = None,
+        tags: Optional[str | list[str]] = None,
     ) -> str:
         """Create a commit for an existing prompt.
 
@@ -7994,7 +7994,7 @@ class Client:
             object (Any): The LangChain object to commit.
             parent_commit_hash (Optional[str]): The hash of the parent commit.
                 Defaults to latest commit.
-            tags (Optional[Sequence[str]]): List of tags to apply to the commit.
+            tags (Optional[str | list[str]]): A single tag string or list of tags to apply to the commit.
                 Defaults to None.
 
         Returns:
@@ -8340,7 +8340,7 @@ class Client:
         description: Optional[str] = None,
         readme: Optional[str] = None,
         tags: Optional[Sequence[str]] = None,
-        commit_tags: Optional[Sequence[str]] = None,
+        commit_tags: Optional[str | list[str]] = None,
     ) -> str:
         """Push a prompt to the LangSmith API.
 
@@ -8364,7 +8364,7 @@ class Client:
                 Defaults to an empty string.
             tags (Optional[Sequence[str]]): A list of tags for the prompt.
                 Defaults to an empty list.
-            commit_tags (Optional[Sequence[str]]): A list of tags for the prompt commit.
+            commit_tags (Optional[str | list[str]]): A single tag string or list of tags for the prompt commit.
                 Defaults to an empty list.
 
         Returns:
