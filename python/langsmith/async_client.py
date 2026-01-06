@@ -1356,18 +1356,20 @@ class AsyncClient:
         return commits[0]["commit_hash"] if commits else None
 
     async def _create_commit_tags(
-        self, prompt_owner_and_name: str, commit_id: str, tags: Sequence[str]
+        self, prompt_owner_and_name: str, commit_id: str, tags: Union[str, list[str]]
     ) -> None:
         """Update tags for a prompt commit.
 
         Args:
             prompt_owner_and_name (str): The owner and name of the prompt in the format 'owner/repo'.
             commit_id (str): The commit ID to tag.
-            tags (Sequence[str]): List of tags to apply to the commit.
+            tags (Union[str, list[str]]): A single tag string or list of tags to apply to the commit.
 
         Raises:
             requests.exceptions.HTTPError: If the request fails.
         """
+        # Normalize tags to always be a list
+        tag_list = [tags] if isinstance(tags, str) else tags
 
         # Post each tag individually since there's no bulk endpoint
         async def create_tag(tag: str):
@@ -1380,7 +1382,7 @@ class AsyncClient:
             )
             ls_utils.raise_for_status_with_text(response)
 
-        await asyncio.gather(*[create_tag(tag) for tag in tags])
+        await asyncio.gather(*[create_tag(tag) for tag in tag_list])
 
     async def _like_or_unlike_prompt(
         self, prompt_identifier: str, like: bool
