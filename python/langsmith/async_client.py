@@ -1368,6 +1368,7 @@ class AsyncClient:
         Raises:
             requests.exceptions.HTTPError: If the request fails.
         """
+
         # Post each tag individually since there's no bulk endpoint
         async def create_tag(tag: str):
             payload = {
