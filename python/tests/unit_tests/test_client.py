@@ -4710,7 +4710,6 @@ def test_tracing_error_callback_on_429():
 def test_prompt_commit_tags(mock_session_cls: mock.Mock) -> None:
     """Test _create_commit_tags functionality and create_commit integration with tags."""
     try:
-        from langchain_core.load import dumps
         from langchain_core.prompts import ChatPromptTemplate
     except ImportError:
         pytest.skip("Skipping test that requires langchain-core")

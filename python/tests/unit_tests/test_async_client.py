@@ -48,9 +48,7 @@ async def test_list_runs_child_run_ids_deprecation_warning(
 @mock.patch("langsmith.async_client.httpx.AsyncClient")
 @pytest.mark.asyncio
 async def test__create_commit_tags(mock_client_cls: mock.Mock) -> None:
-    """Test _create_commit_tags functionality and create_commit integration with tags."""
     try:
-        from langchain_core.load import dumps
         from langchain_core.prompts import ChatPromptTemplate
     except ImportError:
         pytest.skip("Skipping test that requires langchain-core")
