@@ -704,7 +704,7 @@ class Client:
         max_batch_size_bytes: Optional[int] = None,
         headers: Optional[dict[str, str]] = None,
         tracing_error_callback: Optional[Callable[[Exception], None]] = None,
-        cache: Union[Cache, bool, None] = None,
+        cache: Union[Cache, bool] = False,
     ) -> None:
         """Initialize a `Client` instance.
 
@@ -795,11 +795,11 @@ class Client:
             tracing_error_callback (Optional[Callable[[Exception], None]]): Optional callback function to handle errors.
 
                 Called when exceptions occur during tracing operations.
-            cache (Union[Cache, bool, None]): Configuration for caching. Can be:
+            cache (Union[Cache, bool]): Configuration for caching. Can be:
 
                 - ``True``: Enable caching with default settings
                 - ``Cache`` instance: Use custom cache configuration
-                - ``None`` or ``False``: Disable caching (default)
+                - ``False``: Disable caching (default)
 
                 Example::
 

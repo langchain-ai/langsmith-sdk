@@ -43,7 +43,7 @@ class AsyncClient:
         ] = None,
         retry_config: Optional[Mapping[str, Any]] = None,
         web_url: Optional[str] = None,
-        cache: Union[AsyncCache, bool, None] = None,
+        cache: Union[AsyncCache, bool] = False,
     ):
         """Initialize the async client.
 
@@ -56,7 +56,7 @@ class AsyncClient:
             cache: Configuration for caching. Can be:
                 - True: Enable caching with default settings
                 - AsyncCache instance: Use custom cache configuration
-                - None or False: Disable caching (default)
+                - False: Disable caching (default)
         """
         self._retry_config = retry_config or {"max_retries": 3}
         _headers = {
