@@ -81,6 +81,7 @@ sync-version:
 	# Update version in __init__.py to match pyproject.toml
 	$(eval VERSION := $(shell grep '^version =' pyproject.toml | sed 's/version = "\(.*\)"/\1/'))
 	sed -i '' 's/__version__ = "[^"]*"/__version__ = "$(VERSION)"/' langsmith/__init__.py
+	uv lock
 	echo "Synced version: $(VERSION)"
 
 check-version:
@@ -88,10 +89,13 @@ check-version:
 	$(eval VERSION := $(shell grep '^version =' pyproject.toml | sed 's/version = "\(.*\)"/\1/'))
 	# Get version from __init__.py
 	$(eval INIT_VERSION := $(shell grep '__version__ =' langsmith/__init__.py | sed 's/__version__ = "\(.*\)"/\1/'))
+	# Get version from uv.lock (find langsmith package definition, not dependency reference)
+	$(eval LOCK_VERSION := $(shell grep -A1 '^name = "langsmith"$$' uv.lock | grep '^version' | sed 's/version = "\(.*\)"/\1/'))
 	@echo "Checking version alignment..."
 	@echo "pyproject.toml version: $(VERSION)"
 	@echo "__init__.py version: $(INIT_VERSION)"
-	@if [ "$(VERSION)" = "$(INIT_VERSION)" ]; then \
+	@echo "uv.lock version: $(LOCK_VERSION)"
+	@if [ "$(VERSION)" = "$(INIT_VERSION)" ] && [ "$(VERSION)" = "$(LOCK_VERSION)" ]; then \
 		echo "✅ Versions are aligned"; \
 	else \
 		echo "❌ Version mismatch! Please run 'make sync-version' to sync versions"; \
