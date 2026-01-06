@@ -1355,6 +1355,35 @@ class AsyncClient:
         commits = response.json()["commits"]
         return commits[0]["commit_hash"] if commits else None
 
+    async def _create_commit_tags(
+        self, prompt_owner_and_name: str, commit_id: str, tags: Union[str, list[str]]
+    ) -> None:
+        """Update tags for a prompt commit.
+
+        Args:
+            prompt_owner_and_name (str): The owner and name of the prompt in the format 'owner/repo'.
+            commit_id (str): The commit ID to tag.
+            tags (Union[str, list[str]]): A single tag or list of tags to apply to the commit.
+
+        Raises:
+            requests.exceptions.HTTPError: If the request fails.
+        """
+        # Normalize tags to always be a list
+        tag_list = [tags] if isinstance(tags, str) else tags
+
+        # Post each tag individually since there's no bulk endpoint
+        async def create_tag(tag: str):
+            payload = {
+                "tag_name": tag,
+                "commit_id": commit_id,
+            }
+            response = await self._arequest_with_retries(
+                "POST", f"/repos/{prompt_owner_and_name}/tags", json=payload
+            )
+            ls_utils.raise_for_status_with_text(response)
+
+        await asyncio.gather(*[create_tag(tag) for tag in tag_list])
+
     async def _like_or_unlike_prompt(
         self, prompt_identifier: str, like: bool
     ) -> dict[str, int]:
@@ -1569,6 +1598,7 @@ class AsyncClient:
         object: Any,
         *,
         parent_commit_hash: Optional[str] = None,
+        tags: Optional[str | list[str]] = None,
     ) -> str:
         """Create a commit for an existing prompt.
 
@@ -1577,6 +1607,8 @@ class AsyncClient:
             object (Any): The LangChain object to commit.
             parent_commit_hash (Optional[str]): The hash of the parent commit.
                 Defaults to latest commit.
+            tags (Optional[str | list[str]]): A single tag or list of tags to apply to the commit.
+                Defaults to None.
 
         Returns:
             str: The url of the prompt commit.
@@ -1615,7 +1647,11 @@ class AsyncClient:
             "POST", f"/commits/{prompt_owner_and_name}", json=request_dict
         )
 
-        commit_hash = response.json()["commit"]["commit_hash"]
+        commit_json = response.json()["commit"]
+        commit_hash = commit_json["commit_hash"]
+        commit_id = commit_json["id"]
+        if tags:
+            await self._create_commit_tags(prompt_owner_and_name, commit_id, tags)
 
         return await self._get_prompt_url(f"{prompt_owner_and_name}:{commit_hash}")
 
@@ -1928,6 +1964,7 @@ class AsyncClient:
         description: Optional[str] = None,
         readme: Optional[str] = None,
         tags: Optional[Sequence[str]] = None,
+        commit_tags: Optional[str | list[str]] = None,
     ) -> str:
         """Push a prompt to the LangSmith API.
 
@@ -1950,6 +1987,8 @@ class AsyncClient:
             readme (Optional[str]): A readme for the prompt.
                 Defaults to an empty string.
             tags (Optional[Sequence[str]]): A list of tags for the prompt.
+                Defaults to an empty list.
+            commit_tags (Optional[str | list[str]]): A single tag or list of tags for the prompt commit.
                 Defaults to an empty list.
 
         Returns:
@@ -1984,6 +2023,7 @@ class AsyncClient:
             prompt_identifier,
             object,
             parent_commit_hash=parent_commit_hash,
+            tags=commit_tags,
         )
         return url
 
