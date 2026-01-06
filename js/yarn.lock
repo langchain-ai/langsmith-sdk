@@ -59,10 +59,10 @@
     "@jridgewell/gen-mapping" "^0.3.5"
     "@jridgewell/trace-mapping" "^0.3.24"
 
-"@anthropic-ai/claude-agent-sdk@^0.1.71":
-  version "0.1.71"
-  resolved "https://registry.yarnpkg.com/@anthropic-ai/claude-agent-sdk/-/claude-agent-sdk-0.1.71.tgz#7bcbf47c7f3bda2c8ce3084587fb16853411eaf0"
-  integrity sha512-O34SQCEsdU11Z2uy30GaJGRLdRbEwEvaQs8APywHVOW/EdIGE0rS/AE4V6p9j45/j5AFwh2USZWlbz5NTlLnrw==
+"@anthropic-ai/claude-agent-sdk@^0.1.76":
+  version "0.1.76"
+  resolved "https://registry.yarnpkg.com/@anthropic-ai/claude-agent-sdk/-/claude-agent-sdk-0.1.76.tgz#ba6de7de8139483e8cce561cc7340433a1a4ab9e"
+  integrity sha512-s7RvpXoFaLXLG7A1cJBAPD8ilwOhhc/12fb5mJXRuD561o4FmPtQ+WRfuy9akMmrFRfLsKv8Ornw3ClGAPL2fw==
   optionalDependencies:
     "@img/sharp-darwin-arm64" "^0.33.5"
     "@img/sharp-darwin-x64" "^0.33.5"

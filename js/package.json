@@ -142,7 +142,7 @@
   "devDependencies": {
     "@ai-sdk/anthropic": "^2.0.17",
     "@ai-sdk/openai": "^2.0.23",
-    "@anthropic-ai/claude-agent-sdk": "^0.1.71",
+    "@anthropic-ai/claude-agent-sdk": "^0.1.76",
     "@anthropic-ai/sdk": "^0.71.2",
     "@babel/preset-env": "^7.22.4",
     "@faker-js/faker": "^8.4.1",
