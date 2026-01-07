@@ -71,22 +71,133 @@ const _createUsageMetadata = (usage: Record<string, any>): KVMap => {
 };
 
 const chatAggregator = (chunks: Record<string, any>[]): KVMap => {
-  const fullText = chunks
-    .filter((chunk) => chunk?.text)
-    .map((chunk) => chunk.text)
-    .join("");
+  if (!chunks || chunks.length === 0) {
+    return { content: "", role: "assistant" };
+  }
+
+  let text = "";
+  let thoughtText = "";
+  const toolCalls: Array<Record<string, unknown>> = [];
+  const otherParts: Array<Record<string, unknown>> = [];
+  let usageMetadata: Record<string, any> | null = null;
+  let finishReason: string | null = null;
+  let safetyRatings: Array<Record<string, any>> | null = null;
+
+  for (const chunk of chunks) {
+    if (chunk?.usageMetadata) {
+      usageMetadata = chunk.usageMetadata;
+    }
+
+    if (chunk?.candidates && Array.isArray(chunk.candidates)) {
+      for (const candidate of chunk.candidates) {
+        if (candidate.finishReason) {
+          finishReason = candidate.finishReason;
+        }
+        if (candidate.safetyRatings) {
+          safetyRatings = candidate.safetyRatings;
+        }
+
+        if (candidate.content?.parts) {
+          for (const part of candidate.content.parts) {
+            if ("text" in part && part.text !== undefined) {
+              if (part.thought) {
+                thoughtText += part.text;
+              } else {
+                text += part.text;
+              }
+            } else if ("functionCall" in part && part.functionCall) {
+              toolCalls.push({
+                type: "function",
+                function: {
+                  name: part.functionCall.name || "",
+                  arguments: JSON.stringify(part.functionCall.args || {}),
+                },
+              });
+            } else if (
+              "codeExecutionResult" in part &&
+              part.codeExecutionResult
+            ) {
+              otherParts.push({
+                type: "code_execution_result",
+                code_execution_result: part.codeExecutionResult,
+              });
+            } else if ("executableCode" in part && part.executableCode) {
+              otherParts.push({
+                type: "executable_code",
+                executable_code: part.executableCode,
+              });
+            } else if ("inlineData" in part && part.inlineData) {
+              const mimeType = part.inlineData.mimeType || "image/jpeg";
+              const data = part.inlineData.data || "";
+              otherParts.push({
+                type: "image_url",
+                image_url: {
+                  url: `data:${mimeType};base64,${data}`,
+                  detail: "high",
+                },
+              });
+            } else if ("fileData" in part && part.fileData) {
+              otherParts.push({
+                type: "file_data",
+                mime_type: part.fileData.mimeType,
+                file_uri: part.fileData.fileUri,
+              });
+            }
+          }
+        }
+      }
+    } else if (chunk?.text) {
+      text += chunk.text;
+    }
+  }
+
+  const contentParts: Array<Record<string, unknown>> = [];
+
+  if (thoughtText) {
+    contentParts.push({ type: "text", text: thoughtText, thought: true });
+  }
+
+  if (text) {
+    contentParts.push({ type: "text", text: text });
+  }
+
+  contentParts.push(...otherParts);
 
   const result: KVMap = {
-    content: fullText,
     role: "assistant",
   };
 
-  // Extract usage metadata from the last chunk
-  if (chunks.length > 0) {
-    const lastChunk = chunks[chunks.length - 1];
-    if (lastChunk?.usageMetadata) {
-      result.usage_metadata = _createUsageMetadata(lastChunk.usageMetadata);
-    }
+  if (
+    contentParts.length > 1 ||
+    (contentParts.length > 0 && contentParts[0].type !== "text")
+  ) {
+    result.content = contentParts;
+  } else if (
+    contentParts.length === 1 &&
+    contentParts[0].type === "text" &&
+    !contentParts[0].thought
+  ) {
+    result.content = contentParts[0].text as string;
+  } else if (thoughtText && !text) {
+    result.content = contentParts;
+  } else {
+    result.content = text || "";
+  }
+
+  if (toolCalls.length > 0) {
+    result.tool_calls = toolCalls;
+  }
+
+  if (finishReason) {
+    result.finish_reason = finishReason;
+  }
+
+  if (safetyRatings) {
+    result.safety_ratings = safetyRatings;
+  }
+
+  if (usageMetadata) {
+    result.usage_metadata = _createUsageMetadata(usageMetadata);
   }
 
   return result;
@@ -186,7 +297,6 @@ function processGeminiOutputs(outputs: Record<string, any>): KVMap {
     return { content: "", role: "assistant" };
   }
 
-  // Already processed from chatAggregator
   if (
     "content" in response &&
     "role" in response &&
@@ -195,10 +305,12 @@ function processGeminiOutputs(outputs: Record<string, any>): KVMap {
     return response;
   }
 
-  // Process raw Gemini response
-  let content = "";
+  let text = "";
+  let thoughtText = "";
   const toolCalls: Array<Record<string, unknown>> = [];
-  const parts: Array<Record<string, unknown>> = [];
+  const otherParts: Array<Record<string, unknown>> = [];
+  let finishReason: string | null = null;
+  let safetyRatings: Array<Record<string, any>> | null = null;
 
   if (
     "candidates" in response &&
@@ -207,25 +319,43 @@ function processGeminiOutputs(outputs: Record<string, any>): KVMap {
   ) {
     const firstCandidate = response.candidates[0];
 
+    if (firstCandidate.finishReason) {
+      finishReason = firstCandidate.finishReason;
+    }
+    if (firstCandidate.safetyRatings) {
+      safetyRatings = firstCandidate.safetyRatings;
+    }
+
     if (firstCandidate?.content?.parts) {
       for (const part of firstCandidate.content.parts) {
-        if ("text" in part && part.text) {
-          content += part.text;
-          parts.push({ type: "text", text: part.text });
-        } else if ("functionCall" in part) {
-          const funcCall = part.functionCall;
+        if ("text" in part && part.text !== undefined) {
+          if (part.thought) {
+            thoughtText += part.text;
+          } else {
+            text += part.text;
+          }
+        } else if ("functionCall" in part && part.functionCall) {
           toolCalls.push({
             type: "function",
             function: {
-              name: funcCall?.name || "",
-              arguments: JSON.stringify(funcCall?.args || {}),
+              name: part.functionCall.name || "",
+              arguments: JSON.stringify(part.functionCall.args || {}),
             },
           });
+        } else if ("codeExecutionResult" in part && part.codeExecutionResult) {
+          otherParts.push({
+            type: "code_execution_result",
+            code_execution_result: part.codeExecutionResult,
+          });
+        } else if ("executableCode" in part && part.executableCode) {
+          otherParts.push({
+            type: "executable_code",
+            executable_code: part.executableCode,
+          });
         } else if ("inlineData" in part && part.inlineData) {
-          // Convert inline data (images) to OpenAI-compatible format for LangSmith UI
           const mimeType = part.inlineData.mimeType || "image/jpeg";
           const data = part.inlineData.data || "";
-          parts.push({
+          otherParts.push({
             type: "image_url",
             image_url: {
               url: `data:${mimeType};base64,${data}`,
@@ -233,8 +363,7 @@ function processGeminiOutputs(outputs: Record<string, any>): KVMap {
             },
           });
         } else if ("fileData" in part && part.fileData) {
-          // Handle file data
-          parts.push({
+          otherParts.push({
             type: "file_data",
             mime_type: part.fileData.mimeType,
             file_uri: part.fileData.fileUri,
@@ -244,30 +373,51 @@ function processGeminiOutputs(outputs: Record<string, any>): KVMap {
     }
   }
 
-  // Build result following Python's logic:
-  // - If multiple parts or non-text parts: content = parts array
-  // - If text-only: content = string
-  let resultContent: string | Array<any>;
-  if (parts.length > 1 || (parts.length > 0 && parts[0].type !== "text")) {
-    // Multimodal or mixed content: use parts array
-    resultContent = parts;
-  } else {
-    // Text-only: use string
-    resultContent = content;
+  const contentParts: Array<Record<string, unknown>> = [];
+
+  if (thoughtText) {
+    contentParts.push({ type: "text", text: thoughtText, thought: true });
   }
+  if (text) {
+    contentParts.push({ type: "text", text: text });
+  }
+  contentParts.push(...otherParts);
 
   const result: KVMap = {
-    content: resultContent,
     role: "assistant",
   };
 
-  // Extract and store usage metadata
-  if ("usageMetadata" in response && response.usageMetadata) {
-    result.usage_metadata = _createUsageMetadata(response.usageMetadata);
+  if (
+    contentParts.length > 1 ||
+    (contentParts.length > 0 && contentParts[0].type !== "text")
+  ) {
+    result.content = contentParts;
+  } else if (
+    contentParts.length === 1 &&
+    contentParts[0].type === "text" &&
+    !contentParts[0].thought
+  ) {
+    result.content = contentParts[0].text as string;
+  } else if (thoughtText && !text) {
+    result.content = contentParts;
+  } else {
+    result.content = text || "";
   }
 
   if (toolCalls.length > 0) {
     result.tool_calls = toolCalls;
+  }
+
+  if (finishReason) {
+    result.finish_reason = finishReason;
+  }
+
+  if (safetyRatings) {
+    result.safety_ratings = safetyRatings;
+  }
+
+  if ("usageMetadata" in response && response.usageMetadata) {
+    result.usage_metadata = _createUsageMetadata(response.usageMetadata);
   }
 
   return result;
