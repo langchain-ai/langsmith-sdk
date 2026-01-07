@@ -769,6 +769,184 @@ describe("async generators", () => {
       },
     });
   });
+
+  test("early termination triggers finally block cleanup", async () => {
+    const { client } = mockClient();
+    const cleanupOrder: string[] = [];
+
+    async function* generator(name: string) {
+      try {
+        cleanupOrder.push(`${name}: In try block`);
+        yield `${name}: yield 1`;
+        yield `${name}: yield 2`;
+      } catch {
+        cleanupOrder.push(`${name}: caught exception`);
+      } finally {
+        cleanupOrder.push(`${name}: In finally block`);
+      }
+    }
+
+    const traceableGenerator = traceable(generator, {
+      name: "traceable_test",
+      client,
+      tracingEnabled: true,
+    });
+
+    // Break early to trigger cleanup
+    for await (const _ of traceableGenerator("test")) {
+      break;
+    }
+
+    // Verify that finally block was called even though we broke early
+    expect(cleanupOrder).toEqual([
+      "test: In try block",
+      "test: In finally block",
+    ]);
+  });
+
+  test("early termination with throw triggers finally block cleanup", async () => {
+    const { client } = mockClient();
+    const cleanupOrder: string[] = [];
+
+    async function* generator(name: string, shouldThrow: boolean) {
+      try {
+        cleanupOrder.push(`${name}: In try block`);
+        yield `${name}: yield 1`;
+        if (shouldThrow) {
+          throw new Error("Test error");
+        }
+        yield `${name}: yield 2`;
+      } catch (ex) {
+        cleanupOrder.push(`${name}: caught exception`);
+        throw ex;
+      } finally {
+        cleanupOrder.push(`${name}: In finally block`);
+      }
+    }
+
+    const traceableGenerator = traceable(generator, {
+      name: "traceable_test_throw",
+      client,
+      tracingEnabled: true,
+    });
+
+    // Error should propagate and finally should still run
+    await expect(async () => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      for await (const _ of traceableGenerator("test", true)) {
+        // pass
+      }
+    }).rejects.toThrow("Test error");
+
+    // Verify that finally block was called even though an error was thrown
+    expect(cleanupOrder).toEqual([
+      "test: In try block",
+      "test: caught exception",
+      "test: In finally block",
+    ]);
+  });
+
+  test("parent run ends immediately on error without waiting for child runs", async () => {
+    const { client, callSpy } = mockClient();
+    const parentId = uuidv4();
+
+    // Create a child that never completes (simulating long-running streaming)
+    const neverEndingChild = traceable(
+      async function* neverEndingChild() {
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          yield "chunk";
+        }
+      },
+      { name: "never_ending_child", client, tracingEnabled: true }
+    );
+
+    const parentWithError = traceable(
+      async function parentWithError() {
+        // Start child operation that will never finish
+        const childIterator = neverEndingChild()[Symbol.asyncIterator]();
+        void childIterator.next(); // Start the child
+
+        // Throw error immediately
+        throw new Error("Parent error");
+      },
+      { name: "parent", client, tracingEnabled: true, id: parentId }
+    );
+
+    const startTime = Date.now();
+
+    // Error should propagate immediately
+    await expect(parentWithError()).rejects.toThrow("Parent error");
+
+    // Parent run should be ended quickly, not waiting for child
+    const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+    expect(tree.data["parent:0"].error).toContain("Parent error");
+    expect(tree.data["parent:0"].end_time).toBeDefined();
+
+    // Child run should NOT have ended (since it never finishes and parent didn't wait)
+    expect(tree.data["never_ending_child:1"]).toBeDefined();
+    expect(tree.data["never_ending_child:1"].end_time).toBeUndefined();
+
+    const elapsedTime = Date.now() - startTime;
+
+    // Parent run should end quickly, proving we didn't wait for the never-ending child
+    expect(elapsedTime).toBeLessThan(200);
+  });
+
+  test("generator run ends immediately on error without waiting for child runs", async () => {
+    const { client, callSpy } = mockClient();
+
+    // Create a child that never completes
+    const neverEndingChild = traceable(
+      async function* neverEndingChild() {
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          yield "chunk";
+        }
+      },
+      { name: "never_ending_child", client, tracingEnabled: true }
+    );
+
+    const generatorWithError = traceable(
+      async function* generatorWithError() {
+        // Start child operation that will never finish
+        const childIterator = neverEndingChild()[Symbol.asyncIterator]();
+        void childIterator.next(); // Start the child
+
+        yield "first";
+
+        // Throw error after first yield
+        throw new Error("Generator error");
+      },
+      { name: "generator", client, tracingEnabled: true }
+    );
+
+    const startTime = Date.now();
+
+    // Error should propagate immediately
+    await expect(async () => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      for await (const _ of generatorWithError()) {
+        // pass
+      }
+    }).rejects.toThrow("Generator error");
+
+    // Generator run should be ended quickly, not waiting for child
+    const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+    expect(tree.data["generator:0"].error).toContain("Generator error");
+    expect(tree.data["generator:0"].end_time).toBeDefined();
+
+    // Child run should NOT have ended (since it never finishes and generator didn't wait)
+    expect(tree.data["never_ending_child:1"]).toBeDefined();
+    expect(tree.data["never_ending_child:1"].end_time).toBeUndefined();
+
+    const elapsedTime = Date.now() - startTime;
+
+    // Generator run should end quickly, proving we didn't wait for the never-ending child
+    expect(elapsedTime).toBeLessThan(200);
+  });
 });
 
 describe("deferred input", () => {

@@ -25,6 +25,7 @@ from typing import (
     TypeVar,
     Union,
     cast,
+    overload,
 )
 from urllib import parse as urllib_parse
 
@@ -370,7 +371,27 @@ def is_base_message_like(obj: object) -> bool:
 
 def is_env_var_truish(value: Optional[str]) -> bool:
     """Check if the given environment variable is truish."""
+    if value is None:
+        return False
     return is_truish(get_env_var(value))
+
+
+@overload
+def get_env_var(
+    name: str,
+    default: str,
+    *,
+    namespaces: tuple = ("LANGSMITH", "LANGCHAIN"),
+) -> str: ...
+
+
+@overload
+def get_env_var(
+    name: str,
+    default: None = None,
+    *,
+    namespaces: tuple = ("LANGSMITH", "LANGCHAIN"),
+) -> Optional[str]: ...
 
 
 @functools.lru_cache(maxsize=100)
@@ -395,7 +416,7 @@ def get_env_var(
     names = [f"{namespace}_{name}" for namespace in namespaces]
     for name in names:
         value = os.environ.get(name)
-        if value is not None:
+        if value is not None and value.strip() != "":
             return value
     return default
 

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "langsmith"
-version = "0.5.0"
+version = "0.6.1"
 description = "Client library to connect to the LangSmith Observability and Evaluation Platform."
 authors = [
     {name = "LangChain", email = "support@langchain.dev"},
@@ -24,7 +24,7 @@ keywords = [
     "platform",
 ]
 dependencies = [
-    "pydantic>=1,<3",
+    "pydantic>=2,<3",
     "requests>=2.0.0",
     "orjson>=3.9.14; platform_python_implementation != 'PyPy'",
     "httpx>=0.23.0,<1",
@@ -171,7 +171,7 @@ docstring-code-format = true
 docstring-code-line-length = 80
 
 [tool.mypy]
-plugins = ["pydantic.v1.mypy", "pydantic.mypy"]
+plugins = ["pydantic.mypy"]
 ignore_missing_imports = "True"
 disallow_untyped_defs = "True"
 

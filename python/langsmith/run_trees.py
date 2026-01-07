@@ -2,36 +2,27 @@
 
 from __future__ import annotations
 
+import contextvars
 import functools
 import json
 import logging
 import sys
+import threading
+import urllib.parse
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from typing import Any, Optional, Union, cast
-from uuid import NAMESPACE_DNS, UUID, uuid5
+from uuid import UUID
 
+from pydantic import ConfigDict, Field, model_validator
 from typing_extensions import TypedDict
-
-from langsmith._internal._uuid import uuid7
-from langsmith.uuid import uuid7_from_datetime
-
-try:
-    from pydantic.v1 import Field, root_validator  # type: ignore[import]
-except ImportError:
-    from pydantic import (  # type: ignore[assignment, no-redef]
-        Field,
-        root_validator,
-    )
-
-import contextvars
-import threading
-import urllib.parse
 
 import langsmith._internal._context as _context
 from langsmith import schemas as ls_schemas
 from langsmith import utils
+from langsmith._internal._uuid import uuid7, uuid7_deterministic
 from langsmith.client import ID_TYPE, RUN_TYPE_T, Client, _dumps_json, _ensure_uuid
+from langsmith.uuid import uuid7_from_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -206,7 +197,7 @@ class RunTree(ls_schemas.RunBase):
     parent_dotted_order: Optional[str] = Field(default=None, exclude=True)
     child_runs: list[RunTree] = Field(
         default_factory=list,
-        exclude={"__all__": {"parent_run_id"}},
+        exclude=True,
     )
     session_name: str = Field(
         default_factory=lambda: utils.get_tracer_project() or "default",
@@ -231,15 +222,14 @@ class RunTree(ls_schemas.RunBase):
         description="Projects to replicate this run to with optional updates.",
     )
 
-    class Config:
-        """Pydantic model configuration."""
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+        populate_by_name=True,
+        extra="ignore",
+    )
 
-        arbitrary_types_allowed = True
-        allow_population_by_field_name = True
-        extra = "ignore"
-
-    @root_validator(pre=True)
-    def infer_defaults(cls, values: dict) -> dict:
+    @model_validator(mode="before")
+    def infer_defaults(cls, values: dict[str, Any]) -> dict[str, Any]:
         """Assign name to the run."""
         if values.get("name") is None and values.get("serialized") is not None:
             if "name" in values["serialized"]:
@@ -285,21 +275,19 @@ class RunTree(ls_schemas.RunBase):
         values["replicas"] = _ensure_write_replicas(values["replicas"])
         return values
 
-    @root_validator(pre=False)
-    def ensure_dotted_order(cls, values: dict) -> dict:
+    @model_validator(mode="after")
+    def ensure_dotted_order(self) -> RunTree:
         """Ensure the dotted order of the run."""
-        current_dotted_order = values.get("dotted_order")
+        current_dotted_order = self.dotted_order
         if current_dotted_order and current_dotted_order.strip():
-            return values
-        current_dotted_order = _create_current_dotted_order(
-            values["start_time"], values["id"]
-        )
-        parent_dotted_order = values.get("parent_dotted_order")
+            return self
+        current_dotted_order = _create_current_dotted_order(self.start_time, self.id)
+        parent_dotted_order = self.parent_dotted_order
         if parent_dotted_order is not None:
-            values["dotted_order"] = parent_dotted_order + "." + current_dotted_order
+            self.dotted_order = parent_dotted_order + "." + current_dotted_order
         else:
-            values["dotted_order"] = current_dotted_order
-        return values
+            self.dotted_order = current_dotted_order
+        return self
 
     @property
     def client(self) -> Client:
@@ -490,6 +478,17 @@ class RunTree(ls_schemas.RunBase):
         attachments: Optional[ls_schemas.Attachments] = None,
     ) -> RunTree:
         """Add a child run to the run tree."""
+        # Ensure child start_time is never earlier than parent start_time
+        # to prevent timestamp ordering violations in dotted_order
+        if start_time is not None and self.start_time is not None:
+            if start_time < self.start_time:
+                logger.debug(
+                    f"Adjusting child run '{name}' start_time from {start_time} "
+                    f"to {self.start_time} to maintain timestamp ordering with "
+                    f"parent '{self.name}'"
+                )
+            start_time = max(start_time, self.start_time)
+
         serialized_ = serialized or {"name": name}
         run = RunTree(
             name=name,
@@ -516,7 +515,7 @@ class RunTree(ls_schemas.RunBase):
 
     def _get_dicts_safe(self):
         # Things like generators cannot be copied
-        self_dict = self.dict(
+        self_dict = self.model_dump(
             exclude={"child_runs", "inputs", "outputs"}, exclude_none=True
         )
         if self.inputs is not None:
@@ -580,17 +579,17 @@ class RunTree(ls_schemas.RunBase):
                 self._slice_parent_id(distributed_parent_id, run_dict)
 
         old_id = run_dict["id"]
-        new_id = uuid5(NAMESPACE_DNS, f"{old_id}:{project_name}")
+        new_id = uuid7_deterministic(UUID(str(old_id)), project_name)
         # trace id
         old_trace = run_dict.get("trace_id")
         if old_trace:
-            new_trace = uuid5(NAMESPACE_DNS, f"{old_trace}:{project_name}")
+            new_trace = uuid7_deterministic(UUID(str(old_trace)), project_name)
         else:
             new_trace = None
         # parent id
         parent = run_dict.get("parent_run_id")
         if parent:
-            new_parent = uuid5(NAMESPACE_DNS, f"{parent}:{project_name}")
+            new_parent = uuid7_deterministic(UUID(str(parent)), project_name)
         else:
             new_parent = None
         # dotted order
@@ -598,9 +597,8 @@ class RunTree(ls_schemas.RunBase):
             segs = run_dict["dotted_order"].split(".")
             rebuilt = []
             for part in segs[:-1]:
-                repl = uuid5(
-                    NAMESPACE_DNS, f"{part[-TIMESTAMP_LENGTH:]}:{project_name}"
-                )
+                seg_id = UUID(part[-TIMESTAMP_LENGTH:])
+                repl = uuid7_deterministic(seg_id, project_name)
                 rebuilt.append(part[:-TIMESTAMP_LENGTH] + str(repl))
             rebuilt.append(segs[-1][:-TIMESTAMP_LENGTH] + str(new_id))
             dotted = ".".join(rebuilt)

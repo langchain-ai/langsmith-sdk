@@ -1,4 +1,4 @@
-// import { generateText, stepCountIs, tool, wrapLanguageModel } from "ai";
+/* eslint-disable @typescript-eslint/no-non-null-assertion */
 import { openai } from "@ai-sdk/openai";
 import * as ai from "ai";
 import z from "zod";
@@ -12,13 +12,19 @@ import {
   createLangSmithProviderOptions,
   wrapAISDK,
 } from "../../../experimental/vercel/index.js";
-import { waitUntilRunFound } from "../../utils.js";
+import { generateLongContext, waitUntilRunFound } from "../../utils.js";
 import { mockClient } from "../../utils/mock_client.js";
+import { traceable } from "../../../traceable.js";
 
 const { tool, stepCountIs } = ai;
 
-const { generateText, streamText, generateObject, streamObject } =
-  wrapAISDK(ai);
+const {
+  generateText,
+  streamText,
+  generateObject,
+  streamObject,
+  ToolLoopAgent,
+} = wrapAISDK(ai);
 
 test("wrap generateText", async () => {
   const result = await generateText({
@@ -217,7 +223,30 @@ test("wrap streamText with service tier", async () => {
   ).toEqual(usageMetadata.output_tokens);
 });
 
-test("wrap generateObject", async () => {
+test("wrap generateText with an output schema", async () => {
+  const schema = z.object({
+    color: z.string(),
+  });
+  const output = ai.Output.object({
+    schema,
+  });
+  const result = await generateText({
+    model: openai("gpt-5-nano"),
+    messages: [
+      {
+        role: "user",
+        content: "What color is the sky in one word?",
+      },
+    ],
+    output,
+  });
+  expect(result.output).toBeDefined();
+  expect(schema.parse(result.output)).toBeDefined();
+  expect(result.usage).toBeDefined();
+  expect(result.providerMetadata).toBeDefined();
+});
+
+test.skip("wrap generateObject (deprecated)", async () => {
   const schema = z.object({
     color: z.string(),
   });
@@ -237,11 +266,39 @@ test("wrap generateObject", async () => {
   expect(result.providerMetadata).toBeDefined();
 });
 
-test("wrap streamObject", async () => {
+test("wrap streamText with an output schema", async () => {
   const schema = z.object({
     color: z.string(),
   });
-  const result = await streamObject({
+  const output = ai.Output.object({
+    schema,
+  });
+  const result = streamText({
+    model: openai("gpt-5-nano"),
+    messages: [
+      {
+        role: "user",
+        content: "What color is the sky in one word?",
+      },
+    ],
+    output,
+  });
+  const chunks = [];
+  for await (const chunk of result.partialOutputStream) {
+    chunks.push(chunk);
+  }
+  expect(chunks.length).toBeGreaterThan(0);
+  expect(schema.parse(chunks.at(-1))).toBeDefined();
+  expect(result.usage).toBeDefined();
+  expect(result.providerMetadata).toBeDefined();
+});
+
+// Deprecated in AI SDK v6
+test.skip("wrap streamObject", async () => {
+  const schema = z.object({
+    color: z.string(),
+  });
+  const result = streamObject({
     model: openai("gpt-5-nano"),
     messages: [
       {
@@ -466,4 +523,201 @@ test("streamText with experimental_output should display as structured object in
   }
   expect(chunks.length).toBeGreaterThan(0);
   expect(outputSchema.parse(chunks.at(-1))).toBeDefined();
+});
+
+it.skip("openai cache with large prompt for automatic caching", async () => {
+  const meta = v4();
+  const client = new Client();
+  const aiSDKResponses: unknown[] = [];
+
+  // Create a large prompt (>1024 tokens) to trigger OpenAI's automatic prompt caching
+  const largeProgrammingContext = generateLongContext();
+
+  const wrapper = traceable(
+    async () => {
+      // First call - should create cache due to large prompt (>1024 tokens)
+      try {
+        const res1 = await generateText({
+          model: openai("gpt-5-nano"),
+          messages: [
+            {
+              role: "system",
+              content: largeProgrammingContext,
+            },
+            {
+              role: "user",
+              content:
+                "What are the top 3 memory optimization strategies you would recommend for this Java service?",
+            },
+          ],
+        });
+        aiSDKResponses.push(res1);
+        console.log("Cache create response:", res1.usage);
+      } catch (error) {
+        console.error("Cache create error:", error);
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+
+      // Second call - should read from cache with same large context
+      try {
+        const res2 = await generateText({
+          model: openai("gpt-5-nano"),
+          messages: [
+            {
+              role: "system",
+              content: largeProgrammingContext,
+            },
+            {
+              role: "user",
+              content:
+                "How would you redesign the database access pattern to reduce connection pool pressure?",
+            },
+          ],
+        });
+        aiSDKResponses.push(res2);
+        console.log("Cache read response:", res2.usage);
+      } catch (error) {
+        console.error("Cache read error:", error);
+      }
+
+      return "OpenAI cache test completed";
+    },
+    {
+      name: "OpenAI Cache Test Wrapper",
+      metadata: { testKey: meta },
+      client,
+    }
+  );
+
+  await wrapper();
+
+  await client.awaitPendingTraceBatches();
+});
+
+it.skip("openai cache with streamText", async () => {
+  const meta = v4();
+  const client = new Client();
+  const aiSDKResponses: unknown[] = [];
+
+  // Create a large prompt (>1024 tokens) to trigger OpenAI's automatic prompt caching
+  const largeProgrammingContext = generateLongContext();
+
+  const wrapper = traceable(
+    async () => {
+      // First call - should create cache due to large prompt (>1024 tokens)
+      try {
+        const { textStream } = streamText({
+          model: openai("gpt-5-nano"),
+          messages: [
+            {
+              role: "system",
+              content: largeProgrammingContext,
+            },
+            {
+              role: "user",
+              content:
+                "What are the top 3 memory optimization strategies you would recommend for this Java service?",
+            },
+          ],
+        });
+
+        let fullText = "";
+        for await (const chunk of textStream) {
+          fullText += chunk;
+        }
+        aiSDKResponses.push({ text: fullText });
+        console.log("Cache create response with streamText");
+      } catch (error) {
+        console.error("Cache create error:", error);
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+
+      // Second call - should read from cache with same large context
+      try {
+        const { textStream } = streamText({
+          model: openai("gpt-5-nano"),
+          messages: [
+            {
+              role: "system",
+              content: largeProgrammingContext,
+            },
+            {
+              role: "user",
+              content:
+                "How would you redesign the database access pattern to reduce connection pool pressure?",
+            },
+          ],
+          providerOptions: {
+            openai: {
+              stream_options: {
+                include_usage: true,
+              },
+            },
+          },
+        });
+
+        let fullText = "";
+        for await (const chunk of textStream) {
+          fullText += chunk;
+        }
+        aiSDKResponses.push({ text: fullText });
+        console.log("Cache read response with streamText");
+      } catch (error) {
+        console.error("Cache read error:", error);
+      }
+
+      return "OpenAI cache streamText test completed";
+    },
+    {
+      name: "OpenAI Cache StreamText Test Wrapper",
+      metadata: { testKey: meta },
+      client,
+    }
+  );
+
+  await wrapper();
+
+  await client.awaitPendingTraceBatches();
+});
+
+test.skip("ToolLoopAgent generate", async () => {
+  const agent = new ToolLoopAgent({
+    model: openai("gpt-5-nano"),
+    tools: {
+      listOrders: tool({
+        description: "list all orders",
+        inputSchema: z.object({ userId: z.string() }),
+        execute: async ({ userId }) =>
+          `User ${userId} has the following orders: 1`,
+      }),
+    },
+  });
+
+  const result = await agent.generate({
+    prompt: "What are my orders? My user id is 1",
+  });
+  console.log(result);
+});
+
+test.skip("ToolLoopAgent stream", async () => {
+  const agent = new ToolLoopAgent({
+    model: openai("gpt-5-nano"),
+    tools: {
+      listOrders: tool({
+        description: "list all orders",
+        inputSchema: z.object({ userId: z.string() }),
+        execute: async ({ userId }) =>
+          `User ${userId} has the following orders: 1`,
+      }),
+    },
+  });
+
+  const result = await agent.stream({
+    prompt: "What are my orders? My user id is 1",
+  });
+  for await (const chunk of result.textStream) {
+    console.log(chunk);
+  }
 });

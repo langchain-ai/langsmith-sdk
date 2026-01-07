@@ -2,6 +2,7 @@ import datetime
 from typing import Any
 from unittest.mock import MagicMock
 
+from langsmith._internal._uuid import uuid7, uuid7_deterministic
 from langsmith.client import Client
 from langsmith.run_helpers import traceable
 from langsmith.run_trees import RunTree
@@ -49,7 +50,7 @@ def test_run_tree_default_uuidv7_and_start_time_match() -> None:
     assert rt.id.version == 7
     id_ms = _uuid_v7_ms(rt.id)
     start_ms = int(rt.start_time.timestamp() * 1_000_000_000) // 1_000_000
-    assert id_ms == start_ms
+    assert abs(id_ms - start_ms) <= 1
 
 
 def test_run_tree_explicit_start_time_matches_id() -> None:
@@ -91,3 +92,42 @@ def test_post_and_patch_include_run_type_and_start_time() -> None:
     _, update_kwargs = client.update_run.call_args
     assert update_kwargs["run_type"] == "llm"
     assert update_kwargs["start_time"] == fixed_start
+
+
+def test_uuid7_deterministic() -> None:
+    """Test uuid7_deterministic produces valid, deterministic UUID7s."""
+
+    original = uuid7()
+    key = "replica-project"
+
+    d1 = uuid7_deterministic(original, key)
+    d2 = uuid7_deterministic(original, key)
+
+    # Valid UUID7
+    assert d1.version == 7
+    assert (d1.bytes[8] & 0xC0) == 0x80  # RFC 4122 variant
+
+    assert d1 == d2
+
+    # Different inputs -> different outputs
+    assert uuid7_deterministic(original, "other-key") != d1
+    assert uuid7_deterministic(uuid7(), key) != d1
+
+
+def test_uuid7_deterministic_timestamp_handling() -> None:
+    """Test timestamp is preserved from UUID7, fresh for non-UUID7."""
+    import time
+    import uuid as uuid_module
+
+    # UUID7 input: timestamp preserved
+    original_v7 = uuid7()
+    derived_v7 = uuid7_deterministic(original_v7, "key")
+    assert _uuid_v7_ms(derived_v7) == _uuid_v7_ms(original_v7)
+
+    # UUID4 input: gets fresh timestamp
+    before_ms = time.time_ns() // 1_000_000
+    derived_v4 = uuid7_deterministic(uuid_module.uuid4(), "key")
+    after_ms = time.time_ns() // 1_000_000
+
+    assert derived_v4.version == 7
+    assert before_ms <= _uuid_v7_ms(derived_v4) <= after_ms

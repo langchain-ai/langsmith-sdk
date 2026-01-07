@@ -166,8 +166,8 @@ class SerializedFeedbackOperation:
 def serialize_feedback_dict(
     feedback: Union[ls_schemas.FeedbackCreate, dict],
 ) -> SerializedFeedbackOperation:
-    if hasattr(feedback, "dict") and callable(getattr(feedback, "dict")):
-        feedback_create: dict = feedback.dict()  # type: ignore
+    if hasattr(feedback, "model_dump") and callable(getattr(feedback, "model_dump")):
+        feedback_create: dict = feedback.model_dump()  # type: ignore
     else:
         feedback_create = cast(dict, feedback)
     if "id" not in feedback_create:

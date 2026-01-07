@@ -71,6 +71,7 @@ import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
 import { parsePromptIdentifier } from "./utils/prompts.js";
 import { raiseForStatus, isLangSmithNotFoundError } from "./utils/error.js";
+import { Cache } from "./utils/prompts_cache.js";
 import {
   _globalFetchImplementationIsNodeFetch,
   _getFetchImplementation,
@@ -125,6 +126,28 @@ export interface ClientConfig {
    * Custom fetch implementation. Useful for testing.
    */
   fetchImplementation?: typeof fetch;
+  /**
+   * Configuration for caching. Can be:
+   * - `true`: Enable caching with default settings
+   * - `Cache` instance: Use custom cache configuration
+   * - `undefined` or `false`: Disable caching (default)
+   *
+   * @example
+   * ```typescript
+   * import { Client, Cache } from "langsmith";
+   *
+   * // Enable with defaults
+   * const client1 = new Client({ cache: true });
+   *
+   * // Or use custom configuration
+   * const myCache = new Cache({
+   *   maxSize: 100,
+   *   ttlSeconds: 3600, // 1 hour, or null for infinite TTL
+   * });
+   * const client2 = new Client({ cache: myCache });
+   * ```
+   */
+  cache?: Cache | boolean;
 }
 
 /**
@@ -714,6 +737,8 @@ export class Client implements LangSmithTracingClientInterface {
 
   private cachedLSEnvVarsForMetadata?: Record<string, string>;
 
+  private _cache?: Cache;
+
   private get _fetch(): typeof fetch {
     return this.fetchImplementation || _getFetchImplementation(this.debug);
   }
@@ -786,6 +811,15 @@ export class Client implements LangSmithTracingClientInterface {
     }
     // Cache metadata env vars once during construction to avoid repeatedly scanning process.env
     this.cachedLSEnvVarsForMetadata = getLangSmithEnvVarsMetadata();
+
+    // Initialize cache
+    if (config.cache === true) {
+      this._cache = new Cache();
+    } else if (config.cache && typeof config.cache === "object") {
+      this._cache = config.cache;
+    } else {
+      this._cache = undefined;
+    }
   }
 
   public static getDefaultClientConfig(): {
@@ -5354,11 +5388,24 @@ export class Client implements LangSmithTracingClientInterface {
     return response.json();
   }
 
-  public async pullPromptCommit(
+  /**
+   * Generate a cache key for a prompt.
+   * Format: "{identifier}" or "{identifier}:with_model"
+   */
+  private _getPromptCacheKey(
     promptIdentifier: string,
-    options?: {
-      includeModel?: boolean;
-    }
+    includeModel?: boolean
+  ): string {
+    const suffix = includeModel ? ":with_model" : "";
+    return `${promptIdentifier}${suffix}`;
+  }
+
+  /**
+   * Fetch a prompt commit directly from the API (bypassing cache).
+   */
+  private async _fetchPromptFromApi(
+    promptIdentifier: string,
+    options?: { includeModel?: boolean }
   ): Promise<PromptCommit> {
     const [owner, promptName, commitHash] =
       parsePromptIdentifier(promptIdentifier);
@@ -5389,6 +5436,34 @@ export class Client implements LangSmithTracingClientInterface {
     };
   }
 
+  public async pullPromptCommit(
+    promptIdentifier: string,
+    options?: {
+      includeModel?: boolean;
+      skipCache?: boolean;
+    }
+  ): Promise<PromptCommit> {
+    // Check cache first if not skipped
+    if (!options?.skipCache && this._cache) {
+      const cacheKey = this._getPromptCacheKey(
+        promptIdentifier,
+        options?.includeModel
+      );
+      const cached = this._cache.get(cacheKey);
+      if (cached) {
+        return cached;
+      }
+
+      // Cache miss - fetch from API and cache it
+      const result = await this._fetchPromptFromApi(promptIdentifier, options);
+      this._cache.set(cacheKey, result);
+      return result;
+    }
+
+    // No cache or skip cache - fetch directly
+    return this._fetchPromptFromApi(promptIdentifier, options);
+  }
+
   /**
    * This method should not be used directly, use `import { pull } from "langchain/hub"` instead.
    * Using this method directly returns the JSON string of the prompt rather than a LangChain object.
@@ -5398,10 +5473,12 @@ export class Client implements LangSmithTracingClientInterface {
     promptIdentifier: string,
     options?: {
       includeModel?: boolean;
+      skipCache?: boolean;
     }
   ): Promise<any> {
     const promptObject = await this.pullPromptCommit(promptIdentifier, {
       includeModel: options?.includeModel,
+      skipCache: options?.skipCache,
     });
     const prompt = JSON.stringify(promptObject.manifest);
     return prompt;
@@ -5546,6 +5623,24 @@ export class Client implements LangSmithTracingClientInterface {
       }
     } catch (error) {
       throw new Error(`Invalid public ${kind} URL or token: ${urlOrToken}`);
+    }
+  }
+
+  /**
+   * Get the cache instance, if caching is enabled.
+   * Useful for accessing cache metrics or manually managing the cache.
+   */
+  get cache(): Cache | undefined {
+    return this._cache;
+  }
+
+  /**
+   * Cleanup resources held by the client.
+   * Stops the cache's background refresh timer.
+   */
+  public cleanup(): void {
+    if (this._cache) {
+      this._cache.stop();
     }
   }
 

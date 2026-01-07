@@ -1,0 +1,17 @@
+{
+  "name": "test-exports-esm",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Tests that langsmith exports work correctly in ESM environments",
+  "scripts": {
+    "test": "npx tsx src/index.ts"
+  },
+  "dependencies": {
+    "langsmith": "file:../../.."
+  },
+  "devDependencies": {
+    "tsx": "^4.7.0",
+    "@types/node": "^20.0.0"
+  }
+}

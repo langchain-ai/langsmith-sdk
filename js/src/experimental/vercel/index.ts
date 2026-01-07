@@ -75,29 +75,46 @@ const _getModelId = (model: string | Record<string, unknown>) => {
   return typeof model.modelId === "string" ? model.modelId : undefined;
 };
 
-const _formatTracedInputs = (params: Record<string, unknown>) => {
-  const { prompt, messages, model, tools, ...rest } = params;
+const _formatTracedInputs = async (params: Record<string, unknown>) => {
+  const { prompt, messages, model, tools, output, ...rest } = params;
+  let processedInputs: Record<string, unknown> = {};
   if (Array.isArray(prompt)) {
-    return {
+    processedInputs = {
       ...rest,
       messages: prompt.map((message) => convertMessageToTracedFormat(message)),
     };
   } else if (Array.isArray(messages)) {
-    return {
+    processedInputs = {
       ...rest,
       messages: messages.map((message) =>
         convertMessageToTracedFormat(message)
       ),
     };
   } else {
-    return { ...rest, prompt, messages };
+    processedInputs = { ...rest, prompt, messages };
   }
+  try {
+    if (
+      output != null &&
+      typeof output === "object" &&
+      "responseFormat" in output
+    ) {
+      const responseFormat = await output.responseFormat;
+      processedInputs.output = responseFormat;
+    } else {
+      processedInputs.output = output;
+    }
+  } catch {
+    // Could not extract response format from output for tracing
+    processedInputs.output = output;
+  }
+  return processedInputs;
 };
 
 const _mergeConfig = (
   baseConfig?: Partial<RunTreeConfig>,
   runtimeConfig?: Partial<RunTreeConfig>
-): Record<string, any> => {
+): Record<string, unknown> => {
   return {
     ...baseConfig,
     ...runtimeConfig,
@@ -386,6 +403,183 @@ const _resolveConfigs = (
   };
 };
 
+const _getGenerateTextWrapperConfig = ({
+  model,
+  runName,
+  aiSdkMethodName,
+  resolvedLsConfig,
+  hasExplicitOutput,
+  hasExplicitExperimentalOutput,
+  traceResponseMetadata,
+}: {
+  model: any;
+  runName?: string;
+  aiSdkMethodName?: string;
+  resolvedLsConfig: WrapAISDKConfig;
+  hasExplicitOutput: boolean;
+  hasExplicitExperimentalOutput?: boolean;
+  traceResponseMetadata?: boolean;
+}) => {
+  return {
+    name: runName ?? _getModelDisplayName(model),
+    ...resolvedLsConfig,
+    metadata: {
+      ai_sdk_method: aiSdkMethodName ?? "ai.generateText",
+      ...resolvedLsConfig?.metadata,
+    },
+    processInputs: async (inputs: any) => {
+      const inputFormatter =
+        resolvedLsConfig?.processInputs ?? _formatTracedInputs;
+      return inputFormatter(inputs);
+    },
+    processOutputs: async (outputs: any) => {
+      if (resolvedLsConfig?.processOutputs) {
+        const processedOutputs = await resolvedLsConfig.processOutputs(
+          // TODO: Fix this typing on minor bump
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          outputs as any
+        );
+        return processedOutputs;
+      }
+      if (outputs.outputs == null || typeof outputs.outputs !== "object") {
+        return outputs;
+      }
+      // If output or experimental_output (legacy) was explicitly provided, return it directly at top level (like generateObject)
+      // Note: In AI SDK 6, experimental_output/output is always available as a getter, so we need to check if it was explicitly provided
+      if (hasExplicitOutput) {
+        try {
+          // Try new 'output' property first, then fall back to 'experimental_output' for backwards compatibility
+          if ("output" in outputs.outputs) {
+            const output = outputs.outputs.output;
+            if (output != null && typeof output === "object") {
+              if (Array.isArray(output)) {
+                return { outputs: output };
+              }
+              return output;
+            }
+          }
+        } catch {
+          // output not accessible, continue with normal processing
+        }
+      } else if (hasExplicitExperimentalOutput) {
+        try {
+          if ("experimental_output" in outputs.outputs) {
+            const experimentalOutput = outputs.outputs.experimental_output;
+            if (experimentalOutput != null) {
+              return experimentalOutput;
+            }
+          }
+        } catch {
+          // experimental_output not accessible, continue with normal processing
+        }
+      }
+      const { steps } = outputs.outputs;
+      if (Array.isArray(steps)) {
+        const lastStep = steps.at(-1);
+        if (lastStep == null || typeof lastStep !== "object") {
+          return outputs;
+        }
+        const { content } = lastStep;
+        return convertMessageToTracedFormat(
+          {
+            content: content ?? outputs.outputs.text,
+            role: "assistant",
+          },
+          resolvedLsConfig?.traceResponseMetadata ?? traceResponseMetadata
+            ? { steps }
+            : undefined
+        );
+      } else {
+        return outputs;
+      }
+    },
+  };
+};
+
+const _getStreamTextWrapperConfig = ({
+  model,
+  runName,
+  aiSdkMethodName,
+  resolvedLsConfig,
+  hasExplicitOutput,
+  hasExplicitExperimentalOutput,
+  traceResponseMetadata,
+}: {
+  model: any;
+  runName?: string;
+  aiSdkMethodName?: string;
+  resolvedLsConfig: WrapAISDKConfig;
+  hasExplicitOutput: boolean;
+  hasExplicitExperimentalOutput?: boolean;
+  traceResponseMetadata?: boolean;
+}) => {
+  return {
+    name: runName ?? _getModelDisplayName(model),
+    ...resolvedLsConfig,
+    metadata: {
+      ai_sdk_method: aiSdkMethodName ?? "ai.streamText",
+      ...resolvedLsConfig?.metadata,
+    },
+    processInputs: async (inputs: any) => {
+      const inputFormatter =
+        resolvedLsConfig?.processInputs ?? _formatTracedInputs;
+      return inputFormatter(inputs);
+    },
+    processOutputs: async (outputs: any) => {
+      try {
+        if (resolvedLsConfig?.processOutputs) {
+          const processedOutputs = await resolvedLsConfig.processOutputs(
+            // TODO: Fix this typing on minor bump
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            outputs as any
+          );
+          return processedOutputs;
+        }
+        if (outputs.outputs == null || typeof outputs.outputs !== "object") {
+          return outputs;
+        }
+        // Important: Even accessing this property creates a promise.
+        // This must be awaited.
+        let content = await outputs.outputs.content;
+        if (content == null) {
+          // AI SDK 4 shim
+          content = await outputs.outputs.text;
+        }
+        if (content == null || !["object", "string"].includes(typeof content)) {
+          return outputs;
+        }
+        try {
+          if (hasExplicitOutput || hasExplicitExperimentalOutput) {
+            const textContent = await outputs.outputs.text;
+            return JSON.parse(textContent);
+          }
+        } catch {
+          // experimental_partialOutputStream not specified, continue with normal processing
+        }
+        let responseMetadata: Record<string, unknown> | undefined = undefined;
+        if (resolvedLsConfig?.traceResponseMetadata ?? traceResponseMetadata) {
+          try {
+            const steps = await outputs.outputs.steps;
+            responseMetadata = { steps };
+          } catch {
+            // Do nothing if step parsing fails
+          }
+        }
+        return convertMessageToTracedFormat(
+          {
+            content,
+            role: "assistant",
+          },
+          responseMetadata
+        );
+      } catch {
+        // Handle parsing failures without a log
+        return outputs;
+      }
+    },
+  };
+};
+
 /**
  * Wraps LangSmith config in a way that matches AI SDK provider types.
  *
@@ -423,7 +617,7 @@ export const createLangSmithProviderOptions = <
 };
 
 /**
- * Wraps Vercel AI SDK 5 functions with LangSmith tracing capabilities.
+ * Wraps Vercel AI SDK 6 or AI SDK 5 functions with LangSmith tracing capabilities.
  *
  * @param methods - Object containing AI SDK methods to wrap
  * @param methods.wrapLanguageModel - AI SDK's wrapLanguageModel function
@@ -439,34 +633,26 @@ export const createLangSmithProviderOptions = <
  * @returns returns.streamObject - Wrapped streamObject function that traces calls to LangSmith
  */
 const wrapAISDK = <
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  GenerateTextType extends (...args: any[]) => any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  StreamTextType extends (...args: any[]) => any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  GenerateObjectType extends (...args: any[]) => any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  StreamObjectType extends (...args: any[]) => any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  WrapLanguageModelType extends (...args: any[]) => any
+  T extends {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    wrapLanguageModel: (...args: any[]) => any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    generateText: (...args: any[]) => any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    streamText: (...args: any[]) => any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    streamObject?: (...args: any[]) => any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    generateObject?: (...args: any[]) => any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ToolLoopAgent?: any;
+  }
 >(
-  {
-    wrapLanguageModel,
-    generateText,
-    streamText,
-    streamObject,
-    generateObject,
-  }: {
-    wrapLanguageModel: WrapLanguageModelType;
-    generateText: GenerateTextType;
-    streamText: StreamTextType;
-    streamObject: StreamObjectType;
-    generateObject: GenerateObjectType;
-  },
+  ai: T,
   baseLsConfig?: WrapAISDKConfig
 ) => {
   /**
-   * Wrapped version of AI SDK 5's generateText with LangSmith tracing.
+   * Wrapped version of AI SDK's generateText with LangSmith tracing.
    *
    * This function has the same signature and behavior as the original generateText,
    * but adds automatic tracing to LangSmith for observability.
@@ -483,18 +669,22 @@ const wrapAISDK = <
    * @param params - Same parameters as the original generateText function
    * @returns Promise resolving to the same result as generateText, with tracing applied
    */
-  const wrappedGenerateText = async (...args: Parameters<GenerateTextType>) => {
+  const wrappedGenerateText = async (
+    ...args: Parameters<typeof ai.generateText>
+  ) => {
     const params = args[0];
     const { langsmith: runtimeLsConfig, ...providerOptions } =
       params.providerOptions ?? {};
     const { resolvedLsConfig, resolvedChildLLMRunConfig, resolvedToolConfig } =
       _resolveConfigs(baseLsConfig, runtimeLsConfig);
+    const hasExplicitOutput = "output" in params;
+    const hasExplicitExperimentalOutput = "experimental_output" in params;
     const traceableFunc = traceable(
       async (
-        ...args: Parameters<GenerateTextType>
-      ): Promise<ReturnType<GenerateTextType>> => {
+        ...args: Parameters<typeof ai.generateText>
+      ): Promise<ReturnType<typeof ai.generateText>> => {
         const [params, ...rest] = args;
-        const wrappedModel = wrapLanguageModel({
+        const wrappedModel = ai.wrapLanguageModel({
           model: params.model,
           middleware: LangSmithMiddleware({
             name: _getModelDisplayName(params.model),
@@ -503,7 +693,7 @@ const wrapAISDK = <
             lsConfig: resolvedChildLLMRunConfig as Record<string, unknown>,
           }),
         });
-        return generateText(
+        return ai.generateText(
           {
             ...params,
             providerOptions,
@@ -511,155 +701,113 @@ const wrapAISDK = <
             model: wrappedModel,
           },
           ...rest
-        ) as ReturnType<GenerateTextType>;
+        );
       },
-      {
-        name: _getModelDisplayName(params.model),
-        ...resolvedLsConfig,
-        metadata: {
-          ai_sdk_method: "ai.generateText",
-          ...resolvedLsConfig?.metadata,
-        },
-        processInputs: (inputs) => {
-          const inputFormatter =
-            resolvedLsConfig?.processInputs ?? _formatTracedInputs;
-          return inputFormatter(inputs);
-        },
-        processOutputs: async (outputs) => {
-          if (resolvedLsConfig?.processOutputs) {
-            const processedOutputs = await resolvedLsConfig.processOutputs(
+      _getGenerateTextWrapperConfig({
+        model: params.model,
+        resolvedLsConfig,
+        hasExplicitOutput,
+        hasExplicitExperimentalOutput,
+      })
+    ) as (
+      ...args: Parameters<typeof ai.generateText>
+    ) => Promise<ReturnType<typeof ai.generateText>>;
+    return traceableFunc(...args);
+  };
+
+  let wrappedGenerateObject;
+  if (typeof ai.generateObject === "function") {
+    const generateObject = ai.generateObject;
+    /**
+     * Wrapped version of AI SDK's generateObject with LangSmith tracing.
+     *
+     * This function has the same signature and behavior as the original generateObject,
+     * but adds automatic tracing to LangSmith for observability.
+     *
+     * ```ts
+     * import * as ai from "ai";
+     * import { wrapAISDK } from "langsmith/experimental/vercel";
+     *
+     * const { generateObject } = wrapAISDK(ai);
+     * const { object } = await generateObject(...);
+     * ```
+     *
+     * @see {@link https://sdk.vercel.ai/docs/ai-sdk-core/generating-structured-data} Original generateObject documentation
+     * @param params - Same parameters as the original generateObject function
+     * @returns Promise resolving to the same result as generateObject, with tracing applied
+     */
+    wrappedGenerateObject = async (
+      ...args: Parameters<typeof generateObject>
+    ) => {
+      const params = args[0];
+      const { langsmith: runtimeLsConfig, ...providerOptions } =
+        params.providerOptions ?? {};
+      const { resolvedLsConfig, resolvedChildLLMRunConfig } = _resolveConfigs(
+        baseLsConfig,
+        runtimeLsConfig
+      );
+      const traceableFunc = traceable(
+        async (
+          ...args: Parameters<typeof generateObject>
+        ): Promise<ReturnType<typeof generateObject>> => {
+          const [params, ...rest] = args;
+          const wrappedModel = ai.wrapLanguageModel({
+            model: params.model,
+            middleware: LangSmithMiddleware({
+              name: _getModelDisplayName(params.model),
+              modelId: _getModelId(params.model),
               // TODO: Fix this typing on minor bump
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              outputs as any
-            );
-            return processedOutputs;
-          }
-          if (outputs.outputs == null || typeof outputs.outputs !== "object") {
-            return outputs;
-          }
-          // If experimental_output is present, return it directly at top level (like generateObject)
-          // Note: accessing experimental_output throws if not specified, so wrap in try-catch
-          try {
-            if ("experimental_output" in outputs.outputs) {
-              const experimentalOutput = outputs.outputs.experimental_output;
-              if (experimentalOutput != null) {
-                return experimentalOutput;
-              }
+              lsConfig: resolvedChildLLMRunConfig as Record<string, unknown>,
+            }),
+          });
+          return generateObject(
+            {
+              ...params,
+              providerOptions,
+              model: wrappedModel,
+            },
+            ...rest
+          ) as ReturnType<typeof generateObject>;
+        },
+        {
+          name: _getModelDisplayName(params.model),
+          ...resolvedLsConfig,
+          metadata: {
+            ai_sdk_method: "ai.generateObject",
+            ...resolvedLsConfig?.metadata,
+          },
+          processInputs: async (inputs) => {
+            const inputFormatter =
+              resolvedLsConfig?.processInputs ?? _formatTracedInputs;
+            return inputFormatter(inputs);
+          },
+          processOutputs: async (outputs) => {
+            if (resolvedLsConfig?.processOutputs) {
+              const processedOutputs = await resolvedLsConfig.processOutputs(
+                // TODO: Fix this typing on minor bump
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                outputs as any
+              );
+              return processedOutputs;
             }
-          } catch (e) {
-            // experimental_output not specified, continue with normal processing
-          }
-          const { steps } = outputs.outputs;
-          if (Array.isArray(steps)) {
-            const lastStep = steps.at(-1);
-            if (lastStep == null || typeof lastStep !== "object") {
+            if (
+              outputs.outputs == null ||
+              typeof outputs.outputs !== "object"
+            ) {
               return outputs;
             }
-            const { content } = lastStep;
-            return convertMessageToTracedFormat(
-              {
-                content: content ?? outputs.outputs.text,
-                role: "assistant",
-              },
-              resolvedLsConfig?.traceResponseMetadata ? { steps } : undefined
-            );
-          } else {
-            return outputs;
-          }
-        },
-      }
-    ) as (
-      ...args: Parameters<GenerateTextType>
-    ) => Promise<ReturnType<GenerateTextType>>;
-    return traceableFunc(...args);
-  };
-
-  /**
-   * Wrapped version of AI SDK 5's generateObject with LangSmith tracing.
-   *
-   * This function has the same signature and behavior as the original generateObject,
-   * but adds automatic tracing to LangSmith for observability.
-   *
-   * ```ts
-   * import * as ai from "ai";
-   * import { wrapAISDK } from "langsmith/experimental/vercel";
-   *
-   * const { generateObject } = wrapAISDK(ai);
-   * const { object } = await generateObject(...);
-   * ```
-   *
-   * @see {@link https://sdk.vercel.ai/docs/ai-sdk-core/generating-structured-data} Original generateObject documentation
-   * @param params - Same parameters as the original generateObject function
-   * @returns Promise resolving to the same result as generateObject, with tracing applied
-   */
-  const wrappedGenerateObject = async (
-    ...args: Parameters<GenerateObjectType>
-  ) => {
-    const params = args[0];
-    const { langsmith: runtimeLsConfig, ...providerOptions } =
-      params.providerOptions ?? {};
-    const { resolvedLsConfig, resolvedChildLLMRunConfig } = _resolveConfigs(
-      baseLsConfig,
-      runtimeLsConfig
-    );
-    const traceableFunc = traceable(
-      async (
-        ...args: Parameters<GenerateObjectType>
-      ): Promise<ReturnType<GenerateObjectType>> => {
-        const [params, ...rest] = args;
-        const wrappedModel = wrapLanguageModel({
-          model: params.model,
-          middleware: LangSmithMiddleware({
-            name: _getModelDisplayName(params.model),
-            modelId: _getModelId(params.model),
-            // TODO: Fix this typing on minor bump
-            lsConfig: resolvedChildLLMRunConfig as Record<string, unknown>,
-          }),
-        });
-        return generateObject(
-          {
-            ...params,
-            providerOptions,
-            model: wrappedModel,
+            return outputs.outputs.object ?? outputs;
           },
-          ...rest
-        ) as ReturnType<GenerateObjectType>;
-      },
-      {
-        name: _getModelDisplayName(params.model),
-        ...resolvedLsConfig,
-        metadata: {
-          ai_sdk_method: "ai.generateObject",
-          ...resolvedLsConfig?.metadata,
-        },
-        processInputs: (inputs) => {
-          const inputFormatter =
-            resolvedLsConfig?.processInputs ?? _formatTracedInputs;
-          return inputFormatter(inputs);
-        },
-        processOutputs: async (outputs) => {
-          if (resolvedLsConfig?.processOutputs) {
-            const processedOutputs = await resolvedLsConfig.processOutputs(
-              // TODO: Fix this typing on minor bump
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              outputs as any
-            );
-            return processedOutputs;
-          }
-          if (outputs.outputs == null || typeof outputs.outputs !== "object") {
-            return outputs;
-          }
-          return outputs.outputs.object ?? outputs;
-        },
-      }
-    ) as (
-      ...args: Parameters<GenerateObjectType>
-    ) => Promise<ReturnType<GenerateObjectType>>;
-    return traceableFunc(...args);
-  };
+        }
+      ) as (
+        ...args: Parameters<typeof generateObject>
+      ) => Promise<ReturnType<typeof generateObject>>;
+      return traceableFunc(...args);
+    };
+  }
 
   /**
-   * Wrapped version of AI SDK 5's streamText with LangSmith tracing.
+   * Wrapped version of AI SDK's streamText with LangSmith tracing.
    *
    * Must be called with `await`, but otherwise behaves the same as the
    * original streamText and adds adds automatic tracing to LangSmith
@@ -677,16 +825,20 @@ const wrapAISDK = <
    * @param params - Same parameters as the original streamText function
    * @returns Promise resolving to the same result as streamText, with tracing applied
    */
-  const wrappedStreamText = (...args: Parameters<StreamTextType>) => {
+  const wrappedStreamText = (...args: Parameters<typeof ai.streamText>) => {
     const params = args[0];
     const { langsmith: runtimeLsConfig, ...providerOptions } =
       params.providerOptions ?? {};
     const { resolvedLsConfig, resolvedChildLLMRunConfig, resolvedToolConfig } =
       _resolveConfigs(baseLsConfig, runtimeLsConfig);
+    const hasExplicitOutput = "output" in params;
+    const hasExplicitExperimentalOutput = "experimental_output" in params;
     const traceableFunc = traceable(
-      (...args: Parameters<StreamTextType>): ReturnType<StreamTextType> => {
+      (
+        ...args: Parameters<typeof ai.streamText>
+      ): ReturnType<typeof ai.streamText> => {
         const [params, ...rest] = args;
-        const wrappedModel = wrapLanguageModel({
+        const wrappedModel = ai.wrapLanguageModel({
           model: params.model,
           middleware: LangSmithMiddleware({
             name: _getModelDisplayName(params.model),
@@ -695,7 +847,7 @@ const wrapAISDK = <
             lsConfig: resolvedChildLLMRunConfig as Record<string, unknown>,
           }),
         });
-        return streamText(
+        return ai.streamText(
           {
             ...params,
             providerOptions,
@@ -703,186 +855,204 @@ const wrapAISDK = <
             model: wrappedModel,
           },
           ...rest
-        ) as ReturnType<StreamTextType>;
+        ) as ReturnType<typeof ai.streamText>;
       },
-      {
-        name: _getModelDisplayName(params.model),
-        ...resolvedLsConfig,
-        metadata: {
-          ai_sdk_method: "ai.streamText",
-          ...resolvedLsConfig?.metadata,
-        },
-        processInputs: (inputs) => {
-          const inputFormatter =
-            resolvedLsConfig?.processInputs ?? _formatTracedInputs;
-          return inputFormatter(inputs);
-        },
-        processOutputs: async (outputs) => {
-          try {
-            if (resolvedLsConfig?.processOutputs) {
-              const processedOutputs = await resolvedLsConfig.processOutputs(
-                // TODO: Fix this typing on minor bump
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                outputs as any
-              );
-              return processedOutputs;
-            }
-            if (
-              outputs.outputs == null ||
-              typeof outputs.outputs !== "object"
-            ) {
-              return outputs;
-            }
-            // Important: Even accessing this property creates a promise.
-            // This must be awaited.
-            let content = await outputs.outputs.content;
-            if (content == null) {
-              // AI SDK 4 shim
-              content = await outputs.outputs.text;
-            }
-            if (
-              content == null ||
-              !["object", "string"].includes(typeof content)
-            ) {
-              return outputs;
-            }
-            try {
-              if (
-                "experimental_partialOutputStream" in outputs.outputs &&
-                outputs.outputs.experimental_partialOutputStream != null
-              ) {
-                const textContent = await outputs.outputs.text;
-                return JSON.parse(textContent);
-              }
-            } catch (e) {
-              // experimental_partialOutputStream not specified, continue with normal processing
-            }
-            let responseMetadata: Record<string, unknown> | undefined =
-              undefined;
-            if (resolvedLsConfig?.traceResponseMetadata) {
-              try {
-                const steps = await outputs.outputs.steps;
-                responseMetadata = { steps };
-              } catch (e: unknown) {
-                // Do nothing if step parsing fails
-              }
-            }
-            return convertMessageToTracedFormat(
-              {
-                content,
-                role: "assistant",
-              },
-              responseMetadata
-            );
-          } catch (e: unknown) {
-            // Handle parsing failures without a log
-            return outputs;
-          }
-        },
-      }
-    ) as (...args: Parameters<StreamTextType>) => ReturnType<StreamTextType>;
+      _getStreamTextWrapperConfig({
+        model: params.model,
+        resolvedLsConfig,
+        hasExplicitOutput,
+        hasExplicitExperimentalOutput,
+      })
+    ) as (
+      ...args: Parameters<typeof ai.streamText>
+    ) => ReturnType<typeof ai.streamText>;
     return traceableFunc(...args);
   };
 
-  /**
-   * Wrapped version of AI SDK 5's streamObject with LangSmith tracing.
-   *
-   * Must be called with `await`, but otherwise behaves the same as the
-   * original streamObject and adds adds automatic tracing to LangSmith
-   * for observability.
-   *
-   * ```ts
-   * import * as ai from "ai";
-   * import { wrapAISDK } from "langsmith/experimental/vercel";
-   *
-   * const { streamObject } = wrapAISDK(ai);
-   * const { partialObjectStream } = await streamObject(...);
-   * ```
-   *
-   * @see {@link https://sdk.vercel.ai/docs/ai-sdk-core/generating-structured-data} Original streamObject documentation
-   * @param params - Same parameters as the original streamObject function
-   * @returns Promise resolving to the same result as streamObject, with tracing applied
-   */
-  const wrappedStreamObject = (...args: Parameters<StreamObjectType>) => {
-    const params = args[0];
-    const { langsmith: runtimeLsConfig, ...providerOptions } =
-      params.providerOptions ?? {};
-    const { resolvedLsConfig, resolvedChildLLMRunConfig } = _resolveConfigs(
-      baseLsConfig,
-      runtimeLsConfig
-    );
-    const traceableFunc = traceable(
-      (...args: Parameters<StreamObjectType>): ReturnType<StreamObjectType> => {
-        const [params, ...rest] = args;
-        const wrappedModel = wrapLanguageModel({
-          model: params.model,
-          middleware: LangSmithMiddleware({
-            name: _getModelDisplayName(params.model),
-            modelId: _getModelId(params.model),
-            // TODO: Fix this typing on minor bump
-            lsConfig: resolvedChildLLMRunConfig as Record<string, unknown>,
-          }),
-        });
-        return streamObject(
-          {
-            ...params,
-            providerOptions,
-            model: wrappedModel,
+  let wrappedStreamObject;
+  if (typeof ai.streamObject === "function") {
+    const streamObject = ai.streamObject;
+    /**
+     * Wrapped version of AI SDK's streamObject with LangSmith tracing.
+     *
+     * Must be called with `await`, but otherwise behaves the same as the
+     * original streamObject and adds adds automatic tracing to LangSmith
+     * for observability.
+     *
+     * ```ts
+     * import * as ai from "ai";
+     * import { wrapAISDK } from "langsmith/experimental/vercel";
+     *
+     * const { streamObject } = wrapAISDK(ai);
+     * const { partialObjectStream } = await streamObject(...);
+     * ```
+     *
+     * @see {@link https://sdk.vercel.ai/docs/ai-sdk-core/generating-structured-data} Original streamObject documentation
+     * @param params - Same parameters as the original streamObject function
+     * @returns Promise resolving to the same result as streamObject, with tracing applied
+     */
+    wrappedStreamObject = (...args: Parameters<typeof streamObject>) => {
+      const params = args[0];
+      const { langsmith: runtimeLsConfig, ...providerOptions } =
+        params.providerOptions ?? {};
+      const { resolvedLsConfig, resolvedChildLLMRunConfig } = _resolveConfigs(
+        baseLsConfig,
+        runtimeLsConfig
+      );
+      const traceableFunc = traceable(
+        (
+          ...args: Parameters<typeof streamObject>
+        ): ReturnType<typeof streamObject> => {
+          const [params, ...rest] = args;
+          const wrappedModel = ai.wrapLanguageModel({
+            model: params.model,
+            middleware: LangSmithMiddleware({
+              name: _getModelDisplayName(params.model),
+              modelId: _getModelId(params.model),
+              // TODO: Fix this typing on minor bump
+              lsConfig: resolvedChildLLMRunConfig as Record<string, unknown>,
+            }),
+          });
+          return streamObject(
+            {
+              ...params,
+              providerOptions,
+              model: wrappedModel,
+            },
+            ...rest
+          ) as ReturnType<typeof ai.streamObject>;
+        },
+        {
+          name: _getModelDisplayName(params.model),
+          ...resolvedLsConfig,
+          metadata: {
+            ai_sdk_method: "ai.streamObject",
+            ...resolvedLsConfig?.metadata,
           },
-          ...rest
-        ) as ReturnType<StreamObjectType>;
-      },
-      {
-        name: _getModelDisplayName(params.model),
-        ...resolvedLsConfig,
-        metadata: {
-          ai_sdk_method: "ai.streamObject",
-          ...resolvedLsConfig?.metadata,
-        },
-        processInputs: (inputs) => {
-          const inputFormatter =
-            resolvedLsConfig?.processInputs ?? _formatTracedInputs;
-          return inputFormatter(inputs);
-        },
-        processOutputs: async (outputs) => {
-          try {
-            if (resolvedLsConfig?.processOutputs) {
-              const processedOutputs = await resolvedLsConfig.processOutputs(
-                // TODO: Fix this typing on minor bump
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                outputs as any
+          processInputs: async (inputs) => {
+            const inputFormatter =
+              resolvedLsConfig?.processInputs ?? _formatTracedInputs;
+            return inputFormatter(inputs);
+          },
+          processOutputs: async (outputs) => {
+            try {
+              if (resolvedLsConfig?.processOutputs) {
+                const processedOutputs = await resolvedLsConfig.processOutputs(
+                  // TODO: Fix this typing on minor bump
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  outputs as any
+                );
+                return processedOutputs;
+              }
+              if (
+                outputs.outputs == null ||
+                typeof outputs.outputs !== "object"
+              ) {
+                return outputs;
+              }
+              const object = await outputs.outputs.object;
+              if (object == null || typeof object !== "object") {
+                return outputs;
+              }
+              return object;
+            } catch {
+              // Handle parsing failures without a log
+              return outputs;
+            }
+          },
+        }
+      ) as (
+        ...args: Parameters<typeof streamObject>
+      ) => ReturnType<typeof streamObject>;
+      return traceableFunc(...args);
+    };
+  }
+
+  let wrappedToolLoopAgentClass;
+  if (ai.ToolLoopAgent != null) {
+    try {
+      const wrapToolLoopAgent = (ToolLoopAgent: any) => {
+        return new Proxy(ToolLoopAgent, {
+          construct(ToolLoopAgent, args) {
+            const params = args[0] ?? {};
+            const { langsmith: runtimeLsConfig } = params.providerOptions ?? {};
+            const {
+              resolvedLsConfig,
+              resolvedChildLLMRunConfig,
+              resolvedToolConfig,
+            } = _resolveConfigs(baseLsConfig, runtimeLsConfig);
+            let wrappedModel = params.model;
+            if (wrappedModel != null) {
+              wrappedModel = ai.wrapLanguageModel({
+                model: params.model,
+                middleware: LangSmithMiddleware({
+                  name: _getModelDisplayName(params.model),
+                  modelId: _getModelId(params.model),
+                  // TODO: Fix this typing on minor bump
+                  lsConfig: resolvedChildLLMRunConfig as Record<
+                    string,
+                    unknown
+                  >,
+                }),
+              });
+            }
+            let wrappedTools = params.tools;
+            if (wrappedTools != null) {
+              wrappedTools = _wrapTools(params.tools, resolvedToolConfig);
+            }
+            const instance = new ToolLoopAgent(
+              ...[
+                { ...params, model: wrappedModel, tools: wrappedTools },
+                ...args.slice(1),
+              ]
+            );
+            if (typeof instance.generate === "function") {
+              instance.generate = traceable(
+                instance.generate.bind(instance),
+                _getGenerateTextWrapperConfig({
+                  model: wrappedModel,
+                  runName: "ToolLoopAgent",
+                  aiSdkMethodName: "ai.ToolLoopAgent.generate",
+                  resolvedLsConfig,
+                  hasExplicitOutput:
+                    "output" in params && params.output != null,
+                  traceResponseMetadata: true,
+                })
               );
-              return processedOutputs;
             }
-            if (
-              outputs.outputs == null ||
-              typeof outputs.outputs !== "object"
-            ) {
-              return outputs;
+            if (typeof instance.stream === "function") {
+              instance.stream = traceable(
+                instance.stream.bind(instance),
+                _getStreamTextWrapperConfig({
+                  model: wrappedModel,
+                  runName: "ToolLoopAgent",
+                  aiSdkMethodName: "ai.ToolLoopAgent.stream",
+                  resolvedLsConfig,
+                  hasExplicitOutput:
+                    "output" in params && params.output != null,
+                  traceResponseMetadata: true,
+                })
+              );
             }
-            const object = await outputs.outputs.object;
-            if (object == null || typeof object !== "object") {
-              return outputs;
-            }
-            return object;
-          } catch (e: unknown) {
-            // Handle parsing failures without a log
-            return outputs;
-          }
-        },
-      }
-    ) as (
-      ...args: Parameters<StreamObjectType>
-    ) => ReturnType<StreamObjectType>;
-    return traceableFunc(...args);
-  };
+            return instance;
+          },
+        });
+      };
+      wrappedToolLoopAgentClass = wrapToolLoopAgent(ai.ToolLoopAgent);
+    } catch (e) {
+      console.error("Failed to wrap passed ToolLoopAgent:", e);
+      wrappedToolLoopAgentClass = ai.ToolLoopAgent;
+    }
+  }
 
   return {
-    generateText: wrappedGenerateText as GenerateTextType,
-    generateObject: wrappedGenerateObject as GenerateObjectType,
-    streamText: wrappedStreamText as StreamTextType,
-    streamObject: wrappedStreamObject as StreamObjectType,
-  };
+    ...ai,
+    generateText: wrappedGenerateText,
+    generateObject: wrappedGenerateObject,
+    streamText: wrappedStreamText,
+    streamObject: wrappedStreamObject,
+    ToolLoopAgent: wrappedToolLoopAgentClass,
+  } as T;
 };
 
 export { wrapAISDK };

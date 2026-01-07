@@ -1,0 +1,70 @@
+version: "3"
+
+services:
+  test-exports-esm:
+    image: node:22
+    working_dir: /app/js/internal/environment_tests/test-exports-esm
+    volumes:
+      - ../../..:/app
+    command: bash -c "yarn install && yarn test"
+
+  test-exports-cjs:
+    image: node:22
+    working_dir: /app/js/internal/environment_tests/test-exports-cjs
+    volumes:
+      - ../../..:/app
+    command: bash -c "yarn install && yarn test"
+
+  test-exports-cf:
+    image: node:22
+    working_dir: /app/js/internal/environment_tests/test-exports-cf
+    volumes:
+      - ../../..:/app
+    command: bash -c "yarn install && yarn test"
+
+  test-exports-vite:
+    image: node:22
+    working_dir: /app/js/internal/environment_tests/test-exports-vite
+    volumes:
+      - ../../..:/app
+    command: bash -c "yarn install && yarn test"
+
+  test-exports-webpack:
+    image: node:22
+    working_dir: /app/js/internal/environment_tests/test-exports-webpack
+    volumes:
+      - ../../..:/app
+    command: bash -c "yarn install && yarn test"
+
+  test-exports-esbuild:
+    image: node:22
+    working_dir: /app/js/internal/environment_tests/test-exports-esbuild
+    volumes:
+      - ../../..:/app
+    command: bash -c "yarn install && yarn test"
+
+  test-exports-metro:
+    image: node:22
+    working_dir: /app/js/internal/environment_tests/test-exports-metro
+    volumes:
+      - ../../..:/app
+    command: bash -c "yarn install && yarn test"
+
+  success:
+    image: alpine:3.14
+    depends_on:
+      test-exports-esm:
+        condition: service_completed_successfully
+      test-exports-cjs:
+        condition: service_completed_successfully
+      test-exports-cf:
+        condition: service_completed_successfully
+      test-exports-vite:
+        condition: service_completed_successfully
+      test-exports-webpack:
+        condition: service_completed_successfully
+      test-exports-esbuild:
+        condition: service_completed_successfully
+      test-exports-metro:
+        condition: service_completed_successfully
+    command: echo "All export tests passed!"

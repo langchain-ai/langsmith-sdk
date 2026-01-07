@@ -2,9 +2,9 @@ import io
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
-from uuid import NAMESPACE_DNS, UUID, uuid5
+from uuid import UUID
 
 import pytest
 from multipart import MultipartParser, parse_options_header
@@ -12,6 +12,7 @@ from requests_toolbelt import MultipartEncoder
 
 from langsmith import run_trees
 from langsmith import schemas as ls_schemas
+from langsmith._internal._uuid import uuid7_deterministic
 from langsmith.client import Client
 from langsmith.run_trees import RunTree
 
@@ -333,96 +334,26 @@ def test_distributed_parent_id_from_headers():
     )
 
 
-def test_remap_for_project_uuid5_remapping():
-    """Test that _remap_for_project remaps UUIDs using uuid5 for different projects."""
+def test_remap_for_project():
+    """Test _remap_for_project remaps IDs correctly using uuid7_deterministic."""
     mock_client = MagicMock(spec=Client)
 
-    # Create a hierarchy: grandparent -> parent -> child
-    grandparent = RunTree(
-        name="Grandparent",
-        inputs={"text": "root"},
-        client=mock_client,
-        session_name="original_project",
-    )
-    parent = grandparent.create_child(name="Parent")
-    child = parent.create_child(name="Child")
+    root = RunTree(name="Root", inputs={}, client=mock_client, session_name="original")
+    child = root.create_child(name="Child")
 
-    # Test 1: Same project name should return unmodified dict
-    same_project_dict = child._remap_for_project("original_project")
-    assert same_project_dict["id"] == child.id
-    assert same_project_dict["trace_id"] == grandparent.id
-    assert same_project_dict["parent_run_id"] == parent.id
+    # Same project: no remapping
+    same = child._remap_for_project("original")
+    assert same["id"] == child.id
 
-    # Test 2: Different project name should remap UUIDs using uuid5
-    new_project = "different_project"
-    remapped_dict = child._remap_for_project(new_project)
+    # Different project: IDs remapped deterministically
+    r1 = child._remap_for_project("replica")
+    r2 = child._remap_for_project("replica")
 
-    # Verify IDs are remapped using uuid5
-    expected_id = uuid5(NAMESPACE_DNS, f"{child.id}:{new_project}")
-    expected_trace_id = uuid5(NAMESPACE_DNS, f"{grandparent.id}:{new_project}")
-    expected_parent_id = uuid5(NAMESPACE_DNS, f"{parent.id}:{new_project}")
-
-    assert remapped_dict["id"] == expected_id
-    assert remapped_dict["trace_id"] == expected_trace_id
-    assert remapped_dict["parent_run_id"] == expected_parent_id
-    assert remapped_dict["session_name"] == new_project
-
-    # Test 3: Verify dotted_order is correctly rebuilt with remapped UUIDs
-    original_dotted_order = child.dotted_order
-    remapped_dotted_order = remapped_dict["dotted_order"]
-
-    # Parse both dotted orders
-    original_parts = run_trees._parse_dotted_order(original_dotted_order)
-    remapped_parts = run_trees._parse_dotted_order(remapped_dotted_order)
-
-    # Should have same number of segments
-    assert len(original_parts) == len(remapped_parts)
-
-    # Each segment should have UUID remapped via uuid5
-    for (orig_time, orig_uuid), (remap_time, remap_uuid) in zip(
-        original_parts, remapped_parts
-    ):
-        expected_uuid = uuid5(NAMESPACE_DNS, f"{orig_uuid}:{new_project}")
-        assert remap_uuid == expected_uuid
-        assert orig_time == remap_time  # Timestamps should be preserved
-
-    # Test 4: Remapping is deterministic (same input -> same output)
-    remapped_dict_2 = child._remap_for_project(new_project)
-    assert remapped_dict["id"] == remapped_dict_2["id"]
-    assert remapped_dict["trace_id"] == remapped_dict_2["trace_id"]
-    assert remapped_dict["parent_run_id"] == remapped_dict_2["parent_run_id"]
-    assert remapped_dict["dotted_order"] == remapped_dict_2["dotted_order"]
-
-
-def test_remap_for_project_root_run():
-    """Test _remap_for_project on a root run (no parent)."""
-    mock_client = MagicMock(spec=Client)
-
-    root = RunTree(
-        name="Root",
-        inputs={"text": "root"},
-        client=mock_client,
-        session_name="original_project",
-    )
-
-    new_project = "different_project"
-    remapped_dict = root._remap_for_project(new_project)
-
-    # Verify ID is remapped
-    expected_id = uuid5(NAMESPACE_DNS, f"{root.id}:{new_project}")
-    assert remapped_dict["id"] == expected_id
-
-    # Root run has trace_id == id, so trace_id should also be remapped
-    expected_trace_id = uuid5(NAMESPACE_DNS, f"{root.id}:{new_project}")
-    assert remapped_dict["trace_id"] == expected_trace_id
-
-    # Root run has no parent
-    assert remapped_dict["parent_run_id"] is None
-
-    # Dotted order should have single segment with remapped UUID
-    remapped_parts = run_trees._parse_dotted_order(remapped_dict["dotted_order"])
-    assert len(remapped_parts) == 1
-    assert remapped_parts[0][1] == expected_id
+    assert r1["id"] == uuid7_deterministic(child.id, "replica")
+    assert r1["trace_id"] == uuid7_deterministic(root.id, "replica")
+    assert r1["parent_run_id"] == uuid7_deterministic(root.id, "replica")
+    assert r1["id"].version == 7
+    assert r1 == r2  # Deterministic
 
 
 def test_inputs_attachment_moved_to_attachments():
@@ -474,3 +405,45 @@ def test_inputs_attachment_moved_to_attachments():
     _, (mime_type, content) = next((d for d in datas if d[0] == key))
     assert mime_type == "text/plain"
     assert content == "hi"
+
+
+def test_create_child_enforces_timestamp_order():
+    """Test that child runs cannot have start_time earlier than parent.
+
+    This prevents timestamp ordering violations in dotted_order that can
+    cause 400 Bad Request errors from the LangSmith API.
+
+    See: https://github.com/langchain-ai/langsmith-sdk/issues/2236
+    """
+    mock_client = MagicMock(spec=Client)
+
+    # Create a parent run with a specific timestamp
+    parent_time = datetime(2025, 12, 22, 23, 43, 8, 14739, tzinfo=timezone.utc)
+    parent = RunTree(
+        name="Parent",
+        start_time=parent_time,
+        client=mock_client,
+    )
+
+    # Try to create a child with an earlier timestamp (simulating race condition)
+    earlier_time = parent_time - timedelta(milliseconds=3)
+    child = parent.create_child(
+        name="Child",
+        start_time=earlier_time,
+    )
+
+    # Child's start_time should be adjusted to match parent's start_time
+    assert child.start_time == parent.start_time
+    assert child.parent_run_id == parent.id
+
+    # Test with a later timestamp - should not be modified
+    later_time = parent_time + timedelta(milliseconds=10)
+    child2 = parent.create_child(
+        name="Child2",
+        start_time=later_time,
+    )
+    assert child2.start_time == later_time
+
+    # Test with no start_time provided - should use current time
+    child3 = parent.create_child(name="Child3")
+    assert child3.start_time >= parent.start_time

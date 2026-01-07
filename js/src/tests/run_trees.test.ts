@@ -487,3 +487,75 @@ test("integration: reroot with replicas makes correct API calls", async () => {
   // The actual rerooting logic is already tested in unit tests
   // This integration test just verifies the API calls are made to the correct endpoints
 }, 180_000);
+
+test("child_runs array is cleared after postRun to prevent memory leak", async () => {
+  const { client } = mockClient();
+
+  const parent = new RunTree({
+    name: "Parent",
+    inputs: { text: "parent" },
+    client: client,
+  });
+
+  const child1 = parent.createChild({ name: "Child1" });
+  const child2 = parent.createChild({ name: "Child2" });
+
+  // Before posting, parent should have references to children
+  expect(parent.child_runs).toHaveLength(2);
+  expect(parent.child_runs).toContain(child1);
+  expect(parent.child_runs).toContain(child2);
+
+  // Post the parent run
+  await parent.postRun();
+
+  // After posting, child_runs should be cleared to prevent memory leak
+  expect(parent.child_runs).toHaveLength(0);
+});
+
+test("child_runs array is cleared after patchRun to prevent memory leak", async () => {
+  const { client } = mockClient();
+
+  const parent = new RunTree({
+    name: "Parent",
+    inputs: { text: "parent" },
+    client: client,
+  });
+
+  parent.createChild({ name: "Child1" });
+  parent.createChild({ name: "Child2" });
+
+  // Before patching, parent should have references to children
+  expect(parent.child_runs).toHaveLength(2);
+
+  // Patch the parent run
+  await parent.patchRun();
+
+  // After patching, child_runs should be cleared to prevent memory leak
+  expect(parent.child_runs).toHaveLength(0);
+});
+
+test("memory leak test with multiple iterations", async () => {
+  const { client } = mockClient();
+
+  // Simulate multiple requests creating parent-child hierarchies
+  for (let i = 0; i < 10; i++) {
+    const parent = new RunTree({
+      name: `Parent${i}`,
+      inputs: { iteration: i },
+      client: client,
+    });
+
+    // Each parent creates multiple children
+    parent.createChild({ name: `Child${i}-1` });
+    parent.createChild({ name: `Child${i}-2` });
+    parent.createChild({ name: `Child${i}-3` });
+
+    expect(parent.child_runs).toHaveLength(3);
+
+    // Post the run
+    await parent.postRun();
+
+    // After posting, array should be cleared
+    expect(parent.child_runs).toHaveLength(0);
+  }
+});

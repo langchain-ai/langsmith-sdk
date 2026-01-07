@@ -1,0 +1,16 @@
+{
+  "name": "test-exports-cf",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Tests that langsmith exports work correctly in Cloudflare Workers (edge runtime)",
+  "scripts": {
+    "test": "npx wrangler deploy --dry-run --outdir=dist"
+  },
+  "dependencies": {
+    "langsmith": "file:../../.."
+  },
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  }
+}

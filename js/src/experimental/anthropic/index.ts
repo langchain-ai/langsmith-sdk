@@ -1,5 +1,5 @@
 import { traceable, getCurrentRunTree } from "../../traceable.js";
-import type { RunTreeConfig, RunTree } from "../../run_trees.js";
+import type { RunTree } from "../../run_trees.js";
 import type Anthropic from "@anthropic-ai/sdk";
 import { convertAnthropicUsageToInputTokenDetails } from "../../utils/usage.js";
 import {
