@@ -533,7 +533,11 @@ function _wrapClaudeAgentQuery<
     // Each message ID maps to { message, startTime } - we keep the latest streaming update
     const pendingMessages: Map<
       string,
-      { message: SDKAssistantMessage; startTime: number }
+      {
+        message: SDKAssistantMessage;
+        messageHistory: Array<{ content: unknown; role: string }>;
+        startTime: number;
+      }
     > = new Map();
 
     // Track which message IDs have already had spans created
@@ -595,7 +599,7 @@ function _wrapClaudeAgentQuery<
       const finalMessageContent = await _createLLMSpanForMessages(
         [pending.message],
         prompt,
-        finalResults,
+        pending.messageHistory,
         modifiedOptions,
         pending.startTime
       );
@@ -653,13 +657,23 @@ function _wrapClaudeAgentQuery<
 
               pendingMessages.set(messageId, {
                 message,
+                messageHistory: finalResults.slice(0),
                 startTime: currentTime,
               });
             } else {
               // Streaming update - keep the start time, update the message
               pendingMessages.set(messageId, {
                 message,
+                messageHistory: finalResults.slice(0),
                 startTime: existing.startTime,
+              });
+            }
+
+            // We need to push the assistant message as well
+            if (message.message.content) {
+              finalResults.push({
+                content: _flattenContentBlocks(message.message.content),
+                role: "assistant",
               });
             }
 
