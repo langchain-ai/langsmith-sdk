@@ -1201,7 +1201,9 @@ export class Client implements LangSmithTracingClientInterface {
           !this._multipartDisabled &&
           (serverInfo?.batch_ingest_config?.use_multipart_endpoint ?? true);
         if (useMultipart) {
-          const useGzip = serverInfo?.instance_flags?.gzip_body_enabled;
+          const useGzip =
+            getLangSmithEnvironmentVariable("DISABLE_RUN_COMPRESSION") !==
+              "true" && serverInfo?.instance_flags?.gzip_body_enabled;
           try {
             await this.multipartIngestRuns(ingestParams, {
               ...options,
