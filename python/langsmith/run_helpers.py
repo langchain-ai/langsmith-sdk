@@ -312,6 +312,7 @@ def traceable(
     process_chunk: Optional[Callable] = None,
     _invocation_params_fn: Optional[Callable[[dict], dict]] = None,
     dangerously_allow_filesystem: bool = False,
+    enabled: Optional[bool] = None,
 ) -> Callable[[Callable[P, R]], SupportsLangsmithExtra[P, R]]: ...
 
 
@@ -358,6 +359,9 @@ def traceable(
             Traces that reference local filepaths will be uploaded to LangSmith.
             In general, network-hosted applications should not be using this because
             referenced files are usually on the user's machine, not the host machine.
+        enabled: Whether tracing is enabled for this function.
+
+            Defaults to `None`, which will use the default value from the current context.
 
     Returns:
         The decorated function.
@@ -516,6 +520,7 @@ def traceable(
         dangerously_allow_filesystem=kwargs.pop("dangerously_allow_filesystem", False),
     )
     outputs_processor = kwargs.pop("process_outputs", None)
+    enabled = kwargs.pop("enabled", True)
     _on_run_end = functools.partial(
         _handle_container_end,
         outputs_processor=outputs_processor,
@@ -854,6 +859,17 @@ def traceable(
             else:
                 selected_wrapper = wrapper
         setattr(selected_wrapper, "__langsmith_traceable__", True)
+        setattr(
+            selected_wrapper,
+            "__traceable_config__",
+            {
+                "process_inputs": container_input.get("process_inputs"),
+                "process_outputs": outputs_processor,
+                "enabled": enabled,
+                "tags": container_input.get("tags"),
+                "metadata": container_input.get("metadata"),
+            },
+        )
         sig = inspect.signature(selected_wrapper)
         if not sig.parameters.get("config"):
             sig = sig.replace(
