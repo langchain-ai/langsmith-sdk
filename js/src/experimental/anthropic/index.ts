@@ -2,172 +2,44 @@ import { traceable, getCurrentRunTree } from "../../traceable.js";
 import type { RunTreeConfig, RunTree } from "../../run_trees.js";
 import type Anthropic from "@anthropic-ai/sdk";
 import { convertAnthropicUsageToInputTokenDetails } from "../../utils/usage.js";
+import {
+  AgentSDKContext,
+  HookInput,
+  HookOutput,
+  SDKHookEvents,
+  HookCallbackMatcher,
+  SDKAssistantMessage,
+  SDKMessage,
+  QueryOptions,
+  SdkMcpToolDefinition,
+  ToolHandler,
+  SDKModelUsage,
+  WrapClaudeAgentSDKConfig,
+} from "./types.js";
+import { getNumberProperty } from "./utils.js";
 
-/**
- * Types from @anthropic-ai/claude-agent-sdk
- */
-type SDKAssistantMessage = {
-  type: "assistant";
-  message: Anthropic.Beta.BetaMessage;
-  parent_tool_use_id: string | null;
-};
-
-type SDKResultMessage = {
-  type: "result";
-  duration_ms: number;
-  duration_api_ms: number;
-  total_cost_usd: number;
-  usage: Record<string, Anthropic.Beta.BetaUsage>;
-  modelUsage: Record<string, SDKModelUsage>;
-};
-
-type SDKUserMessage = {
-  type: "user";
-  message: Anthropic.MessageParam;
-  parent_tool_use_id: string | null;
-  isSynthetic?: boolean;
-  tool_use_result?: unknown;
-  session_id: string;
-  isReplay?: boolean;
-};
-
-type SDKMessage = SDKAssistantMessage | SDKResultMessage | SDKUserMessage;
-
-type SDKModelUsage = {
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadInputTokens: number;
-  cacheCreationInputTokens: number;
-  webSearchRequests: number;
-  costUSD: number;
-  contextWindow: number;
-};
-
-type SDKHookEvents = [
-  "PreToolUse",
-  "PostToolUse",
-  "PostToolUseFailure",
-  "Notification",
-  "UserPromptSubmit",
-  "SessionStart",
-  "SessionEnd",
-  "Stop",
-  "SubagentStart",
-  "SubagentStop",
-  "PreCompact",
-  "PermissionRequest"
-][number];
-
-type QueryOptions = {
-  model?: string;
-  maxTurns?: number;
-  tools?: Array<SdkMcpToolDefinition<unknown>>;
-  hooks?: Record<string, HookCallbackMatcher[]>;
-  [key: string]: unknown;
-};
-
-type CallToolResult = {
-  content: unknown[];
-  isError?: boolean;
-};
-
-type ToolHandler<T> = (args: T, extra: unknown) => Promise<CallToolResult>;
-
-type SdkMcpToolDefinition<T> = {
-  name: string;
-  description: string;
-  inputSchema: unknown;
-  handler: ToolHandler<T>;
-};
-
-/**
- * Hook input types from Claude Agent SDK
- */
-type HookInput = {
-  hook_event_name: string;
-  tool_name?: string;
-  tool_input?: unknown;
-  tool_response?: unknown;
-  tool_use_id?: string;
-  session_id?: string;
-  [key: string]: unknown;
-};
-
-type HookOutput = {
-  continue?: boolean;
-  [key: string]: unknown;
-};
-
-type HookCallback = (
-  input: HookInput,
-  toolUseId: string | undefined,
-  options: { signal: AbortSignal }
-) => Promise<HookOutput>;
-
-type HookCallbackMatcher = {
-  matcher?: string;
-  hooks: HookCallback[];
-  timeout?: number;
-};
-
-/**
- * Storage for active tool runs, keyed by tool_use_id.
- * Used to correlate PreToolUse and PostToolUse hooks.
- */
-const _activeToolRuns: Map<string, { run: RunTree; startTime: number }> =
-  new Map();
-
-/**
- * Storage for client-managed runs (subagent sessions and their child tools).
- * These are created when processing AssistantMessage content blocks and
- * closed when PostToolUse hook fires. Keyed by tool_use_id.
- */
-const _clientManagedRuns: Map<string, RunTree> = new Map();
-
-/**
- * Storage for subagent sessions, keyed by the Task tool's tool_use_id.
- * Used to parent LLM turns and tools to the correct subagent.
- */
-const _subagentSessions: Map<string, RunTree> = new Map();
-
-/**
- * Tracks the currently active subagent context (tool_use_id).
- * Set when a Task tool is called, cleared when the tool result returns.
- * Assistant messages that arrive while a subagent is active belong to that subagent.
- */
-// TODO: THIS SHOULD NOT BE STORED AT MODULE LEVEL (what happens if there are parallel agents running?)
-let _activeSubagentToolUseId: string | undefined;
-
-/**
- * Reference to the current parent run tree for tool tracing.
- * Set when a traced query starts, cleared when it ends.
- */
-// TODO: THIS SHOULD NOT BE STORED AT MODULE LEVEL (what happens if there are parallel agents running?)
-let _currentParentRun: RunTree | undefined;
-
-/**
- * Configuration options for wrapping Claude Agent SDK with LangSmith tracing.
- */
-export type WrapClaudeAgentSDKConfig = Partial<
-  Omit<
-    RunTreeConfig,
-    "inputs" | "outputs" | "run_type" | "child_runs" | "parent_run" | "error"
-  >
->;
+const createQueryContext = (): AgentSDKContext => ({
+  activeToolRuns: new Map(),
+  clientManagedRuns: new Map(),
+  subagentSessions: new Map(),
+  activeSubagentToolUseId: undefined,
+  currentParentRun: undefined,
+});
 
 /**
  * PreToolUse hook that creates a tool span when a tool execution starts.
  * This traces ALL tools including built-in tools, external MCP tools, and SDK MCP tools.
  * Skips tools that are client-managed (subagent sessions and their children).
  */
-async function _preToolUseHook(
+async function preToolUseHook(
   input: HookInput,
-  toolUseId: string | undefined
+  toolUseId: string | undefined,
+  context: AgentSDKContext
 ): Promise<HookOutput> {
   if (!toolUseId) return {};
 
   // Skip if this tool run is already managed by the client (subagent or its children)
-  if (_clientManagedRuns.has(toolUseId)) {
+  if (context.clientManagedRuns.has(toolUseId)) {
     return {};
   }
 
@@ -175,7 +47,7 @@ async function _preToolUseHook(
   const toolInput = input.tool_input;
 
   try {
-    const parent = _currentParentRun || getCurrentRunTree();
+    const parent = context.currentParentRun || getCurrentRunTree();
     if (!parent) {
       return {};
     }
@@ -189,7 +61,7 @@ async function _preToolUseHook(
 
     await toolRun.postRun();
 
-    _activeToolRuns.set(toolUseId, { run: toolRun, startTime });
+    context.activeToolRuns.set(toolUseId, { run: toolRun, startTime });
   } catch {
     // Silently fail - don't interrupt tool execution
   }
@@ -201,9 +73,10 @@ async function _preToolUseHook(
  * PostToolUse hook that ends the tool span when a tool execution completes.
  * Handles both regular tool runs and client-managed runs (subagents and their children).
  */
-async function _postToolUseHook(
+async function postToolUseHook(
   input: HookInput,
-  toolUseId: string | undefined
+  toolUseId: string | undefined,
+  context: AgentSDKContext
 ): Promise<HookOutput> {
   if (!toolUseId) return {};
   const toolResponse = input.tool_response;
@@ -234,14 +107,14 @@ async function _postToolUseHook(
 
   try {
     // Check if this is a client-managed run (subagent session or its children)
-    const clientRun = _clientManagedRuns.get(toolUseId);
+    const clientRun = context.clientManagedRuns.get(toolUseId);
     if (clientRun) {
-      _clientManagedRuns.delete(toolUseId);
+      context.clientManagedRuns.delete(toolUseId);
 
       // If this is a subagent session (Task tool), DON'T delete from _subagentSessions yet
       // The subagent's assistant messages will arrive after the tool result
       // We'll clean it up when we detect the next main conversation turn
-      const isSubagentSession = _subagentSessions.has(toolUseId);
+      const isSubagentSession = context.subagentSessions.has(toolUseId);
 
       const { outputs, isError } = formatOutputs(toolResponse);
       await clientRun.end({
@@ -259,12 +132,12 @@ async function _postToolUseHook(
     }
 
     // Handle regular tool runs
-    const runInfo = _activeToolRuns.get(toolUseId);
+    const runInfo = context.activeToolRuns.get(toolUseId);
     if (!runInfo) {
       return {};
     }
 
-    _activeToolRuns.delete(toolUseId);
+    context.activeToolRuns.delete(toolUseId);
 
     const { run: toolRun } = runInfo;
     const { outputs, isError } = formatOutputs(toolResponse);
@@ -286,8 +159,7 @@ async function _postToolUseHook(
  * Creates hook matchers for LangSmith tracing.
  * Returns PreToolUse and PostToolUse hook configurations.
  */
-
-function _createTracingHooks() {
+function createTracingHooks(context: AgentSDKContext) {
   return {
     PreToolUse: [
       {
@@ -297,7 +169,7 @@ function _createTracingHooks() {
             input: HookInput,
             toolUseId: string | undefined,
             _options: { signal: AbortSignal }
-          ) => _preToolUseHook(input, toolUseId),
+          ) => preToolUseHook(input, toolUseId, context),
         ],
       },
     ],
@@ -309,7 +181,7 @@ function _createTracingHooks() {
             input: HookInput,
             toolUseId: string | undefined,
             _options: { signal: AbortSignal }
-          ) => _postToolUseHook(input, toolUseId),
+          ) => postToolUseHook(input, toolUseId, context),
         ],
       },
     ],
@@ -320,7 +192,7 @@ function _createTracingHooks() {
         hooks: [
           async (_input: HookInput) => {
             // Clean up at end of session
-            _clearActiveToolRuns();
+            clearActiveToolRuns(context);
             return {};
           },
         ],
@@ -334,8 +206,8 @@ function _createTracingHooks() {
           async (_input: HookInput, toolUseId: string | undefined) => {
             // Clean up subagent session
             if (toolUseId) {
-              _subagentSessions.delete(toolUseId);
-              _clientManagedRuns.delete(toolUseId);
+              context.subagentSessions.delete(toolUseId);
+              context.clientManagedRuns.delete(toolUseId);
             }
             return {};
           },
@@ -348,7 +220,7 @@ function _createTracingHooks() {
         hooks: [
           async (_input: HookInput) => {
             // Clean up on stop - ensure all runs are finalized
-            _clearActiveToolRuns();
+            clearActiveToolRuns(context);
             return {};
           },
         ],
@@ -360,10 +232,11 @@ function _createTracingHooks() {
 /**
  * Merges LangSmith tracing hooks with existing user hooks.
  */
-function _mergeHooks(
-  existingHooks: Record<string, HookCallbackMatcher[]> | undefined
+function mergeHooks(
+  existingHooks: Record<string, HookCallbackMatcher[]> | undefined,
+  context: AgentSDKContext
 ): Record<string, HookCallbackMatcher[]> {
-  const tracingHooks = _createTracingHooks();
+  const tracingHooks = createTracingHooks(context);
   if (!existingHooks) return tracingHooks;
 
   const merged: Record<string, HookCallbackMatcher[]> = { ...existingHooks };
@@ -381,14 +254,12 @@ function _mergeHooks(
  * @param tool - The tool to check
  * @returns True if the tool is a Task tool, false otherwise
  */
-function _isTaskTool(tool: Anthropic.Beta.BetaToolUseBlock): tool is {
+function isTaskTool(tool: Anthropic.Beta.BetaToolUseBlock): tool is {
   id: string;
   input: {
     description: string;
     prompt: string;
     subagent_type: string;
-
-    // TODO: where does this come from?
     agent_type?: string;
   };
   name: "Task";
@@ -397,7 +268,10 @@ function _isTaskTool(tool: Anthropic.Beta.BetaToolUseBlock): tool is {
   return tool.type === "tool_use" && tool.name === "Task";
 }
 
-function _isToolBlock(
+/**
+ * Type-assertion to check for tool blocks
+ */
+function isToolBlock(
   block: Anthropic.Beta.BetaContentBlock
 ): block is Anthropic.Beta.BetaToolUseBlock {
   if (!block || typeof block !== "object") return false;
@@ -411,9 +285,10 @@ function _isToolBlock(
  * @param message - The AssistantMessage to process
  * @param parentRun - The parent run tree (main conversation chain)
  */
-async function _handleAssistantToolUses(
+async function handleAssistantToolUses(
   message: SDKAssistantMessage,
-  parentRun: RunTree | undefined
+  parentRun: RunTree | undefined,
+  context: AgentSDKContext
 ): Promise<void> {
   if (!parentRun) return;
 
@@ -423,11 +298,11 @@ async function _handleAssistantToolUses(
   const parentToolUseId = message.parent_tool_use_id;
 
   for (const block of content) {
-    if (!_isToolBlock(block) || !block.id) continue;
+    if (!isToolBlock(block) || !block.id) continue;
 
     try {
       // Check if this is a Task tool (subagent) at the top level
-      if (_isTaskTool(block) && !parentToolUseId) {
+      if (isTaskTool(block) && !parentToolUseId) {
         // Extract subagent name from input
         const subagentName =
           block.input.subagent_type ||
@@ -448,13 +323,16 @@ async function _handleAssistantToolUses(
         await subagentSession.postRun();
 
         // Store in both maps
-        _subagentSessions.set(block.id, subagentSession);
-        _clientManagedRuns.set(block.id, subagentSession);
+        context.subagentSessions.set(block.id, subagentSession);
+        context.clientManagedRuns.set(block.id, subagentSession);
       }
       // Check if tool use is within a subagent
-      else if (parentToolUseId && _subagentSessions.has(parentToolUseId)) {
+      else if (
+        parentToolUseId &&
+        context.subagentSessions.has(parentToolUseId)
+      ) {
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-        const subagentSession = _subagentSessions.get(parentToolUseId)!;
+        const subagentSession = context.subagentSessions.get(parentToolUseId)!;
 
         // Create tool run as child of subagent
         const toolRun = await subagentSession.createChild({
@@ -464,7 +342,7 @@ async function _handleAssistantToolUses(
         });
 
         await toolRun.postRun();
-        _clientManagedRuns.set(block.id, toolRun);
+        context.clientManagedRuns.set(block.id, toolRun);
       }
     } catch {
       // Silently fail - don't interrupt message processing
@@ -475,9 +353,9 @@ async function _handleAssistantToolUses(
 /**
  * Clears all active tool runs and client-managed runs. Called when a conversation ends.
  */
-function _clearActiveToolRuns(): void {
+function clearActiveToolRuns(context: AgentSDKContext): void {
   // Clean up client-managed runs (subagents and their children)
-  for (const [, run] of _clientManagedRuns) {
+  for (const [, run] of context.clientManagedRuns) {
     try {
       run
         .end({ error: "Run not completed (conversation ended)" })
@@ -487,12 +365,12 @@ function _clearActiveToolRuns(): void {
       // Ignore cleanup errors
     }
   }
-  _clientManagedRuns.clear();
-  _subagentSessions.clear();
-  _activeSubagentToolUseId = undefined;
+  context.clientManagedRuns.clear();
+  context.subagentSessions.clear();
+  context.activeSubagentToolUseId = undefined;
 
   // Clean up regular tool runs
-  for (const [, { run }] of _activeToolRuns) {
+  for (const [, { run }] of context.activeToolRuns) {
     try {
       run
         .end({ error: "Tool run not completed (conversation ended)" })
@@ -502,7 +380,7 @@ function _clearActiveToolRuns(): void {
       // Ignore cleanup errors
     }
   }
-  _activeToolRuns.clear();
+  context.activeToolRuns.clear();
 }
 
 /**
@@ -510,10 +388,11 @@ function _clearActiveToolRuns(): void {
  * Traces the entire agent interaction including all streaming messages.
  * Internal use only - use wrapClaudeAgentSDK instead.
  */
-function _wrapClaudeAgentQuery<
+function wrapClaudeAgentQuery<
   T extends (...args: unknown[]) => AsyncGenerator<SDKMessage, void, unknown>
 >(queryFn: T, defaultThis?: unknown, baseConfig?: WrapClaudeAgentSDKConfig): T {
   const wrapped = async function* (...args: unknown[]) {
+    const context = createQueryContext();
     const params = (args[0] ?? {}) as {
       prompt?: string | AsyncIterable<SDKMessage>;
       options?: QueryOptions;
@@ -522,7 +401,7 @@ function _wrapClaudeAgentQuery<
     const { prompt, options = {} } = params;
 
     // Inject LangSmith tracing hooks into options
-    const mergedHooks = _mergeHooks(options.hooks);
+    const mergedHooks = mergeHooks(options.hooks, context);
     const modifiedOptions = { ...options, hooks: mergedHooks };
     const modifiedParams = { ...params, options: modifiedOptions };
     const modifiedArgs = [modifiedParams, ...args.slice(1)];
@@ -564,7 +443,7 @@ function _wrapClaudeAgentQuery<
     >();
 
     // Set the parent run for hook-based tool tracing
-    _currentParentRun = getCurrentRunTree();
+    context.currentParentRun = getCurrentRunTree();
 
     // Create an LLM span for a specific message ID
     const createLLMSpanForId = async (messageId: string) => {
@@ -596,12 +475,13 @@ function _wrapClaudeAgentQuery<
         completedUsageByModel.set(model, existing);
       }
 
-      const finalMessageContent = await _createLLMSpanForMessages(
+      const finalMessageContent = await createLLMSpanForMessages(
         [pending.message],
         prompt,
         pending.messageHistory,
         modifiedOptions,
-        pending.startTime
+        pending.startTime,
+        context
       );
 
       if (finalMessageContent) finalResults.push(finalMessageContent);
@@ -621,7 +501,7 @@ function _wrapClaudeAgentQuery<
 
           // If we have an active subagent context and this message doesn't have parent_tool_use_id,
           // check if this is a new main conversation message (which would end the subagent execution)
-          if (_activeSubagentToolUseId && !message.parent_tool_use_id) {
+          if (context.activeSubagentToolUseId && !message.parent_tool_use_id) {
             // Check if this message contains tool uses - if it does, it's part of main conversation
             const content = message.message?.content;
             if (Array.isArray(content)) {
@@ -634,8 +514,10 @@ function _wrapClaudeAgentQuery<
               // If this message has tool uses and none are within the subagent, it's a new turn
               if (hasToolUse) {
                 // Clean up the subagent session
-                _subagentSessions.delete(_activeSubagentToolUseId);
-                _activeSubagentToolUseId = undefined;
+                context.subagentSessions.delete(
+                  context.activeSubagentToolUseId
+                );
+                context.activeSubagentToolUseId = undefined;
               }
             }
           }
@@ -672,7 +554,7 @@ function _wrapClaudeAgentQuery<
             // We need to push the assistant message as well
             if (message.message.content) {
               finalResults.push({
-                content: _flattenContentBlocks(message.message.content),
+                content: flattenContentBlocks(message.message.content),
                 role: "assistant",
               });
             }
@@ -686,14 +568,18 @@ function _wrapClaudeAgentQuery<
           }
 
           // Process tool uses for subagent detection (matches Python's _handle_assistant_tool_uses)
-          await _handleAssistantToolUses(message, _currentParentRun);
+          await handleAssistantToolUses(
+            message,
+            context.currentParentRun,
+            context
+          );
         }
 
         // Handle UserMessage - add to conversation history (matches Python)
         if (message.type === "user") {
           if (message.message.content) {
             finalResults.push({
-              content: _flattenContentBlocks(message.message.content),
+              content: flattenContentBlocks(message.message.content),
               role: "user",
             });
           }
@@ -702,9 +588,9 @@ function _wrapClaudeAgentQuery<
           // The subagent's assistant messages will come AFTER this result
           if (
             message.parent_tool_use_id &&
-            _subagentSessions.has(message.parent_tool_use_id)
+            context.subagentSessions.has(message.parent_tool_use_id)
           ) {
-            _activeSubagentToolUseId = message.parent_tool_use_id;
+            context.activeSubagentToolUseId = message.parent_tool_use_id;
           }
         }
 
@@ -714,7 +600,7 @@ function _wrapClaudeAgentQuery<
           // Otherwise fall back to top-level usage field
           if (message.modelUsage) {
             // Aggregate usage from modelUsage (includes ALL models)
-            resultUsage = _aggregateUsageFromModelUsage(message.modelUsage);
+            resultUsage = aggregateUsageFromModelUsage(message.modelUsage);
 
             // Patch token counts for pending messages using modelUsage
             // This handles the SDK limitation where the last assistant message
@@ -768,7 +654,7 @@ function _wrapClaudeAgentQuery<
             }
           } else if (message.usage) {
             // Fall back to top-level usage if modelUsage not available
-            resultUsage = _extractUsageFromMessage(message);
+            resultUsage = extractUsageFromMessage(message);
           }
 
           // Add total_cost if available (LangSmith standard field)
@@ -820,8 +706,8 @@ function _wrapClaudeAgentQuery<
       }
     } finally {
       // Clean up parent run reference and any orphaned tool runs
-      _currentParentRun = undefined;
-      _clearActiveToolRuns();
+      context.currentParentRun = undefined;
+      clearActiveToolRuns(context);
     }
   } as T;
 
@@ -838,7 +724,7 @@ function _wrapClaudeAgentQuery<
  * Wraps a Claude Agent SDK tool definition to add LangSmith tracing for tool executions.
  * Internal use only - use wrapClaudeAgentSDK instead.
  */
-function _wrapClaudeAgentTool<T>(
+function wrapClaudeAgentTool<T>(
   toolDef: SdkMcpToolDefinition<T>,
   baseConfig?: WrapClaudeAgentSDKConfig
 ): SdkMcpToolDefinition<T> {
@@ -859,7 +745,7 @@ function _wrapClaudeAgentTool<T>(
 /**
  * Builds the input array for an LLM span from the initial prompt and conversation history.
  */
-function _buildLLMInput(
+function buildLLMInput(
   prompt: string | AsyncIterable<SDKMessage> | undefined,
   conversationHistory: Array<{ content: unknown; role: string }>
 ): Array<{ content: unknown; role: string }> | undefined {
@@ -878,7 +764,7 @@ function _buildLLMInput(
  * Aggregates usage from modelUsage breakdown (includes all models, including hidden ones).
  * This provides accurate totals when multiple models are used.
  */
-function _aggregateUsageFromModelUsage(
+function aggregateUsageFromModelUsage(
   modelUsage: Record<string, SDKModelUsage>
 ): Record<string, unknown> {
   const metrics: Record<string, unknown> = {};
@@ -918,9 +804,7 @@ function _aggregateUsageFromModelUsage(
 /**
  * Extracts and normalizes usage metrics from a Claude Agent SDK message.
  */
-function _extractUsageFromMessage(
-  message: SDKMessage
-): Record<string, unknown> {
+function extractUsageFromMessage(message: SDKMessage): Record<string, unknown> {
   const metrics: Record<string, unknown> = {};
 
   // Assistant messages contain usage in message.message.usage
@@ -937,13 +821,13 @@ function _extractUsageFromMessage(
   }
 
   // Standard token counts - use LangSmith's expected field names
-  const inputTokens = _getNumberProperty(usage, "input_tokens") || 0;
-  const outputTokens = _getNumberProperty(usage, "output_tokens") || 0;
+  const inputTokens = getNumberProperty(usage, "input_tokens") || 0;
+  const outputTokens = getNumberProperty(usage, "output_tokens") || 0;
 
   // Get cache tokens
-  const cacheRead = _getNumberProperty(usage, "cache_read_input_tokens") || 0;
+  const cacheRead = getNumberProperty(usage, "cache_read_input_tokens") || 0;
   const cacheCreation =
-    _getNumberProperty(usage, "cache_creation_input_tokens") || 0;
+    getNumberProperty(usage, "cache_creation_input_tokens") || 0;
 
   // Build input_token_details if we have cache tokens
   if (cacheRead > 0 || cacheCreation > 0) {
@@ -970,12 +854,13 @@ function _extractUsageFromMessage(
  * Returns the final message content to add to conversation history.
  * Handles subagent LLM turns by parenting them to the correct subagent session.
  */
-async function _createLLMSpanForMessages(
+async function createLLMSpanForMessages(
   messages: SDKMessage[],
   prompt: string | AsyncIterable<SDKMessage> | undefined,
   conversationHistory: Array<{ content: unknown; role: string }>,
   options: QueryOptions,
-  startTime: number
+  startTime: number,
+  context: AgentSDKContext
 ): Promise<{ content: unknown; role: string } | undefined> {
   if (messages.length === 0) return undefined;
 
@@ -988,15 +873,15 @@ async function _createLLMSpanForMessages(
 
   // Extract model from message first, fall back to options (matches Python)
   const model = lastMessage.message.model || options.model;
-  const usage = _extractUsageFromMessage(lastMessage);
-  const input = _buildLLMInput(prompt, conversationHistory);
+  const usage = extractUsageFromMessage(lastMessage);
+  const input = buildLLMInput(prompt, conversationHistory);
 
   // Flatten content blocks for proper serialization (matches Python)
   const outputs = messages
     .map((m) => {
       if (!("message" in m) || !("role" in m.message)) return undefined;
       return {
-        content: _flattenContentBlocks(m.message.content),
+        content: flattenContentBlocks(m.message.content),
         role: m.message.role as "assistant" | "user",
       };
     })
@@ -1006,12 +891,14 @@ async function _createLLMSpanForMessages(
   // First check if message has explicit parent_tool_use_id
   const parentToolUseId = lastMessage.parent_tool_use_id;
   let subagentParent = parentToolUseId
-    ? _subagentSessions.get(parentToolUseId)
+    ? context.subagentSessions.get(parentToolUseId)
     : undefined;
 
   // If no explicit parent, check if we're in an active subagent context
-  if (!subagentParent && _activeSubagentToolUseId) {
-    subagentParent = _subagentSessions.get(_activeSubagentToolUseId);
+  if (!subagentParent && context.activeSubagentToolUseId) {
+    subagentParent = context.subagentSessions.get(
+      context.activeSubagentToolUseId
+    );
   }
 
   const endTime = Date.now();
@@ -1072,25 +959,17 @@ async function _createLLMSpanForMessages(
   // Return flattened content for conversation history
   return lastMessage.message?.content && lastMessage.message?.role
     ? {
-        content: _flattenContentBlocks(lastMessage.message.content),
+        content: flattenContentBlocks(lastMessage.message.content),
         role: lastMessage.message.role,
       }
     : undefined;
-}
-
-function _getNumberProperty(obj: unknown, key: string): number | undefined {
-  if (!obj || typeof obj !== "object" || !(key in obj)) {
-    return undefined;
-  }
-  const value = Reflect.get(obj, key);
-  return typeof value === "number" ? value : undefined;
 }
 
 /**
  * Converts SDK content blocks into serializable objects.
  * Matches Python's flatten_content_blocks behavior.
  */
-function _flattenContentBlocks(
+function flattenContentBlocks(
   content: Anthropic.Beta.BetaContentBlock[] | unknown
 ): Array<Record<string, unknown>> | unknown {
   if (!Array.isArray(content)) {
@@ -1169,6 +1048,10 @@ export function wrapClaudeAgentSDK<T extends object>(
     query?: (...args: unknown[]) => AsyncGenerator<SDKMessage, void, unknown>;
     tool?: (...args: unknown[]) => unknown;
     createSdkMcpServer?: () => unknown;
+
+    unstable_v2_createSession?: (...args: unknown[]) => unknown;
+    unstable_v2_prompt?: (...args: unknown[]) => unknown;
+    unstable_v2_resumeSession?: (...args: unknown[]) => unknown;
   };
 
   const inputSdk = sdk as TypedSdk;
@@ -1176,7 +1059,7 @@ export function wrapClaudeAgentSDK<T extends object>(
 
   // Wrap the query method if it exists
   if ("query" in inputSdk && typeof inputSdk.query === "function") {
-    wrappedSdk.query = _wrapClaudeAgentQuery(inputSdk.query, inputSdk, config);
+    wrappedSdk.query = wrapClaudeAgentQuery(inputSdk.query, inputSdk, config);
   }
 
   // Wrap the tool method if it exists
@@ -1185,7 +1068,7 @@ export function wrapClaudeAgentSDK<T extends object>(
     wrappedSdk.tool = function (...args) {
       const toolDef = originalTool.apply(sdk, args);
       if (toolDef && typeof toolDef === "object" && "handler" in toolDef) {
-        return _wrapClaudeAgentTool(
+        return wrapClaudeAgentTool(
           toolDef as SdkMcpToolDefinition<unknown>,
           config
         );
@@ -1202,6 +1085,45 @@ export function wrapClaudeAgentSDK<T extends object>(
     wrappedSdk.createSdkMcpServer = inputSdk.createSdkMcpServer.bind(inputSdk);
   }
 
-  // TODO: add a warning if attempting to trace unstable_v2 APIs
+  if (
+    "unstable_v2_createSession" in inputSdk &&
+    typeof inputSdk.unstable_v2_createSession === "function"
+  ) {
+    wrappedSdk.unstable_v2_createSession = (
+      ...args: Parameters<typeof inputSdk.unstable_v2_createSession>
+    ) => {
+      console.warn(
+        "Tracing of `unstable_v2_createSession` is not supported by LangSmith. Tracing will not be applied."
+      );
+      return inputSdk.unstable_v2_createSession?.(...args);
+    };
+  }
+  if (
+    "unstable_v2_prompt" in inputSdk &&
+    typeof inputSdk.unstable_v2_prompt === "function"
+  ) {
+    wrappedSdk.unstable_v2_prompt = (
+      ...args: Parameters<typeof inputSdk.unstable_v2_prompt>
+    ) => {
+      console.warn(
+        "Tracing of `unstable_v2_prompt` is not supported by LangSmith. Tracing will not be applied."
+      );
+      return inputSdk.unstable_v2_prompt?.(...args);
+    };
+  }
+  if (
+    "unstable_v2_resumeSession" in inputSdk &&
+    typeof inputSdk.unstable_v2_resumeSession === "function"
+  ) {
+    wrappedSdk.unstable_v2_resumeSession = (
+      ...args: Parameters<typeof inputSdk.unstable_v2_resumeSession>
+    ) => {
+      console.warn(
+        "Tracing of `unstable_v2_resumeSession` is not supported by LangSmith. Tracing will not be applied."
+      );
+      return inputSdk.unstable_v2_resumeSession?.(...args);
+    };
+  }
+
   return wrappedSdk as T;
 }
