@@ -464,6 +464,7 @@ async def test_end_metadata_with_run_tree(langchain_client: Client):
     assert run.outputs == {"result": "success"}
 
 
+@skip_if_rate_limited
 def test_trace_file_path(langchain_client: Client) -> None:
     """Test that you can trace attachments with file paths"""
     project_name = "__test_trace_file_path3" + uuid.uuid4().hex
