@@ -3,6 +3,18 @@
 from __future__ import annotations
 
 import ast
+
+# Python 3.14+ removes ast.Str in favor of ast.Constant
+_AST_STR_TYPES: tuple = (
+    (ast.Str, ast.Constant) if hasattr(ast, "Str") else (ast.Constant,)
+)
+
+
+def _get_str_value(node: ast.expr) -> str:
+    """Get string value from ast.Str or ast.Constant."""
+    return node.value if isinstance(node, ast.Constant) else node.s  # type: ignore[return-value,union-attr]
+
+
 import collections
 import concurrent.futures as cf
 import functools
@@ -2094,12 +2106,10 @@ def _extract_code_evaluator_feedback_keys(func: Callable) -> list[str]:
             keys = []
             key_value = None
             for key, value in zip(node.keys, node.values):
-                if isinstance(key, (ast.Str, ast.Constant)):
-                    key_str = key.s if isinstance(key, ast.Str) else key.value
-                    if key_str == "key" and isinstance(value, (ast.Str, ast.Constant)):
-                        key_value = (
-                            value.s if isinstance(value, ast.Str) else value.value
-                        )
+                if isinstance(key, _AST_STR_TYPES):
+                    key_str = _get_str_value(key)
+                    if key_str == "key" and isinstance(value, _AST_STR_TYPES):
+                        key_value = _get_str_value(value)
             return [key_value] if key_value else keys
         elif (
             isinstance(node, ast.Call)
@@ -2107,16 +2117,8 @@ def _extract_code_evaluator_feedback_keys(func: Callable) -> list[str]:
             and node.func.id == "dict"
         ):
             for keyword in node.keywords:
-                if keyword.arg == "key" and isinstance(
-                    keyword.value, (ast.Str, ast.Constant)
-                ):
-                    return [
-                        (
-                            keyword.value.s
-                            if isinstance(keyword.value, ast.Str)
-                            else keyword.value.value
-                        )
-                    ]
+                if keyword.arg == "key" and isinstance(keyword.value, _AST_STR_TYPES):
+                    return [_get_str_value(keyword.value)]
         return []
 
     def extract_evaluation_result_key(node):
@@ -2126,16 +2128,8 @@ def _extract_code_evaluator_feedback_keys(func: Callable) -> list[str]:
             and node.func.id == "EvaluationResult"
         ):
             for keyword in node.keywords:
-                if keyword.arg == "key" and isinstance(
-                    keyword.value, (ast.Str, ast.Constant)
-                ):
-                    return [
-                        (
-                            keyword.value.s
-                            if isinstance(keyword.value, ast.Str)
-                            else keyword.value.value
-                        )
-                    ]
+                if keyword.arg == "key" and isinstance(keyword.value, _AST_STR_TYPES):
+                    return [_get_str_value(keyword.value)]
         return []
 
     def extract_evaluation_results_keys(node, variables):
@@ -2155,20 +2149,18 @@ def _extract_code_evaluator_feedback_keys(func: Callable) -> list[str]:
                         return keys
         elif isinstance(node, ast.Dict):
             for key, value in zip(node.keys, node.values):
-                if isinstance(key, (ast.Str, ast.Constant)) and key.s == "results":
+                if isinstance(key, _AST_STR_TYPES) and _get_str_value(key) == "results":
                     if isinstance(value, ast.List):
                         keys = []
                         for elt in value.elts:
                             if isinstance(elt, ast.Dict):
                                 for elt_key, elt_value in zip(elt.keys, elt.values):
                                     if (
-                                        isinstance(elt_key, (ast.Str, ast.Constant))
-                                        and elt_key.s == "key"
+                                        isinstance(elt_key, _AST_STR_TYPES)
+                                        and _get_str_value(elt_key) == "key"
                                     ):
-                                        if isinstance(
-                                            elt_value, (ast.Str, ast.Constant)
-                                        ):
-                                            keys.append(elt_value.s)
+                                        if isinstance(elt_value, _AST_STR_TYPES):
+                                            keys.append(_get_str_value(elt_value))
                             elif (
                                 isinstance(elt, ast.Call)
                                 and isinstance(elt.func, ast.Name)
@@ -2176,13 +2168,9 @@ def _extract_code_evaluator_feedback_keys(func: Callable) -> list[str]:
                             ):
                                 for keyword in elt.keywords:
                                     if keyword.arg == "key" and isinstance(
-                                        keyword.value, (ast.Str, ast.Constant)
+                                        keyword.value, _AST_STR_TYPES
                                     ):
-                                        keys.append(
-                                            keyword.value.s
-                                            if isinstance(keyword.value, ast.Str)
-                                            else keyword.value.value
-                                        )
+                                        keys.append(_get_str_value(keyword.value))
 
                         return keys
         return []
