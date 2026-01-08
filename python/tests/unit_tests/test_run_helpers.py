@@ -1956,3 +1956,273 @@ def test_set_run_metadata_without_active_run_tree(
     langsmith.set_run_metadata(foo=1)
     assert len(caplog.records) == 1
     assert "No active run tree found" in caplog.text
+
+
+# Tests for enabled parameter on @traceable decorator
+
+
+def test_traceable_enabled_false_overrides_context(mock_client: Client) -> None:
+    """Verify that enabled=False on decorator disables tracing.
+
+    Even with tracing_context(enabled=True).
+    """
+
+    @traceable(client=mock_client, enabled=False)
+    def my_function(a: int) -> int:
+        return a * 2
+
+    with tracing_context(enabled=True):
+        result = my_function(5)
+
+    assert result == 10
+    mock_calls = _get_calls(mock_client)
+    assert len(mock_calls) == 0  # No tracing should occur
+
+
+def test_traceable_enabled_true_overrides_context(mock_client: Client) -> None:
+    """Verify that enabled=True on decorator forces tracing.
+
+    Even with tracing_context(enabled=False).
+    """
+
+    @traceable(client=mock_client, enabled=True)
+    def my_function(a: int) -> int:
+        return a * 2
+
+    with tracing_context(enabled=False):
+        result = my_function(5)
+
+    assert result == 10
+    mock_calls = _get_calls(mock_client, minimum=1)
+    assert len(mock_calls) >= 1  # Tracing should occur despite context
+
+
+def test_traceable_enabled_none_respects_context_enabled(mock_client: Client) -> None:
+    """Verify that enabled=None (default) follows tracing_context when enabled."""
+
+    @traceable(client=mock_client)  # enabled defaults to None
+    def my_function(a: int) -> int:
+        return a * 2
+
+    with tracing_context(enabled=True):
+        result = my_function(5)
+
+    assert result == 10
+    mock_calls = _get_calls(mock_client, minimum=1)
+    assert len(mock_calls) >= 1  # Tracing should occur
+
+
+def test_traceable_enabled_none_respects_context_disabled(mock_client: Client) -> None:
+    """Verify that enabled=None (default) follows tracing_context when disabled."""
+
+    @traceable(client=mock_client)  # enabled defaults to None
+    def my_function(a: int) -> int:
+        return a * 2
+
+    with tracing_context(enabled=False):
+        result = my_function(5)
+
+    assert result == 10
+    mock_calls = _get_calls(mock_client)
+    assert len(mock_calls) == 0  # No tracing should occur
+
+
+def test_traceable_config_attribute(mock_client: Client) -> None:
+    """Verify that __traceable_config__ is set with correct values."""
+
+    def my_process_inputs(inputs: dict) -> dict:
+        return inputs
+
+    def my_process_outputs(outputs: Any) -> dict:
+        return {"output": outputs}
+
+    @traceable(
+        client=mock_client,
+        enabled=False,
+        process_inputs=my_process_inputs,
+        process_outputs=my_process_outputs,
+        tags=["tag1", "tag2"],
+        metadata={"key": "value"},
+    )
+    def my_function(a: int) -> int:
+        return a * 2
+
+    assert hasattr(my_function, "__traceable_config__")
+    config = my_function.__traceable_config__
+    assert config["enabled"] is False
+    assert config["process_inputs"] is my_process_inputs
+    assert config["process_outputs"] is my_process_outputs
+    assert config["tags"] == ["tag1", "tag2"]
+    assert config["metadata"] == {"key": "value"}
+
+
+def test_traceable_config_defaults(mock_client: Client) -> None:
+    """Verify that __traceable_config__ has correct defaults."""
+
+    @traceable(client=mock_client)
+    def my_function(a: int) -> int:
+        return a * 2
+
+    assert hasattr(my_function, "__traceable_config__")
+    config = my_function.__traceable_config__
+    assert config["enabled"] is None  # Should default to None
+    assert config["process_inputs"] is None
+    assert config["process_outputs"] is None
+    assert config["tags"] is None
+    assert config["metadata"] is None
+
+
+async def test_traceable_async_enabled_false(mock_client: Client) -> None:
+    """Verify that enabled=False works with async functions."""
+
+    @traceable(client=mock_client, enabled=False)
+    async def my_async_function(a: int) -> int:
+        return a * 2
+
+    with tracing_context(enabled=True):
+        result = await my_async_function(5)
+
+    assert result == 10
+    mock_calls = _get_calls(mock_client)
+    assert len(mock_calls) == 0  # No tracing should occur
+
+
+async def test_traceable_async_enabled_true_overrides_context(
+    mock_client: Client,
+) -> None:
+    """Verify that enabled=True forces tracing for async functions.
+
+    Even when context is disabled.
+    """
+
+    @traceable(client=mock_client, enabled=True)
+    async def my_async_function(a: int) -> int:
+        return a * 2
+
+    with tracing_context(enabled=False):
+        result = await my_async_function(5)
+
+    assert result == 10
+    mock_calls = _get_calls(mock_client, minimum=1)
+    assert len(mock_calls) >= 1  # Tracing should occur despite context
+
+
+def test_traceable_generator_enabled_false(mock_client: Client) -> None:
+    """Verify that enabled=False works with generator functions."""
+
+    @traceable(client=mock_client, enabled=False)
+    def my_generator(n: int) -> Generator[int, None, None]:
+        for i in range(n):
+            yield i
+
+    with tracing_context(enabled=True):
+        result = list(my_generator(5))
+
+    assert result == [0, 1, 2, 3, 4]
+    mock_calls = _get_calls(mock_client)
+    assert len(mock_calls) == 0  # No tracing should occur
+
+
+async def test_traceable_async_generator_enabled_false(mock_client: Client) -> None:
+    """Verify that enabled=False works with async generator functions."""
+
+    @traceable(client=mock_client, enabled=False)
+    async def my_async_generator(n: int) -> AsyncGenerator[int, None]:
+        for i in range(n):
+            yield i
+
+    with tracing_context(enabled=True):
+        result = [x async for x in my_async_generator(5)]
+
+    assert result == [0, 1, 2, 3, 4]
+    mock_calls = _get_calls(mock_client)
+    assert len(mock_calls) == 0  # No tracing should occur
+
+
+def test_traceable_enabled_does_not_propagate(mock_client: Client) -> None:
+    """Test that enabled setting applies only to its function, not nested calls."""
+
+    @traceable(client=mock_client, enabled=False)
+    def outer_function(a: int) -> int:
+        return inner_function(a)
+
+    @traceable(client=mock_client, enabled=True)
+    def inner_function(a: int) -> int:
+        return a * 2
+
+    with tracing_context(enabled=True):
+        result = outer_function(5)
+
+    assert result == 10
+    mock_calls = _get_calls(mock_client, minimum=1)
+    datas = _get_data(mock_calls)
+    # outer_function should NOT be traced (enabled=False)
+    # inner_function SHOULD be traced (enabled=True) - setting doesn't propagate
+    names = [p.get("name") for _, p in datas if p.get("name")]
+    assert "outer_function" not in names
+    assert "inner_function" in names
+
+
+def test_traceable_nested_outer_enabled_inner_disabled(mock_client: Client) -> None:
+    """Test nested functions where outer is enabled and inner is disabled."""
+
+    @traceable(client=mock_client, enabled=True)
+    def outer_function(a: int) -> int:
+        return inner_function(a)
+
+    @traceable(client=mock_client, enabled=False)
+    def inner_function(a: int) -> int:
+        return a * 2
+
+    with tracing_context(enabled=True):
+        result = outer_function(5)
+
+    assert result == 10
+    mock_calls = _get_calls(mock_client, minimum=1)
+    datas = _get_data(mock_calls)
+    # Only outer_function should be traced, not inner_function
+    names = [p.get("name") for _, p in datas if p.get("name")]
+    assert "outer_function" in names
+    assert "inner_function" not in names
+
+
+@pytest.mark.parametrize(
+    "decorator_enabled,context_enabled,should_trace",
+    [
+        (None, True, True),  # None follows context
+        (None, False, False),  # None follows context
+        (True, True, True),  # True forces on
+        (True, False, True),  # True forces on (override context)
+        (False, True, False),  # False forces off (override context)
+        (False, False, False),  # False forces off
+    ],
+)
+def test_traceable_enabled_matrix(
+    decorator_enabled: Optional[bool],
+    context_enabled: bool,
+    should_trace: bool,
+) -> None:
+    """Test all combinations of decorator enabled and context enabled."""
+    mock_client = _get_mock_client()
+
+    if decorator_enabled is None:
+
+        @traceable(client=mock_client)
+        def my_function(a: int) -> int:
+            return a * 2
+
+    else:
+
+        @traceable(client=mock_client, enabled=decorator_enabled)
+        def my_function(a: int) -> int:
+            return a * 2
+
+    with tracing_context(enabled=context_enabled):
+        result = my_function(5)
+
+    assert result == 10
+    mock_calls = _get_calls(mock_client, minimum=1 if should_trace else 0)
+    if should_trace:
+        assert len(mock_calls) >= 1
+    else:
+        assert len(mock_calls) == 0
