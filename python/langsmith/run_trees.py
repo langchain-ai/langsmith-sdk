@@ -303,6 +303,12 @@ class RunTree(ls_schemas.RunBase):
         # For backwards compat
         return self.ls_client
 
+    @functools.cached_property
+    def trace_start_time(self) -> datetime:
+        """Return the start time of the trace (root run)."""
+        dt = _parse_dotted_order(self.dotted_order)[0][0]
+        return dt.replace(tzinfo=timezone.utc)
+
     def __setattr__(self, name, value):
         """Set the `_client` specially."""
         # For backwards compat

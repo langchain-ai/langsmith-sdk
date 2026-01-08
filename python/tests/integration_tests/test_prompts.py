@@ -157,6 +157,7 @@ def test_current_tenant_is_owner(langsmith_client: Client):
     assert not langsmith_client._current_tenant_is_owner("non_existent_owner")
 
 
+@skip_if_rate_limited
 def test_list_prompts(langsmith_client: Client):
     response = langsmith_client.list_prompts(limit=10, offset=0)
     assert isinstance(response, ls_schemas.ListPromptsResponse)
@@ -233,6 +234,7 @@ def test_pull_prompt_object(
     langsmith_client.delete_prompt(prompt_name)
 
 
+@skip_if_rate_limited
 def test_pull_prompt(langsmith_client: Client, prompt_template_1: ChatPromptTemplate):
     prompt_name = f"test_prompt_{uuid4().hex[:8]}"
     langsmith_client.push_prompt(prompt_name, object=prompt_template_1)
@@ -300,6 +302,7 @@ def test_push_and_pull_prompt(
         )
 
 
+@skip_if_rate_limited
 def test_pull_prompt_include_model(langsmith_client: Client, prompt_with_model: dict):
     prompt_name = f"test_prompt_with_model_{uuid4().hex[:8]}"
     langsmith_client.push_prompt(prompt_name, object=prompt_with_model)
@@ -349,6 +352,7 @@ def test_create_prompt(langsmith_client: Client):
     langsmith_client.delete_prompt(prompt_name)
 
 
+@skip_if_rate_limited
 def test_create_commit(
     langsmith_client: Client,
     prompt_template_2: ChatPromptTemplate,
@@ -399,6 +403,7 @@ def test_create_commit(
     langsmith_client.delete_prompt(prompt_name)
 
 
+@skip_if_rate_limited
 def test_push_prompt(
     langsmith_client: Client,
     prompt_template_3: PromptTemplate,
@@ -495,6 +500,7 @@ def test_update_prompt_archive(
         (ls_schemas.PromptSortField.updated_at, "desc"),
     ],
 )
+@skip_if_rate_limited
 def test_list_prompts_sorting(
     langsmith_client: Client,
     prompt_template_1: ChatPromptTemplate,

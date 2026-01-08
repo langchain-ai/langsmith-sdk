@@ -4017,7 +4017,9 @@ class Client:
             result_df = example_df.merge(result_df, left_index=True, right_index=True)
 
         # Flatten dict columns into dot syntax for easier access
-        return pd.json_normalize(result_df.to_dict(orient="records"))
+        return pd.json_normalize(
+            cast(list[dict[str, Any]], result_df.to_dict(orient="records"))
+        )
 
     def list_projects(
         self,
@@ -8003,16 +8005,21 @@ class Client:
                 "Prompt does not exist, you must create it first."
             )
 
-        try:
-            from langchain_core.load import dumps
-        except ImportError:
-            raise ImportError(
-                "The client.create_commit function requires the langchain-core"
-                "package to run.\nInstall with `pip install langchain-core`"
-            )
+        # Check if object is already a serialized LangChain manifest
+        prepped = prep_obj_for_push(object)
+        if isinstance(prepped, dict) and "id" in prepped and "lc" in prepped:
+            manifest_dict = prepped
+        else:
+            try:
+                from langchain_core.load import dumps
+            except ImportError:
+                raise ImportError(
+                    "The client.create_commit function requires the langchain-core"
+                    "package to run.\nInstall with `pip install langchain-core`"
+                )
 
-        json_object = dumps(prep_obj_for_push(object))
-        manifest_dict = json.loads(json_object)
+            json_object = dumps(prepped)
+            manifest_dict = json.loads(json_object)
 
         owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
         prompt_owner_and_name = f"{owner}/{prompt_name}"
