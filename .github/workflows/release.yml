@@ -35,7 +35,7 @@ jobs:
       - name: Check Version
         id: check-version
         run: |
-          cd python && echo version=$(grep '^version =' pyproject.toml | sed 's/version = "\(.*\)"/\1/') >> $GITHUB_OUTPUT
+          cd python && echo version=$(grep '__version__ =' langsmith/__init__.py | sed 's/__version__ = "\(.*\)"/\1/') >> $GITHUB_OUTPUT
       - name: Create Release
         uses: ncipollo/release-action@v1
         with:
