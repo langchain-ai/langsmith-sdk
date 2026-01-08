@@ -869,6 +869,7 @@ def traceable(
                 "enabled": enabled,
                 "tags": container_input.get("tags"),
                 "metadata": container_input.get("metadata"),
+                "wrapped": func,
             },
         )
         sig = inspect.signature(selected_wrapper)

@@ -2226,3 +2226,45 @@ def test_traceable_enabled_matrix(
         assert len(mock_calls) >= 1
     else:
         assert len(mock_calls) == 0
+
+
+def test_traceable_triple_decorated(mock_client: Client) -> None:
+    """Test that other decorators don't affect tracing."""
+
+    def some_decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            return func(*args, **kwargs)
+
+        return wrapper
+
+    def some_other_decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            return func(*args, **kwargs)
+
+        return wrapper
+
+    @some_decorator
+    def original_function(a: int) -> str:
+        return f"foo {a}"
+
+    wrapped_function = some_other_decorator(
+        (traceable(client=mock_client, enabled=True)((original_function)))
+    )
+
+    result = wrapped_function(5)
+
+    assert result == "foo 5"
+    mock_calls = _get_calls(mock_client, minimum=1)
+    datas = _get_data(mock_calls)
+    names = [p.get("name") for _, p in datas if p.get("name")]
+    assert "outer_function" not in names
+    assert "original_function" in names
+    config = wrapped_function.__traceable_config__
+    assert config["enabled"] is True  # Should default to None
+    assert config["process_inputs"] is None
+    assert config["process_outputs"] is None
+    assert config["tags"] is None
+    assert config["metadata"] is None
+    assert config["wrapped"] is original_function
