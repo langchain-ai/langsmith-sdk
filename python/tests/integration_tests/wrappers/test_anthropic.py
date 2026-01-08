@@ -278,14 +278,14 @@ def test_completions_sync_api(stream: bool):
     )
     prompt = "Human: Say 'Hi i'm Claude' then stop.\n\nAssistant:"
     original = original_client.completions.create(
-        model="claude-2.1",
+        model="claude-haiku-4-5",
         prompt=prompt,
         temperature=0,
         stream=stream,
         max_tokens_to_sample=3,
     )
     patched = patched_client.completions.create(
-        model="claude-2.1",
+        model="claude-haiku-4-5",
         prompt=prompt,
         temperature=0,
         stream=stream,
@@ -322,14 +322,14 @@ async def test_completions_async_api(stream: bool):
     )
     prompt = "Human: Say 'Hi i'm Claude' then stop.\n\nAssistant:"
     original = await original_client.completions.create(
-        model="claude-2.1",
+        model="claude-haiku-4-5",
         prompt=prompt,
         temperature=0,
         stream=stream,
         max_tokens_to_sample=3,
     )
     patched = await patched_client.completions.create(
-        model="claude-2.1",
+        model="claude-haiku-4-5",
         prompt=prompt,
         temperature=0,
         stream=stream,
