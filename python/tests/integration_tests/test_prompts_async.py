@@ -156,6 +156,7 @@ async def test_current_tenant_is_owner(langsmith_client: AsyncClient):
     assert not await langsmith_client._current_tenant_is_owner("non_existent_owner")
 
 
+@skip_if_rate_limited
 async def test_list_prompts(langsmith_client: AsyncClient):
     response = await langsmith_client.list_prompts(limit=10, offset=0)
     assert isinstance(response, ls_schemas.ListPromptsResponse)
@@ -366,6 +367,7 @@ async def test_create_prompt(langsmith_client: AsyncClient):
     await langsmith_client.delete_prompt(prompt_name)
 
 
+@skip_if_rate_limited
 async def test_create_commit(
     langsmith_client: AsyncClient,
     prompt_template_2: ChatPromptTemplate,
@@ -422,6 +424,7 @@ async def test_create_commit(
     await langsmith_client.delete_prompt(prompt_name)
 
 
+@skip_if_rate_limited
 async def test_push_prompt(
     langsmith_client: AsyncClient,
     prompt_template_3: PromptTemplate,
