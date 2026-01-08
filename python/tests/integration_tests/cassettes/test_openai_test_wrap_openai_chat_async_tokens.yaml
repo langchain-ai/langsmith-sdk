@@ -898,4 +898,641 @@ interactions:
     status:
       code: 200
       message: OK
+- request:
+    body: '{"messages": [{"role": "user", "content": "howdy"}], "model": "gpt-4o-mini",
+      "stream": true, "stream_options": {"include_usage": true}}'
+    headers:
+      Accept:
+      - application/json
+      Accept-Encoding:
+      - gzip, deflate, zstd
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '135'
+      Content-Type:
+      - application/json
+      Host:
+      - api.openai.com
+      X-Stainless-Arch:
+      - arm64
+      X-Stainless-Async:
+      - async:asyncio
+      X-Stainless-Lang:
+      - python
+      X-Stainless-OS:
+      - MacOS
+      X-Stainless-Package-Version:
+      - 2.11.0
+      X-Stainless-Runtime:
+      - CPython
+      X-Stainless-Runtime-Version:
+      - 3.13.3
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+    method: POST
+    uri: https://api.openai.com/v1/chat/completions
+  response:
+    body:
+      string: 'data: {"id":"chatcmpl-Cvbcd2ywAVy8PFboNM4HageHMzLPh","object":"chat.completion.chunk","created":1767845351,"model":"gpt-4o-mini-2024-07-18","service_tier":"default","system_fingerprint":"fp_29330a9688","choices":[{"index":0,"delta":{"role":"assistant","content":"","refusal":null},"logprobs":null,"finish_reason":null}],"usage":null,"obfuscation":"AFy0B5Kzv"}
+
+
+        data: {"id":"chatcmpl-Cvbcd2ywAVy8PFboNM4HageHMzLPh","object":"chat.completion.chunk","created":1767845351,"model":"gpt-4o-mini-2024-07-18","service_tier":"default","system_fingerprint":"fp_29330a9688","choices":[{"index":0,"delta":{"content":"Howdy"},"logprobs":null,"finish_reason":null}],"usage":null,"obfuscation":"HZv8XI"}
+
+
+        data: {"id":"chatcmpl-Cvbcd2ywAVy8PFboNM4HageHMzLPh","object":"chat.completion.chunk","created":1767845351,"model":"gpt-4o-mini-2024-07-18","service_tier":"default","system_fingerprint":"fp_29330a9688","choices":[{"index":0,"delta":{"content":"!"},"logprobs":null,"finish_reason":null}],"usage":null,"obfuscation":"YfqPs47rFA"}
+
+
+        data: {"id":"chatcmpl-Cvbcd2ywAVy8PFboNM4HageHMzLPh","object":"chat.completion.chunk","created":1767845351,"model":"gpt-4o-mini-2024-07-18","service_tier":"default","system_fingerprint":"fp_29330a9688","choices":[{"index":0,"delta":{"content":"
+        How"},"logprobs":null,"finish_reason":null}],"usage":null,"obfuscation":"GwR5IPz"}
+
+
+        data: {"id":"chatcmpl-Cvbcd2ywAVy8PFboNM4HageHMzLPh","object":"chat.completion.chunk","created":1767845351,"model":"gpt-4o-mini-2024-07-18","service_tier":"default","system_fingerprint":"fp_29330a9688","choices":[{"index":0,"delta":{"content":"
+        can"},"logprobs":null,"finish_reason":null}],"usage":null,"obfuscation":"OUbJwiv"}
+
+
+        data: {"id":"chatcmpl-Cvbcd2ywAVy8PFboNM4HageHMzLPh","object":"chat.completion.chunk","created":1767845351,"model":"gpt-4o-mini-2024-07-18","service_tier":"default","system_fingerprint":"fp_29330a9688","choices":[{"index":0,"delta":{"content":"
+        I"},"logprobs":null,"finish_reason":null}],"usage":null,"obfuscation":"qNZV7jyfY"}
+
+
+        data: {"id":"chatcmpl-Cvbcd2ywAVy8PFboNM4HageHMzLPh","object":"chat.completion.chunk","created":1767845351,"model":"gpt-4o-mini-2024-07-18","service_tier":"default","system_fingerprint":"fp_29330a9688","choices":[{"index":0,"delta":{"content":"
+        help"},"logprobs":null,"finish_reason":null}],"usage":null,"obfuscation":"0RQc3L"}
+
+
+        data: {"id":"chatcmpl-Cvbcd2ywAVy8PFboNM4HageHMzLPh","object":"chat.completion.chunk","created":1767845351,"model":"gpt-4o-mini-2024-07-18","service_tier":"default","system_fingerprint":"fp_29330a9688","choices":[{"index":0,"delta":{"content":"
+        you"},"logprobs":null,"finish_reason":null}],"usage":null,"obfuscation":"conTxOe"}
+
+
+        data: {"id":"chatcmpl-Cvbcd2ywAVy8PFboNM4HageHMzLPh","object":"chat.completion.chunk","created":1767845351,"model":"gpt-4o-mini-2024-07-18","service_tier":"default","system_fingerprint":"fp_29330a9688","choices":[{"index":0,"delta":{"content":"
+        today"},"logprobs":null,"finish_reason":null}],"usage":null,"obfuscation":"42i96"}
+
+
+        data: {"id":"chatcmpl-Cvbcd2ywAVy8PFboNM4HageHMzLPh","object":"chat.completion.chunk","created":1767845351,"model":"gpt-4o-mini-2024-07-18","service_tier":"default","system_fingerprint":"fp_29330a9688","choices":[{"index":0,"delta":{"content":"?"},"logprobs":null,"finish_reason":null}],"usage":null,"obfuscation":"hEGtC9HMXi"}
+
+
+        data: {"id":"chatcmpl-Cvbcd2ywAVy8PFboNM4HageHMzLPh","object":"chat.completion.chunk","created":1767845351,"model":"gpt-4o-mini-2024-07-18","service_tier":"default","system_fingerprint":"fp_29330a9688","choices":[{"index":0,"delta":{},"logprobs":null,"finish_reason":"stop"}],"usage":null,"obfuscation":"07hiO"}
+
+
+        data: {"id":"chatcmpl-Cvbcd2ywAVy8PFboNM4HageHMzLPh","object":"chat.completion.chunk","created":1767845351,"model":"gpt-4o-mini-2024-07-18","service_tier":"default","system_fingerprint":"fp_29330a9688","choices":[],"usage":{"prompt_tokens":9,"completion_tokens":9,"total_tokens":18,"prompt_tokens_details":{"cached_tokens":0,"audio_tokens":0},"completion_tokens_details":{"reasoning_tokens":0,"audio_tokens":0,"accepted_prediction_tokens":0,"rejected_prediction_tokens":0}},"obfuscation":"tAlSRjLa6pGM"}
+
+
+        data: [DONE]
+
+
+        '
+    headers:
+      CF-RAY:
+      - 9ba8d6855d3c1698-SJC
+      Connection:
+      - keep-alive
+      Content-Type:
+      - text/event-stream; charset=utf-8
+      Date:
+      - Thu, 08 Jan 2026 04:09:11 GMT
+      Server:
+      - cloudflare
+      Set-Cookie:
+      - __cf_bm=GONiAT2ByGAKpemF5dtCUrHUNaesuIIrAQyW_KK.T0o-1767845351-1.0.1.1-h5fkJyjQEMk0RkWP.WNO0AdBAQj12QTcv9WeKgGeuVvEH41svOqDOGpX8YmADdDR8ti759uQCWcHk_jQJ5o7u_DeSSH6Ic9_rC5k4tqevTw;
+        path=/; expires=Thu, 08-Jan-26 04:39:11 GMT; domain=.api.openai.com; HttpOnly;
+        Secure; SameSite=None
+      - _cfuvid=l9p72HYyMCoACSZrbyfv5st5z37Qjbv2wk1SHJpdXCc-1767845351657-0.0.1.1-604800000;
+        path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None
+      Strict-Transport-Security:
+      - max-age=31536000; includeSubDomains; preload
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '320'
+      openai-project:
+      - proj_IfpviNC2vx5jMiYFE4hbElsy
+      openai-version:
+      - '2020-10-01'
+      x-envoy-upstream-service-time:
+      - '340'
+      x-openai-proxy-wasm:
+      - v0.1
+      x-ratelimit-limit-requests:
+      - '30000'
+      x-ratelimit-limit-tokens:
+      - '150000000'
+      x-ratelimit-remaining-requests:
+      - '29999'
+      x-ratelimit-remaining-tokens:
+      - '149999995'
+      x-ratelimit-reset-requests:
+      - 2ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_1ba7ee24c2034e178ce16d43b8025522
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"messages": [{"role": "user", "content": "howdy"}], "model": "gpt-4o-mini",
+      "stream": true}'
+    headers:
+      Accept:
+      - application/json
+      Accept-Encoding:
+      - gzip, deflate, zstd
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '92'
+      Content-Type:
+      - application/json
+      Host:
+      - api.openai.com
+      X-Stainless-Arch:
+      - arm64
+      X-Stainless-Async:
+      - async:asyncio
+      X-Stainless-Lang:
+      - python
+      X-Stainless-OS:
+      - MacOS
+      X-Stainless-Package-Version:
+      - 2.11.0
+      X-Stainless-Runtime:
+      - CPython
+      X-Stainless-Runtime-Version:
+      - 3.13.3
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+    method: POST
+    uri: https://api.openai.com/v1/chat/completions
+  response:
+    body:
+      string: 'data: {"id":"chatcmpl-CvbceLajOn6G5cK8gvR8HYsm2SaQG","object":"chat.completion.chunk","created":1767845352,"model":"gpt-4o-mini-2024-07-18","service_tier":"default","system_fingerprint":"fp_c4585b5b9c","choices":[{"index":0,"delta":{"role":"assistant","content":"","refusal":null},"logprobs":null,"finish_reason":null}],"obfuscation":"8HoV3z"}
+
+
+        data: {"id":"chatcmpl-CvbceLajOn6G5cK8gvR8HYsm2SaQG","object":"chat.completion.chunk","created":1767845352,"model":"gpt-4o-mini-2024-07-18","service_tier":"default","system_fingerprint":"fp_c4585b5b9c","choices":[{"index":0,"delta":{"content":"Howdy"},"logprobs":null,"finish_reason":null}],"obfuscation":"Z2c"}
+
+
+        data: {"id":"chatcmpl-CvbceLajOn6G5cK8gvR8HYsm2SaQG","object":"chat.completion.chunk","created":1767845352,"model":"gpt-4o-mini-2024-07-18","service_tier":"default","system_fingerprint":"fp_c4585b5b9c","choices":[{"index":0,"delta":{"content":"!"},"logprobs":null,"finish_reason":null}],"obfuscation":"v0dr0C3"}
+
+
+        data: {"id":"chatcmpl-CvbceLajOn6G5cK8gvR8HYsm2SaQG","object":"chat.completion.chunk","created":1767845352,"model":"gpt-4o-mini-2024-07-18","service_tier":"default","system_fingerprint":"fp_c4585b5b9c","choices":[{"index":0,"delta":{"content":"
+        How"},"logprobs":null,"finish_reason":null}],"obfuscation":"nAMw"}
+
+
+        data: {"id":"chatcmpl-CvbceLajOn6G5cK8gvR8HYsm2SaQG","object":"chat.completion.chunk","created":1767845352,"model":"gpt-4o-mini-2024-07-18","service_tier":"default","system_fingerprint":"fp_c4585b5b9c","choices":[{"index":0,"delta":{"content":"
+        can"},"logprobs":null,"finish_reason":null}],"obfuscation":"6SQp"}
+
+
+        data: {"id":"chatcmpl-CvbceLajOn6G5cK8gvR8HYsm2SaQG","object":"chat.completion.chunk","created":1767845352,"model":"gpt-4o-mini-2024-07-18","service_tier":"default","system_fingerprint":"fp_c4585b5b9c","choices":[{"index":0,"delta":{"content":"
+        I"},"logprobs":null,"finish_reason":null}],"obfuscation":"AGJxjm"}
+
+
+        data: {"id":"chatcmpl-CvbceLajOn6G5cK8gvR8HYsm2SaQG","object":"chat.completion.chunk","created":1767845352,"model":"gpt-4o-mini-2024-07-18","service_tier":"default","system_fingerprint":"fp_c4585b5b9c","choices":[{"index":0,"delta":{"content":"
+        assist"},"logprobs":null,"finish_reason":null}],"obfuscation":"q"}
+
+
+        data: {"id":"chatcmpl-CvbceLajOn6G5cK8gvR8HYsm2SaQG","object":"chat.completion.chunk","created":1767845352,"model":"gpt-4o-mini-2024-07-18","service_tier":"default","system_fingerprint":"fp_c4585b5b9c","choices":[{"index":0,"delta":{"content":"
+        you"},"logprobs":null,"finish_reason":null}],"obfuscation":"Kd1G"}
+
+
+        data: {"id":"chatcmpl-CvbceLajOn6G5cK8gvR8HYsm2SaQG","object":"chat.completion.chunk","created":1767845352,"model":"gpt-4o-mini-2024-07-18","service_tier":"default","system_fingerprint":"fp_c4585b5b9c","choices":[{"index":0,"delta":{"content":"
+        today"},"logprobs":null,"finish_reason":null}],"obfuscation":"nm"}
+
+
+        data: {"id":"chatcmpl-CvbceLajOn6G5cK8gvR8HYsm2SaQG","object":"chat.completion.chunk","created":1767845352,"model":"gpt-4o-mini-2024-07-18","service_tier":"default","system_fingerprint":"fp_c4585b5b9c","choices":[{"index":0,"delta":{"content":"?"},"logprobs":null,"finish_reason":null}],"obfuscation":"tNY1Ere"}
+
+
+        data: {"id":"chatcmpl-CvbceLajOn6G5cK8gvR8HYsm2SaQG","object":"chat.completion.chunk","created":1767845352,"model":"gpt-4o-mini-2024-07-18","service_tier":"default","system_fingerprint":"fp_c4585b5b9c","choices":[{"index":0,"delta":{},"logprobs":null,"finish_reason":"stop"}],"obfuscation":"le"}
+
+
+        data: [DONE]
+
+
+        '
+    headers:
+      CF-RAY:
+      - 9ba8d68b5950fa01-SJC
+      Connection:
+      - keep-alive
+      Content-Type:
+      - text/event-stream; charset=utf-8
+      Date:
+      - Thu, 08 Jan 2026 04:09:12 GMT
+      Server:
+      - cloudflare
+      Set-Cookie:
+      - __cf_bm=Rk8RJDTgFk.Y0VMLN3FbpXbYpkWCk1eVr2i3nCSwSOA-1767845352-1.0.1.1-jOyoKDgZKC.DyuyFGuo9t4.5QbTUKRFHC.oKgV8y226O.aSj5ufk5svUn6oYgMvU0dVdEG4amIvBk5gq71_b3OchDw7waSczKHQz8FVS7K4;
+        path=/; expires=Thu, 08-Jan-26 04:39:12 GMT; domain=.api.openai.com; HttpOnly;
+        Secure; SameSite=None
+      - _cfuvid=Wb04AAzwTqOzNCQU4xWxttwmm3UP70KqdsclS6FB8yg-1767845352491-0.0.1.1-604800000;
+        path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None
+      Strict-Transport-Security:
+      - max-age=31536000; includeSubDomains; preload
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '189'
+      openai-project:
+      - proj_IfpviNC2vx5jMiYFE4hbElsy
+      openai-version:
+      - '2020-10-01'
+      x-envoy-upstream-service-time:
+      - '202'
+      x-openai-proxy-wasm:
+      - v0.1
+      x-ratelimit-limit-requests:
+      - '30000'
+      x-ratelimit-limit-tokens:
+      - '150000000'
+      x-ratelimit-remaining-requests:
+      - '29999'
+      x-ratelimit-remaining-tokens:
+      - '149999995'
+      x-ratelimit-reset-requests:
+      - 2ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_97f2d58132974ffd80e8e3252bf90a0d
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"messages": [{"role": "user", "content": "howdy"}], "model": "gpt-4o-mini"}'
+    headers:
+      Accept:
+      - application/json
+      Accept-Encoding:
+      - gzip, deflate, zstd
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '76'
+      Content-Type:
+      - application/json
+      Host:
+      - api.openai.com
+      X-Stainless-Arch:
+      - arm64
+      X-Stainless-Async:
+      - async:asyncio
+      X-Stainless-Lang:
+      - python
+      X-Stainless-OS:
+      - MacOS
+      X-Stainless-Package-Version:
+      - 2.11.0
+      X-Stainless-Runtime:
+      - CPython
+      X-Stainless-Runtime-Version:
+      - 3.13.3
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+    method: POST
+    uri: https://api.openai.com/v1/chat/completions
+  response:
+    body:
+      string: "{\n  \"id\": \"chatcmpl-CvbcfdR0zBDW7m4Lkj1MetGRobvNZ\",\n  \"object\":
+        \"chat.completion\",\n  \"created\": 1767845353,\n  \"model\": \"gpt-4o-mini-2024-07-18\",\n
+        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
+        \"assistant\",\n        \"content\": \"Howdy! How can I assist you today?\",\n
+        \       \"refusal\": null,\n        \"annotations\": []\n      },\n      \"logprobs\":
+        null,\n      \"finish_reason\": \"stop\"\n    }\n  ],\n  \"usage\": {\n    \"prompt_tokens\":
+        9,\n    \"completion_tokens\": 9,\n    \"total_tokens\": 18,\n    \"prompt_tokens_details\":
+        {\n      \"cached_tokens\": 0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
+        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
+        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
+        \"default\",\n  \"system_fingerprint\": \"fp_c4585b5b9c\"\n}\n"
+    headers:
+      CF-RAY:
+      - 9ba8d6902dfd17f4-SJC
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Thu, 08 Jan 2026 04:09:13 GMT
+      Server:
+      - cloudflare
+      Set-Cookie:
+      - __cf_bm=D.ev47x0YmlqS9J0qK5FcgYZoGl7KyUNyGknz1NsM8c-1767845353-1.0.1.1-kgB4heklxf6InGBExZh69hqAaBlAXrmdyzGcZt3k_88tOze7zE.FN30pwtGFroW8HoBF3qSTBiZGurhkVO9zhsUy0EPHuvhEVqLdgRH83Rs;
+        path=/; expires=Thu, 08-Jan-26 04:39:13 GMT; domain=.api.openai.com; HttpOnly;
+        Secure; SameSite=None
+      - _cfuvid=dnNmyzT3PQuYATAP.4EO9z80t5GYLfdxQHBZoUfvHrQ-1767845353504-0.0.1.1-604800000;
+        path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None
+      Strict-Transport-Security:
+      - max-age=31536000; includeSubDomains; preload
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '839'
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '419'
+      openai-project:
+      - proj_IfpviNC2vx5jMiYFE4hbElsy
+      openai-version:
+      - '2020-10-01'
+      x-envoy-upstream-service-time:
+      - '456'
+      x-openai-proxy-wasm:
+      - v0.1
+      x-ratelimit-limit-requests:
+      - '30000'
+      x-ratelimit-limit-tokens:
+      - '150000000'
+      x-ratelimit-remaining-requests:
+      - '29999'
+      x-ratelimit-remaining-tokens:
+      - '149999997'
+      x-ratelimit-reset-requests:
+      - 2ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_b45a05b6b45048d9b67bae5742f5750d
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"messages": [{"role": "user", "content": "Write a bash script that takes
+      a matrix represented as a string with format ''[1,2],[3,4],[5,6]'' and prints
+      the transpose in the same format."}], "model": "o4-mini"}'
+    headers:
+      Accept:
+      - application/json
+      Accept-Encoding:
+      - gzip, deflate, zstd
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '207'
+      Content-Type:
+      - application/json
+      Host:
+      - api.openai.com
+      X-Stainless-Arch:
+      - arm64
+      X-Stainless-Async:
+      - async:asyncio
+      X-Stainless-Lang:
+      - python
+      X-Stainless-OS:
+      - MacOS
+      X-Stainless-Package-Version:
+      - 2.11.0
+      X-Stainless-Runtime:
+      - CPython
+      X-Stainless-Runtime-Version:
+      - 3.13.3
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+    method: POST
+    uri: https://api.openai.com/v1/chat/completions
+  response:
+    body:
+      string: "{\n  \"id\": \"chatcmpl-CvbcfiRfgQXL4PRNI5V5XC10c7gqL\",\n  \"object\":
+        \"chat.completion\",\n  \"created\": 1767845353,\n  \"model\": \"o4-mini-2025-04-16\",\n
+        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
+        \"assistant\",\n        \"content\": \"Here\u2019s a self\u2010contained bash
+        script (`transpose.sh`) that takes exactly one argument of the form\\n\\n
+        \ [1,2],[3,4],[5,6]\\n\\nand prints its transpose in the same format:\\n\\n```bash\\n#!/usr/bin/env
+        bash\\nset -e\\n\\nif [ $# -ne 1 ]; then\\n  echo \\\"Usage: $0 '[1,2],[3,4],[5,6]'\\\"\\n
+        \ exit 1\\nfi\\n\\ninput=$1\\n\\n# 1) Extract each \u201C[\u2026]\u201D block
+        into an array rows[], stripping the brackets:\\nrows=()\\nwhile [[ $input
+        =~ ^\\\\[([0-9]+(,[0-9]+)*)\\\\] ]]; do\\n  rows+=(\\\"${BASH_REMATCH[1]}\\\")\\n
+        \ # remove the leading \u201C[\u2026],\u201D (if present) from input\\n  input=${input#*\\\\[${BASH_REMATCH[1]}\\\\],?}\\ndone\\n\\n#
+        number of rows (m) and number of columns (n)\\nm=${#rows[@]}\\nIFS=',' read
+        -r -a tmp <<< \\\"${rows[0]}\\\"\\nn=${#tmp[@]}\\n\\n# 2) Load into a 2D associative
+        array mat[i,j]\\ndeclare -A mat\\nfor ((i=0; i<m; i++)); do\\n  IFS=',' read
+        -r -a cols <<< \\\"${rows[i]}\\\"\\n  for ((j=0; j<n; j++)); do\\n    mat[$i,$j]=${cols[j]}\\n
+        \ done\\ndone\\n\\n# 3) Build the transpose: it will have n rows and m columns\\nout_rows=()\\nfor
+        ((j=0; j<n; j++)); do\\n  # start the row with \u201C[first_element\u201D\\n
+        \ row=\\\"[${mat[0,$j]}\\\"\\n  for ((i=1; i<m; i++)); do\\n    row+=\\\",${mat[$i,$j]}\\\"\\n
+        \ done\\n  row+=\\\"]\\\"\\n  out_rows+=(\\\"$row\\\")\\ndone\\n\\n# 4) Join
+        the out_rows by commas and print\\nprintf \\\"%s\\\" \\\"${out_rows[0]}\\\"\\nfor
+        ((k=1; k<${#out_rows[@]}; k++)); do\\n  printf \\\",%s\\\" \\\"${out_rows[k]}\\\"\\ndone\\nprintf
+        \\\"\\\\n\\\"\\n```\\n\\nSave that as `transpose.sh`, make it executable:\\n\\n```bash\\nchmod
+        +x transpose.sh\\n```\\n\\nExample:\\n\\n```bash\\n$ ./transpose.sh '[1,2],[3,4],[5,6]'\\n[1,3,5],[2,4,6]\\n```\\n\\nExplanation
+        in brief:\\n\\n1. We use a bash\u2010regex loop to peel off each `\\\\[...\\\\]`
+        block and store its inner comma\u2010separated numbers into `rows[]`.\\n2.
+        We determine `m` (number of rows) and `n` (columns per row) from the first
+        entry.\\n3. We populate an associative array `mat[i,j]` so that we can randomly
+        access the element at row `i`, column `j`.\\n4. We build each transposed row
+        `j` by gathering `mat[0,j], mat[1,j], \u2026, mat[m-1,j]`.\\n5. Finally, we
+        join those transposed rows with commas and print.\",\n        \"refusal\":
+        null,\n        \"annotations\": []\n      },\n      \"finish_reason\": \"stop\"\n
+        \   }\n  ],\n  \"usage\": {\n    \"prompt_tokens\": 42,\n    \"completion_tokens\":
+        2299,\n    \"total_tokens\": 2341,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\":
+        0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
+        {\n      \"reasoning_tokens\": 1600,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
+        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
+        \"default\",\n  \"system_fingerprint\": null\n}\n"
+    headers:
+      CF-RAY:
+      - 9ba8d694aa1967b8-SJC
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Thu, 08 Jan 2026 04:09:36 GMT
+      Server:
+      - cloudflare
+      Set-Cookie:
+      - __cf_bm=vN_Hh00zSn9QdYwFP76kK6wAMFaFUXe_U2jf6TSBEpE-1767845376-1.0.1.1-INVeZnXK8SdgVXcBoMsBYHp9ziKbLGCmuHK2v_KYpiuXfXoS8vYS0q7aI7gC6W.Oqcj2Kej23jMrg2HckxfPdxM1UyTTtmPSKD__84JE69A;
+        path=/; expires=Thu, 08-Jan-26 04:39:36 GMT; domain=.api.openai.com; HttpOnly;
+        Secure; SameSite=None
+      - _cfuvid=iZctY0JIulC.M.TdsbiWiqmwAbxCR.1JJQTXFE7qjno-1767845376654-0.0.1.1-604800000;
+        path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None
+      Strict-Transport-Security:
+      - max-age=31536000; includeSubDomains; preload
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '2856'
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '22863'
+      openai-project:
+      - proj_IfpviNC2vx5jMiYFE4hbElsy
+      openai-version:
+      - '2020-10-01'
+      x-envoy-upstream-service-time:
+      - '22884'
+      x-openai-proxy-wasm:
+      - v0.1
+      x-ratelimit-limit-requests:
+      - '30000'
+      x-ratelimit-limit-tokens:
+      - '150000000'
+      x-ratelimit-remaining-requests:
+      - '29999'
+      x-ratelimit-remaining-tokens:
+      - '149999962'
+      x-ratelimit-reset-requests:
+      - 2ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_4debb02150064abdbdfd768d3e40a213
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"messages": [{"role": "user", "content": "howdy"}], "model": "gpt-5-nano",
+      "service_tier": "flex"}'
+    headers:
+      Accept:
+      - application/json
+      Accept-Encoding:
+      - gzip, deflate, zstd
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '99'
+      Content-Type:
+      - application/json
+      Host:
+      - api.openai.com
+      X-Stainless-Arch:
+      - arm64
+      X-Stainless-Async:
+      - async:asyncio
+      X-Stainless-Lang:
+      - python
+      X-Stainless-OS:
+      - MacOS
+      X-Stainless-Package-Version:
+      - 2.11.0
+      X-Stainless-Runtime:
+      - CPython
+      X-Stainless-Runtime-Version:
+      - 3.13.3
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+    method: POST
+    uri: https://api.openai.com/v1/chat/completions
+  response:
+    body:
+      string: "{\n  \"id\": \"chatcmpl-Cvbd2f6ciTHgCSv8mKvmYPC0SoQml\",\n  \"object\":
+        \"chat.completion\",\n  \"created\": 1767845376,\n  \"model\": \"gpt-5-nano-2025-08-07\",\n
+        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
+        \"assistant\",\n        \"content\": \"Howdy! How can I help you today?\\n\\nI
+        can help with questions, explanations, writing help, brainstorming, coding,
+        planning, summarizing, and more. If you\u2019ve got something in mind, tell
+        me and we\u2019ll dive in.\",\n        \"refusal\": null,\n        \"annotations\":
+        []\n      },\n      \"finish_reason\": \"stop\"\n    }\n  ],\n  \"usage\":
+        {\n    \"prompt_tokens\": 8,\n    \"completion_tokens\": 313,\n    \"total_tokens\":
+        321,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\": 0,\n      \"audio_tokens\":
+        0\n    },\n    \"completion_tokens_details\": {\n      \"reasoning_tokens\":
+        256,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\": 0,\n
+        \     \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
+        \"flex\",\n  \"system_fingerprint\": null\n}\n"
+    headers:
+      CF-RAY:
+      - 9ba8d7255d09cd36-SJC
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Thu, 08 Jan 2026 04:09:38 GMT
+      Server:
+      - cloudflare
+      Set-Cookie:
+      - __cf_bm=ztBw6ePY4IO6778B5wKV.r8aWwNoUOF6sU._NWS7058-1767845378-1.0.1.1-uJ.Ent7bMPAkG8jKaS15vEPRenaomXJxqHqLO41qbwVNq4ouWCB0apKxk8CBTYDwZ1kNrfwc_0RiFWTwRYBlenqIjQycolMtoRjwmHUpViY;
+        path=/; expires=Thu, 08-Jan-26 04:39:38 GMT; domain=.api.openai.com; HttpOnly;
+        Secure; SameSite=None
+      - _cfuvid=0wNTybDlB89JjBzvZvR7Q9fZV9TaQOv29e0KEc66esg-1767845378835-0.0.1.1-604800000;
+        path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None
+      Strict-Transport-Security:
+      - max-age=31536000; includeSubDomains; preload
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '981'
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '1896'
+      openai-project:
+      - proj_IfpviNC2vx5jMiYFE4hbElsy
+      openai-version:
+      - '2020-10-01'
+      x-envoy-upstream-service-time:
+      - '1924'
+      x-openai-proxy-wasm:
+      - v0.1
+      x-ratelimit-limit-requests:
+      - '30000'
+      x-ratelimit-limit-tokens:
+      - '180000000'
+      x-ratelimit-remaining-requests:
+      - '29999'
+      x-ratelimit-remaining-tokens:
+      - '179999997'
+      x-ratelimit-reset-requests:
+      - 2ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_40f45c29422c4c7998205709c7ca9947
+    status:
+      code: 200
+      message: OK
 version: 1

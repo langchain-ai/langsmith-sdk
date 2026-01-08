@@ -447,3 +447,26 @@ def test_create_child_enforces_timestamp_order():
     # Test with no start_time provided - should use current time
     child3 = parent.create_child(name="Child3")
     assert child3.start_time >= parent.start_time
+
+
+def test_trace_start_time():
+    """Test that trace_start_time returns the root run's
+    start time for all nested runs."""
+    mock_client = MagicMock(spec=Client)
+
+    # Create a nested hierarchy: root -> child1 -> grandchild
+    #                                 -> child2
+    root = RunTree(name="root", client=mock_client)
+    child1 = root.create_child(name="child1")
+    grandchild = child1.create_child(name="grandchild")
+    child2 = root.create_child(name="child2")
+
+    # All runs should have the same trace_start_time as the root's start_time
+    assert root.trace_start_time == root.start_time
+    assert child1.trace_start_time == root.start_time
+    assert grandchild.trace_start_time == root.start_time
+    assert child2.trace_start_time == root.start_time
+
+    # Verify trace_start_time is timezone-aware (UTC)
+    assert root.trace_start_time.tzinfo == timezone.utc
+    assert child1.trace_start_time.tzinfo == timezone.utc
