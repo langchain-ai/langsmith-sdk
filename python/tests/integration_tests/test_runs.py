@@ -113,6 +113,7 @@ def test_nested_runs(
     assert runs_dict["my_llm_run"].inputs == {"text": "foo"}
 
 
+@skip_if_rate_limited
 async def test_list_runs_multi_project(langchain_client: Client):
     project_names = [
         "__My Tracer Project - test_list_runs_multi_project" + uuid7().hex,
