@@ -126,6 +126,9 @@ langsmith_plugin = "langsmith.pytest_plugin"
 [tool.hatch.version]
 path = "langsmith/__init__.py"
 
+[tool.hatch.build.targets.sdist]
+exclude = [".test", ".venv*"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["langsmith"]
 
