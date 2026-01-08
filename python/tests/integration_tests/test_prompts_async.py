@@ -226,6 +226,7 @@ async def test_delete_prompt(
     assert not await langsmith_client._prompt_exists(prompt_name)
 
 
+@skip_if_rate_limited
 async def test_pull_prompt_object(
     langsmith_client: AsyncClient, prompt_template_1: ChatPromptTemplate
 ):
@@ -239,6 +240,7 @@ async def test_pull_prompt_object(
     await langsmith_client.delete_prompt(prompt_name)
 
 
+@skip_if_rate_limited
 async def test_pull_prompt(
     langsmith_client: AsyncClient, prompt_template_1: ChatPromptTemplate
 ):
@@ -312,6 +314,7 @@ async def test_push_and_pull_prompt(
         )
 
 
+@skip_if_rate_limited
 async def test_pull_prompt_include_model(
     langsmith_client: AsyncClient, prompt_with_model: dict
 ):
