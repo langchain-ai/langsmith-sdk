@@ -243,6 +243,7 @@ async def test_nested_async_runs_with_threadpool(langchain_client: Client):
             assert run.parent_run_id is None
 
 
+@skip_if_rate_limited
 async def test_context_manager(langchain_client: Client) -> None:
     project_name = "__My Tracer Project - test_context_manager"
 
