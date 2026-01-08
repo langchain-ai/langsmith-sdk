@@ -111,8 +111,6 @@ jobs:
           uv pip install langchain
       - name: Build ${{ matrix.python-version }}
         run: uv build
-      - name: Check version alignment
-        run: make check-version
       - name: Run Unit tests ${{ matrix.python-version }}
         run: make tests
         shell: bash

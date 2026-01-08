@@ -912,7 +912,6 @@ wheels = [
 
 [[package]]
 name = "langsmith"
-version = "0.6.1"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
@@ -1022,7 +1021,7 @@ requires-dist = [
     { name = "vcrpy", marker = "extra == 'vcr'", specifier = ">=7.0.0" },
     { name = "zstandard", specifier = ">=0.23.0" },
 ]
-provides-extras = ["langsmith-pyo3", "otel", "openai-agents", "claude-agent-sdk", "pytest", "vcr"]
+provides-extras = ["claude-agent-sdk", "langsmith-pyo3", "openai-agents", "otel", "pytest", "vcr"]
 
 [package.metadata.requires-dev]
 dev = [
