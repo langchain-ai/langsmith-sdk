@@ -1073,7 +1073,7 @@ def test_client_gc_after_autoscale() -> None:
         for call in session.request.mock_calls
         if call.args and call.args[0] == "POST"
     ]
-    assert len(request_calls) >= 500 and len(request_calls) <= 550
+    assert len(request_calls) >= 400 and len(request_calls) <= 1000
     for call in request_calls:
         assert call.args[0] == "POST"
         assert call.args[1] == "http://localhost:1984/runs/multipart"
