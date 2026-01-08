@@ -1,0 +1,674 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  workflow_dispatch:
+    inputs:
+      run-python-integration:
+        description: "Run Python integration tests"
+        default: "true"
+        required: false
+      run-js-integration:
+        description: "Run JS integration tests"
+        default: "true"
+        required: false
+
+permissions:
+  contents: read
+
+env:
+  RUST_VERSION: "1.82"
+  RUST_WORKSPACE_PATH: "rust"
+  NODE_VERSION: "22.4.1"
+
+jobs:
+  # ============================================================================
+  # Path Detection
+  # ============================================================================
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      python: ${{ steps.filter.outputs.python }}
+      js: ${{ steps.filter.outputs.js }}
+      rust: ${{ steps.filter.outputs.rust }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            python:
+              - 'python/**'
+              - '.github/**'
+            js:
+              - 'js/**'
+              - '.github/**'
+            rust:
+              - 'rust/**'
+              - 'vendor/orjson/**'
+              - 'vendor/pyo3/**'
+              - '.github/**'
+
+  # ============================================================================
+  # Python CI
+  # ============================================================================
+  python-lint:
+    name: "Python Lint"
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: "python"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync --group dev --group lint
+      - name: Check formatting
+        run: uv run ruff format --check
+      - name: Lint
+        run: make lint
+
+  python-test:
+    name: "Python Test ${{ matrix.python-version }}"
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        python-version:
+          - "3.10"
+          - "3.11"
+          - "3.12"
+          - "3.13"
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+      - name: Install dependencies
+        run: |
+          uv sync --group dev --group lint
+          uv pip install langchain
+      - name: Build ${{ matrix.python-version }}
+        run: uv build
+      - name: Check version alignment
+        run: make check-version
+      - name: Run Unit tests ${{ matrix.python-version }}
+        run: make tests
+        shell: bash
+
+  # ============================================================================
+  # JS CI
+  # ============================================================================
+  js-format:
+    name: "JS Check formatting"
+    needs: changes
+    if: needs.changes.outputs.js == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: "js"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js 20.x
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20.x
+          cache: "yarn"
+          cache-dependency-path: "js/yarn.lock"
+      - name: Install dependencies
+        run: yarn install --immutable --mode=skip-build
+      - name: Check formatting
+        run: yarn run format:check
+
+  js-lint:
+    name: "JS Check linting"
+    needs: changes
+    if: needs.changes.outputs.js == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: "js"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js 20.x
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20.x
+          cache: "yarn"
+          cache-dependency-path: "js/yarn.lock"
+      - name: Install dependencies
+        run: yarn install --immutable --mode=skip-build
+      - name: Check linting
+        run: yarn run lint
+
+  js-build:
+    name: "JS Build and check types"
+    needs: changes
+    if: needs.changes.outputs.js == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: "js"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js 20.x
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20.x
+          cache: "yarn"
+          cache-dependency-path: "js/yarn.lock"
+      - name: Install dependencies
+        run: yarn install --immutable
+      - name: Build and check types
+        run: yarn run build
+
+  js-test:
+    name: "JS Unit Tests (${{ matrix.os }}, ${{ matrix.node-version }})"
+    needs: changes
+    if: needs.changes.outputs.js == 'true'
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        node-version: [20.x, "22.4.1"]
+        include:
+          - os: windows-latest
+            node-version: 20.x
+          - os: macos-latest
+            node-version: 20.x
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: "js"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: "yarn"
+          cache-dependency-path: "js/yarn.lock"
+      - name: Install dependencies
+        run: yarn install --immutable
+      - name: Build
+        run: yarn run build
+      - name: Check version
+        run: yarn run check-version
+      - name: Test
+        run: yarn run test
+      - name: Test Vitest
+        run: yarn run test:vitest
+
+  # ============================================================================
+  # JS Environment Tests
+  # ============================================================================
+  js-exports-esm:
+    name: "JS Exports ESM"
+    needs: changes
+    if: needs.changes.outputs.js == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "yarn"
+          cache-dependency-path: js/yarn.lock
+      - name: Install dependencies
+        working-directory: js
+        run: yarn install --immutable
+      - name: Build
+        working-directory: js
+        run: yarn build
+      - name: Test ESM exports
+        run: docker compose -f js/internal/environment_tests/docker-compose.yml run test-exports-esm
+
+  js-exports-cjs:
+    name: "JS Exports CJS"
+    needs: changes
+    if: needs.changes.outputs.js == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "yarn"
+          cache-dependency-path: js/yarn.lock
+      - name: Install dependencies
+        working-directory: js
+        run: yarn install --immutable
+      - name: Build
+        working-directory: js
+        run: yarn build
+      - name: Test CJS exports
+        run: docker compose -f js/internal/environment_tests/docker-compose.yml run test-exports-cjs
+
+  js-exports-cf:
+    name: "JS Exports Cloudflare"
+    needs: changes
+    if: needs.changes.outputs.js == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "yarn"
+          cache-dependency-path: js/yarn.lock
+      - name: Install dependencies
+        working-directory: js
+        run: yarn install --immutable
+      - name: Build
+        working-directory: js
+        run: yarn build
+      - name: Test Cloudflare exports
+        run: docker compose -f js/internal/environment_tests/docker-compose.yml run test-exports-cf
+
+  js-exports-vite:
+    name: "JS Exports Vite"
+    needs: changes
+    if: needs.changes.outputs.js == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "yarn"
+          cache-dependency-path: js/yarn.lock
+      - name: Install dependencies
+        working-directory: js
+        run: yarn install --immutable
+      - name: Build
+        working-directory: js
+        run: yarn build
+      - name: Test Vite exports
+        run: docker compose -f js/internal/environment_tests/docker-compose.yml run test-exports-vite
+
+  js-exports-webpack:
+    name: "JS Exports Webpack"
+    needs: changes
+    if: needs.changes.outputs.js == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "yarn"
+          cache-dependency-path: js/yarn.lock
+      - name: Install dependencies
+        working-directory: js
+        run: yarn install --immutable
+      - name: Build
+        working-directory: js
+        run: yarn build
+      - name: Test Webpack exports
+        run: docker compose -f js/internal/environment_tests/docker-compose.yml run test-exports-webpack
+
+  js-exports-esbuild:
+    name: "JS Exports esbuild"
+    needs: changes
+    if: needs.changes.outputs.js == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "yarn"
+          cache-dependency-path: js/yarn.lock
+      - name: Install dependencies
+        working-directory: js
+        run: yarn install --immutable
+      - name: Build
+        working-directory: js
+        run: yarn build
+      - name: Test esbuild exports
+        run: docker compose -f js/internal/environment_tests/docker-compose.yml run test-exports-esbuild
+
+  js-exports-metro:
+    name: "JS Exports Metro"
+    needs: changes
+    if: needs.changes.outputs.js == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "yarn"
+          cache-dependency-path: js/yarn.lock
+      - name: Install dependencies
+        working-directory: js
+        run: yarn install --immutable
+      - name: Build
+        working-directory: js
+        run: yarn build
+      - name: Test Metro exports
+        run: docker compose -f js/internal/environment_tests/docker-compose.yml run test-exports-metro
+
+  # ============================================================================
+  # Rust CI
+  # ============================================================================
+  rust-lint:
+    name: "Rust Check lint and rustfmt"
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: "${{ env.RUST_VERSION }}"
+          components: rustfmt, clippy
+          cache-workspaces: "${{ env.RUST_WORKSPACE_PATH }} -> target"
+          rustflags: ""
+      - name: cargo clippy
+        working-directory: ${{ env.RUST_WORKSPACE_PATH }}
+        run: cargo clippy --workspace --all-targets --all-features --no-deps -- -D warnings --allow deprecated
+      - name: cargo fmt
+        working-directory: ${{ env.RUST_WORKSPACE_PATH }}
+        run: cargo fmt -- --check
+      - name: cargo doc
+        working-directory: ${{ env.RUST_WORKSPACE_PATH }}
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --workspace --no-deps --document-private-items
+
+  rust-test:
+    name: "Rust cargo test"
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: "${{ env.RUST_VERSION }}"
+          cache-workspaces: "${{ env.RUST_WORKSPACE_PATH }} -> target"
+          rustflags: ""
+      - name: cargo test
+        working-directory: ${{ env.RUST_WORKSPACE_PATH }}
+        run: |
+          set -euxo pipefail
+          # We exclude `langsmith-pyo3` since its tests:
+          # - Have to be run under `nextest`, since they require one-process-per-test.
+          # - Require a non-default configuration in order to run.
+          cargo test --workspace --exclude langsmith-pyo3 --all-features
+
+  rust-pyo3-test:
+    name: "Rust langsmith-pyo3 tests"
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: "${{ env.RUST_VERSION }}"
+          cache-workspaces: "${{ env.RUST_WORKSPACE_PATH }} -> target"
+          rustflags: ""
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      - name: cargo test
+        working-directory: "${{ env.RUST_WORKSPACE_PATH }}/crates/langsmith-pyo3"
+        run: |
+          set -euxo pipefail
+          # See the langsmith-pyo3 README.md file for an explanation
+          # of why tests have to run under nextest & without default features.
+          cargo nextest run --no-default-features
+
+  # ============================================================================
+  # Integration Tests
+  # ============================================================================
+  integration-changes:
+    name: "Integration Test Changes"
+    runs-on: ubuntu-latest
+    outputs:
+      python_changed: ${{ steps.check-changes.outputs.python_changed }}
+      js_changed: ${{ steps.check-changes.outputs.js_changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check for file changes
+        id: check-changes
+        run: |
+          if git diff --name-only origin/main HEAD | grep -E "^python/.*\.py$"; then
+            echo "python_changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "python_changed=false" >> $GITHUB_OUTPUT
+          fi
+          if git diff --name-only origin/main HEAD | grep -E "^js/.*\.(js|ts|jsx|tsx)$"; then
+            echo "js_changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "js_changed=false" >> $GITHUB_OUTPUT
+          fi
+
+  python-integration:
+    name: "Python ${{ matrix.test-type }} Test ${{ matrix.shard_index }}"
+    needs: integration-changes
+    if: >
+      (github.event_name == 'push') ||
+      (github.event_name == 'pull_request' && (
+        contains(github.event.pull_request.labels.*.name, 'release') ||
+        needs.integration-changes.outputs.python_changed == 'true'
+      )) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.run-python-integration == 'true')
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - test-type: integration
+            shard_total: 6
+            shard_index: 0
+          - test-type: integration
+            shard_total: 6
+            shard_index: 1
+          - test-type: integration
+            shard_total: 6
+            shard_index: 2
+          - test-type: integration
+            shard_total: 4
+            shard_index: 3
+          - test-type: integration
+            shard_total: 6
+            shard_index: 4
+          - test-type: integration
+            shard_total: 6
+            shard_index: 5
+          - test-type: doctest
+            shard_total: ""
+            shard_index: ""
+          - test-type: evals
+            shard_total: ""
+            shard_index: ""
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Python ${{ matrix.test-type }}-${{ matrix.shard_index }}
+        uses: ./.github/actions/python-integration-tests
+        with:
+          python-version: 3.11
+          langchain-api-key-beta: ${{ secrets.LANGSMITH_API_KEY_BETA }}
+          langchain-api-key-prod: ${{ secrets.LANGSMITH_API_KEY_PROD }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
+          test-type: ${{ matrix.test-type }}
+          shard-total: ${{ matrix.shard_total }}
+          shard-index: ${{ matrix.shard_index }}
+
+  js-integration:
+    name: "JS Integration Test"
+    needs: integration-changes
+    if: >
+      (github.event_name == 'push') ||
+      (github.event_name == 'pull_request' && (
+        contains(github.event.pull_request.labels.*.name, 'release') ||
+        needs.integration-changes.outputs.js_changed == 'true'
+      )) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.run-js-integration == 'true')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: js
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js 20.x
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20.x
+          cache: "yarn"
+          cache-dependency-path: "js/yarn.lock"
+      - name: Install dependencies
+        run: yarn install --immutable
+      - name: Run JS integration tests
+        uses: ./.github/actions/js-integration-tests
+        with:
+          node-version: 20.x
+          langchain-api-key-beta: ${{ secrets.LANGSMITH_API_KEY_BETA }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+
+  js-vitest-eval:
+    name: "JS Vitest Runner Test"
+    needs: integration-changes
+    if: >
+      (github.event_name == 'push') ||
+      (github.event_name == 'pull_request' && (
+        contains(github.event.pull_request.labels.*.name, 'release') ||
+        needs.integration-changes.outputs.js_changed == 'true'
+      )) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.run-js-integration == 'true')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: js
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js 20.x
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20.x
+          cache: "yarn"
+          cache-dependency-path: "js/yarn.lock"
+      - name: Install dependencies
+        run: yarn install --immutable
+      - name: Run JS Vitest eval runner test
+        uses: ./.github/actions/js-vitest-eval-test
+        with:
+          node-version: 20.x
+          langchain-api-key-beta: ${{ secrets.LANGSMITH_API_KEY_BETA }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+
+  bun-test:
+    name: "Bun Integration Tests"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: "js"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install dependencies
+        run: bun install
+      - name: Run Bun tests
+        run: bun test ./src/tests/bun/traceable.test.bun.ts
+        env:
+          LANGSMITH_TRACING: "true"
+          LANGSMITH_ENDPOINT: https://beta.api.smith.langchain.com
+          LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY_BETA }}
+
+  # ============================================================================
+  # CI Success Gate
+  # ============================================================================
+  ci-success:
+    name: "CI Success"
+    needs:
+      - changes
+      # Python
+      - python-lint
+      - python-test
+      # JS
+      - js-format
+      - js-lint
+      - js-build
+      - js-test
+      # JS Environment
+      - js-exports-esm
+      - js-exports-cjs
+      - js-exports-cf
+      - js-exports-vite
+      - js-exports-webpack
+      - js-exports-esbuild
+      - js-exports-metro
+      # Rust
+      - rust-lint
+      - rust-test
+      - rust-pyo3-test
+      # Integration
+      - integration-changes
+      - python-integration
+      - js-integration
+      - js-vitest-eval
+      - bun-test
+    if: always()
+    runs-on: ubuntu-latest
+    env:
+      JOBS_JSON: ${{ toJSON(needs) }}
+      RESULTS_JSON: ${{ toJSON(needs.*.result) }}
+    steps:
+      - name: "CI Success"
+        run: |
+          echo "$JOBS_JSON"
+          echo "$RESULTS_JSON"
+          if echo "$RESULTS_JSON" | grep -qE '"(failure|cancelled)"'; then
+            echo "CI failed - one or more jobs failed or were cancelled"
+            exit 1
+          fi
+          echo "CI passed - all jobs succeeded or were skipped"
