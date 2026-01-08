@@ -4017,7 +4017,9 @@ class Client:
             result_df = example_df.merge(result_df, left_index=True, right_index=True)
 
         # Flatten dict columns into dot syntax for easier access
-        return pd.json_normalize(result_df.to_dict(orient="records"))
+        return pd.json_normalize(
+            cast(list[dict[str, Any]], result_df.to_dict(orient="records"))
+        )
 
     def list_projects(
         self,

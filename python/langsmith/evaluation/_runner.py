@@ -3,18 +3,6 @@
 from __future__ import annotations
 
 import ast
-
-# Python 3.14+ removes ast.Str in favor of ast.Constant
-_AST_STR_TYPES: tuple = (
-    (ast.Str, ast.Constant) if hasattr(ast, "Str") else (ast.Constant,)
-)
-
-
-def _get_str_value(node: ast.expr) -> str:
-    """Get string value from ast.Str or ast.Constant."""
-    return node.value if isinstance(node, ast.Constant) else node.s  # type: ignore[return-value,union-attr]
-
-
 import collections
 import concurrent.futures as cf
 import functools
@@ -62,6 +50,17 @@ from langsmith.evaluation.evaluator import (
     comparison_evaluator,
     run_evaluator,
 )
+
+# Python 3.14+ removes ast.Str in favor of ast.Constant
+_AST_STR_TYPES: tuple = (
+    (ast.Str, ast.Constant) if hasattr(ast, "Str") else (ast.Constant,)
+)
+
+
+def _get_str_value(node: ast.expr) -> str:
+    """Get string value from ast.Str or ast.Constant."""
+    return node.value if isinstance(node, ast.Constant) else node.s  # type: ignore[return-value,union-attr,attr-defined]
+
 
 if TYPE_CHECKING:
     import pandas as pd
