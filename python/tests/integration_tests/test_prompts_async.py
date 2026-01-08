@@ -520,6 +520,8 @@ async def test_update_prompt_archive(
         (ls_schemas.PromptSortField.updated_at, "desc"),
     ],
 )
+
+@skip_if_rate_limited
 async def test_list_prompts_sorting(
     langsmith_client: AsyncClient,
     prompt_template_1: ChatPromptTemplate,
