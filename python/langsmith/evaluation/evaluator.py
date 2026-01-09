@@ -20,7 +20,7 @@ from typing import (
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from typing_extensions import TypedDict
-
+from pydantic import root_validator
 from langsmith import run_helpers as rh
 from langsmith import schemas
 from langsmith.schemas import SCORE_TYPE, VALUE_TYPE, Example, Run
@@ -51,6 +51,29 @@ class FeedbackConfig(TypedDict, total=False):
     """The maximum value permitted value (if continuous type)."""
     categories: Optional[list[Union[Category, dict]]]
 
+class FeedbackConfigModel(BaseModel):
+    """Validated configuration for feedback."""
+
+    type: Literal["continuous", "categorical", "freeform"]
+    min: Optional[Union[float, int]] = None
+    max: Optional[Union[float, int]] = None
+    categories: Optional[list[Union[Category, dict]]] = None
+
+    class Config:
+        extra = "forbid"
+
+    @root_validator(pre=True)
+    def reject_unknown_fields(cls, values):
+        known_fields = {"type", "min", "max", "categories"}
+        unknown = set(values.keys()) - known_fields
+        if unknown:
+            raise ValueError(
+                f"Unknown fields in feedback_config: {', '.join(unknown)}. "
+                "Please use only supported keys."
+            )
+        return values
+
+
 
 class EvaluationResult(BaseModel):
     """Evaluation result."""
@@ -69,8 +92,9 @@ class EvaluationResult(BaseModel):
     """What the correct value should be, if applicable."""
     evaluator_info: dict = Field(default_factory=dict)
     """Additional information about the evaluator."""
-    feedback_config: Optional[Union[FeedbackConfig, dict]] = None
-    """The configuration used to generate this feedback."""
+    feedback_config: Optional[FeedbackConfigModel] = None
+    """The configuration used to generate this feedback. 
+    Unknown fields will raise a validation error."""
     source_run_id: Optional[Union[uuid.UUID, str]] = None
     """The ID of the trace of the evaluator itself."""
     target_run_id: Optional[Union[uuid.UUID, str]] = None
@@ -254,8 +278,8 @@ class DynamicRunEvaluator(RunEvaluator):
             return EvaluationResult(**{"source_run_id": source_run_id, **result})
         except ValidationError as e:
             raise ValueError(
-                "Expected an EvaluationResult object, or dict with a metric"
-                f" 'key' and optional 'score'; got {result}"
+                f"Invalid EvaluationResult: {e.errors()}.\n"
+                f"Got: {result}"
             ) from e
 
     def _coerce_evaluation_results(
