@@ -4378,7 +4378,18 @@ def test_process_buffered_run_ops_advanced_behavior():
             )
 
             # Test fallback behavior
-            client._run_ops_buffer = [("post", {"id": "test", "name": "test_run"})]
+            client._run_ops_buffer = [
+                (
+                    "post",
+                    {"id": "test", "name": "test_run"},
+                    {
+                        "api_url": None,
+                        "api_key": None,
+                        "service_key": None,
+                        "tenant_id": None,
+                    },
+                )
+            ]
             client._flush_run_ops_buffer()
             mock_process.assert_called_once()
 
@@ -4391,7 +4402,13 @@ def test_process_buffered_run_ops_advanced_behavior():
     )
 
     # Should not flush yet (time not reached)
-    client._run_ops_buffer.append(("post", {"id": "run1", "name": "test"}))
+    client._run_ops_buffer.append(
+        (
+            "post",
+            {"id": "run1", "name": "test"},
+            {"api_url": None, "api_key": None, "service_key": None, "tenant_id": None},
+        )
+    )
     client._run_ops_buffer_last_flush_time = time.time() - 0.5  # 0.5 seconds ago
     assert not client._should_flush_run_ops_buffer()
 
@@ -4403,7 +4420,18 @@ def test_process_buffered_run_ops_advanced_behavior():
     client._run_ops_buffer.clear()
     client._run_ops_buffer_last_flush_time = time.time()  # Recent flush
     for i in range(10):  # Fill to buffer size
-        client._run_ops_buffer.append(("post", {"id": f"run_{i}", "name": "test"}))
+        client._run_ops_buffer.append(
+            (
+                "post",
+                {"id": f"run_{i}", "name": "test"},
+                {
+                    "api_url": None,
+                    "api_key": None,
+                    "service_key": None,
+                    "tenant_id": None,
+                },
+            )
+        )
     assert client._should_flush_run_ops_buffer()
 
 
@@ -4529,7 +4557,18 @@ def test_process_buffered_run_ops_end_to_end_integration():
                     test_runs.append(run_data)
 
                     with client._run_ops_buffer_lock:
-                        client._run_ops_buffer.append(("post", run_data))
+                        client._run_ops_buffer.append(
+                            (
+                                "post",
+                                run_data,
+                                {
+                                    "api_url": None,
+                                    "api_key": None,
+                                    "service_key": None,
+                                    "tenant_id": None,
+                                },
+                            )
+                        )
                         if client._should_flush_run_ops_buffer():
                             client._flush_run_ops_buffer()
 
@@ -4551,6 +4590,52 @@ def test_process_buffered_run_ops_end_to_end_integration():
                         assert "name" in run
 
                 client.cleanup()
+
+
+def test_run_ops_buffer_preserves_service_auth_overrides():
+    """Buffered run ops must preserve per-op service auth overrides."""
+    import uuid
+
+    def noop(runs):
+        return runs
+
+    client = Client(
+        api_url="https://default.example.com",
+        api_key="default-key",
+        info={"version": "0.0.0"},
+        process_buffered_run_ops=noop,
+        run_ops_buffer_size=100,
+    )
+
+    run_id = uuid.uuid4()
+    client.create_run(
+        id=run_id,
+        name="test",
+        run_type="chain",
+        inputs={"x": 1},
+        trace_id=run_id,
+        dotted_order="20240101T000000000000Z00000000000000000000000000000000",
+        service_key="jwt-token-123",
+        tenant_id="tenant-abc",
+    )
+    assert client._run_ops_buffer, "expected buffered run op"
+    op, _, write_ctx = client._run_ops_buffer[-1]
+    assert op == "post"
+    assert write_ctx["service_key"] == "jwt-token-123"
+    assert write_ctx["tenant_id"] == "tenant-abc"
+
+    client.update_run(
+        run_id,
+        outputs={"y": 2},
+        trace_id=run_id,
+        dotted_order="20240101T000000000000Z00000000000000000000000000000001",
+        service_key="jwt-token-456",
+        tenant_id="tenant-def",
+    )
+    op, _, write_ctx = client._run_ops_buffer[-1]
+    assert op == "patch"
+    assert write_ctx["service_key"] == "jwt-token-456"
+    assert write_ctx["tenant_id"] == "tenant-def"
 
     # Test file closing logic
     files_closed = []

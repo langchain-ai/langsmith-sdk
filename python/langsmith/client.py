@@ -890,7 +890,7 @@ class Client:
         self.compressed_traces: Optional[CompressedTraces] = None
         self._data_available_event: Optional[threading.Event] = None
         self._futures: Optional[weakref.WeakSet[cf.Future]] = None
-        self._run_ops_buffer: list[tuple[str, dict]] = []
+        self._run_ops_buffer: list[tuple[str, dict, dict[str, Optional[str]]]] = []
         self._run_ops_buffer_lock = threading.Lock()
         self.otel_exporter: Optional[OTELExporter] = None
         self._max_batch_size_bytes = max_batch_size_bytes
@@ -1820,6 +1820,9 @@ class Client:
             )
             ```
         """
+        # This is an alternative to API key auth. API key auth takes precedence.
+        service_key = kwargs.get("service_key")
+        tenant_id = kwargs.get("tenant_id")
         project_name = project_name or kwargs.pop(
             "session_name",
             # if the project is not provided, use the environment's project
@@ -1852,13 +1855,30 @@ class Client:
         # before batching
         if self._process_buffered_run_ops and not kwargs.get("is_run_ops_buffer_flush"):
             with self._run_ops_buffer_lock:
-                self._run_ops_buffer.append(("post", run_create))
+                self._run_ops_buffer.append(
+                    (
+                        "post",
+                        run_create,
+                        {
+                            "api_url": api_url,
+                            "api_key": api_key,
+                            "service_key": service_key,
+                            "tenant_id": tenant_id,
+                        },
+                    )
+                )
                 # Process batch when we have enough runs or enough time has passed
                 if self._should_flush_run_ops_buffer():
                     self._flush_run_ops_buffer()
                 return
         else:
-            self._create_run(run_create, api_key=api_key, api_url=api_url)
+            self._create_run(
+                run_create,
+                api_key=api_key,
+                api_url=api_url,
+                service_key=service_key,
+                tenant_id=tenant_id,
+            )
 
     def _create_run(
         self,
@@ -1866,6 +1886,8 @@ class Client:
         *,
         api_key: Optional[str] = None,
         api_url: Optional[str] = None,
+        service_key: Optional[str] = None,
+        tenant_id: Optional[str] = None,
     ) -> None:
         if (
             # batch ingest requires trace_id and dotted_order to be set
@@ -1878,6 +1900,8 @@ class Client:
                 self.compressed_traces is not None
                 and api_key is None
                 and api_url is None
+                and service_key is None
+                and tenant_id is None
             ):
                 if self._data_available_event is None:
                     raise ValueError(
@@ -1921,6 +1945,8 @@ class Client:
                             serialized_op,
                             api_key=api_key,
                             api_url=api_url,
+                            service_key=service_key,
+                            tenant_id=tenant_id,
                             otel_context=self._set_span_in_context(
                                 self._otel_trace.get_current_span()
                             ),
@@ -1933,14 +1959,28 @@ class Client:
                             serialized_op,
                             api_key=api_key,
                             api_url=api_url,
+                            service_key=service_key,
+                            tenant_id=tenant_id,
                         )
                     )
             else:
                 # Neither Rust nor Python batch ingestion is configured,
                 # fall back to the non-batch approach.
-                self._create_run_non_batch(run_create, api_key=api_key, api_url=api_url)
+                self._create_run_non_batch(
+                    run_create,
+                    api_key=api_key,
+                    api_url=api_url,
+                    service_key=service_key,
+                    tenant_id=tenant_id,
+                )
         else:
-            self._create_run_non_batch(run_create, api_key=api_key, api_url=api_url)
+            self._create_run_non_batch(
+                run_create,
+                api_key=api_key,
+                api_url=api_url,
+                service_key=service_key,
+                tenant_id=tenant_id,
+            )
 
     def _create_run_non_batch(
         self,
@@ -1948,13 +1988,25 @@ class Client:
         *,
         api_key: Optional[str] = None,
         api_url: Optional[str] = None,
+        service_key: Optional[str] = None,
+        tenant_id: Optional[str] = None,
     ):
         errors = []
-        # If specific api_key/api_url provided, use those; otherwise use all configured endpoints
-        if api_key is not None or api_url is not None:
+        # If specific auth/url provided, use those; otherwise use all configured endpoints
+        if api_key is not None or api_url is not None or service_key is not None:
             target_api_url = api_url or self.api_url
-            target_api_key = api_key or self.api_key
-            headers = {**self._headers, X_API_KEY: target_api_key}
+            headers = {**self._headers}
+            if service_key is not None:
+                # Service auth should not include user API key headers.
+                headers.pop(X_API_KEY, None)
+                headers.pop(X_API_KEY.upper(), None)
+                headers["X-Service-Key"] = service_key
+                if tenant_id is not None:
+                    headers["X-Tenant-Id"] = tenant_id
+            elif api_key is not None:
+                headers[X_API_KEY] = api_key
+            else:
+                headers[X_API_KEY] = self.api_key
             try:
                 self.request_with_retries(
                     "POST",
@@ -2073,6 +2125,8 @@ class Client:
         *,
         api_url: Optional[str] = None,
         api_key: Optional[str] = None,
+        service_key: Optional[str] = None,
+        tenant_id: Optional[str] = None,
     ) -> None:
         ids_and_partial_body: dict[
             Literal["post", "patch"], list[tuple[str, bytes]]
@@ -2135,6 +2189,8 @@ class Client:
                         _context=f"\n{key}: {'; '.join(context_ids[key])}",
                         api_url=api_url,
                         api_key=api_key,
+                        service_key=service_key,
+                        tenant_id=tenant_id,
                     )
                     body_size = 0
                     body_chunks.clear()
@@ -2150,6 +2206,8 @@ class Client:
                 _context="\n" + context,
                 api_url=api_url,
                 api_key=api_key,
+                service_key=service_key,
+                tenant_id=tenant_id,
             )
 
     def batch_ingest_runs(
@@ -2310,15 +2368,41 @@ class Client:
         _context: str,
         api_url: Optional[str] = None,
         api_key: Optional[str] = None,
+        service_key: Optional[str] = None,
+        tenant_id: Optional[str] = None,
     ):
-        # Use provided endpoint or fall back to all configured endpoints
-        endpoints: Mapping[str, Optional[str]]
-        if api_url is not None and api_key is not None:
-            endpoints = {api_url: api_key}
-        else:
-            endpoints = self._write_api_urls
+        headers_base = {**self._headers}
+        if tenant_id is not None:
+            headers_base["X-Tenant-Id"] = tenant_id
 
-        for target_api_url, target_api_key in endpoints.items():
+        # Use provided endpoint/auth override or fall back to all configured endpoints
+        endpoints: list[tuple[str, dict[str, str]]]
+        if service_key is not None:
+            target_api_url = api_url or self.api_url
+            endpoints = [
+                (
+                    target_api_url,
+                    {
+                        **{
+                            k: v
+                            for k, v in headers_base.items()
+                            if k.lower() != X_API_KEY
+                        },
+                        "X-Service-Key": service_key,
+                    },
+                )
+            ]
+        elif api_url is not None or api_key is not None:
+            target_api_url = api_url or self.api_url
+            target_api_key = api_key or self.api_key
+            endpoints = [(target_api_url, {**headers_base, X_API_KEY: target_api_key})]
+        else:
+            endpoints = [
+                (target_api_url, {**headers_base, X_API_KEY: target_api_key})
+                for target_api_url, target_api_key in self._write_api_urls.items()
+            ]
+
+        for target_api_url, headers in endpoints:
             try:
                 logger.debug(
                     f"Sending batch ingest request to {target_api_url} with context: {_context}"
@@ -2328,10 +2412,7 @@ class Client:
                     f"{target_api_url}/runs/batch",
                     request_kwargs={
                         "data": body,
-                        "headers": {
-                            **self._headers,
-                            X_API_KEY: target_api_key,
-                        },
+                        "headers": headers,
                     },
                     to_ignore=(ls_utils.LangSmithConflictError,),
                     stop_after_attempt=3,
@@ -2352,6 +2433,8 @@ class Client:
         *,
         api_url: Optional[str] = None,
         api_key: Optional[str] = None,
+        service_key: Optional[str] = None,
+        tenant_id: Optional[str] = None,
     ) -> None:
         parts: list[MultipartPartsAndContext] = []
         opened_files_dict: dict[str, io.BufferedReader] = {}
@@ -2373,7 +2456,11 @@ class Client:
         if acc_multipart:
             try:
                 self._send_multipart_req(
-                    acc_multipart, api_url=api_url, api_key=api_key
+                    acc_multipart,
+                    api_url=api_url,
+                    api_key=api_key,
+                    service_key=service_key,
+                    tenant_id=tenant_id,
                 )
             except ls_utils.LangSmithNotFoundError:
                 # Fallback to batch ingest if multipart endpoint returns 404
@@ -2382,7 +2469,13 @@ class Client:
                 # Filter out feedback operations as they're not supported in non-multipart mode
                 run_ops = [op for op in ops if isinstance(op, SerializedRunOperation)]
                 if run_ops:
-                    self._batch_ingest_run_ops(run_ops)
+                    self._batch_ingest_run_ops(
+                        run_ops,
+                        api_url=api_url,
+                        api_key=api_key,
+                        service_key=service_key,
+                        tenant_id=tenant_id,
+                    )
             finally:
                 _close_files(list(opened_files_dict.values()))
 
@@ -2565,17 +2658,44 @@ class Client:
         attempts: int = 3,
         api_url: Optional[str] = None,
         api_key: Optional[str] = None,
+        service_key: Optional[str] = None,
+        tenant_id: Optional[str] = None,
     ):
         parts = acc.parts
         _context = acc.context
 
-        # Use provided endpoint or fall back to all configured endpoints
-        if api_url is not None and api_key is not None:
-            endpoints: Mapping[str, str | None] = {api_url: api_key}
-        else:
-            endpoints = self._write_api_urls
+        headers_base = {**self._headers}
+        if tenant_id is not None:
+            headers_base["X-Tenant-Id"] = tenant_id
 
-        for target_api_url, target_api_key in endpoints.items():
+        # Use provided endpoint/auth override or fall back to all configured endpoints
+        endpoints: list[tuple[str, dict[str, str]]]
+        if service_key is not None:
+            target_api_url = api_url or self.api_url
+            endpoints = [
+                (
+                    target_api_url,
+                    {
+                        **{
+                            k: v
+                            for k, v in headers_base.items()
+                            if k.lower() != X_API_KEY
+                        },
+                        "X-Service-Key": service_key,
+                    },
+                )
+            ]
+        elif api_url is not None or api_key is not None:
+            target_api_url = api_url or self.api_url
+            target_api_key = api_key or self.api_key
+            endpoints = [(target_api_url, {**headers_base, X_API_KEY: target_api_key})]
+        else:
+            endpoints = [
+                (target_api_url, {**headers_base, X_API_KEY: target_api_key})
+                for target_api_url, target_api_key in self._write_api_urls.items()
+            ]
+
+        for target_api_url, headers_for_endpoint in endpoints:
             for idx in range(1, attempts + 1):
                 try:
                     encoder = rqtb_multipart.MultipartEncoder(parts, boundary=_BOUNDARY)
@@ -2592,8 +2712,7 @@ class Client:
                         request_kwargs={
                             "data": data,
                             "headers": {
-                                **self._headers,
-                                X_API_KEY: target_api_key,
+                                **headers_for_endpoint,
                                 "Content-Type": encoder.content_type,
                             },
                         },
@@ -2717,6 +2836,8 @@ class Client:
         reference_example_id: str | uuid.UUID | None = None,
         api_key: Optional[str] = None,
         api_url: Optional[str] = None,
+        service_key: Optional[str] = None,
+        tenant_id: Optional[str] = None,
         **kwargs: Any,
     ) -> None:
         """Update a run in the LangSmith API.
@@ -2740,6 +2861,8 @@ class Client:
                 an experiment.
             api_key (Optional[str]): The API key to use for this specific run.
             api_url (Optional[str]): The API URL to use for this specific run.
+            service_key (Optional[str]): The service JWT key for service-to-service auth.
+            tenant_id (Optional[str]): The tenant ID for multi-tenant requests.
             **kwargs (Any): Kwargs are ignored.
 
         Returns:
@@ -2833,13 +2956,30 @@ class Client:
         # If process_buffered_run_ops is enabled, collect runs in batches
         if self._process_buffered_run_ops and not kwargs.get("is_run_ops_buffer_flush"):
             with self._run_ops_buffer_lock:
-                self._run_ops_buffer.append(("patch", data))
+                self._run_ops_buffer.append(
+                    (
+                        "patch",
+                        data,
+                        {
+                            "api_url": api_url,
+                            "api_key": api_key,
+                            "service_key": service_key,
+                            "tenant_id": tenant_id,
+                        },
+                    )
+                )
                 # Process batch when we have enough runs or enough time has passed
                 if self._should_flush_run_ops_buffer():
                     self._flush_run_ops_buffer()
                 return
         else:
-            self._update_run(data, api_key=api_key, api_url=api_url)
+            self._update_run(
+                data,
+                api_key=api_key,
+                api_url=api_url,
+                service_key=service_key,
+                tenant_id=tenant_id,
+            )
 
     def _update_run(
         self,
@@ -2847,6 +2987,8 @@ class Client:
         *,
         api_key: Optional[str] = None,
         api_url: Optional[str] = None,
+        service_key: Optional[str] = None,
+        tenant_id: Optional[str] = None,
     ):
         use_multipart = (
             (self.tracing_queue is not None or self.compressed_traces is not None)
@@ -2862,6 +3004,8 @@ class Client:
                 self.compressed_traces is not None
                 and api_key is None
                 and api_url is None
+                and service_key is None
+                and tenant_id is None
             ):
                 (
                     multipart_form,
@@ -2902,6 +3046,8 @@ class Client:
                             serialized_op,
                             api_key=api_key,
                             api_url=api_url,
+                            service_key=service_key,
+                            tenant_id=tenant_id,
                             otel_context=self._set_span_in_context(
                                 self._otel_trace.get_current_span()
                             ),
@@ -2914,10 +3060,18 @@ class Client:
                             serialized_op,
                             api_key=api_key,
                             api_url=api_url,
+                            service_key=service_key,
+                            tenant_id=tenant_id,
                         )
                     )
         else:
-            self._update_run_non_batch(run_update, api_key=api_key, api_url=api_url)
+            self._update_run_non_batch(
+                run_update,
+                api_key=api_key,
+                api_url=api_url,
+                service_key=service_key,
+                tenant_id=tenant_id,
+            )
 
     def _update_run_non_batch(
         self,
@@ -2925,15 +3079,24 @@ class Client:
         *,
         api_key: Optional[str] = None,
         api_url: Optional[str] = None,
+        service_key: Optional[str] = None,
+        tenant_id: Optional[str] = None,
     ) -> None:
-        # If specific api_key/api_url provided, use those; otherwise use all configured endpoints
-        if api_key is not None or api_url is not None:
+        # If specific auth/url provided, use those; otherwise use all configured endpoints
+        if api_key is not None or api_url is not None or service_key is not None:
             target_api_url = api_url or self.api_url
-            target_api_key = api_key or self.api_key
-            headers = {
-                **self._headers,
-                X_API_KEY: target_api_key,
-            }
+            headers = {**self._headers}
+            if service_key is not None:
+                # Service auth should not include user API key headers.
+                headers.pop(X_API_KEY, None)
+                headers.pop(X_API_KEY.upper(), None)
+                headers["X-Service-Key"] = service_key
+                if tenant_id is not None:
+                    headers["X-Tenant-Id"] = tenant_id
+            elif api_key is not None:
+                headers[X_API_KEY] = api_key
+            else:
+                headers[X_API_KEY] = self.api_key
 
             self.request_with_retries(
                 "PATCH",

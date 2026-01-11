@@ -40,13 +40,16 @@ LANGSMITH_CLIENT_THREAD_POOL = cf.ThreadPoolExecutor(max_workers=cpu_count())
 
 def _group_batch_by_api_endpoint(
     batch: list[TracingQueueItem],
-) -> dict[tuple[Optional[str], Optional[str]], list[TracingQueueItem]]:
-    """Group batch items by (api_url, api_key) combination."""
+) -> dict[
+    tuple[Optional[str], Optional[str], Optional[str], Optional[str]],
+    list[TracingQueueItem],
+]:
+    """Group batch items by endpoint and auth combination."""
     from collections import defaultdict
 
     grouped = defaultdict(list)
     for item in batch:
-        key = (item.api_url, item.api_key)
+        key = (item.api_url, item.api_key, item.service_key, item.tenant_id)
         grouped[key].append(item)
     return grouped
 
@@ -65,9 +68,19 @@ class TracingQueueItem:
     item: Union[SerializedRunOperation, SerializedFeedbackOperation]
     api_url: Optional[str]
     api_key: Optional[str]
+    service_key: Optional[str]
+    tenant_id: Optional[str]
     otel_context: Optional[Context]
 
-    __slots__ = ("priority", "item", "api_key", "api_url", "otel_context")
+    __slots__ = (
+        "priority",
+        "item",
+        "api_key",
+        "api_url",
+        "service_key",
+        "tenant_id",
+        "otel_context",
+    )
 
     def __init__(
         self,
@@ -75,12 +88,16 @@ class TracingQueueItem:
         item: Union[SerializedRunOperation, SerializedFeedbackOperation],
         api_key: Optional[str] = None,
         api_url: Optional[str] = None,
+        service_key: Optional[str] = None,
+        tenant_id: Optional[str] = None,
         otel_context: Optional[Context] = None,
     ) -> None:
         self.priority = priority
         self.item = item
         self.api_key = api_key
         self.api_url = api_url
+        self.service_key = service_key
+        self.tenant_id = tenant_id
         self.otel_context = otel_context
 
     def __lt__(self, other: TracingQueueItem) -> bool:
@@ -200,12 +217,13 @@ def _tracing_thread_drain_compressed_buffer(
 
 
 def _process_buffered_run_ops_batch(
-    client: Client, batch_to_process: list[tuple[str, dict]]
+    client: Client,
+    batch_to_process: list[tuple[str, dict, dict[str, Optional[str]]]],
 ) -> None:
     """Process a batch of run operations asynchronously."""
     try:
         # Extract just the run dictionaries for process_buffered_run_ops
-        run_dicts = [run_data for _, run_data in batch_to_process]
+        run_dicts = [run_data for _, run_data, _ in batch_to_process]
         original_ids = [run.get("id") for run in run_dicts]
 
         # Apply process_buffered_run_ops transformation
@@ -229,12 +247,14 @@ def _process_buffered_run_ops_batch(
                 f"Expected {original_ids}, got {processed_ids}"
             )
 
-        # Process each run and add to compressed traces
-        for (operation, _), processed_run in zip(batch_to_process, processed_runs):
+        # Process each run and add to tracing (preserving per-op auth overrides)
+        for (operation, _, write_ctx), processed_run in zip(
+            batch_to_process, processed_runs
+        ):
             if operation == "post":
-                client._create_run(processed_run)
+                client._create_run(processed_run, **write_ctx)
             elif operation == "patch":
-                client._update_run(processed_run)
+                client._update_run(processed_run, **write_ctx)
 
         # Trigger data available event
         if client._data_available_event:
@@ -272,10 +292,15 @@ def _tracing_thread_handle_batch(
             If None, operations will be combined from the batch items.
     """
     try:
-        # Group batch items by (api_url, api_key) combination
+        # Group batch items by endpoint + auth combination
         grouped_batches = _group_batch_by_api_endpoint(batch)
 
-        for (api_url, api_key), group_batch in grouped_batches.items():
+        for (
+            api_url,
+            api_key,
+            service_key,
+            tenant_id,
+        ), group_batch in grouped_batches.items():
             if not ops:
                 group_ops = combine_serialized_queue_operations(
                     [item.item for item in group_batch]
@@ -286,7 +311,11 @@ def _tracing_thread_handle_batch(
 
             if use_multipart:
                 client._multipart_ingest_ops(
-                    group_ops, api_url=api_url, api_key=api_key
+                    group_ops,
+                    api_url=api_url,
+                    api_key=api_key,
+                    service_key=service_key,
+                    tenant_id=tenant_id,
                 )
             else:
                 if any(isinstance(op, SerializedFeedbackOperation) for op in group_ops):
@@ -302,6 +331,8 @@ def _tracing_thread_handle_batch(
                     cast(list[SerializedRunOperation], group_ops),
                     api_url=api_url,
                     api_key=api_key,
+                    service_key=service_key,
+                    tenant_id=tenant_id,
                 )
 
     except Exception as e:

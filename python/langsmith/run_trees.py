@@ -15,7 +15,7 @@ from typing import Any, Optional, Union, cast
 from uuid import UUID
 
 from pydantic import ConfigDict, Field, model_validator
-from typing_extensions import TypedDict
+from typing_extensions import NotRequired, TypedDict
 
 import langsmith._internal._context as _context
 from langsmith import schemas as ls_schemas
@@ -27,9 +27,24 @@ from langsmith.uuid import uuid7_from_datetime
 logger = logging.getLogger(__name__)
 
 
+class ApiKeyAuth(TypedDict):
+    """API key authentication for write replicas."""
+
+    api_key: str
+
+
+class ServiceAuth(TypedDict, total=False):
+    """Service-to-service JWT authentication for write replicas."""
+
+    service_key: str
+    tenant_id: NotRequired[str]
+
+
 class WriteReplica(TypedDict, total=False):
+    """Configuration for a write replica endpoint."""
+
     api_url: Optional[str]
-    api_key: Optional[str]
+    auth: ApiKeyAuth | ServiceAuth
     project_name: Optional[str]
     updates: Optional[dict]
 
@@ -641,10 +656,15 @@ class RunTree(ls_schemas.RunBase):
                 project_name = replica.get("project_name") or self.session_name
                 updates = replica.get("updates")
                 run_dict = self._remap_for_project(project_name, updates)
+                api_url, api_key, service_key, tenant_id = _extract_replica_auth(
+                    replica
+                )
                 self.client.create_run(
                     **run_dict,
-                    api_key=replica.get("api_key"),
-                    api_url=replica.get("api_url"),
+                    api_key=api_key,
+                    api_url=api_url,
+                    service_key=service_key,
+                    tenant_id=tenant_id,
                 )
         else:
             kwargs = self._get_dicts_safe()
@@ -697,6 +717,9 @@ class RunTree(ls_schemas.RunBase):
                 project_name = replica.get("project_name") or self.session_name
                 updates = replica.get("updates")
                 run_dict = self._remap_for_project(project_name, updates)
+                api_url, api_key, service_key, tenant_id = _extract_replica_auth(
+                    replica
+                )
                 self.client.update_run(
                     name=run_dict["name"],
                     run_id=run_dict["id"],
@@ -715,8 +738,10 @@ class RunTree(ls_schemas.RunBase):
                     tags=run_dict.get("tags"),
                     extra=run_dict.get("extra"),
                     attachments=attachments,
-                    api_key=replica.get("api_key"),
-                    api_url=replica.get("api_url"),
+                    api_key=api_key,
+                    api_url=api_url,
+                    service_key=service_key,
+                    tenant_id=tenant_id,
                 )
         else:
             self.client.update_run(
@@ -961,10 +986,10 @@ class _Baggage:
                             and len(replica_item) == 2
                         ):
                             # Convert legacy format to WriteReplica
+                            # Legacy format has no auth, just project_name and updates
                             parsed_replicas.append(
                                 WriteReplica(
                                     api_url=None,
-                                    api_key=None,
                                     project_name=str(replica_item[0]),
                                     updates=replica_item[1],
                                 )
@@ -1060,7 +1085,7 @@ def _parse_write_replicas_from_env_var(env_var: Optional[str]) -> list[WriteRepl
                 replicas.append(
                     WriteReplica(
                         api_url=api_url.rstrip("/"),
-                        api_key=api_key,
+                        auth=ApiKeyAuth(api_key=api_key),
                         project_name=None,
                         updates=None,
                     )
@@ -1077,7 +1102,7 @@ def _parse_write_replicas_from_env_var(env_var: Optional[str]) -> list[WriteRepl
                     replicas.append(
                         WriteReplica(
                             api_url=url,
-                            api_key=key,
+                            auth=ApiKeyAuth(api_key=key),
                             project_name=None,
                             updates=None,
                         )
@@ -1160,3 +1185,24 @@ def _create_current_dotted_order(
     st = start_time or datetime.now(timezone.utc)
     id_ = run_id or uuid7_from_datetime(st)
     return st.strftime("%Y%m%dT%H%M%S%fZ") + str(id_)
+
+
+def _extract_replica_auth(
+    replica: WriteReplica,
+) -> tuple[str | None, str | None, str | None, str | None]:
+    # api_url, api_key, service_key, tenant_id
+    api_url = replica.get("api_url")
+    if "api_key" in replica:
+        return api_url, replica["api_key"], None, None
+    if "auth" in replica:
+        auth = replica["auth"]
+        if "api_key" in auth:
+            return api_url, auth["api_key"], None, None
+        if "service_key" in auth:
+            return (
+                api_url,
+                None,
+                auth["service_key"],
+                replica.get("tenant_id"),
+            )
+    return api_url, None, None, None

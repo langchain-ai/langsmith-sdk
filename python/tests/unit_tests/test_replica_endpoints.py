@@ -10,7 +10,9 @@ import pytest
 from langsmith import Client
 from langsmith import utils as ls_utils
 from langsmith.run_trees import (
+    ApiKeyAuth,
     RunTree,
+    ServiceAuth,
     WriteReplica,
     _ensure_write_replicas,
     _get_write_replicas_from_env,
@@ -38,7 +40,7 @@ class TestWriteReplicaTypes:
         assert len(result) == 2
         assert result[0]["project_name"] == "project1"
         assert result[0]["updates"] == {"key": "value"}
-        assert result[0].get("api_key") is None
+        assert result[0].get("auth") is None
         assert result[0].get("api_url") is None
 
         assert result[1]["project_name"] == "project2"
@@ -49,13 +51,13 @@ class TestWriteReplicaTypes:
         new_replicas = [
             WriteReplica(
                 api_url="https://replica1.example.com",
-                api_key="key1",
+                auth=ApiKeyAuth(api_key="key1"),
                 project_name="project1",
                 updates={"test": "value"},
             ),
             WriteReplica(
                 api_url="https://replica2.example.com",
-                api_key="key2",
+                auth=ApiKeyAuth(api_key="key2"),
             ),
         ]
 
@@ -63,12 +65,12 @@ class TestWriteReplicaTypes:
 
         assert len(result) == 2
         assert result[0]["api_url"] == "https://replica1.example.com"
-        assert result[0]["api_key"] == "key1"
+        assert result[0]["auth"]["api_key"] == "key1"
         assert result[0]["project_name"] == "project1"
         assert result[0]["updates"] == {"test": "value"}
 
         assert result[1]["api_url"] == "https://replica2.example.com"
-        assert result[1]["api_key"] == "key2"
+        assert result[1]["auth"]["api_key"] == "key2"
         assert result[1].get("project_name") is None
 
 
@@ -106,7 +108,7 @@ class TestEnvironmentVariableParsing:
 
                 assert len(result) == 3
                 urls = [r["api_url"] for r in result]
-                keys = [r["api_key"] for r in result]
+                keys = [r["auth"]["api_key"] for r in result]
 
                 assert "https://api.smith.langchain.com" in urls
                 assert "https://replica1.example.com" in urls
@@ -200,7 +202,7 @@ class TestEnvironmentVariableParsing:
                 ]
                 assert len(api_example_replicas) == 3
 
-                api_keys = [r["api_key"] for r in api_example_replicas]
+                api_keys = [r["auth"]["api_key"] for r in api_example_replicas]
                 assert "key1" in api_keys
                 assert "key2" in api_keys
                 assert "key3" in api_keys
@@ -210,7 +212,7 @@ class TestEnvironmentVariableParsing:
                     r for r in result if r["api_url"] == "https://replica.example.com"
                 ]
                 assert len(replica_example_replicas) == 1
-                assert replica_example_replicas[0]["api_key"] == "single-key"
+                assert replica_example_replicas[0]["auth"]["api_key"] == "single-key"
 
         finally:
             ls_utils.get_env_var.cache_clear()
@@ -239,7 +241,7 @@ class TestEnvironmentVariableParsing:
                 assert len(result) == 3
 
                 urls = [r["api_url"] for r in result]
-                keys = [r["api_key"] for r in result]
+                keys = [r["auth"]["api_key"] for r in result]
 
                 assert "https://single.example.com" in urls
                 assert "https://another.example.com" in urls
@@ -275,7 +277,7 @@ class TestEnvironmentVariableParsing:
                 # Should only have the valid replica, empty array should be ignored
                 assert len(result) == 1
                 assert result[0]["api_url"] == "https://valid.example.com"
-                assert result[0]["api_key"] == "valid-key"
+                assert result[0]["auth"]["api_key"] == "valid-key"
 
         finally:
             ls_utils.get_env_var.cache_clear()
@@ -305,7 +307,7 @@ class TestEnvironmentVariableParsing:
                 assert len(result) == 1
 
                 assert result[0]["api_url"] == "https://valid.example.com"
-                assert result[0]["api_key"] == "valid-key"
+                assert result[0]["auth"]["api_key"] == "valid-key"
 
         finally:
             ls_utils.get_env_var.cache_clear()
@@ -334,7 +336,7 @@ class TestEnvironmentVariableParsing:
                 # Should only have the valid replica
                 assert len(result) == 1
                 assert result[0]["api_url"] == "https://valid.example.com"
-                assert result[0]["api_key"] == "valid-key"
+                assert result[0]["auth"]["api_key"] == "valid-key"
 
         finally:
             ls_utils.get_env_var.cache_clear()
@@ -361,7 +363,7 @@ class TestParseWriteReplicasFromEnvVar:
         assert len(result) == 3
         assert all(r["api_url"] == "https://api.example.com" for r in result)
 
-        keys = [r["api_key"] for r in result]
+        keys = [r["auth"]["api_key"] for r in result]
         assert "key1" in keys
         assert "key2" in keys
         assert "key3" in keys
@@ -388,7 +390,7 @@ class TestParseWriteReplicasFromEnvVar:
 
         # Check replicas
         urls = [r["api_url"] for r in result]
-        keys = [r["api_key"] for r in result]
+        keys = [r["auth"]["api_key"] for r in result]
 
         assert "https://single.example.com" in urls
         assert "https://another.example.com" in urls
@@ -451,7 +453,7 @@ class TestParseWriteReplicasFromEnvVar:
         # Should only have the valid replica
         assert len(result) == 1
         assert result[0]["api_url"] == "https://valid.example.com"
-        assert result[0]["api_key"] == "valid-key"
+        assert result[0]["auth"]["api_key"] == "valid-key"
 
     def test_parse_invalid_object_values(self):
         """Test parsing with invalid values in object format."""
@@ -472,7 +474,7 @@ class TestParseWriteReplicasFromEnvVar:
         # Should only have the valid replica
         assert len(result) == 1
         assert result[0]["api_url"] == "https://valid.example.com"
-        assert result[0]["api_key"] == "valid-key"
+        assert result[0]["auth"]["api_key"] == "valid-key"
 
     def test_parse_invalid_value_types(self):
         """Test parsing with invalid value types."""
@@ -492,7 +494,7 @@ class TestParseWriteReplicasFromEnvVar:
         # Should only have the valid replica
         assert len(result) == 1
         assert result[0]["api_url"] == "https://valid.example.com"
-        assert result[0]["api_key"] == "valid-key"
+        assert result[0]["auth"]["api_key"] == "valid-key"
 
     def test_parse_empty_string(self):
         """Test parsing with empty string."""
@@ -530,7 +532,7 @@ class TestParseWriteReplicasFromEnvVar:
         # Should only have the valid replica
         assert len(result) == 1
         assert result[0]["api_url"] == "https://valid.example.com"
-        assert result[0]["api_key"] == "valid-key"
+        assert result[0]["auth"]["api_key"] == "valid-key"
 
     def test_parse_invalid_root_type(self):
         """Test parsing with invalid root type (not list or dict)."""
@@ -608,6 +610,8 @@ class TestRunTreeReplicas:
         call_args = client.create_run.call_args
         assert call_args[1]["api_key"] is None
         assert call_args[1]["api_url"] is None
+        assert call_args[1]["service_key"] is None
+        assert call_args[1]["tenant_id"] is None
 
     def test_run_tree_with_new_replicas(self):
         """Test RunTree with WriteReplica format."""
@@ -616,12 +620,12 @@ class TestRunTreeReplicas:
         replicas = [
             WriteReplica(
                 api_url="https://replica1.example.com",
-                api_key="replica1-key",
+                auth=ApiKeyAuth(api_key="replica1-key"),
                 project_name="replica1-project",
             ),
             WriteReplica(
                 api_url="https://replica2.example.com",
-                api_key="replica2-key",
+                auth=ApiKeyAuth(api_key="replica2-key"),
                 project_name="replica2-project",
             ),
         ]
@@ -645,6 +649,36 @@ class TestRunTreeReplicas:
         assert calls[1][1]["api_key"] == "replica2-key"
         assert calls[1][1]["api_url"] == "https://replica2.example.com"
 
+    def test_run_tree_with_service_auth_replicas(self):
+        """Test RunTree with ServiceAuth replicas."""
+        client = Mock()
+
+        replicas = [
+            WriteReplica(
+                api_url="https://internal.example.com",
+                auth=ServiceAuth(service_key="jwt-token-123", tenant_id="tenant-abc"),
+                project_name="internal-project",
+            ),
+        ]
+
+        run_tree = RunTree(
+            name="test_run",
+            inputs={"input": "test"},
+            client=client,
+            project_name="test-project",
+            replicas=replicas,
+        )
+
+        run_tree.post()
+
+        # Verify client.create_run was called with service auth parameters
+        assert client.create_run.call_count == 1
+        call_args = client.create_run.call_args
+        assert call_args[1]["api_key"] is None
+        assert call_args[1]["api_url"] == "https://internal.example.com"
+        assert call_args[1]["service_key"] == "jwt-token-123"
+        assert call_args[1]["tenant_id"] == "tenant-abc"
+
     def test_run_tree_patch_with_replicas(self):
         """Test RunTree patch method with replicas."""
         client = Mock()
@@ -652,7 +686,7 @@ class TestRunTreeReplicas:
         replicas = [
             WriteReplica(
                 api_url="https://replica.example.com",
-                api_key="replica-key",
+                auth=ApiKeyAuth(api_key="replica-key"),
                 project_name="replica-project",
                 updates={"extra_field": "extra_value"},
             )
@@ -701,7 +735,7 @@ class TestBaggageReplicaParsing:
         assert baggage.replicas[0]["project_name"] == "replica-project-1"
         assert baggage.replicas[0]["updates"] == {"environment": "staging"}
         assert baggage.replicas[0].get("api_url") is None
-        assert baggage.replicas[0].get("api_key") is None
+        assert baggage.replicas[0].get("auth") is None
 
         assert baggage.replicas[1]["project_name"] == "replica-project-2"
         assert baggage.replicas[1]["updates"] is None
@@ -713,17 +747,17 @@ class TestBaggageReplicaParsing:
 
         from langsmith.run_trees import _Baggage
 
-        #  WriteReplica format
+        #  WriteReplica format with auth (auth should be ignored for safety)
         new_replicas = [
             {
                 "api_url": "https://replica1.example.com",
-                "api_key": "replica1-key",
+                "auth": {"api_key": "replica1-key"},
                 "project_name": "replica1-project",
                 "updates": {"environment": "production"},
             },
             {
                 "api_url": "https://replica2.example.com",
-                "api_key": "replica2-key",
+                "auth": {"api_key": "replica2-key"},
                 "project_name": "replica2-project",
             },
         ]
@@ -734,10 +768,10 @@ class TestBaggageReplicaParsing:
         baggage = _Baggage.from_header(baggage_value)
 
         assert len(baggage.replicas) == 2
-        assert "api_url" not in baggage.replicas[0]
-        assert "api_key" not in baggage.replicas[0]
         assert baggage.replicas[0]["project_name"] == "replica1-project"
         assert baggage.replicas[0]["updates"] == {"environment": "production"}
+        assert baggage.replicas[0].get("api_url") is None
+        assert baggage.replicas[0].get("auth") is None
 
         assert "api_url" not in baggage.replicas[1]
         assert "api_key" not in baggage.replicas[1]
@@ -755,9 +789,9 @@ class TestBaggageReplicaParsing:
             ("tuple-project", {"tuple": "true"}),  # tuple format
             {
                 "api_url": "https://new.example.com",
-                "api_key": "new-key",
+                "auth": {"api_key": "new-key"},
                 "project_name": "new-project",
-            },  # New format
+            },  # New format with auth
         ]
 
         baggage_value = (
@@ -774,6 +808,167 @@ class TestBaggageReplicaParsing:
         assert "api_url" not in baggage.replicas[1]
         assert "api_key" not in baggage.replicas[1]
         assert baggage.replicas[1]["project_name"] == "new-project"
+        assert baggage.replicas[1].get("api_url") is None
+        assert baggage.replicas[1].get("auth") is None
+
+    def test_baggage_parsing_drops_replica_without_project_name(self):
+        """Replicas without project_name should be ignored from baggage."""
+        import json
+        import urllib.parse
+
+        from langsmith.run_trees import _Baggage
+
+        new_replicas = [
+            {"api_url": "https://attacker.example.com"},
+            {"api_url": "https://replica.example.com", "project_name": "safe-project"},
+        ]
+        baggage_value = (
+            f"langsmith-replicas={urllib.parse.quote(json.dumps(new_replicas))}"
+        )
+        baggage = _Baggage.from_header(baggage_value)
+        assert len(baggage.replicas) == 1
+        assert baggage.replicas[0]["project_name"] == "safe-project"
+        assert baggage.replicas[0].get("api_url") is None
+        assert baggage.replicas[0].get("auth") is None
+
+    def test_run_tree_to_headers_does_not_propagate_replica_auth(self):
+        """Replica auth should not be propagated via W3C baggage headers."""
+        from langsmith.run_trees import _Baggage
+
+        client = Mock()
+        run_tree = RunTree(
+            name="test_run",
+            inputs={"input": "test"},
+            client=client,
+            project_name="test-project",
+            replicas=[
+                WriteReplica(
+                    api_url="https://replica.example.com",
+                    auth=ApiKeyAuth(api_key="replica-key"),
+                    project_name="replica-project",
+                    updates={"env": "test"},
+                ),
+                WriteReplica(
+                    api_url="https://internal.example.com",
+                    auth=ServiceAuth(
+                        service_key="jwt-token-123", tenant_id="tenant-abc"
+                    ),
+                    project_name="internal-project",
+                ),
+            ],
+        )
+
+        headers = run_tree.to_headers()
+        baggage = _Baggage.from_headers(headers)
+        assert len(baggage.replicas) == 2
+        # Auth should not appear in propagated replicas
+        assert "auth" not in baggage.replicas[0]
+        assert "api_key" not in baggage.replicas[0]
+        assert baggage.replicas[0].get("api_url") is None
+        assert baggage.replicas[0]["project_name"] == "replica-project"
+        assert baggage.replicas[0]["updates"] == {"env": "test"}
+        assert "auth" not in baggage.replicas[1]
+        assert "api_key" not in baggage.replicas[1]
+        assert baggage.replicas[1].get("api_url") is None
+
+    def test_from_headers_does_not_accept_replica_endpoint_or_auth(self):
+        """Inbound baggage must not be allowed to redirect writes or inject auth."""
+        import json
+        import urllib.parse
+        import uuid
+
+        from langsmith.run_trees import RunTree
+
+        replicas = [
+            {
+                "api_url": "https://attacker.example.com",
+                "auth": {"api_key": "attacker-key"},
+                "project_name": "safe-project",
+            }
+        ]
+        baggage = f"langsmith-replicas={urllib.parse.quote(json.dumps(replicas))}"
+        headers = {
+            "baggage": baggage,
+            "langsmith-trace": "20240101T000000000000Z" + str(uuid.uuid4()),
+        }
+
+        rt = RunTree.from_headers(headers)
+        assert rt.replicas
+        assert rt.replicas[0]["project_name"] == "safe-project"
+        assert rt.replicas[0].get("api_url") is None
+        assert rt.replicas[0].get("auth") is None
+
+
+class TestServiceAuthBatching:
+    def test_multipart_ingest_uses_service_auth_headers(self):
+        """ServiceAuth should flow through multipart batching headers."""
+        import uuid
+        from unittest.mock import patch
+
+        from langsmith._internal._operations import serialize_run_dict
+
+        client = Client(
+            api_url="https://default.example.com",
+            api_key="default-key",
+            # Avoid any network calls for /info during test setup.
+            info={"version": "0.0.0"},
+        )
+
+        run = {
+            "id": uuid.uuid4(),
+            "trace_id": uuid.uuid4(),
+            "dotted_order": "20240101T000000000000Z00000000000000000000000000000000",
+            "session_name": "proj",
+            "name": "test",
+            "run_type": "chain",
+            "inputs": {"x": 1},
+        }
+        op = serialize_run_dict("post", run)
+
+        with patch.object(Client, "request_with_retries") as mock_req:
+            client._multipart_ingest_ops(
+                [op],
+                api_url="https://ingest.example.com",
+                service_key="jwt-token-123",
+                tenant_id="tenant-abc",
+            )
+
+            assert mock_req.call_count == 1
+            _, url = mock_req.call_args.args[:2]
+            assert url == "https://ingest.example.com/runs/multipart"
+            headers = mock_req.call_args.kwargs["request_kwargs"]["headers"]
+            assert headers.get("X-Service-Key") == "jwt-token-123"
+            assert headers.get("X-Tenant-Id") == "tenant-abc"
+            # Should not use API key auth when service auth is provided
+            assert "x-api-key" not in {k.lower(): v for k, v in headers.items()}
+
+    def test_batch_ingest_uses_service_auth_headers(self):
+        """ServiceAuth should flow through /runs/batch headers."""
+        from unittest.mock import patch
+
+        client = Client(
+            api_url="https://default.example.com",
+            api_key="default-key",
+            info={"version": "0.0.0"},
+        )
+
+        body = b'{"post": [], "patch": []}'
+        with patch.object(Client, "request_with_retries") as mock_req:
+            client._post_batch_ingest_runs(
+                body,
+                _context="test",
+                api_url="https://ingest.example.com",
+                service_key="jwt-token-123",
+                tenant_id="tenant-abc",
+            )
+
+            assert mock_req.call_count == 1
+            _, url = mock_req.call_args.args[:2]
+            assert url == "https://ingest.example.com/runs/batch"
+            headers = mock_req.call_args.kwargs["request_kwargs"]["headers"]
+            assert headers.get("X-Service-Key") == "jwt-token-123"
+            assert headers.get("X-Tenant-Id") == "tenant-abc"
+            assert "x-api-key" not in {k.lower(): v for k, v in headers.items()}
 
 
 class TestTracingContextReplicas:
@@ -782,12 +977,12 @@ class TestTracingContextReplicas:
     def test_tracing_context_with_new_replica_format(self):
         """Test that tracing_context accepts the WriteReplica format."""
         from langsmith.run_helpers import tracing_context
-        from langsmith.run_trees import WriteReplica
+        from langsmith.run_trees import ApiKeyAuth, WriteReplica
 
         replicas = [
             WriteReplica(
                 api_url="https://replica.example.com",
-                api_key="replica-key",
+                auth=ApiKeyAuth(api_key="replica-key"),
                 project_name="replica-project",
                 updates={"environment": "test"},
             )
@@ -814,14 +1009,14 @@ class TestTracingContextReplicas:
     def test_tracing_context_with_mixed_replica_types(self):
         """Test that tracing_context accepts different types of replicas."""
         from langsmith.run_helpers import tracing_context
-        from langsmith.run_trees import WriteReplica
+        from langsmith.run_trees import ApiKeyAuth, WriteReplica
 
         replicas = [
             # project replica
             WriteReplica(project_name="project-replica", updates={"env": "test"}),
             WriteReplica(
                 api_url="https://new.example.com",
-                api_key="new-key",
+                auth=ApiKeyAuth(api_key="new-key"),
                 project_name="new-project",
             ),  # API replica
         ]
