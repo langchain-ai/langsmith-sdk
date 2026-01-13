@@ -138,33 +138,51 @@ export class AsyncCaller {
               }
             }),
           {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            async onFailedAttempt({ error }: { error: any }) {
+            async onFailedAttempt({ error }: { error: unknown }) {
+              // Rethrow the value if it's not an object
+              if (typeof error !== "object" || error == null) throw error;
+
               const errorMessage =
-                typeof error?.message === "string" ? error.message : "";
+                "message" in error && typeof error.message === "string"
+                  ? error.message
+                  : undefined;
+
               if (
-                errorMessage.startsWith("Cancel") ||
-                errorMessage.startsWith("TimeoutError") ||
-                error?.name === "TimeoutError" ||
-                errorMessage.startsWith("AbortError")
+                errorMessage?.startsWith("Cancel") ||
+                errorMessage?.startsWith("TimeoutError") ||
+                errorMessage?.startsWith("AbortError")
               ) {
                 throw error;
               }
-              if (error?.code === "ECONNABORTED") {
+
+              if ("name" in error && error.name === "TimeoutError") {
                 throw error;
               }
-              const response: Response | undefined = error?.response;
+
+              if ("code" in error && error.code === "ECONNABORTED") {
+                throw error;
+              }
+
+              const response =
+                "response" in error
+                  ? (error.response as Response | undefined)
+                  : undefined;
+
               if (onFailedResponseHook) {
                 const handled = await onFailedResponseHook(response);
-                if (handled) {
-                  return;
-                }
+                if (handled) return;
               }
-              const status = response?.status ?? error?.status;
-              if (status) {
-                if (!STATUS_RETRYABLE.includes(+status)) {
-                  throw error;
-                }
+
+              const status =
+                response?.status ??
+                ("status" in error ? error.status : undefined);
+
+              if (
+                status != null &&
+                (typeof status === "number" || typeof status === "string") &&
+                !STATUS_RETRYABLE.includes(+status)
+              ) {
+                throw error;
               }
             },
             retries: this.maxRetries,
