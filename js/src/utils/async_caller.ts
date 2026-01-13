@@ -140,11 +140,13 @@ export class AsyncCaller {
           {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             async onFailedAttempt({ error }: { error: any }) {
+              const errorMessage =
+                typeof error?.message === "string" ? error.message : "";
               if (
-                error.message.startsWith("Cancel") ||
-                error.message.startsWith("TimeoutError") ||
-                error.name === "TimeoutError" ||
-                error.message.startsWith("AbortError")
+                errorMessage.startsWith("Cancel") ||
+                errorMessage.startsWith("TimeoutError") ||
+                error?.name === "TimeoutError" ||
+                errorMessage.startsWith("AbortError")
               ) {
                 throw error;
               }
