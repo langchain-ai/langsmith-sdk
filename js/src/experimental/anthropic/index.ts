@@ -1,4 +1,8 @@
-import { traceable, getCurrentRunTree } from "../../traceable.js";
+import {
+  traceable,
+  getCurrentRunTree,
+  isTraceableFunction,
+} from "../../traceable.js";
 import type { RunTree } from "../../run_trees.js";
 import type Anthropic from "@anthropic-ai/sdk";
 import { convertAnthropicUsageToInputTokenDetails } from "../../utils/usage.js";
@@ -111,23 +115,12 @@ async function postToolUseHook(
     if (clientRun) {
       context.clientManagedRuns.delete(toolUseId);
 
-      // If this is a subagent session (Task tool), DON'T delete from _subagentSessions yet
-      // The subagent's assistant messages will arrive after the tool result
-      // We'll clean it up when we detect the next main conversation turn
-      const isSubagentSession = context.subagentSessions.has(toolUseId);
-
       const { outputs, isError } = formatOutputs(toolResponse);
       await clientRun.end({
         outputs,
         error: isError ? outputs.output?.toString() : undefined,
       });
       await clientRun.patchRun();
-
-      // If this is NOT a subagent session (it's a tool within a subagent), remove it
-      if (!isSubagentSession) {
-        // This was a tool within a subagent, safe to remove
-      }
-
       return {};
     }
 
@@ -1056,6 +1049,12 @@ export function wrapClaudeAgentSDK<T extends object>(
 
   const inputSdk = sdk as TypedSdk;
   const wrappedSdk = { ...sdk } as TypedSdk;
+
+  if ("query" in inputSdk && isTraceableFunction(inputSdk.query)) {
+    throw new Error(
+      "This instance of Claude Agent SDK has been already wrapped by `wrapClaudeAgentSDK`."
+    );
+  }
 
   // Wrap the query method if it exists
   if ("query" in inputSdk && typeof inputSdk.query === "function") {
