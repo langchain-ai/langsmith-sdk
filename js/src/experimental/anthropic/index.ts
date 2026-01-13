@@ -545,7 +545,7 @@ function wrapClaudeAgentQuery<
             }
 
             // We need to push the assistant message as well
-            if (message.message.content) {
+            if ("content" in message.message && message.message.content) {
               finalResults.push({
                 content: flattenContentBlocks(message.message.content),
                 role: "assistant",
@@ -570,7 +570,7 @@ function wrapClaudeAgentQuery<
 
         // Handle UserMessage - add to conversation history (matches Python)
         if (message.type === "user") {
-          if (message.message.content) {
+          if ("content" in message.message && message.message.content) {
             finalResults.push({
               content: flattenContentBlocks(message.message.content),
               role: "user",

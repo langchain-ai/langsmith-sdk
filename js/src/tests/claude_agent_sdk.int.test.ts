@@ -233,7 +233,7 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
   test("handles streaming messages correctly", async () => {
     const messages: any[] = [];
     let lastMessageId: string | undefined;
-    let messageIdChanges = 0;
+    let _messageIdChanges = 0;
 
     for await (const message of wrappedSDK.query({
       prompt: "Write a haiku about programming.",
@@ -246,7 +246,7 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
 
       if (message.type === "assistant" && message.message?.id) {
         if (lastMessageId && lastMessageId !== message.message.id) {
-          messageIdChanges++;
+          _messageIdChanges += 1;
         }
         lastMessageId = message.message.id;
       }

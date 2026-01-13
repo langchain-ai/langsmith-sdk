@@ -394,8 +394,10 @@ describe("wrapClaudeAgentSDK", () => {
         // User message in the middle of conversation
         yield {
           type: "user",
-          content: [{ type: "text", text: "Follow up question" }],
-        } as any;
+          message: {
+            content: [{ type: "text", text: "Follow up question" }],
+          },
+        };
 
         yield {
           type: "assistant",
@@ -760,5 +762,13 @@ describe("wrapClaudeAgentSDK", () => {
     // Tools within subagent
     expect(messages[1].message.content[0].name).toBe("Glob");
     expect(messages[2].message.content[0].name).toBe("Read");
+  });
+
+  test("throws error if wrapped again", () => {
+    const mockSDK = createMockSDK();
+    const wrapped = wrapClaudeAgentSDK(mockSDK);
+    expect(() => wrapClaudeAgentSDK(wrapped)).toThrow(
+      "This instance of Claude Agent SDK has been already wrapped by `wrapClaudeAgentSDK`."
+    );
   });
 });
