@@ -2,6 +2,7 @@ import {
   Dataset,
   Example,
   ExampleUpdateWithAttachments,
+  Feedback,
   Run,
   TracerSession,
 } from "../schemas.js";
@@ -337,13 +338,20 @@ test("Test create feedback with source run", async () => {
       score: 0.5,
       feedbackSourceType: "app",
     });
-    // Feedback creation is queued, give some processing time
-    await new Promise((resolve) => setTimeout(resolve, 5000));
-    const feedbacks = await toArray(
-      langchainClient.listFeedback({
-        runIds: [runId, runId2],
-      })
-    );
+
+    // Poll for feedbacks to be available (up to 10 seconds)
+    let feedbacks: Feedback[] = [];
+    const deadline = Date.now() + 10_000;
+    while (Date.now() < deadline) {
+      feedbacks = await toArray(
+        langchainClient.listFeedback({
+          runIds: [runId, runId2],
+        })
+      );
+      if (feedbacks.length >= 2) break;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+
     expect(feedbacks).toHaveLength(2);
     expect(feedbacks.map((f) => f.run_id)).toContain(runId);
     expect(feedbacks.map((f) => f.run_id)).toContain(runId2);
