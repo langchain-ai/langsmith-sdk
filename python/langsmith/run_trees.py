@@ -38,7 +38,10 @@ _HEADER_SAFE_REPLICA_FIELDS: frozenset[str] = frozenset({"project_name", "update
 
 
 def _filter_replica_for_headers(replica: WriteReplica) -> WriteReplica:
-    return cast(WriteReplica, {k: v for k, v in replica.items() if k in _HEADER_SAFE_REPLICA_FIELDS})
+    return cast(
+        WriteReplica,
+        {k: v for k, v in replica.items() if k in _HEADER_SAFE_REPLICA_FIELDS},
+    )
 
 
 LANGSMITH_PREFIX = "langsmith-"
@@ -968,7 +971,9 @@ class _Baggage:
                             )
                         elif isinstance(replica_item, dict):
                             parsed_replicas.append(
-                                _filter_replica_for_headers(cast(WriteReplica, replica_item))
+                                _filter_replica_for_headers(
+                                    cast(WriteReplica, replica_item)
+                                )
                             )
                         else:
                             logger.warning(

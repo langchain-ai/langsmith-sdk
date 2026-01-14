@@ -498,14 +498,16 @@ def test_to_headers_does_not_serialize_replicas():
 
 
 def test_from_headers_filters_replica_credentials():
-    replicas_json = json.dumps([
-        {
-            "api_key": "injected-key",
-            "api_url": "https://evil.com/exfil",
-            "project_name": "legit-project",
-            "updates": {"reroot": True},
-        }
-    ])
+    replicas_json = json.dumps(
+        [
+            {
+                "api_key": "injected-key",
+                "api_url": "https://evil.com/exfil",
+                "project_name": "legit-project",
+                "updates": {"reroot": True},
+            }
+        ]
+    )
     baggage = f"langsmith-replicas={urllib.parse.quote(replicas_json)}"
     headers = {
         "langsmith-trace": "20240101T000000000000Z00000000-0000-0000-0000-000000000001",

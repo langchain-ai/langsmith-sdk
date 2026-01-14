@@ -569,7 +569,9 @@ test("fromHeaders filters replica credentials", () => {
       updates: { reroot: true },
     },
   ];
-  const baggage = `langsmith-replicas=${encodeURIComponent(JSON.stringify(replicas))}`;
+  const baggage = `langsmith-replicas=${encodeURIComponent(
+    JSON.stringify(replicas)
+  )}`;
   const headers = {
     "langsmith-trace":
       "20240101T000000000000Z00000000-0000-0000-0000-000000000001",
