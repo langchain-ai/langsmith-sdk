@@ -1,9 +1,6 @@
 /* eslint-disable import/no-extraneous-dependencies */
-import type {
-  LanguageModelV2DataContent,
-  LanguageModelV2Message,
-} from "@ai-sdk/provider";
-import type { ModelMessage, ToolCallPart } from "ai";
+import type { LanguageModelV2DataContent } from "@ai-sdk/provider";
+import type { ToolCallPart } from "ai";
 
 const guessMimetypeFromBase64 = (data: string) => {
   // Check magic bytes from base64 data
@@ -122,7 +119,7 @@ export const normalizeFileDataAsDataURL = (
 };
 
 export const convertMessageToTracedFormat = (
-  message: LanguageModelV2Message | ModelMessage,
+  message: Record<string, unknown>,
   responseMetadata?: Record<string, unknown>
 ) => {
   const formattedMessage: Record<string, unknown> = {
