@@ -1191,7 +1191,9 @@ test("Test pull prompt include model", async () => {
   } catch (error: any) {
     // Skip test if it fails due to missing/invalid API key during deserialization
     if (error?.message?.includes("Missing secret")) {
-      console.log("⚠️  Test skipped: OPENAI_API_KEY not valid for model loading");
+      console.log(
+        "⚠️  Test skipped: OPENAI_API_KEY not valid for model loading"
+      );
       return;
     }
     throw error;
