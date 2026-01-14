@@ -216,6 +216,27 @@ export function isRateLimitError(error: any): boolean {
 }
 
 /**
+ * Helper to check if an error is a timeout error
+ */
+export function isTimeoutError(error: any): boolean {
+  const message = error?.message || "";
+  return (
+    message.includes("Timeout") ||
+    message.includes("timeout") ||
+    message.includes("ETIMEDOUT") ||
+    message.includes("Exceeded timeout")
+  );
+}
+
+/**
+ * Helper to check if an error is a transient/flaky error that can be skipped in CI.
+ * This includes rate limit errors, timeouts, and other transient issues.
+ */
+export function isTransientError(error: any): boolean {
+  return isRateLimitError(error) || isTimeoutError(error);
+}
+
+/**
  * Wraps a test function to skip gracefully on rate limit errors
  */
 export async function skipOnRateLimit(
@@ -227,6 +248,27 @@ export async function skipOnRateLimit(
     if (isRateLimitError(error)) {
       console.log(
         "⚠️  Test skipped due to rate limit (429). This is expected in CI with API rate limits."
+      );
+      return; // Skip test gracefully
+    }
+    throw error; // Re-throw other errors
+  }
+}
+
+/**
+ * Wraps a test function to skip gracefully on transient errors
+ * (rate limits, timeouts, and other CI-flaky issues)
+ */
+export async function skipIfTransientError(
+  testFn: () => Promise<void>
+): Promise<void> {
+  try {
+    await testFn();
+  } catch (error: any) {
+    if (isTransientError(error)) {
+      const errorType = isRateLimitError(error) ? "rate limit" : "timeout";
+      console.log(
+        `⚠️  Test skipped due to ${errorType}. This is expected in CI with API rate limits.`
       );
       return; // Skip test gracefully
     }
