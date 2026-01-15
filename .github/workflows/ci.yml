@@ -25,8 +25,6 @@ permissions:
   contents: read
 
 env:
-  RUST_VERSION: "1.82"
-  RUST_WORKSPACE_PATH: "rust"
   NODE_VERSION: "22.4.1"
 
 jobs:
@@ -39,7 +37,6 @@ jobs:
     outputs:
       python: ${{ steps.filter.outputs.python }}
       js: ${{ steps.filter.outputs.js }}
-      rust: ${{ steps.filter.outputs.rust }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -51,11 +48,6 @@ jobs:
               - '.github/**'
             js:
               - 'js/**'
-              - '.github/**'
-            rust:
-              - 'rust/**'
-              - 'vendor/orjson/**'
-              - 'vendor/pyo3/**'
               - '.github/**'
 
   # ============================================================================
@@ -564,10 +556,6 @@ jobs:
       - js-exports-webpack
       - js-exports-esbuild
       - js-exports-metro
-      # Rust
-      - rust-lint
-      - rust-test
-      - rust-pyo3-test
       # Integration
       - integration-changes
       - python-integration
