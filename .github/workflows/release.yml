@@ -5,7 +5,7 @@ on:
     branches:
       - main
     paths:
-      - "python/pyproject.toml"
+      - "python/langsmith/__init__.py"
   workflow_dispatch:
     inputs:
       dangerous-non-main-release:
@@ -24,6 +24,26 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v4
+      - name: Check if version already released
+        id: version-check
+        run: |
+          cd python
+          VERSION=$(grep '__version__ =' langsmith/__init__.py | sed 's/__version__ = "\(.*\)"/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+          # Check if tag already exists
+          if git ls-remote --tags origin | grep -q "refs/tags/v$VERSION$"; then
+            echo "Tag v$VERSION already exists"
+            echo "already_released=true" >> $GITHUB_OUTPUT
+          else
+            echo "Tag v$VERSION does not exist, proceeding with release"
+            echo "already_released=false" >> $GITHUB_OUTPUT
+          fi
+      - name: Exit if already released
+        if: steps.version-check.outputs.already_released == 'true' && !inputs.dangerous-non-main-release
+        run: |
+          echo "Version ${{ steps.version-check.outputs.version }} already released, skipping"
+          exit 1
       # Python Build
       - name: Install uv
         uses: astral-sh/setup-uv@v6
@@ -32,10 +52,6 @@ jobs:
           enable-cache: true
       - name: Build project for distribution
         run: cd python && uv build
-      - name: Check Version
-        id: check-version
-        run: |
-          cd python && echo version=$(grep '__version__ =' langsmith/__init__.py | sed 's/__version__ = "\(.*\)"/\1/') >> $GITHUB_OUTPUT
       - name: Create Release
         uses: ncipollo/release-action@v1
         with:
@@ -45,7 +61,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           draft: false
           generateReleaseNotes: true
-          tag: v${{ steps.check-version.outputs.version }}
+          tag: v${{ steps.version-check.outputs.version }}
           commit: ${{ github.sha }}
       - name: Publish package distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
