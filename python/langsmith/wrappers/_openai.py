@@ -515,19 +515,6 @@ def wrap_openai(
         process_outputs=_process_chat_completion,
     )
 
-    # Wrap with_raw_response.create for chat completions
-    if hasattr(client.chat.completions, "with_raw_response"):
-        client.chat.completions.with_raw_response.create = _get_wrapper(  # type: ignore[method-assign]
-            client.chat.completions.with_raw_response.create,
-            chat_name,
-            _reduce_chat,
-            tracing_extra=tracing_extra,
-            invocation_params_fn=functools.partial(
-                _infer_invocation_params, "chat", ls_provider, False
-            ),
-            process_outputs=_process_chat_completion,
-        )
-
     client.completions.create = _get_wrapper(  # type: ignore[method-assign]
         client.completions.create,
         completions_name,
@@ -537,18 +524,6 @@ def wrap_openai(
             _infer_invocation_params, "llm", ls_provider, False
         ),
     )
-
-    # Wrap with_raw_response.create for completions
-    if hasattr(client.completions, "with_raw_response"):
-        client.completions.with_raw_response.create = _get_wrapper(  # type: ignore[method-assign]
-            client.completions.with_raw_response.create,
-            completions_name,
-            _reduce_completions,
-            tracing_extra=tracing_extra,
-            invocation_params_fn=functools.partial(
-                _infer_invocation_params, "llm", ls_provider, False
-            ),
-        )
 
     # Wrap beta.chat.completions.parse if it exists
     if (

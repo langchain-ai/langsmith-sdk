@@ -495,15 +495,6 @@ def wrap_anthropic(client: C, *, tracing_extra: Optional[TracingExtra] = None) -
         tracing_extra,
     )
 
-    # Wrap with_raw_response.create for messages
-    if hasattr(client.messages, "with_raw_response"):
-        client.messages.with_raw_response.create = _get_wrapper(  # type: ignore[method-assign]
-            client.messages.with_raw_response.create,
-            "ChatAnthropic",
-            _reduce_chat_chunks,
-            tracing_extra,
-        )
-
     client.messages.stream = _get_stream_wrapper(  # type: ignore[method-assign]
         client.messages.stream,
         "ChatAnthropic",
