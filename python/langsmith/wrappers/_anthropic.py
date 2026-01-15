@@ -182,6 +182,16 @@ def _reduce_completions(all_chunks: list[Completion]) -> dict:
 
 def _process_chat_completion(outputs: Any):
     try:
+        # Check if outputs is a LegacyAPIResponse wrapper (from with_raw_response).
+        # The Anthropic SDK's LegacyAPIResponse wraps the actual response object.
+        # Call .parse() to extract the Message for tracing.
+        # See: anthropics/anthropic-sdk-python _legacy_response.py#L102
+        if hasattr(outputs, "parse") and callable(outputs.parse):
+            try:
+                outputs = outputs.parse()
+            except Exception:
+                pass
+
         rdict = outputs.model_dump()
         anthropic_token_usage = rdict.pop("usage", None)
         rdict["usage_metadata"] = (
@@ -455,6 +465,16 @@ def wrap_anthropic(client: C, *, tracing_extra: Optional[TracingExtra] = None) -
         )
         print(completion.content)
 
+        # With raw response to access headers:
+        raw_response = client.messages.with_raw_response.create(
+            model="claude-3-5-sonnet-latest",
+            messages=messages,
+            max_tokens=1000,
+            system=system,
+        )
+        print(raw_response.headers)  # Access HTTP headers
+        message = raw_response.parse()  # Get parsed response
+
         # You can also use the streaming context manager:
         with client.messages.stream(
             model="claude-3-5-sonnet-latest",
@@ -474,6 +494,7 @@ def wrap_anthropic(client: C, *, tracing_extra: Optional[TracingExtra] = None) -
         _reduce_chat_chunks,
         tracing_extra,
     )
+
     client.messages.stream = _get_stream_wrapper(  # type: ignore[method-assign]
         client.messages.stream,
         "ChatAnthropic",
