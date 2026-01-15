@@ -34,6 +34,16 @@ class WriteReplica(TypedDict, total=False):
     updates: Optional[dict]
 
 
+_HEADER_SAFE_REPLICA_FIELDS: frozenset[str] = frozenset({"project_name", "updates"})
+
+
+def _filter_replica_for_headers(replica: WriteReplica) -> WriteReplica:
+    return cast(
+        WriteReplica,
+        {k: v for k, v in replica.items() if k in _HEADER_SAFE_REPLICA_FIELDS},
+    )
+
+
 LANGSMITH_PREFIX = "langsmith-"
 LANGSMITH_DOTTED_ORDER = sys.intern(f"{LANGSMITH_PREFIX}trace")
 LANGSMITH_DOTTED_ORDER_BYTES = LANGSMITH_DOTTED_ORDER.encode("utf-8")
@@ -960,8 +970,11 @@ class _Baggage:
                                 )
                             )
                         elif isinstance(replica_item, dict):
-                            # New WriteReplica format: preserve as dict
-                            parsed_replicas.append(cast(WriteReplica, replica_item))
+                            parsed_replicas.append(
+                                _filter_replica_for_headers(
+                                    cast(WriteReplica, replica_item)
+                                )
+                            )
                         else:
                             logger.warning(
                                 f"Unknown replica format in baggage: {replica_item}"
@@ -1000,11 +1013,6 @@ class _Baggage:
         if self.project_name:
             items.append(
                 f"{LANGSMITH_PREFIX}project={urllib.parse.quote(self.project_name)}"
-            )
-        if self.replicas:
-            serialized_replicas = _dumps_json(self.replicas)
-            items.append(
-                f"{LANGSMITH_PREFIX}replicas={urllib.parse.quote(serialized_replicas)}"
             )
         return ",".join(items)
 
