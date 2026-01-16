@@ -11,6 +11,7 @@ from langsmith import Client
 from langsmith import utils as ls_utils
 from langsmith.run_trees import (
     ApiKeyAuth,
+    AuthHeaders,
     RunTree,
     ServiceAuth,
     WriteReplica,
@@ -597,11 +598,15 @@ class TestReplicaAuthExtraction:
             project_name="replica-project",
         )
 
-        api_url, api_key, service_key, tenant_id = _extract_replica_auth(replica)
+        api_url, api_key, service_key, tenant_id, authorization, cookie = (
+            _extract_replica_auth(replica)
+        )
         assert api_url == "https://replica.example.com"
         assert api_key == "legacy-key"
         assert service_key is None
         assert tenant_id is None
+        assert authorization is None
+        assert cookie is None
 
     def test_extract_replica_auth_with_auth_api_key(self):
         replica = WriteReplica(
@@ -609,11 +614,15 @@ class TestReplicaAuthExtraction:
             auth=ApiKeyAuth(api_key="auth-key"),
         )
 
-        api_url, api_key, service_key, tenant_id = _extract_replica_auth(replica)
+        api_url, api_key, service_key, tenant_id, authorization, cookie = (
+            _extract_replica_auth(replica)
+        )
         assert api_url == "https://replica.example.com"
         assert api_key == "auth-key"
         assert service_key is None
         assert tenant_id is None
+        assert authorization is None
+        assert cookie is None
 
     def test_extract_replica_auth_with_service_auth(self):
         replica = WriteReplica(
@@ -621,11 +630,34 @@ class TestReplicaAuthExtraction:
             auth=ServiceAuth(service_key="svc-key", tenant_id="tenant-123"),
         )
 
-        api_url, api_key, service_key, tenant_id = _extract_replica_auth(replica)
+        api_url, api_key, service_key, tenant_id, authorization, cookie = (
+            _extract_replica_auth(replica)
+        )
         assert api_url == "https://replica.example.com"
         assert api_key is None
         assert service_key == "svc-key"
         assert tenant_id == "tenant-123"
+        assert authorization is None
+        assert cookie is None
+
+    def test_extract_replica_auth_with_authorization_and_cookie(self):
+        replica = WriteReplica(
+            api_url="https://replica.example.com",
+            auth=AuthHeaders(
+                authorization="Bearer token-123",
+                cookie="session=abc",
+            ),
+        )
+
+        api_url, api_key, service_key, tenant_id, authorization, cookie = (
+            _extract_replica_auth(replica)
+        )
+        assert api_url == "https://replica.example.com"
+        assert api_key is None
+        assert service_key is None
+        assert tenant_id is None
+        assert authorization == "Bearer token-123"
+        assert cookie == "session=abc"
 
 
 class TestRunTreeReplicas:
@@ -654,6 +686,37 @@ class TestRunTreeReplicas:
         assert call_args[1]["api_url"] is None
         assert call_args[1]["service_key"] is None
         assert call_args[1]["tenant_id"] is None
+        assert call_args[1]["authorization"] is None
+        assert call_args[1]["cookie"] is None
+
+    def test_run_tree_with_authorization_and_cookie(self):
+        client = Mock()
+
+        replicas = [
+            WriteReplica(
+                api_url="https://replica.example.com",
+                auth=AuthHeaders(
+                    authorization="Bearer token-123",
+                    cookie="session=abc",
+                ),
+                project_name="replica-project",
+            )
+        ]
+
+        run_tree = RunTree(
+            name="test_run",
+            inputs={"input": "test"},
+            client=client,
+            project_name="test-project",
+            replicas=replicas,
+        )
+
+        run_tree.post()
+
+        call_args = client.create_run.call_args
+        assert call_args[1]["authorization"] == "Bearer token-123"
+        assert call_args[1]["cookie"] == "session=abc"
+        assert call_args[1]["api_key"] is None
 
     def test_run_tree_with_new_replicas(self):
         """Test RunTree with WriteReplica format."""

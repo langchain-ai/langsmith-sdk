@@ -40,12 +40,22 @@ class ServiceAuth(TypedDict, total=False):
     tenant_id: NotRequired[str]
 
 
+class AuthHeaders(TypedDict, total=False):
+    """Custom authentication headers for write replicas."""
+
+    api_key: str
+    service_key: str
+    tenant_id: str
+    authorization: str
+    cookie: str
+
+
 class WriteReplica(TypedDict, total=False):
     """Configuration for a write replica endpoint."""
 
     api_url: Optional[str]
     api_key: NotRequired[str]
-    auth: ApiKeyAuth | ServiceAuth
+    auth: AuthHeaders
     project_name: Optional[str]
     updates: Optional[dict]
 
@@ -657,8 +667,8 @@ class RunTree(ls_schemas.RunBase):
                 project_name = replica.get("project_name") or self.session_name
                 updates = replica.get("updates")
                 run_dict = self._remap_for_project(project_name, updates)
-                api_url, api_key, service_key, tenant_id = _extract_replica_auth(
-                    replica
+                api_url, api_key, service_key, tenant_id, authorization, cookie = (
+                    _extract_replica_auth(replica)
                 )
                 self.client.create_run(
                     **run_dict,
@@ -666,6 +676,8 @@ class RunTree(ls_schemas.RunBase):
                     api_url=api_url,
                     service_key=service_key,
                     tenant_id=tenant_id,
+                    authorization=authorization,
+                    cookie=cookie,
                 )
         else:
             kwargs = self._get_dicts_safe()
@@ -718,8 +730,8 @@ class RunTree(ls_schemas.RunBase):
                 project_name = replica.get("project_name") or self.session_name
                 updates = replica.get("updates")
                 run_dict = self._remap_for_project(project_name, updates)
-                api_url, api_key, service_key, tenant_id = _extract_replica_auth(
-                    replica
+                api_url, api_key, service_key, tenant_id, authorization, cookie = (
+                    _extract_replica_auth(replica)
                 )
                 self.client.update_run(
                     name=run_dict["name"],
@@ -743,6 +755,8 @@ class RunTree(ls_schemas.RunBase):
                     api_url=api_url,
                     service_key=service_key,
                     tenant_id=tenant_id,
+                    authorization=authorization,
+                    cookie=cookie,
                 )
         else:
             self.client.update_run(
@@ -1085,7 +1099,7 @@ def _parse_write_replicas_from_env_var(env_var: Optional[str]) -> list[WriteRepl
                 replicas.append(
                     WriteReplica(
                         api_url=api_url.rstrip("/"),
-                        auth=ApiKeyAuth(api_key=api_key),
+                        auth=AuthHeaders(api_key=api_key),
                         project_name=None,
                         updates=None,
                     )
@@ -1102,7 +1116,7 @@ def _parse_write_replicas_from_env_var(env_var: Optional[str]) -> list[WriteRepl
                     replicas.append(
                         WriteReplica(
                             api_url=url,
-                            auth=ApiKeyAuth(api_key=key),
+                            auth=AuthHeaders(api_key=key),
                             project_name=None,
                             updates=None,
                         )
@@ -1189,20 +1203,17 @@ def _create_current_dotted_order(
 
 def _extract_replica_auth(
     replica: WriteReplica,
-) -> tuple[str | None, str | None, str | None, str | None]:
-    # api_url, api_key, service_key, tenant_id
+) -> tuple[str | None, str | None, str | None, str | None, str | None, str | None]:
+    # api_url, api_key, service_key, tenant_id, authorization, cookie
     api_url = replica.get("api_url")
-    if "api_key" in replica:
-        return api_url, replica["api_key"], None, None
     if "auth" in replica:
-        auth = replica["auth"]
-        if "api_key" in auth:
-            return api_url, cast(ApiKeyAuth, auth)["api_key"], None, None
-        if "service_key" in auth:
-            return (
-                api_url,
-                None,
-                auth["service_key"],
-                auth.get("tenant_id"),
-            )
-    return api_url, None, None, None
+        auth = cast(AuthHeaders, replica["auth"])
+        api_key = auth.get("api_key")
+        service_key = auth.get("service_key")
+        tenant_id = auth.get("tenant_id")
+        authorization = auth.get("authorization")
+        cookie = auth.get("cookie")
+        return api_url, api_key, service_key, tenant_id, authorization, cookie
+    if "api_key" in replica:
+        return api_url, replica["api_key"], None, None, None, None
+    return api_url, None, None, None, None, None

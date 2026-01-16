@@ -1103,17 +1103,6 @@ class Client:
             headers["X-Tenant-Id"] = self._workspace_id
         return headers
 
-    @staticmethod
-    def _apply_optional_api_key(
-        headers: dict[str, str], api_key: Optional[str]
-    ) -> dict[str, str]:
-        if api_key:
-            headers[X_API_KEY] = api_key
-        else:
-            headers.pop(X_API_KEY, None)
-            headers.pop(X_API_KEY.upper(), None)
-        return headers
-
     def _set_header_affecting_attr(self, attr_name: str, value: Any) -> None:
         """Set attributes that affect headers and recalculate them."""
         object.__setattr__(self, attr_name, value)
@@ -1800,6 +1789,10 @@ class Client:
             revision_id (Optional[Union[UUID, str]]): The revision ID of the run.
             api_key (Optional[str]): The API key to use for this specific run.
             api_url (Optional[str]): The API URL to use for this specific run.
+            service_key (Optional[str]): The service JWT key for service-to-service auth.
+            tenant_id (Optional[str]): The tenant ID for multi-tenant requests.
+            authorization (Optional[str]): The Authorization header value.
+            cookie (Optional[str]): The Cookie header value.
             **kwargs (Any): Additional keyword arguments.
 
         Returns:
@@ -1832,8 +1825,14 @@ class Client:
             ```
         """
         # This is an alternative to API key auth. API key auth takes precedence.
-        service_key = kwargs.get("service_key")
-        tenant_id = kwargs.get("tenant_id")
+        # service_key: Optional[str] = None,
+        # tenant_id: Optional[str] = None,
+        # authorization: Optional[str] = None,
+        # cookie: Optional[str] = None,
+        service_key: str | None = kwargs.pop("service_key", None)
+        tenant_id: str | None = kwargs.pop("tenant_id", None)
+        authorization: str | None = kwargs.pop("authorization", None)
+        cookie: str | None = kwargs.pop("cookie", None)
         project_name = project_name or kwargs.pop(
             "session_name",
             # if the project is not provided, use the environment's project
@@ -1875,6 +1874,8 @@ class Client:
                             "api_key": api_key,
                             "service_key": service_key,
                             "tenant_id": tenant_id,
+                            "authorization": authorization,
+                            "cookie": cookie,
                         },
                     )
                 )
@@ -1889,6 +1890,8 @@ class Client:
                 api_url=api_url,
                 service_key=service_key,
                 tenant_id=tenant_id,
+                authorization=authorization,
+                cookie=cookie,
             )
 
     def _create_run(
@@ -1899,6 +1902,8 @@ class Client:
         api_url: Optional[str] = None,
         service_key: Optional[str] = None,
         tenant_id: Optional[str] = None,
+        authorization: Optional[str] = None,
+        cookie: Optional[str] = None,
     ) -> None:
         if (
             # batch ingest requires trace_id and dotted_order to be set
@@ -1913,6 +1918,8 @@ class Client:
                 and api_url is None
                 and service_key is None
                 and tenant_id is None
+                and authorization is None
+                and cookie is None
             ):
                 if self._data_available_event is None:
                     raise ValueError(
@@ -1958,6 +1965,8 @@ class Client:
                             api_url=api_url,
                             service_key=service_key,
                             tenant_id=tenant_id,
+                            authorization=authorization,
+                            cookie=cookie,
                             otel_context=self._set_span_in_context(
                                 self._otel_trace.get_current_span()
                             ),
@@ -1972,6 +1981,8 @@ class Client:
                             api_url=api_url,
                             service_key=service_key,
                             tenant_id=tenant_id,
+                            authorization=authorization,
+                            cookie=cookie,
                         )
                     )
             else:
@@ -1983,6 +1994,8 @@ class Client:
                     api_url=api_url,
                     service_key=service_key,
                     tenant_id=tenant_id,
+                    authorization=authorization,
+                    cookie=cookie,
                 )
         else:
             self._create_run_non_batch(
@@ -1991,6 +2004,8 @@ class Client:
                 api_url=api_url,
                 service_key=service_key,
                 tenant_id=tenant_id,
+                authorization=authorization,
+                cookie=cookie,
             )
 
     def _create_run_non_batch(
@@ -2001,23 +2016,23 @@ class Client:
         api_url: Optional[str] = None,
         service_key: Optional[str] = None,
         tenant_id: Optional[str] = None,
+        authorization: Optional[str] = None,
+        cookie: Optional[str] = None,
     ):
         errors = []
         # If specific auth/url provided, use those; otherwise use all configured endpoints
-        if api_key is not None or api_url is not None or service_key is not None:
+        use_override = any([api_url, api_key, service_key, authorization, cookie])
+        if use_override:
             target_api_url = api_url or self.api_url
-            headers = {**self._headers}
-            if service_key is not None:
-                # Service auth should not include user API key headers.
-                headers.pop(X_API_KEY, None)
-                headers.pop(X_API_KEY.upper(), None)
-                headers["X-Service-Key"] = service_key
-                if tenant_id is not None:
-                    headers["X-Tenant-Id"] = tenant_id
-            elif api_key is not None:
-                headers[X_API_KEY] = api_key
-            elif self.api_key is not None:
-                headers[X_API_KEY] = self.api_key
+            headers = _apply_auth_overrides(
+                self._headers,
+                api_key=api_key,
+                service_key=service_key,
+                tenant_id=tenant_id,
+                authorization=authorization,
+                cookie=cookie,
+                fallback_api_key=self.api_key,
+            )
             try:
                 self.request_with_retries(
                     "POST",
@@ -2034,14 +2049,21 @@ class Client:
             # Use all configured write API URLs
             for write_api_url, write_api_key in self._write_api_urls.items():
                 try:
+                    headers = _apply_auth_overrides(
+                        self._headers,
+                        api_key=write_api_key,
+                        service_key=None,
+                        tenant_id=tenant_id,
+                        authorization=None,
+                        cookie=None,
+                        fallback_api_key=None,
+                    )
                     self.request_with_retries(
                         "POST",
                         f"{write_api_url}/runs",
                         request_kwargs={
                             "data": _dumps_json(run_create),
-                            "headers": self._apply_optional_api_key(
-                                {**self._headers}, write_api_key
-                            ),
+                            "headers": headers,
                         },
                         to_ignore=(ls_utils.LangSmithConflictError,),
                     )
@@ -2139,6 +2161,8 @@ class Client:
         api_key: Optional[str] = None,
         service_key: Optional[str] = None,
         tenant_id: Optional[str] = None,
+        authorization: Optional[str] = None,
+        cookie: Optional[str] = None,
     ) -> None:
         ids_and_partial_body: dict[
             Literal["post", "patch"], list[tuple[str, bytes]]
@@ -2203,6 +2227,8 @@ class Client:
                         api_key=api_key,
                         service_key=service_key,
                         tenant_id=tenant_id,
+                        authorization=authorization,
+                        cookie=cookie,
                     )
                     body_size = 0
                     body_chunks.clear()
@@ -2220,6 +2246,8 @@ class Client:
                 api_key=api_key,
                 service_key=service_key,
                 tenant_id=tenant_id,
+                authorization=authorization,
+                cookie=cookie,
             )
 
     def batch_ingest_runs(
@@ -2382,6 +2410,8 @@ class Client:
         api_key: Optional[str] = None,
         service_key: Optional[str] = None,
         tenant_id: Optional[str] = None,
+        authorization: Optional[str] = None,
+        cookie: Optional[str] = None,
     ):
         headers_base = {**self._headers}
         if tenant_id is not None:
@@ -2389,35 +2419,36 @@ class Client:
 
         # Use provided endpoint/auth override or fall back to all configured endpoints
         endpoints: list[tuple[str, dict[str, str]]]
-        if service_key is not None:
+        use_override = any([api_url, api_key, service_key, authorization, cookie])
+        if use_override:
             target_api_url = api_url or self.api_url
             endpoints = [
                 (
                     target_api_url,
-                    {
-                        **{
-                            k: v
-                            for k, v in headers_base.items()
-                            if k.lower() != X_API_KEY
-                        },
-                        "X-Service-Key": service_key,
-                    },
-                )
-            ]
-        elif api_url is not None or api_key is not None:
-            target_api_url = api_url or self.api_url
-            target_api_key = api_key or self.api_key
-            endpoints = [
-                (
-                    target_api_url,
-                    self._apply_optional_api_key({**headers_base}, target_api_key),
+                    _apply_auth_overrides(
+                        {**headers_base},
+                        api_key=api_key,
+                        service_key=service_key,
+                        tenant_id=tenant_id,
+                        authorization=authorization,
+                        cookie=cookie,
+                        fallback_api_key=self.api_key,
+                    ),
                 )
             ]
         else:
             endpoints = [
                 (
                     target_api_url,
-                    self._apply_optional_api_key({**headers_base}, target_api_key),
+                    _apply_auth_overrides(
+                        {**headers_base},
+                        api_key=target_api_key,
+                        service_key=None,
+                        tenant_id=tenant_id,
+                        authorization=None,
+                        cookie=None,
+                        fallback_api_key=None,
+                    ),
                 )
                 for target_api_url, target_api_key in self._write_api_urls.items()
             ]
@@ -2455,6 +2486,8 @@ class Client:
         api_key: Optional[str] = None,
         service_key: Optional[str] = None,
         tenant_id: Optional[str] = None,
+        authorization: Optional[str] = None,
+        cookie: Optional[str] = None,
     ) -> None:
         parts: list[MultipartPartsAndContext] = []
         opened_files_dict: dict[str, io.BufferedReader] = {}
@@ -2481,6 +2514,8 @@ class Client:
                     api_key=api_key,
                     service_key=service_key,
                     tenant_id=tenant_id,
+                    authorization=authorization,
+                    cookie=cookie,
                 )
             except ls_utils.LangSmithNotFoundError:
                 # Fallback to batch ingest if multipart endpoint returns 404
@@ -2495,6 +2530,8 @@ class Client:
                         api_key=api_key,
                         service_key=service_key,
                         tenant_id=tenant_id,
+                        authorization=authorization,
+                        cookie=cookie,
                     )
             finally:
                 _close_files(list(opened_files_dict.values()))
@@ -2680,6 +2717,8 @@ class Client:
         api_key: Optional[str] = None,
         service_key: Optional[str] = None,
         tenant_id: Optional[str] = None,
+        authorization: Optional[str] = None,
+        cookie: Optional[str] = None,
     ):
         parts = acc.parts
         _context = acc.context
@@ -2690,35 +2729,36 @@ class Client:
 
         # Use provided endpoint/auth override or fall back to all configured endpoints
         endpoints: list[tuple[str, dict[str, str]]]
-        if service_key is not None:
+        use_override = any([api_url, api_key, service_key, authorization, cookie])
+        if use_override:
             target_api_url = api_url or self.api_url
             endpoints = [
                 (
                     target_api_url,
-                    {
-                        **{
-                            k: v
-                            for k, v in headers_base.items()
-                            if k.lower() != X_API_KEY
-                        },
-                        "X-Service-Key": service_key,
-                    },
-                )
-            ]
-        elif api_url is not None or api_key is not None:
-            target_api_url = api_url or self.api_url
-            target_api_key = api_key or self.api_key
-            endpoints = [
-                (
-                    target_api_url,
-                    self._apply_optional_api_key({**headers_base}, target_api_key),
+                    _apply_auth_overrides(
+                        {**headers_base},
+                        api_key=api_key,
+                        service_key=service_key,
+                        tenant_id=tenant_id,
+                        authorization=authorization,
+                        cookie=cookie,
+                        fallback_api_key=self.api_key,
+                    ),
                 )
             ]
         else:
             endpoints = [
                 (
                     target_api_url,
-                    self._apply_optional_api_key({**headers_base}, target_api_key),
+                    _apply_auth_overrides(
+                        {**headers_base},
+                        api_key=target_api_key,
+                        service_key=None,
+                        tenant_id=tenant_id,
+                        authorization=None,
+                        cookie=None,
+                        fallback_api_key=None,
+                    ),
                 )
                 for target_api_url, target_api_key in self._write_api_urls.items()
             ]
@@ -2866,6 +2906,8 @@ class Client:
         api_url: Optional[str] = None,
         service_key: Optional[str] = None,
         tenant_id: Optional[str] = None,
+        authorization: Optional[str] = None,
+        cookie: Optional[str] = None,
         **kwargs: Any,
     ) -> None:
         """Update a run in the LangSmith API.
@@ -2891,6 +2933,8 @@ class Client:
             api_url (Optional[str]): The API URL to use for this specific run.
             service_key (Optional[str]): The service JWT key for service-to-service auth.
             tenant_id (Optional[str]): The tenant ID for multi-tenant requests.
+            authorization (Optional[str]): The Authorization header value.
+            cookie (Optional[str]): The Cookie header value.
             **kwargs (Any): Kwargs are ignored.
 
         Returns:
@@ -2927,6 +2971,8 @@ class Client:
             client.update_run(run["id"], **run)
             ```
         """
+        authorization = kwargs.pop("authorization", authorization)
+        cookie = kwargs.pop("cookie", cookie)
         data: dict[str, Any] = {
             "id": _as_uuid(run_id, "run_id"),
             "name": name,
@@ -2993,6 +3039,8 @@ class Client:
                             "api_key": api_key,
                             "service_key": service_key,
                             "tenant_id": tenant_id,
+                            "authorization": authorization,
+                            "cookie": cookie,
                         },
                     )
                 )
@@ -3007,6 +3055,8 @@ class Client:
                 api_url=api_url,
                 service_key=service_key,
                 tenant_id=tenant_id,
+                authorization=authorization,
+                cookie=cookie,
             )
 
     def _update_run(
@@ -3017,6 +3067,8 @@ class Client:
         api_url: Optional[str] = None,
         service_key: Optional[str] = None,
         tenant_id: Optional[str] = None,
+        authorization: Optional[str] = None,
+        cookie: Optional[str] = None,
     ):
         use_multipart = (
             (self.tracing_queue is not None or self.compressed_traces is not None)
@@ -3034,6 +3086,8 @@ class Client:
                 and api_url is None
                 and service_key is None
                 and tenant_id is None
+                and authorization is None
+                and cookie is None
             ):
                 (
                     multipart_form,
@@ -3076,6 +3130,8 @@ class Client:
                             api_url=api_url,
                             service_key=service_key,
                             tenant_id=tenant_id,
+                            authorization=authorization,
+                            cookie=cookie,
                             otel_context=self._set_span_in_context(
                                 self._otel_trace.get_current_span()
                             ),
@@ -3090,6 +3146,8 @@ class Client:
                             api_url=api_url,
                             service_key=service_key,
                             tenant_id=tenant_id,
+                            authorization=authorization,
+                            cookie=cookie,
                         )
                     )
         else:
@@ -3099,6 +3157,8 @@ class Client:
                 api_url=api_url,
                 service_key=service_key,
                 tenant_id=tenant_id,
+                authorization=authorization,
+                cookie=cookie,
             )
 
     def _update_run_non_batch(
@@ -3109,22 +3169,22 @@ class Client:
         api_url: Optional[str] = None,
         service_key: Optional[str] = None,
         tenant_id: Optional[str] = None,
+        authorization: Optional[str] = None,
+        cookie: Optional[str] = None,
     ) -> None:
         # If specific auth/url provided, use those; otherwise use all configured endpoints
-        if api_key is not None or api_url is not None or service_key is not None:
+        use_override = any([api_url, api_key, service_key, authorization, cookie])
+        if use_override:
             target_api_url = api_url or self.api_url
-            headers = {**self._headers}
-            if service_key is not None:
-                # Service auth should not include user API key headers.
-                headers.pop(X_API_KEY, None)
-                headers.pop(X_API_KEY.upper(), None)
-                headers["X-Service-Key"] = service_key
-                if tenant_id is not None:
-                    headers["X-Tenant-Id"] = tenant_id
-            elif api_key is not None:
-                headers[X_API_KEY] = api_key
-            else:
-                headers = self._apply_optional_api_key(headers, self.api_key)
+            headers = _apply_auth_overrides(
+                self._headers,
+                api_key=api_key,
+                service_key=service_key,
+                tenant_id=tenant_id,
+                authorization=authorization,
+                cookie=cookie,
+                fallback_api_key=self.api_key,
+            )
 
             self.request_with_retries(
                 "PATCH",
@@ -3137,7 +3197,15 @@ class Client:
         else:
             # Use all configured write API URLs
             for write_api_url, write_api_key in self._write_api_urls.items():
-                headers = self._apply_optional_api_key({**self._headers}, write_api_key)
+                headers = _apply_auth_overrides(
+                    self._headers,
+                    api_key=write_api_key,
+                    service_key=None,
+                    tenant_id=tenant_id,
+                    authorization=None,
+                    cookie=None,
+                    fallback_api_key=None,
+                )
 
                 self.request_with_retries(
                     "PATCH",
@@ -9709,3 +9777,43 @@ def prep_obj_for_push(obj: Any) -> Any:
             # called.
             chain_to_push = RunnableSequence(prompt, bound_model)
     return chain_to_push
+
+
+def _apply_auth_overrides(
+    headers: Mapping[str, str],
+    *,
+    api_key: Optional[str],
+    service_key: Optional[str],
+    tenant_id: Optional[str],
+    authorization: Optional[str],
+    cookie: Optional[str],
+    fallback_api_key: Optional[str],
+) -> dict[str, str]:
+    headers = {**headers}
+    has_non_api_key = any([service_key, authorization, cookie])
+    if has_non_api_key:
+        headers = _apply_optional_api_key(headers, None)
+    if api_key is not None:
+        headers[X_API_KEY] = api_key
+    elif not has_non_api_key:
+        headers = _apply_optional_api_key(headers, fallback_api_key)
+    if service_key is not None:
+        headers["X-Service-Key"] = service_key
+    if tenant_id is not None:
+        headers["X-Tenant-Id"] = tenant_id
+    if authorization is not None:
+        headers["Authorization"] = authorization
+    if cookie is not None:
+        headers["Cookie"] = cookie
+    return headers
+
+
+def _apply_optional_api_key(
+    headers: dict[str, str], api_key: Optional[str]
+) -> dict[str, str]:
+    if api_key:
+        headers[X_API_KEY] = api_key
+    else:
+        headers.pop(X_API_KEY, None)
+        headers.pop(X_API_KEY.upper(), None)
+    return headers

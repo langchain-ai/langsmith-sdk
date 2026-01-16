@@ -39,6 +39,8 @@ from langsmith._internal import _orjson
 from langsmith._internal._serde import _serialize_json
 from langsmith.client import (
     Client,
+    _apply_auth_overrides,
+    _apply_optional_api_key,
     _construct_url,
     _convert_stored_attachments_to_attachments_dict,
     _dataset_examples_path,
@@ -214,13 +216,47 @@ def test_apply_optional_api_key() -> None:
         "other": "value",
     }
 
-    updated = Client._apply_optional_api_key(headers, None)
+    updated = _apply_optional_api_key(headers, None)
     assert "x-api-key" not in updated
     assert "X-API-KEY" not in updated
     assert updated["other"] == "value"
 
-    updated = Client._apply_optional_api_key({"other": "value"}, "new-key")
+    updated = _apply_optional_api_key({"other": "value"}, "new-key")
     assert updated["x-api-key"] == "new-key"
+
+
+def test_apply_auth_overrides() -> None:
+    headers = {
+        "x-api-key": "old",
+        "other": "value",
+    }
+
+    updated = _apply_auth_overrides(
+        headers,
+        api_key=None,
+        service_key=None,
+        tenant_id=None,
+        authorization="Bearer abc",
+        cookie="session=xyz",
+        fallback_api_key="fallback",
+    )
+    assert "x-api-key" not in updated
+    assert updated["Authorization"] == "Bearer abc"
+    assert updated["Cookie"] == "session=xyz"
+    assert updated["other"] == "value"
+
+    updated = _apply_auth_overrides(
+        {"other": "value"},
+        api_key="explicit",
+        service_key="svc",
+        tenant_id="tenant",
+        authorization=None,
+        cookie=None,
+        fallback_api_key="fallback",
+    )
+    assert updated["x-api-key"] == "explicit"
+    assert updated["X-Service-Key"] == "svc"
+    assert updated["X-Tenant-Id"] == "tenant"
 
 
 @mock.patch("langsmith.client.requests.Session")

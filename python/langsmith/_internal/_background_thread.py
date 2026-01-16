@@ -41,7 +41,14 @@ LANGSMITH_CLIENT_THREAD_POOL = cf.ThreadPoolExecutor(max_workers=cpu_count())
 def _group_batch_by_api_endpoint(
     batch: list[TracingQueueItem],
 ) -> dict[
-    tuple[Optional[str], Optional[str], Optional[str], Optional[str]],
+    tuple[
+        Optional[str],
+        Optional[str],
+        Optional[str],
+        Optional[str],
+        Optional[str],
+        Optional[str],
+    ],
     list[TracingQueueItem],
 ]:
     """Group batch items by endpoint and auth combination."""
@@ -49,7 +56,14 @@ def _group_batch_by_api_endpoint(
 
     grouped = defaultdict(list)
     for item in batch:
-        key = (item.api_url, item.api_key, item.service_key, item.tenant_id)
+        key = (
+            item.api_url,
+            item.api_key,
+            item.service_key,
+            item.tenant_id,
+            item.authorization,
+            item.cookie,
+        )
         grouped[key].append(item)
     return grouped
 
@@ -70,6 +84,8 @@ class TracingQueueItem:
     api_key: Optional[str]
     service_key: Optional[str]
     tenant_id: Optional[str]
+    authorization: Optional[str]
+    cookie: Optional[str]
     otel_context: Optional[Context]
 
     __slots__ = (
@@ -79,6 +95,8 @@ class TracingQueueItem:
         "api_url",
         "service_key",
         "tenant_id",
+        "authorization",
+        "cookie",
         "otel_context",
     )
 
@@ -90,6 +108,8 @@ class TracingQueueItem:
         api_url: Optional[str] = None,
         service_key: Optional[str] = None,
         tenant_id: Optional[str] = None,
+        authorization: Optional[str] = None,
+        cookie: Optional[str] = None,
         otel_context: Optional[Context] = None,
     ) -> None:
         self.priority = priority
@@ -98,6 +118,8 @@ class TracingQueueItem:
         self.api_url = api_url
         self.service_key = service_key
         self.tenant_id = tenant_id
+        self.authorization = authorization
+        self.cookie = cookie
         self.otel_context = otel_context
 
     def __lt__(self, other: TracingQueueItem) -> bool:
@@ -247,7 +269,7 @@ def _process_buffered_run_ops_batch(
                 f"Expected {original_ids}, got {processed_ids}"
             )
 
-        # Process each run and add to tracing (preserving per-op auth overrides)
+        # Process each run and add to compressed traces
         for (operation, _, write_ctx), processed_run in zip(
             batch_to_process, processed_runs
         ):
@@ -292,7 +314,7 @@ def _tracing_thread_handle_batch(
             If None, operations will be combined from the batch items.
     """
     try:
-        # Group batch items by endpoint + auth combination
+        # Group batch items by (api_url, auth) combination
         grouped_batches = _group_batch_by_api_endpoint(batch)
 
         for (
@@ -300,6 +322,8 @@ def _tracing_thread_handle_batch(
             api_key,
             service_key,
             tenant_id,
+            authorization,
+            cookie,
         ), group_batch in grouped_batches.items():
             if not ops:
                 group_ops = combine_serialized_queue_operations(
@@ -316,6 +340,8 @@ def _tracing_thread_handle_batch(
                     api_key=api_key,
                     service_key=service_key,
                     tenant_id=tenant_id,
+                    authorization=authorization,
+                    cookie=cookie,
                 )
             else:
                 if any(isinstance(op, SerializedFeedbackOperation) for op in group_ops):
@@ -333,6 +359,8 @@ def _tracing_thread_handle_batch(
                     api_key=api_key,
                     service_key=service_key,
                     tenant_id=tenant_id,
+                    authorization=authorization,
+                    cookie=cookie,
                 )
 
     except Exception as e:

@@ -231,6 +231,10 @@ def test__get_inputs_misnamed_and_required_keyword_only_args() -> None:
 
 
 def _get_mock_client(**kwargs: Any) -> Client:
+    ls_utils.get_env_var.cache_clear()
+    from langsmith.run_trees import _parse_write_replicas_from_env_var
+
+    _parse_write_replicas_from_env_var.cache_clear()
     mock_session = MagicMock()
     client = Client(session=mock_session, api_key="test", **kwargs)
     return client

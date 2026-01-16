@@ -285,6 +285,51 @@ class TestLangsmithRunsEndpoints:
         assert ("https://api.same.com", "jwt-a", "tenant-a") in auth_calls
         assert ("https://api.same.com", "jwt-b", "tenant-b") in auth_calls
 
+    def test_background_threading_groups_by_auth_headers(self):
+        """Test background threading groups by authorization/cookie overrides."""
+        client = Mock()
+        tracing_queue = Mock()
+
+        client._multipart_ingest_ops = Mock()
+
+        serialized_op1 = serialize_run_dict(
+            "post", {**self.run_data, "id": uuid.uuid4()}
+        )
+        serialized_op2 = serialize_run_dict(
+            "post", {**self.run_data, "id": uuid.uuid4()}
+        )
+
+        batch = [
+            TracingQueueItem(
+                "priority1",
+                serialized_op1,
+                api_url="https://api.same.com",
+                api_key="shared-key",
+                authorization="Bearer token-a",
+                cookie="session=a",
+            ),
+            TracingQueueItem(
+                "priority2",
+                serialized_op2,
+                api_url="https://api.same.com",
+                api_key="shared-key",
+                authorization="Bearer token-b",
+                cookie="session=b",
+            ),
+        ]
+
+        _tracing_thread_handle_batch(client, tracing_queue, batch, use_multipart=True)
+
+        assert client._multipart_ingest_ops.call_count == 2
+        calls = client._multipart_ingest_ops.call_args_list
+        auth_pairs = {
+            (call.kwargs.get("authorization"), call.kwargs.get("cookie"))
+            for call in calls
+        }
+        assert ("Bearer token-a", "session=a") in auth_pairs
+        assert ("Bearer token-b", "session=b") in auth_pairs
+        assert all(len(call.args[0]) == 1 for call in calls)
+
     def test_background_threading_does_not_mix_service_and_api_key_auth(self):
         """Service auth and api key auth should never be grouped together."""
         client = Mock()
