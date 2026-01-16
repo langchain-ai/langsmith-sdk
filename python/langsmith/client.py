@@ -2455,9 +2455,6 @@ class Client:
 
         for target_api_url, headers in endpoints:
             try:
-                logger.debug(
-                    f"Sending batch ingest request to {target_api_url} with context: {_context}"
-                )
                 self.request_with_retries(
                     "POST",
                     f"{target_api_url}/runs/batch",
@@ -2771,9 +2768,6 @@ class Client:
                         data = encoder.to_string()
                     else:
                         data = encoder
-                    logger.debug(
-                        f"Sending multipart request to {target_api_url} with context: {_context}"
-                    )
                     self.request_with_retries(
                         "POST",
                         f"{target_api_url}/runs/multipart",
