@@ -2,6 +2,7 @@ import {
   Dataset,
   Example,
   ExampleUpdateWithAttachments,
+  Feedback,
   Run,
   TracerSession,
 } from "../schemas.js";
@@ -23,6 +24,7 @@ import {
   deleteProject,
   toArray,
   waitUntil,
+  skipIfTransientError,
 } from "./utils.js";
 import { ChatPromptTemplate, PromptTemplate } from "@langchain/core/prompts";
 import { ChatOpenAI } from "@langchain/openai";
@@ -294,57 +296,66 @@ test("Test list datasets", async () => {
 }, 180_000);
 
 test("Test create feedback with source run", async () => {
-  const langchainClient = new Client({
-    autoBatchTracing: false,
-    callerOptions: { maxRetries: 6 },
-  });
-  const projectName = "__test_create_feedback_with_source_run JS";
-  if (await langchainClient.hasProject({ projectName })) {
-    await deleteProject(langchainClient, projectName);
-  }
-  const runId = uuidv4();
-  await langchainClient.createRun({
-    id: runId,
-    project_name: projectName,
-    name: "test_run",
-    run_type: "llm",
-    inputs: { prompt: "hello world" },
-    outputs: { generation: "hi there" },
-    start_time: new Date().getTime(),
-    end_time: new Date().getTime(),
-  });
+  await skipIfTransientError(async () => {
+    const langchainClient = new Client({
+      autoBatchTracing: false,
+      callerOptions: { maxRetries: 6 },
+    });
+    const projectName = "__test_create_feedback_with_source_run JS";
+    if (await langchainClient.hasProject({ projectName })) {
+      await deleteProject(langchainClient, projectName);
+    }
+    const runId = uuidv4();
+    await langchainClient.createRun({
+      id: runId,
+      project_name: projectName,
+      name: "test_run",
+      run_type: "llm",
+      inputs: { prompt: "hello world" },
+      outputs: { generation: "hi there" },
+      start_time: new Date().getTime(),
+      end_time: new Date().getTime(),
+    });
 
-  const runId2 = uuidv4();
-  await langchainClient.createRun({
-    id: runId2,
-    project_name: projectName,
-    name: "test_run_2",
-    run_type: "llm",
-    inputs: { prompt: "hello world 2" },
-    outputs: { generation: "hi there 2" },
-    start_time: new Date().getTime(),
-    end_time: new Date().getTime(),
-  });
+    const runId2 = uuidv4();
+    await langchainClient.createRun({
+      id: runId2,
+      project_name: projectName,
+      name: "test_run_2",
+      run_type: "llm",
+      inputs: { prompt: "hello world 2" },
+      outputs: { generation: "hi there 2" },
+      start_time: new Date().getTime(),
+      end_time: new Date().getTime(),
+    });
 
-  await langchainClient.createFeedback(runId, "test_feedback", {
-    score: 0.5,
-    sourceRunId: runId2,
-    feedbackSourceType: "app",
+    await langchainClient.createFeedback(runId, "test_feedback", {
+      score: 0.5,
+      sourceRunId: runId2,
+      feedbackSourceType: "app",
+    });
+    await langchainClient.createFeedback(runId2, "test_feedback_2", {
+      score: 0.5,
+      feedbackSourceType: "app",
+    });
+
+    // Poll for feedbacks to be available (up to 10 seconds)
+    let feedbacks: Feedback[] = [];
+    const deadline = Date.now() + 10_000;
+    while (Date.now() < deadline) {
+      feedbacks = await toArray(
+        langchainClient.listFeedback({
+          runIds: [runId, runId2],
+        })
+      );
+      if (feedbacks.length >= 2) break;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+
+    expect(feedbacks).toHaveLength(2);
+    expect(feedbacks.map((f) => f.run_id)).toContain(runId);
+    expect(feedbacks.map((f) => f.run_id)).toContain(runId2);
   });
-  await langchainClient.createFeedback(runId2, "test_feedback_2", {
-    score: 0.5,
-    feedbackSourceType: "app",
-  });
-  // Feedback creation is queued, give some processing time
-  await new Promise((resolve) => setTimeout(resolve, 5000));
-  const feedbacks = await toArray(
-    langchainClient.listFeedback({
-      runIds: [runId, runId2],
-    })
-  );
-  expect(feedbacks).toHaveLength(2);
-  expect(feedbacks.map((f) => f.run_id)).toContain(runId);
-  expect(feedbacks.map((f) => f.run_id)).toContain(runId2);
 }, 180_000);
 
 test("Test create run with masked inputs/outputs", async () => {
@@ -747,6 +758,32 @@ test("Examples CRUD", async () => {
   );
   expect(examplesList3.length).toEqual(3);
 
+  // Test batch soft delete - at the end so it doesn't affect other tests
+  const allExamples = await toArray(
+    client.listExamples({ datasetId: dataset.id })
+  );
+  const exampleIdsToDelete = allExamples.slice(0, 2).map((e) => e.id);
+  await client.deleteExamples(exampleIdsToDelete);
+  const examplesAfterBatchDelete = await toArray(
+    client.listExamples({ datasetId: dataset.id })
+  );
+  expect(examplesAfterBatchDelete.length).toEqual(allExamples.length - 2);
+
+  // Test hard delete
+  const remainingExamples = await toArray(
+    client.listExamples({ datasetId: dataset.id })
+  );
+  if (remainingExamples.length > 0) {
+    const hardDeleteIds = [remainingExamples[0].id];
+    await client.deleteExamples(hardDeleteIds, { hardDelete: true });
+    const examplesAfterHardDelete = await toArray(
+      client.listExamples({ datasetId: dataset.id })
+    );
+    expect(examplesAfterHardDelete.length).toEqual(
+      remainingExamples.length - 1
+    );
+  }
+
   await client.deleteDataset({ datasetId: dataset.id });
 }, 180_000);
 
@@ -1132,25 +1169,51 @@ test("Test push and pull prompt", async () => {
   await client.deletePrompt(promptName);
 });
 
+// This test requires OPENAI_API_KEY to be set and valid
 test("Test pull prompt include model", async () => {
+  // eslint-disable-next-line no-process-env
+  const openaiKey = process.env.OPENAI_API_KEY;
+  if (!openaiKey || openaiKey.trim() === "" || openaiKey === "placeholder") {
+    console.log("⚠️  Test skipped: OPENAI_API_KEY not set or invalid");
+    return;
+  }
+
   const client = new Client({ callerOptions: { maxRetries: 6 } });
-  const model = new ChatOpenAI({});
-  const promptTemplate = PromptTemplate.fromTemplate(
-    "Tell me a joke about {topic}"
-  );
-  const promptWithModel = promptTemplate.pipe(model);
+  let promptName: string | undefined;
+  try {
+    const model = new ChatOpenAI({});
+    const promptTemplate = PromptTemplate.fromTemplate(
+      "Tell me a joke about {topic}"
+    );
+    const promptWithModel = promptTemplate.pipe(model);
 
-  const promptName = `test_prompt_with_model_${uuidv4().slice(0, 8)}`;
-  await client.pushPrompt(promptName, { object: promptWithModel });
+    promptName = `test_prompt_with_model_${uuidv4().slice(0, 8)}`;
+    await client.pushPrompt(promptName, { object: promptWithModel });
 
-  const pulledPrompt = await client._pullPrompt(promptName, {
-    includeModel: true,
-  });
-  const rs: RunnableSequence = await load(pulledPrompt);
-  expect(rs).toBeDefined();
-  expect(rs).toBeInstanceOf(RunnableSequence);
-
-  await client.deletePrompt(promptName);
+    const pulledPrompt = await client._pullPrompt(promptName, {
+      includeModel: true,
+    });
+    const rs: RunnableSequence = await load(pulledPrompt);
+    expect(rs).toBeDefined();
+    expect(rs).toBeInstanceOf(RunnableSequence);
+  } catch (error: any) {
+    // Skip test if it fails due to missing/invalid API key during deserialization
+    if (error?.message?.includes("Missing secret")) {
+      console.log(
+        "⚠️  Test skipped: OPENAI_API_KEY not valid for model loading"
+      );
+      return;
+    }
+    throw error;
+  } finally {
+    if (promptName) {
+      try {
+        await client.deletePrompt(promptName);
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
+  }
 });
 
 test("list shared examples can list shared examples", async () => {

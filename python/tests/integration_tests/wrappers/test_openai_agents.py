@@ -10,6 +10,17 @@ import langsmith
 from langsmith.wrappers import OpenAIAgentsTracingProcessor, wrap_openai
 from tests.integration_tests.test_client import safe_delete_dataset
 
+LS_TEST_CLIENT_INFO = {
+    "batch_ingest_config": {
+        "use_multipart_endpoint": False,
+        "scale_up_qsize_trigger": 1000,
+        "scale_up_nthreads_limit": 16,
+        "scale_down_nempty_trigger": 4,
+        "size_limit": 100,
+        "size_limit_bytes": 20971520,
+    },
+}
+
 
 def _collect_trace_requests(mock_session: mock.MagicMock):
     """Collect and parse trace data from mock session requests."""
@@ -27,8 +38,10 @@ def _collect_trace_requests(mock_session: mock.MagicMock):
 @pytest.mark.asyncio
 async def test_openai_agents_tracing_processor():
     """Test that OpenAIAgentsTracingProcessor correctly traces agent runs."""
+    import openai
+
     mock_session = mock.MagicMock()
-    client = langsmith.Client(session=mock_session)
+    client = langsmith.Client(session=mock_session, info=LS_TEST_CLIENT_INFO)
 
     processor = OpenAIAgentsTracingProcessor(client=client)
     set_trace_processors([processor])
@@ -43,8 +56,10 @@ async def test_openai_agents_tracing_processor():
         "Why is my code failing when I try to divide by zero?"
         " I keep getting this error message."
     )
-
-    result = await Runner.run(agent, question)
+    try:
+        result = await Runner.run(agent, question)
+    except openai.APIConnectionError as e:
+        pytest.skip(reason="Openai is having issues" + str(e))
 
     # Verify we got a result
     assert result is not None
@@ -168,7 +183,7 @@ async def test_openai_agents_with_evaluate():
 async def test_wrap_openai_nests_under_agent_trace():
     """Test that wrap_openai calls from function tools nest under agent traces."""
     mock_session = mock.MagicMock()
-    client = langsmith.Client(session=mock_session)
+    client = langsmith.Client(session=mock_session, info=LS_TEST_CLIENT_INFO)
 
     try:
         import openai
@@ -259,12 +274,23 @@ async def test_wrap_openai_nests_under_agent_trace():
         f"but found {len(trace_ids)}: {trace_ids}"
     )
 
+    # Verify invocation_params with tools are present in trace events
+    events_with_tools = [
+        event
+        for event in all_events
+        if event.get("extra", {}).get("invocation_params", {}).get("tools")
+    ]
+    assert len(events_with_tools) > 0, (
+        "No trace events found with invocation_params.tools - "
+        "tools should be captured in invocation_params"
+    )
+
 
 @pytest.mark.asyncio
 async def test_traceable_decorator_nests_under_agent_trace():
     """Test that @traceable decorated functions nest under agent traces."""
     mock_session = mock.MagicMock()
-    client = langsmith.Client(session=mock_session)
+    client = langsmith.Client(session=mock_session, info=LS_TEST_CLIENT_INFO)
 
     @langsmith.traceable
     def helper_function(x: int, y: int) -> int:

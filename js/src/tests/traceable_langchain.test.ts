@@ -46,7 +46,9 @@ describe("to langchain", () => {
 
     await awaitAllCallbacks();
 
-    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+    expect(
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+    ).toMatchObject({
       nodes: [
         "main:0",
         "RunnableSequence:1",
@@ -91,7 +93,9 @@ describe("to langchain", () => {
     }
 
     expect(result).toEqual(["Hello world"]);
-    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+    expect(
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+    ).toMatchObject({
       nodes: [
         "main:0",
         "RunnableSequence:1",
@@ -125,7 +129,9 @@ describe("to langchain", () => {
 
     await awaitAllCallbacks();
     expect(result).toEqual(["Hello world", "Who are you?"]);
-    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+    expect(
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+    ).toMatchObject({
       nodes: [
         "main:0",
         "RunnableSequence:1",
@@ -184,7 +190,9 @@ describe("to traceable", () => {
     await awaitAllCallbacks();
 
     expect(response).toEqual("Hello world");
-    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+    expect(
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+    ).toMatchObject({
       nodes: [
         "RunnableSequence:0",
         "ChatPromptTemplate:1",
@@ -221,7 +229,9 @@ describe("to traceable", () => {
     }
 
     expect(tokens).toEqual([["Hello", "world"]]);
-    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+    expect(
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+    ).toMatchObject({
       nodes: ["<lambda>:0"],
       edges: [],
     });
@@ -250,7 +260,9 @@ describe("to traceable", () => {
     }
 
     expect(tokens).toEqual(["Hello", "world"]);
-    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+    expect(
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+    ).toMatchObject({
       nodes: ["<lambda>:0"],
       edges: [],
     });
@@ -285,7 +297,9 @@ describe("to traceable", () => {
     }
 
     expect(tokens).toEqual(["Hello", "world"]);
-    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+    expect(
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+    ).toMatchObject({
       nodes: ["<lambda>:0"],
       edges: [],
     });
@@ -315,7 +329,9 @@ describe("to traceable", () => {
     }
 
     expect(tokens).toEqual(["Hello", "world"]);
-    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+    expect(
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+    ).toMatchObject({
       nodes: ["<lambda>:0"],
       edges: [],
     });
@@ -374,7 +390,9 @@ test("explicit nested", async () => {
     ],
   });
 
-  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+  expect(
+    await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+  ).toMatchObject({
     nodes: [
       "main:0",
       "wrappedModel:1",
@@ -483,7 +501,7 @@ describe("LangChain context variables", () => {
 // skip until the @langchain/core 0.2.17 is out
 describe.skip("automatic tracing", () => {
   it("root langchain", async () => {
-    const { callSpy, langChainTracer } = mockClient();
+    const { callSpy, langChainTracer, client } = mockClient();
 
     const lc = RunnableLambda.from(async () => "Hello from LangChain");
     const ls = traceable(() => "Hello from LangSmith", { name: "traceable" });
@@ -521,7 +539,9 @@ describe.skip("automatic tracing", () => {
       ].join("\n")
     );
 
-    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+    expect(
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+    ).toMatchObject({
       nodes: [
         "rootLC:0",
         "childA:1",
@@ -579,7 +599,9 @@ describe.skip("automatic tracing", () => {
       ].join("\n")
     );
 
-    expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+    expect(
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+    ).toMatchObject({
       nodes: [
         "rootLS:0",
         "childA:1",

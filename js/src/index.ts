@@ -21,5 +21,11 @@ export { getDefaultProjectName } from "./utils/project.js";
 
 export { uuid7, uuid7FromTime } from "./uuid.js";
 
+export {
+  Cache,
+  type CacheConfig,
+  type CacheMetrics,
+} from "./utils/prompts_cache.js";
+
 // Update using yarn bump-version
-export const __version__ = "0.3.81";
+export const __version__ = "0.4.7";

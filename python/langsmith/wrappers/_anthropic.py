@@ -22,6 +22,7 @@ from langsmith.schemas import InputTokenDetails, UsageMetadata
 if TYPE_CHECKING:
     import httpx
     from anthropic import Anthropic, AsyncAnthropic
+    from anthropic.lib.streaming import AsyncMessageStream, MessageStream
     from anthropic.types import Completion, Message, MessageStreamEvent
 
 C = TypeVar("C", bound=Union["Anthropic", "AsyncAnthropic", Any])
@@ -181,6 +182,16 @@ def _reduce_completions(all_chunks: list[Completion]) -> dict:
 
 def _process_chat_completion(outputs: Any):
     try:
+        # Check if outputs is a LegacyAPIResponse wrapper (from with_raw_response).
+        # The Anthropic SDK's LegacyAPIResponse wraps the actual response object.
+        # Call .parse() to extract the Message for tracing.
+        # See: anthropics/anthropic-sdk-python _legacy_response.py#L102
+        if hasattr(outputs, "parse") and callable(outputs.parse):
+            try:
+                outputs = outputs.parse()
+            except Exception:
+                pass
+
         rdict = outputs.model_dump()
         anthropic_token_usage = rdict.pop("usage", None)
         rdict["usage_metadata"] = (
@@ -241,8 +252,6 @@ def _get_stream_wrapper(
     tracing_extra: TracingExtra,
 ) -> Callable:
     """Create a wrapper for Anthropic's streaming context manager."""
-    import anthropic
-
     is_async = "async" in str(original_stream).lower()
     configured_traceable = run_helpers.traceable(
         name=name,
@@ -266,7 +275,7 @@ def _get_stream_wrapper(
         class AsyncMessageStreamWrapper:
             def __init__(
                 self,
-                wrapped: anthropic.lib.streaming._messages.AsyncMessageStream,
+                wrapped: AsyncMessageStream,
                 **kwargs,
             ) -> None:
                 self._wrapped = wrapped
@@ -345,7 +354,7 @@ def _get_stream_wrapper(
         class MessageStreamWrapper:
             def __init__(
                 self,
-                wrapped: anthropic.lib.streaming._messages.MessageStream,
+                wrapped: MessageStream,
                 **kwargs,
             ) -> None:
                 self._wrapped = wrapped
@@ -427,49 +436,56 @@ def wrap_anthropic(client: C, *, tracing_extra: Optional[TracingExtra] = None) -
     """Patch the Anthropic client to make it traceable.
 
     Args:
-        client (Union[Anthropic, AsyncAnthropic]): The client to patch.
-        tracing_extra (Optional[TracingExtra], optional): Extra tracing information.
-            Defaults to None.
+        client: The client to patch.
+        tracing_extra: Extra tracing information.
 
     Returns:
-        Union[Anthropic, AsyncAnthropic]: The patched client.
+        The patched client.
 
     Example:
+        ```python
+        import anthropic
+        from langsmith import wrappers
 
-        .. code-block:: python
+        client = wrappers.wrap_anthropic(anthropic.Anthropic())
 
-            import anthropic
-            from langsmith import wrappers
+        # Use Anthropic client same as you normally would:
+        system = "You are a helpful assistant."
+        messages = [
+            {
+                "role": "user",
+                "content": "What physics breakthroughs do you predict will happen by 2300?",
+            }
+        ]
+        completion = client.messages.create(
+            model="claude-3-5-sonnet-latest",
+            messages=messages,
+            max_tokens=1000,
+            system=system,
+        )
+        print(completion.content)
 
-            client = wrappers.wrap_anthropic(anthropic.Anthropic())
+        # With raw response to access headers:
+        raw_response = client.messages.with_raw_response.create(
+            model="claude-3-5-sonnet-latest",
+            messages=messages,
+            max_tokens=1000,
+            system=system,
+        )
+        print(raw_response.headers)  # Access HTTP headers
+        message = raw_response.parse()  # Get parsed response
 
-            # Use Anthropic client same as you normally would:
-            system = "You are a helpful assistant."
-            messages = [
-                {
-                    "role": "user",
-                    "content": "What physics breakthroughs do you predict will happen by 2300?",
-                }
-            ]
-            completion = client.messages.create(
-                model="claude-3-5-sonnet-latest",
-                messages=messages,
-                max_tokens=1000,
-                system=system,
-            )
-            print(completion.content)
-
-            # You can also use the streaming context manager:
-            with client.messages.stream(
-                model="claude-3-5-sonnet-latest",
-                messages=messages,
-                max_tokens=1000,
-                system=system,
-            ) as stream:
-                for text in stream.text_stream:
-                    print(text, end="", flush=True)
-                message = stream.get_final_message()
-
+        # You can also use the streaming context manager:
+        with client.messages.stream(
+            model="claude-3-5-sonnet-latest",
+            messages=messages,
+            max_tokens=1000,
+            system=system,
+        ) as stream:
+            for text in stream.text_stream:
+                print(text, end="", flush=True)
+            message = stream.get_final_message()
+        ```
     """  # noqa: E501
     tracing_extra = tracing_extra or {}
     client.messages.create = _get_wrapper(  # type: ignore[method-assign]
@@ -478,6 +494,7 @@ def wrap_anthropic(client: C, *, tracing_extra: Optional[TracingExtra] = None) -
         _reduce_chat_chunks,
         tracing_extra,
     )
+
     client.messages.stream = _get_stream_wrapper(  # type: ignore[method-assign]
         client.messages.stream,
         "ChatAnthropic",

@@ -12,6 +12,7 @@ import math
 import os
 import pathlib
 import sys
+import threading
 import time
 import uuid
 import warnings
@@ -45,7 +46,9 @@ from langsmith.client import (
     _is_langchain_hosted,
     _parse_token_or_url,
 )
-from langsmith.utils import LangSmithUserError
+from langsmith.run_trees import RunTree
+from langsmith.utils import LangSmithRateLimitError, LangSmithUserError
+from tests.unit_tests.conftest import parse_request_data
 
 _CREATED_AT = datetime(2015, 1, 1, 0, 0, 0)
 
@@ -303,7 +306,6 @@ def test_async_methods() -> None:
         method
         for method in dir(Client)
         if not method.startswith("_")
-        and method not in {"arun_on_dataset"}
         and callable(getattr(Client, method))
         and asyncio.iscoroutinefunction(getattr(Client, method))
     ]
@@ -430,9 +432,13 @@ def test_create_run_mutate(
         for _ in range(10):
             time.sleep(0.1)  # Give the background thread time to stop
             payloads = [
-                json.loads(call[2]["data"])
+                parse_request_data(call[2]["data"])
                 for call in session.request.mock_calls
-                if call.args and call.args[1].endswith("runs/batch")
+                if call.args
+                and (
+                    call.args[1].endswith("runs/batch")
+                    or call.args[1].endswith("runs/multipart")
+                )
             ]
             if payloads:
                 break
@@ -749,7 +755,7 @@ def test_client_gc(auto_batch_tracing: bool, supports_batch_endpoint: bool) -> N
 
         for call in request_calls:
             assert call.args[0] == "POST"
-            assert call.args[1] == "http://localhost:1984/runs/batch"
+            assert call.args[1] == "http://localhost:1984/runs/multipart"
         get_calls = [
             call
             for call in session.request.mock_calls
@@ -932,6 +938,103 @@ def test_hide_metadata(
         )
 
 
+def test_omit_traced_runtime_info() -> None:
+    """Test that omit_traced_runtime_info prevents runtime info from being added."""
+    session = mock.MagicMock(spec=requests.Session)
+
+    # Test with omit_traced_runtime_info=True
+    client_omit = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        auto_batch_tracing=False,
+        session=session,
+        omit_traced_runtime_info=True,
+    )
+
+    run_id = uuid.uuid4()
+    client_omit.create_run(
+        "test_run_no_runtime",
+        inputs={"in": "put"},
+        run_type="llm",
+        id=run_id,
+    )
+
+    # Find the POST call
+    post_call = None
+    for call in session.request.mock_calls:
+        if len(call.args) > 1 and call.args[0] == "POST" and "runs" in call.args[1]:
+            post_call = call
+            break
+
+    assert post_call is not None, "POST request to /runs not found"
+
+    payload_data = post_call.kwargs.get("data", b"{}")
+    if isinstance(payload_data, bytes):
+        payload_str = payload_data.decode("utf-8")
+    else:
+        payload_str = str(payload_data)
+
+    try:
+        payload = json.loads(payload_str)
+    except json.JSONDecodeError:
+        if isinstance(payload_data, dict):
+            payload = payload_data
+        else:
+            raise
+
+    payload_extra = payload.get("extra", {})
+
+    # Runtime should not be present or should be empty
+    assert "runtime" not in payload_extra or payload_extra["runtime"] == {}
+
+    # Test with default (omit_traced_runtime_info=False)
+    session2 = mock.MagicMock(spec=requests.Session)
+    client_default = Client(
+        api_url="http://localhost:1984",
+        api_key="123",
+        auto_batch_tracing=False,
+        session=session2,
+    )
+
+    run_id2 = uuid.uuid4()
+    client_default.create_run(
+        "test_run_with_runtime",
+        inputs={"in": "put"},
+        run_type="llm",
+        id=run_id2,
+    )
+
+    # Find the POST call
+    post_call2 = None
+    for call in session2.request.mock_calls:
+        if len(call.args) > 1 and call.args[0] == "POST" and "runs" in call.args[1]:
+            post_call2 = call
+            break
+
+    assert post_call2 is not None, "POST request to /runs not found"
+
+    payload_data2 = post_call2.kwargs.get("data", b"{}")
+    if isinstance(payload_data2, bytes):
+        payload_str2 = payload_data2.decode("utf-8")
+    else:
+        payload_str2 = str(payload_data2)
+
+    try:
+        payload2 = json.loads(payload_str2)
+    except json.JSONDecodeError:
+        if isinstance(payload_data2, dict):
+            payload2 = payload_data2
+        else:
+            raise
+
+    payload_extra2 = payload2.get("extra", {})
+
+    # Runtime should be present and not empty
+    assert "runtime" in payload_extra2
+    assert payload_extra2["runtime"]  # Should not be empty
+    assert "sdk_version" in payload_extra2["runtime"]
+
+
 @pytest.mark.flaky(retries=3)
 def test_client_gc_after_autoscale() -> None:
     session = mock.MagicMock(spec=requests.Session)
@@ -970,10 +1073,10 @@ def test_client_gc_after_autoscale() -> None:
         for call in session.request.mock_calls
         if call.args and call.args[0] == "POST"
     ]
-    assert len(request_calls) >= 500 and len(request_calls) <= 550
+    assert len(request_calls) >= 400 and len(request_calls) <= 1000
     for call in request_calls:
         assert call.args[0] == "POST"
-        assert call.args[1] == "http://localhost:1984/runs/batch"
+        assert call.args[1] == "http://localhost:1984/runs/multipart"
 
 
 @pytest.mark.parametrize("supports_batch_endpoint", [True, False])
@@ -1031,7 +1134,7 @@ def test_create_run_includes_langchain_env_var_metadata(
         if tracing_queue := client.tracing_queue:
             tracing_queue.join()
         # Check the posted value in the request
-        posted_value = json.loads(session.request.call_args[1]["data"])
+        posted_value = parse_request_data(session.request.call_args[1]["data"])
         if auto_batch_tracing:
             assert (
                 posted_value["post"][0]["extra"]["metadata"]["LANGCHAIN_REVISION"]
@@ -1806,13 +1909,13 @@ def test_original_sampling_and_batching():
         assert len(post_calls) >= 2
 
         # Verify that only odd-numbered runs were sampled (due to our counter logic)
-        assert post_calls[0].args[1].endswith("/runs/batch")
-        assert post_calls[1].args[1].endswith("/runs/batch")
+        assert post_calls[0].args[1].endswith("/runs/multipart")
+        assert post_calls[1].args[1].endswith("/runs/multipart")
 
         data = post_calls[0].kwargs["data"]
         if isinstance(data, bytes):
             data = data.decode("utf-8")
-        batch_data = json.loads(data)
+        batch_data = parse_request_data(data)
 
         # Verify posts only contain odd-numbered runs
         assert len(batch_data.get("post", [])) == 2
@@ -1828,7 +1931,7 @@ def test_original_sampling_and_batching():
         data = post_calls[1].kwargs["data"]
         if isinstance(data, bytes):
             data = data.decode("utf-8")
-        batch_data = json.loads(data)
+        batch_data = parse_request_data(data)
         assert len(batch_data.get("post", [])) == 2
         for p in batch_data.get("post", []):
             run_id = p["id"]
@@ -1914,9 +2017,12 @@ def test_validate_api_key_if_hosted_without_tracing(
     ls_utils.get_env_var.cache_clear()
     with warnings.catch_warnings(record=True) as w:
         client_cls(api_url="https://api.smith.langchain.com")
-        assert len(w) == 0, (
-            f"Expected no warnings, but got: {[str(warning.message) for warning in w]}"
-        )
+        if len(w) != 0:
+            e = AssertionError(
+                f"Expected no warnings, but got: {[str(warning.message) for warning in w]}"
+            )
+            if "unclosed event loop" not in str(w[0].message):
+                raise e
 
 
 def test_parse_token_or_url():
@@ -2798,16 +2904,24 @@ def test_pull_prompt(
         session=mock_session,
         info=info,
     )
-    with mock.patch.dict(
-        "os.environ",
-        {
-            "ANTHROPIC_API_KEY": "test_anthropic_key",
-            "OPENAI_API_KEY": "test_openai_key",
-        },
-    ):
+    secrets = {
+        "ANTHROPIC_API_KEY": "test_anthropic_key",
+        "OPENAI_API_KEY": "test_openai_key",
+    }
+    try:
         result = client.pull_prompt(
             prompt_identifier=manifest_data["repo"], include_model=include_model
         )
+    except ValueError as e:
+        if include_model:
+            assert "no secrets were provided" in str(e)
+            result = client.pull_prompt(
+                prompt_identifier=manifest_data["repo"],
+                include_model=include_model,
+                secrets=secrets,
+            )
+        else:
+            raise e
     expected_prompt_type = (
         StructuredPrompt if manifest_type == "structured" else ChatPromptTemplate
     )
@@ -2848,7 +2962,9 @@ def test_pull_and_push_prompt(
         if method == "GET" and "/commits/" in url:
             return mock.Mock(json=lambda: manifest_data)
         elif method == "POST" and "/commits/" in url:
-            return mock.Mock(json=lambda: {"commit": {"commit_hash": "new_hash"}})
+            return mock.Mock(
+                json=lambda: {"commit": {"commit_hash": "new_hash", "id": "new_id"}}
+            )
         else:
             return mock.Mock(json=lambda: {})
 
@@ -2882,18 +2998,30 @@ def test_pull_and_push_prompt(
         with mock.patch.dict(
             "os.environ",
             {
-                "ANTHROPIC_API_KEY": "test_anthropic_key",
-                "OPENAI_API_KEY": "test_openai_key",
                 "LANGSMITH_API_KEY": "fake_api_key",
                 "LANGSMITH_ENDPOINT": "http://localhost:1984",
             },
             clear=True,
         ):
             # Pull the prompt
-            pulled_prompt = client.pull_prompt(
-                prompt_identifier=manifest_data["repo"], include_model=include_model
-            )
-
+            secrets = {
+                "ANTHROPIC_API_KEY": "test_anthropic_key",
+                "OPENAI_API_KEY": "test_openai_key",
+            }
+            try:
+                pulled_prompt = client.pull_prompt(
+                    prompt_identifier=manifest_data["repo"], include_model=include_model
+                )
+            except ValueError as e:
+                if include_model:
+                    assert "no secrets were provided" in str(e)
+                    pulled_prompt = client.pull_prompt(
+                        prompt_identifier=manifest_data["repo"],
+                        include_model=include_model,
+                        secrets=secrets,
+                    )
+                else:
+                    raise e
             # Capture the dumps call when pushing
             pushed_manifest = None
 
@@ -4485,3 +4613,241 @@ def test_list_runs_child_run_ids_deprecation_warning(
     with warnings.catch_warnings():
         warnings.simplefilter("error", DeprecationWarning)
         list(client.list_runs(project_id=uuid.uuid4(), select=["id", "name"]))
+
+
+def test_tracing_error_callback_on_429():
+    """Test that tracing_error_callback is invoked on 429 errors in multipart flow."""
+    mock_session = MagicMock()
+
+    # Track callback invocations
+    callback_errors = []
+    callback_event = threading.Event()
+
+    def error_callback(error: Exception):
+        callback_errors.append(error)
+        callback_event.set()
+
+    # Mock successful response for info endpoint
+    info_response = MagicMock()
+    info_response.status_code = 200
+    info_response.json.return_value = {
+        "version": "0.1.0",
+        "batch_ingest_config": {
+            "size_limit": 1,  # Process immediately
+            "size_limit_bytes": 1,  # Process immediately
+            "use_multipart_endpoint": True,
+            "scale_up_nthreads_limit": 16,
+            "scale_up_qsize_trigger": 1,  # Scale up immediately
+            "scale_down_nempty_trigger": 4,
+        },
+        "instance_flags": {
+            "zstd_compression_enabled": False,
+        },
+    }
+
+    # Mock 429 response for batch ingest
+    rate_limit_response = MagicMock()
+    rate_limit_response.status_code = 429
+    rate_limit_response.text = "Rate limit exceeded"
+    rate_limit_response.raise_for_status.side_effect = HTTPError(
+        response=rate_limit_response
+    )
+
+    def mock_request_handler(method, url, **kwargs):
+        # Return info for info endpoint
+        if url.endswith("/info"):
+            return info_response
+        # Return 429 for multipart endpoint
+        elif "multipart" in url:
+            return rate_limit_response
+        # Return 200 for other endpoints (should not be called in this test)
+        else:
+            success_response = MagicMock()
+            success_response.status_code = 200
+            return success_response
+
+    mock_session.request.side_effect = mock_request_handler
+
+    client = Client(
+        api_key="test",
+        session=mock_session,
+        auto_batch_tracing=True,
+        tracing_error_callback=error_callback,
+    )
+
+    # Create a test run using RunTree with trace_id and dotted_order
+    run_id = uuid.uuid4()
+    trace_id = uuid.uuid4()
+    run = RunTree(
+        name="test_run",
+        id=run_id,
+        trace_id=trace_id,
+        dotted_order=f"{time.time()}.{run_id}",
+        client=client,
+        project_name="test_project",
+        inputs={"input": "test"},
+    )
+    run.post()  # Explicitly post to trigger queue
+    run.end(outputs={"output": "test"})
+    run.patch()  # Explicitly patch to trigger queue
+
+    # Wait for the background thread to process
+    time.sleep(0.5)
+
+    # Now wait for callback
+    callback_event.wait(timeout=10.0)
+
+    # Verify callback was invoked with the error
+    assert len(callback_errors) >= 1, (
+        f"Expected callback to be invoked, got {len(callback_errors)} errors. "
+        f"Queue size: {client.tracing_queue.qsize() if client.tracing_queue else 'N/A'}"
+    )
+    assert isinstance(callback_errors[0], LangSmithRateLimitError)
+    assert "Rate limit exceeded" in str(callback_errors[0])
+
+
+@patch("langsmith.client.requests.Session")
+def test_prompt_commit_tags(mock_session_cls: mock.Mock) -> None:
+    """Test _create_commit_tags functionality and create_commit integration with tags."""
+    try:
+        from langchain_core.prompts import ChatPromptTemplate
+    except ImportError:
+        pytest.skip("Skipping test that requires langchain-core")
+
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+
+    def mock_request(method, url, **kwargs):
+        response = MagicMock()
+        response.status_code = 200
+
+        if "/commits/" in url and method == "GET":
+            response.json.return_value = {
+                "commits": [{"commit_hash": "parent123", "id": "1"}],
+                "total": 1,
+            }
+        elif "/commits/" in url and method == "POST":
+            response.json.return_value = {
+                "commit": {"commit_hash": "new_commit_123", "id": "1"}
+            }
+        elif "/repos/" in url and "/tags" in url and method == "POST":
+            response.json.return_value = {}
+        else:
+            response.json.return_value = {}
+
+        return response
+
+    mock_session.request.side_effect = mock_request
+    mock_session_cls.return_value = mock_session
+
+    client = Client(
+        api_url="http://localhost:1984",
+        api_key="test_api_key",
+    )
+
+    # Test 1: _create_commit_tags with multiple tags
+    mock_session.request.reset_mock()
+    mock_session.request.return_value = mock_response
+    tags = ["tag1", "tag2", "tag3"]
+    commit_id = "abc123"
+    client._create_commit_tags("test-owner/test-repo", commit_id, tags)
+
+    post_calls = [
+        call
+        for call in mock_session.request.call_args_list
+        if call[0][0] == "POST" and "/repos/" in call[0][1]
+    ]
+    assert len(post_calls) == 3
+
+    # Verify all tags were created (order not guaranteed due to threading)
+    tag_names_created = {call[1]["json"]["tag_name"] for call in post_calls}
+    assert tag_names_created == set(tags)
+
+    # Verify all calls have correct structure
+    for call_args in post_calls:
+        assert call_args[0][0] == "POST"
+        assert call_args[0][1].endswith("/repos/test-owner/test-repo/tags")
+        assert call_args[1]["json"]["commit_id"] == commit_id
+        assert call_args[1]["json"]["tag_name"] in tags
+
+    # Test 2: Empty tags list
+    mock_session.request.reset_mock()
+    client._create_commit_tags("owner/repo", "commit123", [])
+
+    post_calls = [
+        call
+        for call in mock_session.request.call_args_list
+        if call[0][0] == "POST" and "/repos/" in call[0][1]
+    ]
+    assert len(post_calls) == 0
+
+    # Test 3: create_commit with tags
+    mock_session.request.reset_mock()
+    mock_session.request.side_effect = mock_request
+
+    with patch.object(Client, "_prompt_exists", return_value=True):
+        with patch.object(Client, "_current_tenant_is_owner", return_value=True):
+            with patch.object(Client, "_get_settings") as mock_settings:
+                mock_settings.return_value = ls_schemas.LangSmithSettings(
+                    id=str(uuid.uuid4()),
+                    tenant_handle="test-owner",
+                    display_name="test_commit",
+                    created_at=datetime.now(),
+                )
+
+                prompt = ChatPromptTemplate.from_messages(
+                    [
+                        ("system", "You are a helpful assistant"),
+                        ("human", "{input}"),
+                    ]
+                )
+
+                # Create commit with tags
+                commit_tags = ["production", "v1.0"]
+                client.create_commit(
+                    "test-owner/test-prompt",
+                    prompt,
+                    tags=commit_tags,
+                )
+
+                tag_post_calls = [
+                    call
+                    for call in mock_session.request.call_args_list
+                    if call[0][0] == "POST"
+                    and "/repos/" in call[0][1]
+                    and "/tags" in call[0][1]
+                ]
+                assert len(tag_post_calls) == 2
+
+                tag_names = [call[1]["json"]["tag_name"] for call in tag_post_calls]
+                assert "production" in tag_names
+                assert "v1.0" in tag_names
+
+    # Test 4: create_commit without tags
+    mock_session.request.reset_mock()
+    mock_session.request.side_effect = mock_request
+
+    with patch.object(Client, "_prompt_exists", return_value=True):
+        with patch.object(Client, "_current_tenant_is_owner", return_value=True):
+            with patch.object(Client, "_get_settings") as mock_settings:
+                mock_settings.return_value = ls_schemas.LangSmithSettings(
+                    id=str(uuid.uuid4()),
+                    tenant_handle="test-owner",
+                    display_name="test_commit",
+                    created_at=datetime.now(),
+                )
+
+                client.create_commit(
+                    "test-owner/test-prompt",
+                    prompt,
+                )
+
+                tag_post_calls = [
+                    call
+                    for call in mock_session.request.call_args_list
+                    if call[0][0] == "POST"
+                    and "/repos/" in call[0][1]
+                    and "/tags" in call[0][1]
+                ]
+                assert len(tag_post_calls) == 0

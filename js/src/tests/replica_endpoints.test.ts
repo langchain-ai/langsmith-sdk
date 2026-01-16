@@ -8,6 +8,7 @@ import { Client } from "../client.js";
 import { RunTree } from "../run_trees.js";
 import { traceable } from "../traceable.js";
 import { getLangSmithEnvironmentVariable } from "../utils/env.js";
+import { mockClient } from "./utils/mock_client.js";
 
 // Helper function to parse mock request body
 const parseMockRequestBody = async (
@@ -740,6 +741,117 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
       await client.awaitPendingTraceBatches();
 
       expect(callSpy).toHaveBeenCalled();
+    });
+  });
+
+  describe("Replica Behavior with Main Project", () => {
+    it("replica targeting same project as default should include children", async () => {
+      const { client, callSpy } = mockClient();
+      const mainProject = "main-project";
+
+      // Grandchild has no replicas
+      const grandchild = traceable(
+        async () => {
+          return "grandchild";
+        },
+        {
+          name: "grandchild",
+          client,
+          project_name: mainProject,
+          tracingEnabled: true,
+        }
+      );
+
+      // Child has replicas: one for main project, one for replica project with reroot
+      const child = traceable(
+        async () => {
+          const grandchildRes = await grandchild();
+          return "child: " + grandchildRes;
+        },
+        {
+          replicas: [
+            {
+              projectName: mainProject, // Same as default
+            },
+            {
+              projectName: "replica-project",
+              reroot: true,
+            },
+          ],
+          name: "child",
+          client,
+          project_name: mainProject,
+          tracingEnabled: true,
+        }
+      );
+
+      // Parent has no replicas
+      const parent = traceable(
+        async () => {
+          const childRes = await child();
+          return "parent: " + childRes;
+        },
+        {
+          name: "parent",
+          client,
+          project_name: mainProject,
+          tracingEnabled: true,
+        }
+      );
+
+      await parent();
+
+      // Wait for async operations
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Get all POST calls
+      const allPostCalls = callSpy.mock.calls.filter(
+        (call) =>
+          (call[0] as string).includes("/runs") &&
+          (call[1] as any)?.method === "POST"
+      );
+
+      // Parse runs from calls
+      const runs = allPostCalls.map((call) => {
+        const body = (call[1] as any)?.body;
+        let bodyStr: string;
+        if (typeof body === "string") {
+          bodyStr = body;
+        } else if (Buffer.isBuffer(body)) {
+          bodyStr = body.toString("utf-8");
+        } else if (ArrayBuffer.isView(body)) {
+          bodyStr = new TextDecoder().decode(body);
+        } else {
+          bodyStr = JSON.stringify(body);
+        }
+        return JSON.parse(bodyStr);
+      });
+
+      // Count runs by project
+      const mainProjectRuns = runs.filter(
+        (r) => r.session_name === mainProject
+      );
+      const replicaProjectRuns = runs.filter(
+        (r) => r.session_name === "replica-project"
+      );
+
+      // Expected:
+      // - Parent: 1 in main (no replicas, uses default)
+      // - Child: 2 (main via default + replica-project via replica with new ID, skips main replica)
+      // - Grandchild: 2 (inherits child's replicas, main via default + replica-project via replica with new ID)
+      // Total: 5 runs (3 in main, 2 in replica-project)
+
+      expect(runs.length).toBe(5);
+      expect(mainProjectRuns.length).toBe(3); // parent, child, grandchild
+      expect(replicaProjectRuns.length).toBe(2); // child (rerooted), grandchild (remapped IDs)
+
+      // Verify each run type appears in main project
+      const mainNames = mainProjectRuns.map((r) => r.name).sort();
+      expect(mainNames).toEqual(["child", "grandchild", "parent"]);
+
+      // Verify child and grandchild appear in replica project
+      const replicaNames = replicaProjectRuns.map((r) => r.name).sort();
+      expect(replicaNames).toEqual(["child", "grandchild"]);
     });
   });
 });

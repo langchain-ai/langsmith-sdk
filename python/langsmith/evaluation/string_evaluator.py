@@ -10,10 +10,15 @@ from langsmith.schemas import Example, Run
 
 
 class StringEvaluator(RunEvaluator, BaseModel):
-    """Grades the run's string input, output, and optional answer."""
+    """Grades the run's string input, output, and optional answer.
+
+    .. deprecated:: 0.5.0
+
+       StringEvaluator is deprecated. Use openevals instead: https://github.com/langchain-ai/openevals
+    """
 
     evaluation_name: Optional[str] = None
-    """The name evaluation, such as 'Accuracy' or 'Salience'."""
+    """The name evaluation, such as `'Accuracy'` or `'Salience'`."""
     input_key: str = "input"
     """The key in the run inputs to extract the input string."""
     prediction_key: str = "output"

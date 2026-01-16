@@ -2,7 +2,8 @@ import { RunTree, RunnableConfigLike } from "../run_trees.js";
 import { ROOT } from "./traceable.js";
 import { _LC_CONTEXT_VARIABLES_KEY } from "./constants.js";
 
-type SmartPromise<T> = T extends AsyncGenerator
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type SmartPromise<T> = T extends AsyncIterable<any>
   ? T
   : T extends Promise<unknown>
   ? T
@@ -18,11 +19,13 @@ type WrapArgReturnPair<Pair> = Pair extends [
           runTree: RunTree | typeof ROOT,
           ...args: RestArgs
         ): SmartPromise<Return>;
+        /** @deprecated Will be removed in 0.4 */
         (config: RunnableConfigLike, ...args: RestArgs): SmartPromise<Return>;
       }
     : {
         (...args: Args): SmartPromise<Return>;
-        (runTree: RunTree, ...rest: Args): SmartPromise<Return>;
+        (runTree: RunTree | typeof ROOT, ...rest: Args): SmartPromise<Return>;
+        /** @deprecated Will be removed in 0.4 */
         (config: RunnableConfigLike, ...args: Args): SmartPromise<Return>;
       }
   : never;

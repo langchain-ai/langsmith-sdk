@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import logging
 import uuid
 from abc import abstractmethod
 from collections.abc import Awaitable, Sequence
+from functools import wraps
 from typing import (
     Any,
     Callable,
@@ -16,29 +18,11 @@ from typing import (
     cast,
 )
 
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from typing_extensions import TypedDict
 
 from langsmith import run_helpers as rh
 from langsmith import schemas
-
-try:
-    from pydantic.v1 import (  # type: ignore[import]
-        BaseModel,
-        Field,
-        ValidationError,
-        validator,
-    )
-except ImportError:
-    from pydantic import (  # type: ignore[assignment]
-        BaseModel,
-        Field,
-        ValidationError,
-        validator,
-    )
-
-import logging
-from functools import wraps
-
 from langsmith.schemas import SCORE_TYPE, VALUE_TYPE, Example, Run
 
 logger = logging.getLogger(__name__)
@@ -56,7 +40,7 @@ class Category(TypedDict):
 class FeedbackConfig(TypedDict, total=False):
     """Configuration to define a type of feedback.
 
-    Applied on on the first creation of a feedback_key.
+    Applied on on the first creation of a `feedback_key`.
     """
 
     type: Literal["continuous", "categorical", "freeform"]
@@ -77,6 +61,8 @@ class EvaluationResult(BaseModel):
     """The numeric score for this evaluation."""
     value: VALUE_TYPE = None
     """The value for this evaluation, if not numeric."""
+    metadata: Optional[dict] = None
+    """Arbitrary metadata attached to the evaluation."""
     comment: Optional[str] = None
     """An explanation regarding the evaluation."""
     correction: Optional[dict] = None
@@ -89,30 +75,23 @@ class EvaluationResult(BaseModel):
     """The ID of the trace of the evaluator itself."""
     target_run_id: Optional[Union[uuid.UUID, str]] = None
     """The ID of the trace this evaluation is applied to.
-    
+
     If none provided, the evaluation feedback is applied to the
     root trace being."""
     extra: Optional[dict] = None
     """Metadata for the evaluator run."""
 
-    class Config:
-        """Pydantic model configuration."""
+    model_config = ConfigDict(extra="forbid")
 
-        allow_extra = False
-
-    @validator("value", pre=True)
-    def check_value_non_numeric(cls, v, values):
-        """Check that the value is not numeric."""
-        # If a score isn't provided and the value is numeric
-        # it's more likely the user intended use the score field
-        if "score" not in values or values["score"] is None:
-            if isinstance(v, (int, float)):
-                logger.warning(
-                    "Numeric values should be provided in"
-                    " the 'score' field, not 'value'."
-                    f" Got: {v}"
-                )
-        return v
+    @model_validator(mode="after")
+    def check_value_non_numeric(self) -> EvaluationResult:
+        """Warn when numeric values are passed via the `value` field."""
+        if self.score is None and isinstance(self.value, (int, float)):
+            logger.warning(
+                "Numeric values should be provided in the 'score' field, not 'value'."
+                f" Got: {self.value}"
+            )
+        return self
 
 
 class EvaluationResults(TypedDict, total=False):
@@ -172,7 +151,9 @@ class ComparisonEvaluationResult(BaseModel):
     """The ID of the trace of the evaluator itself."""
     comment: Optional[Union[str, dict[Union[uuid.UUID, str], str]]] = None
     """Comment for the scores. If a string, it's shared across all target runs.
-    If a dict, it maps run IDs to individual comments."""
+    
+    If a `dict`, it maps run IDs to individual comments.
+    """
 
 
 _COMPARISON_OUTPUT = Union[ComparisonEvaluationResult, dict]
@@ -203,7 +184,7 @@ class DynamicRunEvaluator(RunEvaluator):
             ]
         ] = None,
     ):
-        """Initialize the DynamicRunEvaluator with a given function.
+        """Initialize the `DynamicRunEvaluator` with a given function.
 
         Args:
             func (Callable): A function that takes a `Run` and an optional `Example` as
@@ -313,7 +294,7 @@ class DynamicRunEvaluator(RunEvaluator):
         """Check if the evaluator function is asynchronous.
 
         Returns:
-            bool: True if the evaluator function is asynchronous, False otherwise.
+            bool: `True` if the evaluator function is asynchronous, `False` otherwise.
         """
         return hasattr(self, "afunc")
 
@@ -449,7 +430,7 @@ class DynamicComparisonRunEvaluator:
             ]
         ] = None,
     ):
-        """Initialize the DynamicRunEvaluator with a given function.
+        """Initialize the `DynamicRunEvaluator` with a given function.
 
         Args:
             func (Callable): A function that takes a `Run` and an optional `Example` as
@@ -504,7 +485,7 @@ class DynamicComparisonRunEvaluator:
         """Check if the evaluator function is asynchronous.
 
         Returns:
-            bool: True if the evaluator function is asynchronous, False otherwise.
+            bool: `True` if the evaluator function is asynchronous, `False` otherwise.
         """
         return hasattr(self, "afunc")
 

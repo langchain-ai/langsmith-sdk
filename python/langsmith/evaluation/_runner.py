@@ -50,7 +50,17 @@ from langsmith.evaluation.evaluator import (
     comparison_evaluator,
     run_evaluator,
 )
-from langsmith.evaluation.integrations import LangChainStringEvaluator
+
+# Python 3.14+ removes ast.Str in favor of ast.Constant
+_AST_STR_TYPES: tuple = (
+    (ast.Str, ast.Constant) if hasattr(ast, "Str") else (ast.Constant,)
+)
+
+
+def _get_str_value(node: ast.expr) -> str:
+    """Get string value from ast.Str or ast.Constant."""
+    return node.value if isinstance(node, ast.Constant) else node.s  # type: ignore[return-value,union-attr,attr-defined]
+
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -148,48 +158,46 @@ def evaluate(
 
     Args:
         target (TARGET_T | Runnable | EXPERIMENT_T | Tuple[EXPERIMENT_T, EXPERIMENT_T]):
-            The target system or experiment(s) to evaluate. Can be a function
-            that takes a dict and returns a dict, a langchain Runnable, an
+            The target system or experiment(s) to evaluate.
+
+            Can be a function that takes a dict and returns a `dict`, a langchain `Runnable`, an
             existing experiment ID, or a two-tuple of experiment IDs.
-        data (DATA_T): The dataset to evaluate on. Can be a dataset name, a list of
-            examples, or a generator of examples.
+        data (DATA_T): The dataset to evaluate on.
+
+            Can be a dataset name, a list of examples, or a generator of examples.
         evaluators (Sequence[EVALUATOR_T] | Sequence[COMPARATIVE_EVALUATOR_T] | None):
             A list of evaluators to run on each example. The evaluator signature
-            depends on the target type. Default to None.
+            depends on the target type.
         summary_evaluators (Sequence[SUMMARY_EVALUATOR_T] | None): A list of summary
-            evaluators to run on the entire dataset. Should not be specified if
-            comparing two existing experiments. Defaults to None.
+            evaluators to run on the entire dataset.
+
+            Should not be specified if comparing two existing experiments.
         metadata (dict | None): Metadata to attach to the experiment.
-            Defaults to None.
         experiment_prefix (str | None): A prefix to provide for your experiment name.
-            Defaults to None.
         description (str | None): A free-form text description for the experiment.
         max_concurrency (int | None): The maximum number of concurrent
-            evaluations to run. If None then no limit is set. If 0 then no concurrency.
-            Defaults to 0.
+            evaluations to run.
+
+            If `None` then no limit is set. If `0` then no concurrency.
         client (langsmith.Client | None): The LangSmith client to use.
-            Defaults to None.
         blocking (bool): Whether to block until the evaluation is complete.
-            Defaults to True.
         num_repetitions (int): The number of times to run the evaluation.
             Each item in the dataset will be run and evaluated this many times.
-            Defaults to 1.
         experiment (schemas.TracerSession | None): An existing experiment to
-            extend. If provided, experiment_prefix is ignored. For advanced
-            usage only. Should not be specified if target is an existing experiment or
-            two-tuple fo experiments.
-        load_nested (bool): Whether to load all child runs for the experiment.
-            Default is to only load the top-level root runs. Should only be specified
-            when target is an existing experiment or two-tuple of experiments.
-        randomize_order (bool): Whether to randomize the order of the outputs for each
-            evaluation. Default is False. Should only be specified when target is a
-            two-tuple of existing experiments.
-        error_handling (str, default="log"): How to handle individual run errors. 'log'
-            will trace the runs with the error message as part of the experiment,
-            'ignore' will not count the run as part of the experiment at all.
+            extend.
+
+            If provided, `experiment_prefix` is ignored.
+
+            For advanced usage only. Should not be specified if target is an existing
+            experiment or two-tuple fo experiments.
+        error_handling (str, default="log"): How to handle individual run errors.
+
+            `'log'` will trace the runs with the error message as part of the
+            experiment, `'ignore'` will not count the run as part of the experiment at
+            all.
 
     Returns:
-        ExperimentResults: If target is a function, Runnable, or existing experiment.
+        ExperimentResults: If target is a function, `Runnable`, or existing experiment.
         ComparativeExperimentResults: If target is a two-tuple of existing experiments.
 
     Examples:
@@ -265,38 +273,7 @@ def evaluate(
         >>> for i, result in enumerate(results):  # doctest: +ELLIPSIS
         ...     pass
 
-        Using the `evaluate` API with an off-the-shelf LangChain evaluator:
 
-        >>> from langsmith.evaluation import LangChainStringEvaluator  # doctest: +SKIP
-        >>> from langchain_openai import ChatOpenAI  # doctest: +SKIP
-        >>> def prepare_criteria_data(run: Run, example: Example):  # doctest: +SKIP
-        ...     return {
-        ...         "prediction": run.outputs["output"],
-        ...         "reference": example.outputs["answer"],
-        ...         "input": str(example.inputs),
-        ...     }
-        >>> results = evaluate(  # doctest: +SKIP
-        ...     predict,
-        ...     data=dataset_name,
-        ...     evaluators=[
-        ...         accuracy,
-        ...         LangChainStringEvaluator("embedding_distance"),
-        ...         LangChainStringEvaluator(
-        ...             "labeled_criteria",
-        ...             config={
-        ...                 "criteria": {
-        ...                     "usefulness": "The prediction is useful if it is correct"
-        ...                     " and/or asks a useful followup question."
-        ...                 },
-        ...                 "llm": ChatOpenAI(model="gpt-4o"),
-        ...             },
-        ...             prepare_data=prepare_criteria_data,
-        ...         ),
-        ...     ],
-        ...     description="Evaluating with off-the-shelf LangChain evaluators.",
-        ...     summary_evaluators=[precision],
-        ... )
-        View the evaluation results for experiment:...  # doctest: +SKIP
 
         Evaluating a LangChain object:
 
@@ -316,7 +293,7 @@ def evaluate(
         ... )  # doctest: +ELLIPSIS
         View the evaluation results for experiment:...
 
-    .. versionchanged:: 0.2.0
+    !!! warning "Behavior changed in `langsmith` 0.2.0"
 
         'max_concurrency' default updated from None (no limit on concurrency)
         to 0 (no concurrency at all).
@@ -453,27 +430,30 @@ def evaluate_existing(
 
     Args:
         experiment (Union[str, uuid.UUID]): The identifier of the experiment to evaluate.
-        data (DATA_T): The data to use for evaluation.
         evaluators (Optional[Sequence[EVALUATOR_T]]): Optional sequence of evaluators to use for individual run evaluation.
         summary_evaluators (Optional[Sequence[SUMMARY_EVALUATOR_T]]): Optional sequence of evaluators
             to apply over the entire dataset.
         metadata (Optional[dict]): Optional metadata to include in the evaluation results.
         max_concurrency (int | None): The maximum number of concurrent
-            evaluations to run. If None then no limit is set. If 0 then no concurrency.
-            Defaults to 0.
+            evaluations to run.
+
+            If `None` then no limit is set. If `0` then no concurrency.
         client (Optional[langsmith.Client]): Optional Langsmith client to use for evaluation.
         load_nested: Whether to load all child runs for the experiment.
+
             Default is to only load the top-level root runs.
         blocking (bool): Whether to block until evaluation is complete.
 
     Returns:
-        ExperimentResults: The evaluation results.
+        The evaluation results.
 
     Environment:
-        - LANGSMITH_TEST_CACHE: If set, API calls will be cached to disk to save time and
-            cost during testing. Recommended to commit the cache files to your repository
-            for faster CI/CD runs.
-            Requires the 'langsmith[vcr]' package to be installed.
+        - `LANGSMITH_TEST_CACHE`: If set, API calls will be cached to disk to save time and
+            cost during testing.
+
+            Recommended to commit the cache files to your repository for faster CI/CD runs.
+
+            Requires the `'langsmith[vcr]'` package to be installed.
 
     Examples:
         Define your evaluators
@@ -520,7 +500,7 @@ def evaluate_existing(
         >>> len(results) > 0
         True
         >>> import time
-        >>> time.sleep(2)
+        >>> time.sleep(5)  # Wait longer for runs to be indexed
         >>> results = evaluate_existing(
         ...     experiment_id,
         ...     evaluators=[accuracy],
@@ -676,21 +656,17 @@ def evaluate_comparative(
         evaluators (Sequence[COMPARATIVE_EVALUATOR_T]):
             A list of evaluators to run on each example.
         experiment_prefix (Optional[str]): A prefix to provide for your experiment name.
-            Defaults to None.
         description (Optional[str]): A free-form text description for the experiment.
         max_concurrency (int): The maximum number of concurrent evaluations to run.
-            Defaults to 5.
         client (Optional[langsmith.Client]): The LangSmith client to use.
-            Defaults to None.
         metadata (Optional[dict]): Metadata to attach to the experiment.
-            Defaults to None.
         load_nested (bool): Whether to load all child runs for the experiment.
+
             Default is to only load the top-level root runs.
         randomize_order (bool): Whether to randomize the order of the outputs for each evaluation.
-            Default is False.
 
     Returns:
-        ComparativeExperimentResults: The results of the comparative evaluation.
+        The results of the comparative evaluation.
 
     Examples:
         Suppose you want to compare two prompts to see which one is more effective.
@@ -1224,6 +1200,7 @@ class _ExperimentManagerMixin:
 
     def _get_experiment_metadata(self):
         project_metadata = self._metadata or {}
+        project_metadata["__ls_runner"] = "py_sdk_evaluate"
         git_info = ls_env.get_git_info()
         if git_info:
             project_metadata = {
@@ -1308,7 +1285,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
         experiment_prefix (Optional[str]): The prefix for the experiment name.
         metadata (Optional[dict]): Additional metadata for the experiment.
         client (Optional[langsmith.Client]): The Langsmith client used for
-             the experiment.
+            the experiment.
         evaluation_results (Optional[Iterable[EvaluationResults]]): The evaluation
             sresults for the experiment.
         summary_results (Optional[Iterable[EvaluationResults]]): The aggregate results
@@ -1358,7 +1335,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
 
         This is only in the case that an attachment is going to be used by more
         than 1 callable (target + evaluators). In that case we keep a single copy
-        of the attachment data in self._attachment_raw_data_dict, and create
+        of the attachment data in `self._attachment_raw_data_dict`, and create
         readers from that data. This makes it so that we don't have to keep
         copies of the same data in memory, instead we can just create readers
         from the same data.
@@ -1528,7 +1505,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
             )
 
     def get_summary_scores(self) -> dict[str, list[dict]]:
-        """If summary_evaluators were applied, consume and return the results."""
+        """If `summary_evaluators` were applied, consume and return the results."""
         if self._summary_results is None:
             return {"results": []}
         # Consume the generator
@@ -1755,7 +1732,7 @@ class _ExperimentManager(_ExperimentManagerMixin):
                         aggregate_feedback.extend(flattened_results)
                         if self._upload_results:
                             for result in flattened_results:
-                                feedback = result.dict(exclude={"target_run_id"})
+                                feedback = result.model_dump(exclude={"target_run_id"})
                                 evaluator_info = feedback.pop("evaluator_info", None)
                                 executor.submit(
                                     self.client.create_feedback,
@@ -1841,8 +1818,6 @@ def _resolve_evaluators(
     for evaluator in evaluators:
         if isinstance(evaluator, RunEvaluator):
             results.append(evaluator)
-        elif isinstance(evaluator, LangChainStringEvaluator):
-            results.append(evaluator.as_run_evaluator())
         else:
             results.append(run_evaluator(evaluator))
     return results
@@ -1967,6 +1942,10 @@ def _resolve_data(
     return data
 
 
+def _default_process_inputs(inputs: dict) -> dict:
+    return inputs["inputs"] if "inputs" in inputs else inputs
+
+
 def _ensure_traceable(
     target: TARGET_T | rh.SupportsLangsmithExtra[[dict], dict] | Runnable,
 ) -> rh.SupportsLangsmithExtra[[dict], dict]:
@@ -1989,7 +1968,9 @@ def _ensure_traceable(
     else:
         if _is_langchain_runnable(target):
             target = target.invoke  # type: ignore[union-attr]
-        fn = rh.traceable(name="Target")(cast(Callable, target))
+        fn = rh.traceable(name="Target", process_inputs=_default_process_inputs)(
+            cast(Callable, target)
+        )
     return fn
 
 
@@ -2124,12 +2105,10 @@ def _extract_code_evaluator_feedback_keys(func: Callable) -> list[str]:
             keys = []
             key_value = None
             for key, value in zip(node.keys, node.values):
-                if isinstance(key, (ast.Str, ast.Constant)):
-                    key_str = key.s if isinstance(key, ast.Str) else key.value
-                    if key_str == "key" and isinstance(value, (ast.Str, ast.Constant)):
-                        key_value = (
-                            value.s if isinstance(value, ast.Str) else value.value
-                        )
+                if isinstance(key, _AST_STR_TYPES):
+                    key_str = _get_str_value(key)
+                    if key_str == "key" and isinstance(value, _AST_STR_TYPES):
+                        key_value = _get_str_value(value)
             return [key_value] if key_value else keys
         elif (
             isinstance(node, ast.Call)
@@ -2137,16 +2116,8 @@ def _extract_code_evaluator_feedback_keys(func: Callable) -> list[str]:
             and node.func.id == "dict"
         ):
             for keyword in node.keywords:
-                if keyword.arg == "key" and isinstance(
-                    keyword.value, (ast.Str, ast.Constant)
-                ):
-                    return [
-                        (
-                            keyword.value.s
-                            if isinstance(keyword.value, ast.Str)
-                            else keyword.value.value
-                        )
-                    ]
+                if keyword.arg == "key" and isinstance(keyword.value, _AST_STR_TYPES):
+                    return [_get_str_value(keyword.value)]
         return []
 
     def extract_evaluation_result_key(node):
@@ -2156,16 +2127,8 @@ def _extract_code_evaluator_feedback_keys(func: Callable) -> list[str]:
             and node.func.id == "EvaluationResult"
         ):
             for keyword in node.keywords:
-                if keyword.arg == "key" and isinstance(
-                    keyword.value, (ast.Str, ast.Constant)
-                ):
-                    return [
-                        (
-                            keyword.value.s
-                            if isinstance(keyword.value, ast.Str)
-                            else keyword.value.value
-                        )
-                    ]
+                if keyword.arg == "key" and isinstance(keyword.value, _AST_STR_TYPES):
+                    return [_get_str_value(keyword.value)]
         return []
 
     def extract_evaluation_results_keys(node, variables):
@@ -2185,20 +2148,18 @@ def _extract_code_evaluator_feedback_keys(func: Callable) -> list[str]:
                         return keys
         elif isinstance(node, ast.Dict):
             for key, value in zip(node.keys, node.values):
-                if isinstance(key, (ast.Str, ast.Constant)) and key.s == "results":
+                if isinstance(key, _AST_STR_TYPES) and _get_str_value(key) == "results":
                     if isinstance(value, ast.List):
                         keys = []
                         for elt in value.elts:
                             if isinstance(elt, ast.Dict):
                                 for elt_key, elt_value in zip(elt.keys, elt.values):
                                     if (
-                                        isinstance(elt_key, (ast.Str, ast.Constant))
-                                        and elt_key.s == "key"
+                                        isinstance(elt_key, _AST_STR_TYPES)
+                                        and _get_str_value(elt_key) == "key"
                                     ):
-                                        if isinstance(
-                                            elt_value, (ast.Str, ast.Constant)
-                                        ):
-                                            keys.append(elt_value.s)
+                                        if isinstance(elt_value, _AST_STR_TYPES):
+                                            keys.append(_get_str_value(elt_value))
                             elif (
                                 isinstance(elt, ast.Call)
                                 and isinstance(elt.func, ast.Name)
@@ -2206,13 +2167,9 @@ def _extract_code_evaluator_feedback_keys(func: Callable) -> list[str]:
                             ):
                                 for keyword in elt.keywords:
                                     if keyword.arg == "key" and isinstance(
-                                        keyword.value, (ast.Str, ast.Constant)
+                                        keyword.value, _AST_STR_TYPES
                                     ):
-                                        keys.append(
-                                            keyword.value.s
-                                            if isinstance(keyword.value, ast.Str)
-                                            else keyword.value.value
-                                        )
+                                        keys.append(_get_str_value(keyword.value))
 
                         return keys
         return []

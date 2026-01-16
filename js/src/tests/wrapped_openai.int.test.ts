@@ -93,6 +93,8 @@ test("chat.completions", async () => {
 
   expect(patchedChoices).toEqual(originalChoices);
 
+  await client.awaitPendingTraceBatches();
+
   expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
 
   // Verify token events were logged
@@ -302,6 +304,7 @@ test("chat completions with tool calling", async () => {
   expect(removeToolCallId(patchedChoices)).toEqual(
     removeToolCallId(originalChoices)
   );
+  await client.awaitPendingTraceBatches();
   expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
 
   // Verify token events were logged for tool calling stream
@@ -363,6 +366,7 @@ test("chat completions with tool calling", async () => {
   expect(removeToolCallId(patchedChoices2)).toEqual(
     removeToolCallId(originalChoices)
   );
+  await client.awaitPendingTraceBatches();
   expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
   for (const call of callSpy.mock.calls) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -554,7 +558,9 @@ test("chat extra name", async () => {
     // pass
   }
 
-  expect(getAssumedTreeFromCalls(callSpy.mock.calls)).toMatchObject({
+  expect(
+    await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+  ).toMatchObject({
     nodes: ["red:0", "green:1"],
     edges: [],
     data: {
@@ -635,7 +641,10 @@ test("responses.create and retrieve workflow", async () => {
 
   // Create a response (this should be traced)
   const createResponse = await openai.responses.create({
-    model: "gpt-4.1-nano",
+    model: "gpt-5-nano",
+    reasoning: {
+      effort: "low",
+    },
     input: [
       {
         role: "user",
@@ -668,9 +677,14 @@ test("responses.create and retrieve workflow", async () => {
   for (const call of createCalls) {
     const body = parseRequestBody((call[1] as any).body);
     expect(body.extra.metadata).toMatchObject({
-      ls_model_name: "gpt-4.1-nano",
+      ls_model_name: "gpt-5-nano",
       ls_model_type: "chat",
       ls_provider: "openai",
+      ls_invocation_params: {
+        reasoning: {
+          effort: "low",
+        },
+      },
     });
   }
   const updateCalls = callSpy.mock.calls.filter(
@@ -712,6 +726,7 @@ test("responses.create streaming", async () => {
   }
 
   expect(chunks.length).toBeGreaterThan(0);
+  await client.awaitPendingTraceBatches();
   expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
 
   // Verify token events were logged
@@ -1043,6 +1058,7 @@ describe("Usage Metadata Tests", () => {
           );
           oaiUsage = (res as OpenAI.ChatCompletion).usage;
         }
+        await client.awaitPendingTraceBatches();
 
         let usageMetadata: UsageMetadata | undefined;
         const requestBodies: any = {};
@@ -1117,4 +1133,87 @@ describe("Usage Metadata Tests", () => {
       });
     }
   );
+});
+
+test("chat.completions.stream with finalChatCompletion", async () => {
+  const { client, callSpy } = mockClient();
+  const openai = wrapOpenAI(new OpenAI(), {
+    client,
+    tracingEnabled: true,
+  });
+
+  const stream = openai.chat.completions.stream({
+    model: "gpt-4o-mini",
+    messages: [{ role: "user", content: "Say 'hello'" }],
+  });
+
+  const completion = await stream.finalChatCompletion();
+
+  expect(completion.choices[0].message.role).toBe("assistant");
+  expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
+
+  // Verify tracing calls were made
+  const patchCalls = callSpy.mock.calls.filter(
+    (call) => (call[1] as any).method === "PATCH"
+  );
+  expect(patchCalls.length).toBeGreaterThan(0);
+
+  callSpy.mockClear();
+});
+
+test("chat.completions.stream with finalMessage", async () => {
+  const { client, callSpy } = mockClient();
+  const openai = wrapOpenAI(new OpenAI(), {
+    client,
+    tracingEnabled: true,
+  });
+
+  const stream = openai.chat.completions.stream({
+    model: "gpt-4o-mini",
+    messages: [{ role: "user", content: "Say 'hello'" }],
+  });
+
+  const message = await stream.finalMessage();
+
+  expect(message.role).toBe("assistant");
+  expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
+
+  // Verify tracing calls were made
+  const patchCalls = callSpy.mock.calls.filter(
+    (call) => (call[1] as any).method === "PATCH"
+  );
+  expect(patchCalls.length).toBeGreaterThan(0);
+
+  callSpy.mockClear();
+});
+
+test("responses.stream with finalResponse", async () => {
+  const { client, callSpy } = mockClient();
+  const openai = wrapOpenAI(new OpenAI(), {
+    client,
+    tracingEnabled: true,
+  });
+
+  const stream = openai.responses.stream({
+    model: "gpt-4.1-nano",
+    input: [
+      {
+        role: "user",
+        content: [{ type: "input_text", text: "Say hello" }],
+      },
+    ],
+  });
+
+  const response = await stream.finalResponse();
+
+  expect(response).toBeDefined();
+  expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
+
+  // Verify tracing calls were made
+  const patchCalls = callSpy.mock.calls.filter(
+    (call) => (call[1] as any).method === "PATCH"
+  );
+  expect(patchCalls.length).toBeGreaterThan(0);
+
+  callSpy.mockClear();
 });

@@ -304,13 +304,14 @@ def _tracing_thread_handle_batch(
                     api_key=api_key,
                 )
 
-    except Exception:
+    except Exception as e:
         logger.error(
             "LangSmith tracing error: Failed to submit trace data.\n"
             "This does not affect your application's runtime.\n"
             "Error details:",
             exc_info=True,
         )
+        client._invoke_tracing_error_callback(e)
     finally:
         if mark_task_done and tracing_queue is not None:
             for _ in batch:
@@ -367,13 +368,14 @@ def _otel_tracing_thread_handle_batch(
                     "Error details: client.otel_exporter is None"
                 )
 
-    except Exception:
+    except Exception as e:
         logger.error(
             "OTEL tracing error: Failed to submit trace data.\n"
             "This does not affect your application's runtime.\n"
             "Error details:",
             exc_info=True,
         )
+        client._invoke_tracing_error_callback(e)
     finally:
         if mark_task_done and tracing_queue is not None:
             for _ in batch:
@@ -529,7 +531,7 @@ def _ensure_ingest_config(
     info: ls_schemas.LangSmithInfo,
 ) -> ls_schemas.BatchIngestConfig:
     default_config = ls_schemas.BatchIngestConfig(
-        use_multipart_endpoint=False,
+        use_multipart_endpoint=True,
         size_limit_bytes=None,  # Note this field is not used here
         size_limit=100,
         scale_up_nthreads_limit=_AUTO_SCALE_UP_NTHREADS_LIMIT,
@@ -582,7 +584,9 @@ def tracing_control_thread_func(client_ref: weakref.ref[Client]) -> None:
     size_limit: int = batch_ingest_config["size_limit"]
     scale_up_nthreads_limit: int = batch_ingest_config["scale_up_nthreads_limit"]
     scale_up_qsize_trigger: int = batch_ingest_config["scale_up_qsize_trigger"]
-    use_multipart = batch_ingest_config.get("use_multipart_endpoint", False)
+    use_multipart = not client._multipart_disabled and batch_ingest_config.get(
+        "use_multipart_endpoint", True
+    )
 
     sub_threads: list[threading.Thread] = []
     # 1 for this func, 1 for getrefcount, 1 for _get_data_type_cached

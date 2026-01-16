@@ -1,14 +1,80 @@
+import io
 import json
+import time
+import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 from uuid import UUID
 
 import pytest
+from multipart import MultipartParser, parse_options_header
+from requests_toolbelt import MultipartEncoder
 
 from langsmith import run_trees
+from langsmith import schemas as ls_schemas
+from langsmith._internal._uuid import uuid7_deterministic
 from langsmith.client import Client
 from langsmith.run_trees import RunTree
+
+
+def _get_calls(
+    mock_client: Client,
+    minimum: int = 0,
+    verbs: set[str] = {"POST"},
+    attempts: int = 10,
+):
+    calls = []
+    for _ in range(attempts):
+        calls = [
+            c
+            for c in mock_client.session.request.mock_calls  # type: ignore[attr-defined]
+            if c.args and c.args[0] in verbs
+        ]
+        if minimum is None:
+            return calls
+        if minimum is not None and len(calls) > minimum:
+            break
+        time.sleep(0.1)
+    return calls
+
+
+def _get_multipart_data(mock_calls):
+    datas = []
+    for call_ in mock_calls:
+        data = call_.kwargs.get("data")
+        headers = call_.kwargs.get("headers", {})
+        content_type = headers.get("Content-Type")
+        if not content_type or not content_type.startswith("multipart/form-data"):
+            continue
+
+        # Get boundary from content type
+        boundary = parse_options_header(content_type)[1].get("boundary")
+        if not boundary:
+            continue
+
+        # Normalize data to raw bytes
+        if isinstance(data, (bytes, bytearray)):
+            raw = data
+        elif isinstance(data, MultipartEncoder):
+            raw = data.to_string()
+        else:
+            # Unknown format
+            continue
+
+        parser = MultipartParser(io.BytesIO(raw), boundary)
+        for part in parser.parts():
+            name = part.name
+            part_ct = part.headers.get("Content-Type", "")
+            value = part.value
+            datas.append((name, (part_ct, value)))
+    return datas
+
+
+def _get_mock_client(**kwargs):
+    mock_session = MagicMock()
+    client = Client(session=mock_session, api_key="test", **kwargs)
+    return client
 
 
 def test_run_tree_accepts_tpe() -> None:
@@ -267,3 +333,194 @@ def test_distributed_parent_id_from_headers():
         f"Distributed parent ID should be the immediate parent from headers! "
         f"Expected {child.id}, got {current_distributed_parent_id}"
     )
+
+
+def test_remap_for_project():
+    """Test _remap_for_project remaps IDs correctly using uuid7_deterministic."""
+    mock_client = MagicMock(spec=Client)
+
+    root = RunTree(name="Root", inputs={}, client=mock_client, session_name="original")
+    child = root.create_child(name="Child")
+
+    # Same project: no remapping
+    same = child._remap_for_project("original")
+    assert same["id"] == child.id
+
+    # Different project: IDs remapped deterministically
+    r1 = child._remap_for_project("replica")
+    r2 = child._remap_for_project("replica")
+
+    assert r1["id"] == uuid7_deterministic(child.id, "replica")
+    assert r1["trace_id"] == uuid7_deterministic(root.id, "replica")
+    assert r1["parent_run_id"] == uuid7_deterministic(root.id, "replica")
+    assert r1["id"].version == 7
+    assert r1 == r2  # Deterministic
+
+
+def test_inputs_attachment_moved_to_attachments():
+    """Ensure Attachment values in inputs are moved to attachments."""
+    mock_client = _get_mock_client(
+        info=ls_schemas.LangSmithInfo(
+            instance_flags={
+                "zstd_compression_enabled": False,
+            },
+            batch_ingest_config=ls_schemas.BatchIngestConfig(
+                use_multipart_endpoint=True,
+                size_limit_bytes=None,
+                size_limit=100,
+                scale_up_nthreads_limit=16,
+                scale_up_qsize_trigger=1000,
+                scale_down_nempty_trigger=4,
+            ),
+        ),
+    )
+    run_tree = RunTree(
+        name="WithAttachment",
+        inputs={
+            "text": "hello",
+            "file": ls_schemas.Attachment(mime_type="text/plain", data=b"hi"),
+        },
+        client=mock_client,
+    )
+    run_tree.post()
+
+    # Wait until at least one POST call is recorded by the background thread
+    calls = _get_calls(mock_client, minimum=0)
+    assert calls
+    datas = _get_multipart_data(calls)
+    assert datas
+
+    # Find trace_id from a post field
+    post_keys = [k for k, _ in datas if k.startswith("post.") and k.endswith(".inputs")]
+    assert post_keys, f"No post inputs found in multipart fields: {datas}"
+    # Keys are like 'post.<trace_id>.inputs'
+    trace_id = post_keys[0].split(".")[1]
+
+    # Verify inputs no longer contain the attachment key
+    _, (_, inputs_bytes) = next((d for d in datas if d[0] == f"post.{trace_id}.inputs"))
+    inputs_obj = json.loads(inputs_bytes)
+    assert inputs_obj == {"text": "hello"}
+
+    # Verify the attachment was uploaded under the correct key
+    key = f"attachment.{trace_id}.file"
+    _, (mime_type, content) = next((d for d in datas if d[0] == key))
+    assert mime_type == "text/plain"
+    assert content == "hi"
+
+
+def test_create_child_enforces_timestamp_order():
+    """Test that child runs cannot have start_time earlier than parent.
+
+    This prevents timestamp ordering violations in dotted_order that can
+    cause 400 Bad Request errors from the LangSmith API.
+
+    See: https://github.com/langchain-ai/langsmith-sdk/issues/2236
+    """
+    mock_client = MagicMock(spec=Client)
+
+    # Create a parent run with a specific timestamp
+    parent_time = datetime(2025, 12, 22, 23, 43, 8, 14739, tzinfo=timezone.utc)
+    parent = RunTree(
+        name="Parent",
+        start_time=parent_time,
+        client=mock_client,
+    )
+
+    # Try to create a child with an earlier timestamp (simulating race condition)
+    earlier_time = parent_time - timedelta(milliseconds=3)
+    child = parent.create_child(
+        name="Child",
+        start_time=earlier_time,
+    )
+
+    # Child's start_time should be adjusted to match parent's start_time
+    assert child.start_time == parent.start_time
+    assert child.parent_run_id == parent.id
+
+    # Test with a later timestamp - should not be modified
+    later_time = parent_time + timedelta(milliseconds=10)
+    child2 = parent.create_child(
+        name="Child2",
+        start_time=later_time,
+    )
+    assert child2.start_time == later_time
+
+    # Test with no start_time provided - should use current time
+    child3 = parent.create_child(name="Child3")
+    assert child3.start_time >= parent.start_time
+
+
+def test_trace_start_time():
+    """Test that trace_start_time returns the root run's
+    start time for all nested runs."""
+    mock_client = MagicMock(spec=Client)
+
+    # Create a nested hierarchy: root -> child1 -> grandchild
+    #                                 -> child2
+    root = RunTree(name="root", client=mock_client)
+    child1 = root.create_child(name="child1")
+    grandchild = child1.create_child(name="grandchild")
+    child2 = root.create_child(name="child2")
+
+    # All runs should have the same trace_start_time as the root's start_time
+    assert root.trace_start_time == root.start_time
+    assert child1.trace_start_time == root.start_time
+    assert grandchild.trace_start_time == root.start_time
+    assert child2.trace_start_time == root.start_time
+
+    # Verify trace_start_time is timezone-aware (UTC)
+    assert root.trace_start_time.tzinfo == timezone.utc
+    assert child1.trace_start_time.tzinfo == timezone.utc
+
+
+def test_to_headers_does_not_serialize_replicas():
+    mock_client = MagicMock(spec=Client)
+    rt = RunTree(
+        name="test",
+        run_type="chain",
+        client=mock_client,
+        replicas=[
+            {
+                "api_key": "secret-key",
+                "api_url": "https://attacker.com",
+                "project_name": "safe-project",
+                "updates": {"reroot": True},
+            }
+        ],
+    )
+    headers = rt.to_headers()
+    baggage = headers.get("baggage", "")
+
+    assert "replicas" not in baggage
+    assert "secret-key" not in baggage
+    assert "attacker.com" not in baggage
+    assert "safe-project" not in baggage
+
+
+def test_from_headers_filters_replica_credentials():
+    replicas_json = json.dumps(
+        [
+            {
+                "api_key": "injected-key",
+                "api_url": "https://evil.com/exfil",
+                "project_name": "legit-project",
+                "updates": {"reroot": True},
+            }
+        ]
+    )
+    baggage = f"langsmith-replicas={urllib.parse.quote(replicas_json)}"
+    headers = {
+        "langsmith-trace": "20240101T000000000000Z00000000-0000-0000-0000-000000000001",
+        "baggage": baggage,
+    }
+
+    parsed = RunTree.from_headers(headers)
+
+    assert parsed is not None
+    assert parsed.replicas is not None
+    assert len(parsed.replicas) == 1
+    replica = parsed.replicas[0]
+    assert "api_key" not in replica
+    assert "api_url" not in replica
+    assert replica.get("project_name") == "legit-project"
+    assert replica.get("updates") == {"reroot": True}

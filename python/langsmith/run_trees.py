@@ -2,36 +2,27 @@
 
 from __future__ import annotations
 
+import contextvars
 import functools
 import json
 import logging
 import sys
+import threading
+import urllib.parse
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from typing import Any, Optional, Union, cast
 from uuid import UUID
 
+from pydantic import ConfigDict, Field, model_validator
 from typing_extensions import TypedDict
-
-from langsmith._internal._uuid import uuid7
-from langsmith.uuid import uuid7_from_datetime
-
-try:
-    from pydantic.v1 import Field, root_validator  # type: ignore[import]
-except ImportError:
-    from pydantic import (  # type: ignore[assignment, no-redef]
-        Field,
-        root_validator,
-    )
-
-import contextvars
-import threading
-import urllib.parse
 
 import langsmith._internal._context as _context
 from langsmith import schemas as ls_schemas
 from langsmith import utils
+from langsmith._internal._uuid import uuid7, uuid7_deterministic
 from langsmith.client import ID_TYPE, RUN_TYPE_T, Client, _dumps_json, _ensure_uuid
+from langsmith.uuid import uuid7_from_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +32,16 @@ class WriteReplica(TypedDict, total=False):
     api_key: Optional[str]
     project_name: Optional[str]
     updates: Optional[dict]
+
+
+_HEADER_SAFE_REPLICA_FIELDS: frozenset[str] = frozenset({"project_name", "updates"})
+
+
+def _filter_replica_for_headers(replica: WriteReplica) -> WriteReplica:
+    return cast(
+        WriteReplica,
+        {k: v for k, v in replica.items() if k in _HEADER_SAFE_REPLICA_FIELDS},
+    )
 
 
 LANGSMITH_PREFIX = "langsmith-"
@@ -98,25 +99,33 @@ def configure(
 
     Args:
         client: A LangSmith Client instance to use for all tracing operations.
+
             If provided, this client will be used instead of creating new clients.
+
             Pass `None` to explicitly clear the global client.
-        enabled: Whether tracing is enabled. Can be:
+        enabled: Whether tracing is enabled.
+
+            Can be:
+
             - `True`: Enable tracing and send data to LangSmith
             - `False`: Disable tracing completely
-            - `"local"`: Enable tracing but only store data locally
+            - `'local'`: Enable tracing but only store data locally
             - `None`: Clear the setting (falls back to environment variables)
         project_name: The LangSmith project name where traces will be sent.
+
             This determines which project dashboard will display your traces.
+
             Pass `None` to explicitly clear the project name.
-        tags: A list of tags to be applied to all traced runs. Tags are useful
-            for filtering and organizing runs in the LangSmith UI.
+        tags: A list of tags to be applied to all traced runs.
+
+            Tags are useful for filtering and organizing runs in the LangSmith UI.
+
             Pass `None` to explicitly clear all global tags.
         metadata: A dictionary of metadata to attach to all traced runs.
-            Metadata can store any additional context about your runs.
-            Pass `None` to explicitly clear all global metadata.
 
-    Returns:
-        None
+            Metadata can store any additional context about your runs.
+
+            Pass `None` to explicitly clear all global metadata.
 
     Examples:
         Basic configuration:
@@ -198,7 +207,7 @@ class RunTree(ls_schemas.RunBase):
     parent_dotted_order: Optional[str] = Field(default=None, exclude=True)
     child_runs: list[RunTree] = Field(
         default_factory=list,
-        exclude={"__all__": {"parent_run_id"}},
+        exclude=True,
     )
     session_name: str = Field(
         default_factory=lambda: utils.get_tracer_project() or "default",
@@ -223,15 +232,14 @@ class RunTree(ls_schemas.RunBase):
         description="Projects to replicate this run to with optional updates.",
     )
 
-    class Config:
-        """Pydantic model configuration."""
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+        populate_by_name=True,
+        extra="ignore",
+    )
 
-        arbitrary_types_allowed = True
-        allow_population_by_field_name = True
-        extra = "ignore"
-
-    @root_validator(pre=True)
-    def infer_defaults(cls, values: dict) -> dict:
+    @model_validator(mode="before")
+    def infer_defaults(cls, values: dict[str, Any]) -> dict[str, Any]:
         """Assign name to the run."""
         if values.get("name") is None and values.get("serialized") is not None:
             if "name" in values["serialized"]:
@@ -255,7 +263,9 @@ class RunTree(ls_schemas.RunBase):
             if "start_time" in values and values["start_time"] is not None:
                 values["id"] = uuid7_from_datetime(values["start_time"])
             else:
-                values["id"] = uuid7()
+                now = datetime.now(timezone.utc)
+                values["start_time"] = now
+                values["id"] = uuid7_from_datetime(now)
         if "trace_id" not in values:
             if parent_run is not None:
                 values["trace_id"] = parent_run.trace_id
@@ -275,21 +285,19 @@ class RunTree(ls_schemas.RunBase):
         values["replicas"] = _ensure_write_replicas(values["replicas"])
         return values
 
-    @root_validator(pre=False)
-    def ensure_dotted_order(cls, values: dict) -> dict:
+    @model_validator(mode="after")
+    def ensure_dotted_order(self) -> RunTree:
         """Ensure the dotted order of the run."""
-        current_dotted_order = values.get("dotted_order")
+        current_dotted_order = self.dotted_order
         if current_dotted_order and current_dotted_order.strip():
-            return values
-        current_dotted_order = _create_current_dotted_order(
-            values["start_time"], values["id"]
-        )
-        parent_dotted_order = values.get("parent_dotted_order")
+            return self
+        current_dotted_order = _create_current_dotted_order(self.start_time, self.id)
+        parent_dotted_order = self.parent_dotted_order
         if parent_dotted_order is not None:
-            values["dotted_order"] = parent_dotted_order + "." + current_dotted_order
+            self.dotted_order = parent_dotted_order + "." + current_dotted_order
         else:
-            values["dotted_order"] = current_dotted_order
-        return values
+            self.dotted_order = current_dotted_order
+        return self
 
     @property
     def client(self) -> Client:
@@ -305,8 +313,14 @@ class RunTree(ls_schemas.RunBase):
         # For backwards compat
         return self.ls_client
 
+    @functools.cached_property
+    def trace_start_time(self) -> datetime:
+        """Return the start time of the trace (root run)."""
+        dt = _parse_dotted_order(self.dotted_order)[0][0]
+        return dt.replace(tzinfo=timezone.utc)
+
     def __setattr__(self, name, value):
-        """Set the _client specially."""
+        """Set the `_client` specially."""
         # For backwards compat
         if name == "_client":
             self.ls_client = value
@@ -329,7 +343,7 @@ class RunTree(ls_schemas.RunBase):
         by the @traceable decorator.
 
         If your LangChain or LangGraph versions are sufficiently up-to-date,
-        this will also override the default behavior of LangChainTracer.
+        this will also override the default behavior of `LangChainTracer`.
 
         Args:
             inputs: The inputs to set.
@@ -383,23 +397,17 @@ class RunTree(ls_schemas.RunBase):
         """Upsert the given outputs into the run.
 
         Args:
-            outputs (Dict[str, Any]): A dictionary containing the outputs to be added.
-
-        Returns:
-            None
+            outputs: A dictionary containing the outputs to be added.
         """
         if self.outputs is None:
             self.outputs = {}
         self.outputs.update(outputs)
 
     def add_inputs(self, inputs: dict[str, Any]) -> None:
-        """Upsert the given outputs into the run.
+        """Upsert the given inputs into the run.
 
         Args:
-            outputs (Dict[str, Any]): A dictionary containing the outputs to be added.
-
-        Returns:
-            None
+            inputs: A dictionary containing the inputs to be added.
         """
         if self.inputs is None:
             self.inputs = {}
@@ -421,9 +429,7 @@ class RunTree(ls_schemas.RunBase):
         """Add an event to the list of events.
 
         Args:
-            events (Union[ls_schemas.RunEvent, Sequence[ls_schemas.RunEvent],
-                    Sequence[dict], dict, str]):
-                The event(s) to be added. It can be a single event, a sequence
+            events: The event(s) to be added. It can be a single event, a sequence
                 of events, a sequence of dictionaries, a dictionary, or a string.
 
         Returns:
@@ -488,6 +494,17 @@ class RunTree(ls_schemas.RunBase):
         attachments: Optional[ls_schemas.Attachments] = None,
     ) -> RunTree:
         """Add a child run to the run tree."""
+        # Ensure child start_time is never earlier than parent start_time
+        # to prevent timestamp ordering violations in dotted_order
+        if start_time is not None and self.start_time is not None:
+            if start_time < self.start_time:
+                logger.debug(
+                    f"Adjusting child run '{name}' start_time from {start_time} "
+                    f"to {self.start_time} to maintain timestamp ordering with "
+                    f"parent '{self.name}'"
+                )
+            start_time = max(start_time, self.start_time)
+
         serialized_ = serialized or {"name": name}
         run = RunTree(
             name=name,
@@ -514,12 +531,21 @@ class RunTree(ls_schemas.RunBase):
 
     def _get_dicts_safe(self):
         # Things like generators cannot be copied
-        self_dict = self.dict(
+        self_dict = self.model_dump(
             exclude={"child_runs", "inputs", "outputs"}, exclude_none=True
         )
         if self.inputs is not None:
             # shallow copy. deep copying will occur in the client
-            self_dict["inputs"] = self.inputs.copy()
+            inputs_ = {}
+            attachments = self_dict.get("attachments", {})
+            for k, v in self.inputs.items():
+                if isinstance(v, ls_schemas.Attachment):
+                    attachments[k] = v
+                else:
+                    inputs_[k] = v
+            self_dict["inputs"] = inputs_
+            if attachments:
+                self_dict["attachments"] = attachments
         if self.outputs is not None:
             # shallow copy; deep copying will occur in the client
             self_dict["outputs"] = self.outputs.copy()
@@ -558,17 +584,52 @@ class RunTree(ls_schemas.RunBase):
     def _remap_for_project(
         self, project_name: str, updates: Optional[dict] = None
     ) -> dict:
-        """Get run dict for a given project with optional updates."""
+        """Rewrites ids/dotted_order for a given project with optional updates."""
         run_dict = self._get_dicts_safe()
+        if project_name == self.session_name:
+            return run_dict
 
         if updates and updates.get("reroot", False):
             distributed_parent_id = _DISTRIBUTED_PARENT_ID.get()
             if distributed_parent_id:
                 self._slice_parent_id(distributed_parent_id, run_dict)
 
+        old_id = run_dict["id"]
+        new_id = uuid7_deterministic(UUID(str(old_id)), project_name)
+        # trace id
+        old_trace = run_dict.get("trace_id")
+        if old_trace:
+            new_trace = uuid7_deterministic(UUID(str(old_trace)), project_name)
+        else:
+            new_trace = None
+        # parent id
+        parent = run_dict.get("parent_run_id")
+        if parent:
+            new_parent = uuid7_deterministic(UUID(str(parent)), project_name)
+        else:
+            new_parent = None
+        # dotted order
+        if run_dict.get("dotted_order"):
+            segs = run_dict["dotted_order"].split(".")
+            rebuilt = []
+            for part in segs[:-1]:
+                seg_id = UUID(part[-TIMESTAMP_LENGTH:])
+                repl = uuid7_deterministic(seg_id, project_name)
+                rebuilt.append(part[:-TIMESTAMP_LENGTH] + str(repl))
+            rebuilt.append(segs[-1][:-TIMESTAMP_LENGTH] + str(new_id))
+            dotted = ".".join(rebuilt)
+        else:
+            dotted = None
         dup = utils.deepish_copy(run_dict)
-        dup["session_name"] = project_name
-
+        dup.update(
+            {
+                "id": new_id,
+                "trace_id": new_trace,
+                "parent_run_id": new_parent,
+                "dotted_order": dotted,
+                "session_name": project_name,
+            }
+        )
         if updates:
             dup.update(updates)
         return dup
@@ -605,7 +666,7 @@ class RunTree(ls_schemas.RunBase):
         """Patch the run tree to the API in a background thread.
 
         Args:
-            exclude_inputs: whether to exclude inputs from the patch request.
+            exclude_inputs: Whether to exclude inputs from the patch request.
         """
         if not self.end_time:
             self.end()
@@ -683,7 +744,7 @@ class RunTree(ls_schemas.RunBase):
             )
 
     def wait(self) -> None:
-        """Wait for all _futures to complete."""
+        """Wait for all `_futures` to complete."""
         pass
 
     def get_url(self) -> str:
@@ -714,11 +775,10 @@ class RunTree(ls_schemas.RunBase):
     ) -> Optional[RunTree]:
         """Create a new 'child' span from the provided runnable config.
 
-        Requires langchain to be installed.
+        Requires `langchain` to be installed.
 
         Returns:
-            Optional[RunTree]: The new span or None if
-                no parent span information is found.
+            The new span or `None` if no parent span information is found.
         """
         try:
             from langchain_core.callbacks.manager import (
@@ -778,12 +838,13 @@ class RunTree(ls_schemas.RunBase):
         """Create a new 'parent' span from the provided headers.
 
         Extracts parent span information from the headers and creates a new span.
+
         Metadata and tags are extracted from the baggage header.
+
         The dotted order and trace id are extracted from the trace header.
 
         Returns:
-            Optional[RunTree]: The new span or None if
-                no parent span information is found.
+            The new span or `None` if no parent span information is found.
         """
         init_args = kwargs.copy()
 
@@ -836,7 +897,7 @@ class RunTree(ls_schemas.RunBase):
         return run_tree
 
     def to_headers(self) -> dict[str, str]:
-        """Return the RunTree as a dictionary of headers."""
+        """Return the `RunTree` as a dictionary of headers."""
         headers = {}
         if self.trace_id:
             headers[f"{LANGSMITH_DOTTED_ORDER}"] = self.dotted_order
@@ -850,7 +911,7 @@ class RunTree(ls_schemas.RunBase):
         return headers
 
     def __repr__(self):
-        """Return a string representation of the RunTree object."""
+        """Return a string representation of the `RunTree` object."""
         return (
             f"RunTree(id={self.id}, name='{self.name}', "
             f"run_type='{self.run_type}', dotted_order='{self.dotted_order}')"
@@ -909,8 +970,11 @@ class _Baggage:
                                 )
                             )
                         elif isinstance(replica_item, dict):
-                            # New WriteReplica format: preserve as dict
-                            parsed_replicas.append(cast(WriteReplica, replica_item))
+                            parsed_replicas.append(
+                                _filter_replica_for_headers(
+                                    cast(WriteReplica, replica_item)
+                                )
+                            )
                         else:
                             logger.warning(
                                 f"Unknown replica format in baggage: {replica_item}"
@@ -949,11 +1013,6 @@ class _Baggage:
         if self.project_name:
             items.append(
                 f"{LANGSMITH_PREFIX}project={urllib.parse.quote(self.project_name)}"
-            )
-        if self.replicas:
-            serialized_replicas = _dumps_json(self.replicas)
-            items.append(
-                f"{LANGSMITH_PREFIX}replicas={urllib.parse.quote(serialized_replicas)}"
             )
         return ",".join(items)
 

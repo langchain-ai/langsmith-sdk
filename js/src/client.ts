@@ -65,16 +65,13 @@ import {
   getEnv,
 } from "./utils/env.js";
 
-import {
-  EvaluationResult,
-  EvaluationResults,
-  RunEvaluator,
-} from "./evaluation/evaluator.js";
+import { EvaluationResult, EvaluationResults } from "./evaluation/evaluator.js";
 import { __version__ } from "./index.js";
 import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
 import { parsePromptIdentifier } from "./utils/prompts.js";
-import { raiseForStatus } from "./utils/error.js";
+import { raiseForStatus, isLangSmithNotFoundError } from "./utils/error.js";
+import { Cache } from "./utils/prompts_cache.js";
 import {
   _globalFetchImplementationIsNodeFetch,
   _getFetchImplementation,
@@ -91,6 +88,13 @@ export interface ClientConfig {
   anonymizer?: (values: KVMap) => KVMap | Promise<KVMap>;
   hideInputs?: boolean | ((inputs: KVMap) => KVMap | Promise<KVMap>);
   hideOutputs?: boolean | ((outputs: KVMap) => KVMap | Promise<KVMap>);
+  /**
+   * Whether to omit runtime information from traced runs.
+   * If true, runtime information (SDK version, platform, etc.) and
+   * LangChain environment variable metadata will not be stored in runs.
+   * Defaults to false.
+   */
+  omitTracedRuntimeInfo?: boolean;
   autoBatchTracing?: boolean;
   /** Maximum size of a batch of runs in bytes. */
   batchSizeBytesLimit?: number;
@@ -122,6 +126,28 @@ export interface ClientConfig {
    * Custom fetch implementation. Useful for testing.
    */
   fetchImplementation?: typeof fetch;
+  /**
+   * Configuration for caching. Can be:
+   * - `true`: Enable caching with default settings
+   * - `Cache` instance: Use custom cache configuration
+   * - `undefined` or `false`: Disable caching (default)
+   *
+   * @example
+   * ```typescript
+   * import { Client, Cache } from "langsmith";
+   *
+   * // Enable with defaults
+   * const client1 = new Client({ cache: true });
+   *
+   * // Or use custom configuration
+   * const myCache = new Cache({
+   *   maxSize: 100,
+   *   ttlSeconds: 3600, // 1 hour, or null for infinite TTL
+   * });
+   * const client2 = new Client({ cache: myCache });
+   * ```
+   */
+  cache?: Cache | boolean;
 }
 
 /**
@@ -432,8 +458,12 @@ type Thread = {
 
 export function mergeRuntimeEnvIntoRun<T extends RunCreate | RunUpdate>(
   run: T,
-  cachedEnvVars?: Record<string, string>
+  cachedEnvVars?: Record<string, string>,
+  omitTracedRuntimeInfo?: boolean
 ): T {
+  if (omitTracedRuntimeInfo) {
+    return run;
+  }
   const runtimeEnv = getRuntimeEnvironment();
   const envVars = cachedEnvVars ?? getLangSmithEnvVarsMetadata();
   const extra = run.extra ?? {};
@@ -667,6 +697,8 @@ export class Client implements LangSmithTracingClientInterface {
 
   private hideOutputs?: boolean | ((outputs: KVMap) => KVMap | Promise<KVMap>);
 
+  private omitTracedRuntimeInfo?: boolean;
+
   private tracingSampleRate?: number;
 
   private filteredPostUuids = new Set();
@@ -705,11 +737,15 @@ export class Client implements LangSmithTracingClientInterface {
 
   private cachedLSEnvVarsForMetadata?: Record<string, string>;
 
+  private _cache?: Cache;
+
   private get _fetch(): typeof fetch {
     return this.fetchImplementation || _getFetchImplementation(this.debug);
   }
 
   private multipartStreamingDisabled = false;
+
+  private _multipartDisabled = false;
 
   debug = getEnvironmentVariable("LANGSMITH_DEBUG") === "true";
 
@@ -760,6 +796,7 @@ export class Client implements LangSmithTracingClientInterface {
       config.hideInputs ?? config.anonymizer ?? defaultConfig.hideInputs;
     this.hideOutputs =
       config.hideOutputs ?? config.anonymizer ?? defaultConfig.hideOutputs;
+    this.omitTracedRuntimeInfo = config.omitTracedRuntimeInfo ?? false;
 
     this.autoBatchTracing = config.autoBatchTracing ?? this.autoBatchTracing;
     this.autoBatchQueue = new AutoBatchQueue(maxMemory);
@@ -774,6 +811,15 @@ export class Client implements LangSmithTracingClientInterface {
     }
     // Cache metadata env vars once during construction to avoid repeatedly scanning process.env
     this.cachedLSEnvVarsForMetadata = getLangSmithEnvVarsMetadata();
+
+    // Initialize cache
+    if (config.cache === true) {
+      this._cache = new Cache();
+    } else if (config.cache && typeof config.cache === "object") {
+      this._cache = config.cache;
+    } else {
+      this._cache = undefined;
+    }
   }
 
   public static getDefaultClientConfig(): {
@@ -1055,7 +1101,7 @@ export class Client implements LangSmithTracingClientInterface {
     const serverInfo = await this._ensureServerInfo();
     return (
       this.batchSizeBytesLimit ??
-      serverInfo.batch_ingest_config?.size_limit_bytes ??
+      serverInfo?.batch_ingest_config?.size_limit_bytes ??
       DEFAULT_UNCOMPRESSED_BATCH_SIZE_LIMIT_BYTES
     );
   }
@@ -1067,7 +1113,7 @@ export class Client implements LangSmithTracingClientInterface {
     const serverInfo = await this._ensureServerInfo();
     return (
       this.batchSizeLimit ??
-      serverInfo.batch_ingest_config?.size_limit ??
+      serverInfo?.batch_ingest_config?.size_limit ??
       DEFAULT_BATCH_SIZE_LIMIT
     );
   }
@@ -1151,13 +1197,31 @@ export class Client implements LangSmithTracingClientInterface {
             .map((item) => item.item) as RunUpdate[],
         };
         const serverInfo = await this._ensureServerInfo();
-        if (serverInfo?.batch_ingest_config?.use_multipart_endpoint) {
+        const useMultipart =
+          !this._multipartDisabled &&
+          (serverInfo?.batch_ingest_config?.use_multipart_endpoint ?? true);
+        if (useMultipart) {
           const useGzip = serverInfo?.instance_flags?.gzip_body_enabled;
-          await this.multipartIngestRuns(ingestParams, {
-            ...options,
-            useGzip,
-            sizeBytes: batchSizeBytes,
-          });
+          try {
+            await this.multipartIngestRuns(ingestParams, {
+              ...options,
+              useGzip,
+              sizeBytes: batchSizeBytes,
+            });
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          } catch (e: any) {
+            if (isLangSmithNotFoundError(e)) {
+              // Fallback to batch ingest if multipart endpoint returns 404
+              // Disable multipart for future requests
+              this._multipartDisabled = true;
+              await this.batchIngestRuns(ingestParams, {
+                ...options,
+                sizeBytes: batchSizeBytes,
+              });
+            } else {
+              throw e;
+            }
+          }
         } else {
           await this.batchIngestRuns(ingestParams, {
             ...options,
@@ -1203,7 +1267,8 @@ export class Client implements LangSmithTracingClientInterface {
     this.autoBatchTimeout = undefined;
     item.item = mergeRuntimeEnvIntoRun(
       item.item as RunCreate,
-      this.cachedLSEnvVarsForMetadata
+      this.cachedLSEnvVarsForMetadata,
+      this.omitTracedRuntimeInfo
     );
     const itemPromise = this.autoBatchQueue.push(item);
     if (this.manualFlushMode) {
@@ -1348,7 +1413,8 @@ export class Client implements LangSmithTracingClientInterface {
     }
     const mergedRunCreateParam = mergeRuntimeEnvIntoRun(
       runCreate,
-      this.cachedLSEnvVarsForMetadata
+      this.cachedLSEnvVarsForMetadata,
+      this.omitTracedRuntimeInfo
     );
     if (options?.apiKey !== undefined) {
       headers["x-api-key"] = options.apiKey;
@@ -1862,6 +1928,10 @@ export class Client implements LangSmithTracingClientInterface {
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
+      // Re-throw 404 errors so caller can fall back to batch ingest
+      if (isLangSmithNotFoundError(e)) {
+        throw e;
+      }
       console.warn(`${e.message.trim()}\n\nContext: ${context}`);
     }
   }
@@ -3793,6 +3863,58 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   /**
+   * Delete multiple examples by ID.
+   * @param exampleIds - The IDs of the examples to delete
+   * @param options - Optional settings for deletion
+   * @param options.hardDelete - If true, permanently delete examples. If false (default), soft delete them.
+   */
+  public async deleteExamples(
+    exampleIds: string[],
+    options?: { hardDelete?: boolean }
+  ): Promise<void> {
+    // Validate all UUIDs
+    exampleIds.forEach((id) => assertUuid(id));
+
+    if (options?.hardDelete) {
+      // Hard delete uses POST to a different platform endpoint
+      const path = this._getPlatformEndpointPath("datasets/examples/delete");
+
+      await this.caller.call(async () => {
+        const res = await this._fetch(`${this.apiUrl}${path}`, {
+          method: "POST",
+          headers: { ...this.headers, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            example_ids: exampleIds,
+            hard_delete: true,
+          }),
+          signal: AbortSignal.timeout(this.timeout_ms),
+          ...this.fetchOptions,
+        });
+        await raiseForStatus(res, "hard delete examples", true);
+        return res;
+      });
+    } else {
+      // Soft delete uses DELETE with query params
+      const params = new URLSearchParams();
+      exampleIds.forEach((id) => params.append("example_ids", id));
+
+      await this.caller.call(async () => {
+        const res = await this._fetch(
+          `${this.apiUrl}/examples?${params.toString()}`,
+          {
+            method: "DELETE",
+            headers: this.headers,
+            signal: AbortSignal.timeout(this.timeout_ms),
+            ...this.fetchOptions,
+          }
+        );
+        await raiseForStatus(res, "delete examples", true);
+        return res;
+      });
+    }
+  }
+
+  /**
    * @deprecated This signature is deprecated, use updateExample(update: ExampleUpdate) instead
    */
   public async updateExample(
@@ -4004,50 +4126,6 @@ export class Client implements LangSmithTracingClientInterface {
       await raiseForStatus(res, "update dataset splits", true);
       return res;
     });
-  }
-
-  /**
-   * @deprecated This method is deprecated and will be removed in future LangSmith versions, use `evaluate` from `langsmith/evaluation` instead.
-   */
-  public async evaluateRun(
-    run: Run | string,
-    evaluator: RunEvaluator,
-    {
-      sourceInfo,
-      loadChildRuns,
-      referenceExample,
-    }: {
-      sourceInfo?: KVMap;
-      loadChildRuns: boolean;
-      referenceExample?: Example;
-    } = { loadChildRuns: false }
-  ): Promise<Feedback> {
-    warnOnce(
-      "This method is deprecated and will be removed in future LangSmith versions, use `evaluate` from `langsmith/evaluation` instead."
-    );
-    let run_: Run;
-    if (typeof run === "string") {
-      run_ = await this.readRun(run, { loadChildRuns });
-    } else if (typeof run === "object" && "id" in run) {
-      run_ = run as Run;
-    } else {
-      throw new Error(`Invalid run type: ${typeof run}`);
-    }
-    if (
-      run_.reference_example_id !== null &&
-      run_.reference_example_id !== undefined
-    ) {
-      referenceExample = await this.readExample(run_.reference_example_id);
-    }
-
-    const feedbackResult = await evaluator.evaluateRun(run_, referenceExample);
-    const [_, feedbacks] = await this._logEvaluationFeedback(
-      feedbackResult,
-      run_,
-      sourceInfo
-    );
-
-    return feedbacks[0];
   }
 
   public async createFeedback(
@@ -5310,11 +5388,24 @@ export class Client implements LangSmithTracingClientInterface {
     return response.json();
   }
 
-  public async pullPromptCommit(
+  /**
+   * Generate a cache key for a prompt.
+   * Format: "{identifier}" or "{identifier}:with_model"
+   */
+  private _getPromptCacheKey(
     promptIdentifier: string,
-    options?: {
-      includeModel?: boolean;
-    }
+    includeModel?: boolean
+  ): string {
+    const suffix = includeModel ? ":with_model" : "";
+    return `${promptIdentifier}${suffix}`;
+  }
+
+  /**
+   * Fetch a prompt commit directly from the API (bypassing cache).
+   */
+  private async _fetchPromptFromApi(
+    promptIdentifier: string,
+    options?: { includeModel?: boolean }
   ): Promise<PromptCommit> {
     const [owner, promptName, commitHash] =
       parsePromptIdentifier(promptIdentifier);
@@ -5345,6 +5436,34 @@ export class Client implements LangSmithTracingClientInterface {
     };
   }
 
+  public async pullPromptCommit(
+    promptIdentifier: string,
+    options?: {
+      includeModel?: boolean;
+      skipCache?: boolean;
+    }
+  ): Promise<PromptCommit> {
+    // Check cache first if not skipped
+    if (!options?.skipCache && this._cache) {
+      const cacheKey = this._getPromptCacheKey(
+        promptIdentifier,
+        options?.includeModel
+      );
+      const cached = this._cache.get(cacheKey);
+      if (cached) {
+        return cached;
+      }
+
+      // Cache miss - fetch from API and cache it
+      const result = await this._fetchPromptFromApi(promptIdentifier, options);
+      this._cache.set(cacheKey, result);
+      return result;
+    }
+
+    // No cache or skip cache - fetch directly
+    return this._fetchPromptFromApi(promptIdentifier, options);
+  }
+
   /**
    * This method should not be used directly, use `import { pull } from "langchain/hub"` instead.
    * Using this method directly returns the JSON string of the prompt rather than a LangChain object.
@@ -5354,10 +5473,12 @@ export class Client implements LangSmithTracingClientInterface {
     promptIdentifier: string,
     options?: {
       includeModel?: boolean;
+      skipCache?: boolean;
     }
   ): Promise<any> {
     const promptObject = await this.pullPromptCommit(promptIdentifier, {
       includeModel: options?.includeModel,
+      skipCache: options?.skipCache,
     });
     const prompt = JSON.stringify(promptObject.manifest);
     return prompt;
@@ -5506,6 +5627,24 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   /**
+   * Get the cache instance, if caching is enabled.
+   * Useful for accessing cache metrics or manually managing the cache.
+   */
+  get cache(): Cache | undefined {
+    return this._cache;
+  }
+
+  /**
+   * Cleanup resources held by the client.
+   * Stops the cache's background refresh timer.
+   */
+  public cleanup(): void {
+    if (this._cache) {
+      this._cache.stop();
+    }
+  }
+
+  /**
    * Awaits all pending trace batches. Useful for environments where
    * you need to be sure that all tracing requests finish before execution ends,
    * such as serverless environments.
@@ -5533,6 +5672,21 @@ export class Client implements LangSmithTracingClientInterface {
       );
       return Promise.resolve();
     }
+    /**
+     * traceables use a backgrounded promise before updating runs to avoid blocking
+     * and to allow waiting for child runs to end. Waiting a small amount of time
+     * here ensures that they are able to enqueue their run operation before we await
+     * queued run operations below:
+     *
+     * ```ts
+     * const run = await traceable(async () => {
+     *   return "Hello, world!";
+     * }, { client })();
+     *
+     * await client.awaitPendingTraceBatches();
+     * ```
+     */
+    await new Promise((resolve) => setTimeout(resolve, 1));
     await Promise.all([
       ...this.autoBatchQueue.items.map(({ itemPromise }) => itemPromise),
       this.batchIngestCaller.queue.onIdle(),

@@ -25,6 +25,7 @@ from typing import (
     TypeVar,
     Union,
     cast,
+    overload,
 )
 from urllib import parse as urllib_parse
 
@@ -229,11 +230,10 @@ def get_messages_from_inputs(inputs: Mapping[str, Any]) -> list[dict[str, Any]]:
     """Extract messages from the given inputs dictionary.
 
     Args:
-        inputs (Mapping[str, Any]): The inputs dictionary.
+        inputs: The inputs dictionary.
 
     Returns:
-        List[Dict[str, Any]]: A list of dictionaries representing
-            the extracted messages.
+        A list of dictionaries representing the extracted messages.
 
     Raises:
         ValueError: If no message(s) are found in the inputs dictionary.
@@ -249,10 +249,10 @@ def get_message_generation_from_outputs(outputs: Mapping[str, Any]) -> dict[str,
     """Retrieve the message generation from the given outputs.
 
     Args:
-        outputs (Mapping[str, Any]): The outputs dictionary.
+        outputs: The outputs dictionary.
 
     Returns:
-        Dict[str, Any]: The message generation.
+        The message generation.
 
     Raises:
         ValueError: If no generations are found or if multiple generations are present.
@@ -278,7 +278,7 @@ def get_prompt_from_inputs(inputs: Mapping[str, Any]) -> str:
     """Retrieve the prompt from the given inputs.
 
     Args:
-        inputs (Mapping[str, Any]): The inputs dictionary.
+        inputs: The inputs dictionary.
 
     Returns:
         str: The prompt.
@@ -352,13 +352,13 @@ def convert_langchain_message(message: ls_schemas.BaseMessageLike) -> dict:
 
 
 def is_base_message_like(obj: object) -> bool:
-    """Check if the given object is similar to BaseMessage.
+    """Check if the given object is similar to `BaseMessage`.
 
     Args:
-        obj (object): The object to check.
+        obj: The object to check.
 
     Returns:
-        bool: True if the object is similar to BaseMessage, False otherwise.
+        bool: True if the object is similar to `BaseMessage`, `False` otherwise.
     """
     return all(
         [
@@ -371,7 +371,27 @@ def is_base_message_like(obj: object) -> bool:
 
 def is_env_var_truish(value: Optional[str]) -> bool:
     """Check if the given environment variable is truish."""
+    if value is None:
+        return False
     return is_truish(get_env_var(value))
+
+
+@overload
+def get_env_var(
+    name: str,
+    default: str,
+    *,
+    namespaces: tuple = ("LANGSMITH", "LANGCHAIN"),
+) -> str: ...
+
+
+@overload
+def get_env_var(
+    name: str,
+    default: None = None,
+    *,
+    namespaces: tuple = ("LANGSMITH", "LANGCHAIN"),
+) -> Optional[str]: ...
 
 
 @functools.lru_cache(maxsize=100)
@@ -384,20 +404,19 @@ def get_env_var(
     """Retrieve an environment variable from a list of namespaces.
 
     Args:
-        name (str): The name of the environment variable.
-        default (Optional[str], optional): The default value to return if the
-            environment variable is not found. Defaults to None.
-        namespaces (Tuple, optional): A tuple of namespaces to search for the
-            environment variable. Defaults to ("LANGSMITH", "LANGCHAINs").
+        name: The name of the environment variable.
+        default: The default value to return if the environment variable is not found.
+        namespaces: A tuple of namespaces to search for the environment variable.
+
+            Defaults to `('LANGSMITH', 'LANGCHAINs')`.
 
     Returns:
-        Optional[str]: The value of the environment variable if found,
-            otherwise the default value.
+        The value of the environment variable if found, otherwise the default value.
     """
     names = [f"{namespace}_{name}" for namespace in namespaces]
     for name in names:
         value = os.environ.get(name)
-        if value is not None:
+        if value is not None and value.strip() != "":
             return value
     return default
 
@@ -423,14 +442,14 @@ def get_tracer_project(return_default_value=True) -> Optional[str]:
 
 
 class FilterPoolFullWarning(logging.Filter):
-    """Filter urrllib3 warnings logged when the connection pool isn't reused."""
+    """Filter `urllib3` warnings logged when the connection pool isn't reused."""
 
     def __init__(self, name: str = "", host: str = "") -> None:
-        """Initialize the FilterPoolFullWarning filter.
+        """Initialize the `FilterPoolFullWarning` filter.
 
         Args:
-            name (str, optional): The name of the filter. Defaults to "".
-            host (str, optional): The host to filter. Defaults to "".
+            name: The name of the filter. Defaults to `""`.
+            host: The host to filter. Defaults to `""`.
         """
         super().__init__(name)
         self._host = host
@@ -468,7 +487,7 @@ def filter_logs(
 
     Parameters:
     - logger: The logger to which the filters will be added.
-    - filters: A sequence of logging.Filter objects to be temporarily added
+    - filters: A sequence of `logging.Filter` objects to be temporarily added
         to the logger.
     """
     with _FILTER_LOCK:
@@ -490,11 +509,11 @@ def get_cache_dir(cache: Optional[str]) -> Optional[str]:
     """Get the testing cache directory.
 
     Args:
-        cache (Optional[str]): The cache path.
+        cache: The cache path.
 
     Returns:
-        Optional[str]: The cache path if provided, otherwise the value
-        from the LANGSMITH_TEST_CACHE environment variable.
+        The cache path if provided, otherwise the value from the `LANGSMITH_TEST_CACHE`
+        environment variable.
     """
     if cache is not None:
         return cache
@@ -507,7 +526,7 @@ def filter_request_headers(
     ignore_hosts: Optional[Sequence[str]] = None,
     allow_hosts: Optional[Sequence[str]] = None,
 ) -> Any:
-    """Filter request headers based on ignore_hosts and allow_hosts."""
+    """Filter request headers based on `ignore_hosts` and `allow_hosts`."""
     # Legacy behavior
     if ignore_hosts and any(request.url.startswith(host) for host in ignore_hosts):
         return None
@@ -663,17 +682,17 @@ def is_version_greater_or_equal(current_version: str, target_version: str) -> bo
 
 
 def parse_prompt_identifier(identifier: str) -> tuple[str, str, str]:
-    """Parse a string in the format of owner/name:hash, name:hash, owner/name, or name.
+    """Parse a string in the format of `owner/name:hash`, `name:hash`, `owner/name`, or `name`.
 
     Args:
-        identifier (str): The prompt identifier to parse.
+        identifier: The prompt identifier to parse.
 
     Returns:
-        Tuple[str, str, str]: A tuple containing (owner, name, hash).
+        A tuple containing `(owner, name, hash)`.
 
     Raises:
         ValueError: If the identifier doesn't match the expected formats.
-    """
+    """  # noqa: E501
     if (
         not identifier
         or identifier.count("/") > 1

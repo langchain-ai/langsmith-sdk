@@ -41,6 +41,7 @@ from langsmith.run_helpers import (
     tracing_context,
 )
 from langsmith.run_trees import RunTree
+from tests.unit_tests.conftest import parse_request_data
 
 
 def _get_calls(
@@ -67,7 +68,7 @@ def _get_calls(
 def _get_data(mock_calls: List[Any]) -> List[Tuple[str, dict]]:
     datas = []
     for call_ in mock_calls:
-        data = json.loads(call_.kwargs["data"])
+        data = parse_request_data(call_.kwargs["data"])
         for verb in ("post", "patch"):
             for payload in data.get(verb) or []:
                 datas.append((verb, payload))
@@ -280,7 +281,7 @@ def test_traceable_iterator(
     call = mock_calls[0]
     assert call.args[0] == "POST"
     assert call.args[1].startswith("https://api.smith.langchain.com")
-    body = json.loads(mock_calls[0].kwargs["data"])
+    body = parse_request_data(mock_calls[0].kwargs["data"])
     assert body["post"]
     assert body["post"][0]["outputs"]["output"] == expected
 
@@ -364,7 +365,9 @@ async def test_traceable_stream(
     call = mock_calls[0]
     assert call.args[0] == "POST"
     assert call.args[1].startswith("https://api.smith.langchain.com")
-    call_data = [json.loads(mock_call.kwargs["data"]) for mock_call in mock_calls]
+    call_data = [
+        parse_request_data(mock_call.kwargs["data"]) for mock_call in mock_calls
+    ]
     body = call_data[0]
     assert body["post"]
     assert body["post"][0]["name"] == "my_stream_fn"
@@ -379,7 +382,7 @@ async def test_traceable_stream(
                 assert False, "Could not get patch"
             mock_calls = _get_calls(mock_client, minimum=1)
             call_data = [
-                json.loads(mock_call.kwargs["data"]) for mock_call in mock_calls
+                parse_request_data(mock_call.kwargs["data"]) for mock_call in mock_calls
             ]
             first_patch = next((d for d in call_data if d.get("patch")), None)
             attempt += 1
@@ -417,7 +420,7 @@ async def test_traceable_async_iterator(use_next: bool, mock_client: Client) -> 
         call = mock_calls[0]
         assert call.args[0] == "POST"
         assert call.args[1].startswith("https://api.smith.langchain.com")
-        body = json.loads(call.kwargs["data"])
+        body = parse_request_data(call.kwargs["data"])
         assert body["post"]
         assert body["post"][0]["inputs"] == {"a": "FOOOOOO", "b": 2, "d": 3}
         outputs_ = body["post"][0]["outputs"]
@@ -427,7 +430,7 @@ async def test_traceable_async_iterator(use_next: bool, mock_client: Client) -> 
         else:
             # It was put in the second batch
             assert len(mock_calls) == 2
-            body_2 = json.loads(mock_calls[1].kwargs["data"])
+            body_2 = parse_request_data(mock_calls[1].kwargs["data"])
             assert body_2["patch"]
             assert body_2["patch"][0]["outputs"]["output"] == expected
 
@@ -614,7 +617,7 @@ def test_traceable_parent_from_runnable_config() -> None:
             if call.args and call.args[0] != "GET":
                 assert call.args[0] == "POST"
                 assert call.args[1].startswith("https://api.smith.langchain.com")
-                body = json.loads(call.kwargs["data"])
+                body = parse_request_data(call.kwargs["data"])
                 assert body["post"]
                 posts.extend(body["post"])
         assert len(posts) == 2
@@ -653,7 +656,7 @@ def test_traceable_parent_from_runnable_config_accepts_config() -> None:
             if call.args and call.args[0] != "GET":
                 assert call.args[0] == "POST"
                 assert call.args[1].startswith("https://api.smith.langchain.com")
-                body = json.loads(call.kwargs["data"])
+                body = parse_request_data(call.kwargs["data"])
                 assert body["post"]
                 posts.extend(body["post"])
         assert len(posts) == 2
@@ -678,7 +681,7 @@ def test_traceable_project_name() -> None:
         call = mock_calls[0]
         assert call.args[0] == "POST"
         assert call.args[1].startswith("https://api.smith.langchain.com")
-        body = json.loads(call.kwargs["data"])
+        body = parse_request_data(call.kwargs["data"])
         assert body["post"]
         assert body["post"][0]["session_name"] == "my foo project"
 
@@ -698,7 +701,7 @@ def test_traceable_project_name() -> None:
         call = mock_calls[0]
         assert call.args[0] == "POST"
         assert call.args[1].startswith("https://api.smith.langchain.com")
-        body = json.loads(call.kwargs["data"])
+        body = parse_request_data(call.kwargs["data"])
         assert body["post"]
         assert body["post"][0]["session_name"] == "my bar project"
         assert body["post"][1]["session_name"] == "my bar project"
@@ -1245,7 +1248,7 @@ def test_client_passed_when_trace_parent():
     call = calls[0]
     assert call.args[0] == "POST"
     assert call.args[1].startswith("https://api.smith.langchain.com")
-    body = json.loads(call.kwargs["data"])
+    body = parse_request_data(call.kwargs["data"])
     assert body["post"]
     assert body["post"][0]["inputs"] == {"foo": "bar"}
     assert body["post"][0]["outputs"] == {"bar": "baz"}
@@ -1355,7 +1358,7 @@ def test_io_interops():
     assert parent_result == expected_at_stage["parent_output"]
     mock_posts = _get_calls(tracer.client, minimum=5)
     assert len(mock_posts) == 5
-    datas = [json.loads(mock_post.kwargs["data"]) for mock_post in mock_posts]
+    datas = [parse_request_data(mock_post.kwargs["data"]) for mock_post in mock_posts]
     names = [
         "the_parent",
         "child",
@@ -1386,7 +1389,7 @@ def test_io_interops():
     mock_patches = _get_calls(tracer.client, verbs={"PATCH"}, minimum=5)
     assert len(mock_patches) == 5
     patches_datas = [
-        json.loads(mock_patch.kwargs["data"]) for mock_patch in mock_patches
+        parse_request_data(mock_patch.kwargs["data"]) for mock_patch in mock_patches
     ]
     patches_dict = {d["id"]: d for d in patches_datas}
     child_patch = patches_dict[ids["child"]]
@@ -1432,7 +1435,7 @@ def test_trace_nested_enable_disable():
     # run -> run3
     # with run2 being invisible
     mock_calls = _get_calls(mock_client, verbs={"POST", "PATCH"})
-    datas = [json.loads(mock_post.kwargs["data"]) for mock_post in mock_calls]
+    datas = [parse_request_data(mock_post.kwargs["data"]) for mock_post in mock_calls]
     assert "post" in datas[0]
     posted = datas[0]["post"]
     assert len(posted) == 2
@@ -1631,7 +1634,7 @@ async def test_process_inputs_outputs():
         call = mock_calls[0]
         assert call.args[0] == "POST"
         assert call.args[1].startswith("https://api.smith.langchain.com")
-        body = json.loads(call.kwargs["data"])
+        body = parse_request_data(call.kwargs["data"])
         assert body["post"]
         assert body["post"][0]["inputs"] == {
             "serialized_in": "what's the meaning of life?"
@@ -1880,7 +1883,7 @@ def test_traceable_iterator_process_chunk(mock_client: Client) -> None:
     call = mock_calls[0]
     assert call.args[0] == "POST"
     assert call.args[1].startswith("https://api.smith.langchain.com")
-    body = json.loads(mock_calls[0].kwargs["data"])
+    body = parse_request_data(mock_calls[0].kwargs["data"])
     assert body["post"]
     assert body["post"][0]["outputs"]["output"] == list(range(6))
 
@@ -1926,7 +1929,7 @@ async def test_traceable_async_iterator_process_chunk(mock_client: Client) -> No
     call = mock_calls[0]
     assert call.args[0] == "POST"
     assert call.args[1].startswith("https://api.smith.langchain.com")
-    body = json.loads(mock_calls[0].kwargs["data"])
+    body = parse_request_data(mock_calls[0].kwargs["data"])
     assert body["post"]
     assert body["post"][0]["outputs"]["output"] == list(range(6))
 
@@ -1953,3 +1956,315 @@ def test_set_run_metadata_without_active_run_tree(
     langsmith.set_run_metadata(foo=1)
     assert len(caplog.records) == 1
     assert "No active run tree found" in caplog.text
+
+
+# Tests for enabled parameter on @traceable decorator
+
+
+def test_traceable_enabled_false_overrides_context(mock_client: Client) -> None:
+    """Verify that enabled=False on decorator disables tracing.
+
+    Even with tracing_context(enabled=True).
+    """
+
+    @traceable(client=mock_client, enabled=False)
+    def my_function(a: int) -> int:
+        return a * 2
+
+    with tracing_context(enabled=True):
+        result = my_function(5)
+
+    assert result == 10
+    mock_calls = _get_calls(mock_client)
+    assert len(mock_calls) == 0  # No tracing should occur
+
+
+def test_traceable_enabled_true_overrides_context(mock_client: Client) -> None:
+    """Verify that enabled=True on decorator forces tracing.
+
+    Even with tracing_context(enabled=False).
+    """
+
+    @traceable(client=mock_client, enabled=True)
+    def my_function(a: int) -> int:
+        return a * 2
+
+    with tracing_context(enabled=False):
+        result = my_function(5)
+
+    assert result == 10
+    mock_calls = _get_calls(mock_client, minimum=1)
+    assert len(mock_calls) >= 1  # Tracing should occur despite context
+
+
+def test_traceable_enabled_none_respects_context_enabled(mock_client: Client) -> None:
+    """Verify that enabled=None (default) follows tracing_context when enabled."""
+
+    @traceable(client=mock_client)  # enabled defaults to None
+    def my_function(a: int) -> int:
+        return a * 2
+
+    with tracing_context(enabled=True):
+        result = my_function(5)
+
+    assert result == 10
+    mock_calls = _get_calls(mock_client, minimum=1)
+    assert len(mock_calls) >= 1  # Tracing should occur
+
+
+def test_traceable_enabled_none_respects_context_disabled(mock_client: Client) -> None:
+    """Verify that enabled=None (default) follows tracing_context when disabled."""
+
+    @traceable(client=mock_client)  # enabled defaults to None
+    def my_function(a: int) -> int:
+        return a * 2
+
+    with tracing_context(enabled=False):
+        result = my_function(5)
+
+    assert result == 10
+    mock_calls = _get_calls(mock_client)
+    assert len(mock_calls) == 0  # No tracing should occur
+
+
+def test_traceable_config_attribute(mock_client: Client) -> None:
+    """Verify that __traceable_config__ is set with correct values."""
+
+    def my_process_inputs(inputs: dict) -> dict:
+        return inputs
+
+    def my_process_outputs(outputs: Any) -> dict:
+        return {"output": outputs}
+
+    @traceable(
+        client=mock_client,
+        enabled=False,
+        process_inputs=my_process_inputs,
+        process_outputs=my_process_outputs,
+        tags=["tag1", "tag2"],
+        metadata={"key": "value"},
+    )
+    def my_function(a: int) -> int:
+        return a * 2
+
+    assert hasattr(my_function, "__traceable_config__")
+    config = my_function.__traceable_config__
+    assert config["enabled"] is False
+    assert config["process_inputs"] is my_process_inputs
+    assert config["process_outputs"] is my_process_outputs
+    assert config["tags"] == ["tag1", "tag2"]
+    assert config["metadata"] == {"key": "value"}
+
+
+def test_traceable_config_defaults(mock_client: Client) -> None:
+    """Verify that __traceable_config__ has correct defaults."""
+
+    @traceable(client=mock_client)
+    def my_function(a: int) -> int:
+        return a * 2
+
+    assert hasattr(my_function, "__traceable_config__")
+    config = my_function.__traceable_config__
+    assert config["enabled"] is None  # Should default to None
+    assert config["process_inputs"] is None
+    assert config["process_outputs"] is None
+    assert config["tags"] is None
+    assert config["metadata"] is None
+
+
+async def test_traceable_async_enabled_false(mock_client: Client) -> None:
+    """Verify that enabled=False works with async functions."""
+
+    @traceable(client=mock_client, enabled=False)
+    async def my_async_function(a: int) -> int:
+        return a * 2
+
+    with tracing_context(enabled=True):
+        result = await my_async_function(5)
+
+    assert result == 10
+    mock_calls = _get_calls(mock_client)
+    assert len(mock_calls) == 0  # No tracing should occur
+
+
+async def test_traceable_async_enabled_true_overrides_context(
+    mock_client: Client,
+) -> None:
+    """Verify that enabled=True forces tracing for async functions.
+
+    Even when context is disabled.
+    """
+
+    @traceable(client=mock_client, enabled=True)
+    async def my_async_function(a: int) -> int:
+        return a * 2
+
+    with tracing_context(enabled=False):
+        result = await my_async_function(5)
+
+    assert result == 10
+    mock_calls = _get_calls(mock_client, minimum=1)
+    assert len(mock_calls) >= 1  # Tracing should occur despite context
+
+
+def test_traceable_generator_enabled_false(mock_client: Client) -> None:
+    """Verify that enabled=False works with generator functions."""
+
+    @traceable(client=mock_client, enabled=False)
+    def my_generator(n: int) -> Generator[int, None, None]:
+        for i in range(n):
+            yield i
+
+    with tracing_context(enabled=True):
+        result = list(my_generator(5))
+
+    assert result == [0, 1, 2, 3, 4]
+    mock_calls = _get_calls(mock_client)
+    assert len(mock_calls) == 0  # No tracing should occur
+
+
+async def test_traceable_async_generator_enabled_false(mock_client: Client) -> None:
+    """Verify that enabled=False works with async generator functions."""
+
+    @traceable(client=mock_client, enabled=False)
+    async def my_async_generator(n: int) -> AsyncGenerator[int, None]:
+        for i in range(n):
+            yield i
+
+    with tracing_context(enabled=True):
+        result = [x async for x in my_async_generator(5)]
+
+    assert result == [0, 1, 2, 3, 4]
+    mock_calls = _get_calls(mock_client)
+    assert len(mock_calls) == 0  # No tracing should occur
+
+
+def test_traceable_enabled_does_not_propagate(mock_client: Client) -> None:
+    """Test that enabled setting applies only to its function, not nested calls."""
+
+    @traceable(client=mock_client, enabled=False)
+    def outer_function(a: int) -> int:
+        return inner_function(a)
+
+    @traceable(client=mock_client, enabled=True)
+    def inner_function(a: int) -> int:
+        return a * 2
+
+    with tracing_context(enabled=True):
+        result = outer_function(5)
+
+    assert result == 10
+    mock_calls = _get_calls(mock_client, minimum=1)
+    datas = _get_data(mock_calls)
+    # outer_function should NOT be traced (enabled=False)
+    # inner_function SHOULD be traced (enabled=True) - setting doesn't propagate
+    names = [p.get("name") for _, p in datas if p.get("name")]
+    assert "outer_function" not in names
+    assert "inner_function" in names
+
+
+def test_traceable_nested_outer_enabled_inner_disabled(mock_client: Client) -> None:
+    """Test nested functions where outer is enabled and inner is disabled."""
+
+    @traceable(client=mock_client, enabled=True)
+    def outer_function(a: int) -> int:
+        return inner_function(a)
+
+    @traceable(client=mock_client, enabled=False)
+    def inner_function(a: int) -> int:
+        return a * 2
+
+    with tracing_context(enabled=True):
+        result = outer_function(5)
+
+    assert result == 10
+    mock_calls = _get_calls(mock_client, minimum=1)
+    datas = _get_data(mock_calls)
+    # Only outer_function should be traced, not inner_function
+    names = [p.get("name") for _, p in datas if p.get("name")]
+    assert "outer_function" in names
+    assert "inner_function" not in names
+
+
+@pytest.mark.parametrize(
+    "decorator_enabled,context_enabled,should_trace",
+    [
+        (None, True, True),  # None follows context
+        (None, False, False),  # None follows context
+        (True, True, True),  # True forces on
+        (True, False, True),  # True forces on (override context)
+        (False, True, False),  # False forces off (override context)
+        (False, False, False),  # False forces off
+    ],
+)
+def test_traceable_enabled_matrix(
+    decorator_enabled: Optional[bool],
+    context_enabled: bool,
+    should_trace: bool,
+) -> None:
+    """Test all combinations of decorator enabled and context enabled."""
+    mock_client = _get_mock_client()
+
+    if decorator_enabled is None:
+
+        @traceable(client=mock_client)
+        def my_function(a: int) -> int:
+            return a * 2
+
+    else:
+
+        @traceable(client=mock_client, enabled=decorator_enabled)
+        def my_function(a: int) -> int:
+            return a * 2
+
+    with tracing_context(enabled=context_enabled):
+        result = my_function(5)
+
+    assert result == 10
+    mock_calls = _get_calls(mock_client, minimum=1 if should_trace else 0)
+    if should_trace:
+        assert len(mock_calls) >= 1
+    else:
+        assert len(mock_calls) == 0
+
+
+def test_traceable_triple_decorated(mock_client: Client) -> None:
+    """Test that other decorators don't affect tracing."""
+
+    def some_decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            return func(*args, **kwargs)
+
+        return wrapper
+
+    def some_other_decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            return func(*args, **kwargs)
+
+        return wrapper
+
+    @some_decorator
+    def original_function(a: int) -> str:
+        return f"foo {a}"
+
+    wrapped_function = some_other_decorator(
+        (traceable(client=mock_client, enabled=True)((original_function)))
+    )
+
+    result = wrapped_function(5)
+
+    assert result == "foo 5"
+    mock_calls = _get_calls(mock_client, minimum=1)
+    datas = _get_data(mock_calls)
+    names = [p.get("name") for _, p in datas if p.get("name")]
+    assert "outer_function" not in names
+    assert "original_function" in names
+    config = wrapped_function.__traceable_config__
+    assert config["enabled"] is True  # Should default to None
+    assert config["process_inputs"] is None
+    assert config["process_outputs"] is None
+    assert config["tags"] is None
+    assert config["metadata"] is None
+    assert config["wrapped"] is original_function

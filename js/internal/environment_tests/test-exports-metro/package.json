@@ -1,0 +1,16 @@
+{
+  "name": "test-exports-metro",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Tests that langsmith exports work correctly in Metro bundler (React Native)",
+  "scripts": {
+    "test": "mkdir -p dist && metro build src/index.js --out dist/bundle.js"
+  },
+  "dependencies": {
+    "langsmith": "file:../../.."
+  },
+  "devDependencies": {
+    "@react-native/babel-preset": "^0.76.0",
+    "metro": "^0.81.0"
+  }
+}

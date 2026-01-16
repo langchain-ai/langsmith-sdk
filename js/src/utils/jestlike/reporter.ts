@@ -81,7 +81,7 @@ export async function printReporterTable(
     duration: number;
     status: "pass" | "passed" | "fail" | "failed" | "pending" | "skipped";
   }[],
-  testStatus: "pass" | "skip" | "fail",
+  testStatus: "pass" | "skip" | "fail" | "passed" | "failed" | "skipped",
   failureMessage?: string
 ) {
   const rows = [];

@@ -1,7 +1,7 @@
 """LangSmith integration for Claude Agent SDK.
 
 This module provides automatic tracing for the Claude Agent SDK by instrumenting
-ClaudeSDKClient and injecting hooks to trace all tool calls.
+`ClaudeSDKClient` and injecting hooks to trace all tool calls.
 """
 
 import logging
@@ -25,11 +25,11 @@ def configure_claude_agent_sdk(
     """Enable LangSmith tracing for the Claude Agent SDK by patching entry points.
 
     This function instruments the Claude Agent SDK to automatically trace:
-    - Chain runs for each conversation stream (via ClaudeSDKClient)
+    - Chain runs for each conversation stream (via `ClaudeSDKClient`)
     - Model runs for each assistant turn
     - All tool calls including built-in tools, external MCP tools, and SDK MCP tools
 
-    Tool tracing is implemented via PreToolUse and PostToolUse hooks
+    Tool tracing is implemented via `PreToolUse` and `PostToolUse` hooks
 
     Args:
         name: Name of the root trace.
@@ -38,15 +38,17 @@ def configure_claude_agent_sdk(
         tags: Tags to associate with all traces.
 
     Returns:
-        True if configuration was successful, False otherwise.
+        `True` if configuration was successful, `False` otherwise.
 
     Example:
-        >>> from langsmith.integrations.claude_agents_sdk import (
+        >>> from langsmith.integrations.claude_agent_sdk import (
         ...     configure_claude_agent_sdk,
         ... )
-        >>> configure_claude_agent_sdk(project_name="my-project", tags=["production"])
+        >>> configure_claude_agent_sdk(
+        ...     project_name="my-project", tags=["production"]
+        ... )  # doctest: +SKIP
         >>> # Now use claude_agent_sdk as normal - tracing is automatic
-    """
+    """  # noqa: E501
     try:
         import claude_agent_sdk  # type: ignore[import-not-found]
     except ImportError:

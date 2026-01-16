@@ -65,7 +65,7 @@ def _strip_not_given(d: dict) -> dict:
 
 
 def _process_inputs(d: dict) -> dict:
-    """Strip NotGiven values and serialize text_format to JSON schema."""
+    """Strip `NotGiven` values and serialize `text_format` to JSON schema."""
     d = _strip_not_given(d)
 
     # Convert text_format (Pydantic model) to JSON schema if present
@@ -82,7 +82,9 @@ def _process_inputs(d: dict) -> dict:
     return d
 
 
-def _infer_invocation_params(model_type: str, provider: str, kwargs: dict):
+def _infer_invocation_params(
+    model_type: str, provider: str, use_responses_api: bool, kwargs: dict
+):
     stripped = _strip_not_given(kwargs)
 
     stop = stripped.get("stop")
@@ -119,6 +121,9 @@ def _infer_invocation_params(model_type: str, provider: str, kwargs: dict):
     invocation_params = {
         k: v for k, v in stripped.items() if k in allowed_invocation_keys
     }
+
+    if use_responses_api:
+        invocation_params["use_responses_api"] = True
 
     return {
         "ls_provider": provider,
@@ -302,6 +307,16 @@ def _create_usage_metadata(
 
 def _process_chat_completion(outputs: Any):
     try:
+        # Check if outputs is an APIResponse wrapper (from with_raw_response).
+        # The OpenAI SDK's APIResponse wraps the actual response object.
+        # Call .parse() to extract the ChatCompletion/Completion for tracing.
+        # See: github.com/openai/openai-python/blob/main/src/openai/_response.py#L285
+        if hasattr(outputs, "parse") and callable(outputs.parse):
+            try:
+                outputs = outputs.parse()
+            except Exception:
+                pass
+
         rdict = outputs.model_dump()
         oai_token_usage = rdict.pop("usage", None)
         rdict["usage_metadata"] = (
@@ -418,54 +433,62 @@ def wrap_openai(
     Supports:
         - Chat and Responses API's
         - Sync and async OpenAI clients
-        - create() and parse() methods
-        - with and without streaming
+        - `create` and `parse` methods
+        - With and without streaming
+        - `with_raw_response` API for accessing HTTP headers
 
     Args:
-        client (Union[OpenAI, AsyncOpenAI]): The client to patch.
-        tracing_extra (Optional[TracingExtra], optional): Extra tracing information.
-            Defaults to None.
-        chat_name (str, optional): The run name for the chat completions endpoint.
-            Defaults to "ChatOpenAI".
-        completions_name (str, optional): The run name for the completions endpoint.
-            Defaults to "OpenAI".
+        client: The client to patch.
+        tracing_extra: Extra tracing information.
+        chat_name: The run name for the chat completions endpoint.
+        completions_name: The run name for the completions endpoint.
 
     Returns:
-        Union[OpenAI, AsyncOpenAI]: The patched client.
+        The patched client.
 
     Example:
+        ```python
+        import openai
+        from langsmith import wrappers
 
-        .. code-block:: python
+        # Use OpenAI client same as you normally would.
+        client = wrappers.wrap_openai(openai.OpenAI())
 
-            import openai
-            from langsmith import wrappers
+        # Chat API:
+        messages = [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {
+                "role": "user",
+                "content": "What physics breakthroughs do you predict will happen by 2300?",
+            },
+        ]
+        completion = client.chat.completions.create(
+            model="gpt-4o-mini", messages=messages
+        )
+        print(completion.choices[0].message.content)
 
-            # Use OpenAI client same as you normally would.
-            client = wrappers.wrap_openai(openai.OpenAI())
+        # Responses API:
+        response = client.responses.create(
+            model="gpt-4o-mini",
+            messages=messages,
+        )
+        print(response.output_text)
 
-            # Chat API:
-            messages = [
-                {"role": "system", "content": "You are a helpful assistant."},
-                {
-                    "role": "user",
-                    "content": "What physics breakthroughs do you predict will happen by 2300?",
-                },
-            ]
-            completion = client.chat.completions.create(
-                model="gpt-4o-mini", messages=messages
-            )
-            print(completion.choices[0].message.content)
+        # With raw response to access headers:
+        raw_response = client.chat.completions.with_raw_response.create(
+            model="gpt-4o-mini", messages=messages
+        )
+        print(raw_response.headers)  # Access HTTP headers
+        completion = raw_response.parse()  # Get parsed response
+        ```
 
-            # Responses API:
-            response = client.responses.create(
-                model="gpt-4o-mini",
-                messages=messages,
-            )
-            print(response.output_text)
-
-    .. versionchanged:: 0.3.16
+    !!! warning "Behavior changed in `langsmith` 0.3.16"
 
         Support for Responses API added.
+
+    !!! warning "Behavior changed in `langsmith` 0.3.x"
+
+        Support for `with_raw_response` API added.
     """  # noqa: E501
     tracing_extra = tracing_extra or {}
 
@@ -487,7 +510,7 @@ def wrap_openai(
         _reduce_chat,
         tracing_extra=tracing_extra,
         invocation_params_fn=functools.partial(
-            _infer_invocation_params, "chat", ls_provider
+            _infer_invocation_params, "chat", ls_provider, False
         ),
         process_outputs=_process_chat_completion,
     )
@@ -498,7 +521,7 @@ def wrap_openai(
         _reduce_completions,
         tracing_extra=tracing_extra,
         invocation_params_fn=functools.partial(
-            _infer_invocation_params, "llm", ls_provider
+            _infer_invocation_params, "llm", ls_provider, False
         ),
     )
 
@@ -515,7 +538,7 @@ def wrap_openai(
             _process_chat_completion,
             tracing_extra=tracing_extra,
             invocation_params_fn=functools.partial(
-                _infer_invocation_params, "chat", ls_provider
+                _infer_invocation_params, "chat", ls_provider, False
             ),
         )
 
@@ -531,7 +554,7 @@ def wrap_openai(
             _process_chat_completion,
             tracing_extra=tracing_extra,
             invocation_params_fn=functools.partial(
-                _infer_invocation_params, "chat", ls_provider
+                _infer_invocation_params, "chat", ls_provider, False
             ),
         )
 
@@ -545,7 +568,7 @@ def wrap_openai(
                 process_outputs=_process_responses_api_output,
                 tracing_extra=tracing_extra,
                 invocation_params_fn=functools.partial(
-                    _infer_invocation_params, "chat", ls_provider
+                    _infer_invocation_params, "chat", ls_provider, True
                 ),
             )
         if hasattr(client.responses, "parse"):
@@ -555,7 +578,7 @@ def wrap_openai(
                 _process_responses_api_output,
                 tracing_extra=tracing_extra,
                 invocation_params_fn=functools.partial(
-                    _infer_invocation_params, "chat", ls_provider
+                    _infer_invocation_params, "chat", ls_provider, True
                 ),
             )
 

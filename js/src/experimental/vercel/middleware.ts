@@ -31,8 +31,21 @@ const _formatTracedInputs = (params: LanguageModelV2CallOptions) => {
   return rest;
 };
 
-const _formatTracedOutputs = (outputs: Record<string, unknown>) => {
-  const formattedOutputs = { ...outputs };
+const _formatTracedOutputs = (
+  outputs: Record<string, unknown>,
+  includeHttpDetails = false
+) => {
+  let formattedOutputs: Record<string, unknown>;
+
+  if (includeHttpDetails) {
+    // Include all fields including raw request/response/usage
+    formattedOutputs = { ...outputs };
+  } else {
+    // Extract only the fields we want to trace, excluding raw request/response/usage
+    const { request: _, response: __, ...messageFields } = outputs;
+    formattedOutputs = { ...messageFields };
+  }
+
   if (formattedOutputs.role == null) {
     formattedOutputs.role = formattedOutputs.type ?? "assistant";
   }
@@ -51,21 +64,70 @@ const setUsageMetadataOnRunTree = (
   if (result.usage == null || typeof result.usage !== "object") {
     return;
   }
-  // Shim for AI SDK 4
-  const inputTokens =
-    result.usage?.inputTokens ??
-    (result.usage as Record<string, number | undefined>)?.promptTokens;
-  const outputTokens =
-    result.usage?.outputTokens ??
-    (result.usage as Record<string, number | undefined>)?.completionTokens;
-  let totalTokens = result.usage?.totalTokens;
+
+  const usage = result.usage as Record<string, any>;
+  let inputTokens: number | undefined;
+  let outputTokens: number | undefined;
+  let totalTokens: number | undefined;
+
+  // AI SDK 6: Check for object-based token structures first
   if (
-    typeof totalTokens !== "number" &&
-    typeof inputTokens === "number" &&
-    typeof outputTokens === "number"
+    typeof usage.inputTokens === "object" &&
+    usage.inputTokens?.total != null
   ) {
-    totalTokens = inputTokens + outputTokens;
+    // AI SDK 6 detected
+    inputTokens = usage.inputTokens.total;
+
+    if (
+      typeof usage.outputTokens === "object" &&
+      usage.outputTokens?.total != null
+    ) {
+      outputTokens = usage.outputTokens.total;
+    }
+
+    totalTokens = result.usage?.totalTokens;
+    if (
+      typeof totalTokens !== "number" &&
+      typeof inputTokens === "number" &&
+      typeof outputTokens === "number"
+    ) {
+      totalTokens = inputTokens + outputTokens;
+    }
+  } else if (typeof usage.inputTokens === "number") {
+    // AI SDK 5 detected
+    inputTokens = usage.inputTokens;
+
+    if (typeof usage.outputTokens === "number") {
+      outputTokens = usage.outputTokens;
+    }
+
+    totalTokens = result.usage?.totalTokens;
+    if (
+      typeof totalTokens !== "number" &&
+      typeof inputTokens === "number" &&
+      typeof outputTokens === "number"
+    ) {
+      totalTokens = inputTokens + outputTokens;
+    }
+  } else {
+    // AI SDK 4 fallback
+    if (typeof usage.promptTokens === "number") {
+      inputTokens = usage.promptTokens;
+    }
+    if (typeof usage.completionTokens === "number") {
+      outputTokens = usage.completionTokens;
+    }
+
+    totalTokens = result.usage?.totalTokens;
+    if (
+      typeof totalTokens !== "number" &&
+      typeof inputTokens === "number" &&
+      typeof outputTokens === "number"
+    ) {
+      totalTokens = inputTokens + outputTokens;
+    }
   }
+
   const langsmithUsage = {
     input_tokens: inputTokens,
     output_tokens: outputTokens,
@@ -112,7 +174,7 @@ export type AggregatedDoStreamOutput = {
 };
 
 /**
- * AI SDK middleware that wraps an AI SDK 5 model and adds LangSmith tracing.
+ * AI SDK middleware that wraps an AI SDK 6 or 5 model and adds LangSmith tracing.
  */
 export function LangSmithMiddleware(config?: {
   name: string;
@@ -124,6 +186,7 @@ export function LangSmithMiddleware(config?: {
     processOutputs?: (
       outputs: Record<string, unknown>
     ) => Record<string, unknown> | Promise<Record<string, unknown>>;
+    traceRawHttp?: boolean;
   };
 }): LanguageModelV2Middleware {
   const { name, modelId, lsConfig } = config ?? {};
@@ -158,9 +221,10 @@ export function LangSmithMiddleware(config?: {
             const typedOutputs = outputs as Awaited<
               ReturnType<typeof doGenerate>
             >;
-            const outputFormatter =
-              lsConfig?.processOutputs ?? _formatTracedOutputs;
-            return outputFormatter(typedOutputs);
+            if (lsConfig?.processOutputs) {
+              return lsConfig.processOutputs(typedOutputs);
+            }
+            return _formatTracedOutputs(typedOutputs, lsConfig?.traceRawHttp);
           },
         }
       );
