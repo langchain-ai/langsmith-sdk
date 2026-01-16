@@ -1103,6 +1103,17 @@ class Client:
             headers["X-Tenant-Id"] = self._workspace_id
         return headers
 
+    @staticmethod
+    def _apply_optional_api_key(
+        headers: dict[str, str], api_key: Optional[str]
+    ) -> dict[str, str]:
+        if api_key:
+            headers[X_API_KEY] = api_key
+        else:
+            headers.pop(X_API_KEY, None)
+            headers.pop(X_API_KEY.upper(), None)
+        return headers
+
     def _set_header_affecting_attr(self, attr_name: str, value: Any) -> None:
         """Set attributes that affect headers and recalculate them."""
         object.__setattr__(self, attr_name, value)
@@ -2005,7 +2016,7 @@ class Client:
                     headers["X-Tenant-Id"] = tenant_id
             elif api_key is not None:
                 headers[X_API_KEY] = api_key
-            else:
+            elif self.api_key is not None:
                 headers[X_API_KEY] = self.api_key
             try:
                 self.request_with_retries(
@@ -2022,14 +2033,15 @@ class Client:
         else:
             # Use all configured write API URLs
             for write_api_url, write_api_key in self._write_api_urls.items():
-                headers = {**self._headers, X_API_KEY: write_api_key}
                 try:
                     self.request_with_retries(
                         "POST",
                         f"{write_api_url}/runs",
                         request_kwargs={
                             "data": _dumps_json(run_create),
-                            "headers": headers,
+                            "headers": self._apply_optional_api_key(
+                                {**self._headers}, write_api_key
+                            ),
                         },
                         to_ignore=(ls_utils.LangSmithConflictError,),
                     )
@@ -2395,10 +2407,18 @@ class Client:
         elif api_url is not None or api_key is not None:
             target_api_url = api_url or self.api_url
             target_api_key = api_key or self.api_key
-            endpoints = [(target_api_url, {**headers_base, X_API_KEY: target_api_key})]
+            endpoints = [
+                (
+                    target_api_url,
+                    self._apply_optional_api_key({**headers_base}, target_api_key),
+                )
+            ]
         else:
             endpoints = [
-                (target_api_url, {**headers_base, X_API_KEY: target_api_key})
+                (
+                    target_api_url,
+                    self._apply_optional_api_key({**headers_base}, target_api_key),
+                )
                 for target_api_url, target_api_key in self._write_api_urls.items()
             ]
 
@@ -2688,10 +2708,18 @@ class Client:
         elif api_url is not None or api_key is not None:
             target_api_url = api_url or self.api_url
             target_api_key = api_key or self.api_key
-            endpoints = [(target_api_url, {**headers_base, X_API_KEY: target_api_key})]
+            endpoints = [
+                (
+                    target_api_url,
+                    self._apply_optional_api_key({**headers_base}, target_api_key),
+                )
+            ]
         else:
             endpoints = [
-                (target_api_url, {**headers_base, X_API_KEY: target_api_key})
+                (
+                    target_api_url,
+                    self._apply_optional_api_key({**headers_base}, target_api_key),
+                )
                 for target_api_url, target_api_key in self._write_api_urls.items()
             ]
 
@@ -3096,7 +3124,7 @@ class Client:
             elif api_key is not None:
                 headers[X_API_KEY] = api_key
             else:
-                headers[X_API_KEY] = self.api_key
+                headers = self._apply_optional_api_key(headers, self.api_key)
 
             self.request_with_retries(
                 "PATCH",
@@ -3109,10 +3137,7 @@ class Client:
         else:
             # Use all configured write API URLs
             for write_api_url, write_api_key in self._write_api_urls.items():
-                headers = {
-                    **self._headers,
-                    X_API_KEY: write_api_key,
-                }
+                headers = self._apply_optional_api_key({**self._headers}, write_api_key)
 
                 self.request_with_retries(
                     "PATCH",

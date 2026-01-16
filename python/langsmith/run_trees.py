@@ -44,6 +44,7 @@ class WriteReplica(TypedDict, total=False):
     """Configuration for a write replica endpoint."""
 
     api_url: Optional[str]
+    api_key: NotRequired[str]
     auth: ApiKeyAuth | ServiceAuth
     project_name: Optional[str]
     updates: Optional[dict]
@@ -986,7 +987,6 @@ class _Baggage:
                             and len(replica_item) == 2
                         ):
                             # Convert legacy format to WriteReplica
-                            # Legacy format has no auth, just project_name and updates
                             parsed_replicas.append(
                                 WriteReplica(
                                     api_url=None,
@@ -995,11 +995,11 @@ class _Baggage:
                                 )
                             )
                         elif isinstance(replica_item, dict):
-                            parsed_replicas.append(
-                                _filter_replica_for_headers(
-                                    cast(WriteReplica, replica_item)
-                                )
+                            filtered_replica = _filter_replica_for_headers(
+                                cast(WriteReplica, replica_item)
                             )
+                            if filtered_replica.get("project_name"):
+                                parsed_replicas.append(filtered_replica)
                         else:
                             logger.warning(
                                 f"Unknown replica format in baggage: {replica_item}"
@@ -1197,12 +1197,12 @@ def _extract_replica_auth(
     if "auth" in replica:
         auth = replica["auth"]
         if "api_key" in auth:
-            return api_url, auth["api_key"], None, None
+            return api_url, cast(ApiKeyAuth, auth)["api_key"], None, None
         if "service_key" in auth:
             return (
                 api_url,
                 None,
                 auth["service_key"],
-                replica.get("tenant_id"),
+                auth.get("tenant_id"),
             )
     return api_url, None, None, None

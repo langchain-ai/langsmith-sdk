@@ -207,6 +207,22 @@ def test_headers(monkeypatch: pytest.MonkeyPatch) -> None:
         assert "x-api-key" not in client_no_key._headers
 
 
+def test_apply_optional_api_key() -> None:
+    headers = {
+        "x-api-key": "old",
+        "X-API-KEY": "old-upper",
+        "other": "value",
+    }
+
+    updated = Client._apply_optional_api_key(headers, None)
+    assert "x-api-key" not in updated
+    assert "X-API-KEY" not in updated
+    assert updated["other"] == "value"
+
+    updated = Client._apply_optional_api_key({"other": "value"}, "new-key")
+    assert updated["x-api-key"] == "new-key"
+
+
 @mock.patch("langsmith.client.requests.Session")
 def test_cached_header_and_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
     _clear_env_cache()

@@ -15,6 +15,7 @@ from langsmith.run_trees import (
     ServiceAuth,
     WriteReplica,
     _ensure_write_replicas,
+    _extract_replica_auth,
     _get_write_replicas_from_env,
     _parse_write_replicas_from_env_var,
 )
@@ -586,6 +587,47 @@ class TestClientReplicaMethods:
             )
 
 
+class TestReplicaAuthExtraction:
+    """Test replica auth extraction for legacy and current formats."""
+
+    def test_extract_replica_auth_with_top_level_api_key(self):
+        replica = WriteReplica(
+            api_url="https://replica.example.com",
+            api_key="legacy-key",
+            project_name="replica-project",
+        )
+
+        api_url, api_key, service_key, tenant_id = _extract_replica_auth(replica)
+        assert api_url == "https://replica.example.com"
+        assert api_key == "legacy-key"
+        assert service_key is None
+        assert tenant_id is None
+
+    def test_extract_replica_auth_with_auth_api_key(self):
+        replica = WriteReplica(
+            api_url="https://replica.example.com",
+            auth=ApiKeyAuth(api_key="auth-key"),
+        )
+
+        api_url, api_key, service_key, tenant_id = _extract_replica_auth(replica)
+        assert api_url == "https://replica.example.com"
+        assert api_key == "auth-key"
+        assert service_key is None
+        assert tenant_id is None
+
+    def test_extract_replica_auth_with_service_auth(self):
+        replica = WriteReplica(
+            api_url="https://replica.example.com",
+            auth=ServiceAuth(service_key="svc-key", tenant_id="tenant-123"),
+        )
+
+        api_url, api_key, service_key, tenant_id = _extract_replica_auth(replica)
+        assert api_url == "https://replica.example.com"
+        assert api_key is None
+        assert service_key == "svc-key"
+        assert tenant_id == "tenant-123"
+
+
 class TestRunTreeReplicas:
     """Test RunTree with replica functionality."""
 
@@ -860,16 +902,7 @@ class TestBaggageReplicaParsing:
 
         headers = run_tree.to_headers()
         baggage = _Baggage.from_headers(headers)
-        assert len(baggage.replicas) == 2
-        # Auth should not appear in propagated replicas
-        assert "auth" not in baggage.replicas[0]
-        assert "api_key" not in baggage.replicas[0]
-        assert baggage.replicas[0].get("api_url") is None
-        assert baggage.replicas[0]["project_name"] == "replica-project"
-        assert baggage.replicas[0]["updates"] == {"env": "test"}
-        assert "auth" not in baggage.replicas[1]
-        assert "api_key" not in baggage.replicas[1]
-        assert baggage.replicas[1].get("api_url") is None
+        assert baggage.replicas == []
 
     def test_from_headers_does_not_accept_replica_endpoint_or_auth(self):
         """Inbound baggage must not be allowed to redirect writes or inject auth."""

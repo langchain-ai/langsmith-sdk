@@ -1954,8 +1954,11 @@ def test_set_run_metadata_without_active_run_tree(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     langsmith.set_run_metadata(foo=1)
-    assert len(caplog.records) == 1
-    assert "No active run tree found" in caplog.text
+    run_helper_logs = [
+        record for record in caplog.records if record.name == "langsmith.run_helpers"
+    ]
+    assert len(run_helper_logs) == 1
+    assert "No active run tree found" in run_helper_logs[0].message
 
 
 # Tests for enabled parameter on @traceable decorator
