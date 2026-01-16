@@ -573,6 +573,7 @@ jobs:
           node-version: 20.x
           langchain-api-key-beta: ${{ secrets.LANGSMITH_API_KEY_BETA }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
 
   js-vitest-eval:
     name: "JS Vitest Runner Test"
