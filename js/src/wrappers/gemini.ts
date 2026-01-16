@@ -5,6 +5,14 @@ import {
   type TraceableConfig,
 } from "../traceable.js";
 import { KVMap, InvocationParamsSchema } from "../schemas.js";
+import type {
+  Content,
+  GenerateContentParameters,
+  GenerateContentResponse,
+  GenerateContentResponseUsageMetadata,
+  SafetyRating,
+  UsageMetadata,
+} from "@google/genai";
 
 type GoogleGenAIType = {
   models: {
@@ -22,7 +30,7 @@ type PatchedGeminiClient<T extends GoogleGenAIType> = T & {
   };
 };
 
-interface UsageMetadata {
+interface LangSmithUsageMetadata {
   input_tokens: number;
   output_tokens: number;
   total_tokens: number;
@@ -37,10 +45,22 @@ interface UsageMetadata {
   };
 }
 
-const _createUsageMetadata = (usage: Record<string, any>): KVMap => {
-  const usageMetadata: UsageMetadata = {
+const _createUsageMetadata = (
+  usage: UsageMetadata | GenerateContentResponseUsageMetadata
+): KVMap => {
+  const usageMetadata: LangSmithUsageMetadata = {
     input_tokens: usage.promptTokenCount || 0,
-    output_tokens: usage.responseTokenCount || usage.candidatesTokenCount || 0,
+    output_tokens: (() => {
+      if ("responseTokenCount" in usage) {
+        return usage.responseTokenCount || 0;
+      }
+
+      if ("candidatesTokenCount" in usage) {
+        return usage.candidatesTokenCount || 0;
+      }
+
+      return 0;
+    })(),
     total_tokens: usage.totalTokenCount || 0,
   };
 
@@ -59,9 +79,10 @@ const _createUsageMetadata = (usage: Record<string, any>): KVMap => {
 
   // Add output token details if available
   usageMetadata.output_token_details = {
-    ...(usage.candidatesTokenCount && {
-      over_200k: Math.max(0, usage.candidatesTokenCount - 200000),
-    }),
+    ...("candidatesTokenCount" in usage &&
+      usage.candidatesTokenCount != null && {
+        over_200k: Math.max(0, usage.candidatesTokenCount - 200000),
+      }),
     ...(usage.thoughtsTokenCount && {
       reasoning: usage.thoughtsTokenCount,
     }),
@@ -70,7 +91,13 @@ const _createUsageMetadata = (usage: Record<string, any>): KVMap => {
   return usageMetadata;
 };
 
-const chatAggregator = (chunks: Record<string, any>[]): KVMap => {
+const chatAggregator = (input: unknown): KVMap => {
+  const chunks =
+    Array.isArray(input) &&
+    input.every((item) => typeof item === "object" && item !== null)
+      ? (input as GenerateContentResponse[])
+      : [];
+
   if (!chunks || chunks.length === 0) {
     return { content: "", role: "assistant" };
   }
@@ -79,9 +106,9 @@ const chatAggregator = (chunks: Record<string, any>[]): KVMap => {
   let thoughtText = "";
   const toolCalls: Array<Record<string, unknown>> = [];
   const otherParts: Array<Record<string, unknown>> = [];
-  let usageMetadata: Record<string, any> | null = null;
+  let usageMetadata: GenerateContentResponseUsageMetadata | null = null;
   let finishReason: string | null = null;
-  let safetyRatings: Array<Record<string, any>> | null = null;
+  let safetyRatings: SafetyRating[] | null = null;
 
   for (const chunk of chunks) {
     if (chunk?.usageMetadata) {
@@ -204,11 +231,8 @@ const chatAggregator = (chunks: Record<string, any>[]): KVMap => {
 };
 
 function processGeminiInputs(inputs: KVMap): KVMap {
-  const { contents, model, ...rest } = inputs;
-
-  if (!contents) {
-    return inputs;
-  }
+  const { contents, model, ...rest } = inputs as GenerateContentParameters;
+  if (!contents) return inputs;
 
   if (typeof contents === "string") {
     return {
@@ -227,14 +251,17 @@ function processGeminiInputs(inputs: KVMap): KVMap {
 
     const messages = contents
       .map((content) => {
-        if (typeof content !== "object" || content === null) {
-          return null;
-        }
+        if (typeof content !== "object" || content === null) return null;
 
-        const role = content.role || "user";
-        const parts = content.parts || [];
+        const isContent = (item: typeof content): item is Content => {
+          return "parts" in item && Array.isArray(item.parts);
+        };
+
+        const role = "role" in content ? content.role : "user";
+        const parts = isContent(content) ? content.parts ?? [] : [content];
+
         const textParts: string[] = [];
-        const contentParts: Array<Record<string, any>> = [];
+        const contentParts: Array<Record<string, unknown>> = [];
 
         for (const part of parts) {
           if (typeof part === "object" && part !== null) {
@@ -279,19 +306,25 @@ function processGeminiInputs(inputs: KVMap): KVMap {
 
         return { role, content: messageContent };
       })
-      .filter((msg): msg is { role: string; content: any } => msg !== null);
+      .filter(
+        (
+          msg
+        ): msg is {
+          role: string;
+          content: string | Record<string, unknown>[];
+        } => msg !== null
+      );
 
-    return {
-      messages,
-      ...rest,
-    };
+    return { messages, ...rest };
   }
 
   return inputs;
 }
 
-function processGeminiOutputs(outputs: Record<string, any>): KVMap {
-  const response = outputs?.outputs || outputs;
+function processGeminiOutputs(outputs: Record<string, unknown>): KVMap {
+  const response = (outputs?.outputs || outputs) as
+    | GenerateContentResponse
+    | undefined;
 
   if (!response) {
     return { content: "", role: "assistant" };
@@ -310,7 +343,7 @@ function processGeminiOutputs(outputs: Record<string, any>): KVMap {
   const toolCalls: Array<Record<string, unknown>> = [];
   const otherParts: Array<Record<string, unknown>> = [];
   let finishReason: string | null = null;
-  let safetyRatings: Array<Record<string, any>> | null = null;
+  let safetyRatings: SafetyRating[] | null = null;
 
   if (
     "candidates" in response &&
@@ -424,9 +457,12 @@ function processGeminiOutputs(outputs: Record<string, any>): KVMap {
 }
 
 function getInvocationParams(
-  payload: Record<string, any>
+  payload: Record<string, unknown>
 ): InvocationParamsSchema {
-  const config = payload?.[0] || payload;
+  const config = (payload?.[0] || payload) as
+    | GenerateContentParameters
+    | undefined;
+
   return {
     ls_provider: "google",
     ls_model_type: "chat" as const,
