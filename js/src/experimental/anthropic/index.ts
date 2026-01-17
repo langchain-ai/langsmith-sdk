@@ -6,25 +6,27 @@ import {
 import type { RunTree } from "../../run_trees.js";
 import type Anthropic from "@anthropic-ai/sdk";
 import { convertAnthropicUsageToInputTokenDetails } from "../../utils/usage.js";
-import {
-  AgentSDKContext,
-  HookInput,
-  HookOutput,
-  SDKHookEvents,
-  HookCallbackMatcher,
-  SDKAssistantMessage,
-  SDKMessage,
-  QueryOptions,
-  SdkMcpToolDefinition,
-  ToolHandler,
-  SDKModelUsage,
-  WrapClaudeAgentSDKConfig,
-} from "./types.js";
+import { AgentSDKContext, WrapClaudeAgentSDKConfig } from "./types.js";
 import { getNumberProperty } from "./utils.js";
 import type {
   SDKUserMessage,
-  SDKMessage as ClaudeAgentSDKMessage,
+  SDKMessage,
+  SDKAssistantMessage,
+  HookInput,
+  HookJSONOutput,
+  Options as QueryOptions,
+  HookCallbackMatcher,
+  HookEvent,
+  ModelUsage,
+  PostToolUseHookInput,
+  PreToolUseHookInput,
+  createSdkMcpServer,
 } from "@anthropic-ai/claude-agent-sdk";
+
+type SdkMcpToolDefinition = Exclude<
+  Parameters<typeof createSdkMcpServer>[0]["tools"],
+  undefined
+>[number];
 
 const createQueryContext = (): AgentSDKContext => ({
   activeToolRuns: new Map(),
@@ -40,10 +42,10 @@ const createQueryContext = (): AgentSDKContext => ({
  * Skips tools that are client-managed (subagent sessions and their children).
  */
 async function preToolUseHook(
-  input: HookInput,
+  input: PreToolUseHookInput,
   toolUseId: string | undefined,
   context: AgentSDKContext
-): Promise<HookOutput> {
+): Promise<HookJSONOutput> {
   if (!toolUseId) return {};
 
   // Skip if this tool run is already managed by the client (subagent or its children)
@@ -82,10 +84,10 @@ async function preToolUseHook(
  * Handles both regular tool runs and client-managed runs (subagents and their children).
  */
 async function postToolUseHook(
-  input: HookInput,
+  input: PostToolUseHookInput,
   toolUseId: string | undefined,
   context: AgentSDKContext
-): Promise<HookOutput> {
+): Promise<HookJSONOutput> {
   if (!toolUseId) return {};
   const toolResponse = input.tool_response;
 
@@ -166,7 +168,7 @@ function createTracingHooks(context: AgentSDKContext) {
             input: HookInput,
             toolUseId: string | undefined,
             _options: { signal: AbortSignal }
-          ) => preToolUseHook(input, toolUseId, context),
+          ) => preToolUseHook(input as PreToolUseHookInput, toolUseId, context),
         ],
       },
     ],
@@ -178,7 +180,8 @@ function createTracingHooks(context: AgentSDKContext) {
             input: HookInput,
             toolUseId: string | undefined,
             _options: { signal: AbortSignal }
-          ) => postToolUseHook(input, toolUseId, context),
+          ) =>
+            postToolUseHook(input as PostToolUseHookInput, toolUseId, context),
         ],
       },
     ],
@@ -223,7 +226,7 @@ function createTracingHooks(context: AgentSDKContext) {
         ],
       },
     ],
-  } satisfies Partial<Record<SDKHookEvents, HookCallbackMatcher[]>>;
+  } satisfies Partial<Record<HookEvent, HookCallbackMatcher[]>>;
 }
 
 /**
@@ -802,7 +805,7 @@ function wrapClaudeAgentQuery<
     },
     processOutputs(rawOutputs) {
       if ("outputs" in rawOutputs && Array.isArray(rawOutputs.outputs)) {
-        const sdkMessages = rawOutputs.outputs as ClaudeAgentSDKMessage[];
+        const sdkMessages = rawOutputs.outputs as SDKMessage[];
         const messages = sdkMessages.flatMap((sdkMessage) => {
           if ("message" in sdkMessage && sdkMessage.message != null) {
             return {
@@ -824,21 +827,17 @@ function wrapClaudeAgentQuery<
  * Wraps a Claude Agent SDK tool definition to add LangSmith tracing for tool executions.
  * Internal use only - use wrapClaudeAgentSDK instead.
  */
-function wrapClaudeAgentTool<T>(
-  toolDef: SdkMcpToolDefinition<T>,
+function wrapClaudeAgentTool(
+  toolDef: SdkMcpToolDefinition,
   baseConfig?: WrapClaudeAgentSDKConfig
-): SdkMcpToolDefinition<T> {
-  const originalHandler = toolDef.handler;
-
-  const wrappedHandler = traceable(originalHandler, {
-    name: toolDef.name,
-    run_type: "tool",
-    ...baseConfig,
-  }) as ToolHandler<T>;
-
+): SdkMcpToolDefinition {
   return {
     ...toolDef,
-    handler: wrappedHandler,
+    handler: traceable(toolDef.handler, {
+      name: toolDef.name,
+      run_type: "tool",
+      ...baseConfig,
+    }),
   };
 }
 
@@ -865,7 +864,7 @@ function buildLLMInput(
  * This provides accurate totals when multiple models are used.
  */
 function aggregateUsageFromModelUsage(
-  modelUsage: Record<string, SDKModelUsage>
+  modelUsage: Record<string, ModelUsage>
 ): Record<string, unknown> {
   const metrics: Record<string, unknown> = {};
 
@@ -1173,10 +1172,7 @@ export function wrapClaudeAgentSDK<T extends object>(
     wrappedSdk.tool = function (...args) {
       const toolDef = originalTool.apply(sdk, args);
       if (toolDef && typeof toolDef === "object" && "handler" in toolDef) {
-        return wrapClaudeAgentTool(
-          toolDef as SdkMcpToolDefinition<unknown>,
-          config
-        );
+        return wrapClaudeAgentTool(toolDef as SdkMcpToolDefinition, config);
       }
       return toolDef;
     };
