@@ -433,6 +433,9 @@ function wrapClaudeAgentQuery<
     // Track usage from ResultMessage to add to the parent span
     let resultUsage: Record<string, unknown> | undefined;
 
+    // Track additional metadata from the SDK
+    const extraMetadata: [key: string, value: unknown][] = [];
+
     // Track usage from completed assistant message spans (by model)
     // Used to calculate remaining tokens for pending messages
     const completedUsageByModel = new Map<
@@ -659,6 +662,24 @@ function wrapClaudeAgentQuery<
           if (message.total_cost_usd != null && resultUsage) {
             resultUsage.total_cost = message.total_cost_usd;
           }
+
+          // Add conversation-level metadata
+          if (message.is_error != null) {
+            extraMetadata.push(["is_error", message.is_error]);
+          }
+          if (message.num_turns != null) {
+            extraMetadata.push(["num_turns", message.num_turns]);
+          }
+          if (message.session_id != null) {
+            extraMetadata.push(["session_id", message.session_id]);
+          }
+
+          if (message.duration_ms != null) {
+            extraMetadata.push(["duration_ms", message.duration_ms]);
+          }
+          if (message.duration_api_ms != null) {
+            extraMetadata.push(["duration_api_ms", message.duration_api_ms]);
+          }
         }
 
         yield message;
@@ -675,31 +696,33 @@ function wrapClaudeAgentQuery<
 
       // Apply usage metadata to the chain run using LangSmith's standard fields
       const currentRun = getCurrentRunTree();
-      if (currentRun && resultUsage) {
+      if (currentRun && (resultUsage || extraMetadata.length > 0)) {
         // Initialize metadata object if needed
-        if (!currentRun.extra) {
-          currentRun.extra = {};
-        }
-        if (!currentRun.extra.metadata) {
-          currentRun.extra.metadata = {};
+        currentRun.extra ||= {};
+        currentRun.extra.metadata ||= {};
+
+        if (resultUsage) {
+          // Add LangSmith-standard usage fields directly to metadata
+          if (resultUsage.input_tokens !== undefined) {
+            currentRun.extra.metadata.input_tokens = resultUsage.input_tokens;
+          }
+          if (resultUsage.output_tokens !== undefined) {
+            currentRun.extra.metadata.output_tokens = resultUsage.output_tokens;
+          }
+          if (resultUsage.total_tokens !== undefined) {
+            currentRun.extra.metadata.total_tokens = resultUsage.total_tokens;
+          }
+          if (resultUsage.input_token_details) {
+            currentRun.extra.metadata.input_token_details =
+              resultUsage.input_token_details;
+          }
+          if (resultUsage.total_cost !== undefined) {
+            currentRun.extra.metadata.total_cost = resultUsage.total_cost;
+          }
         }
 
-        // Add LangSmith-standard usage fields directly to metadata
-        if (resultUsage.input_tokens !== undefined) {
-          currentRun.extra.metadata.input_tokens = resultUsage.input_tokens;
-        }
-        if (resultUsage.output_tokens !== undefined) {
-          currentRun.extra.metadata.output_tokens = resultUsage.output_tokens;
-        }
-        if (resultUsage.total_tokens !== undefined) {
-          currentRun.extra.metadata.total_tokens = resultUsage.total_tokens;
-        }
-        if (resultUsage.input_token_details) {
-          currentRun.extra.metadata.input_token_details =
-            resultUsage.input_token_details;
-        }
-        if (resultUsage.total_cost !== undefined) {
-          currentRun.extra.metadata.total_cost = resultUsage.total_cost;
+        for (const [key, value] of extraMetadata) {
+          currentRun.extra.metadata[key] = value;
         }
       }
     } finally {
@@ -803,7 +826,6 @@ function aggregateUsageFromModelUsage(
   let totalOutputTokens = 0;
   let totalCacheReadTokens = 0;
   let totalCacheCreationTokens = 0;
-
   // Aggregate across all models
   for (const modelStats of Object.values(modelUsage)) {
     totalInputTokens += modelStats.inputTokens || 0;

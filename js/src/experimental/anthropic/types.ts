@@ -14,6 +14,9 @@ type SDKResultMessage = {
   duration_ms: number;
   duration_api_ms: number;
   total_cost_usd: number;
+  is_error: boolean;
+  num_turns: number;
+  session_id: string;
   usage: Record<string, Anthropic.Beta.BetaUsage>;
   modelUsage: Record<string, SDKModelUsage>;
 };
