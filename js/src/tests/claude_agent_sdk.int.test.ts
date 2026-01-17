@@ -410,4 +410,20 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
     expect(resultMessage).toBeDefined();
     expect(resultMessage.usage.output_tokens).toBeGreaterThan(1); // Should be more than the initial streaming count of 1
   });
+
+  test("wrapping query preserves extra methods from generator", async () => {
+    const query = wrappedSDK.query({
+      prompt: "Write a haiku about programming.",
+      options: {
+        model: "claude-3-5-haiku-20241022",
+        maxTurns: 1,
+      },
+    });
+
+    expect(query.supportedModels).toBeDefined();
+    expect(query.supportedCommands).toBeDefined();
+
+    await expect(() => query.supportedModels()).not.toThrow();
+    await expect(() => query.supportedCommands()).not.toThrow();
+  });
 });

@@ -384,8 +384,7 @@ function clearActiveToolRuns(context: AgentSDKContext): void {
 function wrapClaudeAgentQuery<
   T extends (...args: unknown[]) => AsyncGenerator<SDKMessage, void, unknown>
 >(queryFn: T, defaultThis?: unknown, baseConfig?: WrapClaudeAgentSDKConfig): T {
-  const wrapped = async function* (...args: unknown[]) {
-    const context = createQueryContext();
+  const getModifiedArgs = (args: unknown[], context: AgentSDKContext) => {
     const params = (args[0] ?? {}) as {
       prompt?: string | AsyncIterable<SDKMessage>;
       options?: QueryOptions;
@@ -397,8 +396,19 @@ function wrapClaudeAgentQuery<
     const mergedHooks = mergeHooks(options.hooks, context);
     const modifiedOptions = { ...options, hooks: mergedHooks };
     const modifiedParams = { ...params, options: modifiedOptions };
-    const modifiedArgs = [modifiedParams, ...args.slice(1)];
+    return {
+      prompt,
+      options: modifiedOptions,
+      modifiedArgs: [modifiedParams, ...args.slice(1)],
+    };
+  };
 
+  async function* generator(
+    originalGenerator: AsyncGenerator<SDKMessage, void, unknown>,
+    prompt: string | AsyncIterable<SDKMessage> | undefined,
+    options: QueryOptions,
+    context: AgentSDKContext
+  ) {
     const finalResults: Array<{ content: unknown; role: string }> = [];
 
     // Track assistant messages by their message ID for proper streaming handling
@@ -435,9 +445,6 @@ function wrapClaudeAgentQuery<
       }
     >();
 
-    // Set the parent run for hook-based tool tracing
-    context.currentParentRun = getCurrentRunTree();
-
     // Create an LLM span for a specific message ID
     const createLLMSpanForId = async (messageId: string) => {
       // Skip if we've already created a span for this message ID
@@ -472,7 +479,7 @@ function wrapClaudeAgentQuery<
         [pending.message],
         prompt,
         pending.messageHistory,
-        modifiedOptions,
+        options,
         pending.startTime,
         context
       );
@@ -480,11 +487,8 @@ function wrapClaudeAgentQuery<
       if (finalMessageContent) finalResults.push(finalMessageContent);
     };
 
-    const generator: AsyncGenerator<SDKMessage, void, unknown> =
-      await queryFn.call(defaultThis, ...modifiedArgs);
-
     try {
-      for await (const message of generator) {
+      for await (const message of originalGenerator) {
         const currentTime = Date.now();
 
         // Handle assistant messages - group by message ID for streaming
@@ -544,7 +548,8 @@ function wrapClaudeAgentQuery<
               });
             }
 
-            // We need to push the assistant message as well
+            // Push the message to the final results,
+            // Used to create spans with the full chat history as input
             if ("content" in message.message && message.message.content) {
               finalResults.push({
                 content: flattenContentBlocks(message.message.content),
@@ -702,7 +707,39 @@ function wrapClaudeAgentQuery<
       context.currentParentRun = undefined;
       clearActiveToolRuns(context);
     }
-  } as T;
+  }
+
+  const wrapped = (...args: unknown[]) => {
+    const context = createQueryContext();
+    context.currentParentRun = getCurrentRunTree();
+
+    const { prompt, options, modifiedArgs } = getModifiedArgs(args, context);
+    const actualGenerator = queryFn.call(defaultThis, ...modifiedArgs);
+    const wrappedGenerator = generator(
+      actualGenerator,
+      prompt,
+      options,
+      context
+    );
+
+    for (const method of Object.getOwnPropertyNames(
+      Object.getPrototypeOf(actualGenerator)
+    ).filter(
+      (method) => !["constructor", "next", "throw", "return"].includes(method)
+    )) {
+      Object.defineProperty(wrappedGenerator, method, {
+        get() {
+          const getValue =
+            actualGenerator?.[method as keyof typeof actualGenerator];
+          if (typeof getValue === "function")
+            return getValue.bind(actualGenerator);
+          return getValue;
+        },
+      });
+    }
+
+    return wrappedGenerator;
+  };
 
   // Wrap in traceable
   return traceable(wrapped, {
@@ -710,7 +747,7 @@ function wrapClaudeAgentQuery<
     run_type: "chain",
     ...baseConfig,
     metadata: { ...baseConfig?.metadata },
-  }) as T;
+  }) as unknown as T;
 }
 
 /**
