@@ -307,6 +307,16 @@ def _create_usage_metadata(
 
 def _process_chat_completion(outputs: Any):
     try:
+        # Check if outputs is an APIResponse wrapper (from with_raw_response).
+        # The OpenAI SDK's APIResponse wraps the actual response object.
+        # Call .parse() to extract the ChatCompletion/Completion for tracing.
+        # See: github.com/openai/openai-python/blob/main/src/openai/_response.py#L285
+        if hasattr(outputs, "parse") and callable(outputs.parse):
+            try:
+                outputs = outputs.parse()
+            except Exception:
+                pass
+
         rdict = outputs.model_dump()
         oai_token_usage = rdict.pop("usage", None)
         rdict["usage_metadata"] = (
@@ -425,6 +435,7 @@ def wrap_openai(
         - Sync and async OpenAI clients
         - `create` and `parse` methods
         - With and without streaming
+        - `with_raw_response` API for accessing HTTP headers
 
     Args:
         client: The client to patch.
@@ -462,11 +473,22 @@ def wrap_openai(
             messages=messages,
         )
         print(response.output_text)
+
+        # With raw response to access headers:
+        raw_response = client.chat.completions.with_raw_response.create(
+            model="gpt-4o-mini", messages=messages
+        )
+        print(raw_response.headers)  # Access HTTP headers
+        completion = raw_response.parse()  # Get parsed response
         ```
 
     !!! warning "Behavior changed in `langsmith` 0.3.16"
 
         Support for Responses API added.
+
+    !!! warning "Behavior changed in `langsmith` 0.3.x"
+
+        Support for `with_raw_response` API added.
     """  # noqa: E501
     tracing_extra = tracing_extra or {}
 

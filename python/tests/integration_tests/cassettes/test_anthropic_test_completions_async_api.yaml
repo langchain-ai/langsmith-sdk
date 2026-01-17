@@ -292,4 +292,592 @@ interactions:
     status:
       code: 200
       message: OK
+- request:
+    body: '{"max_tokens_to_sample": 3, "model": "claude-haiku-4-5", "prompt": "Human:
+      Say ''Hi i''m Claude'' then stop.\n\nAssistant:", "stream": false, "temperature":
+      0}'
+    headers:
+      Accept:
+      - application/json
+      Accept-Encoding:
+      - gzip, deflate, zstd
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '156'
+      Content-Type:
+      - application/json
+      Host:
+      - api.anthropic.com
+      X-Stainless-Arch:
+      - arm64
+      X-Stainless-Async:
+      - async:asyncio
+      X-Stainless-Lang:
+      - python
+      X-Stainless-OS:
+      - MacOS
+      X-Stainless-Package-Version:
+      - 0.75.0
+      X-Stainless-Runtime:
+      - CPython
+      X-Stainless-Runtime-Version:
+      - 3.13.3
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-timeout:
+      - '600'
+    method: POST
+    uri: https://api.anthropic.com/v1/complete
+  response:
+    body:
+      string: '{"type":"error","error":{"type":"invalid_request_error","message":"\"claude-haiku-4-5\"
+        is not supported on this API. Please use the Messages API instead."},"request_id":"req_011CWuF4PVeUU8XuYtDxwRLh"}'
+    headers:
+      CF-RAY:
+      - 9ba8c9d6b8f87ab8-SJC
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '201'
+      Content-Type:
+      - application/json
+      Date:
+      - Thu, 08 Jan 2026 04:00:31 GMT
+      Server:
+      - cloudflare
+      X-Robots-Tag:
+      - none
+      anthropic-organization-id:
+      - 39635d3b-ebfd-4987-9921-b228d48174d6
+      cf-cache-status:
+      - DYNAMIC
+      request-id:
+      - req_011CWuF4PVeUU8XuYtDxwRLh
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      x-envoy-upstream-service-time:
+      - '32'
+      x-should-retry:
+      - 'false'
+    status:
+      code: 400
+      message: Bad Request
+- request:
+    body: '{"max_tokens_to_sample": 3, "model": "claude-haiku-4-5", "prompt": "Human:
+      Say ''Hi i''m Claude'' then stop.\n\nAssistant:", "stream": true, "temperature":
+      0}'
+    headers:
+      Accept:
+      - application/json
+      Accept-Encoding:
+      - gzip, deflate, zstd
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '155'
+      Content-Type:
+      - application/json
+      Host:
+      - api.anthropic.com
+      X-Stainless-Arch:
+      - arm64
+      X-Stainless-Async:
+      - async:asyncio
+      X-Stainless-Lang:
+      - python
+      X-Stainless-OS:
+      - MacOS
+      X-Stainless-Package-Version:
+      - 0.75.0
+      X-Stainless-Runtime:
+      - CPython
+      X-Stainless-Runtime-Version:
+      - 3.13.3
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-timeout:
+      - '600'
+    method: POST
+    uri: https://api.anthropic.com/v1/complete
+  response:
+    body:
+      string: '{"type":"error","error":{"type":"invalid_request_error","message":"\"claude-haiku-4-5\"
+        is not supported on this API. Please use the Messages API instead."},"request_id":"req_011CWuF4QH2XuWhPMPwQXpJH"}'
+    headers:
+      CF-RAY:
+      - 9ba8c9d7df5bf3f6-SJC
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '201'
+      Content-Type:
+      - application/json
+      Date:
+      - Thu, 08 Jan 2026 04:00:32 GMT
+      Server:
+      - cloudflare
+      X-Robots-Tag:
+      - none
+      anthropic-organization-id:
+      - 39635d3b-ebfd-4987-9921-b228d48174d6
+      cf-cache-status:
+      - DYNAMIC
+      request-id:
+      - req_011CWuF4QH2XuWhPMPwQXpJH
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      x-envoy-upstream-service-time:
+      - '77'
+      x-should-retry:
+      - 'false'
+    status:
+      code: 400
+      message: Bad Request
+- request:
+    body: '{"max_tokens_to_sample": 3, "model": "claude-haiku-4-5", "prompt": "Human:
+      Say ''Hi i''m Claude'' then stop.\n\nAssistant:", "stream": false, "temperature":
+      0}'
+    headers:
+      Accept:
+      - application/json
+      Accept-Encoding:
+      - gzip, deflate, zstd
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '156'
+      Content-Type:
+      - application/json
+      Host:
+      - api.anthropic.com
+      X-Stainless-Arch:
+      - arm64
+      X-Stainless-Async:
+      - async:asyncio
+      X-Stainless-Lang:
+      - python
+      X-Stainless-OS:
+      - MacOS
+      X-Stainless-Package-Version:
+      - 0.75.0
+      X-Stainless-Runtime:
+      - CPython
+      X-Stainless-Runtime-Version:
+      - 3.13.3
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-timeout:
+      - '600'
+    method: POST
+    uri: https://api.anthropic.com/v1/complete
+  response:
+    body:
+      string: '{"type":"error","error":{"type":"invalid_request_error","message":"\"claude-haiku-4-5\"
+        is not supported on this API. Please use the Messages API instead."},"request_id":"req_011CWuFNavUyuuw4Bk17Z3S2"}'
+    headers:
+      CF-RAY:
+      - 9ba8cfdd9bcc5024-SJC
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '201'
+      Content-Type:
+      - application/json
+      Date:
+      - Thu, 08 Jan 2026 04:04:38 GMT
+      Server:
+      - cloudflare
+      X-Robots-Tag:
+      - none
+      anthropic-organization-id:
+      - 39635d3b-ebfd-4987-9921-b228d48174d6
+      cf-cache-status:
+      - DYNAMIC
+      request-id:
+      - req_011CWuFNavUyuuw4Bk17Z3S2
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      x-envoy-upstream-service-time:
+      - '57'
+      x-should-retry:
+      - 'false'
+    status:
+      code: 400
+      message: Bad Request
+- request:
+    body: '{"max_tokens_to_sample": 3, "model": "claude-haiku-4-5", "prompt": "Human:
+      Say ''Hi i''m Claude'' then stop.\n\nAssistant:", "stream": true, "temperature":
+      0}'
+    headers:
+      Accept:
+      - application/json
+      Accept-Encoding:
+      - gzip, deflate, zstd
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '155'
+      Content-Type:
+      - application/json
+      Host:
+      - api.anthropic.com
+      X-Stainless-Arch:
+      - arm64
+      X-Stainless-Async:
+      - async:asyncio
+      X-Stainless-Lang:
+      - python
+      X-Stainless-OS:
+      - MacOS
+      X-Stainless-Package-Version:
+      - 0.75.0
+      X-Stainless-Runtime:
+      - CPython
+      X-Stainless-Runtime-Version:
+      - 3.13.3
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-timeout:
+      - '600'
+    method: POST
+    uri: https://api.anthropic.com/v1/complete
+  response:
+    body:
+      string: '{"type":"error","error":{"type":"invalid_request_error","message":"\"claude-haiku-4-5\"
+        is not supported on this API. Please use the Messages API instead."},"request_id":"req_011CWuFNbpoq6aBtWCfSRcLZ"}'
+    headers:
+      CF-RAY:
+      - 9ba8cfdeeaa0f3f6-SJC
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '201'
+      Content-Type:
+      - application/json
+      Date:
+      - Thu, 08 Jan 2026 04:04:38 GMT
+      Server:
+      - cloudflare
+      X-Robots-Tag:
+      - none
+      anthropic-organization-id:
+      - 39635d3b-ebfd-4987-9921-b228d48174d6
+      cf-cache-status:
+      - DYNAMIC
+      request-id:
+      - req_011CWuFNbpoq6aBtWCfSRcLZ
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      x-envoy-upstream-service-time:
+      - '36'
+      x-should-retry:
+      - 'false'
+    status:
+      code: 400
+      message: Bad Request
+- request:
+    body: '{"max_tokens_to_sample": 3, "model": "claude-haiku-4-5-latest", "prompt":
+      "Human: Say ''Hi i''m Claude'' then stop.\n\nAssistant:", "stream": false, "temperature":
+      0}'
+    headers:
+      Accept:
+      - application/json
+      Accept-Encoding:
+      - gzip, deflate, zstd
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '163'
+      Content-Type:
+      - application/json
+      Host:
+      - api.anthropic.com
+      X-Stainless-Arch:
+      - arm64
+      X-Stainless-Async:
+      - async:asyncio
+      X-Stainless-Lang:
+      - python
+      X-Stainless-OS:
+      - MacOS
+      X-Stainless-Package-Version:
+      - 0.75.0
+      X-Stainless-Runtime:
+      - CPython
+      X-Stainless-Runtime-Version:
+      - 3.13.3
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-timeout:
+      - '600'
+    method: POST
+    uri: https://api.anthropic.com/v1/complete
+  response:
+    body:
+      string: '{"type":"error","error":{"type":"not_found_error","message":"model:
+        claude-haiku-4-5-latest"},"request_id":"req_011CWuFSgSUq4KTFGQqx83ym"}'
+    headers:
+      CF-RAY:
+      - 9ba8d138dee55655-SJC
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Thu, 08 Jan 2026 04:05:34 GMT
+      Server:
+      - cloudflare
+      Transfer-Encoding:
+      - chunked
+      X-Robots-Tag:
+      - none
+      anthropic-organization-id:
+      - 39635d3b-ebfd-4987-9921-b228d48174d6
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '138'
+      request-id:
+      - req_011CWuFSgSUq4KTFGQqx83ym
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      x-envoy-upstream-service-time:
+      - '34'
+      x-should-retry:
+      - 'false'
+    status:
+      code: 404
+      message: Not Found
+- request:
+    body: '{"max_tokens_to_sample": 3, "model": "claude-haiku-4-5-latest", "prompt":
+      "Human: Say ''Hi i''m Claude'' then stop.\n\nAssistant:", "stream": true, "temperature":
+      0}'
+    headers:
+      Accept:
+      - application/json
+      Accept-Encoding:
+      - gzip, deflate, zstd
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '162'
+      Content-Type:
+      - application/json
+      Host:
+      - api.anthropic.com
+      X-Stainless-Arch:
+      - arm64
+      X-Stainless-Async:
+      - async:asyncio
+      X-Stainless-Lang:
+      - python
+      X-Stainless-OS:
+      - MacOS
+      X-Stainless-Package-Version:
+      - 0.75.0
+      X-Stainless-Runtime:
+      - CPython
+      X-Stainless-Runtime-Version:
+      - 3.13.3
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-timeout:
+      - '600'
+    method: POST
+    uri: https://api.anthropic.com/v1/complete
+  response:
+    body:
+      string: '{"type":"error","error":{"type":"not_found_error","message":"model:
+        claude-haiku-4-5-latest"},"request_id":"req_011CWuFShHLTseN88iRPwoDe"}'
+    headers:
+      CF-RAY:
+      - 9ba8d13a099dc4f3-SJC
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Thu, 08 Jan 2026 04:05:34 GMT
+      Server:
+      - cloudflare
+      Transfer-Encoding:
+      - chunked
+      X-Robots-Tag:
+      - none
+      anthropic-organization-id:
+      - 39635d3b-ebfd-4987-9921-b228d48174d6
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '138'
+      request-id:
+      - req_011CWuFShHLTseN88iRPwoDe
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      x-envoy-upstream-service-time:
+      - '68'
+      x-should-retry:
+      - 'false'
+    status:
+      code: 404
+      message: Not Found
+- request:
+    body: '{"max_tokens_to_sample": 3, "model": "claude-haiku-4-5-20251001", "prompt":
+      "Human: Say ''Hi i''m Claude'' then stop.\n\nAssistant:", "stream": false, "temperature":
+      0}'
+    headers:
+      Accept:
+      - application/json
+      Accept-Encoding:
+      - gzip, deflate, zstd
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '165'
+      Content-Type:
+      - application/json
+      Host:
+      - api.anthropic.com
+      X-Stainless-Arch:
+      - arm64
+      X-Stainless-Async:
+      - async:asyncio
+      X-Stainless-Lang:
+      - python
+      X-Stainless-OS:
+      - MacOS
+      X-Stainless-Package-Version:
+      - 0.75.0
+      X-Stainless-Runtime:
+      - CPython
+      X-Stainless-Runtime-Version:
+      - 3.13.3
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-timeout:
+      - '600'
+    method: POST
+    uri: https://api.anthropic.com/v1/complete
+  response:
+    body:
+      string: '{"type":"error","error":{"type":"invalid_request_error","message":"\"claude-haiku-4-5-20251001\"
+        is not supported on this API. Please use the Messages API instead."},"request_id":"req_011CWuFX1fVW1jPfsftHHqJE"}'
+    headers:
+      CF-RAY:
+      - 9ba8d2a8192f34c3-SJC
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '210'
+      Content-Type:
+      - application/json
+      Date:
+      - Thu, 08 Jan 2026 04:06:33 GMT
+      Server:
+      - cloudflare
+      X-Robots-Tag:
+      - none
+      anthropic-organization-id:
+      - 39635d3b-ebfd-4987-9921-b228d48174d6
+      cf-cache-status:
+      - DYNAMIC
+      request-id:
+      - req_011CWuFX1fVW1jPfsftHHqJE
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      x-envoy-upstream-service-time:
+      - '32'
+      x-should-retry:
+      - 'false'
+    status:
+      code: 400
+      message: Bad Request
+- request:
+    body: '{"max_tokens_to_sample": 3, "model": "claude-haiku-4-5-20251001", "prompt":
+      "Human: Say ''Hi i''m Claude'' then stop.\n\nAssistant:", "stream": true, "temperature":
+      0}'
+    headers:
+      Accept:
+      - application/json
+      Accept-Encoding:
+      - gzip, deflate, zstd
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '164'
+      Content-Type:
+      - application/json
+      Host:
+      - api.anthropic.com
+      X-Stainless-Arch:
+      - arm64
+      X-Stainless-Async:
+      - async:asyncio
+      X-Stainless-Lang:
+      - python
+      X-Stainless-OS:
+      - MacOS
+      X-Stainless-Package-Version:
+      - 0.75.0
+      X-Stainless-Runtime:
+      - CPython
+      X-Stainless-Runtime-Version:
+      - 3.13.3
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-timeout:
+      - '600'
+    method: POST
+    uri: https://api.anthropic.com/v1/complete
+  response:
+    body:
+      string: '{"type":"error","error":{"type":"invalid_request_error","message":"\"claude-haiku-4-5-20251001\"
+        is not supported on this API. Please use the Messages API instead."},"request_id":"req_011CWuFX2S87pThi4ijGPk2t"}'
+    headers:
+      CF-RAY:
+      - 9ba8d2a92bc99e58-SJC
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '210'
+      Content-Type:
+      - application/json
+      Date:
+      - Thu, 08 Jan 2026 04:06:33 GMT
+      Server:
+      - cloudflare
+      X-Robots-Tag:
+      - none
+      anthropic-organization-id:
+      - 39635d3b-ebfd-4987-9921-b228d48174d6
+      cf-cache-status:
+      - DYNAMIC
+      request-id:
+      - req_011CWuFX2S87pThi4ijGPk2t
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      x-envoy-upstream-service-time:
+      - '54'
+      x-should-retry:
+      - 'false'
+    status:
+      code: 400
+      message: Bad Request
 version: 1

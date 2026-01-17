@@ -105,4 +105,122 @@ interactions:
     status:
       code: 200
       message: OK
+- request:
+    body: '{"messages": [{"role": "user", "content": "Check usage"}], "model": "gpt-3.5-turbo",
+      "stream": false}'
+    headers:
+      Accept:
+      - application/json
+      Accept-Encoding:
+      - gzip, deflate, zstd
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '101'
+      Content-Type:
+      - application/json
+      Host:
+      - api.openai.com
+      X-Stainless-Arch:
+      - arm64
+      X-Stainless-Async:
+      - 'false'
+      X-Stainless-Helper-Method:
+      - chat.completions.parse
+      X-Stainless-Lang:
+      - python
+      X-Stainless-OS:
+      - MacOS
+      X-Stainless-Package-Version:
+      - 2.11.0
+      X-Stainless-Runtime:
+      - CPython
+      X-Stainless-Runtime-Version:
+      - 3.13.3
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+    method: POST
+    uri: https://api.openai.com/v1/chat/completions
+  response:
+    body:
+      string: "{\n  \"id\": \"chatcmpl-CvbdAfFAdgJwjgCaFoXA8hvAyD4W3\",\n  \"object\":
+        \"chat.completion\",\n  \"created\": 1767845384,\n  \"model\": \"gpt-3.5-turbo-0125\",\n
+        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
+        \"assistant\",\n        \"content\": \"Usage of a product or service refers
+        to how it is used or the way in which it is utilized by consumers. It can
+        also refer to the frequency or duration of usage. For example, the usage of
+        a smartphone may include making calls, sending messages, browsing the internet,
+        and using apps. The usage of a credit card may involve making purchases, paying
+        bills, and accessing rewards or benefits. Understanding usage patterns can
+        help businesses improve their products or services and tailor them to better
+        meet the needs of their customers.\",\n        \"refusal\": null,\n        \"annotations\":
+        []\n      },\n      \"logprobs\": null,\n      \"finish_reason\": \"stop\"\n
+        \   }\n  ],\n  \"usage\": {\n    \"prompt_tokens\": 9,\n    \"completion_tokens\":
+        102,\n    \"total_tokens\": 111,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\":
+        0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
+        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
+        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
+        \"default\",\n  \"system_fingerprint\": null\n}\n"
+    headers:
+      CF-RAY:
+      - 9ba8d7529bc1eb1e-SJC
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Thu, 08 Jan 2026 04:09:45 GMT
+      Server:
+      - cloudflare
+      Set-Cookie:
+      - __cf_bm=X7GeiZZkdO3RF4GWNPu.ZOQFnvteANxWUkBdmGRIN1I-1767845385-1.0.1.1-goZoRFufEGr8Ql0fh7PVAj7_6L7XOlsUdMJehxSWgBvrJSzEBqvDGn8NEhLK1cgoMVrjwm8j4pkzsuXav3KFnxAqjyuFHkJsZEG7B_bQHaQ;
+        path=/; expires=Thu, 08-Jan-26 04:39:45 GMT; domain=.api.openai.com; HttpOnly;
+        Secure; SameSite=None
+      - _cfuvid=vJcuS0RNWObg9xtvZqnv0FTgvPmPlRV0p7_Ot0JXuAk-1767845385188-0.0.1.1-604800000;
+        path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None
+      Strict-Transport-Security:
+      - max-age=31536000; includeSubDomains; preload
+      Transfer-Encoding:
+      - chunked
+      X-Content-Type-Options:
+      - nosniff
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      content-length:
+      - '1326'
+      openai-organization:
+      - langchain
+      openai-processing-ms:
+      - '1007'
+      openai-project:
+      - proj_IfpviNC2vx5jMiYFE4hbElsy
+      openai-version:
+      - '2020-10-01'
+      x-envoy-upstream-service-time:
+      - '1027'
+      x-openai-proxy-wasm:
+      - v0.1
+      x-ratelimit-limit-requests:
+      - '10000'
+      x-ratelimit-limit-tokens:
+      - '50000000'
+      x-ratelimit-remaining-requests:
+      - '9999'
+      x-ratelimit-remaining-tokens:
+      - '49999995'
+      x-ratelimit-reset-requests:
+      - 6ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_0ec71609a46741968665e00d676434da
+    status:
+      code: 200
+      message: OK
 version: 1
