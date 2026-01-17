@@ -21,6 +21,10 @@ import {
   WrapClaudeAgentSDKConfig,
 } from "./types.js";
 import { getNumberProperty } from "./utils.js";
+import type {
+  SDKUserMessage,
+  SDKMessage as ClaudeAgentSDKMessage,
+} from "@anthropic-ai/claude-agent-sdk";
 
 const createQueryContext = (): AgentSDKContext => ({
   activeToolRuns: new Map(),
@@ -770,6 +774,49 @@ function wrapClaudeAgentQuery<
     run_type: "chain",
     ...baseConfig,
     metadata: { ...baseConfig?.metadata },
+    async processInputs(rawInputs: unknown) {
+      const { prompt, ...rest } = rawInputs as {
+        prompt: string | AsyncIterable<SDKUserMessage>;
+        options: QueryOptions;
+      };
+      const messages = await (async () => {
+        if (prompt == null) return undefined;
+
+        const result: Array<{ content: unknown; role: string }> = [];
+        if (typeof prompt === "string") {
+          result.push({ content: prompt, role: "user" });
+        } else {
+          for await (const { message } of prompt) {
+            if (!message) continue;
+            result.push({
+              content: flattenContentBlocks(message.content),
+              role: message.role,
+            });
+          }
+        }
+
+        return result;
+      })();
+
+      return { messages, ...rest };
+    },
+    processOutputs(rawOutputs) {
+      if ("outputs" in rawOutputs && Array.isArray(rawOutputs.outputs)) {
+        const sdkMessages = rawOutputs.outputs as ClaudeAgentSDKMessage[];
+        const messages = sdkMessages.flatMap((sdkMessage) => {
+          if ("message" in sdkMessage && sdkMessage.message != null) {
+            return {
+              role: sdkMessage.message.role,
+              content: flattenContentBlocks(sdkMessage.message.content),
+            };
+          }
+          return [];
+        });
+
+        return { output: { messages } };
+      }
+      return rawOutputs;
+    },
   }) as unknown as T;
 }
 
