@@ -178,10 +178,12 @@ def _unwrap_streamed_messages(
         if "message" in msg:
             inner = msg["message"]
             if isinstance(inner, dict):
-                formatted.append({
-                    "role": inner.get("role", "user"),
-                    "content": inner.get("content", ""),
-                })
+                formatted.append(
+                    {
+                        "role": inner.get("role", "user"),
+                        "content": inner.get("content", ""),
+                    }
+                )
             else:
                 formatted.append(msg)
         else:

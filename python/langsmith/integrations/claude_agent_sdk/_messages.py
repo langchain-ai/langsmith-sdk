@@ -88,10 +88,12 @@ def build_llm_input(prompt: Any, history: list[dict[str, Any]]) -> list[dict[str
             if "message" in msg:
                 inner = msg["message"]
                 if isinstance(inner, dict):
-                    formatted.append({
-                        "role": inner.get("role", "user"),
-                        "content": inner.get("content", ""),
-                    })
+                    formatted.append(
+                        {
+                            "role": inner.get("role", "user"),
+                            "content": inner.get("content", ""),
+                        }
+                    )
                 else:
                     formatted.append(msg)
             elif "role" in msg and "content" in msg:
