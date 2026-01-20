@@ -529,42 +529,35 @@ def test_from_headers_filters_replica_credentials():
 class TestNonRecordingRunTree:
     """Tests for the NonRecordingRunTree class."""
 
-    def test_singleton_instance_exists(self):
-        """Test that the global singleton exists."""
-        from langsmith.run_trees import NON_RECORDING_RUN, NonRecordingRunTree
+    def test_is_recording_returns_false(self):
+        """Test that is_recording returns False for NonRecordingRunTree."""
+        from langsmith.run_trees import NonRecordingRunTree
 
-        assert NON_RECORDING_RUN is not None
-        assert isinstance(NON_RECORDING_RUN, NonRecordingRunTree)
+        run = NonRecordingRunTree()
+        assert run.is_recording() is False
 
-    def test_bool_returns_false(self):
-        """Test that NonRecordingRunTree evaluates to False in boolean context."""
-        from langsmith.run_trees import NON_RECORDING_RUN
-
-        assert not NON_RECORDING_RUN
-        assert bool(NON_RECORDING_RUN) is False
-
-        # Ensure if checks work as expected
-        if NON_RECORDING_RUN:
-            pytest.fail("NonRecordingRunTree should evaluate to False")
+    def test_run_tree_is_recording_returns_true(self):
+        """Test that is_recording returns True for regular RunTree."""
+        mock_client = MagicMock(spec=Client)
+        run = RunTree(name="test", client=mock_client)
+        assert run.is_recording() is True
 
     def test_properties_return_placeholders(self):
         """Test that properties return appropriate placeholder values."""
-        from langsmith.run_trees import NON_RECORDING_RUN
+        from langsmith.run_trees import NonRecordingRunTree
 
-        assert NON_RECORDING_RUN.id == UUID("00000000-0000-0000-0000-000000000000")
-        assert NON_RECORDING_RUN.trace_id == UUID(
-            "00000000-0000-0000-0000-000000000000"
-        )
-        assert NON_RECORDING_RUN.dotted_order == ""
-        assert NON_RECORDING_RUN.name == ""
-        assert NON_RECORDING_RUN.run_type == "chain"
-        assert NON_RECORDING_RUN.session_name == ""
+        run = NonRecordingRunTree()
+        assert run.id == UUID("00000000-0000-0000-0000-000000000000")
+        assert run.trace_id == UUID("00000000-0000-0000-0000-000000000000")
+        assert run.dotted_order == ""
+        assert run.name == ""
+        assert run.run_type == "chain"
+        assert run.session_name == ""
 
     def test_methods_are_noops(self):
         """Test that all methods execute without error and do nothing."""
         from langsmith.run_trees import NonRecordingRunTree
 
-        # Create a fresh instance to avoid contaminating the singleton
         run = NonRecordingRunTree()
 
         # These should all execute without error
@@ -584,14 +577,15 @@ class TestNonRecordingRunTree:
 
     def test_create_child_returns_self(self):
         """Test that create_child returns the same instance (no nesting)."""
-        from langsmith.run_trees import NON_RECORDING_RUN
+        from langsmith.run_trees import NonRecordingRunTree
 
-        child = NON_RECORDING_RUN.create_child("child_name")
-        assert child is NON_RECORDING_RUN
+        run = NonRecordingRunTree()
+        child = run.create_child("child_name")
+        assert child is run
 
         # Nested calls should all return the same instance
         grandchild = child.create_child("grandchild")
-        assert grandchild is NON_RECORDING_RUN
+        assert grandchild is run
 
     def test_metadata_dict_is_mutable_but_noop(self):
         """Test that metadata can be accessed and mutated without error."""
@@ -619,6 +613,7 @@ class TestNonRecordingRunTree:
 
     def test_repr(self):
         """Test string representation."""
-        from langsmith.run_trees import NON_RECORDING_RUN
+        from langsmith.run_trees import NonRecordingRunTree
 
-        assert repr(NON_RECORDING_RUN) == "NonRecordingRunTree()"
+        run = NonRecordingRunTree()
+        assert repr(run) == "NonRecordingRunTree()"

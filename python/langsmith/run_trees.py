@@ -917,6 +917,10 @@ class RunTree(ls_schemas.RunBase):
             f"run_type='{self.run_type}', dotted_order='{self.dotted_order}')"
         )
 
+    def is_recording(self) -> bool:
+        """Return True since this RunTree records data."""
+        return True
+
 
 class _Baggage:
     """Baggage header information."""
@@ -1150,7 +1154,7 @@ def _parse_dotted_order(dotted_order: str) -> list[tuple[datetime, UUID]]:
 
 
 _CLIENT: Optional[Client] = _context._GLOBAL_CLIENT
-__all__ = ["RunTree", "NonRecordingRunTree", "NON_RECORDING_RUN"]
+__all__ = ["RunTree", "NonRecordingRunTree"]
 
 
 def _create_current_dotted_order(
@@ -1171,8 +1175,7 @@ class NonRecordingRunTree:
     This allows code to unconditionally call methods like `add_metadata()` without
     checking if tracing is enabled.
 
-    The class evaluates to `False` in boolean context, so existing code patterns
-    like `if run_tree:` will still work correctly.
+    Use `is_recording()` to check if the run tree is actually recording data.
     """
 
     def __init__(self) -> None:
@@ -1183,13 +1186,13 @@ class NonRecordingRunTree:
         self._outputs: dict[str, Any] = {}
         self._events: list[dict] = []
 
-    def __bool__(self) -> bool:
-        """Return False so that `if run_tree:` checks work as expected."""
-        return False
-
     def __repr__(self) -> str:
         """Return string representation of NonRecordingRunTree."""
         return "NonRecordingRunTree()"
+
+    def is_recording(self) -> bool:
+        """Return False since this RunTree does not record data."""
+        return False
 
     @property
     def id(self) -> UUID:
@@ -1349,7 +1352,3 @@ class NonRecordingRunTree:
     def get_url(self) -> str:
         """Return an empty URL."""
         return ""
-
-
-# Global singleton instance
-NON_RECORDING_RUN: NonRecordingRunTree = NonRecordingRunTree()

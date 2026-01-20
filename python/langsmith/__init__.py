@@ -23,8 +23,6 @@ if TYPE_CHECKING:
         tracing_context,
     )
     from langsmith.run_trees import (
-        NON_RECORDING_RUN,
-        NonRecordingRunTree,
         RunTree,
         configure,
     )
@@ -53,14 +51,6 @@ def __getattr__(name: str) -> Any:
         from langsmith.run_trees import RunTree
 
         return RunTree
-    elif name == "NonRecordingRunTree":
-        from langsmith.run_trees import NonRecordingRunTree
-
-        return NonRecordingRunTree
-    elif name == "NON_RECORDING_RUN":
-        from langsmith.run_trees import NON_RECORDING_RUN
-
-        return NON_RECORDING_RUN
     elif name == "EvaluationResult":
         from langsmith.evaluation.evaluator import EvaluationResult
 
@@ -160,8 +150,6 @@ __all__ = [
     "Cache",
     "AsyncCache",
     "RunTree",
-    "NonRecordingRunTree",
-    "NON_RECORDING_RUN",
     "configure",
     "__version__",
     "EvaluationResult",

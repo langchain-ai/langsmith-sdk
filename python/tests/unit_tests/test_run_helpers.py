@@ -2278,17 +2278,11 @@ class TestGetCurrentRunTree:
 
     def test_returns_non_recording_run_outside_trace(self):
         """Test get_current_run_tree returns NonRecordingRunTree when not tracing."""
-        from langsmith.run_trees import NON_RECORDING_RUN, NonRecordingRunTree
+        from langsmith.run_trees import NonRecordingRunTree
 
         run = get_current_run_tree()
         assert isinstance(run, NonRecordingRunTree)
-        assert run is NON_RECORDING_RUN
-
-    def test_non_recording_run_is_falsy(self):
-        """Test that the returned run evaluates to False in boolean context."""
-        run = get_current_run_tree()
-        assert not run
-        assert bool(run) is False
+        assert run.is_recording() is False
 
     def test_can_call_methods_unconditionally(self):
         """Test that methods can be called on get_current_run_tree() without checks."""
@@ -2314,15 +2308,15 @@ class TestGetCurrentRunTree:
 
             assert captured_run is not None
             assert isinstance(captured_run, RunTree)
-            assert bool(captured_run) is True  # Real RunTree is truthy
+            assert captured_run.is_recording() is True
 
-    def test_if_run_pattern_works(self):
-        """Test that 'if run:' pattern works correctly in both contexts."""
+    def test_is_recording_pattern_works(self):
+        """Test that 'is_recording()' pattern works correctly in both contexts."""
         results = []
 
         def check_run():
             run = get_current_run_tree()
-            if run:
+            if run.is_recording():
                 results.append("inside_trace")
             else:
                 results.append("outside_trace")

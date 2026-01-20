@@ -73,16 +73,14 @@ def get_current_run_tree() -> Union[run_trees.RunTree, run_trees.NonRecordingRun
     """Get the current run tree.
 
     Returns the active run tree if inside a traced context, otherwise returns
-    a `NonRecordingRunTree` singleton that implements the same interface but
-    does nothing.
+    a `NonRecordingRunTree` that implements the same interface but does nothing.
 
-    The `NonRecordingRunTree` evaluates to `False` in boolean context, so
-    existing code patterns like `if run_tree:` will still work correctly.
+    Use `is_recording()` on the returned object to check if tracing is active.
 
     Returns:
-        The current `RunTree` if tracing is active, otherwise `NON_RECORDING_RUN`.
+        The current `RunTree` if tracing is active, otherwise a `NonRecordingRunTree`.
     """
-    return _context._PARENT_RUN_TREE.get() or run_trees.NON_RECORDING_RUN
+    return _context._PARENT_RUN_TREE.get() or run_trees.NonRecordingRunTree()
 
 
 def set_run_metadata(**metadata: Any) -> None:
