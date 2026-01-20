@@ -22,7 +22,12 @@ if TYPE_CHECKING:
         traceable,
         tracing_context,
     )
-    from langsmith.run_trees import RunTree, configure
+    from langsmith.run_trees import (
+        NON_RECORDING_RUN,
+        NonRecordingRunTree,
+        RunTree,
+        configure,
+    )
     from langsmith.testing._internal import test, unit
     from langsmith.utils import ContextThreadPoolExecutor
     from langsmith.uuid import uuid7, uuid7_from_datetime
@@ -48,6 +53,14 @@ def __getattr__(name: str) -> Any:
         from langsmith.run_trees import RunTree
 
         return RunTree
+    elif name == "NonRecordingRunTree":
+        from langsmith.run_trees import NonRecordingRunTree
+
+        return NonRecordingRunTree
+    elif name == "NON_RECORDING_RUN":
+        from langsmith.run_trees import NON_RECORDING_RUN
+
+        return NON_RECORDING_RUN
     elif name == "EvaluationResult":
         from langsmith.evaluation.evaluator import EvaluationResult
 
@@ -147,6 +160,8 @@ __all__ = [
     "Cache",
     "AsyncCache",
     "RunTree",
+    "NonRecordingRunTree",
+    "NON_RECORDING_RUN",
     "configure",
     "__version__",
     "EvaluationResult",

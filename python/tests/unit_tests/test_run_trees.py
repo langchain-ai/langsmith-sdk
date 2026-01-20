@@ -524,3 +524,99 @@ def test_from_headers_filters_replica_credentials():
     assert "api_url" not in replica
     assert replica.get("project_name") == "legit-project"
     assert replica.get("updates") == {"reroot": True}
+
+
+class TestNonRecordingRunTree:
+    """Tests for the NonRecordingRunTree class."""
+
+    def test_singleton_instance_exists(self):
+        """Test that the global singleton exists."""
+        from langsmith.run_trees import NON_RECORDING_RUN, NonRecordingRunTree
+
+        assert NON_RECORDING_RUN is not None
+        assert isinstance(NON_RECORDING_RUN, NonRecordingRunTree)
+
+    def test_bool_returns_false(self):
+        """Test that NonRecordingRunTree evaluates to False in boolean context."""
+        from langsmith.run_trees import NON_RECORDING_RUN
+
+        assert not NON_RECORDING_RUN
+        assert bool(NON_RECORDING_RUN) is False
+
+        # Ensure if checks work as expected
+        if NON_RECORDING_RUN:
+            pytest.fail("NonRecordingRunTree should evaluate to False")
+
+    def test_properties_return_placeholders(self):
+        """Test that properties return appropriate placeholder values."""
+        from langsmith.run_trees import NON_RECORDING_RUN
+
+        assert NON_RECORDING_RUN.id == UUID("00000000-0000-0000-0000-000000000000")
+        assert NON_RECORDING_RUN.trace_id == UUID("00000000-0000-0000-0000-000000000000")
+        assert NON_RECORDING_RUN.dotted_order == ""
+        assert NON_RECORDING_RUN.name == ""
+        assert NON_RECORDING_RUN.run_type == "chain"
+        assert NON_RECORDING_RUN.session_name == ""
+
+    def test_methods_are_noops(self):
+        """Test that all methods execute without error and do nothing."""
+        from langsmith.run_trees import NonRecordingRunTree
+
+        # Create a fresh instance to avoid contaminating the singleton
+        run = NonRecordingRunTree()
+
+        # These should all execute without error
+        run.set(inputs={"a": 1}, outputs={"b": 2})
+        run.add_tags(["tag1", "tag2"])
+        run.add_metadata({"key": "value"})
+        run.add_outputs({"output": "data"})
+        run.add_inputs({"input": "data"})
+        run.add_event({"name": "event"})
+        run.end(outputs={"final": "output"})
+        run.post()
+        run.patch()
+        run.wait()
+
+        # get_url should return empty string
+        assert run.get_url() == ""
+
+    def test_create_child_returns_self(self):
+        """Test that create_child returns the same instance (no nesting)."""
+        from langsmith.run_trees import NON_RECORDING_RUN
+
+        child = NON_RECORDING_RUN.create_child("child_name")
+        assert child is NON_RECORDING_RUN
+
+        # Nested calls should all return the same instance
+        grandchild = child.create_child("grandchild")
+        assert grandchild is NON_RECORDING_RUN
+
+    def test_metadata_dict_is_mutable_but_noop(self):
+        """Test that metadata can be accessed and mutated without error."""
+        from langsmith.run_trees import NonRecordingRunTree
+
+        run = NonRecordingRunTree()
+
+        # Should be able to access and mutate metadata
+        run.metadata["key"] = "value"
+        assert run.metadata.get("key") == "value"
+
+        # But add_metadata is a no-op (doesn't actually add to the dict)
+        run.add_metadata({"other": "data"})
+        # The no-op doesn't add to metadata
+        assert "other" not in run.metadata
+
+    def test_outputs_setter_is_noop(self):
+        """Test that setting outputs is a no-op."""
+        from langsmith.run_trees import NonRecordingRunTree
+
+        run = NonRecordingRunTree()
+        run.outputs = {"should": "be ignored"}
+        # Setter is a no-op, so outputs dict should be empty
+        assert run.outputs == {}
+
+    def test_repr(self):
+        """Test string representation."""
+        from langsmith.run_trees import NON_RECORDING_RUN
+
+        assert repr(NON_RECORDING_RUN) == "NonRecordingRunTree()"

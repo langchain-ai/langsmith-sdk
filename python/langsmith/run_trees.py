@@ -1150,7 +1150,7 @@ def _parse_dotted_order(dotted_order: str) -> list[tuple[datetime, UUID]]:
 
 
 _CLIENT: Optional[Client] = _context._GLOBAL_CLIENT
-__all__ = ["RunTree", "RunTree"]
+__all__ = ["RunTree", "NonRecordingRunTree", "NON_RECORDING_RUN"]
 
 
 def _create_current_dotted_order(
@@ -1160,3 +1160,194 @@ def _create_current_dotted_order(
     st = start_time or datetime.now(timezone.utc)
     id_ = run_id or uuid7_from_datetime(st)
     return st.strftime("%Y%m%dT%H%M%S%fZ") + str(id_)
+
+
+class NonRecordingRunTree:
+    """A run tree that does not record any data.
+
+    This is returned by `get_current_run_tree()` when there is no active trace.
+    It implements the same interface as `RunTree` but all operations are no-ops.
+
+    This allows code to unconditionally call methods like `add_metadata()` without
+    checking if tracing is enabled.
+
+    The class evaluates to `False` in boolean context, so existing code patterns
+    like `if run_tree:` will still work correctly.
+    """
+
+    def __init__(self) -> None:
+        self._metadata: dict[str, Any] = {}
+        self._tags: list[str] = []
+        self._inputs: dict[str, Any] = {}
+        self._outputs: dict[str, Any] = {}
+        self._events: list[dict] = []
+
+    def __bool__(self) -> bool:
+        """Return False so that `if run_tree:` checks work as expected."""
+        return False
+
+    def __repr__(self) -> str:
+        return "NonRecordingRunTree()"
+
+    @property
+    def id(self) -> UUID:
+        """Return a placeholder UUID."""
+        return UUID("00000000-0000-0000-0000-000000000000")
+
+    @property
+    def trace_id(self) -> UUID:
+        """Return a placeholder trace UUID."""
+        return UUID("00000000-0000-0000-0000-000000000000")
+
+    @property
+    def dotted_order(self) -> str:
+        """Return an empty dotted order."""
+        return ""
+
+    @property
+    def name(self) -> str:
+        """Return a placeholder name."""
+        return ""
+
+    @property
+    def run_type(self) -> str:
+        """Return a placeholder run type."""
+        return "chain"
+
+    @property
+    def session_name(self) -> str:
+        """Return a placeholder session name."""
+        return ""
+
+    @property
+    def metadata(self) -> dict[str, Any]:
+        """Return the metadata dict (writes are no-ops but won't error)."""
+        return self._metadata
+
+    @property
+    def tags(self) -> list[str]:
+        """Return the tags list."""
+        return self._tags
+
+    @property
+    def inputs(self) -> dict[str, Any]:
+        """Return the inputs dict."""
+        return self._inputs
+
+    @inputs.setter
+    def inputs(self, value: dict[str, Any]) -> None:
+        """No-op setter for inputs."""
+        pass
+
+    @property
+    def outputs(self) -> dict[str, Any]:
+        """Return the outputs dict."""
+        return self._outputs
+
+    @outputs.setter
+    def outputs(self, value: dict[str, Any]) -> None:
+        """No-op setter for outputs."""
+        pass
+
+    @property
+    def events(self) -> list[dict]:
+        """Return the events list."""
+        return self._events
+
+    @property
+    def extra(self) -> dict[str, Any]:
+        """Return an empty extra dict."""
+        return {}
+
+    def set(
+        self,
+        *,
+        inputs: Optional[Mapping[str, Any]] = None,
+        outputs: Optional[Mapping[str, Any]] = None,
+        tags: Optional[Sequence[str]] = None,
+        metadata: Optional[Mapping[str, Any]] = None,
+        usage_metadata: Optional[ls_schemas.ExtractedUsageMetadata] = None,
+    ) -> None:
+        """No-op."""
+        pass
+
+    def add_tags(self, tags: Union[Sequence[str], str]) -> None:
+        """No-op."""
+        pass
+
+    def add_metadata(self, metadata: dict[str, Any]) -> None:
+        """No-op."""
+        pass
+
+    def add_outputs(self, outputs: dict[str, Any]) -> None:
+        """No-op."""
+        pass
+
+    def add_inputs(self, inputs: dict[str, Any]) -> None:
+        """No-op."""
+        pass
+
+    def add_event(
+        self,
+        events: Union[
+            ls_schemas.RunEvent,
+            Sequence[ls_schemas.RunEvent],
+            Sequence[dict],
+            dict,
+            str,
+        ],
+    ) -> None:
+        """No-op."""
+        pass
+
+    def end(
+        self,
+        *,
+        outputs: Optional[dict] = None,
+        error: Optional[str] = None,
+        end_time: Optional[datetime] = None,
+        events: Optional[Sequence[ls_schemas.RunEvent]] = None,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> None:
+        """No-op."""
+        pass
+
+    def create_child(
+        self,
+        name: str,
+        run_type: RUN_TYPE_T = "chain",
+        *,
+        run_id: Optional[ID_TYPE] = None,
+        serialized: Optional[dict] = None,
+        inputs: Optional[dict] = None,
+        outputs: Optional[dict] = None,
+        error: Optional[str] = None,
+        reference_example_id: Optional[UUID] = None,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+        tags: Optional[list[str]] = None,
+        extra: Optional[dict] = None,
+        attachments: Optional[ls_schemas.Attachments] = None,
+    ) -> "NonRecordingRunTree":
+        """Return self (no child creation)."""
+        return self
+
+    def post(self, exclude_child_runs: bool = True) -> None:
+        """No-op."""
+        pass
+
+    def patch(self, *, exclude_inputs: bool = False) -> None:
+        """No-op."""
+        pass
+
+    def wait(self) -> None:
+        """No-op."""
+        pass
+
+    def get_url(self) -> str:
+        """Return an empty URL."""
+        return ""
+
+
+# Global singleton instance
+NON_RECORDING_RUN: NonRecordingRunTree = NonRecordingRunTree()

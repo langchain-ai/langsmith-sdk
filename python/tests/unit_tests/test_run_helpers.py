@@ -1950,12 +1950,15 @@ def test_set_run_metadata_updates_current_run_tree() -> None:
     assert run_tree.metadata["bar"] == "two"
 
 
-def test_set_run_metadata_without_active_run_tree(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
+def test_set_run_metadata_without_active_run_tree() -> None:
+    """Verify that set_run_metadata is a silent no-op outside a traced context."""
+    # This should not raise an error - it's a silent no-op
     langsmith.set_run_metadata(foo=1)
-    assert len(caplog.records) == 1
-    assert "No active run tree found" in caplog.text
+    # Verify the non-recording run tree received the call but didn't error
+    from langsmith.run_helpers import get_current_run_tree
+
+    run = get_current_run_tree()
+    assert not run  # Should be NonRecordingRunTree (falsy)
 
 
 # Tests for enabled parameter on @traceable decorator
@@ -2268,3 +2271,73 @@ def test_traceable_triple_decorated(mock_client: Client) -> None:
     assert config["tags"] is None
     assert config["metadata"] is None
     assert config["wrapped"] is original_function
+
+
+class TestGetCurrentRunTree:
+    """Tests for get_current_run_tree() returning NonRecordingRunTree."""
+
+    def test_returns_non_recording_run_outside_trace(self):
+        """Test that get_current_run_tree returns NonRecordingRunTree when not tracing."""
+        from langsmith.run_trees import NON_RECORDING_RUN, NonRecordingRunTree
+
+        run = get_current_run_tree()
+        assert isinstance(run, NonRecordingRunTree)
+        assert run is NON_RECORDING_RUN
+
+    def test_non_recording_run_is_falsy(self):
+        """Test that the returned run evaluates to False in boolean context."""
+        run = get_current_run_tree()
+        assert not run
+        assert bool(run) is False
+
+    def test_can_call_methods_unconditionally(self):
+        """Test that methods can be called on get_current_run_tree() without checks."""
+        # This should not raise any errors
+        run = get_current_run_tree()
+        run.add_metadata({"key": "value"})
+        run.add_tags(["tag1"])
+        run.add_outputs({"output": "data"})
+        run.end()
+
+    def test_returns_real_run_inside_trace(self):
+        """Test that get_current_run_tree returns real RunTree inside traced function."""
+        with tracing_context(enabled=True):
+            captured_run = None
+
+            @traceable
+            def my_func():
+                nonlocal captured_run
+                captured_run = get_current_run_tree()
+                return "result"
+
+            my_func()
+
+            assert captured_run is not None
+            assert isinstance(captured_run, RunTree)
+            assert bool(captured_run) is True  # Real RunTree is truthy
+
+    def test_if_run_pattern_works(self):
+        """Test that 'if run:' pattern works correctly in both contexts."""
+        results = []
+
+        def check_run():
+            run = get_current_run_tree()
+            if run:
+                results.append("inside_trace")
+            else:
+                results.append("outside_trace")
+
+        # Outside trace
+        check_run()
+
+        # Inside trace
+        with tracing_context(enabled=True):
+
+            @traceable
+            def traced_check():
+                check_run()
+                return "done"
+
+            traced_check()
+
+        assert results == ["outside_trace", "inside_trace"]
