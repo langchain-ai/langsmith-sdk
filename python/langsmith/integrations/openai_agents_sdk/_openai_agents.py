@@ -189,7 +189,6 @@ if HAVE_AGENTS:
                 new_run: rt.RunTree
                 if current_run_tree:
                     # Nest under existing trace
-                    assert isinstance(current_run_tree, rt.RunTree)
                     new_run = current_run_tree.create_child(
                         name=run_name,
                         run_type="chain",
