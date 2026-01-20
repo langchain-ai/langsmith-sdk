@@ -2268,3 +2268,157 @@ def test_traceable_triple_decorated(mock_client: Client) -> None:
     assert config["tags"] is None
     assert config["metadata"] is None
     assert config["wrapped"] is original_function
+
+
+# Tests for enabled parameter on trace() context manager
+
+
+def test_trace_enabled_false_overrides_context(mock_client: Client) -> None:
+    """Verify that enabled=False on trace() disables tracing.
+
+    Even with tracing_context(enabled=True).
+    """
+    with tracing_context(enabled=True):
+        with trace(name="My Operation", client=mock_client, enabled=False) as run:
+            result = 5 * 2
+
+    assert result == 10
+    assert run is None  # run should be None when disabled
+    mock_calls = _get_calls(mock_client)
+    assert len(mock_calls) == 0  # No tracing should occur
+
+
+def test_trace_enabled_true_overrides_context(mock_client: Client) -> None:
+    """Verify that enabled=True on trace() forces tracing.
+
+    Even with tracing_context(enabled=False).
+    """
+    with tracing_context(enabled=False):
+        with trace(name="My Operation", client=mock_client, enabled=True) as run:
+            result = 5 * 2
+            run.end(outputs={"result": result})
+
+    assert result == 10
+    mock_calls = _get_calls(mock_client, minimum=1)
+    assert len(mock_calls) >= 1  # Tracing should occur despite context
+
+
+def test_trace_enabled_none_respects_context_enabled(mock_client: Client) -> None:
+    """Verify that enabled=None (default) follows tracing_context when enabled."""
+    with tracing_context(enabled=True):
+        with trace(name="My Operation", client=mock_client) as run:  # enabled=None
+            result = 5 * 2
+            run.end(outputs={"result": result})
+
+    assert result == 10
+    mock_calls = _get_calls(mock_client, minimum=1)
+    assert len(mock_calls) >= 1  # Tracing should occur
+
+
+def test_trace_enabled_none_respects_context_disabled(mock_client: Client) -> None:
+    """Verify that enabled=None (default) follows tracing_context when disabled."""
+    with tracing_context(enabled=False):
+        with trace(name="My Operation", client=mock_client) as run:  # enabled=None
+            result = 5 * 2
+
+    assert result == 10
+    mock_calls = _get_calls(mock_client)
+    assert len(mock_calls) == 0  # No tracing should occur
+
+
+async def test_trace_async_enabled_false(mock_client: Client) -> None:
+    """Verify that enabled=False works with async context manager."""
+    with tracing_context(enabled=True):
+        async with trace(name="Async Operation", client=mock_client, enabled=False) as run:
+            result = 5 * 2
+
+    assert result == 10
+    assert run is None
+    mock_calls = _get_calls(mock_client)
+    assert len(mock_calls) == 0  # No tracing should occur
+
+
+async def test_trace_async_enabled_true_overrides_context(mock_client: Client) -> None:
+    """Verify that enabled=True forces tracing for async context manager.
+
+    Even when context is disabled.
+    """
+    with tracing_context(enabled=False):
+        async with trace(name="Async Operation", client=mock_client, enabled=True) as run:
+            result = 5 * 2
+            run.end(outputs={"result": result})
+
+    assert result == 10
+    mock_calls = _get_calls(mock_client, minimum=1)
+    assert len(mock_calls) >= 1  # Tracing should occur despite context
+
+
+def test_trace_enabled_does_not_propagate(mock_client: Client) -> None:
+    """Test that enabled setting applies only to its trace, not nested calls."""
+    with tracing_context(enabled=True):
+        with trace(name="outer_trace", client=mock_client, enabled=False) as outer_run:
+            with trace(name="inner_trace", client=mock_client, enabled=True) as inner_run:
+                inner_run.end(outputs={"result": "inner"})
+
+    assert outer_run is None
+    mock_calls = _get_calls(mock_client, minimum=1)
+    datas = _get_data(mock_calls)
+    # outer_trace should NOT be traced (enabled=False)
+    # inner_trace SHOULD be traced (enabled=True) - setting doesn't propagate
+    names = [p.get("name") for _, p in datas if p.get("name")]
+    assert "outer_trace" not in names
+    assert "inner_trace" in names
+
+
+def test_trace_nested_outer_enabled_inner_disabled(mock_client: Client) -> None:
+    """Test nested trace() where outer is enabled and inner is disabled."""
+    with tracing_context(enabled=True):
+        with trace(name="outer_trace", client=mock_client, enabled=True) as outer_run:
+            with trace(name="inner_trace", client=mock_client, enabled=False) as inner_run:
+                pass
+            outer_run.end(outputs={"result": "outer"})
+
+    assert inner_run is None
+    mock_calls = _get_calls(mock_client, minimum=1)
+    datas = _get_data(mock_calls)
+    # Only outer_trace should be traced, not inner_trace
+    names = [p.get("name") for _, p in datas if p.get("name")]
+    assert "outer_trace" in names
+    assert "inner_trace" not in names
+
+
+@pytest.mark.parametrize(
+    "trace_enabled,context_enabled,should_trace",
+    [
+        (None, True, True),  # None follows context
+        (None, False, False),  # None follows context
+        (True, True, True),  # True forces on
+        (True, False, True),  # True forces on (override context)
+        (False, True, False),  # False forces off (override context)
+        (False, False, False),  # False forces off
+    ],
+)
+def test_trace_enabled_matrix(
+    trace_enabled: Optional[bool],
+    context_enabled: bool,
+    should_trace: bool,
+) -> None:
+    """Test all combinations of trace enabled and context enabled."""
+    mock_client = _get_mock_client()
+
+    with tracing_context(enabled=context_enabled):
+        with trace(
+            name="My Operation",
+            client=mock_client,
+            enabled=trace_enabled,
+        ) as run:
+            result = 5 * 2
+            if run:
+                run.end(outputs={"result": result})
+
+    assert result == 10
+    mock_calls = _get_calls(mock_client, minimum=1 if should_trace else 0)
+    if should_trace:
+        assert len(mock_calls) >= 1
+    else:
+        assert len(mock_calls) == 0

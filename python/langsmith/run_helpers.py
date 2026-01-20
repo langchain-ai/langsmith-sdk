@@ -926,6 +926,12 @@ class trace:
         extra: Extra data to send to LangSmith.
 
             Use 'metadata' instead.
+        enabled: Whether tracing is enabled for this context.
+
+            - ``None`` (default): Uses the current context/environment setting.
+            - ``True``: Forces tracing on, overriding context.
+            - ``False``: Forces tracing off, overriding context. Returns ``None``
+              for the run tree variable.
 
     Examples:
         Synchronous usage:
@@ -963,6 +969,19 @@ class trace:
                 pytest.skip("Skipping test for windows")
             result = "foo"  # Perform test operation
         ```
+
+        Conditional tracing:
+
+        ```python
+        import os
+
+        tracing_enabled = os.environ.get("LANGSMITH_TRACING", "false").lower() == "true"
+
+        with trace("My Operation", run_type="llm", enabled=tracing_enabled) as run:
+            result = perform_operation()
+            if run:  # run is None when disabled
+                run.end(outputs={"result": result})
+        ```
     """
 
     def __init__(
@@ -983,6 +1002,7 @@ class trace:
         reference_example_id: Optional[ls_client.ID_TYPE] = None,
         exceptions_to_handle: Optional[tuple[type[BaseException], ...]] = None,
         attachments: Optional[schemas.Attachments] = None,
+        enabled: Optional[bool] = None,
         **kwargs: Any,
     ):
         """Initialize the trace context manager.
@@ -1012,10 +1032,11 @@ class trace:
         self.run_id = run_id
         self.reference_example_id = reference_example_id
         self.exceptions_to_handle = exceptions_to_handle
+        self.enabled = enabled
         self.new_run: Optional[run_trees.RunTree] = None
         self.old_ctx: Optional[dict] = None
 
-    def _setup(self) -> run_trees.RunTree:
+    def _setup(self) -> Optional[run_trees.RunTree]:
         """Set up the tracing context and create a new run.
 
         This method initializes the tracing context, merges tags and metadata,
@@ -1023,10 +1044,21 @@ class trace:
         and sets up the necessary context variables.
 
         Returns:
-            run_trees.RunTree: The newly created run.
+            run_trees.RunTree: The newly created run, or None if tracing is disabled.
         """
         self.old_ctx = get_tracing_context()
-        enabled = utils.tracing_is_enabled(self.old_ctx)
+        context_enabled = utils.tracing_is_enabled(self.old_ctx)
+
+        # Determine if tracing should be enabled for this context:
+        # - enabled=False: never trace (return None)
+        # - enabled=True: always trace
+        # - enabled=None: use context/environment setting
+        if self.enabled is False:
+            self.new_run = None
+            return None
+
+        # Use self.enabled if explicitly set, otherwise fall back to context
+        enabled = self.enabled if self.enabled is not None else context_enabled
 
         outer_tags = _context._TAGS.get() or _context._GLOBAL_TAGS
         outer_metadata = _context._METADATA.get() or _context._GLOBAL_METADATA
@@ -1079,7 +1111,8 @@ class trace:
                 attachments=self.attachments or {},  # type: ignore
             )
 
-        if enabled is True:
+        # Post run if enabled=True (force) or if tracing is enabled globally
+        if self.enabled is True or context_enabled is True:
             self.new_run.post()
         if enabled:
             _context._TAGS.set(tags_)
@@ -1107,6 +1140,9 @@ class trace:
             traceback: The traceback object associated with the exception, if any.
         """
         if self.new_run is None:
+            # Reset context even when disabled to ensure proper cleanup
+            if self.old_ctx is not None:
+                _set_tracing_context(self.old_ctx)
             return
         if exc_type is not None:
             if self.exceptions_to_handle and issubclass(
@@ -1118,19 +1154,20 @@ class trace:
                 tb = f"{exc_type.__name__}: {exc_value}\n\n{tb}"
             self.new_run.end(error=tb)
         if self.old_ctx is not None:
-            enabled = utils.tracing_is_enabled(self.old_ctx)
-            if enabled is True and self._end_on_exit:
+            context_enabled = utils.tracing_is_enabled(self.old_ctx)
+            # Patch run if enabled=True (force) or if tracing is enabled globally
+            if (self.enabled is True or context_enabled is True) and self._end_on_exit:
                 self.new_run.patch()
 
             _set_tracing_context(self.old_ctx)
         else:
             warnings.warn("Tracing context was not set up properly.", RuntimeWarning)
 
-    def __enter__(self) -> run_trees.RunTree:
+    def __enter__(self) -> Optional[run_trees.RunTree]:
         """Enter the context manager synchronously.
 
         Returns:
-            run_trees.RunTree: The newly created run.
+            run_trees.RunTree: The newly created run, or None if tracing is disabled.
         """
         return self._setup()
 
@@ -1149,11 +1186,11 @@ class trace:
         """
         self._teardown(exc_type, exc_value, traceback)
 
-    async def __aenter__(self) -> run_trees.RunTree:
+    async def __aenter__(self) -> Optional[run_trees.RunTree]:
         """Enter the context manager asynchronously.
 
         Returns:
-            run_trees.RunTree: The newly created run.
+            run_trees.RunTree: The newly created run, or None if tracing is disabled.
         """
         ctx = copy_context()
         result = await aitertools.aio_to_thread(self._setup, __ctx=ctx)
