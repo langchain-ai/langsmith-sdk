@@ -777,31 +777,51 @@ function wrapClaudeAgentQuery<
     run_type: "chain",
     ...baseConfig,
     metadata: { ...baseConfig?.metadata },
+    __deferredSerializableArgOptions: { maxDepth: 1 },
     async processInputs(rawInputs: unknown) {
-      const { prompt, ...rest } = rawInputs as {
+      const inputs = rawInputs as {
         prompt: string | AsyncIterable<SDKUserMessage>;
         options: QueryOptions;
       };
-      const messages = await (async () => {
-        if (prompt == null) return undefined;
 
-        const result: Array<{ content: unknown; role: string }> = [];
-        if (typeof prompt === "string") {
-          result.push({ content: prompt, role: "user" });
-        } else {
-          for await (const { message } of prompt) {
-            if (!message) continue;
-            result.push({
-              content: flattenContentBlocks(message.content),
-              role: message.role,
-            });
-          }
-        }
+      const newInputs = { ...inputs };
+      return Object.assign(newInputs, {
+        toJSON: () => {
+          const toJSON = (value: unknown) => {
+            if (typeof value !== "object" || value == null) return value;
+            const fn = (value as Record<string, unknown>)?.toJSON;
+            if (typeof fn === "function") return fn();
+            return value;
+          };
 
-        return result;
-      })();
+          const prompt = toJSON(inputs.prompt) as
+            | string
+            | Iterable<SDKUserMessage>
+            | undefined;
+          const options = toJSON(inputs.options) as QueryOptions | undefined;
 
-      return { messages, ...rest };
+          const messages = (() => {
+            if (prompt == null) return undefined;
+
+            const result: Array<{ content: unknown; role: string }> = [];
+            if (typeof prompt === "string") {
+              result.push({ content: prompt, role: "user" });
+            } else {
+              for (const { message } of prompt) {
+                if (!message) continue;
+                result.push({
+                  content: flattenContentBlocks(message.content),
+                  role: message.role,
+                });
+              }
+            }
+
+            return result;
+          })();
+
+          return { messages, options };
+        },
+      });
     },
     processOutputs(rawOutputs) {
       if ("outputs" in rawOutputs && Array.isArray(rawOutputs.outputs)) {

@@ -771,4 +771,113 @@ describe("wrapClaudeAgentSDK", () => {
       "This instance of Claude Agent SDK has been already wrapped by `wrapClaudeAgentSDK`."
     );
   });
+
+  test("handles streaming input", async () => {
+    const recordedInputs: { seenAt: number; value: unknown }[] = [];
+
+    const mockSDK = (() => {
+      const mockQuery = async function* (
+        params: MockQueryParams
+      ): AsyncGenerator<MockSDKMessage, void, unknown> {
+        const prompt =
+          typeof params.prompt === "string"
+            ? [params.prompt]
+            : params.prompt ?? [];
+
+        for await (const message of prompt) {
+          recordedInputs.push({ seenAt: Date.now(), value: message });
+
+          // Simulate assistant message with streaming
+          yield {
+            type: "assistant",
+            message: {
+              id: "msg_123",
+              role: "assistant",
+              content: "Hello! How can I help you?",
+              model: "claude-3-5-sonnet-20241022",
+              usage: {
+                input_tokens: 10,
+                output_tokens: 8,
+                cache_read_input_tokens: 0,
+                cache_creation_input_tokens: 0,
+              },
+            },
+          };
+
+          // Simulate result message
+          yield {
+            type: "result",
+            usage: {
+              input_tokens: 10,
+              output_tokens: 8,
+              cache_read_input_tokens: 0,
+              cache_creation_input_tokens: 0,
+            },
+            num_turns: 1,
+            session_id: "session_456",
+          };
+        }
+      };
+
+      const mockTool = <T>(
+        name: string,
+        description: string,
+        inputSchema: unknown,
+        handler: (
+          args: T,
+          extra: unknown
+        ) => Promise<{
+          content: Array<unknown>;
+          isError?: boolean;
+        }>
+      ) => {
+        return {
+          name,
+          description,
+          inputSchema,
+          handler,
+        };
+      };
+
+      const mockCreateSdkMcpServer = () => {
+        return {
+          listen: () => Promise.resolve(),
+        };
+      };
+
+      return {
+        query: mockQuery,
+        tool: mockTool,
+        createSdkMcpServer: mockCreateSdkMcpServer,
+      };
+    })();
+
+    const wrapped = wrapClaudeAgentSDK(mockSDK);
+
+    async function* createPromptStream(): AsyncIterable<MockSDKMessage> {
+      yield { type: "user", message: { content: "Hello" } };
+
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      yield { type: "user", message: { content: "How are you?" } };
+    }
+
+    const messages: MockSDKMessage[] = [];
+    for await (const message of wrapped.query({
+      prompt: createPromptStream(),
+    })) {
+      messages.push(message);
+    }
+
+    expect(recordedInputs.length).toBe(2);
+    // Check if we're waiting for the second message
+    expect(
+      Math.abs(recordedInputs[1].seenAt - recordedInputs[0].seenAt)
+    ).toBeGreaterThan(500);
+
+    expect(recordedInputs.map((input) => input.value)).toMatchObject([
+      { type: "user", message: { content: "Hello" } },
+      { type: "user", message: { content: "How are you?" } },
+    ]);
+  });
 });
