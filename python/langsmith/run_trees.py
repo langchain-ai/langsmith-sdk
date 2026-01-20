@@ -1176,6 +1176,7 @@ class NonRecordingRunTree:
     """
 
     def __init__(self) -> None:
+        """Initialize a NonRecordingRunTree with empty placeholder data."""
         self._metadata: dict[str, Any] = {}
         self._tags: list[str] = []
         self._inputs: dict[str, Any] = {}
@@ -1187,6 +1188,7 @@ class NonRecordingRunTree:
         return False
 
     def __repr__(self) -> str:
+        """Return string representation of NonRecordingRunTree."""
         return "NonRecordingRunTree()"
 
     @property
@@ -1328,7 +1330,7 @@ class NonRecordingRunTree:
         tags: Optional[list[str]] = None,
         extra: Optional[dict] = None,
         attachments: Optional[ls_schemas.Attachments] = None,
-    ) -> "NonRecordingRunTree":
+    ) -> NonRecordingRunTree:
         """Return self (no child creation)."""
         return self
 

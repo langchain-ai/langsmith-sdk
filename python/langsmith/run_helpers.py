@@ -1458,10 +1458,11 @@ def _get_parent_run(
     run_tree = langsmith_extra.get("run_tree")
     if run_tree:
         return run_tree
-    crt = get_current_run_tree()
+    crt_or_noop = get_current_run_tree()
     # If crt is the NonRecordingRunTree sentinel (falsy), treat as no parent
-    if not crt:
-        crt = None
+    crt: Optional[run_trees.RunTree] = (
+        crt_or_noop if isinstance(crt_or_noop, run_trees.RunTree) else None
+    )
     if _runtime_env.get_langchain_core_version() is not None:
         if rt := run_trees.RunTree.from_runnable_config(
             config, client=langsmith_extra.get("client")

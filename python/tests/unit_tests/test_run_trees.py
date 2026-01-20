@@ -552,7 +552,9 @@ class TestNonRecordingRunTree:
         from langsmith.run_trees import NON_RECORDING_RUN
 
         assert NON_RECORDING_RUN.id == UUID("00000000-0000-0000-0000-000000000000")
-        assert NON_RECORDING_RUN.trace_id == UUID("00000000-0000-0000-0000-000000000000")
+        assert NON_RECORDING_RUN.trace_id == UUID(
+            "00000000-0000-0000-0000-000000000000"
+        )
         assert NON_RECORDING_RUN.dotted_order == ""
         assert NON_RECORDING_RUN.name == ""
         assert NON_RECORDING_RUN.run_type == "chain"

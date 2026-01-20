@@ -2277,7 +2277,7 @@ class TestGetCurrentRunTree:
     """Tests for get_current_run_tree() returning NonRecordingRunTree."""
 
     def test_returns_non_recording_run_outside_trace(self):
-        """Test that get_current_run_tree returns NonRecordingRunTree when not tracing."""
+        """Test get_current_run_tree returns NonRecordingRunTree when not tracing."""
         from langsmith.run_trees import NON_RECORDING_RUN, NonRecordingRunTree
 
         run = get_current_run_tree()
@@ -2300,7 +2300,7 @@ class TestGetCurrentRunTree:
         run.end()
 
     def test_returns_real_run_inside_trace(self):
-        """Test that get_current_run_tree returns real RunTree inside traced function."""
+        """Test get_current_run_tree returns real RunTree inside traced function."""
         with tracing_context(enabled=True):
             captured_run = None
 
