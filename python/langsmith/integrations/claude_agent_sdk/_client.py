@@ -162,7 +162,7 @@ def _inject_tracing_hooks(options: Any) -> None:
         logger.warning(f"Failed to inject tracing hooks: {e}")
 
 
-def _format_captured_messages(
+def _unwrap_streamed_messages(
     messages: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """Unwrap streaming input messages for trace display."""
@@ -203,12 +203,12 @@ def instrument_claude_client(original_class: Any) -> Any:
             super().__init__(*args, **kwargs)
             self._prompt: Optional[str] = None
             self._start_time: Optional[float] = None
-            self._captured_messages: Optional[list[dict[str, Any]]] = None
+            self._streamed_input: Optional[list[dict[str, Any]]] = None
 
         async def query(self, *args: Any, **kwargs: Any) -> Any:
             """Capture prompt and start time, wrapping generators if needed."""
             self._start_time = time.time()
-            self._captured_messages = None
+            self._streamed_input = None
             prompt = args[0] if args else kwargs.get("prompt")
 
             if prompt is None:
@@ -216,19 +216,19 @@ def instrument_claude_client(original_class: Any) -> Any:
             elif isinstance(prompt, str):
                 self._prompt = prompt
             elif isinstance(prompt, AsyncIterable):
-                captured: list[dict[str, Any]] = []
-                self._captured_messages = captured
+                collector: list[dict[str, Any]] = []
+                self._streamed_input = collector
                 self._prompt = None
 
-                async def _intercept() -> AsyncGenerator[dict[str, Any], None]:
+                async def _gen_wrapper() -> AsyncGenerator[dict[str, Any], None]:
                     async for msg in prompt:
-                        captured.append(msg)
+                        collector.append(msg)
                         yield msg
 
                 if args:
-                    args = (_intercept(),) + args[1:]
+                    args = (_gen_wrapper(),) + args[1:]
                 else:
-                    kwargs["prompt"] = _intercept()
+                    kwargs["prompt"] = _gen_wrapper()
             else:
                 self._prompt = str(prompt)
 
@@ -316,7 +316,7 @@ def instrument_claude_client(original_class: Any) -> Any:
             trace_metadata = {}
 
             # Track if we need to update input from captured streaming messages
-            input_needs_update = self._captured_messages is not None
+            awaiting_streamed_input = self._streamed_input is not None
 
             # Add prompt to inputs (for string prompts)
             if self._prompt:
@@ -367,14 +367,14 @@ def instrument_claude_client(original_class: Any) -> Any:
 
                 try:
                     async for msg in messages:
-                        if input_needs_update and self._captured_messages:
-                            formatted_input = _format_captured_messages(
-                                self._captured_messages
+                        if awaiting_streamed_input and self._streamed_input:
+                            unwrapped_messages = _unwrap_streamed_messages(
+                                self._streamed_input
                             )
-                            if formatted_input:
-                                run.inputs["messages"] = formatted_input
-                                prompt_for_llm = self._captured_messages
-                            input_needs_update = False
+                            if unwrapped_messages:
+                                run.inputs["messages"] = unwrapped_messages
+                                prompt_for_llm = self._streamed_input
+                            awaiting_streamed_input = False
 
                         msg_type = type(msg).__name__
                         if msg_type == "AssistantMessage":
