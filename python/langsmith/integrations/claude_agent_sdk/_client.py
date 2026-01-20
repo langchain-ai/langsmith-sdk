@@ -2,7 +2,7 @@
 
 import logging
 import time
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, AsyncIterable
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -162,6 +162,34 @@ def _inject_tracing_hooks(options: Any) -> None:
         logger.warning(f"Failed to inject tracing hooks: {e}")
 
 
+def _format_captured_messages(
+    messages: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Unwrap streaming input messages for trace display."""
+    if not messages:
+        return []
+
+    formatted = []
+    for msg in messages:
+        if not isinstance(msg, dict):
+            formatted.append(msg)
+            continue
+
+        if "message" in msg:
+            inner = msg["message"]
+            if isinstance(inner, dict):
+                formatted.append({
+                    "role": inner.get("role", "user"),
+                    "content": inner.get("content", ""),
+                })
+            else:
+                formatted.append(msg)
+        else:
+            formatted.append(msg)
+
+    return formatted
+
+
 def instrument_claude_client(original_class: Any) -> Any:
     """Wrap `ClaudeSDKClient` to trace both `query()` and `receive_response()`."""
 
@@ -175,11 +203,35 @@ def instrument_claude_client(original_class: Any) -> Any:
             super().__init__(*args, **kwargs)
             self._prompt: Optional[str] = None
             self._start_time: Optional[float] = None
+            self._captured_messages: Optional[list[dict[str, Any]]] = None
 
         async def query(self, *args: Any, **kwargs: Any) -> Any:
-            """Capture prompt and timestamp when query starts."""
+            """Capture prompt and start time, wrapping generators if needed."""
             self._start_time = time.time()
-            self._prompt = str(kwargs.get("prompt") or (args[0] if args else ""))
+            self._captured_messages = None
+            prompt = args[0] if args else kwargs.get("prompt")
+
+            if prompt is None:
+                pass
+            elif isinstance(prompt, str):
+                self._prompt = prompt
+            elif isinstance(prompt, AsyncIterable):
+                captured: list[dict[str, Any]] = []
+                self._captured_messages = captured
+                self._prompt = None
+
+                async def _intercept() -> AsyncGenerator[dict[str, Any], None]:
+                    async for msg in prompt:
+                        captured.append(msg)
+                        yield msg
+
+                if args:
+                    args = (_intercept(),) + args[1:]
+                else:
+                    kwargs["prompt"] = _intercept()
+            else:
+                self._prompt = str(prompt)
+
             return await super().query(*args, **kwargs)
 
         def _handle_assistant_tool_uses(
@@ -263,7 +315,10 @@ def instrument_claude_client(original_class: Any) -> Any:
             trace_inputs: dict[str, Any] = {}
             trace_metadata = {}
 
-            # Add prompt to inputs
+            # Track if we need to update input from captured streaming messages
+            input_needs_update = self._captured_messages is not None
+
+            # Add prompt to inputs (for string prompts)
             if self._prompt:
                 trace_inputs["prompt"] = self._prompt
 
@@ -308,8 +363,19 @@ def instrument_claude_client(original_class: Any) -> Any:
                 # Track subagent sessions by Task tool_use_id
                 subagent_sessions: dict[str, Any] = {}
 
+                prompt_for_llm: Any = self._prompt
+
                 try:
                     async for msg in messages:
+                        if input_needs_update and self._captured_messages:
+                            formatted_input = _format_captured_messages(
+                                self._captured_messages
+                            )
+                            if formatted_input:
+                                run.inputs["messages"] = formatted_input
+                                prompt_for_llm = self._captured_messages
+                            input_needs_update = False
+
                         msg_type = type(msg).__name__
                         if msg_type == "AssistantMessage":
                             # Check if this message belongs to a subagent
@@ -323,7 +389,7 @@ def instrument_claude_client(original_class: Any) -> Any:
                             )
 
                             content = tracker.start_llm_run(
-                                msg, self._prompt, collected, parent=llm_parent
+                                msg, prompt_for_llm, collected, parent=llm_parent
                             )
                             if content:
                                 collected.append(content)
