@@ -2318,7 +2318,7 @@ def test_trace_enabled_none_respects_context_enabled(mock_client: Client) -> Non
 def test_trace_enabled_none_respects_context_disabled(mock_client: Client) -> None:
     """Verify that enabled=None (default) follows tracing_context when disabled."""
     with tracing_context(enabled=False):
-        with trace(name="My Operation", client=mock_client) as run:  # enabled=None
+        with trace(name="My Operation", client=mock_client):  # enabled=None
             result = 5 * 2
 
     assert result == 10
@@ -2329,7 +2329,9 @@ def test_trace_enabled_none_respects_context_disabled(mock_client: Client) -> No
 async def test_trace_async_enabled_false(mock_client: Client) -> None:
     """Verify that enabled=False works with async context manager."""
     with tracing_context(enabled=True):
-        async with trace(name="Async Operation", client=mock_client, enabled=False) as run:
+        async with trace(
+            name="Async Operation", client=mock_client, enabled=False
+        ) as run:
             result = 5 * 2
 
     assert result == 10
@@ -2344,7 +2346,9 @@ async def test_trace_async_enabled_true_overrides_context(mock_client: Client) -
     Even when context is disabled.
     """
     with tracing_context(enabled=False):
-        async with trace(name="Async Operation", client=mock_client, enabled=True) as run:
+        async with trace(
+            name="Async Operation", client=mock_client, enabled=True
+        ) as run:
             result = 5 * 2
             run.end(outputs={"result": result})
 
@@ -2356,8 +2360,12 @@ async def test_trace_async_enabled_true_overrides_context(mock_client: Client) -
 def test_trace_enabled_does_not_propagate(mock_client: Client) -> None:
     """Test that enabled setting applies only to its trace, not nested calls."""
     with tracing_context(enabled=True):
-        with trace(name="outer_trace", client=mock_client, enabled=False) as outer_run:
-            with trace(name="inner_trace", client=mock_client, enabled=True) as inner_run:
+        with trace(
+            name="outer_trace", client=mock_client, enabled=False
+        ) as outer_run:
+            with trace(
+                name="inner_trace", client=mock_client, enabled=True
+            ) as inner_run:
                 inner_run.end(outputs={"result": "inner"})
 
     assert outer_run is None
@@ -2373,8 +2381,12 @@ def test_trace_enabled_does_not_propagate(mock_client: Client) -> None:
 def test_trace_nested_outer_enabled_inner_disabled(mock_client: Client) -> None:
     """Test nested trace() where outer is enabled and inner is disabled."""
     with tracing_context(enabled=True):
-        with trace(name="outer_trace", client=mock_client, enabled=True) as outer_run:
-            with trace(name="inner_trace", client=mock_client, enabled=False) as inner_run:
+        with trace(
+            name="outer_trace", client=mock_client, enabled=True
+        ) as outer_run:
+            with trace(
+                name="inner_trace", client=mock_client, enabled=False
+            ) as inner_run:
                 pass
             outer_run.end(outputs={"result": "outer"})
 

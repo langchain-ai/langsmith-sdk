@@ -389,11 +389,12 @@ def instrument_claude_client(original_class: Any) -> Any:
                                 }.items()
                                 if v is not None
                             }
-                            if meta:
+                            if meta and run:
                                 run.metadata.update(meta)
 
                         yield msg
-                    run.end(outputs=collected[-1] if collected else None)
+                    if run:
+                        run.end(outputs=collected[-1] if collected else None)
                 except Exception:
                     logger.exception("Error while tracing Claude Agent stream")
                 finally:
