@@ -487,7 +487,6 @@ function wrapClaudeAgentQuery<
 
       const finalMessageContent = await createLLMSpanForMessages(
         [pending.message],
-        prompt,
         pending.messageHistory,
         options,
         pending.startTime,
@@ -500,6 +499,10 @@ function wrapClaudeAgentQuery<
     try {
       for await (const message of originalGenerator) {
         const currentTime = Date.now();
+        if (message.type === "system") {
+          const content = getLatestInput(prompt);
+          if (content != null) finalResults.push(content);
+        }
 
         // Handle assistant messages - group by message ID for streaming
         // Multiple messages with the same ID are streaming updates; use the last one
@@ -862,24 +865,6 @@ function wrapClaudeAgentTool(
 }
 
 /**
- * Builds the input array for an LLM span from the initial prompt and conversation history.
- */
-function buildLLMInput(
-  prompt: string | AsyncIterable<SDKMessage> | undefined,
-  conversationHistory: Array<{ content: unknown; role: string }>
-): Array<{ content: unknown; role: string }> | undefined {
-  const promptMessage =
-    typeof prompt === "string" ? { content: prompt, role: "user" } : undefined;
-
-  const inputParts = [
-    ...(promptMessage ? [promptMessage] : []),
-    ...conversationHistory,
-  ];
-
-  return inputParts.length > 0 ? inputParts : undefined;
-}
-
-/**
  * Aggregates usage from modelUsage breakdown (includes all models, including hidden ones).
  * This provides accurate totals when multiple models are used.
  */
@@ -967,6 +952,28 @@ function extractUsageFromMessage(message: SDKMessage): Record<string, unknown> {
   return metrics;
 }
 
+function getLatestInput(
+  arg: string | AsyncIterable<SDKMessage> | undefined
+): { content: unknown; role: string } | undefined {
+  const value = (() => {
+    if (typeof arg !== "object" || arg == null) return arg;
+
+    const toJSON = (arg as unknown as Record<string, unknown>)["toJSON"];
+    if (typeof toJSON !== "function") return undefined;
+    const latest = toJSON();
+    return latest?.at(-1);
+  })();
+
+  if (typeof value == null) return undefined;
+  if (typeof value === "string") return { content: value, role: "user" };
+
+  const userMessage = value as SDKUserMessage;
+  return {
+    content: flattenContentBlocks(userMessage.message.content),
+    role: userMessage.message.role,
+  };
+}
+
 /**
  * Creates an LLM span for a group of messages with the same message ID.
  * Returns the final message content to add to conversation history.
@@ -974,7 +981,6 @@ function extractUsageFromMessage(message: SDKMessage): Record<string, unknown> {
  */
 async function createLLMSpanForMessages(
   messages: SDKMessage[],
-  prompt: string | AsyncIterable<SDKMessage> | undefined,
   conversationHistory: Array<{ content: unknown; role: string }>,
   options: QueryOptions,
   startTime: number,
@@ -992,7 +998,8 @@ async function createLLMSpanForMessages(
   // Extract model from message first, fall back to options (matches Python)
   const model = lastMessage.message.model || options.model;
   const usage = extractUsageFromMessage(lastMessage);
-  const input = buildLLMInput(prompt, conversationHistory);
+  const input =
+    conversationHistory.length > 0 ? conversationHistory : undefined;
 
   // Flatten content blocks for proper serialization (matches Python)
   const outputs = messages
