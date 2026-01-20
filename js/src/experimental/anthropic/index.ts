@@ -967,10 +967,18 @@ function getLatestInput(
   if (typeof value == null) return undefined;
   if (typeof value === "string") return { content: value, role: "user" };
 
-  const userMessage = value as SDKUserMessage;
+  const userMessage = value as SDKUserMessage | string | undefined;
+  if (typeof userMessage === "string") {
+    return { content: userMessage, role: "user" };
+  }
+
+  if (typeof userMessage !== "object" || userMessage == null) {
+    return undefined;
+  }
+
   return {
+    role: userMessage.message.role || "user",
     content: flattenContentBlocks(userMessage.message.content),
-    role: userMessage.message.role,
   };
 }
 

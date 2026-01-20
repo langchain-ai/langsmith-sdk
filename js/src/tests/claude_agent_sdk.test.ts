@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { describe, test, expect } from "@jest/globals";
+import { describe, test, expect, jest } from "@jest/globals";
 import { wrapClaudeAgentSDK } from "../experimental/anthropic/index.js";
+import { mockClient } from "./utils/mock_client.js";
+import { getAssumedTreeFromCalls } from "./utils/tree.js";
 
 // Mock Claude Agent SDK types and functions
 type MockSDKMessage = {
@@ -34,38 +36,53 @@ type MockQueryParams = {
 
 // Mock Claude Agent SDK
 const createMockSDK = () => {
+  const inputSpy = jest.fn();
+
   const mockQuery = async function* (
-    _params: MockQueryParams
+    params: MockQueryParams
   ): AsyncGenerator<MockSDKMessage, void, unknown> {
-    // Simulate assistant message with streaming
-    yield {
-      type: "assistant",
-      message: {
-        id: "msg_123",
-        role: "assistant",
-        content: "Hello! How can I help you?",
-        model: "claude-3-5-sonnet-20241022",
+    // Simulate system message
+    const prompt =
+      typeof params.prompt === "string" ? [params.prompt] : params.prompt ?? [];
+
+    for await (const message of prompt) {
+      inputSpy(message, { createdAt: Date.now() });
+
+      yield {
+        type: "system",
+        session_id: "session_456",
+      };
+
+      // Simulate assistant message with streaming
+      yield {
+        type: "assistant",
+        message: {
+          id: `msg_123_${crypto.randomUUID()}`,
+          role: "assistant",
+          content: "Hello! How can I help you?",
+          model: "claude-3-5-sonnet-20241022",
+          usage: {
+            input_tokens: 10,
+            output_tokens: 8,
+            cache_read_input_tokens: 0,
+            cache_creation_input_tokens: 0,
+          },
+        },
+      };
+
+      // Simulate result message
+      yield {
+        type: "result",
         usage: {
           input_tokens: 10,
           output_tokens: 8,
           cache_read_input_tokens: 0,
           cache_creation_input_tokens: 0,
         },
-      },
-    };
-
-    // Simulate result message
-    yield {
-      type: "result",
-      usage: {
-        input_tokens: 10,
-        output_tokens: 8,
-        cache_read_input_tokens: 0,
-        cache_creation_input_tokens: 0,
-      },
-      num_turns: 1,
-      session_id: "session_456",
-    };
+        num_turns: 1,
+        session_id: "session_456",
+      };
+    }
   };
 
   const mockTool = <T>(
@@ -98,6 +115,8 @@ const createMockSDK = () => {
     query: mockQuery,
     tool: mockTool,
     createSdkMcpServer: mockCreateSdkMcpServer,
+
+    spy: { input: inputSpy },
   };
 };
 
@@ -114,10 +133,14 @@ describe("wrapClaudeAgentSDK", () => {
       messages.push(message);
     }
 
-    expect(messages.length).toBe(2);
-    expect(messages[0].type).toBe("assistant");
-    expect(messages[1].type).toBe("result");
-    expect(messages[0].message?.content).toBe("Hello! How can I help you?");
+    expect(messages).toMatchObject([
+      { type: "system", session_id: "session_456" },
+      {
+        type: "assistant",
+        message: { content: "Hello! How can I help you?" },
+      },
+      { type: "result" },
+    ]);
   });
 
   test("wraps tool handler with tracing", async () => {
@@ -267,21 +290,98 @@ describe("wrapClaudeAgentSDK", () => {
   });
 
   test("handles async iterable prompt", async () => {
-    async function* createPromptStream(): AsyncIterable<MockSDKMessage> {
-      yield { type: "user", message: { content: "Hello" } };
+    const { client, callSpy } = mockClient();
+    const mockSDK = createMockSDK();
+
+    const wrapped = wrapClaudeAgentSDK(mockSDK, {
+      client,
+      tracingEnabled: true,
+    });
+
+    async function* promptStream(): AsyncIterable<MockSDKMessage> {
+      yield { type: "user", message: { role: "user", content: "Hello" } };
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      yield {
+        type: "user",
+        message: { role: "user", content: "How are you?" },
+      };
     }
 
-    const mockSDK = createMockSDK();
-    const wrapped = wrapClaudeAgentSDK(mockSDK);
-
     const messages: MockSDKMessage[] = [];
-    for await (const message of wrapped.query({
-      prompt: createPromptStream(),
-    })) {
+    for await (const message of wrapped.query({ prompt: promptStream() })) {
       messages.push(message);
     }
 
-    expect(messages.length).toBeGreaterThan(0);
+    expect(mockSDK.spy.input).toHaveBeenCalledTimes(2);
+    expect(mockSDK.spy.input).toHaveBeenCalledWith(
+      { type: "user", message: { role: "user", content: "Hello" } },
+      { createdAt: expect.any(Number) }
+    );
+    expect(mockSDK.spy.input).toHaveBeenCalledWith(
+      { type: "user", message: { role: "user", content: "How are you?" } },
+      { createdAt: expect.any(Number) }
+    );
+
+    const extractDuration = (call: unknown[]) => {
+      const [, { createdAt }] = call as [unknown, { createdAt: number }];
+      return createdAt;
+    };
+
+    expect(
+      extractDuration(mockSDK.spy.input.mock.calls[1]) -
+        extractDuration(mockSDK.spy.input.mock.calls[0])
+    ).toBeGreaterThan(250);
+
+    expect(
+      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
+    ).toMatchObject({
+      nodes: [
+        "claude.assistant.turn:0",
+        "claude.assistant.turn:1",
+        "claude.conversation:2",
+      ],
+      edges: [
+        ["claude.conversation:2", "claude.assistant.turn:0"],
+        ["claude.conversation:2", "claude.assistant.turn:1"],
+      ],
+      data: {
+        "claude.conversation:2": {
+          run_type: "chain",
+          inputs: {
+            messages: [
+              { content: "Hello", role: "user" },
+              { content: "How are you?", role: "user" },
+            ],
+          },
+          outputs: {
+            output: {
+              messages: [
+                { role: "assistant", content: "Hello! How can I help you?" },
+                { role: "assistant", content: "Hello! How can I help you?" },
+              ],
+            },
+          },
+        },
+        "claude.assistant.turn:0": {
+          run_type: "llm",
+          inputs: { role: "user", content: "Hello" },
+          outputs: { role: "assistant", content: "Hello! How can I help you?" },
+        },
+        "claude.assistant.turn:1": {
+          run_type: "llm",
+          inputs: {
+            messages: [
+              { content: "Hello", role: "user" },
+              { role: "assistant", content: "Hello! How can I help you?" },
+              { role: "user", content: "How are you?" },
+            ],
+          },
+          outputs: { role: "assistant", content: "Hello! How can I help you?" },
+        },
+      },
+    });
   });
 
   test("adjusts output tokens correctly for final result", async () => {
@@ -770,114 +870,5 @@ describe("wrapClaudeAgentSDK", () => {
     expect(() => wrapClaudeAgentSDK(wrapped)).toThrow(
       "This instance of Claude Agent SDK has been already wrapped by `wrapClaudeAgentSDK`."
     );
-  });
-
-  test("handles streaming input", async () => {
-    const recordedInputs: { seenAt: number; value: unknown }[] = [];
-
-    const mockSDK = (() => {
-      const mockQuery = async function* (
-        params: MockQueryParams
-      ): AsyncGenerator<MockSDKMessage, void, unknown> {
-        const prompt =
-          typeof params.prompt === "string"
-            ? [params.prompt]
-            : params.prompt ?? [];
-
-        for await (const message of prompt) {
-          recordedInputs.push({ seenAt: Date.now(), value: message });
-
-          // Simulate assistant message with streaming
-          yield {
-            type: "assistant",
-            message: {
-              id: "msg_123",
-              role: "assistant",
-              content: "Hello! How can I help you?",
-              model: "claude-3-5-sonnet-20241022",
-              usage: {
-                input_tokens: 10,
-                output_tokens: 8,
-                cache_read_input_tokens: 0,
-                cache_creation_input_tokens: 0,
-              },
-            },
-          };
-
-          // Simulate result message
-          yield {
-            type: "result",
-            usage: {
-              input_tokens: 10,
-              output_tokens: 8,
-              cache_read_input_tokens: 0,
-              cache_creation_input_tokens: 0,
-            },
-            num_turns: 1,
-            session_id: "session_456",
-          };
-        }
-      };
-
-      const mockTool = <T>(
-        name: string,
-        description: string,
-        inputSchema: unknown,
-        handler: (
-          args: T,
-          extra: unknown
-        ) => Promise<{
-          content: Array<unknown>;
-          isError?: boolean;
-        }>
-      ) => {
-        return {
-          name,
-          description,
-          inputSchema,
-          handler,
-        };
-      };
-
-      const mockCreateSdkMcpServer = () => {
-        return {
-          listen: () => Promise.resolve(),
-        };
-      };
-
-      return {
-        query: mockQuery,
-        tool: mockTool,
-        createSdkMcpServer: mockCreateSdkMcpServer,
-      };
-    })();
-
-    const wrapped = wrapClaudeAgentSDK(mockSDK);
-
-    async function* createPromptStream(): AsyncIterable<MockSDKMessage> {
-      yield { type: "user", message: { content: "Hello" } };
-
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      yield { type: "user", message: { content: "How are you?" } };
-    }
-
-    const messages: MockSDKMessage[] = [];
-    for await (const message of wrapped.query({
-      prompt: createPromptStream(),
-    })) {
-      messages.push(message);
-    }
-
-    expect(recordedInputs.length).toBe(2);
-    // Check if we're waiting for the second message
-    expect(
-      Math.abs(recordedInputs[1].seenAt - recordedInputs[0].seenAt)
-    ).toBeGreaterThan(500);
-
-    expect(recordedInputs.map((input) => input.value)).toMatchObject([
-      { type: "user", message: { content: "Hello" } },
-      { type: "user", message: { content: "How are you?" } },
-    ]);
   });
 });
