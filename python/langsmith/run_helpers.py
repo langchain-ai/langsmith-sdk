@@ -1101,7 +1101,7 @@ class trace:
                 attachments=self.attachments or {},  # type: ignore
             )
 
-        if self.enabled is True or context_enabled is True:
+        if enabled is True:
             self.new_run.post()
         if enabled:
             _context._TAGS.set(tags_)
