@@ -1,3 +1,4 @@
+import type { SDKAssistantMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { RunTree, RunTreeConfig } from "../../run_trees.js";
 
 export type AgentSDKContext = {
@@ -32,6 +33,34 @@ export type AgentSDKContext = {
    * Set when a traced query starts, cleared when it ends.
    */
   currentParentRun: RunTree | undefined;
+
+  /**
+   * Queue of promises to wait for before continuing.
+   */
+  promiseQueue: Promise<void>[];
+
+  /**
+   * History of messages for the current conversation.
+   * Used to fill input for LLM spans
+   */
+  messageHistory: Array<{ content: unknown; role: string }>;
+
+  /** Received AI messages that we need to clear */
+  pendingMessages: Map<
+    string,
+    {
+      message: SDKAssistantMessage;
+      messageHistory: Array<{ content: unknown; role: string }>;
+      startTime: number;
+    }
+  >;
+
+  /**
+   * Track which message IDs have already had spans created
+   * This prevents creating duplicate spans when the SDK sends multiple updates
+   * for the same message ID with stop_reason set
+   */
+  completedMessageIds: Set<string>;
 };
 
 /**
@@ -83,4 +112,8 @@ export const createQueryContext = (): AgentSDKContext => ({
   subagentSessions: new Map(),
   activeSubagentToolUseId: undefined,
   currentParentRun: undefined,
+  promiseQueue: [],
+  pendingMessages: new Map(),
+  completedMessageIds: new Set(),
+  messageHistory: [],
 });

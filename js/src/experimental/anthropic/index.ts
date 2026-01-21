@@ -22,7 +22,10 @@ import type {
   createSdkMcpServer,
 } from "@anthropic-ai/claude-agent-sdk";
 import { mergeHooks } from "./hooks.js";
-import { flattenContentBlocks, isToolResultBlock } from "./messages.js";
+import {
+  convertFromAnthropicMessage,
+  flattenContentBlocks,
+} from "./messages.js";
 
 type SdkMcpToolDefinition = Exclude<
   Parameters<typeof createSdkMcpServer>[0]["tools"],
@@ -65,11 +68,11 @@ function isToolBlock(
  * @param message - The AssistantMessage to process
  * @param parentRun - The parent run tree (main conversation chain)
  */
-async function handleAssistantToolUses(
+function handleAssistantToolUses(
   message: SDKAssistantMessage,
   parentRun: RunTree | undefined,
   context: AgentSDKContext
-): Promise<void> {
+): void {
   if (!parentRun) return;
 
   const content = message.message?.content;
@@ -92,7 +95,7 @@ async function handleAssistantToolUses(
             : null) ||
           "unknown-agent";
 
-        const subagentSession = await parentRun.createChild({
+        const subagentSession = parentRun.createChild({
           name: subagentName,
           run_type: "chain",
           inputs: block.input,
@@ -100,7 +103,7 @@ async function handleAssistantToolUses(
 
         // Post the run to start it, but DON'T end it yet
         // It will be ended when we receive the tool result or at cleanup
-        await subagentSession.postRun();
+        context.promiseQueue.push(subagentSession.postRun());
 
         // Store in both maps
         context.subagentSessions.set(block.id, subagentSession);
@@ -115,13 +118,13 @@ async function handleAssistantToolUses(
         const subagentSession = context.subagentSessions.get(parentToolUseId)!;
 
         // Create tool run as child of subagent
-        const toolRun = await subagentSession.createChild({
+        const toolRun = subagentSession.createChild({
           name: block.name || "unknown_tool",
           run_type: "tool",
           inputs: block.input ? { input: block.input } : {},
         });
 
-        await toolRun.postRun();
+        context.promiseQueue.push(toolRun.postRun());
         context.clientManagedRuns.set(block.id, toolRun);
       }
     } catch {
@@ -163,27 +166,6 @@ function wrapClaudeAgentQuery<
     options: QueryOptions,
     context: AgentSDKContext
   ) {
-    const history: Array<{ content: unknown; role: string }> = [];
-
-    // Track assistant messages by their message ID for proper streaming handling
-    // Each message ID maps to { message, startTime } - we keep the latest streaming update
-    const pendingMessages: Map<
-      string,
-      {
-        message: SDKAssistantMessage;
-        messageHistory: Array<{ content: unknown; role: string }>;
-        startTime: number;
-      }
-    > = new Map();
-
-    // Track which message IDs have already had spans created
-    // This prevents creating duplicate spans when the SDK sends multiple updates
-    // for the same message ID with stop_reason set
-    const completedMessageIds = new Set<string>();
-
-    // Store child run promises for proper async handling
-    const childRunEndPromises: Promise<void>[] = [];
-
     // Track usage from ResultMessage to add to the parent span
     let resultUsage: Record<string, unknown> | undefined;
 
@@ -205,15 +187,15 @@ function wrapClaudeAgentQuery<
     // Create an LLM span for a specific message ID
     const createLLMSpanForId = async (messageId: string) => {
       // Skip if we've already created a span for this message ID
-      if (completedMessageIds.has(messageId)) {
+      if (context.completedMessageIds.has(messageId)) {
         return;
       }
 
-      const pending = pendingMessages.get(messageId);
+      const pending = context.pendingMessages.get(messageId);
       if (!pending) return;
 
-      pendingMessages.delete(messageId);
-      completedMessageIds.add(messageId);
+      context.pendingMessages.delete(messageId);
+      context.completedMessageIds.add(messageId);
 
       // Track the usage before creating the span
       const model = pending.message.message?.model;
@@ -241,7 +223,7 @@ function wrapClaudeAgentQuery<
         context
       );
 
-      if (finalMessageContent) history.push(finalMessageContent);
+      if (finalMessageContent) context.messageHistory.push(finalMessageContent);
     };
 
     try {
@@ -250,7 +232,7 @@ function wrapClaudeAgentQuery<
 
         if (message.type === "system") {
           const content = getLatestInput(prompt);
-          if (content != null) history.push(content);
+          if (content != null) context.messageHistory.push(content);
         }
 
         // Handle assistant messages - group by message ID for streaming
@@ -281,48 +263,37 @@ function wrapClaudeAgentQuery<
             }
           }
 
-          if (messageId) {
-            // Check if this is a new message or an update to existing
-            const existing = pendingMessages.get(messageId);
-            if (!existing) {
-              // New message arrived - finalize all OTHER pending messages first
-              // (they must be complete if we're seeing a new message)
-
-              // Finalize all other pending messages
-              for (const [otherId] of pendingMessages) {
-                if (otherId !== messageId) {
-                  childRunEndPromises.push(createLLMSpanForId(otherId));
-                }
+          // Check if this is a new message or an update to existing
+          const existing = context.pendingMessages.get(messageId);
+          if (!existing) {
+            // New message arrived - finalize all OTHER pending messages first
+            // (they must be complete if we're seeing a new message)
+            for (const [otherId] of context.pendingMessages) {
+              if (otherId !== messageId) {
+                context.promiseQueue.push(createLLMSpanForId(otherId));
               }
-
-              pendingMessages.set(messageId, {
-                message,
-                messageHistory: history.slice(0),
-                startTime: currentTime,
-              });
-            } else {
-              // Streaming update - keep the start time, update the message
-              pendingMessages.set(messageId, {
-                message,
-                messageHistory: history.slice(0),
-                startTime: existing.startTime,
-              });
             }
+          }
 
-            // Push the message to the final results,
-            // Used to create spans with the full chat history as input
-            if ("content" in message.message && message.message.content) {
-              history.push({
-                content: flattenContentBlocks(message.message.content),
-                role: "assistant",
-              });
-            }
+          context.pendingMessages.set(message.message.id, {
+            message,
+            messageHistory: context.messageHistory.slice(0),
+            startTime: existing?.startTime ?? currentTime,
+          });
 
-            // Check if this message has a stop_reason (meaning it's complete)
-            // If so, create the span now (createLLMSpanForId will skip if already created)
-            if (message.message?.stop_reason) {
-              childRunEndPromises.push(createLLMSpanForId(messageId));
-            }
+          // Push the message to the final results,
+          // Used to create spans with the full chat history as input
+          if ("content" in message.message && message.message.content) {
+            context.messageHistory.push({
+              content: flattenContentBlocks(message.message.content),
+              role: "assistant",
+            });
+          }
+
+          // Check if this message has a stop_reason (meaning it's complete)
+          // If so, create the span now (createLLMSpanForId will skip if already created)
+          if (message.message?.stop_reason) {
+            context.promiseQueue.push(createLLMSpanForId(messageId));
           }
 
           // Process tool uses for subagent detection (matches Python's _handle_assistant_tool_uses)
@@ -332,20 +303,7 @@ function wrapClaudeAgentQuery<
             context
           );
         } else if (message.type === "user") {
-          // check if this is a tool result message
-          const flattened = flattenContentBlocks(message.message.content);
-
-          const toolResultBlocks = Array.isArray(flattened)
-            ? flattened.filter(isToolResultBlock)
-            : [];
-
-          if (toolResultBlocks.length > 0) {
-            for (const block of toolResultBlocks) {
-              history.push({ ...block, role: "tool" });
-            }
-          } else if ("content" in message.message && message.message.content) {
-            history.push({ content: flattened, role: "user" });
-          }
+          context.messageHistory.push(...convertFromAnthropicMessage(message));
 
           // If this is a tool result for a Task tool (subagent), we're entering the subagent's execution
           // The subagent's assistant messages will come AFTER this result
@@ -365,7 +323,7 @@ function wrapClaudeAgentQuery<
             // Patch token counts for pending messages using modelUsage
             // This handles the SDK limitation where the last assistant message
             // doesn't receive final streaming updates with accurate token counts
-            for (const [, { message: pendingMsg }] of pendingMessages) {
+            for (const [, { message: pendingMsg }] of context.pendingMessages) {
               const model = pendingMsg.message?.model;
               if (
                 model &&
@@ -445,13 +403,12 @@ function wrapClaudeAgentQuery<
       }
 
       // Create spans for any remaining pending messages (those without stop_reason)
-      for (const messageId of pendingMessages.keys()) {
-        const spanPromise = createLLMSpanForId(messageId);
-        childRunEndPromises.push(spanPromise);
+      for (const messageId of context.pendingMessages.keys()) {
+        context.promiseQueue.push(createLLMSpanForId(messageId));
       }
 
       // Wait for all child runs to complete
-      await Promise.all(childRunEndPromises);
+      await Promise.allSettled(context.promiseQueue);
 
       // Apply usage metadata to the chain run using LangSmith's standard fields
       const currentRun = getCurrentRunTree();
@@ -572,26 +529,7 @@ function wrapClaudeAgentQuery<
   const processOutputs = (rawOutputs: Record<string, unknown>) => {
     if ("outputs" in rawOutputs && Array.isArray(rawOutputs.outputs)) {
       const sdkMessages = rawOutputs.outputs as SDKMessage[];
-      const messages = sdkMessages.flatMap((sdkMessage) => {
-        if ("message" in sdkMessage && sdkMessage.message != null) {
-          const role = sdkMessage.message.role;
-          const flattened = flattenContentBlocks(sdkMessage.message.content);
-
-          const toolResultBlocks =
-            role === "user" && Array.isArray(flattened)
-              ? flattened.filter(isToolResultBlock)
-              : [];
-
-          if (toolResultBlocks.length > 0) {
-            for (const block of toolResultBlocks) {
-              return { ...block, role: "tool" };
-            }
-          }
-
-          return { role, content: flattened };
-        }
-        return [];
-      });
+      const messages = sdkMessages.flatMap(convertFromAnthropicMessage);
 
       return { output: { messages } };
     }
@@ -751,13 +689,13 @@ function getLatestInput(
  * Returns the final message content to add to conversation history.
  * Handles subagent LLM turns by parenting them to the correct subagent session.
  */
-async function createLLMSpanForMessages(
+function createLLMSpanForMessages(
   input: Array<{ content: unknown; role: string }>,
   output: SDKMessage[],
   options: QueryOptions,
   startTime: number,
   context: AgentSDKContext
-): Promise<{ content: unknown; role: string } | undefined> {
+): { content: unknown; role: string } | undefined {
   const lastMessage = output.at(-1);
   if (!lastMessage || lastMessage.type !== "assistant") return undefined;
 
@@ -796,30 +734,26 @@ async function createLLMSpanForMessages(
     return getCurrentRunTree();
   })();
 
-  await parent
-    .createChild({
-      name: "claude.assistant.turn",
-      run_type: "llm",
-      inputs: { messages: input },
-      outputs: outputs[outputs.length - 1] || { content: outputs },
-      start_time: startTime,
-      end_time: Date.now(),
-      extra: {
-        metadata: {
-          ...(model ? { ls_model_name: model } : {}),
-          usage_metadata: usage,
+  context.promiseQueue.push(
+    parent
+      .createChild({
+        name: "claude.assistant.turn",
+        run_type: "llm",
+        inputs: { messages: input },
+        outputs: outputs[outputs.length - 1] || { content: outputs },
+        start_time: startTime,
+        end_time: Date.now(),
+        extra: {
+          metadata: {
+            ...(model ? { ls_model_name: model } : {}),
+            usage_metadata: usage,
+          },
         },
-      },
-    })
-    .postRun();
+      })
+      .postRun()
+  );
 
-  // Return flattened content for conversation history
-  return lastMessage.message?.content && lastMessage.message?.role
-    ? {
-        content: flattenContentBlocks(lastMessage.message.content),
-        role: lastMessage.message.role,
-      }
-    : undefined;
+  return outputs.at(-1);
 }
 
 /**

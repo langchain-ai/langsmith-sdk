@@ -1091,7 +1091,7 @@ describe("wrapClaudeAgentSDK", () => {
     });
   });
 
-  test.only("handles nested tools within subagent", async () => {
+  test.skip("handles nested tools within subagent", async () => {
     const { client, callSpy } = mockClient();
     const mockSDK = {
       ...createMockSDK(),

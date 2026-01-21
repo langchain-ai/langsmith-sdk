@@ -1,3 +1,4 @@
+import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type Anthropic from "@anthropic-ai/sdk";
 
 /**
@@ -47,9 +48,39 @@ export function flattenContentBlocks(
   });
 }
 
-export function isToolResultBlock(
-  block: unknown
-): block is {
+export function convertFromAnthropicMessage(
+  sdkMessage: SDKMessage | string | undefined
+): { content: unknown; role: string }[] {
+  if (sdkMessage == null) return [];
+  if (typeof sdkMessage === "string") {
+    return [{ content: sdkMessage, role: "user" }];
+  }
+
+  if (
+    typeof sdkMessage !== "object" ||
+    sdkMessage == null ||
+    !("message" in sdkMessage) ||
+    (sdkMessage.type !== "assistant" && sdkMessage.type !== "user")
+  ) {
+    return [];
+  }
+
+  const { role = sdkMessage.type, content, ...rest } = sdkMessage.message;
+  const flattened = flattenContentBlocks(content);
+
+  const toolResultBlocks =
+    role === "user" && Array.isArray(flattened)
+      ? flattened.filter(isToolResultBlock)
+      : [];
+
+  if (toolResultBlocks.length > 0) {
+    return toolResultBlocks.map((block) => ({ ...block, role: "tool" }));
+  }
+
+  return [{ ...rest, content: flattened, role }];
+}
+
+function isToolResultBlock(block: unknown): block is {
   type: "tool_result";
   tool_use_id: string;
   content: string;

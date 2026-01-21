@@ -426,4 +426,30 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
     await expect(() => query.supportedModels()).not.toThrow();
     await expect(() => query.supportedCommands()).not.toThrow();
   });
+
+  test("streaming input", async () => {
+    const query = wrappedSDK.query({
+      prompt: (async function* () {
+        yield {
+          type: "user" as const,
+          message: { role: "user" as const, content: "Hello" },
+        } as unknown as claudeSDK.SDKUserMessage;
+        yield {
+          type: "user" as const,
+          message: { role: "user" as const, content: "How are you?" },
+        } as unknown as claudeSDK.SDKUserMessage;
+      })(),
+      options: {
+        model: "claude-3-5-haiku-20241022",
+        maxTurns: 1,
+      },
+    });
+
+    const messages: any[] = [];
+    for await (const message of query) {
+      messages.push(message);
+    }
+
+    expect(messages.length).toBeGreaterThan(0);
+  });
 });
