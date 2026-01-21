@@ -46,9 +46,7 @@ class TestAsyncSandboxProperties:
 
     def test_dataplane_url_property(self, sandbox):
         """Test dataplane_url property."""
-        assert (
-            sandbox.dataplane_url == "https://sandbox-router.example.com/sb-123"
-        )
+        assert sandbox.dataplane_url == "https://sandbox-router.example.com/sb-123"
 
 
 class TestAsyncSandboxRun:

@@ -2,6 +2,8 @@
 
 Sandboxed code execution for LangSmith. Run untrusted code safely in isolated containers.
 
+> ⚠️ **Alpha**: This module is experimental. Features and APIs may change, and breaking changes are expected as we iterate.
+
 ## Quick Start
 
 ```python
