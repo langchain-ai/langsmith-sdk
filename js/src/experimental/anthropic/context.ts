@@ -43,3 +43,44 @@ export type WrapClaudeAgentSDKConfig = Partial<
     "inputs" | "outputs" | "run_type" | "child_runs" | "parent_run" | "error"
   >
 >;
+/**
+ * Clears all active tool runs and client-managed runs. Called when a conversation ends.
+ */
+
+export function clearActiveToolRuns(context: AgentSDKContext): void {
+  // Clean up client-managed runs (subagents and their children)
+  for (const [, run] of context.clientManagedRuns) {
+    try {
+      run
+        .end({ error: "Run not completed (conversation ended)" })
+        .then(() => run.patchRun())
+        .catch(() => {});
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+  context.clientManagedRuns.clear();
+  context.subagentSessions.clear();
+  context.activeSubagentToolUseId = undefined;
+
+  // Clean up regular tool runs
+  for (const [, { run }] of context.activeToolRuns) {
+    try {
+      run
+        .end({ error: "Tool run not completed (conversation ended)" })
+        .then(() => run.patchRun())
+        .catch(() => {});
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+  context.activeToolRuns.clear();
+}
+
+export const createQueryContext = (): AgentSDKContext => ({
+  activeToolRuns: new Map(),
+  clientManagedRuns: new Map(),
+  subagentSessions: new Map(),
+  activeSubagentToolUseId: undefined,
+  currentParentRun: undefined,
+});

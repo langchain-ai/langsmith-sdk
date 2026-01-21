@@ -6,248 +6,28 @@ import {
 import type { RunTree } from "../../run_trees.js";
 import type Anthropic from "@anthropic-ai/sdk";
 import { convertAnthropicUsageToInputTokenDetails } from "../../utils/usage.js";
-import { AgentSDKContext, WrapClaudeAgentSDKConfig } from "./types.js";
+import {
+  type AgentSDKContext,
+  type WrapClaudeAgentSDKConfig,
+  clearActiveToolRuns,
+  createQueryContext,
+} from "./context.js";
 import { getNumberProperty } from "./utils.js";
 import type {
   SDKUserMessage,
   SDKMessage,
   SDKAssistantMessage,
-  HookInput,
-  HookJSONOutput,
   Options as QueryOptions,
-  HookCallbackMatcher,
-  HookEvent,
   ModelUsage,
-  PostToolUseHookInput,
-  PreToolUseHookInput,
   createSdkMcpServer,
 } from "@anthropic-ai/claude-agent-sdk";
+import { mergeHooks } from "./hooks.js";
+import { flattenContentBlocks, isToolResultBlock } from "./messages.js";
 
 type SdkMcpToolDefinition = Exclude<
   Parameters<typeof createSdkMcpServer>[0]["tools"],
   undefined
 >[number];
-
-const createQueryContext = (): AgentSDKContext => ({
-  activeToolRuns: new Map(),
-  clientManagedRuns: new Map(),
-  subagentSessions: new Map(),
-  activeSubagentToolUseId: undefined,
-  currentParentRun: undefined,
-});
-
-/**
- * PreToolUse hook that creates a tool span when a tool execution starts.
- * This traces ALL tools including built-in tools, external MCP tools, and SDK MCP tools.
- * Skips tools that are client-managed (subagent sessions and their children).
- */
-async function preToolUseHook(
-  input: PreToolUseHookInput,
-  toolUseId: string | undefined,
-  context: AgentSDKContext
-): Promise<HookJSONOutput> {
-  if (!toolUseId) return {};
-
-  // Skip if this tool run is already managed by the client (subagent or its children)
-  if (context.clientManagedRuns.has(toolUseId)) {
-    return {};
-  }
-
-  const toolName = input.tool_name || "unknown_tool";
-  const toolInput = input.tool_input;
-
-  try {
-    const parent = context.currentParentRun || getCurrentRunTree();
-    if (!parent) {
-      return {};
-    }
-
-    const startTime = Date.now();
-    const toolRun = await parent.createChild({
-      name: toolName,
-      run_type: "tool",
-      inputs: toolInput ? { input: toolInput } : {},
-    });
-
-    await toolRun.postRun();
-
-    context.activeToolRuns.set(toolUseId, { run: toolRun, startTime });
-  } catch {
-    // Silently fail - don't interrupt tool execution
-  }
-
-  return {};
-}
-
-/**
- * PostToolUse hook that ends the tool span when a tool execution completes.
- * Handles both regular tool runs and client-managed runs (subagents and their children).
- */
-async function postToolUseHook(
-  input: PostToolUseHookInput,
-  toolUseId: string | undefined,
-  context: AgentSDKContext
-): Promise<HookJSONOutput> {
-  if (!toolUseId) return {};
-  const toolResponse = input.tool_response;
-
-  // Format outputs based on response type
-  const formatOutputs = (
-    response: unknown
-  ): { outputs: Record<string, unknown>; isError: boolean } => {
-    let outputs: Record<string, unknown>;
-    if (typeof response === "object" && response !== null) {
-      if (Array.isArray(response)) {
-        outputs = { content: response };
-      } else {
-        outputs = response as Record<string, unknown>;
-      }
-    } else {
-      outputs = response ? { output: String(response) } : {};
-    }
-
-    const isError =
-      typeof response === "object" &&
-      response !== null &&
-      "is_error" in response &&
-      (response as Record<string, unknown>).is_error === true;
-
-    return { outputs, isError };
-  };
-
-  try {
-    // Check if this is a client-managed run (subagent session or its children)
-    const clientRun = context.clientManagedRuns.get(toolUseId);
-    if (clientRun) {
-      context.clientManagedRuns.delete(toolUseId);
-
-      const { outputs, isError } = formatOutputs(toolResponse);
-      await clientRun.end({
-        outputs,
-        error: isError ? outputs.output?.toString() : undefined,
-      });
-      await clientRun.patchRun();
-      return {};
-    }
-
-    // Handle regular tool runs
-    const runInfo = context.activeToolRuns.get(toolUseId);
-    if (!runInfo) {
-      return {};
-    }
-
-    context.activeToolRuns.delete(toolUseId);
-
-    const { run: toolRun } = runInfo;
-    const { outputs, isError } = formatOutputs(toolResponse);
-
-    await toolRun.end({
-      outputs,
-      error: isError ? outputs.output?.toString() : undefined,
-    });
-
-    await toolRun.patchRun();
-  } catch {
-    // Silently fail - don't interrupt tool execution
-  }
-
-  return {};
-}
-
-/**
- * Creates hook matchers for LangSmith tracing.
- * Returns PreToolUse and PostToolUse hook configurations.
- */
-function createTracingHooks(context: AgentSDKContext) {
-  return {
-    PreToolUse: [
-      {
-        matcher: undefined, // Match all tools
-        hooks: [
-          async (
-            input: HookInput,
-            toolUseId: string | undefined,
-            _options: { signal: AbortSignal }
-          ) => preToolUseHook(input as PreToolUseHookInput, toolUseId, context),
-        ],
-      },
-    ],
-    PostToolUse: [
-      {
-        matcher: undefined, // Match all tools
-        hooks: [
-          async (
-            input: HookInput,
-            toolUseId: string | undefined,
-            _options: { signal: AbortSignal }
-          ) =>
-            postToolUseHook(input as PostToolUseHookInput, toolUseId, context),
-        ],
-      },
-    ],
-
-    SessionEnd: [
-      {
-        matcher: undefined,
-        hooks: [
-          async (_input: HookInput) => {
-            // Clean up at end of session
-            clearActiveToolRuns(context);
-            return {};
-          },
-        ],
-      },
-    ],
-
-    SubagentStop: [
-      {
-        matcher: undefined,
-        hooks: [
-          async (_input: HookInput, toolUseId: string | undefined) => {
-            // Clean up subagent session
-            if (toolUseId) {
-              context.subagentSessions.delete(toolUseId);
-              context.clientManagedRuns.delete(toolUseId);
-            }
-            return {};
-          },
-        ],
-      },
-    ],
-    Stop: [
-      {
-        matcher: undefined,
-        hooks: [
-          async (_input: HookInput) => {
-            // Clean up on stop - ensure all runs are finalized
-            clearActiveToolRuns(context);
-            return {};
-          },
-        ],
-      },
-    ],
-  } satisfies Partial<Record<HookEvent, HookCallbackMatcher[]>>;
-}
-
-/**
- * Merges LangSmith tracing hooks with existing user hooks.
- */
-function mergeHooks(
-  existingHooks: Record<string, HookCallbackMatcher[]> | undefined,
-  context: AgentSDKContext
-): Record<string, HookCallbackMatcher[]> {
-  const tracingHooks = createTracingHooks(context);
-  if (!existingHooks) return tracingHooks;
-
-  const merged: Record<string, HookCallbackMatcher[]> = { ...existingHooks };
-
-  // Prepend tracing hooks so they run first
-  for (const [event, matchers] of Object.entries(tracingHooks)) {
-    merged[event] = [...matchers, ...(merged[event] ?? [])];
-  }
-
-  return merged;
-}
 
 /**
  * Type assertion to check if a tool is a Task tool
@@ -351,39 +131,6 @@ async function handleAssistantToolUses(
 }
 
 /**
- * Clears all active tool runs and client-managed runs. Called when a conversation ends.
- */
-function clearActiveToolRuns(context: AgentSDKContext): void {
-  // Clean up client-managed runs (subagents and their children)
-  for (const [, run] of context.clientManagedRuns) {
-    try {
-      run
-        .end({ error: "Run not completed (conversation ended)" })
-        .then(() => run.patchRun())
-        .catch(() => {});
-    } catch {
-      // Ignore cleanup errors
-    }
-  }
-  context.clientManagedRuns.clear();
-  context.subagentSessions.clear();
-  context.activeSubagentToolUseId = undefined;
-
-  // Clean up regular tool runs
-  for (const [, { run }] of context.activeToolRuns) {
-    try {
-      run
-        .end({ error: "Tool run not completed (conversation ended)" })
-        .then(() => run.patchRun())
-        .catch(() => {});
-    } catch {
-      // Ignore cleanup errors
-    }
-  }
-  context.activeToolRuns.clear();
-}
-
-/**
  * Wraps the Claude Agent SDK's query function to add LangSmith tracing.
  * Traces the entire agent interaction including all streaming messages.
  * Internal use only - use wrapClaudeAgentSDK instead.
@@ -416,7 +163,7 @@ function wrapClaudeAgentQuery<
     options: QueryOptions,
     context: AgentSDKContext
   ) {
-    const finalResults: Array<{ content: unknown; role: string }> = [];
+    const history: Array<{ content: unknown; role: string }> = [];
 
     // Track assistant messages by their message ID for proper streaming handling
     // Each message ID maps to { message, startTime } - we keep the latest streaming update
@@ -471,6 +218,7 @@ function wrapClaudeAgentQuery<
       // Track the usage before creating the span
       const model = pending.message.message?.model;
       const usage = pending.message.message?.usage;
+
       if (model && usage) {
         const existing = completedUsageByModel.get(model) || {
           inputTokens: 0,
@@ -486,22 +234,23 @@ function wrapClaudeAgentQuery<
       }
 
       const finalMessageContent = await createLLMSpanForMessages(
-        [pending.message],
         pending.messageHistory,
+        [pending.message],
         options,
         pending.startTime,
         context
       );
 
-      if (finalMessageContent) finalResults.push(finalMessageContent);
+      if (finalMessageContent) history.push(finalMessageContent);
     };
 
     try {
       for await (const message of originalGenerator) {
         const currentTime = Date.now();
+
         if (message.type === "system") {
           const content = getLatestInput(prompt);
-          if (content != null) finalResults.push(content);
+          if (content != null) history.push(content);
         }
 
         // Handle assistant messages - group by message ID for streaming
@@ -542,21 +291,20 @@ function wrapClaudeAgentQuery<
               // Finalize all other pending messages
               for (const [otherId] of pendingMessages) {
                 if (otherId !== messageId) {
-                  const spanPromise = createLLMSpanForId(otherId);
-                  childRunEndPromises.push(spanPromise);
+                  childRunEndPromises.push(createLLMSpanForId(otherId));
                 }
               }
 
               pendingMessages.set(messageId, {
                 message,
-                messageHistory: finalResults.slice(0),
+                messageHistory: history.slice(0),
                 startTime: currentTime,
               });
             } else {
               // Streaming update - keep the start time, update the message
               pendingMessages.set(messageId, {
                 message,
-                messageHistory: finalResults.slice(0),
+                messageHistory: history.slice(0),
                 startTime: existing.startTime,
               });
             }
@@ -564,7 +312,7 @@ function wrapClaudeAgentQuery<
             // Push the message to the final results,
             // Used to create spans with the full chat history as input
             if ("content" in message.message && message.message.content) {
-              finalResults.push({
+              history.push({
                 content: flattenContentBlocks(message.message.content),
                 role: "assistant",
               });
@@ -573,8 +321,7 @@ function wrapClaudeAgentQuery<
             // Check if this message has a stop_reason (meaning it's complete)
             // If so, create the span now (createLLMSpanForId will skip if already created)
             if (message.message?.stop_reason) {
-              const spanPromise = createLLMSpanForId(messageId);
-              childRunEndPromises.push(spanPromise);
+              childRunEndPromises.push(createLLMSpanForId(messageId));
             }
           }
 
@@ -584,15 +331,20 @@ function wrapClaudeAgentQuery<
             context.currentParentRun,
             context
           );
-        }
+        } else if (message.type === "user") {
+          // check if this is a tool result message
+          const flattened = flattenContentBlocks(message.message.content);
 
-        // Handle UserMessage - add to conversation history (matches Python)
-        if (message.type === "user") {
-          if ("content" in message.message && message.message.content) {
-            finalResults.push({
-              content: flattenContentBlocks(message.message.content),
-              role: "user",
-            });
+          const toolResultBlocks = Array.isArray(flattened)
+            ? flattened.filter(isToolResultBlock)
+            : [];
+
+          if (toolResultBlocks.length > 0) {
+            for (const block of toolResultBlocks) {
+              history.push({ ...block, role: "tool" });
+            }
+          } else if ("content" in message.message && message.message.content) {
+            history.push({ content: flattened, role: "user" });
           }
 
           // If this is a tool result for a Task tool (subagent), we're entering the subagent's execution
@@ -603,10 +355,7 @@ function wrapClaudeAgentQuery<
           ) {
             context.activeSubagentToolUseId = message.parent_tool_use_id;
           }
-        }
-
-        // Handle ResultMessage - extract usage and metadata
-        if (message.type === "result") {
+        } else if (message.type === "result") {
           // If modelUsage is available, aggregate from it (includes ALL models)
           // Otherwise fall back to top-level usage field
           if (message.modelUsage) {
@@ -774,6 +523,81 @@ function wrapClaudeAgentQuery<
     return wrappedGenerator;
   };
 
+  const processInputs = async (rawInputs: unknown) => {
+    const inputs = rawInputs as {
+      prompt: string | AsyncIterable<SDKUserMessage>;
+      options: QueryOptions;
+    };
+
+    const newInputs = { ...inputs };
+    return Object.assign(newInputs, {
+      toJSON: () => {
+        const toJSON = (value: unknown) => {
+          if (typeof value !== "object" || value == null) return value;
+          const fn = (value as Record<string, unknown>)?.toJSON;
+          if (typeof fn === "function") return fn();
+          return value;
+        };
+
+        const prompt = toJSON(inputs.prompt) as
+          | string
+          | Iterable<SDKUserMessage>
+          | undefined;
+        const options = toJSON(inputs.options) as QueryOptions | undefined;
+
+        const messages = (() => {
+          if (prompt == null) return undefined;
+
+          const result: Array<{ content: unknown; role: string }> = [];
+          if (typeof prompt === "string") {
+            result.push({ content: prompt, role: "user" });
+          } else {
+            for (const { message } of prompt) {
+              if (!message) continue;
+              result.push({
+                content: flattenContentBlocks(message.content),
+                role: message.role,
+              });
+            }
+          }
+
+          return result;
+        })();
+
+        return { messages, options };
+      },
+    });
+  };
+
+  const processOutputs = (rawOutputs: Record<string, unknown>) => {
+    if ("outputs" in rawOutputs && Array.isArray(rawOutputs.outputs)) {
+      const sdkMessages = rawOutputs.outputs as SDKMessage[];
+      const messages = sdkMessages.flatMap((sdkMessage) => {
+        if ("message" in sdkMessage && sdkMessage.message != null) {
+          const role = sdkMessage.message.role;
+          const flattened = flattenContentBlocks(sdkMessage.message.content);
+
+          const toolResultBlocks =
+            role === "user" && Array.isArray(flattened)
+              ? flattened.filter(isToolResultBlock)
+              : [];
+
+          if (toolResultBlocks.length > 0) {
+            for (const block of toolResultBlocks) {
+              return { ...block, role: "tool" };
+            }
+          }
+
+          return { role, content: flattened };
+        }
+        return [];
+      });
+
+      return { output: { messages } };
+    }
+    return rawOutputs;
+  };
+
   // Wrap in traceable
   return traceable(wrapped, {
     name: "claude.conversation",
@@ -781,68 +605,8 @@ function wrapClaudeAgentQuery<
     ...baseConfig,
     metadata: { ...baseConfig?.metadata },
     __deferredSerializableArgOptions: { maxDepth: 1 },
-    async processInputs(rawInputs: unknown) {
-      const inputs = rawInputs as {
-        prompt: string | AsyncIterable<SDKUserMessage>;
-        options: QueryOptions;
-      };
-
-      const newInputs = { ...inputs };
-      return Object.assign(newInputs, {
-        toJSON: () => {
-          const toJSON = (value: unknown) => {
-            if (typeof value !== "object" || value == null) return value;
-            const fn = (value as Record<string, unknown>)?.toJSON;
-            if (typeof fn === "function") return fn();
-            return value;
-          };
-
-          const prompt = toJSON(inputs.prompt) as
-            | string
-            | Iterable<SDKUserMessage>
-            | undefined;
-          const options = toJSON(inputs.options) as QueryOptions | undefined;
-
-          const messages = (() => {
-            if (prompt == null) return undefined;
-
-            const result: Array<{ content: unknown; role: string }> = [];
-            if (typeof prompt === "string") {
-              result.push({ content: prompt, role: "user" });
-            } else {
-              for (const { message } of prompt) {
-                if (!message) continue;
-                result.push({
-                  content: flattenContentBlocks(message.content),
-                  role: message.role,
-                });
-              }
-            }
-
-            return result;
-          })();
-
-          return { messages, options };
-        },
-      });
-    },
-    processOutputs(rawOutputs) {
-      if ("outputs" in rawOutputs && Array.isArray(rawOutputs.outputs)) {
-        const sdkMessages = rawOutputs.outputs as SDKMessage[];
-        const messages = sdkMessages.flatMap((sdkMessage) => {
-          if ("message" in sdkMessage && sdkMessage.message != null) {
-            return {
-              role: sdkMessage.message.role,
-              content: flattenContentBlocks(sdkMessage.message.content),
-            };
-          }
-          return [];
-        });
-
-        return { output: { messages } };
-      }
-      return rawOutputs;
-    },
+    processInputs,
+    processOutputs,
   }) as unknown as T;
 }
 
@@ -988,29 +752,21 @@ function getLatestInput(
  * Handles subagent LLM turns by parenting them to the correct subagent session.
  */
 async function createLLMSpanForMessages(
-  messages: SDKMessage[],
-  conversationHistory: Array<{ content: unknown; role: string }>,
+  input: Array<{ content: unknown; role: string }>,
+  output: SDKMessage[],
   options: QueryOptions,
   startTime: number,
   context: AgentSDKContext
 ): Promise<{ content: unknown; role: string } | undefined> {
-  if (messages.length === 0) return undefined;
-
-  const lastMessage = messages[messages.length - 1];
-  // Create LLM spans for all AssistantMessages, not just those with usage
-  // (matches Python's behavior)
-  if (lastMessage.type !== "assistant") {
-    return undefined;
-  }
+  const lastMessage = output.at(-1);
+  if (!lastMessage || lastMessage.type !== "assistant") return undefined;
 
   // Extract model from message first, fall back to options (matches Python)
   const model = lastMessage.message.model || options.model;
   const usage = extractUsageFromMessage(lastMessage);
-  const input =
-    conversationHistory.length > 0 ? conversationHistory : undefined;
 
   // Flatten content blocks for proper serialization (matches Python)
-  const outputs = messages
+  const outputs = output
     .map((m) => {
       if (!("message" in m) || !("role" in m.message)) return undefined;
       return {
@@ -1023,71 +779,39 @@ async function createLLMSpanForMessages(
   // Check if this message belongs to a subagent
   // First check if message has explicit parent_tool_use_id
   const parentToolUseId = lastMessage.parent_tool_use_id;
-  let subagentParent = parentToolUseId
-    ? context.subagentSessions.get(parentToolUseId)
-    : undefined;
 
-  // If no explicit parent, check if we're in an active subagent context
-  if (!subagentParent && context.activeSubagentToolUseId) {
-    subagentParent = context.subagentSessions.get(
-      context.activeSubagentToolUseId
-    );
-  }
+  const parent = (() => {
+    let subagentParent = parentToolUseId
+      ? context.subagentSessions.get(parentToolUseId)
+      : undefined;
 
-  const endTime = Date.now();
+    // If no explicit parent, check if we're in an active subagent context
+    if (!subagentParent && context.activeSubagentToolUseId) {
+      subagentParent = context.subagentSessions.get(
+        context.activeSubagentToolUseId
+      );
+    }
 
-  // Format inputs: if we have a single input, use it directly; otherwise wrap as messages
-  const formattedInputs =
-    input && input.length === 1 ? input[0] : input ? { messages: input } : {};
+    if (subagentParent) return subagentParent;
+    return getCurrentRunTree();
+  })();
 
-  if (subagentParent) {
-    // Create LLM run as child of subagent session with proper start and end time
-    try {
-      const llmRun = await subagentParent.createChild({
-        name: "claude.assistant.turn",
-        run_type: "llm",
-        inputs: formattedInputs,
-        outputs: outputs[outputs.length - 1] || { content: outputs },
-        start_time: startTime,
-        end_time: endTime,
-        extra: {
-          metadata: {
-            ...(model ? { ls_model_name: model } : {}),
-            usage_metadata: usage,
-          },
+  await parent
+    .createChild({
+      name: "claude.assistant.turn",
+      run_type: "llm",
+      inputs: { messages: input },
+      outputs: outputs[outputs.length - 1] || { content: outputs },
+      start_time: startTime,
+      end_time: Date.now(),
+      extra: {
+        metadata: {
+          ...(model ? { ls_model_name: model } : {}),
+          usage_metadata: usage,
         },
-      });
-      await llmRun.postRun();
-    } catch {
-      // Silently fail
-    }
-  } else {
-    // Regular LLM turn under main conversation
-    // Note: traceable doesn't support start_time config, so we use getCurrentRunTree
-    // and manually create the child run to preserve timing
-    const currentRun = getCurrentRunTree();
-    if (currentRun) {
-      try {
-        const llmRun = await currentRun.createChild({
-          name: "claude.assistant.turn",
-          run_type: "llm",
-          inputs: formattedInputs,
-          outputs: outputs[outputs.length - 1] || { content: outputs },
-          start_time: startTime,
-          end_time: endTime,
-          extra: {
-            metadata: {
-              ...(model ? { ls_model_name: model } : {}),
-              usage_metadata: usage,
-            },
-          },
-        });
-        await llmRun.postRun();
-      } catch {
-        // Silently fail
-      }
-    }
-  }
+      },
+    })
+    .postRun();
 
   // Return flattened content for conversation history
   return lastMessage.message?.content && lastMessage.message?.role
@@ -1096,53 +820,6 @@ async function createLLMSpanForMessages(
         role: lastMessage.message.role,
       }
     : undefined;
-}
-
-/**
- * Converts SDK content blocks into serializable objects.
- * Matches Python's flatten_content_blocks behavior.
- */
-function flattenContentBlocks(
-  content: Anthropic.Beta.BetaContentBlock[] | unknown
-): Array<Record<string, unknown>> | unknown {
-  if (!Array.isArray(content)) {
-    return content;
-  }
-
-  return content.map((block) => {
-    if (!block || typeof block !== "object" || !("type" in block)) {
-      return block;
-    }
-
-    const blockType = block.type;
-
-    switch (blockType) {
-      case "text":
-        return { type: "text", text: block.text || "" };
-      case "thinking":
-        return {
-          type: "thinking",
-          thinking: block.thinking || "",
-          signature: block.signature || "",
-        };
-      case "tool_use":
-        return {
-          type: "tool_use",
-          id: block.id,
-          name: block.name,
-          input: block.input,
-        };
-      case "tool_result":
-        return {
-          type: "tool_result",
-          tool_use_id: block.tool_use_id,
-          content: block.content,
-          is_error: block.is_error || false,
-        };
-      default:
-        return block;
-    }
-  });
 }
 
 /**

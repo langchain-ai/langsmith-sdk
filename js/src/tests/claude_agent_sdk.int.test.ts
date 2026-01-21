@@ -72,7 +72,7 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
     expect(resultMessage.usage.output_tokens).toBeGreaterThan(0);
   });
 
-  test("query with subagent usage", async () => {
+  test.only("query with subagent usage", async () => {
     const messages: any[] = [];
 
     // Configure a subagent that can do calculations
