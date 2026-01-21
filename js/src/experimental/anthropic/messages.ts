@@ -1,4 +1,7 @@
-import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import type {
+  createSdkMcpServer,
+  SDKMessage,
+} from "@anthropic-ai/claude-agent-sdk";
 import type Anthropic from "@anthropic-ai/sdk";
 
 /**
@@ -89,4 +92,37 @@ function isToolResultBlock(block: unknown): block is {
   if (typeof block !== "object" || block == null) return false;
   if (!("type" in block)) return false;
   return block.type === "tool_result";
+}
+export type SdkMcpToolDefinition = Exclude<
+  Parameters<typeof createSdkMcpServer>[0]["tools"],
+  undefined
+>[number];
+
+/**
+ * Type assertion to check if a tool is a Task tool
+ * @param tool - The tool to check
+ * @returns True if the tool is a Task tool, false otherwise
+ */
+export function isTaskTool(tool: Anthropic.Beta.BetaToolUseBlock): tool is {
+  id: string;
+  input: {
+    description: string;
+    prompt: string;
+    subagent_type: string;
+    agent_type?: string;
+  };
+  name: "Task";
+  type: "tool_use";
+} {
+  return tool.type === "tool_use" && tool.name === "Task";
+}
+
+/**
+ * Type-assertion to check for tool blocks
+ */
+export function isToolBlock(
+  block: Anthropic.Beta.BetaContentBlock
+): block is Anthropic.Beta.BetaToolUseBlock {
+  if (!block || typeof block !== "object") return false;
+  return block.type === "tool_use";
 }

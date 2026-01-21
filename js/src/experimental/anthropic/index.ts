@@ -4,7 +4,6 @@ import {
   isTraceableFunction,
 } from "../../traceable.js";
 import type { RunTree } from "../../run_trees.js";
-import type Anthropic from "@anthropic-ai/sdk";
 import { convertAnthropicUsageToInputTokenDetails } from "../../utils/usage.js";
 import {
   type AgentSDKContext,
@@ -19,47 +18,18 @@ import type {
   SDKAssistantMessage,
   Options as QueryOptions,
   ModelUsage,
-  createSdkMcpServer,
 } from "@anthropic-ai/claude-agent-sdk";
 import { mergeHooks } from "./hooks.js";
 import {
   convertFromAnthropicMessage,
   flattenContentBlocks,
+  isTaskTool,
+  isToolBlock,
+  type SdkMcpToolDefinition,
 } from "./messages.js";
 
-type SdkMcpToolDefinition = Exclude<
-  Parameters<typeof createSdkMcpServer>[0]["tools"],
-  undefined
->[number];
-
-/**
- * Type assertion to check if a tool is a Task tool
- * @param tool - The tool to check
- * @returns True if the tool is a Task tool, false otherwise
- */
-function isTaskTool(tool: Anthropic.Beta.BetaToolUseBlock): tool is {
-  id: string;
-  input: {
-    description: string;
-    prompt: string;
-    subagent_type: string;
-    agent_type?: string;
-  };
-  name: "Task";
-  type: "tool_use";
-} {
-  return tool.type === "tool_use" && tool.name === "Task";
-}
-
-/**
- * Type-assertion to check for tool blocks
- */
-function isToolBlock(
-  block: Anthropic.Beta.BetaContentBlock
-): block is Anthropic.Beta.BetaToolUseBlock {
-  if (!block || typeof block !== "object") return false;
-  return block.type === "tool_use";
-}
+const TRACE_CHAIN_NAME = "claude.conversation";
+const LLM_RUN_NAME = "claude.assistant.turn";
 
 /**
  * Processes tool uses in an AssistantMessage to detect and create subagent sessions.
@@ -109,6 +79,7 @@ function handleAssistantToolUses(
         context.subagentSessions.set(block.id, subagentSession);
         context.clientManagedRuns.set(block.id, subagentSession);
       }
+
       // Check if tool use is within a subagent
       else if (
         parentToolUseId &&
@@ -166,9 +137,6 @@ function wrapClaudeAgentQuery<
     options: QueryOptions,
     context: AgentSDKContext
   ) {
-    // Track usage from ResultMessage to add to the parent span
-    let resultUsage: Record<string, unknown> | undefined;
-
     // Track additional metadata from the SDK
     const extraMetadata: [key: string, value: unknown][] = [];
 
@@ -314,73 +282,87 @@ function wrapClaudeAgentQuery<
             context.activeSubagentToolUseId = message.parent_tool_use_id;
           }
         } else if (message.type === "result") {
-          // If modelUsage is available, aggregate from it (includes ALL models)
-          // Otherwise fall back to top-level usage field
-          if (message.modelUsage) {
-            // Aggregate usage from modelUsage (includes ALL models)
-            resultUsage = aggregateUsageFromModelUsage(message.modelUsage);
+          const resultUsage = (() => {
+            let usage: Record<string, unknown> | undefined;
+            // If modelUsage is available, aggregate from it (includes ALL models)
+            // Otherwise fall back to top-level usage field
+            if (message.modelUsage) {
+              // Aggregate usage from modelUsage (includes ALL models)
+              usage = aggregateUsageFromModelUsage(message.modelUsage);
 
-            // Patch token counts for pending messages using modelUsage
-            // This handles the SDK limitation where the last assistant message
-            // doesn't receive final streaming updates with accurate token counts
-            for (const [, { message: pendingMsg }] of context.pendingMessages) {
-              const model = pendingMsg.message?.model;
-              if (
-                model &&
-                message.modelUsage[model] &&
-                pendingMsg.message?.usage
-              ) {
-                const modelStats = message.modelUsage[model];
-                const completed = completedUsageByModel.get(model) || {
-                  inputTokens: 0,
-                  outputTokens: 0,
-                  cacheReadTokens: 0,
-                  cacheCreationTokens: 0,
-                };
+              // Patch token counts for pending messages using modelUsage
+              // This handles the SDK limitation where the last assistant message
+              // doesn't receive final streaming updates with accurate token counts
+              for (const [
+                ,
+                { message: pendingMsg },
+              ] of context.pendingMessages) {
+                const model = pendingMsg.message?.model;
+                if (
+                  model &&
+                  message.modelUsage[model] &&
+                  pendingMsg.message?.usage
+                ) {
+                  const modelStats = message.modelUsage[model];
+                  const completed = completedUsageByModel.get(model) || {
+                    inputTokens: 0,
+                    outputTokens: 0,
+                    cacheReadTokens: 0,
+                    cacheCreationTokens: 0,
+                  };
 
-                // Calculate remaining tokens = total - completed
-                const remainingOutput =
-                  (modelStats.outputTokens || 0) - completed.outputTokens;
-                const remainingInput =
-                  (modelStats.inputTokens || 0) - completed.inputTokens;
-                const remainingCacheRead =
-                  (modelStats.cacheReadInputTokens || 0) -
-                  completed.cacheReadTokens;
-                const remainingCacheCreation =
-                  (modelStats.cacheCreationInputTokens || 0) -
-                  completed.cacheCreationTokens;
+                  // Calculate remaining tokens = total - completed
+                  const remainingOutput =
+                    (modelStats.outputTokens || 0) - completed.outputTokens;
+                  const remainingInput =
+                    (modelStats.inputTokens || 0) - completed.inputTokens;
+                  const remainingCacheRead =
+                    (modelStats.cacheReadInputTokens || 0) -
+                    completed.cacheReadTokens;
+                  const remainingCacheCreation =
+                    (modelStats.cacheCreationInputTokens || 0) -
+                    completed.cacheCreationTokens;
 
-                // Update the pending message's usage with remaining tokens
-                pendingMsg.message.usage.output_tokens = Math.max(
-                  0,
-                  remainingOutput
-                );
-                pendingMsg.message.usage.input_tokens = Math.max(
-                  0,
-                  remainingInput
-                );
+                  // Update the pending message's usage with remaining tokens
+                  pendingMsg.message.usage.output_tokens = Math.max(
+                    0,
+                    remainingOutput
+                  );
+                  pendingMsg.message.usage.input_tokens = Math.max(
+                    0,
+                    remainingInput
+                  );
 
-                if (remainingCacheRead > 0) {
-                  pendingMsg.message.usage.cache_read_input_tokens =
-                    remainingCacheRead;
-                }
-                if (remainingCacheCreation > 0) {
-                  pendingMsg.message.usage.cache_creation_input_tokens =
-                    remainingCacheCreation;
+                  if (remainingCacheRead > 0) {
+                    pendingMsg.message.usage.cache_read_input_tokens =
+                      remainingCacheRead;
+                  }
+                  if (remainingCacheCreation > 0) {
+                    pendingMsg.message.usage.cache_creation_input_tokens =
+                      remainingCacheCreation;
+                  }
                 }
               }
+            } else if (message.usage) {
+              // Fall back to top-level usage if modelUsage not available
+              usage = extractUsageFromMessage(message);
             }
-          } else if (message.usage) {
-            // Fall back to top-level usage if modelUsage not available
-            resultUsage = extractUsageFromMessage(message);
-          }
 
-          // Add total_cost if available (LangSmith standard field)
-          if (message.total_cost_usd != null && resultUsage) {
-            resultUsage.total_cost = message.total_cost_usd;
-          }
+            // Add total_cost if available (LangSmith standard field)
+            if (message.total_cost_usd != null && usage) {
+              usage.total_cost = message.total_cost_usd;
+            }
 
-          // Add conversation-level metadata
+            if (usage) {
+              extraMetadata.push(["usage_metadata", usage]);
+            }
+
+            return usage;
+          })();
+
+          if (resultUsage) {
+            extraMetadata.push(["usage_metadata", resultUsage]);
+          }
           if (message.is_error != null) {
             extraMetadata.push(["is_error", message.is_error]);
           }
@@ -412,31 +394,10 @@ function wrapClaudeAgentQuery<
 
       // Apply usage metadata to the chain run using LangSmith's standard fields
       const currentRun = getCurrentRunTree();
-      if (currentRun && (resultUsage || extraMetadata.length > 0)) {
+      if (currentRun && extraMetadata.length > 0) {
         // Initialize metadata object if needed
         currentRun.extra ||= {};
         currentRun.extra.metadata ||= {};
-
-        if (resultUsage) {
-          // Add LangSmith-standard usage fields directly to metadata
-          if (resultUsage.input_tokens !== undefined) {
-            currentRun.extra.metadata.input_tokens = resultUsage.input_tokens;
-          }
-          if (resultUsage.output_tokens !== undefined) {
-            currentRun.extra.metadata.output_tokens = resultUsage.output_tokens;
-          }
-          if (resultUsage.total_tokens !== undefined) {
-            currentRun.extra.metadata.total_tokens = resultUsage.total_tokens;
-          }
-          if (resultUsage.input_token_details) {
-            currentRun.extra.metadata.input_token_details =
-              resultUsage.input_token_details;
-          }
-          if (resultUsage.total_cost !== undefined) {
-            currentRun.extra.metadata.total_cost = resultUsage.total_cost;
-          }
-        }
-
         for (const [key, value] of extraMetadata) {
           currentRun.extra.metadata[key] = value;
         }
@@ -538,7 +499,7 @@ function wrapClaudeAgentQuery<
 
   // Wrap in traceable
   return traceable(wrapped, {
-    name: "claude.conversation",
+    name: TRACE_CHAIN_NAME,
     run_type: "chain",
     ...baseConfig,
     metadata: { ...baseConfig?.metadata },
@@ -737,7 +698,7 @@ function createLLMSpanForMessages(
   context.promiseQueue.push(
     parent
       .createChild({
-        name: "claude.assistant.turn",
+        name: LLM_RUN_NAME,
         run_type: "llm",
         inputs: { messages: input },
         outputs: outputs[outputs.length - 1] || { content: outputs },

@@ -446,9 +446,11 @@ describe("wrapClaudeAgentSDK", () => {
           run_type: "chain",
           extra: {
             metadata: {
-              input_tokens: 10,
-              output_tokens: 15,
-              total_tokens: 25,
+              usage_metadata: {
+                input_tokens: 10,
+                output_tokens: 15,
+                total_tokens: 25,
+              },
             },
           },
           inputs: { messages: [{ content: "Test", role: "user" }] },
@@ -671,9 +673,11 @@ describe("wrapClaudeAgentSDK", () => {
           inputs: { messages: [{ content: "Test", role: "user" }] },
           extra: {
             metadata: {
-              input_tokens: 13,
-              output_tokens: 8,
-              total_tokens: 21,
+              usage_metadata: {
+                input_tokens: 13,
+                output_tokens: 8,
+                total_tokens: 21,
+              },
               num_turns: 2,
             },
           },
@@ -788,10 +792,12 @@ describe("wrapClaudeAgentSDK", () => {
               duration_ms: 1500,
               duration_api_ms: 1200,
 
-              input_tokens: 10,
-              output_tokens: 5,
-              total_tokens: 15,
-              total_cost: 0.0015,
+              usage_metadata: {
+                input_tokens: 10,
+                output_tokens: 5,
+                total_tokens: 15,
+                total_cost: 0.0015,
+              },
             },
           },
         },
@@ -1060,11 +1066,13 @@ describe("wrapClaudeAgentSDK", () => {
           },
           extra: {
             metadata: {
-              input_tokens: 120,
-              output_tokens: 50,
-              total_tokens: 170,
-              input_token_details: { cache_read: 10, cache_creation: 10 },
-              total_cost: 0.0011,
+              usage_metadata: {
+                input_tokens: 120,
+                output_tokens: 50,
+                total_tokens: 170,
+                input_token_details: { cache_read: 10, cache_creation: 10 },
+                total_cost: 0.0011,
+              },
               session_id: "session_abc123",
             },
           },
@@ -1294,7 +1302,9 @@ describe("wrapClaudeAgentSDK", () => {
         },
         "claude.assistant.turn:3": {
           run_type: "llm",
-          inputs: { messages: [{ content: "Find TypeScript files", role: "user" }] },
+          inputs: {
+            messages: [{ content: "Find TypeScript files", role: "user" }],
+          },
           outputs: {
             role: "assistant",
             content: [
