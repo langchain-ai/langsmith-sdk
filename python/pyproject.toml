@@ -106,6 +106,7 @@ dev = [
     "google-genai>=1.2.0",
     "pillow>=12.0.0",
     "ty==0.0.10",
+    "pytest-httpx>=0.30.0",
 ]
 
 # Linting dependencies

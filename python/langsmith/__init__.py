@@ -3,6 +3,7 @@
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from langsmith import sandbox
     from langsmith._expect import expect
     from langsmith.async_client import AsyncClient
     from langsmith.cache import AsyncCache, Cache
@@ -137,6 +138,10 @@ def __getattr__(name: str) -> Any:
         from langsmith.cache import AsyncCache
 
         return AsyncCache
+    elif name == "sandbox":
+        import langsmith.sandbox as _sandbox
+
+        return _sandbox
 
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
@@ -168,4 +173,5 @@ __all__ = [
     "ContextThreadPoolExecutor",
     "uuid7",
     "uuid7_from_datetime",
+    "sandbox",
 ]
