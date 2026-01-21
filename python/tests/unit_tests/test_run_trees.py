@@ -1,3 +1,4 @@
+import inspect
 import io
 import json
 import time
@@ -15,7 +16,7 @@ from langsmith import run_trees
 from langsmith import schemas as ls_schemas
 from langsmith._internal._uuid import uuid7_deterministic
 from langsmith.client import Client
-from langsmith.run_trees import RunTree
+from langsmith.run_trees import NonRecordingRunTree, RunTree
 
 
 def _get_calls(
@@ -531,8 +532,6 @@ class TestNonRecordingRunTree:
 
     def test_is_recording_returns_false(self):
         """Test that is_recording returns False for NonRecordingRunTree."""
-        from langsmith.run_trees import NonRecordingRunTree
-
         run = NonRecordingRunTree()
         assert run.is_recording() is False
 
@@ -544,8 +543,6 @@ class TestNonRecordingRunTree:
 
     def test_properties_return_placeholders(self):
         """Test that properties return appropriate placeholder values."""
-        from langsmith.run_trees import NonRecordingRunTree
-
         run = NonRecordingRunTree()
         assert run.id == UUID("00000000-0000-0000-0000-000000000000")
         assert run.trace_id == UUID("00000000-0000-0000-0000-000000000000")
@@ -556,8 +553,6 @@ class TestNonRecordingRunTree:
 
     def test_methods_are_noops(self):
         """Test that all methods execute without error and do nothing."""
-        from langsmith.run_trees import NonRecordingRunTree
-
         run = NonRecordingRunTree()
 
         # These should all execute without error
@@ -577,8 +572,6 @@ class TestNonRecordingRunTree:
 
     def test_create_child_returns_self(self):
         """Test that create_child returns the same instance (no nesting)."""
-        from langsmith.run_trees import NonRecordingRunTree
-
         run = NonRecordingRunTree()
         child = run.create_child("child_name")
         assert child is run
@@ -589,8 +582,6 @@ class TestNonRecordingRunTree:
 
     def test_metadata_dict_is_mutable_but_noop(self):
         """Test that metadata can be accessed and mutated without error."""
-        from langsmith.run_trees import NonRecordingRunTree
-
         run = NonRecordingRunTree()
 
         # Should be able to access and mutate metadata
@@ -604,8 +595,6 @@ class TestNonRecordingRunTree:
 
     def test_outputs_setter_is_noop(self):
         """Test that setting outputs is a no-op."""
-        from langsmith.run_trees import NonRecordingRunTree
-
         run = NonRecordingRunTree()
         run.outputs = {"should": "be ignored"}
         # Setter is a no-op, so outputs dict should be empty
@@ -613,7 +602,152 @@ class TestNonRecordingRunTree:
 
     def test_repr(self):
         """Test string representation."""
-        from langsmith.run_trees import NonRecordingRunTree
-
         run = NonRecordingRunTree()
         assert repr(run) == "NonRecordingRunTree()"
+
+    def test_interface_matches_run_tree(self):
+        """Test that NonRecordingRunTree has the same public interface as RunTree.
+
+        This ensures that code using get_current_run_tree() can call any method
+        without checking is_recording() first.
+
+        The test dynamically introspects RunTree to find all public methods,
+        so if a new method is added to RunTree, this test will automatically
+        fail if NonRecordingRunTree doesn't implement it.
+        """
+        # Methods that users call on a run tree instance
+        # These are dynamically discovered from RunTree class, minus exclusions
+        excluded_from_interface = {
+            # Pydantic internals
+            "model_copy",
+            "model_dump",
+            "model_dump_json",
+            "model_post_init",
+            "model_validate",
+            "model_validate_json",
+            "model_validate_strings",
+            "model_construct",
+            "model_json_schema",
+            "model_parametrized_name",
+            "model_rebuild",
+            "model_computed_fields",
+            "model_config",
+            "model_extra",
+            "model_fields",
+            "model_fields_set",
+            "copy",
+            "dict",
+            "json",
+            "parse_obj",
+            "parse_raw",
+            "parse_file",
+            "schema",
+            "schema_json",
+            "validate",
+            "update_forward_refs",
+            "from_orm",
+            "construct",
+            # RunTree-specific methods not needed on NonRecordingRunTree
+            "from_dotted_order",
+            "from_headers",
+            "from_runnable_config",
+            "to_headers",
+            "infer_defaults",
+            "ensure_dotted_order",
+            # RunTree-specific properties not part of the shared interface
+            "client",
+            "ls_client",
+            "parent_run",
+            "parent_run_id",
+            "parent_dotted_order",
+            "child_runs",
+            "session_id",
+            "reference_example_id",
+            "start_time",
+            "end_time",
+            "error",
+            "serialized",
+            "attachments",
+            "dangerously_allow_filesystem",
+            "replicas",
+            "trace_start_time",
+            # Properties from base schema not needed on NonRecordingRunTree
+            "latency",
+            "revision_id",
+        }
+
+        # Get public methods and properties defined on RunTree class
+        # (not inherited from object, not dunder, not excluded)
+        run_tree_interface: set[str] = set()
+        for name in dir(RunTree):
+            if name.startswith("_"):
+                continue
+            if name in excluded_from_interface:
+                continue
+            # Check if it's defined on RunTree (not just inherited from object)
+            if hasattr(object, name):
+                continue
+            run_tree_interface.add(name)
+
+        # Also include key properties that users access on run trees
+        # (Pydantic fields are only on instances, not in dir(Class))
+        required_properties = {
+            "id",
+            "trace_id",
+            "dotted_order",
+            "name",
+            "run_type",
+            "session_name",
+            "tags",
+            "inputs",
+            "outputs",
+            "events",
+            "extra",
+        }
+        run_tree_interface.update(required_properties)
+
+        # Check that NonRecordingRunTree has all the required interface members
+        non_recording = NonRecordingRunTree()
+        missing = []
+        for name in run_tree_interface:
+            if not hasattr(non_recording, name):
+                missing.append(name)
+
+        assert not missing, (
+            f"NonRecordingRunTree missing from RunTree interface: {sorted(missing)}"
+        )
+
+        # For methods, check that signatures are compatible
+        recording = RunTree(name="test", client=MagicMock(spec=Client))
+
+        for name in run_tree_interface:
+            # Skip properties (Pydantic fields only exist on instances)
+            if name in required_properties:
+                continue
+
+            rec_attr = getattr(RunTree, name, None)
+            if rec_attr is None:
+                continue
+
+            # Check if it's a method (function defined on class)
+            if callable(rec_attr) and not isinstance(rec_attr, property):
+                non_rec_method = getattr(non_recording, name)
+                rec_method = getattr(recording, name)
+
+                if not callable(non_rec_method):
+                    continue  # Skip if it's become a property on instance
+
+                try:
+                    non_rec_sig = inspect.signature(non_rec_method)
+                    rec_sig = inspect.signature(rec_method)
+
+                    non_rec_params = set(non_rec_sig.parameters.keys())
+                    rec_params = set(rec_sig.parameters.keys())
+
+                    missing_params = rec_params - non_rec_params
+                    assert not missing_params, (
+                        f"NonRecordingRunTree.{name} missing params: {missing_params}"
+                    )
+                except (ValueError, TypeError):
+                    # Some methods may not have inspectable signatures
+                    pass
