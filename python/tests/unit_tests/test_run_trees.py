@@ -608,17 +608,10 @@ class TestNonRecordingRunTree:
     def test_interface_matches_run_tree(self):
         """Test that NonRecordingRunTree has the same public interface as RunTree.
 
-        This ensures that code using get_current_run_tree() can call any method
-        without checking is_recording() first.
-
-        The test dynamically introspects RunTree to find all public methods,
-        so if a new method is added to RunTree, this test will automatically
-        fail if NonRecordingRunTree doesn't implement it.
+        Dynamically introspects RunTree, so adding a new method to RunTree
+        without adding it to NonRecordingRunTree will cause this test to fail.
         """
-        # Methods that users call on a run tree instance
-        # These are dynamically discovered from RunTree class, minus exclusions
-        excluded_from_interface = {
-            # Pydantic internals
+        pydantic_internals = {
             "model_copy",
             "model_dump",
             "model_dump_json",
@@ -647,14 +640,14 @@ class TestNonRecordingRunTree:
             "update_forward_refs",
             "from_orm",
             "construct",
-            # RunTree-specific methods not needed on NonRecordingRunTree
+        }
+        run_tree_only = {
             "from_dotted_order",
             "from_headers",
             "from_runnable_config",
             "to_headers",
             "infer_defaults",
             "ensure_dotted_order",
-            # RunTree-specific properties not part of the shared interface
             "client",
             "ls_client",
             "parent_run",
@@ -671,26 +664,12 @@ class TestNonRecordingRunTree:
             "dangerously_allow_filesystem",
             "replicas",
             "trace_start_time",
-            # Properties from base schema not needed on NonRecordingRunTree
             "latency",
             "revision_id",
         }
+        excluded_from_interface = pydantic_internals | run_tree_only
 
-        # Get public methods and properties defined on RunTree class
-        # (not inherited from object, not dunder, not excluded)
-        run_tree_interface: set[str] = set()
-        for name in dir(RunTree):
-            if name.startswith("_"):
-                continue
-            if name in excluded_from_interface:
-                continue
-            # Check if it's defined on RunTree (not just inherited from object)
-            if hasattr(object, name):
-                continue
-            run_tree_interface.add(name)
-
-        # Also include key properties that users access on run trees
-        # (Pydantic fields are only on instances, not in dir(Class))
+        # Pydantic fields don't appear in dir(Class), only on instances
         required_properties = {
             "id",
             "trace_id",
@@ -704,50 +683,45 @@ class TestNonRecordingRunTree:
             "events",
             "extra",
         }
+
+        run_tree_interface: set[str] = set()
+        for name in dir(RunTree):
+            if name.startswith("_"):
+                continue
+            if name in excluded_from_interface:
+                continue
+            if hasattr(object, name):
+                continue
+            run_tree_interface.add(name)
         run_tree_interface.update(required_properties)
 
-        # Check that NonRecordingRunTree has all the required interface members
         non_recording = NonRecordingRunTree()
-        missing = []
-        for name in run_tree_interface:
-            if not hasattr(non_recording, name):
-                missing.append(name)
-
+        missing = [
+            name for name in run_tree_interface if not hasattr(non_recording, name)
+        ]
         assert not missing, (
             f"NonRecordingRunTree missing from RunTree interface: {sorted(missing)}"
         )
 
-        # For methods, check that signatures are compatible
         recording = RunTree(name="test", client=MagicMock(spec=Client))
-
-        for name in run_tree_interface:
-            # Skip properties (Pydantic fields only exist on instances)
-            if name in required_properties:
+        for name in run_tree_interface - required_properties:
+            run_tree_attr = getattr(RunTree, name, None)
+            if run_tree_attr is None:
+                continue
+            if not callable(run_tree_attr) or isinstance(run_tree_attr, property):
                 continue
 
-            rec_attr = getattr(RunTree, name, None)
-            if rec_attr is None:
+            non_rec_method = getattr(non_recording, name)
+            rec_method = getattr(recording, name)
+            if not callable(non_rec_method):
                 continue
 
-            # Check if it's a method (function defined on class)
-            if callable(rec_attr) and not isinstance(rec_attr, property):
-                non_rec_method = getattr(non_recording, name)
-                rec_method = getattr(recording, name)
-
-                if not callable(non_rec_method):
-                    continue  # Skip if it's become a property on instance
-
-                try:
-                    non_rec_sig = inspect.signature(non_rec_method)
-                    rec_sig = inspect.signature(rec_method)
-
-                    non_rec_params = set(non_rec_sig.parameters.keys())
-                    rec_params = set(rec_sig.parameters.keys())
-
-                    missing_params = rec_params - non_rec_params
-                    assert not missing_params, (
-                        f"NonRecordingRunTree.{name} missing params: {missing_params}"
-                    )
-                except (ValueError, TypeError):
-                    # Some methods may not have inspectable signatures
-                    pass
+            try:
+                non_rec_params = set(inspect.signature(non_rec_method).parameters)
+                rec_params = set(inspect.signature(rec_method).parameters)
+                missing_params = rec_params - non_rec_params
+                assert not missing_params, (
+                    f"NonRecordingRunTree.{name} missing params: {missing_params}"
+                )
+            except (ValueError, TypeError):
+                pass
