@@ -1958,7 +1958,7 @@ def test_set_run_metadata_without_active_run_tree() -> None:
     from langsmith.run_helpers import get_current_run_tree
 
     run = get_current_run_tree()
-    assert not run  # Should be NonRecordingRunTree (falsy)
+    assert not run.is_recording()  # Should be NonRecordingRunTree
 
 
 # Tests for enabled parameter on @traceable decorator

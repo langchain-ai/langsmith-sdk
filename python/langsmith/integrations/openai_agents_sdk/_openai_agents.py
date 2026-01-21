@@ -187,7 +187,7 @@ if HAVE_AGENTS:
 
             try:
                 new_run: rt.RunTree
-                if current_run_tree.is_recording():
+                if isinstance(current_run_tree, rt.RunTree):
                     # Nest under existing trace
                     new_run = current_run_tree.create_child(
                         name=run_name,
