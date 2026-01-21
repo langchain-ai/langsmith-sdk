@@ -26,7 +26,7 @@ def sandbox(client: AsyncSandboxClient):
         data={
             "name": "test-sandbox",
             "template_name": "test-template",
-            "dataplane_url": "https://sandbox-router.example.com/tenant/sb-123",
+            "dataplane_url": "https://sandbox-router.example.com/sb-123",
         },
         client=client,
         auto_delete=False,
@@ -47,7 +47,7 @@ class TestAsyncSandboxProperties:
     def test_dataplane_url_property(self, sandbox):
         """Test dataplane_url property."""
         assert (
-            sandbox.dataplane_url == "https://sandbox-router.example.com/tenant/sb-123"
+            sandbox.dataplane_url == "https://sandbox-router.example.com/sb-123"
         )
 
 
@@ -58,7 +58,7 @@ class TestAsyncSandboxRun:
         """Test running a successful command."""
         httpx_mock.add_response(
             method="POST",
-            url="https://sandbox-router.example.com/tenant/sb-123/execute",
+            url="https://sandbox-router.example.com/sb-123/execute",
             json={
                 "stdout": "hello world\n",
                 "stderr": "",
@@ -77,7 +77,7 @@ class TestAsyncSandboxRun:
         """Test running a failing command."""
         httpx_mock.add_response(
             method="POST",
-            url="https://sandbox-router.example.com/tenant/sb-123/execute",
+            url="https://sandbox-router.example.com/sb-123/execute",
             json={
                 "stdout": "",
                 "stderr": "command not found\n",
@@ -117,6 +117,87 @@ class TestAsyncSandboxRun:
         assert "test-sandbox" in str(exc_info.value)
         assert "dataplane_url" in str(exc_info.value)
 
+    async def test_run_with_env(self, sandbox, httpx_mock: HTTPXMock):
+        """Test running a command with environment variables."""
+        import json
+
+        httpx_mock.add_response(
+            method="POST",
+            url="https://sandbox-router.example.com/sb-123/execute",
+            json={"stdout": "hello\n", "stderr": "", "exit_code": 0},
+        )
+
+        await sandbox.run("echo $MY_VAR", env={"MY_VAR": "hello", "OTHER": "value"})
+
+        request = httpx_mock.get_request()
+        payload = json.loads(request.content)
+        assert payload["env"] == {"MY_VAR": "hello", "OTHER": "value"}
+
+    async def test_run_with_cwd(self, sandbox, httpx_mock: HTTPXMock):
+        """Test running a command with custom working directory."""
+        import json
+
+        httpx_mock.add_response(
+            method="POST",
+            url="https://sandbox-router.example.com/sb-123/execute",
+            json={"stdout": "/tmp\n", "stderr": "", "exit_code": 0},
+        )
+
+        await sandbox.run("pwd", cwd="/tmp")
+
+        request = httpx_mock.get_request()
+        payload = json.loads(request.content)
+        assert payload["cwd"] == "/tmp"
+
+    async def test_run_with_custom_shell(self, sandbox, httpx_mock: HTTPXMock):
+        """Test running a command with custom shell."""
+        import json
+
+        httpx_mock.add_response(
+            method="POST",
+            url="https://sandbox-router.example.com/sb-123/execute",
+            json={"stdout": "", "stderr": "", "exit_code": 0},
+        )
+
+        await sandbox.run("echo hello", shell="/bin/sh")
+
+        request = httpx_mock.get_request()
+        payload = json.loads(request.content)
+        assert payload["shell"] == "/bin/sh"
+
+    async def test_run_default_shell(self, sandbox, httpx_mock: HTTPXMock):
+        """Test that default shell is /bin/bash."""
+        import json
+
+        httpx_mock.add_response(
+            method="POST",
+            url="https://sandbox-router.example.com/sb-123/execute",
+            json={"stdout": "", "stderr": "", "exit_code": 0},
+        )
+
+        await sandbox.run("echo hello")
+
+        request = httpx_mock.get_request()
+        payload = json.loads(request.content)
+        assert payload["shell"] == "/bin/bash"
+
+    async def test_run_omits_none_values(self, sandbox, httpx_mock: HTTPXMock):
+        """Test that None values for env and cwd are omitted from payload."""
+        import json
+
+        httpx_mock.add_response(
+            method="POST",
+            url="https://sandbox-router.example.com/sb-123/execute",
+            json={"stdout": "", "stderr": "", "exit_code": 0},
+        )
+
+        await sandbox.run("echo hello", env=None, cwd=None)
+
+        request = httpx_mock.get_request()
+        payload = json.loads(request.content)
+        assert "env" not in payload
+        assert "cwd" not in payload
+
 
 class TestAsyncSandboxWrite:
     """Tests for async sandbox file write."""
@@ -125,7 +206,7 @@ class TestAsyncSandboxWrite:
         """Test writing a text file."""
         httpx_mock.add_response(
             method="POST",
-            url="https://sandbox-router.example.com/tenant/sb-123/upload?path=%2Fapp%2Ftest.txt",
+            url="https://sandbox-router.example.com/sb-123/upload?path=%2Fapp%2Ftest.txt",
             json={
                 "path": "/app/test.txt",
                 "written": 11,
@@ -145,7 +226,7 @@ class TestAsyncSandboxWrite:
         """Test writing a binary file."""
         httpx_mock.add_response(
             method="POST",
-            url="https://sandbox-router.example.com/tenant/sb-123/upload?path=%2Fapp%2Fdata.bin",
+            url="https://sandbox-router.example.com/sb-123/upload?path=%2Fapp%2Fdata.bin",
             json={
                 "path": "/app/data.bin",
                 "written": 4,
@@ -187,7 +268,7 @@ class TestAsyncSandboxRead:
         # URL uses query parameter with encoded path
         httpx_mock.add_response(
             method="GET",
-            url="https://sandbox-router.example.com/tenant/sb-123/download?path=%2Fapp%2Ftest.txt",
+            url="https://sandbox-router.example.com/sb-123/download?path=%2Fapp%2Ftest.txt",
             content=b"hello world",
             headers={"Content-Type": "application/octet-stream"},
         )
@@ -202,7 +283,7 @@ class TestAsyncSandboxRead:
 
         httpx_mock.add_response(
             method="GET",
-            url="https://sandbox-router.example.com/tenant/sb-123/download?path=%2Fapp%2Fdata.bin",
+            url="https://sandbox-router.example.com/sb-123/download?path=%2Fapp%2Fdata.bin",
             content=binary_data,
             headers={"Content-Type": "application/octet-stream"},
         )
@@ -215,7 +296,7 @@ class TestAsyncSandboxRead:
         """Test reading non-existent file."""
         httpx_mock.add_response(
             method="GET",
-            url="https://sandbox-router.example.com/tenant/sb-123/download?path=%2Fapp%2Fnonexistent.txt",
+            url="https://sandbox-router.example.com/sb-123/download?path=%2Fapp%2Fnonexistent.txt",
             json={"error": "NotFound", "message": "file not found"},
             status_code=404,
         )

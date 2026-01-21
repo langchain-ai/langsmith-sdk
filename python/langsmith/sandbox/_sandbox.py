@@ -115,12 +115,22 @@ class Sandbox:
             )
         return self.dataplane_url
 
-    def run(self, command: str, timeout: int = 60) -> ExecutionResult:
+    def run(
+        self,
+        command: str,
+        timeout: int = 60,
+        env: Optional[dict[str, str]] = None,
+        cwd: Optional[str] = None,
+        shell: str = "/bin/bash",
+    ) -> ExecutionResult:
         """Execute a command in the sandbox.
 
         Args:
             command: Shell command to execute.
             timeout: Command timeout in seconds.
+            env: Environment variables to set for the command.
+            cwd: Working directory for command execution. If None, uses sandbox default.
+            shell: Shell to use for command execution. Defaults to "/bin/bash".
 
         Returns:
             ExecutionResult with stdout, stderr, and exit_code.
@@ -134,7 +144,15 @@ class Sandbox:
         """
         dataplane_url = self._require_dataplane_url()
         url = f"{dataplane_url}/execute"
-        payload = {"command": command, "timeout": timeout}
+        payload: dict[str, Any] = {
+            "command": command,
+            "timeout": timeout,
+            "shell": shell,
+        }
+        if env is not None:
+            payload["env"] = env
+        if cwd is not None:
+            payload["cwd"] = cwd
 
         try:
             response = self._client._http.post(url, json=payload, timeout=timeout + 10)

@@ -165,7 +165,7 @@ client.create_template(name="fast-python", image="python:3.12-slim")
 pool = client.create_pool(
     name="python-pool",
     template_name="fast-python",
-    replicas=5,
+    replicas=2,
 )
 
 # Sandboxes from pooled templates start faster
@@ -173,10 +173,7 @@ with client.sandbox(template_name="fast-python") as sb:
     result = sb.run("python --version")
 
 # Scale the pool
-client.update_pool("python-pool", replicas=10)
-
-# Pause the pool (set replicas to 0)
-client.update_pool("python-pool", replicas=0)
+client.update_pool("python-pool", replicas=3)
 
 # Delete the pool
 client.delete_pool("python-pool")

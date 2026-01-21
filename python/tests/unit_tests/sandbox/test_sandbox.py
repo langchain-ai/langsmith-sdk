@@ -114,6 +114,87 @@ class TestSandboxRun:
         assert "test-sandbox" in str(exc_info.value)
         assert "dataplane_url" in str(exc_info.value)
 
+    def test_run_with_env(self, sandbox, httpx_mock: HTTPXMock):
+        """Test running a command with environment variables."""
+        import json
+
+        httpx_mock.add_response(
+            method="POST",
+            url="https://sandbox-router.example.com/sb-123/execute",
+            json={"stdout": "hello\n", "stderr": "", "exit_code": 0},
+        )
+
+        sandbox.run("echo $MY_VAR", env={"MY_VAR": "hello", "OTHER": "value"})
+
+        request = httpx_mock.get_request()
+        payload = json.loads(request.content)
+        assert payload["env"] == {"MY_VAR": "hello", "OTHER": "value"}
+
+    def test_run_with_cwd(self, sandbox, httpx_mock: HTTPXMock):
+        """Test running a command with custom working directory."""
+        import json
+
+        httpx_mock.add_response(
+            method="POST",
+            url="https://sandbox-router.example.com/sb-123/execute",
+            json={"stdout": "/tmp\n", "stderr": "", "exit_code": 0},
+        )
+
+        sandbox.run("pwd", cwd="/tmp")
+
+        request = httpx_mock.get_request()
+        payload = json.loads(request.content)
+        assert payload["cwd"] == "/tmp"
+
+    def test_run_with_custom_shell(self, sandbox, httpx_mock: HTTPXMock):
+        """Test running a command with custom shell."""
+        import json
+
+        httpx_mock.add_response(
+            method="POST",
+            url="https://sandbox-router.example.com/sb-123/execute",
+            json={"stdout": "", "stderr": "", "exit_code": 0},
+        )
+
+        sandbox.run("echo hello", shell="/bin/sh")
+
+        request = httpx_mock.get_request()
+        payload = json.loads(request.content)
+        assert payload["shell"] == "/bin/sh"
+
+    def test_run_default_shell(self, sandbox, httpx_mock: HTTPXMock):
+        """Test that default shell is /bin/bash."""
+        import json
+
+        httpx_mock.add_response(
+            method="POST",
+            url="https://sandbox-router.example.com/sb-123/execute",
+            json={"stdout": "", "stderr": "", "exit_code": 0},
+        )
+
+        sandbox.run("echo hello")
+
+        request = httpx_mock.get_request()
+        payload = json.loads(request.content)
+        assert payload["shell"] == "/bin/bash"
+
+    def test_run_omits_none_values(self, sandbox, httpx_mock: HTTPXMock):
+        """Test that None values for env and cwd are omitted from payload."""
+        import json
+
+        httpx_mock.add_response(
+            method="POST",
+            url="https://sandbox-router.example.com/sb-123/execute",
+            json={"stdout": "", "stderr": "", "exit_code": 0},
+        )
+
+        sandbox.run("echo hello", env=None, cwd=None)
+
+        request = httpx_mock.get_request()
+        payload = json.loads(request.content)
+        assert "env" not in payload
+        assert "cwd" not in payload
+
 
 class TestSandboxWrite:
     """Tests for sandbox file write."""
