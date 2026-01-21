@@ -928,6 +928,11 @@ class trace:
 
             Only for root runs in evaluation.
         exceptions_to_handle: Exception types to ignore.
+        enabled: Whether tracing is enabled for this context.
+
+            - ``None`` (default): Uses the current context/environment setting.
+            - ``True``: Forces tracing on, overriding context.
+            - ``False``: Forces tracing off for this trace (returns a non-recording run).
         extra: Extra data to send to LangSmith.
 
             Use 'metadata' instead.
@@ -988,6 +993,7 @@ class trace:
         reference_example_id: Optional[ls_client.ID_TYPE] = None,
         exceptions_to_handle: Optional[tuple[type[BaseException], ...]] = None,
         attachments: Optional[schemas.Attachments] = None,
+        enabled: Optional[bool] = None,
         **kwargs: Any,
     ):
         """Initialize the trace context manager.
@@ -1017,10 +1023,15 @@ class trace:
         self.run_id = run_id
         self.reference_example_id = reference_example_id
         self.exceptions_to_handle = exceptions_to_handle
-        self.new_run: Optional[run_trees.RunTree] = None
+        self.enabled = enabled
+        self.new_run: Union[run_trees.RunTree, run_trees.NonRecordingRunTree] = (
+            run_trees.NonRecordingRunTree()
+        )
         self.old_ctx: Optional[dict] = None
 
-    def _setup(self) -> run_trees.RunTree:
+    def _setup(
+        self,
+    ) -> Union[run_trees.RunTree, run_trees.NonRecordingRunTree]:
         """Set up the tracing context and create a new run.
 
         This method initializes the tracing context, merges tags and metadata,
@@ -1029,9 +1040,11 @@ class trace:
 
         Returns:
             run_trees.RunTree: The newly created run.
+            run_trees.NonRecordingRunTree: A non-recording run if tracing is disabled.
         """
         self.old_ctx = get_tracing_context()
-        enabled = utils.tracing_is_enabled(self.old_ctx)
+        context_enabled = utils.tracing_is_enabled(self.old_ctx)
+        enabled = self.enabled if self.enabled is not None else context_enabled
 
         outer_tags = _context._TAGS.get() or _context._GLOBAL_TAGS
         outer_metadata = _context._METADATA.get() or _context._GLOBAL_METADATA
@@ -1056,6 +1069,10 @@ class trace:
         extra_outer["metadata"] = metadata
 
         project_name_ = _get_project_name(self.project_name)
+
+        if enabled is False:
+            self.new_run = run_trees.NonRecordingRunTree()
+            return self.new_run
 
         if parent_run_ is not None and enabled:
             self.new_run = parent_run_.create_child(
@@ -1084,7 +1101,7 @@ class trace:
                 attachments=self.attachments or {},  # type: ignore
             )
 
-        if enabled is True:
+        if self.enabled is True or context_enabled is True:
             self.new_run.post()
         if enabled:
             _context._TAGS.set(tags_)
@@ -1111,8 +1128,6 @@ class trace:
             exc_value: The exception instance that occurred, if any.
             traceback: The traceback object associated with the exception, if any.
         """
-        if self.new_run is None:
-            return
         if exc_type is not None:
             if self.exceptions_to_handle and issubclass(
                 exc_type, self.exceptions_to_handle
@@ -1131,11 +1146,14 @@ class trace:
         else:
             warnings.warn("Tracing context was not set up properly.", RuntimeWarning)
 
-    def __enter__(self) -> run_trees.RunTree:
+    def __enter__(
+        self,
+    ) -> Union[run_trees.RunTree, run_trees.NonRecordingRunTree]:
         """Enter the context manager synchronously.
 
         Returns:
             run_trees.RunTree: The newly created run.
+            run_trees.NonRecordingRunTree: A non-recording run if tracing is disabled.
         """
         return self._setup()
 
@@ -1154,11 +1172,14 @@ class trace:
         """
         self._teardown(exc_type, exc_value, traceback)
 
-    async def __aenter__(self) -> run_trees.RunTree:
+    async def __aenter__(
+        self,
+    ) -> Union[run_trees.RunTree, run_trees.NonRecordingRunTree]:
         """Enter the context manager asynchronously.
 
         Returns:
             run_trees.RunTree: The newly created run.
+            run_trees.NonRecordingRunTree: A non-recording run if tracing is disabled.
         """
         ctx = copy_context()
         result = await aitertools.aio_to_thread(self._setup, __ctx=ctx)
