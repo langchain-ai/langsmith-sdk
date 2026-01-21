@@ -86,7 +86,7 @@ def begin_llm_run_from_assistant_messages(
     model = getattr(last_msg, "model", None)
     if parent is None:
         parent = get_current_run_tree()
-    if not parent:
+    if not parent.is_recording():
         return None, None
 
     inputs = build_llm_input(prompt, history)

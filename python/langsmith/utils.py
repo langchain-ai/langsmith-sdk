@@ -111,7 +111,7 @@ def tracing_is_enabled(ctx: Optional[dict] = None) -> Union[bool, Literal["local
     if tc["enabled"] is not None:
         return tc["enabled"]
     # Next check if we're mid-trace
-    if get_current_run_tree():
+    if get_current_run_tree().is_recording():
         return True
     # If a global fallback was configured, use it next.
     if _context._GLOBAL_TRACING_ENABLED is not None:
