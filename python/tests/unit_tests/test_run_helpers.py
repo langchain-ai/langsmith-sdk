@@ -1408,11 +1408,117 @@ def test_io_interops():
 def test_trace_respects_tracing_context():
     mock_client = _get_mock_client()
     with tracing_context(enabled=False):
-        with trace(name="foo", inputs={"a": 1}, client=mock_client):
+        with trace(name="foo", inputs={"a": 1}, client=mock_client) as run:
             pass
+    assert not run.is_recording()
 
     mock_calls = _get_calls(mock_client)
     assert not mock_calls
+
+
+def test_trace_enabled_false_overrides_context(mock_client: Client) -> None:
+    """Verify that enabled=False on trace() disables tracing.
+
+    Even with tracing_context(enabled=True).
+    """
+    with tracing_context(enabled=True):
+        with trace(name="My Operation", client=mock_client, enabled=False) as run:
+            result = 5 * 2
+
+    assert result == 10
+    assert not run.is_recording()
+    mock_calls = _get_calls(mock_client)
+    assert len(mock_calls) == 0  # No tracing should occur
+
+
+def test_trace_enabled_true_overrides_context(mock_client: Client) -> None:
+    """Verify that enabled=True on trace() forces tracing.
+
+    Even with tracing_context(enabled=False).
+    """
+    with tracing_context(enabled=False):
+        with trace(name="My Operation", client=mock_client, enabled=True) as run:
+            result = 5 * 2
+            run.end(outputs={"result": result})
+
+    assert result == 10
+    assert run.is_recording()
+    mock_calls = _get_calls(mock_client, minimum=1)
+    assert len(mock_calls) >= 1  # Tracing should occur despite context
+
+
+async def test_trace_async_enabled_false(mock_client: Client) -> None:
+    """Verify that enabled=False works with async context manager."""
+    with tracing_context(enabled=True):
+        async with trace(
+            name="Async Operation", client=mock_client, enabled=False
+        ) as run:
+            result = 5 * 2
+
+    assert result == 10
+    assert not run.is_recording()
+    mock_calls = _get_calls(mock_client)
+    assert len(mock_calls) == 0  # No tracing should occur
+
+
+async def test_trace_async_enabled_true_overrides_context(
+    mock_client: Client,
+) -> None:
+    """Verify that enabled=True forces tracing for async context manager.
+
+    Even when context is disabled.
+    """
+    with tracing_context(enabled=False):
+        async with trace(
+            name="Async Operation", client=mock_client, enabled=True
+        ) as run:
+            result = 5 * 2
+            run.end(outputs={"result": result})
+
+    assert result == 10
+    assert run.is_recording()
+    mock_calls = _get_calls(mock_client, minimum=1)
+    assert len(mock_calls) >= 1  # Tracing should occur despite context
+
+
+def test_trace_enabled_does_not_propagate(mock_client: Client) -> None:
+    """Test that enabled setting applies only to its trace, not nested calls."""
+    with tracing_context(enabled=True):
+        with trace(name="outer_trace", client=mock_client, enabled=False) as outer_run:
+            with trace(
+                name="inner_trace", client=mock_client, enabled=True
+            ) as inner_run:
+                inner_run.end(outputs={"result": "inner"})
+
+    assert not outer_run.is_recording()
+    assert inner_run.is_recording()
+    mock_calls = _get_calls(mock_client, minimum=1)
+    datas = _get_data(mock_calls)
+    # outer_trace should NOT be traced (enabled=False)
+    # inner_trace SHOULD be traced (enabled=True) - setting doesn't propagate
+    names = [p.get("name") for _, p in datas if p.get("name")]
+    assert "outer_trace" not in names
+    assert "inner_trace" in names
+
+
+def test_trace_nested_outer_enabled_inner_disabled(mock_client: Client) -> None:
+    """Test nested trace() where outer is enabled and inner is disabled."""
+    with tracing_context(enabled=True):
+        with trace(name="outer_trace", client=mock_client, enabled=True) as outer_run:
+            with trace(
+                name="inner_trace", client=mock_client, enabled=False
+            ) as inner_run:
+                pass
+            outer_run.end(outputs={"result": "outer"})
+
+    assert outer_run.is_recording()
+    assert not inner_run.is_recording()
+    mock_calls = _get_calls(mock_client, minimum=1)
+    datas = _get_data(mock_calls)
+    # Only outer_trace should be traced, not inner_trace
+    names = [p.get("name") for _, p in datas if p.get("name")]
+    assert "outer_trace" in names
+    assert "inner_trace" not in names
 
 
 def test_trace_nested_enable_disable():
