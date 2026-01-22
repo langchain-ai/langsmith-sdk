@@ -747,6 +747,9 @@ export class Client implements LangSmithTracingClientInterface {
 
   private _multipartDisabled = false;
 
+  private _runCompressionDisabled =
+    getLangSmithEnvironmentVariable("DISABLE_RUN_COMPRESSION") === "true";
+
   debug = getEnvironmentVariable("LANGSMITH_DEBUG") === "true";
 
   constructor(config: ClientConfig = {}) {
@@ -1201,7 +1204,9 @@ export class Client implements LangSmithTracingClientInterface {
           !this._multipartDisabled &&
           (serverInfo?.batch_ingest_config?.use_multipart_endpoint ?? true);
         if (useMultipart) {
-          const useGzip = serverInfo?.instance_flags?.gzip_body_enabled;
+          const useGzip =
+            !this._runCompressionDisabled &&
+            serverInfo?.instance_flags?.gzip_body_enabled;
           try {
             await this.multipartIngestRuns(ingestParams, {
               ...options,
@@ -3051,7 +3056,8 @@ export class Client implements LangSmithTracingClientInterface {
   }: UploadCSVParams): Promise<Dataset> {
     const url = `${this.apiUrl}/datasets/upload`;
     const formData = new FormData();
-    formData.append("file", csvFile, fileName);
+    const csvBlob = new Blob([csvFile], { type: "text/csv" });
+    formData.append("file", csvBlob, fileName);
     inputKeys.forEach((key) => {
       formData.append("input_keys", key);
     });
