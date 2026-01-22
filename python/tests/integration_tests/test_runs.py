@@ -113,6 +113,7 @@ def test_nested_runs(
     assert runs_dict["my_llm_run"].inputs == {"text": "foo"}
 
 
+@skip_if_rate_limited
 async def test_list_runs_multi_project(langchain_client: Client):
     project_names = [
         "__My Tracer Project - test_list_runs_multi_project" + uuid7().hex,
@@ -243,6 +244,7 @@ async def test_nested_async_runs_with_threadpool(langchain_client: Client):
             assert run.parent_run_id is None
 
 
+@skip_if_rate_limited
 async def test_context_manager(langchain_client: Client) -> None:
     project_name = "__My Tracer Project - test_context_manager"
 
@@ -462,6 +464,7 @@ async def test_end_metadata_with_run_tree(langchain_client: Client):
     assert run.outputs == {"result": "success"}
 
 
+@skip_if_rate_limited
 def test_trace_file_path(langchain_client: Client) -> None:
     """Test that you can trace attachments with file paths"""
     project_name = "__test_trace_file_path3" + uuid.uuid4().hex

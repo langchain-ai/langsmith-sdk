@@ -391,9 +391,9 @@ test("image and file data normalization", async () => {
     imgBuffer.byteOffset + imgBuffer.byteLength
   );
   const imgBase64 = imgBuffer.toString("base64");
-  const imgUrl = "https://picsum.photos/200/300";
+  const imgUrl = "https://smith.langchain.com/og_image.png";
   const imgDataUrl = `data:image/png;base64,${imgBase64}`;
-  const imgUrlObject = new URL("https://picsum.photos/200/300");
+  const imgUrlObject = new URL("https://smith.langchain.com/og_image.png");
 
   const result = await generateText({
     model: openai("gpt-5-nano"),

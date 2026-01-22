@@ -73,7 +73,6 @@ from langsmith._internal._background_thread import (
     tracing_control_thread_func as _tracing_control_thread_func,
 )
 from langsmith._internal._beta_decorator import warn_beta
-from langsmith._internal._cache import PromptCache
 from langsmith._internal._compressed_traces import CompressedTraces
 from langsmith._internal._constants import (
     _AUTO_SCALE_UP_NTHREADS_LIMIT,
@@ -98,6 +97,7 @@ from langsmith._internal._operations import (
 )
 from langsmith._internal._serde import dumps_json as _dumps_json
 from langsmith._internal._uuid import uuid7
+from langsmith.cache import Cache
 from langsmith.schemas import AttachmentInfo, ExampleWithRuns
 
 logger = logging.getLogger(__name__)
@@ -188,9 +188,9 @@ DEFAULT_INSTRUCTIONS = "How are people using my agent? What are they asking abou
 
 @lru_cache(maxsize=1)
 def _lc_load_allowed_objects_arg_supported() -> bool:
-    """Check if the installed langchain_core.load.load supports the 'allowed_objects' parameter.
+    """Check if the installed `langchain_core.load.load` supports the `allowed_objects` parameter.
 
-    Returns True if langchain-core >= 0.3.81 and < 1.0, or >= 1.2.5.
+    Returns `True` if `langchain-core >= 0.3.81` and `< 1.0`, or `>= 1.2.5`.
     """
     allowed_objects_supported = False
     try:
@@ -257,8 +257,8 @@ def _process_prompt_manifest(
 ) -> Any:
     """Process a prompt manifest into a LangChain prompt object.
 
-    This is the common logic shared between Client.pull_prompt() and
-    AsyncClient.pull_prompt().
+    This is the common logic shared between `Client.pull_prompt()` and
+    `AsyncClient.pull_prompt()`.
 
     Args:
         prompt_object: The prompt commit object containing the manifest.
@@ -270,7 +270,7 @@ def _process_prompt_manifest(
         The processed prompt object.
 
     Raises:
-        ImportError: If langchain-core is not installed.
+        ImportError: If `langchain-core` is not installed.
         ValueError: If secrets are required but not provided.
     """
     try:
@@ -418,10 +418,10 @@ def _is_langchain_hosted(url: str) -> bool:
     """Check if the URL is langchain hosted.
 
     Args:
-        url (str): The URL to check.
+        url: The URL to check.
 
     Returns:
-        bool: True if the URL is langchain hosted, False otherwise.
+        `True` if the URL is langchain hosted, `False` otherwise.
     """
     try:
         netloc = urllib_parse.urlsplit(url).netloc.split(":")[0]
@@ -440,10 +440,10 @@ RUN_TYPE_T = Literal[
 def _default_retry_config() -> Retry:
     """Get the default retry configuration.
 
-    If urllib3 version is 1.26 or greater, retry on all methods.
+    If `urllib3` version is `1.26` or greater, retry on all methods.
 
     Returns:
-        Retry: The default retry configuration.
+        The default retry configuration.
     """
     retry_params = dict(
         total=3,
@@ -472,7 +472,7 @@ def close_session(session: requests.Session) -> None:
     """Close the session.
 
     Args:
-        session (requests.Session): The session to close.
+        session: The session to close.
     """
     logger.debug("Closing Client.session")
     session.close()
@@ -482,11 +482,8 @@ def _validate_api_key_if_hosted(api_url: str, api_key: Optional[str]) -> None:
     """Verify API key is provided if url not localhost.
 
     Args:
-        api_url (str): The API URL.
-        api_key (Optional[str]): The API key.
-
-    Returns:
-        None
+        api_url: The API URL.
+        api_key: The API key.
 
     Raises:
         LangSmithUserError: If the API key is not provided when using the hosted service.
@@ -525,7 +522,7 @@ def _get_tracing_sampling_rate(
     """Get the tracing sampling rate.
 
     Returns:
-        Optional[float]: The tracing sampling rate.
+        The tracing sampling rate.
     """
     if tracing_sampling_rate is None:
         sampling_rate_str = ls_utils.get_env_var("TRACING_SAMPLING_RATE")
@@ -666,7 +663,7 @@ class Client:
         "_max_batch_size_bytes",
         "_tracing_error_callback",
         "_multipart_disabled",
-        "_prompt_cache",
+        "_cache",
     ]
 
     _api_key: Optional[str]
@@ -704,67 +701,74 @@ class Client:
         max_batch_size_bytes: Optional[int] = None,
         headers: Optional[dict[str, str]] = None,
         tracing_error_callback: Optional[Callable[[Exception], None]] = None,
-        prompt_cache_enabled: Optional[bool] = None,
-        prompt_cache_max_size: Optional[int] = None,
-        prompt_cache_ttl_seconds: Optional[float] = None,
-        prompt_cache_refresh_interval_seconds: Optional[float] = None,
-        prompt_cache_path: Optional[str] = None,
+        cache: Union[Cache, bool] = False,
     ) -> None:
         """Initialize a `Client` instance.
 
         Args:
-            api_url (Optional[str]): URL for the LangSmith API. Defaults to the `LANGCHAIN_ENDPOINT`
-                environment variable or `https://api.smith.langchain.com` if not set.
-            api_key (Optional[str]): API key for the LangSmith API. Defaults to the `LANGCHAIN_API_KEY`
-                environment variable.
-            retry_config (Optional[Retry]): Retry configuration for the `HTTPAdapter`.
-            timeout_ms (Optional[Union[int, Tuple[int, int]]]): Timeout for the `HTTPAdapter`.
+            api_url: URL for the LangSmith API.
 
-                Can also be a 2-tuple of `(connect timeout, read timeout)` to set them separately.
-            web_url (Optional[str]): URL for the LangSmith web app. Default is auto-inferred from
-                the `ENDPOINT`.
-            session (Optional[requests.Session]): The session to use for requests.
+                Defaults to the `LANGCHAIN_ENDPOINT` environment variable or
+                `https://api.smith.langchain.com` if not set.
+            api_key: API key for the LangSmith API.
+
+                Defaults to the `LANGCHAIN_API_KEY` environment variable.
+            retry_config: Retry configuration for the `HTTPAdapter`.
+            timeout_ms: Timeout for the `HTTPAdapter`.
+
+                Can also be a 2-tuple of `(connect timeout, read timeout)` to set them
+                separately.
+            web_url: URL for the LangSmith web app.
+
+                Default is auto-inferred from the `ENDPOINT`.
+            session: The session to use for requests.
 
                 If `None`, a new session will be created.
-            auto_batch_tracing (bool, default=True): Whether to automatically batch tracing.
-            anonymizer (Optional[Callable[[dict], dict]]): A function applied for masking serialized run inputs and outputs,
-                before sending to the API.
-            hide_inputs (Optional[Union[Callable[[dict], dict], bool]]): Whether to hide run inputs when tracing with this client.
+            auto_batch_tracing: Whether to automatically batch tracing.
+            anonymizer: A function applied for masking serialized run inputs and
+                outputs, before sending to the API.
+            hide_inputs: Whether to hide run inputs when tracing with this client.
 
                 If `True`, hides the entire inputs.
 
                 If a function, applied to all run inputs when creating runs.
-            hide_outputs (Optional[Union[Callable[[dict], dict], bool]]): Whether to hide run outputs when tracing with this client.
+            hide_outputs: Whether to hide run outputs when tracing with this client.
 
                 If `True`, hides the entire outputs.
 
                 If a function, applied to all run outputs when creating runs.
-            hide_metadata (Optional[Union[Callable[[dict], dict], bool]]): Whether to hide run metadata when tracing with this client.
+            hide_metadata: Whether to hide run metadata when tracing with this client.
 
                 If `True`, hides the entire metadata.
 
                 If a function, applied to all run metadata when creating runs.
-            omit_traced_runtime_info (bool): Whether to omit runtime information from traced runs.
+            omit_traced_runtime_info: Whether to omit runtime information from traced
+                runs.
 
-                If `True`, runtime information (SDK version, platform, Python version, etc.)
-                will not be stored in the `extra.runtime` field of runs.
+                If `True`, runtime information (SDK version, platform, Python version,
+                etc.) will not be stored in the `extra.runtime` field of runs.
 
                 Defaults to `False`.
-            process_buffered_run_ops (Optional[Callable[[Sequence[dict]], Sequence[dict]]]): A function applied to buffered run operations
-                that allows for modification of the raw run dicts before they are converted to multipart and compressed.
+            process_buffered_run_ops: A function applied to buffered run operations that
+                allows for modification of the raw run dicts before they are converted
+                to multipart and compressed.
 
-                Useful specifically for high throughput tracing where you need to apply a rate-limited API or other
-                costly process to the runs before they are sent to the API.
+                Useful specifically for high throughput tracing where you need to apply
+                a rate-limited API or other costly process to the runs before they are
+                sent to the API.
 
-                Note that the buffer will only flush automatically when `run_ops_buffer_size` is reached or a new run is added to the
-                buffer after `run_ops_buffer_timeout_ms` has elapsed - it will not flush outside of these conditions unless you manually
-                call `client.flush()`, so be sure to do this before your code exits.
-            run_ops_buffer_size (Optional[int]): Maximum number of run operations to collect in the buffer before applying
-                `process_buffered_run_ops` and sending to the API.
+                Note that the buffer will only flush automatically when
+                `run_ops_buffer_size` is reached or a new run is added to the buffer
+                after `run_ops_buffer_timeout_ms` has elapsed - it will not flush
+                outside of these conditions unless you manually call `client.flush()`,
+                so be sure to do this before your code exits.
+            run_ops_buffer_size: Maximum number of run operations to collect in the
+                buffer before applying `process_buffered_run_ops` and sending to the
+                API.
 
                 Required when `process_buffered_run_ops` is provided.
-            run_ops_buffer_timeout_ms (Optional[int]): Maximum time in milliseconds to wait before flushing the run ops buffer
-                when new runs are added.
+            run_ops_buffer_timeout_ms: Maximum time in milliseconds to wait before
+                flushing the run ops buffer when new runs are added.
 
                 Defaults to `5000`.
 
@@ -772,49 +776,62 @@ class Client:
             info: The information about the LangSmith API.
 
                 If not provided, it will be fetched from the API.
-            api_urls (Optional[Dict[str, str]]): A dictionary of write API URLs and their corresponding API keys.
+            api_urls: A dictionary of write API URLs and their corresponding API keys.
 
-                Useful for multi-tenant setups. Data is only read from the first
-                URL in the dictionary. However, ONLY Runs are written (`POST` and `PATCH`)
-                to all URLs in the dictionary. Feedback, sessions, datasets, examples,
-                annotation queues and evaluation results are only written to the first.
-            otel_tracer_provider (Optional[TracerProvider]): Optional tracer provider for OpenTelemetry integration.
+                Useful for multi-tenant setups.
+
+                Data is only read from the first URL in the dictionary. However, ONLY
+                Runs are written (`POST` and `PATCH`) to all URLs in the dictionary.
+                Feedback, sessions, datasets, examples, annotation queues and evaluation
+                results are only written to the first.
+            otel_tracer_provider: Optional tracer provider for OpenTelemetry
+                integration.
 
                 If not provided, a LangSmith-specific tracer provider will be used.
-            tracing_sampling_rate (Optional[float]): The sampling rate for tracing.
+            tracing_sampling_rate: The sampling rate for tracing.
 
-                If provided, overrides the `LANGCHAIN_TRACING_SAMPLING_RATE` environment variable.
+                If provided, overrides the `LANGCHAIN_TRACING_SAMPLING_RATE` environment
+                variable.
 
                 Should be a float between `0` and `1`, where `1` means trace everything
                 and `0` means trace nothing.
-            workspace_id (Optional[str]): The workspace ID.
+            workspace_id: The workspace ID.
 
                 Required for org-scoped API keys.
-            max_batch_size_bytes (Optional[int]): The maximum size of a batch of runs in bytes.
+            max_batch_size_bytes: The maximum size of a batch of runs in bytes.
 
                 If not provided, the default is set by the server.
-            headers (Optional[Dict[str, str]]): Additional HTTP headers to include in all requests.
-                These headers will be merged with the default headers (User-Agent, Accept, x-api-key, etc.).
-                Custom headers will not override the default required headers.
-            tracing_error_callback (Optional[Callable[[Exception], None]]): Optional callback function to handle errors.
+            headers: Additional HTTP headers to include in all requests.
+
+                These headers will be merged with the default headers (User-Agent,
+                Accept, x-api-key, etc.). Custom headers will not override the default
+                required headers.
+            tracing_error_callback: Optional callback function to handle errors.
 
                 Called when exceptions occur during tracing operations.
-            prompt_cache_enabled (Optional[bool]): Whether to enable prompt caching.
+            cache: Configuration for caching.
 
-                Defaults to `False`. Set to `True` or use the `LANGSMITH_PROMPT_CACHE_ENABLED`
-                environment variable to enable.
-            prompt_cache_max_size (Optional[int]): Maximum number of prompts to cache.
+                Can be:
 
-                Defaults to `100`.
-            prompt_cache_ttl_seconds (Optional[float]): Time-to-live for cached prompts in seconds.
+                - `True`: Enable caching with default settings
+                - `Cache` instance: Use custom cache configuration
+                - `False`: Disable caching (default)
 
-                After this time, cached prompts are considered stale and will be
-                refreshed in the background. Defaults to `3600` (1 hour).
-            prompt_cache_refresh_interval_seconds (Optional[float]): How often to check for
-                stale cache entries and refresh them in seconds. Defaults to `60` (1 minute).
-            prompt_cache_path (Optional[str]): Path to a JSON file to load cached prompts from
-                on initialization. Useful for offline mode. The file should have been created
-                using `client._prompt_cache.dump(path)`.
+                !!! example
+
+                    ```python
+                    from langsmith import Client, Cache
+
+                    # Enable with defaults
+                    client = Client(cache=True)
+
+                    # Or use custom configuration
+                    my_cache = Cache(
+                        max_size=100,
+                        ttl_seconds=3600,  # 1 hour, or None for infinite TTL
+                    )
+                    client = Client(cache=my_cache)
+                    ```
 
         Raises:
             LangSmithUserError: If the API key is not provided when using the hosted service.
@@ -1023,43 +1040,19 @@ class Client:
 
         self._tracing_error_callback = tracing_error_callback
 
-        # Initialize prompt cache
-        cache_enabled = (
-            prompt_cache_enabled
-            if prompt_cache_enabled is not None
-            else ls_utils.get_env_var("PROMPT_CACHE_ENABLED", default="false") == "true"
-        )
-
-        if cache_enabled:
-            self._prompt_cache: Optional[PromptCache] = PromptCache(
-                max_size=prompt_cache_max_size
-                or int(ls_utils.get_env_var("PROMPT_CACHE_MAX_SIZE", default="100")),
-                ttl_seconds=prompt_cache_ttl_seconds
-                or float(
-                    ls_utils.get_env_var("PROMPT_CACHE_TTL_SECONDS", default="3600")
-                ),
-                refresh_interval_seconds=prompt_cache_refresh_interval_seconds
-                or float(
-                    ls_utils.get_env_var(
-                        "PROMPT_CACHE_REFRESH_INTERVAL_SECONDS", default="60"
-                    )
-                ),
-                fetch_func=self._make_prompt_cache_fetch_func(),
-            )
-            # Load from file if path provided
-            cache_path = prompt_cache_path or ls_utils.get_env_var(
-                "PROMPT_CACHE_PATH", default=""
-            )
-            if cache_path:
-                self._prompt_cache.load(cache_path)
+        # Initialize cache
+        if cache is True:
+            self._cache: Optional[Cache] = Cache()
+        elif isinstance(cache, Cache):
+            self._cache = cache
         else:
-            self._prompt_cache = None
+            self._cache = None
 
     def _repr_html_(self) -> str:
         """Return an HTML representation of the instance with a link to the URL.
 
         Returns:
-            str: The HTML representation of the instance.
+            The HTML representation of the instance.
         """
         link = self._host_url
         return f'<a href="{link}", target="_blank" rel="noopener">LangSmith Client</a>'
@@ -1083,7 +1076,7 @@ class Client:
         """Return a string representation of the instance with a link to the URL.
 
         Returns:
-            str: The string representation of the instance.
+            The string representation of the instance.
         """
         return f"Client (API URL: {self.api_url})"
 
@@ -1174,7 +1167,7 @@ class Client:
         """Get the settings for the current tenant.
 
         Returns:
-            dict: The settings for the current tenant.
+            The settings for the current tenant.
         """
         if self._settings is None:
             response = self.request_with_retries("GET", "/settings")
@@ -1217,17 +1210,18 @@ class Client:
         """Send a request with retries.
 
         Args:
-            method (str): The HTTP request method.
-            pathname (str): The pathname of the request URL. Will be appended to the API URL.
-            request_kwargs (Mapping): Additional request parameters.
-            stop_after_attempt (int, default=1): The number of attempts to make.
-            retry_on (Optional[Sequence[Type[BaseException]]]): The exceptions to retry on.
+            method: The HTTP request method.
+            pathname: The pathname of the request URL. Will be appended to the API URL.
+            request_kwargs: Additional request parameters.
+            stop_after_attempt: The number of attempts to make.
+            retry_on: The exceptions to retry on.
 
                 In addition to: `[LangSmithConnectionError, LangSmithAPIError]`.
-            to_ignore (Optional[Sequence[Type[BaseException]]]): The exceptions to ignore / pass on.
-            handle_response (Optional[Callable[[requests.Response, int], Any]]): A function to handle the response and return whether to continue retrying.
-            _context (str, default=""): The context of the request.
-            **kwargs (Any): Additional keyword arguments to pass to the request.
+            to_ignore: The exceptions to ignore / pass on.
+            handle_response: A function to handle the response and return whether to
+                continue retrying.
+            _context: The context of the request.
+            **kwargs: Additional keyword arguments to pass to the request.
 
         Returns:
             The response object.
@@ -1441,8 +1435,8 @@ class Client:
         """Get a paginated list of items.
 
         Args:
-            path (str): The path of the request URL.
-            params (Optional[dict]): The query parameters.
+            path: The path of the request URL.
+            params: The query parameters.
 
         Yields:
             The items in the paginated list.
@@ -1478,10 +1472,10 @@ class Client:
         """Get a cursor paginated list of items.
 
         Args:
-            path (str): The path of the request URL.
-            body (Optional[dict]): The query body.
-            request_method (Literal["GET", "POST"], default="POST"): The HTTP request method.
-            data_key (str, default="runs"): The key in the response body that contains the items.
+            path: The path of the request URL.
+            body: The query body.
+            request_method: The HTTP request method.
+            data_key: The key in the response body that contains the items.
 
         Yields:
             The items in the paginated list.
@@ -1521,15 +1515,15 @@ class Client:
         """Upload a dataframe as individual examples to the LangSmith API.
 
         Args:
-            df (pd.DataFrame): The dataframe to upload.
-            name (str): The name of the dataset.
-            input_keys (Sequence[str]): The input keys.
-            output_keys (Sequence[str]): The output keys.
-            description (Optional[str]): The description of the dataset.
-            data_type (Optional[DataType]): The data type of the dataset.
+            df: The dataframe to upload.
+            name: The name of the dataset.
+            input_keys: The input keys.
+            output_keys: The output keys.
+            description: The description of the dataset.
+            data_type: The data type of the dataset.
 
         Returns:
-            Dataset: The uploaded dataset.
+            The uploaded dataset.
 
         Raises:
             ValueError: If the `csv_file` is not a `str` or `tuple`.
@@ -1581,20 +1575,20 @@ class Client:
         """Upload a CSV file to the LangSmith API.
 
         Args:
-            csv_file (Union[str, Tuple[str, io.BytesIO]]): The CSV file to upload.
+            csv_file: The CSV file to upload.
 
                 If a string, it should be the path.
 
-                If a tuple, it should be a tuple containing the filename
-                and a `BytesIO` object.
-            input_keys (Sequence[str]): The input keys.
-            output_keys (Sequence[str]): The output keys.
-            name (Optional[str]): The name of the dataset.
-            description (Optional[str]): The description of the dataset.
-            data_type (Optional[ls_schemas.DataType]): The data type of the dataset.
+                If a tuple, it should be a tuple containing the filename and a `BytesIO`
+                object.
+            input_keys: The input keys.
+            output_keys: The output keys.
+            name: The name of the dataset.
+            description: The description of the dataset.
+            data_type: The data type of the dataset.
 
         Returns:
-            Dataset: The uploaded dataset.
+            The uploaded dataset.
 
         Raises:
             ValueError: If the `csv_file` is not a string or tuple.
@@ -1671,12 +1665,12 @@ class Client:
         """Transform the given run object into a dictionary representation.
 
         Args:
-            run (Union[ls_schemas.Run, dict]): The run object to transform.
-            update (Optional[bool]): Whether the payload is for an "update" event.
-            copy (Optional[bool]): Whether to deepcopy run inputs/outputs.
+            run: The run object to transform.
+            update: Whether the payload is for an "update" event.
+            copy: Whether to deepcopy run inputs/outputs.
 
         Returns:
-            dict: The transformed run object as a dictionary.
+            The transformed run object as a dictionary.
         """
         if hasattr(run, "model_dump") and callable(getattr(run, "model_dump")):
             run_create: dict = run.model_dump()  # type: ignore
@@ -3130,32 +3124,32 @@ class Client:
         """List runs from the LangSmith API.
 
         Args:
-            project_id (Optional[Union[UUID, str], Sequence[Union[UUID, str]]]):
-                The ID(s) of the project to filter by.
-            project_name (Optional[Union[str, Sequence[str]]]): The name(s) of the project to filter by.
-            run_type (Optional[str]): The type of the runs to filter by.
-            trace_id (Optional[Union[UUID, str]]): The ID of the trace to filter by.
-            reference_example_id (Optional[Union[UUID, str]]): The ID of the reference example to filter by.
-            query (Optional[str]): The query string to filter by.
-            filter (Optional[str]): The filter string to filter by.
-            trace_filter (Optional[str]): Filter to apply to the ROOT run in the trace tree. This is meant to
-                be used in conjunction with the regular `filter` parameter to let you
-                filter runs by attributes of the root run within a trace.
-            tree_filter (Optional[str]): Filter to apply to OTHER runs in the trace tree, including
-                sibling and child runs. This is meant to be used in conjunction with
-                the regular `filter` parameter to let you filter runs by attributes
-                of any run within a trace.
-            is_root (Optional[bool]): Whether to filter by root runs.
-            parent_run_id (Optional[Union[UUID, str]]):
-                The ID of the parent run to filter by.
-            start_time (Optional[datetime.datetime]):
-                The start time to filter by.
-            error (Optional[bool]): Whether to filter by error status.
-            run_ids (Optional[Sequence[Union[UUID, str]]]):
-                The IDs of the runs to filter by.
-            select (Optional[Sequence[str]]): The fields to select.
-            limit (Optional[int]): The maximum number of runs to return.
-            **kwargs (Any): Additional keyword arguments.
+            project_id: The ID(s) of the project to filter by.
+            project_name: The name(s) of the project to filter by.
+            run_type: The type of the runs to filter by.
+            trace_id: The ID of the trace to filter by.
+            reference_example_id: The ID of the reference example to filter by.
+            query: The query string to filter by.
+            filter: The filter string to filter by.
+            trace_filter: Filter to apply to the ROOT run in the trace tree.
+
+                This is meant to be used in conjunction with the regular `filter`
+                parameter to let you filter runs by attributes of the root run within a
+                trace.
+            tree_filter: Filter to apply to OTHER runs in the trace tree, including
+                sibling and child runs.
+
+                This is meant to be used in conjunction with the regular `filter`
+                parameter to let you filter runs by attributes of any run within a
+                trace.
+            is_root: Whether to filter by root runs.
+            parent_run_id: The ID of the parent run to filter by.
+            start_time: The start time to filter by.
+            error: Whether to filter by error status.
+            run_ids: The IDs of the runs to filter by.
+            select: The fields to select.
+            limit: The maximum number of runs to return.
+            **kwargs: Additional keyword arguments.
 
         Yields:
             The runs.
@@ -4023,7 +4017,9 @@ class Client:
             result_df = example_df.merge(result_df, left_index=True, right_index=True)
 
         # Flatten dict columns into dot syntax for easier access
-        return pd.json_normalize(result_df.to_dict(orient="records"))
+        return pd.json_normalize(
+            cast(list[dict[str, Any]], result_df.to_dict(orient="records"))
+        )
 
     def list_projects(
         self,
@@ -7745,6 +7741,40 @@ class Client:
         commits = response.json()["commits"]
         return commits[0]["commit_hash"] if commits else None
 
+    def _create_commit_tags(
+        self, prompt_owner_and_name: str, commit_id: str, tags: Union[str, list[str]]
+    ) -> None:
+        """Update tags for a prompt commit.
+
+        Args:
+            prompt_owner_and_name (str): The owner and name of the prompt in the format 'owner/repo'.
+            commit_id (str): The commit hash/ID to tag.
+            tags (Union[str, list[str]]): A single tag or list of tags to apply to the commit.
+
+        Raises:
+            requests.exceptions.HTTPError: If the request fails.
+        """
+        # Normalize tags to always be a list
+        tag_list = [tags] if isinstance(tags, str) else tags
+
+        # Post each tag individually since there's no bulk endpoint
+        def create_tag(tag: str):
+            payload = {
+                "tag_name": tag,
+                "commit_id": commit_id,
+            }
+            response = self.request_with_retries(
+                "POST", f"/repos/{prompt_owner_and_name}/tags", json=payload
+            )
+            ls_utils.raise_for_status_with_text(response)
+
+        # Execute requests in parallel threads
+        with cf.ThreadPoolExecutor() as executor:
+            futures = [executor.submit(create_tag, tag) for tag in tag_list]
+            # Wait for all requests to complete and raise any exceptions
+            for future in cf.as_completed(futures):
+                future.result()
+
     def _like_or_unlike_prompt(
         self, prompt_identifier: str, like: bool
     ) -> dict[str, int]:
@@ -7951,6 +7981,7 @@ class Client:
         object: Any,
         *,
         parent_commit_hash: Optional[str] = None,
+        tags: Optional[str | list[str]] = None,
     ) -> str:
         """Create a commit for an existing prompt.
 
@@ -7959,6 +7990,8 @@ class Client:
             object (Any): The LangChain object to commit.
             parent_commit_hash (Optional[str]): The hash of the parent commit.
                 Defaults to latest commit.
+            tags (Optional[str | list[str]]): A single tag or list of tags to apply to the commit.
+                Defaults to None.
 
         Returns:
             str: The url of the prompt commit.
@@ -7972,16 +8005,21 @@ class Client:
                 "Prompt does not exist, you must create it first."
             )
 
-        try:
-            from langchain_core.load import dumps
-        except ImportError:
-            raise ImportError(
-                "The client.create_commit function requires the langchain-core"
-                "package to run.\nInstall with `pip install langchain-core`"
-            )
+        # Check if object is already a serialized LangChain manifest
+        prepped = prep_obj_for_push(object)
+        if isinstance(prepped, dict) and "id" in prepped and "lc" in prepped:
+            manifest_dict = prepped
+        else:
+            try:
+                from langchain_core.load import dumps
+            except ImportError:
+                raise ImportError(
+                    "The client.create_commit function requires the langchain-core"
+                    "package to run.\nInstall with `pip install langchain-core`"
+                )
 
-        json_object = dumps(prep_obj_for_push(object))
-        manifest_dict = json.loads(json_object)
+            json_object = dumps(prepped)
+            manifest_dict = json.loads(json_object)
 
         owner, prompt_name, _ = ls_utils.parse_prompt_identifier(prompt_identifier)
         prompt_owner_and_name = f"{owner}/{prompt_name}"
@@ -7994,7 +8032,11 @@ class Client:
             "POST", f"/commits/{prompt_owner_and_name}", json=request_dict
         )
 
-        commit_hash = response.json()["commit"]["commit_hash"]
+        commit_json = response.json()["commit"]
+        commit_hash = commit_json["commit_hash"]
+        commit_id = commit_json["id"]
+        if tags:
+            self._create_commit_tags(prompt_owner_and_name, commit_id, tags)
         return self._get_prompt_url(f"{prompt_owner_and_name}:{commit_hash}")
 
     def update_prompt(
@@ -8074,7 +8116,7 @@ class Client:
         response = self.request_with_retries("DELETE", f"/repos/{owner}/{prompt_name}")
         response.raise_for_status()
 
-    def _get_prompt_cache_key(
+    def _get_cache_key(
         self, prompt_identifier: str, include_model: Optional[bool] = False
     ) -> str:
         """Generate a cache key for a prompt.
@@ -8088,25 +8130,6 @@ class Client:
         """
         suffix = ":with_model" if include_model else ""
         return f"{prompt_identifier}{suffix}"
-
-    def _make_prompt_cache_fetch_func(self) -> Callable[[str], ls_schemas.PromptCommit]:
-        """Create a fetch function for the prompt cache background refresh.
-
-        Returns:
-            A function that takes a cache key and returns the fetched PromptCommit.
-        """
-
-        def fetch(cache_key: str) -> ls_schemas.PromptCommit:
-            # Parse cache key to extract prompt_identifier and include_model
-            if cache_key.endswith(":with_model"):
-                prompt_identifier = cache_key[:-11]  # Remove ":with_model"
-                include_model = True
-            else:
-                prompt_identifier = cache_key
-                include_model = False
-            return self._fetch_prompt_from_api(prompt_identifier, include_model)
-
-        return fetch
 
     def _fetch_prompt_from_api(
         self,
@@ -8157,9 +8180,9 @@ class Client:
             ValueError: If no commits are found for the prompt.
         """
         # Try cache first if enabled
-        if not skip_cache and self._prompt_cache is not None:
-            cache_key = self._get_prompt_cache_key(prompt_identifier, include_model)
-            cached = self._prompt_cache.get(cache_key)
+        if not skip_cache and self._cache is not None:
+            cache_key = self._get_cache_key(prompt_identifier, include_model)
+            cached = self._cache.get(cache_key)
             if cached is not None:
                 return cached
 
@@ -8167,9 +8190,9 @@ class Client:
         result = self._fetch_prompt_from_api(prompt_identifier, include_model)
 
         # Store in cache (background thread will handle refresh when stale)
-        if not skip_cache and self._prompt_cache is not None:
-            cache_key = self._get_prompt_cache_key(prompt_identifier, include_model)
-            self._prompt_cache.set(cache_key, result)
+        if not skip_cache and self._cache is not None:
+            cache_key = self._get_cache_key(prompt_identifier, include_model)
+            self._cache.set(cache_key, result)
 
         return result
 
@@ -8299,6 +8322,7 @@ class Client:
         description: Optional[str] = None,
         readme: Optional[str] = None,
         tags: Optional[Sequence[str]] = None,
+        commit_tags: Optional[str | list[str]] = None,
     ) -> str:
         """Push a prompt to the LangSmith API.
 
@@ -8321,6 +8345,8 @@ class Client:
             readme (Optional[str]): A readme for the prompt.
                 Defaults to an empty string.
             tags (Optional[Sequence[str]]): A list of tags for the prompt.
+                Defaults to an empty list.
+            commit_tags (Optional[str | list[str]]): A single tag or list of tags for the prompt commit.
                 Defaults to an empty list.
 
         Returns:
@@ -8355,14 +8381,15 @@ class Client:
             prompt_identifier,
             object,
             parent_commit_hash=parent_commit_hash,
+            tags=commit_tags,
         )
         return url
 
     def cleanup(self) -> None:
         """Manually trigger cleanup of background threads."""
         self._manual_cleanup = True
-        if self._prompt_cache is not None:
-            self._prompt_cache.shutdown()
+        if self._cache is not None:
+            self._cache.shutdown()
 
     @overload
     def evaluate(
@@ -9270,7 +9297,7 @@ def convert_prompt_to_openai_format(
             `stop` and any other required arguments.
 
     Returns:
-        dict: The prompt in OpenAI format.
+        The prompt in OpenAI format.
 
     Raises:
         ImportError: If the `langchain_openai` package is not installed.
@@ -9309,7 +9336,7 @@ def convert_prompt_to_anthropic_format(
             Model configuration arguments including `model_name` and `stop`.
 
     Returns:
-        dict: The prompt in Anthropic format.
+        The prompt in Anthropic format.
     """
     try:
         from langchain_anthropic import ChatAnthropic  # type: ignore

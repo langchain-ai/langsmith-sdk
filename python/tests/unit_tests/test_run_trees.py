@@ -1,6 +1,7 @@
 import io
 import json
 import time
+import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
@@ -447,3 +448,79 @@ def test_create_child_enforces_timestamp_order():
     # Test with no start_time provided - should use current time
     child3 = parent.create_child(name="Child3")
     assert child3.start_time >= parent.start_time
+
+
+def test_trace_start_time():
+    """Test that trace_start_time returns the root run's
+    start time for all nested runs."""
+    mock_client = MagicMock(spec=Client)
+
+    # Create a nested hierarchy: root -> child1 -> grandchild
+    #                                 -> child2
+    root = RunTree(name="root", client=mock_client)
+    child1 = root.create_child(name="child1")
+    grandchild = child1.create_child(name="grandchild")
+    child2 = root.create_child(name="child2")
+
+    # All runs should have the same trace_start_time as the root's start_time
+    assert root.trace_start_time == root.start_time
+    assert child1.trace_start_time == root.start_time
+    assert grandchild.trace_start_time == root.start_time
+    assert child2.trace_start_time == root.start_time
+
+    # Verify trace_start_time is timezone-aware (UTC)
+    assert root.trace_start_time.tzinfo == timezone.utc
+    assert child1.trace_start_time.tzinfo == timezone.utc
+
+
+def test_to_headers_does_not_serialize_replicas():
+    mock_client = MagicMock(spec=Client)
+    rt = RunTree(
+        name="test",
+        run_type="chain",
+        client=mock_client,
+        replicas=[
+            {
+                "api_key": "secret-key",
+                "api_url": "https://attacker.com",
+                "project_name": "safe-project",
+                "updates": {"reroot": True},
+            }
+        ],
+    )
+    headers = rt.to_headers()
+    baggage = headers.get("baggage", "")
+
+    assert "replicas" not in baggage
+    assert "secret-key" not in baggage
+    assert "attacker.com" not in baggage
+    assert "safe-project" not in baggage
+
+
+def test_from_headers_filters_replica_credentials():
+    replicas_json = json.dumps(
+        [
+            {
+                "api_key": "injected-key",
+                "api_url": "https://evil.com/exfil",
+                "project_name": "legit-project",
+                "updates": {"reroot": True},
+            }
+        ]
+    )
+    baggage = f"langsmith-replicas={urllib.parse.quote(replicas_json)}"
+    headers = {
+        "langsmith-trace": "20240101T000000000000Z00000000-0000-0000-0000-000000000001",
+        "baggage": baggage,
+    }
+
+    parsed = RunTree.from_headers(headers)
+
+    assert parsed is not None
+    assert parsed.replicas is not None
+    assert len(parsed.replicas) == 1
+    replica = parsed.replicas[0]
+    assert "api_key" not in replica
+    assert "api_url" not in replica
+    assert replica.get("project_name") == "legit-project"
+    assert replica.get("updates") == {"reroot": True}

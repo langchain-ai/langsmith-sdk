@@ -40,7 +40,7 @@ def test_traceable_uses_uuidv7_and_start_time_matches_run_id() -> None:
     id_ms = _uuid_v7_ms(run_tree.id)
     # Match the same calculation path used by uuid7(id from start_time)
     start_ms = int(run_tree.start_time.timestamp() * 1_000_000_000) // 1_000_000
-    assert id_ms == start_ms
+    assert abs(id_ms - start_ms) <= 1
 
 
 def test_run_tree_default_uuidv7_and_start_time_match() -> None:

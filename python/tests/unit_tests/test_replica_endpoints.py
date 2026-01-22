@@ -707,8 +707,7 @@ class TestBaggageReplicaParsing:
         assert baggage.replicas[1]["updates"] is None
 
     def test_baggage_parsing_new_format(self):
-        """Test baggage headers with WriteReplica format are parsed
-        correctly."""
+        """Test baggage headers with WriteReplica format are parsed correctly."""
         import json
         import urllib.parse
 
@@ -735,13 +734,13 @@ class TestBaggageReplicaParsing:
         baggage = _Baggage.from_header(baggage_value)
 
         assert len(baggage.replicas) == 2
-        assert baggage.replicas[0]["api_url"] == "https://replica1.example.com"
-        assert baggage.replicas[0]["api_key"] == "replica1-key"
+        assert "api_url" not in baggage.replicas[0]
+        assert "api_key" not in baggage.replicas[0]
         assert baggage.replicas[0]["project_name"] == "replica1-project"
         assert baggage.replicas[0]["updates"] == {"environment": "production"}
 
-        assert baggage.replicas[1]["api_url"] == "https://replica2.example.com"
-        assert baggage.replicas[1]["api_key"] == "replica2-key"
+        assert "api_url" not in baggage.replicas[1]
+        assert "api_key" not in baggage.replicas[1]
         assert baggage.replicas[1]["project_name"] == "replica2-project"
 
     def test_baggage_parsing_mixed_format(self):
@@ -772,9 +771,8 @@ class TestBaggageReplicaParsing:
         assert baggage.replicas[0]["updates"] == {"tuple": "true"}
         assert baggage.replicas[0].get("api_url") is None
         assert baggage.replicas[0].get("api_key") is None
-        # Second should be new dict format
-        assert baggage.replicas[1]["api_url"] == "https://new.example.com"
-        assert baggage.replicas[1]["api_key"] == "new-key"
+        assert "api_url" not in baggage.replicas[1]
+        assert "api_key" not in baggage.replicas[1]
         assert baggage.replicas[1]["project_name"] == "new-project"
 
 

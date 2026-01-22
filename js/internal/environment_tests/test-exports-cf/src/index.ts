@@ -1,9 +1,11 @@
 /**
  * Cloudflare Workers environment test for langsmith exports.
  * Tests that public API works correctly in edge runtime environments.
+ *
+ * Note: Cache dump/load are not supported in edge environments.
  */
 
-import { Client } from "langsmith";
+import { Client, Cache } from "langsmith";
 
 export default {
   async fetch(): Promise<Response> {
@@ -13,6 +15,15 @@ export default {
       // Test Client import and instantiation
       const client = new Client({ apiKey: "test-key" });
       results.push("✓ Client imported and instantiated");
+
+      // Test Cache import and instantiation
+      const cache = new Cache({ maxSize: 100, ttlSeconds: 3600 });
+      results.push("✓ Cache imported and instantiated");
+      cache.stop();
+
+      // Test Client with cache enabled
+      const clientWithCache = new Client({ apiKey: "test-key", cache: true });
+      results.push("✓ Client with cache enabled");
 
       results.push("\n✅ All Cloudflare export tests passed!");
 

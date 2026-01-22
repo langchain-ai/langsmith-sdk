@@ -165,6 +165,22 @@ type WriteReplica = {
 };
 type Replica = ProjectReplica | WriteReplica;
 
+const HEADER_SAFE_REPLICA_FIELDS = new Set([
+  "projectName",
+  "updates",
+  "reroot",
+]);
+
+function filterReplicaForHeaders(replica: WriteReplica): WriteReplica {
+  const filtered: WriteReplica = {};
+  for (const key of Object.keys(replica) as (keyof WriteReplica)[]) {
+    if (HEADER_SAFE_REPLICA_FIELDS.has(key)) {
+      (filtered as Record<string, unknown>)[key] = replica[key];
+    }
+  }
+  return filtered;
+}
+
 /**
  * Baggage header information
  */
@@ -201,7 +217,13 @@ class Baggage {
       } else if (key === "langsmith-project") {
         project_name = value;
       } else if (key === "langsmith-replicas") {
-        replicas = JSON.parse(value);
+        const parsed = JSON.parse(value) as Replica[];
+        replicas = parsed.map((replica) => {
+          if (Array.isArray(replica)) {
+            return replica;
+          }
+          return filterReplicaForHeaders(replica);
+        });
       }
     }
 

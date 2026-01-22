@@ -156,6 +156,7 @@ async def test_current_tenant_is_owner(langsmith_client: AsyncClient):
     assert not await langsmith_client._current_tenant_is_owner("non_existent_owner")
 
 
+@skip_if_rate_limited
 async def test_list_prompts(langsmith_client: AsyncClient):
     response = await langsmith_client.list_prompts(limit=10, offset=0)
     assert isinstance(response, ls_schemas.ListPromptsResponse)
@@ -226,6 +227,7 @@ async def test_delete_prompt(
     assert not await langsmith_client._prompt_exists(prompt_name)
 
 
+@skip_if_rate_limited
 async def test_pull_prompt_object(
     langsmith_client: AsyncClient, prompt_template_1: ChatPromptTemplate
 ):
@@ -239,6 +241,7 @@ async def test_pull_prompt_object(
     await langsmith_client.delete_prompt(prompt_name)
 
 
+@skip_if_rate_limited
 async def test_pull_prompt(
     langsmith_client: AsyncClient, prompt_template_1: ChatPromptTemplate
 ):
@@ -312,6 +315,7 @@ async def test_push_and_pull_prompt(
         )
 
 
+@skip_if_rate_limited
 async def test_pull_prompt_include_model(
     langsmith_client: AsyncClient, prompt_with_model: dict
 ):
@@ -363,6 +367,7 @@ async def test_create_prompt(langsmith_client: AsyncClient):
     await langsmith_client.delete_prompt(prompt_name)
 
 
+@skip_if_rate_limited
 async def test_create_commit(
     langsmith_client: AsyncClient,
     prompt_template_2: ChatPromptTemplate,
@@ -419,6 +424,7 @@ async def test_create_commit(
     await langsmith_client.delete_prompt(prompt_name)
 
 
+@skip_if_rate_limited
 async def test_push_prompt(
     langsmith_client: AsyncClient,
     prompt_template_3: PromptTemplate,
@@ -517,6 +523,7 @@ async def test_update_prompt_archive(
         (ls_schemas.PromptSortField.updated_at, "desc"),
     ],
 )
+@skip_if_rate_limited
 async def test_list_prompts_sorting(
     langsmith_client: AsyncClient,
     prompt_template_1: ChatPromptTemplate,

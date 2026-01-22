@@ -8,10 +8,10 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from langsmith import schemas as ls_schemas
-from langsmith._internal._cache import (
-    AsyncPromptCache,
+from langsmith.cache import (
+    AsyncCache,
+    Cache,
     CacheEntry,
-    PromptCache,
 )
 
 
@@ -47,12 +47,12 @@ class TestCacheEntry:
         assert entry.is_stale(ttl_seconds=3600)
 
 
-class TestPromptCacheBasic:
-    """Basic tests for PromptCache."""
+class TestCacheBasic:
+    """Basic tests for Cache."""
 
     def test_get_set_basic(self, sample_prompt_commit):
         """Test basic get/set operations."""
-        cache = PromptCache(max_size=100)
+        cache = Cache(max_size=100)
         try:
             # Initially empty
             assert cache.get("test-key") is None
@@ -70,7 +70,7 @@ class TestPromptCacheBasic:
 
     def test_invalidate(self, sample_prompt_commit):
         """Test cache invalidation."""
-        cache = PromptCache()
+        cache = Cache()
         try:
             cache.set("test-key", sample_prompt_commit)
             assert cache.get("test-key") is not None
@@ -82,7 +82,7 @@ class TestPromptCacheBasic:
 
     def test_clear(self, sample_prompt_commit):
         """Test clearing entire cache."""
-        cache = PromptCache()
+        cache = Cache()
         try:
             cache.set("key1", sample_prompt_commit)
             cache.set("key2", sample_prompt_commit)
@@ -96,12 +96,12 @@ class TestPromptCacheBasic:
             cache.shutdown()
 
 
-class TestPromptCacheLRU:
+class TestCacheLRU:
     """Tests for LRU eviction."""
 
     def test_lru_eviction(self, sample_prompt_commit):
         """Test that LRU eviction works when max_size is exceeded."""
-        cache = PromptCache(max_size=3)
+        cache = Cache(max_size=3)
         try:
             # Fill cache to max
             cache.set("key1", sample_prompt_commit)
@@ -124,7 +124,7 @@ class TestPromptCacheLRU:
 
     def test_lru_access_updates_order(self, sample_prompt_commit):
         """Test that accessing an entry updates its position in LRU."""
-        cache = PromptCache(max_size=2)
+        cache = Cache(max_size=2)
         try:
             cache.set("key1", sample_prompt_commit)
             cache.set("key2", sample_prompt_commit)
@@ -142,14 +142,14 @@ class TestPromptCacheLRU:
             cache.shutdown()
 
 
-class TestPromptCacheBackgroundRefresh:
+class TestCacheBackgroundRefresh:
     """Tests for background refresh functionality."""
 
     def test_background_refresh_called(self, sample_prompt_commit):
         """Test that background refresh is triggered for stale entries."""
         mock_fetch = MagicMock(return_value=sample_prompt_commit)
 
-        cache = PromptCache(
+        cache = Cache(
             ttl_seconds=0.1,  # Very short TTL
             refresh_interval_seconds=0.2,
             fetch_func=mock_fetch,
@@ -174,7 +174,7 @@ class TestPromptCacheBackgroundRefresh:
             call_count[0] += 1
             raise Exception("API error")
 
-        cache = PromptCache(
+        cache = Cache(
             ttl_seconds=0.1,
             refresh_interval_seconds=0.2,
             fetch_func=failing_fetch,
@@ -197,7 +197,7 @@ class TestPromptCacheBackgroundRefresh:
 
     def test_no_refresh_without_fetch_func(self, sample_prompt_commit):
         """Test that no background refresh happens without fetch_func."""
-        cache = PromptCache(
+        cache = Cache(
             ttl_seconds=0.1,
             refresh_interval_seconds=0.1,
             # No fetch_func
@@ -218,7 +218,7 @@ class TestPromptCacheBackgroundRefresh:
         """Test that shutdown stops the background refresh thread."""
         mock_fetch = MagicMock(return_value=sample_prompt_commit)
 
-        cache = PromptCache(
+        cache = Cache(
             ttl_seconds=0.1,
             refresh_interval_seconds=0.1,
             fetch_func=mock_fetch,
@@ -234,12 +234,12 @@ class TestPromptCacheBackgroundRefresh:
         assert cache._refresh_thread is None or not cache._refresh_thread.is_alive()
 
 
-class TestPromptCacheThreadSafety:
+class TestCacheThreadSafety:
     """Tests for thread safety."""
 
     def test_concurrent_reads(self, sample_prompt_commit):
         """Test concurrent read operations."""
-        cache = PromptCache()
+        cache = Cache()
         try:
             cache.set("test-key", sample_prompt_commit)
 
@@ -267,7 +267,7 @@ class TestPromptCacheThreadSafety:
 
     def test_concurrent_writes(self, sample_prompt_commit):
         """Test concurrent write operations."""
-        cache = PromptCache(max_size=1000)
+        cache = Cache(max_size=1000)
         try:
             errors = []
 
@@ -291,15 +291,15 @@ class TestPromptCacheThreadSafety:
             cache.shutdown()
 
 
-class TestAsyncPromptCache:
-    """Tests for AsyncPromptCache."""
+class TestAsyncCache:
+    """Tests for AsyncCache."""
 
     @pytest.mark.asyncio
     async def test_async_refresh_called(self, sample_prompt_commit):
         """Test that async background refresh is triggered for stale entries."""
         mock_fetch = AsyncMock(return_value=sample_prompt_commit)
 
-        cache = AsyncPromptCache(
+        cache = AsyncCache(
             ttl_seconds=0.1,  # Very short TTL
             refresh_interval_seconds=0.2,
             fetch_func=mock_fetch,
@@ -328,7 +328,7 @@ class TestAsyncPromptCache:
             call_count[0] += 1
             raise Exception("API error")
 
-        cache = AsyncPromptCache(
+        cache = AsyncCache(
             ttl_seconds=0.1,
             refresh_interval_seconds=0.2,
             fetch_func=failing_fetch,
@@ -357,7 +357,7 @@ class TestAsyncPromptCache:
         """Test that stop() cancels the refresh task."""
         mock_fetch = AsyncMock(return_value=sample_prompt_commit)
 
-        cache = AsyncPromptCache(
+        cache = AsyncCache(
             ttl_seconds=0.1,
             refresh_interval_seconds=0.1,
             fetch_func=mock_fetch,
@@ -377,7 +377,7 @@ class TestAsyncPromptCache:
     @pytest.mark.asyncio
     async def test_start_without_fetch_func(self, sample_prompt_commit):
         """Test that start() is a no-op without fetch_func."""
-        cache = AsyncPromptCache(
+        cache = AsyncCache(
             ttl_seconds=0.1,
             refresh_interval_seconds=0.1,
             # No fetch_func
@@ -394,7 +394,7 @@ class TestAsyncPromptCache:
     @pytest.mark.asyncio
     async def test_basic_operations(self, sample_prompt_commit):
         """Test basic get/set operations work without starting refresh."""
-        cache = AsyncPromptCache()
+        cache = AsyncCache()
 
         # Set and get
         cache.set("test-key", sample_prompt_commit)
@@ -416,7 +416,7 @@ class TestCachePersistence:
         cache_file = tmp_path / "cache.json"
 
         # Create cache and add entries
-        cache1 = PromptCache()
+        cache1 = Cache()
         try:
             cache1.set("prompt1", sample_prompt_commit)
             cache1.set("prompt2", sample_prompt_commit)
@@ -430,7 +430,7 @@ class TestCachePersistence:
         assert cache_file.exists()
 
         # Load into new cache
-        cache2 = PromptCache()
+        cache2 = Cache()
         try:
             loaded = cache2.load(cache_file)
 
@@ -450,7 +450,7 @@ class TestCachePersistence:
 
     def test_load_nonexistent_file(self, tmp_path):
         """Test loading from nonexistent file returns 0."""
-        cache = PromptCache()
+        cache = Cache()
         try:
             loaded = cache.load(tmp_path / "nonexistent.json")
             assert loaded == 0
@@ -462,7 +462,7 @@ class TestCachePersistence:
         cache_file = tmp_path / "corrupted.json"
         cache_file.write_text("not valid json {{{")
 
-        cache = PromptCache()
+        cache = Cache()
         try:
             loaded = cache.load(cache_file)
             assert loaded == 0
@@ -474,7 +474,7 @@ class TestCachePersistence:
         cache_file = tmp_path / "cache.json"
 
         # Create cache with many entries
-        cache1 = PromptCache(max_size=100)
+        cache1 = Cache(max_size=100)
         try:
             for i in range(10):
                 cache1.set(f"prompt{i}", sample_prompt_commit)
@@ -483,7 +483,7 @@ class TestCachePersistence:
             cache1.shutdown()
 
         # Load into cache with smaller max_size
-        cache2 = PromptCache(max_size=3)
+        cache2 = Cache(max_size=3)
         try:
             loaded = cache2.load(cache_file)
             assert loaded == 3  # Only loaded up to max_size
@@ -494,7 +494,7 @@ class TestCachePersistence:
         """Test that dump creates parent directories if needed."""
         cache_file = tmp_path / "nested" / "dir" / "cache.json"
 
-        cache = PromptCache()
+        cache = Cache()
         try:
             cache.set("prompt1", sample_prompt_commit)
             cache.dump(cache_file)
@@ -508,7 +508,7 @@ class TestCachePersistence:
         cache_file = tmp_path / "cache.json"
 
         # Create and dump cache
-        cache1 = PromptCache()
+        cache1 = Cache()
         try:
             cache1.set("prompt1", sample_prompt_commit)
             cache1.dump(cache_file)
@@ -516,7 +516,7 @@ class TestCachePersistence:
             cache1.shutdown()
 
         # Load into new cache - entries should have fresh TTL (not stale)
-        cache2 = PromptCache(ttl_seconds=3600)
+        cache2 = Cache(ttl_seconds=3600)
         try:
             cache2.load(cache_file)
             stale_keys = cache2._get_stale_keys()
@@ -525,15 +525,15 @@ class TestCachePersistence:
             cache2.shutdown()
 
     def test_async_cache_dump_load(self, sample_prompt_commit, tmp_path):
-        """Test that AsyncPromptCache can also dump/load."""
+        """Test that AsyncCache can also dump/load."""
         cache_file = tmp_path / "async_cache.json"
 
         # dump/load are inherited from base class
-        cache1 = AsyncPromptCache()
+        cache1 = AsyncCache()
         cache1.set("prompt1", sample_prompt_commit)
         cache1.dump(cache_file)
 
-        cache2 = AsyncPromptCache()
+        cache2 = AsyncCache()
         loaded = cache2.load(cache_file)
 
         assert loaded == 1
@@ -545,7 +545,7 @@ class TestOfflineMode:
 
     def test_infinite_ttl_never_stale(self, sample_prompt_commit):
         """Test that entries with ttl_seconds=None are never stale."""
-        cache = PromptCache(ttl_seconds=None)
+        cache = Cache(ttl_seconds=None)
         try:
             cache.set("prompt1", sample_prompt_commit)
 
@@ -565,7 +565,7 @@ class TestOfflineMode:
         """Test that no refresh thread starts with ttl_seconds=None."""
         mock_fetch = MagicMock(return_value=sample_prompt_commit)
 
-        cache = PromptCache(
+        cache = Cache(
             ttl_seconds=None,
             fetch_func=mock_fetch,
         )
@@ -586,7 +586,7 @@ class TestOfflineMode:
         cache_file = tmp_path / "offline_cache.json"
 
         # Online: populate and dump cache
-        online_cache = PromptCache(ttl_seconds=3600)
+        online_cache = Cache(ttl_seconds=3600)
         try:
             online_cache.set("prompt1", sample_prompt_commit)
             online_cache.set("prompt2", sample_prompt_commit)
@@ -595,7 +595,7 @@ class TestOfflineMode:
             online_cache.shutdown()
 
         # Offline: load with infinite TTL
-        offline_cache = PromptCache(ttl_seconds=None)
+        offline_cache = Cache(ttl_seconds=None)
         try:
             loaded = offline_cache.load(cache_file)
             assert loaded == 2
@@ -614,7 +614,7 @@ class TestOfflineMode:
         """Test that async cache doesn't start refresh task with ttl_seconds=None."""
         mock_fetch = AsyncMock(return_value=sample_prompt_commit)
 
-        cache = AsyncPromptCache(
+        cache = AsyncCache(
             ttl_seconds=None,
             fetch_func=mock_fetch,
         )
@@ -632,7 +632,7 @@ class TestCacheMetrics:
 
     def test_initial_metrics(self):
         """Test that metrics start at zero."""
-        cache = PromptCache()
+        cache = Cache()
         try:
             assert cache.metrics.hits == 0
             assert cache.metrics.misses == 0
@@ -645,7 +645,7 @@ class TestCacheMetrics:
 
     def test_hit_miss_tracking(self, sample_prompt_commit):
         """Test that hits and misses are tracked correctly."""
-        cache = PromptCache()
+        cache = Cache()
         try:
             # Miss on empty cache
             cache.get("key1")
@@ -676,7 +676,7 @@ class TestCacheMetrics:
         """Test that refreshes are tracked correctly."""
         mock_fetch = MagicMock(return_value=sample_prompt_commit)
 
-        cache = PromptCache(
+        cache = Cache(
             ttl_seconds=0.1,
             refresh_interval_seconds=0.2,
             fetch_func=mock_fetch,
@@ -698,7 +698,7 @@ class TestCacheMetrics:
         def failing_fetch(key):
             raise Exception("API error")
 
-        cache = PromptCache(
+        cache = Cache(
             ttl_seconds=0.1,
             refresh_interval_seconds=0.2,
             fetch_func=failing_fetch,
@@ -716,7 +716,7 @@ class TestCacheMetrics:
 
     def test_reset_metrics(self, sample_prompt_commit):
         """Test that metrics can be reset."""
-        cache = PromptCache()
+        cache = Cache()
         try:
             cache.set("key1", sample_prompt_commit)
             cache.get("key1")
@@ -738,7 +738,7 @@ class TestCacheMetrics:
         """Test that async cache also tracks metrics."""
         mock_fetch = AsyncMock(return_value=sample_prompt_commit)
 
-        cache = AsyncPromptCache(
+        cache = AsyncCache(
             ttl_seconds=0.1,
             refresh_interval_seconds=0.2,
             fetch_func=mock_fetch,

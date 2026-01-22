@@ -312,6 +312,7 @@ def traceable(
     process_chunk: Optional[Callable] = None,
     _invocation_params_fn: Optional[Callable[[dict], dict]] = None,
     dangerously_allow_filesystem: bool = False,
+    enabled: Optional[bool] = None,
 ) -> Callable[[Callable[P, R]], SupportsLangsmithExtra[P, R]]: ...
 
 
@@ -358,6 +359,9 @@ def traceable(
             Traces that reference local filepaths will be uploaded to LangSmith.
             In general, network-hosted applications should not be using this because
             referenced files are usually on the user's machine, not the host machine.
+        enabled: Whether tracing is enabled for this function.
+
+            Defaults to `None`, which will use the default value from the current context.
 
     Returns:
         The decorated function.
@@ -501,6 +505,7 @@ def traceable(
             DeprecationWarning,
         )
     reduce_fn = kwargs.pop("reduce_fn", None)
+    enabled = kwargs.pop("enabled", None)
     container_input = _ContainerInput(
         # TODO: Deprecate raw extra
         extra_outer=kwargs.pop("extra", None),
@@ -514,6 +519,7 @@ def traceable(
         process_chunk=kwargs.pop("process_chunk", None),
         invocation_params_fn=kwargs.pop("_invocation_params_fn", None),
         dangerously_allow_filesystem=kwargs.pop("dangerously_allow_filesystem", False),
+        enabled=enabled,
     )
     outputs_processor = kwargs.pop("process_outputs", None)
     _on_run_end = functools.partial(
@@ -854,6 +860,18 @@ def traceable(
             else:
                 selected_wrapper = wrapper
         setattr(selected_wrapper, "__langsmith_traceable__", True)
+        setattr(
+            selected_wrapper,
+            "__traceable_config__",
+            {
+                "process_inputs": container_input.get("process_inputs"),
+                "process_outputs": outputs_processor,
+                "enabled": enabled,
+                "tags": container_input.get("tags"),
+                "metadata": container_input.get("metadata"),
+                "wrapped": func,
+            },
+        )
         sig = inspect.signature(selected_wrapper)
         if not sig.parameters.get("config"):
             sig = sig.replace(
@@ -1324,6 +1342,7 @@ class _TraceableContainer(TypedDict, total=False):
     on_end: Optional[Callable[[run_trees.RunTree], Any]]
     context: contextvars.Context
     _token_event_logged: Optional[bool]
+    enabled: Optional[bool]
 
 
 class _ContainerInput(TypedDict, total=False):
@@ -1341,6 +1360,7 @@ class _ContainerInput(TypedDict, total=False):
     process_chunk: Optional[Callable]
     invocation_params_fn: Optional[Callable[[dict], dict]]
     dangerously_allow_filesystem: Optional[bool]
+    enabled: Optional[bool]
 
 
 def _container_end(
@@ -1384,7 +1404,9 @@ def _container_end(
                 warnings.warn(f"Failed to run _on_success function: {e}")
 
     run_tree.end(outputs=dict_outputs, error=error_repr)
-    if utils.tracing_is_enabled() is True:
+    # Patch run if enabled=True (force) or if tracing is enabled globally
+    enabled = container.get("enabled")
+    if enabled is True or utils.tracing_is_enabled() is True:
         run_tree.patch()
     if (on_end := container.get("on_end")) and callable(on_end):
         try:
@@ -1490,7 +1512,14 @@ def _setup_run(
     )
     reference_example_id = langsmith_extra.get("reference_example_id")
     id_ = langsmith_extra.get("run_id")
-    if not parent_run_ and not utils.tracing_is_enabled():
+    enabled = container_input.get("enabled")
+    # Determine if tracing should be enabled for this function:
+    # - enabled=False: never trace
+    # - enabled=True: always trace
+    # - enabled=None: use context/environment setting
+    if enabled is False or (
+        enabled is not True and not (parent_run_ or utils.tracing_is_enabled())
+    ):
         utils.log_once(
             logging.DEBUG,
             "LangSmith tracing is not enabled, returning original function.",
@@ -1573,7 +1602,8 @@ def _setup_run(
         if id_ is not None:
             run_tree_kwargs["id"] = ls_client._ensure_uuid(id_)
         new_run = run_trees.RunTree(**cast(Any, run_tree_kwargs))
-    if utils.tracing_is_enabled() is True:
+    # Post run if enabled=True (force) or if tracing is enabled globally
+    if enabled is True or utils.tracing_is_enabled() is True:
         try:
             new_run.post()
         except BaseException as e:
@@ -1588,6 +1618,7 @@ def _setup_run(
         _on_success=langsmith_extra.get("_on_success"),
         context=context,
         _token_event_logged=False,
+        enabled=enabled,
     )
     context.run(_context._PROJECT_NAME.set, response_container["project_name"])
     context.run(_PARENT_RUN_TREE.set, response_container["new_run"])
