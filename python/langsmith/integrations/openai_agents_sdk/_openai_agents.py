@@ -217,6 +217,21 @@ if HAVE_AGENTS:
 
         def on_trace_end(self, trace: tracing.Trace) -> None:
             run = self._runs.pop(trace.trace_id, None)
+
+            # Always clean up response tracking for this trace to prevent memory leaks
+            first_inputs = self._first_response_inputs.pop(trace.trace_id, {})
+            last_outputs = self._last_response_outputs.pop(trace.trace_id, {})
+
+            # Clean up any orphan span entries in _runs that belong to this trace
+            orphan_span_ids = [
+                span_id
+                for span_id, span_run in self._runs.items()
+                if getattr(span_run, "trace_id", None) == trace.trace_id
+                or (hasattr(span_run, "extra") and span_run.extra.get("metadata", {}).get("openai_trace_id") == trace.trace_id)
+            ]
+            for span_id in orphan_span_ids:
+                self._runs.pop(span_id, None)
+
             if not run:
                 return
 
@@ -225,8 +240,8 @@ if HAVE_AGENTS:
 
             try:
                 # Update run with final inputs/outputs
-                run.inputs = self._first_response_inputs.pop(trace.trace_id, {})
-                run.outputs = self._last_response_outputs.pop(trace.trace_id, {})
+                run.inputs = first_inputs
+                run.outputs = last_outputs
 
                 # Update metadata
                 if "metadata" not in run.extra:
@@ -268,6 +283,11 @@ if HAVE_AGENTS:
 
             run_type = agent_utils.get_run_type(span)
             extracted = agent_utils.extract_span_data(span)
+
+            # Store trace_id in metadata for orphan span cleanup
+            if "metadata" not in extracted:
+                extracted["metadata"] = {}
+            extracted["metadata"]["openai_trace_id"] = span.trace_id
 
             try:
                 # Create child run
