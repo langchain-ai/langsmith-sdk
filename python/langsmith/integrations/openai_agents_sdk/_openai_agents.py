@@ -285,9 +285,11 @@ if HAVE_AGENTS:
             extracted = agent_utils.extract_span_data(span)
 
             # Store trace_id in metadata for orphan span cleanup
+            # Only set when metadata is a dict (CustomSpanData can have arbitrary data)
             if "metadata" not in extracted:
                 extracted["metadata"] = {}
-            extracted["metadata"]["openai_trace_id"] = span.trace_id
+            if isinstance(extracted.get("metadata"), dict):
+                extracted["metadata"]["openai_trace_id"] = span.trace_id
 
             try:
                 # Create child run
