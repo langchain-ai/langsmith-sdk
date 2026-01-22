@@ -3090,7 +3090,8 @@ export class Client implements LangSmithTracingClientInterface {
   }: UploadCSVParams): Promise<Dataset> {
     const url = `${this.apiUrl}/datasets/upload`;
     const formData = new FormData();
-    formData.append("file", csvFile, fileName);
+    const csvBlob = new Blob([csvFile], { type: "text/csv" });
+    formData.append("file", csvBlob, fileName);
     inputKeys.forEach((key) => {
       formData.append("input_keys", key);
     });
