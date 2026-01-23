@@ -1,15 +1,16 @@
 import type {
-  createSdkMcpServer,
+  BetaContentBlock,
+  BetaToolUseBlock,
   SDKMessage,
-} from "@anthropic-ai/claude-agent-sdk";
-import type Anthropic from "@anthropic-ai/sdk";
+} from "./types.js";
+import { isIterable } from "./utils.js";
 
 /**
  * Converts SDK content blocks into serializable objects.
  * Matches Python's flatten_content_blocks behavior.
  */
 export function flattenContentBlocks(
-  content: Anthropic.Beta.BetaContentBlock[] | unknown
+  content: BetaContentBlock[] | unknown
 ): Array<Record<string, unknown>> | unknown {
   if (!Array.isArray(content)) {
     return content;
@@ -51,12 +52,20 @@ export function flattenContentBlocks(
   });
 }
 
+/**
+ * Utility function to convert an Anthropic message to a LangSmith-compatible message.
+ * @internal
+ */
 export function convertFromAnthropicMessage(
-  sdkMessage: SDKMessage | string | undefined
+  sdkMessage: SDKMessage | Iterable<SDKMessage> | string | undefined
 ): { content: unknown; role: string }[] {
   if (sdkMessage == null) return [];
   if (typeof sdkMessage === "string") {
     return [{ content: sdkMessage, role: "user" }];
+  }
+
+  if (isIterable(sdkMessage)) {
+    return Array.from(sdkMessage).flatMap(convertFromAnthropicMessage);
   }
 
   if (
@@ -93,17 +102,14 @@ function isToolResultBlock(block: unknown): block is {
   if (!("type" in block)) return false;
   return block.type === "tool_result";
 }
-export type SdkMcpToolDefinition = Exclude<
-  Parameters<typeof createSdkMcpServer>[0]["tools"],
-  undefined
->[number];
 
 /**
  * Type assertion to check if a tool is a Task tool
  * @param tool - The tool to check
  * @returns True if the tool is a Task tool, false otherwise
+ * @internal
  */
-export function isTaskTool(tool: Anthropic.Beta.BetaToolUseBlock): tool is {
+export function isTaskTool(tool: BetaToolUseBlock): tool is {
   id: string;
   input: {
     description: string;
@@ -119,10 +125,11 @@ export function isTaskTool(tool: Anthropic.Beta.BetaToolUseBlock): tool is {
 
 /**
  * Type-assertion to check for tool blocks
+ * @internal
  */
 export function isToolBlock(
-  block: Anthropic.Beta.BetaContentBlock
-): block is Anthropic.Beta.BetaToolUseBlock {
+  block: BetaContentBlock
+): block is BetaToolUseBlock {
   if (!block || typeof block !== "object") return false;
   return block.type === "tool_use";
 }

@@ -367,7 +367,13 @@ describe("wrapClaudeAgentSDK", () => {
         "claude.assistant.turn:0": {
           run_type: "llm",
           inputs: { messages: [{ content: "Hello", role: "user" }] },
-          outputs: { role: "assistant", content: "Hello! How can I help you?" },
+          outputs: {
+            output: {
+              messages: [
+                { role: "assistant", content: "Hello! How can I help you?" },
+              ],
+            },
+          },
         },
         "claude.assistant.turn:1": {
           run_type: "llm",
@@ -378,7 +384,13 @@ describe("wrapClaudeAgentSDK", () => {
               { role: "user", content: "How are you?" },
             ],
           },
-          outputs: { role: "assistant", content: "Hello! How can I help you?" },
+          outputs: {
+            output: {
+              messages: [
+                { role: "assistant", content: "Hello! How can I help you?" },
+              ],
+            },
+          },
         },
       },
     });
@@ -457,7 +469,6 @@ describe("wrapClaudeAgentSDK", () => {
           outputs: {
             output: {
               messages: [
-                // TODO: is this correct? Shouldn't we only have the final message instead?
                 { role: "assistant", content: "Part 1" },
                 { role: "assistant", content: "Part 1 complete" },
               ],
@@ -476,93 +487,16 @@ describe("wrapClaudeAgentSDK", () => {
             },
           },
           inputs: {
-            messages: [
-              { role: "user", content: "Test" },
-              { role: "assistant", content: "Part 1" },
-            ],
+            messages: [{ role: "user", content: "Test" }],
           },
-          outputs: { role: "assistant", content: "Part 1 complete" },
-        },
-      },
-    });
-  });
-
-  test("tool wrapper preserves tool definition properties", async () => {
-    const { client, callSpy } = mockClient();
-    const mockSDK = createMockSDK();
-    const wrapped = wrapClaudeAgentSDK(mockSDK, {
-      client,
-      tracingEnabled: true,
-    });
-
-    const schema = {
-      type: "object",
-      properties: { value: { type: "number" } },
-    };
-
-    const tool = wrapped.tool(
-      "test-tool",
-      "A test tool",
-      schema,
-      async (args: { value: number }) => ({
-        content: [{ type: "text", text: String(args.value) }],
-      })
-    );
-
-    expect(tool.name).toBe("test-tool");
-    expect(tool.description).toBe("A test tool");
-    expect(tool.inputSchema).toEqual(schema);
-    expect(typeof tool.handler).toBe("function");
-    expect(await tool.handler({ value: 1 }, {})).toMatchObject({
-      content: [{ type: "text", text: "1" }],
-    });
-
-    expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
-    ).toMatchObject({
-      nodes: ["test-tool:0"],
-      edges: [],
-      data: {
-        "test-tool:0": {
-          run_type: "tool",
-          inputs: { args: [{ value: 1 }, {}] },
-          outputs: { content: [{ type: "text", text: "1" }] },
-        },
-      },
-    });
-  });
-
-  test("handles errors in tool execution", async () => {
-    const { client, callSpy } = mockClient();
-    const mockSDK = createMockSDK();
-    const wrapped = wrapClaudeAgentSDK(mockSDK, {
-      client,
-      tracingEnabled: true,
-    });
-
-    const errorTool = wrapped.tool(
-      "error-tool",
-      "A tool that errors",
-      { type: "object" },
-      async () => {
-        throw new Error("Tool execution failed");
-      }
-    );
-
-    await expect(errorTool.handler({}, {})).rejects.toThrow(
-      "Tool execution failed"
-    );
-
-    expect(
-      await getAssumedTreeFromCalls(callSpy.mock.calls, client)
-    ).toMatchObject({
-      nodes: ["error-tool:0"],
-      edges: [],
-      data: {
-        "error-tool:0": {
-          run_type: "tool",
-          inputs: { args: [{}, {}] },
-          error: expect.stringMatching(/Tool execution failed/),
+          outputs: {
+            output: {
+              messages: [
+                { role: "assistant", content: "Part 1" },
+                { role: "assistant", content: "Part 1 complete" },
+              ],
+            },
+          },
         },
       },
     });
@@ -694,7 +628,11 @@ describe("wrapClaudeAgentSDK", () => {
         "claude.assistant.turn:1": {
           run_type: "llm",
           inputs: { messages: [{ content: "Test", role: "user" }] },
-          outputs: { content: "First response", role: "assistant" },
+          outputs: {
+            output: {
+              messages: [{ role: "assistant", content: "First response" }],
+            },
+          },
         },
         "claude.assistant.turn:2": {
           run_type: "llm",
@@ -708,7 +646,11 @@ describe("wrapClaudeAgentSDK", () => {
               },
             ],
           },
-          outputs: { role: "assistant", content: "Second response" },
+          outputs: {
+            output: {
+              messages: [{ role: "assistant", content: "Second response" }],
+            },
+          },
         },
       },
     });
@@ -804,7 +746,11 @@ describe("wrapClaudeAgentSDK", () => {
         "claude.assistant.turn:1": {
           run_type: "llm",
           inputs: { messages: [{ content: "Test", role: "user" }] },
-          outputs: { content: "Response", role: "assistant" },
+          outputs: {
+            output: {
+              messages: [{ role: "assistant", content: "Response" }],
+            },
+          },
         },
       },
     });
@@ -878,7 +824,9 @@ describe("wrapClaudeAgentSDK", () => {
         "claude.assistant.turn:1": {
           run_type: "llm",
           inputs: { messages: [{ content: "Test", role: "user" }] },
-          outputs: { content: "Response", role: "assistant" },
+          outputs: {
+            output: { messages: [{ role: "assistant", content: "Response" }] },
+          },
           extra: { metadata: { ls_model_name: "claude-opus-4-20250514" } },
         },
       },
@@ -997,7 +945,7 @@ describe("wrapClaudeAgentSDK", () => {
             role: "assistant",
             content: "Response",
             model: "claude-sonnet-4-20250514",
-            usage: { input_tokens: 100, output_tokens: 50 },
+            usage: { input_tokens: 100, output_tokens: 40 },
           },
         };
 
@@ -1080,7 +1028,9 @@ describe("wrapClaudeAgentSDK", () => {
         "claude.assistant.turn:1": {
           run_type: "llm",
           inputs: { messages: [{ content: "Test", role: "user" }] },
-          outputs: { content: "Response", role: "assistant" },
+          outputs: {
+            output: { messages: [{ role: "assistant", content: "Response" }] },
+          },
           extra: {
             metadata: {
               usage_metadata: {
@@ -1222,23 +1172,22 @@ describe("wrapClaudeAgentSDK", () => {
     ]);
 
     const res = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
-    console.log(JSON.stringify(res, null, 2));
     expect(res).toMatchObject({
       nodes: [
         "claude.conversation:0",
         "explorer:1",
-        "Glob:2",
-        "claude.assistant.turn:3",
-        "Read:4",
-        "claude.assistant.turn:5",
+        "claude.assistant.turn:2",
+        "Glob:3",
+        "claude.assistant.turn:4",
+        "Read:5",
         "claude.assistant.turn:6",
       ],
       edges: [
         ["claude.conversation:0", "explorer:1"],
-        ["explorer:1", "Glob:2"],
-        ["claude.conversation:0", "claude.assistant.turn:3"],
-        ["explorer:1", "Read:4"],
-        ["explorer:1", "claude.assistant.turn:5"],
+        ["claude.conversation:0", "claude.assistant.turn:2"],
+        ["explorer:1", "Glob:3"],
+        ["explorer:1", "claude.assistant.turn:4"],
+        ["explorer:1", "Read:5"],
         ["explorer:1", "claude.assistant.turn:6"],
       ],
       data: {
@@ -1264,28 +1213,6 @@ describe("wrapClaudeAgentSDK", () => {
                     },
                   ],
                 },
-                {
-                  role: "assistant",
-                  content: [
-                    {
-                      type: "tool_use",
-                      id: "glob_1",
-                      name: "Glob",
-                      input: { pattern: "**/*.ts" },
-                    },
-                  ],
-                },
-                {
-                  role: "assistant",
-                  content: [
-                    {
-                      type: "tool_use",
-                      id: "read_1",
-                      name: "Read",
-                      input: { file_path: "/src/index.ts" },
-                    },
-                  ],
-                },
               ],
             },
           },
@@ -1293,36 +1220,45 @@ describe("wrapClaudeAgentSDK", () => {
         "explorer:1": {
           run_type: "chain",
           inputs: { subagent_type: "explorer", prompt: "Find files" },
-          outputs: { error: "Run not completed (conversation ended)" },
+          error: "Run not completed (conversation ended)",
         },
-        "Glob:2": {
+        "Glob:3": {
           run_type: "tool",
           inputs: { input: { pattern: "**/*.ts" } },
-          outputs: { error: "Run not completed (conversation ended)" },
+          error: "Run not completed (conversation ended)",
         },
-        "claude.assistant.turn:3": {
+        "claude.assistant.turn:2": {
           run_type: "llm",
           inputs: {
             messages: [{ content: "Find TypeScript files", role: "user" }],
           },
           outputs: {
-            role: "assistant",
-            content: [
-              {
-                type: "tool_use",
-                id: "task_1",
-                name: "Task",
-                input: { subagent_type: "explorer", prompt: "Find files" },
-              },
-            ],
+            output: {
+              messages: [
+                {
+                  role: "assistant",
+                  content: [
+                    {
+                      type: "tool_use",
+                      id: "task_1",
+                      name: "Task",
+                      input: {
+                        subagent_type: "explorer",
+                        prompt: "Find files",
+                      },
+                    },
+                  ],
+                },
+              ],
+            },
           },
         },
-        "Read:4": {
+        "Read:5": {
           run_type: "tool",
           inputs: { input: { file_path: "/src/index.ts" } },
-          outputs: { error: "Run not completed (conversation ended)" },
+          error: "Run not completed (conversation ended)",
         },
-        "claude.assistant.turn:5": {
+        "claude.assistant.turn:4": {
           name: "claude.assistant.turn",
           run_type: "llm",
           inputs: {
@@ -1342,15 +1278,21 @@ describe("wrapClaudeAgentSDK", () => {
             ],
           },
           outputs: {
-            content: [
-              {
-                type: "tool_use",
-                id: "glob_1",
-                name: "Glob",
-                input: { pattern: "**/*.ts" },
-              },
-            ],
-            role: "assistant",
+            output: {
+              messages: [
+                {
+                  content: [
+                    {
+                      type: "tool_use",
+                      id: "glob_1",
+                      name: "Glob",
+                      input: { pattern: "**/*.ts" },
+                    },
+                  ],
+                  role: "assistant",
+                },
+              ],
+            },
           },
         },
         "claude.assistant.turn:6": {
@@ -1385,31 +1327,26 @@ describe("wrapClaudeAgentSDK", () => {
                 ],
                 role: "assistant",
               },
-              {
-                content: [
-                  {
-                    type: "tool_use",
-                    id: "task_1",
-                    name: "Task",
-                    input: { subagent_type: "explorer", prompt: "Find files" },
-                  },
-                ],
-                role: "assistant",
-              },
             ],
           },
           outputs: {
-            content: [
-              {
-                type: "tool_use",
-                id: "read_1",
-                name: "Read",
-                input: {
-                  file_path: "/src/index.ts",
+            output: {
+              messages: [
+                {
+                  content: [
+                    {
+                      type: "tool_use",
+                      id: "read_1",
+                      name: "Read",
+                      input: {
+                        file_path: "/src/index.ts",
+                      },
+                    },
+                  ],
+                  role: "assistant",
                 },
-              },
-            ],
-            role: "assistant",
+              ],
+            },
           },
         },
       },
@@ -1627,11 +1564,13 @@ describe("wrapClaudeAgentSDK", () => {
       nodes: [
         "claude.conversation:0",
         "claude.assistant.turn:1",
-        "claude.assistant.turn:2",
+        "Bash:2",
+        "claude.assistant.turn:3",
       ],
       edges: [
         ["claude.conversation:0", "claude.assistant.turn:1"],
-        ["claude.conversation:0", "claude.assistant.turn:2"],
+        ["claude.conversation:0", "Bash:2"],
+        ["claude.conversation:0", "claude.assistant.turn:3"],
       ],
       data: {
         "claude.conversation:0": {
@@ -1701,33 +1640,46 @@ describe("wrapClaudeAgentSDK", () => {
                 content: "List available files in the current directory",
                 role: "user",
               },
-              {
-                content: [
-                  {
-                    text: "I'll list the files in the current directory for you.",
-                    type: "text",
-                  },
-                ],
-                role: "assistant",
-              },
             ],
           },
           outputs: {
-            content: [
-              {
-                id: "toolu_01C6pxkyGufmwfL2fGAot85b",
-                input: {
-                  command: "ls -la",
-                  description: "List files in current directory",
+            output: {
+              messages: [
+                {
+                  content: [
+                    {
+                      text: "I'll list the files in the current directory for you.",
+                      type: "text",
+                    },
+                  ],
+                  role: "assistant",
                 },
-                name: "Bash",
-                type: "tool_use",
-              },
-            ],
-            role: "assistant",
+                {
+                  content: [
+                    {
+                      id: "toolu_01C6pxkyGufmwfL2fGAot85b",
+                      input: {
+                        command: "ls -la",
+                        description: "List files in current directory",
+                      },
+                      name: "Bash",
+                      type: "tool_use",
+                    },
+                  ],
+                  role: "assistant",
+                },
+              ],
+            },
           },
         },
-        "claude.assistant.turn:2": {
+        "Bash:2": {
+          run_type: "tool",
+          inputs: { input: { command: "ls -la" } },
+          outputs: {
+            stdout: "total 0",
+          },
+        },
+        "claude.assistant.turn:3": {
           run_type: "llm",
           inputs: {
             messages: [
@@ -1766,8 +1718,14 @@ describe("wrapClaudeAgentSDK", () => {
             ],
           },
           outputs: {
-            content: [{ text: "Here are the files", type: "text" }],
-            role: "assistant",
+            output: {
+              messages: [
+                {
+                  content: [{ text: "Here are the files", type: "text" }],
+                  role: "assistant",
+                },
+              ],
+            },
           },
         },
       },

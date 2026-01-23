@@ -72,7 +72,7 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
     expect(resultMessage.usage.output_tokens).toBeGreaterThan(0);
   });
 
-  test.only("query with subagent usage", async () => {
+  test("query with subagent usage", async () => {
     const messages: any[] = [];
 
     // Configure a subagent that can do calculations
@@ -166,6 +166,8 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
       options: {
         model: "claude-3-5-haiku-20241022",
         maxTurns: 5,
+        allowDangerouslySkipPermissions: true,
+        permissionMode: "bypassPermissions",
         mcpServers: {
           calculator: mcpServer,
         },
@@ -238,6 +240,9 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
     for await (const message of wrappedSDK.query({
       prompt: "Write a haiku about programming.",
       options: {
+        allowDangerouslySkipPermissions: true,
+        permissionMode: "bypassPermissions",
+        includePartialMessages: true,
         model: "claude-3-5-haiku-20241022",
         maxTurns: 1,
       },
@@ -298,11 +303,18 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
     const messages: any[] = [];
 
     for await (const message of wrappedSDK.query({
-      prompt: "Try to use the error-tool.",
+      prompt: "Try to use the error-tool from the error-server.",
       options: {
         model: "claude-3-5-haiku-20241022",
-        maxTurns: 2,
-        tools: [errorTool] as any,
+        maxTurns: 5,
+        allowDangerouslySkipPermissions: true,
+        permissionMode: "bypassPermissions",
+        mcpServers: {
+          errorTool: wrappedSDK.createSdkMcpServer({
+            name: "error-server",
+            tools: [errorTool],
+          }),
+        },
       },
     })) {
       messages.push(message);
@@ -434,6 +446,7 @@ describe("wrapClaudeAgentSDK - Real API Integration", () => {
           type: "user" as const,
           message: { role: "user" as const, content: "Hello" },
         } as unknown as claudeSDK.SDKUserMessage;
+
         yield {
           type: "user" as const,
           message: { role: "user" as const, content: "How are you?" },
