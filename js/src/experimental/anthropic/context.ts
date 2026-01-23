@@ -26,14 +26,17 @@ export class StreamManager {
   runTrees: RunTree[] = [];
 
   constructor() {
-    const rootRun = getCurrentRunTree();
-    if (!rootRun) throw new Error("No root run found");
-    this.namespaces = { root: rootRun };
+    const rootRun = getCurrentRunTree(true);
+    this.namespaces = rootRun?.createChild ? { root: rootRun } : {};
     this.history = { root: [] };
   }
 
   addMessage(message: SDKMessage) {
     const eventTime = Date.now();
+
+    // Short-circuit if no root run found
+    // This can happen if tracing is disabled globally
+    if (this.namespaces["root"] == null) return;
 
     if (message.type === "result") {
       if (message.modelUsage) {
@@ -75,7 +78,7 @@ export class StreamManager {
     // `eventTime` records the time we receive an event, which for `includePartialMessages: false`
     // equals to the end time of an LLM block, so we need to use the first available end time within namespace.
     const candidateStartTime =
-      (this.namespaces[namespace].child_runs ?? []).at(-1)?.end_time ??
+      this.namespaces[namespace].child_runs.at(-1)?.end_time ??
       this.namespaces[namespace].start_time;
 
     this.history[namespace] ??= this.history["root"].slice();
