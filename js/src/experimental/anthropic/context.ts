@@ -75,7 +75,7 @@ export class StreamManager {
     // `eventTime` records the time we receive an event, which for `includePartialMessages: false`
     // equals to the end time of an LLM block, so we need to use the first available end time within namespace.
     const candidateStartTime =
-      this.namespaces[namespace].child_runs.at(-1)?.end_time ??
+      (this.namespaces[namespace].child_runs ?? []).at(-1)?.end_time ??
       this.namespaces[namespace].start_time;
 
     this.history[namespace] ??= this.history["root"].slice();
