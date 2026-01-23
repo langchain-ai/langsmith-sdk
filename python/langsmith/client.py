@@ -1564,7 +1564,7 @@ class Client:
 
     def upload_csv(
         self,
-        csv_file: Union[str, tuple[str, io.BytesIO]],
+        csv_file: Union[str, tuple[str, io.BytesIO], tuple[str, io.BytesIO, str]],
         input_keys: Sequence[str],
         output_keys: Sequence[str],
         *,
@@ -1627,7 +1627,7 @@ class Client:
         data["id"] = str(uuid.uuid4())
         if isinstance(csv_file, str):
             with open(csv_file, "rb") as f:
-                file_ = {"file": f}
+                file_ = {"file": (Path(csv_file).name, f, "text/csv")}
                 response = self.request_with_retries(
                     "POST",
                     "/datasets/upload",
@@ -1635,11 +1635,14 @@ class Client:
                     files=file_,
                 )
         elif isinstance(csv_file, tuple):
+            file_tuple = csv_file
+            if len(csv_file) == 2:
+                file_tuple = (csv_file[0], csv_file[1], "text/csv")
             response = self.request_with_retries(
                 "POST",
                 "/datasets/upload",
                 data=data,
-                files={"file": csv_file},
+                files={"file": file_tuple},
             )
         else:
             raise ValueError("csv_file must be a string or tuple")

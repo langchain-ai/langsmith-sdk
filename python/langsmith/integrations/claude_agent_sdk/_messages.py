@@ -77,6 +77,32 @@ def build_llm_input(prompt: Any, history: list[dict[str, Any]]) -> list[dict[str
     if isinstance(prompt, str):
         entry = {"content": prompt, "role": "user"}
         return [entry, *history] if history else [entry]
+
+    if isinstance(prompt, list):
+        formatted = []
+        for msg in prompt:
+            if not isinstance(msg, dict):
+                formatted.append(msg)
+                continue
+
+            if "message" in msg:
+                inner = msg["message"]
+                if isinstance(inner, dict):
+                    formatted.append(
+                        {
+                            "role": inner.get("role", "user"),
+                            "content": inner.get("content", ""),
+                        }
+                    )
+                else:
+                    formatted.append(msg)
+            elif "role" in msg and "content" in msg:
+                formatted.append(msg)
+            else:
+                formatted.append(msg)
+
+        return [*formatted, *history] if history else formatted
+
     return history or []
 
 
