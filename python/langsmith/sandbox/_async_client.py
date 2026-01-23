@@ -56,6 +56,7 @@ class AsyncSandboxClient:
 
     def __init__(
         self,
+        *,
         api_endpoint: Optional[str] = None,
         timeout: float = 10.0,
         api_key: Optional[str] = None,
@@ -101,6 +102,7 @@ class AsyncSandboxClient:
         self,
         name: str,
         size: str,
+        *,
         timeout: int = 60,
     ) -> Volume:
         """Create a new persistent volume.
@@ -293,6 +295,7 @@ class AsyncSandboxClient:
         self,
         name: str,
         image: str,
+        *,
         cpu: str = "500m",
         memory: str = "512Mi",
         storage: Optional[str] = None,
@@ -474,6 +477,7 @@ class AsyncSandboxClient:
         name: str,
         template_name: str,
         replicas: int,
+        *,
         timeout: int = 30,
     ) -> Pool:
         """Create a new Sandbox Pool.
@@ -663,6 +667,7 @@ class AsyncSandboxClient:
     async def sandbox(
         self,
         template_name: str,
+        *,
         name: Optional[str] = None,
         timeout: int = 30,
     ) -> AsyncSandbox:
@@ -701,6 +706,7 @@ class AsyncSandboxClient:
     async def create_sandbox(
         self,
         template_name: str,
+        *,
         name: Optional[str] = None,
         timeout: int = 30,
     ) -> AsyncSandbox:

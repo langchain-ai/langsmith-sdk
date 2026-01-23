@@ -63,6 +63,7 @@ class SandboxClient:
 
     def __init__(
         self,
+        *,
         api_endpoint: Optional[str] = None,
         timeout: float = 10.0,
         api_key: Optional[str] = None,
@@ -108,6 +109,7 @@ class SandboxClient:
         self,
         name: str,
         size: str,
+        *,
         timeout: int = 60,
     ) -> Volume:
         """Create a new persistent volume.
@@ -300,6 +302,7 @@ class SandboxClient:
         self,
         name: str,
         image: str,
+        *,
         cpu: str = "500m",
         memory: str = "512Mi",
         storage: Optional[str] = None,
@@ -481,6 +484,7 @@ class SandboxClient:
         name: str,
         template_name: str,
         replicas: int,
+        *,
         timeout: int = 30,
     ) -> Pool:
         """Create a new Sandbox Pool.
@@ -670,6 +674,7 @@ class SandboxClient:
     def sandbox(
         self,
         template_name: str,
+        *,
         name: Optional[str] = None,
         timeout: int = 30,
     ) -> Sandbox:
@@ -708,6 +713,7 @@ class SandboxClient:
     def create_sandbox(
         self,
         template_name: str,
+        *,
         name: Optional[str] = None,
         timeout: int = 30,
     ) -> Sandbox:

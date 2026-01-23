@@ -118,6 +118,7 @@ class Sandbox:
     def run(
         self,
         command: str,
+        *,
         timeout: int = 60,
         env: Optional[dict[str, str]] = None,
         cwd: Optional[str] = None,
@@ -176,6 +177,7 @@ class Sandbox:
         self,
         path: str,
         content: Union[str, bytes],
+        *,
         timeout: int = 60,
     ) -> None:
         """Write content to a file in the sandbox.
@@ -213,7 +215,7 @@ class Sandbox:
         except httpx.HTTPStatusError as e:
             handle_sandbox_http_error(e)
 
-    def read(self, path: str, timeout: int = 60) -> bytes:
+    def read(self, path: str, *, timeout: int = 60) -> bytes:
         """Read a file from the sandbox.
 
         Args:

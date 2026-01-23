@@ -118,6 +118,7 @@ class AsyncSandbox:
     async def run(
         self,
         command: str,
+        *,
         timeout: int = 60,
         env: Optional[dict[str, str]] = None,
         cwd: Optional[str] = None,
@@ -178,6 +179,7 @@ class AsyncSandbox:
         self,
         path: str,
         content: Union[str, bytes],
+        *,
         timeout: int = 60,
     ) -> None:
         """Write content to a file in the sandbox asynchronously.
@@ -215,7 +217,7 @@ class AsyncSandbox:
         except httpx.HTTPStatusError as e:
             handle_sandbox_http_error(e)
 
-    async def read(self, path: str, timeout: int = 60) -> bytes:
+    async def read(self, path: str, *, timeout: int = 60) -> bytes:
         """Read a file from the sandbox asynchronously.
 
         Args:
