@@ -1240,6 +1240,8 @@ class UpsertExamplesResponse(TypedDict):
     """The number of examples that were upserted."""
     example_ids: list[str]
     """The ids of the examples that were upserted."""
+    as_of: str
+    """The timestamp when the examples were created/updated."""
 
 
 class ExampleWithRuns(Example):

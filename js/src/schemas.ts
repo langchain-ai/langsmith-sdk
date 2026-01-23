@@ -294,6 +294,7 @@ export interface ExampleUpdateWithAttachments extends ExampleUpdate {}
 export interface UploadExamplesResponse {
   count: number;
   example_ids: string[];
+  as_of: string;
 }
 
 export interface UpdateExamplesResponse extends UploadExamplesResponse {}

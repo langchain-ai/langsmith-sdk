@@ -478,6 +478,11 @@ def test_upsert_examples_multipart(mock_session_cls: mock.Mock) -> None:
     mock_session = MagicMock()
     mock_response = MagicMock()
     mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "count": 1,
+        "example_ids": [str(uuid.uuid4())],
+        "as_of": "2024-01-21T10:00:00.123456Z",
+    }
     mock_session.request.return_value = mock_response
     mock_session_cls.return_value = mock_session
 
@@ -507,7 +512,13 @@ def test_upsert_examples_multipart(mock_session_cls: mock.Mock) -> None:
             ),
         },
     )
-    client.upsert_examples_multipart(upserts=[example])
+    response = client.upsert_examples_multipart(upserts=[example])
+
+    # Verify the response structure
+    assert response["count"] == 1
+    assert "example_ids" in response
+    assert "as_of" in response
+    assert isinstance(response["as_of"], str)
 
     # Verify the request
     assert mock_session.request.call_count == 1
