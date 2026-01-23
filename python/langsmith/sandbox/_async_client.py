@@ -220,9 +220,7 @@ class AsyncSandboxClient:
                 ) from e
             if e.response.status_code == 409:
                 data = parse_error_response(e)
-                raise ResourceInUseError(
-                    data["message"], resource_type="volume"
-                ) from e
+                raise ResourceInUseError(data["message"], resource_type="volume") from e
             handle_client_http_error(e)
 
     async def update_volume(
@@ -276,9 +274,7 @@ class AsyncSandboxClient:
                 ) from e
             if e.response.status_code == 400:
                 data = parse_error_response(e)
-                raise ValidationError(
-                    data["message"], error_type="VolumeResize"
-                ) from e
+                raise ValidationError(data["message"], error_type="VolumeResize") from e
             if e.response.status_code == 409:
                 data = parse_error_response(e)
                 raise ResourceNameConflictError(

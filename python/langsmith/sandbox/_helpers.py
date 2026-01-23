@@ -165,9 +165,7 @@ def handle_sandbox_creation_error(error: httpx.HTTPStatusError) -> None:
 
     if status == 408:
         # Timeout - include the message which contains last known status
-        raise ResourceTimeoutError(
-            data["message"], resource_type="sandbox"
-        ) from error
+        raise ResourceTimeoutError(data["message"], resource_type="sandbox") from error
     elif status == 422:
         # Check if this is a Pydantic validation error (bad input) vs creation error
         details = parse_validation_error(error)
@@ -218,9 +216,7 @@ def handle_volume_creation_error(error: httpx.HTTPStatusError) -> None:
         ) from error
     elif status == 504:
         # Timeout - volume didn't become ready in time
-        raise ResourceTimeoutError(
-            data["message"], resource_type="volume"
-        ) from error
+        raise ResourceTimeoutError(data["message"], resource_type="volume") from error
     else:
         # Fall through to generic handling
         handle_client_http_error(error)
@@ -248,9 +244,7 @@ def handle_pool_error(error: httpx.HTTPStatusError) -> None:
             ) from error
         elif error_type == "ValidationError":
             # Template has volumes attached
-            raise ValidationError(
-                data["message"], error_type=error_type
-            ) from error
+            raise ValidationError(data["message"], error_type=error_type) from error
         else:
             # Generic bad request
             handle_client_http_error(error)
@@ -268,9 +262,7 @@ def handle_pool_error(error: httpx.HTTPStatusError) -> None:
         ) from error
     elif status == 504:
         # Timeout waiting for pool to be ready
-        raise ResourceTimeoutError(
-            data["message"], resource_type="pool"
-        ) from error
+        raise ResourceTimeoutError(data["message"], resource_type="pool") from error
     else:
         # Fall through to generic handling
         handle_client_http_error(error)

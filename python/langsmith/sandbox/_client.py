@@ -227,9 +227,7 @@ class SandboxClient:
                 ) from e
             if e.response.status_code == 409:
                 data = parse_error_response(e)
-                raise ResourceInUseError(
-                    data["message"], resource_type="volume"
-                ) from e
+                raise ResourceInUseError(data["message"], resource_type="volume") from e
             handle_client_http_error(e)
 
     def update_volume(
@@ -283,9 +281,7 @@ class SandboxClient:
                 ) from e
             if e.response.status_code == 400:
                 data = parse_error_response(e)
-                raise ValidationError(
-                    data["message"], error_type="VolumeResize"
-                ) from e
+                raise ValidationError(data["message"], error_type="VolumeResize") from e
             if e.response.status_code == 409:
                 data = parse_error_response(e)
                 raise ResourceNameConflictError(
@@ -749,9 +745,7 @@ class SandboxClient:
             # Use longer timeout for sandbox creation (includes wait_for_ready)
             response = self._http.post(url, json=payload, timeout=timeout + 30)
             response.raise_for_status()
-            return Sandbox.from_dict(
-                response.json(), client=self, auto_delete=False
-            )
+            return Sandbox.from_dict(response.json(), client=self, auto_delete=False)
         except httpx.ConnectError as e:
             raise SandboxConnectionError(f"Failed to connect to server: {e}") from e
         except httpx.HTTPStatusError as e:
@@ -778,9 +772,7 @@ class SandboxClient:
         try:
             response = self._http.get(url)
             response.raise_for_status()
-            return Sandbox.from_dict(
-                response.json(), client=self, auto_delete=False
-            )
+            return Sandbox.from_dict(response.json(), client=self, auto_delete=False)
         except httpx.ConnectError as e:
             raise SandboxConnectionError(f"Failed to connect to server: {e}") from e
         except httpx.HTTPStatusError as e:
