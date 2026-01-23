@@ -6,21 +6,15 @@ import pytest
 from pytest_httpx import HTTPXMock
 
 from langsmith.sandbox import (
-    PoolAlreadyExistsError,
-    PoolNotFoundError,
-    PoolTimeoutError,
-    PoolValidationError,
+    QuotaExceededError,
+    ResourceAlreadyExistsError,
+    ResourceInUseError,
     ResourceNameConflictError,
+    ResourceNotFoundError,
+    ResourceTimeoutError,
     SandboxClient,
     SandboxConnectionError,
-    SandboxNotFoundError,
-    SandboxQuotaExceededError,
-    SandboxTimeoutError,
-    TemplateInUseError,
-    TemplateNotFoundError,
-    VolumeInUseError,
-    VolumeNotFoundError,
-    VolumeResizeError,
+    ValidationError,
 )
 
 
@@ -216,7 +210,7 @@ class TestTemplateOperations:
             status_code=404,
         )
 
-        with pytest.raises(TemplateNotFoundError):
+        with pytest.raises(ResourceNotFoundError):
             client.get_template("nonexistent")
 
     def test_update_template(self, client: SandboxClient, httpx_mock: HTTPXMock):
@@ -252,7 +246,7 @@ class TestTemplateOperations:
             status_code=404,
         )
 
-        with pytest.raises(TemplateNotFoundError):
+        with pytest.raises(ResourceNotFoundError):
             client.update_template("nonexistent", new_name="new-name")
 
     def test_update_template_name_conflict(
@@ -303,7 +297,7 @@ class TestTemplateOperations:
             status_code=409,
         )
 
-        with pytest.raises(TemplateInUseError):
+        with pytest.raises(ResourceInUseError):
             client.delete_template("python-sandbox")
 
 
@@ -365,7 +359,7 @@ class TestSandboxOperations:
             status_code=408,
         )
 
-        with pytest.raises(SandboxTimeoutError):
+        with pytest.raises(ResourceTimeoutError):
             client.create_sandbox(template_name="python-sandbox")
 
     def test_list_sandboxes(self, client: SandboxClient, httpx_mock: HTTPXMock):
@@ -428,7 +422,7 @@ class TestSandboxOperations:
             status_code=404,
         )
 
-        with pytest.raises(SandboxNotFoundError):
+        with pytest.raises(ResourceNotFoundError):
             client.update_sandbox("nonexistent", new_name="new-name")
 
     def test_update_sandbox_name_conflict(
@@ -491,7 +485,7 @@ class TestPoolOperations:
             status_code=400,
         )
 
-        with pytest.raises(TemplateNotFoundError):
+        with pytest.raises(ResourceNotFoundError):
             client.create_pool(
                 name="python-pool",
                 template_name="nonexistent",
@@ -517,7 +511,7 @@ class TestPoolOperations:
             status_code=400,
         )
 
-        with pytest.raises(PoolValidationError) as exc_info:
+        with pytest.raises(ValidationError) as exc_info:
             client.create_pool(
                 name="python-pool",
                 template_name="stateful-template",
@@ -536,7 +530,7 @@ class TestPoolOperations:
             status_code=409,
         )
 
-        with pytest.raises(PoolAlreadyExistsError):
+        with pytest.raises(ResourceAlreadyExistsError):
             client.create_pool(
                 name="python-pool",
                 template_name="python-sandbox",
@@ -559,7 +553,7 @@ class TestPoolOperations:
             status_code=429,
         )
 
-        with pytest.raises(SandboxQuotaExceededError) as exc_info:
+        with pytest.raises(QuotaExceededError) as exc_info:
             client.create_pool(
                 name="python-pool",
                 template_name="python-sandbox",
@@ -618,7 +612,7 @@ class TestPoolOperations:
             status_code=504,
         )
 
-        with pytest.raises(PoolTimeoutError):
+        with pytest.raises(ResourceTimeoutError):
             client.create_pool(
                 name="python-pool",
                 template_name="python-sandbox",
@@ -652,7 +646,7 @@ class TestPoolOperations:
             status_code=404,
         )
 
-        with pytest.raises(PoolNotFoundError):
+        with pytest.raises(ResourceNotFoundError):
             client.get_pool("nonexistent")
 
     def test_list_pools(self, client: SandboxClient, httpx_mock: HTTPXMock):
@@ -766,7 +760,7 @@ class TestPoolOperations:
             status_code=404,
         )
 
-        with pytest.raises(PoolNotFoundError):
+        with pytest.raises(ResourceNotFoundError):
             client.update_pool("nonexistent", replicas=10)
 
     def test_update_pool_quota_exceeded(
@@ -780,7 +774,7 @@ class TestPoolOperations:
             status_code=429,
         )
 
-        with pytest.raises(SandboxQuotaExceededError):
+        with pytest.raises(QuotaExceededError):
             client.update_pool("python-pool", replicas=20)
 
     def test_update_pool_pause(self, client: SandboxClient, httpx_mock: HTTPXMock):
@@ -839,7 +833,7 @@ class TestPoolOperations:
             status_code=404,
         )
 
-        with pytest.raises(PoolNotFoundError):
+        with pytest.raises(ResourceNotFoundError):
             client.delete_pool("nonexistent")
 
 
@@ -963,7 +957,7 @@ class TestVolumeOperations:
             status_code=404,
         )
 
-        with pytest.raises(VolumeNotFoundError):
+        with pytest.raises(ResourceNotFoundError):
             client.update_volume("nonexistent", size="20Gi")
 
     def test_update_volume_resize_error(
@@ -985,7 +979,7 @@ class TestVolumeOperations:
             status_code=400,
         )
 
-        with pytest.raises(VolumeResizeError):
+        with pytest.raises(ValidationError):
             client.update_volume("my-volume", size="5Gi")
 
     def test_update_volume_name_conflict(
@@ -1025,5 +1019,5 @@ class TestVolumeOperations:
             status_code=409,
         )
 
-        with pytest.raises(VolumeInUseError):
+        with pytest.raises(ResourceInUseError):
             client.delete_volume("my-volume")

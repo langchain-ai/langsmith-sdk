@@ -6,8 +6,8 @@ from pytest_httpx import HTTPXMock
 from langsmith.sandbox import (
     AsyncSandboxClient,
     DataplaneNotConfiguredError,
+    ResourceNotFoundError,
     SandboxConnectionError,
-    SandboxNotFoundError,
 )
 from langsmith.sandbox._async_sandbox import AsyncSandbox
 
@@ -299,7 +299,7 @@ class TestAsyncSandboxRead:
             status_code=404,
         )
 
-        with pytest.raises(SandboxNotFoundError):
+        with pytest.raises(ResourceNotFoundError):
             await sandbox.read("/app/nonexistent.txt")
 
     async def test_read_without_dataplane_url(self, client: AsyncSandboxClient):

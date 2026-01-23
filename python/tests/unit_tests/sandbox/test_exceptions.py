@@ -1,14 +1,14 @@
 """Tests for sandbox exceptions."""
 
 from langsmith.sandbox import (
-    PoolValidationError,
+    QuotaExceededError,
     ResourceNameConflictError,
+    ResourceNotFoundError,
+    ResourceTimeoutError,
     SandboxClientError,
     SandboxCreationError,
     SandboxOperationError,
-    SandboxQuotaExceededError,
-    SandboxTimeoutError,
-    SandboxValidationError,
+    ValidationError,
 )
 from langsmith.utils import LangSmithError
 
@@ -28,31 +28,50 @@ class TestExceptionHierarchy:
             assert str(e) == "test error"
 
 
-class TestSandboxTimeoutError:
-    """Tests for SandboxTimeoutError."""
+class TestResourceTimeoutError:
+    """Tests for ResourceTimeoutError."""
 
     def test_basic_message(self):
         """Test basic error message."""
-        error = SandboxTimeoutError("Timeout waiting for sandbox")
+        error = ResourceTimeoutError("Timeout waiting for sandbox")
         assert str(error) == "Timeout waiting for sandbox"
         assert error.last_status is None
+        assert error.resource_type is None
 
     def test_with_last_status(self):
         """Test error with last_status."""
-        error = SandboxTimeoutError(
-            "Timeout waiting for sandbox", last_status="Pending"
+        error = ResourceTimeoutError(
+            "Timeout waiting for sandbox",
+            resource_type="sandbox",
+            last_status="Pending",
         )
         assert "Timeout waiting for sandbox" in str(error)
         assert "last_status: Pending" in str(error)
         assert error.last_status == "Pending"
+        assert error.resource_type == "sandbox"
 
 
-class TestSandboxValidationError:
-    """Tests for SandboxValidationError."""
+class TestResourceNotFoundError:
+    """Tests for ResourceNotFoundError."""
 
     def test_basic_message(self):
         """Test basic error message."""
-        error = SandboxValidationError("Invalid CPU value")
+        error = ResourceNotFoundError("Resource not found")
+        assert str(error) == "Resource not found"
+        assert error.resource_type is None
+
+    def test_with_resource_type(self):
+        """Test error with resource_type."""
+        error = ResourceNotFoundError("Template not found", resource_type="template")
+        assert error.resource_type == "template"
+
+
+class TestValidationError:
+    """Tests for ValidationError."""
+
+    def test_basic_message(self):
+        """Test basic error message."""
+        error = ValidationError("Invalid CPU value")
         assert str(error) == "Invalid CPU value"
         assert error.field is None
         assert error.details == []
@@ -60,7 +79,7 @@ class TestSandboxValidationError:
     def test_with_field_and_details(self):
         """Test error with field and details."""
         details = [{"loc": ["body", "cpu"], "msg": "value too high"}]
-        error = SandboxValidationError(
+        error = ValidationError(
             "Invalid CPU value",
             field="cpu",
             details=details,
@@ -69,18 +88,18 @@ class TestSandboxValidationError:
         assert error.details == details
 
 
-class TestSandboxQuotaExceededError:
-    """Tests for SandboxQuotaExceededError."""
+class TestQuotaExceededError:
+    """Tests for QuotaExceededError."""
 
     def test_basic_message(self):
         """Test basic error message."""
-        error = SandboxQuotaExceededError("Quota exceeded")
+        error = QuotaExceededError("Quota exceeded")
         assert str(error) == "Quota exceeded"
         assert error.quota_type is None
 
     def test_with_quota_type(self):
         """Test error with quota_type."""
-        error = SandboxQuotaExceededError("Quota exceeded", quota_type="sandbox_count")
+        error = QuotaExceededError("Quota exceeded", quota_type="sandbox_count")
         assert error.quota_type == "sandbox_count"
 
 
@@ -115,6 +134,13 @@ class TestSandboxOperationError:
         assert "[WriteError]" in str(error)
         assert error.error_type == "WriteError"
 
+    def test_with_operation(self):
+        """Test error with operation."""
+        error = SandboxOperationError(
+            "Write failed", operation="write", error_type="WriteError"
+        )
+        assert error.operation == "write"
+
 
 class TestResourceNameConflictError:
     """Tests for ResourceNameConflictError."""
@@ -129,20 +155,3 @@ class TestResourceNameConflictError:
         """Test error with resource_type."""
         error = ResourceNameConflictError("Name already exists", resource_type="volume")
         assert error.resource_type == "volume"
-
-
-class TestPoolValidationError:
-    """Tests for PoolValidationError."""
-
-    def test_basic_message(self):
-        """Test basic error message."""
-        error = PoolValidationError("Template has volumes")
-        assert str(error) == "Template has volumes"
-        assert error.error_type is None
-
-    def test_with_error_type(self):
-        """Test error with error_type."""
-        error = PoolValidationError(
-            "Template has volumes", error_type="ValidationError"
-        )
-        assert error.error_type == "ValidationError"

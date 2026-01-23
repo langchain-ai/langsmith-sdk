@@ -9,8 +9,8 @@ import httpx
 
 from langsmith.sandbox._exceptions import (
     DataplaneNotConfiguredError,
+    ResourceNotFoundError,
     SandboxConnectionError,
-    SandboxNotFoundError,
 )
 from langsmith.sandbox._helpers import handle_sandbox_http_error
 from langsmith.sandbox._models import ExecutionResult
@@ -137,7 +137,7 @@ class AsyncSandbox:
 
         Raises:
             DataplaneNotConfiguredError: If dataplane_url is not configured.
-            SandboxCommandError: If command execution fails.
+            SandboxOperationError: If command execution fails.
             SandboxConnectionError: If connection to sandbox fails.
             SandboxNotReadyError: If sandbox is not ready.
             SandboxClientError: For other errors.
@@ -189,8 +189,7 @@ class AsyncSandbox:
 
         Raises:
             DataplaneNotConfiguredError: If dataplane_url is not configured.
-            SandboxWriteError: If file write fails (e.g., permission denied).
-            SandboxPermissionError: If write is denied due to permissions.
+            SandboxOperationError: If file write fails.
             SandboxConnectionError: If connection to sandbox fails.
             SandboxNotReadyError: If sandbox is not ready.
             SandboxClientError: For other errors.
@@ -229,9 +228,8 @@ class AsyncSandbox:
 
         Raises:
             DataplaneNotConfiguredError: If dataplane_url is not configured.
-            SandboxNotFoundError: If the file doesn't exist.
-            SandboxReadError: If file read fails (e.g., I/O error).
-            SandboxPermissionError: If read is denied due to permissions.
+            ResourceNotFoundError: If the file doesn't exist.
+            SandboxOperationError: If file read fails.
             SandboxConnectionError: If connection to sandbox fails.
             SandboxNotReadyError: If sandbox is not ready.
             SandboxClientError: For other errors.
@@ -251,8 +249,9 @@ class AsyncSandbox:
             ) from e
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
-                raise SandboxNotFoundError(
-                    f"File '{path}' not found in sandbox '{self.name}'"
+                raise ResourceNotFoundError(
+                    f"File '{path}' not found in sandbox '{self.name}'",
+                    resource_type="file",
                 ) from e
             handle_sandbox_http_error(e)
             # This line should never be reached but satisfies type checker

@@ -1,6 +1,8 @@
 """Custom exceptions for the sandbox client.
 
 All sandbox exceptions extend LangSmithError for unified error handling.
+The exceptions are organized by error type rather than resource type,
+with a resource_type attribute for specific handling when needed.
 """
 
 from __future__ import annotations
@@ -14,6 +16,11 @@ class SandboxClientError(LangSmithError):
     """Base exception for sandbox client errors."""
 
     pass
+
+
+# =============================================================================
+# Connection and Authentication Errors
+# =============================================================================
 
 
 class SandboxAPIError(SandboxClientError):
@@ -37,62 +44,16 @@ class SandboxConnectionError(SandboxClientError):
     pass
 
 
-class SandboxNotFoundError(SandboxClientError):
-    """Raised when a sandbox (claim) or file is not found."""
-
-    pass
-
-
-class TemplateNotFoundError(SandboxClientError):
-    """Raised when a sandbox template is not found."""
-
-    pass
+# =============================================================================
+# Resource Errors (type-based, with resource_type attribute)
+# =============================================================================
 
 
-class VolumeNotFoundError(SandboxClientError):
-    """Raised when a volume is not found."""
-
-    pass
-
-
-class VolumeProvisioningError(SandboxClientError):
-    """Raised when volume provisioning fails (503 - invalid storage class, quota)."""
-
-    pass
-
-
-class VolumeTimeoutError(SandboxClientError):
-    """Raised when volume doesn't become ready within timeout (504)."""
-
-    pass
-
-
-class VolumeInUseError(SandboxClientError):
-    """Raised when deleting a volume referenced by templates (409)."""
-
-    pass
-
-
-class VolumeResizeError(SandboxClientError):
-    """Raised when volume resize fails (400 - cannot decrease size)."""
-
-    pass
-
-
-class TemplateInUseError(SandboxClientError):
-    """Raised when deleting a template referenced by sandboxes or pools (409)."""
-
-    pass
-
-
-class ResourceNameConflictError(SandboxClientError):
-    """Raised when updating a resource name to one that already exists (409).
-
-    This error occurs when attempting to rename a volume, template, or pool
-    to a name that is already in use by another resource of the same type.
+class ResourceNotFoundError(SandboxClientError):
+    """Raised when a resource is not found.
 
     Attributes:
-        resource_type: Type of resource (e.g., "volume", "template", "pool").
+        resource_type: Type of resource (sandbox, template, volume, pool, file).
     """
 
     def __init__(self, message: str, resource_type: Optional[str] = None):
@@ -101,61 +62,23 @@ class ResourceNameConflictError(SandboxClientError):
         self.resource_type = resource_type
 
 
-class PoolNotFoundError(SandboxClientError):
-    """Raised when a pool is not found."""
-
-    pass
-
-
-class PoolAlreadyExistsError(SandboxClientError):
-    """Raised when creating a pool that already exists (409 Conflict)."""
-
-    pass
-
-
-class PoolValidationError(SandboxClientError):
-    """Raised when pool validation fails.
-
-    This includes:
-    - Template has volume mounts (pools only support stateless templates)
-    - Template was deleted after pool creation
-
-    Attributes:
-        error_type: Machine-readable error type from the API.
-    """
-
-    def __init__(self, message: str, error_type: Optional[str] = None):
-        """Initialize the error."""
-        super().__init__(message)
-        self.error_type = error_type
-
-
-class PoolTimeoutError(SandboxClientError):
-    """Raised when pool doesn't reach ready state within timeout.
-
-    This occurs when the pool doesn't have at least one ready replica
-    within the specified timeout.
-    """
-
-    pass
-
-
-class SandboxNotReadyError(SandboxClientError):
-    """Raised when attempting to interact with a sandbox that is not ready."""
-
-    pass
-
-
-class SandboxTimeoutError(SandboxClientError):
+class ResourceTimeoutError(SandboxClientError):
     """Raised when an operation times out.
 
     Attributes:
-        last_status: The last known status of the sandbox before timeout.
+        resource_type: Type of resource (sandbox, volume, pool).
+        last_status: The last known status before timeout (for sandboxes).
     """
 
-    def __init__(self, message: str, last_status: Optional[str] = None):
+    def __init__(
+        self,
+        message: str,
+        resource_type: Optional[str] = None,
+        last_status: Optional[str] = None,
+    ):
         """Initialize the error."""
         super().__init__(message)
+        self.resource_type = resource_type
         self.last_status = last_status
 
     def __str__(self) -> str:
@@ -166,18 +89,63 @@ class SandboxTimeoutError(SandboxClientError):
         return base
 
 
-class SandboxValidationError(SandboxClientError):
-    """Raised when request validation fails (invalid resource values).
+class ResourceInUseError(SandboxClientError):
+    """Raised when deleting a resource that is still in use.
+
+    Attributes:
+        resource_type: Type of resource (template, volume).
+    """
+
+    def __init__(self, message: str, resource_type: Optional[str] = None):
+        """Initialize the error."""
+        super().__init__(message)
+        self.resource_type = resource_type
+
+
+class ResourceAlreadyExistsError(SandboxClientError):
+    """Raised when creating a resource that already exists.
+
+    Attributes:
+        resource_type: Type of resource (e.g., pool).
+    """
+
+    def __init__(self, message: str, resource_type: Optional[str] = None):
+        """Initialize the error."""
+        super().__init__(message)
+        self.resource_type = resource_type
+
+
+class ResourceNameConflictError(SandboxClientError):
+    """Raised when updating a resource name to one that already exists.
+
+    Attributes:
+        resource_type: Type of resource (volume, template, pool, sandbox).
+    """
+
+    def __init__(self, message: str, resource_type: Optional[str] = None):
+        """Initialize the error."""
+        super().__init__(message)
+        self.resource_type = resource_type
+
+
+# =============================================================================
+# Validation and Quota Errors
+# =============================================================================
+
+
+class ValidationError(SandboxClientError):
+    """Raised when request validation fails.
 
     This includes:
     - Resource values exceeding server-defined limits (CPU, memory, storage)
     - Invalid resource units
-    - Invalid name formats (must start with lowercase letter, only lowercase
-      letters, numbers, and hyphens allowed, cannot end with hyphen)
+    - Invalid name formats
+    - Pool validation failures (e.g., template has volumes)
 
     Attributes:
         field: The field that failed validation (e.g., "cpu", "memory").
         details: List of validation error details from the API.
+        error_type: Machine-readable error type from the API.
     """
 
     def __init__(
@@ -185,18 +153,17 @@ class SandboxValidationError(SandboxClientError):
         message: str,
         field: Optional[str] = None,
         details: Optional[list[dict]] = None,
+        error_type: Optional[str] = None,
     ):
         """Initialize the error."""
         super().__init__(message)
         self.field = field
         self.details = details or []
+        self.error_type = error_type
 
 
-class SandboxQuotaExceededError(SandboxClientError):
+class QuotaExceededError(SandboxClientError):
     """Raised when organization quota limits are exceeded.
-
-    This indicates the organization has reached its resource limits
-    (max sandboxes, total CPU, total memory, etc.).
 
     Users should contact support@langchain.dev to increase quotas.
 
@@ -210,91 +177,17 @@ class SandboxQuotaExceededError(SandboxClientError):
         self.quota_type = quota_type
 
 
+# =============================================================================
+# Sandbox Creation Errors
+# =============================================================================
+
+
 class SandboxCreationError(SandboxClientError):
-    """Raised when sandbox creation fails (image pull, crash, config error).
-
-    This is the base class for all sandbox creation failures. Use the specific
-    subclasses (SandboxImageError, SandboxCrashError, SandboxSchedulingError)
-    to catch specific error types.
+    """Raised when sandbox creation fails.
 
     Attributes:
-        error_type: Machine-readable error type from the API.
-    """
-
-    def __init__(
-        self,
-        message: str,
-        error_type: Optional[str] = None,
-    ):
-        """Initialize the error."""
-        super().__init__(message)
-        self.error_type = error_type
-
-    def __str__(self) -> str:
-        """Return string representation."""
-        if self.error_type:
-            return f"{super().__str__()} [{self.error_type}]"
-        return super().__str__()
-
-
-class SandboxImageError(SandboxCreationError):
-    """Raised for image pull failures.
-
-    Error types: ImagePull.
-
-    This typically indicates the container image doesn't exist, is inaccessible,
-    or the image reference is malformed. Check your template's image configuration.
-    """
-
-    pass
-
-
-class SandboxCrashError(SandboxCreationError):
-    """Raised when container crashes during startup.
-
-    Error types: CrashLoop, SandboxConfig.
-
-    This typically indicates an issue with the container itself - it may be
-    crashing on startup, running out of memory, or have an invalid configuration.
-    """
-
-    pass
-
-
-class SandboxSchedulingError(SandboxCreationError):
-    """Raised when sandbox cannot be scheduled.
-
-    Error types: Unschedulable.
-
-    This typically indicates insufficient cluster resources (CPU, memory, etc.).
-    May succeed on retry when resources become available.
-    """
-
-    pass
-
-
-# =============================================================================
-# Sandbox Operation Errors (runtime errors during sandbox interaction)
-# =============================================================================
-
-
-class DataplaneNotConfiguredError(SandboxClientError):
-    """Raised when dataplane_url is not available for the sandbox.
-
-    This occurs when the sandbox-router URL is not configured for the cluster,
-    meaning runtime operations (run, write, read) cannot be performed directly.
-    """
-
-    pass
-
-
-class SandboxOperationError(SandboxClientError):
-    """Base class for sandbox operation errors (run, read, write).
-
-    This is raised when an operation on a running sandbox fails.
-
-    Attributes:
-        error_type: Machine-readable error type from the API.
+        error_type: Machine-readable error type (ImagePull, CrashLoop,
+            SandboxConfig, Unschedulable).
     """
 
     def __init__(self, message: str, error_type: Optional[str] = None):
@@ -309,45 +202,47 @@ class SandboxOperationError(SandboxClientError):
         return super().__str__()
 
 
-class SandboxCommandError(SandboxOperationError):
-    """Raised when command execution fails in the sandbox.
+# =============================================================================
+# Sandbox Operation Errors (runtime errors during sandbox interaction)
+# =============================================================================
 
-    Error type: CommandError.
 
-    This indicates the command could not be executed (not the same as
-    a non-zero exit code, which is returned in ExecutionResult).
+class DataplaneNotConfiguredError(SandboxClientError):
+    """Raised when dataplane_url is not available for the sandbox.
+
+    This occurs when the sandbox-router URL is not configured for the cluster.
     """
 
     pass
 
 
-class SandboxWriteError(SandboxOperationError):
-    """Raised when writing a file to the sandbox fails.
-
-    Error type: WriteError.
-
-    Common causes include permission denied, disk full, or invalid path.
-    """
+class SandboxNotReadyError(SandboxClientError):
+    """Raised when attempting to interact with a sandbox that is not ready."""
 
     pass
 
 
-class SandboxReadError(SandboxOperationError):
-    """Raised when reading a file from the sandbox fails.
+class SandboxOperationError(SandboxClientError):
+    """Raised when a sandbox operation fails (run, read, write).
 
-    Error type: ReadError.
-
-    Common causes include permission denied or I/O errors.
-    For file not found, SandboxNotFoundError is raised instead.
+    Attributes:
+        operation: The operation that failed (command, read, write).
+        error_type: Machine-readable error type from the API.
     """
 
-    pass
+    def __init__(
+        self,
+        message: str,
+        operation: Optional[str] = None,
+        error_type: Optional[str] = None,
+    ):
+        """Initialize the error."""
+        super().__init__(message)
+        self.operation = operation
+        self.error_type = error_type
 
-
-class SandboxPermissionError(SandboxOperationError):
-    """Raised when an operation is denied due to permissions.
-
-    This is raised for HTTP 403 errors from sandbox operations.
-    """
-
-    pass
+    def __str__(self) -> str:
+        """Return string representation."""
+        if self.error_type:
+            return f"{super().__str__()} [{self.error_type}]"
+        return super().__str__()

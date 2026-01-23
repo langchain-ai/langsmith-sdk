@@ -234,26 +234,26 @@ async def main():
 
 ## Error Handling
 
-The module provides specific exceptions for different error types:
+The module provides type-based exceptions with a `resource_type` attribute for specific handling:
 
 ```python
 from langsmith.sandbox import (
-    SandboxClientError,      # Base exception for all sandbox errors
-    SandboxNotFoundError,    # Sandbox doesn't exist
-    SandboxTimeoutError,     # Operation timed out
-    SandboxConnectionError,  # Network error
-    TemplateNotFoundError,   # Template doesn't exist
-    SandboxQuotaExceededError,  # Quota limit reached
+    SandboxClientError,       # Base exception for all sandbox errors
+    ResourceNotFoundError,    # Resource doesn't exist (check resource_type)
+    ResourceTimeoutError,     # Operation timed out (check resource_type)
+    SandboxConnectionError,   # Network error
+    QuotaExceededError,       # Quota limit reached
 )
 
 try:
     # This will fail if "nonexistent" template doesn't exist
     with client.sandbox(template_name="nonexistent") as sb:
         pass
-except TemplateNotFoundError:
-    print("Template not found! Create it first with client.create_template()")
-except SandboxTimeoutError as e:
-    print(f"Timeout: {e}")
+except ResourceNotFoundError as e:
+    # e.resource_type tells you what wasn't found: "sandbox", "template", "volume", etc.
+    print(f"{e.resource_type} not found: {e}")
+except ResourceTimeoutError as e:
+    print(f"Timeout waiting for {e.resource_type}: {e}")
 except SandboxClientError as e:
     print(f"Error: {e}")
 ```

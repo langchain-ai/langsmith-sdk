@@ -8,16 +8,12 @@ import httpx
 
 from langsmith import utils as ls_utils
 from langsmith.sandbox._exceptions import (
-    PoolNotFoundError,
+    ResourceInUseError,
     ResourceNameConflictError,
+    ResourceNotFoundError,
     SandboxAPIError,
     SandboxConnectionError,
-    SandboxNotFoundError,
-    TemplateInUseError,
-    TemplateNotFoundError,
-    VolumeInUseError,
-    VolumeNotFoundError,
-    VolumeResizeError,
+    ValidationError,
 )
 from langsmith.sandbox._helpers import (
     handle_client_http_error,
@@ -128,7 +124,7 @@ class SandboxClient:
 
         Raises:
             VolumeProvisioningError: If volume provisioning fails.
-            VolumeTimeoutError: If volume doesn't become ready within timeout.
+            ResourceTimeoutError: If volume doesn't become ready within timeout.
             SandboxClientError: For other errors.
         """
         url = f"{self._base_url}/volumes"
@@ -161,7 +157,7 @@ class SandboxClient:
             Volume.
 
         Raises:
-            VolumeNotFoundError: If volume not found.
+            ResourceNotFoundError: If volume not found.
             SandboxClientError: For other errors.
         """
         url = f"{self._base_url}/volumes/{name}"
@@ -174,7 +170,9 @@ class SandboxClient:
             raise SandboxConnectionError(f"Failed to connect to server: {e}") from e
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
-                raise VolumeNotFoundError(f"Volume '{name}' not found") from e
+                raise ResourceNotFoundError(
+                    f"Volume '{name}' not found", resource_type="volume"
+                ) from e
             handle_client_http_error(e)
             raise  # pragma: no cover
 
@@ -209,8 +207,8 @@ class SandboxClient:
             name: Volume name.
 
         Raises:
-            VolumeNotFoundError: If volume not found.
-            VolumeInUseError: If volume is referenced by templates.
+            ResourceNotFoundError: If volume not found.
+            ResourceInUseError: If volume is referenced by templates.
             SandboxClientError: For other errors.
         """
         url = f"{self._base_url}/volumes/{name}"
@@ -222,10 +220,14 @@ class SandboxClient:
             raise SandboxConnectionError(f"Failed to connect to server: {e}") from e
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
-                raise VolumeNotFoundError(f"Volume '{name}' not found") from e
+                raise ResourceNotFoundError(
+                    f"Volume '{name}' not found", resource_type="volume"
+                ) from e
             if e.response.status_code == 409:
                 data = parse_error_response(e)
-                raise VolumeInUseError(data["message"]) from e
+                raise ResourceInUseError(
+                    data["message"], resource_type="volume"
+                ) from e
             handle_client_http_error(e)
 
     def update_volume(
@@ -249,7 +251,7 @@ class SandboxClient:
             Updated Volume.
 
         Raises:
-            VolumeNotFoundError: If volume not found.
+            ResourceNotFoundError: If volume not found.
             VolumeResizeError: If storage decrease attempted.
             ResourceNameConflictError: If new_name is already in use.
             SandboxQuotaExceededError: If storage quota would be exceeded.
@@ -274,10 +276,14 @@ class SandboxClient:
             raise SandboxConnectionError(f"Failed to connect to server: {e}") from e
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
-                raise VolumeNotFoundError(f"Volume '{name}' not found") from e
+                raise ResourceNotFoundError(
+                    f"Volume '{name}' not found", resource_type="volume"
+                ) from e
             if e.response.status_code == 400:
                 data = parse_error_response(e)
-                raise VolumeResizeError(data["message"]) from e
+                raise ValidationError(
+                    data["message"], error_type="VolumeResize"
+                ) from e
             if e.response.status_code == 409:
                 data = parse_error_response(e)
                 raise ResourceNameConflictError(
@@ -356,7 +362,7 @@ class SandboxClient:
             SandboxTemplate.
 
         Raises:
-            TemplateNotFoundError: If template not found.
+            ResourceNotFoundError: If template not found.
             SandboxClientError: For other errors.
         """
         url = f"{self._base_url}/templates/{name}"
@@ -369,7 +375,9 @@ class SandboxClient:
             raise SandboxConnectionError(f"Failed to connect to server: {e}") from e
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
-                raise TemplateNotFoundError(f"Template '{name}' not found") from e
+                raise ResourceNotFoundError(
+                    f"Template '{name}' not found", resource_type="template"
+                ) from e
             handle_client_http_error(e)
             raise  # pragma: no cover
 
@@ -408,7 +416,7 @@ class SandboxClient:
             Updated SandboxTemplate.
 
         Raises:
-            TemplateNotFoundError: If template not found.
+            ResourceNotFoundError: If template not found.
             ResourceNameConflictError: If new_name is already in use.
             SandboxClientError: For other errors.
         """
@@ -423,7 +431,9 @@ class SandboxClient:
             raise SandboxConnectionError(f"Failed to connect to server: {e}") from e
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
-                raise TemplateNotFoundError(f"Template '{name}' not found") from e
+                raise ResourceNotFoundError(
+                    f"Template '{name}' not found", resource_type="template"
+                ) from e
             if e.response.status_code == 409:
                 data = parse_error_response(e)
                 raise ResourceNameConflictError(
@@ -439,8 +449,8 @@ class SandboxClient:
             name: Template name.
 
         Raises:
-            TemplateNotFoundError: If template not found.
-            TemplateInUseError: If template is referenced by sandboxes or pools.
+            ResourceNotFoundError: If template not found.
+            ResourceInUseError: If template is referenced by sandboxes or pools.
             SandboxClientError: For other errors.
         """
         url = f"{self._base_url}/templates/{name}"
@@ -452,10 +462,14 @@ class SandboxClient:
             raise SandboxConnectionError(f"Failed to connect to server: {e}") from e
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
-                raise TemplateNotFoundError(f"Template '{name}' not found") from e
+                raise ResourceNotFoundError(
+                    f"Template '{name}' not found", resource_type="template"
+                ) from e
             if e.response.status_code == 409:
                 data = parse_error_response(e)
-                raise TemplateInUseError(data["message"]) from e
+                raise ResourceInUseError(
+                    data["message"], resource_type="template"
+                ) from e
             handle_client_http_error(e)
 
     # ========================================================================
@@ -483,10 +497,10 @@ class SandboxClient:
             Created Pool.
 
         Raises:
-            TemplateNotFoundError: If template not found.
-            PoolValidationError: If template has volumes attached.
-            PoolAlreadyExistsError: If pool with this name already exists.
-            PoolTimeoutError: If timeout waiting for ready.
+            ResourceNotFoundError: If template not found.
+            ValidationError: If template has volumes attached.
+            ResourceAlreadyExistsError: If pool with this name already exists.
+            ResourceTimeoutError: If pool doesn't reach ready state within timeout.
             SandboxQuotaExceededError: If organization quota is exceeded.
             SandboxClientError: For other errors.
         """
@@ -522,7 +536,7 @@ class SandboxClient:
             Pool.
 
         Raises:
-            PoolNotFoundError: If pool not found.
+            ResourceNotFoundError: If pool not found.
             SandboxClientError: For other errors.
         """
         url = f"{self._base_url}/pools/{name}"
@@ -535,7 +549,9 @@ class SandboxClient:
             raise SandboxConnectionError(f"Failed to connect to server: {e}") from e
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
-                raise PoolNotFoundError(f"Pool '{name}' not found") from e
+                raise ResourceNotFoundError(
+                    f"Pool '{name}' not found", resource_type="pool"
+                ) from e
             handle_client_http_error(e)
             raise  # pragma: no cover
 
@@ -584,8 +600,8 @@ class SandboxClient:
             Updated Pool.
 
         Raises:
-            PoolNotFoundError: If pool not found.
-            PoolValidationError: If template was deleted.
+            ResourceNotFoundError: If pool not found.
+            ValidationError: If template was deleted.
             ResourceNameConflictError: If new_name is already in use.
             SandboxQuotaExceededError: If quota exceeded when scaling up.
             SandboxClientError: For other errors.
@@ -610,7 +626,9 @@ class SandboxClient:
             raise SandboxConnectionError(f"Failed to connect to server: {e}") from e
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
-                raise PoolNotFoundError(f"Pool '{name}' not found") from e
+                raise ResourceNotFoundError(
+                    f"Pool '{name}' not found", resource_type="pool"
+                ) from e
             if e.response.status_code == 409:
                 data = parse_error_response(e)
                 raise ResourceNameConflictError(
@@ -628,7 +646,7 @@ class SandboxClient:
             name: Pool name.
 
         Raises:
-            PoolNotFoundError: If pool not found.
+            ResourceNotFoundError: If pool not found.
             SandboxClientError: For other errors.
         """
         url = f"{self._base_url}/pools/{name}"
@@ -640,7 +658,9 @@ class SandboxClient:
             raise SandboxConnectionError(f"Failed to connect to server: {e}") from e
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
-                raise PoolNotFoundError(f"Pool '{name}' not found") from e
+                raise ResourceNotFoundError(
+                    f"Pool '{name}' not found", resource_type="pool"
+                ) from e
             handle_client_http_error(e)
 
     # ========================================================================
@@ -673,11 +693,8 @@ class SandboxClient:
             Sandbox instance.
 
         Raises:
-            SandboxTimeoutError: If timeout waiting for sandbox to be ready.
-            SandboxImageError: If container image cannot be pulled.
-            SandboxCrashError: If container crashes during startup.
-            SandboxSchedulingError: If sandbox cannot be scheduled.
-            SandboxCreationError: For other sandbox creation failures.
+            ResourceTimeoutError: If timeout waiting for sandbox to be ready.
+            SandboxCreationError: If sandbox creation fails.
             SandboxClientError: For other errors.
         """
         sb = self.create_sandbox(
@@ -708,11 +725,8 @@ class SandboxClient:
             Created Sandbox.
 
         Raises:
-            SandboxTimeoutError: If timeout waiting for sandbox to be ready.
-            SandboxImageError: If container image cannot be pulled.
-            SandboxCrashError: If container crashes during startup.
-            SandboxSchedulingError: If sandbox cannot be scheduled.
-            SandboxCreationError: For other sandbox creation failures.
+            ResourceTimeoutError: If timeout waiting for sandbox to be ready.
+            SandboxCreationError: If sandbox creation fails.
             SandboxClientError: For other errors.
         """
         url = f"{self._base_url}/boxes"
@@ -750,7 +764,7 @@ class SandboxClient:
             Sandbox.
 
         Raises:
-            SandboxNotFoundError: If sandbox not found.
+            ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
         url = f"{self._base_url}/boxes/{name}"
@@ -765,7 +779,9 @@ class SandboxClient:
             raise SandboxConnectionError(f"Failed to connect to server: {e}") from e
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
-                raise SandboxNotFoundError(f"Sandbox '{name}' not found") from e
+                raise ResourceNotFoundError(
+                    f"Sandbox '{name}' not found", resource_type="sandbox"
+                ) from e
             handle_client_http_error(e)
             raise  # pragma: no cover
 
@@ -807,7 +823,7 @@ class SandboxClient:
             Updated Sandbox.
 
         Raises:
-            SandboxNotFoundError: If sandbox not found.
+            ResourceNotFoundError: If sandbox not found.
             ResourceNameConflictError: If new_name is already in use.
             SandboxClientError: For other errors.
         """
@@ -822,7 +838,9 @@ class SandboxClient:
             raise SandboxConnectionError(f"Failed to connect to server: {e}") from e
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
-                raise SandboxNotFoundError(f"Sandbox '{name}' not found") from e
+                raise ResourceNotFoundError(
+                    f"Sandbox '{name}' not found", resource_type="sandbox"
+                ) from e
             if e.response.status_code == 409:
                 raise ResourceNameConflictError(
                     f"Sandbox name '{new_name}' already in use",
@@ -838,7 +856,7 @@ class SandboxClient:
             name: Sandbox name.
 
         Raises:
-            SandboxNotFoundError: If sandbox not found.
+            ResourceNotFoundError: If sandbox not found.
             SandboxClientError: For other errors.
         """
         url = f"{self._base_url}/boxes/{name}"
@@ -850,5 +868,7 @@ class SandboxClient:
             raise SandboxConnectionError(f"Failed to connect to server: {e}") from e
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
-                raise SandboxNotFoundError(f"Sandbox '{name}' not found") from e
+                raise ResourceNotFoundError(
+                    f"Sandbox '{name}' not found", resource_type="sandbox"
+                ) from e
             handle_client_http_error(e)

@@ -5,9 +5,9 @@ from pytest_httpx import HTTPXMock
 
 from langsmith.sandbox import (
     DataplaneNotConfiguredError,
+    ResourceNotFoundError,
     SandboxClient,
     SandboxConnectionError,
-    SandboxNotFoundError,
 )
 from langsmith.sandbox._sandbox import Sandbox
 
@@ -298,7 +298,7 @@ class TestSandboxRead:
             status_code=404,
         )
 
-        with pytest.raises(SandboxNotFoundError):
+        with pytest.raises(ResourceNotFoundError):
             sandbox.read("/app/nonexistent.txt")
 
     def test_read_without_dataplane_url(self, client: SandboxClient):
