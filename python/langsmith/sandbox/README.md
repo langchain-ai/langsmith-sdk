@@ -2,7 +2,7 @@
 
 Sandboxed code execution for LangSmith. Run untrusted code safely in isolated containers.
 
-> ⚠️ **Alpha**: This module is experimental. Features and APIs may change, and breaking changes are expected as we iterate.
+> ⚠️ **Warning**: This module is experimental. Features and APIs may change, and breaking changes are expected as we iterate.
 
 ## Quick Start
 
@@ -23,6 +23,15 @@ with client.sandbox(template_name="python-sandbox") as sb:
     result = sb.run("python -c 'print(2 + 2)'")
     print(result.stdout)  # "4\n"
     print(result.success)  # True
+
+# Or create a sandbox to keep (manual cleanup required)
+sb = client.create_sandbox(template_name="python-sandbox")
+result = sb.run("python -c 'print(2 + 2)'")
+sb.delete()  # Don't forget to clean up when done
+
+# Or use an existing sandbox by ID
+sb = client.get_sandbox(name="your-sandbox")
+result = sb.run("python -c 'print(2 + 2)'")
 ```
 
 ## Configuration
@@ -123,9 +132,6 @@ client.create_template(name="node", image="node:20-slim")
 
 # Ubuntu (general purpose)
 client.create_template(name="ubuntu", image="ubuntu:24.04")
-
-# Custom image from a registry
-client.create_template(name="custom", image="myregistry.io/myimage:latest")
 ```
 
 ## Persistent Volumes
