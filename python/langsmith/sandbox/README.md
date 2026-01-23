@@ -24,10 +24,10 @@ with client.sandbox(template_name="python-sandbox") as sb:
     print(result.stdout)  # "4\n"
     print(result.success)  # True
 
-# Or create a sandbox to keep (manual cleanup required)
+# Or create a sandbox to keep
 sb = client.create_sandbox(template_name="python-sandbox")
 result = sb.run("python -c 'print(2 + 2)'")
-sb.delete()  # Don't forget to clean up when done
+client.delete_sandbox(sb.name)  # Don't forget to clean up when done
 
 # Or use an existing sandbox by ID
 sb = client.get_sandbox(name="your-sandbox")
@@ -189,17 +189,17 @@ client.delete_pool("python-pool")
 
 > **Note:** Templates with volume mounts cannot be used in pools.
 
-## Connecting to Existing Sandboxes
+## Reusing Existing Sandboxes
 
-Connect to a sandbox that's already running:
+Get a sandbox that's already running:
 
 ```python
-# Create a sandbox without auto-delete
-sb = client.create_sandbox(template_name="my-template", auto_delete=False)
+# Create a sandbox (requires explicit cleanup)
+sb = client.create_sandbox(template_name="my-template")
 print(sb.name)  # e.g., "sandbox-abc123"
 
-# Later, reconnect to the same sandbox
-sb = client.connect("sandbox-abc123")
+# Later, get the same sandbox
+sb = client.get_sandbox("sandbox-abc123")
 result = sb.run("echo 'Still running!'")
 
 # Clean up when done
@@ -260,11 +260,10 @@ except SandboxClientError as e:
 
 | Method | Description |
 |--------|-------------|
-| `sandbox(template_name, ...)` | Create a new sandbox (context manager) |
-| `create_sandbox(template_name, ...)` | Create a sandbox without context manager |
-| `connect(name, auto_delete=False)` | Connect to an existing sandbox |
+| `sandbox(template_name, ...)` | Create a sandbox (auto-deleted on context exit) |
+| `create_sandbox(template_name, ...)` | Create a sandbox (requires explicit delete) |
+| `get_sandbox(name)` | Get an existing sandbox by name |
 | `list_sandboxes()` | List all sandboxes |
-| `get_sandbox(name)` | Get sandbox by name |
 | `delete_sandbox(name)` | Delete a sandbox |
 | `create_template(name, image, ...)` | Create a template |
 | `list_templates()` | List all templates |

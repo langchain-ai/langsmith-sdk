@@ -652,7 +652,6 @@ class SandboxClient:
         template_name: str,
         name: Optional[str] = None,
         timeout: int = 30,
-        auto_delete: bool = True,
     ) -> Sandbox:
         """Create a sandbox and return a Sandbox instance.
 
@@ -662,11 +661,13 @@ class SandboxClient:
             with client.sandbox(template_name="my-template") as sandbox:
                 result = sandbox.run("echo hello")
 
+        The sandbox is automatically deleted when exiting the context manager.
+        For sandboxes with manual lifecycle management, use create_sandbox().
+
         Args:
             template_name: Name of the SandboxTemplate to use.
             name: Optional sandbox name (auto-generated if not provided).
             timeout: Timeout in seconds when waiting for ready.
-            auto_delete: Delete the sandbox when exiting context.
 
         Returns:
             Sandbox instance.
@@ -679,50 +680,29 @@ class SandboxClient:
             SandboxCreationError: For other sandbox creation failures.
             SandboxClientError: For other errors.
         """
-        return self.create_sandbox(
+        sb = self.create_sandbox(
             template_name=template_name,
             name=name,
             timeout=timeout,
-            auto_delete=auto_delete,
         )
-
-    def connect(
-        self,
-        name: str,
-        auto_delete: bool = False,
-    ) -> Sandbox:
-        """Connect to an existing sandbox by name.
-
-        Use this to reconnect to a sandbox that was previously created,
-        for example when reusing a sandbox across multiple operations.
-
-        Args:
-            name: Name of the existing sandbox.
-            auto_delete: Delete the sandbox when exiting context (default False).
-
-        Returns:
-            Sandbox instance.
-
-        Raises:
-            SandboxNotFoundError: If sandbox not found.
-            SandboxClientError: For other errors.
-        """
-        return self.get_sandbox(name, auto_delete=auto_delete)
+        sb._auto_delete = True
+        return sb
 
     def create_sandbox(
         self,
         template_name: str,
         name: Optional[str] = None,
         timeout: int = 30,
-        auto_delete: bool = True,
     ) -> Sandbox:
         """Create a new Sandbox.
+
+        The sandbox is NOT automatically deleted. Use delete_sandbox() for cleanup,
+        or use sandbox() for automatic cleanup with a context manager.
 
         Args:
             template_name: Name of the SandboxTemplate to use.
             name: Optional sandbox name (auto-generated if not provided).
             timeout: Timeout in seconds when waiting for ready.
-            auto_delete: Delete the sandbox when exiting context.
 
         Returns:
             Created Sandbox.
@@ -750,7 +730,7 @@ class SandboxClient:
             response = self._http.post(url, json=payload, timeout=timeout + 30)
             response.raise_for_status()
             return Sandbox.from_dict(
-                response.json(), client=self, auto_delete=auto_delete
+                response.json(), client=self, auto_delete=False
             )
         except httpx.ConnectError as e:
             raise SandboxConnectionError(f"Failed to connect to server: {e}") from e
@@ -758,12 +738,13 @@ class SandboxClient:
             handle_sandbox_creation_error(e)
             raise  # pragma: no cover
 
-    def get_sandbox(self, name: str, auto_delete: bool = False) -> Sandbox:
+    def get_sandbox(self, name: str) -> Sandbox:
         """Get a Sandbox by name.
+
+        The sandbox is NOT automatically deleted. Use delete_sandbox() for cleanup.
 
         Args:
             name: Sandbox name.
-            auto_delete: Delete the sandbox when exiting context (default False).
 
         Returns:
             Sandbox.
@@ -778,7 +759,7 @@ class SandboxClient:
             response = self._http.get(url)
             response.raise_for_status()
             return Sandbox.from_dict(
-                response.json(), client=self, auto_delete=auto_delete
+                response.json(), client=self, auto_delete=False
             )
         except httpx.ConnectError as e:
             raise SandboxConnectionError(f"Failed to connect to server: {e}") from e
