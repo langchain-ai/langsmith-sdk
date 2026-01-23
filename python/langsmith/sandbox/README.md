@@ -7,10 +7,10 @@ Sandboxed code execution for LangSmith. Run untrusted code safely in isolated co
 ## Quick Start
 
 ```python
-from langsmith import sandbox
+from langsmith.sandbox import SandboxClient
 
 # Client uses LANGSMITH_ENDPOINT and LANGSMITH_API_KEY from environment
-client = sandbox.SandboxClient()
+client = SandboxClient()
 
 # First, create a template (defines the container image)
 client.create_template(
@@ -39,11 +39,13 @@ result = sb.run("python -c 'print(2 + 2)'")
 The client automatically uses LangSmith environment variables:
 
 ```python
+from langsmith.sandbox import SandboxClient
+
 # Uses LANGSMITH_ENDPOINT and LANGSMITH_API_KEY
-client = sandbox.SandboxClient()
+client = SandboxClient()
 
 # Or configure explicitly
-client = sandbox.SandboxClient(
+client = SandboxClient(
     api_endpoint="https://api.smith.langchain.com/api/v2/sandboxes",
     api_key="your-api-key",
     timeout=30.0,
@@ -139,6 +141,8 @@ client.create_template(name="ubuntu", image="ubuntu:24.04")
 Use volumes to persist data across sandbox sessions:
 
 ```python
+from langsmith.sandbox import VolumeMountSpec
+
 # Create a volume
 volume = client.create_volume(name="my-data", size="1Gi")
 
@@ -147,7 +151,7 @@ template = client.create_template(
     name="stateful-sandbox",
     image="python:3.12-slim",
     volume_mounts=[
-        sandbox.VolumeMountSpec(volume_name="my-data", mount_path="/data")
+        VolumeMountSpec(volume_name="my-data", mount_path="/data")
     ],
 )
 
@@ -211,10 +215,10 @@ client.delete_sandbox("sandbox-abc123")
 Full async support for all operations:
 
 ```python
-from langsmith import sandbox
+from langsmith.sandbox import AsyncSandboxClient
 
 async def main():
-    async with sandbox.AsyncSandboxClient() as client:
+    async with AsyncSandboxClient() as client:
         # Create a template first
         await client.create_template(name="async-python", image="python:3.12-slim")
 

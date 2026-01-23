@@ -121,10 +121,12 @@ __all__ = [
     "ResourceNameConflictError",
 ]
 
-# Emit alpha warning on import
-import logging
+# Emit warning on import
+import warnings
 
-logging.getLogger(__name__).warning(
+warnings.warn(
     "langsmith.sandbox is in alpha. "
-    "This feature is experimental, and breaking changes are expected."
+    "This feature is experimental, and breaking changes are expected.",
+    FutureWarning,
+    stacklevel=2,
 )
