@@ -5506,7 +5506,7 @@ class Client:
                 uploads=batch,  # batch is a list of ExampleCreate objects
                 dangerously_allow_filesystem=dangerously_allow_filesystem,
             )
-            return response                                                                                                                                                                               
+            return response
         else:
             # Strip attachments for legacy endpoint
             for upload in batch:
@@ -5533,6 +5533,7 @@ class Client:
             ls_utils.raise_for_status_with_text(response)
             response_data = response.json()
             from datetime import datetime, timezone
+
             return {
                 "example_ids": [data["id"] for data in response_data],
                 "count": len(response_data),
