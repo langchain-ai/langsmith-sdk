@@ -47,7 +47,7 @@ function wrapClaudeAgentQuery<
       return latest?.at(systemCount);
     })();
 
-    if (typeof value == null) return undefined;
+    if (value == null) return undefined;
     if (typeof value === "string") {
       return {
         type: "user" as const,
