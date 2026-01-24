@@ -5450,10 +5450,10 @@ class Client:
             ]
 
         if not uploads:
-            from datetime import datetime, timezone
-
             return ls_schemas.UpsertExamplesResponse(
-                example_ids=[], count=0, as_of=datetime.now(timezone.utc).isoformat()
+                example_ids=[],
+                count=0,
+                as_of=datetime.datetime.now(datetime.timezone.utc).isoformat(),
             )
 
         # Use size-aware batching to prevent payload limit errors
@@ -5489,8 +5489,13 @@ class Client:
                 total_count += response.get("count", 0)
                 # Track the latest as_of timestamp across all batches
                 # Each batch gets its own timestamp when processed
-                if latest_as_of is None or response["as_of"] > latest_as_of:
-                    latest_as_of = response["as_of"]
+                as_of = response.get("as_of")
+                if as_of and (latest_as_of is None or as_of > latest_as_of):
+                    latest_as_of = as_of
+
+        # Fallback to current time if backend doesn't return as_of (older backends)
+        if latest_as_of is None:
+            latest_as_of = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
         return ls_schemas.UpsertExamplesResponse(
             example_ids=all_examples_ids, count=total_count, as_of=latest_as_of
@@ -5532,12 +5537,10 @@ class Client:
             )
             ls_utils.raise_for_status_with_text(response)
             response_data = response.json()
-            from datetime import datetime, timezone
-
             return {
                 "example_ids": [data["id"] for data in response_data],
                 "count": len(response_data),
-                "as_of": datetime.now(timezone.utc).isoformat(),
+                "as_of": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             }
 
     @ls_utils.xor_args(("dataset_id", "dataset_name"))
