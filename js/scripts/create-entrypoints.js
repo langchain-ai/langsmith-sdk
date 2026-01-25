@@ -27,6 +27,7 @@ const entrypoints = {
   "experimental/otel/exporter": "experimental/otel/exporter",
   "experimental/otel/processor": "experimental/otel/processor",
   "experimental/vercel": "experimental/vercel/index",
+  "experimental/anthropic": "experimental/anthropic/index",
 };
 
 const defaultEntrypoints = ["vitest/reporter"];
