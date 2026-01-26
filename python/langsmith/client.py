@@ -5450,7 +5450,11 @@ class Client:
             ]
 
         if not uploads:
-            return ls_schemas.UpsertExamplesResponse(example_ids=[], count=0)
+            return ls_schemas.UpsertExamplesResponse(
+                example_ids=[],
+                count=0,
+                as_of=None,
+            )
 
         # Use size-aware batching to prevent payload limit errors
         batches = self._batch_examples_by_size(uploads)
@@ -5464,6 +5468,7 @@ class Client:
     ):
         all_examples_ids = []
         total_count = 0
+        latest_as_of = None
         from langsmith.utils import ContextThreadPoolExecutor
 
         with ContextThreadPoolExecutor(max_workers=max_concurrency) as executor:
@@ -5482,9 +5487,14 @@ class Client:
                 response = future.result()
                 all_examples_ids.extend(response.get("example_ids", []))
                 total_count += response.get("count", 0)
+                # Track the latest as_of timestamp across all batches
+                # Each batch gets its own timestamp when processed
+                as_of = response.get("as_of")
+                if as_of and (latest_as_of is None or as_of > latest_as_of):
+                    latest_as_of = as_of
 
         return ls_schemas.UpsertExamplesResponse(
-            example_ids=all_examples_ids, count=total_count
+            example_ids=all_examples_ids, count=total_count, as_of=latest_as_of
         )
 
     def _upload_single_batch(self, batch, dataset_id, dangerously_allow_filesystem):
@@ -5497,10 +5507,7 @@ class Client:
                 uploads=batch,  # batch is a list of ExampleCreate objects
                 dangerously_allow_filesystem=dangerously_allow_filesystem,
             )
-            return {
-                "example_ids": response.get("example_ids", []),
-                "count": response.get("count", 0),
-            }
+            return response
         else:
             # Strip attachments for legacy endpoint
             for upload in batch:
@@ -5529,6 +5536,7 @@ class Client:
             return {
                 "example_ids": [data["id"] for data in response_data],
                 "count": len(response_data),
+                "as_of": None,
             }
 
     @ls_utils.xor_args(("dataset_id", "dataset_name"))

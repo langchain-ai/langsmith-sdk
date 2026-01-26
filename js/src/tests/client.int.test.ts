@@ -1483,6 +1483,13 @@ test("upload examples multipart", async () => {
   ]);
 
   expect(createdExamples.count).toBe(2);
+  expect(createdExamples.as_of).toBeDefined();
+  expect(typeof createdExamples.as_of).toBe("string");
+  if (createdExamples.as_of) {
+    expect(new Date(createdExamples.as_of).getTime()).toBeLessThanOrEqual(
+      Date.now()
+    );
+  }
 
   const createdExample1 = await client.readExample(exampleId);
   expect(createdExample1.inputs["text"]).toBe("hello world");
@@ -1577,7 +1584,16 @@ test("update examples multipart", async () => {
     },
   };
 
-  await client.updateExamplesMultipart(dataset.id, [exampleUpdate3]);
+  const updateResponse = await client.updateExamplesMultipart(dataset.id, [
+    exampleUpdate3,
+  ]);
+  expect(updateResponse.as_of).toBeDefined();
+  expect(typeof updateResponse.as_of).toBe("string");
+  if (updateResponse.as_of) {
+    expect(new Date(updateResponse.as_of).getTime()).toBeLessThanOrEqual(
+      Date.now()
+    );
+  }
 
   let updatedExample = await client.readExample(exampleId);
   expect(updatedExample.inputs.text).toEqual("hello world2");
