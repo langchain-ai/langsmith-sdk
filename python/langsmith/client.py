@@ -5453,7 +5453,7 @@ class Client:
             return ls_schemas.UpsertExamplesResponse(
                 example_ids=[],
                 count=0,
-                as_of=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                as_of=None,
             )
 
         # Use size-aware batching to prevent payload limit errors
@@ -5492,10 +5492,6 @@ class Client:
                 as_of = response.get("as_of")
                 if as_of and (latest_as_of is None or as_of > latest_as_of):
                     latest_as_of = as_of
-
-        # Fallback to current time if backend doesn't return as_of (older backends)
-        if latest_as_of is None:
-            latest_as_of = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
         return ls_schemas.UpsertExamplesResponse(
             example_ids=all_examples_ids, count=total_count, as_of=latest_as_of
@@ -5540,7 +5536,7 @@ class Client:
             return {
                 "example_ids": [data["id"] for data in response_data],
                 "count": len(response_data),
-                "as_of": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "as_of": None,
             }
 
     @ls_utils.xor_args(("dataset_id", "dataset_name"))
