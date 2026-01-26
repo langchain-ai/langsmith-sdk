@@ -1,0 +1,258 @@
+"""Sandbox class for interacting with a specific sandbox instance."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, Optional, Union
+
+import httpx
+
+from langsmith.sandbox._exceptions import (
+    DataplaneNotConfiguredError,
+    ResourceNotFoundError,
+    SandboxConnectionError,
+)
+from langsmith.sandbox._helpers import handle_sandbox_http_error
+from langsmith.sandbox._models import ExecutionResult
+
+if TYPE_CHECKING:
+    from langsmith.sandbox._client import SandboxClient
+
+
+@dataclass
+class Sandbox:
+    """Represents an active sandbox for running commands and file operations.
+
+    This class is typically obtained from SandboxClient.sandbox() and supports
+    the context manager protocol for automatic cleanup.
+
+    Attributes:
+        name: Display name (can be updated).
+        template_name: Name of the template used to create this sandbox.
+        dataplane_url: URL for data plane operations (file I/O, command execution).
+        id: Unique identifier (UUID). Remains constant even if name changes.
+            May be None for resources created before ID support was added.
+        created_at: Timestamp when the sandbox was created.
+        updated_at: Timestamp when the sandbox was last updated.
+
+    Example:
+        with client.sandbox(template_name="python-sandbox") as sandbox:
+            result = sandbox.run("python --version")
+            print(result.stdout)
+    """
+
+    # Data fields (from API response)
+    name: str
+    template_name: str
+    dataplane_url: Optional[str] = None
+    id: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+    # Internal fields (not from API)
+    _client: SandboxClient = field(repr=False, default=None)  # type: ignore
+    _auto_delete: bool = field(repr=False, default=True)
+
+    @classmethod
+    def from_dict(
+        cls,
+        data: dict[str, Any],
+        client: SandboxClient,
+        auto_delete: bool = True,
+    ) -> Sandbox:
+        """Create a Sandbox from API response dict.
+
+        Args:
+            data: API response dictionary containing sandbox data.
+            client: Parent SandboxClient for operations.
+            auto_delete: Whether to delete the sandbox on context exit.
+
+        Returns:
+            Sandbox instance.
+        """
+        return cls(
+            name=data.get("name", ""),
+            template_name=data.get("template_name", ""),
+            dataplane_url=data.get("dataplane_url"),
+            id=data.get("id"),
+            created_at=data.get("created_at"),
+            updated_at=data.get("updated_at"),
+            _client=client,
+            _auto_delete=auto_delete,
+        )
+
+    def __enter__(self) -> Sandbox:
+        """Enter context manager."""
+        return self
+
+    def __exit__(
+        self,
+        exc_type: Optional[type],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[Any],
+    ) -> None:
+        """Exit context manager, optionally deleting the sandbox."""
+        if self._auto_delete:
+            try:
+                self._client.delete_sandbox(self.name)
+            except Exception:
+                # Don't raise on cleanup errors
+                pass
+
+    def _require_dataplane_url(self) -> str:
+        """Validate and return the dataplane URL.
+
+        Returns:
+            The dataplane URL.
+
+        Raises:
+            DataplaneNotConfiguredError: If dataplane_url is not configured.
+        """
+        if not self.dataplane_url:
+            raise DataplaneNotConfiguredError(
+                f"Sandbox '{self.name}' does not have a dataplane_url configured. "
+                "Runtime operations require a dataplane URL."
+            )
+        return self.dataplane_url
+
+    def run(
+        self,
+        command: str,
+        *,
+        timeout: int = 60,
+        env: Optional[dict[str, str]] = None,
+        cwd: Optional[str] = None,
+        shell: str = "/bin/bash",
+    ) -> ExecutionResult:
+        """Execute a command in the sandbox.
+
+        Args:
+            command: Shell command to execute.
+            timeout: Command timeout in seconds.
+            env: Environment variables to set for the command.
+            cwd: Working directory for command execution. If None, uses sandbox default.
+            shell: Shell to use for command execution. Defaults to "/bin/bash".
+
+        Returns:
+            ExecutionResult with stdout, stderr, and exit_code.
+
+        Raises:
+            DataplaneNotConfiguredError: If dataplane_url is not configured.
+            SandboxOperationError: If command execution fails.
+            SandboxConnectionError: If connection to sandbox fails.
+            SandboxNotReadyError: If sandbox is not ready.
+            SandboxClientError: For other errors.
+        """
+        dataplane_url = self._require_dataplane_url()
+        url = f"{dataplane_url}/execute"
+        payload: dict[str, Any] = {
+            "command": command,
+            "timeout": timeout,
+            "shell": shell,
+        }
+        if env is not None:
+            payload["env"] = env
+        if cwd is not None:
+            payload["cwd"] = cwd
+
+        try:
+            response = self._client._http.post(url, json=payload, timeout=timeout + 10)
+            response.raise_for_status()
+            data = response.json()
+            return ExecutionResult(
+                stdout=data.get("stdout", ""),
+                stderr=data.get("stderr", ""),
+                exit_code=data.get("exit_code", -1),
+            )
+        except httpx.ConnectError as e:
+            raise SandboxConnectionError(
+                f"Failed to connect to sandbox '{self.name}': {e}"
+            ) from e
+        except httpx.HTTPStatusError as e:
+            handle_sandbox_http_error(e)
+            # This line should never be reached but satisfies type checker
+            raise  # pragma: no cover
+
+    def write(
+        self,
+        path: str,
+        content: Union[str, bytes],
+        *,
+        timeout: int = 60,
+    ) -> None:
+        """Write content to a file in the sandbox.
+
+        Args:
+            path: Target file path in the sandbox.
+            content: File content (str or bytes).
+            timeout: Request timeout in seconds.
+
+        Raises:
+            DataplaneNotConfiguredError: If dataplane_url is not configured.
+            SandboxOperationError: If file write fails.
+            SandboxConnectionError: If connection to sandbox fails.
+            SandboxNotReadyError: If sandbox is not ready.
+            SandboxClientError: For other errors.
+        """
+        dataplane_url = self._require_dataplane_url()
+        url = f"{dataplane_url}/upload"
+
+        # Ensure content is bytes for multipart upload
+        if isinstance(content, str):
+            content = content.encode("utf-8")
+
+        files = {"file": ("file", content)}
+
+        try:
+            response = self._client._http.post(
+                url, params={"path": path}, files=files, timeout=timeout
+            )
+            response.raise_for_status()
+        except httpx.ConnectError as e:
+            raise SandboxConnectionError(
+                f"Failed to connect to sandbox '{self.name}': {e}"
+            ) from e
+        except httpx.HTTPStatusError as e:
+            handle_sandbox_http_error(e)
+
+    def read(self, path: str, *, timeout: int = 60) -> bytes:
+        """Read a file from the sandbox.
+
+        Args:
+            path: File path to read. Supports both absolute paths (e.g., /tmp/file.txt)
+                  and relative paths (resolved from /home/user/).
+            timeout: Request timeout in seconds.
+
+        Returns:
+            File contents as bytes.
+
+        Raises:
+            DataplaneNotConfiguredError: If dataplane_url is not configured.
+            ResourceNotFoundError: If the file doesn't exist.
+            SandboxOperationError: If file read fails.
+            SandboxConnectionError: If connection to sandbox fails.
+            SandboxNotReadyError: If sandbox is not ready.
+            SandboxClientError: For other errors.
+        """
+        dataplane_url = self._require_dataplane_url()
+        url = f"{dataplane_url}/download"
+
+        try:
+            response = self._client._http.get(
+                url, params={"path": path}, timeout=timeout
+            )
+            response.raise_for_status()
+            return response.content
+        except httpx.ConnectError as e:
+            raise SandboxConnectionError(
+                f"Failed to connect to sandbox '{self.name}': {e}"
+            ) from e
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                raise ResourceNotFoundError(
+                    f"File '{path}' not found in sandbox '{self.name}'",
+                    resource_type="file",
+                ) from e
+            handle_sandbox_http_error(e)
+            # This line should never be reached but satisfies type checker
+            raise  # pragma: no cover
