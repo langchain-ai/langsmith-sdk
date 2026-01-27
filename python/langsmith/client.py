@@ -661,6 +661,7 @@ class Client:
         "_otel_trace",
         "_set_span_in_context",
         "_max_batch_size_bytes",
+        "_use_daemon_threads",
         "_tracing_error_callback",
         "_multipart_disabled",
         "_cache",
@@ -806,7 +807,7 @@ class Client:
                 These headers will be merged with the default headers (User-Agent,
                 Accept, x-api-key, etc.). Custom headers will not override the default
                 required headers.
-            tracing_error_callback: Optional callback function to handle errors.
+            tracing_error_callback (Optional[Callable[[Exception], None]]): Optional callback function to handle errors.
 
                 Called when exceptions occur during tracing operations.
             cache: Configuration for caching.
@@ -895,6 +896,7 @@ class Client:
         self.otel_exporter: Optional[OTELExporter] = None
         self._max_batch_size_bytes = max_batch_size_bytes
         self._multipart_disabled: bool = False
+        self._use_daemon_threads = ls_utils.get_env_var("USE_DAEMON") == "true"
 
         # Initialize auto batching
         if auto_batch_tracing:
@@ -905,6 +907,7 @@ class Client:
                 # arg must be a weakref to self to avoid the Thread object
                 # preventing garbage collection of the Client object
                 args=(weakref.ref(self),),
+                daemon=self._use_daemon_threads,
             ).start()
         else:
             self.tracing_queue = None
