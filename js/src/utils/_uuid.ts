@@ -122,11 +122,14 @@ function _fastHash128(str: string): Uint8Array {
   const result = new Uint8Array(16);
   const view = new DataView(result.buffer);
 
-  // Use four different seeds to generate independent 32-bit hashes
-  view.setUint32(0, murmurhash3_32(data, 0x9747b28c), true); // little-endian
-  view.setUint32(4, murmurhash3_32(data, 0x12345678), true);
-  view.setUint32(8, murmurhash3_32(data, 0xabcdef01), true);
-  view.setUint32(12, murmurhash3_32(data, 0xfedcba98), true);
+  // Use four distinct seeds to generate independent 32-bit hashes.
+  // Different seeds ensure each 32-bit segment is independent, providing
+  // true 128-bit entropy rather than repeating the same 32 bits.
+  // The specific seed values are arbitrary but must remain constant for determinism.
+  view.setUint32(0, murmurhash3_32(data, 0x9e3779b1), true); // Seed 1
+  view.setUint32(4, murmurhash3_32(data, 0x85ebca77), true); // Seed 2
+  view.setUint32(8, murmurhash3_32(data, 0xc2b2ae3d), true); // Seed 3
+  view.setUint32(12, murmurhash3_32(data, 0x27d4eb2f), true); // Seed 4
 
   return result;
 }
