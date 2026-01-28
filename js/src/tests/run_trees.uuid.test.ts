@@ -121,22 +121,28 @@ test("nonCryptographicUuid7Deterministic timestamp handling", () => {
   expect(uuidV7Ms(derivedV4)).toBeLessThanOrEqual(afterMs);
 });
 
-test.only("nonCryptographicUuid7Deterministic is fast", () => {
+test("nonCryptographicUuid7Deterministic is fast", () => {
   const originalUuids = [];
-  for (let i = 0; i < 1000; i++) {
+  for (let i = 0; i < 100000; i++) {
     originalUuids.push(uuidv7());
   }
   const finalUuids = [];
   const startTime = new Date();
-  for (let i = 0; i < 10000; i++) {
+  for (let i = 0; i < 100000; i++) {
     finalUuids.push(
       nonCryptographicUuid7Deterministic(originalUuids[i], "key")
     );
   }
   const endTime = new Date();
   const duration = endTime.getTime() - startTime.getTime();
-  expect(duration).toBeLessThan(1000); // 10k UUIDs/second to be conservative for CI, should actually be much higher
-  for (let i = 0; i < finalUuids.length - 1; i++) {
+  expect(duration).toBeLessThan(10000); // 10k UUIDs/second to be conservative for CI, may be much higher
+
+  // Check all UUIDs are valid v7
+  for (let i = 0; i < finalUuids.length; i++) {
     expect(getUuidVersion(finalUuids[i])).toBe(7);
   }
+
+  // Check uniqueness - different input UUIDs should produce different outputs
+  const uniqueOutputs = new Set(finalUuids); // First 1000 should all be unique
+  expect(uniqueOutputs.size).toBe(100000);
 });
