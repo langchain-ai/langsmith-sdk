@@ -47,6 +47,7 @@
       "src/anonymizer/index.ts",
       "src/wrappers/anthropic.ts",
       "src/wrappers/openai.ts",
+      "src/wrappers/gemini.ts",
       "src/singletons/traceable.ts",
       "src/utils/jestlike/index.ts",
       "src/experimental/otel/setup.ts",
