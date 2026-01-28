@@ -917,7 +917,10 @@ def evaluate_comparative(
             if isinstance(result.comment, str)
             else (result.comment or {})
         )
+        # Build a lookup for run metadata
+        runs_by_id = {str(run.id): run for run in runs_list}
         for run_id, score in result.scores.items():
+            run = runs_by_id.get(str(run_id))
             executor.submit(
                 client.create_feedback,
                 run_id=run_id,
@@ -927,6 +930,8 @@ def evaluate_comparative(
                 comparative_experiment_id=comparative_experiment.id,
                 source_run_id=result.source_run_id,
                 feedback_group_id=feedback_group_id,
+                session_id=run.session_id if run else None,
+                start_time=run.start_time if run else None,
             )
         return example.id, result
 

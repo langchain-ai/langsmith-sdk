@@ -6605,6 +6605,8 @@ class Client:
                 project_id=project_id,
                 extra=res.extra,
                 trace_id=run.trace_id if run else None,
+                session_id=run.session_id if run else None,
+                start_time=run.start_time if run else None,
                 error=error,
             )
         return results
@@ -6677,6 +6679,8 @@ class Client:
         feedback_group_id: Optional[ID_TYPE] = None,
         extra: Optional[dict] = None,
         error: Optional[bool] = None,
+        session_id: Optional[ID_TYPE] = None,
+        start_time: Optional[datetime.datetime] = None,
         **kwargs: Any,
     ) -> ls_schemas.Feedback:
         """Create feedback for a run.
@@ -6734,6 +6738,12 @@ class Client:
                 this is used to group feedback together.
             extra (Optional[Dict]):
                 Metadata for the feedback.
+            session_id (Optional[Union[UUID, str]]):
+                The session (project) ID of the run this feedback is for. Used to
+                optimize feedback ingestion by avoiding server-side lookups.
+            start_time (Optional[datetime]):
+                The start time of the run this feedback is for. Used to optimize
+                feedback ingestion by avoiding server-side lookups.
             **kwargs (Any):
                 Additional keyword arguments.
 
@@ -6831,6 +6841,10 @@ class Client:
                         )
                     )
                 feedback_source.metadata["__run"] = _run_meta
+            # session_id priority: explicit session_id > project_id
+            _session_id = _ensure_uuid(
+                session_id if session_id is not None else project_id, accept_null=True
+            )
             feedback = ls_schemas.FeedbackCreate(
                 id=_ensure_uuid(feedback_id),
                 # If run_id is None, this is interpreted as session-level
@@ -6846,7 +6860,8 @@ class Client:
                 created_at=datetime.datetime.now(datetime.timezone.utc),
                 modified_at=datetime.datetime.now(datetime.timezone.utc),
                 feedback_config=feedback_config,
-                session_id=_ensure_uuid(project_id, accept_null=True),
+                session_id=_session_id,
+                start_time=start_time,
                 comparative_experiment_id=_ensure_uuid(
                     comparative_experiment_id, accept_null=True
                 ),
