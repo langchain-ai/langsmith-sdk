@@ -61,6 +61,10 @@
     "wrappers/openai.js",
     "wrappers/openai.d.ts",
     "wrappers/openai.d.cts",
+    "wrappers/gemini.cjs",
+    "wrappers/gemini.js",
+    "wrappers/gemini.d.ts",
+    "wrappers/gemini.d.cts",
     "singletons/traceable.cjs",
     "singletons/traceable.js",
     "singletons/traceable.d.ts",
@@ -351,6 +355,15 @@
       },
       "import": "./wrappers/openai.js",
       "require": "./wrappers/openai.cjs"
+    },
+    "./wrappers/gemini": {
+      "types": {
+        "import": "./wrappers/gemini.d.ts",
+        "require": "./wrappers/gemini.d.cts",
+        "default": "./wrappers/gemini.d.ts"
+      },
+      "import": "./wrappers/gemini.js",
+      "require": "./wrappers/gemini.cjs"
     },
     "./singletons/traceable": {
       "types": {

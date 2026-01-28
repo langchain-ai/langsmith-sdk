@@ -87,6 +87,10 @@ Chinook_Sqlite.sql
 /wrappers/openai.js
 /wrappers/openai.d.ts
 /wrappers/openai.d.cts
+/wrappers/gemini.cjs
+/wrappers/gemini.js
+/wrappers/gemini.d.ts
+/wrappers/gemini.d.cts
 /singletons/traceable.cjs
 /singletons/traceable.js
 /singletons/traceable.d.ts
