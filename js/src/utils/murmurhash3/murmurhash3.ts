@@ -1,3 +1,5 @@
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-nocheck
 // murmurhash3 - a fast non-cryptographic hash function
 // https://caolan.uk/src/murmurhash3/about
 //
