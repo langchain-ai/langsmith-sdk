@@ -105,7 +105,7 @@ test("nonCryptographicUuid7Deterministic produces valid, deterministic UUID7s", 
   expect(nonCryptographicUuid7Deterministic(uuidv7(), key)).not.toBe(d1);
 });
 
-test("nonCryptographicUuid7Deterministic timestamp handling", () => {
+test("nonCryptographicUuid7Deterministic timestamp handling", async () => {
   // UUID7 input: timestamp preserved
   const originalV7 = uuidv7();
   const derivedV7 = nonCryptographicUuid7Deterministic(originalV7, "key");
