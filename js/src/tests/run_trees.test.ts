@@ -168,7 +168,7 @@ test("shared client between run trees", () => {
   expect(runTree1.client).toBe(runTree2.client);
 });
 
-test("reroot functionality slices dotted order correctly", async () => {
+test("reroot functionality slices dotted order correctly", () => {
   // Create a parent run tree
   const parentId = "00000000-0000-0000-0000-000000000000";
   const parent = new RunTree({
@@ -271,7 +271,7 @@ test("distributed tracing: _sliceParentId method", () => {
   expect(segments.length).toBe(1);
 });
 
-test("distributed tracing: _remapForProject with reroot", async () => {
+test("distributed tracing: _remapForProject with reroot", () => {
   const { client } = mockClient();
 
   const grandparent = new RunTree({
@@ -326,7 +326,7 @@ test("distributed tracing: _remapForProject with reroot", async () => {
   expect(remappedNoParam.parent_run_id).toBeTruthy();
 });
 
-test("distributed tracing: fromHeaders sets distributedParentId correctly", async () => {
+test("distributed tracing: fromHeaders sets distributedParentId correctly", () => {
   const { client } = mockClient();
 
   // Create a hierarchy: grandparent -> parent -> child
