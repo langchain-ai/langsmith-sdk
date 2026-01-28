@@ -122,14 +122,14 @@ test("nonCryptographicUuid7Deterministic timestamp handling", () => {
   expect(uuidV7Ms(derivedV4)).toBeLessThanOrEqual(afterMs);
 });
 
-test("nonCryptographicUuid7Deterministic is fast", () => {
+test("nonCryptographicUuid7Deterministic is fast", async () => {
   const originalUuids = [];
   for (let i = 0; i < 100000; i++) {
     originalUuids.push(uuidv7());
   }
   const finalUuids = [];
   const startTime = new Date();
-  for (let i = 0; i < 100000; i++) {
+  for (let i = 0; i < originalUuids.length; i++) {
     finalUuids.push(
       nonCryptographicUuid7Deterministic(originalUuids[i], "key")
     );
