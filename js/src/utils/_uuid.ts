@@ -2,7 +2,6 @@
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-import { createHash } from "crypto";
 import { v7 as uuidv7 } from "uuid";
 import { warnOnce } from "./warn.js";
 
@@ -75,20 +74,26 @@ export function warnIfNotUuidV7(uuidStr: string, _idType: string): void {
 /**
  * Convert a UUID string to its 16-byte representation.
  * @param uuidStr - The UUID string (with or without dashes)
- * @returns A Buffer containing the 16 bytes of the UUID
+ * @returns A Uint8Array containing the 16 bytes of the UUID
  */
-function uuidToBytes(uuidStr: string): Buffer {
+function uuidToBytes(uuidStr: string): Uint8Array {
   const hex = uuidStr.replace(/-/g, "");
-  return Buffer.from(hex, "hex");
+  const bytes = new Uint8Array(16);
+  for (let i = 0; i < 16; i++) {
+    bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+  }
+  return bytes;
 }
 
 /**
  * Convert 16 bytes to a UUID string.
- * @param bytes - A Buffer containing 16 bytes
+ * @param bytes - A Uint8Array containing 16 bytes
  * @returns A UUID string in standard format
  */
-function bytesToUuid(bytes: Buffer): string {
-  const hex = bytes.toString("hex");
+function bytesToUuid(bytes: Uint8Array): string {
+  const hex = Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(
     12,
     16
@@ -120,10 +125,18 @@ function bytesToUuid(bytes: Buffer): string {
  * assert(uuid7Deterministic(original, "replica-project") === replicaId);
  * ```
  */
-export function uuid7Deterministic(originalId: string, key: string): string {
+export async function uuid7Deterministic(
+  originalId: string,
+  key: string
+): Promise<string> {
   // Generate deterministic bytes from hash of original + key
   const hashInput = `${originalId}:${key}`;
-  const h = createHash("sha256").update(hashInput).digest();
+  const encoder = new TextEncoder();
+  const data = encoder.encode(hashInput);
+
+  // Use SubtleCrypto for cross-platform compatibility
+  const hashBuffer = await globalThis.crypto.subtle.digest("SHA-256", data);
+  const h = new Uint8Array(hashBuffer);
 
   // Build new UUID7:
   // UUID7 structure (RFC 9562):
@@ -133,7 +146,7 @@ export function uuid7Deterministic(originalId: string, key: string): string {
   // [8]    2 bits: variant (10) + 6 bits rand_b
   // [9-15] 56 bits: rand_b (continued)
 
-  const b = Buffer.alloc(16);
+  const b = new Uint8Array(16);
 
   // Check if original is UUID v7 - if so, preserve its timestamp
   // If not, use current time to ensure the derived UUID has a valid timestamp
@@ -141,7 +154,7 @@ export function uuid7Deterministic(originalId: string, key: string): string {
   if (version === 7) {
     // Preserve timestamp from original UUID7 (bytes 0-5)
     const originalBytes = uuidToBytes(originalId);
-    originalBytes.copy(b, 0, 0, 6);
+    b.set(originalBytes.slice(0, 6), 0);
   } else {
     // Generate fresh timestamp for non-UUID7 inputs
     // This matches the uuid npm package's v7 implementation:
@@ -165,7 +178,7 @@ export function uuid7Deterministic(originalId: string, key: string): string {
   b[8] = 0x80 | (h[2] & 0x3f);
 
   // rand_b (56 bits = 7 bytes from hash)
-  h.copy(b, 9, 3, 10);
+  b.set(h.slice(3, 10), 9);
 
   return bytesToUuid(b);
 }

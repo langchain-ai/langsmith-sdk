@@ -168,7 +168,7 @@ test("shared client between run trees", () => {
   expect(runTree1.client).toBe(runTree2.client);
 });
 
-test("reroot functionality slices dotted order correctly", () => {
+test("reroot functionality slices dotted order correctly", async () => {
   // Create a parent run tree
   const parentId = "00000000-0000-0000-0000-000000000000";
   const parent = new RunTree({
@@ -195,7 +195,7 @@ test("reroot functionality slices dotted order correctly", () => {
   child2.replicas = [replicaConfig];
 
   // Use private method to remap for project with reroot
-  const remapped = (child2 as any)._remapForProject({
+  const remapped = await (child2 as any)._remapForProject({
     projectName: "child-project",
     runtimeEnv: undefined,
     excludeChildRuns: true,
@@ -271,7 +271,7 @@ test("distributed tracing: _sliceParentId method", () => {
   expect(segments.length).toBe(1);
 });
 
-test("distributed tracing: _remapForProject with reroot", () => {
+test("distributed tracing: _remapForProject with reroot", async () => {
   const { client } = mockClient();
 
   const grandparent = new RunTree({
@@ -290,7 +290,7 @@ test("distributed tracing: _remapForProject with reroot", () => {
   child.distributedParentId = parentId;
 
   // Test WITH reroot enabled
-  const remappedWithReroot = (child as any)._remapForProject({
+  const remappedWithReroot = await (child as any)._remapForProject({
     projectName: "child_project",
     runtimeEnv: undefined,
     excludeChildRuns: true,
@@ -305,7 +305,7 @@ test("distributed tracing: _remapForProject with reroot", () => {
   expect(segmentsWithReroot.length).toBe(1);
 
   // Test WITHOUT reroot (should keep parent relationship)
-  const remappedWithoutReroot = (child as any)._remapForProject({
+  const remappedWithoutReroot = await (child as any)._remapForProject({
     projectName: "child_project_2",
     runtimeEnv: undefined,
     excludeChildRuns: true,
@@ -316,7 +316,7 @@ test("distributed tracing: _remapForProject with reroot", () => {
   expect(remappedWithoutReroot.parent_run_id).toBeTruthy();
 
   // Test with no reroot parameter (should keep parent relationship)
-  const remappedNoParam = (child as any)._remapForProject({
+  const remappedNoParam = await (child as any)._remapForProject({
     projectName: "child_project_3",
     runtimeEnv: undefined,
     excludeChildRuns: true,
@@ -326,7 +326,7 @@ test("distributed tracing: _remapForProject with reroot", () => {
   expect(remappedNoParam.parent_run_id).toBeTruthy();
 });
 
-test("distributed tracing: fromHeaders sets distributedParentId correctly", () => {
+test("distributed tracing: fromHeaders sets distributedParentId correctly", async () => {
   const { client } = mockClient();
 
   // Create a hierarchy: grandparent -> parent -> child
@@ -361,7 +361,7 @@ test("distributed tracing: fromHeaders sets distributedParentId correctly", () =
   newRun.distributedParentId = fromHeadersRun!.id;
 
   // Remap with reroot enabled
-  const remapped = (newRun as any)._remapForProject({
+  const remapped = await (newRun as any)._remapForProject({
     projectName: "child_project",
     runtimeEnv: undefined,
     excludeChildRuns: true,

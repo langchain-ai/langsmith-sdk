@@ -83,12 +83,12 @@ test("RunTree default/regular behavior uses UUIDv7 and start_time matches id; po
   expect(uuidV7Ms(rt.id)).toBe(fixedMs);
 });
 
-test("uuid7Deterministic produces valid, deterministic UUID7s", () => {
+test("uuid7Deterministic produces valid, deterministic UUID7s", async () => {
   const original = uuidv7();
   const key = "replica-project";
 
-  const d1 = uuid7Deterministic(original, key);
-  const d2 = uuid7Deterministic(original, key);
+  const d1 = await uuid7Deterministic(original, key);
+  const d2 = await uuid7Deterministic(original, key);
 
   // Valid UUID7
   expect(getUuidVersion(d1)).toBe(7);
@@ -96,19 +96,19 @@ test("uuid7Deterministic produces valid, deterministic UUID7s", () => {
   expect(d1).toBe(d2);
 
   // Different inputs -> different outputs
-  expect(uuid7Deterministic(original, "other-key")).not.toBe(d1);
-  expect(uuid7Deterministic(uuidv7(), key)).not.toBe(d1);
+  expect(await uuid7Deterministic(original, "other-key")).not.toBe(d1);
+  expect(await uuid7Deterministic(uuidv7(), key)).not.toBe(d1);
 });
 
-test("uuid7Deterministic timestamp handling", () => {
+test("uuid7Deterministic timestamp handling", async () => {
   // UUID7 input: timestamp preserved
   const originalV7 = uuidv7();
-  const derivedV7 = uuid7Deterministic(originalV7, "key");
+  const derivedV7 = await uuid7Deterministic(originalV7, "key");
   expect(uuidV7Ms(derivedV7)).toBe(uuidV7Ms(originalV7));
 
   // UUID4 input: gets fresh timestamp
   const beforeMs = Date.now();
-  const derivedV4 = uuid7Deterministic(uuidv4(), "key");
+  const derivedV4 = await uuid7Deterministic(uuidv4(), "key");
   const afterMs = Date.now();
 
   expect(getUuidVersion(derivedV4)).toBe(7);

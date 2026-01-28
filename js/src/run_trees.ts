@@ -604,7 +604,7 @@ export class RunTree implements BaseRun {
     }
   }
 
-  private _remapForProject(params: {
+  private async _remapForProject(params: {
     projectName: string;
     runtimeEnv?: RuntimeEnvironment;
     excludeChildRuns?: boolean;
@@ -613,7 +613,7 @@ export class RunTree implements BaseRun {
     apiUrl?: string;
     apiKey?: string;
     workspaceId?: string;
-  }): RunCreate & { id: string } {
+  }): Promise<RunCreate & { id: string }> {
     const {
       projectName,
       runtimeEnv,
@@ -715,12 +715,12 @@ export class RunTree implements BaseRun {
     // This ensures consistency across runs in the same replica while
     // preserving UUID7 properties (time-ordering, monotonicity)
     const oldId = baseRun.id;
-    const newId = uuid7Deterministic(oldId, projectName);
+    const newId = await uuid7Deterministic(oldId, projectName);
 
     // Remap trace_id
     let newTraceId: string;
     if (baseRun.trace_id) {
-      newTraceId = uuid7Deterministic(baseRun.trace_id, projectName);
+      newTraceId = await uuid7Deterministic(baseRun.trace_id, projectName);
     } else {
       newTraceId = newId;
     }
@@ -728,20 +728,25 @@ export class RunTree implements BaseRun {
     // Remap parent_run_id
     let newParentId: string | undefined;
     if (baseRun.parent_run_id) {
-      newParentId = uuid7Deterministic(baseRun.parent_run_id, projectName);
+      newParentId = await uuid7Deterministic(
+        baseRun.parent_run_id,
+        projectName
+      );
     }
 
     // Remap dotted_order segments
     let newDottedOrder: string | undefined;
     if (baseRun.dotted_order) {
       const segs = baseRun.dotted_order.split(".");
-      const remappedSegs = segs.map((seg) => {
-        // Extract the UUID from the segment (last TIMESTAMP_LENGTH characters)
-        const segId = seg.slice(-TIMESTAMP_LENGTH);
-        const remappedId = uuid7Deterministic(segId, projectName);
-        // Replace the UUID part while keeping the timestamp prefix
-        return seg.slice(0, -TIMESTAMP_LENGTH) + remappedId;
-      });
+      const remappedSegs = await Promise.all(
+        segs.map(async (seg) => {
+          // Extract the UUID from the segment (last TIMESTAMP_LENGTH characters)
+          const segId = seg.slice(-TIMESTAMP_LENGTH);
+          const remappedId = await uuid7Deterministic(segId, projectName);
+          // Replace the UUID part while keeping the timestamp prefix
+          return seg.slice(0, -TIMESTAMP_LENGTH) + remappedId;
+        })
+      );
       newDottedOrder = remappedSegs.join(".");
     }
 
@@ -765,7 +770,7 @@ export class RunTree implements BaseRun {
       if (this.replicas && this.replicas.length > 0) {
         for (const { projectName, apiKey, apiUrl, workspaceId, reroot } of this
           .replicas) {
-          const runCreate = this._remapForProject({
+          const runCreate = await this._remapForProject({
             projectName: projectName ?? this.project_name,
             runtimeEnv,
             excludeChildRuns: true,
@@ -815,7 +820,7 @@ export class RunTree implements BaseRun {
         updates,
         reroot,
       } of this.replicas) {
-        const runData = this._remapForProject({
+        const runData = await this._remapForProject({
           projectName: projectName ?? this.project_name,
           runtimeEnv: undefined,
           excludeChildRuns: true,
