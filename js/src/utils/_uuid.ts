@@ -101,9 +101,15 @@ function bytesToUuid(bytes: Uint8Array): string {
   )}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
+// Reuse TextEncoder instance for performance
+const _textEncoder = new TextEncoder();
+
 /**
- * Fast 128-bit hash function for deterministic UUID generation.
- * Uses MurmurHash3-32 with four different seeds to produce 128 bits of output.
+ * Generates a 16-byte fingerprint for deterministic UUID generation.
+ *
+ * This concatenates four MurmurHash3_x86_32 outputs with different seeds to produce
+ * 128 bits of hash data. Note: this is NOT the canonical MurmurHash3_x86_128 or
+ * MurmurHash3_x64_128 algorithm - it's a custom construction for our specific use case.
  *
  * MurmurHash3 is a well-tested, non-cryptographic hash function that provides
  * excellent speed and collision resistance without the overhead of cryptographic hashes.
@@ -113,18 +119,15 @@ function bytesToUuid(bytes: Uint8Array): string {
  * @returns A Uint8Array containing 16 bytes of hash output
  */
 function _fastHash128(str: string): Uint8Array {
-  // Convert string to UTF-8 bytes
-  const encoder = new TextEncoder();
-  const data = encoder.encode(str);
+  const data = _textEncoder.encode(str);
 
-  // Generate 128 bits of hash output by calling murmurhash3_32 four times
-  // with different seeds. This gives us 4 x 32 bits = 128 bits total.
+  // Generate 128 bits by concatenating four MurmurHash3_x86_32 outputs with fixed seeds.
+  // This provides a deterministic 16-byte fingerprint suitable for our UUID generation,
+  // though it's not statistically equivalent to the canonical 128-bit MurmurHash variants.
   const result = new Uint8Array(16);
   const view = new DataView(result.buffer);
 
-  // Use four distinct seeds to generate independent 32-bit hashes.
-  // Different seeds ensure each 32-bit segment is independent, providing
-  // true 128-bit entropy rather than repeating the same 32 bits.
+  // Use four distinct seeds to generate four 32-bit hashes (4 × 32 = 128 bits).
   // The specific seed values are arbitrary but must remain constant for determinism.
   view.setUint32(0, murmurhash3_32(data, 0x9e3779b1), true); // Seed 1
   view.setUint32(4, murmurhash3_32(data, 0x85ebca77), true); // Seed 2
