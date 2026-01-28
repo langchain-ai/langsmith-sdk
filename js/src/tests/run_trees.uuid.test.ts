@@ -114,6 +114,7 @@ test("nonCryptographicUuid7Deterministic timestamp handling", () => {
   // UUID4 input: gets fresh timestamp
   const beforeMs = Date.now();
   const derivedV4 = nonCryptographicUuid7Deterministic(uuidv4(), "key");
+  await new Promise((resolve) => setTimeout(resolve, 10));
   const afterMs = Date.now();
 
   expect(getUuidVersion(derivedV4)).toBe(7);
