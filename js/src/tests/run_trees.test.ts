@@ -195,7 +195,7 @@ test("reroot functionality slices dotted order correctly", async () => {
   child2.replicas = [replicaConfig];
 
   // Use private method to remap for project with reroot
-  const remapped = await (child2 as any)._remapForProject({
+  const remapped = (child2 as any)._remapForProject({
     projectName: "child-project",
     runtimeEnv: undefined,
     excludeChildRuns: true,
@@ -290,7 +290,7 @@ test("distributed tracing: _remapForProject with reroot", async () => {
   child.distributedParentId = parentId;
 
   // Test WITH reroot enabled
-  const remappedWithReroot = await (child as any)._remapForProject({
+  const remappedWithReroot = (child as any)._remapForProject({
     projectName: "child_project",
     runtimeEnv: undefined,
     excludeChildRuns: true,
@@ -305,7 +305,7 @@ test("distributed tracing: _remapForProject with reroot", async () => {
   expect(segmentsWithReroot.length).toBe(1);
 
   // Test WITHOUT reroot (should keep parent relationship)
-  const remappedWithoutReroot = await (child as any)._remapForProject({
+  const remappedWithoutReroot = (child as any)._remapForProject({
     projectName: "child_project_2",
     runtimeEnv: undefined,
     excludeChildRuns: true,
@@ -316,7 +316,7 @@ test("distributed tracing: _remapForProject with reroot", async () => {
   expect(remappedWithoutReroot.parent_run_id).toBeTruthy();
 
   // Test with no reroot parameter (should keep parent relationship)
-  const remappedNoParam = await (child as any)._remapForProject({
+  const remappedNoParam = (child as any)._remapForProject({
     projectName: "child_project_3",
     runtimeEnv: undefined,
     excludeChildRuns: true,
@@ -361,7 +361,7 @@ test("distributed tracing: fromHeaders sets distributedParentId correctly", asyn
   newRun.distributedParentId = fromHeadersRun!.id;
 
   // Remap with reroot enabled
-  const remapped = await (newRun as any)._remapForProject({
+  const remapped = (newRun as any)._remapForProject({
     projectName: "child_project",
     runtimeEnv: undefined,
     excludeChildRuns: true,

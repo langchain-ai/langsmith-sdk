@@ -24,7 +24,10 @@ import {
 import { getDefaultProjectName } from "./utils/project.js";
 import { getLangSmithEnvironmentVariable } from "./utils/env.js";
 import { warnOnce } from "./utils/warn.js";
-import { uuid7FromTime, uuid7Deterministic } from "./utils/_uuid.js";
+import {
+  uuid7FromTime,
+  nonCryptographicUuid7Deterministic,
+} from "./utils/_uuid.js";
 import { v5 as uuidv5 } from "uuid";
 
 const TIMESTAMP_LENGTH = 36;
@@ -604,7 +607,7 @@ export class RunTree implements BaseRun {
     }
   }
 
-  private async _remapForProject(params: {
+  private _remapForProject(params: {
     projectName: string;
     runtimeEnv?: RuntimeEnvironment;
     excludeChildRuns?: boolean;
@@ -613,7 +616,7 @@ export class RunTree implements BaseRun {
     apiUrl?: string;
     apiKey?: string;
     workspaceId?: string;
-  }): Promise<RunCreate & { id: string }> {
+  }): RunCreate & { id: string } {
     const {
       projectName,
       runtimeEnv,
@@ -711,16 +714,19 @@ export class RunTree implements BaseRun {
       }
     }
 
-    // Remap IDs for the replica using uuid7Deterministic
+    // Remap IDs for the replica using nonCryptographicUuid7Deterministic
     // This ensures consistency across runs in the same replica while
     // preserving UUID7 properties (time-ordering, monotonicity)
     const oldId = baseRun.id;
-    const newId = await uuid7Deterministic(oldId, projectName);
+    const newId = nonCryptographicUuid7Deterministic(oldId, projectName);
 
     // Remap trace_id
     let newTraceId: string;
     if (baseRun.trace_id) {
-      newTraceId = await uuid7Deterministic(baseRun.trace_id, projectName);
+      newTraceId = nonCryptographicUuid7Deterministic(
+        baseRun.trace_id,
+        projectName
+      );
     } else {
       newTraceId = newId;
     }
@@ -728,7 +734,7 @@ export class RunTree implements BaseRun {
     // Remap parent_run_id
     let newParentId: string | undefined;
     if (baseRun.parent_run_id) {
-      newParentId = await uuid7Deterministic(
+      newParentId = nonCryptographicUuid7Deterministic(
         baseRun.parent_run_id,
         projectName
       );
@@ -738,15 +744,16 @@ export class RunTree implements BaseRun {
     let newDottedOrder: string | undefined;
     if (baseRun.dotted_order) {
       const segs = baseRun.dotted_order.split(".");
-      const remappedSegs = await Promise.all(
-        segs.map(async (seg) => {
-          // Extract the UUID from the segment (last TIMESTAMP_LENGTH characters)
-          const segId = seg.slice(-TIMESTAMP_LENGTH);
-          const remappedId = await uuid7Deterministic(segId, projectName);
-          // Replace the UUID part while keeping the timestamp prefix
-          return seg.slice(0, -TIMESTAMP_LENGTH) + remappedId;
-        })
-      );
+      const remappedSegs = segs.map((seg) => {
+        // Extract the UUID from the segment (last TIMESTAMP_LENGTH characters)
+        const segId = seg.slice(-TIMESTAMP_LENGTH);
+        const remappedId = nonCryptographicUuid7Deterministic(
+          segId,
+          projectName
+        );
+        // Replace the UUID part while keeping the timestamp prefix
+        return seg.slice(0, -TIMESTAMP_LENGTH) + remappedId;
+      });
       newDottedOrder = remappedSegs.join(".");
     }
 
@@ -770,7 +777,7 @@ export class RunTree implements BaseRun {
       if (this.replicas && this.replicas.length > 0) {
         for (const { projectName, apiKey, apiUrl, workspaceId, reroot } of this
           .replicas) {
-          const runCreate = await this._remapForProject({
+          const runCreate = this._remapForProject({
             projectName: projectName ?? this.project_name,
             runtimeEnv,
             excludeChildRuns: true,
@@ -820,7 +827,7 @@ export class RunTree implements BaseRun {
         updates,
         reroot,
       } of this.replicas) {
-        const runData = await this._remapForProject({
+        const runData = this._remapForProject({
           projectName: projectName ?? this.project_name,
           runtimeEnv: undefined,
           excludeChildRuns: true,

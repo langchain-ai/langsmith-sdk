@@ -4,6 +4,7 @@ const UUID_REGEX =
 
 import { v7 as uuidv7 } from "uuid";
 import { warnOnce } from "./warn.js";
+import { murmurhash3_32 } from "./murmurhash3/murmurhash3.js";
 
 let UUID7_WARNING_EMITTED = false;
 
@@ -101,6 +102,36 @@ function bytesToUuid(bytes: Uint8Array): string {
 }
 
 /**
+ * Fast 128-bit hash function for deterministic UUID generation.
+ * Uses MurmurHash3-32 with four different seeds to produce 128 bits of output.
+ *
+ * MurmurHash3 is a well-tested, non-cryptographic hash function that provides
+ * excellent speed and collision resistance without the overhead of cryptographic hashes.
+ * See: https://github.com/aappleby/smhasher
+ *
+ * @param str - The input string to hash
+ * @returns A Uint8Array containing 16 bytes of hash output
+ */
+function _fastHash128(str: string): Uint8Array {
+  // Convert string to UTF-8 bytes
+  const encoder = new TextEncoder();
+  const data = encoder.encode(str);
+
+  // Generate 128 bits of hash output by calling murmurhash3_32 four times
+  // with different seeds. This gives us 4 x 32 bits = 128 bits total.
+  const result = new Uint8Array(16);
+  const view = new DataView(result.buffer);
+
+  // Use four different seeds to generate independent 32-bit hashes
+  view.setUint32(0, murmurhash3_32(data, 0x9747b28c), true); // little-endian
+  view.setUint32(4, murmurhash3_32(data, 0x12345678), true);
+  view.setUint32(8, murmurhash3_32(data, 0xabcdef01), true);
+  view.setUint32(12, murmurhash3_32(data, 0xfedcba98), true);
+
+  return result;
+}
+
+/**
  * Generate a deterministic UUID v7 derived from an original UUID and a key.
  *
  * This function creates a new UUID that:
@@ -120,23 +151,18 @@ function bytesToUuid(bytes: Uint8Array): string {
  * @example
  * ```typescript
  * const original = uuidv7();
- * const replicaId = uuid7Deterministic(original, "replica-project");
+ * const replicaId = nonCryptographicUuid7Deterministic(original, "replica-project");
  * // Same inputs always produce same output
- * assert(uuid7Deterministic(original, "replica-project") === replicaId);
+ * assert(nonCryptographicUuid7Deterministic(original, "replica-project") === replicaId);
  * ```
  */
-export async function uuid7Deterministic(
+export function nonCryptographicUuid7Deterministic(
   originalId: string,
   key: string
-): Promise<string> {
+): string {
   // Generate deterministic bytes from hash of original + key
   const hashInput = `${originalId}:${key}`;
-  const encoder = new TextEncoder();
-  const data = encoder.encode(hashInput);
-
-  // Use SubtleCrypto for cross-platform compatibility
-  const hashBuffer = await globalThis.crypto.subtle.digest("SHA-256", data);
-  const h = new Uint8Array(hashBuffer);
+  const h = _fastHash128(hashInput);
 
   // Build new UUID7:
   // UUID7 structure (RFC 9562):
