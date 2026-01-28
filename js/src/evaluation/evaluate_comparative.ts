@@ -351,7 +351,7 @@ export async function evaluateComparative(
         sourceRunId: result.source_run_id,
         comparativeExperimentId: comparativeExperiment.id,
         sessionId: run?.session_id,
-        startTime: run?.start_time,
+        startTime: run?.start_time != null ? String(run.start_time) : undefined,
       });
     }
 

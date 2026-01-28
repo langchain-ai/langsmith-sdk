@@ -109,7 +109,7 @@ class _Matcher:
     def _submit_feedback(self, score: int, message: Optional[str] = None) -> None:
         if not ls_utils.test_tracking_is_disabled():
             if not self._client:
-                self._client = rh.get_cached_client()
+                self._client = rt.get_cached_client()
             self._executor.submit(
                 self._client.create_feedback,
                 run_id=self._run_id,

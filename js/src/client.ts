@@ -4510,7 +4510,8 @@ export class Client implements LangSmithTracingClientInterface {
           feedbackConfig: res.feedbackConfig as FeedbackConfig | undefined,
           feedbackSourceType: "model",
           sessionId: run?.session_id,
-          startTime: run?.start_time,
+          startTime:
+            run?.start_time != null ? String(run.start_time) : undefined,
         })
       );
     }
