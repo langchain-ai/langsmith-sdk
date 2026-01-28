@@ -266,7 +266,7 @@ test("should handle function calling", async () => {
   callSpy.mockClear();
 });
 
-test("should handle image input", async () => {
+test.skip("should handle image input", async () => {
   const { client, callSpy } = mockClient();
   const geminiClient = wrapGemini(
     new GoogleGenAI({

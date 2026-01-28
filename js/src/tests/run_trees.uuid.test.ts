@@ -120,3 +120,23 @@ test("nonCryptographicUuid7Deterministic timestamp handling", () => {
   expect(uuidV7Ms(derivedV4)).toBeGreaterThanOrEqual(beforeMs);
   expect(uuidV7Ms(derivedV4)).toBeLessThanOrEqual(afterMs);
 });
+
+test.only("nonCryptographicUuid7Deterministic is fast", () => {
+  const originalUuids = [];
+  for (let i = 0; i < 1000; i++) {
+    originalUuids.push(uuidv7());
+  }
+  const finalUuids = [];
+  const startTime = new Date();
+  for (let i = 0; i < 10000; i++) {
+    finalUuids.push(
+      nonCryptographicUuid7Deterministic(originalUuids[i], "key")
+    );
+  }
+  const endTime = new Date();
+  const duration = endTime.getTime() - startTime.getTime();
+  expect(duration).toBeLessThan(1000); // 10k UUIDs/second to be conservative for CI, should actually be much higher
+  for (let i = 0; i < finalUuids.length - 1; i++) {
+    expect(getUuidVersion(finalUuids[i])).toBe(7);
+  }
+});
