@@ -493,9 +493,10 @@ export function xxh128ToBytes(hash128: bigint): Uint8Array {
   const low64 = hash128 & mask64;
   const high64 = hash128 >> n(64);
 
-  // Write in little-endian order
-  view.setBigUint64(0, low64, true);
-  view.setBigUint64(8, high64, true);
+  // Write in big-endian order to match Python's xxhash.digest() output
+  // Python outputs: [high64 bytes][low64 bytes], each in big-endian
+  view.setBigUint64(0, high64, false); // high 64 bits, big-endian
+  view.setBigUint64(8, low64, false); // low 64 bits, big-endian
 
   return result;
 }

@@ -122,6 +122,35 @@ test("nonCryptographicUuid7Deterministic timestamp handling", async () => {
   expect(uuidV7Ms(derivedV4)).toBeLessThanOrEqual(afterMs);
 });
 
+test("nonCryptographicUuid7Deterministic produces expected values", () => {
+  // Test with hard-coded values to ensure compatibility across implementations
+  // These values should match the Python implementation exactly
+
+  const testCases = [
+    {
+      input: "019c0711-e1aa-7223-bf21-12119afe80f7",
+      key: "other-key",
+      expected: "019c0711-e1aa-7614-833c-500ba8e2e686",
+    },
+    {
+      input: "019c0711-e1aa-7223-bf21-12119afe80f7",
+      key: "replica-project",
+      expected: "019c0711-e1aa-7817-8301-943c0df9a3cd",
+    },
+    {
+      input: "01900000-0000-7000-8000-000000000000",
+      key: "test",
+      expected: "01900000-0000-7132-8131-f80e352488a3",
+    },
+  ];
+
+  for (const { input, key, expected } of testCases) {
+    const result = nonCryptographicUuid7Deterministic(input, key);
+    expect(result).toBe(expected);
+    expect(getUuidVersion(result)).toBe(7);
+  }
+});
+
 test("nonCryptographicUuid7Deterministic is fast", async () => {
   const originalUuids = [];
   for (let i = 0; i < 100000; i++) {
