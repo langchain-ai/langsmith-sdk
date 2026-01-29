@@ -92,7 +92,7 @@ describe("LANGSMITH_RUNS_ENDPOINTS Replica Testing", () => {
     delete process.env.LANGSMITH_ENDPOINT;
     delete process.env.LANGCHAIN_ENDPOINT;
     delete process.env.LANGSMITH_RUNS_ENDPOINTS;
-    // delete process.env.LANGSMITH_API_KEY;
+    delete process.env.LANGSMITH_API_KEY;
     delete process.env.LANGCHAIN_API_KEY;
   });
 
