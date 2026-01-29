@@ -4,7 +4,7 @@ const UUID_REGEX =
 
 import { v7 as uuidv7 } from "uuid";
 import { warnOnce } from "./warn.js";
-import { murmurhash3_32 } from "./murmurhash3/murmurhash3.js";
+import { XXH3_128, xxh128ToBytes } from "./xxhash/xxhash.js";
 
 let UUID7_WARNING_EMITTED = false;
 
@@ -105,15 +105,13 @@ function bytesToUuid(bytes: Uint8Array): string {
 const _textEncoder = new TextEncoder();
 
 /**
- * Generates a 16-byte fingerprint for deterministic UUID generation.
+ * Generates a 16-byte fingerprint for deterministic UUID generation using XXH3-128.
  *
- * This concatenates four MurmurHash3_x86_32 outputs with different seeds to produce
- * 128 bits of hash data. Note: this is NOT the canonical MurmurHash3_x86_128 or
- * MurmurHash3_x64_128 algorithm - it's a custom construction for our specific use case.
+ * XXH3 is an extremely fast, non-cryptographic hash function that provides excellent
+ * collision resistance. It's widely used in production systems and compatible with
+ * xxHash implementations in other languages.
  *
- * MurmurHash3 is a well-tested, non-cryptographic hash function that provides
- * excellent speed and collision resistance without the overhead of cryptographic hashes.
- * See: https://github.com/aappleby/smhasher
+ * See: https://github.com/Cyan4973/xxHash
  *
  * @param str - The input string to hash
  * @returns A Uint8Array containing 16 bytes of hash output
@@ -121,20 +119,9 @@ const _textEncoder = new TextEncoder();
 function _fastHash128(str: string): Uint8Array {
   const data = _textEncoder.encode(str);
 
-  // Generate 128 bits by concatenating four MurmurHash3_x86_32 outputs with fixed seeds.
-  // This provides a deterministic 16-byte fingerprint suitable for our UUID generation,
-  // though it's not statistically equivalent to the canonical 128-bit MurmurHash variants.
-  const result = new Uint8Array(16);
-  const view = new DataView(result.buffer);
-
-  // Use four distinct seeds to generate four 32-bit hashes (4 × 32 = 128 bits).
-  // The specific seed values are arbitrary but must remain constant for determinism.
-  view.setUint32(0, murmurhash3_32(data, 0x9e3779b1), true); // Seed 1
-  view.setUint32(4, murmurhash3_32(data, 0x85ebca77), true); // Seed 2
-  view.setUint32(8, murmurhash3_32(data, 0xc2b2ae3d), true); // Seed 3
-  view.setUint32(12, murmurhash3_32(data, 0x27d4eb2f), true); // Seed 4
-
-  return result;
+  // Compute XXH3-128 hash and convert to bytes
+  const hash128 = XXH3_128(data);
+  return xxh128ToBytes(hash128);
 }
 
 /**

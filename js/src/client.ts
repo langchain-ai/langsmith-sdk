@@ -1885,6 +1885,7 @@ export class Client implements LangSmithTracingClientInterface {
               ...this.fetchOptions,
             } as RequestInit
           );
+          console.log(response);
 
           await raiseForStatus(
             response,
