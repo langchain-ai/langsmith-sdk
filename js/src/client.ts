@@ -349,6 +349,7 @@ interface FeedbackCreate {
   feedback_source?: feedback_source | KVMap | null;
   feedbackConfig?: FeedbackConfig;
   session_id?: string;
+  start_time?: number | string;
   comparative_experiment_id?: string;
 }
 
@@ -4149,6 +4150,8 @@ export class Client implements LangSmithTracingClientInterface {
       feedbackConfig,
       projectId,
       comparativeExperimentId,
+      sessionId,
+      startTime,
     }: {
       score?: ScoreType;
       value?: ValueType;
@@ -4162,6 +4165,10 @@ export class Client implements LangSmithTracingClientInterface {
       eager?: boolean;
       projectId?: string;
       comparativeExperimentId?: string;
+      /** The session (project) ID of the run this feedback is for. */
+      sessionId?: string;
+      /** The start time of the run this feedback is for. Accepts ISO string or epoch ms. */
+      startTime?: number | string;
     }
   ): Promise<Feedback> {
     if (!runId && !projectId) {
@@ -4198,7 +4205,8 @@ export class Client implements LangSmithTracingClientInterface {
       feedback_source: feedback_source,
       comparative_experiment_id: comparativeExperimentId,
       feedbackConfig,
-      session_id: projectId,
+      session_id: sessionId ?? projectId,
+      start_time: startTime,
     };
     const body = JSON.stringify(feedback);
     const url = `${this.apiUrl}/feedback`;
@@ -4501,6 +4509,8 @@ export class Client implements LangSmithTracingClientInterface {
           sourceRunId: res.sourceRunId,
           feedbackConfig: res.feedbackConfig as FeedbackConfig | undefined,
           feedbackSourceType: "model",
+          sessionId: run?.session_id,
+          startTime: run?.start_time,
         })
       );
     }

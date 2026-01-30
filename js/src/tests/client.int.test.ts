@@ -329,6 +329,12 @@ test("Test create feedback with source run", async () => {
       end_time: new Date().getTime(),
     });
 
+    // Wait for runs to be ingested before creating feedback
+    await Promise.all([
+      waitUntilRunFound(langchainClient, runId, true),
+      waitUntilRunFound(langchainClient, runId2, true),
+    ]);
+
     await langchainClient.createFeedback(runId, "test_feedback", {
       score: 0.5,
       sourceRunId: runId2,
