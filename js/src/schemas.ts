@@ -490,6 +490,7 @@ export interface InvocationParamsSchema {
   ls_temperature?: number;
   ls_max_tokens?: number;
   ls_stop?: string[];
+  ls_invocation_params?: Record<string, unknown>;
 }
 
 export interface PromptCommit {
