@@ -456,7 +456,7 @@ function processGeminiOutputs(outputs: Record<string, unknown>): KVMap {
   return result;
 }
 
-function getInvocationParams(
+function _getGeminiInvocationParams(
   prepopulatedInvocationParams: Record<string, unknown>,
   payload: Record<string, unknown>
 ): InvocationParamsSchema {
@@ -532,10 +532,11 @@ export function wrapGemini<T extends GoogleGenAIType>(
     name: "ChatGoogleGenerativeAI",
     run_type: "llm",
     getInvocationParams: (payload: Record<string, unknown>) =>
-      getInvocationParams(prepopulatedInvocationParams ?? {}, payload),
+      _getGeminiInvocationParams(prepopulatedInvocationParams ?? {}, payload),
     processInputs: processGeminiInputs,
     processOutputs: processGeminiOutputs,
-    ...rest,
+    ...options,
+    metadata: rest,
   };
 
   const geminiStreamTraceConfig: TraceableConfig<
@@ -545,10 +546,11 @@ export function wrapGemini<T extends GoogleGenAIType>(
     run_type: "llm",
     aggregator: chatAggregator,
     getInvocationParams: (payload: Record<string, unknown>) =>
-      getInvocationParams(prepopulatedInvocationParams ?? {}, payload),
+      _getGeminiInvocationParams(prepopulatedInvocationParams ?? {}, payload),
     processInputs: processGeminiInputs,
     processOutputs: processGeminiOutputs,
-    ...rest,
+    ...options,
+    metadata: rest,
   };
 
   tracedGeminiClient.models = {
