@@ -186,7 +186,7 @@ test("prepopulated invocation params are merged and runtime params override", as
 
   await wrappedClient.chat.completions.create({
     messages: [{ role: "user", content: "Say 'hello'" }],
-    model: "gpt-3.5-turbo",
+    model: "gpt-4.1-nano",
     seed: 42, // Should override prepopulated seed=100
   });
 

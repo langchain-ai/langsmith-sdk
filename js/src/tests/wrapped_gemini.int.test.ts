@@ -414,7 +414,7 @@ test("prepopulated invocation params are passed through", async () => {
   });
 
   await wrappedClient.models.generateContent({
-    model: "gemini-2.0-flash-exp",
+    model: "gemini-2.5-flash",
     contents: "Say 'hello'",
   });
 

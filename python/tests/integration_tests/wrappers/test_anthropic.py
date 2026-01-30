@@ -374,7 +374,7 @@ def test_prepopulated_invocation_params():
     patched_client.messages.create(
         messages=messages,
         top_k=40,  # Should override prepopulated top_k=100
-        model="claude-3-5-sonnet-20241022",
+        model=model_name,
         max_tokens=10,
     )
 
