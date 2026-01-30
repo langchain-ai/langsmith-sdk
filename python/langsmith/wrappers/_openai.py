@@ -500,8 +500,8 @@ def wrap_openai(
     tracing_extra = tracing_extra or {}
 
     # Extract ls_invocation_params from metadata
-    metadata = tracing_extra.get("metadata") or {}
-    prepopulated_invocation_params = metadata.pop("ls_invocation_params", {})  # type: ignore[misc]
+    metadata = dict(tracing_extra.get("metadata") or {})
+    prepopulated_invocation_params = metadata.pop("ls_invocation_params", {})
 
     # Create new tracing_extra without ls_invocation_params in metadata
     tracing_extra_rest: TracingExtra = {
@@ -510,7 +510,7 @@ def wrap_openai(
         if k != "metadata"  # type: ignore[misc]
     }
     if metadata:
-        tracing_extra_rest["metadata"] = metadata
+        tracing_extra_rest["metadata"] = metadata  # type: ignore[typeddict-item]
 
     ls_provider = "openai"
     try:
