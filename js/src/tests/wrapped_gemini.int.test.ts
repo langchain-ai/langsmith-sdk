@@ -39,6 +39,8 @@ test("models.generateContent non-streaming", async () => {
     contents: "Say 'hello'",
   });
 
+  await client.awaitPendingTraceBatches();
+
   // TypeScript knows response should have certain properties
   // Let's verify the basic response structure
   expect(response).toBeDefined();
@@ -82,6 +84,8 @@ test("models.generateContentStream streaming", async () => {
   // Verify we got some chunks
   expect(chunks.length).toBeGreaterThan(0);
 
+  await client.awaitPendingTraceBatches();
+
   // Verify tracing was called
   expect(callSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
 
@@ -115,6 +119,8 @@ test("should trace calls to langsmith", async () => {
     contents: "Say 'hello'",
   });
 
+  await client.awaitPendingTraceBatches();
+
   expect(callSpy.mock.calls.length).toBeGreaterThan(0);
 
   const firstCall = callSpy.mock.calls[0];
@@ -145,6 +151,8 @@ test("should extract usage metadata in outputs", async () => {
     model: "gemini-2.5-flash",
     contents: "Say hello world",
   });
+
+  await client.awaitPendingTraceBatches();
 
   expect(callSpy.mock.calls.length).toBeGreaterThan(0);
 
@@ -186,6 +194,8 @@ test("should extract usage metadata in extra.metadata.usage_metadata", async () 
     model: "gemini-2.5-flash",
     contents: "Say hello world",
   });
+
+  await client.awaitPendingTraceBatches();
 
   expect(callSpy.mock.calls.length).toBeGreaterThan(0);
 
@@ -243,6 +253,8 @@ test("should handle function calling", async () => {
   });
 
   expect(response).toBeDefined();
+
+  await client.awaitPendingTraceBatches();
   expect(callSpy.mock.calls.length).toBeGreaterThan(0);
 
   // Find the PATCH call
@@ -302,6 +314,8 @@ test("should handle image input", async () => {
     ],
   });
 
+  await client.awaitPendingTraceBatches();
+
   expect(callSpy.mock.calls.length).toBeGreaterThan(0);
   expect(response).toBeDefined();
   expect(response.text).toBeDefined();
@@ -351,6 +365,8 @@ test("should handle image generation output", async () => {
       responseModalities: ["Image"],
     },
   });
+
+  await client.awaitPendingTraceBatches();
 
   expect(callSpy.mock.calls.length).toBeGreaterThan(0);
   expect(response).toBeDefined();
