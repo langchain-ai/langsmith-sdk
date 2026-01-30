@@ -918,7 +918,7 @@ def test_prepopulated_invocation_params():
     patched_client.chat.completions.create(
         messages=messages,
         seed=42,  # Should override prepopulated seed=100
-        model="gpt-3.5-turbo",
+        model="gpt-5-nano",
     )
 
     # Give the thread a chance
