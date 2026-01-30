@@ -1180,60 +1180,14 @@ describe.skip("Requires Anthropic API key", () => {
   });
 });
 
-test("prepopulated invocation params are merged correctly", async () => {
+test("prepopulated invocation params are merged and runtime params override", async () => {
   const callSpy = jest.spyOn((client as any).caller, "call");
 
   const wrappedClient = wrapAnthropic(new Anthropic(), {
     metadata: {
-      ls_invocation_params: { env: "test", team: "qa" },
-    },
-  });
-
-  await wrappedClient.messages.create({
-    messages: [{ role: "user", content: "Say 'hello'" }],
-    model: "claude-3-5-sonnet-20241022",
-    temperature: 0.7,
-    top_k: 40,
-    max_tokens: 10,
-  });
-
-  await new Promise((resolve) => setTimeout(resolve, 1000));
-
-  const postCalls = callSpy.mock.calls.filter(
-    (call) => (call[1] as any).method === "POST"
-  );
-
-  expect(postCalls.length).toBeGreaterThan(0);
-
-  // Find the call with run data
-  const runCall = postCalls.find((call) => {
-    const body = (call[1] as any).body;
-    return (
-      body && typeof body === "string" && body.includes("invocation_params")
-    );
-  });
-
-  expect(runCall).toBeDefined();
-
-  const runData = JSON.parse((runCall![1] as any).body);
-  const invocationParams = runData.extra?.invocation_params;
-  const lsInvocationParams = invocationParams?.ls_invocation_params;
-
-  // Should have prepopulated params
-  expect(lsInvocationParams?.env).toBe("test");
-  expect(lsInvocationParams?.team).toBe("qa");
-  // Should have runtime params
-  expect(lsInvocationParams?.top_k).toBe(40);
-
-  callSpy.mockClear();
-});
-
-test("runtime params override prepopulated params", async () => {
-  const callSpy = jest.spyOn((client as any).caller, "call");
-
-  const wrappedClient = wrapAnthropic(new Anthropic(), {
-    metadata: {
-      ls_invocation_params: { top_k: 100, env: "test" },
+      ls_invocation_params: { top_k: 100, env: "test", team: "qa" },
+      custom_key: "custom_value",
+      version: "1.0.0",
     },
   });
 
@@ -1265,10 +1219,16 @@ test("runtime params override prepopulated params", async () => {
   const lsInvocationParams =
     runData.extra?.invocation_params?.ls_invocation_params;
 
-  // Runtime top_k should win
+  // Runtime top_k should override prepopulated top_k
   expect(lsInvocationParams?.top_k).toBe(40);
-  // Prepopulated env should still be there
+  // Prepopulated params without conflicts should still be there
   expect(lsInvocationParams?.env).toBe("test");
+  expect(lsInvocationParams?.team).toBe("qa");
+
+  // Check that other metadata keys are preserved
+  const metadata = runData.extra?.metadata;
+  expect(metadata?.custom_key).toBe("custom_value");
+  expect(metadata?.version).toBe("1.0.0");
 
   callSpy.mockClear();
 });

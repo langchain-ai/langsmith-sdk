@@ -549,7 +549,11 @@ class TestInferInvocationParams:
 
     def test_prepopulated_invocation_params(self):
         kwargs = {"model": "gemini-pro"}
-        prepopulated = {"custom_key": "custom_value", "env": "production"}
+        prepopulated = {
+            "custom_key": "custom_value",
+            "env": "production",
+            "version": "1.0.0",
+        }
         result = _infer_invocation_params(prepopulated, kwargs)
 
         expected = {
@@ -559,7 +563,11 @@ class TestInferInvocationParams:
             "ls_temperature": None,
             "ls_max_tokens": None,
             "ls_stop": None,
-            "ls_invocation_params": {"custom_key": "custom_value", "env": "production"},
+            "ls_invocation_params": {
+                "custom_key": "custom_value",
+                "env": "production",
+                "version": "1.0.0",
+            },
         }
         assert result == expected
 

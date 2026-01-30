@@ -408,6 +408,8 @@ test("prepopulated invocation params are passed through", async () => {
   const wrappedClient = wrapGemini(genaiClient, {
     metadata: {
       ls_invocation_params: { env: "test", team: "qa" },
+      custom_key: "custom_value",
+      version: "1.0.0",
     },
   });
 
@@ -441,6 +443,11 @@ test("prepopulated invocation params are passed through", async () => {
   // Should have prepopulated params (Gemini doesn't extract runtime params)
   expect(lsInvocationParams?.env).toBe("test");
   expect(lsInvocationParams?.team).toBe("qa");
+
+  // Check that other metadata keys are preserved
+  const metadata = runData.extra?.metadata;
+  expect(metadata?.custom_key).toBe("custom_value");
+  expect(metadata?.version).toBe("1.0.0");
 
   callSpy.mockClear();
 });
