@@ -351,11 +351,12 @@ async def test_beta_chat_async_api():
 
 
 def test_prepopulated_invocation_params():
-    """Test that prepopulated invocation params are merged and runtime params override."""
+    """Test that prepopulated invocation params are merged
+    and runtime params override."""
     import anthropic
 
     mock_session = mock.MagicMock()
-    client = langsmith.Client(session=mock_session)
+    client = Client(session=mock_session)
 
     # Wrap client with prepopulated params including top_k
     patched_client = wrap_anthropic(

@@ -403,15 +403,22 @@ test("should handle image generation output", async () => {
 });
 
 test("prepopulated invocation params are passed through", async () => {
-  const callSpy = jest.spyOn((client as any).caller, "call");
+  const { client, callSpy } = mockClient();
 
-  const wrappedClient = wrapGemini(genaiClient, {
-    metadata: {
-      ls_invocation_params: { env: "test", team: "qa" },
-      custom_key: "custom_value",
-      version: "1.0.0",
-    },
-  });
+  const wrappedClient = wrapGemini(
+    new GoogleGenAI({
+      apiKey: process.env.GEMINI_API_KEY || "test-key",
+    }),
+    {
+      client,
+      tracingEnabled: true,
+      metadata: {
+        ls_invocation_params: { env: "test", team: "qa" },
+        custom_key: "custom_value",
+        version: "1.0.0",
+      },
+    }
+  );
 
   await wrappedClient.models.generateContent({
     model: "gemini-2.5-flash",

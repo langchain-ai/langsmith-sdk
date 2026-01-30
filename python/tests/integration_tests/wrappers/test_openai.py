@@ -894,7 +894,8 @@ async def test_tool_call_chunking():
 
 
 def test_prepopulated_invocation_params():
-    """Test that prepopulated invocation params are merged and runtime params override."""
+    """Test that prepopulated invocation params are merged
+    and runtime params override."""
     import openai
 
     mock_session = mock.MagicMock()

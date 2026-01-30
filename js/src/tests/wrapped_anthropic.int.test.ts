@@ -1181,9 +1181,11 @@ describe.skip("Requires Anthropic API key", () => {
 });
 
 test("prepopulated invocation params are merged and runtime params override", async () => {
-  const callSpy = jest.spyOn((client as any).caller, "call");
+  const { client, callSpy } = mockClient();
 
   const wrappedClient = wrapAnthropic(new Anthropic(), {
+    client,
+    tracingEnabled: true,
     metadata: {
       ls_invocation_params: { top_k: 100, env: "test", team: "qa" },
       custom_key: "custom_value",
