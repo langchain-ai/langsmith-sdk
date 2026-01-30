@@ -89,8 +89,8 @@ def _infer_ls_params(prepopulated_invocation_params: dict, kwargs: dict):
         "ls_max_tokens": stripped.get("max_tokens", None),
         "ls_stop": stop,
         "ls_invocation_params": {
-            **invocation_params,
             **prepopulated_invocation_params,
+            **invocation_params,
         },
     }
 

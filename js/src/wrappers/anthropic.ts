@@ -337,8 +337,8 @@ export const wrapAnthropic = <T extends AnthropicType>(
         ls_temperature: params.temperature ?? undefined,
         ls_stop,
         ls_invocation_params: {
-          ...ls_invocation_params,
           ...prepopulatedInvocationParams,
+          ...ls_invocation_params,
         },
       };
     },

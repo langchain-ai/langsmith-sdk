@@ -139,8 +139,8 @@ def _infer_invocation_params(
         or stripped.get("max_output_tokens"),
         "ls_stop": stop,
         "ls_invocation_params": {
-            **invocation_params,
             **prepopulated_invocation_params,
+            **invocation_params,
         },
     }
 
