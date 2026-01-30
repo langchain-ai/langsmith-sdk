@@ -1,3 +1,4 @@
+import inspect
 import io
 import json
 import time
@@ -15,7 +16,7 @@ from langsmith import run_trees
 from langsmith import schemas as ls_schemas
 from langsmith._internal._uuid import uuid7_deterministic
 from langsmith.client import Client
-from langsmith.run_trees import RunTree
+from langsmith.run_trees import NonRecordingRunTree, RunTree
 
 
 def _get_calls(
@@ -524,3 +525,203 @@ def test_from_headers_filters_replica_credentials():
     assert "api_url" not in replica
     assert replica.get("project_name") == "legit-project"
     assert replica.get("updates") == {"reroot": True}
+
+
+class TestNonRecordingRunTree:
+    """Tests for the NonRecordingRunTree class."""
+
+    def test_is_recording_returns_false(self):
+        """Test that is_recording returns False for NonRecordingRunTree."""
+        run = NonRecordingRunTree()
+        assert run.is_recording() is False
+
+    def test_run_tree_is_recording_returns_true(self):
+        """Test that is_recording returns True for regular RunTree."""
+        mock_client = MagicMock(spec=Client)
+        run = RunTree(name="test", client=mock_client)
+        assert run.is_recording() is True
+
+    def test_properties_return_placeholders(self):
+        """Test that properties return appropriate placeholder values."""
+        run = NonRecordingRunTree()
+        assert run.id == UUID("00000000-0000-0000-0000-000000000000")
+        assert run.trace_id == UUID("00000000-0000-0000-0000-000000000000")
+        assert run.dotted_order == ""
+        assert run.name == ""
+        assert run.run_type == "chain"
+        assert run.session_name == ""
+
+    def test_methods_are_noops(self):
+        """Test that all methods execute without error and do nothing."""
+        run = NonRecordingRunTree()
+
+        # These should all execute without error
+        run.set(inputs={"a": 1}, outputs={"b": 2})
+        run.add_tags(["tag1", "tag2"])
+        run.add_metadata({"key": "value"})
+        run.add_outputs({"output": "data"})
+        run.add_inputs({"input": "data"})
+        run.add_event({"name": "event"})
+        run.end(outputs={"final": "output"})
+        run.post()
+        run.patch()
+        run.wait()
+
+        # get_url should return empty string
+        assert run.get_url() == ""
+
+    def test_create_child_returns_self(self):
+        """Test that create_child returns the same instance (no nesting)."""
+        run = NonRecordingRunTree()
+        child = run.create_child("child_name")
+        assert child is run
+
+        # Nested calls should all return the same instance
+        grandchild = child.create_child("grandchild")
+        assert grandchild is run
+
+    def test_metadata_dict_is_mutable_but_noop(self):
+        """Test that metadata can be accessed and mutated without error."""
+        run = NonRecordingRunTree()
+
+        # Should be able to access and mutate metadata
+        run.metadata["key"] = "value"
+        assert run.metadata.get("key") == "value"
+
+        # But add_metadata is a no-op (doesn't actually add to the dict)
+        run.add_metadata({"other": "data"})
+        # The no-op doesn't add to metadata
+        assert "other" not in run.metadata
+
+    def test_outputs_setter_is_noop(self):
+        """Test that setting outputs is a no-op."""
+        run = NonRecordingRunTree()
+        run.outputs = {"should": "be ignored"}
+        # Setter is a no-op, so outputs dict should be empty
+        assert run.outputs == {}
+
+    def test_repr(self):
+        """Test string representation."""
+        run = NonRecordingRunTree()
+        assert repr(run) == "NonRecordingRunTree()"
+
+    def test_interface_matches_run_tree(self):
+        """Test that NonRecordingRunTree has the same public interface as RunTree.
+
+        Dynamically introspects RunTree, so adding a new method to RunTree
+        without adding it to NonRecordingRunTree will cause this test to fail.
+        """
+        pydantic_internals = {
+            "model_copy",
+            "model_dump",
+            "model_dump_json",
+            "model_post_init",
+            "model_validate",
+            "model_validate_json",
+            "model_validate_strings",
+            "model_construct",
+            "model_json_schema",
+            "model_parametrized_name",
+            "model_rebuild",
+            "model_computed_fields",
+            "model_config",
+            "model_extra",
+            "model_fields",
+            "model_fields_set",
+            "copy",
+            "dict",
+            "json",
+            "parse_obj",
+            "parse_raw",
+            "parse_file",
+            "schema",
+            "schema_json",
+            "validate",
+            "update_forward_refs",
+            "from_orm",
+            "construct",
+        }
+        run_tree_only = {
+            "from_dotted_order",
+            "from_headers",
+            "from_runnable_config",
+            "to_headers",
+            "infer_defaults",
+            "ensure_dotted_order",
+            "client",
+            "ls_client",
+            "parent_run",
+            "parent_run_id",
+            "parent_dotted_order",
+            "child_runs",
+            "session_id",
+            "reference_example_id",
+            "start_time",
+            "end_time",
+            "error",
+            "serialized",
+            "attachments",
+            "dangerously_allow_filesystem",
+            "replicas",
+            "trace_start_time",
+            "latency",
+            "revision_id",
+        }
+        excluded_from_interface = pydantic_internals | run_tree_only
+
+        # Pydantic fields don't appear in dir(Class), only on instances
+        required_properties = {
+            "id",
+            "trace_id",
+            "dotted_order",
+            "name",
+            "run_type",
+            "session_name",
+            "tags",
+            "inputs",
+            "outputs",
+            "events",
+            "extra",
+        }
+
+        run_tree_interface: set[str] = set()
+        for name in dir(RunTree):
+            if name.startswith("_"):
+                continue
+            if name in excluded_from_interface:
+                continue
+            if hasattr(object, name):
+                continue
+            run_tree_interface.add(name)
+        run_tree_interface.update(required_properties)
+
+        non_recording = NonRecordingRunTree()
+        missing = [
+            name for name in run_tree_interface if not hasattr(non_recording, name)
+        ]
+        assert not missing, (
+            f"NonRecordingRunTree missing from RunTree interface: {sorted(missing)}"
+        )
+
+        recording = RunTree(name="test", client=MagicMock(spec=Client))
+        for name in run_tree_interface - required_properties:
+            run_tree_attr = getattr(RunTree, name, None)
+            if run_tree_attr is None:
+                continue
+            if not callable(run_tree_attr) or isinstance(run_tree_attr, property):
+                continue
+
+            non_rec_method = getattr(non_recording, name)
+            rec_method = getattr(recording, name)
+            if not callable(non_rec_method):
+                continue
+
+            try:
+                non_rec_params = set(inspect.signature(non_rec_method).parameters)
+                rec_params = set(inspect.signature(rec_method).parameters)
+                missing_params = rec_params - non_rec_params
+                assert not missing_params, (
+                    f"NonRecordingRunTree.{name} missing params: {missing_params}"
+                )
+            except (ValueError, TypeError):
+                pass

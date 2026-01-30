@@ -60,7 +60,7 @@ async def pre_tool_use_hook(
 
     try:
         parent = get_parent_run_tree() or get_current_run_tree()
-        if not parent:
+        if not parent.is_recording():
             logger.debug(f"No parent run tree found for tool {tool_name}")
             return {}
 

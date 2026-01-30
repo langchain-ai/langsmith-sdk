@@ -1166,7 +1166,7 @@ def log_inputs(inputs: dict, /) -> None:
         return
     run_tree = rh.get_current_run_tree()
     test_case = _TEST_CASE.get()
-    if not run_tree or not test_case:
+    if not run_tree.is_recording() or not test_case:
         msg = (
             "log_inputs should only be called within a pytest test decorated with "
             "@pytest.mark.langsmith, and with tracing enabled (by setting the "
@@ -1208,7 +1208,7 @@ def log_outputs(outputs: dict, /) -> None:
         return
     run_tree = rh.get_current_run_tree()
     test_case = _TEST_CASE.get()
-    if not run_tree or not test_case:
+    if not run_tree.is_recording() or not test_case:
         msg = (
             "log_outputs should only be called within a pytest test decorated with "
             "@pytest.mark.langsmith, and with tracing enabled (by setting the "
@@ -1320,7 +1320,7 @@ def log_feedback(
 
     run_tree = rh.get_current_run_tree()
     test_case = _TEST_CASE.get()
-    if not run_tree or not test_case:
+    if not run_tree.is_recording() or not test_case:
         msg = (
             "log_feedback should only be called within a pytest test decorated with "
             "@pytest.mark.langsmith, and with tracing enabled (by setting the "

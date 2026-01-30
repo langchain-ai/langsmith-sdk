@@ -186,7 +186,8 @@ if HAVE_AGENTS:
                 run_extra["metadata"]["thread_id"] = trace_dict["group_id"]
 
             try:
-                if current_run_tree is not None:
+                new_run: rt.RunTree
+                if isinstance(current_run_tree, rt.RunTree):
                     # Nest under existing trace
                     new_run = current_run_tree.create_child(
                         name=run_name,

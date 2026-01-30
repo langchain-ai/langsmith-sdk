@@ -69,21 +69,26 @@ _EXCLUDED_FRAME_FNAME = "langsmith/run_helpers.py"
 _OTEL_AVAILABLE: Optional[bool] = None
 
 
-def get_current_run_tree() -> Optional[run_trees.RunTree]:
-    """Get the current run tree."""
-    return _context._PARENT_RUN_TREE.get()
+def get_current_run_tree() -> Union[run_trees.RunTree, run_trees.NonRecordingRunTree]:
+    """Get the current run tree.
+
+    Returns the active run tree if inside a traced context, otherwise returns
+    a `NonRecordingRunTree` that implements the same interface but does nothing.
+
+    Use `is_recording()` on the returned object to check if tracing is active.
+
+    Returns:
+        The current `RunTree` if tracing is active, otherwise a `NonRecordingRunTree`.
+    """
+    return _context._PARENT_RUN_TREE.get() or run_trees.NonRecordingRunTree()
 
 
 def set_run_metadata(**metadata: Any) -> None:
-    """Update metadata on the current run tree."""
-    run_tree = get_current_run_tree()
-    if run_tree is None:
-        LOGGER.warning(
-            "No active run tree found. Call `set_run_metadata` inside a traced run."
-        )
-    else:
-        run_tree.metadata.update(metadata)
-    return
+    """Update metadata on the current run tree.
+
+    If called outside a traced context, this is a no-op.
+    """
+    get_current_run_tree().add_metadata(metadata)
 
 
 def get_tracing_context(
@@ -1451,7 +1456,11 @@ def _get_parent_run(
     run_tree = langsmith_extra.get("run_tree")
     if run_tree:
         return run_tree
-    crt = get_current_run_tree()
+    crt_or_noop = get_current_run_tree()
+    # If crt is the NonRecordingRunTree sentinel (falsy), treat as no parent
+    crt: Optional[run_trees.RunTree] = (
+        crt_or_noop if isinstance(crt_or_noop, run_trees.RunTree) else None
+    )
     if _runtime_env.get_langchain_core_version() is not None:
         if rt := run_trees.RunTree.from_runnable_config(
             config, client=langsmith_extra.get("client")
