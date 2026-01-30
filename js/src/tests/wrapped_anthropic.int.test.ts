@@ -1179,3 +1179,96 @@ describe.skip("Requires Anthropic API key", () => {
     );
   });
 });
+
+test("prepopulated invocation params are merged correctly", async () => {
+  const callSpy = jest.spyOn((client as any).caller, "call");
+
+  const wrappedClient = wrapAnthropic(new Anthropic(), {
+    metadata: {
+      ls_invocation_params: { env: "test", team: "qa" },
+    },
+  });
+
+  await wrappedClient.messages.create({
+    messages: [{ role: "user", content: "Say 'hello'" }],
+    model: "claude-3-5-sonnet-20241022",
+    temperature: 0.7,
+    top_k: 40,
+    max_tokens: 10,
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+
+  const postCalls = callSpy.mock.calls.filter(
+    (call) => (call[1] as any).method === "POST"
+  );
+
+  expect(postCalls.length).toBeGreaterThan(0);
+
+  // Find the call with run data
+  const runCall = postCalls.find((call) => {
+    const body = (call[1] as any).body;
+    return (
+      body && typeof body === "string" && body.includes("invocation_params")
+    );
+  });
+
+  expect(runCall).toBeDefined();
+
+  const runData = JSON.parse((runCall![1] as any).body);
+  const invocationParams = runData.extra?.invocation_params;
+  const lsInvocationParams = invocationParams?.ls_invocation_params;
+
+  // Should have prepopulated params
+  expect(lsInvocationParams?.env).toBe("test");
+  expect(lsInvocationParams?.team).toBe("qa");
+  // Should have runtime params
+  expect(lsInvocationParams?.top_k).toBe(40);
+
+  callSpy.mockClear();
+});
+
+test("runtime params override prepopulated params", async () => {
+  const callSpy = jest.spyOn((client as any).caller, "call");
+
+  const wrappedClient = wrapAnthropic(new Anthropic(), {
+    metadata: {
+      ls_invocation_params: { top_k: 100, env: "test" },
+    },
+  });
+
+  await wrappedClient.messages.create({
+    messages: [{ role: "user", content: "Say 'hello'" }],
+    model: "claude-3-5-sonnet-20241022",
+    top_k: 40, // Should override prepopulated top_k=100
+    max_tokens: 10,
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+
+  const postCalls = callSpy.mock.calls.filter(
+    (call) => (call[1] as any).method === "POST"
+  );
+
+  expect(postCalls.length).toBeGreaterThan(0);
+
+  const runCall = postCalls.find((call) => {
+    const body = (call[1] as any).body;
+    return (
+      body && typeof body === "string" && body.includes("invocation_params")
+    );
+  });
+
+  expect(runCall).toBeDefined();
+
+  const runData = JSON.parse((runCall![1] as any).body);
+  const lsInvocationParams =
+    runData.extra?.invocation_params?.ls_invocation_params;
+
+  // Runtime top_k should win
+  expect(lsInvocationParams?.top_k).toBe(40);
+  // Prepopulated env should still be there
+  expect(lsInvocationParams?.env).toBe("test");
+
+  callSpy.mockClear();
+});

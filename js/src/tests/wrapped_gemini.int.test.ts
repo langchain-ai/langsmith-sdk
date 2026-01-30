@@ -401,3 +401,46 @@ test("should handle image generation output", async () => {
 
   callSpy.mockClear();
 });
+
+test("prepopulated invocation params are passed through", async () => {
+  const callSpy = jest.spyOn((client as any).caller, "call");
+
+  const wrappedClient = wrapGemini(genaiClient, {
+    metadata: {
+      ls_invocation_params: { env: "test", team: "qa" },
+    },
+  });
+
+  await wrappedClient.models.generateContent({
+    model: "gemini-2.0-flash-exp",
+    contents: "Say 'hello'",
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+
+  const postCalls = callSpy.mock.calls.filter(
+    (call) => (call[1] as any).method === "POST"
+  );
+
+  expect(postCalls.length).toBeGreaterThan(0);
+
+  // Find the call with run data
+  const runCall = postCalls.find((call) => {
+    const body = (call[1] as any).body;
+    return (
+      body && typeof body === "string" && body.includes("invocation_params")
+    );
+  });
+
+  expect(runCall).toBeDefined();
+
+  const runData = JSON.parse((runCall![1] as any).body);
+  const invocationParams = runData.extra?.invocation_params;
+  const lsInvocationParams = invocationParams?.ls_invocation_params;
+
+  // Should have prepopulated params (Gemini doesn't extract runtime params)
+  expect(lsInvocationParams?.env).toBe("test");
+  expect(lsInvocationParams?.team).toBe("qa");
+
+  callSpy.mockClear();
+});

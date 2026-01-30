@@ -173,6 +173,97 @@ test("chat.completions", async () => {
   callSpy.mockClear();
 });
 
+test("prepopulated invocation params are merged correctly", async () => {
+  const callSpy = jest.spyOn((client as any).caller, "call");
+
+  const wrappedClient = wrapOpenAI(new OpenAI(), {
+    metadata: {
+      ls_invocation_params: { env: "test", team: "qa" },
+    },
+  });
+
+  await wrappedClient.chat.completions.create({
+    messages: [{ role: "user", content: "Say 'hello'" }],
+    model: "gpt-3.5-turbo",
+    temperature: 0.7,
+    seed: 42,
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+
+  const postCalls = callSpy.mock.calls.filter(
+    (call) => (call[1] as any).method === "POST"
+  );
+
+  expect(postCalls.length).toBeGreaterThan(0);
+
+  // Find the call with run data
+  const runCall = postCalls.find((call) => {
+    const body = (call[1] as any).body;
+    return (
+      body && typeof body === "string" && body.includes("invocation_params")
+    );
+  });
+
+  expect(runCall).toBeDefined();
+
+  const runData = JSON.parse((runCall![1] as any).body);
+  const invocationParams = runData.extra?.invocation_params;
+  const lsInvocationParams = invocationParams?.ls_invocation_params;
+
+  // Should have prepopulated params
+  expect(lsInvocationParams?.env).toBe("test");
+  expect(lsInvocationParams?.team).toBe("qa");
+  // Should have runtime params
+  expect(lsInvocationParams?.seed).toBe(42);
+
+  callSpy.mockClear();
+});
+
+test("runtime params override prepopulated params", async () => {
+  const callSpy = jest.spyOn((client as any).caller, "call");
+
+  const wrappedClient = wrapOpenAI(new OpenAI(), {
+    metadata: {
+      ls_invocation_params: { seed: 100, env: "test" },
+    },
+  });
+
+  await wrappedClient.chat.completions.create({
+    messages: [{ role: "user", content: "Say 'hello'" }],
+    model: "gpt-3.5-turbo",
+    seed: 42, // Should override prepopulated seed=100
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+
+  const postCalls = callSpy.mock.calls.filter(
+    (call) => (call[1] as any).method === "POST"
+  );
+
+  expect(postCalls.length).toBeGreaterThan(0);
+
+  const runCall = postCalls.find((call) => {
+    const body = (call[1] as any).body;
+    return (
+      body && typeof body === "string" && body.includes("invocation_params")
+    );
+  });
+
+  expect(runCall).toBeDefined();
+
+  const runData = JSON.parse((runCall![1] as any).body);
+  const lsInvocationParams =
+    runData.extra?.invocation_params?.ls_invocation_params;
+
+  // Runtime seed should win
+  expect(lsInvocationParams?.seed).toBe(42);
+  // Prepopulated env should still be there
+  expect(lsInvocationParams?.env).toBe("test");
+
+  callSpy.mockClear();
+});
+
 test("chat completions with tool calling", async () => {
   const { client, callSpy } = mockClient();
 

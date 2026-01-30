@@ -348,3 +348,117 @@ async def test_beta_chat_async_api():
         assert mock_session.request.call_args_list[0][0][0].upper() == "GET"
         for call in mock_session.request.call_args_list[1:]:
             assert call[0][0].upper() == "POST"
+
+
+def test_prepopulated_invocation_params():
+    """Test that prepopulated invocation params are merged correctly."""
+    import anthropic
+
+    mock_session = mock.MagicMock()
+    client = langsmith.Client(session=mock_session)
+
+    # Wrap client with prepopulated params
+    patched_client = wrap_anthropic(
+        anthropic.Anthropic(),
+        tracing_extra={
+            "client": client,
+            "metadata": {"ls_invocation_params": {"env": "test", "team": "qa"}},
+        },
+    )
+
+    messages = [{"role": "user", "content": "Say 'hello'"}]
+    patched_client.messages.create(
+        messages=messages,
+        temperature=0.7,
+        top_k=40,
+        model="claude-3-5-sonnet-20241022",
+        max_tokens=10,
+    )
+
+    # Give the thread a chance
+    time.sleep(0.5)
+
+    # Find the POST request with the run data
+    post_calls = [
+        call
+        for call in mock_session.request.call_args_list
+        if call[0][0] == "POST" and "/runs" in str(call)
+    ]
+
+    assert len(post_calls) > 0
+
+    # Get the run data from the POST call
+    run_data = None
+    for call in post_calls:
+        if call[1].get("json"):
+            run_data = call[1]["json"]
+            break
+
+    assert run_data is not None
+
+    # Check that invocation params include both prepopulated and runtime params
+    extra = run_data.get("extra", {})
+    invocation_params = extra.get("invocation_params", {})
+    ls_invocation_params = invocation_params.get("ls_invocation_params", {})
+
+    # Should have prepopulated params
+    assert ls_invocation_params.get("env") == "test"
+    assert ls_invocation_params.get("team") == "qa"
+    # Should have runtime params (top_k is allowlisted)
+    assert ls_invocation_params.get("top_k") == 40
+
+
+def test_runtime_params_override_prepopulated():
+    """Test that runtime params override prepopulated params."""
+    import anthropic
+
+    mock_session = mock.MagicMock()
+    client = langsmith.Client(session=mock_session)
+
+    # Wrap client with prepopulated params including top_k
+    patched_client = wrap_anthropic(
+        anthropic.Anthropic(),
+        tracing_extra={
+            "client": client,
+            "metadata": {"ls_invocation_params": {"top_k": 100, "env": "test"}},
+        },
+    )
+
+    messages = [{"role": "user", "content": "Say 'hello'"}]
+    patched_client.messages.create(
+        messages=messages,
+        top_k=40,  # Should override prepopulated top_k=100
+        model="claude-3-5-sonnet-20241022",
+        max_tokens=10,
+    )
+
+    # Give the thread a chance
+    time.sleep(0.5)
+
+    # Find the POST request with the run data
+    post_calls = [
+        call
+        for call in mock_session.request.call_args_list
+        if call[0][0] == "POST" and "/runs" in str(call)
+    ]
+
+    assert len(post_calls) > 0
+
+    # Get the run data
+    run_data = None
+    for call in post_calls:
+        if call[1].get("json"):
+            run_data = call[1]["json"]
+            break
+
+    assert run_data is not None
+
+    # Check invocation params
+    extra = run_data.get("extra", {})
+    invocation_params = extra.get("invocation_params", {})
+    ls_invocation_params = invocation_params.get("ls_invocation_params", {})
+
+    # Runtime top_k should win
+    assert ls_invocation_params.get("top_k") == 40
+    # Prepopulated env should still be there
+    assert ls_invocation_params.get("env") == "test"
