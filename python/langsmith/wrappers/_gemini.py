@@ -623,10 +623,8 @@ def wrap_gemini(
     prepopulated_invocation_params = metadata.pop("ls_invocation_params", {})
 
     # Create new tracing_extra without ls_invocation_params in metadata
-    tracing_extra_rest: TracingExtra = {
-        k: v
-        for k, v in tracing_extra.items()
-        if k != "metadata"  # type: ignore[misc]
+    tracing_extra_rest: TracingExtra = {  # type: ignore[assignment]
+        k: v for k, v in tracing_extra.items() if k != "metadata"
     }
     if metadata:
         tracing_extra_rest["metadata"] = metadata  # type: ignore[typeddict-item]
