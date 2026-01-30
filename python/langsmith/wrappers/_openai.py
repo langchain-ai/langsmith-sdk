@@ -83,7 +83,11 @@ def _process_inputs(d: dict) -> dict:
 
 
 def _infer_invocation_params(
-    model_type: str, provider: str, use_responses_api: bool, kwargs: dict
+    model_type: str,
+    provider: str,
+    prepopulated_invocation_params: dict,
+    use_responses_api: bool,
+    kwargs: dict,
 ):
     stripped = _strip_not_given(kwargs)
 
@@ -134,7 +138,10 @@ def _infer_invocation_params(
         or stripped.get("max_completion_tokens")
         or stripped.get("max_output_tokens"),
         "ls_stop": stop,
-        "ls_invocation_params": invocation_params,
+        "ls_invocation_params": {
+            **invocation_params,
+            **prepopulated_invocation_params,
+        },
     }
 
 
@@ -492,6 +499,19 @@ def wrap_openai(
     """  # noqa: E501
     tracing_extra = tracing_extra or {}
 
+    # Extract ls_invocation_params from metadata
+    metadata = tracing_extra.get("metadata") or {}
+    prepopulated_invocation_params = metadata.pop("ls_invocation_params", {})  # type: ignore[misc]
+
+    # Create new tracing_extra without ls_invocation_params in metadata
+    tracing_extra_rest: TracingExtra = {
+        k: v
+        for k, v in tracing_extra.items()
+        if k != "metadata"  # type: ignore[misc]
+    }
+    if metadata:
+        tracing_extra_rest["metadata"] = metadata
+
     ls_provider = "openai"
     try:
         from openai import AsyncAzureOpenAI, AzureOpenAI
@@ -508,9 +528,13 @@ def wrap_openai(
         client.chat.completions.create,
         chat_name,
         _reduce_chat,
-        tracing_extra=tracing_extra,
+        tracing_extra=tracing_extra_rest,
         invocation_params_fn=functools.partial(
-            _infer_invocation_params, "chat", ls_provider, False
+            _infer_invocation_params,
+            "chat",
+            ls_provider,
+            prepopulated_invocation_params,
+            False,
         ),
         process_outputs=_process_chat_completion,
     )
@@ -519,9 +543,13 @@ def wrap_openai(
         client.completions.create,
         completions_name,
         _reduce_completions,
-        tracing_extra=tracing_extra,
+        tracing_extra=tracing_extra_rest,
         invocation_params_fn=functools.partial(
-            _infer_invocation_params, "llm", ls_provider, False
+            _infer_invocation_params,
+            "llm",
+            ls_provider,
+            prepopulated_invocation_params,
+            False,
         ),
     )
 
@@ -536,9 +564,13 @@ def wrap_openai(
             client.beta.chat.completions.parse,  # type: ignore
             chat_name,
             _process_chat_completion,
-            tracing_extra=tracing_extra,
+            tracing_extra=tracing_extra_rest,
             invocation_params_fn=functools.partial(
-                _infer_invocation_params, "chat", ls_provider, False
+                _infer_invocation_params,
+                "chat",
+                ls_provider,
+                prepopulated_invocation_params,
+                False,
             ),
         )
 
@@ -552,9 +584,13 @@ def wrap_openai(
             client.chat.completions.parse,  # type: ignore
             chat_name,
             _process_chat_completion,
-            tracing_extra=tracing_extra,
+            tracing_extra=tracing_extra_rest,
             invocation_params_fn=functools.partial(
-                _infer_invocation_params, "chat", ls_provider, False
+                _infer_invocation_params,
+                "chat",
+                ls_provider,
+                prepopulated_invocation_params,
+                False,
             ),
         )
 
@@ -566,9 +602,13 @@ def wrap_openai(
                 chat_name,
                 _reduce_response_events,
                 process_outputs=_process_responses_api_output,
-                tracing_extra=tracing_extra,
+                tracing_extra=tracing_extra_rest,
                 invocation_params_fn=functools.partial(
-                    _infer_invocation_params, "chat", ls_provider, True
+                    _infer_invocation_params,
+                    "chat",
+                    ls_provider,
+                    prepopulated_invocation_params,
+                    True,
                 ),
             )
         if hasattr(client.responses, "parse"):
@@ -576,9 +616,13 @@ def wrap_openai(
                 client.responses.parse,
                 chat_name,
                 _process_responses_api_output,
-                tracing_extra=tracing_extra,
+                tracing_extra=tracing_extra_rest,
                 invocation_params_fn=functools.partial(
-                    _infer_invocation_params, "chat", ls_provider, True
+                    _infer_invocation_params,
+                    "chat",
+                    ls_provider,
+                    prepopulated_invocation_params,
+                    True,
                 ),
             )
 

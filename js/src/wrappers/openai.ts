@@ -336,6 +336,7 @@ function processChatCompletion(outputs: KVMap): KVMap {
 
 const getChatModelInvocationParamsFn = (
   provider: string,
+  prepopulatedInvocationParams: Record<string, unknown>,
   useResponsesApi: boolean
 ) => {
   return (payload: unknown) => {
@@ -365,7 +366,10 @@ const getChatModelInvocationParamsFn = (
         params.max_completion_tokens ?? params.max_tokens ?? undefined,
       ls_temperature: params.temperature ?? undefined,
       ls_stop,
-      ls_invocation_params,
+      ls_invocation_params: {
+        ...ls_invocation_params,
+        ...prepopulatedInvocationParams,
+      },
     } as InvocationParamsSchema;
   };
 };
@@ -423,6 +427,9 @@ export const wrapOpenAI = <T extends OpenAIType>(
   // OpenAI methods.
   const tracedOpenAIClient = { ...openai };
 
+  const { ls_invocation_params: prepopulatedInvocationParams, ...rest } =
+    options?.metadata ?? {};
+
   const chatCompletionParseMetadata: TraceableConfig<
     typeof openai.chat.completions.create
   > = {
@@ -430,9 +437,13 @@ export const wrapOpenAI = <T extends OpenAIType>(
     run_type: "llm",
     aggregator: chatAggregator,
     argsConfigPath: [1, "langsmithExtra"],
-    getInvocationParams: getChatModelInvocationParamsFn(provider, false),
+    getInvocationParams: getChatModelInvocationParamsFn(
+      provider,
+      prepopulatedInvocationParams,
+      false
+    ),
     processOutputs: processChatCompletion,
-    ...options,
+    ...rest,
   };
 
   if (openai.beta) {
@@ -561,10 +572,13 @@ export const wrapOpenAI = <T extends OpenAIType>(
           ls_max_tokens: params.max_tokens ?? undefined,
           ls_temperature: params.temperature ?? undefined,
           ls_stop,
-          ls_invocation_params,
+          ls_invocation_params: {
+            ...ls_invocation_params,
+            ...prepopulatedInvocationParams,
+          },
         };
       },
-      ...options,
+      ...rest,
     }),
   };
 
@@ -592,9 +606,13 @@ export const wrapOpenAI = <T extends OpenAIType>(
           run_type: "llm",
           aggregator: responsesAggregator,
           argsConfigPath: [1, "langsmithExtra"],
-          getInvocationParams: getChatModelInvocationParamsFn(provider, true),
+          getInvocationParams: getChatModelInvocationParamsFn(
+            provider,
+            prepopulatedInvocationParams,
+            true
+          ),
           processOutputs: processChatCompletion,
-          ...options,
+          ...rest,
         }
       );
     }
@@ -610,9 +628,13 @@ export const wrapOpenAI = <T extends OpenAIType>(
           run_type: "llm",
           aggregator: responsesAggregator,
           argsConfigPath: [1, "langsmithExtra"],
-          getInvocationParams: getChatModelInvocationParamsFn(provider, true),
+          getInvocationParams: getChatModelInvocationParamsFn(
+            provider,
+            prepopulatedInvocationParams,
+            true
+          ),
           processOutputs: processChatCompletion,
-          ...options,
+          ...rest,
         }
       );
     }
@@ -628,9 +650,13 @@ export const wrapOpenAI = <T extends OpenAIType>(
           run_type: "llm",
           aggregator: responsesAggregator,
           argsConfigPath: [1, "langsmithExtra"],
-          getInvocationParams: getChatModelInvocationParamsFn(provider, true),
+          getInvocationParams: getChatModelInvocationParamsFn(
+            provider,
+            prepopulatedInvocationParams,
+            true
+          ),
           processOutputs: processChatCompletion,
-          ...options,
+          ...rest,
         }
       );
     }
