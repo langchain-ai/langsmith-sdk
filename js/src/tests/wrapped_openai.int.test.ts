@@ -174,9 +174,11 @@ test("chat.completions", async () => {
 });
 
 test("prepopulated invocation params are merged and runtime params override", async () => {
-  const callSpy = jest.spyOn((client as any).caller, "call");
+  const { client, callSpy } = mockClient();
 
   const wrappedClient = wrapOpenAI(new OpenAI(), {
+    client,
+    tracingEnabled: true,
     metadata: {
       ls_invocation_params: { seed: 100, env: "test", team: "qa" },
       custom_key: "custom_value",
