@@ -302,8 +302,10 @@ export const wrapAnthropic = <T extends AnthropicType>(
   const tracedAnthropicClient = { ...anthropic };
 
   // Extract ls_invocation_params from metadata
-  const { ls_invocation_params: prepopulatedInvocationParams, ...rest } =
-    options?.metadata ?? {};
+  const prepopulatedInvocationParams =
+    typeof options?.metadata?.ls_invocation_params === "object"
+      ? options.metadata.ls_invocation_params
+      : {};
 
   // Common configuration for messages.create
   const messagesCreateConfig: TraceableConfig<
@@ -343,7 +345,7 @@ export const wrapAnthropic = <T extends AnthropicType>(
       };
     },
     processOutputs: processMessageOutput,
-    ...rest,
+    ...options,
   };
 
   // Create a new messages object preserving the prototype
@@ -398,7 +400,7 @@ export const wrapAnthropic = <T extends AnthropicType>(
       argsConfigPath: [1, "langsmithExtra"],
       getInvocationParams: messagesCreateConfig.getInvocationParams,
       processOutputs: processMessageOutput,
-      ...rest,
+      ...options,
     }
   );
 
@@ -434,7 +436,7 @@ export const wrapAnthropic = <T extends AnthropicType>(
           argsConfigPath: [1, "langsmithExtra"],
           getInvocationParams: messagesCreateConfig.getInvocationParams,
           processOutputs: processMessageOutput,
-          ...rest,
+          ...options,
         }
       );
     }

@@ -427,8 +427,10 @@ export const wrapOpenAI = <T extends OpenAIType>(
   // OpenAI methods.
   const tracedOpenAIClient = { ...openai };
 
-  const { ls_invocation_params: prepopulatedInvocationParams, ...rest } =
-    options?.metadata ?? {};
+  const prepopulatedInvocationParams =
+    typeof options?.metadata?.ls_invocation_params === "object"
+      ? options.metadata.ls_invocation_params
+      : {};
 
   const chatCompletionParseMetadata: TraceableConfig<
     typeof openai.chat.completions.create
@@ -443,7 +445,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
       false
     ),
     processOutputs: processChatCompletion,
-    ...rest,
+    ...options,
   };
 
   if (openai.beta) {
@@ -578,7 +580,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
           },
         };
       },
-      ...rest,
+      ...options,
     }),
   };
 
@@ -612,7 +614,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
             true
           ),
           processOutputs: processChatCompletion,
-          ...rest,
+          ...options,
         }
       );
     }
@@ -634,7 +636,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
             true
           ),
           processOutputs: processChatCompletion,
-          ...rest,
+          ...options,
         }
       );
     }
@@ -656,7 +658,7 @@ export const wrapOpenAI = <T extends OpenAIType>(
             true
           ),
           processOutputs: processChatCompletion,
-          ...rest,
+          ...options,
         }
       );
     }
