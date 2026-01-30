@@ -2026,69 +2026,70 @@ class Client:
             return metadata
         return self._hide_metadata(metadata)
 
-    def _tag_resource_with_application(
+    def _tag_resource(
         self,
         resource_type: str,
         resource_id: ID_TYPE,
-        application: str,
+        tags: dict[str, str],
     ) -> None:
-        tag_key_id = None
-        response = self.request_with_retries(
-            "GET",
-            "/workspaces/current/tag-keys",
-            headers={**self._headers},
-        )
-        ls_utils.raise_for_status_with_text(response)
-        tag_keys = response.json()
-        for tag_key in tag_keys:
-            if tag_key["key"] == "Application":
-                tag_key_id = tag_key["id"]
-                break
-
-        if tag_key_id is None:
+        for tag_key_name, tag_value_name in tags.items():
+            tag_key_id = None
             response = self.request_with_retries(
-                "POST",
+                "GET",
                 "/workspaces/current/tag-keys",
-                headers={**self._headers, "Content-Type": "application/json"},
-                data=_dumps_json({"key": "Application", "description": None}),
+                headers={**self._headers},
             )
             ls_utils.raise_for_status_with_text(response)
-            tag_key_id = response.json()["id"]
+            tag_keys = response.json()
+            for tag_key in tag_keys:
+                if tag_key["key"] == tag_key_name:
+                    tag_key_id = tag_key["id"]
+                    break
 
-        tag_value_id = None
-        response = self.request_with_retries(
-            "GET",
-            f"/workspaces/current/tag-keys/{tag_key_id}/tag-values",
-            headers={**self._headers},
-        )
-        ls_utils.raise_for_status_with_text(response)
-        tag_values = response.json()
-        for tag_value in tag_values:
-            if tag_value["value"] == application:
-                tag_value_id = tag_value["id"]
-                break
+            if tag_key_id is None:
+                response = self.request_with_retries(
+                    "POST",
+                    "/workspaces/current/tag-keys",
+                    headers={**self._headers, "Content-Type": "application/json"},
+                    data=_dumps_json({"key": tag_key_name, "description": None}),
+                )
+                ls_utils.raise_for_status_with_text(response)
+                tag_key_id = response.json()["id"]
 
-        if tag_value_id is None:
+            tag_value_id = None
+            response = self.request_with_retries(
+                "GET",
+                f"/workspaces/current/tag-keys/{tag_key_id}/tag-values",
+                headers={**self._headers},
+            )
+            ls_utils.raise_for_status_with_text(response)
+            tag_values = response.json()
+            for tag_value in tag_values:
+                if tag_value["value"] == tag_value_name:
+                    tag_value_id = tag_value["id"]
+                    break
+
+            if tag_value_id is None:
+                response = self.request_with_retries(
+                    "POST",
+                    f"/workspaces/current/tag-keys/{tag_key_id}/tag-values",
+                    headers={**self._headers, "Content-Type": "application/json"},
+                    data=_dumps_json({"value": tag_value_name, "description": None}),
+                )
+                ls_utils.raise_for_status_with_text(response)
+                tag_value_id = response.json()["id"]
+
             response = self.request_with_retries(
                 "POST",
-                f"/workspaces/current/tag-keys/{tag_key_id}/tag-values",
+                "/workspaces/current/taggings",
                 headers={**self._headers, "Content-Type": "application/json"},
-                data=_dumps_json({"value": application, "description": None}),
+                data=_dumps_json({
+                    "tag_value_id": str(tag_value_id),
+                    "resource_type": resource_type,
+                    "resource_id": str(resource_id),
+                }),
             )
             ls_utils.raise_for_status_with_text(response)
-            tag_value_id = response.json()["id"]
-
-        response = self.request_with_retries(
-            "POST",
-            "/workspaces/current/taggings",
-            headers={**self._headers, "Content-Type": "application/json"},
-            data=_dumps_json({
-                "tag_value_id": str(tag_value_id),
-                "resource_type": resource_type,
-                "resource_id": str(resource_id),
-            }),
-        )
-        ls_utils.raise_for_status_with_text(response)
 
     def _should_flush_run_ops_buffer(self) -> bool:
         """Check if the run ops buffer should be flushed based on size or time."""
@@ -3802,7 +3803,7 @@ class Client:
         upsert: bool = False,
         project_extra: Optional[dict] = None,
         reference_dataset_id: Optional[ID_TYPE] = None,
-        application: Optional[str] = None,
+        tags: Optional[dict[str, str]] = None,
     ) -> ls_schemas.TracerSession:
         """Create a project on the LangSmith API.
 
@@ -3813,7 +3814,7 @@ class Client:
             description (Optional[str]): The description of the project.
             upsert (bool, default=False): Whether to update the project if it already exists.
             reference_dataset_id (Optional[Union[UUID, str]): The ID of the reference dataset to associate with the project.
-            application (Optional[str]): The application to tag this project with.
+            tags (Optional[dict[str, str]]): Tags to apply to the project (e.g., {"Application": "my-app", "Team": "engineering"}).
 
         Returns:
             TracerSession: The created project.
@@ -3841,8 +3842,8 @@ class Client:
         )
         ls_utils.raise_for_status_with_text(response)
         result = ls_schemas.TracerSession(**response.json(), _host_url=self._host_url)
-        if application is not None:
-            self._tag_resource_with_application("project", result.id, application)
+        if tags is not None:
+            self._tag_resource("project", result.id, tags)
         return result
 
     def update_project(
@@ -4210,7 +4211,7 @@ class Client:
         outputs_schema: Optional[dict[str, Any]] = None,
         transformations: Optional[list[ls_schemas.DatasetTransformation]] = None,
         metadata: Optional[dict] = None,
-        application: Optional[str] = None,
+        tags: Optional[dict[str, str]] = None,
     ) -> ls_schemas.Dataset:
         """Create a dataset in the LangSmith API.
 
@@ -4229,8 +4230,8 @@ class Client:
                 A list of transformations to apply to the dataset.
             metadata (Optional[dict]):
                 Additional metadata to associate with the dataset.
-            application (Optional[str]):
-                The application to tag this dataset with.
+            tags (Optional[dict[str, str]]):
+                Tags to apply to the dataset (e.g., {"Application": "my-app", "Team": "engineering"}).
 
         Returns:
             Dataset: The created dataset.
@@ -4274,8 +4275,8 @@ class Client:
             _host_url=self._host_url,
             _tenant_id=self._get_optional_tenant_id(),
         )
-        if application is not None:
-            self._tag_resource_with_application("dataset", result.id, application)
+        if tags is not None:
+            self._tag_resource("dataset", result.id, tags)
         return result
 
     def has_dataset(
@@ -7567,7 +7568,7 @@ class Client:
         description: Optional[str] = None,
         queue_id: Optional[ID_TYPE] = None,
         rubric_instructions: Optional[str] = None,
-        application: Optional[str] = None,
+        tags: Optional[dict[str, str]] = None,
     ) -> ls_schemas.AnnotationQueueWithDetails:
         """Create an annotation queue on the LangSmith API.
 
@@ -7580,8 +7581,8 @@ class Client:
                 The ID of the annotation queue.
             rubric_instructions (Optional[str]):
                 The rubric instructions for the annotation queue.
-            application (Optional[str]):
-                The application to tag this queue with.
+            tags (Optional[dict[str, str]]):
+                Tags to apply to the queue (e.g., {"Application": "my-app", "Team": "engineering"}).
 
         Returns:
             AnnotationQueue: The created annotation queue object.
@@ -7601,8 +7602,8 @@ class Client:
         result = ls_schemas.AnnotationQueueWithDetails(
             **response.json(),
         )
-        if application is not None:
-            self._tag_resource_with_application("queue", result.id, application)
+        if tags is not None:
+            self._tag_resource("queue", result.id, tags)
         return result
 
     def read_annotation_queue(self, queue_id: ID_TYPE) -> ls_schemas.AnnotationQueue:
@@ -8025,7 +8026,7 @@ class Client:
         readme: Optional[str] = None,
         tags: Optional[Sequence[str]] = None,
         is_public: bool = False,
-        application: Optional[str] = None,
+        resource_tags: Optional[dict[str, str]] = None,
     ) -> ls_schemas.Prompt:
         """Create a new prompt.
 
@@ -8038,7 +8039,7 @@ class Client:
             readme (Optional[str]): A readme for the prompt.
             tags (Optional[Sequence[str]]): A list of tags for the prompt.
             is_public (bool): Whether the prompt should be public.
-            application (Optional[str]): The application to tag this prompt with.
+            resource_tags (Optional[dict[str, str]]): Resource tags to apply to the prompt (e.g., {"Application": "my-app", "Team": "engineering"}).
 
         Returns:
             Prompt: The created prompt object.
@@ -8071,8 +8072,8 @@ class Client:
         response = self.request_with_retries("POST", "/repos/", json=json)
         response.raise_for_status()
         result = ls_schemas.Prompt(**response.json()["repo"])
-        if application is not None:
-            self._tag_resource_with_application("prompt", result.id, application)
+        if resource_tags is not None:
+            self._tag_resource("prompt", result.id, resource_tags)
         return result
 
     def create_commit(

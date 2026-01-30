@@ -424,7 +424,7 @@ export type CreateProjectParams = {
   upsert?: boolean;
   projectExtra?: RecordStringAny | null;
   referenceDatasetId?: string | null;
-  application?: string;
+  tags?: Record<string, string>;
 };
 
 type AutoBatchQueueItem = {
@@ -1359,111 +1359,113 @@ export class Client implements LangSmithTracingClientInterface {
     return await this.settings;
   }
 
-  private async _tagResourceWithApplication(
+  private async _tagResource(
     resourceType: string,
     resourceId: string,
-    application: string
+    tags: Record<string, string>
   ): Promise<void> {
-    let tagKeyId: string | null = null;
-    const tagKeysResponse = await this.caller.call(async () => {
-      const res = await this._fetch(
-        `${this.apiUrl}/workspaces/current/tag-keys`,
-        {
-          method: "GET",
-          headers: this.headers,
-          signal: AbortSignal.timeout(this.timeout_ms),
-          ...this.fetchOptions,
-        }
-      );
-      await raiseForStatus(res, "get tag keys");
-      return res;
-    });
-    const tagKeys = await tagKeysResponse.json();
-    for (const tagKey of tagKeys) {
-      if (tagKey.key === "Application") {
-        tagKeyId = tagKey.id;
-        break;
-      }
-    }
-
-    if (tagKeyId === null) {
-      const createKeyResponse = await this.caller.call(async () => {
+    for (const [tagKeyName, tagValueName] of Object.entries(tags)) {
+      let tagKeyId: string | null = null;
+      const tagKeysResponse = await this.caller.call(async () => {
         const res = await this._fetch(
           `${this.apiUrl}/workspaces/current/tag-keys`,
           {
-            method: "POST",
-            headers: { ...this.headers, "Content-Type": "application/json" },
+            method: "GET",
+            headers: this.headers,
             signal: AbortSignal.timeout(this.timeout_ms),
             ...this.fetchOptions,
-            body: JSON.stringify({ key: "Application", description: null }),
           }
         );
-        await raiseForStatus(res, "create tag key");
+        await raiseForStatus(res, "get tag keys");
         return res;
       });
-      const newTagKey = await createKeyResponse.json();
-      tagKeyId = newTagKey.id;
-    }
-
-    let tagValueId: string | null = null;
-    const tagValuesResponse = await this.caller.call(async () => {
-      const res = await this._fetch(
-        `${this.apiUrl}/workspaces/current/tag-keys/${tagKeyId}/tag-values`,
-        {
-          method: "GET",
-          headers: this.headers,
-          signal: AbortSignal.timeout(this.timeout_ms),
-          ...this.fetchOptions,
+      const tagKeys = await tagKeysResponse.json();
+      for (const tagKey of tagKeys) {
+        if (tagKey.key === tagKeyName) {
+          tagKeyId = tagKey.id;
+          break;
         }
-      );
-      await raiseForStatus(res, "get tag values");
-      return res;
-    });
-    const tagValues = await tagValuesResponse.json();
-    for (const tagValue of tagValues) {
-      if (tagValue.value === application) {
-        tagValueId = tagValue.id;
-        break;
       }
-    }
 
-    if (tagValueId === null) {
-      const createValueResponse = await this.caller.call(async () => {
+      if (tagKeyId === null) {
+        const createKeyResponse = await this.caller.call(async () => {
+          const res = await this._fetch(
+            `${this.apiUrl}/workspaces/current/tag-keys`,
+            {
+              method: "POST",
+              headers: { ...this.headers, "Content-Type": "application/json" },
+              signal: AbortSignal.timeout(this.timeout_ms),
+              ...this.fetchOptions,
+              body: JSON.stringify({ key: tagKeyName, description: null }),
+            }
+          );
+          await raiseForStatus(res, "create tag key");
+          return res;
+        });
+        const newTagKey = await createKeyResponse.json();
+        tagKeyId = newTagKey.id;
+      }
+
+      let tagValueId: string | null = null;
+      const tagValuesResponse = await this.caller.call(async () => {
         const res = await this._fetch(
           `${this.apiUrl}/workspaces/current/tag-keys/${tagKeyId}/tag-values`,
+          {
+            method: "GET",
+            headers: this.headers,
+            signal: AbortSignal.timeout(this.timeout_ms),
+            ...this.fetchOptions,
+          }
+        );
+        await raiseForStatus(res, "get tag values");
+        return res;
+      });
+      const tagValues = await tagValuesResponse.json();
+      for (const tagValue of tagValues) {
+        if (tagValue.value === tagValueName) {
+          tagValueId = tagValue.id;
+          break;
+        }
+      }
+
+      if (tagValueId === null) {
+        const createValueResponse = await this.caller.call(async () => {
+          const res = await this._fetch(
+            `${this.apiUrl}/workspaces/current/tag-keys/${tagKeyId}/tag-values`,
+            {
+              method: "POST",
+              headers: { ...this.headers, "Content-Type": "application/json" },
+              signal: AbortSignal.timeout(this.timeout_ms),
+              ...this.fetchOptions,
+              body: JSON.stringify({ value: tagValueName, description: null }),
+            }
+          );
+          await raiseForStatus(res, "create tag value");
+          return res;
+        });
+        const newTagValue = await createValueResponse.json();
+        tagValueId = newTagValue.id;
+      }
+
+      await this.caller.call(async () => {
+        const res = await this._fetch(
+          `${this.apiUrl}/workspaces/current/taggings`,
           {
             method: "POST",
             headers: { ...this.headers, "Content-Type": "application/json" },
             signal: AbortSignal.timeout(this.timeout_ms),
             ...this.fetchOptions,
-            body: JSON.stringify({ value: application, description: null }),
+            body: JSON.stringify({
+              tag_value_id: tagValueId,
+              resource_type: resourceType,
+              resource_id: resourceId,
+            }),
           }
         );
-        await raiseForStatus(res, "create tag value");
+        await raiseForStatus(res, "create tagging");
         return res;
       });
-      const newTagValue = await createValueResponse.json();
-      tagValueId = newTagValue.id;
     }
-
-    await this.caller.call(async () => {
-      const res = await this._fetch(
-        `${this.apiUrl}/workspaces/current/taggings`,
-        {
-          method: "POST",
-          headers: { ...this.headers, "Content-Type": "application/json" },
-          signal: AbortSignal.timeout(this.timeout_ms),
-          ...this.fetchOptions,
-          body: JSON.stringify({
-            tag_value_id: tagValueId,
-            resource_type: resourceType,
-            resource_id: resourceId,
-          }),
-        }
-      );
-      await raiseForStatus(res, "create tagging");
-      return res;
-    });
   }
 
   /**
@@ -2849,7 +2851,7 @@ export class Client implements LangSmithTracingClientInterface {
     upsert = false,
     projectExtra = null,
     referenceDatasetId = null,
-    application,
+    tags,
   }: CreateProjectParams): Promise<TracerSession> {
     const upsert_ = upsert ? `?upsert=true` : "";
     const endpoint = `${this.apiUrl}/sessions${upsert_}`;
@@ -2878,8 +2880,8 @@ export class Client implements LangSmithTracingClientInterface {
       return res;
     });
     const result = await response.json();
-    if (application) {
-      await this._tagResourceWithApplication("project", result.id, application);
+    if (tags) {
+      await this._tagResource("project", result.id, tags);
     }
     return result as TracerSession;
   }
@@ -3211,14 +3213,14 @@ export class Client implements LangSmithTracingClientInterface {
       inputsSchema,
       outputsSchema,
       metadata,
-      application,
+      tags,
     }: {
       description?: string;
       dataType?: DataType;
       inputsSchema?: KVMap;
       outputsSchema?: KVMap;
       metadata?: RecordStringAny;
-      application?: string;
+      tags?: Record<string, string>;
     } = {}
   ): Promise<Dataset> {
     const body: KVMap = {
@@ -3248,8 +3250,8 @@ export class Client implements LangSmithTracingClientInterface {
       return res;
     });
     const result = await response.json();
-    if (application) {
-      await this._tagResourceWithApplication("dataset", result.id, application);
+    if (tags) {
+      await this._tagResource("dataset", result.id, tags);
     }
     return result as Dataset;
   }
@@ -4701,9 +4703,9 @@ export class Client implements LangSmithTracingClientInterface {
     description?: string;
     queueId?: string;
     rubricInstructions?: string;
-    application?: string;
+    tags?: Record<string, string>;
   }): Promise<AnnotationQueueWithDetails> {
-    const { name, description, queueId, rubricInstructions, application } = options;
+    const { name, description, queueId, rubricInstructions, tags } = options;
     const body = {
       name,
       description,
@@ -4728,8 +4730,8 @@ export class Client implements LangSmithTracingClientInterface {
       return res;
     });
     const result = await response.json();
-    if (application) {
-      await this._tagResourceWithApplication("queue", result.id, application);
+    if (tags) {
+      await this._tagResource("queue", result.id, tags);
     }
     return result;
   }
@@ -5110,7 +5112,7 @@ export class Client implements LangSmithTracingClientInterface {
       readme?: string;
       tags?: string[];
       isPublic?: boolean;
-      application?: string;
+      resourceTags?: Record<string, string>;
     }
   ): Promise<Prompt> {
     const settings = await this._getSettings();
@@ -5149,8 +5151,8 @@ export class Client implements LangSmithTracingClientInterface {
       return res;
     });
     const { repo } = await response.json();
-    if (options?.application) {
-      await this._tagResourceWithApplication("prompt", repo.id, options.application);
+    if (options?.resourceTags) {
+      await this._tagResource("prompt", repo.id, options.resourceTags);
     }
     return repo as Prompt;
   }
