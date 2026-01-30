@@ -2083,11 +2083,13 @@ class Client:
                 "POST",
                 "/workspaces/current/taggings",
                 headers={**self._headers, "Content-Type": "application/json"},
-                data=_dumps_json({
-                    "tag_value_id": str(tag_value_id),
-                    "resource_type": resource_type,
-                    "resource_id": str(resource_id),
-                }),
+                data=_dumps_json(
+                    {
+                        "tag_value_id": str(tag_value_id),
+                        "resource_type": resource_type,
+                        "resource_id": str(resource_id),
+                    }
+                ),
             )
             ls_utils.raise_for_status_with_text(response)
 
