@@ -24,6 +24,7 @@ import {
   deleteProject,
   toArray,
   waitUntil,
+  waitUntilRunFound,
   skipIfTransientError,
 } from "./utils.js";
 import { ChatPromptTemplate, PromptTemplate } from "@langchain/core/prompts";
@@ -328,6 +329,12 @@ test("Test create feedback with source run", async () => {
       start_time: new Date().getTime(),
       end_time: new Date().getTime(),
     });
+
+    // Wait for runs to be ingested before creating feedback
+    await Promise.all([
+      waitUntilRunFound(langchainClient, runId, true),
+      waitUntilRunFound(langchainClient, runId2, true),
+    ]);
 
     await langchainClient.createFeedback(runId, "test_feedback", {
       score: 0.5,
