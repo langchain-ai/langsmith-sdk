@@ -163,6 +163,17 @@ export class AsyncCaller {
                 throw error;
               }
 
+              const cause = "cause" in error ? (error as { cause?: unknown }).cause : undefined;
+              if (
+                ("name" in error && error.name === "ConnectionError") ||
+                (cause != null &&
+                  typeof cause === "object" &&
+                  "name" in cause &&
+                  (cause as { name: string }).name === "ConnectionError")
+              ) {
+                throw error;
+              }
+
               const response =
                 "response" in error
                   ? (error.response as Response | undefined)

@@ -1236,6 +1236,7 @@ export class Client implements LangSmithTracingClientInterface {
       }
     } catch (e) {
       console.error("Error exporting batch:", e);
+      throw e;
     }
   }
 
@@ -1938,6 +1939,7 @@ export class Client implements LangSmithTracingClientInterface {
         throw e;
       }
       console.warn(`${e.message.trim()}\n\nContext: ${context}`);
+      throw e;
     }
   }
 
