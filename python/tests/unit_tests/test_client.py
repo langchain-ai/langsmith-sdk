@@ -4883,7 +4883,10 @@ def test_prompt_commit_tags(mock_session_cls: mock.Mock) -> None:
         (
             {"description": "Test description", "metadata": {"key": "value"}},
             {},
-            {"description": "Test description", "extra": {"metadata": {"key": "value"}}},
+            {
+                "description": "Test description",
+                "extra": {"metadata": {"key": "value"}},
+            },
         ),
         # Project with project_extra and metadata (metadata should merge)
         (
