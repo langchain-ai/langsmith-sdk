@@ -433,19 +433,11 @@ test("prepopulated invocation params are passed through", async () => {
 
   expect(postCalls.length).toBeGreaterThan(0);
 
-  // Find the call with run data
-  const runCall = postCalls.find((call) => {
-    const body = (call[1] as any).body;
-    return (
-      body && typeof body === "string" && body.includes("invocation_params")
-    );
-  });
+  // Get the POST call with run data (should have extra.metadata)
+  const postBody = parseRequestBody((postCalls[0][1] as any).body);
 
-  expect(runCall).toBeDefined();
-
-  const runData = JSON.parse((runCall![1] as any).body);
   // ls_invocation_params is in metadata, not in extra.invocation_params
-  const metadata = runData.extra?.metadata;
+  const metadata = postBody.extra?.metadata;
   const lsInvocationParams = metadata?.ls_invocation_params;
 
   // Should have prepopulated params (Gemini doesn't extract runtime params)

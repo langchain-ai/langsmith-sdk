@@ -528,6 +528,13 @@ export function wrapGemini<T extends GoogleGenAIType>(
       ? options.metadata.ls_invocation_params
       : {};
 
+  // Remove ls_invocation_params from metadata to avoid duplication
+  const { ls_invocation_params, ...restMetadata } = options?.metadata ?? {};
+  const cleanedOptions = {
+    ...options,
+    metadata: restMetadata,
+  };
+
   const geminiTraceConfig: TraceableConfig<
     typeof gemini.models.generateContent
   > = {
@@ -537,7 +544,7 @@ export function wrapGemini<T extends GoogleGenAIType>(
       _getGeminiInvocationParams(prepopulatedInvocationParams ?? {}, payload),
     processInputs: processGeminiInputs,
     processOutputs: processGeminiOutputs,
-    ...options,
+    ...cleanedOptions,
   };
 
   const geminiStreamTraceConfig: TraceableConfig<
@@ -550,7 +557,7 @@ export function wrapGemini<T extends GoogleGenAIType>(
       _getGeminiInvocationParams(prepopulatedInvocationParams ?? {}, payload),
     processInputs: processGeminiInputs,
     processOutputs: processGeminiOutputs,
-    ...options,
+    ...cleanedOptions,
   };
 
   tracedGeminiClient.models = {
