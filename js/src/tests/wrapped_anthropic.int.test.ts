@@ -1218,8 +1218,9 @@ test("prepopulated invocation params are merged and runtime params override", as
   expect(runCall).toBeDefined();
 
   const runData = JSON.parse((runCall![1] as any).body);
-  const lsInvocationParams =
-    runData.extra?.invocation_params?.ls_invocation_params;
+  // ls_invocation_params is in metadata, not in extra.invocation_params
+  const metadata = runData.extra?.metadata;
+  const lsInvocationParams = metadata?.ls_invocation_params;
 
   // Runtime top_k should override prepopulated top_k
   expect(lsInvocationParams?.top_k).toBe(40);
@@ -1228,7 +1229,6 @@ test("prepopulated invocation params are merged and runtime params override", as
   expect(lsInvocationParams?.team).toBe("qa");
 
   // Check that other metadata keys are preserved
-  const metadata = runData.extra?.metadata;
   expect(metadata?.custom_key).toBe("custom_value");
   expect(metadata?.version).toBe("1.0.0");
 

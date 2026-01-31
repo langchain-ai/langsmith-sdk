@@ -444,15 +444,15 @@ test("prepopulated invocation params are passed through", async () => {
   expect(runCall).toBeDefined();
 
   const runData = JSON.parse((runCall![1] as any).body);
-  const invocationParams = runData.extra?.invocation_params;
-  const lsInvocationParams = invocationParams?.ls_invocation_params;
+  // ls_invocation_params is in metadata, not in extra.invocation_params
+  const metadata = runData.extra?.metadata;
+  const lsInvocationParams = metadata?.ls_invocation_params;
 
   // Should have prepopulated params (Gemini doesn't extract runtime params)
   expect(lsInvocationParams?.env).toBe("test");
   expect(lsInvocationParams?.team).toBe("qa");
 
   // Check that other metadata keys are preserved
-  const metadata = runData.extra?.metadata;
   expect(metadata?.custom_key).toBe("custom_value");
   expect(metadata?.version).toBe("1.0.0");
 
