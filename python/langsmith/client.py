@@ -3772,6 +3772,7 @@ class Client:
             endpoint,
             headers={**self._headers, "Content-Type": "application/json"},
             data=_dumps_json(body),
+            params=params,
         )
         ls_utils.raise_for_status_with_text(response)
         return ls_schemas.TracerSession(**response.json(), _host_url=self._host_url)

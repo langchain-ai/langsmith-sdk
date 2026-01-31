@@ -4862,3 +4862,99 @@ def test_prompt_commit_tags(mock_session_cls: mock.Mock) -> None:
                     and "/tags" in call[0][1]
                 ]
                 assert len(tag_post_calls) == 0
+
+
+@pytest.mark.parametrize(
+    "kwargs,expected_params,expected_body_fields",
+    [
+        # Basic project creation
+        (
+            {},
+            {},
+            {"description": None, "extra": None},
+        ),
+        # Project with upsert=True
+        (
+            {"upsert": True},
+            {"upsert": True},
+            {},
+        ),
+        # Project with metadata and description
+        (
+            {"description": "Test description", "metadata": {"key": "value"}},
+            {},
+            {
+                "description": "Test description",
+                "extra": {"metadata": {"key": "value"}},
+            },
+        ),
+        # Project with project_extra and metadata (metadata should merge)
+        (
+            {"project_extra": {"custom": "data"}, "metadata": {"key": "value"}},
+            {},
+            {"extra": {"custom": "data", "metadata": {"key": "value"}}},
+        ),
+        # Project with reference_dataset_id
+        (
+            {"reference_dataset_id": "DATASET_ID_PLACEHOLDER"},
+            {},
+            {"reference_dataset_id": "DATASET_ID_PLACEHOLDER"},
+        ),
+        # All parameters together
+        (
+            {
+                "description": "Full test",
+                "metadata": {"key": "value"},
+                "upsert": True,
+                "project_extra": {"custom": "data"},
+                "reference_dataset_id": "DATASET_ID_PLACEHOLDER",
+            },
+            {"upsert": True},
+            {
+                "description": "Full test",
+                "extra": {"custom": "data", "metadata": {"key": "value"}},
+                "reference_dataset_id": "DATASET_ID_PLACEHOLDER",
+            },
+        ),
+    ],
+)
+def test_create_project(kwargs, expected_params, expected_body_fields):
+    """Test that create_project passes all parameters correctly."""
+    with patch("langsmith.client.requests.Session") as mock_session_cls:
+        mock_session = MagicMock()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        project_id = uuid.uuid4()
+        tenant_id = uuid.uuid4()
+        dataset_id = uuid.uuid4()
+        mock_response.json.return_value = {
+            "id": str(project_id),
+            "name": "test-project",
+            "tenant_id": str(tenant_id),
+            "reference_dataset_id": str(dataset_id),
+        }
+        mock_session.request.return_value = mock_response
+        mock_session_cls.return_value = mock_session
+
+        client = Client(api_key="test", auto_batch_tracing=False)
+
+        # Replace placeholder with actual dataset_id
+        if "reference_dataset_id" in kwargs:
+            kwargs["reference_dataset_id"] = dataset_id
+        if "reference_dataset_id" in expected_body_fields:
+            expected_body_fields["reference_dataset_id"] = str(dataset_id)
+
+        _result = client.create_project("test-project", **kwargs)
+
+        assert mock_session.request.called
+        call_args = mock_session.request.call_args
+        assert call_args[0] == ("POST", f"{client.api_url}/sessions")
+
+        params = call_args.kwargs.get("params", {})
+        assert params == expected_params
+
+        body = json.loads(call_args.kwargs["data"])
+        assert body["name"] == "test-project"
+        assert "id" in body
+        for field, value in expected_body_fields.items():
+            assert body[field] == value
