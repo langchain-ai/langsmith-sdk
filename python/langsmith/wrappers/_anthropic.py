@@ -58,7 +58,7 @@ def _strip_not_given(d: dict) -> dict:
     return {k: v for k, v in d.items() if v is not None}
 
 
-def _infer_ls_params(kwargs: dict):
+def _infer_ls_params(prepopulated_invocation_params: dict, kwargs: dict):
     stripped = _strip_not_given(kwargs)
 
     stop = stripped.get("stop")
@@ -88,7 +88,10 @@ def _infer_ls_params(kwargs: dict):
         "ls_temperature": stripped.get("temperature", None),
         "ls_max_tokens": stripped.get("max_tokens", None),
         "ls_stop": stop,
-        "ls_invocation_params": invocation_params,
+        "ls_invocation_params": {
+            **prepopulated_invocation_params,
+            **invocation_params,
+        },
     }
 
 
@@ -210,6 +213,7 @@ def _get_wrapper(
     original_create: Callable,
     name: str,
     reduce_fn: Callable,
+    prepopulated_invocation_params: dict,
     tracing_extra: TracingExtra,
 ) -> Callable:
     @functools.wraps(original_create)
@@ -221,7 +225,9 @@ def _get_wrapper(
             reduce_fn=reduce_fn if stream else None,
             process_inputs=_strip_not_given,
             process_outputs=_process_chat_completion,
-            _invocation_params_fn=_infer_ls_params,
+            _invocation_params_fn=functools.partial(
+                _infer_ls_params, prepopulated_invocation_params
+            ),
             **tracing_extra,
         )
 
@@ -237,7 +243,9 @@ def _get_wrapper(
             reduce_fn=reduce_fn if stream else None,
             process_inputs=_strip_not_given,
             process_outputs=_process_chat_completion,
-            _invocation_params_fn=_infer_ls_params,
+            _invocation_params_fn=functools.partial(
+                _infer_ls_params, prepopulated_invocation_params
+            ),
             **tracing_extra,
         )
         result = await decorator(original_create)(*args, **kwargs)
@@ -249,6 +257,7 @@ def _get_wrapper(
 def _get_stream_wrapper(
     original_stream: Callable,
     name: str,
+    prepopulated_invocation_params: dict,
     tracing_extra: TracingExtra,
 ) -> Callable:
     """Create a wrapper for Anthropic's streaming context manager."""
@@ -258,7 +267,9 @@ def _get_stream_wrapper(
         reduce_fn=_reduce_chat_chunks,
         run_type="llm",
         process_inputs=_strip_not_given,
-        _invocation_params_fn=_infer_ls_params,
+        _invocation_params_fn=functools.partial(
+            _infer_ls_params, prepopulated_invocation_params
+        ),
         **tracing_extra,
     )
     configured_traceable_text = run_helpers.traceable(
@@ -266,7 +277,9 @@ def _get_stream_wrapper(
         run_type="llm",
         process_inputs=_strip_not_given,
         process_outputs=_process_chat_completion,
-        _invocation_params_fn=_infer_ls_params,
+        _invocation_params_fn=functools.partial(
+            _infer_ls_params, prepopulated_invocation_params
+        ),
         **tracing_extra,
     )
 
@@ -488,23 +501,38 @@ def wrap_anthropic(client: C, *, tracing_extra: Optional[TracingExtra] = None) -
         ```
     """  # noqa: E501
     tracing_extra = tracing_extra or {}
+
+    # Extract ls_invocation_params from metadata
+    metadata = dict(tracing_extra.get("metadata") or {})
+    prepopulated_invocation_params = metadata.pop("ls_invocation_params", {})
+
+    # Create new tracing_extra without ls_invocation_params in metadata
+    tracing_extra_rest: TracingExtra = {  # type: ignore[assignment]
+        k: v for k, v in tracing_extra.items() if k != "metadata"
+    }
+    if metadata:
+        tracing_extra_rest["metadata"] = metadata  # type: ignore[typeddict-item]
+
     client.messages.create = _get_wrapper(  # type: ignore[method-assign]
         client.messages.create,
         "ChatAnthropic",
         _reduce_chat_chunks,
-        tracing_extra,
+        prepopulated_invocation_params,
+        tracing_extra_rest,
     )
 
     client.messages.stream = _get_stream_wrapper(  # type: ignore[method-assign]
         client.messages.stream,
         "ChatAnthropic",
-        tracing_extra,
+        prepopulated_invocation_params,
+        tracing_extra_rest,
     )
     client.completions.create = _get_wrapper(  # type: ignore[method-assign]
         client.completions.create,
         "Anthropic",
         _reduce_completions,
-        tracing_extra,
+        prepopulated_invocation_params,
+        tracing_extra_rest,
     )
 
     if (
@@ -516,6 +544,7 @@ def wrap_anthropic(client: C, *, tracing_extra: Optional[TracingExtra] = None) -
             client.beta.messages.create,  # type: ignore
             "ChatAnthropic",
             _reduce_chat_chunks,
-            tracing_extra,
+            prepopulated_invocation_params,
+            tracing_extra_rest,
         )
     return client
