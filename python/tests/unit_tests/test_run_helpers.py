@@ -231,6 +231,10 @@ def test__get_inputs_misnamed_and_required_keyword_only_args() -> None:
 
 
 def _get_mock_client(**kwargs: Any) -> Client:
+    ls_utils.get_env_var.cache_clear()
+    from langsmith.run_trees import _parse_write_replicas_from_env_var
+
+    _parse_write_replicas_from_env_var.cache_clear()
     mock_session = MagicMock()
     client = Client(session=mock_session, api_key="test", **kwargs)
     return client
@@ -1954,8 +1958,11 @@ def test_set_run_metadata_without_active_run_tree(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     langsmith.set_run_metadata(foo=1)
-    assert len(caplog.records) == 1
-    assert "No active run tree found" in caplog.text
+    run_helper_logs = [
+        record for record in caplog.records if record.name == "langsmith.run_helpers"
+    ]
+    assert len(run_helper_logs) == 1
+    assert "No active run tree found" in run_helper_logs[0].message
 
 
 # Tests for enabled parameter on @traceable decorator

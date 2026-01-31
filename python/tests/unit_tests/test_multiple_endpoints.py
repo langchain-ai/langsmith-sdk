@@ -21,7 +21,7 @@ from langsmith._internal._background_thread import (
     _tracing_thread_handle_batch,
 )
 from langsmith._internal._operations import serialize_run_dict
-from langsmith.run_trees import RunTree, WriteReplica
+from langsmith.run_trees import ApiKeyAuth, RunTree, WriteReplica
 
 
 class TestLangsmithRunsEndpoints:
@@ -125,19 +125,19 @@ class TestLangsmithRunsEndpoints:
             assert headers.get("x-api-key") == "custom_key"
 
     def test_run_tree_with_replicas(self):
-        """Test RunTree.post() with replicas containing api_key/api_url."""
+        """Test RunTree.post() with replicas containing auth/api_url."""
         client = Mock()
 
         # Create RunTree with replicas that have different endpoints
         replicas = [
             WriteReplica(
                 api_url="https://replica1.example.com",
-                api_key="replica_key1",
+                auth=ApiKeyAuth(api_key="replica_key1"),
                 project_name="project1",
             ),
             WriteReplica(
                 api_url="https://replica2.example.com",
-                api_key="replica_key2",
+                auth=ApiKeyAuth(api_key="replica_key2"),
                 project_name="project2",
             ),
         ]
@@ -239,6 +239,131 @@ class TestLangsmithRunsEndpoints:
             else:
                 assert len(ops) == 1  # One operation for api2
 
+    def test_background_threading_groups_by_service_auth(self):
+        """Test background threading groups by (api_url, service_key, tenant_id)."""
+        client = Mock()
+        tracing_queue = Mock()
+
+        client._multipart_ingest_ops = Mock()
+
+        serialized_op1 = serialize_run_dict(
+            "post", {**self.run_data, "id": uuid.uuid4()}
+        )
+        serialized_op2 = serialize_run_dict(
+            "post", {**self.run_data, "id": uuid.uuid4()}
+        )
+
+        batch = [
+            TracingQueueItem(
+                "priority1",
+                serialized_op1,
+                api_url="https://api.same.com",
+                service_key="jwt-a",
+                tenant_id="tenant-a",
+            ),
+            TracingQueueItem(
+                "priority2",
+                serialized_op2,
+                api_url="https://api.same.com",
+                service_key="jwt-b",
+                tenant_id="tenant-b",
+            ),
+        ]
+
+        _tracing_thread_handle_batch(client, tracing_queue, batch, use_multipart=True)
+
+        assert client._multipart_ingest_ops.call_count == 2
+        calls = client._multipart_ingest_ops.call_args_list
+        auth_calls = [
+            (
+                call.kwargs.get("api_url"),
+                call.kwargs.get("service_key"),
+                call.kwargs.get("tenant_id"),
+            )
+            for call in calls
+        ]
+        assert ("https://api.same.com", "jwt-a", "tenant-a") in auth_calls
+        assert ("https://api.same.com", "jwt-b", "tenant-b") in auth_calls
+
+    def test_background_threading_groups_by_auth_headers(self):
+        """Test background threading groups by authorization/cookie overrides."""
+        client = Mock()
+        tracing_queue = Mock()
+
+        client._multipart_ingest_ops = Mock()
+
+        serialized_op1 = serialize_run_dict(
+            "post", {**self.run_data, "id": uuid.uuid4()}
+        )
+        serialized_op2 = serialize_run_dict(
+            "post", {**self.run_data, "id": uuid.uuid4()}
+        )
+
+        batch = [
+            TracingQueueItem(
+                "priority1",
+                serialized_op1,
+                api_url="https://api.same.com",
+                api_key="shared-key",
+                authorization="Bearer token-a",
+                cookie="session=a",
+            ),
+            TracingQueueItem(
+                "priority2",
+                serialized_op2,
+                api_url="https://api.same.com",
+                api_key="shared-key",
+                authorization="Bearer token-b",
+                cookie="session=b",
+            ),
+        ]
+
+        _tracing_thread_handle_batch(client, tracing_queue, batch, use_multipart=True)
+
+        assert client._multipart_ingest_ops.call_count == 2
+        calls = client._multipart_ingest_ops.call_args_list
+        auth_pairs = {
+            (call.kwargs.get("authorization"), call.kwargs.get("cookie"))
+            for call in calls
+        }
+        assert ("Bearer token-a", "session=a") in auth_pairs
+        assert ("Bearer token-b", "session=b") in auth_pairs
+        assert all(len(call.args[0]) == 1 for call in calls)
+
+    def test_background_threading_does_not_mix_service_and_api_key_auth(self):
+        """Service auth and api key auth should never be grouped together."""
+        client = Mock()
+        tracing_queue = Mock()
+
+        client._multipart_ingest_ops = Mock()
+
+        serialized_op1 = serialize_run_dict(
+            "post", {**self.run_data, "id": uuid.uuid4()}
+        )
+        serialized_op2 = serialize_run_dict(
+            "post", {**self.run_data, "id": uuid.uuid4()}
+        )
+
+        batch = [
+            TracingQueueItem(
+                "priority1",
+                serialized_op1,
+                api_url="https://api.same.com",
+                api_key="key-a",
+            ),
+            TracingQueueItem(
+                "priority2",
+                serialized_op2,
+                api_url="https://api.same.com",
+                service_key="jwt-b",
+                tenant_id="tenant-b",
+            ),
+        ]
+
+        _tracing_thread_handle_batch(client, tracing_queue, batch, use_multipart=True)
+
+        assert client._multipart_ingest_ops.call_count == 2
+
     def test_background_threading_non_multipart_mode(self):
         """Test background threading in non-multipart mode with different endpoints."""
         client = Mock()
@@ -295,11 +420,11 @@ class TestLangsmithRunsEndpoints:
 
         assert len(replicas) == 3
         assert replicas[0]["api_url"] == "https://api1.example.com"
-        assert replicas[0]["api_key"] == "key1"
+        assert replicas[0]["auth"]["api_key"] == "key1"
         assert replicas[1]["api_url"] == "https://api2.example.com"
-        assert replicas[1]["api_key"] == "key2"
+        assert replicas[1]["auth"]["api_key"] == "key2"
         assert replicas[2]["api_url"] == "https://api3.example.com"
-        assert replicas[2]["api_key"] == "key3"
+        assert replicas[2]["auth"]["api_key"] == "key3"
 
     def test_mixed_endpoints_and_default_fallback(self):
         """Test batch with mixed endpoints and items that should use default."""
