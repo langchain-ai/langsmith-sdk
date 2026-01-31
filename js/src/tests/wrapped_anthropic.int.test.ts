@@ -1195,7 +1195,7 @@ test("prepopulated invocation params are merged and runtime params override", as
 
   await wrappedClient.messages.create({
     messages: [{ role: "user", content: "Say 'hello'" }],
-    model: "claude-3-5-sonnet-20241022",
+    model: "claude-haiku-4-5",
     top_k: 40, // Should override prepopulated top_k=100
     max_tokens: 10,
   });
