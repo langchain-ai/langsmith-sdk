@@ -664,7 +664,8 @@ class Client:
         "_use_daemon_threads",
         "_tracing_error_callback",
         "_multipart_disabled",
-        "_cache",
+        "_prompt_cache_config",
+        "_cache_initialized",
     ]
 
     _api_key: Optional[str]
@@ -702,7 +703,7 @@ class Client:
         max_batch_size_bytes: Optional[int] = None,
         headers: Optional[dict[str, str]] = None,
         tracing_error_callback: Optional[Callable[[Exception], None]] = None,
-        cache: Union[Cache, bool] = False,
+        prompt_cache: Union[Cache, bool, dict] = True,
     ) -> None:
         """Initialize a `Client` instance.
 
@@ -810,28 +811,36 @@ class Client:
             tracing_error_callback (Optional[Callable[[Exception], None]]): Optional callback function to handle errors.
 
                 Called when exceptions occur during tracing operations.
-            cache: Configuration for caching.
+            prompt_cache: Configuration for prompt caching.
 
                 Can be:
 
-                - `True`: Enable caching with default settings
-                - `Cache` instance: Use custom cache configuration
-                - `False`: Disable caching (default)
+                - `True` or `None`: Enable caching with default settings using a global singleton (default)
+                - `dict`: Configure the global singleton cache with custom settings
+                - `False`: Disable caching
+
+                The cache is lazy-initialized on the first prompt pull, and is shared across
+                all Client instances in the same process for improved cache hit rates and memory efficiency.
+                The first client to pull a prompt initializes the singleton with its configuration.
 
                 !!! example
 
                     ```python
-                    from langsmith import Client, Cache
+                    from langsmith import Client
 
-                    # Enable with defaults
-                    client = Client(cache=True)
+                    # Enable with defaults (or omit prompt_cache entirely - it defaults to True)
+                    client = Client(prompt_cache=True)
 
                     # Or use custom configuration
-                    my_cache = Cache(
-                        max_size=100,
-                        ttl_seconds=3600,  # 1 hour, or None for infinite TTL
+                    client = Client(
+                        prompt_cache={
+                            "max_size": 100,
+                            "ttl_seconds": 3600,  # 1 hour, or None for infinite TTL
+                        }
                     )
-                    client = Client(cache=my_cache)
+
+                    # Explicitly disable caching
+                    client = Client(prompt_cache=False)
                     ```
 
         Raises:
@@ -1043,13 +1052,46 @@ class Client:
 
         self._tracing_error_callback = tracing_error_callback
 
-        # Initialize cache
-        if cache is True:
-            self._cache: Optional[Cache] = Cache()
-        elif isinstance(cache, Cache):
-            self._cache = cache
-        else:
-            self._cache = None
+        # Store cache config for lazy initialization
+        self._prompt_cache_config: Union[bool, dict] = prompt_cache
+        self._cache_initialized = False
+
+    @property
+    def cache(self) -> Optional[Cache]:
+        """Get the prompt cache instance (lazy-initialized singleton).
+        
+        Returns:
+            The cache instance, or None if caching is disabled.
+        """
+        if self._prompt_cache_config is False:
+            return None
+            
+        if not self._cache_initialized:
+            from langsmith.prompt_cache_singleton import get_or_initialize_cache
+            
+            # Extract config parameters
+            if isinstance(self._prompt_cache_config, dict):
+                max_size = self._prompt_cache_config.get("max_size", 100)
+                ttl_seconds = self._prompt_cache_config.get("ttl_seconds", 3600.0)
+                refresh_interval = self._prompt_cache_config.get(
+                    "refresh_interval_seconds", 60.0
+                )
+            else:
+                # Use defaults
+                max_size = 100
+                ttl_seconds = 3600.0
+                refresh_interval = 60.0
+            
+            # Initialize or get the singleton
+            get_or_initialize_cache(
+                max_size=max_size,
+                ttl_seconds=ttl_seconds,
+                refresh_interval_seconds=refresh_interval,
+            )
+            self._cache_initialized = True
+        
+        from langsmith.prompt_cache_singleton import PromptCacheManagerSingleton
+        return PromptCacheManagerSingleton.get_instance()
 
     def _repr_html_(self) -> str:
         """Return an HTML representation of the instance with a link to the URL.
@@ -8210,9 +8252,10 @@ class Client:
             ValueError: If no commits are found for the prompt.
         """
         # Try cache first if enabled
-        if not skip_cache and self._cache is not None:
+        cache = self.cache
+        if not skip_cache and cache is not None:
             cache_key = self._get_cache_key(prompt_identifier, include_model)
-            cached = self._cache.get(cache_key)
+            cached = cache.get(cache_key)
             if cached is not None:
                 return cached
 
@@ -8220,9 +8263,9 @@ class Client:
         result = self._fetch_prompt_from_api(prompt_identifier, include_model)
 
         # Store in cache (background thread will handle refresh when stale)
-        if not skip_cache and self._cache is not None:
+        if not skip_cache and cache is not None:
             cache_key = self._get_cache_key(prompt_identifier, include_model)
-            self._cache.set(cache_key, result)
+            cache.set(cache_key, result)
 
         return result
 
@@ -8416,10 +8459,18 @@ class Client:
         return url
 
     def cleanup(self) -> None:
-        """Manually trigger cleanup of background threads."""
+        """Manually trigger cleanup of background threads.
+        
+        Note: This does NOT stop the global cache's background refresh thread,
+        as the cache is shared across all clients. If you need to stop the
+        global cache (e.g., when shutting down your application), use:
+        
+            from langsmith import PromptCacheManagerSingleton
+            PromptCacheManagerSingleton.cleanup()
+        """
         self._manual_cleanup = True
-        if self._cache is not None:
-            self._cache.shutdown()
+        # No-op for cache since it's a singleton now
+        # Cache cleanup is done via PromptCacheManagerSingleton.cleanup()
 
     @overload
     def evaluate(

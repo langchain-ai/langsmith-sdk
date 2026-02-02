@@ -14,6 +14,12 @@ if TYPE_CHECKING:
         evaluate_existing,
     )
     from langsmith.evaluation.evaluator import EvaluationResult, RunEvaluator
+    from langsmith.prompt_cache_singleton import (
+        AsyncPromptCacheManagerSingleton,
+        PromptCacheManagerSingleton,
+        get_or_initialize_async_cache,
+        get_or_initialize_cache,
+    )
     from langsmith.run_helpers import (
         get_current_run_tree,
         get_tracing_context,
@@ -137,6 +143,22 @@ def __getattr__(name: str) -> Any:
         from langsmith.cache import AsyncCache
 
         return AsyncCache
+    elif name == "PromptCacheManagerSingleton":
+        from langsmith.prompt_cache_singleton import PromptCacheManagerSingleton
+
+        return PromptCacheManagerSingleton
+    elif name == "AsyncPromptCacheManagerSingleton":
+        from langsmith.prompt_cache_singleton import AsyncPromptCacheManagerSingleton
+
+        return AsyncPromptCacheManagerSingleton
+    elif name == "get_or_initialize_cache":
+        from langsmith.prompt_cache_singleton import get_or_initialize_cache
+
+        return get_or_initialize_cache
+    elif name == "get_or_initialize_async_cache":
+        from langsmith.prompt_cache_singleton import get_or_initialize_async_cache
+
+        return get_or_initialize_async_cache
 
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
@@ -146,6 +168,10 @@ __all__ = [
     "AsyncClient",
     "Cache",
     "AsyncCache",
+    "PromptCacheManagerSingleton",
+    "AsyncPromptCacheManagerSingleton",
+    "get_or_initialize_cache",
+    "get_or_initialize_async_cache",
     "RunTree",
     "configure",
     "__version__",

@@ -30,7 +30,14 @@ ID_TYPE = Union[uuid.UUID, str]
 class AsyncClient:
     """Async Client for interacting with the LangSmith API."""
 
-    __slots__ = ("_retry_config", "_client", "_web_url", "_settings", "_cache")
+    __slots__ = (
+        "_retry_config",
+        "_client",
+        "_web_url",
+        "_settings",
+        "_prompt_cache_config",
+        "_cache_initialized",
+    )
 
     def __init__(
         self,
@@ -43,7 +50,7 @@ class AsyncClient:
         ] = None,
         retry_config: Optional[Mapping[str, Any]] = None,
         web_url: Optional[str] = None,
-        cache: Union[AsyncCache, bool] = False,
+        prompt_cache: Union[AsyncCache, bool, dict] = True,
     ):
         """Initialize the async client.
 
@@ -53,13 +60,16 @@ class AsyncClient:
             timeout_ms: Timeout for requests in milliseconds.
             retry_config: Retry configuration.
             web_url: URL for the LangSmith web app.
-            cache: Configuration for caching.
+            prompt_cache: Configuration for prompt caching.
 
                 Can be:
 
-                - `True`: Enable caching with default settings
-                - `AsyncCache` instance: Use custom cache configuration
-                - `False`: Disable caching (default)
+                - `True` or `None`: Enable caching with default settings using a global singleton (default)
+                - `dict`: Configure the global singleton cache with custom settings
+                - `False`: Disable caching
+                
+                The cache is lazy-initialized on the first prompt pull, and is shared across
+                all AsyncClient instances in the same process for improved cache hit rates and memory efficiency
         """
         self._retry_config = retry_config or {"max_retries": 3}
         _headers = {
@@ -83,18 +93,52 @@ class AsyncClient:
         self._web_url = web_url
         self._settings: Optional[ls_schemas.LangSmithSettings] = None
 
-        # Initialize cache
-        if cache is True:
-            self._cache: Optional[AsyncCache] = AsyncCache()
-        elif isinstance(cache, AsyncCache):
-            self._cache = cache
-        else:
-            self._cache = None
+        # Store cache config for lazy initialization
+        self._prompt_cache_config: Union[bool, dict] = prompt_cache
+        self._cache_initialized = False
+
+    @property
+    def cache(self) -> Optional[AsyncCache]:
+        """Get the async prompt cache instance (lazy-initialized singleton).
+        
+        Returns:
+            The async cache instance, or None if caching is disabled.
+        """
+        if self._prompt_cache_config is False:
+            return None
+            
+        if not self._cache_initialized:
+            from langsmith.prompt_cache_singleton import get_or_initialize_async_cache
+            
+            # Extract config parameters
+            if isinstance(self._prompt_cache_config, dict):
+                max_size = self._prompt_cache_config.get("max_size", 100)
+                ttl_seconds = self._prompt_cache_config.get("ttl_seconds", 3600.0)
+                refresh_interval = self._prompt_cache_config.get(
+                    "refresh_interval_seconds", 60.0
+                )
+            else:
+                # Use defaults
+                max_size = 100
+                ttl_seconds = 3600.0
+                refresh_interval = 60.0
+            
+            # Initialize or get the singleton
+            get_or_initialize_async_cache(
+                max_size=max_size,
+                ttl_seconds=ttl_seconds,
+                refresh_interval_seconds=refresh_interval,
+            )
+            self._cache_initialized = True
+        
+        from langsmith.prompt_cache_singleton import AsyncPromptCacheManagerSingleton
+        return AsyncPromptCacheManagerSingleton.get_instance()
 
     async def __aenter__(self) -> AsyncClient:
         """Enter the async client."""
-        if self._cache is not None:
-            await self._cache.start()
+        cache = self.cache
+        if cache is not None:
+            await cache.start()
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -102,9 +146,17 @@ class AsyncClient:
         await self.aclose()
 
     async def aclose(self):
-        """Close the async client."""
-        if self._cache is not None:
-            await self._cache.stop()
+        """Close the async client.
+        
+        Note: This does NOT stop the global cache's background refresh task,
+        as the cache is shared across all async clients. If you need to stop the
+        global cache (e.g., when shutting down your application), use:
+        
+            from langsmith import AsyncPromptCacheManagerSingleton
+            AsyncPromptCacheManagerSingleton.cleanup()
+        """
+        # No-op for cache since it's a singleton now
+        # Cache cleanup is done via AsyncPromptCacheManagerSingleton.cleanup()
         await self._client.aclose()
 
     @property
@@ -1708,9 +1760,10 @@ class AsyncClient:
             ValueError: If no commits are found for the prompt.
         """
         # Try cache first if enabled
-        if not skip_cache and self._cache is not None:
+        cache = self.cache
+        if not skip_cache and cache is not None:
             cache_key = self._get_cache_key(prompt_identifier, include_model)
-            cached = self._cache.get(cache_key)
+            cached = cache.get(cache_key)
             if cached is not None:
                 return cached
 
@@ -1718,9 +1771,9 @@ class AsyncClient:
         result = await self._afetch_prompt_from_api(prompt_identifier, include_model)
 
         # Store in cache
-        if not skip_cache and self._cache is not None:
+        if not skip_cache and cache is not None:
             cache_key = self._get_cache_key(prompt_identifier, include_model)
-            self._cache.set(cache_key, result)
+            cache.set(cache_key, result)
 
         return result
 
