@@ -11,7 +11,7 @@ import type { CacheConfig } from "../utils/prompts_cache/types.js";
 // Module-level singleton cache instance
 let _cacheInstance: Cache | undefined;
 
-class CacheManager {
+class PromptCacheManager {
   /**
    * Get the cache instance.
    * Returns undefined if not initialized.
@@ -62,7 +62,7 @@ class CacheManager {
   }
 }
 
-export const CacheManagerSingleton = new CacheManager();
+export const PromptCacheManagerSingleton = new PromptCacheManager();
 
 /**
  * Get or initialize the prompt cache singleton.
@@ -71,9 +71,9 @@ export const CacheManagerSingleton = new CacheManager();
  * @returns The singleton cache instance
  */
 export function getOrInitializeCache(config?: CacheConfig): Cache {
-  const existing = CacheManagerSingleton.getInstance();
+  const existing = PromptCacheManagerSingleton.getInstance();
   if (existing) {
     return existing;
   }
-  return CacheManagerSingleton.initializeInstance(config);
+  return PromptCacheManagerSingleton.initializeInstance(config);
 }

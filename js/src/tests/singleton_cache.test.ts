@@ -1,6 +1,6 @@
 import { jest } from "@jest/globals";
 import { Client } from "../client.js";
-import { CacheManagerSingleton } from "../singletons/cache.js";
+import { PromptCacheManagerSingleton } from "../singletons/prompt_cache.js";
 import type { PromptCommit } from "../schemas.js";
 import { mockClient } from "./utils/mock_client.js";
 
@@ -18,11 +18,11 @@ function createMockPromptCommit(name: string): PromptCommit {
 describe("Singleton Cache in Client", () => {
   // Clean up the singleton before each test
   beforeEach(() => {
-    CacheManagerSingleton.cleanup();
+    PromptCacheManagerSingleton.cleanup();
   });
 
   afterEach(() => {
-    CacheManagerSingleton.cleanup();
+    PromptCacheManagerSingleton.cleanup();
   });
 
   test("cache should be enabled by default", () => {
@@ -31,12 +31,12 @@ describe("Singleton Cache in Client", () => {
 
     // Cache should be enabled by default (lazy initialized on access)
     expect(cache).toBeDefined();
-    expect(CacheManagerSingleton.isInitialized()).toBe(true);
+    expect(PromptCacheManagerSingleton.isInitialized()).toBe(true);
   });
 
   test("multiple clients should share the same cache instance", () => {
-    const client1 = new Client({ cache: true });
-    const client2 = new Client({ cache: true });
+    const client1 = new Client({ promptCache: true });
+    const client2 = new Client({ promptCache: true });
 
     const cache1 = client1.cache;
     const cache2 = client2.cache;
@@ -50,8 +50,8 @@ describe("Singleton Cache in Client", () => {
   });
 
   test("cache should be shared across client instances", () => {
-    const client1 = new Client({ cache: true });
-    const client2 = new Client({ cache: true });
+    const client1 = new Client({ promptCache: true });
+    const client2 = new Client({ promptCache: true });
 
     const cache1 = client1.cache;
     const cache2 = client2.cache;
@@ -70,7 +70,7 @@ describe("Singleton Cache in Client", () => {
 
   test("first client configuration should initialize the singleton", () => {
     const client1 = new Client({
-      cache: {
+      promptCache: {
         maxSize: 50,
         ttlSeconds: 1800,
       },
@@ -81,7 +81,7 @@ describe("Singleton Cache in Client", () => {
 
     // Second client with different config should use the same instance
     const client2 = new Client({
-      cache: {
+      promptCache: {
         maxSize: 100, // Different config, but should be ignored
         ttlSeconds: 3600,
       },
@@ -94,15 +94,15 @@ describe("Singleton Cache in Client", () => {
   });
 
   test("client with cache disabled should not access the singleton", () => {
-    const client1 = new Client({ cache: true });
-    const client2 = new Client({ cache: false });
+    const client1 = new Client({ promptCache: true });
+    const client2 = new Client({ promptCache: false });
 
     expect(client1.cache).toBeDefined();
     expect(client2.cache).toBeUndefined();
   });
 
   test("cleanup should not stop the global cache", () => {
-    const client1 = new Client({ cache: true });
+    const client1 = new Client({ promptCache: true });
     const cache = client1.cache;
 
     expect(cache).toBeDefined();
@@ -111,12 +111,12 @@ describe("Singleton Cache in Client", () => {
     client1.cleanup();
 
     // Cache should still be accessible from another client
-    const client2 = new Client({ cache: true });
+    const client2 = new Client({ promptCache: true });
     expect(client2.cache).toBe(cache);
   });
 
-  test("CacheManagerSingleton.cleanup should stop and clear the cache", () => {
-    const client1 = new Client({ cache: true });
+  test("PromptCacheManagerSingleton.cleanup should stop and clear the cache", () => {
+    const client1 = new Client({ promptCache: true });
     const cache1 = client1.cache;
 
     expect(cache1).toBeDefined();
@@ -127,10 +127,10 @@ describe("Singleton Cache in Client", () => {
     expect(cache1.size).toBe(1);
 
     // Cleanup the singleton
-    CacheManagerSingleton.cleanup();
+    PromptCacheManagerSingleton.cleanup();
 
     // New client should get a fresh cache
-    const client2 = new Client({ cache: true });
+    const client2 = new Client({ promptCache: true });
     const cache2 = client2.cache;
 
     expect(cache2).toBeDefined();
@@ -144,8 +144,8 @@ describe("Singleton Cache in Client", () => {
   });
 
   test("metrics should be shared across clients", () => {
-    const client1 = new Client({ cache: true });
-    const client2 = new Client({ cache: true });
+    const client1 = new Client({ promptCache: true });
+    const client2 = new Client({ promptCache: true });
 
     const cache1 = client1.cache;
     const cache2 = client2.cache;
@@ -171,19 +171,19 @@ describe("Singleton Cache in Client", () => {
   test("cache should lazy initialize only when accessed", () => {
     // Creating client should not initialize cache
     const client = new Client();
-    expect(CacheManagerSingleton.isInitialized()).toBe(false);
+    expect(PromptCacheManagerSingleton.isInitialized()).toBe(false);
 
     // Accessing cache property should initialize it
     const cache = client.cache;
     expect(cache).toBeDefined();
-    expect(CacheManagerSingleton.isInitialized()).toBe(true);
+    expect(PromptCacheManagerSingleton.isInitialized()).toBe(true);
   });
 
   test("cache should lazy initialize on first prompt pull", async () => {
     const { client, callSpy } = mockClient();
 
     // Cache should not be initialized yet
-    expect(CacheManagerSingleton.isInitialized()).toBe(false);
+    expect(PromptCacheManagerSingleton.isInitialized()).toBe(false);
 
     // Mock the response for prompt pulling
     callSpy.mockResolvedValueOnce({
@@ -203,7 +203,7 @@ describe("Singleton Cache in Client", () => {
     const result = await client.pullPromptCommit("test-prompt");
 
     // Cache should now be initialized after the prompt pull
-    expect(CacheManagerSingleton.isInitialized()).toBe(true);
+    expect(PromptCacheManagerSingleton.isInitialized()).toBe(true);
     expect(result.commit_hash).toBe("abc123");
     
     const cache = client.cache;

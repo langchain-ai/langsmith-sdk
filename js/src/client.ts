@@ -77,7 +77,7 @@ import {
   _globalFetchImplementationIsNodeFetch,
   _getFetchImplementation,
 } from "./singletons/fetch.js";
-import { getOrInitializeCache } from "./singletons/cache.js";
+import { getOrInitializeCache } from "./singletons/prompt_cache.js";
 
 import { serialize as serializePayloadForTracing } from "./utils/fast-safe-stringify/index.js";
 
@@ -129,7 +129,7 @@ export interface ClientConfig {
    */
   fetchImplementation?: typeof fetch;
   /**
-   * Configuration for caching. Can be:
+   * Configuration for prompt caching. Can be:
    * - `true` or `undefined`: Enable caching with default settings using a global singleton (default)
    * - `CacheConfig` object: Configure the global singleton cache (see Cache constructor)
    * - `false`: Disable caching
@@ -142,22 +142,22 @@ export interface ClientConfig {
    * ```typescript
    * import { Client } from "langsmith";
    *
-   * // Enable with defaults (or omit cache entirely - it defaults to true)
-   * const client1 = new Client({ cache: true });
+   * // Enable with defaults (or omit promptCache entirely - it defaults to true)
+   * const client1 = new Client({ promptCache: true });
    *
    * // Or use custom configuration
    * const client2 = new Client({
-   *   cache: {
+   *   promptCache: {
    *     maxSize: 100,
    *     ttlSeconds: 3600, // 1 hour, or null for infinite TTL
    *   }
    * });
    *
    * // Explicitly disable caching
-   * const client3 = new Client({ cache: false });
+   * const client3 = new Client({ promptCache: false });
    * ```
    */
-  cache?: boolean | CacheConfig;
+  promptCache?: boolean | CacheConfig;
 }
 
 /**
@@ -828,7 +828,7 @@ export class Client implements LangSmithTracingClientInterface {
     this.cachedLSEnvVarsForMetadata = getLangSmithEnvVarsMetadata();
 
     // Store cache config for lazy initialization (defaults to true)
-    this._cacheConfig = config.cache ?? true;
+    this._cacheConfig = config.promptCache ?? true;
   }
 
   public static getDefaultClientConfig(): {
@@ -5690,8 +5690,8 @@ export class Client implements LangSmithTracingClientInterface {
    * global cache (e.g., when shutting down your application), use:
    *
    * ```typescript
-   * import { CacheManagerSingleton } from "langsmith/singletons/cache";
-   * CacheManagerSingleton.cleanup();
+   * import { PromptCacheManagerSingleton } from "langsmith";
+   * PromptCacheManagerSingleton.cleanup();
    * ```
    */
   public cleanup(): void {

@@ -18,9 +18,9 @@ export { RunTree, type RunTreeConfig } from "./run_trees.js";
 export { overrideFetchImplementation } from "./singletons/fetch.js";
 
 export {
-  CacheManagerSingleton,
+  PromptCacheManagerSingleton,
   getOrInitializeCache,
-} from "./singletons/cache.js";
+} from "./singletons/prompt_cache.js";
 
 export { getDefaultProjectName } from "./utils/project.js";
 
