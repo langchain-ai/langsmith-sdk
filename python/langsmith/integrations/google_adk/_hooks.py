@@ -83,7 +83,7 @@ def before_tool_callback(
     """Create tool run before execution."""
     function_call_id = (
         getattr(tool_context, "function_call_id", None)
-        or f"tool_{id(tool)}_{time.time()}"
+        or f"tool_{id(tool)}_{id(tool_context)}"
     )
     tool_name = getattr(tool, "name", None) or type(tool).__name__
     parent = _get_parent_run()
@@ -115,7 +115,7 @@ def after_tool_callback(
     """End tool run with response."""
     function_call_id = (
         getattr(tool_context, "function_call_id", None)
-        or f"tool_{id(tool)}_{time.time()}"
+        or f"tool_{id(tool)}_{id(tool_context)}"
     )
     run_info = _active_tool_runs.pop(function_call_id, None)
     if not run_info:
