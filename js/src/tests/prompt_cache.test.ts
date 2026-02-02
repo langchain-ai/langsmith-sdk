@@ -1,4 +1,3 @@
-import { jest } from "@jest/globals";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -196,17 +195,17 @@ describe("Cache", () => {
     test("should mark entries as stale after TTL expires", async () => {
       const cache = new Cache({ ttlSeconds: 0.1 }); // 100ms TTL
       const prompt = createMockPromptCommit("test");
-      
+
       cache.set("test-key", prompt);
-      
+
       // Immediately - should be fresh
       let result = cache.get("test-key");
       expect(result).toBeDefined();
       expect(result?.isStale).toBe(false);
-      
+
       // Wait for TTL to expire
-      await new Promise(resolve => setTimeout(resolve, 150));
-      
+      await new Promise((resolve) => setTimeout(resolve, 150));
+
       // Should now be stale
       result = cache.get("test-key");
       expect(result).toBeDefined();
@@ -216,12 +215,12 @@ describe("Cache", () => {
     test("should never mark entries as stale with null TTL", async () => {
       const cache = new Cache({ ttlSeconds: null });
       const prompt = createMockPromptCommit("test");
-      
+
       cache.set("test-key", prompt);
-      
+
       // Wait a bit
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
       // Should still be fresh
       const result = cache.get("test-key");
       expect(result).toBeDefined();

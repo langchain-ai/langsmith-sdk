@@ -1,11 +1,4 @@
 /**
- * Type definitions for prompt cache.
- * Separated to avoid circular dependencies.
- */
-
-import type { PromptCommit } from "../../schemas.js";
-
-/**
  * A single cache entry with metadata for TTL tracking.
  */
 export interface CacheEntry<T = unknown> {
