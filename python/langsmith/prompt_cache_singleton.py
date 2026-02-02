@@ -37,8 +37,7 @@ class PromptCacheManager:
     def initialize_instance(
         self,
         max_size: int = 100,
-        ttl_seconds: Optional[float] = 3600.0,
-        refresh_interval_seconds: float = 60.0,
+        ttl_seconds: Optional[float] = 60.0,
         force: bool = False,
     ) -> Cache:
         """Initialize the cache instance.
@@ -47,10 +46,9 @@ class PromptCacheManager:
         
         Args:
             max_size: Maximum entries in cache (LRU eviction when exceeded).
-            ttl_seconds: Time before entry is considered stale. Set to None for
-                infinite TTL (entries never expire, no background refresh).
-            refresh_interval_seconds: How often to check for stale entries.
-            force: If True, replace existing cache instance (will shutdown the old one).
+            ttl_seconds: Time before entry is considered stale. Default: 60 seconds.
+                Set to None for infinite TTL (entries never expire).
+            force: If True, replace existing cache instance.
             
         Returns:
             The cache instance.
@@ -73,7 +71,6 @@ class PromptCacheManager:
             _cache_instance = Cache(
                 max_size=max_size,
                 ttl_seconds=ttl_seconds,
-                refresh_interval_seconds=refresh_interval_seconds,
             )
             return _cache_instance
 
@@ -82,13 +79,11 @@ class PromptCacheManager:
         return _cache_instance is not None
 
     def cleanup(self) -> None:
-        """Shutdown and clear the cache instance."""
+        """Clear the cache instance."""
         global _cache_instance
 
         with _cache_lock:
-            if _cache_instance is not None:
-                _cache_instance.shutdown()
-                _cache_instance = None
+            _cache_instance = None
 
 
 class AsyncPromptCacheManager:
@@ -109,8 +104,7 @@ class AsyncPromptCacheManager:
     def initialize_instance(
         self,
         max_size: int = 100,
-        ttl_seconds: Optional[float] = 3600.0,
-        refresh_interval_seconds: float = 60.0,
+        ttl_seconds: Optional[float] = 60.0,
         force: bool = False,
     ) -> AsyncCache:
         """Initialize the async cache instance.
@@ -119,10 +113,9 @@ class AsyncPromptCacheManager:
         
         Args:
             max_size: Maximum entries in cache (LRU eviction when exceeded).
-            ttl_seconds: Time before entry is considered stale. Set to None for
-                infinite TTL (entries never expire, no background refresh).
-            refresh_interval_seconds: How often to check for stale entries.
-            force: If True, replace existing cache instance (will shutdown the old one).
+            ttl_seconds: Time before entry is considered stale. Default: 60 seconds.
+                Set to None for infinite TTL (entries never expire).
+            force: If True, replace existing cache instance.
             
         Returns:
             The async cache instance.
@@ -134,10 +127,6 @@ class AsyncPromptCacheManager:
                 # Already initialized, return existing
                 return _async_cache_instance
 
-            if _async_cache_instance is not None and force:
-                # Shutdown the existing cache before replacing
-                _async_cache_instance.shutdown()
-
             # Import here to avoid circular dependency
             from langsmith.cache import AsyncCache
 
@@ -145,7 +134,6 @@ class AsyncPromptCacheManager:
             _async_cache_instance = AsyncCache(
                 max_size=max_size,
                 ttl_seconds=ttl_seconds,
-                refresh_interval_seconds=refresh_interval_seconds,
             )
             return _async_cache_instance
 
@@ -154,13 +142,11 @@ class AsyncPromptCacheManager:
         return _async_cache_instance is not None
 
     def cleanup(self) -> None:
-        """Shutdown and clear the async cache instance."""
+        """Clear the async cache instance."""
         global _async_cache_instance
 
         with _cache_lock:
-            if _async_cache_instance is not None:
-                _async_cache_instance.shutdown()
-                _async_cache_instance = None
+            _async_cache_instance = None
 
 
 # Singleton instances
@@ -170,15 +156,14 @@ AsyncPromptCacheManagerSingleton = AsyncPromptCacheManager()
 
 def get_or_initialize_cache(
     max_size: int = 100,
-    ttl_seconds: Optional[float] = 3600.0,
-    refresh_interval_seconds: float = 60.0,
+    ttl_seconds: Optional[float] = 60.0,
 ) -> Cache:
     """Get or initialize the prompt cache singleton.
     
     Args:
         max_size: Maximum entries in cache (used only if not yet initialized).
-        ttl_seconds: TTL for cache entries (used only if not yet initialized).
-        refresh_interval_seconds: Refresh interval (used only if not yet initialized).
+        ttl_seconds: TTL for cache entries in seconds (used only if not yet initialized).
+            Default: 60 seconds.
         
     Returns:
         The singleton cache instance.
@@ -189,21 +174,19 @@ def get_or_initialize_cache(
     return PromptCacheManagerSingleton.initialize_instance(
         max_size=max_size,
         ttl_seconds=ttl_seconds,
-        refresh_interval_seconds=refresh_interval_seconds,
     )
 
 
 def get_or_initialize_async_cache(
     max_size: int = 100,
-    ttl_seconds: Optional[float] = 3600.0,
-    refresh_interval_seconds: float = 60.0,
+    ttl_seconds: Optional[float] = 60.0,
 ) -> AsyncCache:
     """Get or initialize the async prompt cache singleton.
     
     Args:
         max_size: Maximum entries in cache (used only if not yet initialized).
-        ttl_seconds: TTL for cache entries (used only if not yet initialized).
-        refresh_interval_seconds: Refresh interval (used only if not yet initialized).
+        ttl_seconds: TTL for cache entries in seconds (used only if not yet initialized).
+            Default: 60 seconds.
         
     Returns:
         The singleton async cache instance.
@@ -214,5 +197,4 @@ def get_or_initialize_async_cache(
     return AsyncPromptCacheManagerSingleton.initialize_instance(
         max_size=max_size,
         ttl_seconds=ttl_seconds,
-        refresh_interval_seconds=refresh_interval_seconds,
     )

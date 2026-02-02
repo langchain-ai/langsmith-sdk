@@ -55,9 +55,6 @@ export class Cache {
   private cache: Map<string, CacheEntry<PromptCommit>> = new Map();
   private maxSize: number;
   private ttlSeconds: number | null;
-  private refreshIntervalSeconds: number;
-  private fetchFunc?: (key: string) => Promise<PromptCommit>;
-  private refreshTimer?: ReturnType<typeof setInterval>;
   private _metrics: CacheMetrics = {
     hits: 0,
     misses: 0,
@@ -67,14 +64,7 @@ export class Cache {
 
   constructor(config: PromptCacheConfig = {}) {
     this.maxSize = config.maxSize ?? 100;
-    this.ttlSeconds = config.ttlSeconds ?? 3600;
-    this.refreshIntervalSeconds = config.refreshIntervalSeconds ?? 60;
-    this.fetchFunc = config.fetchFunc;
-
-    // Start background refresh if fetch function provided and TTL is set
-    if (this.fetchFunc && this.ttlSeconds !== null) {
-      this.startRefreshLoop();
-    }
+    this.ttlSeconds = config.ttlSeconds ?? 60;
   }
 
   /**
@@ -114,22 +104,29 @@ export class Cache {
   /**
    * Get a value from cache.
    *
-   * Returns the cached value or undefined if not found.
-   * Stale entries are still returned (background refresh handles updates).
+   * Returns the cached value and metadata, or undefined if not found.
+   * The caller is responsible for checking staleness and refreshing if needed.
+   *
+   * @param key - The cache key
+   * @returns The cache entry (with value and metadata) or undefined if not found
    */
-  get(key: string): PromptCommit | undefined {
+  get(key: string): { value: PromptCommit; isStale: boolean } | undefined {
     const entry = this.cache.get(key);
     if (!entry) {
       this._metrics.misses += 1;
       return undefined;
     }
 
-    // Move to end for LRU (delete and re-add)
+    // Move to end for LRU
     this.cache.delete(key);
     this.cache.set(key, entry);
 
     this._metrics.hits += 1;
-    return entry.value;
+
+    return {
+      value: entry.value,
+      isStale: isStale(entry, this.ttlSeconds),
+    };
   }
 
   /**
@@ -177,17 +174,6 @@ export class Cache {
   }
 
   /**
-   * Stop background refresh.
-   * Should be called when the client is being cleaned up.
-   */
-  stop(): void {
-    if (this.refreshTimer) {
-      clearInterval(this.refreshTimer);
-      this.refreshTimer = undefined;
-    }
-  }
-
-  /**
    * Dump cache contents to a JSON file for offline use.
    */
   dump(filePath: string): void {
@@ -228,61 +214,5 @@ export class Cache {
     }
 
     return loaded;
-  }
-
-  /**
-   * Start the background refresh loop.
-   */
-  private startRefreshLoop(): void {
-    this.refreshTimer = setInterval(() => {
-      this.refreshStaleEntries().catch((e) => {
-        // Log but don't die - keep the refresh loop running
-        console.warn("Unexpected error in cache refresh loop:", e);
-      });
-    }, this.refreshIntervalSeconds * 1000);
-
-    // Don't block Node.js from exiting
-    if (this.refreshTimer.unref) {
-      this.refreshTimer.unref();
-    }
-  }
-
-  /**
-   * Get list of stale cache keys.
-   */
-  private getStaleKeys(): string[] {
-    const staleKeys: string[] = [];
-    for (const [key, entry] of this.cache.entries()) {
-      if (isStale(entry, this.ttlSeconds)) {
-        staleKeys.push(key);
-      }
-    }
-    return staleKeys;
-  }
-
-  /**
-   * Check for stale entries and refresh them.
-   */
-  private async refreshStaleEntries(): Promise<void> {
-    if (!this.fetchFunc) {
-      return;
-    }
-
-    const staleKeys = this.getStaleKeys();
-    if (staleKeys.length === 0) {
-      return;
-    }
-
-    for (const key of staleKeys) {
-      try {
-        const newValue = await this.fetchFunc(key);
-        this.set(key, newValue);
-        this._metrics.refreshes += 1;
-      } catch (e) {
-        // Keep stale data on refresh failure
-        this._metrics.refreshErrors += 1;
-        console.warn(`Failed to refresh cache entry ${key}:`, e);
-      }
-    }
   }
 }

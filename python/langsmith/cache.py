@@ -71,7 +71,6 @@ class _BasePromptCache(ABC):
         "_lock",
         "_max_size",
         "_ttl_seconds",
-        "_refresh_interval",
         "_metrics",
     ]
 
@@ -79,22 +78,19 @@ class _BasePromptCache(ABC):
         self,
         *,
         max_size: int = 100,
-        ttl_seconds: Optional[float] = 3600.0,
-        refresh_interval_seconds: float = 60.0,
+        ttl_seconds: Optional[float] = 60.0,
     ) -> None:
         """Initialize the base cache.
 
         Args:
             max_size: Maximum entries in cache (LRU eviction when exceeded).
-            ttl_seconds: Time before entry is considered stale. Set to None for
-                infinite TTL (entries never expire, no background refresh).
-            refresh_interval_seconds: How often to check for stale entries.
+            ttl_seconds: Time before entry is considered stale. Default: 60 seconds.
+                Set to None for infinite TTL (entries never expire).
         """
         self._cache: OrderedDict[str, CacheEntry] = OrderedDict()
         self._lock = threading.RLock()
         self._max_size = max_size
         self._ttl_seconds = ttl_seconds
-        self._refresh_interval = refresh_interval_seconds
         self._metrics = CacheMetrics()
 
     @property
@@ -295,93 +291,39 @@ class Cache(_BasePromptCache):
         >>> cache.shutdown()
     """
 
-    __slots__ = ["_fetch_func", "_shutdown_event", "_refresh_thread"]
-
     def __init__(
         self,
         *,
         max_size: int = 100,
-        ttl_seconds: Optional[float] = 3600.0,
-        refresh_interval_seconds: float = 60.0,
-        fetch_func: Optional[Callable[[str], Any]] = None,
+        ttl_seconds: Optional[float] = 60.0,
     ) -> None:
         """Initialize the sync prompt cache.
 
         Args:
             max_size: Maximum entries in cache (LRU eviction when exceeded).
-            ttl_seconds: Time before entry is considered stale. Set to None for
-                infinite TTL (offline mode - entries never expire).
-            refresh_interval_seconds: How often to check for stale entries.
-            fetch_func: Callback to fetch fresh data for a cache key.
-                If provided, starts a background thread for refresh.
+            ttl_seconds: Time before entry is considered stale. Default: 60 seconds.
+                Set to None for infinite TTL (offline mode - entries never expire).
         """
         super().__init__(
             max_size=max_size,
             ttl_seconds=ttl_seconds,
-            refresh_interval_seconds=refresh_interval_seconds,
         )
-        self._fetch_func = fetch_func
-        self._shutdown_event = threading.Event()
-        self._refresh_thread: Optional[threading.Thread] = None
 
-        # Start background refresh if fetch_func provided and TTL is set
-        # (no refresh needed for infinite TTL)
-        if self._fetch_func is not None and self._ttl_seconds is not None:
-            self._start_refresh_thread()
-
-    def shutdown(self) -> None:
-        """Stop background refresh thread.
-
-        Should be called when the client is being cleaned up.
+    def is_stale(self, key: str) -> bool:
+        """Check if a cache entry is stale.
+        
+        Args:
+            key: The cache key
+            
+        Returns:
+            True if entry exists and is stale, False otherwise
         """
-        self._shutdown_event.set()
-        if self._refresh_thread is not None:
-            self._refresh_thread.join(timeout=5.0)
-            self._refresh_thread = None
+        with self._lock:
+            if key not in self._cache:
+                return False
+            entry = self._cache[key]
+            return entry.is_stale(self._ttl_seconds)
 
-    def _start_refresh_thread(self) -> None:
-        """Start background thread for refreshing stale entries."""
-        self._refresh_thread = threading.Thread(
-            target=self._refresh_loop,
-            daemon=True,
-            name="PromptCache-refresh",
-        )
-        self._refresh_thread.start()
-        logger.debug("Started cache refresh thread")
-
-    def _refresh_loop(self) -> None:
-        """Background loop to refresh stale entries."""
-        while not self._shutdown_event.wait(self._refresh_interval):
-            try:
-                self._refresh_stale_entries()
-            except Exception as e:
-                # Log but don't die - keep the refresh loop running
-                logger.exception(f"Unexpected error in cache refresh loop: {e}")
-
-    def _refresh_stale_entries(self) -> None:
-        """Check for stale entries and refresh them."""
-        if self._fetch_func is None:
-            return
-
-        stale_keys = self._get_stale_keys()
-
-        if not stale_keys:
-            return
-
-        logger.debug(f"Refreshing {len(stale_keys)} stale cache entries")
-
-        for key in stale_keys:
-            if self._shutdown_event.is_set():
-                break
-            try:
-                new_value = self._fetch_func(key)
-                self.set(key, new_value)
-                self._metrics.refreshes += 1
-                logger.debug(f"Refreshed cache entry: {key}")
-            except Exception as e:
-                # Keep stale data on refresh failure
-                self._metrics.refresh_errors += 1
-                logger.warning(f"Failed to refresh cache entry {key}: {e}")
 
 
 class AsyncCache(_BasePromptCache):
@@ -415,94 +357,16 @@ class AsyncCache(_BasePromptCache):
         self,
         *,
         max_size: int = 100,
-        ttl_seconds: Optional[float] = 3600.0,
-        refresh_interval_seconds: float = 60.0,
-        fetch_func: Optional[Callable[[str], Awaitable[Any]]] = None,
+        ttl_seconds: Optional[float] = 60.0,
     ) -> None:
         """Initialize the async prompt cache.
 
         Args:
             max_size: Maximum entries in cache (LRU eviction when exceeded).
-            ttl_seconds: Time before entry is considered stale. Set to None for
-                infinite TTL (offline mode - entries never expire).
-            refresh_interval_seconds: How often to check for stale entries.
-            fetch_func: Async callback to fetch fresh data for a cache key.
+            ttl_seconds: Time before entry is considered stale. Default: 60 seconds.
+                Set to None for infinite TTL (offline mode - entries never expire).
         """
         super().__init__(
             max_size=max_size,
             ttl_seconds=ttl_seconds,
-            refresh_interval_seconds=refresh_interval_seconds,
         )
-        self._fetch_func = fetch_func
-        self._refresh_task: Optional[asyncio.Task[None]] = None
-
-    async def start(self) -> None:
-        """Start async background refresh loop.
-
-        Must be called from an async context. Creates an asyncio task that
-        periodically checks for stale entries and refreshes them.
-        Does nothing if ttl_seconds is None (infinite TTL mode).
-        """
-        if self._fetch_func is None or self._ttl_seconds is None:
-            return
-
-        if self._refresh_task is not None:
-            # Already running
-            return
-
-        self._refresh_task = asyncio.create_task(
-            self._refresh_loop(),
-            name="AsyncPromptCache-refresh",
-        )
-        logger.debug("Started async cache refresh task")
-
-    async def stop(self) -> None:
-        """Stop async background refresh loop.
-
-        Cancels the refresh task and waits for it to complete.
-        """
-        if self._refresh_task is None:
-            return
-
-        self._refresh_task.cancel()
-        try:
-            await self._refresh_task
-        except asyncio.CancelledError:
-            pass
-        self._refresh_task = None
-        logger.debug("Stopped async cache refresh task")
-
-    async def _refresh_loop(self) -> None:
-        """Async background loop to refresh stale entries."""
-        while True:
-            try:
-                await asyncio.sleep(self._refresh_interval)
-                await self._refresh_stale_entries()
-            except asyncio.CancelledError:
-                raise
-            except Exception as e:
-                # Log but don't die - keep the refresh loop running
-                logger.exception(f"Unexpected error in async cache refresh loop: {e}")
-
-    async def _refresh_stale_entries(self) -> None:
-        """Check for stale entries and refresh them asynchronously."""
-        if self._fetch_func is None:
-            return
-
-        stale_keys = self._get_stale_keys()
-
-        if not stale_keys:
-            return
-
-        logger.debug(f"Async refreshing {len(stale_keys)} stale cache entries")
-
-        for key in stale_keys:
-            try:
-                new_value = await self._fetch_func(key)
-                self.set(key, new_value)
-                self._metrics.refreshes += 1
-                logger.debug(f"Async refreshed cache entry: {key}")
-            except Exception as e:
-                # Keep stale data on refresh failure
-                self._metrics.refresh_errors += 1
-                logger.warning(f"Failed to async refresh cache entry {key}: {e}")

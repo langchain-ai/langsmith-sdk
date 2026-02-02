@@ -29,10 +29,6 @@ export interface CacheMetrics {
 export interface PromptCacheConfig {
   /** Maximum entries in cache (LRU eviction when exceeded). Default: 100 */
   maxSize?: number;
-  /** Time in seconds before entry is stale. null = infinite TTL. Default: 3600 */
+  /** Time in seconds before entry is stale. null = infinite TTL. Default: 60 */
   ttlSeconds?: number | null;
-  /** How often to check for stale entries in seconds. Default: 60 */
-  refreshIntervalSeconds?: number;
-  /** Callback to fetch fresh data for a cache key */
-  fetchFunc?: (key: string) => Promise<PromptCommit>;
 }

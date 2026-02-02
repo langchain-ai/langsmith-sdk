@@ -665,6 +665,7 @@ class Client:
         "_tracing_error_callback",
         "_multipart_disabled",
         "_prompt_cache_config",
+        "_inflight_prompt_fetches",
     ]
 
     _api_key: Optional[str]
@@ -1053,6 +1054,9 @@ class Client:
 
         # Store cache config for lazy initialization
         self._prompt_cache_config: Union[bool, dict] = prompt_cache
+        
+        # Track in-flight prompt fetches to avoid duplicate requests
+        self._inflight_prompt_fetches: dict[str, Any] = {}
 
     @property
     def cache(self) -> Optional[Cache]:
@@ -1069,21 +1073,16 @@ class Client:
         # Extract config parameters
         if isinstance(self._prompt_cache_config, dict):
             max_size = self._prompt_cache_config.get("max_size", 100)
-            ttl_seconds = self._prompt_cache_config.get("ttl_seconds", 3600.0)
-            refresh_interval = self._prompt_cache_config.get(
-                "refresh_interval_seconds", 60.0
-            )
+            ttl_seconds = self._prompt_cache_config.get("ttl_seconds", 60.0)
         else:
             # Use defaults
             max_size = 100
-            ttl_seconds = 3600.0
-            refresh_interval = 60.0
+            ttl_seconds = 60.0
         
         # Initialize or get the singleton
         return get_or_initialize_cache(
             max_size=max_size,
             ttl_seconds=ttl_seconds,
-            refresh_interval_seconds=refresh_interval,
         )
 
     def _repr_html_(self) -> str:
@@ -8249,13 +8248,61 @@ class Client:
         if not skip_cache and cache is not None:
             cache_key = self._get_cache_key(prompt_identifier, include_model)
             cached = cache.get(cache_key)
+            
             if cached is not None:
-                return cached
+                # Cache hit - check if stale
+                if not cache.is_stale(cache_key):
+                    # Fresh data - return immediately
+                    return cached
+                
+                # Stale data - check if there's already an in-flight fetch
+                import concurrent.futures
+                import threading
+                
+                if cache_key in self._inflight_prompt_fetches:
+                    # Reuse existing in-flight fetch
+                    future = self._inflight_prompt_fetches[cache_key]
+                else:
+                    # Start new fetch
+                    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+                    future = executor.submit(
+                        self._fetch_prompt_from_api, prompt_identifier, include_model
+                    )
+                    self._inflight_prompt_fetches[cache_key] = future
+                    
+                    # Clean up after completion
+                    def cleanup():
+                        self._inflight_prompt_fetches.pop(cache_key, None)
+                        executor.shutdown(wait=False)
+                    
+                    future.add_done_callback(lambda _: cleanup())
+                
+                try:
+                    # Try to get fresh data within 1s
+                    fresh_value = future.result(timeout=1.0)
+                    cache.set(cache_key, fresh_value)
+                    return fresh_value
+                except concurrent.futures.TimeoutError:
+                    # Timeout - return stale data, let fetch complete in background
+                    def background_refresh():
+                        try:
+                            fresh_value = future.result(timeout=30.0)
+                            cache.set(cache_key, fresh_value)
+                        except Exception:
+                            # Background fetch failed - mark as fresh to prevent retry storms
+                            cache.set(cache_key, cached)
+                    
+                    threading.Thread(target=background_refresh, daemon=True).start()
+                    return cached
+                except Exception:
+                    # Fetch failed - return stale and mark as fresh
+                    cache.set(cache_key, cached)
+                    return cached
 
         # Cache miss or cache skipped - fetch from API
         result = self._fetch_prompt_from_api(prompt_identifier, include_model)
 
-        # Store in cache (background thread will handle refresh when stale)
+        # Store in cache
         if not skip_cache and cache is not None:
             cache_key = self._get_cache_key(prompt_identifier, include_model)
             cache.set(cache_key, result)

@@ -34,12 +34,7 @@ class PromptCacheManager {
       return _cacheInstance;
     }
 
-    if (_cacheInstance && force) {
-      // Stop the existing cache before replacing
-      _cacheInstance.stop();
-    }
-
-    // Create new cache instance
+    // Create new cache instance (replacing old one if force=true)
     _cacheInstance = new Cache(config);
     return _cacheInstance;
   }
@@ -52,13 +47,10 @@ class PromptCacheManager {
   }
 
   /**
-   * Clear and stop the cache instance.
+   * Clear the cache instance.
    */
   cleanup(): void {
-    if (_cacheInstance) {
-      _cacheInstance.stop();
-      _cacheInstance = undefined;
-    }
+    _cacheInstance = undefined;
   }
 }
 
