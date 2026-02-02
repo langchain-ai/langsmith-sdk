@@ -1130,6 +1130,10 @@ class _AsyncExperimentManager(_ExperimentManagerMixin):
         return list(splits)
 
     async def _aend(self) -> None:
+        # Shutdown the feedback executor if it was created
+        if hasattr(self, "_evaluation_feedback_executor"):
+            self._evaluation_feedback_executor.shutdown(wait=True)
+
         if not self._upload_results:
             return
         experiment = self._experiment
