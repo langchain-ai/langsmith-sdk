@@ -17,15 +17,22 @@ export { RunTree, type RunTreeConfig } from "./run_trees.js";
 
 export { overrideFetchImplementation } from "./singletons/fetch.js";
 
+export {
+  CacheManagerSingleton,
+  getOrInitializeCache,
+} from "./singletons/cache.js";
+
 export { getDefaultProjectName } from "./utils/project.js";
 
 export { uuid7, uuid7FromTime } from "./uuid.js";
 
-export {
-  Cache,
-  type CacheConfig,
-  type CacheMetrics,
-} from "./utils/prompts_cache.js";
+export { Cache } from "./utils/prompts_cache/index.js";
+
+export type {
+  CacheConfig,
+  CacheMetrics,
+  CacheEntry,
+} from "./utils/prompts_cache/types.js";
 
 // Update using yarn bump-version
 export const __version__ = "0.4.12";

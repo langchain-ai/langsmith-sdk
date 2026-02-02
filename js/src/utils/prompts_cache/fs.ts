@@ -1,7 +1,7 @@
 /**
  * File system operations for prompt cache (Node.js version).
  *
- * This file is swapped with prompts_cache_fs.browser.ts for browser builds
+ * This file is swapped with fs.browser.ts for browser builds
  * via the package.json browser field.
  */
 

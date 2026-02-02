@@ -2,7 +2,7 @@ import { jest } from "@jest/globals";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { Cache } from "../utils/prompts_cache.js";
+import { Cache } from "../utils/prompts_cache/index.js";
 import type { PromptCommit } from "../schemas.js";
 
 // Helper to create a mock PromptCommit

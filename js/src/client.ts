@@ -71,11 +71,13 @@ import { assertUuid } from "./utils/_uuid.js";
 import { warnOnce } from "./utils/warn.js";
 import { parsePromptIdentifier } from "./utils/prompts.js";
 import { raiseForStatus, isLangSmithNotFoundError } from "./utils/error.js";
-import { Cache } from "./utils/prompts_cache.js";
+import { Cache } from "./utils/prompts_cache/index.js";
+import type { CacheConfig } from "./utils/prompts_cache/types.js";
 import {
   _globalFetchImplementationIsNodeFetch,
   _getFetchImplementation,
 } from "./singletons/fetch.js";
+import { getOrInitializeCache } from "./singletons/cache.js";
 
 import { serialize as serializePayloadForTracing } from "./utils/fast-safe-stringify/index.js";
 
@@ -128,26 +130,34 @@ export interface ClientConfig {
   fetchImplementation?: typeof fetch;
   /**
    * Configuration for caching. Can be:
-   * - `true`: Enable caching with default settings
-   * - `Cache` instance: Use custom cache configuration
-   * - `undefined` or `false`: Disable caching (default)
+   * - `true` or `undefined`: Enable caching with default settings using a global singleton (default)
+   * - `CacheConfig` object: Configure the global singleton cache (see Cache constructor)
+   * - `false`: Disable caching
+   *
+   * The cache is lazy-initialized on the first prompt pull, and is shared across
+   * all Client instances in the same process for improved cache hit rates and memory efficiency.
+   * The first client to pull a prompt initializes the singleton with its configuration.
    *
    * @example
    * ```typescript
-   * import { Client, Cache } from "langsmith";
+   * import { Client } from "langsmith";
    *
-   * // Enable with defaults
+   * // Enable with defaults (or omit cache entirely - it defaults to true)
    * const client1 = new Client({ cache: true });
    *
    * // Or use custom configuration
-   * const myCache = new Cache({
-   *   maxSize: 100,
-   *   ttlSeconds: 3600, // 1 hour, or null for infinite TTL
+   * const client2 = new Client({
+   *   cache: {
+   *     maxSize: 100,
+   *     ttlSeconds: 3600, // 1 hour, or null for infinite TTL
+   *   }
    * });
-   * const client2 = new Client({ cache: myCache });
+   *
+   * // Explicitly disable caching
+   * const client3 = new Client({ cache: false });
    * ```
    */
-  cache?: Cache | boolean;
+  cache?: boolean | CacheConfig;
 }
 
 /**
@@ -738,7 +748,8 @@ export class Client implements LangSmithTracingClientInterface {
 
   private cachedLSEnvVarsForMetadata?: Record<string, string>;
 
-  private _cache?: Cache;
+  private _cacheConfig: boolean | CacheConfig;
+  private _cacheInitialized = false;
 
   private get _fetch(): typeof fetch {
     return this.fetchImplementation || _getFetchImplementation(this.debug);
@@ -816,14 +827,8 @@ export class Client implements LangSmithTracingClientInterface {
     // Cache metadata env vars once during construction to avoid repeatedly scanning process.env
     this.cachedLSEnvVarsForMetadata = getLangSmithEnvVarsMetadata();
 
-    // Initialize cache
-    if (config.cache === true) {
-      this._cache = new Cache();
-    } else if (config.cache && typeof config.cache === "object") {
-      this._cache = config.cache;
-    } else {
-      this._cache = undefined;
-    }
+    // Store cache config for lazy initialization (defaults to true)
+    this._cacheConfig = config.cache ?? true;
   }
 
   public static getDefaultClientConfig(): {
@@ -5459,20 +5464,32 @@ export class Client implements LangSmithTracingClientInterface {
       skipCache?: boolean;
     }
   ): Promise<PromptCommit> {
-    // Check cache first if not skipped
-    if (!options?.skipCache && this._cache) {
+    // Check if caching is enabled (not explicitly false)
+    const cachingEnabled = this._cacheConfig !== false;
+
+    // Check cache first if not skipped and caching is enabled
+    if (!options?.skipCache && cachingEnabled) {
+      // Lazy initialize the cache on first use
+      if (!this._cacheInitialized) {
+        const config: CacheConfig | undefined =
+          typeof this._cacheConfig === "object" ? this._cacheConfig : undefined;
+        getOrInitializeCache(config);
+        this._cacheInitialized = true;
+      }
+
+      const cache = getOrInitializeCache();
       const cacheKey = this._getPromptCacheKey(
         promptIdentifier,
         options?.includeModel
       );
-      const cached = this._cache.get(cacheKey);
+      const cached = cache.get(cacheKey);
       if (cached) {
         return cached;
       }
 
       // Cache miss - fetch from API and cache it
       const result = await this._fetchPromptFromApi(promptIdentifier, options);
-      this._cache.set(cacheKey, result);
+      cache.set(cacheKey, result);
       return result;
     }
 
@@ -5643,21 +5660,43 @@ export class Client implements LangSmithTracingClientInterface {
   }
 
   /**
-   * Get the cache instance, if caching is enabled.
+   * Get the global cache instance, if caching is enabled.
    * Useful for accessing cache metrics or manually managing the cache.
+   *
+   * Note: The cache is shared across all Client instances in the same process.
+   * This will lazy-initialize the cache if not already initialized.
    */
   get cache(): Cache | undefined {
-    return this._cache;
+    if (this._cacheConfig === false) {
+      return undefined;
+    }
+
+    // Lazy initialize on access
+    if (!this._cacheInitialized) {
+      const config: CacheConfig | undefined =
+        typeof this._cacheConfig === "object" ? this._cacheConfig : undefined;
+      getOrInitializeCache(config);
+      this._cacheInitialized = true;
+    }
+
+    return getOrInitializeCache();
   }
 
   /**
    * Cleanup resources held by the client.
-   * Stops the cache's background refresh timer.
+   *
+   * Note: This does NOT stop the global cache's background refresh timer,
+   * as the cache is shared across all clients. If you need to stop the
+   * global cache (e.g., when shutting down your application), use:
+   *
+   * ```typescript
+   * import { CacheManagerSingleton } from "langsmith/singletons/cache";
+   * CacheManagerSingleton.cleanup();
+   * ```
    */
   public cleanup(): void {
-    if (this._cache) {
-      this._cache.stop();
-    }
+    // No-op now that cache is a singleton
+    // Keeping this method for backward compatibility
   }
 
   /**
