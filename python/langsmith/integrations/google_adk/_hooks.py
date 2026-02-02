@@ -350,10 +350,12 @@ def after_model_callback(
 
                 # Emit new_token event for TTFT tracking
                 try:
-                    llm_run.add_event(
-                        name="new_token",
-                        time=datetime.fromtimestamp(current_time, tz=timezone.utc),
-                    )
+                    llm_run.add_event({
+                        "name": "new_token",
+                        "time": datetime.fromtimestamp(
+                            current_time, tz=timezone.utc
+                        ).isoformat(),
+                    })
                 except Exception as e:
                     logger.debug(f"Failed to add new_token event: {e}")
             return  # Don't finalize yet for partial responses

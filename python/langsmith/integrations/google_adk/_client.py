@@ -1,36 +1,36 @@
-"""Client instrumentation for Google ADK."""
+"""Client instrumentation for Google ADK.
+
+Uses wrapt for import-order agnostic patching while maintaining
+the 6 ADK callbacks for actual tracing.
+"""
 
 import json
 import logging
 import time
-from collections.abc import AsyncGenerator
+from contextlib import aclosing
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from langsmith.run_helpers import get_current_run_tree, trace
+from langsmith.run_trees import RunTree
 
 from ._config import get_tracing_config
 from ._hooks import clear_active_runs
+from ._messages import convert_llm_request_to_messages, has_function_calls
 from ._recursive import RecursiveCallbackInjector, get_callbacks
-from ._tools import clear_parent_run_tree, set_parent_run_tree
+from ._tools import clear_parent_run_tree, get_parent_run_tree, set_parent_run_tree
+from ._usage import extract_model_name, extract_usage_from_response
 
 logger = logging.getLogger(__name__)
 
-DEBUG_TRACE_DATA = False  # Set to True to log trace inputs/outputs
+TRACE_CHAIN_NAME = "google_adk.session"
 
 
 def _extract_text_from_content(content: Any) -> str | None:
-    """Extract plain text from ADK Content object.
-
-    Args:
-        content: ADK Content object with parts.
-
-    Returns:
-        The concatenated text from all text parts, or None.
-    """
+    """Extract plain text from ADK Content object."""
     if content is None:
         return None
 
-    # Get parts from Content object
     parts = getattr(content, "parts", None)
     if not parts:
         return None
@@ -44,47 +44,8 @@ def _extract_text_from_content(content: Any) -> str | None:
     return " ".join(text_parts) if text_parts else None
 
 
-def _serialize_for_trace(obj: Any) -> Any:
-    """Serialize ADK object for trace input/output.
-
-    Uses model_dump() for Pydantic models (like Opik/Braintrust do),
-    otherwise returns as-is or converts to string.
-
-    Args:
-        obj: Any object to serialize.
-
-    Returns:
-        JSON-serializable representation.
-    """
-    if obj is None:
-        return None
-
-    # ADK Content objects are Pydantic models - use model_dump()
-    if hasattr(obj, "model_dump") and callable(obj.model_dump):
-        try:
-            return obj.model_dump(exclude_none=True, mode="json")
-        except Exception:
-            pass
-
-    # Already serializable types
-    if isinstance(obj, (str, int, float, bool, list, dict)):
-        return obj
-
-    # Fallback to string
-    return str(obj)
-
-TRACE_CHAIN_NAME = "google_adk.session"
-
-
 def _inject_tracing_callbacks(agent: Any) -> None:
-    """Inject LangSmith tracing callbacks into an agent hierarchy.
-
-    This uses RecursiveCallbackInjector to traverse the entire agent
-    hierarchy and inject callbacks at every level.
-
-    Args:
-        agent: The root agent to inject callbacks into.
-    """
+    """Inject LangSmith tracing callbacks into an agent hierarchy."""
     try:
         callbacks = get_callbacks()
         injector = RecursiveCallbackInjector(callbacks)
@@ -94,166 +55,140 @@ def _inject_tracing_callbacks(agent: Any) -> None:
         logger.warning(f"Failed to inject tracing callbacks: {e}")
 
 
-def instrument_adk_runner(original_class: Any) -> Any:
-    """Wrap `Runner` to auto-inject LangSmith callbacks and trace sessions.
+# =============================================================================
+# Wrapt-style wrapper functions (for import-order agnostic patching)
+# =============================================================================
 
-    Args:
-        original_class: The original Runner class to wrap.
 
-    Returns:
-        A wrapped Runner class with tracing enabled.
-    """
+def wrap_runner_init(wrapped: Any, instance: Any, args: Any, kwargs: Any) -> Any:
+    """Wrapt wrapper for Runner.__init__ - injects callbacks into agent."""
+    # Get the agent from kwargs or args
+    agent = kwargs.get("agent")
+    if not agent and args:
+        agent = args[0] if args else None
 
-    class TracedRunner(original_class):
-        """Runner subclass that automatically traces all sessions."""
+    # Inject tracing callbacks into the agent hierarchy
+    if agent:
+        _inject_tracing_callbacks(agent)
 
-        def __init__(self, *args: Any, **kwargs: Any):
-            if DEBUG_TRACE_DATA:
-                logger.debug(f"TracedRunner.__init__ called with args={args}, kwargs keys={kwargs.keys()}")
+    # Store config reference on instance for later use
+    result = wrapped(*args, **kwargs)
+    instance._langsmith_config = get_tracing_config()
+    return result
 
-            # Get the agent from kwargs or args
-            agent = kwargs.get("agent")
-            if not agent and args:
-                # First positional arg might be agent
-                agent = args[0] if args else None
 
-            # Inject tracing callbacks into the agent hierarchy
-            if agent:
-                _inject_tracing_callbacks(agent)
+def wrap_runner_run(wrapped: Any, instance: Any, args: Any, kwargs: Any) -> Any:
+    """Wrapt wrapper for Runner.run - traces synchronous execution."""
+    config = getattr(instance, "_langsmith_config", None) or get_tracing_config()
+    trace_name = config.get("name") or TRACE_CHAIN_NAME
 
-            super().__init__(*args, **kwargs)
+    # Extract session info
+    user_id = kwargs.get("user_id")
+    session_id = kwargs.get("session_id")
+    new_message = kwargs.get("new_message")
 
-            # Store configuration for tracing
-            self._langsmith_config = get_tracing_config()
-            self._trace_start_time: Optional[float] = None
+    # Use flat text input
+    trace_inputs: dict[str, Any] = {}
+    if new_message:
+        input_text = _extract_text_from_content(new_message)
+        if input_text:
+            trace_inputs["input"] = input_text
 
-        def run(
-            self,
-            *args: Any,
-            **kwargs: Any,
-        ) -> Any:
-            """Run the agent synchronously with tracing."""
-            if DEBUG_TRACE_DATA:
-                logger.debug(f"TracedRunner.run() called")
+    # Put session info in metadata
+    trace_metadata = {
+        **(config.get("metadata") or {}),
+    }
+    if hasattr(instance, "app_name") and instance.app_name:
+        trace_metadata["app_name"] = instance.app_name
+    if user_id:
+        trace_metadata["user_id"] = user_id
+    if session_id:
+        trace_metadata["session_id"] = session_id
 
-            config = self._langsmith_config
-            trace_name = config.get("name") or TRACE_CHAIN_NAME
+    def _trace_run():
+        with trace(
+            name=trace_name,
+            run_type="chain",
+            inputs=trace_inputs,
+            project_name=config.get("project_name"),
+            tags=config.get("tags"),
+            metadata=trace_metadata,
+        ) as run:
+            set_parent_run_tree(run)
+            try:
+                # Consume the generator to get all events
+                events = list(wrapped(*args, **kwargs))
 
-            # Extract session info for metadata
-            user_id = kwargs.get("user_id")
-            session_id = kwargs.get("session_id")
-            new_message = kwargs.get("new_message")
+                # Extract final text output from last event with model content
+                final_output = None
+                for event in reversed(events):
+                    content = getattr(event, "content", None)
+                    if content:
+                        final_output = _extract_text_from_content(content)
+                        if final_output:
+                            break
 
-            # Use flat text input, not nested parts
-            trace_inputs: dict[str, Any] = {}
-            if new_message:
-                input_text = _extract_text_from_content(new_message)
-                if input_text:
-                    trace_inputs["input"] = input_text
+                outputs = {"output": final_output} if final_output else None
+                run.end(outputs=outputs)
 
-            # Put session info in metadata, not inputs
-            trace_metadata = {
-                **(config.get("metadata") or {}),
-            }
-            if hasattr(self, "app_name") and self.app_name:
-                trace_metadata["app_name"] = self.app_name
-            if user_id:
-                trace_metadata["user_id"] = user_id
-            if session_id:
-                trace_metadata["session_id"] = session_id
+                # Yield events for caller
+                yield from events
+            except Exception as e:
+                run.end(error=str(e))
+                raise
+            finally:
+                clear_parent_run_tree()
+                clear_active_runs()
 
-            self._trace_start_time = time.time()
+    return _trace_run()
 
-            if DEBUG_TRACE_DATA:
-                logger.debug(
-                    f"Root span inputs: {json.dumps(trace_inputs, indent=2)}"
-                )
-                logger.debug(
-                    f"Root span metadata: {json.dumps(trace_metadata, indent=2)}"
-                )
 
-            with trace(
-                name=trace_name,
-                run_type="chain",
-                inputs=trace_inputs,
-                project_name=config.get("project_name"),
-                tags=config.get("tags"),
-                metadata=trace_metadata,
-            ) as run:
-                set_parent_run_tree(run)
-                try:
-                    # super().run() returns a generator - consume it
-                    result_generator = super().run(*args, **kwargs)
-                    events = list(result_generator)
+async def wrap_runner_run_async(
+    wrapped: Any, instance: Any, args: Any, kwargs: Any
+) -> Any:
+    """Wrapt wrapper for Runner.run_async - traces async execution with aclosing."""
+    config = getattr(instance, "_langsmith_config", None) or get_tracing_config()
+    trace_name = config.get("name") or TRACE_CHAIN_NAME
 
-                    # Extract final text output from last event with model content
-                    final_output = None
-                    for event in reversed(events):
-                        content = getattr(event, "content", None)
-                        if content:
-                            final_output = _extract_text_from_content(content)
-                            if final_output:
-                                break
+    # Extract session info
+    user_id = kwargs.get("user_id")
+    session_id = kwargs.get("session_id")
+    new_message = kwargs.get("new_message")
 
-                    outputs = {"output": final_output} if final_output else None
-                    run.end(outputs=outputs)
+    # Use flat text input
+    trace_inputs: dict[str, Any] = {}
+    if new_message:
+        input_text = _extract_text_from_content(new_message)
+        if input_text:
+            trace_inputs["input"] = input_text
 
-                    # Return a generator-like object for compatibility
-                    return iter(events)
-                except Exception as e:
-                    run.end(error=str(e))
-                    raise
-                finally:
-                    clear_parent_run_tree()
-                    clear_active_runs()
+    # Put session info in metadata
+    trace_metadata = {
+        **(config.get("metadata") or {}),
+    }
+    if hasattr(instance, "app_name") and instance.app_name:
+        trace_metadata["app_name"] = instance.app_name
+    if user_id:
+        trace_metadata["user_id"] = user_id
+    if session_id:
+        trace_metadata["session_id"] = session_id
 
-        async def run_async(
-            self,
-            *args: Any,
-            **kwargs: Any,
-        ) -> AsyncGenerator[Any, None]:
-            """Async run with tracing that yields events."""
-            config = self._langsmith_config
-            trace_name = config.get("name") or TRACE_CHAIN_NAME
+    async def _trace_run_async():
+        async with trace(
+            name=trace_name,
+            run_type="chain",
+            inputs=trace_inputs,
+            project_name=config.get("project_name"),
+            tags=config.get("tags"),
+            metadata=trace_metadata,
+        ) as run:
+            set_parent_run_tree(run)
+            try:
+                final_output: str | None = None
 
-            # Extract session info for metadata
-            user_id = kwargs.get("user_id")
-            session_id = kwargs.get("session_id")
-            new_message = kwargs.get("new_message")
-
-            # Use flat text input, not nested parts
-            trace_inputs: dict[str, Any] = {}
-            if new_message:
-                input_text = _extract_text_from_content(new_message)
-                if input_text:
-                    trace_inputs["input"] = input_text
-
-            # Put session info in metadata, not inputs
-            trace_metadata = {
-                **(config.get("metadata") or {}),
-            }
-            if hasattr(self, "app_name") and self.app_name:
-                trace_metadata["app_name"] = self.app_name
-            if user_id:
-                trace_metadata["user_id"] = user_id
-            if session_id:
-                trace_metadata["session_id"] = session_id
-
-            self._trace_start_time = time.time()
-            final_output: str | None = None
-
-            async with trace(
-                name=trace_name,
-                run_type="chain",
-                inputs=trace_inputs,
-                project_name=config.get("project_name"),
-                tags=config.get("tags"),
-                metadata=trace_metadata,
-            ) as run:
-                set_parent_run_tree(run)
-                try:
-                    # Call parent's run_async and yield events
-                    async for event in super().run_async(*args, **kwargs):
+                # Use aclosing for proper async generator cleanup (like Braintrust)
+                async with aclosing(wrapped(*args, **kwargs)) as agen:
+                    async for event in agen:
                         # Track the final text output from events
                         content = getattr(event, "content", None)
                         if content:
@@ -262,24 +197,243 @@ def instrument_adk_runner(original_class: Any) -> Any:
                                 final_output = text
                         yield event
 
-                    outputs = {"output": final_output} if final_output else None
-                    run.end(outputs=outputs)
-                except Exception as e:
-                    run.end(error=str(e))
-                    raise
-                finally:
-                    clear_parent_run_tree()
-                    clear_active_runs()
+                outputs = {"output": final_output} if final_output else None
+                run.end(outputs=outputs)
+            except Exception as e:
+                run.end(error=str(e))
+                raise
+            finally:
+                clear_parent_run_tree()
+                clear_active_runs()
 
-        def _get_trace_run(self) -> Any:
-            """Get the current trace run for manual updates.
+    # Return the async generator
+    async for event in _trace_run_async():
+        yield event
 
-            Returns:
-                The current RunTree or None.
-            """
-            return get_current_run_tree()
 
-    return TracedRunner
+# =============================================================================
+# Flow-level wrapping for TTFT capture
+# =============================================================================
+
+
+def _get_parent_run() -> RunTree | None:
+    """Get the parent run tree from thread-local or context."""
+    return get_parent_run_tree() or get_current_run_tree()
+
+
+def _determine_llm_call_type_from_response(llm_request: Any, llm_response: Any) -> str:
+    """Classify LLM call based on request/response content."""
+    try:
+        # Check if there's a function_response in request contents
+        contents = getattr(llm_request, "contents", None)
+        if contents:
+            for content in contents:
+                parts = getattr(content, "parts", None)
+                if parts:
+                    for part in parts:
+                        if hasattr(part, "function_response") and part.function_response:
+                            return "response_generation"
+
+        # Check if response has function calls
+        if has_function_calls(llm_response):
+            return "tool_selection"
+
+        return "direct_response"
+    except Exception:
+        return "unknown"
+
+
+async def wrap_flow_call_llm_async(
+    wrapped: Any, instance: Any, args: Any, kwargs: Any
+) -> Any:
+    """Wrapt wrapper for BaseLlmFlow._call_llm_async - captures TTFT via streaming.
+
+    This wraps the low-level LLM call to capture time-to-first-token by observing
+    the first event from the async generator.
+    """
+    parent = _get_parent_run()
+    if not parent:
+        # No tracing context, just pass through
+        async for event in wrapped(*args, **kwargs):
+            yield event
+        return
+
+    # Extract invocation_context and llm_request from args
+    invocation_context = args[0] if len(args) > 0 else kwargs.get("invocation_context")
+    llm_request = args[1] if len(args) > 1 else kwargs.get("llm_request")
+
+    # Extract model name and messages for inputs
+    model_name = extract_model_name(llm_request) if llm_request else None
+    messages = convert_llm_request_to_messages(llm_request) if llm_request else None
+
+    inputs: dict[str, Any] = {}
+    if messages:
+        inputs["messages"] = messages
+
+    # Build metadata
+    metadata: dict[str, Any] = {}
+    if model_name:
+        metadata["ls_model_name"] = model_name
+
+    # Create LLM span
+    start_time = time.time()
+    llm_run = parent.create_child(
+        name=model_name or "google_adk_llm",
+        run_type="llm",
+        inputs=inputs,
+        extra={"metadata": metadata} if metadata else None,
+        start_time=datetime.fromtimestamp(start_time, tz=timezone.utc),
+    )
+
+    try:
+        llm_run.post()
+    except Exception as e:
+        logger.debug(f"Failed to post LLM run: {e}")
+
+    first_token_time: float | None = None
+    last_event = None
+    event_with_content = None
+
+    try:
+        async with aclosing(wrapped(*args, **kwargs)) as agen:
+            async for event in agen:
+                # Record TTFT on first event
+                if first_token_time is None:
+                    first_token_time = time.time()
+                    try:
+                        llm_run.add_event({
+                            "name": "new_token",
+                            "time": datetime.fromtimestamp(
+                                first_token_time, tz=timezone.utc
+                            ).isoformat(),
+                        })
+                    except Exception as e:
+                        logger.debug(f"Failed to add new_token event: {e}")
+
+                last_event = event
+                if hasattr(event, "content") and event.content is not None:
+                    event_with_content = event
+
+                yield event
+
+        # After execution, finalize the span
+        outputs: dict[str, Any] = {"role": "assistant"}
+
+        # Extract content from the best available event
+        content_source = event_with_content or last_event
+        if content_source and hasattr(content_source, "content") and content_source.content:
+            content = content_source.content
+            parts = getattr(content, "parts", None)
+            if parts:
+                text_parts = []
+                tool_calls = []
+                tool_call_idx = 0
+
+                for part in parts:
+                    if hasattr(part, "text") and part.text:
+                        text_parts.append(str(part.text))
+                    elif hasattr(part, "function_call") and part.function_call:
+                        fc = part.function_call
+                        tool_calls.append({
+                            "id": f"call_{tool_call_idx}",
+                            "type": "function",
+                            "function": {
+                                "name": getattr(fc, "name", ""),
+                                "arguments": json.dumps(
+                                    dict(fc.args) if hasattr(fc, "args") and fc.args else {}
+                                ),
+                            },
+                        })
+                        tool_call_idx += 1
+
+                if text_parts:
+                    outputs["content"] = " ".join(text_parts)
+                else:
+                    outputs["content"] = None
+
+                if tool_calls:
+                    outputs["tool_calls"] = tool_calls
+
+        # Extract usage metrics
+        if last_event:
+            usage = extract_usage_from_response(last_event)
+            if usage:
+                llm_run.extra.setdefault("metadata", {})["usage_metadata"] = usage
+
+        # Add TTFT metric
+        if first_token_time is not None:
+            ttft = first_token_time - start_time
+            llm_run.extra.setdefault("metadata", {})["time_to_first_token"] = ttft
+
+        # Determine call type
+        if last_event and llm_request:
+            call_type = _determine_llm_call_type_from_response(llm_request, last_event)
+            llm_run.extra.setdefault("metadata", {})["llm_call_type"] = call_type
+
+        llm_run.end(outputs=outputs)
+        try:
+            llm_run.patch()
+        except Exception as e:
+            logger.debug(f"Failed to patch LLM run: {e}")
+
+    except Exception as e:
+        llm_run.end(error=str(e))
+        try:
+            llm_run.patch()
+        except Exception:
+            pass
+        raise
+
+
+# =============================================================================
+# MCP Tool wrapping
+# =============================================================================
+
+
+async def wrap_mcp_tool_run_async(
+    wrapped: Any, instance: Any, args: Any, kwargs: Any
+) -> Any:
+    """Wrapt wrapper for McpTool.run_async - traces MCP tool invocations."""
+    parent = _get_parent_run()
+    if not parent:
+        return await wrapped(*args, **kwargs)
+
+    tool_name = getattr(instance, "name", "mcp_tool")
+    tool_args = kwargs.get("args", {})
+
+    start_time = time.time()
+    tool_run = parent.create_child(
+        name=f"mcp_tool [{tool_name}]",
+        run_type="tool",
+        inputs={"tool_name": tool_name, "arguments": tool_args},
+        start_time=datetime.fromtimestamp(start_time, tz=timezone.utc),
+    )
+
+    try:
+        tool_run.post()
+    except Exception as e:
+        logger.debug(f"Failed to post MCP tool run: {e}")
+
+    try:
+        result = await wrapped(*args, **kwargs)
+        tool_run.end(outputs=result if result else {})
+        try:
+            tool_run.patch()
+        except Exception as e:
+            logger.debug(f"Failed to patch MCP tool run: {e}")
+        return result
+    except Exception as e:
+        tool_run.end(error=str(e))
+        try:
+            tool_run.patch()
+        except Exception:
+            pass
+        raise
+
+
+# =============================================================================
+# Manual tracing context (for advanced use cases)
+# =============================================================================
 
 
 def create_traced_session_context(

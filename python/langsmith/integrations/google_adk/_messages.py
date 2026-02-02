@@ -1,6 +1,7 @@
 """Message processing and content serialization for Google ADK."""
 
 import base64
+import inspect
 from typing import Any
 
 
@@ -305,3 +306,86 @@ def has_function_response_in_request(llm_request: Any) -> bool:
             return True
 
     return False
+
+
+def serialize_pydantic_schema(schema_class: Any) -> dict[str, Any]:
+    """Serialize a Pydantic model class to its full JSON schema.
+
+    Returns the complete schema including descriptions, constraints, and nested
+    definitions so engineers can see exactly what structured output schema was used.
+
+    Args:
+        schema_class: A Pydantic model class or any other object.
+
+    Returns:
+        The JSON schema dict for Pydantic models, or a class name dict otherwise.
+    """
+    try:
+        from pydantic import BaseModel
+
+        if inspect.isclass(schema_class) and issubclass(schema_class, BaseModel):
+            return schema_class.model_json_schema()
+    except (ImportError, AttributeError, TypeError):
+        pass
+
+    # If not a Pydantic model, return class name
+    if inspect.isclass(schema_class):
+        return {"__class__": schema_class.__name__}
+    return {"__class__": type(schema_class).__name__}
+
+
+def serialize_config(config: Any) -> dict[str, Any] | Any:
+    """Serialize a config object, handling Pydantic schema fields.
+
+    Google ADK uses these fields for schemas:
+    - response_schema, response_json_schema (in GenerateContentConfig for LLM requests)
+    - input_schema, output_schema (in agent config)
+
+    Args:
+        config: The config object to serialize.
+
+    Returns:
+        A serialized config dict with schemas expanded.
+    """
+    if config is None:
+        return None
+    if not config:
+        return config
+
+    # Extract schema fields BEFORE converting to dict
+    schema_fields = [
+        "response_schema",
+        "response_json_schema",
+        "input_schema",
+        "output_schema",
+    ]
+    serialized_schemas: dict[str, Any] = {}
+
+    for field in schema_fields:
+        schema_value = None
+
+        # Try to get the field value
+        if hasattr(config, field):
+            schema_value = getattr(config, field)
+        elif isinstance(config, dict) and field in config:
+            schema_value = config[field]
+
+        # If it's a Pydantic class, serialize it
+        if schema_value is not None and inspect.isclass(schema_value):
+            try:
+                from pydantic import BaseModel
+
+                if issubclass(schema_value, BaseModel):
+                    serialized_schemas[field] = serialize_pydantic_schema(schema_value)
+            except (TypeError, ImportError):
+                pass
+
+    # Serialize the config
+    config_dict = _safe_serialize(config)
+    if not isinstance(config_dict, dict):
+        return config_dict
+
+    # Replace schema fields with serialized versions
+    config_dict.update(serialized_schemas)
+
+    return config_dict

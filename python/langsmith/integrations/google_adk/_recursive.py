@@ -133,23 +133,23 @@ class RecursiveCallbackInjector:
 def get_callbacks() -> dict[str, Callable[..., Any]]:
     """Get the dictionary of LangSmith tracing callbacks.
 
+    Note: Model callbacks are NOT included here because LLM tracing
+    is handled by the flow-level wrapper (wrap_flow_call_llm_async)
+    which provides better TTFT (time to first token) tracking.
+
     Returns:
         Dictionary mapping callback attribute names to callback functions.
     """
     from ._hooks import (
         after_agent_callback,
-        after_model_callback,
         after_tool_callback,
         before_agent_callback,
-        before_model_callback,
         before_tool_callback,
     )
 
     return {
         "before_agent_callback": before_agent_callback,
         "after_agent_callback": after_agent_callback,
-        "before_model_callback": before_model_callback,
-        "after_model_callback": after_model_callback,
         "before_tool_callback": before_tool_callback,
         "after_tool_callback": after_tool_callback,
     }
