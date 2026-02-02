@@ -33,6 +33,7 @@ def _get_ls_provider() -> str:
     )
     return _LS_PROVIDER_VERTEXAI if use_vertexai else _LS_PROVIDER_GOOGLE_AI
 
+
 logger = logging.getLogger(__name__)
 
 TRACE_CHAIN_NAME = "google_adk.session"
