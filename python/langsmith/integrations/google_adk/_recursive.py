@@ -1,5 +1,7 @@
 """Recursive callback injection for Google ADK agent hierarchies."""
 
+from __future__ import annotations
+
 import logging
 from typing import Any, Callable
 

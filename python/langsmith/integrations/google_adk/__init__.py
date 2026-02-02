@@ -1,5 +1,7 @@
 """LangSmith integration for Google ADK (Agent Development Kit)."""
 
+from __future__ import annotations
+
 import logging
 from typing import Optional
 

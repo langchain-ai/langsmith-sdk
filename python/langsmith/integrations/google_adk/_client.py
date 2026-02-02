@@ -1,5 +1,7 @@
 """Client instrumentation for Google ADK using wrapt."""
 
+from __future__ import annotations
+
 import json
 import logging
 import time
@@ -14,15 +16,29 @@ from ._config import get_tracing_config
 from ._hooks import clear_active_runs
 from ._messages import convert_llm_request_to_messages, has_function_calls
 from ._recursive import RecursiveCallbackInjector, get_callbacks
-from ._tools import clear_parent_run_tree, get_parent_run_tree, set_parent_run_tree
 from ._usage import extract_model_name, extract_usage_from_response
+
+_LS_PROVIDER_VERTEXAI = "google_vertexai"
+_LS_PROVIDER_GOOGLE_AI = "google_ai"
+
+
+def _get_ls_provider() -> str:
+    """Detect provider based on GOOGLE_GENAI_USE_VERTEXAI env var."""
+    import os
+
+    use_vertexai = os.environ.get("GOOGLE_GENAI_USE_VERTEXAI", "0").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    return _LS_PROVIDER_VERTEXAI if use_vertexai else _LS_PROVIDER_GOOGLE_AI
 
 logger = logging.getLogger(__name__)
 
 TRACE_CHAIN_NAME = "google_adk.session"
 
 
-def _extract_text_from_content(content: Any) -> str | None:
+def _extract_text_from_content(content: Any) -> Optional[str]:
     if content is None:
         return None
     parts = getattr(content, "parts", None)
@@ -40,11 +56,12 @@ def _inject_tracing_callbacks(agent: Any) -> None:
         logger.warning(f"Failed to inject tracing callbacks: {e}")
 
 
-def _get_parent_run() -> RunTree | None:
-    return get_parent_run_tree() or get_current_run_tree()
+def _get_parent_run() -> Optional[RunTree]:
+    return get_current_run_tree()
 
 
 def wrap_runner_init(wrapped: Any, instance: Any, args: Any, kwargs: Any) -> Any:
+    """Wrap Runner.__init__ to inject tracing callbacks into the agent hierarchy."""
     agent = kwargs.get("agent") or (args[0] if args else None)
     if agent:
         _inject_tracing_callbacks(agent)
@@ -54,6 +71,7 @@ def wrap_runner_init(wrapped: Any, instance: Any, args: Any, kwargs: Any) -> Any
 
 
 def wrap_runner_run(wrapped: Any, instance: Any, args: Any, kwargs: Any) -> Any:
+    """Wrap Runner.run to create a traced session for synchronous execution."""
     config = getattr(instance, "_langsmith_config", None) or get_tracing_config()
     trace_name = config.get("name") or TRACE_CHAIN_NAME
 
@@ -62,7 +80,10 @@ def wrap_runner_run(wrapped: Any, instance: Any, args: Any, kwargs: Any) -> Any:
         if text := _extract_text_from_content(new_message):
             trace_inputs["input"] = text
 
-    trace_metadata = {**(config.get("metadata") or {})}
+    trace_metadata = {
+        "ls_provider": _get_ls_provider(),
+        **(config.get("metadata") or {}),
+    }
     if app_name := getattr(instance, "app_name", None):
         trace_metadata["app_name"] = app_name
     if user_id := kwargs.get("user_id"):
@@ -78,8 +99,7 @@ def wrap_runner_run(wrapped: Any, instance: Any, args: Any, kwargs: Any) -> Any:
             project_name=config.get("project_name"),
             tags=config.get("tags"),
             metadata=trace_metadata,
-        ) as run:
-            set_parent_run_tree(run)
+        ):
             try:
                 events = list(wrapped(*args, **kwargs))
                 final_output = None
@@ -88,13 +108,16 @@ def wrap_runner_run(wrapped: Any, instance: Any, args: Any, kwargs: Any) -> Any:
                         if text := _extract_text_from_content(content):
                             final_output = text
                             break
-                run.end(outputs={"output": final_output} if final_output else None)
+                run = get_current_run_tree()
+                if run:
+                    run.end(outputs={"output": final_output} if final_output else None)
                 yield from events
             except Exception as e:
-                run.end(error=str(e))
+                run = get_current_run_tree()
+                if run:
+                    run.end(error=str(e))
                 raise
             finally:
-                clear_parent_run_tree()
                 clear_active_runs()
 
     return _trace_run()
@@ -103,6 +126,7 @@ def wrap_runner_run(wrapped: Any, instance: Any, args: Any, kwargs: Any) -> Any:
 async def wrap_runner_run_async(
     wrapped: Any, instance: Any, args: Any, kwargs: Any
 ) -> Any:
+    """Wrap Runner.run_async to create a traced session for asynchronous execution."""
     config = getattr(instance, "_langsmith_config", None) or get_tracing_config()
     trace_name = config.get("name") or TRACE_CHAIN_NAME
 
@@ -111,7 +135,10 @@ async def wrap_runner_run_async(
         if text := _extract_text_from_content(new_message):
             trace_inputs["input"] = text
 
-    trace_metadata = {**(config.get("metadata") or {})}
+    trace_metadata = {
+        "ls_provider": _get_ls_provider(),
+        **(config.get("metadata") or {}),
+    }
     if app_name := getattr(instance, "app_name", None):
         trace_metadata["app_name"] = app_name
     if user_id := kwargs.get("user_id"):
@@ -128,9 +155,8 @@ async def wrap_runner_run_async(
             tags=config.get("tags"),
             metadata=trace_metadata,
         ) as run:
-            set_parent_run_tree(run)
             try:
-                final_output: str | None = None
+                final_output: Optional[str] = None
                 async with aclosing(wrapped(*args, **kwargs)) as agen:
                     async for event in agen:
                         if content := getattr(event, "content", None):
@@ -142,7 +168,6 @@ async def wrap_runner_run_async(
                 run.end(error=str(e))
                 raise
             finally:
-                clear_parent_run_tree()
                 clear_active_runs()
 
     async for event in _trace_run_async():
@@ -165,7 +190,7 @@ def _determine_llm_call_type(llm_request: Any, llm_response: Any) -> str:
 async def wrap_flow_call_llm_async(
     wrapped: Any, instance: Any, args: Any, kwargs: Any
 ) -> Any:
-    """Wrap BaseLlmFlow._call_llm_async to capture TTFT."""
+    """Wrap BaseLlmFlow._call_llm_async to capture LLM calls with TTFT tracking."""
     parent = _get_parent_run()
     if not parent:
         async for event in wrapped(*args, **kwargs):
@@ -180,7 +205,7 @@ async def wrap_flow_call_llm_async(
     if messages:
         inputs["messages"] = messages
 
-    metadata: dict[str, Any] = {}
+    metadata: dict[str, Any] = {"ls_provider": _get_ls_provider()}
     if model_name:
         metadata["ls_model_name"] = model_name
 
@@ -189,23 +214,25 @@ async def wrap_flow_call_llm_async(
         name=model_name or "google_adk_llm",
         run_type="llm",
         inputs=inputs,
-        extra={"metadata": metadata} if metadata else None,
+        extra={"metadata": metadata},
         start_time=datetime.fromtimestamp(start_time, tz=timezone.utc),
     )
 
     try:
         llm_run.post()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Failed to post LLM run: {e}")
 
-    first_token_time: float | None = None
+    first_token_time: Optional[float] = None
     last_event = None
     event_with_content = None
 
     try:
         async with aclosing(wrapped(*args, **kwargs)) as agen:
             async for event in agen:
-                if first_token_time is None:
+                is_partial = getattr(event, "partial", False)
+
+                if first_token_time is None and is_partial:
                     first_token_time = time.time()
                     try:
                         llm_run.add_event(
@@ -216,8 +243,8 @@ async def wrap_flow_call_llm_async(
                                 ).isoformat(),
                             }
                         )
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"Failed to add new_token event: {e}")
 
                 last_event = event
                 if hasattr(event, "content") and event.content is not None:
@@ -274,15 +301,15 @@ async def wrap_flow_call_llm_async(
         llm_run.end(outputs=outputs)
         try:
             llm_run.patch()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Failed to patch LLM run: {e}")
 
     except Exception as e:
         llm_run.end(error=str(e))
         try:
             llm_run.patch()
-        except Exception:
-            pass
+        except Exception as patch_e:
+            logger.debug(f"Failed to patch LLM run on error: {patch_e}")
         raise
 
 
@@ -302,28 +329,29 @@ async def wrap_mcp_tool_run_async(
         name=f"mcp_tool [{tool_name}]",
         run_type="tool",
         inputs={"tool_name": tool_name, "arguments": tool_args},
+        extra={"metadata": {"ls_provider": _get_ls_provider()}},
         start_time=datetime.fromtimestamp(start_time, tz=timezone.utc),
     )
 
     try:
         tool_run.post()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Failed to post MCP tool run: {e}")
 
     try:
         result = await wrapped(*args, **kwargs)
         tool_run.end(outputs=result or {})
         try:
             tool_run.patch()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Failed to patch MCP tool run: {e}")
         return result
     except Exception as e:
         tool_run.end(error=str(e))
         try:
             tool_run.patch()
-        except Exception:
-            pass
+        except Exception as patch_e:
+            logger.debug(f"Failed to patch MCP tool run on error: {patch_e}")
         raise
 
 

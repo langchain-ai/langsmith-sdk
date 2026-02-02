@@ -1,5 +1,7 @@
 """Configuration for Google ADK tracing."""
 
+from __future__ import annotations
+
 from typing import Any, Optional
 
 _tracing_config: dict[str, Any] = {

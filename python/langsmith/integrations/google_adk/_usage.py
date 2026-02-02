@@ -1,6 +1,8 @@
 """Token usage extraction for Google ADK."""
 
-from typing import Any
+from __future__ import annotations
+
+from typing import Any, Optional
 
 
 def extract_usage_from_response(llm_response: Any) -> dict[str, Any]:
@@ -24,7 +26,7 @@ def extract_usage_from_response(llm_response: Any) -> dict[str, Any]:
     return usage
 
 
-def extract_model_name(llm_request: Any) -> str | None:
+def extract_model_name(llm_request: Any) -> Optional[str]:
     """Extract the model name from an LlmRequest."""
     if config := getattr(llm_request, "config", None):
         if model := getattr(config, "model", None):

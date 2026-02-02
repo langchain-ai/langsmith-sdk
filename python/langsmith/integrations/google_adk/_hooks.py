@@ -1,15 +1,16 @@
 """Callback-based tracing for Google ADK agents and tools."""
 
+from __future__ import annotations
+
 import logging
 import time
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Optional
 
 from langsmith.run_helpers import get_current_run_tree
 from langsmith.run_trees import RunTree
 
 from ._messages import convert_adk_content_to_langsmith
-from ._tools import get_parent_run_tree
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +18,8 @@ _active_agent_runs: dict[str, tuple[RunTree, float]] = {}
 _active_tool_runs: dict[str, tuple[RunTree, float]] = {}
 
 
-def _get_parent_run() -> RunTree | None:
-    return get_parent_run_tree() or get_current_run_tree()
+def _get_parent_run() -> Optional[RunTree]:
+    return get_current_run_tree()
 
 
 def before_agent_callback(callback_context: Any, *args: Any, **kwargs: Any) -> None:
