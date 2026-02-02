@@ -1,5 +1,6 @@
 # mypy: disable-error-code="attr-defined, union-attr, arg-type, call-overload"
 """Integration tests for Google ADK wrapper."""
+
 from __future__ import annotations
 
 import time
@@ -12,6 +13,8 @@ from langsmith import Client
 from langsmith.integrations.google_adk import configure_google_adk
 from langsmith.run_helpers import tracing_context
 from tests.unit_tests.test_run_helpers import _get_calls
+
+pytest.importorskip("google.adk", reason="google-adk not installed")
 
 MODEL_NAME = "gemini-2.0-flash"
 APP_NAME = "test_app"
