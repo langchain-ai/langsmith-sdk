@@ -67,7 +67,7 @@ class AsyncClient:
                 - `True` or `None`: Enable caching with default settings using a global singleton (default)
                 - `dict`: Configure the global singleton cache with custom settings
                 - `False`: Disable caching
-                
+
                 The cache is lazy-initialized on the first prompt pull, and is shared across
                 all AsyncClient instances in the same process for improved cache hit rates and memory efficiency
         """
@@ -95,22 +95,22 @@ class AsyncClient:
 
         # Store cache config for lazy initialization
         self._prompt_cache_config: Union[bool, dict] = prompt_cache
-        
+
         # Track in-flight prompt fetches to avoid duplicate requests
         self._inflight_prompt_fetches: dict[str, Any] = {}
 
     @property
     def cache(self) -> Optional[AsyncCache]:
         """Get the async prompt cache instance (lazy-initialized singleton).
-        
+
         Returns:
             The async cache instance, or None if caching is disabled.
         """
         if self._prompt_cache_config is False:
             return None
-            
+
         from langsmith.prompt_cache_singleton import get_or_initialize_async_cache
-        
+
         # Extract config parameters
         if isinstance(self._prompt_cache_config, dict):
             max_size = self._prompt_cache_config.get("max_size", 100)
@@ -119,7 +119,7 @@ class AsyncClient:
             # Use defaults
             max_size = 100
             ttl_seconds = 60.0
-        
+
         # Initialize or get the singleton
         return get_or_initialize_async_cache(
             max_size=max_size,
@@ -1743,13 +1743,13 @@ class AsyncClient:
         if not skip_cache and cache is not None:
             cache_key = self._get_cache_key(prompt_identifier, include_model)
             cached = cache.get(cache_key)
-            
+
             if cached is not None:
                 # Cache hit - check if stale
                 if not cache.is_stale(cache_key):
                     # Fresh data - return immediately
                     return cached
-                
+
                 # Stale data - check if there's already an in-flight fetch
                 if cache_key in self._inflight_prompt_fetches:
                     # Reuse existing in-flight fetch
@@ -1760,13 +1760,13 @@ class AsyncClient:
                         self._afetch_prompt_from_api(prompt_identifier, include_model)
                     )
                     self._inflight_prompt_fetches[cache_key] = fetch_task
-                    
+
                     # Clean up after completion
                     def cleanup(_):
                         self._inflight_prompt_fetches.pop(cache_key, None)
-                    
+
                     fetch_task.add_done_callback(cleanup)
-                
+
                 try:
                     # Try to get fresh data within 1s
                     fresh_value = await asyncio.wait_for(fetch_task, timeout=1.0)
@@ -1776,7 +1776,9 @@ class AsyncClient:
                     # Timeout - return stale data, let fetch complete in background
                     async def background_refresh():
                         try:
-                            fresh_value = await asyncio.wait_for(fetch_task, timeout=30.0)
+                            fresh_value = await asyncio.wait_for(
+                                fetch_task, timeout=30.0
+                            )
                             cache.set(cache_key, fresh_value)
                         except Exception as e:
                             # If 404, the prompt was deleted - clear from cache
@@ -1785,7 +1787,7 @@ class AsyncClient:
                             else:
                                 # Other errors - mark as fresh to prevent retry storms
                                 cache.set(cache_key, cached)
-                    
+
                     asyncio.create_task(background_refresh())
                     return cached
                 except Exception as e:
@@ -1801,7 +1803,7 @@ class AsyncClient:
         # Cache miss or cache disabled - fetch from API
         if not skip_cache and cache is not None:
             cache_key = self._get_cache_key(prompt_identifier, include_model)
-            
+
             # Check for in-flight fetch to avoid thundering herd
             if cache_key in self._inflight_prompt_fetches:
                 # Reuse existing fetch
@@ -1812,13 +1814,13 @@ class AsyncClient:
                     self._afetch_prompt_from_api(prompt_identifier, include_model)
                 )
                 self._inflight_prompt_fetches[cache_key] = fetch_task
-                
+
                 # Clean up after completion
                 def cleanup(_):
                     self._inflight_prompt_fetches.pop(cache_key, None)
-                
+
                 fetch_task.add_done_callback(cleanup)
-            
+
             # Wait for fetch to complete
             result = await fetch_task
             cache.set(cache_key, result)

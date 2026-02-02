@@ -1054,22 +1054,22 @@ class Client:
 
         # Store cache config for lazy initialization
         self._prompt_cache_config: Union[bool, dict] = prompt_cache
-        
+
         # Track in-flight prompt fetches to avoid duplicate requests
         self._inflight_prompt_fetches: dict[str, Any] = {}
 
     @property
     def cache(self) -> Optional[Cache]:
         """Get the prompt cache instance (lazy-initialized singleton).
-        
+
         Returns:
             The cache instance, or None if caching is disabled.
         """
         if self._prompt_cache_config is False:
             return None
-            
+
         from langsmith.prompt_cache_singleton import get_or_initialize_cache
-        
+
         # Extract config parameters
         if isinstance(self._prompt_cache_config, dict):
             max_size = self._prompt_cache_config.get("max_size", 100)
@@ -1078,7 +1078,7 @@ class Client:
             # Use defaults
             max_size = 100
             ttl_seconds = 60.0
-        
+
         # Initialize or get the singleton
         return get_or_initialize_cache(
             max_size=max_size,
@@ -8248,13 +8248,13 @@ class Client:
         if not skip_cache and cache is not None:
             cache_key = self._get_cache_key(prompt_identifier, include_model)
             cached = cache.get(cache_key)
-            
+
             if cached is not None:
                 # Cache hit - check if stale
                 if not cache.is_stale(cache_key):
                     # Fresh data - return immediately
                     return cached
-                
+
                 # Stale data - check if there's already an in-flight fetch
                 if cache_key in self._inflight_prompt_fetches:
                     # Reuse existing in-flight fetch
@@ -8266,14 +8266,14 @@ class Client:
                         self._fetch_prompt_from_api, prompt_identifier, include_model
                     )
                     self._inflight_prompt_fetches[cache_key] = future
-                    
+
                     # Clean up after completion
                     def cleanup():
                         self._inflight_prompt_fetches.pop(cache_key, None)
                         executor.shutdown(wait=False)
-                    
+
                     future.add_done_callback(lambda _: cleanup())
-                
+
                 try:
                     # Try to get fresh data within 1s
                     fresh_value = future.result(timeout=1.0)
@@ -8292,7 +8292,7 @@ class Client:
                             else:
                                 # Other errors - mark as fresh to prevent retry storms
                                 cache.set(cache_key, cached)
-                    
+
                     threading.Thread(target=background_refresh, daemon=True).start()
                     return cached
                 except Exception as e:
@@ -8308,7 +8308,7 @@ class Client:
         # Cache miss or cache skipped - fetch from API
         if not skip_cache and cache is not None:
             cache_key = self._get_cache_key(prompt_identifier, include_model)
-            
+
             # Check for in-flight fetch to avoid thundering herd
             if cache_key in self._inflight_prompt_fetches:
                 # Reuse existing fetch
@@ -8320,14 +8320,14 @@ class Client:
                     self._fetch_prompt_from_api, prompt_identifier, include_model
                 )
                 self._inflight_prompt_fetches[cache_key] = future
-                
+
                 # Clean up after completion
                 def cleanup():
                     self._inflight_prompt_fetches.pop(cache_key, None)
                     executor.shutdown(wait=False)
-                
+
                 future.add_done_callback(lambda _: cleanup())
-            
+
             # Wait for fetch to complete
             result = future.result()
             cache.set(cache_key, result)

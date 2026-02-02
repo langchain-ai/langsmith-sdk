@@ -751,10 +751,8 @@ export class Client implements LangSmithTracingClientInterface {
   private _cacheConfig: boolean | PromptCacheConfig;
 
   // Track in-flight prompt fetches to avoid duplicate requests
-  private _inflightPromptFetches: Map<
-    string,
-    Promise<PromptCommit>
-  > = new Map();
+  private _inflightPromptFetches: Map<string, Promise<PromptCommit>> =
+    new Map();
 
   private get _fetch(): typeof fetch {
     return this.fetchImplementation || _getFetchImplementation(this.debug);
@@ -5480,43 +5478,45 @@ export class Client implements LangSmithTracingClientInterface {
           promptIdentifier,
           options?.includeModel
         );
-        
+
         const cached = cache.get(cacheKey);
-        
+
         if (cached) {
           // Cache hit - check if stale
           if (!cached.isStale) {
             // Fresh data - return immediately
             return cached.value;
           }
-          
+
           // Stale data - check if there's already an in-flight fetch
           let fetchPromise = this._inflightPromptFetches.get(cacheKey);
-          
+
           if (!fetchPromise) {
             // Start new fetch
             fetchPromise = this._fetchPromptFromApi(promptIdentifier, options);
             this._inflightPromptFetches.set(cacheKey, fetchPromise);
-            
+
             // Clean up after completion
             fetchPromise.finally(() => {
               this._inflightPromptFetches.delete(cacheKey);
             });
           }
-          
+
           // Try to get fresh data with timeout (1s)
           try {
             const freshValue = await Promise.race([
               fetchPromise,
-              new Promise<null>((resolve) => setTimeout(() => resolve(null), 1000)),
+              new Promise<null>((resolve) =>
+                setTimeout(() => resolve(null), 1000)
+              ),
             ]);
-            
+
             if (freshValue !== null) {
               // Got fresh data within 1s - update cache and return
               cache.set(cacheKey, freshValue);
               return freshValue;
             }
-            
+
             // Timeout - return stale data, let fetch complete in background
             fetchPromise
               .then((value) => cache.set(cacheKey, value))
@@ -5524,14 +5524,19 @@ export class Client implements LangSmithTracingClientInterface {
                 // If 404, the prompt was deleted - clear from cache
                 if (isLangSmithNotFoundError(error)) {
                   cache.invalidate(cacheKey);
-                  console.warn(`Prompt not found, cleared from cache: ${cacheKey}`);
+                  console.warn(
+                    `Prompt not found, cleared from cache: ${cacheKey}`
+                  );
                 } else {
                   // Other errors - mark as fresh to prevent retry storms
                   cache.set(cacheKey, cached.value);
-                  console.warn(`Background prompt refresh failed for ${cacheKey}:`, error);
+                  console.warn(
+                    `Background prompt refresh failed for ${cacheKey}:`,
+                    error
+                  );
                 }
               });
-            
+
             return cached.value;
           } catch (error) {
             // Fetch failed immediately
@@ -5548,18 +5553,18 @@ export class Client implements LangSmithTracingClientInterface {
 
         // Cache miss - check for in-flight fetch to avoid thundering herd
         let fetchPromise = this._inflightPromptFetches.get(cacheKey);
-        
+
         if (!fetchPromise) {
           // Start new fetch
           fetchPromise = this._fetchPromptFromApi(promptIdentifier, options);
           this._inflightPromptFetches.set(cacheKey, fetchPromise);
-          
+
           // Clean up after completion
           fetchPromise.finally(() => {
             this._inflightPromptFetches.delete(cacheKey);
           });
         }
-        
+
         // Wait for fetch to complete
         const result = await fetchPromise;
         cache.set(cacheKey, result);

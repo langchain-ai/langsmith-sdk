@@ -311,10 +311,10 @@ class Cache(_BasePromptCache):
 
     def is_stale(self, key: str) -> bool:
         """Check if a cache entry is stale.
-        
+
         Args:
             key: The cache key
-            
+
         Returns:
             True if entry exists and is stale, False otherwise
         """
@@ -323,7 +323,6 @@ class Cache(_BasePromptCache):
                 return False
             entry = self._cache[key]
             return entry.is_stale(self._ttl_seconds)
-
 
 
 class AsyncCache(_BasePromptCache):

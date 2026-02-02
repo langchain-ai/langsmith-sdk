@@ -191,7 +191,7 @@ describe("Singleton Cache in Client", () => {
     // Cache should now be initialized after the prompt pull
     expect(PromptCacheManagerSingleton.isInitialized()).toBe(true);
     expect(result.commit_hash).toBe("abc123");
-    
+
     const cache = client.cache;
     expect(cache).toBeDefined();
   });
@@ -272,9 +272,7 @@ describe("Pull-Through Refresh Pattern", () => {
     // Mock slow API call (will timeout)
     fetchSpy.mockImplementationOnce(
       () =>
-        new Promise((resolve) =>
-          setTimeout(() => resolve(freshCommit), 2000)
-        )
+        new Promise((resolve) => setTimeout(() => resolve(freshCommit), 2000))
     );
 
     const start = Date.now();
@@ -403,9 +401,7 @@ describe("Pull-Through Refresh Pattern", () => {
     // Mock slow API call that will timeout but complete in background
     fetchSpy.mockImplementationOnce(
       () =>
-        new Promise((resolve) =>
-          setTimeout(() => resolve(freshCommit), 1500)
-        )
+        new Promise((resolve) => setTimeout(() => resolve(freshCommit), 1500))
     );
 
     // This should return stale and start background refresh

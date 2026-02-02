@@ -21,14 +21,14 @@ _cache_lock = threading.RLock()
 
 class PromptCacheManager:
     """Manager for the singleton prompt cache (sync version).
-    
+
     This manager ensures only one Cache instance is shared across
     all Client instances in the same process.
     """
 
     def get_instance(self) -> Optional[Cache]:
         """Get the cache instance.
-        
+
         Returns:
             The singleton Cache instance, or None if not initialized.
         """
@@ -41,15 +41,15 @@ class PromptCacheManager:
         force: bool = False,
     ) -> Cache:
         """Initialize the cache instance.
-        
+
         If already initialized, this is a no-op unless force=True.
-        
+
         Args:
             max_size: Maximum entries in cache (LRU eviction when exceeded).
             ttl_seconds: Time before entry is considered stale. Default: 60 seconds.
                 Set to None for infinite TTL (entries never expire).
             force: If True, replace existing cache instance.
-            
+
         Returns:
             The cache instance.
         """
@@ -88,14 +88,14 @@ class PromptCacheManager:
 
 class AsyncPromptCacheManager:
     """Manager for the singleton async prompt cache.
-    
+
     This manager ensures only one AsyncCache instance is shared across
     all AsyncClient instances in the same process.
     """
 
     def get_instance(self) -> Optional[AsyncCache]:
         """Get the async cache instance.
-        
+
         Returns:
             The singleton AsyncCache instance, or None if not initialized.
         """
@@ -108,15 +108,15 @@ class AsyncPromptCacheManager:
         force: bool = False,
     ) -> AsyncCache:
         """Initialize the async cache instance.
-        
+
         If already initialized, this is a no-op unless force=True.
-        
+
         Args:
             max_size: Maximum entries in cache (LRU eviction when exceeded).
             ttl_seconds: Time before entry is considered stale. Default: 60 seconds.
                 Set to None for infinite TTL (entries never expire).
             force: If True, replace existing cache instance.
-            
+
         Returns:
             The async cache instance.
         """
@@ -159,12 +159,12 @@ def get_or_initialize_cache(
     ttl_seconds: Optional[float] = 60.0,
 ) -> Cache:
     """Get or initialize the prompt cache singleton.
-    
+
     Args:
         max_size: Maximum entries in cache (used only if not yet initialized).
         ttl_seconds: TTL for cache entries in seconds (used only if not yet initialized).
             Default: 60 seconds.
-        
+
     Returns:
         The singleton cache instance.
     """
@@ -182,12 +182,12 @@ def get_or_initialize_async_cache(
     ttl_seconds: Optional[float] = 60.0,
 ) -> AsyncCache:
     """Get or initialize the async prompt cache singleton.
-    
+
     Args:
         max_size: Maximum entries in cache (used only if not yet initialized).
         ttl_seconds: TTL for cache entries in seconds (used only if not yet initialized).
             Default: 60 seconds.
-        
+
     Returns:
         The singleton async cache instance.
     """

@@ -140,7 +140,7 @@ class TestCacheStaleness:
         """Test that fresh entries are not stale."""
         cache = Cache(max_size=100, ttl_seconds=60.0)
         cache.set("test-key", sample_prompt_commit)
-        
+
         # Should be fresh immediately after setting
         assert not cache.is_stale("test-key")
         assert cache.get("test-key") is not None
@@ -149,13 +149,13 @@ class TestCacheStaleness:
         """Test that old entries are stale."""
         cache = Cache(max_size=100, ttl_seconds=0.1)  # 100ms TTL
         cache.set("test-key", sample_prompt_commit)
-        
+
         # Should be fresh immediately
         assert not cache.is_stale("test-key")
-        
+
         # Wait for TTL to expire
         time.sleep(0.15)
-        
+
         # Should now be stale
         assert cache.is_stale("test-key")
         # But still accessible
@@ -164,7 +164,7 @@ class TestCacheStaleness:
     def test_is_stale_missing_key(self):
         """Test that missing keys are not stale (returns False)."""
         cache = Cache(max_size=100, ttl_seconds=60.0)
-        
+
         # Missing key should return False (not stale, just missing)
         assert not cache.is_stale("missing-key")
 
@@ -172,10 +172,10 @@ class TestCacheStaleness:
         """Test that entries never go stale with null TTL."""
         cache = Cache(max_size=100, ttl_seconds=None)
         cache.set("test-key", sample_prompt_commit)
-        
+
         # Wait a bit
         time.sleep(0.1)
-        
+
         # Should never be stale with null TTL
         assert not cache.is_stale("test-key")
         assert cache.get("test-key") is not None
@@ -221,9 +221,7 @@ class TestCacheThreadSafety:
             except Exception as e:
                 errors.append(e)
 
-        threads = [
-            threading.Thread(target=write_cache, args=(i,)) for i in range(10)
-        ]
+        threads = [threading.Thread(target=write_cache, args=(i,)) for i in range(10)]
         for t in threads:
             t.start()
         for t in threads:
@@ -256,7 +254,7 @@ class TestAsyncCache:
         """Test that fresh entries are not stale in async cache."""
         cache = AsyncCache(max_size=100, ttl_seconds=60.0)
         cache.set("test-key", sample_prompt_commit)
-        
+
         # Should be fresh immediately after setting
         assert not cache.is_stale("test-key")
         assert cache.get("test-key") is not None
@@ -265,16 +263,16 @@ class TestAsyncCache:
     async def test_is_stale_expired_entry(self, sample_prompt_commit):
         """Test that old entries are stale in async cache."""
         import asyncio
-        
+
         cache = AsyncCache(max_size=100, ttl_seconds=0.1)  # 100ms TTL
         cache.set("test-key", sample_prompt_commit)
-        
+
         # Should be fresh immediately
         assert not cache.is_stale("test-key")
-        
+
         # Wait for TTL to expire
         await asyncio.sleep(0.15)
-        
+
         # Should now be stale
         assert cache.is_stale("test-key")
         # But still accessible
@@ -284,13 +282,13 @@ class TestAsyncCache:
     async def test_is_stale_null_ttl(self, sample_prompt_commit):
         """Test that entries never go stale with null TTL in async cache."""
         import asyncio
-        
+
         cache = AsyncCache(max_size=100, ttl_seconds=None)
         cache.set("test-key", sample_prompt_commit)
-        
+
         # Wait a bit
         await asyncio.sleep(0.1)
-        
+
         # Should never be stale with null TTL
         assert not cache.is_stale("test-key")
         assert cache.get("test-key") is not None
@@ -823,9 +821,7 @@ class TestClientPullThroughRefreshAsync:
         )
 
         # Populate cache with stale data
-        with patch.object(
-            client, "_afetch_prompt_from_api", return_value=stale_commit
-        ):
+        with patch.object(client, "_afetch_prompt_from_api", return_value=stale_commit):
             result1 = await client.pull_prompt_commit("test-prompt")
             assert result1.commit_hash == "old123"
 
@@ -867,9 +863,7 @@ class TestClientPullThroughRefreshAsync:
         )
 
         # Populate cache
-        with patch.object(
-            client, "_afetch_prompt_from_api", return_value=stale_commit
-        ):
+        with patch.object(client, "_afetch_prompt_from_api", return_value=stale_commit):
             result1 = await client.pull_prompt_commit("test-prompt")
             assert result1.commit_hash == "old123"
 
@@ -877,9 +871,7 @@ class TestClientPullThroughRefreshAsync:
         await asyncio.sleep(0.15)
 
         # Mock fast API call (completes within 1s)
-        with patch.object(
-            client, "_afetch_prompt_from_api", return_value=fresh_commit
-        ):
+        with patch.object(client, "_afetch_prompt_from_api", return_value=fresh_commit):
             result2 = await client.pull_prompt_commit("test-prompt")
 
             # Should return fresh data
