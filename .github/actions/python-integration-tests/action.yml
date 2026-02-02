@@ -47,7 +47,7 @@ runs:
     - name: Install dependencies
       run: |
         uv sync --group dev
-        uv pip install langchain langchain-openai langchain-anthropic tiktoken rapidfuzz vcrpy numpy
+        uv pip install langchain langchain-openai langchain-anthropic tiktoken rapidfuzz vcrpy numpy google-adk
       shell: bash
       working-directory: python
 
