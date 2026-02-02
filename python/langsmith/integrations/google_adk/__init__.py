@@ -42,7 +42,7 @@ def configure_google_adk(
         return True
 
     try:
-        from google.adk import runners
+        from google.adk import runners  # type: ignore[import-untyped]
         from wrapt import wrap_function_wrapper
     except ImportError as e:
         logger.warning(f"Missing dependency: {e}")
@@ -64,7 +64,7 @@ def configure_google_adk(
     wrap_function_wrapper(runners, "Runner.run_async", wrap_runner_run_async)
 
     try:
-        from google.adk.flows.llm_flows import base_llm_flow
+        from google.adk.flows.llm_flows import base_llm_flow  # type: ignore[import-untyped]
 
         wrap_function_wrapper(
             base_llm_flow, "BaseLlmFlow._call_llm_async", wrap_flow_call_llm_async
@@ -73,7 +73,7 @@ def configure_google_adk(
         pass
 
     try:
-        from google.adk.tools.mcp_tool import mcp_tool
+        from google.adk.tools.mcp_tool import mcp_tool  # type: ignore[import-untyped]
 
         from ._client import wrap_mcp_tool_run_async
 
