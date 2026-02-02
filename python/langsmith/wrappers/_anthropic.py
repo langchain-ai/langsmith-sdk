@@ -445,12 +445,20 @@ class TracingExtra(TypedDict, total=False):
     client: Optional[ls_client.Client]
 
 
-def wrap_anthropic(client: C, *, tracing_extra: Optional[TracingExtra] = None) -> C:
+def wrap_anthropic(
+    client: C,
+    *,
+    tracing_extra: Optional[TracingExtra] = None,
+    chat_name: str = "ChatAnthropic",
+    completions_name: str = "Anthropic",
+) -> C:
     """Patch the Anthropic client to make it traceable.
 
     Args:
         client: The client to patch.
         tracing_extra: Extra tracing information.
+        chat_name: The run name for the messages endpoint.
+        completions_name: The run name for the completions endpoint.
 
     Returns:
         The patched client.
@@ -515,7 +523,7 @@ def wrap_anthropic(client: C, *, tracing_extra: Optional[TracingExtra] = None) -
 
     client.messages.create = _get_wrapper(  # type: ignore[method-assign]
         client.messages.create,
-        "ChatAnthropic",
+        chat_name,
         _reduce_chat_chunks,
         prepopulated_invocation_params,
         tracing_extra_rest,
@@ -523,13 +531,13 @@ def wrap_anthropic(client: C, *, tracing_extra: Optional[TracingExtra] = None) -
 
     client.messages.stream = _get_stream_wrapper(  # type: ignore[method-assign]
         client.messages.stream,
-        "ChatAnthropic",
+        chat_name,
         prepopulated_invocation_params,
         tracing_extra_rest,
     )
     client.completions.create = _get_wrapper(  # type: ignore[method-assign]
         client.completions.create,
-        "Anthropic",
+        completions_name,
         _reduce_completions,
         prepopulated_invocation_params,
         tracing_extra_rest,
@@ -542,7 +550,7 @@ def wrap_anthropic(client: C, *, tracing_extra: Optional[TracingExtra] = None) -
     ):
         client.beta.messages.create = _get_wrapper(  # type: ignore[method-assign]
             client.beta.messages.create,  # type: ignore
-            "ChatAnthropic",
+            chat_name,
             _reduce_chat_chunks,
             prepopulated_invocation_params,
             tracing_extra_rest,
