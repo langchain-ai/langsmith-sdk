@@ -64,8 +64,8 @@ def configure_google_adk(
     wrap_function_wrapper(runners, "Runner.run_async", wrap_runner_run_async)
 
     try:
-        from google.adk.flows.llm_flows import (
-            base_llm_flow,  # type: ignore[import-untyped]
+        from google.adk.flows.llm_flows import (  # type: ignore[import-untyped]
+            base_llm_flow,
         )
 
         wrap_function_wrapper(
