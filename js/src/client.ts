@@ -749,7 +749,6 @@ export class Client implements LangSmithTracingClientInterface {
   private cachedLSEnvVarsForMetadata?: Record<string, string>;
 
   private _cacheConfig: boolean | PromptCacheConfig;
-  private _cacheInitialized = false;
 
   private get _fetch(): typeof fetch {
     return this.fetchImplementation || _getFetchImplementation(this.debug);
@@ -5469,15 +5468,10 @@ export class Client implements LangSmithTracingClientInterface {
 
     // Check cache first if not skipped and caching is enabled
     if (!options?.skipCache && cachingEnabled) {
-      // Lazy initialize the cache on first use
-      if (!this._cacheInitialized) {
-        const config: PromptCacheConfig | undefined =
-          typeof this._cacheConfig === "object" ? this._cacheConfig : undefined;
-        getOrInitializeCache(config);
-        this._cacheInitialized = true;
-      }
-
-      const cache = getOrInitializeCache();
+      const config: PromptCacheConfig | undefined =
+        typeof this._cacheConfig === "object" ? this._cacheConfig : undefined;
+      const cache = getOrInitializeCache(config);
+      
       const cacheKey = this._getPromptCacheKey(
         promptIdentifier,
         options?.includeModel
@@ -5671,15 +5665,9 @@ export class Client implements LangSmithTracingClientInterface {
       return undefined;
     }
 
-    // Lazy initialize on access
-    if (!this._cacheInitialized) {
-      const config: PromptCacheConfig | undefined =
-        typeof this._cacheConfig === "object" ? this._cacheConfig : undefined;
-      getOrInitializeCache(config);
-      this._cacheInitialized = true;
-    }
-
-    return getOrInitializeCache();
+    const config: PromptCacheConfig | undefined =
+      typeof this._cacheConfig === "object" ? this._cacheConfig : undefined;
+    return getOrInitializeCache(config);
   }
 
   /**

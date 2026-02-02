@@ -36,7 +36,6 @@ class AsyncClient:
         "_web_url",
         "_settings",
         "_prompt_cache_config",
-        "_cache_initialized",
     )
 
     def __init__(
@@ -95,7 +94,6 @@ class AsyncClient:
 
         # Store cache config for lazy initialization
         self._prompt_cache_config: Union[bool, dict] = prompt_cache
-        self._cache_initialized = False
 
     @property
     def cache(self) -> Optional[AsyncCache]:
@@ -107,32 +105,27 @@ class AsyncClient:
         if self._prompt_cache_config is False:
             return None
             
-        if not self._cache_initialized:
-            from langsmith.prompt_cache_singleton import get_or_initialize_async_cache
-            
-            # Extract config parameters
-            if isinstance(self._prompt_cache_config, dict):
-                max_size = self._prompt_cache_config.get("max_size", 100)
-                ttl_seconds = self._prompt_cache_config.get("ttl_seconds", 3600.0)
-                refresh_interval = self._prompt_cache_config.get(
-                    "refresh_interval_seconds", 60.0
-                )
-            else:
-                # Use defaults
-                max_size = 100
-                ttl_seconds = 3600.0
-                refresh_interval = 60.0
-            
-            # Initialize or get the singleton
-            get_or_initialize_async_cache(
-                max_size=max_size,
-                ttl_seconds=ttl_seconds,
-                refresh_interval_seconds=refresh_interval,
-            )
-            self._cache_initialized = True
+        from langsmith.prompt_cache_singleton import get_or_initialize_async_cache
         
-        from langsmith.prompt_cache_singleton import AsyncPromptCacheManagerSingleton
-        return AsyncPromptCacheManagerSingleton.get_instance()
+        # Extract config parameters
+        if isinstance(self._prompt_cache_config, dict):
+            max_size = self._prompt_cache_config.get("max_size", 100)
+            ttl_seconds = self._prompt_cache_config.get("ttl_seconds", 3600.0)
+            refresh_interval = self._prompt_cache_config.get(
+                "refresh_interval_seconds", 60.0
+            )
+        else:
+            # Use defaults
+            max_size = 100
+            ttl_seconds = 3600.0
+            refresh_interval = 60.0
+        
+        # Initialize or get the singleton
+        return get_or_initialize_async_cache(
+            max_size=max_size,
+            ttl_seconds=ttl_seconds,
+            refresh_interval_seconds=refresh_interval,
+        )
 
     async def __aenter__(self) -> AsyncClient:
         """Enter the async client."""
