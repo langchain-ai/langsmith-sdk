@@ -24,9 +24,9 @@ export interface CacheMetrics {
 }
 
 /**
- * Configuration options for Cache.
+ * Configuration options for prompt cache.
  */
-export interface CacheConfig {
+export interface PromptCacheConfig {
   /** Maximum entries in cache (LRU eviction when exceeded). Default: 100 */
   maxSize?: number;
   /** Time in seconds before entry is stale. null = infinite TTL. Default: 3600 */

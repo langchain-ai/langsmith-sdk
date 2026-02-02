@@ -72,7 +72,7 @@ import { warnOnce } from "./utils/warn.js";
 import { parsePromptIdentifier } from "./utils/prompts.js";
 import { raiseForStatus, isLangSmithNotFoundError } from "./utils/error.js";
 import { Cache } from "./utils/prompts_cache/index.js";
-import type { CacheConfig } from "./utils/prompts_cache/types.js";
+import type { PromptCacheConfig } from "./utils/prompts_cache/types.js";
 import {
   _globalFetchImplementationIsNodeFetch,
   _getFetchImplementation,
@@ -131,7 +131,7 @@ export interface ClientConfig {
   /**
    * Configuration for prompt caching. Can be:
    * - `true` or `undefined`: Enable caching with default settings using a global singleton (default)
-   * - `CacheConfig` object: Configure the global singleton cache (see Cache constructor)
+   * - `PromptCacheConfig` object: Configure the global singleton cache (see Cache constructor)
    * - `false`: Disable caching
    *
    * The cache is lazy-initialized on the first prompt pull, and is shared across
@@ -157,7 +157,7 @@ export interface ClientConfig {
    * const client3 = new Client({ promptCache: false });
    * ```
    */
-  promptCache?: boolean | CacheConfig;
+  promptCache?: boolean | PromptCacheConfig;
 }
 
 /**
@@ -748,7 +748,7 @@ export class Client implements LangSmithTracingClientInterface {
 
   private cachedLSEnvVarsForMetadata?: Record<string, string>;
 
-  private _cacheConfig: boolean | CacheConfig;
+  private _cacheConfig: boolean | PromptCacheConfig;
   private _cacheInitialized = false;
 
   private get _fetch(): typeof fetch {
@@ -5471,7 +5471,7 @@ export class Client implements LangSmithTracingClientInterface {
     if (!options?.skipCache && cachingEnabled) {
       // Lazy initialize the cache on first use
       if (!this._cacheInitialized) {
-        const config: CacheConfig | undefined =
+        const config: PromptCacheConfig | undefined =
           typeof this._cacheConfig === "object" ? this._cacheConfig : undefined;
         getOrInitializeCache(config);
         this._cacheInitialized = true;
@@ -5673,7 +5673,7 @@ export class Client implements LangSmithTracingClientInterface {
 
     // Lazy initialize on access
     if (!this._cacheInitialized) {
-      const config: CacheConfig | undefined =
+      const config: PromptCacheConfig | undefined =
         typeof this._cacheConfig === "object" ? this._cacheConfig : undefined;
       getOrInitializeCache(config);
       this._cacheInitialized = true;

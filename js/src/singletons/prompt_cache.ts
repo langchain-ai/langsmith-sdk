@@ -6,7 +6,7 @@
  */
 
 import { Cache } from "../utils/prompts_cache/index.js";
-import type { CacheConfig } from "../utils/prompts_cache/types.js";
+import type { PromptCacheConfig } from "../utils/prompts_cache/types.js";
 
 // Module-level singleton cache instance
 let _cacheInstance: Cache | undefined;
@@ -28,7 +28,7 @@ class PromptCacheManager {
    * @param force - If true, replace existing cache instance (will stop the old one)
    * @returns The cache instance
    */
-  initializeInstance(config?: CacheConfig, force = false): Cache {
+  initializeInstance(config?: PromptCacheConfig, force = false): Cache {
     if (_cacheInstance && !force) {
       // Already initialized, return existing
       return _cacheInstance;
@@ -70,7 +70,7 @@ export const PromptCacheManagerSingleton = new PromptCacheManager();
  * @param config - Configuration to use if cache is not yet initialized (ignored if already initialized)
  * @returns The singleton cache instance
  */
-export function getOrInitializeCache(config?: CacheConfig): Cache {
+export function getOrInitializeCache(config?: PromptCacheConfig): Cache {
   const existing = PromptCacheManagerSingleton.getInstance();
   if (existing) {
     return existing;

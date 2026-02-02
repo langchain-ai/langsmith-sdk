@@ -10,10 +10,10 @@
 
 import type { PromptCommit } from "../../schemas.js";
 import { dumpCache, loadCache } from "./fs.js";
-import type { CacheEntry, CacheMetrics, CacheConfig } from "./types.js";
+import type { CacheEntry, CacheMetrics, PromptCacheConfig } from "./types.js";
 
 // Re-export types for convenience
-export type { CacheEntry, CacheMetrics, CacheConfig };
+export type { CacheEntry, CacheMetrics, PromptCacheConfig };
 
 /**
  * Check if a cache entry is stale based on TTL.
@@ -65,7 +65,7 @@ export class Cache {
     refreshErrors: 0,
   };
 
-  constructor(config: CacheConfig = {}) {
+  constructor(config: PromptCacheConfig = {}) {
     this.maxSize = config.maxSize ?? 100;
     this.ttlSeconds = config.ttlSeconds ?? 3600;
     this.refreshIntervalSeconds = config.refreshIntervalSeconds ?? 60;

@@ -29,7 +29,7 @@ export { uuid7, uuid7FromTime } from "./uuid.js";
 export { Cache } from "./utils/prompts_cache/index.js";
 
 export type {
-  CacheConfig,
+  PromptCacheConfig,
   CacheMetrics,
   CacheEntry,
 } from "./utils/prompts_cache/types.js";
